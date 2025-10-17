@@ -3,7 +3,7 @@
 A collection of sample programs written in the
 [Mojo](https://docs.modular.com/mojo/manual/) programming language.
 
-## Getting Started
+## Getting started
 
 The easiest way to get started with Mojo is to install the
 [Pixi](https://pixi.sh/latest/) package and virtual environment manager:
@@ -19,13 +19,11 @@ below:
 git clone https://github.com/modular/modular.git
 ```
 
-## Running
-
 Navigate into the `examples` directory and use `pixi run` to invoke `mojo` and
 run the basic example programs. For example:
 
 ```bash
-pixi run mojo matmul.mojo
+pixi run mojo mandelbrot.mojo
 ```
 
 ## License

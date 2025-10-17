@@ -33,19 +33,13 @@ from math import ceildiv
 from sys import simd_width_of
 
 from buffer import NDBuffer
-from gpu import (
-    block_dim,
-    global_idx,
-    grid_dim,
-    WARP_SIZE,
-)
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host import get_gpu_target
+from gpu import WARP_SIZE, block_dim, global_idx, grid_dim
+from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
 from utils import StaticTuple
 
 # Import P2P detection and synchronization from allreduce
-from .allreduce import MAX_GPUS, Signal, can_enable_p2p, _multi_gpu_barrier
+from .allreduce import MAX_GPUS, Signal, _multi_gpu_barrier, can_enable_p2p
 
 
 @always_inline
@@ -104,7 +98,6 @@ fn _allgather_p2p_kernel[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    my_rank: Int,
     *,
     BLOCK_SIZE: Int,
 ](
@@ -113,6 +106,7 @@ fn _allgather_p2p_kernel[
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     lengths: StaticTuple[Int, ngpus],
     max_num_blocks: Int,
+    my_rank: Int,
 ):
     """P2P kernel for allgather operation.
 
@@ -122,7 +116,7 @@ fn _allgather_p2p_kernel[
     alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
 
     var global_tid = global_idx.x
-    var stride = grid_dim.x * BLOCK_SIZE
+    var stride = grid_dim.x * UInt(BLOCK_SIZE)
     var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
 
     # Synchronize before reading.
@@ -182,19 +176,9 @@ fn _allgather_p2p[
         list_of_in_ptrs[i] = input_buffers[i].data
         lengths[i] = input_buffers[i].num_elements()
 
-    # Prepare signal pointers
-    var rank_sigs_tuple = StaticTuple[UnsafePointer[Signal], MAX_GPUS](
-        UnsafePointer[Signal]()
-    )
-
-    @parameter
-    for i in range(ngpus):
-        rank_sigs_tuple[i] = rank_sigs[i]
-
     alias BLOCK_SIZE = 256
 
     # Launch kernel on each GPU.
-    @parameter
     for gpu_idx in range(ngpus):
         var curr_ctx = ctxs[gpu_idx]
 
@@ -224,15 +208,15 @@ fn _allgather_p2p[
                 dtype,
                 rank,
                 ngpus,
-                my_rank=gpu_idx,
                 BLOCK_SIZE=BLOCK_SIZE,
             ]
         ](
             output_ptrs,
             list_of_in_ptrs,
-            rank_sigs_tuple,
+            rank_sigs,
             lengths,
             max_num_blocks,
+            gpu_idx,
             grid_dim=grid_size,
             block_dim=BLOCK_SIZE,
         )

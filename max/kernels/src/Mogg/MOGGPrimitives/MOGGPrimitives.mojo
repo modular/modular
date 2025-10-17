@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import fma
 from sys import external_call
 
 from buffer import NDBuffer
@@ -18,19 +19,19 @@ from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
-from math import fma
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from memory import memcpy
 from nn.concat import concat
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal.managed_tensor_slice import get_kernel_simd_width
-from tensor_internal.io_spec import IO
 from tensor_internal import (
     DynamicTensor,
     InputTensor,
     IOSpec,
     ManagedTensorSlice,
 )
+from tensor_internal.io_spec import IO
+from tensor_internal.managed_tensor_slice import get_kernel_simd_width
 from weights_registry import WeightsRegistry
 
 from utils import Index, IndexList, StaticTuple
@@ -111,7 +112,7 @@ fn create_index_async(value: Int, async_ptr: OpaquePointer):
 @register_internal("builtin.create_si64_async")
 @no_inline
 @export
-fn create_si64_async(value: Scalar[DType.int64], async_ptr: OpaquePointer):
+fn create_si64_async(value: Int64, async_ptr: OpaquePointer):
     external_call["KGEN_CompilerRT_CreateAsync_int64t", NoneType](
         value, async_ptr
     )
@@ -450,6 +451,57 @@ fn mogg_async_unpack[T: AnyTrivialRegType](async_ptr: OpaquePointer) -> T:
     ).bitcast[T]()[0]
 
 
+struct MoggAsyncPackHelper:
+    """
+    Helper struct for packing various data types into an asynchronous context for MOGG operations.
+    Provides constructor overloads for different supported types.
+    """
+
+    fn __init__(out self, data: Int, async_ptr: OpaquePointer):
+        """
+        Packs an integer value into the asynchronous context.
+        Calls create_index_async to handle the packing.
+        """
+        create_index_async(data, async_ptr)
+
+    fn __init__(out self, data: Int64, async_ptr: OpaquePointer):
+        """
+        Packs a 64-bit integer value into the asynchronous context.
+        Calls create_si64_async to handle the packing.
+        """
+        create_si64_async(data, async_ptr)
+
+    fn __init__(out self, data: Bool, async_ptr: OpaquePointer):
+        """
+        Packs a boolean value into the asynchronous context.
+        Calls create_i1_async to handle the packing.
+        """
+        create_i1_async(data, async_ptr)
+
+    fn __init__[
+        spec_rank: Int
+    ](out self, data: IndexList[spec_rank], async_ptr: OpaquePointer):
+        """
+        Packs an IndexList of specified rank into the asynchronous context.
+        Calls create_tensor_spec_async to handle the packing.
+        """
+        create_tensor_spec_async(data, async_ptr)
+
+
+@register_internal("mogg.async.pack")
+@no_inline
+fn mogg_async_pack(pack_helper: MoggAsyncPackHelper):
+    """
+    Packs asynchronous data using the provided MoggAsyncPackHelper.
+
+    This function serves as an entry point for packing data into an asynchronous
+    reference. The actual packing logic is handled by the MoggAsyncPackHelper struct,
+    which provides specialized constructors for different data types. This function
+    itself is a no-op and exists to satisfy the internal registration mechanism.
+    """
+    return
+
+
 @register_internal("mogg.tensor.__init__")
 @no_inline
 fn mogg_tensor_init[
@@ -460,6 +512,7 @@ fn mogg_tensor_init[
     static_shape: DimList,
     static_stride: DimList,
     alignment: Int,
+    exclusive: Bool,
 ](ptr: OpaquePointer, shape: IndexList[rank]) -> ManagedTensorSlice[
     io_spec = IOSpec[mut, input](),
     static_spec = StaticTensorSpec[dtype, rank](
@@ -467,7 +520,7 @@ fn mogg_tensor_init[
         static_stride,
         alignment,
         AddressSpace.GENERIC,
-        True,
+        exclusive,
         None,
         None,
         None,
@@ -478,7 +531,7 @@ fn mogg_tensor_init[
         static_stride,
         alignment,
         AddressSpace.GENERIC,
-        True,
+        exclusive,
         None,
         None,
         None,
@@ -495,6 +548,17 @@ fn mogg_async_ready(async_ptr: OpaquePointer):
     external_call["KGEN_CompilerRT_CreateAsync_chain", NoneType](async_ptr)
 
 
+@register_internal("mogg.async.error")
+@no_inline
+fn mogg_async_error(async_ptr: OpaquePointer, err: Error):
+    """Indicates to the C++ runtime that the kernel has failed."""
+    external_call["KGEN_CompilerRT_AsyncRT_CreateAsync_Error", NoneType](
+        async_ptr,
+        err.unsafe_cstr_ptr(),
+        err.byte_length(),
+    )
+
+
 # ===-----------------------------------------------------------------------===#
 # MGP Common Primitives
 # ===-----------------------------------------------------------------------===#
@@ -502,9 +566,9 @@ fn mogg_async_ready(async_ptr: OpaquePointer):
 
 @register_internal("mgp.assert")
 @no_inline
-fn mgp_assert(cond: Bool, msg_ptr: UnsafePointer[Byte], msg_len: UInt) raises:
+fn mgp_assert(cond: Bool, msg_ptr: UnsafePointer[Byte], msg_len: Int) raises:
     if not cond:
-        raise Error(pack_string_res(msg_ptr, msg_len))
+        raise Error(pack_string_res(msg_ptr, UInt(msg_len)))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -714,13 +778,27 @@ fn mgp_buffer_concat[
     inputs: StaticTuple[NDBuffer[DType.uint8, 1, MutableAnyOrigin], *_],
     call_ctx: DeviceContextPtr,
 ) raises:
+    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    var output_lt = LayoutTensor[DType.uint8, layout_1d](
+        output.data,
+        RuntimeLayout[layout_1d].row_major(IndexList[1](len(output))),
+    )
+    var input_tensors = StaticTuple[
+        LayoutTensor[DType.uint8, layout_1d, MutableAnyOrigin],
+        inputs.size,
+    ]()
+    for i in range(len(inputs)):
+        input_tensors[i] = input_tensors.element_type(
+            inputs[i].data,
+            RuntimeLayout[layout_1d].row_major(IndexList[1](len(inputs[i]))),
+        )
     if len(output) < 4096:
-        concat[1, DType.uint8, True, bDevice, None](
-            output, 0, inputs, context=call_ctx
+        concat[inputs_layout=layout_1d, DType.uint8, True, bDevice, None](
+            output_lt, 0, input_tensors, context=call_ctx
         )
     else:
-        concat[1, DType.uint8, False, bDevice, None](
-            output, 0, inputs, context=call_ctx
+        concat[DType.uint8, False, bDevice, None](
+            output_lt, 0, input_tensors, context=call_ctx
         )
 
 
@@ -777,7 +855,7 @@ fn mgp_buffer_device_to_device[
             ),
         )
     elif is_cpu[cSrcDevice]() and is_cpu[dDstDevice]():
-        memcpy(dst_buf.data, src_buf.data, src_buf.size())
+        memcpy(dest=dst_buf.data, src=src_buf.data, count=src_buf.size())
     else:
         raise Error(
             "mgp.buffer.device_to_device can be scheduled between same device"
@@ -814,8 +892,8 @@ fn mgp_buffer_host_to_device[
 @no_inline
 fn mgp_buffer_get_cached(
     ctx: StateContext,
+    buffer_slot: UInt,
     storage_ref_addr: UnsafePointer[OpaquePointer],
-    buffer_slot: UInt64,
 ) raises -> NDBuffer[DType.uint8, 1, MutableAnyOrigin]:
     var buffer_size: UInt64 = 0
     var buffer_data: OpaquePointer = external_call[
@@ -882,24 +960,6 @@ fn mgp_tensor_spec_create[
     return shape
 
 
-@register_internal("mgp.tensor_spec.equal.static")
-@no_inline
-fn mgp_tensor_spec_equal_static[
-    spec_rank: Int, *rawDims: Dim
-](spec: IndexList[spec_rank]) -> Bool:
-    var dims: VariadicList[Dim] = rawDims
-    var numDims = len(dims)
-    if spec_rank != numDims:
-        return False
-    for i in range(numDims):
-        var dim = dims[i]
-        var expectedDim = spec[i]
-        if dim and dim != -1 and dim != expectedDim:
-            return False
-
-    return True
-
-
 @register_internal("mgp.tensor_spec.get_dim")
 @no_inline
 fn mgp_tensor_spec_get_dim[
@@ -950,11 +1010,11 @@ fn mgp_debug_tensor_print[
     buffer: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
     shape: IndexList[spec_rank],
     label_ptr: UnsafePointer[Byte],
-    label_len: UInt,
+    label_len: Int,
 ) raises:
     external_call["KGEN_CompilerRT_DebugTensorPrint", NoneType](
         label_ptr,
-        label_len,
+        UInt(label_len),
         dtype,
         UnsafePointer(to=shape.data),
         spec_rank,
@@ -1110,7 +1170,7 @@ fn ListOfTensorDef[
         ]
     ]
 ) -> __type_of(ty):
-    return ty
+    return ty.copy()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1140,6 +1200,45 @@ fn reshape_contiguous_buffer[
     shape: IndexList[new_rank],
 ) -> DynamicTensor[dtype, new_rank]:
     return DynamicTensor[dtype, new_rank](buffer._ptr, shape)
+
+
+# TODO: Rename it without `_v2` and get rid of the implementation above.
+# The previous implementation didn't propagate the StaticTensorSpec correctly.
+# This wasn't a problem because we manipulated KGEN in the GC and passed the correct parameter to the kernel either way.
+# But for mojo we need to compute it correctly.
+@register_internal("reshape_contiguous_managed_tensor_slice_v2")
+@always_inline
+fn reshape_contiguous_buffer_v2[
+    static_shape: DimList, static_stride: DimList, new_rank: Int
+](
+    buffer: ManagedTensorSlice,
+    shape: IndexList[new_rank],
+) -> ManagedTensorSlice[
+    io_spec = buffer.io_spec,
+    static_spec = StaticTensorSpec[buffer.dtype, new_rank](
+        static_shape,
+        static_stride,
+        1,
+        AddressSpace.GENERIC,
+        True,
+        None,
+        None,
+        None,
+    ),
+]:
+    return ManagedTensorSlice[
+        io_spec = buffer.io_spec,
+        static_spec = StaticTensorSpec[buffer.dtype, new_rank](
+            static_shape,
+            static_stride,
+            1,
+            AddressSpace.GENERIC,
+            True,
+            None,
+            None,
+            None,
+        ),
+    ](buffer._ptr, shape)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1197,7 +1296,7 @@ fn build_static_tensor_specs_tuple[
     array_of_specs: VariadicList[StaticTensorSpec[dtype, rank]],
     out result: StaticTuple[StaticTensorSpec[dtype, rank], size],
 ):
-    return __type_of(result)(array_of_specs)
+    return {array_of_specs}
 
 
 # TODO: this should take IOSpec as a param -- will require graph compiler changes
@@ -1253,6 +1352,12 @@ fn get_scalar_from_managed_tensor_slice[
         static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
     ]
 ) -> Scalar[dtype]:
+    return _get_scalar_from_managed_tensor_slice(tensor)
+
+
+@register_internal("mogg.as_scalar")
+@always_inline
+fn mogg_as_scalar(tensor: ManagedTensorSlice) -> Scalar[tensor.dtype]:
     return _get_scalar_from_managed_tensor_slice(tensor)
 
 
@@ -1488,7 +1593,7 @@ fn test_my_int_to_index(x: MyInt) -> Int:
 
 
 @register_passable("trivial")
-struct MyIntReg(Copyable, Movable):
+struct MyIntReg(ImplicitlyCopyable, Movable):
     var val: Int
 
     fn __init__(out self, val: Int):
@@ -1502,7 +1607,7 @@ fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
 
 
 @register_passable
-struct MyIntReg2(Copyable, Movable):
+struct MyIntReg2(ImplicitlyCopyable, Movable):
     var val: Int
 
     fn __init__(out self, val: Int):

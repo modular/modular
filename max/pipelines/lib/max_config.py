@@ -113,7 +113,7 @@ def _get_argparse_type_and_action(
         - action: The action string for add_argument() or None for typed args
     """
 
-    # Get the origin and args for generic types (e.g., Optional[int] -> Union, (int, NoneType))
+    # Get the origin and args for generic types (e.g., int | None -> Union, (int, NoneType))
     origin = get_origin(field_type)
     args = get_args(field_type)
 
@@ -198,7 +198,7 @@ def convert_max_config_value(
     if value is None:
         return None
 
-    # Get the origin and args for generic types (e.g., Optional[int] -> Union, (int, NoneType))
+    # Get the origin and args for generic types (e.g., int | None -> Union, (int, NoneType))
     origin = get_origin(field_type)
     args = get_args(field_type)
 
@@ -302,7 +302,7 @@ def convert_max_config_value(
                 )
         try:
             # Handle numeric values (0/1)
-            if isinstance(value, (int, float)):
+            if isinstance(value, int | float):
                 return bool(value)
             else:
                 # Try to convert to int first, then to bool
@@ -784,34 +784,139 @@ class MAXConfig:
                 f"Failed to create {cls.__name__} instance: {e}"
             ) from e
 
+    def _get_group_description(
+        self, group_name: str, group_fields: list[Any]
+    ) -> str | None:
+        """Get the description for an argument group.
+
+        Args:
+            group_name: The name of the group.
+            group_fields: List of dataclass field objects in this group.
+
+        Returns:
+            The group description if found, None otherwise.
+        """
+        # TODO: I think the group_description should live somewhere else more global
+        # and not defined in an individual config field. This isn't a great design
+        # but maybe it's ok for now until a follow up PR.
+        # Look for group_description in any field's metadata
+        for field_obj in group_fields:
+            group_description = field_obj.metadata.get("group_description")
+            if group_description:
+                return group_description
+        return None
+
+    def _add_field_as_argument(
+        self,
+        parser_or_group: argparse.ArgumentParser | argparse._ArgumentGroup,
+        field_obj: Any,
+        type_hints: dict[str, Any],
+        choices_provider: dict[str, list[str]],
+        required_params: set[str],
+    ) -> None:
+        """Add a single field as an argument to a parser or argument group.
+
+        Args:
+            parser_or_group: The ArgumentParser or ArgumentGroup to add the argument to.
+            field_obj: The dataclass field object.
+            type_hints: Resolved type hints for the class.
+            choices_provider: Dictionary mapping field names to their valid choices.
+            required_params: Set of field names that should be marked as required.
+        """
+        # Skip internal fields
+        if field_obj.name.startswith("_"):
+            return
+
+        field_name = field_obj.name.replace("_", "-")
+        arg_name = f"--{field_name}"
+
+        # Use resolved type hint if available, otherwise fall back to field.type
+        field_type = type_hints.get(field_obj.name, field_obj.type)
+
+        # Use helper function to determine argparse parameters
+        arg_type, action = _get_argparse_type_and_action(
+            field_type, field_obj.default
+        )
+
+        # Build argument kwargs
+        # Use the actual config value, not the field default
+        field_value = getattr(self, field_obj.name)
+
+        # Handle enum types specially - argparse expects string values for enums
+        if (
+            hasattr(field_value, "value")
+            and hasattr(field_value, "__class__")
+            and issubclass(field_value.__class__, enum.Enum)
+        ):
+            # For enums, use the string value as default but we'll need to convert back
+            arg_kwargs = {
+                "default": field_value.value
+                if field_value
+                else field_obj.default
+            }
+        else:
+            arg_kwargs = {"default": field_value}
+
+        # Apply choices from choices_provider
+        if field_obj.name in choices_provider:
+            arg_kwargs["choices"] = choices_provider[field_obj.name]
+
+        # Add help from the config class if available
+        if hasattr(self, "help"):
+            help_dict = self.help()
+            if field_obj.name in help_dict:
+                arg_kwargs["help"] = help_dict[field_obj.name]
+
+        # Mark as required if specified in required_params
+        # The required_params set is already calculated by the caller (e.g., smart required fields logic)
+        if field_obj.name in required_params:
+            arg_kwargs["required"] = True
+
+        # Add argument with appropriate type and action
+        if action:
+            # Boolean fields with action
+            arg_kwargs["action"] = action
+            parser_or_group.add_argument(arg_name, **arg_kwargs)
+        elif get_origin(field_type) is list:
+            # List fields need nargs
+            arg_kwargs.update({"type": arg_type, "nargs": "*"})
+            parser_or_group.add_argument(arg_name, **arg_kwargs)
+        else:
+            # Regular typed fields
+            arg_kwargs["type"] = arg_type
+            parser_or_group.add_argument(arg_name, **arg_kwargs)
+
     def cli_arg_parsers(
         self,
         choices_provider: dict[str, list[str]] | None = None,
         description: str | None = None,
+        formatter_class: type[argparse.HelpFormatter] | None = None,
         required_params: set[str] | None = None,
     ) -> argparse.ArgumentParser:
         """Create an ArgumentParser populated with all MAXConfig fields as arguments.
 
         This creates a parser with proper add_argument() calls for each field,
-        using the loaded config values as defaults. The parser's parse_args() method
-        is wrapped to automatically convert parsed string values back to their proper
-        types (e.g., enum objects, proper data types) using MAXConfig's type conversion
-        logic.
+        using the loaded config values as defaults. Arguments are automatically
+        grouped by their 'group' metadata from field definitions. The parser's
+        parse_args() method is wrapped to automatically convert parsed string
+        values back to their proper types (e.g., enum objects, proper data types)
+        using MAXConfig's type conversion logic.
 
         Args:
             choices_provider: Optional dictionary mapping field names to their valid choices.
                              This allows external code to specify choices for specific fields.
             description: Optional description for the argument parser.
+            formatter_class: Optional formatter class for the argument parser. This is forwarded
+                              to the argparse.ArgumentParser constructor.
             required_params: Optional set of field names that should be marked as required
                            in the argument parser, regardless of their default values.
 
         Usage:
             ```python
-            # Basic usage with config file defaults
+            # Basic usage with config file defaults and automatic grouping
             config = KVCacheConfig.from_config_file("kv_cache.yaml")
             parser = config.cli_arg_parsers()
-            args = parser.parse_args()  # Gets config file values as defaults
-            main(args)  # args.cache_strategy will be proper enum object
+            args = parser.parse_args()  # Gets config file values as defaults, grouped by metadata
 
             # With choices for validation
             choices = {"backend": ["modular", "vllm"], "dataset_name": ["sharegpt", "random"]}
@@ -832,18 +937,34 @@ class MAXConfig:
             A configured ArgumentParser with enhanced parse_args() method that:
             - Uses loaded config values as argument defaults
             - Automatically converts parsed values to proper types (enums, etc.)
+            - Groups arguments by field metadata for better organization
             - Maintains compatibility with standard argparse usage
 
         Note:
             The returned parser's parse_args() method automatically handles type
             conversion, so enum fields will return actual enum objects rather than
             strings, matching the behavior of loading from config files.
+
+            Fields with 'group' metadata are organized into argument groups.
+            Fields without 'group' metadata are added to the main parser.
         """
 
         # Create parser
-        parser = argparse.ArgumentParser(description=description)
+        additional_argument_parser_args: dict[str, Any] = {}
+
+        if formatter_class is not None:
+            additional_argument_parser_args["formatter_class"] = formatter_class
+
+        parser = argparse.ArgumentParser(
+            description=description, **additional_argument_parser_args
+        )
         choices_provider = choices_provider or self.get_default_field_choices()
-        required_params = required_params or self.get_default_required_fields()
+        # Use provided required_params if it's not None, otherwise use default required fields
+        required_params = (
+            required_params
+            if required_params is not None
+            else self.get_default_required_fields()
+        )
 
         # Resolve type hints in case of string annotations (from __future__ import annotations)
         try:
@@ -851,68 +972,44 @@ class MAXConfig:
         except (NameError, AttributeError):
             type_hints = {}
 
+        # Group fields by their 'group' metadata
+        groups: dict[str, list[Any]] = {}
+        ungrouped_fields: list[Any] = []
+
         for field_obj in fields(self):
-            # Skip internal fields
             if field_obj.name.startswith("_"):
                 continue
 
-            field_name = field_obj.name.replace("_", "-")
-            arg_name = f"--{field_name}"
+            group_name = field_obj.metadata.get("group")
+            if group_name is not None:
+                if group_name not in groups:
+                    groups[group_name] = []
+                groups[group_name].append(field_obj)
+            else:
+                ungrouped_fields.append(field_obj)
 
-            # Use resolved type hint if available, otherwise fall back to field.type
-            field_type = type_hints.get(field_obj.name, field_obj.type)
-
-            # Use helper function to determine argparse parameters
-            arg_type, action = _get_argparse_type_and_action(
-                field_type, field_obj.default
+        # Create argument groups
+        for group_name, group_fields in groups.items():
+            group_description = self._get_group_description(
+                group_name, group_fields
             )
+            group = parser.add_argument_group(group_name, group_description)
 
-            # Build argument kwargs
-            # Use the actual config value, not the field default
-            field_value = getattr(self, field_obj.name)
+            # Add arguments to this group
+            for field_obj in group_fields:
+                self._add_field_as_argument(
+                    group,
+                    field_obj,
+                    type_hints,
+                    choices_provider,
+                    required_params,
+                )
 
-            # Handle enum types specially - argparse expects string values for enums
-            if (
-                hasattr(field_value, "value")
-                and hasattr(field_value, "__class__")
-                and issubclass(field_value.__class__, enum.Enum)
-            ):
-                # For enums, use the string value as default but we'll need to convert back
-                arg_kwargs = {
-                    "default": field_value.value
-                    if field_value
-                    else field_obj.default
-                }
-            else:
-                arg_kwargs = {"default": field_value}
-
-            # Apply choices from choices_provider
-            if field_obj.name in choices_provider:
-                arg_kwargs["choices"] = choices_provider[field_obj.name]
-
-            # Add help from the config class if available
-            if hasattr(self, "help"):
-                help_dict = self.help()
-                if field_obj.name in help_dict:
-                    arg_kwargs["help"] = help_dict[field_obj.name]
-
-            # Mark as required if specified in required_params
-            if field_obj.name in required_params:
-                arg_kwargs["required"] = True
-
-            # Add argument with appropriate type and action
-            if action:
-                # Boolean fields with action
-                arg_kwargs["action"] = action
-                parser.add_argument(arg_name, **arg_kwargs)  # type: ignore
-            elif get_origin(field_type) is list:
-                # List fields need nargs
-                arg_kwargs.update({"type": arg_type, "nargs": "*"})
-                parser.add_argument(arg_name, **arg_kwargs)  # type: ignore
-            else:
-                # Regular typed fields
-                arg_kwargs["type"] = arg_type
-                parser.add_argument(arg_name, **arg_kwargs)  # type: ignore
+        # Add ungrouped fields to main parser
+        for field_obj in ungrouped_fields:
+            self._add_field_as_argument(
+                parser, field_obj, type_hints, choices_provider, required_params
+            )
 
         # Create a wrapper class to override parse_args method
         class MAXConfigArgumentParser(argparse.ArgumentParser):
@@ -926,7 +1023,7 @@ class MAXConfig:
                 self._config_instance = config_instance
                 self._original_parse_args = parser_instance.parse_args
 
-            def parse_args(  # type: ignore[override]
+            def parse_args(  # type: ignore[override]  # noqa: ANN202
                 self,
                 args: list[str] | None = None,
                 namespace: argparse.Namespace | None = None,

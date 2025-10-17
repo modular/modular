@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import Union
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
@@ -40,7 +39,7 @@ class ConvTranspose1d(Module):
             )
     """
 
-    device: Union[DeviceRef, None]
+    device: DeviceRef | None
     """The device where matrix operations are performed."""
 
     weight: Weight
@@ -64,7 +63,7 @@ class ConvTranspose1d(Module):
     PyTorch order is: (in_channels, out_channels, kernel_length)
     Max API order: (kernel_length, out_channels, in_channels). """
 
-    bias: Union[Weight, None] = None
+    bias: Weight | None = None
     """The optional bias vector stored on CPU with shape (out_channels,).
     Model init moves the bias to :obj:`device` if present."""
 
@@ -74,14 +73,14 @@ class ConvTranspose1d(Module):
         in_channels: int,
         out_channels: int,
         dtype: DType,
-        stride: Union[int, tuple[int, int]] = 1,
-        padding: Union[int, tuple[int, int, int, int]] = 0,
-        dilation: Union[int, tuple[int, int]] = 1,
-        output_padding: Union[int, tuple[int, int]] = 0,
-        device: Union[DeviceRef, None] = None,
+        stride: int | tuple[int, int] = 1,
+        padding: int | tuple[int, int, int, int] = 0,
+        dilation: int | tuple[int, int] = 1,
+        output_padding: int | tuple[int, int] = 0,
+        device: DeviceRef | None = None,
         has_bias: bool = False,
         permute: bool = False,
-        name: Union[str, None] = None,
+        name: str | None = None,
     ) -> None:
         """Initializes the ConvTranspose1d layer with weights and optional bias.
 
@@ -181,7 +180,7 @@ class ConvTranspose1d(Module):
              a tensor of shape (batch_size, new_length, out_channels).
              if self.permute, then the output shape will be (batch_size, out_channels, new_length)
         """
-        weight: TensorValue = self.weight
+        weight: TensorValue = self.weight.to(x.device)
 
         if self.permute:
             # Use Pyotorch and CuDNN layout.
@@ -199,6 +198,11 @@ class ConvTranspose1d(Module):
             # Reshape [kernel_length, in_channels, out_channels] to [kernel_height=1, kernel_length, out_channels, in_channels].
             weight = ops.unsqueeze(weight, 0)
 
+        if self.bias is not None:
+            bias = self.bias.to(x.device)
+        else:
+            bias = None
+
         res = ops.conv2d_transpose(
             x=x,
             filter=weight,
@@ -206,7 +210,7 @@ class ConvTranspose1d(Module):
             dilation=self.dilation,
             padding=self.padding,
             output_paddings=self.output_padding,
-            bias=self.bias,
+            bias=bias,
             input_layout=ConvInputLayout.NCHW
             if self.permute
             else ConvInputLayout.NHWC,
@@ -249,7 +253,7 @@ class WeightNormConvTranspose1d(Module):
             )
     """
 
-    device: Union[DeviceRef, None]
+    device: DeviceRef | None
     """The device where matrix operations are performed."""
 
     conv: ConvTranspose1d
@@ -267,14 +271,14 @@ class WeightNormConvTranspose1d(Module):
         in_channels: int,
         out_channels: int,
         dtype: DType,
-        stride: Union[int, tuple[int, int]] = 1,
-        padding: Union[int, tuple[int, int, int, int]] = 0,
-        dilation: Union[int, tuple[int, int]] = 1,
-        output_padding: Union[int, tuple[int, int]] = 0,
-        device: Union[DeviceRef, None] = None,
+        stride: int | tuple[int, int] = 1,
+        padding: int | tuple[int, int, int, int] = 0,
+        dilation: int | tuple[int, int] = 1,
+        output_padding: int | tuple[int, int] = 0,
+        device: DeviceRef | None = None,
         has_bias: bool = False,
         permute: bool = False,
-        name: Union[str, None] = None,
+        name: str | None = None,
     ) -> None:
         """Initializes the WeightNormConvTranspose1d layer.
 
@@ -347,12 +351,14 @@ class WeightNormConvTranspose1d(Module):
         """
         if not hasattr(self.conv, "weight"):
             # Compute normalized weight sqrt(sum(x**2))
-            in_channels = self.weight_v.shape[0]
+            weight_v = self.weight_v.to(x.device)
+            weight_g = self.weight_g.to(x.device)
+            in_channels = weight_v.shape[0]
             v_norm = ops.sqrt(
-                ops.sum((self.weight_v**2).reshape([in_channels, -1]), axis=1)
+                ops.sum((weight_v**2).reshape([in_channels, -1]), axis=1)
             ).reshape([in_channels, 1, 1])
-            w = self.weight_v / v_norm
-            w = w * self.weight_g
+            w = weight_v / v_norm
+            w = w * weight_g
 
             # Update conv layer weight and apply convolution
             self.conv.weight = w

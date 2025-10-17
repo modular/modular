@@ -13,9 +13,10 @@
 
 
 from gpu import barrier
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, get_gpu_target
+from gpu.host.compile import _compile_code
 from gpu.id import thread_idx
-from gpu.memory import AddressSpace
+from gpu.memory import AddressSpace, CacheOperation
 from layout import *
 from layout._fillers import arange
 from layout._utils import load_to_simd
@@ -24,9 +25,9 @@ from layout.layout_tensor import (
     copy_dram_to_local,
     copy_dram_to_sram,
 )
-from layout.tensor_builder import LayoutTensorBuild as tb
-
+from sys import simd_width_of
 from utils import IndexList
+from benchmark import keep
 
 
 fn copy_dram_to_sram_buffer_load_kernel[
@@ -35,12 +36,7 @@ fn copy_dram_to_sram_buffer_load_kernel[
     BN: Int,
     BK: Int,
     thread_layout: Layout,
-](
-    input_ptr: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GLOBAL
-    ],
-    m: Int,
-):
+](input_ptr: UnsafePointer[Scalar[dtype]], m: Int,):
     alias layout = Layout.row_major(BM, BN)
     alias q_tile_type = LayoutTensor[
         dtype, layout, masked=True, address_space = AddressSpace.GLOBAL
@@ -53,10 +49,13 @@ fn copy_dram_to_sram_buffer_load_kernel[
     ].row_major(IndexList[2, element_type = q_tile_type.layout_int_type](m, BN))
 
     var q_tile = q_tile_type(
-        input_ptr,
+        input_ptr.address_space_cast[AddressSpace.GLOBAL](),
         runtime_layout,
     )
-    var smem = tb[dtype]().row_major[BM, BN]().shared().alloc()
+    alias layout_bmn = Layout.row_major(BM, BN)
+    var smem = LayoutTensor[
+        dtype, layout_bmn, MutableAnyOrigin, address_space = AddressSpace.SHARED
+    ].stack_allocation()
     if thread_idx.x == 0:
         _ = smem.fill(-1)
     barrier()
@@ -89,18 +88,19 @@ fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
     # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
 
     alias thread_layout = Layout.row_major(4, 2)
-    var input_tensor = tb[DType.bfloat16]().row_major[4, 16]().alloc()
+    alias layout = Layout.row_major(4, 16)
+    var stack = InlineArray[BFloat16, layout.size()](uninitialized=True)
+    var input_tensor = LayoutTensor[DType.bfloat16, layout](stack)
     arange(input_tensor)
     var device_tensor = ctx.enqueue_create_buffer[DType.bfloat16](
         input_tensor.layout.size()
     )
     ctx.enqueue_copy(device_tensor, input_tensor.ptr)
-    ctx.enqueue_function[
-        copy_dram_to_sram_buffer_load_kernel[
-            DType.bfloat16, 4, 16, 8, thread_layout
-        ],
-    ](
-        device_tensor.unsafe_ptr(),
+    alias kernel = copy_dram_to_sram_buffer_load_kernel[
+        DType.bfloat16, 4, 16, 8, thread_layout
+    ]
+    ctx.enqueue_function_checked[kernel, kernel](
+        device_tensor,
         3,
         grid_dim=1,
         block_dim=(thread_layout.size()),
@@ -115,12 +115,7 @@ fn copy_dram_to_local_buffer_load_kernel[
     BN: Int,
     BK: Int,
     thread_layout: Layout,
-](
-    input_ptr: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GLOBAL
-    ],
-    m: Int,
-):
+](input_ptr: UnsafePointer[Scalar[dtype]], m: Int,):
     alias layout = Layout.row_major(BM, BN)
     alias q_tile_type = LayoutTensor[
         dtype, layout, masked=True, address_space = AddressSpace.GLOBAL
@@ -133,7 +128,7 @@ fn copy_dram_to_local_buffer_load_kernel[
     ].row_major(IndexList[2, element_type = q_tile_type.layout_int_type](m, BN))
 
     var q_tile = q_tile_type(
-        input_ptr,
+        input_ptr.address_space_cast[AddressSpace.GLOBAL](),
         runtime_layout,
     )
 
@@ -141,12 +136,15 @@ fn copy_dram_to_local_buffer_load_kernel[
 
     var q_gmem_iter = q_tile.tiled_iterator[BM, BK, axis=1](0, 0)
 
-    var a_reg_tile = (
-        tb[dtype]()
-        .row_major[(BM * BN) // thread_layout.size() // 2, 2]()
-        .local()
-        .alloc()
+    alias a_reg_layout = Layout.row_major(
+        (BM * BN) // thread_layout.size() // 2, 2
     )
+    var a_reg_tile = LayoutTensor[
+        dtype,
+        a_reg_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
 
     @parameter
     for i in range(BN // BK):
@@ -184,18 +182,21 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     # CHECK: tid = 14 reg = [0.0, 0.0, 0.0, 0.0]
     # CHECK: tid = 15 reg = [0.0, 0.0, 0.0, 0.0]
     alias thread_layout = Layout.row_major(4, 4)
-    var input_tensor = tb[DType.bfloat16]().row_major[4, 16]().alloc()
+    alias input_layout = Layout.row_major(4, 16)
+    var input_stack = InlineArray[BFloat16, input_layout.size()](
+        uninitialized=True
+    )
+    var input_tensor = LayoutTensor[DType.bfloat16, input_layout](input_stack)
     arange(input_tensor)
     var device_tensor = ctx.enqueue_create_buffer[DType.bfloat16](
         input_tensor.layout.size()
     )
     ctx.enqueue_copy(device_tensor, input_tensor.ptr)
-    ctx.enqueue_function[
-        copy_dram_to_local_buffer_load_kernel[
-            DType.bfloat16, 4, 16, 8, thread_layout
-        ],
-    ](
-        device_tensor.unsafe_ptr(),
+    alias kernel = copy_dram_to_local_buffer_load_kernel[
+        DType.bfloat16, 4, 16, 8, thread_layout
+    ]
+    ctx.enqueue_function_checked[kernel, kernel](
+        device_tensor,
         3,
         grid_dim=1,
         block_dim=(thread_layout.size()),
@@ -204,7 +205,45 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     _ = device_tensor^
 
 
-fn main() raises:
+fn test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
+    fn kernel[cache_policy: CacheOperation](ptr: UnsafePointer[BFloat16]):
+        alias simd_width = simd_width_of[DType.bfloat16]()
+        var global_tensor = LayoutTensor[
+            DType.bfloat16,
+            Layout.row_major(16, 128),
+        ](ptr)
+        var local_tensor = LayoutTensor[
+            DType.bfloat16,
+            Layout.row_major(16, 8),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation()
+
+        alias thread_layout = Layout.row_major(16, 16)
+        copy_dram_to_local[
+            src_thread_layout=thread_layout,
+            cache_policy=cache_policy,
+        ](
+            local_tensor.vectorize[1, simd_width](),
+            global_tensor.vectorize[1, simd_width](),
+            global_tensor,
+        )
+        keep(local_tensor)
+
+    alias MI355X_TARGET = get_gpu_target["mi355x"]()
+    # CHECK: === test_codegen_copy_dram_to_local_streaming_workgroup
+    # CHECK: buffer_load_dwordx4 v[0:3], v0, s[0:3], 0 offen sc0 nt
+    print("=== test_codegen_copy_dram_to_local_streaming_workgroup")
+    print(
+        _compile_code[
+            kernel[CacheOperation.STREAMING | CacheOperation.WORKGROUP],
+            target=MI355X_TARGET,
+        ]()
+    )
+
+
+def main():
     with DeviceContext() as ctx:
         run_copy_dram_to_sram_buffer_load_tests(ctx)
         run_copy_dram_to_local_buffer_load_tests(ctx)
+        test_codegen_copy_dram_to_local(ctx)

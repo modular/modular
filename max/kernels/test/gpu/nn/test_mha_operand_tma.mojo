@@ -11,37 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
 from collections import Set
+from random import random_ui64, seed
+from sys import size_of
+
+from buffer import NDBuffer
 from gpu import barrier
-from gpu.memory import fence_async_view_proxy
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
+from gpu.memory import fence_async_view_proxy
 from internal_utils import HostNDBuffer, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
-    PagedKVCacheCollection,
     KVCacheStaticParams,
+    PagedKVCacheCollection,
 )
 from layout import Layout, LayoutTensor
-from layout.tensor_core_async import tile_layout_mn_major, tile_layout_k_major
-from layout.tma_async import (
-    SharedMemBarrier,
-    TMANestedTensorTile,
-)
+from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from layout.tma_async import SharedMemBarrier, TMANestedTensorTile
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 from nn.mha_operand import (
-    MHAOperand,
     KVCacheMHAOperand,
-    NDBufferMHAOperand,
+    MHAOperand,
+    LayoutTensorMHAOperand,
     RaggedMHAOperand,
 )
-from random import random_ui64, seed
 from testing import assert_equal
+
 from utils import IndexList
-from sys import size_of
 
 
 @__llvm_arg_metadata(src_tma_tile, `nvvm.grid_constant`)
@@ -497,12 +496,16 @@ def test_ndbuffer[
     src_device = src_host.copy_to_device(ctx)
 
     # Create MHAOperands
-    src_operand = NDBufferMHAOperand(src_device.tensor)
+    src_operand = LayoutTensorMHAOperand(
+        src_device.to_layout_tensor().as_any_origin()
+    )
     for is_k_major in range(2):
         dst_host = HostNDBuffer[dtype, 4](dyn_shape)
 
         dst_device = dst_host.copy_to_device(ctx)
-        dst_operand = NDBufferMHAOperand(dst_device.tensor)
+        dst_operand = LayoutTensorMHAOperand(
+            dst_device.to_layout_tensor().as_any_origin()
+        )
 
         if is_k_major == 0:  # unswitch
             mha_operand_copy[tile_m, kv_params, is_k_major=False](
@@ -526,8 +529,12 @@ def test_ndbuffer[
         ctx.synchronize()
 
         # Create host-side MHAOperands for verification
-        src_host_operand = NDBufferMHAOperand(src_host.tensor)
-        dst_host_operand = NDBufferMHAOperand(dst_host.tensor)
+        src_host_operand = LayoutTensorMHAOperand(
+            src_host.to_layout_tensor().as_any_origin()
+        )
+        dst_host_operand = LayoutTensorMHAOperand(
+            dst_host.to_layout_tensor().as_any_origin()
+        )
 
         # Verify using block_paged_ptr
         test_mha_host_operand[tile_m, kv_params](
@@ -578,7 +585,8 @@ def test_ragged[
 
     # Create MHAOperands
     src_operand = RaggedMHAOperand(
-        src_device.tensor, cache_row_offsets_device.tensor
+        src_device.to_layout_tensor().as_any_origin(),
+        cache_row_offsets_device.to_layout_tensor().as_any_origin(),
     )
 
     # Find max sequence length for grid calculation
@@ -588,7 +596,8 @@ def test_ragged[
 
     # Create host-side MHAOperands for verification
     src_host_operand = RaggedMHAOperand(
-        src_host.tensor, cache_row_offsets_host.tensor
+        src_host.to_layout_tensor().as_any_origin(),
+        cache_row_offsets_host.to_layout_tensor().as_any_origin(),
     )
 
     for is_k_major in range(2):
@@ -596,7 +605,8 @@ def test_ragged[
         dst_device = dst_host.copy_to_device(ctx)
 
         dst_operand = RaggedMHAOperand(
-            dst_device.tensor, cache_row_offsets_device.tensor
+            dst_device.to_layout_tensor().as_any_origin(),
+            cache_row_offsets_device.to_layout_tensor().as_any_origin(),
         )
 
         if is_k_major == 0:
@@ -621,7 +631,8 @@ def test_ragged[
         ctx.synchronize()
 
         dst_host_operand = RaggedMHAOperand(
-            dst_host.tensor, cache_row_offsets_host.tensor
+            dst_host.to_layout_tensor().as_any_origin(),
+            cache_row_offsets_host.to_layout_tensor().as_any_origin(),
         )
 
         # Verify using block_paged_ptr
@@ -655,7 +666,7 @@ def main():
         for i in range(6, 9):
             alias head_size = 1 << i  # 64, 128, 256
             alias kv_params = KVCacheStaticParams(
-                num_heads=8, head_size=head_size
+                num_heads=8, head_size=UInt(head_size)
             )
 
             @parameter

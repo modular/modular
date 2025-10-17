@@ -26,14 +26,14 @@ def test_logical_not__same_type(
     graph_builder: GraphBuilder, tensor_type: TensorType
 ) -> None:
     with graph_builder(input_types=[tensor_type]) as graph:
-        x = graph.inputs[0]
+        x = graph.inputs[0].tensor
         op = logical_not(x)
         assert op.type == tensor_type
-        assert op.shape == x.shape  # type: ignore
+        assert op.shape == x.shape
 
-        op2 = ~x  # type: ignore
+        op2 = ~x
         assert op2.type == tensor_type
-        assert op2.shape == x.shape  # type: ignore
+        assert op2.shape == x.shape
 
 
 @given(tensor_type=...)
@@ -43,9 +43,9 @@ def test_logical_not__invalid_dtype(
 ) -> None:
     assume(tensor_type.dtype != DType.bool)
     with graph_builder(input_types=[tensor_type]) as graph:
-        x = graph.inputs[0]
+        x = graph.inputs[0].tensor
         with pytest.raises(ValueError):
             logical_not(x)
 
         with pytest.raises(ValueError):
-            ~x  # type: ignore  # noqa: B018
+            ~x  # noqa: B018

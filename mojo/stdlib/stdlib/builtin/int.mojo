@@ -15,23 +15,22 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from collections.interval import IntervalElement
 from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
 )
-from collections.interval import IntervalElement
 from hashlib.hasher import Hasher
-from math import CeilDivable, Ceilable, Floorable, Truncable
-from sys import bit_width_of
+from math import Ceilable, CeilDivable, Floorable, Truncable
 from sys.info import is_32bit
 
 from builtin.device_passable import DevicePassable
 from builtin.math import Absable, DivModable, Powable
 from python import (
-    Python,
-    PythonObject,
     ConvertibleFromPython,
     ConvertibleToPython,
+    Python,
+    PythonObject,
 )
 
 from utils._select import _select_register_value as select
@@ -49,7 +48,7 @@ trait Indexer:
     types like `UInt` to not have to be converted to an `Int` first.
     """
 
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:
@@ -65,7 +64,7 @@ trait Indexer:
 
 @always_inline("nodebug")
 fn index[T: Indexer](idx: T, /) -> Int:
-    """Returns the value of `__index__` for the given value.
+    """Returns the value of `__mlir_index__` for the given value.
 
     Parameters:
         T: A type conforming to the `Indexer` trait.
@@ -76,7 +75,7 @@ fn index[T: Indexer](idx: T, /) -> Int:
     Returns:
         An `__mlir_type` representing the index value.
     """
-    return Int(mlir_value=idx.__index__())
+    return Int(mlir_value=idx.__mlir_index__())
 
 
 # ===----------------------------------------------------------------------=== #
@@ -212,14 +211,13 @@ struct Int(
     Comparable,
     ConvertibleFromPython,
     ConvertibleToPython,
-    Copyable,
     Defaultable,
     DevicePassable,
     DivModable,
-    ExplicitlyCopyable,
     Floorable,
     Hashable,
     ImplicitlyBoolable,
+    ImplicitlyCopyable,
     Indexer,
     Intable,
     IntervalElement,
@@ -245,13 +243,13 @@ struct Int(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias BITWIDTH = Int(bit_width_of[DType.index]())
+    alias BITWIDTH = Int(DType.int.bit_width())
     """The bit width of the integer type."""
 
-    alias MAX = Int(Scalar[DType.index].MAX)
+    alias MAX = Int(Scalar[DType.int].MAX)
     """Returns the maximum integer value."""
 
-    alias MIN = Int(Scalar[DType.index].MIN)
+    alias MIN = Int(Scalar[DType.int].MIN)
     """Returns the minimum value of type."""
 
     alias device_type: AnyTrivialRegType = Self
@@ -298,8 +296,7 @@ struct Int(
 
     @doc_private
     @always_inline("builtin")
-    @implicit
-    fn __init__(out self, mlir_value: __mlir_type.index):
+    fn __init__(out self, *, mlir_value: __mlir_type.index):
         """Construct Int from the given index value.
 
         Args:
@@ -584,7 +581,7 @@ struct Int(
         """
         return Float64(self) / Float64(rhs)
 
-    @always_inline("builtin")
+    @always_inline("nodebug")
     fn __floordiv__(self, rhs: Int) -> Int:
         """Return the division of `self` and `rhs` rounded down to the nearest
         integer.
@@ -602,7 +599,7 @@ struct Int(
         var res = select(((rhs < 0) ^ (self < 0)) & (rem != 0), div - 1, div)
         return select(rhs == 0, 0, res)
 
-    @always_inline("builtin")
+    @always_inline("nodebug")
     fn __mod__(self, rhs: Int) -> Int:
         """Return the remainder of self divided by rhs.
 
@@ -1019,7 +1016,7 @@ struct Int(
         return self.__bool__()
 
     @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:

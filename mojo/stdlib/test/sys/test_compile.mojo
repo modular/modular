@@ -14,8 +14,13 @@
 from sys.compile import DebugLevel, OptimizationLevel
 
 from testing import assert_equal
+from testing import TestSuite
+
+
+def test_compile_options():
+    assert_equal(Int(OptimizationLevel), 3)
+    assert_equal(String(DebugLevel), "none")
 
 
 def main():
-    assert_equal(Int(OptimizationLevel), 3)
-    assert_equal(String(DebugLevel), "none")
+    TestSuite.discover_tests[__functions_in_module()]().run()

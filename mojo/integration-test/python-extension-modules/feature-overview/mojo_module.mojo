@@ -14,13 +14,13 @@
 from os import abort
 
 from python import Python, PythonObject
+from python._cpython import PyObjectPtr
 from python.bindings import (
+    PythonModuleBuilder,
     check_and_get_arg,
     check_and_get_or_convert_arg,
     check_arguments_arity,
-    PythonModuleBuilder,
 )
-from python._cpython import PyObjectPtr
 
 
 @export
@@ -126,7 +126,7 @@ fn case_downcast_unbound_type(value: PythonObject) raises:
 
 
 @fieldwise_init
-struct Person(Copyable, Defaultable, Movable, Representable):
+struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
     var name: String
     var age: Int
 
@@ -155,7 +155,7 @@ struct Person(Copyable, Defaultable, Movable, Representable):
     ) raises -> PythonObject:
         var self0 = UnsafePointer[Self, **_](
             unchecked_downcast_value=self_
-        ).origin_cast[mut=True]()
+        ).unsafe_mut_cast[True]()
 
         if len(new_name) > len(self0[].name.codepoints()):
             raise Error("cannot make name longer than current name")

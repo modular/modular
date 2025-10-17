@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import ceildiv, isqrt
+from math import ceildiv, rsqrt
 from random import random_ui64
 
 from buffer import Dim, DimList
@@ -132,9 +132,9 @@ def execute_ragged_flash_attention(
         )
 
         memcpy(
-            mixed_ce_offset,
-            true_ce_offset,
-            mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
+            dest=mixed_ce_offset,
+            src=true_ce_offset,
+            count=mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
         )
 
     mixed_ce_q_ragged_device = mixed_ce_q_ragged_host.copy_to_device(ctx)
@@ -202,8 +202,8 @@ def execute_ragged_flash_attention(
     # "true CE" execution
     print("true")
     flash_attention[ragged=True](
-        true_ce_output_device.tensor,
-        true_ce_q_ragged_device.tensor,
+        true_ce_output_device.to_layout_tensor(),
+        true_ce_q_ragged_device.to_layout_tensor(),
         true_ce_kv_collection_device.get_key_cache(layer_idx),
         true_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
@@ -212,7 +212,7 @@ def execute_ragged_flash_attention(
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
         ](true_ce_row_offsets_device.tensor),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
     ctx.synchronize()
@@ -220,8 +220,8 @@ def execute_ragged_flash_attention(
     # "mixed CE" execution
     print("mixed")
     flash_attention[ragged=True](
-        mixed_ce_output_device.tensor,
-        mixed_ce_q_ragged_device.tensor,
+        mixed_ce_output_device.to_layout_tensor(),
+        mixed_ce_q_ragged_device.to_layout_tensor(),
         mixed_ce_kv_collection_device.get_key_cache(layer_idx),
         mixed_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
@@ -230,7 +230,7 @@ def execute_ragged_flash_attention(
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
         ](mixed_ce_row_offsets_device.tensor),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
     ctx.synchronize()

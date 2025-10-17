@@ -11,19 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.memory import AddressSpace
 from gpu import WARP_SIZE
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
-from memory import stack_allocation
-from gpu.sync import barrier
 from gpu.host import DeviceContext
-from layout._utils import ManagedLayoutTensor
-from layout import Layout, LayoutTensor
-from testing import assert_almost_equal
-from gpu.id import thread_idx
 from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.id import thread_idx
 from gpu.memory import AddressSpace
+from gpu.mma_sm100 import *
+from gpu.sync import barrier
+from gpu.tcgen05 import *
+from layout import Layout, LayoutTensor
+from layout._utils import ManagedLayoutTensor
+from memory import stack_allocation
+from testing import assert_almost_equal
 
 
 fn tcgen05_st_ld_roundtrip_kernel[
@@ -86,7 +85,9 @@ def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext):
         DType.float32,
         Layout.row_major(M, N),
     ](ctx)
-    ctx.enqueue_function[tcgen05_st_ld_roundtrip_kernel[M, N]](
+
+    alias kernel = tcgen05_st_ld_roundtrip_kernel[M, N]
+    ctx.enqueue_function_checked[kernel, kernel](
         data.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(M),
@@ -238,7 +239,8 @@ def test_tcgen05_cp_ld_roundtrip(ctx: DeviceContext):
         DType.float32,
         Layout.row_major(M, N),
     ](ctx)
-    ctx.enqueue_function[tcgen05_cp_ld_roundtrip_kernel[M, N]](
+    alias kernel = tcgen05_cp_ld_roundtrip_kernel[M, N]
+    ctx.enqueue_function_checked[kernel, kernel](
         data.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(M),

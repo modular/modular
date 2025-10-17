@@ -12,16 +12,23 @@
 # ===----------------------------------------------------------------------=== #
 """mutable ops tests."""
 
+import os
+from pathlib import Path
+
+import numpy as np
 import pytest
 from conftest import buffer_types, shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
 from max._core.dialects import mo
+from max.driver import CPU, Tensor
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import (
     BufferType,
     BufferValue,
+    DeviceRef,
     Graph,
     TensorType,
     TensorValue,
@@ -35,6 +42,13 @@ shared_dtypes = st.shared(st.from_type(DType))
 shared_shapes = st.shared(shapes().filter(lambda shape: 0 not in shape))
 tensor_type = tensor_types(shapes=shared_shapes, dtypes=shared_dtypes)
 buffer_type = buffer_types(shapes=shared_shapes, dtypes=shared_dtypes)
+
+
+def _custom_ops_path() -> Path:
+    path = os.getenv("CUSTOM_OPS_PATH")
+    if path is None:
+        pytest.skip("CUSTOM_OPS_PATH is not set; custom ops unavailable")
+    return Path(path)
 
 
 @given(buffer_type=...)
@@ -90,14 +104,14 @@ def test_value_constructor(
         buffer = BufferValue(graph.inputs[1])
         assert isinstance(buffer, BufferValue)
         assert isinstance(buffer.type, BufferType)
-        tensor = TensorValue(graph.inputs[0])  # type: ignore
+        tensor = TensorValue(graph.inputs[0].tensor)
         assert isinstance(tensor, TensorValue)
         assert isinstance(tensor.type, TensorType)
 
         with pytest.raises(TypeError):
             BufferValue(graph.inputs[0])
         with pytest.raises(TypeError):
-            TensorValue(graph.inputs[1])  # type: ignore
+            TensorValue(graph.inputs[1].tensor)
 
         with pytest.raises(TypeError):
             TensorValue(0)
@@ -115,21 +129,22 @@ def test_load(buffer_type: BufferType) -> None:
             buffer_type,
         ],
     ) as graph:
-        buffer = graph.inputs[0]
-        chain_0 = graph._current_chain
+        buffer = graph.inputs[0].buffer
+        chain_0 = graph.device_chains[buffer.device]
         assert isinstance(chain_0, _ChainValue)
         assert isinstance(chain_0.type, _ChainType)
 
-        y = ops.buffer_load(buffer)  # type: ignore
-        chain_1 = graph._current_chain
+        y = ops.buffer_load(buffer)
+        chain_1 = graph.device_chains[buffer.device]
 
         assert isinstance(chain_1, _ChainValue)
         assert isinstance(chain_1.type, _ChainType)
 
-        assert y.shape == buffer.shape  # type: ignore
-        assert y.dtype == buffer.dtype  # type: ignore
+        assert y.shape == buffer.shape
+        assert y.dtype == buffer.dtype
         assert isinstance(y, TensorValue)
         # Check the chain is updated.
+
         assert chain_0 != chain_1
 
         graph.output()
@@ -148,14 +163,14 @@ def test_store(tensor_type: TensorType, buffer_type: BufferType) -> None:
             buffer_type,
         ],
     ) as graph:
-        tensor = graph.inputs[0]
-        buffer = graph.inputs[1]
-        chain_0 = graph._current_chain
-        ops.buffer_store(buffer, tensor)  # type: ignore
-        chain_1 = graph._current_chain
+        tensor = graph.inputs[0].tensor
+        buffer = graph.inputs[1].buffer
+        chain_0 = graph.device_chains[buffer.device]
+        ops.buffer_store(buffer, tensor)
+        chain_1 = graph.device_chains[buffer.device]
 
-        assert buffer.shape == tensor.shape  # type: ignore
-        assert buffer.dtype == tensor.dtype  # type: ignore
+        assert buffer.shape == tensor.shape
+        assert buffer.dtype == tensor.dtype
 
         # Check the chain is updated.
         assert chain_0 != chain_1
@@ -174,21 +189,21 @@ def test_load_store(buffer_type: BufferType) -> None:
             buffer_type,
         ],
     ) as graph:
-        buffer = graph.inputs[0]
-        chain_0 = graph._current_chain
-        tensor = ops.buffer_load(buffer)  # type: ignore
-        chain_1 = graph._current_chain
+        buffer = graph.inputs[0].buffer
+        chain_0 = graph.device_chains[buffer.device]
+        tensor = ops.buffer_load(buffer)
+        chain_1 = graph.device_chains[buffer.device]
 
-        assert tensor.shape == buffer.shape  # type: ignore
-        assert tensor.dtype == buffer.dtype  # type: ignore
+        assert tensor.shape == buffer.shape
+        assert tensor.dtype == buffer.dtype
         assert isinstance(tensor, TensorValue)
         assert chain_0 != chain_1
 
-        ops.buffer_store(buffer, tensor)  # type: ignore
-        chain_2 = graph._current_chain
+        ops.buffer_store(buffer, tensor)
+        chain_2 = graph.device_chains[buffer.device]
 
-        assert buffer.shape == tensor.shape  # type: ignore
-        assert buffer.dtype == tensor.dtype  # type: ignore
+        assert buffer.shape == tensor.shape
+        assert buffer.dtype == tensor.dtype
         assert chain_0 != chain_2
         assert chain_1 != chain_2
 
@@ -212,14 +227,14 @@ def test_load_store_ellipsis_slice(
             buffer_type,
         ],
     ) as graph:
-        tensor = graph.inputs[0]
-        buffer = graph.inputs[1]
-        chain_0 = graph._current_chain
-        buffer[...] = tensor + buffer[...]  # type: ignore
-        chain_1 = graph._current_chain
+        tensor = graph.inputs[0].tensor
+        buffer = graph.inputs[1].buffer
+        chain_0 = graph.device_chains[buffer.device]
+        buffer[...] = tensor + buffer[...]
+        chain_1 = graph.device_chains[buffer.device]
 
-        assert buffer.shape == tensor.shape  # type: ignore
-        assert buffer.dtype == tensor.dtype  # type: ignore
+        assert buffer.shape == tensor.shape
+        assert buffer.dtype == tensor.dtype
         # Check the chain is updated.
         assert chain_0 != chain_1
 
@@ -244,14 +259,14 @@ def test_load_store_slice(
             buffer_type,
         ],
     ) as graph:
-        tensor = graph.inputs[0]
-        buffer = graph.inputs[1]
-        chain_0 = graph._current_chain
-        buffer[0] = tensor[0] + buffer[0]  # type: ignore
-        chain_1 = graph._current_chain
+        tensor = graph.inputs[0].tensor
+        buffer = graph.inputs[1].buffer
+        chain_0 = graph.device_chains[buffer.device]
+        buffer[0] = tensor[0] + buffer[0]
+        chain_1 = graph.device_chains[buffer.device]
 
-        assert buffer.shape == tensor.shape  # type: ignore
-        assert buffer.dtype == tensor.dtype  # type: ignore
+        assert buffer.shape == tensor.shape
+        assert buffer.dtype == tensor.dtype
         # Check the chain is updated.
         assert chain_0 != chain_1
 
@@ -297,14 +312,16 @@ def test_prints_with_buffer_ops(
         "debug_prints_and_mutable_ops",
         input_types=[buffer_type, tensor_type],
     ) as graph:
-        buffer: BufferValue = graph.inputs[0]  # type: ignore
-        tensor: TensorValue = graph.inputs[1]  # type: ignore
+        buffer: BufferValue = graph.inputs[0].buffer
+        tensor: TensorValue = graph.inputs[1].tensor
 
         chain_0 = graph._current_chain
 
         tensor.print()
         chain_1 = graph._current_chain
 
+        # Buffer load op goes onto the corresponding device chain, which
+        # should leave the global chain unchanged.
         x = buffer[...]
         chain_2 = graph._current_chain
 
@@ -317,9 +334,47 @@ def test_prints_with_buffer_ops(
         graph.output()
 
         assert chain_0 != chain_1
-        assert chain_1 != chain_2
+        assert chain_1 == chain_2
         assert chain_2 != chain_3
 
 
-# TODO(MSDK-960): test that the chain is working correctly.
-# TODO(MSDK-960): test load -> element-wise ops -> store.
+def test_buffer_ops_sequence_after_inplace_custom() -> None:
+    """Buffer ops observe effects of preceding inplace_custom on same device."""
+    custom_ops_path = _custom_ops_path()
+    buffer_type = BufferType(
+        DType.float32,
+        shape=[4],
+        device=DeviceRef.CPU(),
+    )
+
+    with Graph(
+        "buffer_device_chain_merge",
+        input_types=[buffer_type],
+        custom_extensions=[custom_ops_path],
+    ) as graph:
+        buffer = graph.inputs[0].buffer
+
+        # @compiler.register("mutable_test_op") increments the first element.
+        ops.inplace_custom(
+            "mutable_test_op",
+            device=buffer.device,
+            values=[buffer],
+        )
+
+        tensor = ops.buffer_load(buffer)
+        ops.buffer_store(buffer, tensor)
+
+        graph.output(buffer)
+
+    session = InferenceSession(devices=[CPU()])
+    model = session.load(graph)
+
+    input_buffer = Tensor.from_numpy(np.zeros((4,), dtype=np.float32)).to(
+        model.input_devices[0]
+    )
+    (result,) = model.execute(input_buffer)
+    assert isinstance(result, Tensor)
+    np.testing.assert_allclose(
+        result.to_numpy(),
+        np.array([1, 0, 0, 0], dtype=np.float32),
+    )

@@ -59,7 +59,7 @@ class JSONLFileRecorder(Recorder):
         'owned' only matters for file-like objects; this object always owns the
         file if a path is provided.
         """
-        if isinstance(f, (str, Path)):
+        if isinstance(f, str | Path):
             f = Path(f).open("wb")
             owned = True
         if hasattr(f, "buffer"):
@@ -103,7 +103,7 @@ def read_jsonl_recording(
 
     Items are streamed as required.
     """
-    if isinstance(f, (str, Path)):
+    if isinstance(f, str | Path):
         with Path(f).open("rb") as fh:
             yield from read_jsonl_recording(fh)
         return

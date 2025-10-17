@@ -12,12 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from layout import (
-    LayoutTensor,
-    Layout,
-    RuntimeLayout,
-    UNKNOWN_VALUE,
-)
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import arange
 from nn.pool import (
     PoolMethod,
@@ -31,7 +26,7 @@ from testing import assert_almost_equal
 from utils.index import IndexList
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_max_pool_2d(ctx)
         test_avg_pool_2d(ctx)

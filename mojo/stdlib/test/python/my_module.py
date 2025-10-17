@@ -25,7 +25,7 @@ class Foo:
 
 class AbstractPerson(ABC):
     @abstractmethod
-    def method(self): ...
+    def method(self): ...  # noqa: ANN201
 
 
 def my_function(name) -> str:  # noqa: ANN001

@@ -17,13 +17,14 @@ from sys.info import CompilationTarget
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from linalg.matmul import GemmShape, KernelConfig
-from linalg.matmul_default import Inner_matmul_default
-from linalg.matmul_i8mm import Inner_matmul_i8mm
-from linalg.matmul_neon import Inner_matmul_neon
-from linalg.matmul_vnni import Inner_matmul_vnni
+from linalg.matmul.cpu.default import Inner_matmul_default
+from linalg.matmul.cpu.i8mm import Inner_matmul_i8mm
+from linalg.matmul.cpu.neon import Inner_matmul_neon
+from linalg.matmul.cpu.vnni import Inner_matmul_vnni
 from linalg.utils import (
+    GemmShape,
     InnerKernelID,
+    KernelConfig,
     get_kernel_config,
     get_matmul_arch_factor,
     select_inner_kernel,
@@ -155,13 +156,14 @@ fn test_micro_kernel[
 
     alias alignment = align_of[SIMD[c_type, config.simd_size]]()
 
-    var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(m * k)
-    var b_packed_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(
+    var a_ptr = UnsafePointer[Scalar[a_type],].alloc(m * k, alignment=alignment)
+    var b_packed_ptr = UnsafePointer[Scalar[b_type]].alloc(
         (np // config.kernel_cols)
         * (kh // factor)
-        * (factor * config.kernel_cols)
+        * (factor * config.kernel_cols),
+        alignment=alignment,
     )
-    var c_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
+    var c_ptr = UnsafePointer[Scalar[c_type],].alloc(m * n, alignment=alignment)
     var a = NDBuffer[a_type, 2, _, a_shape](a_ptr, Index(m, k))
 
     var b_packed = NDBuffer[b_type, 3, _, config.packed_shape](
@@ -192,19 +194,12 @@ fn kernel_export_dynamic(m: Int, n: Int, k: Int) raises:
     test_micro_kernel[DType.float32, DType.float32, DType.float32](m, n, k)
 
 
-fn main() raises:
+def main():
     test_micro_kernel[DType.float32, DType.float32, DType.float32](M, N, K)
     test_micro_kernel[DType.uint8, DType.int8, DType.int32](M, N, K)
     test_micro_kernel[
         DType.uint8, DType.int8, DType.int32, saturated_vnni=True
     ](M, N, K)
 
-    # TODO(KERN-228): Re-enable after we resolve llvm lowering issues.
-    @parameter
-    if not CompilationTarget.has_neon():
-        test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16](
-            M, N, K
-        )
-        test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32](
-            M, N, K
-        )
+    test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16](M, N, K)
+    test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32](M, N, K)

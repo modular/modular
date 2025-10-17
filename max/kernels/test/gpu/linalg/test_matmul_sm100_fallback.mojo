@@ -13,14 +13,12 @@
 
 from collections import OptionalReg
 from hashlib import default_comp_time_hasher
+from sys import align_of, size_of
+
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
-from linalg.matmul_sm100 import matmul_sm100_fallback
-from sys import size_of
 from gpu.host import DeviceContext
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg import vendor_blas
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from utils.index import Index, IndexList
 
 # Additional imports for testing
 from internal_utils import (
@@ -31,8 +29,11 @@ from internal_utils import (
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu.sm100.matmul import matmul_sm100_fallback
 from linalg.utils import elementwise_epilogue_type
-from sys import align_of
+
+from utils.index import Index, IndexList
 
 
 def test_matmul_sm100_fallback[

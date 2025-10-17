@@ -15,10 +15,10 @@ from gpu import WARP_SIZE, lane_id
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
-from utils.index import Index, IndexList
 from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
+
+from utils.index import Index, IndexList
 
 alias fp8_dtype = DType.float8_e4m3fnuz
 alias bf8_dtype = DType.float8_e5m2fnuz

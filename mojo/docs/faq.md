@@ -256,19 +256,26 @@ Modular](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-n
 
 ## Mojo SDK
 
-### How can I get access to the SDK?
+### How can I get the Mojo SDK?
 
-You can install it with the `mojo` conda package. Try it now by following
-the tutorial to [get started with Mojo](/mojo/manual/get-started).
+You can get Mojo and all the developer tools by installing `mojo` with
+any Python or Conda package manager. For details, see the
+[Mojo installation guide](/mojo/manual/install).
 
 ### Is the Mojo Playground still available?
 
-Yes, but it's different. When we first announced Mojo, it was available
-only through login, in a JupyterLab environment. Now that Mojo is available
-for local development, we've shut down that service.
+No. We shut it down with the v25.6 release.
 
-The new [Mojo Playground](https://developer.modular.com/playground)
-does not require login.
+Here's the story: When we announced Mojo in May, 2023, Mojo wasn't
+available in an SDK; it was available only in web-hosted a JupyterLab
+environment. After we made Mojo available for local development, we
+shut down the JupyterLab environment and launched a new Mojo Playground
+for people to try Mojo on the web. But ever since we made the Mojo SDK
+avialable for Linux and Mac, Mojo Playground usage steadily declined.
+The trickle of users we get now no longer justifies the maintenance
+and hosting costs.
+
+See how to [install Mojo](/mojo/manual/install).
 
 ### What are the license terms for the SDK?
 
@@ -276,16 +283,25 @@ Please read the [Terms of use](https://www.modular.com/legal/terms).
 
 ### What operating systems are supported?
 
-See the [system requirements](/max/faq#system-requirements).
+Mac and Linux. For details, see the
+[Mojo system requirements](/mojo/manual/install#system-requirements).
 
 ### Is there IDE Integration?
 
-Yes, we've published an official [Mojo language extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
-for VS Code.
-
-The extension supports various features including syntax highlighting, code
+Yes, we've published an official Mojo language extension for
+[Visual Studio Code](https://code.visualstudio.com/) and other editors that
+support VS Code extensions (such as [Cursor](https://cursor.com/home)). The
+extension supports various features including syntax highlighting, code
 completion, formatting, hover, etc. It works seamlessly with remote-ssh and dev
 containers to enable remote development in Mojo.
+
+You can obtain the extension from either the
+[Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
+or the
+[Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
+See
+[Add the VS Code extension](/mojo/manual/install/#add-the-vs-code-extension) for
+more information.
 
 ### Does the Mojo SDK collect telemetry?
 

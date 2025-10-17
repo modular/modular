@@ -17,9 +17,10 @@ from algorithm.functional import (
 )
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from testing import assert_equal, assert_true
+from testing import TestSuite
 
 from utils.index import IndexList
-from testing import assert_true, assert_equal
 
 
 def test_elementwise():
@@ -80,8 +81,8 @@ def test_elementwise():
 
 
 def test_elementwise_implicit_runtime():
-    var vector_stack = InlineArray[Scalar[DType.index], 20](uninitialized=True)
-    var vector = NDBuffer[DType.index, 1, _, 20](vector_stack)
+    var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
+    var vector = NDBuffer[DType.int, 1, _, 20](vector_stack)
 
     for i in range(len(vector)):
         vector[i] = i
@@ -124,6 +125,4 @@ def test_indices_conversion():
 
 
 def main():
-    test_elementwise()
-    test_elementwise_implicit_runtime()
-    test_indices_conversion()
+    TestSuite.discover_tests[__functions_in_module()]().run()

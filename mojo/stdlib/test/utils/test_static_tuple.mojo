@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 from utils import StaticTuple
 
@@ -52,5 +52,4 @@ def test_setitem():
 
 
 def main():
-    test_getitem()
-    test_setitem()
+    TestSuite.discover_tests[__functions_in_module()]().run()

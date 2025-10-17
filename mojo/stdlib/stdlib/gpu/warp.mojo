@@ -38,14 +38,16 @@ from sys import (
     is_nvidia_gpu,
     llvm_intrinsic,
     size_of,
+    _RegisterPackType,
 )
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_100x_or_newer
+from sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
 
 from bit import log2_floor
 from builtin.math import max as _max
 from builtin.math import min as _min
 from gpu import lane_id
+from gpu.intrinsics import permlane_shuffle
 from gpu.globals import WARP_SIZE
 from memory import bitcast
 
@@ -104,7 +106,7 @@ fn _shuffle[
         @parameter
         if simd_width == 1:
             # splat and recurse to meet 32 bitwidth requirements
-            var splatted_val = SIMD[dtype, 2](val._refine[size=1]())
+            var splatted_val = SIMD[dtype, 2](val._refine[new_size=1]())
             return _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
                 mask, splatted_val, offset
             )[0]
@@ -138,27 +140,27 @@ fn _shuffle_amd_helper[
             dst_lane * 4, bitcast[DType.int32, 1](val)
         )
         return bitcast[dtype, simd_width](result_packed)
-
-    constrained[simd_width == 1, "Unsupported simd width"]()
-
-    @parameter
-    if dtype is DType.bool:
-        return _shuffle_amd_helper(dst_lane, val.cast[DType.int32]()).cast[
-            dtype
-        ]()
-    elif bit_width_of[dtype]() == 16:
-        var val_splatted = SIMD[dtype, 2](val._refine[size=1]())
-        return _shuffle_amd_helper(dst_lane, val_splatted)[0]
-    elif bit_width_of[dtype]() == 64:
-        var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
-        var val_half1, val_half2 = val_bitcast.deinterleave()
-        var shuffle1 = _shuffle_amd_helper(dst_lane, val_half1)
-        var shuffle2 = _shuffle_amd_helper(dst_lane, val_half2)
-        var result = shuffle1.interleave(shuffle2)
-        return bitcast[dtype, simd_width](result)
     else:
-        constrained[False, "unhandled shuffle dtype"]()
-        return 0
+        constrained[simd_width == 1, "Unsupported simd width"]()
+
+        @parameter
+        if dtype is DType.bool:
+            return _shuffle_amd_helper(dst_lane, val.cast[DType.int32]()).cast[
+                dtype
+            ]()
+        elif dtype.bit_width() == 16:
+            var val_splatted = SIMD[dtype, 2](val._refine[new_size=1]())
+            return _shuffle_amd_helper(dst_lane, val_splatted)[0]
+        elif dtype.bit_width() == 64:
+            var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
+            var val_half1, val_half2 = val_bitcast.deinterleave()
+            var shuffle1 = _shuffle_amd_helper(dst_lane, val_half1)
+            var shuffle2 = _shuffle_amd_helper(dst_lane, val_half2)
+            var result = shuffle1.interleave(shuffle2)
+            return bitcast[dtype, simd_width](result)
+        else:
+            constrained[False, "unhandled shuffle dtype"]()
+            return 0
 
 
 # ===-----------------------------------------------------------------------===#
@@ -743,9 +745,23 @@ fn lane_group_sum_and_broadcast[
     fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return x + y
 
-    return lane_group_reduce[
-        shuffle_xor, _reduce_add, num_lanes=num_lanes, stride=stride
-    ](val)
+    @parameter
+    if (
+        num_lanes == WARP_SIZE // stride
+        and stride in (16, 32)
+        and _cdna_4_or_newer()
+    ):
+        var out = _reduce_add(val, permlane_shuffle[32](val))
+
+        @parameter
+        if stride == 16:
+            out = _reduce_add(out, permlane_shuffle[16](out))
+
+        return out
+    else:
+        return lane_group_reduce[
+            shuffle_xor, _reduce_add, num_lanes=num_lanes, stride=stride
+        ](val)
 
 
 @always_inline
@@ -774,7 +790,7 @@ fn sum[
 
 @fieldwise_init
 @register_passable("trivial")
-struct ReductionMethod:
+struct ReductionMethod(EqualityComparable, Identifiable):
     """Enumerates the supported reduction methods."""
 
     var _value: Int
@@ -795,17 +811,6 @@ struct ReductionMethod:
         """
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Checks if two ReductionMethod are not equal.
-
-        Args:
-            other: The other ReductionMethod to compare.
-
-        Returns:
-            True if the ReductionMethod are not equal, false otherwise.
-        """
-        return self._value != other._value
-
     fn __is__(self, other: Self) -> Bool:
         """Checks if two ReductionMethod are identical.
 
@@ -816,17 +821,6 @@ struct ReductionMethod:
             True if the ReductionMethod are identical, false otherwise.
         """
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        """Checks if two ReductionMethod are not identical.
-
-        Args:
-            other: The other ReductionMethod to compare.
-
-        Returns:
-            True if the ReductionMethod are not identical, false otherwise.
-        """
-        return self != other
 
 
 @always_inline
@@ -1044,9 +1038,23 @@ fn lane_group_max_and_broadcast[
     fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return _max(x, y)
 
-    return lane_group_reduce[
-        shuffle_xor, _reduce_max, num_lanes=num_lanes, stride=stride
-    ](val)
+    @parameter
+    if (
+        num_lanes == WARP_SIZE // stride
+        and stride in (16, 32)
+        and _cdna_4_or_newer()
+    ):
+        var out = _reduce_max(val, permlane_shuffle[32](val))
+
+        @parameter
+        if stride == 16:
+            out = _reduce_max(out, permlane_shuffle[16](out))
+
+        return out
+    else:
+        return lane_group_reduce[
+            shuffle_xor, _reduce_max, num_lanes=num_lanes, stride=stride
+        ](val)
 
 
 @always_inline
@@ -1201,3 +1209,62 @@ fn broadcast(val: UInt) -> UInt:
         The broadcast unsigned integer value, where all lanes receive a copy of the input from lane 0.
     """
     return UInt(Int(shuffle_idx(Int32(val), 0)))
+
+
+# ===-----------------------------------------------------------------------===#
+# Warp Vote
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _vote_nvidia_helper(vote: Bool) -> UInt32:
+    return llvm_intrinsic[
+        "llvm.nvvm.vote.ballot.sync",
+        UInt32,
+        UInt32,
+        Bool,
+        has_side_effect=False,
+    ](0xFFFFFFFF, vote).cast[DType.uint32]()
+
+
+@always_inline
+fn _vote_amd_helper[ret_type: DType](vote: Bool) -> Scalar[ret_type]:
+    constrained[
+        ret_type in (DType.uint32, DType.uint64),
+        "Unsupported return type",
+    ]()
+
+    alias instruction = String("llvm.amdgcn.ballot.i", ret_type.bit_width())
+    return llvm_intrinsic[
+        instruction,
+        Scalar[ret_type],
+        has_side_effect=False,
+    ](vote)
+
+
+@always_inline
+fn vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
+    """Creates a 32 or 64 bit mask among all threads in the warp, where each bit is set to 1 if the
+    corresponding thread voted True, and 0 otherwise.
+
+    This function takes a boolean value which represents the cooresponding threads vote.
+
+    Nvidia only supports 32 bit masks, while AMD supports 32 and 64 bit masks.
+
+    Args:
+        val: The boolean vote.
+
+    Returns:
+        A mask containing the vote of all threads in the warp.
+    """
+
+    @parameter
+    if is_nvidia_gpu():
+        constrained[ret_type is DType.uint32, "Unsupported return type"]()
+        return rebind[Scalar[ret_type]](_vote_nvidia_helper(val))
+    elif is_amd_gpu():
+        return _vote_amd_helper[ret_type](val)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            Scalar[ret_type], operation="vote"
+        ]()

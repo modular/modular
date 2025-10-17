@@ -12,66 +12,60 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from sys import simd_width_of, size_of, align_of
+from sys import align_of, simd_width_of, size_of
+from sys.info import has_amd_gpu_accelerator
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, WARP_SIZE
-from gpu.cluster import (
-    cluster_sync,
-    cluster_sync_relaxed,
-    elect_one_sync,
-)
+from gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
+from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.host.info import H100, B200
+from gpu.host.info import B200, H100
 from gpu.id import (
     block_dim,
     block_id_in_cluster,
     block_idx,
     global_idx,
     grid_dim,
-    thread_idx,
     lane_id,
+    thread_idx,
+    warp_id as get_warp_id,
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from gpu.mma_sm100 import *
+from gpu.tcgen05 import *
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
-from layout.tensor_core_async import (
-    TensorCoreAsync,
-    tile_layout_k_major,
-)
+from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
     create_tma_tile,
 )
-from linalg.matmul_sm90 import (
-    _get_c_smem_layout,
-    cluster_size,
-    consumer_main_loop,
-    warp_specialized_gemm_output,
-)
-from linalg.matmul_dispatch_sm90 import _find_largest_bn_for_sm90_matmul
-from linalg.matmul_loadop_sm90 import async_load_AB
-from linalg.vendor_blas import matmul as vendor_matmul
 
+from utils.fast_div import FastDiv
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
+from .arch.sm100 import MmaOpSM100_SS
+from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul
+from .matmul.gpu.sm90.matmul import _get_c_smem_layout
+from .matmul.gpu.sm90.grouped_matmul import grouped_matmul_sm90
+from .matmul.vendor.blas import matmul as vendor_matmul
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, block_swizzle
+from .grouped_matmul_sm100 import grouped_matmul_sm100_persistent
 
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
-from linalg.mmaop_sm100 import MmaOpSM100_SS
-from utils.fast_div import FastDiv
+from .matmul.gpu.amd import gemm_kernel_amd
+from algorithm import vectorize
+
 
 # ===----------------------------------------------------------------------=== #
 # Naive grouped matmul
@@ -124,6 +118,11 @@ fn naive_grouped_matmul[
     )
 
 
+# grouped matmul computes:
+# for i in range(num_active_experts)
+#     C[a_offsets[i]:a_offsets[i+1], :] = A[a_offsets[i]:a_offsets[i+1], :] @ B[expert_ids[i], :, :].T
+
+
 fn naive_grouped_matmul_kernel[
     c_type: DType,
     c_shape: DimList,
@@ -170,8 +169,8 @@ fn naive_grouped_matmul_kernel[
     if expert != -1:
         for k in range(K):
             accum += (
-                a_by_expert[m * K + k].cast[accum_type]()
-                * b_by_expert[n * K + k].cast[accum_type]()
+                a_by_expert[m * UInt(K) + UInt(k)].cast[accum_type]()
+                * b_by_expert[n * UInt(K) + UInt(k)].cast[accum_type]()
             )
 
     @parameter
@@ -182,496 +181,60 @@ fn naive_grouped_matmul_kernel[
         )
     else:
         c_by_expert = c.data + a_start_row * N
-        c_by_expert[m * N + n] = accum.cast[c_type]()
+        c_by_expert[m * UInt(N) + n] = accum.cast[c_type]()
+
+
+fn naive_epilogue[
+    c_type: DType,
+    c_shape: DimList,
+    *,
+    elementwise_lambda_fn: elementwise_epilogue_type,
+](
+    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
+    ctx: DeviceContext,
+) raises:
+    alias kernel = naive_epilogue_kernel[
+        c_type,
+        c_shape,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ]
+    var M = c.dim[0]()
+    var N = c.dim[1]()
+    alias simd_size = simd_width_of[c_type]()
+    var block_dim = (128 // simd_size, simd_size, 1)
+    ctx.enqueue_function[kernel](
+        c,
+        grid_dim=(ceildiv(N, block_dim[0]), ceildiv(M, block_dim[1]), 1),
+        block_dim=block_dim,
+    )
+
+
+fn naive_epilogue_kernel[
+    c_type: DType,
+    c_shape: DimList,
+    *,
+    elementwise_lambda_fn: elementwise_epilogue_type,
+](c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],):
+    alias simd_size = simd_width_of[c_type]()
+    alias alignment = align_of[SIMD[c_type, simd_size]]()
+    var n = global_idx.x * UInt(simd_size)
+    var m = global_idx.y
+    alias N = c_shape.get[1]()
+    var M = c.dim[0]()
+
+    # note that the most naive implementation of simd_size=1 won't work because
+    # different threads will be loading and storing in the same 32-bit region
+    # leading to synchronization/data race issues.
+    if m < UInt(M) and n < UInt(N):
+        var val = c.load[width=simd_size, alignment=alignment](Index(m, n))
+        elementwise_lambda_fn[c_type, simd_size, alignment=alignment](
+            Index(m, n), val
+        )
 
 
 # ===----------------------------------------------------------------------=== #
 # H100 grouped matmul
 # ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-fn default_config_sm90[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    transpose_b: Bool,
-    wgmma_shape: IndexList[3],
-]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
-    alias BN = wgmma_shape[1]
-    return MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(128, BN, 64),
-        mma_shape=wgmma_shape,
-        cluster_shape=Index(1, 1, 1),
-        num_pipeline_stages=4,
-        num_consumer=2,
-        partitioned_multicast=False,
-    )
-
-
-fn grouped_matmul_sm90[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList, //,
-    *,
-    transpose_b: Bool = True,
-    wgmma_shape: IndexList[3] = Index(64, 256, 16),
-    config: MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ] = default_config_sm90[a_type, b_type, c_type, transpose_b, wgmma_shape](),
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-](
-    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    max_num_tokens_per_expert: Int,
-    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
-    num_active_experts: Int,
-    ctx: DeviceContext,
-) raises:
-    alias num_experts = b.shape.get[0]()
-    alias N = b.shape.get[1]()
-    alias K = b.shape.get[2]()
-
-    alias cluster_shape = StaticTuple[Int32, 3](
-        config.cluster_shape[0],
-        config.cluster_shape[1],
-        config.cluster_shape[2],
-    )
-
-    alias CLUSTER_N = UInt(cluster_shape[0])
-    alias CLUSTER_M = UInt(cluster_shape[1])
-
-    alias c_smem_layout = _get_c_smem_layout[
-        config.block_tile_shape,
-        a_type,
-        b_type,
-        c_type,
-        Int(config.num_pipeline_stages),
-    ]()
-    alias c_smem_tile = Index(
-        c_smem_layout.shape[0].value(), c_smem_layout.shape[1].value()
-    )
-
-    alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    alias c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
-
-    alias BM = config.block_tile_shape[0]
-    alias BN = config.block_tile_shape[1]
-    alias BK = config.block_tile_shape[2]
-
-    # Create TMA op for the entire A tensor including all tokens.
-    a_tensor = from_ndbuffer_row_major(a)
-    a_tma_op = create_tma_tile[
-        a_type,
-        2,
-        Index(BM, BK),
-        swizzle_mode=a_swizzle,
-    ](ctx, a_tensor)
-
-    # Flattne B tensor into a 2D tensor for easier TMA support.
-    b_tensor = LayoutTensor[
-        b_type,
-        Layout.row_major(num_experts * N, K),
-        MutableAnyOrigin,
-        address_space = AddressSpace.GENERIC,
-    ](b.data)
-    b_tma_op = create_tma_tile[
-        b_type,
-        2,
-        Index(BN, BK),
-        swizzle_mode=b_swizzle,
-    ](ctx, b_tensor)
-
-    # Create a dummy TMA op for C, we don't support TMA store for output.
-    c_tensor = from_ndbuffer_row_major(c)
-    c_tma_op = create_tma_tile[
-        c_type,
-        2,
-        Index(BM, BK),
-        swizzle_mode=c_swizzle,
-    ](ctx, c_tensor)
-
-    alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
-    alias smem_size = Int(config.num_pipeline_stages) * (
-        BM * BK * size_of[a_type]()
-        + BN * BK * size_of[b_type]()
-        + (size_of[Int64]() * 2)
-    ) + c_smem_layout.size() * size_of[c_type]()
-
-    alias kernel = grouped_matmul_kernel[
-        a_type,
-        b_type,
-        c_type,
-        __type_of(a_tensor).layout,
-        __type_of(b_tensor).layout,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
-        __type_of(c_tensor).layout,
-        config.block_tile_shape,
-        wgmma_shape,
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
-        __type_of(c_tma_op).desc_layout,
-        c_smem_layout,
-        c_swizzle=c_swizzle,
-        cluster_shape=cluster_shape,
-        transpose_b=True,
-        num_threads = Int(num_threads),
-        pipeline_stages = Int(config.num_pipeline_stages),
-        use_tma_store=False,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ]
-
-    ctx.enqueue_function[kernel](
-        a_tma_op,
-        b_tma_op,
-        c_tma_op,
-        a_offsets,
-        expert_ids,
-        c_tensor,
-        grid_dim=(
-            ceildiv(N, BN),
-            ceildiv(max_num_tokens_per_expert, BM),
-            num_active_experts,
-        ),
-        block_dim=(num_threads),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
-    )
-
-
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads),
-    `nvvm.cluster_dim`=cluster_shape,
-)
-@__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
-@__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-@__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-fn grouped_matmul_kernel[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    c_layout: Layout,
-    block_tile_shape: IndexList[3],
-    wgmma_shape: IndexList[3],
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    c_desc_layout: Layout,
-    c_smem_layout: Layout,
-    cluster_shape: StaticTuple[Int32, 3],
-    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    transpose_b: Bool = True,
-    num_threads: Int = 128,
-    pipeline_stages: Int = 7,
-    use_tma_store: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-](
-    a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-    c_tma_op: TMATensorTile[c_type, c_smem_layout, c_desc_layout],
-    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-):
-    constrained[transpose_b, "Only support transposed B in layout"]()
-
-    alias num_consumer = (num_threads // 128) - 1
-    alias num_consumer_threads = num_consumer * 128
-    alias CLUSTER_N = UInt(cluster_shape[0])
-    alias CLUSTER_M = UInt(cluster_shape[1])
-    alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
-
-    alias K = b_layout.shape[1].value()
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-
-    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
-    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK, b_swizzle]()
-
-    alias simd_size = simd_width_of[c_type]()
-
-    alias num_m_mmas = BM // wgmma_shape[0] // num_consumer
-    alias num_n_mmas = BN // wgmma_shape[1]
-
-    alias accum_type = get_accum_type[a_type]()
-    alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
-
-    alias use_cluster = cluster_size[cluster_shape]() > 1
-
-    var block_idx_swizzle = block_swizzle(
-        Index[dtype = DType.uint32](block_idx.x, block_idx.y),
-        Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
-    ) if not use_cluster else Index[dtype = DType.uint32](
-        block_idx.x, block_idx.y
-    )
-
-    # The block may be OOB because we create blocks based the maximum
-    # number of tokens per expert.
-    M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
-    if UInt32(block_idx_swizzle[1] * BM) >= M:
-        return
-
-    a_start_row = a_offsets[Int(block_idx.z)]
-
-    alias N = c_layout.shape[1].value()
-    expert = expert_ids[Int(block_idx.z)]
-    # We use -1 to indicate that the block is not active for LoRA use cases.
-    # but we still need to zero out the output for this case.
-    skip_matmul = expert < 0
-
-    b_start_row = expert * N
-
-    wgmma_op = TensorCoreAsync[
-        accum_type,
-        a_type,
-        b_type,
-        wgmma_shape,
-        a_swizzle=a_swizzle,
-        b_swizzle=b_swizzle,
-        transpose_b=transpose_b,
-    ]()
-
-    var smem = external_memory[
-        UInt8, address_space = AddressSpace.SHARED, alignment=8
-    ]()
-
-    alias a_smem_size = a_smem_layout.size() * pipeline_stages
-    alias b_smem_size = b_smem_layout.size() * pipeline_stages
-
-    alias a_smem_bytes = a_smem_size * size_of[a_type]()
-    alias b_smem_bytes = b_smem_size * size_of[b_type]()
-
-    alias c_smem_size = c_smem_layout.size()
-    alias c_smem_bytes = c_smem_size * size_of[c_type]()
-
-    var a_smem = smem.bitcast[Scalar[a_type]]()
-    var b_smem = (smem + a_smem_bytes).bitcast[Scalar[b_type]]()
-    var c_smem = (smem + a_smem_bytes + b_smem_bytes).bitcast[Scalar[c_type]]()
-    var smem_pool = (smem + a_smem_bytes + b_smem_bytes + c_smem_bytes).bitcast[
-        Int64
-    ]()
-
-    var a_smem_iter = LayoutTensorIter[
-        a_type,
-        a_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-        circular=True,
-    ](a_smem.static_alignment_cast[128](), a_smem_size)
-
-    var b_smem_iter = LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-        circular=True,
-    ](b_smem.static_alignment_cast[128](), b_smem_size)
-
-    var c_smem_tile = LayoutTensor[
-        c_type,
-        c_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ](c_smem.static_alignment_cast[128]())
-
-    var a_mbars_ptr = smem_pool.bitcast[Int64]()
-    var b_mbars_ptr = smem_pool.bitcast[Int64]() + pipeline_stages
-
-    full = a_mbars_ptr.bitcast[SharedMemBarrier]()
-    empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
-
-    var warp_group_idx = thread_idx.x // WARPGROUP_SIZE
-    var warp_group_thread_idx = thread_idx.x % WARPGROUP_SIZE
-    alias num_k_iters = K // BK
-
-    var rank_m = block_id_in_cluster.y
-    var rank_n = block_id_in_cluster.x
-
-    var lane_predicate = elect_one_sync()
-    if thread_idx.x == 0:
-        a_tma_op.prefetch_descriptor()
-        b_tma_op.prefetch_descriptor()
-
-        @parameter
-        for i in range(pipeline_stages):
-            full[i].init(1)
-            empty[i].init(num_consumer * CLUSTER_SIZE)
-
-    # We need this to guarantee that the Pipeline init is visible
-    # To all producers and consumer blocks in the cluster
-    @parameter
-    if cluster_size[cluster_shape]() > 1:
-        fence_mbarrier_init()
-        cluster_sync_relaxed()
-    else:
-        barrier()
-
-    if warp_group_idx == 0:
-        alias num_regs = 24 if num_consumer <= 2 else 32
-        warpgroup_reg_dealloc[num_regs]()
-        if warp_group_thread_idx == 0 and lane_predicate and not skip_matmul:
-            var write_pipeline_states = PipelineState[pipeline_stages]()
-
-            var m_coord = (
-                block_idx.y * BM if CLUSTER_N
-                > 1 else UInt(Int(a_start_row))
-                + UInt(block_idx_swizzle[1]) * BM
-            )
-
-            var n_coord = (
-                block_idx.x * BN if CLUSTER_M
-                > 1 else UInt(Int(b_start_row))
-                + UInt(block_idx_swizzle[0]) * BN
-            )
-
-            async_load_AB[
-                block_tile_shape=block_tile_shape,
-                cluster_shape=cluster_shape,
-                partitioned_multicast=False,
-                num_k_iters=num_k_iters,
-            ](
-                a_tma_op,
-                b_tma_op,
-                a_smem_iter,
-                b_smem_iter,
-                UInt(m_coord),
-                UInt(n_coord),
-                0,
-                rank_n,
-                rank_m,
-                write_pipeline_states,
-                empty,
-                full,
-            )
-
-    else:
-
-        @parameter
-        if num_consumer == 1 or num_consumer == 2:
-            alias num_regs = 256 if num_consumer == 1 else 240
-            warpgroup_reg_alloc[num_regs]()
-        else:
-            warpgroup_reg_alloc[160]()
-
-        var local_warp_group_idx = warp_group_idx - 1
-
-        var c_reg_tile = LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ].stack_allocation()
-
-        var dummy_c_reg_tile = LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ].stack_allocation()
-
-        _ = c_reg_tile.fill(0.0)
-
-        if not skip_matmul:
-
-            @parameter
-            for i in range(pipeline_stages):
-
-                @parameter
-                if cluster_size[cluster_shape]() > 1:
-                    if warp_group_thread_idx < CLUSTER_SIZE:
-                        _ = empty[i].arrive_cluster(warp_group_thread_idx)
-                else:
-                    if warp_group_thread_idx == 0:
-                        _ = empty[i].arrive()
-
-            var read_pipeline_states = PipelineState[pipeline_stages]()
-
-            consumer_main_loop[
-                cluster_shape=cluster_shape,
-                num_consumer=num_consumer,
-                num_k_iters=num_k_iters,
-            ](
-                dummy_c_reg_tile,
-                c_reg_tile,
-                a_smem_iter,
-                b_smem_iter,
-                read_pipeline_states,
-                full,
-                empty,
-                wgmma_op,
-                UInt(local_warp_group_idx),
-                UInt(warp_group_thread_idx),
-            )
-
-        # C layout for current expert
-        alias c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
-        alias c_gmem_type = LayoutTensor[
-            c_type,
-            c_gmem_layout,
-            MutableAnyOrigin,
-            layout_int_type = DType.int32,
-            address_space = AddressSpace.GENERIC,
-        ]
-
-        # FIXME: A list literal initializer should be enough here, but somehow Mojo fails to infer that.
-        var c_gmem_runtime_layout = RuntimeLayout[c_gmem_layout](
-            Index(M, N), Index(N, 1)
-        )
-
-        var c_by_expert = c_gmem_type(
-            c.ptr + a_start_row * N, c_gmem_runtime_layout
-        )
-
-        @always_inline
-        @parameter
-        fn elementwise_epilogue_fn_wrapper[
-            dtype: DType, width: Int, *, alignment: Int = 1
-        ](idx: IndexList[2], val: SIMD[dtype, width]):
-            @parameter
-            if elementwise_lambda_fn:
-                alias elementwise_epilogue = elementwise_lambda_fn.value()
-                var batch_idx = IndexList[2](Int(a_start_row + idx[0]), idx[1])
-                elementwise_epilogue(batch_idx, val)
-
-        warp_specialized_gemm_output[
-            c_tile_shape = Index(BM, BN),
-            c_swizzle=c_swizzle,
-            wgmma_shape=wgmma_shape,
-            num_consumer=num_consumer,
-            use_tma_store=use_tma_store,
-            elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
-                elementwise_epilogue_fn_wrapper
-            ) if elementwise_lambda_fn else None,
-        ](
-            c_tma_op,
-            c_by_expert,
-            c_smem_tile,
-            c_reg_tile,
-            UInt(warp_group_thread_idx),
-            UInt(local_warp_group_idx),
-            UInt(thread_idx.x - WARPGROUP_SIZE),
-            block_idx_swizzle[1],
-            block_idx_swizzle[0],
-        )
-
-    # TO ensure SEMEM destruction doesn't happen
-    @parameter
-    if cluster_size[cluster_shape]() > 1:
-        cluster_sync()
 
 
 @__llvm_metadata(
@@ -727,8 +290,8 @@ fn grouped_matmul_kernel_sm100[
     expert = expert_ids[Int(block_idx.z)]
     b_start_row = expert * N
 
-    m_start = block_idx.y * BM
-    n_start = block_idx.x * BN
+    m_start = block_idx.y * UInt(BM)
+    n_start = block_idx.x * UInt(BN)
     a_m_start = UInt(a_start_row) + m_start
     b_n_start = UInt(b_start_row) + n_start
     if m_start >= UInt(M) or n_start >= UInt(N):
@@ -751,9 +314,7 @@ fn grouped_matmul_kernel_sm100[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space = AddressSpace.SHARED, alignment=128
-        ]
+        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
@@ -807,11 +368,7 @@ fn grouped_matmul_kernel_sm100[
     var b_smem_tile = b_smem_tile_t(b_smem)
 
     # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
-    var ptr_tmem_addr = (
-        (b_smem + b_size)
-        .bitcast[UInt32]()
-        .static_alignment_cast[alignment=16]()
-    )
+    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
 
     alias accum_type = get_accum_type[a_type]()
 
@@ -824,12 +381,8 @@ fn grouped_matmul_kernel_sm100[
     alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
-    tma_mbar = (
-        (ptr_tmem_addr + 2)
-        .bitcast[SharedMemBarrier]()
-        .static_alignment_cast[alignment=8]()
-    )
-    mma_mbar = (tma_mbar + 1).static_alignment_cast[alignment=8]()
+    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    mma_mbar = tma_mbar + 1
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -838,7 +391,7 @@ fn grouped_matmul_kernel_sm100[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
     var elect_one_thread = thread_idx.x == 0
     alias max_tmem_cols = 512
 
@@ -887,7 +440,7 @@ fn grouped_matmul_kernel_sm100[
                 # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
                 # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
                 # so the async_copy takes care of that. TMA engine will copy the data from global tensor into smem tile A
-                k_start = UInt(i) * BK + k
+                k_start = UInt(i) * UInt(BK) + UInt(k)
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
@@ -935,7 +488,7 @@ fn grouped_matmul_kernel_sm100[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     alias num_warps = num_threads // WARP_SIZE
-    warp_id = thread_idx.x // WARP_SIZE
+    warp_id = thread_idx.x // UInt(WARP_SIZE)
 
     alias c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
     alias c_gmem_type = LayoutTensor[
@@ -1059,9 +612,9 @@ fn grouped_matmul_sm100[
     alias c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
     a_tensor = from_ndbuffer_row_major(a)
-    a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
-    ](ctx, a_tensor)
+    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+        ctx, a_tensor
+    )
     b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
@@ -1069,8 +622,6 @@ fn grouped_matmul_sm100[
         address_space = AddressSpace.GENERIC,
     ](b.data)
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(BN, BK) if transpose_b else Index(BK, BN),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
@@ -1119,6 +670,236 @@ fn grouped_matmul_sm100[
     )
 
 
+fn grouped_matmul_amd_kernel_launcher[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    layout_c: Layout,
+    layout_a: Layout,
+    layout_b: Layout,
+    transpose_b: Bool,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c_tensor: LayoutTensor[c_type, layout_c, MutableAnyOrigin],
+    a_tensor: LayoutTensor[a_type, layout_a, MutableAnyOrigin],
+    b_tensor: LayoutTensor[b_type, layout_b, MutableAnyOrigin],
+    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    num_active_experts: Int,
+):
+    var M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
+    alias N = c_tensor.shape[1]()
+    alias K = b_tensor.shape[1]()
+
+    alias num_experts = b_tensor.shape[0]()
+    var expert_id = expert_ids[Int(block_idx.z)]
+    var a_start_row = a_offsets[Int(block_idx.z)]
+
+    var a_ptr = a_tensor.ptr + a_start_row * K
+    var b_ptr = b_tensor.ptr + expert_id * N * K
+    var c_ptr = c_tensor.ptr + a_start_row * N
+
+    alias c_layout = Layout.row_major(UNKNOWN_VALUE, N)
+    alias a_layout = Layout.row_major(UNKNOWN_VALUE, K)
+    alias b_layout = Layout.row_major(
+        N, K
+    ) if transpose_b else Layout.row_major(K, N)
+
+    var c = LayoutTensor[
+        c_type,
+        c_layout,
+        MutableAnyOrigin,
+        address_space = c_ptr.address_space,
+    ](c_ptr, RuntimeLayout[c_layout](Index(M, N), Index(N, 1)))
+
+    var a = LayoutTensor[
+        a_type,
+        a_layout,
+        MutableAnyOrigin,
+        address_space = a_ptr.address_space,
+    ](a_ptr, RuntimeLayout[a_layout](Index(M, K), Index(K, 1)))
+
+    var b = LayoutTensor[
+        b_type,
+        b_layout,
+        MutableAnyOrigin,
+        address_space = b_ptr.address_space,
+    ](b_ptr, RuntimeLayout[b_layout](Index(N, K), Index(K, 1)))
+
+    @always_inline
+    @parameter
+    fn elementwise_epilogue_fn_wrapper[
+        dtype: DType, width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[dtype, width]):
+        @parameter
+        if elementwise_lambda_fn:
+            alias elementwise_epilogue = elementwise_lambda_fn.value()
+            var batch_idx = IndexList[2](Int(a_start_row + idx[0]), idx[1])
+            elementwise_epilogue(batch_idx, val)
+
+    # Only perform matmul if expert_id is not -1
+    # AMD matmul kernel performs the epilogue function
+    if expert_id != -1:
+        gemm_kernel_amd[
+            c_type,
+            c.layout,
+            a_type,
+            a.layout,
+            b_type,
+            b.layout,
+            transpose_b,
+            c.layout_int_type,
+            a.layout_int_type,
+            b.layout_int_type,
+            c.linear_idx_type,
+            a.linear_idx_type,
+            b.linear_idx_type,
+            config,
+            OptionalReg[elementwise_epilogue_type](
+                elementwise_epilogue_fn_wrapper
+            ) if elementwise_lambda_fn else None,
+        ](c, a, b)
+
+    # Perform the epilogue function separately if expert_id is -1
+    else:
+        _ = c.fill(0.0)
+
+        @parameter
+        if elementwise_lambda_fn:
+            alias epilogue = elementwise_lambda_fn.value()
+
+            alias BM = config.block_tile_shape[0]
+            alias BN = config.block_tile_shape[1]
+            alias vec_width = simd_width_of[c_type]()
+            alias alignment = align_of[SIMD[c_type, vec_width]]()
+
+            var block_m = Int(block_idx.y)
+            var block_n = Int(block_idx.x)
+
+            # Early exit if this block is completely outside the matrix bounds
+            if UInt32(block_m * BM) >= UInt32(M):
+                return
+
+            alias threads_per_block = 256
+            alias elements_per_thread = ceildiv(BM * BN, threads_per_block)
+
+            var tid = Int(thread_idx.x)
+            var thread_start = tid * elements_per_thread
+            var thread_end = min(thread_start + elements_per_thread, BM * BN)
+
+            var elements_to_process = thread_end - thread_start
+
+            @always_inline
+            @parameter
+            fn process_elements[width: Int](idx: Int):
+                var elem_idx = thread_start + idx
+                var tile_row, tile_col = divmod(elem_idx, BN)
+                var local_row: UInt32 = block_m * BM + tile_row
+                var local_col: UInt32 = block_n * BN + tile_col
+
+                if local_row < M:
+                    var remaining_in_row = N - local_col
+                    var remaining_in_tile_row = BN - tile_col
+                    var actual_width = min(
+                        width,
+                        min(Int(remaining_in_row), Int(remaining_in_tile_row)),
+                    )
+
+                    if actual_width == width and local_col + width <= N:
+                        var zero_vec = SIMD[c_type, width](0.0)
+                        epilogue[
+                            dtype=c_type,
+                            width=width,
+                            alignment = align_of[SIMD[c_type, width]](),
+                        ]((Int(local_row), Int(local_col)), zero_vec)
+                    else:
+                        for i in range(actual_width):
+                            if local_col + i < N:
+                                var zero_scalar = SIMD[c_type, 1](0.0)
+                                epilogue[dtype=c_type, width=1, alignment=1](
+                                    (Int(local_row), Int(local_col + i)),
+                                    zero_scalar,
+                                )
+
+            vectorize[process_elements, vec_width](elements_to_process)
+
+
+fn grouped_matmul_amd[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    *,
+    transpose_b: Bool = True,
+    block_tile_shape: IndexList[3] = Index(128, 128, 64),
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    max_num_tokens_per_expert: Int,
+    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
+    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    alias num_experts = b.shape.get[0]()
+    alias N = b.shape.get[1]()
+    alias K = b.shape.get[2]()
+
+    alias BM = block_tile_shape[0]
+    alias BN = block_tile_shape[1]
+    alias BK = block_tile_shape[2]
+    constrained[K % BK == 0]()
+
+    var a_tensor = from_ndbuffer_row_major(a)
+    var b_tensor = LayoutTensor[
+        b_type,
+        Layout.row_major(num_experts * N, K),
+        MutableAnyOrigin,
+        address_space = AddressSpace.GENERIC,
+    ](b.data)
+    var c_tensor = from_ndbuffer_row_major(c)
+
+    alias block_dim = 256
+    alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(BM, BN, BK),
+        warp_tile_shape=Index(BM // 2, BN // 2, BK),
+        num_pipeline_stages=1,
+        num_k_partitions=1,
+    )
+
+    alias kernel = grouped_matmul_amd_kernel_launcher[
+        c_type,
+        a_type,
+        b_type,
+        __type_of(c_tensor).layout,
+        __type_of(a_tensor).layout,
+        __type_of(b_tensor).layout,
+        transpose_b,
+        config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ]
+
+    ctx.enqueue_function[kernel](
+        c_tensor,
+        a_tensor,
+        b_tensor,
+        a_offsets,
+        expert_ids,
+        num_active_experts,
+        grid_dim=(
+            ceildiv(N, BN),
+            ceildiv(max_num_tokens_per_expert, BM),
+            num_active_experts,
+        ),
+        block_dim=(block_dim),
+    )
+
+
 # ===----------------------------------------------------------------------=== #
 # Entry Point and Dispatch
 # ===----------------------------------------------------------------------=== #
@@ -1147,6 +928,7 @@ fn grouped_matmul[
     ]() and c_shape.has_value[1]()
     alias is_sm90_kernel_applicable = ctx.default_device_info is H100 and is_expert_shape_static
     alias is_sm100_kernel_applicable = ctx.default_device_info is B200 and is_expert_shape_static
+    alias is_amd_kernel_applicable = has_amd_gpu_accelerator() and is_expert_shape_static
 
     @parameter
     if is_sm90_kernel_applicable:
@@ -1167,7 +949,73 @@ fn grouped_matmul[
             ctx,
         )
     elif is_sm100_kernel_applicable:
-        grouped_matmul_sm100[elementwise_lambda_fn=elementwise_lambda_fn](
+        alias N = b.shape.get[1]()
+        alias K = b.shape.get[2]()
+        alias contiguous_bytes = K * size_of[a_type]()
+
+        fn get_swizzle_mode(contiguous_bytes: Int) -> TensorMapSwizzle:
+            if contiguous_bytes >= TensorMapSwizzle.SWIZZLE_128B.bytes():
+                return TensorMapSwizzle.SWIZZLE_128B
+            elif contiguous_bytes >= TensorMapSwizzle.SWIZZLE_64B.bytes():
+                return TensorMapSwizzle.SWIZZLE_64B
+            elif contiguous_bytes >= TensorMapSwizzle.SWIZZLE_32B.bytes():
+                return TensorMapSwizzle.SWIZZLE_32B
+            else:
+                return TensorMapSwizzle.SWIZZLE_NONE
+
+        alias a_swizzle = get_swizzle_mode(contiguous_bytes)
+        alias b_swizzle = a_swizzle
+        alias BK = (a_swizzle.bytes() // size_of[a_type]())
+        alias _MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+        alias MMA_K = min(_MMA_K, K)
+        # For cta_group = 2, N must be divisible by 256 to ensure correct tiling and memory alignment for the kernel.
+        alias cta_group = 2 if N % 256 == 0 else 1
+        alias block_tile_shape = Index(128, 32 // cta_group, BK)
+        alias umma_shape = Index(
+            block_tile_shape[0] * cta_group,
+            block_tile_shape[1] * cta_group,
+            MMA_K,
+        )
+        alias cluster_shape = Index(cta_group, 1, 1)
+        alias transpose_b = True
+        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            block_tile_shape=block_tile_shape,
+            mma_shape=umma_shape,
+            cluster_shape=cluster_shape,
+        )
+        constrained[
+            K % BK == 0,
+            "b_shape[2] must be a multiple of BK. Got " + String(K),
+        ]()
+
+        grouped_matmul_sm100_persistent[
+            transpose_b=transpose_b,
+            config=config,
+            cta_group=cta_group,
+            a_swizzle=a_swizzle,
+            b_swizzle=b_swizzle,
+        ](
+            c,
+            a,
+            a_offsets,
+            max_num_tokens_per_expert,
+            b,
+            expert_ids,
+            num_active_experts,
+            ctx,
+        )
+
+        @parameter
+        if elementwise_lambda_fn:
+            alias elementwise_lambda = elementwise_lambda_fn.value()
+            naive_epilogue[
+                c_type, c_shape, elementwise_lambda_fn=elementwise_lambda
+            ](
+                c,
+                ctx,
+            )
+    elif is_amd_kernel_applicable:
+        grouped_matmul_amd[elementwise_lambda_fn=elementwise_lambda_fn](
             c,
             a,
             a_offsets,
@@ -1220,50 +1068,49 @@ fn grouped_matmul_vendor[
         a_type == b_type, "A and B must have the same dtype for vendor BLAS"
     ]()
     # Push the device context to ensure correct CUDA context
-    with ctx.push_context() as cur_ctx:
-        for i in range(num_active_experts):
-            var expert_id = expert_ids[i]
+    for i in range(num_active_experts):
+        var expert_id = expert_ids[i]
 
-            var token_start = a_offsets[i]
-            var token_end = a_offsets[i + 1]
-            var num_tokens = token_end - token_start
+        var token_start = a_offsets[i]
+        var token_end = a_offsets[i + 1]
+        var num_tokens = token_end - token_start
 
-            # Skip if no tokens for this expert
-            if num_tokens <= 0:
-                continue
+        # Skip if no tokens for this expert
+        if num_tokens <= 0:
+            continue
 
-            # Handle experts with expert_id = -1 by writing zeros
-            if expert_id < 0:
-                # Create output slice and zero it out
-                var c_slice = NDBuffer[c_type, 2, MutableAnyOrigin](
-                    c.data + token_start * c.dim[1](),
-                    DimList(num_tokens, c.dim[1]()),
-                )
-                var buff = DeviceBuffer(
-                    ctx, c_slice.data, c_slice.num_elements(), owning=False
-                )
-                ctx.enqueue_memset(buff, 0)
-                continue
-
-            # Create views into the tensors for this expert
-            var a_slice = NDBuffer[a_type, 2, MutableAnyOrigin](
-                a.data + token_start * a.dim[1](),
-                DimList(num_tokens, a.dim[1]()),
-            )
-            var b_slice = NDBuffer[b_type, 2, MutableAnyOrigin](
-                b.data + expert_id * b.dim[1]() * b.dim[2](),
-                DimList(b.dim[1](), b.dim[2]()),
-            )
+        # Handle experts with expert_id = -1 by writing zeros
+        if expert_id < 0:
+            # Create output slice and zero it out
             var c_slice = NDBuffer[c_type, 2, MutableAnyOrigin](
                 c.data + token_start * c.dim[1](),
                 DimList(num_tokens, c.dim[1]()),
             )
-
-            vendor_matmul[use_tf32](
-                ctx,
-                c_slice,
-                a_slice,
-                b_slice,
-                c_row_major=True,
-                transpose_b=transpose_b,
+            var buff = DeviceBuffer(
+                ctx, c_slice.data, c_slice.num_elements(), owning=False
             )
+            ctx.enqueue_memset(buff, 0)
+            continue
+
+        # Create views into the tensors for this expert
+        var a_slice = NDBuffer[a_type, 2, MutableAnyOrigin](
+            a.data + token_start * a.dim[1](),
+            DimList(num_tokens, a.dim[1]()),
+        )
+        var b_slice = NDBuffer[b_type, 2, MutableAnyOrigin](
+            b.data + expert_id * b.dim[1]() * b.dim[2](),
+            DimList(b.dim[1](), b.dim[2]()),
+        )
+        var c_slice = NDBuffer[c_type, 2, MutableAnyOrigin](
+            c.data + token_start * c.dim[1](),
+            DimList(num_tokens, c.dim[1]()),
+        )
+
+        vendor_matmul[use_tf32](
+            ctx,
+            c_slice,
+            a_slice,
+            b_slice,
+            c_row_major=True,
+            transpose_b=transpose_b,
+        )

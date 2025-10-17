@@ -16,16 +16,13 @@ These APIs are imported automatically, just like builtins.
 """
 
 from sys import align_of, is_gpu, is_nvidia_gpu, size_of
-from sys.intrinsics import (
-    gather,
-    scatter,
-    strided_load,
-    strided_store,
-)
+from sys.intrinsics import gather, scatter, strided_load, strided_store
 
 from builtin.simd import _simd_construction_checks
+from memory import memcpy
 from memory.memory import _free, _malloc
-
+from memory.maybe_uninitialized import UnsafeMaybeUninitialized
+from os import abort
 from python import PythonObject
 
 # ===----------------------------------------------------------------------=== #
@@ -38,27 +35,22 @@ fn _default_invariant[mut: Bool]() -> Bool:
     return is_gpu() and mut == False
 
 
-alias _must_be_mut_err = "UnsafePointer must be mutable for this operation"
-
-
 @register_passable("trivial")
 struct UnsafePointer[
     type: AnyType,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = align_of[type](),
     mut: Bool = True,
     origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin],
 ](
-    ImplicitlyBoolable,
-    Copyable,
-    Movable,
-    ExplicitlyCopyable,
-    Stringable,
-    Writable,
-    Intable,
     Comparable,
     Defaultable,
+    ImplicitlyBoolable,
+    ImplicitlyCopyable,
+    Intable,
+    Movable,
+    Stringable,
+    Writable,
 ):
     """`UnsafePointer[T]` represents an indirect reference to one or more values
     of type `T` consecutively in memory, and can refer to uninitialized memory.
@@ -94,10 +86,13 @@ struct UnsafePointer[
       `alignment` when data is not naturally aligned.
     - `store()`: Stores `val: SIMD[dtype, width]` at `offset` into
       `UnsafePointer[Scalar[dtype]]`. Requires a mutable pointer.
-    - `destroy_pointee()` / `take_pointee()` / `move_pointee_into(dst)`:
-      Explicitly end the lifetime of the current pointee or move it out and
-      into another pointer without running an extra copy. Use these to manage
-      lifecycles when working with uninitialized memory patterns.
+    - `destroy_pointee()` / `take_pointee()`:
+      Explicitly end the lifetime of the current pointee, or move it out, taking
+      ownership.
+    - `init_pointee_move()` / `init_pointee_move_from()` / `init_pointee_copy()`
+      Initialize a pointee that is currently uninitialized, by moving an existing
+      value, moving from another pointee, or by copying an existing value.
+      Use these to manage lifecycles when working with uninitialized memory.
 
     For more information see [Unsafe
     pointers](/mojo/manual/pointers/unsafe-pointers) in the Mojo Manual. For a
@@ -109,9 +104,9 @@ struct UnsafePointer[
     Element-wise store and load (width = 1):
 
     ```mojo
-    var p = UnsafePointer[Scalar[DType.float32]].alloc(4)
+    var p = UnsafePointer[Float32].alloc(4)
     for i in range(4):
-        p.store(i, Scalar[DType.float32](Float32(i)))
+        p.store(i, Float32(i))
     var v = p.load(2)
     print(v[0])  # => 2.0
     p.free()
@@ -120,7 +115,7 @@ struct UnsafePointer[
     Vectorized store and load (width = 4):
 
     ```mojo
-    var p = UnsafePointer[Scalar[DType.int32]].alloc(8)
+    var p = UnsafePointer[Int32].alloc(8)
     var vec = SIMD[DType.int32, 4](1, 2, 3, 4)
     p.store(0, vec)
     var out = p.load[width=4](0)
@@ -153,7 +148,6 @@ struct UnsafePointer[
     Parameters:
         type: The type the pointer points to.
         address_space: The address space associated with the UnsafePointer allocated memory.
-        alignment: The minimum alignment of this pointer known statically.
         mut: Whether the origin is mutable.
         origin: The origin of the memory being addressed.
     """
@@ -247,11 +241,10 @@ struct UnsafePointer[
     @staticmethod
     @always_inline
     fn alloc(
-        count: Int,
+        count: Int, *, alignment: Int = align_of[type]()
     ) -> UnsafePointer[
         type,
         address_space = AddressSpace.GENERIC,
-        alignment=alignment,
         # This is a newly allocated pointer, so should not alias anything
         # already existing.
         origin = MutableOrigin.empty,
@@ -267,10 +260,10 @@ struct UnsafePointer[
         Example:
 
         ```mojo
-        var p = UnsafePointer[Scalar[DType.int32]].alloc(4)
-        p.store(0, SIMD[DType.int32, 1](42))
-        p.store(1, SIMD[DType.int32, 1](7))
-        p.store(2, SIMD[DType.int32, 1](9))
+        var p = UnsafePointer[Int32].alloc(4)
+        p.store(0, Int32(42))
+        p.store(1, Int32(7))
+        p.store(2, Int32(9))
         var a = p.load(0)
         print(a[0], p.load(1)[0], p.load(2)[0])
         p.free()
@@ -278,13 +271,14 @@ struct UnsafePointer[
 
         Args:
             count: Number of elements to allocate.
+            alignment: The alignment of the allocation.
 
         Returns:
             Pointer to the newly allocated uninitialized array.
         """
         alias size_of_t = size_of[type]()
         constrained[size_of_t > 0, "size must be greater than zero"]()
-        return _malloc[type, alignment=alignment](size_of_t * count)
+        return _malloc[type](size_of_t * count, alignment=alignment)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -484,7 +478,6 @@ struct UnsafePointer[
             UnsafePointer[
                 type,
                 address_space=address_space,
-                alignment=_,
                 mut=_,
                 origin=_,
             ]
@@ -494,7 +487,6 @@ struct UnsafePointer[
         mut = mut & other_type.origin.mut,
         origin = __origin_of(origin, other_type.origin),
         address_space=address_space,
-        alignment = min(alignment, other_type.alignment),
     ]:
         """Returns a pointer merged with the specified `other_type`.
 
@@ -518,15 +510,6 @@ struct UnsafePointer[
             Whether the pointer is null.
         """
         return Int(self) != 0
-
-    @always_inline
-    fn __as_bool__(self) -> Bool:
-        """Return true if the pointer is non-null.
-
-        Returns:
-            Whether the pointer is null.
-        """
-        return self.__bool__()
 
     @always_inline
     fn __int__(self) -> Int:
@@ -563,6 +546,60 @@ struct UnsafePointer[
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
+    fn swap_pointees[
+        U: Movable
+    ](
+        self: UnsafePointer[U, mut=True, origin=_],
+        other: UnsafePointer[U, mut=True, origin=_],
+    ):
+        """Swap the values at the pointers.
+
+        This function assumes that `self` and `other` _may_ overlap in memory.
+        If that is not the case, or when references are available, you should
+        use `builtin.swap` instead.
+
+        Parameters:
+            U: The type the pointers point to, which must be `Movable`.
+
+        Args:
+            other: The other pointer to swap with.
+
+        Safety:
+            - `self` and `other` must both point to valid, initialized instances
+              of `T`.
+        """
+
+        @parameter
+        if U.__moveinit__is_trivial:
+            # If `moveinit` is trivial, we can avoid the branch introduced from
+            # checking if the pointers are equal by using temporary stack
+            # values.
+            #
+            # Since `lhs` may overlap with `rhs` we need two temporary stack
+            # values since we cannot call `memcpy` with the potentially
+            # overlapping pointers.
+            #
+            # Even if they are not overlapping, this also produces better llvm
+            # code with only 2 loads and 2 stores. Whereas with only 1 temporary
+            # and a memcpy between the pointers it produces 3 load and 3 stores.
+
+            var self_tmp = UnsafeMaybeUninitialized[U]()
+            var other_tmp = UnsafeMaybeUninitialized[U]()
+            memcpy(dest=self_tmp.unsafe_ptr(), src=self, count=1)
+            memcpy(dest=other_tmp.unsafe_ptr(), src=other, count=1)
+
+            memcpy(dest=self, src=other_tmp.unsafe_ptr(), count=1)
+            memcpy(dest=other, src=self_tmp.unsafe_ptr(), count=1)
+        else:
+            # If `moveinit` is NOT trivial, we need to check if the pointers are
+            # the same to avoid undefined behavior when moving from rhs to lhs.
+            if self == other:
+                return
+            var tmp = self.take_pointee()
+            self.init_pointee_move_from(other)
+            other.init_pointee_move(tmp^)
+
+    @always_inline("nodebug")
     fn as_noalias_ptr(self) -> Self:
         """Cast the pointer to a new pointer that is known not to locally alias
         any other pointer. In other words, the pointer transitively does not
@@ -595,7 +632,7 @@ struct UnsafePointer[
         Example:
 
         ```mojo
-        var p = UnsafePointer[Scalar[DType.int32]].alloc(8)
+        var p = UnsafePointer[Int32].alloc(8)
         p.store(0, SIMD[DType.int32, 4](1, 2, 3, 4))
         var v = p.load[width=4]()
         print(v)  # => [1, 2, 3, 4]
@@ -733,7 +770,7 @@ struct UnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], mut=True, **_],
         offset: I,
         val: SIMD[dtype, width],
     ):
@@ -754,7 +791,6 @@ struct UnsafePointer[
             offset: The offset to store to.
             val: The value to store.
         """
-        constrained[mut, _must_be_mut_err]()
         self.offset(offset).store[alignment=alignment, volatile=volatile](val)
 
     @always_inline("nodebug")
@@ -766,7 +802,7 @@ struct UnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], mut=True, **_],
         offset: Scalar[offset_type],
         val: SIMD[dtype, width],
     ):
@@ -786,7 +822,6 @@ struct UnsafePointer[
             offset: The offset to store to.
             val: The value to store.
         """
-        constrained[mut, _must_be_mut_err]()
         constrained[offset_type.is_integral(), "offset must be integer"]()
         self.offset(Int(offset))._store[alignment=alignment, volatile=volatile](
             val
@@ -799,7 +834,10 @@ struct UnsafePointer[
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
-    ](self: UnsafePointer[Scalar[dtype], **_], val: SIMD[dtype, width]):
+    ](
+        self: UnsafePointer[Scalar[dtype], mut=True, **_],
+        val: SIMD[dtype, width],
+    ):
         """Stores a single element value `val` at element offset 0.
 
         Specify `alignment` when writing to packed/unaligned memory. Requires a
@@ -809,7 +847,7 @@ struct UnsafePointer[
         Example:
 
         ```mojo
-        var p = UnsafePointer[Scalar[DType.float32]].alloc(4)
+        var p = UnsafePointer[Float32].alloc(4)
         var vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
         p.store(vec)
         var out = p.load[width=4]()
@@ -829,7 +867,6 @@ struct UnsafePointer[
         Args:
             val: The SIMD value to store.
         """
-        constrained[mut, _must_be_mut_err]()
         self._store[alignment=alignment, volatile=volatile](val)
 
     @always_inline("nodebug")
@@ -839,8 +876,10 @@ struct UnsafePointer[
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
-    ](self: UnsafePointer[Scalar[dtype], **_], val: SIMD[dtype, width]):
-        constrained[mut, _must_be_mut_err]()
+    ](
+        self: UnsafePointer[Scalar[dtype], mut=True, **_],
+        val: SIMD[dtype, width],
+    ):
         constrained[width > 0, "width must be a positive integer value"]()
         constrained[
             alignment > 0, "alignment must be a positive integer value"
@@ -878,7 +917,7 @@ struct UnsafePointer[
         T: Intable, //,
         width: Int = 1,
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], mut=True, **_],
         val: SIMD[dtype, width],
         stride: T,
     ):
@@ -893,7 +932,6 @@ struct UnsafePointer[
             val: The SIMD value to store.
             stride: The stride between stores.
         """
-        constrained[mut, _must_be_mut_err]()
         strided_store(
             val, self, Int(stride), SIMD[DType.bool, width](fill=True)
         )
@@ -950,7 +988,7 @@ struct UnsafePointer[
             "alignment must be a power of two integer value",
         ]()
 
-        var base = offset.cast[DType.index]().fma(size_of[dtype](), Int(self))
+        var base = offset.cast[DType.int]().fma(size_of[dtype](), Int(self))
         return gather(base, mask, default, alignment)
 
     @always_inline("nodebug")
@@ -960,7 +998,7 @@ struct UnsafePointer[
         width: Int = 1,
         alignment: Int = align_of[dtype](),
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], mut=True, **_],
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
@@ -995,7 +1033,6 @@ struct UnsafePointer[
             mask: The SIMD vector of boolean values, indicating for each
                 element whether to store at memory or not.
         """
-        constrained[mut, _must_be_mut_err]()
         constrained[
             offset.dtype.is_integral(),
             "offset type must be an integral type",
@@ -1005,7 +1042,7 @@ struct UnsafePointer[
             "alignment must be a power of two integer value",
         ]()
 
-        var base = offset.cast[DType.index]().fma(size_of[dtype](), Int(self))
+        var base = offset.cast[DType.int]().fma(size_of[dtype](), Int(self))
         scatter(val, base, mask, alignment)
 
     @always_inline
@@ -1019,7 +1056,6 @@ struct UnsafePointer[
     ](self) -> UnsafePointer[
         T,
         address_space=address_space,
-        alignment=alignment,
         mut=mut,
         origin=origin,
     ]:
@@ -1034,86 +1070,207 @@ struct UnsafePointer[
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointer[
-                T, address_space=address_space, alignment=alignment
+                T,
+                address_space=address_space,
+            ]._mlir_type,
+        ](self.address)
+
+    alias _OriginCastType[
+        target_mut: Bool, target_origin: Origin[target_mut]
+    ] = UnsafePointer[
+        type,
+        address_space=address_space,
+        mut=target_mut,
+        origin=target_origin,
+    ]
+
+    @always_inline("nodebug")
+    fn mut_cast[
+        target_mut: Bool
+    ](self) -> Self._OriginCastType[
+        target_mut, Origin[target_mut].cast_from[origin]
+    ]:
+        """Changes the mutability of a pointer.
+
+        This is a safe way to change the mutability of a pointer with an
+        unbounded mutability. This function will emit a compile time error if
+        you try to cast an immutable pointer to mutable.
+
+        Parameters:
+            target_mut: Mutability of the destination pointer.
+
+        Returns:
+            A pointer with the same type, origin and address space as the
+            original pointer, but with the newly specified mutability.
+        """
+        constrained[
+            target_mut == False or target_mut == mut,
+            "Cannot safely cast an immutable pointer to mutable",
+        ]()
+        return self.unsafe_mut_cast[target_mut]()
+
+    @always_inline("builtin")
+    fn unsafe_mut_cast[
+        target_mut: Bool
+    ](self) -> Self._OriginCastType[
+        target_mut, Origin[target_mut].cast_from[origin]
+    ]:
+        """Changes the mutability of a pointer.
+
+        Parameters:
+            target_mut: Mutability of the destination pointer.
+
+        Returns:
+            A pointer with the same type, origin and address space as the
+            original pointer, but with the newly specified mutability.
+
+        If you are unconditionally casting the mutability to `False`, use
+        `as_immutable` instead.
+        If you are casting to mutable or a parameterized mutability, prefer
+        using the safe `mut_cast` method instead.
+
+        Safety:
+            Casting the mutability of a pointer is inherently very unsafe.
+            Improper usage can lead to undefined behavior. Consider restricting
+            types to their proper mutability at the function signature level.
+            For example, taking an `UnsafePointer[T, mut=True, **_]` as an
+            argument over an unbound `UnsafePointer[T, **_]` is preferred.
+        """
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type = Self._OriginCastType[
+                target_mut, Origin[target_mut].cast_from[origin]
             ]._mlir_type,
         ](self.address)
 
     @always_inline("builtin")
-    fn static_alignment_cast[
-        alignment: Int = Self.alignment
-    ](self) -> UnsafePointer[
-        type,
-        address_space=address_space,
-        alignment=alignment,
-        mut=mut,
-        origin=origin,
-    ]:
-        """Changes the `alignment` of an `UnsafePointer`.
-
-        The static alignment of an UnsafePointer must be greater
-        or equal to the actual alignment of the runtime pointer
-        value. Casting an UnsafePointer to a static alignment greater
-        than its runtime alignment may cause undefined behavior".
-
-        This only changes the compile-time alignment encoded in the type of
-        this pointer. This does not change the alignment of the pointer address
-        at runtime.
-
+    fn unsafe_origin_cast[
+        target_origin: Origin[mut]
+    ](self) -> Self._OriginCastType[mut, target_origin]:
+        """Changes the origin of a pointer.
 
         Parameters:
-            alignment: Alignment of the destination pointer.
+            target_origin: Origin of the destination pointer.
 
         Returns:
-            A new UnsafePointer object with the same type, address_space, and address,
-            as the original UnsafePointer, and the new specified alignment.
+            A pointer with the same type, mutability and address space as the
+            original pointer, but with the newly specified origin.
+
+        If you are unconditionally casting the origin to an `AnyOrigin`, use
+        `as_any_origin` instead.
+
+        Safety:
+            Casting the origin of a pointer is inherently very unsafe.
+            Improper usage can lead to undefined behavior or unexpected variable
+            destruction. Considering parameterizing the origin at the function
+            level to avoid unnecessary casts.
         """
         return __mlir_op.`pop.pointer.bitcast`[
+            _type = Self._OriginCastType[mut, target_origin]._mlir_type,
+        ](self.address)
+
+    @always_inline("builtin")
+    fn as_immutable(
+        self,
+    ) -> Self._OriginCastType[False, ImmutableOrigin.cast_from[origin]]:
+        """Changes the mutability of a pointer to immutable.
+
+        Unlike `unsafe_mut_cast`, this function is always safe to use as casting
+        from (im)mutable to immutable is always safe.
+
+        Returns:
+            A pointer with the mutability set to immutable.
+        """
+        return self.unsafe_mut_cast[False]()
+
+    @doc_private
+    fn as_any_origin(
+        self: UnsafePointer[type, **_],
+        out result: Self._OriginCastType[False, ImmutableAnyOrigin],
+    ):
+        constrained[
+            False,
+            (
+                "An UnsafePointer with unbound mutability cannot be cast to"
+                " 'AnyOrigin'. Consider using `as_immutable` first, or binding"
+                " the mutability explicitly before calling this function."
+            ),
+        ]()
+        result = abort[__type_of(result)]()
+
+    @always_inline("builtin")
+    fn as_any_origin(
+        self: UnsafePointer[type, mut=False, **_],
+    ) -> UnsafePointer[
+        type,
+        address_space=address_space,
+        mut=False,
+        origin=ImmutableAnyOrigin,
+    ]:
+        """Casts the origin of an immutable pointer to `ImmutableAnyOrigin`.
+
+        Returns:
+            A pointer with the origin set to `ImmutableAnyOrigin`.
+
+        It is usually preferred to maintain concrete origin values instead of
+        using `ImmutableAnyOrigin`. However, if it is needed, keep in mind that
+        `ImmutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        destruction will not apply during the lifetime of the pointer.
+        """
+        # TODO: compiler error if using self.unsafe_origin_cast
+        return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointer[
-                type, address_space=address_space, alignment=alignment
+                type,
+                address_space=address_space,
+                mut=False,
+                origin=ImmutableAnyOrigin,
             ]._mlir_type,
         ](self.address)
 
     @always_inline("builtin")
-    fn origin_cast[
-        mut: Bool = Self.mut,
-        origin: Origin[mut] = Origin[mut].cast_from[Self.origin],
-    ](self) -> UnsafePointer[
+    fn as_any_origin(
+        self: UnsafePointer[type, mut=True, **_],
+    ) -> UnsafePointer[
         type,
         address_space=address_space,
-        alignment=alignment,
-        mut=mut,
-        origin=origin,
+        mut=True,
+        origin=MutableAnyOrigin,
     ]:
-        """Changes the origin or mutability of a pointer.
-
-        Parameters:
-            mut: Whether the origin is mutable.
-            origin: Origin of the destination pointer.
+        """Casts the origin of a mutable pointer to `MutableAnyOrigin`.
 
         Returns:
-            A new UnsafePointer object with the same type and the same address,
-            as the original UnsafePointer and the new specified mutability and origin.
+            A pointer with the origin set to `MutableAnyOrigin`.
+
+        This requires the pointer to already be mutable as casting mutability
+        is inherently very unsafe.
+
+        It is usually preferred to maintain concrete origin values instead of
+        using `MutableAnyOrigin`. However, if it is needed, keep in mind that
+        `MutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        destruction will not apply during the lifetime of the pointer.
         """
+        # TODO: compiler error if using self.unsafe_origin_cast
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointer[
-                type, address_space=address_space, alignment=alignment
+                type,
+                address_space=address_space,
+                mut=True,
+                origin=MutableAnyOrigin,
             ]._mlir_type,
         ](self.address)
 
     @always_inline("builtin")
     fn address_space_cast[
-        address_space: AddressSpace = Self.address_space,
+        target_address_space: AddressSpace = Self.address_space,
     ](self) -> UnsafePointer[
         type,
-        address_space=address_space,
-        alignment=alignment,
+        address_space=target_address_space,
         mut=mut,
         origin=origin,
     ]:
         """Casts an UnsafePointer to a different address space.
 
         Parameters:
-            address_space: The address space of the result.
+            target_address_space: The address space of the result.
 
         Returns:
             A new UnsafePointer object with the same type and the same address,
@@ -1121,13 +1278,16 @@ struct UnsafePointer[
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointer[
-                type, address_space=address_space, alignment=alignment
+                type,
+                address_space=target_address_space,
             ]._mlir_type,
         ](self.address)
 
     @always_inline
     fn destroy_pointee(
-        self: UnsafePointer[type, address_space = AddressSpace.GENERIC, **_]
+        self: UnsafePointer[
+            type, mut=True, address_space = AddressSpace.GENERIC, **_
+        ]
     ):
         """Destroy the pointed-to value.
 
@@ -1137,13 +1297,16 @@ struct UnsafePointer[
         more efficient because it doesn't invoke `__moveinit__`.
 
         """
-        constrained[mut, _must_be_mut_err]()
         _ = __get_address_as_owned_value(self.address)
 
     @always_inline
     fn take_pointee[
         T: Movable, //,
-    ](self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_]) -> T:
+    ](
+        self: UnsafePointer[
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
+        ]
+    ) -> T:
         """Move the value at the pointer out, leaving it uninitialized.
 
         The pointer must not be null, and the pointer memory location is assumed
@@ -1160,7 +1323,6 @@ struct UnsafePointer[
         Returns:
             The value at the pointer.
         """
-        constrained[mut, _must_be_mut_err]()
         return __get_address_as_owned_value(self.address)
 
     # TODO: Allow overloading on more specific traits
@@ -1168,7 +1330,9 @@ struct UnsafePointer[
     fn init_pointee_move[
         T: Movable, //,
     ](
-        self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
+        self: UnsafePointer[
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
+        ],
         var value: T,
     ):
         """Emplace a new value into the pointer location, moving from `value`.
@@ -1187,14 +1351,15 @@ struct UnsafePointer[
         Args:
             value: The value to emplace.
         """
-        constrained[mut, _must_be_mut_err]()
         __get_address_as_uninit_lvalue(self.address) = value^
 
     @always_inline
     fn init_pointee_copy[
-        T: ExplicitlyCopyable, //,
+        T: Copyable, //,
     ](
-        self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
+        self: UnsafePointer[
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
+        ],
         value: T,
     ):
         """Emplace a copy of `value` into the pointer location.
@@ -1213,42 +1378,89 @@ struct UnsafePointer[
         Args:
             value: The value to emplace.
         """
-        constrained[mut, _must_be_mut_err]()
         __get_address_as_uninit_lvalue(self.address) = value.copy()
 
     @always_inline
-    fn init_pointee_explicit_copy[
-        T: ExplicitlyCopyable, //
+    fn init_pointee_move_from[
+        T: Movable, //,
     ](
-        self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
-        value: T,
+        self: UnsafePointer[
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
+        ],
+        src: UnsafePointer[
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
+        ],
     ):
-        """Emplace a copy of `value` into this pointer location.
+        """Moves the value `src` points to into the memory location pointed to
+        by `self`.
 
-        The pointer memory location is assumed to contain uninitialized data,
-        and consequently the current contents of this pointer are not destructed
-        before writing `value`. Similarly, ownership of `value` is logically
-        transferred into the pointer location.
+        The `self` pointer memory location is assumed to contain uninitialized
+        data prior to this assignment, and consequently the current contents of
+        this pointer are not destructed before writing the value from the `src`
+        pointer.
 
-        When compared to `init_pointee_move`, this avoids an extra move on
-        the callee side when the value must be copied.
+        Ownership of the value is logically transferred from `src` into `self`'s
+        pointer location.
+
+        After this call, the `src` pointee value should be treated as
+        uninitialized data. Subsequent reads of or destructor calls on the `src`
+        pointee value are invalid, unless and until a new valid value has been
+        moved into the `src` pointer's memory location using an
+        `init_pointee_*()` operation.
+
+        This transfers the value out of `src` and into `self` using at most one
+        `__moveinit__()` call.
+
+        ### Example
+
+        ```mojo
+        var a_ptr = UnsafePointer.alloc[String](1)
+        var b_ptr = UnsafePointer.alloc[String](2)
+
+        # Initialize A pointee
+        a_ptr.init_pointee_move("foo")
+
+        # Perform the move
+        b_ptr.init_pointee_move_from(a_ptr)
+
+        # Clean up
+        b_ptr.destroy_pointee()
+        a_ptr.free()
+        b_ptr.free()
+        ```
+
+        ### Safety
+
+        * `self` and `src` must be non-null
+        * `src` must contain a valid, initialized instance of `T`
+        * The pointee contents of `self` should be uninitialized. If `self` was
+          previously written with a valid value, that value will be be
+          overwritten and its destructor will NOT be run.
 
         Parameters:
-            T: The type the pointer points to, which must be
-               `ExplicitlyCopyable`.
+            T: The type the pointer points to, which must be `Movable`.
 
         Args:
-            value: The value to emplace.
+            src: Source pointer that the value will be moved from.
         """
-        constrained[mut, _must_be_mut_err]()
-        __get_address_as_uninit_lvalue(self.address) = value.copy()
+        __get_address_as_uninit_lvalue(
+            self.address
+        ) = __get_address_as_owned_value(src.address)
 
+    @deprecated(
+        "Use `lhs_ptr.init_pointee_move_from(rhs_ptr)` instead, which uses "
+        "`LHS = RHS` argument ordering for readability."
+    )
     @always_inline
     fn move_pointee_into[
         T: Movable, //,
     ](
-        self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
-        dst: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
+        self: UnsafePointer[
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
+        ],
+        dst: UnsafePointer[
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
+        ],
     ):
         """Moves the value `self` points to into the memory location pointed to by
         `dst`.
@@ -1276,7 +1488,6 @@ struct UnsafePointer[
         Args:
             dst: Destination pointer that the value will be moved into.
         """
-        constrained[mut, _must_be_mut_err]()
         __get_address_as_uninit_lvalue(
             dst.address
         ) = __get_address_as_owned_value(self.address)

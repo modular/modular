@@ -16,9 +16,11 @@ from math import exp2, iota
 from bit import prev_power_of_two
 
 from utils.index import IndexList
+from builtin.device_passable import DevicePassable
 
 
-trait ScoreModTrait:
+@register_passable("trivial")
+trait ScoreModTrait(Copyable, DevicePassable):
     """The ScoreMod trait desctribes score_mod for mha kernel like alibi bias.
     """
 
@@ -52,6 +54,18 @@ struct AlibiScoreMod[
     """
 
     alias name_str: String = "alibi"
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "AlibiScoreMod"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn _generate_alibi_bias[
@@ -123,10 +137,23 @@ struct AlibiScoreMod[
 
 @fieldwise_init
 @register_passable("trivial")
-struct IdentityScoreMod(Copyable, Movable, ScoreModTrait):
+struct IdentityScoreMod(ImplicitlyCopyable, Movable, ScoreModTrait):
     """IdentityScoreMod simply returns attention score."""
 
     alias name_str: String = "no_pos"
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "IdentityScoreMod"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn score_mod[

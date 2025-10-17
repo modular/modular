@@ -62,7 +62,9 @@ fn tma_swizzle_load_kernel[
         mbar[0].init()
         mbar[0].expect_bytes(expected_bytes)
         tma_tile.async_copy(
-            tile, mbar[0], (block_idx.x * tileN, block_idx.y * tileM)
+            tile,
+            mbar[0],
+            (UInt(block_idx.x * UInt(tileN)), UInt(block_idx.y * UInt(tileM))),
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
@@ -98,8 +100,6 @@ def test_tma_swizzle[
         arange(dst.tensor[update=False](), 0)
 
     var tma_tensor = create_tma_tile[
-        dtype,
-        2,
         tile_shape,
         swizzle_mode=swizzle_mode,
         is_k_major=is_k_major,

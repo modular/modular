@@ -11,17 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import isqrt
+from collections import OptionalReg, Set
+from math import rsqrt
 from random import random_ui64, seed
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import HostNDBuffer, DeviceNDBuffer, random
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import memcpy
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
@@ -29,8 +30,8 @@ from nn.mha_score_mod import IdentityScoreMod
 from tensor_internal import IOUnknown, ManagedTensorSlice
 from tensor_internal.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
+
 from utils import IndexList
-from collections import OptionalReg
 
 alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
@@ -116,9 +117,9 @@ def execute_ragged_flash_attention[
             IndexList[3](ragged_start_idx, 0, 0)
         )
         memcpy(
-            padded_ptr,
-            ragged_ptr,
-            unpadded_seq_len * num_q_heads * kv_params.head_size,
+            dest=padded_ptr,
+            src=ragged_ptr,
+            count=unpadded_seq_len * num_q_heads * kv_params.head_size,
         )
 
     q_ragged_device = q_ragged_host.copy_to_device(ctx)
@@ -182,7 +183,7 @@ def execute_ragged_flash_attention[
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
-    # Create sink weights (weird lifetime behavior if inside of parameter if, so we always creted it)
+    # Create sink weights (weird lifetime behavior if inside of parameter if, so we always create it)
     # TODO: fix this
     var sink_weights_shape = IndexList[1](num_q_heads)
     var sink_weights_host = HostNDBuffer[dtype, 1](sink_weights_shape)
@@ -194,17 +195,24 @@ def execute_ragged_flash_attention[
     sink_weights_device = sink_weights_host.copy_to_device(ctx)
 
     var sink_weights_device_tensor: OptionalReg[
-        NDBuffer[dtype, 1, MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
     ] = None
 
     @parameter
     if sink:
-        sink_weights_device_tensor = sink_weights_device.tensor
+        sink_weights_device_tensor = LayoutTensor[
+            dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ](
+            sink_weights_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                sink_weights_shape
+            ),
+        )
 
     # ragged execution with sink weights
     flash_attention[ragged=True, sink=sink](
-        test_output_device.tensor,
-        q_ragged_device.tensor,
+        test_output_device.to_layout_tensor(),
+        q_ragged_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
         CausalMask(),
@@ -213,7 +221,7 @@ def execute_ragged_flash_attention[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
         ](input_row_offsets_device.tensor),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         ctx,
         sink_weights=sink_weights_device_tensor,
     )
@@ -221,8 +229,8 @@ def execute_ragged_flash_attention[
 
     # padded execution
     flash_attention[sink=sink, naive_kernel=True](
-        ref_output_device.tensor,
-        q_padded_device.tensor,
+        ref_output_device.to_layout_tensor(),
+        q_padded_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
         CausalMask(),
@@ -231,7 +239,7 @@ def execute_ragged_flash_attention[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
         ](valid_lengths_device.tensor),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         ctx,
         sink_weights=sink_weights_device_tensor,
     )

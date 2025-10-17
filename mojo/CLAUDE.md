@@ -69,8 +69,8 @@ Read the `mojo/stdlib/benchmarks/README.md` for details on how to run benchmarks
 ### Code Formatting
 
 ```bash
-# Format all Mojo files
-mojo format ./
+# Format all Mojo files (from the root of the repository)
+./bazelw run format
 
 # Format is automatically applied via pre-commit hooks
 ```

@@ -8,12 +8,18 @@ modular_py_library(
         requirement("pydantic-settings"),
         "//SDK/lib/API/python/max/serve/kvcache_agent",
         "//SDK/lib/API/python/max/serve/queue",
+        "//SDK/lib/API/python/max/support",
     ],
 )
 
 modular_py_library(
     name = "process_control",
     srcs = ["process_control.py"],
+)
+
+modular_py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
 )
 
 modular_py_library(
@@ -24,20 +30,24 @@ modular_py_library(
             "process_control.py",
             "config.py",
             "debug.py",
+            "exceptions.py",
         ],
     ),
     imports = ["../.."],
     deps = [
         ":config",
         ":debug",
+        ":exceptions",
         ":process_control",
         "//SDK/lib/API/python/max/serve/mocks",
+        "//SDK/lib/API/python/max/serve/parser",
         "//SDK/lib/API/python/max/serve/pipelines",
         "//SDK/lib/API/python/max/serve/recordreplay",
         "//SDK/lib/API/python/max/serve/router",
         "//SDK/lib/API/python/max/serve/scheduler",
         "//SDK/lib/API/python/max/serve/schemas",
         "//SDK/lib/API/python/max/serve/telemetry",
+        "//SDK/lib/API/python/max/support",
         requirement("fastapi"),
         requirement("opentelemetry-api"),
         requirement("prometheus-client"),

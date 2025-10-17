@@ -54,7 +54,7 @@ fn _support_pdl_launch() -> Bool:
     if not has_nvidia_gpu_accelerator():
         return False
 
-    if GPUInfo.from_name[_accelerator_arch()]() < H100:
+    if GPUInfo.from_name[_accelerator_arch()]() < materialize[H100]():
         return False
 
     return True

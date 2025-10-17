@@ -13,9 +13,9 @@
 # RUN: echo -n | %mojo %s
 
 import sys
-
 from io.io import _fdopen
-from testing import testing
+
+from testing import testing, TestSuite
 
 
 fn test_read_until_delimiter_raises_eof() raises:
@@ -24,5 +24,5 @@ fn test_read_until_delimiter_raises_eof() raises:
         _ = stdin.read_until_delimiter("\n")
 
 
-fn main() raises:
-    test_read_until_delimiter_raises_eof()
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

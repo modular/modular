@@ -52,7 +52,7 @@ fn fill_boxes[
     var shape = IndexList[3](batch_size, num_boxes, 4)
     var storage = UnsafePointer[Scalar[dtype]].alloc(shape.flattened_length())
     var boxes = LayoutTensor[dtype, unknown_layout_3d](
-        storage.origin_cast[True, MutableAnyOrigin](),
+        storage.as_any_origin(),
         RuntimeLayout[unknown_layout_3d].row_major(shape),
     )
     for i in range(len(box_list)):
@@ -89,7 +89,7 @@ fn fill_scores[
     var shape = IndexList[3](batch_size, num_classes, num_boxes)
     var storage = UnsafePointer[Scalar[dtype]].alloc(shape.flattened_length())
     var scores = LayoutTensor[dtype, unknown_layout_3d](
-        storage.origin_cast[True, MutableAnyOrigin](),
+        storage.as_any_origin(),
         RuntimeLayout[unknown_layout_3d].row_major(shape),
     )
     for i in range(len(scores_list)):

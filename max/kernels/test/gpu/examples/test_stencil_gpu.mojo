@@ -20,10 +20,10 @@ from testing import assert_almost_equal
 from utils import IndexList
 from utils.numerics import min_or_neg_inf
 
-alias _map_fn_type = fn[rank: Int] (IndexList[rank]) capturing -> (
+alias _map_fn_type = fn[rank: Int] (IndexList[rank]) capturing -> Tuple[
     IndexList[rank],
     IndexList[rank],
-)
+]
 alias load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int] (
     IndexList[rank]
 ) capturing -> SIMD[dtype, simd_width]
@@ -89,12 +89,12 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
         Int(input_shape.product())
     )
-    var d_input = NDBuffer[dtype, rank](d_input_buf._unsafe_ptr(), input_shape)
+    var d_input = NDBuffer[dtype, rank](d_input_buf.unsafe_ptr(), input_shape)
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
         Int(output_shape.product())
     )
     var d_output = NDBuffer[dtype, rank](
-        d_output_buf._unsafe_ptr(), output_shape
+        d_output_buf.unsafe_ptr(), output_shape
     )
 
     # Copy to device
@@ -104,10 +104,10 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
         var upper_bound = IndexList[stencil_rank](
             point[0] + pool_window_h, point[1] + pool_window_w
@@ -258,12 +258,12 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
         Int(input_shape.product())
     )
-    var d_input = NDBuffer[dtype, rank](d_input_buf._unsafe_ptr(), input_shape)
+    var d_input = NDBuffer[dtype, rank](d_input_buf.unsafe_ptr(), input_shape)
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
         Int(output_shape.product())
     )
     var d_output = NDBuffer[dtype, rank](
-        d_output_buf._unsafe_ptr(), output_shape
+        d_output_buf.unsafe_ptr(), output_shape
     )
 
     # Copy to device
@@ -273,10 +273,10 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] - pad_h, point[1] - pad_w
         )
@@ -428,12 +428,12 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
         Int(input_shape.product())
     )
-    var d_input = NDBuffer[dtype, rank](d_input_buf._unsafe_ptr(), input_shape)
+    var d_input = NDBuffer[dtype, rank](d_input_buf.unsafe_ptr(), input_shape)
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
         Int(output_shape.product())
     )
     var d_output = NDBuffer[dtype, rank](
-        d_output_buf._unsafe_ptr(), output_shape
+        d_output_buf.unsafe_ptr(), output_shape
     )
 
     # Copy to device
@@ -443,10 +443,10 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride, point[1] * stride
         )
@@ -607,12 +607,12 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
         Int(input_shape.product())
     )
-    var d_input = NDBuffer[dtype, rank](d_input_buf._unsafe_ptr(), input_shape)
+    var d_input = NDBuffer[dtype, rank](d_input_buf.unsafe_ptr(), input_shape)
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
         Int(output_shape.product())
     )
     var d_output = NDBuffer[dtype, rank](
-        d_output_buf._unsafe_ptr(), output_shape
+        d_output_buf.unsafe_ptr(), output_shape
     )
 
     # Copy to device
@@ -622,10 +622,10 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride, point[1] * stride
         )
@@ -739,7 +739,7 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     _ = d_input_buf^
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_stencil_avg_pool(ctx)
         test_stencil_avg_pool_padded(ctx)

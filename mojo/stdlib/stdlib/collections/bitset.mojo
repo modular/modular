@@ -32,11 +32,12 @@ print(len(bs))          # Prints 0.
 # ---------------------------------------------------------------------------
 
 
+from math import ceildiv
+from sys import simd_width_of
+
 from algorithm import vectorize
 from bit import log2_floor, pop_count
-from math import ceildiv
 from memory import pack_bits
-from sys import bit_width_of, simd_width_of
 
 from .inline_array import InlineArray
 
@@ -44,20 +45,20 @@ from .inline_array import InlineArray
 # Utilities
 # ===-----------------------------------------------------------------------===#
 
-alias _WORD_BITS = bit_width_of[UInt64]()
+alias _WORD_BITS = DType.uint64.bit_width()
 alias _WORD_BITS_LOG2 = log2_floor(_WORD_BITS)
 
 
 @always_inline
 fn _word_index(idx: UInt) -> UInt:
     """Computes the 0-based index of the 64-bit word containing bit `idx`."""
-    return UInt(idx >> _WORD_BITS_LOG2)
+    return UInt(idx >> UInt(_WORD_BITS_LOG2))
 
 
 @always_inline
 fn _bit_mask(idx: UInt) -> UInt64:
     """Returns a UInt64 mask with only the bit corresponding to `idx` set."""
-    return UInt64(1) << (idx & (_WORD_BITS - 1))
+    return UInt64(1) << (idx & UInt(_WORD_BITS - 1))
 
 
 @always_inline
@@ -333,7 +334,7 @@ struct BitSet[size: UInt](
                     right._words.unsafe_get(i),
                 )
 
-        return res
+        return res^
 
     fn union(self, other: Self) -> Self:
         """Returns a new bitset that is the union of `self` and `other`.

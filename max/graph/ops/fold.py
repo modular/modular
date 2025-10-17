@@ -46,7 +46,7 @@ def fold(
 
     Args:
         input: The 3D tensor to fold with shape ``(N, C * kernel sizes, L)``.
-        output_size: Spacial dimensions of the output tensor. Must be a tuple of two ints.
+        output_size: Spatial dimensions of the output tensor. Must be a tuple of two ints.
         kernel_size: The size of the sliding blocks. Must be a tuple of two ints.
         stride: The stride of the sliding blocks in the input dimension
             (can be an int or a tuple of two ints).
@@ -95,7 +95,9 @@ def fold(
             and isinstance(output_size[1], int)
         ):
             L = 1
-            for n, (o, k) in enumerate(zip(output_size, kernel_size)):
+            for n, (o, k) in enumerate(
+                zip(output_size, kernel_size, strict=True)
+            ):
                 L_d = int(
                     (int(o) + 2 * padding[n] - dilation[n] * (int(k) - 1) - 1)
                     // stride[n]

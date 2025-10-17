@@ -14,9 +14,9 @@
 from pathlib import Path
 from sys.ffi import (
     _find_dylib,
+    _get_dylib_function,
     _Global,
     _OwnedDLHandle,
-    _get_dylib_function,
     c_int,
 )
 
@@ -28,22 +28,19 @@ alias MPI_LIBRARY_PATHS = List[Path](
     "nvshmem_bootstrap_mpi.so.3.0.0",
     "nvshmem_bootstrap_mpi.so.3",
     "nvshmem_bootstrap_mpi.so",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/nvshmem_bootstrap_mpi.so.3.0.0",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/nvshmem_bootstrap_mpi.so.3",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/nvshmem_bootstrap_mpi.so",
 )
 
-alias MPI_LIBRARY = _Global["MPI_LIBRARY", _OwnedDLHandle, _init_mpi_dylib]
+alias MPI_LIBRARY = _Global["MPI_LIBRARY", _init_mpi_dylib]
 
 
 fn _init_mpi_dylib() -> _OwnedDLHandle:
-    return _find_dylib["MPI"](MPI_LIBRARY_PATHS)
+    return _find_dylib["MPI"](materialize[MPI_LIBRARY_PATHS]())
 
 
 @always_inline
 fn _get_mpi_function[
     func_name: StaticString, result_type: AnyTrivialRegType
-]() -> result_type:
+]() raises -> result_type:
     return _get_dylib_function[
         MPI_LIBRARY(),
         func_name,
@@ -62,25 +59,29 @@ alias MPIComm = UnsafePointer[OpaquePointer]
 # ===-----------------------------------------------------------------------===#
 
 
-fn MPI_Init(argc: Int, argv: VariadicList[StaticString]) -> c_int:
+fn MPI_Init(mut argc: Int, mut argv: VariadicList[StaticString]) raises:
     """Initialize MPI."""
-    return _get_mpi_function[
+    var result = _get_mpi_function[
         "MPI_Init",
         fn (
             UnsafePointer[Int], UnsafePointer[VariadicList[StaticString]]
         ) -> c_int,
     ]()(UnsafePointer(to=argc), UnsafePointer(to=argv))
+    if result != 0:
+        raise Error("failed to initialize MPI with error code:", result)
 
 
-fn MPI_Finalize() -> c_int:
+fn MPI_Finalize() raises:
     """Finalize MPI."""
-    return _get_mpi_function[
+    var result = _get_mpi_function[
         "MPI_Finalize",
         fn () -> c_int,
     ]()()
+    if result != 0:
+        raise Error("failed to finalize MPI with error code:", result)
 
 
-fn MPI_Comm_rank(comm: MPIComm, rank: UnsafePointer[c_int]) -> c_int:
+fn MPI_Comm_rank(comm: MPIComm, rank: UnsafePointer[c_int]) raises -> c_int:
     """Get the rank of the current process in the communicator."""
     return _get_mpi_function[
         "MPI_Comm_rank",
@@ -88,7 +89,7 @@ fn MPI_Comm_rank(comm: MPIComm, rank: UnsafePointer[c_int]) -> c_int:
     ]()(comm, rank)
 
 
-fn MPI_Comm_size(comm: MPIComm, size: UnsafePointer[c_int]) -> c_int:
+fn MPI_Comm_size(comm: MPIComm, size: UnsafePointer[c_int]) raises -> c_int:
     """Get the size of the communicator."""
     return _get_mpi_function[
         "MPI_Comm_size",
@@ -96,7 +97,7 @@ fn MPI_Comm_size(comm: MPIComm, size: UnsafePointer[c_int]) -> c_int:
     ]()(comm, size)
 
 
-fn get_mpi_comm_world() -> MPIComm:
+fn get_mpi_comm_world() raises -> MPIComm:
     """Get the MPI_COMM_WORLD communicator."""
     var handle = MPI_LIBRARY.get_or_create_ptr()[].handle()
     var comm_world_ptr = handle.get_symbol[OpaquePointer](

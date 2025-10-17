@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import isqrt
+from math import rsqrt
 from random import random_ui64, seed
 from sys import env_get_dtype, env_get_int
 
@@ -83,7 +83,9 @@ def execute_kv_cache_ragged_flash_attention[
     var num_blocks = batch_size * 2
     alias CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
-        KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
+        KVCacheStaticParams(
+            num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
+        ),
     ]
 
     debug_assert(
@@ -157,6 +159,7 @@ def execute_kv_cache_ragged_flash_attention[
         IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
     )
     var output_device = output_host.copy_to_device(ctx)
+    var output_device_tensor = output_device.to_layout_tensor()
 
     # initialize our KVCache
     kv_block_host = HostNDBuffer[dtype, 6](
@@ -208,7 +211,7 @@ def execute_kv_cache_ragged_flash_attention[
         q_device,
         k_cache_device,
         v_cache_device,
-        output_device,
+        output_device_tensor,
         dummy_mask,
         input_row_offsets_device,
     )
@@ -218,8 +221,9 @@ def execute_kv_cache_ragged_flash_attention[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             flash_attention[ragged=True](
-                output_device.tensor,
-                q_device.tensor,
+                # TODO: move to_layout_tensor here once unified closures are supported.
+                output_device_tensor.as_any_origin(),
+                q_device.to_layout_tensor(),
                 k_cache_device,
                 v_cache_device,
                 CausalMask(),
@@ -230,7 +234,7 @@ def execute_kv_cache_ragged_flash_attention[
                         DType.uint32, 1
                     ].create_unknown(),
                 ](input_row_offsets_device.tensor),
-                isqrt(Float32(head_dim)),
+                rsqrt(Float32(head_dim)),
                 ctx,
             )
 

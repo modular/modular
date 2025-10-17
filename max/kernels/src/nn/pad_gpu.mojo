@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from gpu import block_dim, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, DeviceBuffer
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 
@@ -46,7 +46,7 @@ fn _fill_strides_indexlist[
     rank: Int,
 ](
     input_shape: IndexList[rank],
-    strides: LayoutTensor[mut=True, DType.index, Layout(rank)],
+    strides: LayoutTensor[mut=True, DType.int, Layout(rank)],
 ):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
@@ -75,8 +75,10 @@ fn _fill_gpu[
     ctx: DeviceContext,
 ) raises:
     alias block_dim = 256
-    ctx.enqueue_function[_fill_gpu_kernel[dtype]](
-        ptr,
+    alias kernel = _fill_gpu_kernel[dtype]
+    var ptr_device = DeviceBuffer[dtype](ctx, ptr, count, owning=False)
+    ctx.enqueue_function_checked[kernel, kernel](
+        ptr_device,
         value,
         count,
         grid_dim=((count + block_dim) // block_dim),
@@ -93,9 +95,12 @@ fn _memcpy_gpu[
     ctx: DeviceContext,
 ) raises:
     alias block_dim = 256
-    ctx.enqueue_function[_copy_gpu_kernel[dtype]](
-        dst,
-        src,
+    alias kernel = _copy_gpu_kernel[dtype]
+    var dst_device = DeviceBuffer[dtype](ctx, dst, count, owning=False)
+    var src_device = DeviceBuffer[dtype](ctx, src, count, owning=False)
+    ctx.enqueue_function_checked[kernel, kernel](
+        dst_device,
+        src_device,
         count,
         grid_dim=((count + block_dim) // block_dim),
         block_dim=(block_dim),
@@ -104,7 +109,7 @@ fn _memcpy_gpu[
 
 @register_passable("trivial")
 struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
-    Copyable & Movable
+    ImplicitlyCopyable & Movable
 ):
     var pre_pad: Int
     var post_pad: Int
@@ -202,8 +207,8 @@ fn _pad_constant_axis[
     input: UnsafePointer[Scalar[dtype]],
     constant: Scalar[dtype],
     output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.index]],
-    input_strides: UnsafePointer[Scalar[DType.index]],
+    output_strides: UnsafePointer[Scalar[DType.int]],
+    input_strides: UnsafePointer[Scalar[DType.int]],
     var axis_params: StaticTuple[_AxisParams[rank, dtype, paddings_type], rank],
     ctx: DeviceContext,
 ) raises:
@@ -245,8 +250,8 @@ fn _pad_constant_impl[
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: Scalar[dtype],
     output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.index]],
-    input_strides: UnsafePointer[Scalar[DType.index]],
+    output_strides: UnsafePointer[Scalar[DType.int]],
+    input_strides: UnsafePointer[Scalar[DType.int]],
     ctx: DeviceContext,
 ) raises:
     """
@@ -338,8 +343,8 @@ fn pad_constant[
         input: UnsafePointer[Scalar[dtype]],
         paddings: UnsafePointer[Scalar[padding_type]],
         output_shape: IndexList[rank],
-        output_strides: UnsafePointer[Scalar[DType.index]],
-        input_strides: UnsafePointer[Scalar[DType.index]],
+        output_strides: UnsafePointer[Scalar[DType.int]],
+        input_strides: UnsafePointer[Scalar[DType.int]],
         ctx: DeviceContext,
     ) raises:
         return _pad_constant_impl[rank, dtype](
@@ -354,10 +359,10 @@ fn pad_constant[
         )
 
     var input_strides_buf = LayoutTensor[
-        DType.index, Layout(rank), MutableAnyOrigin
+        DType.int, Layout(rank), MutableAnyOrigin
     ].stack_allocation()
     var output_strides_buf = LayoutTensor[
-        DType.index, Layout(rank), MutableAnyOrigin
+        DType.int, Layout(rank), MutableAnyOrigin
     ].stack_allocation()
     _fill_strides_indexlist[rank](input_shape, input_strides_buf)
     _fill_strides_indexlist[rank](output_shape, output_strides_buf)
@@ -377,7 +382,7 @@ fn get_padding_output_shape[
     rank: Int
 ](
     input_shape: IndexList[rank],
-    paddings: LayoutTensor[DType.index, Layout(2 * rank)],
+    paddings: LayoutTensor[DType.int, Layout(2 * rank)],
 ) -> IndexList[rank]:
     var output_shape = IndexList[rank]()
     for i in range(rank):

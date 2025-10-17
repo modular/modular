@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from python import PythonObject
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def test_default():
@@ -42,9 +42,6 @@ def test_bool_none():
 struct MyTrue(ImplicitlyBoolable):
     fn __bool__(self) -> Bool:
         return True
-
-    fn __as_bool__(self) -> Bool:
-        return self.__bool__()
 
 
 fn takes_bool(cond: Bool) -> Bool:
@@ -150,13 +147,4 @@ def test_float_conversion():
 
 
 def main():
-    test_default()
-    test_min_max()
-    test_bool_cast_to_int()
-    test_bool_none()
-    test_convert_from_implicitly_boolable()
-    test_bool_representation()
-    test_bitwise()
-    test_indexer()
-    test_comparisons()
-    test_float_conversion()
+    TestSuite.discover_tests[__functions_in_module()]().run()

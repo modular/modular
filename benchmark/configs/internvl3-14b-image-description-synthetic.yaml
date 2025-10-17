@@ -1,0 +1,26 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# max serve --model OpenGVLab/InternVL3-14B-Instruct --trust-remote-code
+# max benchmark --config-file internvl3-14b-image-description-synthetic.yaml
+benchmark_config:
+  model: OpenGVLab/InternVL3-14B-Instruct
+  backend: modular
+  endpoint: /v1/chat/completions
+  dataset_name: random
+  num_prompts: 1000
+  random_input_len: 40
+  random_output_len: 150
+  random_image_count: 1
+  random_image_size: 512,512
+  random_coefficient_of_variation: 0.1,0.6

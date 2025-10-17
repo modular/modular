@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 @fieldwise_init
@@ -21,7 +21,7 @@ struct Foo[z: Int]:
 
 @fieldwise_init
 struct Bar[x: Int, //, y: Int, *, foo: Foo[x], bar: Foo[y] = Foo[y]()](
-    Intable, Copyable
+    ImplicitlyCopyable, Intable
 ):
     fn __int__(self) -> Int:
         return self.x + self.y + self.foo.z + self.bar.z
@@ -38,7 +38,7 @@ def test_some_arg():
 
 
 fn takes_some_param[x: Some[Intable]]() -> Int:
-    return x.__int__()
+    return materialize[x]().__int__()
 
 
 def test_some_param():
@@ -48,7 +48,7 @@ def test_some_param():
 
 
 fn takes_multiple_traits(x: Some[Intable & Copyable]) -> __type_of(x):
-    return x
+    return x.copy()
 
 
 def test_some_return():
@@ -66,7 +66,4 @@ def test_closure():
 
 
 def main():
-    test_some_arg()
-    test_some_param()
-    test_some_return()
-    test_closure()
+    TestSuite.discover_tests[__functions_in_module()]().run()

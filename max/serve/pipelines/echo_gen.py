@@ -13,7 +13,7 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Union, cast
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -54,7 +54,7 @@ class EchoPipelineTokenizer(
 
     async def encode(
         self,
-        prompt: Union[str, Sequence[int]],
+        prompt: str | Sequence[int],
         add_special_tokens: bool = False,
     ) -> npt.NDArray[np.integer[Any]]:
         """Encode the prompt into token IDs.
@@ -92,7 +92,7 @@ class EchoPipelineTokenizer(
         """Creates a new TextContext for echo generation."""
 
         # Extract prompt from request
-        prompt: Union[str, Sequence[int]]
+        prompt: str | Sequence[int]
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages is not None:
@@ -140,7 +140,7 @@ class EchoTokenGenerator(
 
     def __init__(self) -> None:
         # Track the echo index for each request (0-based, counts how many tokens we've echoed)
-        self._echo_indices: dict[str, int] = {}
+        self._echo_indices: dict[RequestID, int] = {}
 
     def execute(
         self,
@@ -166,10 +166,21 @@ class EchoTokenGenerator(
                 prompt_tokens = context.prompt_tokens
 
                 # Check if we have more tokens to echo and haven't reached max length
-                if (
-                    echo_idx < len(prompt_tokens)
-                    and context.current_length < context.max_length
-                ):
+                if echo_idx >= len(prompt_tokens):
+                    responses[
+                        request_id
+                    ].final_status = GenerationStatus.END_OF_SEQUENCE
+                    if request_id in self._echo_indices:
+                        del self._echo_indices[request_id]
+                    break
+                elif context.current_length >= context.max_length:
+                    responses[
+                        request_id
+                    ].final_status = GenerationStatus.MAXIMUM_LENGTH
+                    if request_id in self._echo_indices:
+                        del self._echo_indices[request_id]
+                    break
+                else:
                     # Echo the next token in the original order
                     next_token_id = int(prompt_tokens[echo_idx])
 
@@ -181,16 +192,6 @@ class EchoTokenGenerator(
 
                     # Move to the next token
                     self._echo_indices[request_id] += 1
-
-                else:
-                    # Finished echoing all tokens or reached max length
-                    responses[
-                        request_id
-                    ].final_status = GenerationStatus.MAXIMUM_LENGTH
-                    # Clean up the echo index
-                    if request_id in self._echo_indices:
-                        del self._echo_indices[request_id]
-                    break  # No more tokens to process for this request
 
         return responses
 

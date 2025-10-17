@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
+from io.write import Writable, Writer
 from math import align_up, ceildiv
 from sys import (
     has_amd_gpu_accelerator,
@@ -33,36 +34,39 @@ from gpu import (
     thread_idx,
 )
 from gpu import warp_id as get_warp_id
-from gpu.host import DeviceAttribute, DeviceContext, LaunchAttribute
-from gpu.host import get_gpu_target, DeviceBuffer
+from gpu.host import (
+    DeviceAttribute,
+    DeviceBuffer,
+    DeviceContext,
+    LaunchAttribute,
+    get_gpu_target,
+)
 from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
 from gpu.memory import AddressSpace, load
+
+# layout imports
+from layout import (
+    UNKNOWN_VALUE,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+)
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
 from memory import stack_allocation
 
 from utils import IndexList
 from utils.index import Index
-from io.write import Writable, Writer
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
-from .matmul_gpu import matmul_kernel_naive
+from .matmul.gpu import matmul_kernel_naive
 from .utils import GemmShape, elementwise_epilogue_type
-
-# layout imports
-from layout import (
-    LayoutTensor,
-    Layout,
-    UNKNOWN_VALUE,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.tensor_builder import LayoutTensorBuild as tb
 
 
 @fieldwise_init
-struct GEMVAlgorithm(Copyable, Movable, Stringable, Writable):
+struct GEMVAlgorithm(ImplicitlyCopyable, Movable, Stringable, Writable):
     var _value: Int
 
     alias GEMV_KERNEL = Self(0)
@@ -133,9 +137,9 @@ fn gemv_kernel[
     k: Int,
 ):
     var tid = global_idx.x
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
 
-    if warp_id >= m:
+    if warp_id >= UInt(m):
         return
 
     var accum = Scalar[s_type](0)
@@ -145,7 +149,7 @@ fn gemv_kernel[
         var idx = i * WARP_SIZE + lane_id()
         if idx < k:
             accum += (
-                a.load(warp_id * k + idx).cast[s_type]()
+                a.load(warp_id * UInt(k) + UInt(idx)).cast[s_type]()
                 * b.load(idx).cast[s_type]()
             )
 
@@ -189,7 +193,7 @@ fn gemv_kernel_vector[
     k: Int,
 ):
     var tid = global_idx.x
-    var warp_id = Int(warp.broadcast(tid // WARP_SIZE))
+    var warp_id = Int(warp.broadcast(tid // UInt(WARP_SIZE)))
     alias step = WARP_SIZE * simd_width
 
     var idx = lane_id() * simd_width
@@ -267,7 +271,7 @@ fn gemv_split_k[
     """GEMV with tiling in K dimension.
     Assuming the B (weight) matrix is transposed i.e. row major N x K, this kernel
     implements a vector (1 x K) times a matrix (N x K).
-    The impl can actually handle M > 1 but it's only optimal fro tiny M. We use
+    The impl can actually handle M > 1 but it's only optimal for tiny M. We use
     it for M = 1 only.
     """
     # tile_m represents how many rows each thread will process of the output activation matrix
@@ -279,11 +283,25 @@ fn gemv_split_k[
     # which rows of the weight matrix each thread will process
     var tile_id_n = block_idx.y * tile_n
     var tid = thread_idx.x
-    var tile_w = tb[b_type]().row_major[tile_n, simd_width]().local().alloc()
+    var tile_w = LayoutTensor[
+        b_type,
+        Layout.row_major(tile_n, simd_width),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
     # these are the partial accumlations for each thread this a matrix of values
     # since each thread will process a tile_m x tile_n partials of the output vector
-    var acc = tb[s_type]().row_major[tile_m, tile_n]().local().alloc().fill(0)
-    var output_idx = tile_id_m * n + tile_id_n
+    var acc = (
+        LayoutTensor[
+            s_type,
+            Layout.row_major(tile_m, tile_n),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
+    var output_idx = tile_id_m * UInt(n) + tile_id_n
     var iteration = 0
     alias WeightVecType = SIMD[b_type, simd_width]
     # Each thread sums local data in K.
@@ -299,7 +317,7 @@ fn gemv_split_k[
             # of rows in the weight matrix.
             @parameter
             if check_bounds:
-                if i + tile_id_n >= n:
+                if i + tile_id_n >= UInt(n):
                     continue
             var b_vec = weight_tile.vectorize[1, simd_width]()[i, thread_idx.x]
             tile_w.store[simd_width](i, 0, rebind[WeightVecType](b_vec))
@@ -313,7 +331,7 @@ fn gemv_split_k[
             # tile_m is 1.
             @parameter
             if check_bounds:
-                if i + tile_id_m >= m:
+                if i + tile_id_m >= UInt(m):
                     continue
             var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
 
@@ -336,14 +354,14 @@ fn gemv_split_k[
         iteration += 1
 
     # Warps are arranged along K.
-    alias k_warp_num = num_threads // WARP_SIZE
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
-    var shmem = (
-        tb[s_type]()
-        .row_major[1, tile_m * tile_n * k_warp_num]()
-        .shared()
-        .alloc()
-    )
+    alias k_warp_num = num_threads // UInt(WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var shmem = LayoutTensor[
+        s_type,
+        Layout.row_major(1, tile_m * tile_n * k_warp_num),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Each warp sums across its threads and stages results in shared memory.
     # Shared memory data is row mojor (num_warps, tile_m, tile_n) stored in 1D.
@@ -372,14 +390,14 @@ fn gemv_split_k[
         if elementwise_lambda_fn:
             alias elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
-                Index(0, output_idx + mid * n + nid), val.cast[c_type]()
+                Index(0, output_idx + mid * UInt(n) + nid), val.cast[c_type]()
             )
         else:
-            var idx = output_idx + mid * n + nid
+            var idx = output_idx + mid * UInt(n) + nid
 
             @parameter
             if check_bounds:
-                if idx >= n:
+                if idx >= UInt(n):
                     continue
             output[0, idx] = val.cast[c_type]()
 
@@ -401,12 +419,12 @@ fn gevm_kernel[
     n: Int,
     k: Int,
 ):
-    var warps_per_block = block_dim.x // WARP_SIZE
+    var warps_per_block = block_dim.x // UInt(WARP_SIZE)
     var warp_id = get_warp_id()
     var accum = Scalar[s_type]()
-    var col = block_idx.x * WARP_SIZE + lane_id()
+    var col = block_idx.x * UInt(WARP_SIZE) + lane_id()
     var tid = global_idx.x
-    var global_warp_id = tid // WARP_SIZE
+    var global_warp_id = tid // UInt(WARP_SIZE)
 
     var x_shared = stack_allocation[
         tile_size,
@@ -418,10 +436,10 @@ fn gevm_kernel[
     for i in range(ceildiv(UInt(k), UInt(warps_per_block))):
         var row = i * warps_per_block + warp_id
         var lhs = a.load(row)
-        var rhs = b.load(row * n + col)
+        var rhs = b.load(row * UInt(n) + col)
         accum += lhs.cast[s_type]() * rhs.cast[s_type]()
 
-    x_shared[lane_id() * WARP_SIZE + warp_id] = accum
+    x_shared[lane_id() * UInt(WARP_SIZE) + warp_id] = accum
     barrier()
 
     var total = x_shared.load(thread_idx.x).cast[s_type]()
@@ -553,32 +571,28 @@ fn gemv_gpu_dispatch[
                 )
             else:
                 # runtime transpose since layout_tensor.transpose requires static shape
-                alias b_alignment = b.alignment
-                var aligned_b = b.data.static_alignment_cast[b_alignment]()
+                var aligned_b = b.data
 
                 alias has_K = a.shape.has_value[1]()
                 alias static_K = a.shape.get[1]() if has_K else UNKNOWN_VALUE
                 alias b_layout_template = Layout.row_major(static_N, static_K)
 
-                var b_runtime_shape = RuntimeTuple[
-                    b_layout_template.shape, element_type = DType.int32
-                ](n, k)
+                var b_runtime_shape = RuntimeTuple[b_layout_template.shape](
+                    n, k
+                )
 
-                var b_runtime_stride = RuntimeTuple[
-                    b_layout_template.stride, element_type = DType.int32
-                ](k, 1)
+                var b_runtime_stride = RuntimeTuple[b_layout_template.stride](
+                    k, 1
+                )
 
-                var b_runtime_layout = RuntimeLayout[
-                    b_layout_template,
-                    element_type = DType.int32,
-                    linear_idx_type = DType.int32,
-                ](b_runtime_shape, b_runtime_stride)
+                var b_runtime_layout = RuntimeLayout[b_layout_template](
+                    b_runtime_shape, b_runtime_stride
+                )
 
                 var b_tensor_n_major = LayoutTensor[
                     b.type,
                     b_layout_template,
                     MutableAnyOrigin,
-                    alignment = aligned_b.alignment,
                     address_space = aligned_b.address_space,
                 ](aligned_b, b_runtime_layout)
 
@@ -606,13 +620,13 @@ fn gemv_gpu_dispatch[
                         b.type,
                         c_tensor.layout,
                         a_tensor.layout,
-                        b_tensor_n_major.layout,
+                        b_layout_template,
                         simd_width = UInt(simd_width),
                         reduction_method = warp.ReductionMethod.WARP,
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
-                    ctx.enqueue_function[kernel](
+                    ctx.enqueue_function_checked[kernel, kernel](
                         c_tensor,
                         a_tensor,
                         b_tensor_n_major,
@@ -621,7 +635,7 @@ fn gemv_gpu_dispatch[
                         k,
                         grid_dim=ceildiv(m, block_dim // WARP_SIZE),
                         block_dim=block_dim,
-                        attributes=launch_attributes,
+                        attributes=launch_attributes^,
                     )
                 else:
                     alias kernel = gemv_kernel_vector[
@@ -636,7 +650,7 @@ fn gemv_gpu_dispatch[
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
-                    ctx.enqueue_function[kernel](
+                    ctx.enqueue_function_checked[kernel, kernel](
                         c_tensor,
                         a_tensor,
                         b_tensor_n_major,
@@ -772,6 +786,7 @@ fn log_shape[
         "_" if has_mode_2 else "",
         mode_2,
         ")",
+        sep="",
     )
 
 
@@ -881,12 +896,12 @@ fn gemv[
     @always_inline
     @parameter
     fn input_fn[
-        type: DType, width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[type, width]:
+        dtype: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[dtype, width]:
         return (
-            a_buf.load[width=width](Index(idx[0], idx[1])).cast[type]()
-            * b_buf.load[width=width](idx[1]).cast[type]()
-        ).cast[type]()
+            a_buf.load[width=width](Index(idx[0], idx[1])).cast[dtype]()
+            * b_buf.load[width=width](idx[1]).cast[dtype]()
+        ).cast[dtype]()
 
     @always_inline
     @parameter
@@ -926,11 +941,11 @@ fn naive_gemv[
     c_size: Dim,
     a_shape: DimList,
     b_size: Dim,
-    type: DType,
+    dtype: DType,
 ](
-    c_buf: NDBuffer[mut=True, type, 1, _, c_size],
-    a_buf: NDBuffer[type, 2, _, a_shape],
-    b_buf: NDBuffer[type, 1, _, b_size],
+    c_buf: NDBuffer[mut=True, dtype, 1, _, c_size],
+    a_buf: NDBuffer[dtype, 2, _, a_shape],
+    b_buf: NDBuffer[dtype, 1, _, b_size],
 ):
     var M = a_buf.dim[0]()
     var K = a_buf.dim[1]()

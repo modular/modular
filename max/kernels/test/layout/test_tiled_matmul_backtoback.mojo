@@ -84,9 +84,9 @@ fn getKr[mode: IntTuple]() -> Int:
 fn matmul_ukern[
     elt: DType, width: Int, mr: Int, nr: Int, kr: Int, kf: Int
 ](
-    C: UnsafePointer[Scalar[elt], alignment=64],
+    C: UnsafePointer[Scalar[elt]],
     A: UnsafePointer[Scalar[elt]],
-    B: UnsafePointer[Scalar[elt], alignment=64],
+    B: UnsafePointer[Scalar[elt]],
     inc: Bool,
 ):
     alias Align: Int = size_of[elt]() * width
@@ -117,7 +117,7 @@ fn matmul_ukern[
     # so that A can stay in the L1-cache, while we stream B through it.
 
     var Ao: UnsafePointer[Scalar[elt]] = A
-    var Bo: UnsafePointer[Scalar[elt], alignment=64] = B
+    var Bo: UnsafePointer[Scalar[elt]] = B
     # TODO: static assert that kf%Astride == 0
     for _ in range(Astride):
         # Aecause we repeatedly call `matmul_ukern` with the same
@@ -281,7 +281,7 @@ fn matmul[
     constrained[size(layoutB.stride[1].tuple()[1]) == WNr * Kc]()
     constrained[size(layoutB.stride[1].tuple()[2]) == Nc * K]()
 
-    alias Ptr = UnsafePointer[Scalar[elt], alignment=64]
+    alias Ptr = UnsafePointer[Scalar[elt]]
     var pc: UnsafePointer[Scalar[elt]] = C.ptr
     var pa: UnsafePointer[Scalar[elt]] = A.ptr
     # TODO: nontemporal prefetches on the microkernel slices of `B`
@@ -290,13 +290,13 @@ fn matmul[
     #       the L1, suffering L2->register latency for each load.
     # NOTE: Read comments within the loop from the inside out.
     for _ in range(M // Mc):
-        var pb: UnsafePointer[Scalar[elt], alignment=64] = B.ptr
+        var pb: UnsafePointer[Scalar[elt]] = B.ptr
         var pak: __type_of(pb) = pa
         for _ in range(N // Nc):
-            var pck: UnsafePointer[Scalar[elt], alignment=64] = pc
+            var pck: UnsafePointer[Scalar[elt]] = pc
             pak = pa
             for kc in range(K // Kc):
-                var pbk: UnsafePointer[Scalar[elt], alignment=64] = pb
+                var pbk: UnsafePointer[Scalar[elt]] = pb
                 pck = pc
                 for _ in range(Mc // Mr):  # mr
                     pbk = pb
@@ -316,7 +316,7 @@ fn alloc_tensor[
     elt: DType, layout: Layout
 ]() -> LayoutTensor[elt, layout, MutableAnyOrigin]:
     return LayoutTensor[elt, layout, MutableAnyOrigin](
-        UnsafePointer[Scalar[elt], alignment=64].alloc(layout.size())
+        UnsafePointer[Scalar[elt]].alloc(layout.size(), alignment=64)
     )
 
 
@@ -326,7 +326,7 @@ fn alloc_tensor[
     elt, layout, MutableAnyOrigin
 ]:
     return LayoutTensor[elt, layout, MutableAnyOrigin](
-        UnsafePointer[Scalar[elt], alignment=64].alloc(rtlayout.size()),
+        UnsafePointer[Scalar[elt]].alloc(rtlayout.size(), alignment=64),
         rtlayout,
     )
 
@@ -639,18 +639,18 @@ fn matmulb2b[
     var pa: UnsafePointer[Scalar[elt]] = A.ptr
     var pd: UnsafePointer[Scalar[elt]] = D.ptr
     # Should we support heap-allocating and passing it in?
-    var AB: UnsafePointer[Scalar[elt], alignment=64] = stack_allocation[
+    var AB: UnsafePointer[Scalar[elt]] = stack_allocation[
         Mc * Nc, elt, alignment=64
     ]()
-    # TODO: prefetches, as descried in nest
+    # TODO: prefetches, as described in nest
     # NOTE: Read comments within the loop from the inside out.
     #       I.e., read following a post-order depth first traversal of the
     #       loop tree.
     for _ in range(M // Mc):  # mc
-        var pb: UnsafePointer[Scalar[elt], alignment=64] = B.ptr
-        var pc: UnsafePointer[Scalar[elt], alignment=64] = C.ptr
-        var pak: UnsafePointer[Scalar[elt], alignment=64] = pa
-        var pdk: UnsafePointer[Scalar[elt], alignment=64] = pd
+        var pb: UnsafePointer[Scalar[elt]] = B.ptr
+        var pc: UnsafePointer[Scalar[elt]] = C.ptr
+        var pak: UnsafePointer[Scalar[elt]] = pa
+        var pdk: UnsafePointer[Scalar[elt]] = pd
         for lc in range(L // Nc):  # lc, reduction for (AB)*C
             pak = pa
             for kc in range(
@@ -664,14 +664,14 @@ fn matmulb2b[
                 #
                 # The use of `prefetchnta` on `A` helps more at this level, as
                 # `Mc x Kc` could be a very large chunk. Because `A[Mc, Kc]` is
-                # replaced, it is not actually held/re-used at the L3 cache level.
+                # replaced, it is not actually held/reused at the L3 cache level.
                 # Instead, we must stream through it.
                 # Because it is also held in the L1 cache, this is a prime candidate
                 # for `prefetchnta`, to load slices to the L1 where they may be
                 # held and reused, without polluting any of the other caches, where
-                # the memory is not re-used.
-                var pabk: UnsafePointer[Scalar[elt], alignment=64] = AB
-                var pbk: UnsafePointer[Scalar[elt], alignment=64] = pb
+                # the memory is not reused.
+                var pabk: UnsafePointer[Scalar[elt]] = AB
+                var pbk: UnsafePointer[Scalar[elt]] = pb
                 for _ in range(Mc // Mr):  # mr               - hold in l2 cache
                     # Comment #1
                     # Size of slices accessed per iteration:
@@ -732,7 +732,7 @@ fn matmulb2b[
                 # However, because of the different loop order for this
                 # nest, we hold `AB` in the L3 cache, while we streamed `A`.
                 # `AB` was also held in the `L3` cache in th previous subloop,
-                # allowing for re-use of the block across these subloops.
+                # allowing for reuse of the block across these subloops.
                 #
                 # Instead, we stream through `D` and `C`.
                 # `C` is held in the l2 cache, thus we may want to prefetch it
@@ -749,8 +749,8 @@ fn matmulb2b[
                 # We might be able to load `D` with `prefetchnta` when updating it,
                 # and using a streaming store to write? Although, this would
                 # necessitate fences.
-                var pabk: UnsafePointer[Scalar[elt], alignment=64] = AB
-                var pck: UnsafePointer[Scalar[elt], alignment=64] = pc
+                var pabk: UnsafePointer[Scalar[elt]] = AB
+                var pck: UnsafePointer[Scalar[elt]] = pc
                 for _ in range(
                     Mc // Mr
                 ):  # mr                - hold in l2 cache

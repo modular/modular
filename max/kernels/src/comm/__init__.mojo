@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The `gpu.comm` package provides communication primitives for GPUs.
+"""Provides communication primitives for GPUs.
 
 This package includes functions for sending and receiving data between GPUs,
 as well as for synchronizing threads across GPUs.

@@ -13,7 +13,7 @@
 
 from gpu.host import DeviceContext, FuncAttribute
 from layout import Layout
-from linalg._multistage_gemm_gpu import multistage_gemm_kernel
+from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import MatmulKernels
 
 
@@ -60,7 +60,7 @@ fn multistage_gemm_simple[
     )
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         multistage_gemm_simple[
             1024,

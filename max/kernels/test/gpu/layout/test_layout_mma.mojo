@@ -16,12 +16,7 @@ from os import abort
 from random import random_float64
 from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
-from gpu import (
-    WARP_SIZE,
-    block_dim,
-    global_idx,
-    grid_dim,
-)
+from gpu import WARP_SIZE, block_dim, global_idx, grid_dim
 from gpu.host import DeviceContext
 from layout import *
 from layout._utils import ManagedLayoutTensor
@@ -128,9 +123,10 @@ fn test_layout_mma[
             mat_c_tensor[i, j] = val.cast[out_type]()
             mat_c_n_tensor[i, j] = mat_c_tensor[i, j]
 
-    ctx.enqueue_function[
-        mma_layout_tc[out_type, in_type, shape, layout_c, layout_a, layout_b]
-    ](
+    alias kernel = mma_layout_tc[
+        out_type, in_type, shape, layout_c, layout_a, layout_b
+    ]
+    ctx.enqueue_function_checked[kernel, kernel](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),
@@ -144,7 +140,7 @@ fn test_layout_mma[
     alias naive_func = matmul_naive[
         out_type, in_type, layout_c, layout_a, layout_b
     ]
-    ctx.enqueue_function[naive_func](
+    ctx.enqueue_function_checked[kernel, kernel](
         mat_c_n.device_tensor(),
         mat_a_n.device_tensor(),
         mat_b_n.device_tensor(),

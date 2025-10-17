@@ -21,7 +21,7 @@ from layout._utils import ManagedLayoutTensor
 
 @fieldwise_init
 @register_passable
-struct Dim(Copyable, Movable, Stringable):
+struct Dim(ImplicitlyCopyable, Movable, Stringable):
     var m: Int
     var n: Int
     var k: Int
@@ -39,7 +39,7 @@ struct Dim(Copyable, Movable, Stringable):
 trait TiledOp:
     @staticmethod
     fn op(
-        mut dst: LayoutTensor,
+        dst: LayoutTensor[mut=True, *_, **_],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
@@ -50,7 +50,7 @@ trait TiledOp:
 struct MMA(TiledOp):
     @staticmethod
     fn op(
-        mut dst: LayoutTensor,
+        dst: LayoutTensor[mut=True, *_, **_],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
@@ -72,7 +72,7 @@ struct MMA(TiledOp):
 struct MMA_Vec(TiledOp):
     @staticmethod
     fn op(
-        mut dst: LayoutTensor,
+        dst: LayoutTensor[mut=True, *_, **_],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
@@ -102,7 +102,9 @@ struct MMA_Vec(TiledOp):
 
 fn gemm_l2_cache[
     mma: TiledOp, L1: Dim, L2: Dim
-](dst: LayoutTensor, lhs: LayoutTensor, rhs: LayoutTensor) raises:
+](
+    dst: LayoutTensor[mut=True, *_, **_], lhs: LayoutTensor, rhs: LayoutTensor
+) raises:
     alias M = dst.shape[0]()
     alias N = dst.shape[1]()
     alias K = lhs.shape[1]()
@@ -155,7 +157,7 @@ fn gemm_l2_cache[
 
 fn gemm_l1_cache[
     mma: TiledOp, L1: Dim, L2: Dim
-](dst: LayoutTensor, lhs: LayoutTensor, rhs: LayoutTensor):
+](dst: LayoutTensor[mut=True, *_, **_], lhs: LayoutTensor, rhs: LayoutTensor):
     alias M = dst.shape[0]()
     alias N = dst.shape[1]()
     alias K = lhs.shape[1]()
@@ -258,7 +260,7 @@ fn test_tiled_matmul[use_l1_cache: Bool]() raises:
     _ = dst^
 
 
-fn main() raises:
+def main():
     # CHECK: === test_tiled_matmul_l1_cache
     # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
     # CHECK: 2912.0   3004.0   3096.0   3188.0   3280.0   3372.0   3464.0   3556.0

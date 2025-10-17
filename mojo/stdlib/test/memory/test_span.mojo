@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from testing import TestSuite
 from testing import assert_equal, assert_raises, assert_true
 
 
@@ -140,8 +141,8 @@ def test_copy_from():
     var s = Span(a)
     var s2 = Span(b)
     s.copy_from(s2[: len(a)])
-    for i in range(len(a)):
-        assert_equal(a[i], b[i])
+    for i, val in enumerate(a):
+        assert_equal(val, b[i])
         assert_equal(s[i], s2[i])
 
 
@@ -183,8 +184,8 @@ def test_fill():
 
     s.fill(2)
 
-    for i in range(len(a)):
-        assert_equal(a[i], 2)
+    for i, val in enumerate(a):
+        assert_equal(val, 2)
         assert_equal(s[i], 2)
 
 
@@ -215,15 +216,6 @@ def test_span_coerce():
 
     takes_span(l)
     takes_span(a)
-
-
-# We don't actually need to call this test
-# but we want to make sure it compiles
-def test_conditional_conformance():
-    var l = [1, 2, 3]
-    var s = Span[Int, alignment=2](l)
-    s.fill(0)
-    _ = s == s
 
 
 def test_swap_elements():
@@ -308,21 +300,21 @@ def test_apply():
         items = List[Scalar[D]](
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
         )
-        twice = items
+        twice = items.copy()
         span = Span(twice)
         span.apply[func = _twice[D]]()
-        for i in range(len(items)):
-            assert_true(span[i] == items[i] * 2)
+        for i, item in enumerate(items):
+            assert_true(span[i] == item * 2)
 
         # twice only even numbers
-        twice = items
+        twice = items.copy()
         span = Span(twice)
-        span.apply[func = _twice[D], where = _where[D]]()
-        for i in range(len(items)):
-            if items[i] % 2 == 0:
-                assert_true(span[i] == items[i] * 2)
+        span.apply[func = _twice[D], cond = _where[D]]()
+        for i, item in enumerate(items):
+            if item % 2 == 0:
+                assert_true(span[i] == item * 2)
             else:
-                assert_true(span[i] == items[i])
+                assert_true(span[i] == item)
 
     _test[DType.uint8]()
     _test[DType.uint16]()
@@ -348,23 +340,15 @@ def test_count_func():
     assert_equal(1, data[:3].count[func=is_2]())
 
 
+def test_unsafe_subspan():
+    var data = Span(List[Int](0, 1, 2, 3, 4))
+
+    var subspan1 = data.unsafe_subspan(offset=0, length=4)
+    assert_equal(List(subspan1), [0, 1, 2, 3])
+
+    var subspan2 = data.unsafe_subspan(offset=1, length=3)
+    assert_equal(List(subspan2), [1, 2, 3])
+
+
 def main():
-    test_span_list_int()
-    test_span_list_str()
-    test_span_array_int()
-    test_span_array_str()
-    test_indexing()
-    test_span_slice()
-    test_equality()
-    test_bool()
-    test_contains()
-    test_fill()
-    test_ref()
-    test_reversed()
-    test_swap_elements()
-    test_merge()
-    test_span_to_string()
-    test_span_repr()
-    test_reverse()
-    test_apply()
-    test_count_func()
+    TestSuite.discover_tests[__functions_in_module()]().run()

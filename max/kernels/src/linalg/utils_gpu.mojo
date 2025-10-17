@@ -13,22 +13,18 @@
 
 from hashlib.hasher import Hasher
 from math import ceildiv
-from sys import (
-    env_get_int,
-    has_nvidia_gpu_accelerator,
-    size_of,
-)
+from sys import env_get_int, has_nvidia_gpu_accelerator, size_of
 from sys.ffi import external_call
 
 from gpu import WARP_SIZE
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext
+from gpu.host.device_context import DeviceBuffer
 from gpu.host.info import A100
 from layout.tensor_core import get_mma_shape
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from gpu.host.device_context import DeviceBuffer
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling
@@ -83,7 +79,7 @@ fn _block_swizzle_by_scale[
     bx = bx + by // grid_dim.data[1] * (grid_dim.data[0] >> scale)
     by = by % grid_dim.data[1]
 
-    return __type_of(block_idx)(Int(bx), Int(by))
+    return {Int(bx), Int(by)}
 
 
 # ===------------------------------------------------------------------===#
@@ -97,7 +93,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](Copyable, Movable, Stringable, Writable):
+](ImplicitlyCopyable, Movable, Stringable, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -166,6 +162,24 @@ struct MatmulConfig[
         self.partitioned_multicast = partitioned_multicast
         self._pdl_level = pdl_level
 
+    fn copy_field(mut self, other: MatmulConfig):
+        self.block_tile_shape = other.block_tile_shape
+        self.warp_tile_shape = other.warp_tile_shape
+        self.mma_shape = other.mma_shape
+        self.num_pipeline_stages = other.num_pipeline_stages
+        self.num_k_partitions = other.num_k_partitions
+        self.k_group_size = other.k_group_size
+        self.num_warp_k_partitions = other.num_warp_k_partitions
+        self.cluster_shape = other.cluster_shape
+        self.num_consumer = other.num_consumer
+        self.partitioned_multicast = other.partitioned_multicast
+        self._pdl_level = other._pdl_level
+
+    fn swapAB(self) -> MatmulConfig[b_type, a_type, c_type, transpose_b]:
+        var new_config = MatmulConfig[b_type, a_type, c_type, transpose_b]()
+        new_config.copy_field(self)
+        return new_config
+
     fn num_warps_m(self) -> UInt:
         return UInt(self.block_tile_shape[0] // self.warp_tile_shape[0])
 
@@ -177,7 +191,7 @@ struct MatmulConfig[
             self.num_warps_m()
             * self.num_warps_n()
             * self.num_warp_k_partitions
-            * WARP_SIZE
+            * UInt(WARP_SIZE)
         )
 
     fn shared_mem_usage(self) -> Int:
@@ -306,7 +320,7 @@ fn _shared_memory_usage[
 @register_passable("trivial")
 struct MatmulKernels[
     a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """Supported matmul kernels.
 
     The configurations are named as: <arch>_<BNxBM>_<stages>.
@@ -399,7 +413,7 @@ fn select_config[
 
     alias opt_list = [_128x128_4, _256x64_4, _256x128_3]
 
-    for bmnk_stage in opt_list:
+    for bmnk_stage in materialize[opt_list]():
         var bm = bmnk_stage[0]
         var bn = bmnk_stage[1]
         var bk = bmnk_stage[2]
@@ -475,7 +489,7 @@ fn create_hilbert_lut(
     """
     var num_blocks = grid_x * grid_y
     # Allocate temporary host buffer.
-    var host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(num_blocks)
+    var host_ptr = UnsafePointer[UInt32].alloc(num_blocks)
 
     # Next power-of-two square dimension enclosing the rectangle.
     var dim_pow2 = 1
@@ -507,7 +521,7 @@ fn create_hilbert_lut(
             s <<= 1
 
         if hx < UInt32(grid_x) and hy < UInt32(grid_y):
-            host_ptr[seen] = Scalar[DType.uint32]((hy << 16) | hx)  # pack (y,x)
+            host_ptr[seen] = UInt32((hy << 16) | hx)  # pack (y,x)
             seen += 1
         d += 1
 
@@ -530,7 +544,7 @@ fn get_hilbert_lut_with_cache(
     ](key_str.unsafe_cstr_ptr(), key_str.byte_length())
 
     if cached_ptr:
-        var device_ptr = cached_ptr.bitcast[Scalar[DType.uint32]]()
+        var device_ptr = cached_ptr.bitcast[UInt32]()
         var num_blocks = grid_x * grid_y
         # the cached buffer stays alive as long as the program runs
         return DeviceBuffer[DType.uint32](
@@ -539,7 +553,7 @@ fn get_hilbert_lut_with_cache(
 
     # not in cache :(
     var buf = create_hilbert_lut(ctx, grid_x, grid_y)
-    var device_ptr = buf._unsafe_ptr()
+    var device_ptr = buf.unsafe_ptr()
     var num_blocks = grid_x * grid_y
 
     # store the device pointer directly in global cache

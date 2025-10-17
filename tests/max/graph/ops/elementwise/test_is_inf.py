@@ -29,12 +29,12 @@ def test_is_inf_returns_bool(
     graph_builder: GraphBuilder, tensor_type: TensorType
 ) -> None:
     with graph_builder(input_types=[tensor_type]) as graph:
-        (x,) = graph.inputs
-        op = is_inf(x)  # type: ignore
+        (x,) = (v.tensor for v in graph.inputs)
+        op = is_inf(x)
 
         # is_inf should always return boolean tensors regardless of input dtype
         expected_type = TensorType(
             dtype=DType.bool, shape=tensor_type.shape, device=tensor_type.device
         )
         assert op.type == expected_type
-        assert op.shape == x.shape  # type: ignore
+        assert op.shape == x.shape

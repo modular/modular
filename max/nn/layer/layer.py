@@ -17,11 +17,11 @@ import difflib
 import threading
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import wraps
 from inspect import signature
 from itertools import islice
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 import numpy as np
 from max.driver import DLPackArray, Tensor
@@ -232,7 +232,7 @@ class Module(Layer, ABC):
         subgraph_input_types: list[Type[Any]] = []
 
         def flatten(t: Any, result: list[Any]) -> None:
-            if isinstance(t, (list, tuple)):
+            if isinstance(t, list | tuple):
                 for item in t:
                     flatten(item, result)
             else:
@@ -263,7 +263,7 @@ class Module(Layer, ABC):
                     weight.name = weight.name.removeprefix(weight_prefix)
 
             result = self(*subgraph_inputs)
-            if isinstance(result, (list, tuple)):
+            if isinstance(result, list | tuple):
                 subgraph.output(*result)
             else:
                 subgraph.output(result)
@@ -366,11 +366,10 @@ class Module(Layer, ABC):
                     f"Unexpected keys in state_dict: {', '.join(sorted(list(unused_keys)))}"
                 )
 
-            msg = (
+            raise ValueError(
                 "load_state_dict() strict=True validation failed. "
                 + "; ".join(parts)
             )
-            raise ValueError(msg)
 
     def state_dict(
         self, auto_initialize: bool = True
@@ -455,7 +454,10 @@ def _array_from_weight_loader(
         # Store the original shape and dtype of the weight (used in layers like
         # GPTLinear).
         weight.original_dtype_and_shape = (data.dtype, data.shape)
-        data.data = Tensor.from_dlpack(data.data).view(DType.uint8)
+        data.data = new_data = Tensor.from_dlpack(data.data).view(DType.uint8)
+        data.dtype = DType.uint8
+        data.shape = Shape(new_data.shape)
+        weight._shape = Shape(new_data.shape)
 
     if weight.quantization_encoding:
         # TODO: Set the quantized weight shape correctly when initializing the
@@ -469,11 +471,10 @@ def _array_from_weight_loader(
         # Treat the data as if it has the correct shape.
         data.shape = Shape(weight._shape)
     elif weight.shape != data.shape:
-        msg = (
+        raise ValueError(
             f"Value provided to weight '{name}' had different shape"
             f" (expected={weight.shape}, actual={data.shape})"
         )
-        raise ValueError(msg)
 
     if weight.quantization_encoding != data.quantization_encoding:
         if (
@@ -487,11 +488,10 @@ def _array_from_weight_loader(
         # quantization label)
 
     if weight.dtype != data.dtype:
-        msg = (
+        raise ValueError(
             f"Value provided to weight '{name}' had different dtype"
             f" (expected={weight.dtype}, actual={data.dtype})"
         )
-        raise ValueError(msg)
 
     return data
 
@@ -574,7 +574,7 @@ def _validate_weight_value(
             # Check each dimension: static dims must match, symbolic dims can vary
             mismatches = []
             for i, (weight_dim, value_dim) in enumerate(
-                zip(weight_shape_dims, shape_tuple)
+                zip(weight_shape_dims, shape_tuple, strict=True)
             ):
                 if isinstance(weight_dim, StaticDim):
                     # This is a static dimension - must match exactly

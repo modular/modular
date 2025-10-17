@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "requirement")
 load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
 load(":lib_toolchain.bzl", "lib_toolchain")
 
@@ -18,6 +18,13 @@ filegroup(
     name = "create_venv",
     testonly = True,
     srcs = ["create_venv.py"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "pytest_runner",
+    testonly = True,
+    srcs = ["pytest_runner.py"],
     visibility = ["//visibility:public"],
 )
 
@@ -59,4 +66,18 @@ gpu_toolchain_alias(
     name = "current_gpu_toolchain",
     testonly = True,
     visibility = ["//visibility:public"],
+)
+
+modular_cc_library(
+    name = "debugging_test_lib",
+    srcs = ["debugging_test_lib.cpp"],
+    hdrs = ["debugging_test_lib.h"],
+    tags = ["manual"],
+)
+
+modular_cc_binary(
+    name = "debugging_test_bin",
+    srcs = ["debugging_test_bin.cpp"],
+    tags = ["manual"],
+    deps = [":debugging_test_lib"],
 )

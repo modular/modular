@@ -21,7 +21,6 @@ from gpu.host import DeviceContext
 
 from utils import StaticTuple
 
-
 # ===-----------------------------------------------------------------------===#
 # _AsyncContext
 # ===-----------------------------------------------------------------------===#
@@ -276,7 +275,7 @@ struct Task[type: AnyType, origins: OriginSet]:
 
 @fieldwise_init
 @register_passable("trivial")
-struct TaskGroupContext(Copyable, Movable):
+struct TaskGroupContext(ImplicitlyCopyable, Movable):
     """Context structure for task group operations.
 
     This structure holds a callback function and a pointer to a TaskGroup,
@@ -295,7 +294,7 @@ struct TaskGroupContext(Copyable, Movable):
 
 
 @register_passable
-struct _TaskGroupBox(Copyable, Movable):
+struct _TaskGroupBox(ImplicitlyCopyable, Movable):
     """This struct is a type-erased owning box for an opaque coroutine."""
 
     var handle: AnyCoroutine
@@ -319,7 +318,7 @@ struct TaskGroup(Defaultable):
     It provides mechanisms to create, track, and wait for the completion of tasks.
     """
 
-    var counter: Atomic[DType.index]
+    var counter: Atomic[DType.int]
     """Atomic counter tracking the number of active tasks in the group."""
 
     var chain: _Chain
@@ -333,7 +332,7 @@ struct TaskGroup(Defaultable):
         """
         var chain = _Chain()
         _init_asyncrt_chain(UnsafePointer[_Chain](to=chain))
-        self.counter = Atomic[DType.index](1)
+        self.counter = Atomic[DType.int](1)
         self.chain = chain
         self.tasks = List[_TaskGroupBox](capacity=16)
 

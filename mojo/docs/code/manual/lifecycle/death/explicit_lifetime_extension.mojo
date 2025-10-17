@@ -13,7 +13,7 @@
 
 
 @fieldwise_init
-struct Foobat(Copyable, ExplicitlyCopyable, Movable):
+struct Foobat(ImplicitlyCopyable, Movable):
     var x: Int
 
     fn __copyinit__(out self, other: Self):

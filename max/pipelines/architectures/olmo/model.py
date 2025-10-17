@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from max.driver import Device
 from max.engine import InferenceSession
@@ -39,7 +39,7 @@ class OlmoModel(LlamaModelBase):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         super().__init__(

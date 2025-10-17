@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, thread_idx
 from math import iota
 from sys import exit
 from sys.info import has_accelerator
+
+from gpu.host import DeviceContext
+from gpu.id import block_dim, block_idx, thread_idx
 
 alias num_elements = 20
 
@@ -45,7 +46,7 @@ fn scalar_add(vector: UnsafePointer[Float32], size: Int, scalar: Float32):
     # Bounds checking: ensure we don't access memory beyond the vector size.
     # This is crucial when the number of threads doesn't exactly match vector
     # size.
-    if idx < size:
+    if idx < UInt(size):
         # Each thread adds the scalar to its corresponding vector element
         # This operation happens in parallel across all GPU threads
         vector[idx] += scalar

@@ -11,28 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import iota
+from random import rand
+from sys import argv, has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+
 from benchmark import (
     Bench,
+    BenchConfig,
     Bencher,
     BenchId,
     BenchMetric,
     ThroughputMeasure,
-    BenchConfig,
 )
 from bit import log2_floor
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
+from kernels.causal_conv1d import CausalConv1Dcpu, CausalConv1Dgpu
 from kernels.matrix_multiplication import MatrixMultiplication
-from kernels.causal_conv1d import CausalConv1Dgpu, CausalConv1Dcpu
+from kernels.tensor_core_mma import TensorCoreMMA
 from kernels.top_k import TopK
-from math import iota
-from random import rand
-from sys import (
-    argv,
-    has_nvidia_gpu_accelerator,
-    has_amd_gpu_accelerator,
-)
-from gpu.host import DeviceContext, DeviceBuffer
 from tensor_internal import (
     Input,
     IOSpec,
@@ -49,7 +46,7 @@ struct Tensor[
     rank: Int, //,
     io_spec: IOSpec,
     static_spec: StaticTensorSpec[dtype, rank],
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     alias size = Int(static_spec.shape.product())
 
     var slice: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
@@ -77,6 +74,29 @@ struct Tensor[
     fn iota(self) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
             iota(host_buffer.unsafe_ptr(), Self.size)
+            return self
+
+    fn fill(self, value: Scalar[dtype]) raises -> Self:
+        with self.buffer.map_to_host() as host_buffer:
+            var ptr = host_buffer.unsafe_ptr()
+            for i in range(Self.size):
+                ptr[i] = value
+            return self
+
+    fn custom_fill_a(self, M: Int, K: Int) raises -> Self:
+        with self.buffer.map_to_host() as host_buffer:
+            var ptr = host_buffer.unsafe_ptr()
+            for i in range(M):
+                for j in range(K):
+                    ptr[i * K + j] = i
+            return self
+
+    fn custom_fill_b(self, K: Int, N: Int) raises -> Self:
+        with self.buffer.map_to_host() as host_buffer:
+            var ptr = host_buffer.unsafe_ptr()
+            for i in range(K):
+                for j in range(N):
+                    ptr[i * N + j] = j
             return self
 
 
@@ -199,6 +219,75 @@ def matmul():
     print(bench)
 
 
+def tensor_core_mma():
+    print("Running tensor core mma benchmark...")
+    alias M = 4096
+    alias N = 4096
+    alias K = 4096
+
+    alias rank = 2
+    alias dtype = DType.float16
+
+    alias FLOPS = M * N * (2 * K - 1)
+
+    alias a_spec = StaticTensorSpec[dtype, rank](DimList(M, K))
+    alias b_spec = StaticTensorSpec[dtype, rank](DimList(K, N))
+    alias c_spec = StaticTensorSpec[DType.float32, rank](DimList(M, N))
+
+    var cpu_ctx = DeviceContext(api="cpu")
+
+    var a = Tensor[Input, a_spec](cpu_ctx).rand()
+    var b = Tensor[Input, b_spec](cpu_ctx).rand()
+    var c = Tensor[Output, c_spec](cpu_ctx).rand()
+
+    var bench = Bench()
+    var flops = ThroughputMeasure(BenchMetric.flops, FLOPS)
+    var elements = ThroughputMeasure(BenchMetric.elements, M * N)
+    var metrics = List(flops, elements)
+
+    alias perform_validation = False
+
+    @parameter
+    if perform_validation:
+        bench.config.max_iters = 1
+        bench.config.max_batch_size = 1
+        bench.config.num_repetitions = 1
+
+    # TODO: Add NVIDIA GPU support
+    @parameter
+    if has_amd_gpu_accelerator():
+        var gpu_ctx = DeviceContext()
+        var a_dev = Tensor[Input, a_spec](gpu_ctx).rand()
+        var b_dev = Tensor[Input, b_spec](gpu_ctx).rand()
+        var c_dev = Tensor[Output, c_spec](gpu_ctx).rand()
+
+        @parameter
+        def bench_matmul_kernel[impl: StaticString]():
+            @parameter
+            def bench_gpu():
+                TensorCoreMMA[impl].execute[target="gpu", M=M, N=N, K=K](
+                    c_dev.slice,
+                    a_dev.slice,
+                    b_dev.slice,
+                    perform_validation,
+                    gpu_ctx,
+                )
+
+            bench.bench_function[bench_gpu](
+                BenchId("gpu", String(impl)), metrics
+            )
+
+        bench_matmul_kernel["naive_tensor"]()
+        bench_matmul_kernel["basic_shared_mem"]()
+        bench_matmul_kernel["multi_block_tiled"]()
+        bench_matmul_kernel["scheduler_hints"]()
+        bench_matmul_kernel["double_buffer"]()
+        bench_matmul_kernel["mma_tile_buffers"]()
+
+    bench.config.verbose_metric_names = False
+    print(bench)
+
+
 def run_conv1d[impl: StaticString]():
     alias nBatches = 128
     alias nChannels = 8
@@ -296,14 +385,17 @@ def run_conv1d[impl: StaticString]():
 
 
 def main():
-    run_conv1d["conv1d"]()
     var args = argv()
     if len(args) == 1:
         top_k()
         matmul()
     else:
         for arg in argv():
+            if arg == "--conv1d":
+                run_conv1d["conv1d"]()
             if arg == "--top-k":
                 top_k()
             if arg == "--matmul":
                 matmul()
+            if arg == "--tensor-core-mma":
+                tensor_core_mma()

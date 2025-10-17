@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from max.dtype import DType
 from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
 from max.nn import MLP, ColumnParallelLinear, LayerList, Module, ReturnLogits
-from max.nn.kv_cache import FetchPagedKVCacheCollection
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
@@ -155,17 +155,13 @@ class Gemma3TextModel(Module):
         self.lm_head = self.lm_head
         self.embed_tokens = self.embed_tokens
         self.kv_params = config.kv_params
-        self.kv_collection_constructor = FetchPagedKVCacheCollection(
-            config.kv_params,
-            num_layers=config.num_hidden_layers,
-        )
         self.return_logits = config.return_logits
 
     def __call__(
         self,
         tokens: TensorValue,
         signal_buffers: Sequence[BufferValue],
-        kv_cache_inputs_per_dev: Sequence[tuple[TensorValue, ...]],
+        kv_collections: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
         **kwargs,
@@ -173,10 +169,6 @@ class Gemma3TextModel(Module):
         h = self.embed_tokens(tokens, signal_buffers)
 
         # Create KV cache collections per device
-        kv_collections = [
-            self.kv_collection_constructor(*kv_cache_inputs)
-            for kv_cache_inputs in kv_cache_inputs_per_dev
-        ]
 
         # Run through transformer layers
         for idx, layer in enumerate(self.layers):
@@ -197,7 +189,7 @@ class Gemma3TextModel(Module):
         if h:
             last_token_h = [
                 ops.gather(h_device, indices, axis=0)
-                for h_device, indices in zip(h, last_token_indices)
+                for h_device, indices in zip(h, last_token_indices, strict=True)
             ]
         last_logits = ops.cast(
             # Take only the device 0 logits to device-to-host transfer.
@@ -235,7 +227,9 @@ class Gemma3TextModel(Module):
             # Gather, normalize, and get logits
             variable_tokens = [
                 self.norm_shards[i](ops.gather(h_device, indices, axis=0))
-                for i, (h_device, indices) in enumerate(zip(h, last_indices))
+                for i, (h_device, indices) in enumerate(
+                    zip(h, last_indices, strict=True)
+                )
             ]
             logits = ops.cast(
                 self.lm_head(variable_tokens, signal_buffers)[0], DType.float32
@@ -277,7 +271,7 @@ class Gemma3(Module):
         self,
         tokens: TensorValue,
         signal_buffers: Sequence[BufferValue],
-        kv_cache_inputs_per_dev: Sequence[tuple[TensorValue, ...]],
+        kv_cache_inputs_per_dev: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
     ) -> tuple[TensorValue, ...]:

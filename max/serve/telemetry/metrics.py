@@ -17,10 +17,10 @@ import abc
 import functools
 import logging
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Union, get_args
+from typing import get_args
 
 from max.serve.config import MetricLevel, Settings
 from opentelemetry import context
@@ -52,22 +52,24 @@ logger = logging.getLogger("max.serve")
 _meter = get_meter_provider().get_meter("modular")
 
 
-NumberType = Union[float, int]
-OtelAttributes = Optional[dict[str, str]]
+NumberType = float | int
+OtelAttributes = dict[str, str] | None
 
 # API_PROXIES the "types" of measurements we make from a meter
 # SDK instruments are the "types" that actually do recording
-API_PROXIES = Union[
-    api_instrument._ProxyCounter,
-    api_instrument._ProxyHistogram,
-    api_instrument._ProxyUpDownCounter,
-]
-SDK_INSTRUMENTS = Union[
-    sdk_instrument._Counter,
-    sdk_instrument._Histogram,
-    sdk_instrument._UpDownCounter,
-]
-SupportedInstruments = Union[API_PROXIES, SDK_INSTRUMENTS]
+API_PROXIES = (
+    api_instrument._ProxyCounter
+    | api_instrument._ProxyHistogram
+    | api_instrument._ProxyUpDownCounter
+)
+
+SDK_INSTRUMENTS = (
+    sdk_instrument._Counter
+    | sdk_instrument._Histogram
+    | sdk_instrument._UpDownCounter
+)
+
+SupportedInstruments = API_PROXIES | SDK_INSTRUMENTS
 
 
 # Sorry for the type ignores, OTEL goes out of its way to obscure its types.
@@ -124,6 +126,11 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.batch_size": _meter.create_histogram(
         "maxserve.batch_size", description="Distribution of batch sizes"
     ),  # type: ignore
+    "maxserve.batch_execution_time": _meter.create_histogram(
+        "maxserve.batch_execution_time",
+        unit="ms",
+        description="Distribution of batch execution time",
+    ),  # type: ignore
     # semantically, this should be a gauge, but it seems unimplemented in the OTEL SDK
     "maxserve.cache.num_used_blocks": _meter.create_counter(
         "maxserve.cache.num_used_blocks",
@@ -155,6 +162,11 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="requests",
         description="Number of KV cache misses in a batch by the scheduler.",
     ),  # type: ignore
+    "maxserve.tts.audio_output_length": _meter.create_histogram(
+        "maxserve.tts.audio_output_length",
+        unit="ms",
+        description="Audio output length in milliseconds",
+    ),  # type: ignore
 }
 
 
@@ -171,7 +183,7 @@ class MaxMeasurement:
 
     instrument_name: str
     value: NumberType
-    attributes: Optional[OtelAttributes] = None
+    attributes: OtelAttributes | None = None
     time_unix_nano: int = field(default_factory=time.time_ns)
 
     def commit(self) -> None:
@@ -219,8 +231,7 @@ class MetricClient(abc.ABC):
     @abc.abstractmethod
     def send_measurement(
         self, metric: MaxMeasurement, level: MetricLevel
-    ) -> None:
-        pass
+    ) -> None: ...
 
     @abc.abstractmethod
     def cross_process_factory(
@@ -367,6 +378,18 @@ class _AsyncMetrics:
             MaxMeasurement("maxserve.batch_size", size), MetricLevel.DETAILED
         )
 
+    def batch_execution_time(
+        self, execution_time: float, batch_type: str
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.batch_execution_time",
+                execution_time,
+                attributes={"batch_type": batch_type},
+            ),
+            MetricLevel.DETAILED,
+        )
+
     def cache_num_used_blocks(self, num_used_blocks: int) -> None:
         self.client.send_measurement(
             MaxMeasurement("maxserve.cache.num_used_blocks", num_used_blocks),
@@ -399,6 +422,12 @@ class _AsyncMetrics:
     def preemption(self) -> None:
         self.client.send_measurement(
             MaxMeasurement("maxserve.cache.preemption_count", 1),
+            MetricLevel.DETAILED,
+        )
+
+    def audio_output_length(self, length_ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.tts.audio_output_length", length_ms),
             MetricLevel.DETAILED,
         )
 

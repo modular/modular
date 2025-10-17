@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu import thread_idx
-from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
+from gpu.host.compile import _compile_code
 from gpu.memory import AddressSpace, external_memory
 
 
@@ -28,7 +28,7 @@ fn test_array_offset():
     ):
         output[] = p[idx]
 
-    # CHECK: getelementptr inbounds float, ptr addrspace(3) %1, i32 %4
+    # CHECK: getelementptr inbounds float, ptr addrspace(3) %1, i{{[0-9]+}} %{{.*}}
     print(_compile_code[kernel, emission_kind="llvm"]())
 
 
@@ -70,7 +70,7 @@ fn test_dynamic_shared_mem():
     # CHECK: @extern_ptr_syml_0 = external dso_local addrspace(3) global [0 x float], align 4
     fn kernel(output: UnsafePointer[Float32]):
         # CHECK: %2 = load float, ptr addrspace(3) @extern_ptr_syml, align 4
-        # CHECK: %3 = load float, ptr addrspace(3) getelementptr inbounds nuw (i8, ptr addrspace(3) @extern_ptr_syml_0, i32 4), align 4
+        # CHECK: %3 = load float, ptr addrspace(3) getelementptr inbounds nuw (i8, ptr addrspace(3) @extern_ptr_syml_0, i{{[0-9]+}}  4), align 4
         # CHECK: fadd contract float %2, %3
         var dynamic_sram_ptr_1 = external_memory[
             Float32, address_space = AddressSpace.SHARED, alignment=4

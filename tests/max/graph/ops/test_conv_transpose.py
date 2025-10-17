@@ -52,9 +52,9 @@ output_padding_type = st.tuples(sized_int, sized_int)
 def test_conv_transpose_valid(
     x_type: TensorType,
     filter_type: TensorType,
-    stride,  # noqa: ANN001
-    padding,  # noqa: ANN001
-    output_padding,  # noqa: ANN001
+    stride: tuple[int, int],
+    padding: tuple[int, int, int, int],
+    output_padding: tuple[int, int],
 ) -> None:
     assume(filter_type.shape[0] <= x_type.shape[1])  # type: ignore
     assume(filter_type.shape[1] <= x_type.shape[2])  # type: ignore
@@ -131,7 +131,7 @@ def test_conv_dtype_promote_weight() -> None:
     )
     with Graph("conv", input_types=[x_type]) as graph:
         out = ops.conv2d_transpose(
-            graph.inputs[0],  # type: ignore
+            graph.inputs[0].tensor,
             filter,
         )
         # Both input and filter dtype exactly match.

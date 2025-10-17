@@ -26,8 +26,8 @@ The module is designed for performance-critical code and requires careful usage 
 achieve optimal memory access patterns and cache utilization.
 """
 
-from collections.string import StaticString
 from collections.optional import OptionalReg
+from collections.string import StaticString
 from collections.string.string_slice import _get_kgen_string, get_static_string
 from sys import (
     align_of,
@@ -39,7 +39,7 @@ from sys import (
     size_of,
 )
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x_or_newer, CompilationTarget
+from sys.info import CompilationTarget, _is_sm_9x_or_newer
 from sys.intrinsics import _RegisterPackType
 
 from builtin.dtype import _uint_type_of_width
@@ -51,7 +51,13 @@ from memory.unsafe import bitcast
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
-from ._utils import to_i16, to_i32, to_llvm_ptr, to_llvm_shared_mem_ptr
+from ._utils import (
+    to_i16,
+    to_i32,
+    to_llvm_ptr,
+    to_llvm_shared_mem_ptr,
+    to_llvm_shared_cluster_mem_ptr,
+)
 from .intrinsics import Scope
 
 # ===-----------------------------------------------------------------------===#
@@ -67,7 +73,7 @@ alias AddressSpace = _GPUAddressSpace
 
 @fieldwise_init
 @register_passable("trivial")
-struct CacheOperation:
+struct CacheOperation(EqualityComparable, Identifiable):
     """Represents different GPU cache operation policies.
 
     This struct defines various caching behaviors for GPU memory operations,
@@ -98,32 +104,38 @@ struct CacheOperation:
     May bypass certain cache levels for better throughput.
     """
 
-    alias LAST_USE = Self(3)
+    alias LAST_USE = Self(4)
     """Indicates the cache line will not be used again.
 
     Hints to the cache that this data can be evicted after this access.
     Helps optimize cache utilization.
     """
 
-    alias VOLATILE = Self(4)
+    alias VOLATILE = Self(8)
     """Don't cache, and fetch again.
 
     Forces reads/writes to bypass cache and go directly to memory.
     Useful for memory-mapped I/O or when cache coherency is required.
     """
 
-    alias WRITE_BACK = Self(5)
+    alias WRITE_BACK = Self(16)
     """Write back at all coherent levels.
 
     Updates all cache levels and eventually writes to memory.
     Most efficient for multiple writes to same location.
     """
 
-    alias WRITE_THROUGH = Self(6)
+    alias WRITE_THROUGH = Self(32)
     """Write through to system memory.
 
     Immediately writes updates to memory while updating cache.
     Provides stronger consistency but lower performance than write-back.
+    """
+
+    alias WORKGROUP = Self(64)
+    """Workgroup level coherency.
+
+    Caches data in the L1 cache and streams it to the wave.
     """
 
     fn __eq__(self, other: Self) -> Bool:
@@ -137,17 +149,6 @@ struct CacheOperation:
         """
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Tests if two CacheOperation instances are not equal.
-
-        Args:
-            other: The CacheOperation to compare against.
-
-        Returns:
-            True if the operations are not equal, False otherwise.
-        """
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         """Tests if two CacheOperation instances are identical.
 
@@ -159,16 +160,9 @@ struct CacheOperation:
         """
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        """Tests if two CacheOperation instances are not identical.
-
-        Args:
-            other: The CacheOperation to compare against.
-
-        Returns:
-            True if the operations are not identical, False otherwise.
-        """
-        return self != other
+    fn __or__(self, other: Self) -> Self:
+        """Returns the bitwise OR of two CacheOperation instances."""
+        return Self(self._value | other._value)
 
     @always_inline
     fn mnemonic(self) -> StaticString:
@@ -194,6 +188,8 @@ struct CacheOperation:
             return "wb"
         if self is Self.WRITE_THROUGH:
             return "wt"
+        if self is Self.WORKGROUP:
+            return "wg"
 
         return "unknown cache operation"
 
@@ -205,7 +201,7 @@ struct CacheOperation:
 
 @fieldwise_init
 @register_passable("trivial")
-struct CacheEviction:
+struct CacheEviction(EqualityComparable, Identifiable):
     """Represents cache eviction policies for GPU memory operations.
 
     This struct defines different cache eviction priorities that control how data is
@@ -273,17 +269,6 @@ struct CacheEviction:
         """
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Tests if two CacheEviction instances are not equal.
-
-        Args:
-            other: The CacheEviction to compare against.
-
-        Returns:
-            True if the eviction policies are not equal, False otherwise.
-        """
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         """Tests if two CacheEviction instances are identical.
 
@@ -294,17 +279,6 @@ struct CacheEviction:
             True if the eviction policies are identical, False otherwise.
         """
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        """Tests if two CacheEviction instances are not identical.
-
-        Args:
-            other: The CacheEviction to compare against.
-
-        Returns:
-            True if the eviction policies are not identical, False otherwise.
-        """
-        return self != other
 
     @always_inline
     fn mnemonic(self) -> StaticString:
@@ -336,7 +310,7 @@ struct CacheEviction:
 
 @fieldwise_init
 @register_passable("trivial")
-struct Fill:
+struct Fill(EqualityComparable, Identifiable):
     """Represents memory fill patterns for GPU memory operations.
 
     This struct defines different fill patterns that can be used when allocating or
@@ -366,17 +340,6 @@ struct Fill:
         """
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Tests if two Fill instances have different fill patterns.
-
-        Args:
-            other: The Fill instance to compare against.
-
-        Returns:
-            True if the fill patterns are different, False otherwise.
-        """
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         """Tests if two Fill instances are identical.
 
@@ -387,17 +350,6 @@ struct Fill:
             True if the fill patterns are identical, False otherwise.
         """
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        """Tests if two Fill instances are not identical.
-
-        Args:
-            other: The Fill instance to compare against.
-
-        Returns:
-            True if the fill patterns are not identical, False otherwise.
-        """
-        return self != other
 
     @no_inline
     fn __str__(self) -> String:
@@ -425,7 +377,9 @@ struct Fill:
 
 @fieldwise_init
 @register_passable("trivial")
-struct Consistency(Copyable, EqualityComparable, Movable):
+struct Consistency(
+    EqualityComparable, Identifiable, ImplicitlyCopyable, Movable
+):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
@@ -481,17 +435,6 @@ struct Consistency(Copyable, EqualityComparable, Movable):
         """
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        """Tests if two Consistency instances are not identical.
-
-        Args:
-            other: The Consistency instance to compare against.
-
-        Returns:
-            True if the consistency levels are not identical, False otherwise.
-        """
-        return self != other
-
     fn __str__(self) -> String:
         """Returns a string representation of the consistency level.
 
@@ -526,7 +469,7 @@ struct Consistency(Copyable, EqualityComparable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ReduceOp:
+struct ReduceOp(EqualityComparable, Identifiable):
     """Represents reduction operations for parallel reduction algorithms.
 
     This struct defines different reduction operations that can be performed
@@ -577,17 +520,6 @@ struct ReduceOp:
         """
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Tests if two ReduceOp instances are not equal.
-
-        Args:
-            other: The ReduceOp instance to compare against.
-
-        Returns:
-            True if the reduction operations are different, False otherwise.
-        """
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         """Tests if two ReduceOp instances are identical.
 
@@ -598,17 +530,6 @@ struct ReduceOp:
             True if the reduction operations are identical, False otherwise.
         """
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        """Tests if two ReduceOp instances are not identical.
-
-        Args:
-            other: The ReduceOp instance to compare against.
-
-        Returns:
-            True if the reduction operations are not identical, False otherwise.
-        """
-        return self != other
 
     @no_inline
     fn __str__(self) -> String:
@@ -693,8 +614,10 @@ fn async_copy[
     l2_prefetch: OptionalReg[Int] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
-    dst: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED],
+    src: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL, **_],
+    dst: UnsafePointer[
+        Scalar[dtype], mut=True, address_space = AddressSpace.SHARED, **_
+    ],
     src_size: Int32 = Int32(size),
     predicate: Bool = False,
 ):
@@ -964,7 +887,7 @@ fn external_memory[
     address_space: _AddressSpace,
     alignment: Int,
     name: StaticString = "extern_ptr_syml",
-]() -> UnsafePointer[dtype, address_space=address_space, alignment=alignment]:
+]() -> UnsafePointer[dtype, address_space=address_space]:
     """Gets a pointer to dynamically allocated external memory.
 
     This function returns a pointer to external memory that can be used for dynamic
@@ -990,13 +913,12 @@ fn external_memory[
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
     var extern_ptr_symbol = UnsafePointer[
-        StaticTuple[dtype, 0], address_space=address_space, alignment=alignment
+        StaticTuple[dtype, 0], address_space=address_space
     ](
         __mlir_op.`pop.extern_ptr_symbol`[
             _type = UnsafePointer[
                 StaticTuple[dtype, 0],
                 address_space=address_space,
-                alignment=alignment,
             ]._mlir_type,
             name = _get_kgen_string[name](),
             alignment = alignment._mlir_value,
@@ -1102,9 +1024,13 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     *,
     cta_group: Int = 1,
 ](
-    dst_mem: UnsafePointer[dst_type, address_space = GPUAddressSpace.SHARED],
-    tma_descriptor: OpaquePointer,
-    mem_bar: UnsafePointer[mbr_type, address_space = GPUAddressSpace.SHARED],
+    dst_mem: UnsafePointer[
+        dst_type, mut=True, origin=_, address_space = GPUAddressSpace.SHARED
+    ],
+    tma_descriptor: UnsafePointer[NoneType, mut=False],
+    mem_bar: UnsafePointer[
+        mbr_type, mut=False, address_space = GPUAddressSpace.SHARED
+    ],
     coords: IndexList[rank],
 ):
     """Initiates an asynchronous bulk copy operation of tensor data from global memory to shared memory.
@@ -1155,10 +1081,16 @@ fn cp_async_bulk_tensor_shared_cluster_global[
 
         @parameter
         if cta_group == 1:
+            # We added the intrinsic before the SHARED_CLUSTER address space was
+            # introduced. Cast the address space here to avoid modifying all the
+            # callsites that use the old SHARED address space.
+            var dst_mem_cluster = dst_mem.address_space_cast[
+                GPUAddressSpace.SHARED_CLUSTER
+            ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,3,1,0,0,0,0>}`
             ](
-                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
                 to_i32(coords[0]),
                 to_i32(coords[1]),
@@ -1182,10 +1114,13 @@ fn cp_async_bulk_tensor_shared_cluster_global[
 
         @parameter
         if cta_group == 1:
+            var dst_mem_cluster = dst_mem.address_space_cast[
+                GPUAddressSpace.SHARED_CLUSTER
+            ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,0,0,0>}`
             ](
-                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
                 to_i32(coords[0]),
                 to_i32(coords[1]),
@@ -1207,10 +1142,13 @@ fn cp_async_bulk_tensor_shared_cluster_global[
 
         @parameter
         if cta_group == 1:
+            var dst_mem_cluster = dst_mem.address_space_cast[
+                GPUAddressSpace.SHARED_CLUSTER
+            ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,0,0,0>}`
             ](
-                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
                 to_i32(coords[0]),
                 to_llvm_shared_mem_ptr(mem_bar),
@@ -1237,9 +1175,13 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     *,
     cta_group: Int = 1,
 ](
-    dst_mem: UnsafePointer[dst_type, address_space = GPUAddressSpace.SHARED],
-    tma_descriptor: OpaquePointer,
-    mem_bar: UnsafePointer[mbr_type, address_space = GPUAddressSpace.SHARED],
+    dst_mem: UnsafePointer[
+        dst_type, mut=True, origin=_, address_space = GPUAddressSpace.SHARED
+    ],
+    tma_descriptor: UnsafePointer[NoneType, mut=False],
+    mem_bar: UnsafePointer[
+        mbr_type, mut=False, address_space = GPUAddressSpace.SHARED
+    ],
     coords: IndexList[rank],
     multicast_mask: UInt16,
 ):
@@ -1295,10 +1237,13 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
 
         @parameter
         if cta_group == 1:
+            var dst_mem_cluster = dst_mem.address_space_cast[
+                GPUAddressSpace.SHARED_CLUSTER
+            ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,1,0,0>}`
             ](
-                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
                 to_i32(coords[0]),
                 to_i32(coords[1]),
@@ -1322,10 +1267,13 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
 
         @parameter
         if cta_group == 1:
+            var dst_mem_cluster = dst_mem.address_space_cast[
+                GPUAddressSpace.SHARED_CLUSTER
+            ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,1,0,0>}`
             ](
-                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
                 to_i32(coords[0]),
                 to_llvm_shared_mem_ptr(mem_bar),
@@ -1352,8 +1300,10 @@ fn cp_async_bulk_tensor_global_shared_cta[
     /,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src_mem: UnsafePointer[src_type, address_space = GPUAddressSpace.SHARED],
-    tma_descriptor: OpaquePointer,
+    src_mem: UnsafePointer[
+        src_type, address_space = GPUAddressSpace.SHARED, **_
+    ],
+    tma_descriptor: UnsafePointer[NoneType, mut=False],
     coords: IndexList[rank],
 ):
     """Initiates an asynchronous copy operation to transfer tensor data from shared CTA
@@ -1419,8 +1369,10 @@ fn cp_async_bulk_tensor_reduce[
     reduction_kind: ReduceOp,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src_mem: UnsafePointer[src_type, address_space = GPUAddressSpace.SHARED],
-    tma_descriptor: OpaquePointer,
+    src_mem: UnsafePointer[
+        src_type, address_space = GPUAddressSpace.SHARED, **_
+    ],
+    tma_descriptor: UnsafePointer[NoneType, mut=False],
     coords: IndexList[rank],
 ):
     """Initiates an asynchronous reduction operation between shared CTA memory and global memory
@@ -1503,8 +1455,12 @@ fn _load_impl[
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = align_of[Scalar[dtype]]() if is_gpu() else 1,
-](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
+    alignment: Int = align_of[Scalar[dtype]](),
+](
+    ptr: UnsafePointer[
+        Scalar[dtype], address_space = _GPUAddressSpace.GENERIC, **_
+    ]
+) -> SIMD[dtype, width]:
     """Internal implementation of vectorized memory loads from global memory.
 
     This function provides low-level control over cache behavior and memory access patterns
@@ -1531,10 +1487,6 @@ fn _load_impl[
         - Prefetch size must be 64, 128, or 256 bytes if specified.
         - Read-only not supported on AMD GPUs.
     """
-    constrained[
-        ptr.address_space == _GPUAddressSpace.GENERIC,
-        "must be global address space",
-    ]()
     constrained[dtype.is_numeric(), "type must be numeric"]()
 
     @parameter
@@ -1548,7 +1500,7 @@ fn _load_impl[
         constrained[prefetch_size.value() in (64, 128, 256)]()
 
     alias bytes_to_load = size_of[dtype]() * width
-    alias dtype_bitwidth = bit_width_of[dtype]()
+    alias dtype_bitwidth = dtype.bit_width()
 
     @parameter
     if bytes_to_load < size_of[DType.uint32]():
@@ -1628,22 +1580,22 @@ fn _load_impl[
             has_side_effect=True,
         ](ptr.bitcast[NoneType](), res[0], res[1], res[2], res[3])
         return SIMD[dtype, width](tmp[0], tmp[1], tmp[2], tmp[3])
-
-    var lhs = _load_impl[
-        width = width // 2,
-        prefetch_size=prefetch_size,
-        cache_policy=cache_policy,
-        eviction_policy=eviction_policy,
-        alignment=alignment,
-    ](ptr)
-    var rhs = _load_impl[
-        width = width // 2,
-        prefetch_size=prefetch_size,
-        cache_policy=cache_policy,
-        eviction_policy=eviction_policy,
-        alignment=alignment,
-    ](ptr + width // 2)
-    return lhs.join(rhs)._refine[size=width]()
+    else:
+        var lhs = _load_impl[
+            width = width // 2,
+            prefetch_size=prefetch_size,
+            cache_policy=cache_policy,
+            eviction_policy=eviction_policy,
+            alignment=alignment,
+        ](ptr)
+        var rhs = _load_impl[
+            width = width // 2,
+            prefetch_size=prefetch_size,
+            cache_policy=cache_policy,
+            eviction_policy=eviction_policy,
+            alignment=alignment,
+        ](ptr + width // 2)
+        return lhs.join(rhs)._refine[new_size=width]()
 
 
 @always_inline
@@ -1656,7 +1608,11 @@ fn load[
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
-](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
+](
+    ptr: UnsafePointer[
+        Scalar[dtype], address_space = _GPUAddressSpace.GENERIC, **_
+    ]
+) -> SIMD[dtype, width]:
     """Loads data from global memory into a SIMD vector.
 
     Provides a high-level interface for vectorized memory loads with configurable
@@ -1698,7 +1654,12 @@ fn load[
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
-](ptr: UnsafePointer[Scalar[dtype]], offset: OffsetType) -> SIMD[dtype, width]:
+](
+    ptr: UnsafePointer[
+        Scalar[dtype], address_space = _GPUAddressSpace.GENERIC, **_
+    ],
+    offset: OffsetType,
+) -> SIMD[dtype, width]:
     """Loads data from global memory with an offset into a SIMD vector.
 
     Provides a high-level interface for vectorized memory loads with configurable
@@ -1814,7 +1775,9 @@ fn multimem_ld_reduce[
     accum_type: DType = get_accum_type[dtype](),
     output_width: Int = 1,
 ](
-    addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
+    addr: UnsafePointer[
+        Scalar[dtype], mut=False, address_space = AddressSpace.GLOBAL, **_
+    ],
 ) -> StaticTuple[SIMD[dtype, output_width], count]:
     """Performs a vectorized load-reduce operation using NVIDIA's multimem feature.
 
@@ -1934,7 +1897,9 @@ fn multimem_ld_reduce[
     consistency: Consistency,
     accum_type: DType = get_accum_type[dtype](),
 ](
-    addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
+    addr: UnsafePointer[
+        Scalar[dtype], mut=False, address_space = AddressSpace.GLOBAL, **_
+    ],
 ) -> SIMD[dtype, simd_width]:
     """Simplified multimem_ld_reduce that automatically calculates optimal packing.
 
@@ -2045,7 +2010,9 @@ fn multimem_st[
     consistency: Consistency,
     width: Int = 1,
 ](
-    addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
+    addr: UnsafePointer[
+        Scalar[dtype], mut=True, origin=_, address_space = AddressSpace.GLOBAL
+    ],
     values: StaticTuple[SIMD[dtype, width], count],
 ) -> None:
     """Stages an inline multimem.st instruction.

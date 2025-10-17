@@ -56,7 +56,9 @@ fn variadic_size[T: _AnyTypeMetaType](seq: VariadicOf[T]) -> Int:
 
 
 @fieldwise_init
-struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Iterator, Movable):
+struct _VariadicListIter[type: AnyTrivialRegType](
+    ImplicitlyCopyable, Iterable, Iterator, Movable
+):
     """Const Iterator for VariadicList.
 
     Parameters:
@@ -64,6 +66,9 @@ struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Iterator, Movable):
     """
 
     alias Element = type
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
 
     var index: Int
     var src: VariadicList[type]
@@ -76,9 +81,17 @@ struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Iterator, Movable):
         self.index += 1
         return self.src[self.index - 1]
 
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var len = len(self.src) - self.index
+        return (len, {len})
+
 
 @register_passable("trivial")
-struct VariadicList[type: AnyTrivialRegType](Sized):
+struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
     """A utility class to access homogeneous variadic function arguments.
 
     `VariadicList` is used when you need to accept variadic arguments where all
@@ -123,7 +136,9 @@ struct VariadicList[type: AnyTrivialRegType](Sized):
     var value: Self._mlir_type
     """The underlying storage for the variadic list."""
 
-    alias IterType = _VariadicListIter[type]
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _VariadicListIter[type]
 
     @always_inline
     @implicit
@@ -173,13 +188,13 @@ struct VariadicList[type: AnyTrivialRegType](Sized):
         return __mlir_op.`pop.variadic.get`(self.value, index(idx)._mlir_value)
 
     @always_inline
-    fn __iter__(self) -> Self.IterType:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         """Iterate over the list.
 
         Returns:
             An iterator to the start of the list.
         """
-        return Self.IterType(0, self)
+        return {0, self}
 
 
 @fieldwise_init
@@ -223,7 +238,7 @@ struct _VariadicListMemIter[
     fn __has_next__(self) -> Bool:
         return self.index < len(self.src[])
 
-    fn __next_ref__(mut self) -> ref [elt_origin] elt_type:
+    fn __next_ref__(mut self) -> ref [elt_origin._mlir_origin] elt_type:
         self.index += 1
         return rebind[Self.variadic_list_type.reference_type](
             Pointer(to=self.src[][self.index - 1])
@@ -291,7 +306,10 @@ struct VariadicListMem[
         @parameter
         if is_owned:
             for i in reversed(range(len(self))):
-                UnsafePointer(to=self[i]).destroy_pointee()
+                # Safety: We own the elements in this list.
+                UnsafePointer(to=self[i]).unsafe_mut_cast[
+                    True
+                ]().destroy_pointee()
 
     fn consume_elements[
         elt_handler: fn (idx: Int, var elt: element_type) capturing
@@ -361,16 +379,15 @@ struct VariadicListMem[
 
     fn __iter__(
         self,
-        out result: _VariadicListMemIter[
-            element_type, origin, __origin_of(self), is_owned
-        ],
-    ):
+    ) -> _VariadicListMemIter[
+        element_type, origin, __origin_of(self), is_owned
+    ]:
         """Iterate over the list.
 
         Returns:
             An iterator to the start of the list.
         """
-        return __type_of(result)(0, self)
+        return {0, self}
 
 
 # ===-----------------------------------------------------------------------===#
@@ -480,7 +497,10 @@ struct VariadicPack[
 
             @parameter
             for i in reversed(range(Self.__len__())):
-                UnsafePointer(to=self[i]).destroy_pointee()
+                # Safety: We own the elements in this pack.
+                UnsafePointer(to=self[i]).unsafe_mut_cast[
+                    True
+                ]().destroy_pointee()
 
     fn consume_elements[
         elt_handler: fn[idx: Int] (var elt: element_types[idx]) capturing
@@ -547,7 +567,7 @@ struct VariadicPack[
             mutability of the pack argument convention.
         """
         litref_elt = __mlir_op.`lit.ref.pack.extract`[
-            index = index._mlir_value
+            index = index.__mlir_index__()
         ](self._value)
         return __get_litref_as_mvalue(litref_elt)
 

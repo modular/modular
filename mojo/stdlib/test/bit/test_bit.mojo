@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import floor, ceil, log2
+from math import ceil, floor, log2
+
 from bit import (
     bit_not,
     bit_reverse,
@@ -19,8 +20,8 @@ from bit import (
     byte_swap,
     count_leading_zeros,
     count_trailing_zeros,
-    log2_floor,
     log2_ceil,
+    log2_floor,
     next_power_of_two,
     pop_count,
     prev_power_of_two,
@@ -28,6 +29,7 @@ from bit import (
     rotate_bits_right,
 )
 from testing import assert_equal
+from testing import TestSuite
 
 
 def test_count_leading_zeros():
@@ -337,7 +339,7 @@ def test_next_power_of_two():
     assert_equal(next_power_of_two(UInt(2)), 2)
     assert_equal(next_power_of_two(UInt(4)), 4)
     assert_equal(next_power_of_two(UInt(5)), 8)
-    assert_equal(next_power_of_two(UInt(2**59 - 3)), 2**59)
+    assert_equal(next_power_of_two(UInt(2**59 - 3)), UInt(2) ** 59)
 
 
 def test_next_power_of_two_simd():
@@ -478,12 +480,12 @@ fn _log2_floor(n: Int) -> Int:
 fn _log2_ceil(n: Int) -> Int:
     """Computes ceil(log_2(d))."""
 
-    return Int(_log2_ceil(Scalar[DType.index](n)))
+    return Int(_log2_ceil(Scalar[DType.int](n)))
 
 
 @always_inline
 fn _log2_ceil(n: Scalar) -> __type_of(n):
-    return __type_of(n)(ceil(log2(Float64(n))))
+    return {ceil(log2(Float64(n)))}
 
 
 def test_log2_floor():
@@ -595,7 +597,7 @@ def test_log2_ceil():
     _check_alias[32](5)
 
 
-def test_log2_ceil_int32():
+def test_log2_ceil32():
     assert_equal(log2_ceil(Int32(0)), 0)
     for i in range(Int32(1), Int32(100)):
         assert_equal(
@@ -634,25 +636,4 @@ def test_log2_ceil_int32():
 
 
 def main():
-    test_rotate_bits_int()
-    test_rotate_bits_simd()
-    test_next_power_of_two()
-    test_next_power_of_two_simd()
-    test_prev_power_of_two()
-    test_prev_power_of_two_simd()
-    test_bit_width()
-    test_bit_width_simd()
-    test_count_leading_zeros()
-    test_count_leading_zeros_simd()
-    test_count_trailing_zeros()
-    test_count_trailing_zeros_simd()
-    test_bit_reverse()
-    test_bit_reverse_simd()
-    test_byte_swap()
-    test_byte_swap_simd()
-    test_pop_count()
-    test_pop_count_simd()
-    test_bit_not_simd()
-    test_log2_floor()
-    test_log2_ceil()
-    test_log2_ceil_int32()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -20,7 +20,7 @@ from sys import (
     size_of,
 )
 
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
@@ -29,12 +29,12 @@ from internal_utils._utils import (
     InitializationType,
     ValOrDim,
     dynamic,
+    init_vector_launch,
     initialize,
     random,
     static,
-    init_vector_launch,
 )
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul.gpu import _matmul_gpu
 
 from utils import IndexList
 
@@ -268,7 +268,7 @@ fn create_matmul_bench[
     )
 
 
-fn main() raises:
+def main():
     alias dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var M = Int(arg_parse("M", 1))

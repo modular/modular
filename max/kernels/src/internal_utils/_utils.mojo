@@ -11,8 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import time
+from collections import OptionalReg
+from io.io import _snprintf
+from math import ceildiv
 from random import rand, random_float64
 from sys import argv, env_get_string
+from builtin.device_passable import DevicePassable
 
 from benchmark import (
     Bench,
@@ -25,20 +30,15 @@ from benchmark import (
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from compile import compile_info
+from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext
+from gpu.random import Random
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from io.io import _snprintf
 from tensor_internal import DynamicTensor
 from testing import assert_equal, assert_true
 
 from utils import IndexList
 from utils.index import product
-import time
-from math import ceildiv
-from gpu import *
-from gpu.random import Random
-
-from collections import OptionalReg
 
 
 struct ValOrDim[dim: Dim = Dim()](Defaultable):
@@ -61,7 +61,7 @@ struct HostNDBuffer[
     rank: Int,
     /,
     shape: DimList = DimList.create_unknown[rank](),
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     var tensor: NDBuffer[dtype, rank, MutableAnyOrigin, shape]
 
     @always_inline
@@ -119,12 +119,12 @@ struct HostNDBuffer[
             dtype, Layout.row_major(IntTuple(shape)), MutableAnyOrigin
         ],
     ):
-        result = __type_of(result)(
+        result = {
             self.tensor.data,
             RuntimeLayout[__type_of(result).layout](
                 self.tensor.get_shape(), self.tensor.get_strides()
             ),
-        )
+        }
 
 
 @fieldwise_init
@@ -133,7 +133,7 @@ struct DeviceNDBuffer[
     rank: Int,
     /,
     shape: DimList = DimList.create_unknown[rank](),
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     var buffer: DeviceBuffer[dtype]
     var tensor: NDBuffer[
         dtype,
@@ -158,7 +158,7 @@ struct DeviceNDBuffer[
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
         self.buffer = ctx.enqueue_create_buffer[dtype](shape.product().get())
         self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
-            self.buffer._unsafe_ptr(),
+            self.buffer.unsafe_ptr(),
         )
 
     @always_inline
@@ -173,7 +173,7 @@ struct DeviceNDBuffer[
             product(dynamic_shape, rank)
         )
         self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
-            self.buffer._unsafe_ptr(), dynamic_shape
+            self.buffer.unsafe_ptr(), dynamic_shape
         )
 
     @always_inline
@@ -198,7 +198,7 @@ struct DeviceNDBuffer[
             product(dynamic_shape, rank)
         )
         self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
-            self.buffer._unsafe_ptr(), dynamic_shape, stride
+            self.buffer.unsafe_ptr(), dynamic_shape, stride
         )
 
     @always_inline
@@ -224,17 +224,17 @@ struct DeviceNDBuffer[
             dtype, Layout.row_major(IntTuple(shape)), __origin_of(self.buffer)
         ],
     ):
-        result = __type_of(result)(
+        result = {
             self.buffer,
             RuntimeLayout[__type_of(result).layout](
                 self.tensor.get_shape(), self.tensor.get_strides()
             ),
-        )
+        }
 
 
 # TODO: add address_space: AddressSpace = AddressSpace.GENERIC
 @fieldwise_init
-struct TestTensor[dtype: DType, rank: Int](Copyable, Movable):
+struct TestTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
     var ndbuffer: NDBuffer[dtype, rank, MutableAnyOrigin]
     var shape: DimList
     var num_elements: Int
@@ -274,13 +274,29 @@ struct TestTensor[dtype: DType, rank: Int](Copyable, Movable):
         return DynamicTensor[dtype, rank](self.ndbuffer)
 
 
-struct InitializationType(Copyable, EqualityComparable, Movable):
+@register_passable("trivial")
+struct InitializationType(
+    DevicePassable, EqualityComparable, ImplicitlyCopyable, Movable
+):
     var _value: Int
     alias zero = InitializationType(0)
     alias one = InitializationType(1)
     alias uniform_distribution = InitializationType(2)
     alias arange = InitializationType(3)
     alias fill = InitializationType(4)
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "InitializationType"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -378,7 +394,7 @@ fn bench_compile_time[
     # the value of all measured metrics m to 0.
     var measures: List[ThroughputMeasure] = List[ThroughputMeasure]()
     if len(m.info_vec) > 0:
-        var ref_measures = m.info_vec[0].measures
+        ref ref_measures = m.info_vec[0].measures
         for i in range(len(ref_measures)):
             metric = ref_measures[i].metric
             measures.append(ThroughputMeasure(metric, 0))
@@ -422,7 +438,7 @@ fn parse_shape[name: StaticString]() -> List[Int]:
             continue
         sum = sum * 10 + diff
     vals.append(sum)
-    return vals
+    return vals^
 
 
 fn env_get_shape[name: StaticString, default: StaticString]() -> List[Int]:
@@ -444,7 +460,7 @@ fn env_get_shape[name: StaticString, default: StaticString]() -> List[Int]:
     """
     alias shape_str = env_get_string[name, default]()
     alias shape: List[Int] = parse_shape[shape_str]()
-    return shape
+    return materialize[shape]()
 
 
 fn int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
@@ -452,7 +468,8 @@ fn int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
 
     @parameter
     for i in range(len(x)):
-        t[i] = x[i]
+        alias xi = x[i]
+        t[i] = xi
     return t
 
 
@@ -620,7 +637,7 @@ fn array_equal[
 
 @fieldwise_init
 @register_passable("trivial")
-struct Mode(Copyable, Movable, Stringable):
+struct Mode(ImplicitlyCopyable, Movable, Stringable):
     var _value: Int
     var handle: StaticString
     alias NONE = Self(0x0, "none")
@@ -684,10 +701,6 @@ fn update_bench_config_args(mut b: Bench) raises:
     b.config.max_runtime_secs = arg_parse(
         "bench-max-runtime-secs", b.config.max_runtime_secs
     )
-    # TODO: min_warmuptime_secs will be removed from bencher.mojo and here.
-    b.config.min_warmuptime_secs = arg_parse(
-        "bench-min-warmuptime-secs", b.config.min_warmuptime_secs
-    )
     b.config.num_warmup_iters = arg_parse(
         "bench-num-warmup-iters", b.config.num_warmup_iters
     )
@@ -735,7 +748,7 @@ struct Timer:
         )
 
 
-# TODO: limited support for 1D, generalize to nD
+# TODO: limited support for 1D, generalize to n-D
 fn init_vector_gpu[
     dtype: DType
 ](
@@ -773,8 +786,8 @@ fn init_vector_gpu[
         values = SIMD[dtype, 4](
             UInt64(tid).cast[dtype](),
             UInt64(tid + stride).cast[dtype](),
-            UInt64(tid + 2 * stride).cast[dtype](),
-            UInt64(tid + 3 * stride).cast[dtype](),
+            UInt64(tid + UInt(2 * stride)).cast[dtype](),
+            UInt64(tid + UInt(3 * stride)).cast[dtype](),
         )
     apply(values)
 
@@ -791,7 +804,8 @@ fn init_vector_launch[
     var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
     # using num-threads = 1/4th of length to initialize the array
 
-    context.enqueue_function[init_vector_gpu[dtype]](
+    alias kernel = init_vector_gpu[dtype]
+    context.enqueue_function_checked[kernel, kernel](
         out_device,
         length,
         init_type,

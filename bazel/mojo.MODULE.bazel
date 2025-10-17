@@ -1,6 +1,6 @@
 """Define the Mojo toolchain"""
 
-PACKAGE_VERSION = "25.6.0.dev2025090405"
+PACKAGE_VERSION = "25.7.0.dev2025101605"
 
 BASE_URL = "https://dl.modular.com/public/nightly/python"
 
@@ -8,7 +8,7 @@ mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
 mojo.toolchain(
     base_url = BASE_URL,
     use_prebuilt_packages = False,
-    version = PACKAGE_VERSION,
+    version = "0." + PACKAGE_VERSION,
 )
 use_repo(mojo, "mojo_toolchains")
 

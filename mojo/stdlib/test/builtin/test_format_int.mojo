@@ -12,18 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.format_int import _format_int
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 fn test_format_int() raises:
-    assert_equal(_format_int[DType.index](123), "123")
-    assert_equal(_format_int[DType.index](4, 2), "100")
-    assert_equal(_format_int[DType.index](255, 2), "11111111")
-    assert_equal(_format_int[DType.index](254, 2), "11111110")
-    assert_equal(_format_int[DType.index](255, 36), "73")
+    assert_equal(_format_int[DType.int](123), "123")
+    assert_equal(_format_int[DType.int](4, 2), "100")
+    assert_equal(_format_int[DType.int](255, 2), "11111111")
+    assert_equal(_format_int[DType.int](254, 2), "11111110")
+    assert_equal(_format_int[DType.int](255, 36), "73")
 
-    assert_equal(_format_int[DType.index](-123, 10), "-123")
-    assert_equal(_format_int[DType.index](-999_999_999, 10), "-999999999")
+    assert_equal(_format_int[DType.int](-123, 10), "-123")
+    assert_equal(_format_int[DType.int](-999_999_999, 10), "-999999999")
 
     # i64
     assert_equal(_format_int(Int64.MAX_FINITE, 10), "9223372036854775807")
@@ -164,12 +164,4 @@ def test_different_prefix():
 
 
 def main():
-    test_format_int()
-    test_hex()
-    test_bin_scalar()
-    test_bin_int()
-    test_bin_bool()
-    test_intable()
-    test_oct_scalar()
-    test_oct_bool()
-    test_oct_int()
+    TestSuite.discover_tests[__functions_in_module()]().run()

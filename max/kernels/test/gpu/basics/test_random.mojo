@@ -16,9 +16,8 @@ from sys import simd_width_of
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
-from gpu.random import Random, NormalRandom
+from gpu.host import DeviceContext, get_gpu_target
+from gpu.random import NormalRandom, Random
 from testing import *
 
 from utils.index import Index, IndexList
@@ -36,7 +35,7 @@ def run_elementwise[
     ].stack_allocation()
 
     var out_device = ctx.enqueue_create_buffer[dtype](length)
-    var out_buffer = NDBuffer[dtype, 1](out_device._unsafe_ptr(), Index(length))
+    var out_buffer = NDBuffer[dtype, 1](out_device.unsafe_ptr(), Index(length))
 
     @always_inline
     @__copy_capture(out_buffer)

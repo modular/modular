@@ -13,19 +13,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from enum import Enum
-from typing import Callable, TypeVar
+from typing import TypeVar
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
+from max.graph import (
+    DeviceRef,
+    TensorValue,
+    TensorValueLike,
+    ops,
+)
 
 from ..attention.interfaces import AttentionImpl, AttentionImplQKV
 from ..embedding import Embedding, EmbeddingV1
 from ..kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
-    PagedKVCacheCollection,
+    PagedCacheValues,
 )
 from ..layer import Layer, LayerList, Module
 from ..linear import Linear, LinearV1
@@ -54,7 +57,7 @@ class TransformerBlock(Module):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -101,12 +104,10 @@ class Transformer(Module):
         output: LinearV1 | Linear,
         embedding: EmbeddingV1 | Embedding,
         kv_params: KVCacheParams,
-        kv_collection_constructor: FetchPagedKVCacheCollection,
         rope: RotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         embedding_multiplier: float = 1.0,
-        logits_postprocessor: Callable[[TensorValue], TensorValue]
-        | None = None,
+        logits_scaling: float = 1.0,
     ) -> None:
         super().__init__()
         self.dim = dim
@@ -116,23 +117,15 @@ class Transformer(Module):
         self.lm_head = output
         self.embed_tokens = embedding
         self.kv_params = kv_params
-        self.kv_collection_constructor = kv_collection_constructor
         self.embedding_multiplier = embedding_multiplier
-        self.logits_postprocessor = logits_postprocessor
         self.rope = rope
         self.return_logits = return_logits
-
-    def _apply_logits_postprocessor(
-        self, output: tuple[TensorValue, ...]
-    ) -> tuple[TensorValue, ...]:
-        if self.logits_postprocessor is None:
-            return output
-        return tuple(self.logits_postprocessor(elem) for elem in output)
+        self.logits_scaling = logits_scaling
 
     def __call__(
         self,
         tokens: TensorValueLike,
-        kv_cache_inputs: Sequence[TensorValue],
+        kv_collection: PagedCacheValues,
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
@@ -143,11 +136,8 @@ class Transformer(Module):
                 self.embedding_multiplier, h.dtype, device=h.device
             )
 
-        kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
-
         # Create position embeddings shared across the decoder layers.
         freqs_cis = self.rope.freqs_cis
-
         for idx, layer in enumerate(self.layers):
             h = layer(
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
@@ -192,15 +182,10 @@ class Transformer(Module):
             logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
             offsets = input_row_offsets
 
-        if logits:
-            last_logits, logits = self._apply_logits_postprocessor(
-                (
-                    last_logits,
-                    logits,
-                )
-            )
-        else:
-            last_logits = self._apply_logits_postprocessor((last_logits,))[0]
+        if self.logits_scaling != 1.0:
+            last_logits = last_logits / self.logits_scaling
+            if logits is not None:
+                logits = logits / self.logits_scaling
 
         if offsets is not None:
             assert logits is not None

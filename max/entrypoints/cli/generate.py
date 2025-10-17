@@ -16,19 +16,29 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
-import uuid
 from collections.abc import Iterable
-from typing import Optional
+from typing import Any
 
 import requests
 from max.interfaces import (
+    LogitsProcessor,
     Pipeline,
     PipelineTokenizer,
-    TextGenerationInputs,
+    ProcessorInputs,
+    RequestID,
+    SamplingParams,
+    TextGenerationContext,
     TextGenerationRequest,
 )
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    GenerateMixin,
+    PipelineConfig,
+    TextAndVisionTokenizer,
+    TextTokenizer,
+)
 
 from .metrics import TextGenerationMetrics
 
@@ -37,74 +47,63 @@ logger = logging.getLogger("max.entrypoints")
 MODEL_NAME = "model"
 
 
+class TrackMetrics:
+    def __init__(self, metrics: TextGenerationMetrics):
+        self.metrics = metrics
+        self.first_token = True
+
+    def __call__(self, inputs: ProcessorInputs) -> None:
+        if self.first_token:
+            self.first_token = False
+            self.metrics.signpost("first_token")
+            self.metrics.prompt_size = inputs.context.current_length
+        self.metrics.new_token()
+
+
 async def stream_text_to_console(
-    pipeline: Pipeline,
-    tokenizer: PipelineTokenizer,
+    pipeline: Pipeline[Any, Any],
+    tokenizer: PipelineTokenizer[
+        TextGenerationContext, Any, TextGenerationRequest
+    ],
     prompt: str,
-    images: Optional[list[bytes]],
-    num_steps: int,
-    metrics: Optional[TextGenerationMetrics] = None,
+    images: list[bytes] | None,
+    sampling_params: SamplingParams,
+    metrics: TextGenerationMetrics | None = None,
     print_tokens: bool = True,
 ) -> None:
-    req_id = str(uuid.uuid4())
-    context = await tokenizer.new_context(
-        TextGenerationRequest(
-            request_id=req_id,
-            prompt=prompt,
-            images=images,
-            model_name=MODEL_NAME,
-        )
-    )
-    pipeline_request = {req_id: context}
-    if print_tokens:
-        print(prompt, end="", flush=True)
-
-    prompt_size = context.current_length
+    assert isinstance(tokenizer, TextTokenizer | TextAndVisionTokenizer)
+    logits_processors: list[LogitsProcessor] = []
     if metrics:
-        metrics.prompt_size = prompt_size
+        logits_processors.append(TrackMetrics(metrics))
+
+    sampling_params = dataclasses.replace(
+        sampling_params, logits_processors=logits_processors
+    )
+
+    request = TextGenerationRequest(
+        request_id=RequestID(),
+        prompt=prompt,
+        images=images,
+        model_name=MODEL_NAME,
+        sampling_params=sampling_params,
+    )
+
+    if metrics:
         metrics.signpost("begin_generation")
-
     try:
-        first_token = True
-        generate_again = True
-        while generate_again:
-            responses = pipeline.execute(
-                TextGenerationInputs([pipeline_request], num_steps=num_steps)
-            )
-
-            for request_idx, response in responses.items():  # noqa: B007
-                if response.is_done:
-                    generate_again = False
-
-                for encoded_token in response.tokens:
-                    response_text = await tokenizer.decode(encoded_token)
-                    if metrics:
-                        if first_token:
-                            first_token = False
-                            metrics.signpost("first_token")
-                        metrics.new_token()
-                    if print_tokens:
-                        print(response_text, end="", flush=True)
-
-            # Yield to the event loop.  If at no other point (e.g.
-            # tokenizer.decode which we await earlier does not yield to the
-            # event loop), it will be at this point that we'll receive a
-            # CancelledError if our future was canceled (e.g., we received a
-            # SIGINT).
-            await asyncio.sleep(0)
-
+        assert isinstance(pipeline, GenerateMixin)
+        async for outputs in pipeline.generate_async(request):
+            if print_tokens:
+                decoded = tokenizer.delegate.decode(outputs[0].tokens)
+                print(decoded, end="", flush=True)
     finally:
         if metrics:
             metrics.signpost("end_generation")
 
-        pipeline.release(context.request_id)
-
-    if print_tokens:
-        print()
-
 
 def generate_text_for_pipeline(
     pipeline_config: PipelineConfig,
+    sampling_params: SamplingParams,
     prompt: str,
     image_urls: Iterable[str] = (),
     num_warmups: int = 0,
@@ -121,18 +120,20 @@ def generate_text_for_pipeline(
 
         if num_warmups > 0:
             logger.info("Running warmup")
-            for _ in range(num_warmups):
-                asyncio.run(
-                    stream_text_to_console(
-                        pipeline,
-                        tokenizer,
-                        prompt,
-                        images,
-                        num_steps=pipeline_config.max_num_steps,
-                        metrics=None,
-                        print_tokens=False,
-                    )
+            warmup_params = dataclasses.replace(
+                sampling_params, max_new_tokens=num_warmups
+            )
+            asyncio.run(
+                stream_text_to_console(
+                    pipeline,
+                    tokenizer,
+                    prompt,
+                    images,
+                    sampling_params=warmup_params,
+                    metrics=None,
+                    print_tokens=False,
                 )
+            )
 
         # Run and print results.
         logger.info("Beginning text generation")
@@ -142,7 +143,7 @@ def generate_text_for_pipeline(
                 tokenizer,
                 prompt,
                 images,
-                num_steps=pipeline_config.max_num_steps,
+                sampling_params=sampling_params,
                 metrics=metrics,
                 print_tokens=True,
             )

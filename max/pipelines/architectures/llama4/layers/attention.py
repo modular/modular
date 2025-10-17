@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import math
-from typing import Callable
+from collections.abc import Callable
 
 from max.dtype import DType
 from max.graph import (
@@ -38,7 +38,7 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import (
     KVCacheParams,
-    PagedKVCacheCollection,
+    PagedCacheValues,
 )
 from max.nn.layer import Module
 from max.nn.linear import Linear
@@ -47,7 +47,7 @@ from max.nn.rotary_embedding import RotaryEmbedding
 from .norm import l2_norm
 
 
-def Llama4TextAttention(**kwargs):
+def Llama4TextAttention(**kwargs):  # noqa: ANN201
     """Implementation of the attention layer for the Llama4 text model."""
     devices = kwargs["devices"]
     if len(devices) == 1:
@@ -97,7 +97,7 @@ class _Llama4TextAttention(Module):
             attn_scale: Float, used with `attn_temperature_tuning`.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used. Use
-                `DistributedAttentionWithRope` to use all devices during
+                `TensorParallelAttentionWithRope` to use all devices during
                 attention computation.
             linear_cls: Linear class to use for the outputs dense layer.
             scale: Value used to scale the results of the attention output.
@@ -203,7 +203,7 @@ class _Llama4TextAttention(Module):
         self,
         xs: list[TensorValue],
         cache_positions_list: list[TensorValue],
-        kv_collections: list[PagedKVCacheCollection],
+        kv_collections: list[PagedCacheValues],
         **kwargs,
     ) -> list[TensorValue]:
         assert len(xs) == 1 and len(kv_collections) == 1
@@ -342,7 +342,7 @@ class _DistributedLlama4TextAttention(_Llama4TextAttention):
         self,
         xs: list[TensorValue],
         cache_positions_list: list[TensorValue],
-        kv_collections: list[PagedKVCacheCollection],
+        kv_collections: list[PagedCacheValues],
         **kwargs,
     ) -> list[TensorValue]:
         input_row_offsets = kwargs["input_row_offsets"]

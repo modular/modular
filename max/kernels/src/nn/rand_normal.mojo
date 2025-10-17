@@ -68,8 +68,8 @@ fn random_normal[
         var generator = NormalRandom(seed=seed_value, offset=UInt64(offset))
 
         var values = generator.step_normal(
-            mean=Scalar[DType.float32](mean),
-            stddev=Scalar[DType.float32](stddev),
+            mean=Float32(mean),
+            stddev=Float32(stddev),
         )
 
         output_fn[width=width](idx, values.cast[dtype]().slice[width]())

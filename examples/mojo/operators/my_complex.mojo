@@ -17,8 +17,8 @@ from math import sqrt
 @register_passable("trivial")
 struct Complex(
     Boolable,
-    Copyable,
     EqualityComparable,
+    ImplicitlyCopyable,
     Movable,
     Representable,
     Stringable,
@@ -79,13 +79,13 @@ struct Complex(
 
         @parameter
         if idx == 0:
-            var p = UnsafePointer(to=self.re).origin_cast[
-                origin = __origin_of(self)
+            var p = UnsafePointer(to=self.re).unsafe_origin_cast[
+                __origin_of(self)
             ]()
             return p[]
         else:
-            var p = UnsafePointer(to=self.im).origin_cast[
-                origin = __origin_of(self)
+            var p = UnsafePointer(to=self.im).unsafe_origin_cast[
+                __origin_of(self)
             ]()
             return p[]
 

@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+import functools
+
 from max.nn import (
     MLP,
     Embedding,
@@ -24,7 +26,6 @@ from max.nn import (
     TransformerBlock,
 )
 from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
-from max.nn.kv_cache import FetchPagedKVCacheCollection
 from max.nn.moe import MoE
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -77,6 +78,7 @@ class DeepseekV2(Transformer):
                     qk_rope_head_dim=config.qk_rope_head_dim,
                     v_head_dim=config.v_head_dim,
                     devices=config.devices,
+                    graph_mode=config.graph_mode,
                 ),
                 mlp=self._get_mlp(config, i),
                 attention_norm=RMSNorm(
@@ -123,9 +125,6 @@ class DeepseekV2(Transformer):
             output=lm_head,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=FetchPagedKVCacheCollection(
-                config.kv_params
-            ),
             rope=rope,
         )
 
@@ -152,7 +151,13 @@ class DeepseekV2(Transformer):
                 num_experts=config.n_routed_experts,
                 num_experts_per_token=config.num_experts_per_tok,
                 moe_dim=config.moe_intermediate_size,
-                gate_cls=DeepSeekV2MoEGate,
+                gate_cls=functools.partial(
+                    DeepSeekV2MoEGate,
+                    topk_method=config.topk_method,
+                    n_group=config.n_group,
+                    topk_group=config.topk_group,
+                    routed_scaling_factor=config.routed_scaling_factor,
+                ),
                 has_shared_experts=True,
                 shared_experts_dim=config.n_shared_experts
                 * config.moe_intermediate_size,

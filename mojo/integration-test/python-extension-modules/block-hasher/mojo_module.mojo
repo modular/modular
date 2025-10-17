@@ -16,8 +16,8 @@ from os import abort
 from sys import size_of
 
 from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
 from python._cpython import PyObjectPtr
+from python.bindings import PythonModuleBuilder
 
 
 @export
@@ -39,7 +39,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
 
 @fieldwise_init
-struct PyArrayObject[dtype: DType](Copyable, Movable):
+struct PyArrayObject[dtype: DType](ImplicitlyCopyable, Movable):
     """
     Container for a numpy array.
 

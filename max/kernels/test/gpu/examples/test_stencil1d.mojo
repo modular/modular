@@ -37,7 +37,7 @@ fn stencil1d(
     var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
     var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
 
-    if 0 < tid < arr_size - 1:
+    if 0 < tid < UInt(arr_size - 1):
         b[tid] = coeff0 * a[(tid - 1)] + coeff1 * a[tid] + coeff2 * a[(tid + 1)]
 
 
@@ -61,14 +61,16 @@ fn stencil1d_smem(
 
     a_shared[lindex] = a[tid]
     if thread_idx.x == 0:
-        a_shared[lindex - 1] = a[(tid - 1)] if 0 <= tid - 1 < arr_size else 0
+        a_shared[lindex - 1] = (
+            a[(tid - 1)] if 0 <= tid - 1 < UInt(arr_size) else 0
+        )
         a_shared[lindex + BLOCK_DIM] = (
-            a[(tid + BLOCK_DIM)] if tid + BLOCK_DIM < arr_size else 0
+            a[(tid + BLOCK_DIM)] if tid + BLOCK_DIM < UInt(arr_size) else 0
         )
 
     barrier()
 
-    if 0 < tid < arr_size - 1:
+    if 0 < tid < UInt(arr_size - 1):
         b[tid] = (
             coeff0 * a_shared[lindex - 1]
             + coeff1 * a_shared[lindex]
@@ -102,7 +104,7 @@ fn run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
     alias func_select = stencil1d_smem if smem == True else stencil1d
 
     for _ in range(iterations):
-        ctx.enqueue_function[func_select](
+        ctx.enqueue_function_checked[func_select, func_select](
             a_device,
             b_device,
             m,

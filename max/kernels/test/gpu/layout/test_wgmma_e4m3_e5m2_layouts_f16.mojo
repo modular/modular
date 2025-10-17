@@ -239,7 +239,7 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext):
         a_type = DType.float8_e4m3fn,
         b_type = DType.float8_e4m3fn,
     ]
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -382,7 +382,7 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext):
         b_type = DType.float8_e5m2,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -525,7 +525,7 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext):
         b_type = DType.float8_e5m2,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),
@@ -668,7 +668,7 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext):
         b_type = DType.float8_e4m3fn,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         lhs.device_tensor(),
         rhs.device_tensor(),
         res.device_tensor(),

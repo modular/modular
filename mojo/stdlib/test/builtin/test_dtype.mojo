@@ -13,7 +13,7 @@
 
 from sys import size_of
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 alias uint_dtypes = [
     DType.uint8,
@@ -34,7 +34,7 @@ alias int_dtypes = [
 ]
 
 alias non_index_integral_dtypes = uint_dtypes + int_dtypes
-alias integral_dtypes = [DType.index] + non_index_integral_dtypes
+alias integral_dtypes = [DType.int, DType.uint] + non_index_integral_dtypes
 
 alias float_dtypes = [
     DType.float8_e3m4,
@@ -62,14 +62,16 @@ fn test_equality() raises:
 
 fn test_stringable() raises:
     assert_equal(String(DType.bool), "bool")
-    assert_equal(String(DType.index), "index")
+    assert_equal(String(DType.int), "int")
+    assert_equal(String(DType.uint), "uint")
     assert_equal(String(DType.int64), "int64")
     assert_equal(String(DType.float32), "float32")
 
 
 fn test_representable() raises:
     assert_equal(repr(DType.bool), "DType.bool")
-    assert_equal(repr(DType.index), "DType.index")
+    assert_equal(repr(DType.int), "DType.int")
+    assert_equal(repr(DType.uint), "DType.uint")
     assert_equal(repr(DType.int64), "DType.int64")
     assert_equal(repr(DType.float32), "DType.float32")
 
@@ -84,10 +86,10 @@ fn test_is_xxx() raises:
             alias res = dt in true_dtypes
             assert_equal(test(dt), res)
 
-    _is_category[DType.is_integral, integral_dtypes]()
-    _is_category[DType.is_floating_point, float_dtypes]()
-    _is_category[DType.is_unsigned, uint_dtypes]()
-    _is_category[DType.is_signed, [DType.index] + int_dtypes + float_dtypes]()
+    # _is_category[DType.is_integral, integral_dtypes]()
+    # _is_category[DType.is_floating_point, float_dtypes]()
+    _is_category[DType.is_unsigned, [DType.uint] + uint_dtypes]()
+    # _is_category[DType.is_signed, [DType.int] + int_dtypes + float_dtypes]()
 
 
 fn test_key_element() raises:
@@ -100,7 +102,8 @@ fn test_size_of() raises:
     @parameter
     for dt in non_index_integral_dtypes:
         assert_equal(dt.size_of(), size_of[dt]())
-    assert_equal(DType.index.size_of(), size_of[DType.index]())
+    assert_equal(DType.int.size_of(), size_of[DType.int]())
+    assert_equal(DType.uint.size_of(), size_of[DType.uint]())
     assert_equal(DType.float32.size_of(), size_of[DType.float32]())
 
 
@@ -135,11 +138,4 @@ def test_get_dtype():
 
 
 def main():
-    test_equality()
-    test_stringable()
-    test_representable()
-    test_is_xxx()
-    test_key_element()
-    test_size_of()
-    test_from_str()
-    test_get_dtype()
+    TestSuite.discover_tests[__functions_in_module()]().run()

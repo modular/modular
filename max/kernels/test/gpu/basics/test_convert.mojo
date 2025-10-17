@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.host import get_gpu_target
 from testing import *
 
 
@@ -82,7 +81,8 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     var device_buf = ctx.enqueue_create_buffer[dst_type](size)
     _ = device_buf.enqueue_fill(0)
 
-    ctx.enqueue_function[convert_kernel[src_type, dst_type, size]](
+    alias kernel = convert_kernel[src_type, dst_type, size]
+    ctx.enqueue_function_checked[kernel, kernel](
         device_buf, grid_dim=(1), block_dim=(1)
     )
     with device_buf.map_to_host() as host_buf:
@@ -90,7 +90,7 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
             assert_equal(host_buf[i], i)
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_convert_asm()
         # Only support 2xFP32 -> 2xBF16 conversion via ptx.

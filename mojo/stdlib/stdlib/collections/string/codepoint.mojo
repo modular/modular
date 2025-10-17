@@ -62,7 +62,9 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
     )
 
 
-struct Codepoint(Copyable, EqualityComparable, Intable, Movable, Stringable):
+struct Codepoint(
+    EqualityComparable, ImplicitlyCopyable, Intable, Movable, Stringable
+):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
 
@@ -196,7 +198,7 @@ struct Codepoint(Copyable, EqualityComparable, Intable, Movable, Stringable):
     @staticmethod
     fn unsafe_decode_utf8_codepoint(
         s: Span[mut=False, UInt8, *_],
-    ) -> (Codepoint, Int):
+    ) -> Tuple[Codepoint, Int]:
         """Decodes a single `Codepoint` and number of bytes read from a given
         UTF-8 string pointer.
 
@@ -559,7 +561,7 @@ struct Codepoint(Copyable, EqualityComparable, Intable, Movable, Stringable):
                     ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
             else:
                 var shift = 6 * (num_bytes - 1)
-                var mask = UInt8(0xFF) >> (num_bytes + Int(num_bytes > 1))
+                var mask = UInt8(0xFF) >> (num_bytes + UInt(Int(num_bytes > 1)))
                 var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
                 ptr[0] = ((c >> shift) & mask) | (
                     num_bytes_marker & splat(num_bytes != 1)

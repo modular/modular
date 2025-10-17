@@ -15,10 +15,9 @@
 from __future__ import annotations
 
 import math
-from typing import Callable, Literal
+from typing import Literal
 
 from max.dtype import DType
-from max.graph import TensorValue
 from max.graph.weights import WeightData
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
@@ -42,7 +41,7 @@ class Qwen3Config(Llama3Config):
         n_devices: int,
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-        pipeline_parallel_degree: int = 1,
+        data_parallel_degree: int = 1,
     ) -> KVCacheParams:
         """Override the default Llama3Config.get_kv_params to use head_dim from config.
 
@@ -54,7 +53,6 @@ class Qwen3Config(Llama3Config):
             n_devices: Number of devices for distributed inference.
             kv_cache_config: Configuration for KV cache.
             cache_dtype: Data type for the cache.
-            pipeline_parallel_degree: Pipeline parallel degree (default 1).
 
         Returns:
             KVCacheParams object with the correct head_dim from config.
@@ -71,11 +69,7 @@ class Qwen3Config(Llama3Config):
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             n_devices=n_devices,
-            # Pipeline parallel fields
-            pipeline_parallel_degree=pipeline_parallel_degree,
-            total_num_layers=huggingface_config.num_hidden_layers
-            if pipeline_parallel_degree > 1
-            else None,
+            data_parallel_degree=data_parallel_degree,
         )
 
     @staticmethod
@@ -84,7 +78,6 @@ class Qwen3Config(Llama3Config):
         n_devices: int,
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-        pipeline_parallel_degree: int = 1,
     ) -> float:
         """The attention multiplier for Qwen3 models.
 
@@ -95,7 +88,6 @@ class Qwen3Config(Llama3Config):
             n_devices: Number of devices for distributed inference.
             kv_cache_config: Configuration for KV cache.
             cache_dtype: Data type for the cache.
-            pipeline_parallel_degree: Pipeline parallel degree (default 1).
 
         Returns:
             The attention multiplier value.
@@ -111,7 +103,6 @@ class Qwen3Config(Llama3Config):
                         n_devices=n_devices,
                         kv_cache_config=kv_cache_config,
                         cache_dtype=cache_dtype,
-                        pipeline_parallel_degree=pipeline_parallel_degree,
                     ).head_dim
                 )
             ),
@@ -124,14 +115,12 @@ class Qwen3Config(Llama3Config):
         state_dict: dict[str, WeightData],
         dtype: DType,
         n_devices: int,
-        logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
         attention_bias: bool = False,
-        pipeline_parallel_degree: int = 1,
-        tensor_parallel_degree: int = 1,
+        data_parallel_degree: int = 1,
     ) -> Qwen3Config:
         """Generate a Qwen3Config from the provided parameters.
 
@@ -145,14 +134,11 @@ class Qwen3Config(Llama3Config):
             state_dict: Model state dictionary.
             dtype: Model data type.
             n_devices: Number of devices.
-            logits_postprocessor: Optional logits postprocessor.
             cache_dtype: KV cache data type.
             kv_cache_config: KV cache configuration.
             return_logits: Return logits configuration.
             norm_method: Normalization method.
             attention_bias: Whether to use attention bias.
-            pipeline_parallel_degree: Pipeline parallel degree.
-            tensor_parallel_degree: Tensor parallel degree.
 
         Returns:
             Configured Qwen3Config instance.
@@ -164,14 +150,12 @@ class Qwen3Config(Llama3Config):
             state_dict=state_dict,
             dtype=dtype,
             n_devices=n_devices,
-            logits_postprocessor=logits_postprocessor,
             cache_dtype=cache_dtype,
             kv_cache_config=kv_cache_config,
             return_logits=return_logits,
             norm_method=norm_method,
             attention_bias=attention_bias,
-            pipeline_parallel_degree=pipeline_parallel_degree,
-            tensor_parallel_degree=tensor_parallel_degree,
+            data_parallel_degree=data_parallel_degree,
         )
 
         # Override the KV parameters and attention multiplier with Qwen3-specific calculations
@@ -180,7 +164,7 @@ class Qwen3Config(Llama3Config):
             n_devices=n_devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
-            pipeline_parallel_degree=pipeline_parallel_degree,
+            data_parallel_degree=data_parallel_degree,
         )
 
         qwen3_attention_multiplier = Qwen3Config.calculate_attention_multiplier(
@@ -188,7 +172,6 @@ class Qwen3Config(Llama3Config):
             n_devices=n_devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
-            pipeline_parallel_degree=pipeline_parallel_degree,
         )
 
         # Return a new Qwen3Config with the corrected parameters
@@ -215,7 +198,6 @@ class Qwen3Config(Llama3Config):
             tie_word_embeddings=base_config.tie_word_embeddings,
             stacked_mlp=base_config.stacked_mlp,
             stacked_qkv=base_config.stacked_qkv,
-            logits_postprocessor=base_config.logits_postprocessor,
             attention_multiplier=qwen3_attention_multiplier,  # Use Qwen3-specific attention multiplier
             embedding_multiplier=base_config.embedding_multiplier,
             residual_multiplier=base_config.residual_multiplier,
@@ -223,7 +205,6 @@ class Qwen3Config(Llama3Config):
             clip_qkv=base_config.clip_qkv,
             float8_config=base_config.float8_config,
             use_subgraphs=base_config.use_subgraphs,
-            pipeline_parallel_degree=pipeline_parallel_degree,
-            tensor_parallel_degree=tensor_parallel_degree,
+            data_parallel_degree=data_parallel_degree,
             dist_gemm_config=base_config.dist_gemm_config,
         )

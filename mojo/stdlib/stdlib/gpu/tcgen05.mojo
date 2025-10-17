@@ -15,16 +15,14 @@
 tensorcore 5th generation (tcgen05) instructions."""
 
 from os import abort
-
 from sys import _RegisterPackType, size_of
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
 
 from gpu.memory import AddressSpace, external_memory
 from gpu.mma import _str_iota  # TODO: move to a string module
-from memory import bitcast
-
 from gpu.mma_sm100 import MMASmemDescriptor
+from memory import bitcast
 
 alias check_blackwell_constraint = constrained[
     _has_blackwell_tcgen05(),
@@ -39,9 +37,7 @@ alias check_blackwell_constraint = constrained[
 struct TensorMemory:
     """A wrapper around tensor memory allocated for tcgen05 instructions."""
 
-    var ptr: UnsafePointer[
-        UInt32, address_space = AddressSpace.SHARED, alignment=16
-    ]
+    var ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED]
     """Pointer to the tensor memory address."""
 
     var num_cols: UInt32
@@ -65,9 +61,7 @@ struct TensorMemory:
 fn tcgen05_alloc[
     cta_group: Int32
 ](
-    ptr_tmem_addr: UnsafePointer[
-        UInt32, address_space = AddressSpace.SHARED, alignment=16
-    ],
+    ptr_tmem_addr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
     num_cols: UInt32,
 ):
     """Allocates tensor memory for use with tcgen05 instructions.
@@ -410,13 +404,13 @@ fn tcgen05_st[
             data[40], data[41], data[42], data[43], data[44], data[45], data[46], data[47],
             data[48], data[49], data[50], data[51], data[52], data[53], data[54], data[55],
             data[56], data[57], data[58], data[59], data[60], data[61], data[62], data[63],
-            data[64], data[65], data[66], data[67], data[68], data[69], data[70], data[71], 
-            data[72], data[73], data[74], data[75], data[76], data[77], data[78], data[79], 
-            data[80], data[81], data[82], data[83], data[84], data[85], data[86], data[87], 
-            data[88], data[89], data[90], data[91], data[92], data[93], data[94], data[95], 
-            data[96], data[97], data[98], data[99], data[100], data[101], data[102], data[103], 
-            data[104], data[105], data[106], data[107], data[108], data[109], data[110], data[111], 
-            data[112], data[113], data[114], data[115], data[116], data[117], data[118], data[119], 
+            data[64], data[65], data[66], data[67], data[68], data[69], data[70], data[71],
+            data[72], data[73], data[74], data[75], data[76], data[77], data[78], data[79],
+            data[80], data[81], data[82], data[83], data[84], data[85], data[86], data[87],
+            data[88], data[89], data[90], data[91], data[92], data[93], data[94], data[95],
+            data[96], data[97], data[98], data[99], data[100], data[101], data[102], data[103],
+            data[104], data[105], data[106], data[107], data[108], data[109], data[110], data[111],
+            data[112], data[113], data[114], data[115], data[116], data[117], data[118], data[119],
             data[120], data[121], data[122], data[123], data[124], data[125], data[126], data[127],
             tmem_addr)
     # fmt: on

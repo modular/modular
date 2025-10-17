@@ -14,8 +14,8 @@
 
 from __future__ import annotations
 
+from max._core.dialects import kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from ..dim import StaticDim
 from ..graph import Graph
@@ -95,11 +95,12 @@ def band_part(
             f"{num_upper=} is out of bounds for dimension size {int(n)}"
         )
 
-    return Graph.current._add_op(
-        rmo.mo_linalg_band_part,
-        x.type.to_mlir(),
+    return Graph.current._add_op_generated(
+        rmo.MoLinalgBandPartOp,
+        x.type,
         x,
         constant(num_lower, DType.int64, DeviceRef.CPU()),
         constant(num_upper, DType.int64, DeviceRef.CPU()),
         constant(exclude, DType.bool, DeviceRef.CPU()),
+        kgen.ParamDeclArrayAttr([]),
     )[0].tensor

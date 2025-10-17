@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, ceildiv, isqrt
+from math import align_down, ceildiv, rsqrt
 from sys.info import align_of, simd_width_of, size_of
 
 import gpu.warp as warp
@@ -33,17 +33,16 @@ from gpu import (
     warp_id,
 )
 from gpu.grid_controls import PDL, pdl_launch_attributes
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
 from gpu.memory import AddressSpace, external_memory
 from layout import (
-    LayoutTensor,
-    Layout,
+    UNKNOWN_VALUE,
     IntTuple,
+    Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from memory import stack_allocation
@@ -79,7 +78,7 @@ fn block_reduce[
 
     var warp_m2 = warp.sum(val)
 
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
     var lane_idx = lane_id()
 
     if lane_idx == 0:
@@ -221,7 +220,7 @@ fn welford_block_all_reduce[
     barrier()
 
     if warp_idx == 0:
-        if thread_idx.x < UInt(block_dim.x // WARP_SIZE):
+        if thread_idx.x < UInt(block_dim.x // UInt(WARP_SIZE)):
             warp_mean = mean_shared[lane_idx]
             warp_m2 = m2_shared[lane_idx]
             warp_count = count_shared[lane_idx]
@@ -311,7 +310,7 @@ fn layer_norm_gpu_warp_tiling[
         )
 
         var row_var = max(row_m2 / row_count, 0.0)
-        var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
+        var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
         if idx < UInt(num_cols):
             var gamma_val = gamma_fn[simd_width](Index(idx))
@@ -392,7 +391,7 @@ fn layer_norm_gpu_block[
             )
 
         var row_var = max(row_m2 / row_count, 0)
-        var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
+        var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
         # need a pass again to perform in place normalization
         for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
@@ -470,7 +469,7 @@ fn layer_norm_gpu[
     fn input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        # Translate given 2d index back to original Nd tensor
+        # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
@@ -634,7 +633,7 @@ fn layer_norm_cpu[
         var var_val = variance[dtype, input_gen_wrapper](
             num_cols, mean_val, 0
         )  # use biased estimator
-        var norm_factor = isqrt(var_val + epsilon)
+        var norm_factor = rsqrt(var_val + epsilon)
 
         @__copy_capture(norm_factor, mean_val, row)
         @parameter
@@ -698,7 +697,7 @@ fn layer_norm_cpu[
         fn input_fn_2d[
             simd_width: Int
         ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-            # Translate given 2d index back to original Nd tensor
+            # Translate a given 2D index back to the original n-D tensor
             var indices = _get_start_indices_of_nth_subvolume(
                 row_idx + row, shape
             )
@@ -711,7 +710,7 @@ fn layer_norm_cpu[
         fn output_fn_2d[
             simd_width: Int, alignment: Int
         ](row: Int, col: Int, val: SIMD[dtype, simd_width]):
-            # Translate given 2d index back to original Nd tensor
+            # Translate a given 2D index back to the original n-D tensor
             var indices = _get_start_indices_of_nth_subvolume(
                 row_idx + row, shape
             )
@@ -760,9 +759,10 @@ fn layer_norm[
     fn description_fn() -> String:
         return trace_arg("input", shape, dtype)
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "layer_norm",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.get_device_context().id()),
     ):
 
         @parameter
@@ -849,7 +849,7 @@ fn _rms_norm_warp_tiling_subkernel[
             thread_m2
         )
 
-    var norm_factor = isqrt((row_m2 / num_cols) + epsilon)
+    var norm_factor = rsqrt((row_m2 / num_cols) + epsilon)
     var norm_val: SIMD[dtype, simd_width] = 0
     if idx < num_cols:
         var gamma_idx = gamma.runtime_layout(
@@ -903,17 +903,16 @@ fn rms_norm_gpu_warp_tiling_128[
     var vec_data = SIMD[accum_type, simd_width](0)
     var tid = thread_idx.x
     # Each warp handles 2 rows, so total rows per block is warps_per_block * 2
-    var block_row = block_idx.x * (warps_per_block * 2)
-    var warp_id = tid // WARP_SIZE
-    var sub_warp_id = (tid % WARP_SIZE) // half_warp_size
+    var block_row = block_idx.x * UInt(warps_per_block * 2)
+    var warp_id = tid // UInt(WARP_SIZE)
+    var sub_warp_id = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     # Each warp handles 2 rows, offset by the block's base row
     var row = block_row + (warp_id * 2) + sub_warp_id
-    var local_tid = tid % half_warp_size
-    var idx = local_tid * simd_width
-    var thread_m2 = Scalar[accum_type](0)
+    var local_tid = tid % UInt(half_warp_size)
+    var idx = local_tid * UInt(simd_width)
 
     with PDL():
-        if row < num_rows and idx < num_cols:
+        if row < UInt(num_rows) and idx < UInt(num_cols):
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
 
         var norm_val = _rms_norm_warp_tiling_subkernel[
@@ -927,7 +926,7 @@ fn rms_norm_gpu_warp_tiling_128[
             weight_offset_accum,
             num_cols,
         )
-        if row < num_rows and idx < num_cols:
+        if row < UInt(num_rows) and idx < UInt(num_cols):
             output_fn[simd_width, align](row, idx, norm_val)
 
 
@@ -962,11 +961,10 @@ fn rms_norm_gpu_warp_tiling[
     var vec_data = SIMD[accum_type, simd_width](0)
     var tid = thread_idx.x
     var row = block_idx.x
-    var idx = tid * simd_width
-    var thread_m2 = Scalar[accum_type](0)
+    var idx = tid * UInt(simd_width)
 
     with PDL():
-        if idx < num_cols:
+        if idx < UInt(num_cols):
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
 
         var norm_val = _rms_norm_warp_tiling_subkernel[
@@ -980,7 +978,7 @@ fn rms_norm_gpu_warp_tiling[
             weight_offset_accum,
             num_cols,
         )
-        if idx < num_cols:
+        if idx < UInt(num_cols):
             output_fn[simd_width, align](row, idx, norm_val)
 
 
@@ -1015,7 +1013,7 @@ fn _rms_norm_gpu_block_subkernel[
 
     # Every block has a single row to process
     for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
-        var offset = x * block_dim.x * simd_width + tid * simd_width
+        var offset = x * block_dim.x * simd_width + tid * UInt(simd_width)
         if offset < num_cols:
             var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
             thread_m2 += (vec_data**2).reduce_add()
@@ -1023,11 +1021,11 @@ fn _rms_norm_gpu_block_subkernel[
     var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
         thread_m2
     )
-    var norm_factor = isqrt((row_m2 / num_cols) + eps_accum)
+    var norm_factor = rsqrt((row_m2 / num_cols) + eps_accum)
 
     # Need a pass again to perform in place normalization.
     for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
-        var offset = x * block_dim.x * simd_width + tid * simd_width
+        var offset = x * block_dim.x * simd_width + tid * UInt(simd_width)
 
         if offset < num_cols:
             var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
@@ -1119,7 +1117,7 @@ fn rms_norm_gpu[
     fn output_fn_2d[
         simd_width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
-        # Translate given 2d index back to original Nd tensor
+        # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         output_fn[simd_width, alignment](indices.canonicalize(), val)
@@ -1129,7 +1127,7 @@ fn rms_norm_gpu[
     fn input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        # Translate given 2d index back to original Nd tensor
+        # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
@@ -1273,7 +1271,7 @@ fn rms_norm_cpu[
             sum_val += input_fn[1](row, col).cast[intermediate_type]() ** 2
 
         var mean_val = _sum_to_mean(sum_val, num_cols)
-        var norm_factor = isqrt(mean_val + epsilon.cast[intermediate_type]())
+        var norm_factor = rsqrt(mean_val + epsilon.cast[intermediate_type]())
 
         @__copy_capture(norm_factor, weight_offset)
         @parameter
@@ -1343,7 +1341,7 @@ fn rms_norm_cpu[
         fn output_fn_2d[
             simd_width: Int, alignment: Int
         ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
-            # Translate given 2d index back to the original Nd tensor.
+            # Translate a given 2D index back to the original n-D tensor.
             var indices = _get_start_indices_of_nth_subvolume(
                 row_idx + row, shape
             )
@@ -1356,7 +1354,7 @@ fn rms_norm_cpu[
         fn input_fn_2d[
             simd_width: Int
         ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-            # Translate given 2d index back to the original Nd tensor.
+            # Translate a given 2D index back to the original n-D tensor.
             var indices = _get_start_indices_of_nth_subvolume(
                 row_idx + row, shape
             )
@@ -1478,11 +1476,10 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
     var vec_data = SIMD[dtype, simd_width](0)
     var tid = thread_idx.x
     var row = block_idx.x
-    var idx = tid * simd_width
-    var thread_m2 = Scalar[accum_type](0)
+    var idx = tid * UInt(simd_width)
 
     with PDL():
-        if idx < num_cols:
+        if idx < UInt(num_cols):
             vec_data = input_fn[simd_width](row, idx)
 
         var norm1_val = _rms_norm_warp_tiling_subkernel[
@@ -1497,7 +1494,7 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
             num_cols,
         )
 
-        if idx < num_cols:
+        if idx < UInt(num_cols):
             norm1_val += residual_input_fn[simd_width](row, idx)
             output_residual_fn[simd_width, align](row, idx, norm1_val)
 
@@ -1513,7 +1510,7 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
             num_cols,
         )
 
-        if idx < num_cols:
+        if idx < UInt(num_cols):
             output_fn[simd_width, align](row, idx, norm2_val)
 
 
@@ -1646,7 +1643,7 @@ fn rms_norm_fused_residual_add_gpu[
     fn output_fn_2d[
         simd_width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
-        # Translate given 2d index back to original Nd tensor
+        # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         output_fn[simd_width, alignment](indices.canonicalize(), val)
@@ -1656,7 +1653,7 @@ fn rms_norm_fused_residual_add_gpu[
     fn output_residual_fn_2d[
         simd_width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
-        # Translate given 2d index back to original Nd tensor
+        # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         output_residual_fn[simd_width, alignment](indices.canonicalize(), val)
@@ -1666,7 +1663,7 @@ fn rms_norm_fused_residual_add_gpu[
     fn input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        # Translate given 2d index back to original Nd tensor
+        # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
@@ -1676,7 +1673,7 @@ fn rms_norm_fused_residual_add_gpu[
     fn residual_input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        # Translate given 2d index back to original Nd tensor
+        # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return residual_input_fn[simd_width](indices.canonicalize())
@@ -1914,9 +1911,10 @@ fn rms_norm[
     fn description_fn() -> String:
         return trace_arg("input", shape, dtype)
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "rms_norm",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.get_device_context().id()),
     ):
         _rms_norm_impl[
             dtype,
@@ -2070,9 +2068,10 @@ fn rms_norm_fused_residual_add[
     fn description_fn() -> String:
         return trace_arg("input", shape, dtype)
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "rms_norm_fused_residual_add",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.get_device_context().id()),
     ):
         _rms_norm_fused_residual_add_impl[
             dtype,
@@ -2178,9 +2177,6 @@ fn group_norm_gpu_warp_tiling[
     var thread_m2 = Scalar[accum_type]()
     var thread_count = Scalar[accum_type]()
 
-    var num_rows = output.runtime_layout.shape.value[0]
-    var num_cols = output.runtime_layout.shape.value[1]
-
     with PDL():
         if idx + simd_width <= UInt(group_size):
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
@@ -2196,14 +2192,14 @@ fn group_norm_gpu_warp_tiling[
         )
 
         var row_var = row_m2 / row_count
-        var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
+        var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
         if idx + simd_width <= UInt(group_size):
-            var g = row % num_groups
-            var c_base = g * channels_per_group
+            var g = row % UInt(num_groups)
+            var c_base = g * UInt(channels_per_group)
             var norm_val = SIMD[accum_type, simd_width]()
             for i in range(simd_width):
-                var offset = (idx + i) // spatial
+                var offset = (idx + i) // UInt(spatial)
                 var c = c_base + offset
                 var gamma_val = gamma_fn[1](Index(c))
                 var beta_val = beta_fn[1](Index(c))
@@ -2281,7 +2277,7 @@ fn group_norm_gpu_block[
         )
 
         var row_var = row_m2 / row_count
-        var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
+        var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
         for x in range(ceildiv(group_size // simd_width, block_dim.x)):
             var offset = x * block_dim.x * simd_width + tid * simd_width
@@ -2290,13 +2286,13 @@ fn group_norm_gpu_block[
                     accum_type
                 ]()
 
-                var g = row % num_groups
-                var c_base = g * channels_per_group
+                var g = row % UInt(num_groups)
+                var c_base = g * UInt(channels_per_group)
 
                 var norm_val = SIMD[accum_type, simd_width]()
                 for i in range(simd_width):
                     var offset_c = (offset + i) // spatial
-                    var c = c_base + offset_c
+                    var c = c_base + UInt(offset_c)
                     var gamma_val = gamma_fn[1](Index(c))
                     var beta_val = beta_fn[1](Index(c))
                     norm_val[i] = (
@@ -2511,9 +2507,10 @@ fn group_norm[
     fn description_fn() -> String:
         return trace_arg("input", shape, dtype)
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "group_norm",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.get_device_context().id()),
     ):
         group_norm_gpu[
             dtype=dtype,

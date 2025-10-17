@@ -7,22 +7,6 @@ module(
 
 include("//bazel:common.MODULE.bazel")
 
-bazel_dep(name = "toolchains_llvm", version = "1.4.0", dev_dependency = True)
-
-# TODO: Remove override (not patch) once >1.4.0 is released
-archive_override(
-    module_name = "toolchains_llvm",
-    integrity = "sha256-6aV/BiwLvmc4+ZU/E2cIZ2A8yXuUV3fS9V2oweWL41I=",
-    patch_strip = 1,
-    patches = [
-        "//bazel:toolchains_llvm.patch",
-    ],
-    strip_prefix = "toolchains_llvm-6eef27401b4dff9de4ca6f66aea7592a90305789",
-    urls = [
-        "https://github.com/bazel-contrib/toolchains_llvm/archive/6eef27401b4dff9de4ca6f66aea7592a90305789.tar.gz",
-    ],
-)
-
 mojo_aliases = use_repo_rule("//bazel:mojo_aliases.bzl", "mojo_aliases")
 
 mojo_aliases(name = "mojo")
@@ -35,41 +19,16 @@ modular_wheel_repository = use_repo_rule("//bazel:modular_wheel_repository.bzl",
 
 modular_wheel_repository(name = "modular_wheel")
 
+macos_sysroot_repository = use_repo_rule("//bazel/internal/cc-toolchain:macos_sysroot_repository.bzl", "macos_sysroot_repository")
+
+macos_sysroot_repository(name = "sysroot-macos")
+
 include("//bazel:mojo.MODULE.bazel")
 
-register_toolchains("@mojo_toolchains//...")
-
-llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm", dev_dependency = True)
-llvm.toolchain(
-    name = "llvm_toolchain",
-    llvm_versions = {
-        "linux-aarch64": "20.1.1",
-        "linux-x86_64": "20.1.1",
-    },
-    sha256 = {
-        "linux-aarch64": "86314680f7abea8e054d635c0e54b3f3f6993f8e826df0da8cfd02e456976625",
-        "linux-x86_64": "58d7a1a8fa22a001794e82a8e9ca441e12fb6d62fd8b7d47040df58a459dec8e",
-    },
-    stdlib = {
-        "linux-aarch64": "dynamic-stdc++",
-        "linux-x86_64": "dynamic-stdc++",
-    },
-    urls = {
-        "linux-aarch64": ["https://github.com/dzbarsky/static-clang/releases/download/v20.1.1/linux_arm64.tar.xz"],
-        "linux-x86_64": ["https://github.com/dzbarsky/static-clang/releases/download/v20.1.1/linux_amd64.tar.xz"],
-    },
+register_toolchains(
+    "@mojo_toolchains//...",
+    "//bazel/internal/cc-toolchain:all",
 )
-llvm.sysroot(
-    label = "@sysroot-jammy-aarch64",
-    targets = ["linux-aarch64"],
-)
-llvm.sysroot(
-    label = "@sysroot-jammy-x86_64",
-    targets = ["linux-x86_64"],
-)
-use_repo(llvm, "llvm_toolchain")
-
-register_toolchains("@llvm_toolchain//:all")
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
@@ -100,9 +59,9 @@ http_archive(
 )
 
 # NOTE: These versions don't particularly match what modular uses internally, this is only used for test dependencies
-LLVM_COMMIT = "6274cdb9a6714908c8a4e30d2ef0bf22a6949065"
+LLVM_COMMIT = "f645d209d42c0d4ccb31d48c6663676098d7ec4d"
 
-LLVM_SHA = "ee26cf9d90a87bd02f10f0846cda0f2e82e4d930a3704d5c790cb2ee76f44124"
+LLVM_SHA = "78e3990768c2325709f2f5cb54cb193422e35bf4a96ebb8f3de024b371b71dfc"
 
 http_archive(
     name = "llvm-raw",
@@ -121,6 +80,9 @@ npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependenc
 npm.npm_translate_lock(
     name = "npm",
     data = ["//bazel/lint:package.json"],
+    lifecycle_hooks_exclude = [
+        "cpu-features",
+    ],
     npm_package_lock = "//bazel/lint:package-lock.json",
     pnpm_lock = "//bazel/lint:pnpm-lock.yaml",
     verify_node_modules_ignored = "//:.bazelignore",

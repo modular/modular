@@ -17,20 +17,21 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from typing import Optional, cast
+from typing import Any, cast
 
 import numpy as np
 from max.driver import Device, DeviceSpec, Tensor
 from max.dtype import DType
-from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.engine.api import InferenceSession, Model
+from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheManager,
     KVCacheParams,
+    PagedCacheValues,
+    TPPagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -44,6 +45,7 @@ from max.pipelines.lib import (
     SupportedEncoding,
     upper_bounded_default,
 )
+from max.pipelines.lib.config_enums import PipelineRole
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
     log_probabilities_ragged_graph,
@@ -103,13 +105,11 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
-        return_n_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
     ) -> None:
         if pipeline_config.model_config.device_specs[0] == DeviceSpec.cpu():
-            msg = "DeepseekV2 currently only supported on gpu."
-            raise ValueError(msg)
+            raise ValueError("DeepseekV2 currently only supported on gpu.")
 
         super().__init__(
             pipeline_config,
@@ -120,12 +120,8 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             kv_cache_config,
             weights,
             adapter,
-            return_n_logits,
+            return_logits,
         )
-        self.return_n_logits = return_n_logits
-        self.model = self.load_model(session)
-        self.logprobs_device = devices[0]
-        self.logprobs_model = self.load_logprobs_model(session)
 
         # Initialize state needed for communication collectives.
         # Contents of signal buffer should be filled with zeros.
@@ -142,6 +138,10 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             else []
         )
 
+        self.model = self.load_model(session)
+        self.logprobs_device = devices[0]
+        self.logprobs_model = self.load_logprobs_model(session)
+
     def execute(
         self,
         model_inputs: ModelInputs,
@@ -149,7 +149,6 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         assert isinstance(model_inputs, DeepseekV2Inputs)
 
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
-
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets,
@@ -245,19 +244,18 @@ class DeepseekV2Model(PipelineModel[TextContext]):
                 default=pipeline_config.max_length,
             )
         except ValueError as e:
-            msg = (
+            raise ValueError(
                 "Unable to infer max_length for DeepseekV2, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_seq_len "
                 f"({huggingface_config.max_position_embeddings})."
-            )
-            raise ValueError(msg) from e
+            ) from e
 
     def load_kv_manager(
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> KVCacheManager:
+    ) -> TPPagedKVCacheManager:
         return load_kv_manager(
             params=DeepseekV2Config.get_kv_params(
                 huggingface_config=self.huggingface_config,
@@ -345,8 +343,8 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             )
 
     def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[TensorValue]
-    ) -> list[tuple[TensorValue, ...]]:
+        self, kv_inputs_flat: Sequence[Value[Any]]
+    ) -> list[PagedCacheValues]:
         kv_params = DeepseekV2Config.get_kv_params(
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),
@@ -356,34 +354,45 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         n_devices = kv_params.n_devices
         fetch_types = self.kv_manager.input_symbols()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev = [
-            tuple(
-                kv_inputs_flat[
-                    i * len_of_kv_tuple_per_dev : (i + 1)
-                    * len_of_kv_tuple_per_dev
-                ]
+        kv_caches_per_dev: list[PagedCacheValues] = []
+        for i in range(n_devices):
+            start_idx = i * len_of_kv_tuple_per_dev
+            kv_caches_per_dev.append(
+                PagedCacheValues(
+                    kv_blocks=kv_inputs_flat[start_idx].buffer,
+                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
+                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
+                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
+                )
             )
-            for i in range(n_devices)
-        ]
         return kv_caches_per_dev
 
     def _build_graph(self) -> Graph:
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
         # We do this to avoid materializing and copying a buffer with each multistep step
-        assert self.pipeline_config.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
+        max_batch_size = self.pipeline_config.max_batch_size
+        assert max_batch_size, "Expected max_batch_size to be set"
+
         self._input_row_offsets_prealloc = Tensor.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+            np.arange(max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
         # Read in weights.
         if not isinstance(self.weights, SafetensorWeights):
-            msg = "only safetensors weights supported in DeepseekV2."
-            raise ValueError(msg)
+            raise ValueError(
+                "only safetensors weights supported in DeepseekV2."
+            )
 
         pipeline_config = self.pipeline_config
         huggingface_config = self.huggingface_config
+
+        if pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
+            graph_mode = "prefill"
+        elif pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
+            graph_mode = "decode"
+        else:
+            graph_mode = "auto"
+
         if self.adapter:
             state_dict = self.adapter(
                 dict(self.weights.items()),
@@ -405,6 +414,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model_config.device_specs
         ]
+
         model_config = DeepseekV2Config(
             attention_bias=huggingface_config.attention_bias,
             attention_dropout=huggingface_config.attention_dropout,
@@ -447,6 +457,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             dtype=self.dtype,
             kv_params=kv_params,
             devices=device_refs,
+            graph_mode=graph_mode,
         )
 
         # Get Graph Inputs
@@ -472,11 +483,9 @@ class DeepseekV2Model(PipelineModel[TextContext]):
                 ]
 
                 # Unmarshal the remaining arguments, which are for KV cache.
-                kv_cache = [
-                    v.tensor for v in variadic_args[len(self.devices) :]
-                ]
-
-                kv_caches_per_dev = self._unflatten_kv_inputs(kv_cache)
+                kv_caches_per_dev = self._unflatten_kv_inputs(
+                    variadic_args[len(self.devices) :]
+                )
 
                 outputs = nn_model(
                     tokens.tensor,
@@ -498,9 +507,15 @@ class DeepseekV2Model(PipelineModel[TextContext]):
                 tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
                     graph.inputs
                 )
+                kv_collection = PagedCacheValues(
+                    kv_blocks=kv_cache_inputs[0].buffer,
+                    cache_lengths=kv_cache_inputs[1].tensor,
+                    lookup_table=kv_cache_inputs[2].tensor,
+                    max_lengths=kv_cache_inputs[3].tensor,
+                )
                 outputs = nn_model(
                     tokens.tensor,
-                    [inp.tensor for inp in kv_cache_inputs],
+                    kv_collection,
                     return_n_logits.tensor,
                     input_row_offsets.tensor,
                 )

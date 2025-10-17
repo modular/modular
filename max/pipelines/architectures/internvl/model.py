@@ -25,7 +25,7 @@ import numpy.typing as npt
 from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type
+from max.graph import DeviceRef, Graph, TensorType, Type, Value
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -35,8 +35,9 @@ from max.graph.weights import (
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheManager,
     KVCacheParams,
+    PagedCacheValues,
+    TPPagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -54,7 +55,11 @@ from transformers.models.auto.configuration_auto import AutoConfig
 
 from .internvl import InternVLLanguageModel, InternVLVisionModel
 from .model_config import InternVLConfig
-from .tokenizer import IMAGE_CONTEXT_TOKEN_ID, InternVLImageConfig
+from .tokenizer import (
+    IMAGE_NDIMS,
+    InternVLImageConfig,
+    _get_image_context_token_id,
+)
 from .weight_adapters import (
     convert_internvl_language_model_state_dict,
     convert_internvl_vision_model_state_dict,
@@ -177,12 +182,12 @@ class InternVLInputs(ModelInputs):
         return self.pixel_values is not None
 
 
-def _assert_image_embeddings_invariant(
+def assert_image_embeddings_invariant(
     image_embeddings: Sequence[Tensor], image_token_indices: Sequence[Tensor]
 ) -> None:
     # Check for shape mismatch that causes scatter_nd OOB access.
     for i, (embed, indices) in enumerate(
-        zip(image_embeddings, image_token_indices)
+        zip(image_embeddings, image_token_indices, strict=True)
     ):
         embed_count = embed.shape[0]
         indices_count = indices.shape[0]
@@ -328,7 +333,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         `mgp.buffer.plan` op, and verifying with GPU free memory at runtime.
 
         The vision encoder memory scales with the number of images that can be
-        processed concurrently, which is limited by target_num_new_tokens / num_image_tokens
+        processed concurrently, which is limited by prefill_chunk_size / num_image_tokens
         where num_image_tokens=256 for InternVL.
 
         TODO(GEX-2365): Replace this with a more general solution that analyzes
@@ -352,8 +357,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Maximum number of images that can be processed is limited by
         # how many image tokens fit in the target new tokens
         max_images = (
-            pipeline_config.target_num_new_tokens
-            // image_config.num_image_token
+            pipeline_config.prefill_chunk_size // image_config.num_image_token
         )
         # Ensure at least 1 image worth of memory.
         max_images = max(1, max_images)
@@ -374,7 +378,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # ~100KB per token for intermediate activations
         llm_memory_per_token = 100 * 1024  # 100 KiB
         llm_activation_memory = (
-            pipeline_config.target_num_new_tokens * llm_memory_per_token
+            pipeline_config.prefill_chunk_size * llm_memory_per_token
         )
 
         total_activation_memory = (
@@ -430,7 +434,6 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             vision_state_dict=vision_model_weights_dict,
             dtype=self.dtype,
             n_devices=len(self.devices),
-            logits_postprocessor=None,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
@@ -623,8 +626,8 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
     def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[TensorValue]
-    ) -> list[tuple[TensorValue, ...]]:
+        self, kv_inputs_flat: Sequence[Value[Any]]
+    ) -> list[PagedCacheValues]:
         kv_params = InternVLConfig.get_kv_params(
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),
@@ -634,15 +637,17 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         n_devices = kv_params.n_devices
         fetch_types = self.kv_manager.input_symbols()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev = [
-            tuple(
-                kv_inputs_flat[
-                    i * len_of_kv_tuple_per_dev : (i + 1)
-                    * len_of_kv_tuple_per_dev
-                ]
+        kv_caches_per_dev: list[PagedCacheValues] = []
+        for i in range(n_devices):
+            start_idx = i * len_of_kv_tuple_per_dev
+            kv_caches_per_dev.append(
+                PagedCacheValues(
+                    kv_blocks=kv_inputs_flat[start_idx].buffer,
+                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
+                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
+                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
+                )
             )
-            for i in range(n_devices)
-        ]
         return kv_caches_per_dev
 
     def _build_language_graph(
@@ -653,9 +658,11 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         with Graph(
             "internvl_language", input_types=self._language_graph_input_types()
         ) as graph:
-            # Build language model architecture.
+            image_context_token_id = _get_image_context_token_id(
+                self.huggingface_config
+            )
             language_model = InternVLLanguageModel(
-                config, IMAGE_CONTEXT_TOKEN_ID
+                config, image_context_token_id
             )
             language_model.load_state_dict(
                 state_dict=state_dict,
@@ -690,13 +697,15 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             ]
 
             # Unmarshal the remaining arguments, which are for KV cache.
-            kv_cache = [v.tensor for v in variadic_args[len(self.devices) :]]
+            kv_cache = self._unflatten_kv_inputs(
+                variadic_args[len(self.devices) :]
+            )
 
             # Execute language model: text + image embeddings -> logits
             outputs = language_model(
                 tokens=tokens.tensor,
                 signal_buffers=signal_buffers,
-                kv_cache_inputs_per_dev=self._unflatten_kv_inputs(kv_cache),
+                kv_collections=kv_cache,
                 return_n_logits=return_n_logits.tensor,
                 input_row_offsets=input_row_offsets,
                 image_embeddings=image_embeddings,
@@ -714,11 +723,18 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         images = []
         for context in context_batch:
             if context.needs_vision_encoding:
-                # context.pixel_values is a list of numpy arrays containing pre-extracted patches
-                # TODO(MODELS-638): Support multiple images per request
-                image = context.pixel_values[
-                    0
-                ]  # Shape: [num_patches, height_patches, width_patches, channels, patch_size, patch_size]
+                # TODO(MODELS-638): Support multiple images per request for InternVL
+                next_images = context.next_images
+                if len(next_images) != 1:
+                    raise ValueError(
+                        "InternVL only supports one image per request"
+                    )
+                image = next_images[0].pixel_values
+
+                if len(image.shape) != IMAGE_NDIMS:
+                    raise ValueError(
+                        "InternVL vision model expects image shape to be [num_patches, height_patches, width_patches, channels, patch_size, patch_size]"
+                    )
 
                 # Each image patch group needs to be processed separately by the vision model
                 # So we add each patch group as a separate "batch" item
@@ -819,7 +835,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             ]
             image_token_indices = model_inputs.image_token_indices
 
-            _assert_image_embeddings_invariant(
+            assert_image_embeddings_invariant(
                 image_embeddings, image_token_indices
             )
         else:
@@ -889,11 +905,6 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Batch image token indices, offsetting for position in the batch.
         image_token_indices = self._batch_image_token_indices(context_batch)
 
-        # Mark that vision encoding is complete for all contexts in the batch.
-        # This prevents re-encoding on subsequent calls.
-        for ctx in context_batch:
-            ctx.needs_vision_encoding = False
-
         return InternVLInputs(
             input_ids=input_ids,
             input_row_offsets=input_row_offsets,
@@ -934,7 +945,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> KVCacheManager:
+    ) -> TPPagedKVCacheManager:
         """Loads and initializes the KVCacheManager for the InternVL model."""
         return load_kv_manager(
             params=InternVLConfig.get_kv_params(

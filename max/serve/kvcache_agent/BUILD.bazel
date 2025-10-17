@@ -5,21 +5,18 @@ modular_py_library(
     name = "kvcache_agent",
     srcs = [
         "__init__.py",
-        "dispatcher_base.py",
-        "dispatcher_client.py",
         "dispatcher_factory.py",
-        "dispatcher_service.py",
-        "dispatcher_transport.py",
+        "dispatcher_v2.py",
         "kvcache_agent.py",
     ],
     imports = ["../../.."],
     deps = [
+        requirement("grpcio"),  # NOTE: Order matters for PYTHONPATH nonsense
         ":kvcache_agent_service_v1_grpc_py",
         ":kvcache_agent_service_v1_py",
         "//SDK/lib/API/python/max/pipelines/core",
         "//SDK/lib/API/python/max/serve:process_control",
         "//SDK/lib/API/python/max/serve/queue",
-        requirement("grpcio"),
         requirement("pyzmq"),
         requirement("msgspec"),
     ],

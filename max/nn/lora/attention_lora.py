@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import Callable, cast
+from collections.abc import Callable
+from typing import cast
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
@@ -28,7 +29,7 @@ from ..kernels import (
 )
 from ..kv_cache import (
     KVCacheParams,
-    PagedKVCacheCollection,
+    PagedCacheValues,
 )
 from ..linear import Linear
 from ..rotary_embedding import RotaryEmbedding
@@ -69,7 +70,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             dtype: DType of the QKV and output projection weights.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used. Use
-                `DistributedAttentionWithRope` to use all devices during
+                `TensorParallelAttentionWithRope` to use all devices during
                 attention computation.
             linear_cls: Linear class to use for the outputs dense layer.
             stacked_qkv: Whether the weights are stacked together.
@@ -120,7 +121,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -179,10 +180,10 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
 
         return out
 
-    def fused_qkv_lora(
+    def fused_qkv_lora(  # noqa: ANN201
         self,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         input_row_offsets: TensorValue,
         layer_idx: TensorValue,
     ):
@@ -193,7 +194,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             x (TensorValue): The input tensor of shape [total_tokens, hidden_dim].
             qkv_loras (list[LinearLoRA]): List of 3 LinearLoRA modules for Q, K, and V projections.
             input_row_offsets (TensorValue): 1D tensor indicating the start index of each sequence in `x`.
-            kv_collection (PagedKVCacheCollection):
+            kv_collection (PagedCacheValues):
                 The key/value cache collection structure.
             layer_idx (TensorValue): Index of the current transformer layer (used for caching).
 
@@ -207,6 +208,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
 
         lora_ids = qkv_loras[0].lora_ids
         lora_ranks = qkv_loras[0].lora_ranks
+        max_rank = qkv_loras[0].max_lora_rank
         lora_grouped_offsets = qkv_loras[0].lora_grouped_offsets
 
         if lora_ids is None or lora_ranks is None:
@@ -235,6 +237,8 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             kv_params=self.kv_params,
             layer_idx=layer_idx,
             max_lora_seq_len=self.rope.max_seq_len,
+            max_rank=max_rank,
             q_dim=self.q_weight_dim,
+            kv_dim=self.kv_weight_dim,
             bias=lora_bias,
         )

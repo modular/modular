@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys import has_accelerator, has_apple_gpu_accelerator
+
 from gpu.host import DeviceContext
 from gpu.id import block_idx, thread_idx
-from sys import has_accelerator
 
 
 fn print_threads():
@@ -34,11 +35,11 @@ fn print_threads():
 
 def main():
     @parameter
-    if not has_accelerator():
+    if not has_accelerator() or has_apple_gpu_accelerator():
         print("No compatible GPU found")
     else:
         ctx = DeviceContext()
-        ctx.enqueue_function[print_threads](
+        ctx.enqueue_function_checked[print_threads, print_threads](
             grid_dim=(2, 2, 1), block_dim=(16, 4, 2)
         )
         ctx.synchronize()

@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys import external_call, size_of
-from sys.ffi import c_uint, c_int
+from sys.ffi import c_int, c_uint
 
 from gpu._utils import to_llvm_ptr
-from gpu.host import DeviceContext, DeviceStream, DeviceFunction
+from gpu.host import DeviceContext, DeviceFunction, DeviceStream
 from gpu.host.device_context import (
-    _CharPtr,
+    _ConstCharPtr,
     _checked,
     _DeviceBufferPtr,
     _DeviceContextPtr,
-    _DeviceStreamPtr,
     _DeviceFunctionPtr,
+    _DeviceStreamPtr,
 )
 from memory import stack_allocation
 from memory.unsafe import bitcast
@@ -61,7 +61,7 @@ fn CUDA(ctx: DeviceContext) raises -> CUcontext:
     _checked(
         external_call[
             "AsyncRT_DeviceContext_cuda_context",
-            _CharPtr,
+            _ConstCharPtr,
             UnsafePointer[CUcontext],
             _DeviceContextPtr,
         ](
@@ -81,7 +81,7 @@ fn CUDA(stream: DeviceStream) raises -> CUstream:
     _checked(
         external_call[
             "AsyncRT_DeviceStream_cuda_stream",
-            _CharPtr,
+            _ConstCharPtr,
             UnsafePointer[CUstream],
             _DeviceStreamPtr,
         ](
@@ -100,7 +100,7 @@ fn CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
     _checked(
         external_call[
             "AsyncRT_DeviceFunction_cuda_module",
-            _CharPtr,
+            _ConstCharPtr,
             UnsafePointer[CUmodule],
             _DeviceFunctionPtr,
         ](
@@ -115,7 +115,9 @@ fn CUDA_get_current_context() raises -> CUcontext:
     var result = CUcontext()
     # const char *AsyncRT_DeviceContext_cuda_current_context(CUcontext *result)
     _checked(
-        external_call["AsyncRT_DeviceContext_cuda_current_context", _CharPtr,](
+        external_call[
+            "AsyncRT_DeviceContext_cuda_current_context", _ConstCharPtr
+        ](
             UnsafePointer(to=result),
         )
     )
@@ -175,7 +177,12 @@ struct TensorMapInterleave:
 @fieldwise_init("implicit")
 @register_passable("trivial")
 struct TensorMapSwizzle(
-    Copyable, EqualityComparable, Intable, Movable, Stringable, Writable
+    EqualityComparable,
+    ImplicitlyCopyable,
+    Intable,
+    Movable,
+    Stringable,
+    Writable,
 ):
     var _value: Int32
 
@@ -252,8 +259,8 @@ struct TMADescriptor(ImplicitlyCopyable):
         self.data = other.data
 
 
-fn prefetch_tma_descriptor(desc_ptr: OpaquePointer):
-    __mlir_op.`nvvm.prefetch.tensormap`(
+fn prefetch_tma_descriptor(desc_ptr: UnsafePointer[NoneType, mut=False]):
+    __mlir_op.`nvvm.prefetch`[tensormap = __mlir_attr.unit](
         to_llvm_ptr(desc_ptr),
     )
 
@@ -304,7 +311,7 @@ fn create_tma_descriptor[
     _checked(
         external_call[
             "AsyncRT_cuda_tensorMapEncodeTiled",
-            _CharPtr,
+            _ConstCharPtr,
             OpaquePointer,  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank

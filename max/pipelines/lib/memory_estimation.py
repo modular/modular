@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from io import StringIO
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from max.driver import Device
 from max.dtype import DType
@@ -38,7 +38,7 @@ class MemoryEstimator:
     def estimate_memory_footprint(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[Any]],
         model_config: MAXModelConfig,
         devices: list[Device],
     ) -> None:
@@ -98,7 +98,13 @@ class MemoryEstimator:
             free_memory * model_config.kv_cache_config.device_memory_utilization
             - static_memory_size
         )
-        available_kv_cache_memory = max(0, available_kv_cache_memory)
+
+        if available_kv_cache_memory <= 0:
+            raise RuntimeError(
+                f"The model {to_human_readable_bytes(model_weights_size)} and activations "
+                f"{to_human_readable_bytes(activation_memory_size)} don't leave room for KV cache. "
+                f"Try running a smaller model, using a smaller precision, or using a device with more memory."
+            )
 
         user_provided_max_length = pipeline_config.max_length is not None
         user_provided_max_batch_size = (
@@ -107,8 +113,9 @@ class MemoryEstimator:
 
         if is_draft_model:
             if not model_config.quantization_encoding:
-                msg = "quantization_encoding must be provided for draft model"
-                raise ValueError(msg)
+                raise ValueError(
+                    "quantization_encoding must be provided for draft model"
+                )
 
             kv_cache_size = self._calculate_kv_cache_size(
                 pipeline_model,
@@ -130,8 +137,9 @@ class MemoryEstimator:
             )
 
         if not model_config.quantization_encoding:
-            msg = "quantization_encoding must be provided in pipeline_config"
-            raise ValueError(msg)
+            raise ValueError(
+                "quantization_encoding must be provided in pipeline_config"
+            )
 
         if not user_provided_max_batch_size:
             pipeline_config.max_batch_size = self._infer_optimal_batch_size(
@@ -195,45 +203,9 @@ class MemoryEstimator:
             )
             total_size = model_weights_size + actual_kv_cache_size
 
-        if free_memory:
-            free_memory_str = f" / {to_human_readable_bytes(free_memory)} free"
-
-        weights_str = ""
-        if model_weights_size:
-            weights_str = f"\n\t    Weights:                {to_human_readable_bytes(model_weights_size)}"
-
-        activation_str = ""
-        if activation_memory_size:
-            activation_str = f"\n\t    Activation memory:      {to_human_readable_bytes(activation_memory_size)}"
-
-        if not user_provided_max_length:
-            max_length_str = f"Auto-inferred max sequence length: {pipeline_config.max_length}"
-        else:
-            max_length_str = (
-                f"Current max sequence length: {pipeline_config.max_length}"
-            )
-
-        if not user_provided_max_batch_size:
-            max_batch_size_str = f"Auto-inferred max batch size: {pipeline_config.max_batch_size}"
-        else:
-            max_batch_size_str = (
-                f"Current max batch size: {pipeline_config.max_batch_size}"
-            )
-
-        logging_str = (
-            "\n"
-            f"\n\tEstimated memory consumption:"
-            f"{weights_str}"
-            f"{activation_str}"
-            f"\n\t    KVCache allocation:     {to_human_readable_bytes(actual_kv_cache_size)}"
-            f"\n\t    Total estimated:        {to_human_readable_bytes(static_memory_size + actual_kv_cache_size)} used{free_memory_str}"
-            f"\n\t{max_length_str}"
-            f"\n\t{max_batch_size_str}\n"
-        )
-        logger.info(logging_str)
         vram_usage_limit_scale = 0.95
 
-        if isinstance(free_memory, (int, float)):
+        if isinstance(free_memory, int | float):
             if int(total_size) > int(free_memory):
                 self._raise_oom_error(
                     pipeline_config,
@@ -256,7 +228,7 @@ class MemoryEstimator:
     def _find_valid_max_length(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[Any]],
         available_kv_cache_memory: int,
         user_provided_max_batch_size: bool,
         huggingface_config: AutoConfig,
@@ -280,8 +252,9 @@ class MemoryEstimator:
 
         model_config = pipeline_config.model_config
         if not model_config.quantization_encoding:
-            msg = "quantization_encoding must be provided in pipeline_config"
-            raise ValueError(msg)
+            raise ValueError(
+                "quantization_encoding must be provided in pipeline_config"
+            )
 
         while not found_valid_max_length:
             inferred_max_length = (lower + upper) // 2
@@ -328,7 +301,7 @@ class MemoryEstimator:
     def _find_valid_batch_size(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[Any]],
         available_kv_cache_memory: int,
         original_max_length: int,
         user_provided_max_batch_size: bool,
@@ -358,10 +331,9 @@ class MemoryEstimator:
             pipeline_config.max_batch_size = inferred_max_batch_size
 
             if not model_config.quantization_encoding:
-                msg = (
+                raise ValueError(
                     "quantization_encoding must be provided in pipeline_config"
                 )
-                raise ValueError(msg)
 
             kv_cache_size = self._calculate_kv_cache_size(
                 pipeline_model,
@@ -389,7 +361,7 @@ class MemoryEstimator:
 
     def _calculate_kv_cache_size(
         self,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[Any]],
         pipeline_config: PipelineConfig,
         available_kv_cache_memory: int,
         huggingface_config: AutoConfig,
@@ -414,7 +386,7 @@ class MemoryEstimator:
         pipeline_config: PipelineConfig,
         user_provided_max_length: bool,
         user_provided_max_batch_size: bool,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[Any]],
         total_size: int,
         original_free_memory: int,
         available_kv_cache_memory: int,
@@ -641,7 +613,7 @@ class MemoryEstimator:
     def _infer_optimal_batch_size(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[Any]],
         available_kv_cache_memory: int,
         huggingface_config: AutoConfig,
         devices: list[Device],

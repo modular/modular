@@ -19,10 +19,12 @@ from algorithm import map
 ```
 """
 
+import sys
+from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv, clamp
 from os import abort
-import sys
+from pathlib import Path
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -38,17 +40,14 @@ from gpu.grid_controls import (
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceContext
-from gpu.host.info import is_cpu, is_gpu
+from gpu.host.info import B200, is_cpu, is_gpu
 from runtime import tracing
 from runtime.asyncrt import DeviceContextPtr, TaskGroup, parallelism_level
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from utils.index import Index, IndexList
 from utils.numerics import FlushDenormals
 from utils.static_tuple import StaticTuple
-from pathlib import Path
-
-from gpu.host.info import B200
 
 # ===-----------------------------------------------------------------------===#
 # Map
@@ -361,13 +360,13 @@ fn sync_parallelize[
     @always_inline
     fn func_wrapped(i: Int):
         with FlushDenormals():
-            with Trace[TraceLevel.THREAD, target = StaticString("cpu")](
-                "task", task_id=i, parent_id=parent_id
-            ):
-                try:
+            try:
+                with Trace[TraceLevel.THREAD, target = StaticString("cpu")](
+                    "task", task_id=i, parent_id=parent_id
+                ):
                     func(i)
-                except e:
-                    abort(String(e))
+            except e:
+                abort(String(e))
 
     if num_work_items == 1:
         # Just run inline.
@@ -552,8 +551,7 @@ fn tile[
     # Initialize the work_idx with the starting offset.
     var work_idx = offset
     # Iterate on the list of given tile sizes.
-    for tile_idx in range(len(tile_size_list)):
-        var tile_size = tile_size_list[tile_idx]
+    for tile_size in tile_size_list:
         # Launch workloads on the current tile sizes until cannot proceed.
         while work_idx <= upperbound - tile_size:
             workgroup_function(work_idx, tile_size)
@@ -902,16 +900,11 @@ fn tile_and_unswitch[
     # Initialize where to start on the overall work load.
     var current_offset: Int = offset
 
-    for idx in range(len(tile_size_list)):
-        # Get the tile size to proceed with.
-        var tile_size = tile_size_list[idx]
-
+    for tile_size in tile_size_list:
         # Process work with the tile size until there's not enough remaining work
         #  to fit in a tile.
         while current_offset <= upperbound - tile_size:
-            workgroup_function[True](
-                current_offset, upperbound, tile_size_list[idx]
-            )
+            workgroup_function[True](current_offset, upperbound, tile_size)
             current_offset += tile_size
 
     # Use the last tile size to process the residue.
@@ -1073,7 +1066,7 @@ fn _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
 @always_inline
 fn _get_start_indices_of_nth_subvolume[
     rank: Int, //, subvolume_rank: Int = 1
-](n: Int, shape: IndexList[rank, **_]) -> __type_of(shape):
+](n: Int, shape: IndexList[rank, **_], out res: __type_of(shape)):
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
@@ -1114,27 +1107,25 @@ fn _get_start_indices_of_nth_subvolume[
     # fast impls for common cases
     @parameter
     if rank == 2 and subvolume_rank == 1:
-        return __type_of(shape)(n, 0)
+        return {n, 0}
 
     @parameter
     if rank - 1 == subvolume_rank:
-        var out = __type_of(shape)(0)
-        out[0] = n
-        return out
+        res = {0}
+        res[0] = n
+        return
 
     @parameter
     if rank == subvolume_rank:
-        return __type_of(shape)(0)
+        return {0}
 
-    var out = __type_of(shape)()
+    res = {}
     var curr_index = n
 
     @parameter
     for i in reversed(range(rank - subvolume_rank)):
-        out[i] = curr_index._positive_rem(shape[i])
+        res[i] = curr_index._positive_rem(shape[i])
         curr_index = curr_index._positive_div(shape[i])
-
-    return out
 
 
 # TODO(KERN-637) - optimize this algorithm for UInt rather than delegating
@@ -1377,6 +1368,7 @@ fn elementwise[
     with Trace[TraceLevel.OP, target=target](
         kind,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(context),
     ):
 
         @parameter
@@ -1618,10 +1610,12 @@ fn _elementwise_impl_gpu[
     alias num_waves = 32
     alias registers_per_block = hw_info.max_registers_per_block
     alias sm_count: UInt = UInt(hw_info.sm_count)
-    alias threads_per_sm: UInt = UInt(hw_info.threads_per_sm)
+    alias threads_per_multiprocessor: UInt = UInt(
+        hw_info.threads_per_multiprocessor
+    )
 
     constrained[
-        sm_count > 0 and threads_per_sm > 0,
+        sm_count > 0 and threads_per_multiprocessor > 0,
         "the sm_count and thread_count must be known",
     ]()
 
@@ -1630,6 +1624,9 @@ fn _elementwise_impl_gpu[
     var num_packed_elems = length // simd_width
     var unpacked_tail_length = length % simd_width
     var packed_region_length = length - unpacked_tail_length
+
+    if length == 0:
+        return
 
     alias block_size_unrounded = registers_per_block // registers_per_thread
 
@@ -1641,7 +1638,7 @@ fn _elementwise_impl_gpu[
     var num_blocks = clamp(
         ceildiv(num_packed_elems, UInt(block_size)),
         1,
-        sm_count * threads_per_sm // block_size * num_waves,
+        sm_count * threads_per_multiprocessor // UInt(block_size) * num_waves,
     )
 
     @__copy_capture(
@@ -1680,7 +1677,7 @@ fn _elementwise_impl_gpu[
                     for off in range(Int(simd_width)):
                         func[1, rank](
                             _get_start_indices_of_nth_subvolume_uint[0](
-                                UInt(idx * simd_width + off),
+                                UInt(idx * simd_width + UInt(off)),
                                 shape,
                             ).canonicalize()
                         )
@@ -1705,21 +1702,19 @@ fn _elementwise_impl_gpu[
             launch_dependent_grids()
 
     if shape[rank - 1] % simd_width == 0:
-        ctx.enqueue_function[
-            _elementwise_gpu_kernel[
-                block_size = UInt(block_size), handle_uneven_simd=False
-            ]
-        ](
+        alias kernel = _elementwise_gpu_kernel[
+            block_size = UInt(block_size), handle_uneven_simd=False
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             grid_dim=Int(num_blocks),
             block_dim=Int(block_size),
             attributes=pdl_launch_attributes(),
         )
     else:
-        ctx.enqueue_function[
-            _elementwise_gpu_kernel[
-                block_size = UInt(block_size), handle_uneven_simd=True
-            ]
-        ](
+        alias kernel = _elementwise_gpu_kernel[
+            block_size = UInt(block_size), handle_uneven_simd=True
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             grid_dim=Int(num_blocks),
             block_dim=Int(block_size),
             attributes=pdl_launch_attributes(),
@@ -1780,10 +1775,10 @@ fn _stencil_impl_cpu[
     stencil_axis: IndexList[stencil_rank, **_],
     simd_width: Int,
     dtype: DType,
-    map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> (
+    map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> Tuple[
         IndexList[stencil_rank, **_],
         IndexList[stencil_rank, **_],
-    ),
+    ],
     map_strides: fn (dim: Int) capturing [_] -> Int,
     load_fn: fn[simd_width: Int, dtype: DType] (
         IndexList[rank, **_]
@@ -1948,10 +1943,10 @@ fn _stencil_impl_gpu[
     stencil_axis: IndexList[stencil_rank, **_],
     simd_width: Int,
     dtype: DType,
-    map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> (
+    map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> Tuple[
         IndexList[stencil_rank, **_],
         IndexList[stencil_rank, **_],
-    ),
+    ],
     map_strides: fn (dim: Int) capturing [_] -> Int,
     load_fn: fn[simd_width: Int, dtype: DType] (
         IndexList[rank, **_]
@@ -2016,8 +2011,8 @@ fn _stencil_impl_gpu[
         var y = bid_y * block_dim.y + tid_y
 
         # Calculate batch and channel from bid_z
-        var batch_idx = bid_z // shape[3]
-        var channel = bid_z % shape[3]
+        var batch_idx = bid_z // UInt(shape[3])
+        var channel = bid_z % UInt(shape[3])
 
         # Early exit if outside bounds
         if x >= UInt(shape[2]) or y >= UInt(shape[1]):
@@ -2077,4 +2072,6 @@ fn _stencil_impl_gpu[
     )
 
     # Compile and launch kernel
-    ctx.enqueue_function[stencil_kernel](grid_dim=grid_dim, block_dim=block_dim)
+    ctx.enqueue_function_checked[stencil_kernel, stencil_kernel](
+        grid_dim=grid_dim, block_dim=block_dim
+    )

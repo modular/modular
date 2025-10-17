@@ -22,7 +22,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.nn.clamp import clamp
 from max.nn.kernels import grouped_matmul_ragged, moe_create_indices
-from max.nn.layer import LayerList
+from max.nn.layer import LayerList, Shardable
 from max.nn.linear import Linear
 from max.nn.moe import MoE, MoEGate
 
@@ -87,7 +87,7 @@ class GptOssMoEGate(MoEGate):
         return topk_indices, topk_scores
 
 
-class GptOssMoE(MoE):
+class GptOssMoE(MoE, Shardable):
     """GptOss-style MoE implementation with custom activation and biases."""
 
     def __init__(
@@ -207,7 +207,9 @@ class GptOssMoE(MoE):
 
         permutated_states = ops.gather(
             x,
-            token_expert_order / self.num_experts_per_token,
+            ops.cast(
+                token_expert_order // self.num_experts_per_token, DType.int32
+            ),
             axis=0,
         )
 
@@ -320,7 +322,7 @@ class GptOssMoE(MoE):
                 "Only tensor parallel sharding strategy is supported for MoE"
             )
 
-    def shard(self, devices: Iterable[DeviceRef]) -> list[GptOssMoE]:  # type: ignore[override]
+    def shard(self, devices: Iterable[DeviceRef]) -> list[GptOssMoE]:
         """Create sharded views of this MoE module across multiple devices.
 
         Args:

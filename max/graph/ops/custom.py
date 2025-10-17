@@ -24,9 +24,16 @@ from max.dtype import DType
 from max.mlir import BoolAttr, DictAttr, IndexType, IntegerAttr, StringAttr
 from max.mlir.dialects import mo
 
+from ...driver import Device
 from ..graph import Graph
 from ..type import DeviceRef, Type, _ChainType
-from ..value import BufferValue, Value, _OpaqueValue
+from ..value import (
+    BufferValue,
+    TensorValue,
+    Value,
+    _is_strong_tensor_value_like,
+    _OpaqueValue,
+)
 
 
 def _parameter_attribute(
@@ -46,13 +53,14 @@ def _parameter_attribute(
         attr = builtin.TypeAttr(dtype)
         return mlir.Attribute._CAPICreate(attr._CAPIPtr)  # type: ignore
     else:
-        msg = f"unsupported parameter type {type(param)} for custom op"
-        raise TypeError(msg)
+        raise TypeError(
+            f"unsupported parameter type {type(param)} for custom op"
+        )
 
 
 def custom(
     name: str,
-    device: DeviceRef,
+    device: Device | DeviceRef,
     values: Sequence[Value[Any]],
     out_types: Sequence[Type[Any]],
     parameters: Mapping[str, bool | int | str | DType] | None = None,
@@ -77,13 +85,17 @@ def custom(
     """
     graph = Graph.current
     symbol_attr = StringAttr.get(name, graph._context)
+    device = DeviceRef.from_device(device)
 
-    if any(isinstance(val, (BufferValue, _OpaqueValue)) for val in values):
-        msg = (
+    if any(isinstance(val, BufferValue | _OpaqueValue) for val in values):
+        raise TypeError(
             "custom ops that take buffers or opaque values to do in-place "
             "updates should use ops.inplace_custom instead"
         )
-        raise TypeError(msg)
+
+    values = [
+        TensorValue(v) if _is_strong_tensor_value_like(v) else v for v in values
+    ]
 
     results, custom_op = graph._add_op_get_op_with_results(
         mo.custom, [t.to_mlir() for t in out_types], values, symbol=symbol_attr
@@ -98,8 +110,8 @@ def custom(
             graph._context,
         )
 
-    custom_op.device = mlir.Attribute._CAPICreate(
-        device.to_mlir()._CAPIPtr  # type: ignore
+    custom_op.device = mlir.Attribute._CAPICreate(  # type: ignore
+        device.to_mlir()._CAPIPtr
     )
 
     # Call the verifier, will throw if the call is invalid.
@@ -136,26 +148,33 @@ def inplace_custom(
     #
     # Until that switch is made check that at least one input to the custom op
     # is a BufferValue to provide some level of safety.
-    if not any(isinstance(val, (BufferValue, _OpaqueValue)) for val in values):
-        msg = (
+    has_buffer_operand = any(isinstance(val, BufferValue) for val in values)
+    if not has_buffer_operand and not any(
+        isinstance(val, _OpaqueValue) for val in values
+    ):
+        raise TypeError(
             "expected at least one BufferValue or _OpaqueValue as input to an "
             "in-place custom op"
         )
-        raise TypeError(msg)
 
     # Pass empty out_types if unspecified.
     out_mlir_types = [t.to_mlir() for t in out_types] if out_types else []
 
     graph = Graph.current
-    current_chain = graph._current_chain
+
+    values = [
+        TensorValue(v) if _is_strong_tensor_value_like(v) else v for v in values
+    ]
+
+    chain_operand = graph.device_chains[device]
 
     (*results, out_chain), custom_op = graph._add_op_get_op_with_results(
         mo.custom,
         results_=[*out_mlir_types, _ChainType().to_mlir()],
-        operands_=[*values, current_chain],
+        operands_=[*values, chain_operand],
         symbol=StringAttr.get(name, graph._context),
     )
-    graph._update_chain(out_chain)
+    graph.device_chains[device] = out_chain
 
     if parameters is not None:
         custom_op.parameters = DictAttr.get(
@@ -166,8 +185,8 @@ def inplace_custom(
             graph._context,
         )
 
-    custom_op.device = mlir.Attribute._CAPICreate(
-        device.to_mlir()._CAPIPtr  # type: ignore
+    custom_op.device = mlir.Attribute._CAPICreate(  # type: ignore
+        device.to_mlir()._CAPIPtr
     )
 
     # Call the verifier, will throw if the call is invalid.

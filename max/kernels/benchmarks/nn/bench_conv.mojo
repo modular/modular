@@ -92,15 +92,15 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
     var num_copies = ceildiv(4 * L3_cache, size_per_copy)
 
     # Allocate input and output buffers.
-    var input_ptr = UnsafePointer[
-        Scalar[input_type], alignment=alignment
-    ].alloc(input_alloc_size * num_copies)
-    var filter_ptr = UnsafePointer[
-        Scalar[filter_type], alignment=alignment
-    ].alloc(num_copies * filter_alloc_size)
-    var output_ptr = UnsafePointer[
-        Scalar[output_type], alignment=alignment
-    ].alloc(num_copies * output_alloc_size)
+    var input_ptr = UnsafePointer[Scalar[input_type]].alloc(
+        input_alloc_size * num_copies, alignment=alignment
+    )
+    var filter_ptr = UnsafePointer[Scalar[filter_type]].alloc(
+        num_copies * filter_alloc_size, alignment=alignment
+    )
+    var output_ptr = UnsafePointer[Scalar[output_type]].alloc(
+        num_copies * output_alloc_size, alignment=alignment
+    )
 
     rand[input_type](input_ptr, num_copies * input_alloc_size)
     rand[filter_type](filter_ptr, num_copies * filter_alloc_size)
@@ -206,7 +206,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
 
 @fieldwise_init
-struct ConvSpecStatic(Copyable, Movable):
+struct ConvSpecStatic(ImplicitlyCopyable, Movable):
     # Conv rank, 1d, 2d, or 3d. The input rank is rank + 2.
     var rank: Int
     var input_type: DType
@@ -215,7 +215,9 @@ struct ConvSpecStatic(Copyable, Movable):
 
 
 @fieldwise_init
-struct ConvSpec[static_info: ConvSpecStatic](Copyable, Movable, Stringable):
+struct ConvSpec[static_info: ConvSpecStatic](
+    ImplicitlyCopyable, Movable, Stringable
+):
     var n: Int
     var input_dims: IndexList[static_info.rank]
     var c: Int

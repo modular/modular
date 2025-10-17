@@ -12,15 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Establishes the contract between `Writer` and `Writable` types."""
 
-from bit import byte_swap
 from io.io import _printf
-from sys.info import is_gpu
-from memory import memcpy, bitcast
 from os import abort
 from sys import align_of
-from memory import Span, memcpy
+from sys.info import is_gpu
 from sys.param_env import env_get_int
 
+from bit import byte_swap
+from memory import Span, bitcast, memcpy
 
 # ===-----------------------------------------------------------------------===#
 
@@ -46,7 +45,7 @@ trait Writer:
     from memory import Span
 
     @fieldwise_init
-    struct NewString(Writer, Writable, Copyable, Movable):
+    struct NewString(Writer, Writable, ImplicitlyCopyable, Movable):
         var s: String
 
         # Writer requirement to write a Span of Bytes
@@ -65,7 +64,7 @@ trait Writer:
 
 
     @fieldwise_init
-    struct Point(Writable, Copyable, Movable):
+    struct Point(Writable, ImplicitlyCopyable, Movable):
         var x: Int
         var y: Int
 
@@ -168,7 +167,7 @@ struct _WriteBufferHeap(Writable, Writer):
     var pos: Int
 
     fn __init__(out self):
-        alias alignment: Int = align_of[Byte]() if is_gpu() else 1
+        alias alignment: Int = align_of[Byte]()
         self.data = __mlir_op.`pop.stack_allocation`[
             count = HEAP_BUFFER_BYTES._mlir_value,
             _type = UnsafePointer[Byte]._mlir_type,
@@ -196,7 +195,9 @@ struct _WriteBufferHeap(Writable, Writer):
                 " HEAP_BUFFER_BYTES=4096`\n"
             ]()
             abort()
-        memcpy(self.data + self.pos, bytes.unsafe_ptr(), len_bytes)
+        memcpy(
+            dest=self.data + self.pos, src=bytes.unsafe_ptr(), count=len_bytes
+        )
         self.pos += len_bytes
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
@@ -264,7 +265,11 @@ struct _WriteBufferStack[
         elif self.pos + len_bytes > Int(stack_buffer_bytes):
             self.flush()
         # Continue writing to buffer
-        memcpy(self.data.unsafe_ptr() + self.pos, bytes.unsafe_ptr(), len_bytes)
+        memcpy(
+            dest=self.data.unsafe_ptr() + self.pos,
+            src=bytes.unsafe_ptr(),
+            count=len_bytes,
+        )
         self.pos += len_bytes
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
@@ -280,8 +285,13 @@ struct _TotalWritableBytes(Writer):
         self.size = 0
 
     fn __init__[
-        T: Copyable & Movable & Writable, //
-    ](out self, values: List[T, *_], sep: String = String()):
+        T: Copyable & Movable & Writable, //,
+        origin: ImmutableOrigin = StaticConstantOrigin,
+    ](
+        out self,
+        values: List[T, *_],
+        sep: StringSlice[origin] = StringSlice[origin](),
+    ):
         self.size = 0
         var length = len(values)
         if length == 0:

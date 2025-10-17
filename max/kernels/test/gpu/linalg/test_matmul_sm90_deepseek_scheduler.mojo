@@ -12,10 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+
 from gpu.host import DeviceContext
 from internal_utils._utils import dynamic, static
-from linalg.matmul_sm90_testbed import test_matmul_sm90
-from linalg.matmul_tile_scheduler import MatmulSchedule
+from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
+from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
+
 from utils.index import Index
 
 # Helper to calculate wgmma_shape based on dtype and BN
@@ -27,7 +29,7 @@ alias wgmma_shape[BN: Int, a_dtype: DType] = Index(
 alias get_num_consumer[BM: Int] = 1 if BM == 64 else 2
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         # NOTE: please note that cublaslt handle should be used for fp8-e4m3fn and cublas handle for bfloat16
         # because cublas does not support float8-e4m3fn. Also, fp8 tests should be run first and then bfloat16 tests

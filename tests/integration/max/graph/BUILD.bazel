@@ -9,6 +9,10 @@ _GPU_ONLY_TESTS = [
     "test_fused_multiply_add.py",
 ]
 
+_AMD_ONLY_TESTS = [
+    "test_fp8_conversion.py",
+]
+
 modular_py_library(
     name = "modular_graph_test",
     testonly = True,
@@ -30,7 +34,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
-        exclude = _GPU_ONLY_TESTS + _NVIDIA_ONLY_TESTS + ["modular_graph_test.py"],
+        exclude = _AMD_ONLY_TESTS + _GPU_ONLY_TESTS + _NVIDIA_ONLY_TESTS + ["modular_graph_test.py"],
     ),
     data = [
         "//SDK/integration-test:compile_config_ops",
@@ -49,6 +53,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
     },
+    gpu_constraints = [
+        "//:nvidia_gpu",
+        "//:amd_gpu",
+    ],  # FIXME: Enable Apple GPU MOCO-2411
     mojo_deps = [
         "//SDK/integration-test:compile_config_ops",
         "//SDK/integration-test:test_user_op",
@@ -89,11 +97,29 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
         "//SDK/lib/API/python/max",
         requirement("hypothesis"),
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "amd_tests",
+    size = "large",
+    srcs = _AMD_ONLY_TESTS + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        ":modular_graph_test",
+        "//SDK/lib/API/python/max",
     ],
 )

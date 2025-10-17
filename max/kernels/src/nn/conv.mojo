@@ -11,11 +11,42 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import OptionalReg, Dict
 from math import align_down, ceildiv
+from os import abort
 from sys.ffi import _get_global_or_null, external_call
 from sys.info import align_of, simd_width_of
 
+from _cudnn.cnn_infer import (
+    cudnnConvolutionForward,
+    cudnnConvolutionMode_t,
+    cudnnConvolutionStruct,
+    cudnnCreateConvolutionDescriptor,
+    cudnnDestroyConvolutionDescriptor,
+    cudnnGetConvolutionForwardWorkspaceSize,
+    cudnnSetConvolution2dDescriptor,
+    cudnnSetConvolutionGroupCount,
+    cudnnSetConvolutionMathType,
+)
+from _cudnn.infer import (
+    cudnnContext,
+    cudnnConvolutionFwdAlgo_t,
+    cudnnCreate,
+    cudnnCreateFilterDescriptor,
+    cudnnCreateTensorDescriptor,
+    cudnnDataType_t,
+    cudnnDestroy,
+    cudnnDestroyFilterDescriptor,
+    cudnnDestroyTensorDescriptor,
+    cudnnFilterStruct,
+    cudnnMathType_t,
+    cudnnSetFilter4dDescriptor,
+    cudnnSetStream,
+    cudnnSetTensor4dDescriptor,
+    cudnnStatus_t,
+    cudnnTensorFormat_t,
+    cudnnTensorStruct,
+)
 from algorithm import (
     elementwise,
     sync_parallelize,
@@ -31,39 +62,10 @@ from buffer.buffer import (
     prod_dims,
 )
 from buffer.dimlist import Dim, DimList
-from gpu._cudnn.cnn_infer import (
-    cudnnConvolutionForward,
-    cudnnConvolutionMode_t,
-    cudnnConvolutionStruct,
-    cudnnCreateConvolutionDescriptor,
-    cudnnDestroyConvolutionDescriptor,
-    cudnnSetConvolution2dDescriptor,
-    cudnnSetConvolutionGroupCount,
-    cudnnSetConvolutionMathType,
-    cudnnGetConvolutionForwardWorkspaceSize,
-)
-from gpu._cudnn.infer import (
-    cudnnContext,
-    cudnnConvolutionFwdAlgo_t,
-    cudnnCreate,
-    cudnnCreateFilterDescriptor,
-    cudnnCreateTensorDescriptor,
-    cudnnDataType_t,
-    cudnnDestroy,
-    cudnnDestroyFilterDescriptor,
-    cudnnDestroyTensorDescriptor,
-    cudnnFilterStruct,
-    cudnnSetFilter4dDescriptor,
-    cudnnSetStream,
-    cudnnSetTensor4dDescriptor,
-    cudnnStatus_t,
-    cudnnTensorFormat_t,
-    cudnnTensorStruct,
-    cudnnMathType_t,
-)
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
 from gpu.id import block_dim, block_idx, thread_idx
+from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from runtime.asyncrt import parallelism_level
@@ -96,7 +98,7 @@ struct Naive2dConvolution[
     output_type: DType,
     input_type: DType,
     filter_type: DType,
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """Struct wrapper for naive 2d convolution implementation."""
 
     # Input params.
@@ -203,7 +205,7 @@ struct Naive2dConvolution[
         producing a single scalar value at the given output tensor index.
         """
         # Initialize the result of this point.
-        var value: SIMD[output_type, 1] = 0
+        var value: Scalar[output_type] = 0
 
         # Input dims.
         var D = self.input_shape[1]
@@ -372,7 +374,7 @@ struct ConvDirectNHWC[
     filter_packed: Bool,
     conv_attr: ConvInfoStatic[input_rank - 2],
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """Implement the outer loops for direct convolution.
     Collapse N, HO, WO into one dimension n_ho_wo. Tile n_ho_wo, C, and F.
     The tile factor for C and F are chosen by a heuristic prioritizing C.
@@ -391,7 +393,7 @@ struct ConvDirectNHWC[
     var conv_shape: ConvShape[input_rank - 2]
 
     # Support partition in 4 dims: (n, c, f, ho_or_howo). If the input is
-    # padded, the output spacial dims are merged into one as howo. If not
+    # padded, the output spatial dims are merged into one as howo. If not
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 
@@ -417,11 +419,16 @@ struct ConvDirectNHWC[
         # TODO: extend to 1d/3d.
         alias WO = output_shape.at[
             output_rank - 2
-        ]() if input_rank == 4 else Dim()
+        ]().get() if input_rank == 4 and output_shape.at[
+            output_rank - 2
+        ]().has_value() else UNKNOWN_VALUE
+        alias F = output_shape.at[output_rank - 1]().get() if output_shape.at[
+            output_rank - 1
+        ]().has_value() else UNKNOWN_VALUE
         alias micro_kernel_shape = get_micro_kernel_shape[
             input_rank - 2,
             WO,
-            output_shape.at[output_rank - 1](),  # F
+            F,
             conv_attr,
             simd_size,
         ]()
@@ -436,9 +443,9 @@ struct ConvDirectNHWC[
         )
 
         @parameter
-        if conv_attr.num_groups.has_value():
+        if conv_attr.num_groups != UNKNOWN_VALUE:
             constrained[
-                filter_packed or conv_attr.num_groups == Dim(1),
+                filter_packed or conv_attr.num_groups == 1,
                 (
                     "if number of conv groups is statically known, conv filter"
                     " must be prepacked when num_groups > 1"
@@ -571,7 +578,7 @@ struct ConvDirectNHWC[
         alias apply_static_shape_optimization = \
             self.packed_and_fully_static \
             and padded \
-            and conv_attr.num_groups == Dim(1) \
+            and conv_attr.num_groups == 1 \
             and input_rank == 4
         # fmt: on
 
@@ -1622,15 +1629,16 @@ struct ConvDirectNHWC[
 
         var input_curr_image = self.input.data.offset(n * W * H * C)
         var output_curr_image = self.output.data.offset(n * WO * HO * F)
+        var conv_attr_dyn = materialize[conv_attr]()
 
         for ho in range(
             self.partition.ho_or_howo_offset,
             self.partition.ho_or_howo_offset + self.partition.ho_or_howo_size,
         ):
-            var h = ho * conv_attr.strides()[0] - conv_attr.pad_bottom()
+            var h = ho * conv_attr_dyn.strides()[0] - conv_attr_dyn.pad_bottom()
             # Point to (n, 0, ho, c_tile_offset) mapped in input
             var input_base = input_curr_image.offset(
-                c_tile_offset + C * (-conv_attr.pad_left() + W * h)
+                c_tile_offset + C * (-conv_attr_dyn.pad_left() + W * h)
             )
             # Point to (n, 0, ho, f_tile_offset) mapped in input
             var output_base = output_curr_image.offset(
@@ -1691,7 +1699,7 @@ struct ConvDirectNHWC[
                     0,  # beginning of wo dimension
                 )
                 input_base = input_base.offset(
-                    micro_kernel_height_lbound * conv_attr.strides()[1] * C
+                    micro_kernel_height_lbound * conv_attr_dyn.strides()[1] * C
                 )
                 output_base = output_base.offset(micro_kernel_height_lbound * F)
 
@@ -1720,7 +1728,7 @@ struct ConvDirectNHWC[
                         wo,
                     )
                     input_base = input_base.offset(
-                        height * conv_attr.strides()[1] * C
+                        height * conv_attr_dyn.strides()[1] * C
                     )
                     output_base = output_base.offset(height * F)
 
@@ -1830,17 +1838,18 @@ struct ConvDirectNHWC[
         alias WO = output_shape.get[2]()  # NHWC
         # Shift in input H when shifting 1 in filter stencil' R dimension.
         var h_shift = 0
+        var conv_attr_dyn = materialize[conv_attr]()
         # h index in input image
-        var h = ho * conv_attr.strides()[0] - conv_attr.pad_bottom()
+        var h = ho * conv_attr_dyn.strides()[0] - conv_attr_dyn.pad_bottom()
         for r in range(R):
             # Skip if row falls in padding.
             if h + h_shift < 0 or h + h_shift >= H:
-                h_shift += conv_attr.dilations()[0]
+                h_shift += conv_attr_dyn.dilations()[0]
                 continue
 
             var input_ptr = input_base.offset(h_shift * C * W)
             var filter_ptr = filter_base.offset(r * S * filter_S_stride)
-            var w = wo * conv_attr.strides()[1] - conv_attr.pad_left()
+            var w = wo * conv_attr_dyn.strides()[1] - conv_attr_dyn.pad_left()
 
             @parameter
             for s in range(S):
@@ -1889,7 +1898,7 @@ struct ConvDirectNHWC[
                 filter_ptr = filter_ptr.offset(filter_S_stride)
                 input_ptr = input_ptr.offset(s_stride_in_input)
 
-            h_shift += conv_attr.dilations()[0]
+            h_shift += conv_attr_dyn.dilations()[0]
 
         acc.store(output_micro_tile.data, micro_kernel_width * simd_size)
         # Store the micro tile
@@ -2598,18 +2607,25 @@ fn pack_filter_shape[
     var F_per_group = F // num_groups
 
     alias conv_attr = ConvInfoStatic[filter.rank - 2](
-        pad=reorder_padding[filter.rank - 2](paddings),
-        stride=strides,
-        dilation=dilations,
+        pad=reorder_padding[filter.rank - 2](IntTuple(paddings)),
+        stride=IntTuple(strides),
+        dilation=IntTuple(dilations),
         num_groups=num_groups,
     )
 
     # TODO: extend to 1D/3D.
-    alias WO = output_shape.at[2]() if filter.rank == 4 else Dim()
+    alias WO = output_shape.at[
+        2
+    ]().get() if filter.rank == 4 and output_shape.at[
+        2
+    ]().has_value() else UNKNOWN_VALUE
+    alias F_NHWC = output_shape.at[filter.rank - 1]().get() if output_shape.at[
+        filter.rank - 1
+    ]().has_value() else UNKNOWN_VALUE
     alias micro_kernel_shape = get_micro_kernel_shape[
         filter.rank - 2,
         WO,
-        output_shape.at[filter.rank - 1](),  # F , NHWC layout
+        F_NHWC,
         conv_attr,
         simd_size,
     ]()
@@ -2969,9 +2985,42 @@ fn conv_nhwc_direct[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         var conv_shape = get_conv_shape[input_rank - 2, filter_packed](
-            output,
-            input,
-            filter,
+            LayoutTensor[
+                output.type,
+                Layout(IntTuple(output.shape), IntTuple(output.strides)),
+            ](
+                output.data,
+                RuntimeLayout[
+                    Layout(IntTuple(output.shape), IntTuple(output.strides))
+                ](
+                    output.get_shape().canonicalize(),
+                    output.get_strides().canonicalize(),
+                ),
+            ),
+            LayoutTensor[
+                input.type,
+                Layout(IntTuple(input.shape), IntTuple(input.strides)),
+            ](
+                input.data,
+                RuntimeLayout[
+                    Layout(IntTuple(input.shape), IntTuple(input.strides))
+                ](
+                    input.get_shape().canonicalize(),
+                    input.get_strides().canonicalize(),
+                ),
+            ),
+            LayoutTensor[
+                filter.type,
+                Layout(IntTuple(filter.shape), IntTuple(filter.strides)),
+            ](
+                filter.data,
+                RuntimeLayout[
+                    Layout(IntTuple(filter.shape), IntTuple(filter.strides))
+                ](
+                    filter.get_shape().canonicalize(),
+                    filter.get_strides().canonicalize(),
+                ),
+            ),
             stride,
             dilation,
             pad_d,
@@ -3076,9 +3125,9 @@ fn conv2d_gpu_naive_nhwc_rscf[
         var value = Scalar[accum_type](0)
         for r in range(R):
             for s in range(S):
-                var h_in = h * stride_h - pad_h + r * dil_h
-                var w_in = w * stride_w - pad_w + s * dil_w
-                if 0 <= h_in < H and 0 <= w_in < W:
+                var h_in = h * UInt(stride_h) - UInt(pad_h) + UInt(r * dil_h)
+                var w_in = w * UInt(stride_w) - UInt(pad_w) + UInt(s * dil_w)
+                if 0 <= h_in < UInt(H) and 0 <= w_in < UInt(W):
                     for ci in range(C_in):
                         value += (
                             input.load(IndexList[4](n, h_in, w_in, ci)).cast[
@@ -3109,14 +3158,14 @@ fn check_cudnn_error(stat: cudnnStatus_t):
 
 
 @register_passable
-struct CuDNNConvMeta(Copyable, Defaultable, Movable):
+struct CuDNNConvMeta(ImplicitlyCopyable, Movable):
     var ptr_handle: UnsafePointer[cudnnContext]
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct]
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]
     var ptr_conv_desc: UnsafePointer[cudnnConvolutionStruct]
     var ptr_output_desc: UnsafePointer[cudnnTensorStruct]
 
-    fn __init__(out self):
+    fn __init__(out self) raises:
         self.ptr_handle = UnsafePointer[cudnnContext]()
         check_cudnn_error(cudnnCreate(UnsafePointer(to=self.ptr_handle)))
 
@@ -3143,17 +3192,38 @@ struct CuDNNConvMeta(Copyable, Defaultable, Movable):
         )
 
     fn __del__(deinit self):
-        check_cudnn_error(cudnnDestroyTensorDescriptor(self.ptr_output_desc))
-        check_cudnn_error(cudnnDestroyConvolutionDescriptor(self.ptr_conv_desc))
-        check_cudnn_error(cudnnDestroyFilterDescriptor(self.ptr_filter_desc))
-        check_cudnn_error(cudnnDestroyTensorDescriptor(self.ptr_input_desc))
-        check_cudnn_error(cudnnDestroy(self.ptr_handle))
+        try:
+            check_cudnn_error(
+                cudnnDestroyTensorDescriptor(self.ptr_output_desc)
+            )
+            check_cudnn_error(
+                cudnnDestroyConvolutionDescriptor(self.ptr_conv_desc)
+            )
+            check_cudnn_error(
+                cudnnDestroyFilterDescriptor(self.ptr_filter_desc)
+            )
+            check_cudnn_error(cudnnDestroyTensorDescriptor(self.ptr_input_desc))
+            check_cudnn_error(cudnnDestroy(self.ptr_handle))
+        except e:
+            abort(String(e))
 
 
 fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
-    """Get the cuDNN metadata.
-    If the metadata is not found, create a new one and insert it into the global
-    cache.
+    """Get the cuDNN metadata with proper device context management.
+
+    If the metadata is not found for this device, create a new one and insert
+    it into the global cache keyed by device ID.
+
+    IMPORTANT: this function _must_ be called with `ctx`'s CUcontext active via:
+
+    ```mojo
+    from gpu.host import DeviceContext
+    var ctx = DeviceContext()
+    with ctx.push_context():
+        ptr_meta = _get_cudnn_meta(ctx)
+    ```
+
+    This is to satisfy the stateful `cudnn*` API calls.
 
     Args:
         ctx: The device context.
@@ -3161,8 +3231,11 @@ fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
     Returns:
         The cuDNN metadata.
     """
-    var name = "CUDA_CUDNN_META"
-    if ptr_meta := _get_global_or_null(name).bitcast[CuDNNConvMeta]():
+    # Key the cuDNN metadata cache on the device ID.
+    var cache_key = "CUDA_CUDNN_META_CACHE" + String(ctx.id())
+
+    # Get or create the per-device cache dictionary.
+    if ptr_meta := _get_global_or_null(cache_key).bitcast[CuDNNConvMeta]():
         check_cudnn_error(
             cudnnSetStream(ptr_meta[].ptr_handle, CUDA(ctx.stream()))
         )
@@ -3172,7 +3245,7 @@ fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
     ptr_meta.init_pointee_move(CuDNNConvMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(name),
+        StringSlice(cache_key),
         ptr_meta.bitcast[NoneType](),
     )
 
@@ -3196,7 +3269,7 @@ fn get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
         raise Error("unsupported dtype", dtype, "for cuDNN")
 
 
-fn conv_cudnn[
+fn _conv_cudnn[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -3319,6 +3392,27 @@ fn conv_cudnn[
     _ = workspace_buffer^
 
 
+fn conv_cudnn[
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+](
+    input: NDBuffer[input_type, 4, MutableAnyOrigin, *_, **_],
+    filter: NDBuffer[filter_type, 4, MutableAnyOrigin, *_, **_],
+    output: NDBuffer[output_type, 4, MutableAnyOrigin, *_, **_],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    padding: IndexList[2],
+    num_groups: Int,
+    ctx: DeviceContext,
+) raises:
+    # Set `ctx`'s CUcontext as current to satisfy cudnn's stateful API.
+    with ctx.push_context() as ctx:
+        _conv_cudnn(
+            input, filter, output, stride, dilation, padding, num_groups, ctx
+        )
+
+
 fn conv_gpu[
     input_rank: Int,
     filter_rank: Int,
@@ -3433,7 +3527,7 @@ fn conv_gpu[
             var grid_dim_x = ceildiv(
                 output.dim[2](), block_size
             )  # w / block size for 2d
-            ctx.enqueue_function[conv_gpu_n](
+            ctx.enqueue_function_checked[conv_gpu_n, conv_gpu_n](
                 input,
                 filter,
                 output,
@@ -3448,7 +3542,7 @@ fn conv_gpu[
         var grid_dim_x = ceildiv(
             output.dim[2]() * output.dim[3](), block_size
         )  # h * w / block size for 3d
-        ctx.enqueue_function[conv_gpu_3d](
+        ctx.enqueue_function_checked[conv_gpu_3d, conv_gpu_3d](
             input,
             filter,
             output,
@@ -3509,8 +3603,8 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     var x_thread_id = block_idx.x * block_dim.x + thread_idx.x
 
     # map back to separate height and width
-    var h_out_idx = x_thread_id // W_out  # integer division to get height
-    var w_out_idx = x_thread_id % W_out  # modulo to get width
+    var h_out_idx = x_thread_id // UInt(W_out)  # integer division to get height
+    var w_out_idx = x_thread_id % UInt(W_out)  # modulo to get width
 
     # calculate depth from y-dimension
     var d_out_idx = block_idx.y * block_dim.y + thread_idx.y
@@ -3519,8 +3613,8 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     if (
         n >= UInt(N)
         or d_out_idx >= UInt(D_out)
-        or h_out_idx >= H_out
-        or w_out_idx >= W_out
+        or h_out_idx >= UInt(H_out)
+        or w_out_idx >= UInt(W_out)
     ):
         return
 
@@ -3532,9 +3626,21 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
         for q in range(Q):
             for r in range(R):
                 for s in range(S):
-                    var d_in = Int(d_out_idx * stride_d + q * dil_d - pad_d)
-                    var h_in = Int(h_out_idx * stride_h + r * dil_h - pad_h)
-                    var w_in = Int(w_out_idx * stride_w + s * dil_w - pad_w)
+                    var d_in = Int(
+                        d_out_idx * UInt(stride_d)
+                        + UInt(q * dil_d)
+                        - UInt(pad_d)
+                    )
+                    var h_in = Int(
+                        h_out_idx * UInt(stride_h)
+                        + UInt(r * dil_h)
+                        - UInt(pad_h)
+                    )
+                    var w_in = Int(
+                        w_out_idx * UInt(stride_w)
+                        + UInt(s * dil_w)
+                        - UInt(pad_w)
+                    )
 
                     # check all input bounds bro
                     if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:

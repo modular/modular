@@ -13,16 +13,17 @@
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from testing import TestSuite
 
 
 # CHECK-LABEL: test_ndbuffer_dynamic_shape
-fn test_ndbuffer_dynamic_shape():
+def test_ndbuffer_dynamic_shape():
     print("== test_ndbuffer_dynamic_shape")
 
     # Create a buffer of size 16
-    var buffer = InlineArray[Scalar[DType.index], 16](uninitialized=True)
+    var buffer = InlineArray[Scalar[DType.int], 16](uninitialized=True)
 
-    var matrix = NDBuffer[DType.index, 2](buffer, DimList(4, 4))
+    var matrix = NDBuffer[DType.int, 2](buffer, DimList(4, 4))
 
     matrix.dynamic_shape[0] = 42
     matrix.dynamic_shape[1] = 43
@@ -34,7 +35,7 @@ fn test_ndbuffer_dynamic_shape():
 
     # Mix static and dynamic shape.
     var matrix2 = NDBuffer[
-        DType.index,
+        DType.int,
         2,
         _,
         DimList(42, Dim()),
@@ -48,5 +49,5 @@ fn test_ndbuffer_dynamic_shape():
     print(matrix2.dim[1]())
 
 
-fn main():
-    test_ndbuffer_dynamic_shape()
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -11,21 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isqrt
+from math import ceildiv, rsqrt
 from sys import simd_width_of
 
+from gpu import WARP_SIZE
+from gpu.host import DeviceContext, get_gpu_target
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from layout.math import mean, variance
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
 from nn.normalization import *
 from testing import assert_almost_equal
 
@@ -62,13 +61,13 @@ fn run_layer_norm_block[
     alias layout = Layout.row_major[2]()
     alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
-        data_d.unsafe_ptr(), RuntimeLayout[layout].row_major(data_shape)
+        data_d, RuntimeLayout[layout].row_major(data_shape)
     )
     var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+        gamma_d, RuntimeLayout[layout_1d].row_major(param_shape)
     )
     var beta = LayoutTensor[dtype, layout_1d](
-        beta_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+        beta_d, RuntimeLayout[layout_1d].row_major(param_shape)
     )
     var epsilon = Scalar[dtype]()
 
@@ -127,7 +126,7 @@ fn run_layer_norm_block[
             mut = beta.mut,
             origin = beta.origin,
             layout = beta.layout,
-            simd_width,
+            UInt(simd_width),
             input_fn,
             gamma_fn,
             output_fn,
@@ -154,7 +153,7 @@ fn run_layer_norm_block[
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = isqrt(var_ref + epsilon)
+        var norm_factor_ref = rsqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
@@ -202,13 +201,13 @@ fn run_layer_norm_gpu[
     alias layout = Layout.row_major[rank]()
     alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
-        data_d.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
+        data_d, RuntimeLayout[layout].row_major(shape)
     )
     var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+        gamma_d, RuntimeLayout[layout_1d].row_major(param_shape)
     )
     var beta = LayoutTensor[dtype, layout_1d](
-        beta_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+        beta_d, RuntimeLayout[layout_1d].row_major(param_shape)
     )
     var epsilon = Scalar[dtype]()
 
@@ -269,7 +268,7 @@ fn run_layer_norm_gpu[
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = isqrt(var_ref + epsilon)
+        var norm_factor_ref = rsqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
@@ -317,13 +316,13 @@ fn run_layer_norm_warp_tiling[
     alias layout = Layout.row_major[2]()
     alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
-        data_d._unsafe_ptr(), RuntimeLayout[layout].row_major(data_shape)
+        data_d, RuntimeLayout[layout].row_major(data_shape)
     )
     var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d._unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+        gamma_d, RuntimeLayout[layout_1d].row_major(param_shape)
     )
     var beta = LayoutTensor[dtype, layout_1d](
-        beta_d._unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+        beta_d, RuntimeLayout[layout_1d].row_major(param_shape)
     )
     var epsilon = Scalar[dtype]()
 
@@ -383,7 +382,7 @@ fn run_layer_norm_warp_tiling[
             mut = beta.mut,
             origin = beta.origin,
             layout = beta.layout,
-            simd_width,
+            UInt(simd_width),
             input_fn,
             gamma_fn,
             output_fn,
@@ -410,7 +409,7 @@ fn run_layer_norm_warp_tiling[
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = isqrt(var_ref + epsilon)
+        var norm_factor_ref = rsqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[

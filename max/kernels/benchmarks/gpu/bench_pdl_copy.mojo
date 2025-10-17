@@ -25,7 +25,7 @@ fn copy1(
     b: UnsafePointer[Float32],
     n: Int,
 ):
-    var tmp = Scalar[DType.float32]()
+    var tmp = Float32()
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
     ):
@@ -45,7 +45,7 @@ fn copy2(
     d: UnsafePointer[Float32],
     n: Int,
 ):
-    var result = Scalar[DType.float32]()
+    var result = Float32()
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
     ):
@@ -64,7 +64,7 @@ fn copy1_n(
     b: UnsafePointer[Float32],
     n: Int,
 ):
-    var tmp = Scalar[DType.float32]()
+    var tmp = Float32()
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
     ):
@@ -82,7 +82,7 @@ fn copy2_n(
     d: UnsafePointer[Float32],
     n: Int,
 ):
-    var result = Scalar[DType.float32]()
+    var result = Float32()
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
     ):
@@ -127,7 +127,7 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     @parameter
     fn run_func() raises:
         for _ in range(10):
-            context.enqueue_function[copy1](
+            context.enqueue_function_checked[copy1, copy1](
                 a_device,
                 b_device,
                 length,
@@ -135,7 +135,7 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
                 block_dim=(block_dim),
                 attributes=pdl_launch_attributes(),
             )
-            context.enqueue_function[copy2](
+            context.enqueue_function_checked[copy2, copy2](
                 b_device,
                 c_device,
                 d_device,
@@ -202,14 +202,14 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     @parameter
     fn run_func() raises:
         for _ in range(10):
-            context.enqueue_function[copy1_n](
+            context.enqueue_function_checked[copy1_n, copy1_n](
                 a_device,
                 b_device,
                 length,
                 grid_dim=(grid_dim),
                 block_dim=(block_dim),
             )
-            context.enqueue_function[copy2_n](
+            context.enqueue_function_checked[copy2_n, copy2_n](
                 b_device,
                 c_device,
                 d_device,

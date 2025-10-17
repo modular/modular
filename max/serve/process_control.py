@@ -20,9 +20,9 @@ import multiprocessing.process
 import multiprocessing.synchronize
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Optional, Protocol, Union
+from typing import Protocol
 
 logger = logging.getLogger("max.serve.process_control")
 
@@ -34,7 +34,7 @@ class EventCreator(Protocol):
 
     def Event(
         self,
-    ) -> Union[threading.Event, multiprocessing.synchronize.Event]: ...
+    ) -> threading.Event | multiprocessing.synchronize.Event: ...
 
 
 class ProcessControl:
@@ -100,9 +100,9 @@ class ProcessControl:
         self.completed_event = ctx.Event()
         self.canceled_event = ctx.Event()
 
-        self._last_beat: Union[
-            multiprocessing.sharedctypes.Synchronized[int], ctypes.c_int64
-        ]
+        self._last_beat: (
+            multiprocessing.sharedctypes.Synchronized[int] | ctypes.c_int64
+        )
         # Support both threading and multiprocessing contexts
         if hasattr(ctx, "Value"):
             self._last_beat = ctx.Value(ctypes.c_int64)
@@ -167,9 +167,10 @@ class ProcessMonitor:
     proc: multiprocessing.process.BaseProcess
 
     poll_s: float = 200e-3
-    max_time_s: Optional[float] = 10.0
+    max_time_s: float | None = 10.0
     unhealthy_poll_s: float = 200e-3
-    unhealthy_max_time_s: Optional[float] = None
+    unhealthy_max_time_s: float | None = None
+    use_heartbeat: bool = False
 
     async def until_started(self) -> bool:
         return await _until_true(
@@ -201,60 +202,18 @@ class ProcessMonitor:
             self.unhealthy_max_time_s,
         )
 
-    async def wait_for_startup(
-        self, timeout: Optional[float] = 10.0, shutdown_on_failure: bool = False
-    ) -> None:
-        """Wait for the process to either start or die, with an optional timeout.
+    def is_healthy(self) -> bool:
+        if self.use_heartbeat:
+            return self.pc.is_healthy()
 
-        Raises:
-            TimeoutError: If neither start nor death occurs within the timeout.
-            RuntimeError: If the process dies before starting.
-        """
-        startup_task = asyncio.create_task(self.until_started())
-        death_task = asyncio.create_task(self.until_dead())
-
-        try:
-            try:
-                done, pending = await asyncio.wait(
-                    [startup_task, death_task],
-                    timeout=timeout,
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-
-                for task in pending:
-                    task.cancel()
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        pass
-
-                if not done:
-                    raise TimeoutError("Process startup timed out")
-
-                if not self.proc.is_alive():
-                    raise RuntimeError(
-                        f"Process died during startup with exitcode: {self.proc.exitcode}"
-                    )
-            except Exception:
-                if shutdown_on_failure:
-                    try:
-                        await self.shutdown()
-                    except Exception:
-                        logger.exception(
-                            "Error during shutdown after startup failure"
-                        )
-                raise
-        finally:
-            for task in [startup_task, death_task]:
-                if not task.done():
-                    task.cancel()
+        return self.proc.is_alive()
 
     async def shutdown(self) -> None:
-        logger.info("Shutting down")
+        logger.info(f"Shutting down {self.pc.name}")
         self.pc.set_canceled()
         if not self.proc.is_alive():
             logger.info(
-                f"Early exit. Process was already dead. exitcode: {self.proc.exitcode}"
+                f"Early exit. Process {self.pc.name} was already dead. exitcode: {self.proc.exitcode}"
             )
             return
 
@@ -277,10 +236,10 @@ class ProcessMonitor:
             logger.info("Process is still alive.  Killing")
             self.proc.kill()
             dead = await self.until_dead()
-        logger.info("Shut down")
+        logger.info(f"Shut down {self.pc.name}")
 
     async def shutdown_if_unhealthy(
-        self, cb: Optional[Callable[[], None]] = None
+        self, cb: Callable[[], None] | None = None
     ) -> None:
         try:
             await self.until_unhealthy()
@@ -302,7 +261,7 @@ class ProcessMonitor:
             await self.shutdown()
 
     async def shutdown_if_dead(
-        self, cb: Optional[Callable[[], None]] = None
+        self, cb: Callable[[], None] | None = None
     ) -> None:
         try:
             await self.until_dead_no_timeout()
@@ -325,7 +284,7 @@ class ProcessMonitor:
 
 
 async def _until_true(
-    is_done: Callable[[], bool], poll_s: float, max_time_s: Optional[float]
+    is_done: Callable[[], bool], poll_s: float, max_time_s: float | None
 ) -> bool:
     """Poll a predicate until it is true or you exceed 'max_time_s'"""
     steps: Iterable

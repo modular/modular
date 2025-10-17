@@ -19,10 +19,18 @@ http://openshmem.org/site/sites/default/site_files/OpenSHMEM-1.6.pdf
 The headings below corrosspond to section 9: OpenSHMEM Library API.
 """
 
-from sys.ffi import external_call, c_int, c_size_t
-from sys import is_nvidia_gpu, CompilationTarget
 from collections.optional import OptionalReg
-from gpu.host.launch_attribute import LaunchAttributeID, LaunchAttributeValue
+from os import getenv, setenv
+from sys import (
+    CompilationTarget,
+    argv,
+    has_nvidia_gpu_accelerator,
+    is_amd_gpu,
+    is_nvidia_gpu,
+    size_of,
+)
+from sys.ffi import c_int, c_size_t, external_call
+
 from gpu.host import (
     ConstantMemoryMapping,
     DeviceAttribute,
@@ -33,33 +41,38 @@ from gpu.host import (
     FuncAttribute,
     LaunchAttribute,
 )
-from gpu.host._nvidia_cuda import (
-    CUDA,
-    CUDA_MODULE,
-)
+from gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
 from gpu.host.device_context import (
-    _DumpPath,
+    _ConstCharPtr,
     _checked,
-    _CharPtr,
     _DeviceContextPtr,
+    _DumpPath,
 )
-from os import getenv, setenv
-from sys import (
-    CompilationTarget,
-    is_amd_gpu,
-    has_nvidia_gpu_accelerator,
-    size_of,
-    argv,
-)
-from sys.ffi import c_int, external_call
+from gpu.host.launch_attribute import LaunchAttributeID, LaunchAttributeValue
+
 from ._mpi import (
-    get_mpi_comm_world,
-    MPI_Init,
     MPI_Comm_rank,
     MPI_Comm_size,
     MPI_Finalize,
+    MPI_Init,
+    get_mpi_comm_world,
 )
 from ._nvshmem import (
+    NVSHMEM_CMP_EQ,
+    NVSHMEM_CMP_GE,
+    NVSHMEM_CMP_GT,
+    NVSHMEM_CMP_LE,
+    NVSHMEM_CMP_LT,
+    NVSHMEM_CMP_NE,
+    NVSHMEM_CMP_SENTINEL,
+    NVSHMEM_SIGNAL_ADD,
+    NVSHMEM_SIGNAL_SET,
+    NVSHMEM_TEAM_INVALID,
+    NVSHMEM_TEAM_SHARED,
+    NVSHMEM_TEAM_WORLD,
+    NVSHMEMX_INIT_WITH_MPI_COMM,
+    NVSHMEMX_TEAM_NODE,
+    NVSHMEMXInitAttr,
     nvshmem_barrier_all,
     nvshmem_calloc,
     nvshmem_fence,
@@ -78,25 +91,12 @@ from ._nvshmem import (
     nvshmem_team_my_pe,
     nvshmemx_barrier_all_on_stream,
     nvshmemx_cumodule_init,
+    nvshmemx_cumodule_finalize,
     nvshmemx_hostlib_finalize,
-    nvshmemx_init_status,
     nvshmemx_init,
+    nvshmemx_init_thread,
+    nvshmemx_init_status,
     nvshmemx_signal_op,
-    NVSHMEMXInitAttr,
-    NVSHMEM_TEAM_INVALID,
-    NVSHMEM_TEAM_SHARED,
-    NVSHMEM_TEAM_WORLD,
-    NVSHMEMX_INIT_WITH_MPI_COMM,
-    NVSHMEMX_TEAM_NODE,
-    NVSHMEM_CMP_EQ,
-    NVSHMEM_CMP_NE,
-    NVSHMEM_CMP_GT,
-    NVSHMEM_CMP_LE,
-    NVSHMEM_CMP_LT,
-    NVSHMEM_CMP_GE,
-    NVSHMEM_CMP_SENTINEL,
-    NVSHMEM_SIGNAL_SET,
-    NVSHMEM_SIGNAL_ADD,
 )
 
 # ===----------------------------------------------------------------------=== #
@@ -106,7 +106,7 @@ from ._nvshmem import (
 alias shmem_team_t = c_int
 
 
-struct SHMEMScope(Copyable, EqualityComparable, Movable):
+struct SHMEMScope(EqualityComparable, ImplicitlyCopyable, Movable):
     """Enables following the OpenSHMEM spec by default for put/get/iput/iget
     etc. While allowing NVIDIA extensions for block and warp scopes by passing a
     parameter."""
@@ -147,7 +147,6 @@ alias SHMEM_CMP_SENTINEL: c_int = NVSHMEM_CMP_SENTINEL
 alias SHMEM_SIGNAL_SET: c_int = NVSHMEM_SIGNAL_SET
 alias SHMEM_SIGNAL_ADD: c_int = NVSHMEM_SIGNAL_ADD
 
-
 # ===----------------------------------------------------------------------=== #
 # 1: Library Setup, Exit, and Query Routines
 # ===----------------------------------------------------------------------=== #
@@ -177,10 +176,35 @@ fn shmem_init() raises:
 
     @parameter
     if has_nvidia_gpu_accelerator():
-        return nvshmemx_init()
+        nvshmemx_init()
     else:
         return CompilationTarget.unsupported_target_error[
             operation="shmem_init"
+        ]()
+
+
+fn shmem_init_thread(
+    ctx: DeviceContext, number_of_devices_node: Int = -1
+) raises:
+    """Modular-specific init that enables initializing SHMEM on one GPU per
+    thread.
+
+    Arguments:
+        ctx: the `DeviceContext` to associate with this thread
+        number_of_devices_node: the number of devices participating on this node,
+            by default this will use ctx.number_of_devices() to use all
+            available GPUs.
+
+    Raises:
+        If SHMEM initialization fails.
+    """
+
+    @parameter
+    if has_nvidia_gpu_accelerator():
+        nvshmemx_init_thread(ctx, number_of_devices_node)
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation="shmem_init_thread"
         ]()
 
 
@@ -215,7 +239,6 @@ fn shmem_finalize():
     @parameter
     if has_nvidia_gpu_accelerator():
         nvshmemx_hostlib_finalize()
-        _ = MPI_Finalize()
     else:
         return CompilationTarget.unsupported_target_error[
             operation="shmem_finalize",
@@ -235,8 +258,9 @@ fn shmem_my_pe() -> c_int:
     if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
         return nvshmem_my_pe()
     else:
-        CompilationTarget.unsupported_target_error[operation="shmem_my_pe",]()
-        return {}
+        return CompilationTarget.unsupported_target_error[
+            c_int, operation="shmem_my_pe"
+        ]()
 
 
 fn shmem_n_pes() -> c_int:
@@ -251,8 +275,7 @@ fn shmem_n_pes() -> c_int:
         return nvshmem_n_pes()
     else:
         return CompilationTarget.unsupported_target_error[
-            c_int,
-            operation="shmem_n_pes",
+            c_int, operation="shmem_n_pes"
         ]()
 
 
@@ -331,8 +354,9 @@ fn shmem_calloc[
     if has_nvidia_gpu_accelerator():
         return nvshmem_calloc[dtype](count, size)
     else:
-        CompilationTarget.unsupported_target_error[operation="shmem_calloc"]()
-        return {}
+        return CompilationTarget.unsupported_target_error[
+            UnsafePointer[Scalar[dtype]], operation="shmem_calloc"
+        ]()
 
 
 fn shmem_free[dtype: DType](ptr: UnsafePointer[Scalar[dtype]]):
@@ -392,10 +416,9 @@ fn shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
     if has_nvidia_gpu_accelerator():
         return Int(nvshmem_team_my_pe(c_int(team)))
     else:
-        CompilationTarget.unsupported_target_error[
-            operation="shmem_team_my_pe",
+        return CompilationTarget.unsupported_target_error[
+            c_int, operation="shmem_team_my_pe"
         ]()
-        return 0
 
 
 # ===----------------------------------------------------------------------=== #
@@ -486,8 +509,9 @@ fn shmem_g[
     if is_nvidia_gpu():
         return nvshmem_g(source, pe)
     else:
-        CompilationTarget.unsupported_target_error[operation="shmem_g"]()
-        return 0
+        return CompilationTarget.unsupported_target_error[
+            Scalar[dtype], operation="shmem_g"
+        ]()
 
 
 fn shmem_put[
@@ -813,7 +837,7 @@ fn shmem_barrier_all_on_stream(stream: DeviceStream) raises:
 
 fn shmem_module_init(device_function: DeviceFunction) raises:
     """
-    Intializes the device state in the compiled function module so that it’s
+    Initializes the device state in the compiled function module so that it’s
     able to perform NVSHMEM operations. Must have completed device
     initialization prior to calling this function.
 
@@ -831,4 +855,28 @@ fn shmem_module_init(device_function: DeviceFunction) raises:
     else:
         CompilationTarget.unsupported_target_error[
             operation="shmem_cumodule_init",
+        ]()
+
+
+fn shmem_module_finalize(device_function: DeviceFunction) raises:
+    """
+    Finalizes the device state in the compiled function module and cleans up
+    NVSHMEM operations. This should be called when NVSHMEM operations are no
+    longer needed for the given device function.
+
+    Args:
+        device_function: The compiled device function to finalize and clean up
+            NVSHMEM resources.
+
+    Raises:
+        String: If module finalization fails.
+    """
+
+    @parameter
+    if has_nvidia_gpu_accelerator():
+        var func = CUDA_MODULE(device_function)
+        _ = nvshmemx_cumodule_finalize(func)
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation="shmem_module_finalize",
         ]()

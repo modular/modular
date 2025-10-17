@@ -12,9 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys import size_of
-from utils.numerics import min_finite, max_finite
+
+import linalg.matmul.vendor.blas as vendor_blas
 from gpu import WARP_SIZE, barrier
 from gpu import lane_id as get_lane_id
+from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, lane_id, thread_idx
@@ -22,6 +24,7 @@ from gpu.memory import AddressSpace, external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import Layout, LayoutTensor
+from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import IntTuple
 from layout.tensor_core_async import (
@@ -29,13 +32,11 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
     tile_to_descriptor,
 )
-from gpu.cluster import block_rank_in_cluster
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from linalg import vendor_blas
 from testing import assert_almost_equal
-from layout._fillers import random
+
 from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from utils.numerics import get_accum_type, max_finite, min_finite
 from utils.static_tuple import StaticTuple
 
 
@@ -93,9 +94,7 @@ fn tma_umma_kernel_ss[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space = AddressSpace.SHARED, alignment=128
-        ]
+        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
@@ -134,11 +133,7 @@ fn tma_umma_kernel_ss[
     var b_smem_tile = b_smem_tile_t(b_smem)
 
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (
-        (b_smem + b_size)
-        .bitcast[UInt32]()
-        .static_alignment_cast[alignment=16]()
-    )
+    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
 
     alias accum_type = get_accum_type[a_type]()
 
@@ -149,12 +144,8 @@ fn tma_umma_kernel_ss[
     alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
-    tma_mbar = (
-        (ptr_tmem_addr + 2)
-        .bitcast[SharedMemBarrier]()
-        .static_alignment_cast[alignment=8]()
-    )
-    mma_mbar = (tma_mbar + 1).static_alignment_cast[alignment=8]()
+    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    mma_mbar = tma_mbar + 1
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -212,14 +203,14 @@ fn tma_umma_kernel_ss[
             a_tma_op.async_copy(
                 a_smem_tile,
                 tma_mbar[0],
-                (UInt(i) * BK, block_idx.y * BM),
+                (UInt(i * BK), UInt(block_idx.y * BM)),
             )
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
-                (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
-                    block_idx.x * BN,
-                    UInt(i) * BK,
+                (UInt(i * BK), UInt(block_idx.x * BN)) if transpose_b else (
+                    UInt(block_idx.x * BN),
+                    UInt(i * BK),
                 ),
             )
 
@@ -357,9 +348,7 @@ fn tma_umma_kernel_ts[
     ]()
 
     b_smem = rebind[
-        UnsafePointer[
-            Scalar[b_type], address_space = AddressSpace.SHARED, alignment=128
-        ]
+        UnsafePointer[Scalar[b_type], address_space = AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[b_type],
@@ -385,11 +374,7 @@ fn tma_umma_kernel_ts[
         ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
     ]()
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (
-        (b_smem + b_size)
-        .bitcast[UInt32]()
-        .static_alignment_cast[alignment=16]()
-    )
+    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
 
     alias c_frag_size = MMA_M * MMA_N // num_threads
     var c_frag = SIMD[accum_type, c_frag_size]()
@@ -397,12 +382,8 @@ fn tma_umma_kernel_ts[
     alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = b_expected_bytes
 
-    tma_mbar = (
-        (ptr_tmem_addr + 2)
-        .bitcast[SharedMemBarrier]()
-        .static_alignment_cast[alignment=8]()
-    )
-    mma_mbar = (tma_mbar + 1).static_alignment_cast[alignment=8]()
+    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    mma_mbar = tma_mbar + 1
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -501,9 +482,9 @@ fn tma_umma_kernel_ts[
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
-                (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
-                    block_idx.x * BN,
-                    UInt(i) * BK,
+                (UInt(i * BK), UInt(block_idx.x * BN)) if transpose_b else (
+                    UInt(block_idx.x * BN),
+                    UInt(i * BK),
                 ),
             )
 
@@ -679,18 +660,16 @@ def test_tma_umma[
         Layout.row_major(M, N),
     ](ctx)
 
-    a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
-    ](ctx, a.device_tensor())
+    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+        ctx, a.device_tensor()
+    )
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(BN, BK) if transpose_b else Index(BK, BN),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
-    alias block_dim = 2 * MMA_M
+    alias block_dim: UInt = UInt(2 * MMA_M)
 
     @parameter
     if a_smem:
@@ -766,9 +745,9 @@ def test_tma_umma[
 
         vendor_blas.matmul(
             ctx,
-            c_ref.device_buffer(),
-            a.device_buffer[update=False](),
-            b_col_major.device_buffer[update=True](),
+            c_ref.device_tensor[update=False](),
+            a.device_tensor[update=False](),
+            b_col_major.device_tensor[update=True](),
             c_row_major=True,
             transpose_b=True,
         )
@@ -776,9 +755,9 @@ def test_tma_umma[
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref.device_buffer(),
-            a.device_buffer[update=False](),
-            b.device_buffer[update=False](),
+            c_ref.device_tensor[update=False](),
+            a.device_tensor[update=False](),
+            b.device_tensor[update=False](),
             c_row_major=True,
             transpose_b=transpose_b,
         )

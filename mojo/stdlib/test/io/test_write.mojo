@@ -11,15 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from io.write import Writable, Writer, _hex_digits_to_hex_chars, _write_hex
 
 from memory.memory import memset_zero
-from io.write import (
-    Writable,
-    Writer,
-    _write_hex,
-    _hex_digits_to_hex_chars,
-)
+from testing import assert_equal
+
+from testing import TestSuite
 
 
 @fieldwise_init
@@ -116,7 +113,7 @@ def test_hex_digits_to_hex_chars():
 
 
 def test_write_hex():
-    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
+    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
     alias S = StringSlice[__origin_of(items)]
     ptr = items.unsafe_ptr()
     _write_hex[8](ptr, ord("🔥"))
@@ -158,16 +155,4 @@ def test_closure_capturing(mut writer: Some[Writer & Writable]):
 
 
 def main():
-    test_writer_of_string()
-    test_string_write_seq()
-    test_stringable_based_on_format()
-
-    test_write_int_padded()
-
-    test_hex_digits_to_hex_chars()
-    test_write_hex()
-
-    test_closure_non_capturing()
-
-    var writer = String()
-    test_closure_capturing(writer)
+    TestSuite.discover_tests[__functions_in_module()]().run()

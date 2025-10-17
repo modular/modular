@@ -12,6 +12,7 @@ modular_py_library(
         "//SDK/lib/API/python/max/pipelines/lib",
         "//SDK/lib/API/python/max/serve:config",
         "//SDK/lib/API/python/max/serve:process_control",
+        "//SDK/lib/API/python/max/serve/kvcache_agent",
         "//SDK/lib/API/python/max/serve/queue",
         "//SDK/lib/API/python/max/serve/telemetry",
         requirement("msgspec"),

@@ -37,7 +37,7 @@ def test_permute_success(
         input_type.dtype, target_shape, input_type.device
     )
     with graph_builder(input_types=[input_type]) as graph:
-        out = graph.inputs[0].permute(dims)  # type: ignore
+        out = graph.inputs[0].tensor.permute(dims)
         assert out.type == expected_type
 
         graph.output(out)
@@ -60,7 +60,7 @@ def test_permute_out_of_range(
     assume(any(d >= rank or d < -rank for d in dims))
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(IndexError):
-            graph.inputs[0].permute(dims)  # type: ignore
+            graph.inputs[0].tensor.permute(dims)
 
 
 @given(input_type=..., dims=...)
@@ -73,7 +73,7 @@ def test_permute_wrong_rank(
     assume(len(dims) != rank)
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            graph.inputs[0].permute(dims)  # type: ignore
+            graph.inputs[0].tensor.permute(dims)
 
 
 shared_nontrivial_shapes = st.shared(shapes(min_rank=2))
@@ -95,4 +95,4 @@ def test_permute_duplicates(
     assume(len(set(dims)) < len(dims))
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            graph.inputs[0].permute(dims)  # type: ignore
+            graph.inputs[0].tensor.permute(dims)

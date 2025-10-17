@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from hashlib.hasher import Hasher
+
 from bit import pop_count
 from builtin._location import __call_location
-from hashlib.hasher import Hasher
 from testing import assert_true
 
 

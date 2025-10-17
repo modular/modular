@@ -181,7 +181,12 @@ fn matmul_b_transpose(
 @always_inline
 fn fused_attention_cpu[
     BN: Int, BD: Int
-](Q: LayoutTensor, K: LayoutTensor, V: LayoutTensor, mut O: LayoutTensor):
+](
+    Q: LayoutTensor,
+    K: LayoutTensor,
+    V: LayoutTensor,
+    O: LayoutTensor[mut=True, *_, **_],
+):
     alias N = K.shape[0]()
     alias D = K.shape[1]()
 
@@ -382,7 +387,7 @@ def fused_attention_gpu[
         BN,
         BD,
     ]
-    ctx.enqueue_function[kernel_func](
+    ctx.enqueue_function_checked[kernel_func, kernel_func](
         Q,
         K,
         V,

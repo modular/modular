@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from io.io import _printf
 from math import erf
 from sys.info import is_nvidia_gpu, simd_width_of
 
 import gpu.warp as warp
 from algorithm.functional import elementwise
 from bit import log2_floor
-from io.io import _printf
 from gpu import (
     WARP_SIZE,
     barrier,
@@ -28,9 +28,8 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.host import get_gpu_target
 from gpu.memory import AddressSpace
 from memory import memset_zero, stack_allocation
 from testing import *
@@ -170,7 +169,7 @@ def test_erf_elementwise_sm90():
 fn erf_kernel(buf: UnsafePointer[Float32], len: Int):
     var tid = thread_idx.x + block_dim.y * block_idx.y
 
-    if tid >= len:
+    if tid >= UInt(len):
         return
 
     buf[tid] = erf(buf[tid])
@@ -325,7 +324,7 @@ fn gemm(
 
         # Load the B matrix into shared memory.
         var b_val: Float32
-        if tile_idx * TILE_SZ_RATIO + i < k and col + j < n:
+        if tile_idx * TILE_SZ_RATIO + i < k and col + j < UInt(n):
             b_val = get_b(
                 (tile_idx * TILE_SZ_RATIO + i),
                 (col + j),
@@ -341,7 +340,7 @@ fn gemm(
         for idx in range(TILE_SZ_RATIO):
             # Load the A tile into the register.
             var a_reg: Float32
-            if row < m and tile_idx * TILE_SZ_RATIO + idx < k:
+            if row < UInt(m) and tile_idx * TILE_SZ_RATIO + idx < k:
                 a_reg = get_a(row, tile_idx * TILE_SZ_RATIO + idx)
             else:
                 a_reg = 0
@@ -355,8 +354,8 @@ fn gemm(
 
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
-        if row < m and col + out_idx < n:
-            set_c(row, col + out_idx, c_reg.load(out_idx))
+        if row < UInt(m) and col + UInt(out_idx) < UInt(n):
+            set_c(row, col + UInt(out_idx), c_reg.load(out_idx))
 
 
 def _verify_gemm(asm: StringSlice):
@@ -497,7 +496,8 @@ fn block_reduce(val: Float32) -> Float32:
     barrier()
 
     return warp_sum_reduce(
-        shared.load(lane) if thread_idx.x < block_dim.x // WARP_SIZE else 0
+        shared.load(lane) if thread_idx.x
+        < UInt(block_dim.x // UInt(WARP_SIZE)) else 0
     )
 
 

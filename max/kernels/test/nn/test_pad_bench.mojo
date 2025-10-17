@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
-from gpu.memory import AddressSpace
 
 import benchmark
 from benchmark import Unit, keep
-from layout import LayoutTensor, Layout, RuntimeLayout
+from gpu.memory import AddressSpace
+from layout import Layout, LayoutTensor, RuntimeLayout
 from memory import memcpy
 from nn.pad import _do_pad, _fill, pad_constant, pad_reflect
 from python import Python
@@ -44,7 +44,7 @@ fn pad_constant_dispatch[
         dtype, input_layout, address_space = AddressSpace.GENERIC, **_
     ],
     paddings: UnsafePointer[Scalar[paddings_type]],
-    constant: SIMD[constant_type, 1],
+    constant: Scalar[constant_type],
 ):
     """
     Fill `output` with values from `input`, and edges padded with `constant`
@@ -83,8 +83,8 @@ fn pad_constant_dispatch[
             ],
             paddings: UnsafePointer[Scalar[paddings_type]],
             output_shape: IndexList[output_layout.rank()],
-            output_strides: UnsafePointer[Scalar[DType.index]],
-            input_strides: UnsafePointer[Scalar[DType.index]],
+            output_strides: UnsafePointer[Scalar[DType.int]],
+            input_strides: UnsafePointer[Scalar[DType.int]],
         ):
             return _pad_constant_impl_rec[
                 output_layout.rank(), dtype, paddings_type
@@ -124,8 +124,8 @@ fn _pad_constant_impl_rec[
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: Scalar[dtype],
     output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.index]],
-    input_strides: UnsafePointer[Scalar[DType.index]],
+    output_strides: UnsafePointer[Scalar[DType.int]],
+    input_strides: UnsafePointer[Scalar[DType.int]],
     output_offset: Int,
     input_offset: Int,
     pad_with_constant: Bool,
@@ -168,7 +168,7 @@ fn _pad_constant_impl_rec[
             return
 
         _fill(pre_pad_start_ptr, constant, pre_pad)
-        memcpy(non_pad_start_ptr, input_start_ptr, non_pad)
+        memcpy(dest=non_pad_start_ptr, src=input_start_ptr, count=non_pad)
         _fill(post_pad_start_ptr, constant, post_pad)
         return
 
@@ -256,8 +256,8 @@ fn pad_reflect_dispatch[
             ],
             paddings: UnsafePointer[Scalar[paddings_type]],
             output_shape: IndexList[output_layout.rank()],
-            output_strides: UnsafePointer[Scalar[DType.index]],
-            input_strides: UnsafePointer[Scalar[DType.index]],
+            output_strides: UnsafePointer[Scalar[DType.int]],
+            input_strides: UnsafePointer[Scalar[DType.int]],
         ):
             return _pad_reflect_impl_rec[
                 output_layout.rank(), dtype, paddings_type
@@ -314,7 +314,9 @@ fn _memcpy_regions[
             var copy_from_ptr = pre_pad_start_ptr.offset(
                 (copy_from * output_axis_stride)
             )
-            memcpy(copy_to_ptr, copy_from_ptr, output_axis_stride)
+            memcpy(
+                dest=copy_to_ptr, src=copy_from_ptr, count=output_axis_stride
+            )
             curr_pre_pad += 1
 
         if curr_post_pad < post_pad:
@@ -334,7 +336,9 @@ fn _memcpy_regions[
                 copy_from * output_axis_stride
             )
 
-            memcpy(copy_to_ptr, copy_from_ptr, output_axis_stride)
+            memcpy(
+                dest=copy_to_ptr, src=copy_from_ptr, count=output_axis_stride
+            )
             curr_post_pad += 1
 
 
@@ -348,8 +352,8 @@ fn _pad_reflect_impl_rec[
     input: UnsafePointer[Scalar[dtype]],
     paddings: UnsafePointer[Scalar[paddings_type]],
     output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.index]],
-    input_strides: UnsafePointer[Scalar[DType.index]],
+    output_strides: UnsafePointer[Scalar[DType.int]],
+    input_strides: UnsafePointer[Scalar[DType.int]],
     output_offset: Int,
     input_offset: Int,
 ):
@@ -405,7 +409,7 @@ fn _pad_reflect_impl_rec[
     else:
         # no more dimensions to recurse, copy from input to unpadded region
         var non_pad_start_ptr = pre_pad_start_ptr.offset(pre_pad)
-        memcpy(non_pad_start_ptr, input_start_ptr, non_pad)
+        memcpy(dest=non_pad_start_ptr, src=input_start_ptr, count=non_pad)
 
     _memcpy_regions[dtype](
         pre_pad, post_pad, non_pad, output_axis_stride, pre_pad_start_ptr
@@ -524,17 +528,17 @@ fn test_pad_constant_nd[
     alias out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
-    var input_ptr = UnsafePointer[Scalar[DType.index]].alloc(in_size)
-    var input = LayoutTensor[DType.index, Layout.row_major[rank]()](
+    var input_ptr = UnsafePointer[Scalar[DType.int]].alloc(in_size)
+    var input = LayoutTensor[DType.int, Layout.row_major[rank]()](
         input_ptr,
         RuntimeLayout[Layout.row_major[rank]()].row_major(in_shape),
     ).fill(1)
 
     # Create a padding array
-    var paddings_stack = InlineArray[Scalar[DType.index], 2 * rank](
+    var paddings_stack = InlineArray[Scalar[DType.int], 2 * rank](
         uninitialized=True
     )
-    var paddings = LayoutTensor[DType.index, Layout.row_major(2 * rank)](
+    var paddings = LayoutTensor[DType.int, Layout.row_major(2 * rank)](
         paddings_stack
     )
 
@@ -544,9 +548,9 @@ fn test_pad_constant_nd[
         paddings[2 * i + 1] = d_post
 
     # Create an output matrix and fill with 0
-    var output_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
+    var output_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
     var output = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(out_shape),
         address_space = AddressSpace.GENERIC, **_,
     ](
@@ -557,7 +561,7 @@ fn test_pad_constant_nd[
     )
 
     # constant padding value = 7
-    var constant = Scalar[DType.index](7)
+    var constant = Scalar[DType.int](7)
 
     # pad
     pad_constant_dispatch[recursive=recursive](
@@ -565,8 +569,8 @@ fn test_pad_constant_nd[
     )
 
     if verify:
-        var output_rec_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
-        var output_rec = LayoutTensor[DType.index, Layout.row_major(out_shape)](
+        var output_rec_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
+        var output_rec = LayoutTensor[DType.int, Layout.row_major(out_shape)](
             output_rec_ptr,
             RuntimeLayout[Layout.row_major(out_shape)].row_major(out_shape),
         ).fill(0)
@@ -619,17 +623,17 @@ fn test_pad_reflect_nd[
     alias out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
-    var input_ptr = UnsafePointer[Scalar[DType.index]].alloc(in_size)
-    var input = LayoutTensor[DType.index, Layout.row_major[rank]()](
+    var input_ptr = UnsafePointer[Scalar[DType.int]].alloc(in_size)
+    var input = LayoutTensor[DType.int, Layout.row_major[rank]()](
         input_ptr,
         RuntimeLayout[Layout.row_major[rank]()].row_major(in_shape),
     ).fill(1)
 
     # Create a padding array
-    var paddings_stack = InlineArray[Scalar[DType.index], 2 * rank](
+    var paddings_stack = InlineArray[Scalar[DType.int], 2 * rank](
         uninitialized=True
     )
-    var paddings = LayoutTensor[DType.index, Layout.row_major(2 * rank)](
+    var paddings = LayoutTensor[DType.int, Layout.row_major(2 * rank)](
         paddings_stack
     )
 
@@ -639,8 +643,8 @@ fn test_pad_reflect_nd[
         paddings[2 * i + 1] = d_post
 
     # Create an output matrix and fill with 0
-    var output_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
-    var output = LayoutTensor[DType.index, Layout.row_major(out_shape)](
+    var output_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
+    var output = LayoutTensor[DType.int, Layout.row_major(out_shape)](
         output_ptr,
         RuntimeLayout[Layout.row_major(out_shape)].row_major(out_shape),
     ).fill(0)
@@ -649,8 +653,8 @@ fn test_pad_reflect_nd[
     pad_reflect_dispatch[recursive=recursive](output, input, paddings.ptr)
 
     if verify:
-        var output_rec_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
-        var output_rec = LayoutTensor[DType.index, Layout.row_major(out_shape)](
+        var output_rec_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
+        var output_rec = LayoutTensor[DType.int, Layout.row_major(out_shape)](
             output_rec_ptr,
             RuntimeLayout[Layout.row_major(out_shape)].row_major(out_shape),
         ).fill(0)

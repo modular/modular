@@ -13,21 +13,16 @@
 from math import ceildiv
 from sys.info import simd_width_of
 
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.memory import async_copy_wait_all
-from layout.layout_tensor import (
-    Layout,
-    LayoutTensor,
-    copy_dram_to_sram_async,
-)
+from gpu.memory import AddressSpace, async_copy_wait_all
+from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.math import outer_product_acc
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
 
 from utils.index import Index
@@ -401,15 +396,25 @@ fn gemm_kernel_3[
     number of rows in B.
     """
     # Calculate the column and row indices for each thread
-    var col = thread_idx.x % BN
-    var row = thread_idx.x // BN
+    var col = thread_idx.x % UInt(BN)
+    var row = thread_idx.x // UInt(BN)
 
     # Get the tile of the output matrix C that this thread block is responsible for
     var dst = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     # Allocate shared memory for tiles of input matrices A and B
-    var a_smem = tb[dtype]().row_major[BM, BK]().shared().alloc()
-    var b_smem = tb[dtype]().row_major[BK, BN]().shared().alloc()
+    var a_smem = LayoutTensor[
+        dtype,
+        Layout.row_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    var b_smem = LayoutTensor[
+        dtype,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Initialize the register to accumulate the result
     var dst_reg: c.element_type = 0
@@ -552,8 +557,8 @@ fn gemm_kernel_4[
     of rows in B.
     """
     # Calculate the column and row indices for each thread.
-    var col = thread_idx.x % BN
-    var row = thread_idx.x // BN
+    var col = thread_idx.x % UInt(BN)
+    var row = thread_idx.x // UInt(BN)
     var bidx = block_idx.x
     var bidy = block_idx.y
 
@@ -562,11 +567,23 @@ fn gemm_kernel_4[
     var dst = c.tile[BM, BN](bidy, bidx).tile[TM, 1](row, col)
 
     # Allocate shared memory for tiles of A and B.
-    var a_smem = tb[dtype]().row_major[BM, BK]().shared().alloc()
-    var b_smem = tb[dtype]().row_major[BK, BN]().shared().alloc()
+    var a_smem = LayoutTensor[
+        dtype,
+        Layout.row_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    var b_smem = LayoutTensor[
+        dtype,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Allocate a register tile to store the partial results.
-    var dst_reg = tb[dtype]().layout[TM]().local().alloc()
+    var dst_reg = LayoutTensor[
+        dtype, Layout(TM), MutableAnyOrigin, address_space = AddressSpace.LOCAL
+    ].stack_allocation()
     dst_reg.copy_from(dst)
 
     # Iterate over the tiles of A and B in the K dimension.
@@ -718,8 +735,8 @@ fn gemm_kernel_5[
     matrix multiplication, i.e., the number of columns in A equals the number
     of rows in B.
     """
-    var partition_col = thread_idx.x % (BN // TN)
-    var partition_row = thread_idx.x // (BN // TN)
+    var partition_col = thread_idx.x % UInt(BN // TN)
+    var partition_row = thread_idx.x // UInt(BN // TN)
     var bidx = block_idx.x
     var bidy = block_idx.y
 
@@ -727,13 +744,32 @@ fn gemm_kernel_5[
         partition_row, partition_col
     )
 
-    var a_smem = tb[dtype]().row_major[BM, BK]().shared().alloc()
-    var b_smem = tb[dtype]().row_major[BK, BN]().shared().alloc()
+    var a_smem = LayoutTensor[
+        dtype,
+        Layout.row_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    var b_smem = LayoutTensor[
+        dtype,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
-    var dst_reg = tb[dtype]().row_major[TM, TN]().local().alloc()
+    var dst_reg = LayoutTensor[
+        dtype,
+        Layout.row_major(TM, TN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
     dst_reg.copy_from(dst)
-    var a_reg = tb[dtype]().layout[TM]().local().alloc()
-    var b_reg = tb[dtype]().layout[TN]().local().alloc()
+    var a_reg = LayoutTensor[
+        dtype, Layout(TM), MutableAnyOrigin, address_space = AddressSpace.LOCAL
+    ].stack_allocation()
+    var b_reg = LayoutTensor[
+        dtype, Layout(TN), MutableAnyOrigin, address_space = AddressSpace.LOCAL
+    ].stack_allocation()
 
     var ntiles = b.dim[0]() // BK
 
@@ -875,8 +911,8 @@ fn gemm_kernel_6[
     """
 
     alias simd_width = simd_width_of[dtype]()
-    var partition_col = thread_idx.x % (BN // TN)
-    var partition_row = thread_idx.x // (BN // TN)
+    var partition_col = thread_idx.x % UInt(BN // TN)
+    var partition_row = thread_idx.x // UInt(BN // TN)
     var bidx = block_idx.x
     var bidy = block_idx.y
 
@@ -889,16 +925,35 @@ fn gemm_kernel_6[
 
     # Allocate shared memory for tiles of A and B.
     # Use column-major layout for A to get the transpose.
-    var a_smem = tb[dtype]().col_major[BM, BK]().shared().alloc()
-    var b_smem = tb[dtype]().row_major[BK, BN]().shared().alloc()
+    var a_smem = LayoutTensor[
+        dtype,
+        Layout.col_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    var b_smem = LayoutTensor[
+        dtype,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Allocate register tiles to store the partial results and operands.
-    var dst_reg = tb[dtype]().row_major[TM, TN]().local().alloc()
+    var dst_reg = LayoutTensor[
+        dtype,
+        Layout.row_major(TM, TN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
     var dst_reg_vec = dst_reg.vectorize[1, simd_width]()
     dst_reg_vec.copy_from(dst_vec)
 
-    var a_reg = tb[dtype]().layout[TM]().local().alloc()
-    var b_reg = tb[dtype]().layout[TN]().local().alloc()
+    var a_reg = LayoutTensor[
+        dtype, Layout(TM), MutableAnyOrigin, address_space = AddressSpace.LOCAL
+    ].stack_allocation()
+    var b_reg = LayoutTensor[
+        dtype, Layout(TN), MutableAnyOrigin, address_space = AddressSpace.LOCAL
+    ].stack_allocation()
 
     var ntiles = b.dim[0]() // BK
 
@@ -1058,8 +1113,8 @@ fn matmul_kernel_tc[
     var warp_id = get_warp_id()  # Warp ID within the block
 
     # Calculate warp tile coordinates within the block
-    warp_y = warp_id // (BN // WN)
-    warp_x = warp_id % (BN // WN)
+    warp_y = warp_id // UInt(BN // WN)
+    warp_x = warp_id % UInt(BN // WN)
 
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
@@ -1076,15 +1131,28 @@ fn matmul_kernel_tc[
     mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
 
     # Allocate shared memory for tiles of A and B
-    A_sram_tile = tb[A.dtype]().row_major[BM, BK]().shared().alloc()
-    B_sram_tile = tb[B.dtype]().row_major[BK, BN]().shared().alloc()
+    A_sram_tile = LayoutTensor[
+        A.dtype,
+        Layout.row_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    B_sram_tile = LayoutTensor[
+        B.dtype,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Allocate register tile for accumulating partial results
     c_reg = (
-        tb[C.dtype]()
-        .row_major[WM // MMA_M, (WN * 4) // MMA_N]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            C.dtype,
+            Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .fill(0)
     )
 

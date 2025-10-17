@@ -2,6 +2,26 @@ load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
 _EXTRA_MOJO_TEST_CONSTRAINTS = {
     "test_dump_sass.mojo": ["//:nvidia_gpu"],
+    "test_function_attributes.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_device_stream.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEX-2554
+    "test_device_event.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEX-2555
+    "test_external_shared_mem.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2397
+    "test_device_context_sub_buffer.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEX-2562
 }
 
 [

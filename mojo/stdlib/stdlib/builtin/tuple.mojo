@@ -27,8 +27,8 @@ from utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
-struct Tuple[*element_types: ExplicitlyCopyable & Movable](
-    Copyable, Movable, Sized
+struct Tuple[*element_types: Copyable & Movable](
+    ImplicitlyCopyable, Movable, Sized
 ):
     """The type of a literal tuple expression.
 
@@ -40,7 +40,7 @@ struct Tuple[*element_types: ExplicitlyCopyable & Movable](
 
     alias _mlir_type = __mlir_type[
         `!kgen.pack<:`,
-        VariadicOf[ExplicitlyCopyable & Movable],
+        VariadicOf[Copyable & Movable],
         element_types,
         `>`,
     ]
@@ -69,9 +69,7 @@ struct Tuple[*element_types: ExplicitlyCopyable & Movable](
     fn __init__(
         out self,
         *,
-        var storage: VariadicPack[
-            _, _, ExplicitlyCopyable & Movable, *element_types
-        ],
+        var storage: VariadicPack[_, _, Copyable & Movable, *element_types],
     ):
         """Construct the tuple from a low-level internal representation.
 
@@ -130,8 +128,8 @@ struct Tuple[*element_types: ExplicitlyCopyable & Movable](
 
         @parameter
         for i in range(Self.__len__()):
-            UnsafePointer(to=existing[i]).move_pointee_into(
-                UnsafePointer(to=self[i])
+            UnsafePointer(to=self[i]).init_pointee_move_from(
+                UnsafePointer(to=existing[i])
             )
         # Note: The destructor on `existing` is auto-disabled in a moveinit.
 
@@ -171,9 +169,9 @@ struct Tuple[*element_types: ExplicitlyCopyable & Movable](
         var storage_kgen_ptr = UnsafePointer(to=self.storage).address
 
         # KGenPointer to the element.
-        var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[index = idx._mlir_value](
-            storage_kgen_ptr
-        )
+        var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[
+            index = idx.__mlir_index__()
+        ](storage_kgen_ptr)
         # Use an immortal mut reference, which converts to self's origin.
         return UnsafePointer(elt_kgen_ptr)[]
 

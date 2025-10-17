@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct BigExpensiveStruct(ExplicitlyCopyable, Movable):
+struct BigExpensiveStruct(Copyable, Movable):
     var value: Int
 
     @implicit
@@ -23,9 +23,7 @@ struct BigExpensiveStruct(ExplicitlyCopyable, Movable):
         copy = Self(self.value)
 
 
-struct ExplicitCopyOnly[ElementType: ExplicitlyCopyable & Movable](
-    ExplicitlyCopyable, Movable
-):
+struct ExplicitCopyOnly[ElementType: Copyable & Movable](Copyable, Movable):
     var ptr: UnsafePointer[ElementType]
 
     fn __init__(out self, var elt: ElementType):

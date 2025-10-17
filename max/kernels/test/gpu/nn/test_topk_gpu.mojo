@@ -15,15 +15,17 @@ from collections import OptionalReg
 from math import ceildiv, iota
 from random import random_float64
 
+from algorithm.reduction import max as reduce_max
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
 from testing import assert_almost_equal, assert_equal
-from algorithm.reduction import max as reduce_max
+
 from utils import IndexList
 
 alias DEBUG_BENCH = False
@@ -55,7 +57,7 @@ fn test_case_batched[
     fill_fn: fn[rank: Int, dtype: DType] (
         mut NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
-    out_idx_type: DType = DType.index,
+    out_idx_type: DType = DType.int,
     rank: Int = 2,
 ](ctx: DeviceContext, test_case: TestCase) raises:
     # Fetch arguments
@@ -295,7 +297,7 @@ fn test_case_multi_rank[
         mut NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
     rank: Int,
-    out_idx_type: DType = DType.index,
+    out_idx_type: DType = DType.int,
 ](ctx: DeviceContext, test_case: TestCaseMultiRank[rank=rank, *_]) raises:
     # Fetch arguments
     var input_shape = test_case.input_shape
@@ -451,7 +453,9 @@ fn fill_iota[rank: Int, dtype: DType](mut buf: NDBuffer[mut=True, dtype, rank]):
     iota(buf.data, buf.get_shape().flattened_length())
 
 
-struct TestCase[_sampling: Bool, _largest: Bool = True](Copyable, Movable):
+struct TestCase[_sampling: Bool, _largest: Bool = True](
+    ImplicitlyCopyable, Movable
+):
     alias sampling = _sampling
     alias largest = _largest
     var N: Int
@@ -476,7 +480,7 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](Copyable, Movable):
 
 
 struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True](
-    Copyable, Movable
+    ImplicitlyCopyable, Movable
 ):
     alias sampling = _sampling
     alias largest = _largest
@@ -616,7 +620,7 @@ fn test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
     test_case_multi_rank[dtype, fill_iota](ctx, test_case_multi_rank3)
 
 
-fn main() raises:
+def main():
     alias llama3_vocab_size = 128256
     with DeviceContext() as ctx:
         alias dtype = DType.float32
@@ -851,6 +855,25 @@ fn main() raises:
         )
         print_test_case(test_case20)
         test_case_batched[dtype, fill_constant](ctx, test_case20)
+
+        alias test_case_21 = TestCase[_sampling=False](
+            N=llama3_vocab_size,
+            K=75,
+            block_size=512,
+            batch_size=2,
+            num_blocks_per_input=8,
+        )
+        print_test_case(test_case_21)
+        test_case_batched[DType.float32, fill_random](ctx, test_case_21)
+
+        alias test_case_22 = TestCase[_sampling=False](
+            N=50,
+            K=25,
+            block_size=1024,
+            batch_size=1,
+        )
+        print_test_case(test_case_22)
+        test_case_batched[DType.float32, fill_random](ctx, test_case_22)
 
         # Run minimum top-k tests
         test_min_topk[dtype](ctx)

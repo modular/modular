@@ -12,9 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Callable
-
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import (
@@ -27,8 +24,8 @@ from max.nn import (
     TransformerBlock,
 )
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
+    PagedCacheValues,
 )
 from max.nn.rotary_embedding import RotaryEmbedding
 
@@ -55,12 +52,9 @@ class Transformer(Module):
         output: Linear,
         embedding: Embedding,
         kv_params: KVCacheParams,
-        kv_collection_constructor: FetchPagedKVCacheCollection,
         rope: RotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         embedding_multiplier: float = 1.0,
-        logits_postprocessor: Callable[[TensorValue], TensorValue]
-        | None = None,
     ) -> None:
         super().__init__()
         self.dim = dim
@@ -70,23 +64,14 @@ class Transformer(Module):
         self.lm_head = output
         self.embed_tokens = embedding
         self.kv_params = kv_params
-        self.kv_collection_constructor = kv_collection_constructor
         self.embedding_multiplier = embedding_multiplier
-        self.logits_postprocessor = logits_postprocessor
         self.rope = rope
         self.return_logits = return_logits
-
-    def _apply_logits_postprocessor(
-        self, output: tuple[TensorValue, ...]
-    ) -> tuple[TensorValue, ...]:
-        if self.logits_postprocessor is None:
-            return output
-        return tuple(self.logits_postprocessor(elem) for elem in output)
 
     def __call__(
         self,
         embeds: TensorValue,
-        kv_cache_inputs: Sequence[TensorValue],
+        kv_collection: PagedCacheValues,
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
@@ -100,7 +85,6 @@ class Transformer(Module):
                 continuous attention, (blocks, cache_lengths, lookup_table, max_lengths).
         """
         h = embeds
-        kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
 
         freqs_cis = self.rope.freqs_cis
         for idx, layer in enumerate(self.layers):
@@ -146,16 +130,6 @@ class Transformer(Module):
         elif self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
             offsets = input_row_offsets
-
-        if logits:
-            last_logits, logits = self._apply_logits_postprocessor(
-                (
-                    last_logits,
-                    logits,
-                )
-            )
-        else:
-            last_logits = self._apply_logits_postprocessor((last_logits,))[0]
 
         if offsets is not None:
             assert logits is not None

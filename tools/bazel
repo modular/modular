@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -euo pipefail
 
@@ -44,8 +44,6 @@ fi
 
 # Pass a select group of environment variables to the `bazel` binary and to `bazel run`:
 passthrough_env=(
-  # Force a limited PATH to avoid local env pollution
-  "PATH=/usr/bin:/bin:/usr/sbin"
   # Make sure user installed python modules don't make it in to the build
   "PYTHONNOUSERSITE=affirmative"
   # Required for emojis to work in filenames
@@ -57,6 +55,8 @@ passthrough_env=(
 )
 
 allowed_vars=(
+  # This affects caching but is required for non-standard PATH setups
+  "PATH"
   # Basic settings that shouldn't affect caching
   "COLUMNS"
   "HOME"

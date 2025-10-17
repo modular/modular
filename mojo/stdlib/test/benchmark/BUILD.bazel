@@ -6,7 +6,6 @@ _FILECHECK_TESTS = [
 ]
 
 _PLATFORM_CONSTRAINTS = {
-    "test_benchmark.mojo": ["@platforms//:incompatible"],  # TODO (#34267): reenable
 }
 
 _TEST_RUNTIME_ARGS = {

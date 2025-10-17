@@ -1,0 +1,29 @@
+load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+load(":tools.bzl", "declare_tools")
+
+declare_tools()
+
+[
+    alias(
+        name = tool,
+        actual = select({
+            "//:linux_aarch64": ":linux-aarch64-{}".format(tool),
+            "//:linux_x86_64": ":linux-x86_64-{}".format(tool),
+            "@platforms//os:macos": ":macos-{}".format(tool),
+        }),
+        tags = [
+            "manual",
+            TOP_LEVEL_TAG,
+        ],
+        visibility = ["//visibility:public"],
+    )
+    for tool in [
+        "builtin_headers",
+        "clang-format",
+        "clang-tidy",
+        "clangd",
+        "llvm-install-name-tool",
+        "llvm-objcopy",
+        "llvm-otool",
+    ]
+]

@@ -13,6 +13,11 @@ modular_py_binary(
     imports = ["."],
     main = "kbench.py",
     mojo_deps = [
+        "@mojo//:_cublas",
+        "@mojo//:_cudnn",
+        "@mojo//:_cufft",
+        "@mojo//:_curand",
+        "@mojo//:_rocblas",
         "@mojo//:comm",
         "@mojo//:internal_utils",
         "@mojo//:kv_cache",

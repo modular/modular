@@ -27,7 +27,7 @@ fn vec_func(
     supplement: Int,
 ):
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= UInt(len):
         return
     output[tid] = in0[tid] + in1[tid] + supplement
 
@@ -63,7 +63,7 @@ fn test_basic(ctx: DeviceContext) raises:
 
     # Execute the kernel on the device.
     #  - notice the simple function call like invocation
-    ctx.enqueue_function[vec_func](
+    ctx.enqueue_function_checked[vec_func, vec_func](
         in0_device,
         in1_device,
         out_device,

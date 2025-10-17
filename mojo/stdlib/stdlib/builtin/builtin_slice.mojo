@@ -17,9 +17,8 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 struct Slice(
-    Copyable,
     EqualityComparable,
-    ExplicitlyCopyable,
+    ImplicitlyCopyable,
     Movable,
     Representable,
     Stringable,
@@ -145,7 +144,7 @@ struct Slice(
             and self.step == other.step
         )
 
-    fn indices(self, length: Int) -> (Int, Int, Int):
+    fn indices(self, length: Int) -> Tuple[Int, Int, Int]:
         """Returns a tuple of 3 integers representing the start, end, and step
            of the slice if applied to a container of the given length.
 

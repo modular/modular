@@ -29,8 +29,8 @@ from bit import next_power_of_two
 # ===-----------------------------------------------------------------------===#
 
 
-struct Deque[ElementType: ExplicitlyCopyable & Movable](
-    Boolable, ExplicitlyCopyable, Movable, Sized
+struct Deque[ElementType: Copyable & Movable](
+    Boolable, Copyable, Iterable, Movable, Sized
 ):
     """Implements a double-ended queue.
 
@@ -41,6 +41,10 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
         ElementType: The type of the elements in the deque.
             Must implement the traits `Copyable` and `Movable`.
     """
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _DequeIter[ElementType, iterable_origin]
 
     # ===-------------------------------------------------------------------===#
     # Aliases
@@ -128,7 +132,7 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
         self._shrink = shrink
 
         if elements is not None:
-            self.extend(elements.value())
+            self.extend(elements.take())
 
     fn __init__(out self, var *values: ElementType, __list_literal__: () = ()):
         """Constructs a deque from the given values.
@@ -164,39 +168,23 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
         # Remember how many elements we have.
         self._tail = args_length
 
-    fn copy(self) -> Self:
+    fn __copyinit__(out self, other: Self):
         """Creates a deepcopy of the given deque.
 
-        Returns:
-            A copy of the value.
-        """
-        var copy = Self(
-            capacity=self._capacity,
-            min_capacity=self._min_capacity,
-            maxlen=self._maxlen,
-            shrink=self._shrink,
-        )
-        for i in range(len(self)):
-            offset = self._physical_index(self._head + i)
-            (copy._data + i).init_pointee_copy((self._data + offset)[])
-
-        copy._tail = len(self)
-
-        return copy^
-
-    fn __moveinit__(out self, deinit existing: Self):
-        """Moves data of an existing deque into a new one.
-
         Args:
-            existing: The existing deque.
+            other: The deque to copy.
         """
-        self._data = existing._data
-        self._capacity = existing._capacity
-        self._head = existing._head
-        self._tail = existing._tail
-        self._min_capacity = existing._min_capacity
-        self._maxlen = existing._maxlen
-        self._shrink = existing._shrink
+        self = Self(
+            capacity=other._capacity,
+            min_capacity=other._min_capacity,
+            maxlen=other._maxlen,
+            shrink=other._shrink,
+        )
+        for i in range(len(other)):
+            offset = other._physical_index(other._head + i)
+            (self._data + i).init_pointee_copy((other._data + offset)[])
+
+        self._tail = len(other)
 
     fn __del__(deinit self):
         """Destroys all elements in the deque and free its memory."""
@@ -270,7 +258,7 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
                 self.append(element.copy())
 
     fn __eq__[
-        T: EqualityComparable & ExplicitlyCopyable & Movable, //
+        T: EqualityComparable & Copyable & Movable, //
     ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are equal.
 
@@ -295,7 +283,7 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
         return True
 
     fn __ne__[
-        T: EqualityComparable & ExplicitlyCopyable & Movable, //
+        T: EqualityComparable & Copyable & Movable, //
     ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are not equal.
 
@@ -312,7 +300,7 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
         return not (self == other)
 
     fn __contains__[
-        T: EqualityComparable & ExplicitlyCopyable & Movable, //
+        T: EqualityComparable & Copyable & Movable, //
     ](self: Deque[T], value: T) -> Bool:
         """Verify if a given value is present in the deque.
 
@@ -334,7 +322,7 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
 
     fn __iter__(
         ref self,
-    ) -> _DequeIter[ElementType, __origin_of(self)]:
+    ) -> Self.IteratorType[__origin_of(self)]:
         """Iterates over elements of the deque, returning the references.
 
         Returns:
@@ -401,7 +389,7 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
 
     @no_inline
     fn write_to[
-        T: Representable & ExplicitlyCopyable & Movable,
+        T: Representable & Copyable & Movable,
     ](self: Deque[T], mut writer: Some[Writer]):
         """Writes `my_deque.__str__()` to a `Writer`.
 
@@ -422,7 +410,7 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
 
     @no_inline
     fn __str__[
-        T: Representable & ExplicitlyCopyable & Movable, //
+        T: Representable & Copyable & Movable, //
     ](self: Deque[T]) -> String:
         """Returns a string representation of a `Deque`.
 
@@ -450,7 +438,7 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
 
     @no_inline
     fn __repr__[
-        T: Representable & ExplicitlyCopyable & Movable, //
+        T: Representable & Copyable & Movable, //
     ](self: Deque[T]) -> String:
         """Returns a string representation of a `Deque`.
 
@@ -527,7 +515,7 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
         self._tail = 0
 
     fn count[
-        T: EqualityComparable & ExplicitlyCopyable & Movable, //
+        T: EqualityComparable & Copyable & Movable, //
     ](self: Deque[T], value: T) -> Int:
         """Counts the number of occurrences of a `value` in the deque.
 
@@ -577,8 +565,11 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
         # move remaining elements from `values`
         src = values_data + n_pop_values
         for i in range(n_move_values):
-            (src + i).move_pointee_into(self._data + self._tail)
+            (self._data + self._tail).init_pointee_move_from(src + i)
             self._tail = self._physical_index(self._tail + 1)
+
+        # free the list backing buffer
+        values_data.free()
 
     fn extendleft(mut self, var values: List[ElementType]):
         """Extends the left side of the deque by consuming elements from the list argument.
@@ -612,10 +603,12 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
         src = values_data + n_pop_values
         for i in range(n_move_values):
             self._head = self._physical_index(self._head - 1)
-            (src + i).move_pointee_into(self._data + self._head)
+            (self._data + self._head).init_pointee_move_from(src + i)
+
+        values_data.free()
 
     fn index[
-        T: EqualityComparable & ExplicitlyCopyable & Movable, //
+        T: EqualityComparable & Copyable & Movable, //
     ](
         self: Deque[T],
         value: T,
@@ -693,13 +686,13 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
             for i in range(normalized_idx):
                 src = self._physical_index(self._head + i)
                 dst = self._physical_index(src - 1)
-                (self._data + src).move_pointee_into(self._data + dst)
+                (self._data + dst).init_pointee_move_from(self._data + src)
             self._head = self._physical_index(self._head - 1)
         else:
             for i in range(deque_len - normalized_idx):
                 dst = self._physical_index(self._tail - i)
                 src = self._physical_index(dst - 1)
-                (self._data + src).move_pointee_into(self._data + dst)
+                (self._data + dst).init_pointee_move_from(self._data + src)
             self._tail = self._physical_index(self._tail + 1)
 
         offset = self._physical_index(self._head + normalized_idx)
@@ -709,7 +702,7 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
             self._realloc(self._capacity << 1)
 
     fn remove[
-        T: EqualityComparable & ExplicitlyCopyable & Movable, //
+        T: EqualityComparable & Copyable & Movable, //
     ](mut self: Deque[T], value: T) raises:
         """Removes the first occurrence of the `value`.
 
@@ -733,13 +726,17 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
                     for i in reversed(range(idx)):
                         src = self._physical_index(self._head + i)
                         dst = self._physical_index(src + 1)
-                        (self._data + src).move_pointee_into(self._data + dst)
+                        (self._data + dst).init_pointee_move_from(
+                            self._data + src
+                        )
                     self._head = self._physical_index(self._head + 1)
                 else:
                     for i in range(idx + 1, deque_len):
                         src = self._physical_index(self._head + i)
                         dst = self._physical_index(src - 1)
-                        (self._data + src).move_pointee_into(self._data + dst)
+                        (self._data + dst).init_pointee_move_from(
+                            self._data + src
+                        )
                     self._tail = self._physical_index(self._tail - 1)
 
                 if (
@@ -836,7 +833,7 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
             src = self._physical_index(self._head + i)
             dst = self._physical_index(last - i)
             tmp = (self._data + dst).take_pointee()
-            (self._data + src).move_pointee_into(self._data + dst)
+            (self._data + dst).init_pointee_move_from(self._data + src)
             (self._data + src).init_pointee_move(tmp^)
 
     fn rotate(mut self, n: Int = 1):
@@ -851,8 +848,8 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
         """
         if n < 0:
             for _ in range(-n):
-                (self._data + self._head).move_pointee_into(
-                    self._data + self._tail
+                (self._data + self._tail).init_pointee_move_from(
+                    self._data + self._head
                 )
                 self._tail = self._physical_index(self._tail + 1)
                 self._head = self._physical_index(self._head + 1)
@@ -860,13 +857,13 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
             for _ in range(n):
                 self._tail = self._physical_index(self._tail - 1)
                 self._head = self._physical_index(self._head - 1)
-                (self._data + self._tail).move_pointee_into(
-                    self._data + self._head
+                (self._data + self._head).init_pointee_move_from(
+                    self._data + self._tail
                 )
 
     fn _compute_pop_and_move_counts(
         self, len_self: Int, len_values: Int
-    ) -> (Int, Int, Int, Int, Int):
+    ) -> Tuple[Int, Int, Int, Int, Int]:
         """
         Calculates the number of elements to retain, move or discard in the deque and
         in the list of the new values based on the current length of the deque,
@@ -932,7 +929,7 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
 
         for i in range(n_retain):
             offset = self._physical_index(self._head + i)
-            (self._data + offset).move_pointee_into(new_data + i)
+            (new_data + i).init_pointee_move_from(self._data + offset)
 
         if self._data:
             self._data.free()
@@ -962,12 +959,12 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
         src = self._data + self._head
         dsc = new_data
         for i in range(head_len):
-            (src + i).move_pointee_into(dsc + i)
+            (dsc + i).init_pointee_move_from(src + i)
 
         src = self._data
         dsc = new_data + head_len
         for i in range(tail_len):
-            (src + i).move_pointee_into(dsc + i)
+            (dsc + i).init_pointee_move_from(src + i)
 
         self._head = 0
         self._tail = deque_len
@@ -981,10 +978,10 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
 @fieldwise_init
 struct _DequeIter[
     mut: Bool, //,
-    T: ExplicitlyCopyable & Movable,
+    T: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator, Movable):
     """Iterator for Deque.
 
     Parameters:
@@ -994,13 +991,16 @@ struct _DequeIter[
         forward: The iteration direction. `False` is backwards.
     """
 
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
     alias Element = T
 
     var index: Int
     var src: Pointer[Deque[T], origin]
 
-    fn __iter__(self) -> Self:
-        return self
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self.copy()
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -1022,3 +1022,15 @@ struct _DequeIter[
 
     fn __next__(mut self) -> Self.Element:
         return self.__next_ref__().copy()
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var iter_len: Int
+
+        @parameter
+        if forward:
+            iter_len = len(self.src[]) - self.index
+        else:
+            iter_len = self.index
+
+        return (iter_len, {iter_len})

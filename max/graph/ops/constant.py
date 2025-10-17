@@ -14,28 +14,47 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, TypeAlias, cast
 
 import numpy as np
-import numpy.typing as npt
-from max._core import graph as _graph
 from max.dtype import DType
 from max.mlir.dialects import mo
 
-from ...driver import Device
+from ..._core import graph as _graph
+from ..._core.dialects import mo as _mo
+from ...driver import CPU, Device, DLPackArray, Tensor
 from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue
 
+Number: TypeAlias = float | np.number[Any]
+NestedArray: TypeAlias = Sequence["Number | NestedArray"]
+
+
+def shape(literal: NestedArray | Number) -> tuple[int, ...]:
+    if not isinstance(literal, Sequence):
+        return ()
+    outer = len(literal)
+    inners: set[tuple[int, ...]] = {shape(inner) for inner in literal}
+    if len(inners) > 1:
+        raise ValueError(f"Array literals must be rectangular, got {literal=}")
+    return outer, *next(iter(inners), ())
+
+
+def index(literal: NestedArray | Number, idx: Sequence[int]) -> Number:
+    if not idx:
+        assert not isinstance(literal, Sequence)
+        return cast(Number, literal)
+    first, *rest = idx
+    assert isinstance(literal, Sequence)
+    return index(literal[first], rest)
+
 
 def constant(
-    value: npt.NDArray[np.number[Any]]
-    | int
-    | float
-    | np.integer[Any]
-    | np.floating[Any],
-    dtype: DType,
-    device: Device | DeviceRef,
+    value: DLPackArray | NestedArray | Number,
+    dtype: DType | None = None,
+    device: Device | DeviceRef | None = None,
 ) -> TensorValue:
     """Adds a node representing a constant operation.
 
@@ -56,48 +75,41 @@ def constant(
     Returns:
         A graph value containing the constant data as an attribute.
     """
-    device = DeviceRef.from_device(device)
-    if not isinstance(value, (np.ndarray, int, float, np.integer, np.floating)):
-        raise TypeError(
-            "ops.constant expects inputs to numpy array, int, float,"
-            f" np.integer, or np.floating, but got '{type(value).__name__}'."
+
+    if not isinstance(value, DLPackArray):
+        if dtype is None or device is None:
+            raise TypeError(
+                "Literal constants must explicitly set a dtype and device."
+            )
+
+        min, max = _DTYPE_MIN_AND_MAX[dtype]
+        tensor = Tensor(dtype, shape(value), device=CPU())
+        for idx in tensor._iterate_indices():
+            v = index(value, idx)
+
+            if not dtype.is_float() and not min <= int(v) <= max:
+                raise ValueError(
+                    "Unsafe cast: Refusing to implicitly promote external "
+                    f"array with value {v} out of range for DType {dtype}."
+                )
+
+            tensor[idx] = v
+
+        value = tensor
+    elif isinstance(value, np.ndarray):
+        value = np.ascontiguousarray(value)
+
+    value = Tensor.from_dlpack(value)
+    device = DeviceRef.from_device(device or value.device)
+    dtype = dtype or value.dtype
+    if dtype != value.dtype:
+        raise ValueError(
+            f"DType must match input dtype: {dtype=} != {value.dtype=}"
         )
 
-    if isinstance(value, (int, float, np.integer, np.floating)):
-        value = np.array(value)
-
-    device = device or DeviceRef.CPU()
-
-    if dtype == DType.bfloat16:
-        # Numpy can't natively generate in bf16.
-        # Generate in f32 and cast to bf16.
-        return constant(value, DType.float32, device).cast(DType.bfloat16)
-    elif dtype in (
-        DType.float8_e4m3fn,
-        DType.float8_e4m3fnuz,
-        DType.float8_e5m2,
-        DType.float8_e5m2fnuz,
-    ):
-        # Numpy can't natively generate in these types.
-        # Generate in f32 and cast to these types.
-        return constant(value, DType.float32, device).cast(dtype)
-
-    if not dtype.is_float():
-        min, max = _DTYPE_MIN_AND_MAX[dtype]
-        if not (np.all(min <= value) and np.all(value <= max)):
-            raise ValueError(
-                f"Unsafe cast: Can't cast numpy array with value ({value}) to"
-                f" dtype({dtype}). Values out of range of dtype."
-            )
-    tensor_type = TensorType(dtype, value.shape, device).to_mlir()
-    array_attr = _graph.array_attr(
-        "value",
-        np.ascontiguousarray(value.astype(dtype.to_numpy())),
-        tensor_type,
-    )
-    return Graph.current._add_op(
-        mo.constant, result=tensor_type, value=array_attr
-    )[0].tensor
+    type = TensorType(dtype, value.shape, device=device)
+    attr = _graph.array_attr(value, type.to_mlir())
+    return Graph.current._add_op_generated(_mo.ConstantOp, type, attr)[0].tensor
 
 
 def constant_external(name: str, type: TensorType) -> TensorValue:

@@ -16,6 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections.string.string_slice import get_static_string
+from io.write import _WriteBufferHeap, _WriteBufferStack
 from sys import _libc as libc
 from sys import (
     external_call,
@@ -29,12 +30,12 @@ from sys import (
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
 from sys._libc import dup, fclose, fdopen, fflush
 from sys.ffi import c_char
-from sys.intrinsics import _type_is_eq
 from sys.info import CompilationTarget
+from sys.intrinsics import _type_is_eq
+
+from memory import bitcast
 
 from .file_descriptor import FileDescriptor
-from memory import bitcast
-from io.write import _WriteBufferHeap, _WriteBufferStack
 
 # ===----------------------------------------------------------------------=== #
 #  _file_handle
@@ -125,6 +126,7 @@ struct _fdopen[mode: StaticString = "a"]:
         """
         # getdelim will allocate the buffer using malloc().
         var buffer = UnsafePointer[UInt8]()
+        var n = UInt64(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
         var bytes_read = external_call[
@@ -136,7 +138,7 @@ struct _fdopen[mode: StaticString = "a"]:
             OpaquePointer,
         ](
             UnsafePointer(to=buffer),
-            UnsafePointer(to=UInt64(0)),
+            UnsafePointer(to=n),
             ord(delimiter),
             self.handle,
         )

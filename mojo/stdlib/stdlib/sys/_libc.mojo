@@ -20,15 +20,21 @@ functionality in the rest of the Mojo standard library.
 from sys import CompilationTarget
 from sys.ffi import c_char, c_int, c_size_t, get_errno
 
-
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations
 # ===-----------------------------------------------------------------------===#
 
 
 @always_inline
-fn free(ptr: UnsafePointer[NoneType, **_]):
-    external_call["free", NoneType](ptr)
+fn free(ptr: UnsafePointer[NoneType, mut=True, **_]):
+    # manually construct the call to free and attach the
+    # correct attributes
+    __mlir_op.`pop.external_call`[
+        func = __mlir_attr[`"free" : !kgen.string`],
+        _type=None,
+        argAttrs = __mlir_attr.`[{llvm.allocptr}]`,
+        funcAttrs = __mlir_attr.`[["allockind", "4"], ["alloc-family", "malloc"]]`,
+    ](ptr)
 
 
 @always_inline
@@ -44,10 +50,10 @@ alias FILE_ptr = OpaquePointer
 
 
 @always_inline
-fn fdopen(fd: c_int, mode: UnsafePointer[c_char, **_]) -> FILE_ptr:
-    alias name = "_fdopen" if CompilationTarget.is_windows() else "fdopen"
-
-    return external_call[name, FILE_ptr](fd, mode)
+fn fdopen(
+    fd: c_int, mode: UnsafePointer[c_char, mut=False, origin=_]
+) -> FILE_ptr:
+    return external_call["fdopen", FILE_ptr](fd, mode)
 
 
 @always_inline
@@ -62,8 +68,8 @@ fn fflush(stream: FILE_ptr) -> c_int:
 
 @always_inline
 fn popen(
-    command: UnsafePointer[c_char],
-    type: UnsafePointer[c_char],
+    command: UnsafePointer[c_char, mut=False, origin=_],
+    type: UnsafePointer[c_char, mut=False, origin=_],
 ) -> FILE_ptr:
     return external_call["popen", FILE_ptr](command, type)
 
@@ -75,7 +81,10 @@ fn pclose(stream: FILE_ptr) -> c_int:
 
 @always_inline
 fn setvbuf(
-    stream: FILE_ptr, buffer: UnsafePointer[c_char], mode: c_int, size: c_size_t
+    stream: FILE_ptr,
+    buffer: UnsafePointer[c_char, mut=True, origin=_],
+    mode: c_int,
+    size: c_size_t,
 ) -> c_int:
     return external_call["setvbuf", c_int](stream, buffer)
 
@@ -100,14 +109,13 @@ struct BufferMode:
 
 @always_inline
 fn dup(oldfd: c_int) -> c_int:
-    alias name = "_dup" if CompilationTarget.is_windows() else "dup"
-
-    return external_call[name, c_int](oldfd)
+    return external_call["dup", c_int](oldfd)
 
 
 @always_inline
 fn execvp(
-    file: UnsafePointer[c_char], argv: UnsafePointer[UnsafePointer[c_char]]
+    file: UnsafePointer[c_char, mut=False, origin=_],
+    argv: UnsafePointer[UnsafePointer[c_char, mut=False, origin=_]],
 ) -> c_int:
     """[`execvp`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
     — execute a file.
@@ -144,7 +152,7 @@ fn kill(pid: c_int, sig: c_int) -> c_int:
 
 
 @always_inline
-fn pipe(fildes: UnsafePointer[c_int]) -> c_int:
+fn pipe(fildes: UnsafePointer[c_int, mut=True, origin=_]) -> c_int:
     """[`pipe()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/pipe.html) — create an interprocess channel.
     """
     return external_call["pipe", c_int](fildes)
@@ -199,7 +207,9 @@ fn dlerror() -> UnsafePointer[c_char]:
 
 
 @always_inline
-fn dlopen(filename: UnsafePointer[c_char, **_], flags: c_int) -> OpaquePointer:
+fn dlopen(
+    filename: UnsafePointer[c_char, mut=False, origin=_], flags: c_int
+) -> OpaquePointer:
     return external_call["dlopen", OpaquePointer](filename, flags)
 
 
@@ -214,16 +224,14 @@ fn dlsym[
     result_type: AnyType = NoneType
 ](
     handle: OpaquePointer,
-    name: UnsafePointer[c_char, **_],
-) -> UnsafePointer[
-    result_type
-]:
+    name: UnsafePointer[c_char, mut=False, origin=_],
+) -> UnsafePointer[result_type]:
     return external_call["dlsym", UnsafePointer[result_type]](handle, name)
 
 
 fn realpath(
-    path: UnsafePointer[c_char],
-    resolved_path: UnsafePointer[c_char] = UnsafePointer[c_char](),
+    path: UnsafePointer[c_char, mut=False, origin=_],
+    resolved_path: UnsafePointer[c_char, mut=True] = UnsafePointer[c_char](),
 ) raises -> UnsafePointer[c_char]:
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a

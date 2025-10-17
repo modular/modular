@@ -39,7 +39,7 @@ for src in glob(["**/*.mojo"])
 To something like this:
 
 ```bash
-for src in glob(["**/bench_list.mojo"])
+for src in glob(["**/collections/bench_dict.mojo"])
 ```
 
 Remember to revert the `-t` flag and the `glob` changes again before pushing

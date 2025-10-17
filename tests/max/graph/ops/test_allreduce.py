@@ -146,26 +146,5 @@ def test_allreduce_basic() -> None:
             allreduce_outputs[2],
             allreduce_outputs[3],
         )
-        for output, device in zip(allreduce_outputs, devices):
+        for output, device in zip(allreduce_outputs, devices, strict=True):
             assert device == output.device
-
-
-def test_allreduce_inserts_fence() -> None:
-    """Test that allreduce.sum inserts a fence operation for synchronization."""
-    devices = [DeviceRef.GPU(id=0), DeviceRef.GPU(id=1)]
-    signals = Signals(devices)
-    with Graph(
-        "allreduce_fence",
-        input_types=[
-            TensorType(dtype=DType.float32, shape=[2, 2], device=devices[0]),
-            TensorType(dtype=DType.float32, shape=[2, 2], device=devices[1]),
-            *signals.input_types(),
-        ],
-    ) as graph:
-        outs = ops.allreduce.sum(
-            inputs=(v.tensor for v in graph.inputs[: len(devices)]),
-            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
-        )
-        # Materialize IR text and assert fence is present.
-        graph.output(*outs)
-    assert "mo.fence" in str(graph._module)

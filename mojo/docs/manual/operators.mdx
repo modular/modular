@@ -212,7 +212,7 @@ result = i8 * f64
 ```
 
 ```output
-error: invalid call to '__mul__': could not deduce parameter 'type' of parent struct 'SIMD'
+error: invalid call to '__mul__': failed to infer parameter 'type' of parent struct 'SIMD'
     result = i8 * f64
              ~~~^~~~~
 ```
@@ -390,66 +390,45 @@ Mojo supports a standard set of comparison operators: `==`, `!=`, `<`, `<=`,
 `>`, and `>=`. However their behavior depends on the type of values being
 compared.
 
+The remainder of this section describes numeric comparison operators. String
+comparisons are discussed in the [String operators](#string-operators). Several
+other types in the Mojo standard library support various comparison operators,
+in particular the equality and inequality comparisons. Consult the
+[API documentation](/mojo/lib) for a type to determine whether any comparison
+operators are supported.
+
+#### `Bool`-returning comparisons
+
+These comparisons return a single `Bool` value:
+
 - `Int`, `UInt`, `IntLiteral`, and any type that can be implicitly converted to
   `Int` or `UInt` do standard numerical comparison with a `Bool` result.
-- Two `SIMD` values can be compared only if they are the same `DType` and size.
-  (If you need to compare two `SIMD` values of different types, you can
-  explicitly convert a value so that they have the same type either by invoking
-  its [`cast()`](/mojo/stdlib/builtin/simd/SIMD#cast) method or by passing it as
-  an argument to the constructor of the target type.) Mojo performs elementwise
-  comparison with a `SIMD[DType.bool]` result. For example:
+- Equality operators (`==` and `!=`) with multi-element `SIMD` values return a
+  `Bool` result using reduction semantics. The comparison is `True` only if it's
+  true for all corresponding elements. For example:
 
     ```mojo
-    simd1 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-    simd2 = SIMD[DType.int16, 4](0, 1, 2, 3)
-    simd3 = simd1.gt(simd2)  # SIMD[DType.bool, 4]
-    print(simd3)
+    simd8 = SIMD[DType.int32, 4](1, 2, 3, 2)
+    simd9 = SIMD[DType.int32, 4](1, 2, 4, 2)
+    print("simd8 == simd9:", simd8 == simd9)  # False (element 2 differs)
+    print("simd8 != simd9:", simd8 != simd9)  # True (not all elements equal)
     ```
 
     ```output
-    [False, True, False, True]
+    simd8 == simd9: False
+    simd8 != simd9: True
     ```
 
-- An integral type `SIMD` can be compared to an `IntLiteral`, `Int`, `UInt`, or
-  any type that can be implicitly converted to `Int` or `UInt`. Mojo performs
-  elementwise comparison against the value provided and produces a
-  `SIMD[DType.bool]` result. For example:
-
-    ```mojo
-    simd4 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-    simd5 = simd4 > 2  # SIMD[DType.bool, 4]
-    print(simd5)
-    ```
-
-    ```output
-    [False, False, False, True]
-    ```
-
-- A floating point type `SIMD` can be compared to a `FloatLiteral`,
-  `IntLiteral`, `Int`, `UInt`, or any type that can be implicitly converted to
-  `Int` or `UInt`. Mojo performs elementwise comparison against the value
-  provided and produces a `SIMD[DType.bool]` result. For example:
-
-    ```mojo
-    simd6 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
-    simd7 = simd6 > 0.5  # SIMD[DType.bool, 4]
-    print(simd7)
-    ```
-
-    ```output
-    [True, False, True, False]
-    ```
-
-- `Scalar` values are simply aliases for single-element `SIMD` vectors.
-  Therefore, the same restrictions apply against comparing different types. In
-  other words, you can't compare a `Float16` value to a `Float32` value unless
-  you convert the values to the same type. You can convert a `Scalar` value by
-  passing it as an argument to the constructor of the target type:
+- Inequality operators (`<`, `<=`, `>`, `>=`) with multi-element `SIMD` values
+  are not supported. These operators only work with scalar (single-element)
+  `SIMD` values.
+- `Scalar` values are simply aliases for single-element `SIMD` vectors and
+  support all comparison operators with `Bool` results:
 
     ```mojo
     var float1: Float16 = 12.345         # SIMD[DType.float16, 1]
     var float2: Float32 = 0.5            # SIMD[DType.float32, 1]
-    result = Float32(float1) > float2    # Result is SIMD[DType.bool, 1]
+    result = Float32(float1) > float2    # Result is Bool
     print(result)
     ```
 
@@ -457,25 +436,53 @@ compared.
     True
     ```
 
-    :::note
+#### Elementwise comparisons
 
-    Note that the result of comparing a `Scalar` value is a `SIMD[DType.bool, 1]`,
-    which is not the same as a `Bool` value. However, `SIMD` values of size
-    1 implement the `Boolable` trait, which provides for implicit conversion to
-    a `Bool` value when used in a boolean expression.
+For elementwise comparisons that return a `SIMD[DType.bool]` result, use the
+comparison methods: `eq()`, `ne()`, `lt()`, `le()`, `gt()`, and `ge()`. These
+methods work with both `SIMD`-to-`SIMD` and `SIMD`-to-scalar comparisons. Here
+are examples showing all six elementwise comparison methods:
 
-    :::
+    ```mojo
+    simd8 = SIMD[DType.int32, 4](1, 2, 3, 2)
+    simd9 = SIMD[DType.int32, 4](1, 2, 4, 2)
 
-- `String` and `StringLiteral` values can be compared using standard
-  lexicographical ordering, producing a `Bool`. (For example, "Zebra" is treated
-  as less than "ant" because upper case letters occur before lower case letters
-  in the character encoding.) String comparisons are discussed further in the
-  [String operators](#string-operators) section below.
+    print("simd8.eq(simd9):", simd8.eq(simd9))    # Equal
+    print("simd8.ne(simd9):", simd8.ne(simd9))    # Not equal
+    print("simd8.lt(simd9):", simd8.lt(simd9))    # Less than
+    print("simd8.le(simd9):", simd8.le(simd9))    # Less than or equal
+    print("simd8.gt(simd9):", simd8.gt(simd9))    # Greater than
+    print("simd8.ge(simd9):", simd8.ge(simd9))    # Greater than or equal
+    ```
 
-Several other types in the Mojo standard library support various comparison
-operators, in particular the equality and inequality comparisons. Consult the
-[API documentation](/mojo/lib) for a type to determine whether any comparison
-operators are supported.
+    ```output
+    simd8.eq(simd9): [True, True, False, True]
+    simd8.ne(simd9): [False, False, True, False]
+    simd8.lt(simd9): [False, False, True, False]
+    simd8.le(simd9): [True, True, True, True]
+    simd8.gt(simd9): [False, False, False, False]
+    simd8.ge(simd9): [True, True, False, True]
+    ```
+
+    You can also use these methods for `SIMD`-to-scalar comparisons:
+
+    ```mojo
+    simd4 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+    simd5 = simd4.gt(2)  # SIMD[DType.bool, 4]
+    print("simd4.gt(2):", simd5)
+
+    simd6 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
+    simd7 = simd6.gt(0.5)  # SIMD[DType.bool, 4]
+    print("simd6.gt(0.5):", simd7)
+    ```
+
+    ```output
+    simd4.gt(2): [False, False, False, True]
+    simd6.gt(0.5): [True, False, True, False]
+    ```
+
+Use elementwise comparison methods when you need to compare each element
+individually and work with the resulting boolean mask for further processing.
 
 ### String operators
 

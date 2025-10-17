@@ -31,7 +31,6 @@ _TESTONLY_DEPS = [
     "librosa",
     "lm-eval",
     "mteb",
-    "nvitop",
     "peft",
     "pygame",
     "reference_residual_fsq",

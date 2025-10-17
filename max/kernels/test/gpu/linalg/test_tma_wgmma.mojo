@@ -14,6 +14,8 @@
 from math import ceildiv
 from sys import size_of
 
+import linalg.matmul.vendor.blas as vendor_blas
+from buffer import NDBuffer
 from gpu import barrier
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
@@ -32,7 +34,6 @@ from layout.tensor_core_async import (
     warpgroup_fence,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from linalg import vendor_blas
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 from testing import assert_almost_equal
@@ -193,14 +194,19 @@ fn tma_wgmma_kernel[
         if thread_idx.x == 0:
             mbar[0].expect_bytes(expected_bytes)
             a_tma_op.async_copy(
-                a_smem_tile, mbar[0], (UInt(i) * BK, block_idx.y * BM)
+                a_smem_tile,
+                mbar[0],
+                (UInt(i) * UInt(BK), block_idx.y * UInt(BM)),
             )
             b_tma_op.async_copy(
                 b_smem_tile,
                 mbar[0],
-                (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
-                    block_idx.x * BN,
-                    UInt(i) * BK,
+                (
+                    UInt(i) * UInt(BK),
+                    block_idx.x * UInt(BN),
+                ) if transpose_b else (
+                    block_idx.x * UInt(BN),
+                    UInt(i) * UInt(BK),
                 ),
             )
 
@@ -313,12 +319,10 @@ def test_tma_wgmma[
         Layout.row_major(M, N),
     ](ctx)
 
-    a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
-    ](ctx, a.device_tensor())
+    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+        ctx, a.device_tensor()
+    )
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(BN, BK) if transpose_b else Index(BK, BN),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
@@ -353,9 +357,13 @@ def test_tma_wgmma[
 
     vendor_blas.matmul(
         ctx,
-        c_ref.device_buffer(),
-        a.device_buffer[update=False](),
-        b.device_buffer[update=False](),
+        rebind[NDBuffer[c_type, 2, MutableAnyOrigin]](c_ref.device_buffer()),
+        rebind[NDBuffer[a_type, 2, MutableAnyOrigin]](
+            a.device_buffer[update=False]()
+        ),
+        rebind[NDBuffer[b_type, 2, MutableAnyOrigin]](
+            b.device_buffer[update=False]()
+        ),
         c_row_major=True,
         transpose_b=transpose_b,
     )

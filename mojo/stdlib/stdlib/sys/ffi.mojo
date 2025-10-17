@@ -16,7 +16,9 @@ from collections.string.string_slice import _get_kgen_string, get_static_string
 from os import PathLike, abort
 from pathlib import Path
 from sys._libc import dlclose, dlerror, dlopen, dlsym
-from sys._libc_errno import get_errno, set_errno, ErrNo
+from sys._libc_errno import ErrNo, get_errno, set_errno
+
+from memory import OwnedPointer
 
 from .info import CompilationTarget, is_64bit
 from .intrinsics import _mlirtype_is_eq
@@ -93,8 +95,6 @@ fn _get_max_path() -> Int:
         return 4096
     elif CompilationTarget.is_macos():
         return 1024
-    elif CompilationTarget.is_windows():
-        return 260
     # Default POSIX limit
     else:
         return 256
@@ -109,9 +109,6 @@ fn _c_long_dtype[unsigned: Bool = False]() -> DType:
     ):
         # LP64
         return DType.uint64 if unsigned else DType.int64
-    elif is_64bit() and CompilationTarget.is_windows():
-        # LLP64
-        return DType.uint32 if unsigned else DType.int32
     else:
         constrained[False, "size of C `long` is unknown on this target"]()
         return abort[DType]()
@@ -122,9 +119,7 @@ fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
 
     @parameter
     if is_64bit() and (
-        CompilationTarget.is_macos()
-        or CompilationTarget.is_linux()
-        or CompilationTarget.is_windows()
+        CompilationTarget.is_macos() or CompilationTarget.is_linux()
     ):
         # On a 64-bit CPU, `long long` is *always* 64 bits in every OS's data
         # model.
@@ -176,8 +171,10 @@ struct _OwnedDLHandle(Movable):
     fn __init__(out self, path: String, flags: Int = DEFAULT_RTLD) raises:
         self._handle = DLHandle(path, flags)
 
-    fn __moveinit__(out self, deinit other: Self):
-        self._handle = other._handle
+    @doc_private
+    @always_inline
+    fn __init__(out self, *, unsafe_uninitialized: Bool):
+        self._handle = DLHandle(OpaquePointer())
 
     fn __del__(deinit self):
         """Delete the DLHandle object unloading the associated dynamic library.
@@ -194,7 +191,7 @@ struct _OwnedDLHandle(Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
+struct DLHandle(Boolable, Copyable, Movable):
     """Represents a dynamically linked library that can be loaded and unloaded.
 
     The library is loaded on initialization and unloaded by `close`.
@@ -217,8 +214,6 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
         """
         self = Self._dlopen(UnsafePointer[c_char](), flags)
 
-    # TODO(#15590): Implement support for windows and remove the always_inline.
-    @always_inline
     fn __init__[
         PathLike: os.PathLike, //
     ](out self, path: PathLike, flags: Int = DEFAULT_RTLD) raises:
@@ -237,23 +232,17 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
         self = Self._dlopen(fspath.unsafe_cstr_ptr(), flags)
 
     @staticmethod
-    fn _dlopen(file: UnsafePointer[c_char], flags: Int) raises -> DLHandle:
-        @parameter
-        if not CompilationTarget.is_windows():
-            var handle = dlopen(file, flags)
-            if handle == OpaquePointer():
-                var error_message = dlerror()
-                raise Error(
-                    String(
-                        "dlopen failed: ",
-                        StringSlice[error_message.origin](
-                            unsafe_from_utf8_ptr=error_message
-                        ),
-                    )
-                )
-            return DLHandle(handle)
-        else:
-            return DLHandle(OpaquePointer())
+    fn _dlopen(
+        file: UnsafePointer[c_char, mut=False, origin=_], flags: Int
+    ) raises -> DLHandle:
+        var handle = dlopen(file, flags)
+        if handle == OpaquePointer():
+            var error_message = dlerror()
+            raise Error(
+                "dlopen failed: ",
+                StringSlice(unsafe_from_utf8_ptr=error_message),
+            )
+        return DLHandle(handle)
 
     fn check_symbol(self, var name: String) -> Bool:
         """Check that the symbol exists in the dynamic library.
@@ -264,11 +253,6 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
         Returns:
             `True` if the symbol exists.
         """
-        constrained[
-            not CompilationTarget.is_windows(),
-            "Checking dynamic library symbol is not supported on Windows",
-        ]()
-
         var opaque_function_ptr: OpaquePointer = dlsym(
             self.handle,
             name.unsafe_cstr_ptr(),
@@ -276,16 +260,11 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
 
         return Bool(opaque_function_ptr)
 
-    # TODO(#15590): Implement support for windows and remove the always_inline.
-    @always_inline
     fn close(mut self):
         """Delete the DLHandle object unloading the associated dynamic library.
         """
-
-        @parameter
-        if not CompilationTarget.is_windows():
-            _ = dlclose(self.handle)
-            self.handle = OpaquePointer()
+        _ = dlclose(self.handle)
+        self.handle = OpaquePointer()
 
     fn __bool__(self) -> Bool:
         """Checks if the handle is valid.
@@ -295,8 +274,6 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
         """
         return self.handle.__bool__()
 
-    # TODO(#15590): Implement support for windows and remove the always_inline.
-    @always_inline
     fn get_function[
         result_type: AnyTrivialRegType
     ](self, var name: String) -> result_type:
@@ -338,7 +315,9 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
     @always_inline
     fn _get_function[
         result_type: AnyTrivialRegType
-    ](self, *, cstr_name: UnsafePointer[c_char, **_]) -> result_type:
+    ](
+        self, *, cstr_name: UnsafePointer[c_char, mut=False, origin=_]
+    ) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -377,9 +356,9 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
 
     fn get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[Int8, **_]) -> UnsafePointer[
-        result_type
-    ]:
+    ](
+        self, *, cstr_name: UnsafePointer[Int8, mut=False, origin=_]
+    ) -> UnsafePointer[result_type]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 
@@ -393,12 +372,6 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
             A pointer to the symbol.
         """
         debug_assert(self.handle, "Dylib handle is null")
-
-        @parameter
-        if CompilationTarget.is_windows():
-            return abort[UnsafePointer[result_type]](
-                "get_symbol isn't supported on windows"
-            )
 
         # To check for `dlsym()` results that are _validly_ NULL, we do the
         # dance described in https://man7.org/linux/man-pages/man3/dlsym.3.html:
@@ -482,10 +455,10 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
 
 @always_inline
 fn _get_dylib_function[
-    dylib_global: _Global[_, _OwnedDLHandle, _],
+    dylib_global: _Global[StorageType=_OwnedDLHandle, *_, **_],
     func_name: StaticString,
     result_type: AnyTrivialRegType,
-]() -> result_type:
+]() raises -> result_type:
     var func_cache_name = String(dylib_global.name, "/", func_name)
     var func_ptr = _get_global_or_null(func_cache_name)
     if func_ptr:
@@ -545,19 +518,24 @@ fn _try_find_dylib[
     """Load a dynamically linked library given a variadic list of possible names.
     """
     # Convert the variadic pack to a list.
-    var paths_list = List[Path]()
+    var paths_list = List[Path](capacity=len(paths))
     for path in paths:
         paths_list.append(path)
     return _try_find_dylib[name](paths_list)
 
 
-fn _find_dylib[name: StaticString = ""](paths: List[Path]) -> _OwnedDLHandle:
+fn _find_dylib[
+    name: StaticString = "", abort_on_failure: Bool = True
+](paths: List[Path]) -> _OwnedDLHandle:
     """Load a dynamically linked library given a list of possible paths or names.
 
     If the library is not found, the function will abort.
 
     Parameters:
         name: Optional name for the library to be used in error messages.
+        abort_on_failure: If set, then the function will abort the program if
+           the library is not found. Otherwise, we return a null _OwnedDLHandle
+           on failure.
 
     Args:
         paths: A list of paths or library names to pass to the DLHandle
@@ -569,7 +547,44 @@ fn _find_dylib[name: StaticString = ""](paths: List[Path]) -> _OwnedDLHandle:
     try:
         return _try_find_dylib[name](paths)
     except e:
-        return abort[_OwnedDLHandle](String(e))
+
+        @parameter
+        if abort_on_failure:
+            return abort[_OwnedDLHandle](String(e))
+        else:
+            return _OwnedDLHandle(unsafe_uninitialized=True)
+
+
+fn _find_dylib[
+    msg: fn () -> String, abort_on_failure: Bool = True
+](paths: List[Path]) -> _OwnedDLHandle:
+    """Load a dynamically linked library given a list of possible paths or names.
+
+    If the library is not found, the function will abort.
+
+    Parameters:
+        msg: A function that produces the error message to use if the
+             library cannot be found.
+        abort_on_failure: If set, then the function will abort the program if
+           the library is not found. Otherwise, we return a null _OwnedDLHandle
+           on failure.
+
+    Args:
+        paths: A list of paths or library names to pass to the DLHandle
+               constructor.
+
+    Returns:
+        A handle to the loaded dynamic library.
+    """
+    try:
+        return _try_find_dylib(paths)
+    except e:
+
+        @parameter
+        if abort_on_failure:
+            return abort[_OwnedDLHandle, prefix="ERROR:"](msg())
+        else:
+            return _OwnedDLHandle(unsafe_uninitialized=True)
 
 
 fn _find_dylib[name: StaticString = ""](*paths: Path) -> _OwnedDLHandle:
@@ -590,9 +605,10 @@ fn _find_dylib[name: StaticString = ""](*paths: Path) -> _OwnedDLHandle:
 # NOTE: This is vending shared mutable pointers to the client without locking.
 # This is not guaranteeing any sort of thread safety.
 struct _Global[
+    StorageType: Movable, //,
     name: StaticString,
-    StorageType: Movable,
     init_fn: fn () -> StorageType,
+    on_error_msg: Optional[fn () -> Error] = None,
 ](Defaultable):
     alias ResultType = UnsafePointer[StorageType]
 
@@ -602,27 +618,30 @@ struct _Global[
     @staticmethod
     fn _init_wrapper() -> OpaquePointer:
         # Heap allocate space to store this "global"
-        var ptr = UnsafePointer[StorageType].alloc(1)
-
         # TODO:
         #   Any way to avoid the move, e.g. by calling this function
         #   with the ABI destination result pointer already set to `ptr`?
-        ptr.init_pointee_move(init_fn())
+        var ptr = OwnedPointer(init_fn())
 
-        return ptr.bitcast[NoneType]()
+        return ptr^.steal_data().bitcast[NoneType]()
 
     @staticmethod
     fn _deinit_wrapper(opaque_ptr: OpaquePointer):
         # Deinitialize and deallocate the storage.
-        var ptr = opaque_ptr.bitcast[StorageType]()
-        ptr.destroy_pointee()
-        ptr.free()
+        _ = OwnedPointer(
+            unsafe_from_raw_pointer=opaque_ptr.bitcast[StorageType]()
+        )
 
     @staticmethod
-    fn get_or_create_ptr() -> Self.ResultType:
-        return _get_global[
-            name, Self._init_wrapper, Self._deinit_wrapper
-        ]().bitcast[StorageType]()
+    fn get_or_create_ptr() raises -> Self.ResultType:
+        var ptr = _get_global[name, Self._init_wrapper, Self._deinit_wrapper]()
+
+        @parameter
+        if on_error_msg:
+            if not ptr:
+                raise on_error_msg.value()()
+
+        return ptr.bitcast[StorageType]()
 
     # Currently known values for get_or_create_indexed_ptr. See
     # NUM_INDEXED_GLOBALS in CompilerRT.
@@ -636,7 +655,7 @@ struct _Global[
     # This accesses a well-known global with a fixed index rather than using a
     # name to unique the value.  The index table is above.
     @staticmethod
-    fn get_or_create_indexed_ptr(idx: Int) -> Self.ResultType:
+    fn get_or_create_indexed_ptr(idx: Int) raises -> Self.ResultType:
         var ptr = external_call[
             "KGEN_CompilerRT_GetOrCreateGlobalIndexed", OpaquePointer
         ](
@@ -644,6 +663,12 @@ struct _Global[
             Self._init_wrapper,
             Self._deinit_wrapper,
         )
+
+        @parameter
+        if on_error_msg:
+            if not ptr:
+                raise on_error_msg.value()()
+
         return ptr.bitcast[StorageType]()
 
 

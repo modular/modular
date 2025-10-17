@@ -25,7 +25,7 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from linalg.matmul import matmul
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul.gpu import _matmul_gpu
 from memory import memcpy
 from nn.kv_cache_ragged import (
     _fused_qkv_matmul_kv_cache_ragged_impl,
@@ -47,11 +47,11 @@ def _initialize_ragged_inputs[
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
-) -> (
+) -> Tuple[
     DeviceNDBuffer[DType.uint32, 1],
     DeviceNDBuffer[dtype, 2, DimList(Dim(), hidden_size)],
     DeviceNDBuffer[dtype, 2, DimList(Dim(), hidden_size)],
-):
+]:
     """Initializes input row offsets and hidden state ragged tensor inputs."""
     total_length = 0
     max_seq_length_batch = -1
@@ -92,7 +92,7 @@ def _initialize_ragged_inputs[
             ragged_ptr = hidden_state_ragged_host.tensor._offset(
                 IndexList[2](ragged_start_idx + s, 0)
             )
-            memcpy(padded_ptr, ragged_ptr, hidden_size)
+            memcpy(dest=padded_ptr, src=ragged_ptr, count=hidden_size)
 
     hidden_state_padded_device = hidden_state_padded_host.copy_to_device(ctx)
 
@@ -597,19 +597,20 @@ def generic_execute_fused_qkv_cache_ragged[
     k_cache: cache_t,
     v_cache: cache_t,
     ctx: DeviceContext,
-    out result: (
+    out result: Tuple[
         DeviceNDBuffer[
             dtype,
             2,
             DimList(
                 Dim(),
-                (kv_params.num_heads * 2 + num_q_heads) * kv_params.head_size,
+                (kv_params.num_heads * 2 + UInt(num_q_heads))
+                * kv_params.head_size,
             ),
         ],
         DeviceNDBuffer[
             dtype, 2, DimList(Dim(), num_q_heads * kv_params.head_size)
         ],
-    ),
+    ],
 ):
     """Executes fused QKV matmul, writing results kv_cache objects.
 

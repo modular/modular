@@ -16,8 +16,8 @@ the underlying data. This type is used to build custom graph operations.
 """
 from collections import OptionalReg
 from math import ceil, fma
-from sys import align_of, simd_width_of
-from sys.info import is_gpu
+from sys import align_of, simd_width_of, size_of
+from sys.info import CompilationTarget, is_gpu
 from sys.intrinsics import strided_load, strided_store
 
 import algorithm
@@ -226,7 +226,6 @@ fn _extract_tensor_spec[
     return static_spec
 
 
-@register_internal("rebuild_static_tensor_specs_with_input_lambda")
 @no_inline
 fn rebuild_static_tensor_specs_with_input_lambda[
     func_type: AnyTrivialRegType, //,
@@ -248,7 +247,6 @@ fn rebuild_static_tensor_specs_with_input_lambda[
     )
 
 
-@register_internal("rebuild_static_tensor_specs_with_output_lambda")
 @no_inline
 fn rebuild_static_tensor_specs_with_output_lambda[
     func_type: AnyTrivialRegType, //,
@@ -270,7 +268,6 @@ fn rebuild_static_tensor_specs_with_output_lambda[
     )
 
 
-@register_internal("rebuild_static_tensor_specs_with_compute_output_lambda")
 @no_inline
 fn rebuild_static_tensor_specs_with_compute_output_lambda[
     func_type: AnyTrivialRegType, //,
@@ -554,7 +551,7 @@ struct ManagedTensorSlice[
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[dtype, rank],
-](Copyable, DevicePassable, Movable, Stringable, Writable):
+](DevicePassable, ImplicitlyCopyable, Movable, Stringable, Writable):
     """A view of a tensor that does not own the underlying allocated pointer.
     When the object lifetime ends it does not free the underlying pointer.
     Conversely, if a `ManagedTensorSlice` is created, it will not extend the
@@ -703,7 +700,9 @@ struct ManagedTensorSlice[
 
         Note that forwarding of static shape, strides, and lambdas won't work.
         """
-        self = Self(ndbuffer.data, ndbuffer.get_shape())
+        self = Self(
+            ndbuffer.data.mut_cast[True]().as_any_origin(), ndbuffer.get_shape()
+        )
 
     @always_inline
     fn __getitem__(self, indices: IndexList[rank]) -> Scalar[dtype]:
@@ -1150,11 +1149,11 @@ struct ManagedTensorSlice[
             and _is_consistent[new_static_strides](new_runtime_strides)
         )
 
-        return __type_of(result)(
+        return {
             offset_ptr.or_else(self._ptr),
             new_runtime_shape,
             new_runtime_strides,
-        )
+        }
 
     @always_inline
     fn to_layout_tensor(
@@ -1164,7 +1163,7 @@ struct ManagedTensorSlice[
         ],
     ):
         alias layout = static_spec.to_layout()
-        return LayoutTensor[dtype, layout](
+        return __type_of(result)(
             self.unsafe_ptr(),
             __type_of(result.runtime_layout)(
                 self.shape().cast[result.layout_int_type](),
@@ -1185,7 +1184,7 @@ struct ManagedTensorSlice[
         fn serialize[T: Writable](val: T):
             writer.write(val)
 
-        var shape = List[Int, hint_trivial_type=True]()
+        var shape = List[Int]()
         for i in range(rank):
             shape.append(self.shape()[i])
 
@@ -1279,7 +1278,7 @@ struct VariadicTensors[
     io_spec: IOSpec[mut, input],
     *,
     static_specs: StaticTuple[StaticTensorSpec[dtype, rank], size],
-](Copyable, Movable, Sized):
+](ImplicitlyCopyable, Movable, Sized):
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""
 
@@ -1312,9 +1311,7 @@ struct VariadicTensors[
         """
         constrained[index < size]()
         var tensor = self._tensors[index]
-        return __type_of(result)(
-            tensor._ptr, tensor._spec, tensor._runtime_strides
-        )
+        return {tensor._ptr, tensor._spec, tensor._runtime_strides}
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1324,8 +1321,20 @@ struct VariadicTensors[
 
 @doc_private
 fn get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
+    """Get the simd width used in lambda functions.
+
+    For non-simd arch like GPU, this is the width in terms of number of elements
+    used per load/store instruction.
+    """
+
     @parameter
     if _is_gpu[target]():
+        # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
+        # arch support 32B load/store to global memory, see KERN-2037.
+        @parameter
+        if CompilationTarget[get_gpu_target()]._is_arch["sm_100a"]():
+            return 32 // size_of[dtype]()
+
         return simd_width_of[dtype, target = get_gpu_target()]()
 
     return simd_width_of[dtype]()

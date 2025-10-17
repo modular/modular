@@ -23,7 +23,7 @@ from register import register_internal
 
 from utils.index import Index, IndexList
 
-from .apple_accelerate import use_apple_accelerate_lib
+from .matmul.cpu.apple_accelerate import use_apple_accelerate_lib
 from .transpose import transpose, transpose_inplace
 from .utils import (
     GemmShape,
@@ -51,7 +51,7 @@ struct PackMatrixRows[
     row_inner_size: Int,
     packed_origin: MutableOrigin,
     original_origin: Origin[original_mut],
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """Pack rows from a matrix into the mlas packed layout and
     extract inner vectors of rows into the packed inner dimension,
     e.g. extract tile [X, Y] and pack into [Xo][Y][Xi].
@@ -137,7 +137,7 @@ struct PackMatrixRows[
         ],
         local_off_set: IndexList[2],
     ):
-        """Helper function: transpose packs a [simd_size, simd_size] subtile of
+        """Helper function: transpose packs a [simd_size, simd_size] sub-tile of
         matrix, with bound checking and zero-filling. Bound checking can be
         statically skipped, based on the parameters.
            Args:
@@ -147,7 +147,7 @@ struct PackMatrixRows[
                    skpped if true.
                transpose_buffer(NDBuffer): pre-allocated work space to hold
                    transposed temporary data.
-               local_offset(IndexList): offset of the subtile to work on
+               local_offset(IndexList): offset of the sub-tile to work on
                    within the whole tile of data to pack.
         """
         # Calculate the remaining bound from the local offset.
@@ -294,7 +294,7 @@ struct PackMatrixCols[
     use_i8mm: Bool,
     packed_origin: MutableOrigin,
     original_origin: Origin[original_mut],
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """Pack columns from a matrix into the mlas packed layout and
     extract inner vectors of columns into the packed inner dimension,
     e.g. extracts [X, Y] and packs as [Yo][X][Yi].
@@ -764,7 +764,7 @@ fn _pack_b_ndbuffer_impl[
     # Matrix by vector pattern -> use gemv
     if b_input.dim(1) == 1:
         # For gemv no packing is necessary
-        memcpy(output_buffer.data, b_input.data, b_input.dim(0))
+        memcpy(dest=output_buffer.data, src=b_input.data, count=b_input.dim(0))
 
     else:
         var n = b_input.dim(0) if transposed else b_input.dim(1)
@@ -780,7 +780,7 @@ fn _pack_b_ndbuffer_impl[
             @parameter
             if not transposed:
                 var perm = NDBuffer[
-                    DType.index, 1, MutableAnyOrigin, 2
+                    DType.int, 1, MutableAnyOrigin, 2
                 ].stack_allocation()
                 perm[0] = 1
                 perm[1] = 0
@@ -788,7 +788,7 @@ fn _pack_b_ndbuffer_impl[
                 transpose(output_buffer, b_input, perm.data)
 
             else:
-                memcpy(output_buffer.data, b_input.data, n * k)
+                memcpy(dest=output_buffer.data, src=b_input.data, count=n * k)
             return
 
         # The config (in particular inner size and tile_k) needs to EXACTLY match the
@@ -892,7 +892,7 @@ struct BTileGenerator[
     transpose_b: Bool,
     b_packed: Bool,
     origin: Origin[mut],
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """Struct to encapsulate a tile of B that supports prepacking.
 
     If b_packed is true, calls to get_tile will return a buffer view from B.

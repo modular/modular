@@ -11,10 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import bit_width_of
 
 from bit import count_trailing_zeros
-from testing import assert_equal, assert_false, assert_not_equal, assert_true
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+    TestSuite,
+)
 
 
 def test_simple_uint():
@@ -89,7 +94,7 @@ def test_inequality():
 
 def test_properties():
     assert_equal(UInt.MIN, UInt(0))
-    if bit_width_of[DType.index]() == 32:
+    if DType.int.bit_width() == 32:
         assert_equal(UInt.MAX, (1 << 32) - 1)
     else:
         assert_equal(UInt.MAX, (1 << 64) - 1)
@@ -214,8 +219,8 @@ def test_indexer():
 
 
 def test_simd_conversion():
-    assert_equal(UInt(SIMD[DType.int32, 1](1)), UInt(1))
-    assert_equal(UInt(SIMD[DType.uint32, 1](32)), UInt(32))
+    assert_equal(UInt(Int32(1)), UInt(1))
+    assert_equal(UInt(UInt32(32)), UInt(32))
 
 
 def test_comparison():
@@ -255,28 +260,4 @@ def test_comptime():
 
 
 def main():
-    test_simple_uint()
-    test_uint_representation()
-    test_equality()
-    test_inequality()
-    test_properties()
-    test_add()
-    test_sub()
-    test_div()
-    test_pow()
-    test_ceil()
-    test_floor()
-    test_round()
-    test_trunc()
-    test_floordiv()
-    test_mod()
-    test_divmod()
-    test_abs()
-    test_string_conversion()
-    test_int_representation()
-    test_indexer()
-    test_simd_conversion()
-    test_comparison()
-    test_pos()
-    test_hash()
-    test_comptime()
+    TestSuite.discover_tests[__functions_in_module()]().run()

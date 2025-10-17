@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer import DimList, NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
@@ -69,7 +69,7 @@ fn wgmma_kernel_ss[
     ].stack_allocation()
 
     alias num_output_regs = WMMA_M * WMMA_N // 128
-    var c_reg = StaticTuple[Scalar[DType.float32], num_output_regs](0)
+    var c_reg = StaticTuple[Float32, num_output_regs](0)
 
     alias M = a_layout.shape[0].value()
     alias K = a_layout.shape[1].value()
@@ -161,7 +161,7 @@ fn wgmma_bf16_bf16_f32[
         transpose_b=transpose_b,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a.device_tensor(),
         b.device_tensor(),
         c.device_tensor(),

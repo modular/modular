@@ -13,18 +13,19 @@
 """Implements math methods that work on layout tensors."""
 
 import math
+from sys.info import simd_width_of
 
+import algorithm.reduction
+from algorithm import vectorize
 from builtin.math import max as b_max
 from layout import LayoutTensor
-import algorithm.reduction
-from sys.info import simd_width_of
+
 from utils.index import IndexList
-from algorithm import vectorize
 
 
 @always_inline
 fn outer_product_acc(
-    res: LayoutTensor,
+    res: LayoutTensor[mut=True, *_, **_],
     lhs: LayoutTensor,
     rhs: LayoutTensor,
 ):
@@ -287,7 +288,7 @@ fn max[
     dtype: DType, layout: Layout
 ](
     x: LayoutTensor[dtype, layout, **_], y: LayoutTensor[dtype, layout, **_]
-) -> __type_of(x.origin_cast[True, MutableAnyOrigin]()):
+) -> __type_of(x).MutableAnyType:
     """Computes element-wise maximum of two tensors.
 
     Returns a new tensor containing the element-wise maximum between the

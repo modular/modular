@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Literal
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue
+from max.graph import DeviceRef
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import (
@@ -119,7 +119,6 @@ class Llama3ConfigBase(MAXModelConfigBase):
     tie_word_embeddings: bool
     stacked_mlp: bool
     stacked_qkv: bool
-    logits_postprocessor: Callable[[TensorValue], TensorValue] | None
     attention_multiplier: float
     embedding_multiplier: float
     residual_multiplier: float
@@ -127,10 +126,10 @@ class Llama3ConfigBase(MAXModelConfigBase):
     clip_qkv: float | None
     float8_config: Float8Config | None
     lora_config: LoRAConfig | None = None
-    pipeline_parallel_degree: int = 1
-    tensor_parallel_degree: int = 1
+    data_parallel_degree: int = 1
     dist_gemm_config: DistributedGemmConfig | None = None
     longrope_scaling_params: LongRoPEScalingParams | None = None
+    logits_scaling: float = 1.0
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -182,7 +181,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         n_devices: int,
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-        pipeline_parallel_degree: int = 1,
+        data_parallel_degree: int = 1,
     ) -> KVCacheParams:
         return KVCacheParams(
             dtype=cache_dtype,
@@ -197,11 +196,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             n_devices=n_devices,
-            # Pipeline parallel fields
-            pipeline_parallel_degree=pipeline_parallel_degree,
-            total_num_layers=huggingface_config.num_hidden_layers
-            if pipeline_parallel_degree > 1
-            else None,
+            data_parallel_degree=data_parallel_degree,
         )
 
     @staticmethod
@@ -222,13 +217,12 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                 default=pipeline_config.max_length,
             )
         except ValueError as e:
-            msg = (
+            raise ValueError(
                 "Unable to infer max_length for Llama3, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
-            )
-            raise ValueError(msg) from e
+            ) from e
 
     # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
     @staticmethod
@@ -238,14 +232,12 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         state_dict: dict[str, WeightData],
         dtype: DType,
         n_devices: int,
-        logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
         attention_bias: bool = False,
-        pipeline_parallel_degree: int = 1,
-        tensor_parallel_degree: int = 1,
+        data_parallel_degree: int = 1,
     ) -> Llama3Config:
         _weights_format = weights_format(
             pipeline_config.model_config.weight_path
@@ -380,7 +372,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                 n_devices=n_devices,
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
-                pipeline_parallel_degree=pipeline_parallel_degree,
+                data_parallel_degree=data_parallel_degree,
             ),
             norm_method=norm_method,
             norm_dtype=norm_dtype,
@@ -388,7 +380,6 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             tie_word_embeddings=tie_word_embeddings,
             stacked_mlp="layers.0.mlp.gate_up_proj.weight" in state_dict,
             stacked_qkv="layers.0.self_attn.qkv_proj.weight" in state_dict,
-            logits_postprocessor=logits_postprocessor,
             attention_multiplier=attention_multiplier,
             embedding_multiplier=embedding_multiplier,
             residual_multiplier=residual_multiplier,
@@ -398,12 +389,12 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             use_subgraphs=pipeline_config.model_config.use_subgraphs,
             # Force-disable matmul-allreduce overlap for llama FP8.
             # TODO: GEX-2388: Figure out the issue and re-enable this.
-            pipeline_parallel_degree=pipeline_parallel_degree,
-            tensor_parallel_degree=tensor_parallel_degree,
+            data_parallel_degree=data_parallel_degree,
             dist_gemm_config=DistributedGemmConfig(
                 enable_matmul_allreduce=False
             )
             if dtype.is_float8()
             else DistributedGemmConfig.generate(),
             lora_config=pipeline_config.lora_config,
+            logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
         )

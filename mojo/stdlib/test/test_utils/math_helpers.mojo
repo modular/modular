@@ -11,14 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import bit_width_of
 
 from builtin.dtype import _integral_type_of
 from memory import bitcast
 
 
 fn ulp_distance[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Int:
-    alias bitwidth = bit_width_of[dtype]()
+    alias bitwidth = dtype.bit_width()
     alias T = _integral_type_of[dtype]()
     # widen to Int first to avoid overflow
     var a_int = Int(bitcast[T](a))

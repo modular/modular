@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from testing import TestSuite
 from testing import assert_equal
 
 
@@ -37,4 +38,4 @@ def test_max_scalar():
 
 
 def main():
-    test_max()
+    TestSuite.discover_tests[__functions_in_module()]().run()

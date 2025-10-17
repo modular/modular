@@ -13,7 +13,7 @@
 
 
 @fieldwise_init
-struct Sentiment(EqualityComparable):
+struct Sentiment(EqualityComparable, ImplicitlyCopyable):
     var _value: Int
 
     alias NEGATIVE = Sentiment(0)

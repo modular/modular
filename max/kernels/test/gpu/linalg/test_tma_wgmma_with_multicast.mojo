@@ -14,6 +14,8 @@
 from math import ceildiv
 from sys import size_of
 
+import linalg.matmul.vendor.blas as vendor_blas
+from buffer import NDBuffer
 from gpu import barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
@@ -32,7 +34,6 @@ from layout.tensor_core_async import (
     warpgroup_fence,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from linalg import vendor_blas
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 from testing import assert_almost_equal
@@ -164,7 +165,7 @@ fn multicast_tma_wgmma_kernel[
                     a_tma_op.async_multicast_load(
                         a_smem_slice,
                         mbar[0],
-                        (UInt(i) * BK, a_gmem_slice_coord),
+                        (UInt(i) * UInt(BK), UInt(a_gmem_slice_coord)),
                         multicast_mask.cast[DType.uint16](),
                     )
 
@@ -173,13 +174,15 @@ fn multicast_tma_wgmma_kernel[
                         a_tma_op.async_multicast_load(
                             a_smem_tile,
                             mbar[0],
-                            (UInt(i) * BK, block_idx.y * BM),
+                            (UInt(i) * UInt(BK), block_idx.y * UInt(BM)),
                             multicast_mask.cast[DType.uint16](),
                         )
 
             else:
                 a_tma_op.async_copy(
-                    a_smem_tile, mbar[0], (UInt(i) * BK, block_idx.y * BM)
+                    a_smem_tile,
+                    mbar[0],
+                    (UInt(i) * UInt(BK), block_idx.y * UInt(BM)),
                 )
 
             @parameter
@@ -200,9 +203,12 @@ fn multicast_tma_wgmma_kernel[
                     b_tma_op.async_multicast_load(
                         b_smem_slice,
                         mbar[0],
-                        (UInt(i) * BK, b_gmem_slice_coord) if transpose_b else (
-                            block_idx.x * BN,
-                            UInt(i) * BK,
+                        (
+                            UInt(i) * UInt(BK),
+                            UInt(b_gmem_slice_coord),
+                        ) if transpose_b else (
+                            block_idx.x * UInt(BN),
+                            UInt(i) * UInt(BK),
                         ),
                         (multicast_mask << rank_n).cast[DType.uint16](),
                     )
@@ -213,11 +219,11 @@ fn multicast_tma_wgmma_kernel[
                             b_smem_tile,
                             mbar[0],
                             (
-                                UInt(i) * BK,
-                                block_idx.x * BN,
+                                UInt(i) * UInt(BK),
+                                block_idx.x * UInt(BN),
                             ) if transpose_b else (
-                                block_idx.x * BN,
-                                UInt(i) * BK,
+                                block_idx.x * UInt(BN),
+                                UInt(i) * UInt(BK),
                             ),
                             (multicast_mask << rank_n).cast[DType.uint16](),
                         )
@@ -226,9 +232,12 @@ fn multicast_tma_wgmma_kernel[
                 b_tma_op.async_copy(
                     b_smem_tile,
                     mbar[0],
-                    (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
-                        block_idx.x * BN,
-                        UInt(i) * BK,
+                    (
+                        UInt(i) * UInt(BK),
+                        block_idx.x * UInt(BN),
+                    ) if transpose_b else (
+                        block_idx.x * UInt(BN),
+                        UInt(i) * UInt(BK),
                     ),
                 )
 
@@ -373,8 +382,6 @@ def test_multicast_tma_wgmma[
     ]()
 
     a_tma_op = create_tma_tile[
-        a_type,
-        2,
         Index(BM // CLUSTER_N, BK) if partitioned_multicast else Index(BM, BK),
         swizzle_mode=a_swizzle,
     ](ctx, a.device_tensor())
@@ -383,8 +390,6 @@ def test_multicast_tma_wgmma[
         BN // CLUSTER_M, BK
     ) if partitioned_multicast else Index(BN, BK)
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         b_tma_op_shape if transpose_b else Index(BK, BN),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
@@ -422,9 +427,13 @@ def test_multicast_tma_wgmma[
 
     vendor_blas.matmul(
         ctx,
-        c_ref.device_buffer(),
-        a.device_buffer[update=False](),
-        b.device_buffer[update=False](),
+        rebind[NDBuffer[c_type, 2, MutableAnyOrigin]](c_ref.device_buffer()),
+        rebind[NDBuffer[a_type, 2, MutableAnyOrigin]](
+            a.device_buffer[update=False]()
+        ),
+        rebind[NDBuffer[b_type, 2, MutableAnyOrigin]](
+            b.device_buffer[update=False]()
+        ),
         c_row_major=True,
         transpose_b=transpose_b,
     )

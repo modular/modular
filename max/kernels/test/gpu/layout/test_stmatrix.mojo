@@ -18,15 +18,15 @@ from gpu import WARP_SIZE, barrier, lane_id, thread_idx
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma, st_matrix
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor
+from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import get_fragment_size, get_mma_shape
-from linalg.matmul_gpu import matmul_kernel_naive
+from linalg.matmul.gpu import matmul_kernel_naive
 from memory import stack_allocation
 from testing import assert_almost_equal
 
-from utils.numerics import get_accum_type
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
-from layout.runtime_layout import RuntimeLayout
 from utils.index import IndexList
+from utils.numerics import get_accum_type
 
 
 fn test_stmatrix(
@@ -76,10 +76,12 @@ fn test_stmatrix(
 
     var lane = lane_id()
     var a_reg = ld_matrix[4](
-        a_shared + Int((lane % m) * k + (lane // m) * k // 2)
+        a_shared
+        + Int((lane % UInt(m)) * UInt(k) + (lane // UInt(m)) * UInt(k) // 2)
     )
     var b_reg = ld_matrix[2](
-        b_shared + Int((lane % k) * n + (lane // k) * n // 2)
+        b_shared
+        + Int((lane % UInt(k)) * UInt(n) + (lane // UInt(k)) * UInt(n) // 2)
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
@@ -92,7 +94,7 @@ fn test_stmatrix(
 
     var base = tid * 4
     for i in range(4):
-        var d = base + i
+        var d = base + UInt(i)
         var r = d & 63
         var src = ((d >> 6) << 6) + ((r & 1) << 5) + (r >> 1)
         c_ptr[d] = c_shared[src]
@@ -142,10 +144,12 @@ fn test_stmatrix_gen[
     barrier()
 
     var a_reg = ld_matrix[a_frag_size](
-        a_shared + Int((lane % M) * K + (lane // M) * K // 2)
+        a_shared
+        + Int((lane % UInt(M)) * UInt(K) + (lane // UInt(M)) * UInt(K) // 2)
     )
     var b_reg = ld_matrix[b_frag_size, transpose=True](
-        b_shared + Int((lane % K) * N + (lane // K) * N // 2)
+        b_shared
+        + Int((lane % UInt(K)) * UInt(N) + (lane // UInt(K)) * UInt(N) // 2)
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
@@ -158,7 +162,7 @@ fn test_stmatrix_gen[
 
     var base = thread_idx.x * 4
     for i in range(4):
-        var d = base + i
+        var d = base + UInt(i)
         var r = d & 63
         var src = ((d >> 6) << 6) + ((r & 1) << 5) + (r >> 1)
         c_ptr[d] = c_shared[src].cast[output_type]()
@@ -200,7 +204,8 @@ fn check_stmatrix_gen[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    ctx.enqueue_function[test_stmatrix_gen[input_type, output_type]](
+    alias kernel_type = test_stmatrix_gen[input_type, output_type]
+    ctx.enqueue_function_checked[kernel_type, kernel_type](
         c_device,
         a_device,
         b_device,
@@ -218,17 +223,16 @@ fn check_stmatrix_gen[
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
-    ctx.enqueue_function[
-        matmul_kernel_naive[
-            output_type,
-            input_type,
-            input_type,
-            a_tensor.layout,
-            b_tensor.layout,
-            c_tensor_ref.layout,
-            BLOCK_DIM,
-        ]
-    ](
+    alias kernel_naive_type = matmul_kernel_naive[
+        output_type,
+        input_type,
+        input_type,
+        c_tensor_ref.layout,
+        a_tensor.layout,
+        b_tensor.layout,
+        BLOCK_DIM,
+    ]
+    ctx.enqueue_function_checked[kernel_naive_type, kernel_naive_type](
         c_tensor_ref,
         a_tensor,
         b_tensor,
@@ -294,7 +298,7 @@ fn check_stmatrix(
     alias MMA_N = 8
     alias MMA_K = 8
 
-    ctx.enqueue_function[test_stmatrix, dump_asm=False](
+    ctx.enqueue_function_checked[test_stmatrix, test_stmatrix](
         c_device,
         a_device,
         b_device,
@@ -315,31 +319,30 @@ fn check_stmatrix(
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var c_tensor_ref = LayoutTensor[DType.float32, layout](
-        c_device_ref._unsafe_ptr(),
+        c_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
     var a_tensor = LayoutTensor[DType.float32, layout](
-        a_device._unsafe_ptr(),
+        a_device,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor = LayoutTensor[DType.float32, layout](
-        b_device._unsafe_ptr(),
+        b_device,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
-    ctx.enqueue_function[
-        matmul_kernel_naive[
-            DType.float32,
-            DType.float32,
-            DType.float32,
-            a_tensor.layout,
-            b_tensor.layout,
-            c_tensor_ref.layout,
-            BLOCK_DIM,
-        ]
-    ](
+    alias kernel = matmul_kernel_naive[
+        DType.float32,
+        DType.float32,
+        DType.float32,
+        c_tensor_ref.layout,
+        a_tensor.layout,
+        b_tensor.layout,
+        BLOCK_DIM,
+    ]
+    ctx.enqueue_function_checked[kernel, kernel](
         c_tensor_ref,
         a_tensor,
         b_tensor,

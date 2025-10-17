@@ -14,7 +14,7 @@
 from pathlib import Path, _dir_of_current_file
 from tempfile import gettempdir
 
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, TestSuite
 
 alias DUMMY_FILE_SIZE: UInt = 954
 
@@ -300,18 +300,4 @@ def test_file_get_raw_fd():
 
 
 def main():
-    test_file_read()
-    test_file_read_multi()
-    test_file_read_bytes_multi()
-    test_file_read_bytes_all()
-    test_file_read_all()
-    test_file_read_path()
-    test_file_path_direct_read()
-    test_file_read_context()
-    test_file_read_to_address()
-    test_file_seek()
-    test_file_open_nodir()
-    test_file_write()
-    test_file_write_span()
-    test_file_write_again()
-    test_file_get_raw_fd()
+    TestSuite.discover_tests[__functions_in_module()]().run()

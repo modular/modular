@@ -4,10 +4,14 @@ load("//bazel:api.bzl", "mojo_test")
 mojo_test(
     name = "test_multimem_allreduce.mojo.test",
     size = "large",
-    srcs = ["test_multimem_allreduce.mojo"],
+    srcs = [
+        "test_allreduce.mojo",
+        "test_multimem_allreduce.mojo",
+    ],
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
+    main = "test_multimem_allreduce.mojo",
     tags = ["gpu"],
     target_compatible_with = select({
         "//:h100_gpu": ["//:has_multi_gpu"],
@@ -49,6 +53,8 @@ mojo_test(
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = ["test_multimem_allreduce.mojo"],
+        exclude = [
+            "test_multimem_allreduce.mojo",
+        ],
     )
 ]

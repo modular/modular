@@ -89,7 +89,15 @@ ensures that you can only pass instances of `Duck` or `StealthCow` into the
 Traits solve this problem by letting you define a shared set of *behaviors* that
 types can implement. Then you can write a function that depends on the trait,
 rather than individual types. As an example, let's update the `make_it_quack()`
-example using traits. The first step is defining a trait:
+example using traits. This will involve three steps:
+
+1. Defining a new `Quackable` trait.
+2. Adding the trait to the `Duck` and `StealthCow` structs.
+3. Updating the `make_it_quack()` function to depend on the trait.
+
+### Defining a trait
+
+The first step is defining a trait that requires a `quack()` method:
 
 ```mojo
 trait Quackable:
@@ -98,25 +106,34 @@ trait Quackable:
 ```
 
 A trait looks a lot like a struct, except it's introduced by the `trait`
-keyword. A trait can contain method signatures, but it can't implement those
-methods. Each method signature must be followed by
-three dots (`...`) to indicate that the method is unimplemented.
+keyword. Note that the `quack()` method signature is followed three dots
+(`...`), which indicates it isn't implemented. This is a *required method*
+that must be implemented by any conforming struct.
+
+A trait can also supply a default implementation for a required method, so
+that conforming structs don't need to implement it. For more information, see
+[Default method implementations](#default-method-implementations).
 
 A trait can also include associated aliases—compile-time constant values that
 must be defined by conforming structs. Associated aliases are useful for writing
 traits that describe generic types. For more information, see
 [Associated aliases for generics](#associated-aliases-for-generics).
 
-:::note TODO
+:::note
 
-In the future, we plan to support defining fields and default method
-implementations inside a trait.
+Currently, Mojo treats a trait method as not implemented if the function body
+starts with `...` or `pass`. In the future only `...` will mark a trait method
+as not implemented.
 
 :::
 
-Next we create some structs that conform to the `Quackable` trait. To indicate
-that a struct conforms to a trait, include the trait name in parenthesis after
-the struct name. You can also include multiple traits, separated by commas.
+### Adding traits to structs
+
+Next we need some structs that conform to the `Quackable` trait. Since the
+`Duck` and `StealthCow` structs above already implement the `quack()` method,
+all we need to do is add the `Quackable` trait to the traits it conforms to
+(in parenthesis, after the struct name).
+
 (If you're familiar with Python, this looks just like Python's inheritance
 syntax.)
 
@@ -136,19 +153,43 @@ The struct needs to implement any methods that are declared in the trait. The
 compiler enforces conformance: if a struct says it conforms to a trait, it must
 implement everything required by the trait or the code won't compile.
 
+### Using a trait as a type bound
+
 Finally, you can define a function that takes a `Quackable` like this:
 
 ```mojo
-fn make_it_quack[type: Quackable](maybe_a_duck: type):
+fn make_it_quack[DuckType: Quackable](maybe_a_duck: DuckType):
+    maybe_a_duck.quack()
+```
+
+Or using the shorthand form:
+
+```mojo
+fn make_it_quack2(maybe_a_duck: Some[Quackable]):
     maybe_a_duck.quack()
 ```
 
 This syntax may look a little unfamiliar if you haven't dealt with Mojo
-[parameters](/mojo/manual/parameters/) before. What this signature
-means is that `maybe_a_duck` is an argument of type `type`, where `type` is a
-type that must conform to the `Quackable` trait.
+[parameters](/mojo/manual/parameters/) before. What the first signature means is
+that `maybe_a_duck` is an argument of type `DuckType`, where `DuckType` is a
+type that must conform to the `Quackable` trait. `Quackable` is called the *type
+bound* for `DuckType`.
 
-Using the method is simple enough:
+The `Some[Quackable]` form expresses the same idea: the type of `maybe_a_duck`
+is some concrete type that conforms to the trait `Quackable`.
+
+Both forms work the same, except that the first form explicitly names the type
+value. This can be useful, for example, if you want to take two values of the
+same type:
+
+```mojo
+fn take_two_quackers[DuckType: Quackable](quacker1: DuckType, quacker2: DuckType):
+    pass
+```
+
+### Putting it all together
+
+Using the function is simple enough:
 
 ```mojo
 make_it_quack(Duck())
@@ -181,6 +222,47 @@ trait HasStaticMethod:
 
 fn fun_with_traits[type: HasStaticMethod]():
     type.do_stuff()
+```
+
+## Default method implementations
+
+Often, some or all of the structs that conform to a given trait can use the same
+implementation for a given required method. In this case, the trait can include
+a *default implementation*. A conforming struct can still define its own version
+of the method, overriding the default implementation. But if the struct doesn't
+define its own version, it automatically inherits the default implementation.
+
+Defining a default implementation for a trait looks the same as writing a method
+for a struct:
+
+```mojo
+trait DefaultQuackable:
+    fn quack(self):
+        print("Quack")
+
+
+@fieldwise_init
+struct DefaultDuck(Copyable, DefaultQuackable, Movable):
+    pass
+```
+
+When looking at the API doc for a standard library trait, you'll see methods
+that you *must* implement listed as *required methods*, and methods that have
+default implementations listed as *provided methods*.
+
+
+The
+[`EqualityComparable`](/mojo/stdlib/builtin/equality_comparable/EqualityComparable/)
+trait is a good example of the use case for default implementations. The trait
+includes two methods: `__eq__()` (corresponding to the `==` operator) and
+`__ne__()` (corresponding to the `!=` operator). Every type that conforms to
+`EqualityComparable` needs to define the `__eq__()` method for itself, but the
+trait supplies a default implementation for `__ne__()`. Given an `__eq__()`
+method, the definition of `__ne__()` is trivial for most types:
+
+```mojo
+fn __ne__(self, other: Self) -> Bool:
+    return not self.__eq__(other)
 ```
 
 ## Trait compositions
@@ -216,20 +298,21 @@ struct ToyDuck(DuckLike):
     # ... implementation omitted
 ```
 
-Previously, you could only compose traits using
-[inheritance](#trait-inheritance), by defining a new, empty trait like this:
+You can also compose traits using [inheritance](#trait-inheritance), by defining
+a new, empty trait like this:
 
 ```mojo
 trait DuckTrait(Quackable, Flyable):
     pass
 ```
 
-The difference is that using the `trait` keyword defines a new, named
-trait. For a struct t conform to this trait, you need to *explicitly* include
-it in the struct's signature. On the other hand, the `DuckLike` alias represents
-a composition of two separate traits, `Quackable` and `Flyable`, and anything
-that conforms to those two traits conforms to `DuckLike`. For example, consider
-the `FlyingDuck` type shown above:
+However, this is less flexible than using a trait composition and not
+recommended. The difference is that using the `trait` keyword defines a new,
+named trait. For a struct to conform to this trait, you need to *explicitly*
+include it in the struct's signature. On the other hand, the `DuckLike` alias
+represents a composition of two separate traits, `Quackable` and `Flyable`, and
+anything that conforms to those two traits conforms to `DuckLike`. For example,
+consider the `FlyingDuck` type shown above:
 
 ```mojo
 struct FlyingDuck(Copyable, Movable, Quackable, Flyable):
@@ -298,7 +381,7 @@ It uses two built-in traits:
 [`Defaultable`](/mojo/stdlib/builtin/value/Defaultable), which requires a default
 (no-argument) constructor, and
 [`Movable`](/mojo/stdlib/builtin/value/Movable),
-which requires the type to have a no-argument[move
+which requires the type to have a [move
 constructor](/mojo/manual/lifecycle/life#move-constructor).
 
 The `factory[]()` function returns a newly-constructed instance of a
@@ -522,38 +605,6 @@ String: Dog(Rex, 5)
 Representation: Dog(name='Rex', age=5)
 ```
 
-### Special lifecycle traits: `Copyable`, `Movable`, and `ExplicitlyCopyable`
-
-The three traits [`Copyable`](/mojo/stdlib/builtin/value/Copyable/),
-[`Movable`](/mojo/stdlib/builtin/value/Movable/), and
-[`ExplicitlyCopyable`](/mojo/stdlib/builtin/value/ExplicitlyCopyable/) are
-special traits in that the Mojo compiler can supply default implementations for
-the required methods if the struct doesn't define them itself.
-
-The `Copyable` trait describes a type that can be implicitly copied, using a
-[copy constructor](/mojo/manual/lifecycle/life#copy-constructor).
-
-The `Movable` trait defines a type that can be moved using a
-[move constructor](/mojo/manual/lifecycle/life#copy-constructor).
-
-The `ExplicitlyCopyable` trait defines a type that can be explicitly copied by
-calling its `copy()` method. If the type is already `Copyable`, this trait
-provides a default implementation for `copy()`. If the type is **not**
-`Copyable`, you need to implement the `copy()` method yourself. For more
-information, see
-[Explicitly copyable types](/mojo/manual/lifecycle/life#explicitly-copyable-types).
-
-:::note
-
-If your type contains any fields that aren't copyable, Mojo will not generate
-the copy constructor because it cannot copy those fields. In this case, you
-need to define a custom copy constructor if you want the type to be copyable.
-
-Further, if any of the fields are neither copyable nor movable, Mojo won't
-generate a move constructor for that type.
-
-:::
-
 ### The `AnyType` trait
 
 When building a generic container type, one challenge is knowing how to dispose
@@ -598,7 +649,7 @@ generic container. A single `List` can only hold a single type of data.
 The list elments must conform to the `Copyable` and `Movable` traits:
 
 ```mojo
-struct List[T: Copyable & Movable, hint_trivial_type: Bool = False]:
+struct List[T: Copyable & Movable]:
 ```
 
 For example, you can create a list of integer values like this:
@@ -693,7 +744,7 @@ struct MyStack[type: Copyable & Movable](Stacklike):
         self.list = Self.list_type()
 
     fn push(mut self, var item: Self.EltType):
-        self.list.append(item)
+        self.list.append(item^)
 
     fn pop(mut self) -> Self.EltType:
         return self.list.pop()
@@ -718,8 +769,8 @@ The following code exercises this new trait by defining a generic method,
 `add_to_stack()` that adds an item to any `Stacklike` type.
 
 ```mojo
-def add_to_stack[S: Stacklike](mut stack: S, item: S.EltType):
-    stack.push(item)
+def add_to_stack[S: Stacklike](mut stack: S, var item: S.EltType):
+    stack.push(item^)
 
 def main():
     s = MyStack[Int]()

@@ -15,7 +15,7 @@
 from typing import NoReturn
 
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
 
 
 def test_while_loop_basic() -> None:
@@ -27,6 +27,9 @@ def test_while_loop_basic() -> None:
         x = graph.inputs[0]
 
         def pred(x: TensorValue) -> TensorValue:
+            import sys
+
+            print(f"{pred=}", file=sys.stderr)
             return x < 10
 
         def body(x: TensorValue) -> TensorValue:
@@ -149,3 +152,37 @@ def test_while_loop_with_pred_block_chain_mutation() -> None:
 
         graph.output()
     graph._mlir_op.verify()
+
+
+def test_while_loop_device_chains_scoped() -> None:
+    # Ensures per-device chain mutations in loop blocks don't leak.
+    t0 = TensorType(DType.float32, [4], device=DeviceRef.GPU(0))
+    t1 = TensorType(DType.float32, [4], device=DeviceRef.GPU(1))
+    sb0 = BufferType(DType.int64, [1], device=DeviceRef.GPU(0))
+    sb1 = BufferType(DType.int64, [1], device=DeviceRef.GPU(1))
+
+    with Graph(
+        "while_device_chains_scoped", input_types=[t0, t1, sb0, sb1]
+    ) as graph:
+        x0, x1, s0, s1 = graph.inputs
+        x0_t, x1_t = x0.tensor, x1.tensor
+        s0_b, s1_b = s0.buffer, s1.buffer
+
+        # Materialize and snapshot device chains.
+        ch0_before = graph.device_chains[DeviceRef.GPU(0)]
+        ch1_before = graph.device_chains[DeviceRef.GPU(1)]
+        id0, id1 = id(ch0_before), id(ch1_before)
+
+        def pred(_: TensorValue, __: TensorValue) -> TensorValue:
+            return ops.constant(True, dtype=DType.bool, device=DeviceRef.CPU())
+
+        def body(a: TensorValue, b: TensorValue) -> list[TensorValue]:
+            # Advance device chains inside loop body via allreduce.
+            _ = ops.allreduce.sum([x0_t, x1_t], [s0_b, s1_b])
+            return [a, b]
+
+        ops.while_loop([x0_t, x1_t], pred, body)
+        # device chains must be restored after staging the loop regions
+        assert id(graph.device_chains[DeviceRef.GPU(0)]) != id0
+        assert id(graph.device_chains[DeviceRef.GPU(1)]) != id1
+        graph.output()

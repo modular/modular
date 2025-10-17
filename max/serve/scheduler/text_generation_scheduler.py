@@ -14,33 +14,33 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Union
 
 from max.interfaces import (
+    MAXPullQueue,
+    MAXPushQueue,
     Pipeline,
+    RequestID,
+    Scheduler,
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
-    msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
 )
-from max.nn.kv_cache import PagedKVCacheManager
+from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
+from max.nn.kv_cache import TPPagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
-from max.profiler import Tracer
-from max.serve.config import Settings
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
+from max.profiler import Tracer, traced
 
-from .base import Scheduler
+from .base import SchedulerProgress
+from .data_parallelism_utils import split_by_replica_idx
 from .text_batch_constructor import (
-    SchedulerOutput,
     TextBatchConstructor,
     TokenGenerationSchedulerConfig,
 )
 from .utils import (
     SchedulerLogger,
-    maybe_restore_chunked_request,
+    add_newly_encoded_reqs_to_tg_batch,
     release_cancelled_requests,
     release_terminated_requests,
 )
@@ -53,36 +53,23 @@ class TokenGenerationScheduler(Scheduler):
         self,
         scheduler_config: TokenGenerationSchedulerConfig,
         pipeline: Pipeline[
-            TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
-            TextGenerationOutput,
+            TextGenerationInputs[TextContext], TextGenerationOutput
         ],
         *,
-        request_zmq_endpoint: str,
-        response_zmq_endpoint: str,
-        cancel_zmq_endpoint: str,
-        paged_manager: PagedKVCacheManager | None = None,
+        request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
+        response_queue: MAXPushQueue[
+            dict[RequestID, SchedulerResult[TextGenerationOutput]]
+        ],
+        cancel_queue: MAXPullQueue[list[RequestID]],
+        paged_manager: TPPagedKVCacheManager | None = None,
+        offload_queue_draining: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
 
-        self.request_q = ZmqPullSocket[
-            tuple[str, Union[TextContext, TextAndVisionContext]]
-        ](
-            zmq_endpoint=request_zmq_endpoint,
-            deserialize=msgpack_numpy_decoder(
-                tuple[str, Union[TextContext, TextAndVisionContext]]
-            ),
-        )
-        self.response_q = ZmqPushSocket[
-            dict[str, SchedulerResult[TextGenerationOutput]]
-        ](
-            zmq_endpoint=response_zmq_endpoint,
-            serialize=msgpack_numpy_encoder(),
-        )
-        self.cancel_q = ZmqPullSocket[list[str]](
-            zmq_endpoint=cancel_zmq_endpoint,
-            deserialize=msgpack_numpy_decoder(list[str]),
-        )
+        self.request_queue = request_queue
+        self.response_queue = response_queue
+        self.cancel_queue = cancel_queue
 
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
@@ -91,98 +78,143 @@ class TokenGenerationScheduler(Scheduler):
         )
         self.scheduler_logger = SchedulerLogger()
 
-    def _retrieve_pending_requests(self) -> None:
-        self.batch_constructor.ce_reqs |= dict(self.request_q.drain_nowait())
+        # We are parameterizing the offload of queue draining to allow for
+        # the use case where we want to drain the queue in the main thread.
+        # This is useful for debugging and testing purposes.
+        self._queue_drainer: (
+            BackgroundQueueDrainer[TextContext | TextAndVisionContext] | None
+        ) = None
+        if offload_queue_draining:
+            # I am setting this to drain at max batch size ce * 2, to ensure we do not drain
+            # forever, but have more than enough to form full batches.
+            self._queue_drainer = BackgroundQueueDrainer[
+                TextContext | TextAndVisionContext
+            ](
+                self.request_queue,
+                max_items_per_drain=self.scheduler_config.max_batch_size_ce * 2,
+            )
 
-    def run_iteration(self) -> None:
-        """The Scheduler routine that creates batches and schedules them on GPU"""
+    @traced
+    def _retrieve_pending_requests(self) -> None:
+        """
+        Initiates retrieval of pending requests from the request queue.
+
+        If a background retrieval task is already running, this method returns immediately.
+        Otherwise, it submits a background task to drain the request queue and processes
+        any contexts that have already been retrieved and are pending.
+
+        This method is responsible for ensuring that new requests are continuously
+        fetched and made available for batching and scheduling.
+        """
+        if self._queue_drainer is not None:
+            self._queue_drainer.start_draining()
+            items = self._queue_drainer.retrieve_items()
+        else:
+            items = drain_queue(
+                self.request_queue,
+                max_items=self.scheduler_config.max_batch_size_ce * 2,
+            )
+
+        for context in items:
+            self.batch_constructor.ce_reqs[context.request_id] = context
+
+    @traced
+    def run_iteration(self) -> SchedulerProgress:
+        """The Scheduler routine that creates batches and schedules them on GPU
+
+        Returns:
+            SchedulerProgress: Indicates whether work was performed in this iteration.
+        """
         # Drain the request queue and add to CE requests
         self._retrieve_pending_requests()
 
         # Construct the batch to execute
         t0 = time.monotonic()
-        batch_to_execute = self.batch_constructor.construct_batch()
+        inputs = self.batch_constructor.construct_batch()
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
         # If the batch is empty, skip
-        batch_size = batch_to_execute.batch_size
-        if batch_size == 0:
-            return
+        if not inputs:
+            return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch
         t0 = time.monotonic()
-        with Tracer(f"_schedule({batch_to_execute})"):
-            self._schedule(batch_to_execute)
+        with Tracer(f"_schedule({inputs})"):
+            num_terminated_reqs = self._schedule(inputs)
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
 
         # Log batch metrics
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
-            sch_output=batch_to_execute,
+            inputs=inputs,
             paged_cache=self.batch_constructor.paged_cache,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
             num_pending_reqs=len(self.batch_constructor.ce_reqs),
+            num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
 
-        self._handle_cancelled_requests()
-
-    def _handle_cancelled_requests(self) -> None:
         release_cancelled_requests(
-            self.cancel_q,
-            self.response_q,
+            self.cancel_queue,
+            self.response_queue,
             self.batch_constructor.tg_reqs,
             self.pipeline,
         )
 
-    def _schedule(self, sch_output: SchedulerOutput) -> None:
-        assert sch_output.batch_size > 0
-        batch_to_execute = sch_output.batch_inputs
+        return SchedulerProgress.MADE_PROGRESS
+
+    def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
+        """Returns the number of terminated requests."""
+        assert inputs
+
+        # TODO(E2EOPT-399): Add proper data parallelism support. Currently
+        # this naively splits the batch onto different devices.
+        split_by_replica_idx(
+            inputs,
+            self.scheduler_config.data_parallel_degree,
+            self.batch_constructor.paged_cache,
+        )
 
         # execute the batch
-        responses = self.pipeline.execute(
-            TextGenerationInputs(
-                batches=[batch_to_execute], num_steps=sch_output.num_steps
-            )
-        )
+        responses = self.pipeline.execute(inputs)
 
         # If there is a chunked request, we put it back into the request queue
-        maybe_restore_chunked_request(
-            batch_to_execute,
+        add_newly_encoded_reqs_to_tg_batch(
+            inputs.batch,
             responses,
-            self.batch_constructor.ce_reqs,
+            self.batch_constructor,
         )
 
-        # add the encoded requests to the continuous batch
-        self.batch_constructor.tg_reqs |= batch_to_execute
-
         # remove terminated requests from the batch
-        release_terminated_requests(
-            sch_output,
+        num_terminated_reqs = release_terminated_requests(
             responses,
             self.pipeline,
             self.batch_constructor.tg_reqs,
         )
 
         # send the responses to the API process
-        self.response_q.put_nowait(
-            {
-                req_id: SchedulerResult.create(response)
-                for req_id, response in responses.items()
-            }
-        )
+        if responses:
+            self.response_queue.put_nowait(
+                {
+                    req_id: SchedulerResult.create(response)
+                    for req_id, response in responses.items()
+                }
+            )
+
+        return num_terminated_reqs
 
 
 def load_text_generation_scheduler(
-    settings: Settings,
-    pipeline: Pipeline[
-        TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
-        TextGenerationOutput,
-    ],
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
     pipeline_config: PipelineConfig,
+    request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
+    response_queue: MAXPushQueue[
+        dict[RequestID, SchedulerResult[TextGenerationOutput]]
+    ],
+    cancel_queue: MAXPullQueue[list[RequestID]],
 ) -> TokenGenerationScheduler:
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
@@ -197,7 +229,8 @@ def load_text_generation_scheduler(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
         paged_manager=paged_manager,
-        request_zmq_endpoint=settings.request_zmq_endpoint,
-        response_zmq_endpoint=settings.response_zmq_endpoint,
-        cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
+        request_queue=request_queue,
+        response_queue=response_queue,
+        cancel_queue=cancel_queue,
+        offload_queue_draining=pipeline_config.experimental_background_queue,
     )

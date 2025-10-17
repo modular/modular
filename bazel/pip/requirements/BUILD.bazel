@@ -3,17 +3,19 @@ load("@rules_pycross//pycross:defs.bzl", "pycross_lock_file", "pycross_uv_lock_m
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load(":uv.bzl", "uv_lock")
 
+MINIMUM_PYTHON_VERSION = "3_10"
+
 sh_binary(
     name = "uv",
     srcs = ["uv-wrapper.sh"],
     data = [
         "//bazel/internal:uv",
-        "@python_3_9//:py3_runtime",
-        "@python_3_9//:python3",
+        "@python_{}//:py3_runtime".format(MINIMUM_PYTHON_VERSION),
+        "@python_{}//:python3".format(MINIMUM_PYTHON_VERSION),
     ],
     env = {
         "UV": "$(rlocationpath //bazel/internal:uv)",
-        "PYTHON": "$(rlocationpath @python_3_9//:python3)",
+        "PYTHON": "$(rlocationpath @python_{}//:python3)".format(MINIMUM_PYTHON_VERSION),
     },
     deps = [
         "@bazel_tools//tools/bash/runfiles",
@@ -24,7 +26,7 @@ uv_lock(
     name = "uv_lock",
     exec_properties = {"dockerNetwork": "bridge"},
     existing_lockfile = "uv.lock",
-    py3_runtime = "@python_3_9//:py3_runtime",
+    py3_runtime = "@python_{}//:py3_runtime".format(MINIMUM_PYTHON_VERSION),
     pyproject = "pyproject.toml",
 )
 

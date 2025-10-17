@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from gpu.host import DeviceContext
 from internal_utils._utils import dynamic, static
-from linalg.matmul_sm90_testbed import test_matmul_sm90
-from linalg.matmul_tile_scheduler import MatmulSchedule
+from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
+from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
+
 from utils.index import Index
 
 # Helper to calculate block_tile_shape based on dtype and wgmma_n
@@ -29,7 +30,7 @@ alias wgmma_shape[wgmma_n: Int, a_dtype: DType] = Index(
 ) if a_dtype is DType.float8_e4m3fn else Index(64, wgmma_n, 16)
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         # NOTE: please note that cublaslt handle should be used for fp8-e4m3fn and cublas handle for bfloat16
         # because cublas does not support float8-e4m3fn. Also, fp8 tests should be run first and then bfloat16 tests

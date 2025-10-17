@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import ceildiv, isqrt
+from math import ceildiv, rsqrt
 from random import random_ui64
 
 from buffer import Dim, DimList
@@ -117,9 +117,9 @@ def execute_ragged_flash_attention():
         )
 
         memcpy(
-            mixed_ce_offset,
-            true_ce_offset,
-            mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
+            dest=mixed_ce_offset,
+            src=true_ce_offset,
+            count=mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
         )
 
     # initialize reference output
@@ -180,27 +180,27 @@ def execute_ragged_flash_attention():
     # "true CE" execution
     print("true")
     flash_attention_kv_cache(
-        true_ce_q_ragged.tensor,
-        true_ce_row_offsets.tensor,
-        true_ce_row_offsets.tensor,
+        true_ce_q_ragged.to_layout_tensor(),
+        true_ce_row_offsets.to_layout_tensor(),
+        true_ce_row_offsets.to_layout_tensor(),
         true_ce_kv_collection.get_key_cache(layer_idx),
         true_ce_kv_collection.get_value_cache(layer_idx),
         CausalMask(),
-        isqrt(Float32(kv_params.head_size)),
-        true_ce_output.tensor,
+        rsqrt(Float32(kv_params.head_size)),
+        true_ce_output.to_layout_tensor(),
     )
 
     # "mixed CE" execution
     print("mixed")
     flash_attention_kv_cache(
-        mixed_ce_q_ragged.tensor,
-        mixed_ce_row_offsets.tensor,
-        mixed_ce_row_offsets.tensor,
+        mixed_ce_q_ragged.to_layout_tensor(),
+        mixed_ce_row_offsets.to_layout_tensor(),
+        mixed_ce_row_offsets.to_layout_tensor(),
         mixed_ce_kv_collection.get_key_cache(layer_idx),
         mixed_ce_kv_collection.get_value_cache(layer_idx),
         CausalMask(),
-        isqrt(Float32(kv_params.head_size)),
-        mixed_ce_output.tensor,
+        rsqrt(Float32(kv_params.head_size)),
+        mixed_ce_output.to_layout_tensor(),
     )
 
     true_ce_out = true_ce_output.tensor

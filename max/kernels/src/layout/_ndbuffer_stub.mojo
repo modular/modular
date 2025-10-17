@@ -37,7 +37,7 @@ struct TileMask[
     rank: Int,
     element_size: IndexList[rank] = IndexList[rank](1),
     element_stride: IndexList[rank] = IndexList[rank](1),
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     var max_dim: IndexList[rank]
     var offset: IndexList[rank]
 
@@ -114,7 +114,7 @@ fn _tile_mask[
     for i in range(rank):
         tile_offset[i] = tile_sizes[i].get() * tile_coords[i]
 
-    return __type_of(result)(shape, tile_offset)
+    return {shape, tile_offset}
 
 
 @always_inline("nodebug")
@@ -311,7 +311,7 @@ fn _to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
 # Stores the layout of the vectorized buffer element.
 #
 struct ElementLayout[rank: Int, shape: IndexList[rank]](
-    Copyable, Defaultable, Movable, Stringable, Writable
+    Defaultable, ImplicitlyCopyable, Movable, Stringable, Writable
 ):
     var stride: IndexList[rank]
 
@@ -1308,7 +1308,4 @@ fn from_ndbuffer_row_major(
     var runtime_layout = __type_of(result.runtime_layout).row_major(
         buffer.get_shape().cast[result.layout_int_type]()
     )
-    return __type_of(result)(
-        buffer.data,
-        runtime_layout,
-    )
+    return {buffer.data, runtime_layout}

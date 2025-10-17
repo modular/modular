@@ -15,6 +15,7 @@ from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
 )
+from collections.string.string_slice import _to_string_list
 from math import isinf, isnan
 
 from memory import memcpy
@@ -26,6 +27,7 @@ from testing import (
     assert_raises,
     assert_true,
 )
+from testing import TestSuite
 
 
 @fieldwise_init
@@ -687,7 +689,6 @@ def test_split():
 
     # Should add all whitespace-like chars as one
     # test all unicode separators
-    # 0 is to build a String with null terminator
     var next_line = List[UInt8](0xC2, 0x85)
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
@@ -763,17 +764,19 @@ def test_split():
 
 
 def test_splitlines():
-    alias L = List[String]
+    alias S = String
+    alias L = List[StaticString]
+
     # Test with no line breaks
-    assert_equal(String("hello world").splitlines(), L("hello world"))
+    assert_equal(S("hello world").splitlines(), L("hello world"))
 
     # Test with line breaks
-    assert_equal(String("hello\nworld").splitlines(), L("hello", "world"))
-    assert_equal(String("hello\rworld").splitlines(), L("hello", "world"))
-    assert_equal(String("hello\r\nworld").splitlines(), L("hello", "world"))
+    assert_equal(S("hello\nworld").splitlines(), L("hello", "world"))
+    assert_equal(S("hello\rworld").splitlines(), L("hello", "world"))
+    assert_equal(S("hello\r\nworld").splitlines(), L("hello", "world"))
 
     # Test with multiple different line breaks
-    s1 = "hello\nworld\r\nmojo\rlanguage\r\n"
+    s1 = S("hello\nworld\r\nmojo\rlanguage\r\n")
     hello_mojo = L("hello", "world", "mojo", "language")
     assert_equal(s1.splitlines(), hello_mojo)
     assert_equal(
@@ -782,9 +785,9 @@ def test_splitlines():
     )
 
     # Test with an empty string
-    assert_equal(String().splitlines(), L())
+    assert_equal(S("").splitlines(), L())
     # test \v \f \x1c \x1d
-    s2 = "hello\vworld\fmojo\x1clanguage\x1d"
+    s2 = S("hello\vworld\fmojo\x1clanguage\x1d")
     assert_equal(s2.splitlines(), hello_mojo)
     assert_equal(
         s2.splitlines(keepends=True),
@@ -792,7 +795,7 @@ def test_splitlines():
     )
 
     # test \x1c \x1d \x1e
-    s3 = "hello\x1cworld\x1dmojo\x1elanguage\x1e"
+    s3 = S("hello\x1cworld\x1dmojo\x1elanguage\x1e")
     assert_equal(s3.splitlines(), hello_mojo)
     assert_equal(
         s3.splitlines(keepends=True),
@@ -800,17 +803,18 @@ def test_splitlines():
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = List[UInt8](0xC2, 0x85)
-    var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
-    var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
+    var next_line = String(bytes=List[UInt8](0xC2, 0x85))
+    var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
+    var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
 
-    for elt in [next_line, unicode_line_sep, unicode_paragraph_sep]:
-        u = String(bytes=elt)
-        item = String().join("hello", u, "world", u, "mojo", u, "language", u)
+    for u in [next_line^, unicode_line_sep^, unicode_paragraph_sep^]:
+        item = StaticString("").join(
+            "hello", u, "world", u, "mojo", u, "language", u
+        )
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
-            item.splitlines(keepends=True),
-            L("hello" + u, "world" + u, "mojo" + u, "language" + u),
+            _to_string_list(item.splitlines(keepends=True)),
+            List("hello" + u, "world" + u, "mojo" + u, "language" + u),
         )
 
 
@@ -818,7 +822,6 @@ def test_isspace():
     assert_false(String().isspace())
 
     # test all utf8 and unicode separators
-    # 0 is to build a String with null terminator
     var next_line = List[UInt8](0xC2, 0x85)
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
@@ -845,11 +848,11 @@ def test_isspace():
     for i in List[String]("not", "space", "", "s", "a", "c"):
         assert_false(i.isspace())
 
-    for i in range(len(univ_sep_var)):
+    for sep1 in univ_sep_var:
         var sep = String()
-        for j in range(len(univ_sep_var)):
-            sep += univ_sep_var[i]
-            sep += univ_sep_var[j]
+        for sep2 in univ_sep_var:
+            sep += sep1
+            sep += sep2
         assert_true(sep.isspace())
         _ = sep
 
@@ -893,8 +896,8 @@ def test_ascii_aliases():
     assert_true("'" in String.PUNCTUATION)
 
     var text = "I love my Mom and Dad so much!!!\n"
-    for i in range(len(text)):
-        assert_true(text[i] in String.PRINTABLE)
+    for cp in text.codepoint_slices():
+        assert_true(cp in String.PRINTABLE)
 
 
 def test_rstrip():
@@ -1036,29 +1039,27 @@ def test_endswith():
     assert_false(str.endswith("llo", 2, 3))
 
 
-# TODO: Remove the explicit conversion to `String` once #4790 is resolved.
 def test_removeprefix():
-    assert_equal(String(String("hello world").removeprefix("")), "hello world")
-    assert_equal(String(String("hello world").removeprefix("hello")), " world")
+    assert_equal(StaticString("hello world").removeprefix(""), "hello world")
+    assert_equal(StaticString("hello world").removeprefix("hello"), " world")
     assert_equal(
-        String(String("hello world").removeprefix("world")), "hello world"
+        StaticString("hello world").removeprefix("world"), "hello world"
     )
-    assert_equal(String(String("hello world").removeprefix("hello world")), "")
+    assert_equal(StaticString("hello world").removeprefix("hello world"), "")
     assert_equal(
-        String(String("hello world").removeprefix("llo wor")), "hello world"
+        StaticString("hello world").removeprefix("llo wor"), "hello world"
     )
 
 
-# TODO: Remove the explicit conversion to `String` once #4790 is resolved.
 def test_removesuffix():
-    assert_equal(String(String("hello world").removesuffix("")), "hello world")
-    assert_equal(String(String("hello world").removesuffix("world")), "hello ")
+    assert_equal(StaticString("hello world").removesuffix(""), "hello world")
+    assert_equal(StaticString("hello world").removesuffix("world"), "hello ")
     assert_equal(
-        String(String("hello world").removesuffix("hello")), "hello world"
+        StaticString("hello world").removesuffix("hello"), "hello world"
     )
-    assert_equal(String(String("hello world").removesuffix("hello world")), "")
+    assert_equal(StaticString("hello world").removesuffix("hello world"), "")
     assert_equal(
-        String(String("hello world").removesuffix("llo wor")), "hello world"
+        StaticString("hello world").removesuffix("llo wor"), "hello world"
     )
 
 
@@ -1395,28 +1396,36 @@ def test_slice_contains():
 
 def test_reserve():
     var s = String()
-    assert_equal(s.capacity(), 0)
-    s.reserve(1)
-    assert_equal(s.capacity(), 8)
+    assert_equal(s.capacity(), 23)
+    s.reserve(61)
+    assert_equal(s.capacity(), 64)
 
 
 def test_uninit_ctor():
     var hello_len = len("hello")
-    var s = String(unsafe_uninit_length=hello_len)
-    memcpy(s.unsafe_ptr(), StaticString("hello").unsafe_ptr(), hello_len)
+    var s = String(unsafe_uninit_length=UInt(hello_len))
+    memcpy(
+        dest=s.unsafe_ptr(),
+        src=StaticString("hello").unsafe_ptr(),
+        count=hello_len,
+    )
     assert_equal(s, "hello")
 
     # Resize with uninitialized memory.
     var s2 = String()
-    s2.resize(unsafe_uninit_length=hello_len)
-    memcpy(s2.unsafe_ptr_mut(), StaticString("hello").unsafe_ptr(), hello_len)
+    s2.resize(unsafe_uninit_length=UInt(hello_len))
+    memcpy(
+        dest=s2.unsafe_ptr_mut(),
+        src=StaticString("hello").unsafe_ptr(),
+        count=hello_len,
+    )
     assert_equal(s2, "hello")
     assert_equal(s2._is_inline(), True)
 
     var s3 = String()
     var long: StaticString = "hellohellohellohellohellohellohellohellohellohel"
     s3.resize(unsafe_uninit_length=len(long))
-    memcpy(s3.unsafe_ptr_mut(), long.unsafe_ptr(), len(long))
+    memcpy(dest=s3.unsafe_ptr_mut(), src=long.unsafe_ptr(), count=len(long))
     assert_equal(s3, long)
     assert_equal(s3._is_inline(), False)
 
@@ -1523,7 +1532,7 @@ def test_sso():
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    alias expected_capacity = (Int(String.INLINE_CAPACITY) * 2 + 7) & ~7
+    alias expected_capacity = UInt((Int(String.INLINE_CAPACITY) * 2 + 7) & ~7)
     assert_equal(s.capacity(), expected_capacity)
     assert_equal(s._is_inline(), False)
 
@@ -1575,51 +1584,4 @@ def test_copyinit():
 
 
 def main():
-    test_constructors()
-    test_copy()
-    test_len()
-    test_equality_operators()
-    test_comparison_operators()
-    test_add()
-    test_add_string_slice()
-    test_stringable()
-    test_string_join()
-    test_ord()
-    test_chr()
-    test_string_indexing()
-    test_atol()
-    test_atol_base_0()
-    test_atof()
-    test_calc_initial_buffer_size_int32()
-    test_calc_initial_buffer_size_int64()
-    test_contains()
-    test_find()
-    test_replace()
-    test_rfind()
-    test_split()
-    test_splitlines()
-    test_isspace()
-    test_ascii_aliases()
-    test_rstrip()
-    test_lstrip()
-    test_strip()
-    test_hash()
-    test_startswith()
-    test_endswith()
-    test_removeprefix()
-    test_removesuffix()
-    test_intable()
-    test_string_mul()
-    test_indexing()
-    test_string_codepoints_iter()
-    test_string_char_slices_iter()
-    test_format_args()
-    test_format_conversion_flags()
-    test_float_conversion()
-    test_slice_contains()
-    test_uninit_ctor()
-    test_unsafe_cstr()
-    test_variadic_ctors()
-    test_sso()
-    test_python_object()
-    test_copyinit()
+    TestSuite.discover_tests[__functions_in_module()]().run()

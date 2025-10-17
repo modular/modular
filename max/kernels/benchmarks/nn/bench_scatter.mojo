@@ -102,7 +102,7 @@ fn bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
 
 
 @fieldwise_init
-struct ScatterSpec(Copyable, Movable, Stringable):
+struct ScatterSpec(ImplicitlyCopyable, Movable, Stringable):
     var axis: Int
     var m1: Int
     var m2: Int

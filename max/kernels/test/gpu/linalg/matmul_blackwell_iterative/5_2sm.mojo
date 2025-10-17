@@ -11,47 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import size_of, argv
 from hashlib import default_comp_time_hasher
+from math import align_up
+from sys import argv, size_of
+
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-
 from gpu import WARP_SIZE, barrier
+from gpu.cluster import block_rank_in_cluster, cluster_sync, elect_one_sync
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx, block_id_in_cluster
+from gpu.id import block_id_in_cluster, block_idx, lane_id, thread_idx
 from gpu.memory import AddressSpace, fence_async_view_proxy
+from gpu.mma import st_matrix
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
-from gpu.mma import st_matrix
-from layout import (
-    Layout,
-    RuntimeLayout,
-    RuntimeTuple,
-    LayoutTensor,
-    IntTuple,
-    UNKNOWN_VALUE,
-)
-from layout.swizzle import make_swizzle
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    st_matrix_n_layout,
-)
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from gpu.cluster import (
-    elect_one_sync,
-    block_rank_in_cluster,
-    cluster_sync,
-)
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from linalg import vendor_blas
-from linalg.mmaop_sm100 import MmaOpSM100_SS
-
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -60,6 +35,27 @@ from internal_utils import (
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
+from layout import (
+    UNKNOWN_VALUE,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+)
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.swizzle import make_swizzle
+from layout.tensor_core_async import (
+    st_matrix_n_layout,
+    tile_layout_k_major,
+    tile_layout_mn_major,
+)
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from linalg.arch.sm100 import MmaOpSM100_SS
+
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
 
 
 fn is_benchmark() -> Bool:
@@ -180,7 +176,7 @@ fn kernel_5[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](a_smem.static_alignment_cast[128]())
+    ](a_smem)
 
     var b_smem_tile = LayoutTensor[
         b_type,
@@ -188,7 +184,7 @@ fn kernel_5[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](b_smem.static_alignment_cast[128]())
+    ](b_smem)
 
     alias accum_type = get_accum_type[a_type]()
 
@@ -307,14 +303,14 @@ fn kernel_5[
                 a_tma_op.async_multicast_load[cta_group](
                     a_smem_slice,
                     tma_mbar[0],
-                    (UInt(i) * BK + k, a_gmem_slice_coord),
+                    (UInt(i * BK + k), UInt(a_gmem_slice_coord)),
                     a_multicast_mask,
                 )
 
                 b_tma_op.async_multicast_load[cta_group](
                     b_smem_slice,
                     tma_mbar[0],
-                    (UInt(i) * BK + k, b_gmem_slice_coord),
+                    (UInt(i * BK + k), UInt(b_gmem_slice_coord)),
                     b_multicast_mask,
                 )
 
@@ -419,7 +415,7 @@ fn kernel_5[
                         UNKNOWN_VALUE,
                     ),
                 )
-            ](thread_idx.x % 32, i, 0, 0)
+            ](lane_id(), i, 0, 0)
 
             var d_reg_upper_packed = bitcast[DType.float32, 4](d_reg_upper)
             var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
@@ -442,7 +438,7 @@ fn kernel_5[
     # SMEM -> GMEM: Direct TMA store
     # UMMA (tensor memory) → registers → shared memory → global memory
     #           c_frag                   c_smem_tile      c_tma_op
-    if elect_one_warp and thread_idx.x < NUM_TMA_TILES:
+    if elect_one_warp and thread_idx.x < UInt(NUM_TMA_TILES):
         var row_start = block_idx.x * BM
 
         var col_start = block_idx.y * MMA_N + thread_idx.x * TMA_BN
@@ -458,7 +454,7 @@ fn kernel_5[
             alignment=128,
         ](c_smem_offset)
 
-        c_tma_op.async_store(c_tma_tile, (col_start, row_start))
+        c_tma_op.async_store(c_tma_tile, (UInt(col_start), UInt(row_start)))
         c_tma_op.commit_group()
         c_tma_op.wait_group[0]()
 
@@ -489,14 +485,14 @@ fn blackwell_kernel_5[
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
     b_device: NDBuffer[b_type, 2, _, b_shape],
-    M: Int,
-    N: Int,
-    K: Int,
     ctx: DeviceContext,
 ) raises:
     var a = from_ndbuffer_row_major(a_device)
     var b = from_ndbuffer_row_major(b_device)
     var c = from_ndbuffer_row_major(c_device)
+    var M = c.dim[0]()
+    var N = c.dim[1]()
+    var K = a.dim[1]()
 
     constrained[
         transpose_b,
@@ -512,12 +508,10 @@ fn blackwell_kernel_5[
     alias MMA_K = umma_shape[2]
 
     a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM // cluster_shape[1], 64), swizzle_mode=a_swizzle
+        Index(BM // cluster_shape[1], 64), swizzle_mode=a_swizzle
     ](ctx, a)
 
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(
             BN // (cluster_shape[0] // cta_group), 64
         ) if transpose_b else Index(64, BN // (cluster_shape[0] // cta_group)),
@@ -676,9 +670,6 @@ def test_blackwell_kernel_5[
         c_device.tensor,
         a_device.tensor,
         b_device.tensor,
-        M,
-        N,
-        K,
         ctx,
     )
 
@@ -702,9 +693,6 @@ def test_blackwell_kernel_5[
                 c_device.tensor,
                 a_device.tensor,
                 b_device.tensor,
-                M,
-                N,
-                K,
                 ctx,
             )
 
@@ -772,7 +760,7 @@ fn make_dic_of_shapes() -> (
 ):
     var dic = Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]()
     dic[0] = (4096, 4096, 4096)
-    return dic
+    return dic^
 
 
 fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:

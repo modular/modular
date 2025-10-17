@@ -27,7 +27,7 @@ fn test[N: Int = 1024 * 1024]() -> UInt32:
     # seed(0)
     alias alignment = 64
     alias type = DType.uint32
-    var x = UnsafePointer[Scalar[type], alignment=alignment].alloc(N)
+    var x = UnsafePointer[Scalar[type]].alloc(N, alignment=alignment)
     randint[type](x, N, 0, 255)
     var s: UInt32 = 0
     for i in range(N):
@@ -78,7 +78,7 @@ fn bench_func[
     """
 
 
-fn main() raises:
+def main():
     var m = Bench()
     bench_func[test, 8](m, "test8")
     bench_func[test, 16](m, "test16")

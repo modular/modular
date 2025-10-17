@@ -15,36 +15,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
-
 from max.driver import DeviceStream, Tensor
-
-
-class BlockCopyType(Enum):
-    """Type of block copy operation."""
-
-    D2D = 1
-    H2D = 2
-    D2H = 3
-
-
-class BlockCopyMetrics:
-    def __init__(self) -> None:
-        self.d2d = 0
-        self.h2d = 0
-        self.d2h = 0
-
-    def reset(self) -> None:
-        self.d2d = 0
-        self.h2d = 0
-        self.d2h = 0
-
-    def __add__(self, other: BlockCopyMetrics) -> BlockCopyMetrics:
-        new_metrics = BlockCopyMetrics()
-        new_metrics.d2d = self.d2d + other.d2d
-        new_metrics.h2d = self.h2d + other.h2d
-        new_metrics.d2h = self.d2h + other.d2h
-        return new_metrics
 
 
 class BlockCopyEngine:
@@ -54,13 +25,13 @@ class BlockCopyEngine:
         num_device_blocks: int,
         device_tensors: list[Tensor],
         num_host_blocks: int,
-        host_tensor: Tensor | None,
+        host_tensors: list[Tensor] | None,
     ) -> None:
-        if num_host_blocks > 0 and host_tensor is None:
+        if num_host_blocks > 0 and host_tensors is None:
             raise ValueError(
                 "Host tensor must be non-null if there are host blocks"
             )
-        if num_host_blocks <= 0 and host_tensor is not None:
+        if num_host_blocks <= 0 and host_tensors is not None:
             raise ValueError(
                 "Host tensor must be null if there are no host blocks"
             )
@@ -71,81 +42,63 @@ class BlockCopyEngine:
 
         # There is at least 1 device tensors
         self.device_tensors = device_tensors
-        # There can be 0 or 1 host tensors
-        self.host_tensor = host_tensor
+        # There can be 0 or len(self.device_tensors) host tensors
+        self.host_tensors = host_tensors
 
         self.block_size = block_size
         self.num_device_blocks = num_device_blocks
         self.num_host_blocks = num_host_blocks
 
-        self.main_stream: DeviceStream | None = None
-        self.d2h_auxiliary_stream: DeviceStream | None = None
+        self.main_streams: list[DeviceStream] | None = None
+        self.d2h_auxiliary_streams: list[DeviceStream] | None = None
 
         # Scheduling memory copies on separate stream is only useful if we have
         # pinned host memory.
-        if self.host_tensor is not None and self.host_tensor.pinned:
-            gpu_device = self.host_tensor.device
-            self.main_stream = gpu_device.default_stream
-            self.d2h_auxiliary_stream = DeviceStream(gpu_device)
 
-        # Number of blocks that have been copied
-        self.blocks_copied: BlockCopyMetrics = BlockCopyMetrics()
-
-        self.staged_memcpy_ops: list[tuple[BlockCopyType, int, int]] = []
+        if self.host_tensors is not None:
+            self.main_streams = [
+                self.host_tensors[i].device.default_stream
+                for i in range(len(self.device_tensors))
+            ]
+            self.d2h_auxiliary_streams = [
+                DeviceStream(self.host_tensors[i].device)
+                for i in range(len(self.device_tensors))
+            ]
 
     def supports_multistream(self) -> bool:
-        return self.d2h_auxiliary_stream is not None
-
-    def memcpy_d2d(self, dst: int, src: int, num_tokens: int) -> None:
-        """Copy a block between two blocks on the same device.
-
-        This is primarily used for Copy-on-Write so a num_tokens argument can
-        be used to copy only the relevant portion of the block.
-        """
-        # No need to copy if dst and src are the same
-        if dst == src:
-            return
-        self.blocks_copied.d2d += 1
-
-        # Currently we ignore num_tokens and just copy the entire block
-        assert 0 < num_tokens <= self.block_size
-
-        # For each device, copy the block from src to dst
-        for device_tensor in self.device_tensors:
-            device_tensor[dst, :, :, :, :, :].inplace_copy_from(
-                device_tensor[src, :, :, :, :, :]
-            )
+        return self.d2h_auxiliary_streams is not None
 
     def memcpy_h2d(self, dst: int, src: int) -> None:
-        if self.host_tensor is None:
+        if self.host_tensors is None:
             raise ValueError(
                 "Attempted to enqueue h2d copy but there is no host tensor"
             )
-        self.blocks_copied.h2d += 1
 
         # Copy block from host to each of the devices
-        for device_tensor in self.device_tensors:
+        for device_tensor, host_tensor in zip(
+            self.device_tensors, self.host_tensors, strict=True
+        ):
             device_tensor[dst, :, :, :, :, :].inplace_copy_from(
-                self.host_tensor[src, :, :, :, :, :]
+                host_tensor[src, :, :, :, :, :]
             )
 
     def memcpy_d2h(self, dst: int, src: int) -> None:
-        if self.host_tensor is None:
+        if self.host_tensors is None:
             raise ValueError(
                 "Attempted to enqueue d2h copy but there is no host tensor"
             )
-        self.blocks_copied.d2h += 1
 
-        # Copy the data from one device to the host. We assume that all
-        # devices have the same data.
-        device_tensor = self.device_tensors[0]
-        src_block = device_tensor[src, :, :, :, :, :]
-        dst_block = self.host_tensor[dst, :, :, :, :, :]
+        # Copy the data from one device to the host.
+        for i, (device_tensor, host_tensor) in enumerate(
+            zip(self.device_tensors, self.host_tensors, strict=True)
+        ):
+            src_block = device_tensor[src, :, :, :, :, :]
+            dst_block = host_tensor[dst, :, :, :, :, :]
 
-        if self.d2h_auxiliary_stream is not None:
-            dst_block = dst_block.to(self.d2h_auxiliary_stream)
+            if self.d2h_auxiliary_streams is not None:
+                dst_block = dst_block.to(self.d2h_auxiliary_streams[i])
 
-        dst_block.inplace_copy_from(src_block)
+            dst_block.inplace_copy_from(src_block)
 
     def wait_for_completion(self) -> None:
         """Synchronize main stream with the auxiliary stream.
@@ -154,6 +107,10 @@ class BlockCopyEngine:
         BatchN+1 begins. This is needed because BatchN+1 may write to the
         same blocks as BatchN is reading from.
         """
-        if self.d2h_auxiliary_stream is not None:
-            assert self.main_stream is not None
-            self.main_stream.wait_for(self.d2h_auxiliary_stream)
+        if self.d2h_auxiliary_streams is None:
+            return
+        assert self.main_streams is not None
+        for main_stream, d2h_auxiliary_stream in zip(
+            self.main_streams, self.d2h_auxiliary_streams, strict=True
+        ):
+            main_stream.wait_for(d2h_auxiliary_stream)

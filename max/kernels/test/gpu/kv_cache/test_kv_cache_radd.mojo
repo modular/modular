@@ -11,20 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from utils import IndexList
-from internal_utils import (
-    HostNDBuffer,
-    DeviceNDBuffer,
-    initialize,
-    InitializationType,
-)
-from kv_cache.types import PagedKVCacheCollection, KVCacheStaticParams
-from math import ceildiv
 from collections import Set
+from math import ceildiv
 from random import random_ui64
-from nn.kv_cache_ragged import generic_kv_cache_radd_dispatch
+
 from buffer import Dim, DimList
+from gpu.host import DeviceContext
+from internal_utils import (
+    DeviceNDBuffer,
+    HostNDBuffer,
+    InitializationType,
+    initialize,
+)
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
+from nn.kv_cache_ragged import generic_kv_cache_radd_dispatch
+
+from utils import IndexList
 
 
 fn test_kv_cache_radd[
@@ -118,7 +120,9 @@ fn test_kv_cache_radd[
 
     var kv_collection_device = PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+        KVCacheStaticParams(
+            num_heads=UInt(num_heads), head_size=UInt(head_dim)
+        ),
         page_size,
     ](
         kv_block_paged_device.tensor,
@@ -153,7 +157,9 @@ fn test_kv_cache_radd[
 
     var kv_collection_host = PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+        KVCacheStaticParams(
+            num_heads=UInt(num_heads), head_size=UInt(head_dim)
+        ),
         page_size,
     ](
         kv_block_paged_host.tensor,
@@ -250,7 +256,7 @@ fn test_kv_cache_radd[
     _ = paged_lut_host
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_kv_cache_radd[DType.float32, 8, 128, 128, 4,](
             IndexList[4](10, 20, 30, 40),

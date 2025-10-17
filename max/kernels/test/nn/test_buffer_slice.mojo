@@ -14,11 +14,11 @@
 
 from algorithm import elementwise
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from nn.slice import slice_as_copy, slice_as_view
@@ -64,38 +64,38 @@ def test_slice[
 
     var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = LayoutTensor[dtype, Layout.row_major[outer_rank]()](
-        memory1.unsafe_ptr(),
+        memory1,
         RuntimeLayout[Layout.row_major[outer_rank]()].row_major(dims),
     )
 
     print("In shape:", in_tensor.runtime_layout.shape.value.canonicalize())
     print("In strides:", in_tensor.runtime_layout.stride.value.canonicalize())
 
-    var start_tensor_mem = InlineArray[Scalar[DType.index], outer_rank](
+    var start_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
-    var start_tensor = LayoutTensor[DType.index, Layout.row_major[1]()](
-        start_tensor_mem.unsafe_ptr(),
+    var start_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
+        start_tensor_mem,
         RuntimeLayout[Layout.row_major[1]()].row_major(
             IndexList[1](outer_rank)
         ),
     )
 
-    var end_tensor_mem = InlineArray[Scalar[DType.index], outer_rank](
+    var end_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
-    var end_tensor = LayoutTensor[DType.index, Layout.row_major[1]()](
-        end_tensor_mem.unsafe_ptr(),
+    var end_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
+        end_tensor_mem,
         RuntimeLayout[Layout.row_major[1]()].row_major(
             IndexList[1](outer_rank)
         ),
     )
 
-    var step_tensor_mem = InlineArray[Scalar[DType.index], outer_rank](
+    var step_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
-    var step_tensor = LayoutTensor[DType.index, Layout.row_major[1]()](
-        step_tensor_mem.unsafe_ptr(),
+    var step_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
+        step_tensor_mem,
         RuntimeLayout[Layout.row_major[1]()].row_major(
             IndexList[1](outer_rank)
         ),

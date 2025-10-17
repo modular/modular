@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys import exit, has_accelerator, has_amd_gpu_accelerator
+
 from gpu.host import DeviceAttribute, DeviceContext
-from sys import exit
-from sys import has_accelerator, has_amd_gpu_accelerator
 
 
 def main():

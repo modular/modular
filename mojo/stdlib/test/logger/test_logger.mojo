@@ -11,7 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from builtin._location import _SourceLocation
 from logger import Level, Logger
+from testing import TestSuite
+
+
+# CHECK-LABEL: Test logging at trace level
+def test_log_trace():
+    print("=== Test logging at trace level")
+    var log = Logger[Level.TRACE]()
+
+    # CHECK: TRACE::: hello
+    log.trace("hello")
+
+    var log2 = Logger[Level.DEBUG]()
+    # CHECK-NOT: TRACE::: hello
+    log2.trace("hello")
 
 
 # CHECK-LABEL: Test logging at info level
@@ -27,7 +42,7 @@ def test_log_info():
 
 
 # CHECK-LABEL: Test no logging by default
-fn test_log_noset():
+def test_log_noset():
     print("=== Test no logging by default")
     var log = Logger()
 
@@ -38,6 +53,45 @@ fn test_log_noset():
     log.info("hello")
 
 
+# CHECK-LABEL: Test logging with prefix
+def test_log_with_prefix():
+    print("=== Test logging with prefix")
+
+    var log = Logger[Level.TRACE](prefix="[XYZ] ")
+
+    # CHECK: [XYZ] hello
+    log.trace("hello")
+
+
+# CHECK-LABEL: Test logging with location
+def test_log_with_location():
+    print("=== Test logging with location")
+
+    alias log = Logger[Level.TRACE](prefix="", source_location=True)
+
+    # CHECK: test_logger.mojo:73:14] hello
+    log.trace("hello")
+
+
+# CHECK-LABEL: Test logging with custom location
+def test_log_with_custom_location():
+    print("=== Test logging with custom location")
+
+    alias log = Logger[Level.TRACE](prefix="", source_location=True)
+
+    # CHECK: somefile.mojo:42:999] hello
+    log.trace("hello", location=_SourceLocation(42, 999, "somefile.mojo"))
+
+
+# CHECK-LABEL: Test logging with sep/end
+def test_log_with_sep_end():
+    print("=== Test logging with sep/end")
+
+    var log = Logger[Level.TRACE]()
+
+    # CHECK: hello mojo world!!!
+    log.trace("hello", "world", sep=" mojo ", end="!!!\n")
+
+
 def main():
-    test_log_info()
-    test_log_noset()
+    TestSuite.discover_tests[__functions_in_module()]().run()

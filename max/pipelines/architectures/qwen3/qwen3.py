@@ -15,9 +15,10 @@
 from __future__ import annotations
 
 import functools
-from typing import Callable
+from collections.abc import Callable
 
 from max.dtype import DType
+from max.graph import DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
 from max.nn import (
     MLP,
@@ -29,8 +30,7 @@ from max.nn import (
     Transformer,
 )
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
-    KVCacheStrategy,
+    TPPagedKVCacheManager,
 )
 from max.nn.transformer import TransformerBlock
 from max.pipelines.architectures.llama3.llama3 import (
@@ -44,6 +44,7 @@ from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 class Qwen3(Transformer):
     def __init__(self, config: Qwen3Config) -> None:
         assert len(config.devices) == 1
+        self.config = config
         rope = Llama3RotaryEmbedding(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
@@ -83,8 +84,7 @@ class Qwen3(Transformer):
             Linear, float8_config=config.float8_config
         )
         if config.stacked_mlp and config.float8_config:
-            msg = "StackedMLP and float8 are not compatible"
-            raise ValueError(msg)
+            raise ValueError("StackedMLP and float8 are not compatible")
         mlp_cls = (
             StackedMLP
             if config.stacked_mlp
@@ -167,15 +167,6 @@ class Qwen3(Transformer):
         if config.tie_word_embeddings:
             output.set_shared_weight("weight", embedding_layer.weight)
 
-        kv_collection_cls: type[FetchPagedKVCacheCollection]
-        if config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
-            kv_collection_cls = FetchPagedKVCacheCollection
-        else:
-            raise ValueError(
-                "Unsupported caching strategy "
-                + str(config.kv_params.cache_strategy)
-            )
-
         super().__init__(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
@@ -184,11 +175,36 @@ class Qwen3(Transformer):
             output=output,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=kv_collection_cls(
-                config.kv_params, num_layers=config.num_hidden_layers
-            ),
             rope=rope,
             return_logits=config.return_logits,
             embedding_multiplier=config.embedding_multiplier,
-            logits_postprocessor=config.logits_postprocessor,
+        )
+
+    def input_types(
+        self, kv_manager: TPPagedKVCacheManager
+    ) -> tuple[TensorType, ...]:
+        # TODO: Move input symbol computation from the manager classes.
+        # It should be possible to compute the input symbols from the model
+        # config.
+        device_ref = self.config.devices[0]
+
+        # Construct general input types
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
+
+        kv_inputs = kv_manager.input_symbols()
+
+        # Construct Graph Inputs
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
+        return (
+            tokens_type,
+            input_row_offsets_type,
+            return_n_logits_type,
+            *kv_inputs[0],
         )

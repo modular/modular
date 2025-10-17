@@ -11,10 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import get_errno, set_errno, ErrNo
-from sys.info import CompilationTarget
 from os.path import realpath
-from testing import assert_raises, assert_equal
+from sys.ffi import ErrNo, get_errno, set_errno
+from sys.info import CompilationTarget
+
+from testing import assert_equal, assert_raises
+from testing import TestSuite
 
 alias error_message_linux: List[Tuple[ErrNo, String]] = [
     (ErrNo.SUCCESS, "Success"),
@@ -267,7 +269,7 @@ alias error_message_macos: List[Tuple[ErrNo, String]] = [
 def _test_errno_message[error_message: List[Tuple[ErrNo, String]]]():
     @parameter
     for i in range(len(error_message)):
-        errno, msg = error_message[i]
+        errno, msg = materialize[error_message[i]]()
         set_errno(errno)
         assert_equal(get_errno(), errno)
         assert_equal(String(errno), msg)
@@ -304,5 +306,4 @@ def test_errno():
 
 
 def main():
-    test_errno()
-    test_errno_message()
+    TestSuite.discover_tests[__functions_in_module()]().run()

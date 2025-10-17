@@ -19,7 +19,6 @@ from collections import Counter
 ```
 """
 from collections.dict import Dict, _DictEntryIter, _DictKeyIter, _DictValueIter
-
 from hashlib import Hasher, default_hasher
 
 from utils import Variant
@@ -27,7 +26,7 @@ from utils import Variant
 
 @fieldwise_init
 struct Counter[V: KeyElement, H: Hasher = default_hasher](
-    Boolable, Copyable, Defaultable, Movable, Sized
+    Boolable, Copyable, Defaultable, Iterable, Movable, Sized
 ):
     """A container for counting hashable items.
 
@@ -49,6 +48,10 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         V: The value type to be counted. Currently must be KeyElement.
         H: The type of the hasher in the dict.
     """
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _DictKeyIter[V, Int, H, iterable_origin]
 
     # Fields
     var _data: Dict[V, Int, H]
@@ -116,13 +119,13 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         var result = Counter[V, H]()
         for key in keys:
             result[key] = value
-        return result
+        return result^
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
-    def __getitem__(self, key: V) -> Int:
+    fn __getitem__(self, key: V) -> Int:
         """Get the count of a key.
 
         Args:
@@ -142,13 +145,15 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         self._data[value.copy()] = count
 
-    fn __iter__(self) -> _DictKeyIter[V, Int, H, __origin_of(self._data)]:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         """Iterate over the keyword dict's keys as immutable references.
 
         Returns:
             An iterator of immutable references to the Counter values.
         """
-        return self._data.__iter__()
+        return rebind[Self.IteratorType[__origin_of(self)]](
+            self._data.__iter__()
+        )
 
     fn __contains__(self, key: V) -> Bool:
         """Check if a given key is in the dictionary or not.
@@ -433,7 +438,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for item in self.items():
             if item.value < 0:
                 result[item.key] = -item.value
-        return result
+        return result^
 
     # ===------------------------------------------------------------------=== #
     # Methods
@@ -561,7 +566,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         var items: List[CountTuple[V]] = List[CountTuple[V]]()
         for item in self._data.items():
             var t = CountTuple[V](item.key, UInt(item.value))
-            items.append(t)
+            items.append(t^)
 
         @parameter
         fn comparator(a: CountTuple[V], b: CountTuple[V]) -> Bool:
@@ -581,7 +586,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for item in self._data.items():
             for _ in range(item.value):
                 elements.append(item.key.copy())
-        return elements
+        return elements^
 
     fn update(mut self, other: Self):
         """Update the Counter, like `dict.update()` but add counts instead of
@@ -631,15 +636,6 @@ struct CountTuple[V: KeyElement](Copyable, Movable):
         """
         self._value = value.copy()
         self._count = Int(count)
-
-    fn __copyinit__(out self, existing: Self):
-        """Creates a copy of the tuple.
-
-        Args:
-            existing: The tuple to copy.
-        """
-        self._value = existing._value.copy()
-        self._count = existing._count
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders

@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib.hasher import Hasher
 from hashlib._ahash import AHasher
+from hashlib.hasher import Hasher
 from pathlib import Path
 
 from testing import assert_equal
+from testing import TestSuite
 
 
 struct DummyHasher(Hasher):
@@ -45,7 +46,7 @@ struct DummyHasher(Hasher):
 
 
 @fieldwise_init
-struct SomeHashableStruct(Copyable, Hashable, Movable):
+struct SomeHashableStruct(Hashable, ImplicitlyCopyable, Movable):
     var _value: Int64
 
     fn __hash__[H: Hasher](self, mut hasher: H):
@@ -105,7 +106,6 @@ struct ComplexHashableStructWithList(Hashable):
             data=self._value3.unsafe_ptr(),
             length=len(self._value3),
         )
-        _ = self._value3
 
 
 @fieldwise_init
@@ -125,7 +125,6 @@ struct ComplexHashableStructWithListAndWideSIMD(Hashable):
             length=len(self._value3),
         )
         hasher.update(self._value4)
-        _ = self._value3
 
 
 def test_update_with_bytes():
@@ -138,7 +137,7 @@ def test_update_with_bytes():
 
 
 alias _hash_with_hasher = hash[
-    HasherType = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
+    _, HasherType = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
 ]
 
 
@@ -173,10 +172,4 @@ def test_hash_hashable_with_hasher_types():
 
 
 def main():
-    test_hasher()
-    test_hash_with_hasher()
-    test_complex_hasher()
-    test_complex_hash_with_hasher()
-    test_update_with_bytes()
-    test_with_ahasher()
-    test_hash_hashable_with_hasher_types()
+    TestSuite.discover_tests[__functions_in_module()]().run()

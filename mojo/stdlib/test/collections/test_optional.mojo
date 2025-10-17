@@ -14,6 +14,7 @@
 from collections import OptionalReg
 
 from testing import *
+from testing import TestSuite
 
 
 def test_basic():
@@ -193,17 +194,35 @@ def test_optional_repr_wrap():
     assert_equal(repr(o), "Optional(None)")
 
 
+def test_optional_iter():
+    var o = Optional(10)
+    var it = o.__iter__()
+    assert_equal(it.bounds()[0], 1)
+    assert_equal(it.bounds()[1].value(), 1)
+    assert_true(it.__has_next__())
+    assert_equal(it.__next__(), 10)
+    assert_false(it.__has_next__())
+
+    var called = False
+    var o2 = Optional(20)
+    for _value in o2:
+        called = True
+    assert_true(called)
+
+
+def test_optional_iter_empty():
+    var o = Optional[Int](None)
+    var it = o.__iter__()
+    assert_equal(it.bounds()[0], 0)
+    assert_equal(it.bounds()[1].value(), 0)
+    assert_false(it.__has_next__())
+
+    var called = False
+    var o2 = Optional[Int](None)
+    for _value in o2:
+        called = True
+    assert_false(called)
+
+
 def main():
-    test_basic()
-    test_optional_reg_basic()
-    test_optional_is()
-    test_optional_isnot()
-    test_optional_reg_is()
-    test_optional_reg_isnot()
-    test_optional_take_mutates()
-    test_optional_explicit_copy()
-    test_optional_str_repr()
-    test_optional_equality()
-    test_optional_copied()
-    test_optional_unwrap()
-    test_optional_repr_wrap()
+    TestSuite.discover_tests[__functions_in_module()]().run()

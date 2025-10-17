@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu import global_idx
-from gpu.host import DeviceContext, DeviceStream, DeviceBuffer
+from gpu.host import DeviceBuffer, DeviceContext, DeviceStream
 from testing import (
-    assert_true,
-    assert_false,
     assert_equal,
+    assert_false,
     assert_not_equal,
     assert_raises,
+    assert_true,
 )
 
 
@@ -31,7 +31,7 @@ fn simple_kernel(
 ):
     """Simple kernel that multiplies input by a multiplier."""
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= UInt(len):
         return
     output[tid] = input[tid] * multiplier
 

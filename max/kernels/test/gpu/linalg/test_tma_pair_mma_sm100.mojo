@@ -13,33 +13,33 @@
 
 from math import align_up
 from sys import size_of
-from layout._fillers import random
-from utils.numerics import min_finite, max_finite
+
+import linalg.matmul.vendor.blas as vendor_blas
 from gpu import WARP_SIZE, barrier
+from gpu.cluster import (
+    block_rank_in_cluster,
+    cluster_sync,
+    elect_one_sync_with_mask,
+)
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx, block_id_in_cluster
+from gpu.id import block_id_in_cluster, block_idx, lane_id, thread_idx
 from gpu.memory import AddressSpace
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import Layout, LayoutTensor
+from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
     tile_to_descriptor,
 )
-from gpu.cluster import (
-    elect_one_sync_with_mask,
-    block_rank_in_cluster,
-    cluster_sync,
-)
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from linalg import vendor_blas
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from utils.numerics import get_accum_type, max_finite, min_finite
 from utils.static_tuple import StaticTuple
 
 
@@ -119,7 +119,7 @@ fn tma_umma_kernel_pair_cta[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](a_smem.static_alignment_cast[128]())
+    ](a_smem)
 
     var b_smem_tile = LayoutTensor[
         b_type,
@@ -127,7 +127,7 @@ fn tma_umma_kernel_pair_cta[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](b_smem.static_alignment_cast[128]())
+    ](b_smem)
 
     alias accum_type = get_accum_type[a_type]()
 
@@ -232,10 +232,10 @@ fn tma_umma_kernel_pair_cta[
             if elect_one_cta:
                 tma_mbar[0].expect_bytes(expected_bytes)
 
-            var a_gmem_slice_coord = (
+            var a_gmem_slice_coord = UInt(
                 peer_cta_coord[2] * a_tma_rows + block_idx.x * BM
             )
-            var b_gmem_slice_coord = (
+            var b_gmem_slice_coord = UInt(
                 peer_cta_coord[1] * b_tma_rows
                 + peer_cta_coord[0] * BN
                 + block_idx.y * MMA_N
@@ -247,7 +247,7 @@ fn tma_umma_kernel_pair_cta[
             a_tma_op.async_multicast_load[cta_group](
                 a_smem_reshape.split[CLUSTER_N]()[peer_cta_coord[2]],
                 tma_mbar[0],
-                (UInt(i) * BK, a_gmem_slice_coord),
+                (UInt(i * BK), a_gmem_slice_coord),
                 a_multicast_mask,
             )
 
@@ -256,7 +256,7 @@ fn tma_umma_kernel_pair_cta[
                     peer_cta_coord[1]
                 ],
                 tma_mbar[0],
-                (UInt(i) * BK, b_gmem_slice_coord),
+                (UInt(i * BK), b_gmem_slice_coord),
                 b_multicast_mask,
             )
 
@@ -426,11 +426,9 @@ def test_tma_umma_pair_cta[
     ](ctx)
 
     a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a.device_tensor())
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
@@ -486,18 +484,18 @@ def test_tma_umma_pair_cta[
 
         vendor_blas.matmul(
             ctx,
-            c_ref.device_buffer(),
-            a.device_buffer[update=False](),
-            b_col_major.device_buffer[update=True](),
+            c_ref.device_tensor[update=False](),
+            a.device_tensor[update=False](),
+            b_col_major.device_tensor[update=True](),
             c_row_major=True,
             transpose_b=True,
         )
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref.device_buffer(),
-            a.device_buffer[update=False](),
-            b.device_buffer[update=False](),
+            c_ref.device_tensor[update=False](),
+            a.device_tensor[update=False](),
+            b.device_tensor[update=False](),
             c_row_major=True,
             transpose_b=transpose_b,
         )

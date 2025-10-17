@@ -25,12 +25,11 @@ from collections.string.string_slice import _unsafe_strlen
 from sys import CompilationTarget, external_call, is_gpu
 from sys.ffi import c_char
 
-
 from .path import isdir, split
 from .pathlike import PathLike
 
 # TODO move this to a more accurate location once nt/posix like modules are in stdlib
-alias sep = "\\" if CompilationTarget.is_windows() else "/"
+alias sep = "/"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -92,11 +91,6 @@ struct _DirHandle:
         Args:
           path: The path to open.
         """
-        constrained[
-            not CompilationTarget.is_windows(),
-            "operation is only available on unix systems",
-        ]()
-
         if not isdir(path):
             raise Error("the directory '", path, "' does not exist")
 
@@ -148,7 +142,7 @@ struct _DirHandle:
                 continue
             res.append(String(name_str))
 
-        return res
+        return res^
 
     fn _list_macos(self) -> List[String]:
         """Reads all the data from the handle.
@@ -174,7 +168,7 @@ struct _DirHandle:
                 continue
             res.append(String(name_str))
 
-        return res
+        return res^
 
 
 # ===----------------------------------------------------------------------=== #
@@ -189,10 +183,6 @@ fn getuid() -> Int:
     Constraints:
         This function is constrained to run on Linux or macOS operating systems only.
     """
-    constrained[
-        not CompilationTarget.is_windows(),
-        "operating system must be Linux or macOS",
-    ]()
     return Int(external_call["getuid", UInt32]())
 
 
@@ -241,11 +231,14 @@ fn abort[result: AnyType = NoneType._mlir_type]() -> result:
 
 
 @no_inline
-fn abort[result: AnyType = NoneType._mlir_type](message: String) -> result:
+fn abort[
+    result: AnyType = NoneType._mlir_type, *, prefix: StaticString = "ABORT:"
+](message: String) -> result:
     """Calls a target dependent trap instruction if available.
 
     Parameters:
         result: The result type.
+        prefix: A static string prefix to include before the message.
 
     Args:
         message: The message to include when aborting.
@@ -256,7 +249,7 @@ fn abort[result: AnyType = NoneType._mlir_type](message: String) -> result:
 
     @parameter
     if not is_gpu():
-        print("ABORT:", message, flush=True)
+        print(prefix, message, flush=True)
 
     return abort[result]()
 
@@ -329,9 +322,9 @@ fn mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
         raise Error("Can not create directory: ", fspath)
 
 
-def makedirs[
+fn makedirs[
     PathLike: os.PathLike
-](path: PathLike, mode: Int = 0o777, exist_ok: Bool = False) -> None:
+](path: PathLike, mode: Int = 0o777, exist_ok: Bool = False) raises -> None:
     """Creates a specified leaf directory along with any necessary intermediate
     directories that don't already exist.
 
@@ -385,7 +378,7 @@ fn rmdir[PathLike: os.PathLike](path: PathLike) raises:
         raise Error("Can not remove directory: ", fspath)
 
 
-def removedirs[PathLike: os.PathLike](path: PathLike) -> None:
+fn removedirs[PathLike: os.PathLike](path: PathLike) raises -> None:
     """Removes a leaf directory and all empty intermediate ones.
 
     Directories corresponding to rightmost path segments will be pruned away

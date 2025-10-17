@@ -55,8 +55,7 @@ always have the latest linting tools applied.
 To do so, install pre-commit:
 
 ```bash
-pip install pre-commit
-pre-commit install
+pixi x pre-commit install
 ```
 
 and that's it!
@@ -77,7 +76,7 @@ enabled, this will run automatically before committing. If you want to run it
 manually with pre-commit, just run
 
 ```bash
-pre-commit run --all-files
+pixi x pre-commit run --all-files
 ```
 
 #### Whitespace
@@ -183,7 +182,6 @@ struct MyStruct(Sized, Stringable):
     # ===-------------------------------------------------------------------===#
 
     fn unsafe_ptr(..)   # e.g.
-    fn copy(..)        # Explicit copy method
 ```
 
 ## Code conventions

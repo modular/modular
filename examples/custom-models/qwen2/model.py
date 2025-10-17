@@ -15,8 +15,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from max.driver import Device
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
@@ -41,7 +39,7 @@ class Qwen2Model(Llama3Model):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         super().__init__(

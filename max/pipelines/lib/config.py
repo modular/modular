@@ -16,30 +16,37 @@
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 import os
 import sys
 from dataclasses import MISSING, dataclass, field, fields
 from enum import Enum
-from typing import Any, Optional, get_type_hints
+from pathlib import Path
+from typing import Any, get_type_hints
 
 from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
+from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
 from .config_enums import PipelineRole
 from .kv_cache_config import KVCacheConfig
 from .lora_config import LoRAConfig
 from .max_config import MAXConfig
-from .memory_estimation import MEMORY_ESTIMATOR
+from .memory_estimation import MEMORY_ESTIMATOR, to_human_readable_bytes
 from .model_config import MAXModelConfig
 from .profiling_config import ProfilingConfig
-from .registry import PIPELINE_REGISTRY
-from .sampling_config import SamplingConfig
+from .registry import (
+    PIPELINE_REGISTRY,
+    SupportedArchitecture,
+    get_pipeline_for_task,
+)
+from .sampling import SamplingConfig
 
 logger = logging.getLogger("max.pipelines")
 
-# Default target number of tokens for chunked prefill and memory estimation.
-DEFAULT_TARGET_NUM_NEW_TOKENS = 8192
+# Default prefill chunk size for chunked prefill and memory estimation.
+DEFAULT_PREFILL_CHUNK_SIZE = 8192
 
 
 @dataclass(frozen=False)
@@ -53,16 +60,13 @@ class PipelineConfig(MAXConfig):
     default.
     """
 
-    max_length: Optional[int] = None
+    max_length: int | None = None
     """Maximum sequence length of the model."""
-
-    max_new_tokens: int = -1
-    """Maximum number of new tokens to generate during a single inference pass of the model."""
 
     pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode
     """Whether the pipeline should serve both a prefill or decode role or both."""
 
-    max_batch_size: Optional[int] = None
+    max_batch_size: int | None = None
     """Maximum batch size to execute with the model.
     When not specified (None), we determine this value dynamically. For users
     launching in a server scenario, the expectation is that this value should be
@@ -73,10 +77,10 @@ class PipelineConfig(MAXConfig):
     """Maximum cache size to reserve for a single context encoding batch.
     The actual limit is the lesser of this and `max_batch_size`."""
 
-    max_queue_size_tg: Optional[int] = None
+    max_queue_size_tg: int | None = None
     """Maximum number of requests in decode queue. By default, this is max-batch-size."""
 
-    min_batch_size_tg: Optional[int] = None
+    min_batch_size_tg: int | None = None
     """Specifies a soft floor on the decode batch size.
 
     If the TG batch size is larger than this value, the scheduler will continue to
@@ -102,9 +106,15 @@ class PipelineConfig(MAXConfig):
     you know what you are doing.
     """
 
+    experimental_background_queue: bool = False
+    """When enabled, offloads queue draining to a background thread for improved performance.
+
+    This is an experimental flag. Use with caution.
+    """
+
     enable_chunked_prefill: bool = True
     """Enable chunked prefill to split context encoding requests into multiple chunks
-    based on 'target_num_new_tokens'."""
+    based on 'prefill_chunk_size'."""
 
     enable_in_flight_batching: bool = False
     """When enabled, prioritizes token generation by batching it with context
@@ -115,7 +125,7 @@ class PipelineConfig(MAXConfig):
     configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding
     models)."""
 
-    target_num_new_tokens: int = DEFAULT_TARGET_NUM_NEW_TOKENS
+    prefill_chunk_size: int = DEFAULT_PREFILL_CHUNK_SIZE
     """The target number of un-encoded tokens to include in each batch.
     This value is used for chunked prefill and memory estimation."""
 
@@ -124,6 +134,16 @@ class PipelineConfig(MAXConfig):
 
     pool_embeddings: bool = True
     """Whether to pool embedding outputs."""
+
+    chat_template: Path | None = None
+    """Optional custom chat template to override the one shipped with the
+    HuggingFace model config. Can be either:
+    - A Path pointing to a file containing the template
+
+    If a Path is provided, the file will be read during config resolution and
+    the content will be stored as a string. This allows customizing the prompt
+    formatting for different use cases. If None, the model's default chat
+    template will be used."""
 
     use_experimental_kernels: str = os.environ.get(
         "USE_EXPERIMENTAL_KERNELS", "false"
@@ -142,10 +162,22 @@ class PipelineConfig(MAXConfig):
     Each module must expose an `ARCHITECTURES` list of architectures to register.
     """
 
+    zmq_endpoint_base: str = field(default_factory=generate_zmq_ipc_path)
+    """The prefix for the ZMQ endpoints used for IPC. This prefix ensures that the
+    ZMQ endpoints are unique across multiple MAX Serve instances running on the
+    same host. This should be randomly generated when the PipelineConfig is created.
+    Ex:
+    - lora_request_zmq_endpoint: f"{zmq_endpoint_base}-lora_request"
+    - lora_response_zmq_endpoint: f"{zmq_endpoint_base}-lora_response"
+    """
+
+    force: bool = field(default=False)
+    """Skip validation of user provided flags against the architecture's required arguments."""
+
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
 
-    _draft_model_config: Optional[MAXModelConfig] = None
+    _draft_model_config: MAXModelConfig | None = None
     """The draft model config."""
 
     _sampling_config: SamplingConfig = field(default_factory=SamplingConfig)
@@ -154,7 +186,7 @@ class PipelineConfig(MAXConfig):
     _profiling_config: ProfilingConfig = field(default_factory=ProfilingConfig)
     """The profiling config."""
 
-    _lora_config: Optional[LoRAConfig] = None
+    _lora_config: LoRAConfig | None = None
     """The LoRA config."""
 
     _config_file_section_name: str = "pipeline_config"
@@ -245,11 +277,11 @@ class PipelineConfig(MAXConfig):
         # TODO(zheng): Make this more efficient by using MaxConfig instance
         # instead of hardcoding the config names.
         config_mappings = [
+            # NOTE: _model_config must come before _sampling_config so that
+            # SamplingConfig can use generation_config from the model
+            "_model_config",
             "_sampling_config",
             "_profiling_config",
-            # TODO(zheng): Remove this once backward compatibility is no
-            # longer needed for MAXModelConfig.
-            "_model_config",
         ]
 
         for config_name in config_mappings:
@@ -274,9 +306,9 @@ class PipelineConfig(MAXConfig):
 
                 # Remove matched kwargs
                 for key in matched_kwargs:
-                    del unmatched_kwargs[key]
+                    _ = unmatched_kwargs.pop(key, None)
                 for key in kv_cache_kwargs:
-                    del unmatched_kwargs[key]
+                    _ = unmatched_kwargs.pop(key, None)
 
     def _create_and_set_config(
         self,
@@ -297,19 +329,40 @@ class PipelineConfig(MAXConfig):
         if config_name == "_model_config" and kv_cache_kwargs:
             # Create new model config with updated KVCache config
             model_config = config_class(**matched_kwargs)
+
+            if self._draft_model_config:
+                memory_util = kv_cache_kwargs.get(
+                    "device_memory_utilization", 0.9
+                )
+                main_model_util = memory_util * 0.7
+                draft_model_util = memory_util - main_model_util
+
+                kv_cache_kwargs["device_memory_utilization"] = main_model_util
+
             model_config._kv_cache_config = KVCacheConfig(**kv_cache_kwargs)
             setattr(self, config_name, model_config)
 
             if self._draft_model_config:
+                kv_cache_kwargs["device_memory_utilization"] = draft_model_util
                 self._draft_model_config._kv_cache_config = KVCacheConfig(
                     **kv_cache_kwargs
                 )
 
-        elif config_name == "_sampling_config" and (
-            self.enable_echo or self._draft_model_config
-        ):
-            sampling_config = config_class(**matched_kwargs)
-            sampling_config.enable_variable_logits = True
+        elif config_name == "_sampling_config":
+            if hasattr(self, "_model_config") and self._model_config:
+                assert isinstance(self._model_config, MAXModelConfig)
+                assert hasattr(
+                    config_class, "from_generation_config_sampling_defaults"
+                )
+                sampling_config = config_class.from_generation_config_sampling_defaults(
+                    sampling_params_defaults=self._model_config.sampling_params_defaults,
+                    **matched_kwargs,
+                )
+            else:
+                sampling_config = config_class(**matched_kwargs)
+
+            if self.enable_echo or self._draft_model_config:
+                sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
             setattr(self, config_name, config_class(**matched_kwargs))
@@ -351,6 +404,82 @@ class PipelineConfig(MAXConfig):
 
         self.resolve()
 
+    def retrieve_chat_template(self) -> str | None:
+        # Read the file content
+        if self.chat_template is None:
+            return None
+
+        try:
+            with open(self.chat_template, encoding="utf-8") as f:
+                template_content = f.read()
+
+            # Try to parse as JSON and extract chat_template if present
+            try:
+                template_json = json.loads(template_content)
+                if (
+                    isinstance(template_json, dict)
+                    and "chat_template" in template_json
+                ):
+                    logger.info(
+                        f"Successfully loaded chat_template from JSON in {self.chat_template} "
+                        f"({len(template_json['chat_template'])} characters)"
+                    )
+                    return template_json["chat_template"]
+                else:
+                    # JSON but no chat_template key, use entire content
+                    logger.info(
+                        f"Successfully loaded custom prompt template from {self.chat_template} "
+                        f"({len(template_content)} characters, JSON without chat_template key)"
+                    )
+                    return template_content
+            except json.JSONDecodeError:
+                # Not valid JSON, use entire content as template
+                logger.info(
+                    f"Successfully loaded custom prompt template from {self.chat_template} "
+                    f"({len(template_content)} characters)"
+                )
+                return template_content
+
+        except (OSError, UnicodeDecodeError) as e:
+            raise ValueError(
+                f"Failed to read prompt template file {self.chat_template}: {str(e)}. "
+                f"Please ensure the file is readable and contains valid UTF-8 text."
+            ) from e
+
+    def _resolve_chat_template(self) -> None:
+        """
+        Resolve chat_template if it's a Path object by reading the file content.
+
+        This method handles the case where chat_template is a Path object,
+        validates that the file exists, reads its content, and stores the content
+        as a string in the chat_template field.
+
+        Raises:
+            FileNotFoundError: If the specified template file does not exist
+            ValueError: If there's an error reading the template file
+        """
+        if self.chat_template is None:
+            return
+
+        # Expand user home directory if present (e.g., ~/templates/custom.jinja)
+        self.chat_template = self.chat_template.expanduser()
+
+        # Convert relative paths to absolute paths
+        if not self.chat_template.is_absolute():
+            self.chat_template = Path.cwd() / self.chat_template
+
+        # Verify the file exists
+        if not self.chat_template.exists():
+            raise ValueError(
+                f"--chat-template path ({self.chat_template}) does not exist."
+            )
+
+        if not self.chat_template.is_file():
+            raise ValueError(
+                f"Prompt template path is not a file: {self.chat_template}. "
+                f"Please provide a path to a valid template file."
+            )
+
     def _import_custom_architectures(self) -> None:
         """
         Import custom model modules to add them to the registry.
@@ -358,8 +487,9 @@ class PipelineConfig(MAXConfig):
         for module_spec in self.custom_architectures:
             module_parts = module_spec.split(":")
             if len(module_parts) > 2:
-                msg = f"Custom module spec contains too many colons: {module_spec}"
-                raise ValueError(msg)
+                raise ValueError(
+                    f"Custom module spec contains too many colons: {module_spec}"
+                )
             elif len(module_parts) == 2:
                 module_path, module_name = module_parts
             else:
@@ -369,17 +499,67 @@ class PipelineConfig(MAXConfig):
             try:
                 module = importlib.import_module(module_name)
             except Exception as e:
-                msg = f"Failed to import custom model from: {module_spec}"
-                raise ValueError(msg) from e
+                raise ValueError(
+                    f"Failed to import custom model from: {module_spec}"
+                ) from e
 
             if not module.ARCHITECTURES or not isinstance(
                 module.ARCHITECTURES, list
             ):
-                msg = f"Custom model imported, but did not expose an `ARCHITECTURES` list. Module: {module_spec}"
-                raise ValueError(msg)
+                raise ValueError(
+                    f"Custom model imported, but did not expose an `ARCHITECTURES` list. Module: {module_spec}"
+                )
 
             for arch in module.ARCHITECTURES:
                 PIPELINE_REGISTRY.register(arch, allow_override=True)
+
+    def _validate_required_arguments_against_architecture(
+        self, architecture: SupportedArchitecture
+    ) -> None:
+        """
+        Validates and overrides config settings based on required_arguments from SupportedArchitecture.
+
+        This method checks the required_arguments dictionary from the architecture
+        and automatically overrides any config values that don't match, logging warnings
+        when changes are made.
+
+        Args:
+            architecture: The SupportedArchitecture containing required_arguments dictionary
+        """
+        if not architecture.required_arguments:
+            return
+
+        config_objects = [
+            ("PipelineConfig", self),
+            ("MAXModelConfig", self._model_config),
+            ("SamplingConfig", self._sampling_config),
+            ("KVCacheConfig", self._model_config._kv_cache_config),
+        ]
+
+        # Add draft model configurations if present
+        if self._draft_model_config is not None:
+            config_objects.extend(
+                [
+                    ("Draft_MAXModelConfig", self._draft_model_config),
+                    (
+                        "Draft_KVCacheConfig",
+                        self._draft_model_config._kv_cache_config,
+                    ),
+                ]
+            )
+
+        for arg_name, required_value in architecture.required_arguments.items():
+            # Check each config object for the required argument
+            for config_name, config_obj in config_objects:
+                current_value = getattr(config_obj, arg_name, required_value)
+                if current_value != required_value:
+                    logger.warning(
+                        f"Architecture '{architecture.name}' requires {config_name}.{arg_name}={required_value}, "
+                        f"overriding current value {current_value}"
+                    )
+                    setattr(config_obj, arg_name, required_value)
+                # We should be able to override this value for all config objects.
+                continue
 
     def resolve(self) -> None:
         """
@@ -391,7 +571,11 @@ class PipelineConfig(MAXConfig):
         # Before anything else, import custom model modules to add them to the registry.
         self._import_custom_architectures()
 
+        # Resolve chat_template if it's a Path
+        self._resolve_chat_template()
+
         self.model_config.resolve()
+
         # Validate if a provided max_length is non-negative.
         if self.max_length is not None and self.max_length < 0:
             raise ValueError("max_length must be non-negative.")
@@ -410,6 +594,10 @@ class PipelineConfig(MAXConfig):
             raise ValueError(
                 "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
             )
+
+        # Validate LoRA compatibility with model configuration
+        if self._lora_config and self._lora_config.enable_lora:
+            self.model_config.validate_lora_compatibility()
 
         # By this point, we should have a valid model_path.
 
@@ -460,19 +648,22 @@ class PipelineConfig(MAXConfig):
         )
 
         if not draft_arch:
-            msg = "MAX-Optimized architecture not found for `draft_model`"
-            raise ValueError(msg)
+            raise ValueError(
+                "MAX-Optimized architecture not found for `draft_model`"
+            )
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model_config.huggingface_model_repo
         )
         if not target_arch:
-            msg = "MAX-Optimized architecture not found for target model (`model_path`)"
-            raise ValueError(msg)
+            raise ValueError(
+                "MAX-Optimized architecture not found for target model (`model_path`)"
+            )
 
         if draft_arch != target_arch:
-            msg = f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
-            raise ValueError(msg)
+            raise ValueError(
+                f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
+            )
 
         # Validate that their tokenizers are identical.
         draft_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
@@ -484,8 +675,9 @@ class PipelineConfig(MAXConfig):
 
         # Compare Vocabularies
         if draft_tokenizer.get_vocab() != target_tokenizer.get_vocab():
-            msg = f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the vocabulary of the tokenizer for the target model ({self.model_config.model_path})"
-            raise ValueError(msg)
+            raise ValueError(
+                f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the vocabulary of the tokenizer for the target model ({self.model_config.model_path})"
+            )
 
         # Compare Tokenizer Configuration
         if hasattr(draft_tokenizer, "_tokenizer") and hasattr(
@@ -495,20 +687,38 @@ class PipelineConfig(MAXConfig):
                 draft_tokenizer._tokenizer.__dict__
                 != target_tokenizer._tokenizer.__dict__
             ):
-                msg = f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
-                raise ValueError(msg)
+                raise ValueError(
+                    f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
+                )
         else:
             if draft_tokenizer.__dict__ != target_tokenizer.__dict__:
-                msg = f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
-                raise ValueError(msg)
+                raise ValueError(
+                    f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
+                )
 
         if self.enable_echo:
-            msg = "enable_echo not currently supported with speculative decoding enabled"
-            raise ValueError(msg)
+            raise ValueError(
+                "enable_echo not currently supported with speculative decoding enabled"
+            )
 
         if self.sampling_config.enable_structured_output:
-            msg = "structured outputs not currently supported with speculative decoding enabled"
-            raise ValueError(msg)
+            raise ValueError(
+                "structured outputs not currently supported with speculative decoding enabled"
+            )
+
+        if (
+            self.model_config.kv_cache_config.enable_prefix_caching
+            and not self.force
+        ):
+            logging.warning(
+                "Prefix caching is not supported with speculative decoding. "
+                "Overriding user setting to False. Pass --force to bypass this "
+                "validation, though this may result in unexpected behavior or errors."
+            )
+            self.model_config.kv_cache_config.enable_prefix_caching = False
+            self.draft_model_config.kv_cache_config.enable_prefix_caching = (
+                False
+            )
 
     def _validate_and_resolve_remaining_pipeline_config(
         self, model_config: MAXModelConfig
@@ -523,11 +733,24 @@ class PipelineConfig(MAXConfig):
 
         # If nothing is provided, we should not update any more params.
         if not arch:
-            msg = (
+            raise ValueError(
                 f"MAX-optimized architecture not available for '{model_config.model_path}'. "
                 "Please file a request at https://modul.ar/request to add this model architecture to MAX."
             )
-            raise ValueError(msg)
+
+        # Validate required arguments
+        if not self.force:
+            self._validate_required_arguments_against_architecture(arch)
+
+        # Validate LoRA support - currently only Llama3 models support LoRA
+        if self._lora_config and self._lora_config.enable_lora:
+            # Check if the architecture is Llama3 (LlamaForCausalLM)
+            if arch.name != "LlamaForCausalLM":
+                raise ValueError(
+                    f"LoRA is not currently supported for architecture '{arch.name}'. "
+                    f"LoRA support is currently only available for Llama-3.x models (LlamaForCausalLM architecture). "
+                    f"Model '{model_config.model_path}' uses the '{arch.name}' architecture."
+                )
 
         # TODO(E2EOPT-28): remove this constraint.
         # Gemma has a MHA head size of 256.
@@ -554,8 +777,9 @@ class PipelineConfig(MAXConfig):
 
         # by this point, the quantization_encoding must be provided. verify it is supported.
         if model_config.quantization_encoding not in arch.supported_encodings:
-            msg = f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine."
-            raise ValueError(msg)
+            raise ValueError(
+                f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine."
+            )
 
         model_config.validate_and_resolve_with_resolved_quantization_encoding(
             supported_encodings=arch.supported_encodings,
@@ -573,7 +797,7 @@ class PipelineConfig(MAXConfig):
         return state
 
     @property
-    def graph_quantization_encoding(self) -> Optional[QuantizationEncoding]:
+    def graph_quantization_encoding(self) -> QuantizationEncoding | None:
         """Converts the CLI encoding to a MAX graph quantization encoding.
 
         Returns:
@@ -581,11 +805,212 @@ class PipelineConfig(MAXConfig):
         """
         return self._model_config.graph_quantization_encoding
 
+    def log_pipeline_info(self) -> None:
+        """Log comprehensive pipeline and KVCache configuration information.
+
+        Retrieves all necessary information from self and the PIPELINE_REGISTRY.
+        Raises an error if architecture is not found (which should not happen after config resolution).
+        """
+
+        # Retrieve architecture - this should always exist after config resolution
+        arch = PIPELINE_REGISTRY.retrieve_architecture(
+            huggingface_repo=self.model_config.huggingface_model_repo
+        )
+
+        if arch is None:
+            raise ValueError(
+                f"No architecture found for {self.model_config.huggingface_model_repo.repo_id}. "
+                "This should not happen after config resolution."
+            )
+
+        # Get pipeline task and class information
+        task = PIPELINE_REGISTRY.retrieve_pipeline_task(self)
+        pipeline_class = get_pipeline_for_task(task, self)
+
+        weights_repo_str = (
+            f"\n            weights_repo_id        : {self.model_config._weights_repo_id}"
+            if self.model_config._weights_repo_id
+            else ""
+        )
+
+        devices_str = ", ".join(
+            f"{d.device_type}[{d.id}]" for d in self.model_config.device_specs
+        )
+
+        quantization_encoding_str = str(self.model_config.quantization_encoding)
+        if self.model_config._applied_dtype_cast_from:
+            quantization_encoding_str = f"{quantization_encoding_str} (cast from {self.model_config._applied_dtype_cast_from})"
+
+        # Helper function to log kvcache config details
+        def _log_kvcache_details(
+            config: KVCacheConfig, indent: str = "    "
+        ) -> None:
+            logger.info(
+                f"{indent}cache_strategy         : {config.cache_strategy}"
+            )
+            logger.info(
+                f"{indent}page_size              : {config.kv_cache_page_size} tokens"
+            )
+            logger.info(
+                f"{indent}prefix_caching         : {config.enable_prefix_caching}"
+            )
+            logger.info(
+                f"{indent}host_swapping          : {config.enable_kvcache_swapping_to_host}"
+            )
+            if config.enable_kvcache_swapping_to_host:
+                logger.info(
+                    f"{indent}host_swap_space        : {config.host_kvcache_swap_space_gb} GB"
+                )
+            logger.info(
+                f"{indent}memory_utilization     : {config.device_memory_utilization:.1%}"
+            )
+
+            if config._available_cache_memory is None:
+                raise ValueError(
+                    "KVCache config is not available after config resolution."
+                )
+            logger.info(
+                f"{indent}available_cache_memory : {to_human_readable_bytes(config._available_cache_memory)}"
+            )
+
+        # Log Pipeline and Model Information
+        logger.info("")
+        logger.info("Model Information")
+        logger.info("=" * 60)
+        logger.info(f"    architecture           : {arch.name}")
+        logger.info(f"    pipeline_class         : {pipeline_class.__name__}")
+        logger.info(
+            f"    pipeline_model         : {arch.pipeline_model.__name__}"
+        )
+        logger.info(
+            f"    tokenizer              : {arch.tokenizer_cls.__name__}"
+        )
+        logger.info(f"    devices                : {devices_str}")
+        logger.info(
+            f"    model_path             : {self.model_config.model_path}{weights_repo_str}"
+        )
+        logger.info(
+            f"    huggingface_revision   : {self.model_config.huggingface_model_revision}"
+        )
+        logger.info(f"    quantization_encoding  : {quantization_encoding_str}")
+
+        if len(self.model_config.weight_path) == 1:
+            # Single weight path - format inline
+            logger.info(
+                f"    weight_path             : {self.model_config.weight_path[0]}"
+            )
+        elif len(self.model_config.weight_path) > 5:
+            # Many weight paths - replace middle with "..."
+            logger.info("    weight_path            : [")
+            for path in (
+                self.model_config.weight_path[:3]
+                + ["..."]
+                + [self.model_config.weight_path[-1]]
+            ):
+                logger.info(f"                              {path}")
+            logger.info("                            ]")
+        else:
+            # Few weight paths - print all of them
+            logger.info("    weight_path            : [")
+            for path in self.model_config.weight_path:
+                logger.info(f"                              {path}")
+            logger.info("                            ]")
+
+        logger.info("")
+        logger.info("Pipeline Config")
+        logger.info("=" * 60)
+        logger.info(f"    max_seq_len            : {self.max_length}")
+        logger.info(f"    max_batch_size         : {self.max_batch_size}")
+        logger.info(f"    max_ce_batch_size      : {self.max_ce_batch_size}")
+        logger.info(
+            f"    chunked_prefill        : {self.enable_chunked_prefill}"
+        )
+        logger.info(f"    prefill_chunk_size     : {self.prefill_chunk_size}")
+        logger.info(
+            f"    in_flight_batching     : {self.enable_in_flight_batching}"
+        )
+        logger.info("")
+
+        # KVCache Configuration Summary
+        logger.info("KVCache Config")
+        logger.info("=" * 60)
+
+        # Primary model kvcache config
+        kv_config = self.model_config._kv_cache_config
+        _log_kvcache_details(kv_config)
+
+        # Draft model kvcache config (if using speculative decoding)
+        if self.draft_model_config is not None:
+            logger.info("")
+            logger.info("Draft Model KVCache Configuration:")
+            logger.info("-" * 40)
+            draft_kv_config = self.draft_model_config._kv_cache_config
+            _log_kvcache_details(draft_kv_config)
+
+        logger.info("")
+
+    def log_basic_config(self) -> None:
+        """Log minimal pipeline configuration information.
+
+        Logs basic PipelineConfig options including model name, pipeline task,
+        weight path, max_batch_size, max_seq_len, and reserved memory.
+        """
+        # Retrieve architecture - this should always exist after config resolution
+        arch = PIPELINE_REGISTRY.retrieve_architecture(
+            huggingface_repo=self.model_config.huggingface_model_repo
+        )
+
+        if arch is None:
+            raise ValueError(
+                f"No architecture found for {self.model_config.huggingface_model_repo.repo_id}. "
+                "This should not happen after config resolution."
+            )
+
+        # Get pipeline task
+        arch = PIPELINE_REGISTRY.retrieve_architecture(
+            huggingface_repo=self.model_config.huggingface_model_repo
+        )
+        if arch is None:
+            raise ValueError(
+                f"No architecture found for {self.model_config.huggingface_model_repo.repo_id}. "
+                "This should not happen after config resolution."
+            )
+
+        task = PIPELINE_REGISTRY.retrieve_pipeline_task(self)
+        pipeline_class = get_pipeline_for_task(task, self)
+
+        # Get reserved memory info from KVCache config
+        kv_config = self.model_config._kv_cache_config
+        if kv_config._available_cache_memory is None:
+            raise ValueError(
+                "KVCache config is not available after config resolution."
+            )
+        memory_str = to_human_readable_bytes(kv_config._available_cache_memory)
+
+        devices_str = ", ".join(
+            f"{d.device_type}[{d.id}]" for d in self.model_config.device_specs
+        )
+
+        # Log basic configuration
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info(
+            "Pipeline Configuration (use --pretty-print-config to print full config)"
+        )
+        logger.info("=" * 60)
+        logger.info(f"    model              : {self.model_config.model_path}")
+        logger.info(f"    architecture       : {arch.name}")
+        logger.info(f"    pipeline           : {pipeline_class.__name__}")
+        logger.info(f"    devices            : {devices_str}")
+        logger.info(f"    max_batch_size     : {self.max_batch_size}")
+        logger.info(f"    max_seq_len        : {self.max_length}")
+        logger.info(f"    cache_memory       : {memory_str}")
+        logger.info("")
+
     @staticmethod
     def help() -> dict[str, str]:
         return {
             "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
-            "max_new_tokens": "Specify the maximum number of new tokens to generate during a single inference pass of the model. Default is -1, which means the model will generate until the maximum sequence length is hit, or and eos token is generated.",
             "pipeline_role": "Whether the pipeline should serve both a prefill or decode role or both.",
             "max_batch_size": "Define the maximum batch size to execute with the model. When not specified (None), we determine this value dynamically. For users launching in a server scenario, the expectation is that this value should be set higher based on server capacity.",
             "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-batch-size`. Default is 192.",
@@ -593,10 +1018,11 @@ class PipelineConfig(MAXConfig):
             "min_batch_size_tg": "Specifies a soft floor on the decode batch size. If the TG batch size is larger than this value, the scheduler will continue to run TG batches. If it falls below, the scheduler will prioritize CE. This is an experimental flag solely for the TTS scheduler.",
             "ce_delay_ms": "Duration of scheduler sleep prior to starting a prefill batch. This is an experimental flag solely for the TTS scheduler. Default is 0.0.",
             "enable_prioritize_first_decode": "When enabled, the scheduler will always run a TG batch immediately after a CE batch, with the same requests. This may be useful for decreasing time-to-first-chunk latency. This is an experimental flag solely for the TTS scheduler. Default is false.",
-            "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `target-num-new-tokens`. Default is true.",
+            "experimental_background_queue": "When enabled, offloads queue draining to a background thread for improved performance. This is an experimental flag. Default is false.",
+            "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `prefill-chunk-size`. Default is true.",
             "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests. Default is false.",
             "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is -1 which specifies a default value based on configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding models).",
-            "target_num_new_tokens": "The target number of un-encoded tokens to include in each batch. This value is used for chunked prefill and memory estimation. Default is 8192.",
+            "prefill_chunk_size": "The target number of un-encoded tokens to include in each batch. This value is used for chunked prefill and memory estimation. Default is 8192.",
             "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
             "pool_embeddings": "Whether to pool embedding outputs. Default is true.",
             "use_experimental_kernels": "Whether to use experimental kernels. Default is false.",
@@ -609,7 +1035,7 @@ class PipelineConfig(MAXConfig):
         return self._model_config
 
     @property
-    def draft_model_config(self) -> Optional[MAXModelConfig]:
+    def draft_model_config(self) -> MAXModelConfig | None:
         return self._draft_model_config
 
     @property
@@ -621,7 +1047,7 @@ class PipelineConfig(MAXConfig):
         return self._profiling_config
 
     @property
-    def lora_config(self) -> Optional[LoRAConfig]:
+    def lora_config(self) -> LoRAConfig | None:
         return self._lora_config
 
 

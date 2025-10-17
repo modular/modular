@@ -33,7 +33,7 @@ fn make_inputs(
     var result = List[input_type]()
     for i in range(num):
         result.append(begin + step * i)
-    return result
+    return result^
 
 
 fn make_int_inputs(begin: Int, end: Int, num: Int) -> List[Int]:
@@ -45,7 +45,7 @@ fn make_int_inputs(begin: Int, end: Int, num: Int) -> List[Int]:
     var result = List[Int]()
     for i in range(num):
         result.append(begin + step * i)
-    return result
+    return result^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -63,7 +63,6 @@ fn bench_math[
 
     @always_inline
     @parameter
-    @__copy_capture(inputs)
     fn call_fn() raises:
         for input in inputs:
             var result = math_f1p(input)
@@ -85,7 +84,6 @@ fn bench_math3[
 
     @always_inline
     @parameter
-    @__copy_capture(inputs)
     fn call_fn() raises:
         for input in inputs:
             var result = math_f3p(input, input, input)
@@ -103,10 +101,9 @@ fn bench_math2[math_f2p: fn (Int, Int, /) -> Int](mut b: Bencher) raises:
 
     @always_inline
     @parameter
-    @__copy_capture(int_inputs)
     fn call_fn() raises:
-        for i in range(len(int_inputs) // 2):
-            var result = keep(math_f2p(int_inputs[i], int_inputs[-(i + 1)]))
+        for i, input_val in enumerate(int_inputs[: len(int_inputs) // 2]):
+            var result = keep(math_f2p(input_val, int_inputs[-(i + 1)]))
             keep(result)
 
     b.iter[call_fn]()

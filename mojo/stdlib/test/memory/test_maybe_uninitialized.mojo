@@ -12,31 +12,37 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
-from test_utils import AbortOnDel, CopyCounter, DelRecorder, MoveCounter
-from testing import assert_equal
+from test_utils import (
+    AbortOnDel,
+    CopyCounter,
+    DelRecorder,
+    MoveCounter,
+)
+from testing import assert_equal, TestSuite
 
 
 def test_maybe_uninitialized():
     # Every time an Int is destroyed, it's going to be recorded here.
-    var destructor_counter = List[Int]()
+    var destructor_recorder = List[Int]()
 
-    var a = UnsafeMaybeUninitialized[DelRecorder]()
-    a.write(DelRecorder(42, UnsafePointer(to=destructor_counter)))
+    var ptr = UnsafePointer(to=destructor_recorder).as_immutable()
+    var a = UnsafeMaybeUninitialized[DelRecorder[ptr.origin]]()
+    a.write(DelRecorder(42, ptr))
 
     assert_equal(a.assume_initialized().value, 42)
-    assert_equal(len(destructor_counter), 0)
+    assert_equal(len(destructor_recorder), 0)
 
     assert_equal(a.unsafe_ptr()[].value, 42)
-    assert_equal(len(destructor_counter), 0)
+    assert_equal(len(destructor_recorder), 0)
 
     a.assume_initialized_destroy()
-    assert_equal(len(destructor_counter), 1)
-    assert_equal(destructor_counter[0], 42)
+    assert_equal(len(destructor_recorder), 1)
+    assert_equal(destructor_recorder[0], 42)
     _ = a
 
     # Last use of a, but the destructor should not have run
     # since we assume uninitialized memory
-    assert_equal(len(destructor_counter), 1)
+    assert_equal(len(destructor_recorder), 1)
 
 
 def test_write_does_not_trigger_destructor():
@@ -93,8 +99,4 @@ def test_maybe_uninitialized_copy():
 
 
 def main():
-    test_maybe_uninitialized()
-    test_write_does_not_trigger_destructor()
-    test_maybe_uninitialized_move()
-    test_maybe_uninitialized_move_from_pointer()
-    test_maybe_uninitialized_copy()
+    TestSuite.discover_tests[__functions_in_module()]().run()

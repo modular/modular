@@ -11,17 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
-from os import abort
-
 from math import ceildiv
+from os import abort
 from sys import has_accelerator
 
-from complex import ComplexSIMD
+from complex import ComplexSIMD, ComplexScalar
 from gpu import global_idx
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
+from python import PythonObject
+from python.bindings import PythonModuleBuilder
 
 alias GRID_WIDTH = 60
 alias GRID_HEIGHT = 25
@@ -71,9 +70,9 @@ fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
     alias ROW_BLOCKS = ceildiv(GRID_HEIGHT, BLOCK_SIZE)
 
     # Launch the Mandelbrot kernel on the GPU with a 2D grid of thread blocks.
-    ctx.enqueue_function[mandelbrot](
+    ctx.enqueue_function_checked[mandelbrot, mandelbrot](
         out_tensor,
-        Int(iterations),
+        Int32(iterations),
         grid_dim=(COL_BLOCKS, ROW_BLOCKS),
         block_dim=(BLOCK_SIZE, BLOCK_SIZE),
     )
@@ -101,10 +100,10 @@ fn mandelbrot(
     # Calculate the complex C corresponding to that grid location.
     var cx = MIN_X + col * SCALE_X
     var cy = MIN_Y + row * SCALE_Y
-    var c = ComplexSIMD[float_dtype, 1](cx, cy)
+    var c = ComplexScalar[float_dtype](cx, cy)
 
     # Perform the Mandelbrot iteration loop calculation.
-    var z = ComplexSIMD[float_dtype, 1](0, 0)
+    var z = ComplexScalar[float_dtype](0, 0)
     var iters = Scalar[int_dtype](0)
 
     var in_set_mask = Scalar[DType.bool](True)

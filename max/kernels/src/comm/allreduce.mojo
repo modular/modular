@@ -93,9 +93,10 @@ For the naive allreduce (no P2P) per‑device flow and staging details, see the
 
 from collections import InlineArray
 from math import ceildiv
-from sys import align_of, simd_width_of, size_of, is_amd_gpu
-from sys.ffi import external_call, _Global
+from sys import align_of, is_amd_gpu, simd_width_of, size_of
+from sys.ffi import _Global, external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
+from sys.info import _accelerator_arch
 
 from buffer import NDBuffer
 from gpu import (
@@ -103,9 +104,9 @@ from gpu import (
     barrier,
     block_dim,
     block_idx,
+    global_idx,
     grid_dim,
     thread_idx,
-    global_idx,
 )
 from gpu.grid_controls import (
     PDLLevel,
@@ -113,21 +114,17 @@ from gpu.grid_controls import (
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from gpu.intrinsics import load_acquire, store_release
-from gpu.memory import (
-    multimem_ld_reduce,
-    ReduceOp,
-    Scope,
-    Consistency,
-    AddressSpace,
-)
-from memory import stack_allocation
+from gpu.memory import AddressSpace
 from gpu.memory import AddressSpace as GPUAddressSpace
+from gpu.memory import Consistency, ReduceOp, Scope, multimem_ld_reduce
+from memory import stack_allocation
 
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
+from internal_utils import TuningConfig, Table
+from gpu.host.info import GPUInfo
 
 alias elementwise_epilogue_type = fn[
     dtype: DType, rank: Int, width: Int, *, alignment: Int
@@ -236,18 +233,14 @@ fn _p2p_cache_init_wrapper() -> OpaquePointer:
       1 => p2p_not_available
       2 => p2p_available
     """
-    alias p2p_not_available = Scalar[DType.index](1)
-    alias p2p_available = Scalar[DType.index](2)
+    alias p2p_not_available = 1
+    alias p2p_available = 2
 
     try:
         DeviceContext.enable_all_peer_access()
-        return _unsafe_aliasing_address_to_pointer[DType.index](
-            p2p_available
-        ).bitcast[NoneType]()
+        return _unsafe_aliasing_address_to_pointer[NoneType](p2p_available)
     except:
-        return _unsafe_aliasing_address_to_pointer[DType.index](
-            p2p_not_available
-        ).bitcast[NoneType]()
+        return _unsafe_aliasing_address_to_pointer[NoneType](p2p_not_available)
 
 
 fn _p2p_cache_destroy_wrapper(ptr: OpaquePointer) -> None:
@@ -262,8 +255,8 @@ fn can_enable_p2p() raises -> Bool:
     Returns:
         True if P2P access is possible between all GPU pairs, False otherwise.
     """
-    alias p2p_not_available = Scalar[DType.index](1)
-    alias p2p_available = Scalar[DType.index](2)
+    alias p2p_not_available = Scalar[DType.int](1)
+    alias p2p_available = Scalar[DType.int](2)
 
     # Initialize once per process via indexed global, then reuse the tag.
     var cached = external_call[
@@ -274,7 +267,7 @@ fn can_enable_p2p() raises -> Bool:
         _p2p_cache_destroy_wrapper,
     )
 
-    var tag = Scalar[DType.index](Int(cached))
+    var tag = Scalar[DType.int](Int(cached))
     return tag == p2p_available
 
 
@@ -632,7 +625,7 @@ fn _allreduce_2stage_kernel[
     var global_tid = global_idx.x
 
     # Stride equals total threads in grid dimension for grid-strided loops.
-    var stride = grid_dim.x * BLOCK_SIZE
+    var stride = grid_dim.x * UInt(BLOCK_SIZE)
     var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
 
     # --- Data Partitioning ---
@@ -784,7 +777,7 @@ fn _allreduce_1stage_kernel[
     alias alignment = align_of[SIMD[dtype, simd_width]]()
 
     var global_tid = global_idx.x
-    var stride = grid_dim.x * BLOCK_SIZE
+    var stride = grid_dim.x * UInt(BLOCK_SIZE)
     var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
     var num_simd_vectors = num_elements // simd_width
 
@@ -941,12 +934,147 @@ fn _allreduce_p2p[
         )
 
 
+@fieldwise_init
+@register_passable("trivial")
+struct TuningConfigAllreduce(TuningConfig):
+    """
+    Parameters:
+        ngpus: Number of GPUs for running allreduce.
+        num_bytes: Total number of input bytes supported by the config.
+        sm_version: SM version (as string).
+        num_blocks: Number of thread blocks for running allreduce.
+    """
+
+    var ngpus: Int
+    var num_bytes: Int
+    var sm_version: StaticString
+    var num_blocks: Int
+
+    fn __str__(self) -> String:
+        return String(
+            self.ngpus, self.num_bytes, self.sm_version, self.num_blocks
+        )
+
+
+alias allreduce_table = Table(
+    List(
+        # default for sm90 (encoded with ngpus=-1, num_bytes=-1)
+        TuningConfigAllreduce(
+            ngpus=-1, num_bytes=-1, sm_version="sm_90a", num_blocks=216
+        ),
+        TuningConfigAllreduce(
+            ngpus=4, num_bytes=(1 << 27), sm_version="sm_90a", num_blocks=232
+        ),
+        # default for sm100 (encoded with ngpus=-1, num_bytes=-1)
+        TuningConfigAllreduce(
+            ngpus=-1, num_bytes=-1, sm_version="sm_100a", num_blocks=512
+        ),
+        # Tuning results for sm100 (2xB200, 4xB200)
+        TuningConfigAllreduce(
+            ngpus=2, num_bytes=(1 << 23), sm_version="sm_100a", num_blocks=512
+        ),
+        TuningConfigAllreduce(
+            ngpus=2, num_bytes=(1 << 24), sm_version="sm_100a", num_blocks=512
+        ),
+        TuningConfigAllreduce(
+            ngpus=2, num_bytes=(1 << 25), sm_version="sm_100a", num_blocks=512
+        ),
+        TuningConfigAllreduce(
+            ngpus=2, num_bytes=(1 << 26), sm_version="sm_100a", num_blocks=512
+        ),
+        TuningConfigAllreduce(
+            ngpus=2, num_bytes=(1 << 27), sm_version="sm_100a", num_blocks=512
+        ),
+        TuningConfigAllreduce(
+            ngpus=4, num_bytes=(1 << 23), sm_version="sm_100a", num_blocks=512
+        ),
+        TuningConfigAllreduce(
+            ngpus=4, num_bytes=(1 << 24), sm_version="sm_100a", num_blocks=512
+        ),
+        TuningConfigAllreduce(
+            ngpus=4, num_bytes=(1 << 25), sm_version="sm_100a", num_blocks=512
+        ),
+        TuningConfigAllreduce(
+            ngpus=4, num_bytes=(1 << 26), sm_version="sm_100a", num_blocks=512
+        ),
+        TuningConfigAllreduce(
+            ngpus=4, num_bytes=(1 << 27), sm_version="sm_100a", num_blocks=512
+        ),
+    ),
+    "allreduce_table",
+)
+
+
 @always_inline
-fn _dispatch_max_num_blocks[ngpus: Int](num_bytes: Int) -> Int:
-    # TODO(GENAI-96): replace with dispatch table from autotuning.
-    if ngpus == 4 and num_bytes == (1 << 27):
-        return 232
-    return 216
+fn _dispatch_max_num_blocks[
+    ngpus: Int, sm_version: StaticString
+](num_bytes: Int) -> Int:
+    """
+    This function searches for tuning configs with matching sm_version
+    and ngpus. If such configs are found, then the search continues for
+    finding the config x where num_bytes <= x.num_bytes.
+
+    If no matching config is found then falls back to default configs
+    (encoded with ngpus=-1 and num_bytes=-1)
+    """
+
+    # get default entry
+    # TODO: first search for default for that sm
+    # if not found look for a generic config
+    @parameter
+    fn rule_eq_arch_default(x: TuningConfigAllreduce) -> Bool:
+        return x.ngpus == -1 and x.num_bytes == -1
+
+    alias default_idx = allreduce_table.query_index[rule_eq_arch_default]()
+    constrained[len(default_idx)]()
+    alias default_entry = allreduce_table.configs[default_idx[0]]
+
+    # narrowing the search space to matching sm_version and ngpus
+    @parameter
+    fn rule_eq_arch_ngpus(x: TuningConfigAllreduce) -> Bool:
+        return x.sm_version == sm_version and x.ngpus == ngpus
+
+    alias search_domain = allreduce_table.query_index[rule_eq_arch_ngpus]()
+
+    @parameter
+    if not search_domain:
+        return default_entry.num_blocks
+
+    # get all static num_bytes values in table within the search space
+    @parameter
+    fn rule_get_num_bytes(x: TuningConfigAllreduce) -> Int:
+        return x.num_bytes
+
+    alias all_num_bytes_values = allreduce_table.query_values[
+        Int, rule_get_num_bytes, search_domain
+    ]()
+
+    @parameter
+    for nb in all_num_bytes_values:
+
+        @parameter
+        fn rule_eq_nb(x: TuningConfigAllreduce) -> Bool:
+            return x.num_bytes == nb
+
+        # Find the fist config x with input 'num_bytes <= x.num_bytes'
+        if num_bytes <= nb:
+            alias idx_list = allreduce_table.query_index[
+                rule_eq_nb, domain=search_domain
+            ]()
+
+            @parameter
+            if idx_list:
+                alias entry = allreduce_table.configs[idx_list[0]]
+                return entry.num_blocks
+            else:
+                break
+
+    return default_entry.num_blocks
+
+
+fn get_sm_version() -> StaticString:
+    alias default_device_info = GPUInfo.from_name[_accelerator_arch()]()
+    return default_device_info.version
 
 
 @parameter
@@ -1015,8 +1143,14 @@ fn allreduce[
       - The naive path is automatically selected if P2P cannot be enabled.
       - The `use_multimem` parameter requires P2P access between GPUs to be enabled.
     """
+
+    # TODO: check all devices have the same GPU sm_version
+
+    alias sm_version = get_sm_version()
     var max_num_blocks = _max_num_blocks.or_else(
-        _dispatch_max_num_blocks[ngpus](input_buffers[0].bytecount())
+        _dispatch_max_num_blocks[ngpus, sm_version](
+            input_buffers[0].bytecount()
+        )
     )
     if max_num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND:
         raise Error(

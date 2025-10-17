@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
+from gpu.host.compile import _compile_code
 from gpu.intrinsics import ldg
 from layout import Layout, LayoutTensor
 from testing import assert_true
@@ -22,8 +22,11 @@ fn ldg_kernel(i8: UnsafePointer[Int8]):
     i8.store(1, ldg(i8))
 
 
-fn layout_kernel(a: LayoutTensor[mut=False, DType.int8, Layout.row_major(1)]):
-    a[1] = a[0]
+fn layout_kernel(
+    a: LayoutTensor[mut=False, DType.int8, Layout.row_major(1)],
+    mut b: __type_of(a[0]),
+):
+    b = a[0]
 
 
 def test_ldg_kernel[emission_kind: StaticString]() -> String:

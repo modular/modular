@@ -13,12 +13,15 @@ values in stack memory. This means the type is always passed by value and
 cannot be passed by reference.
 
 The basic `@register_passable` decorator does not change the fundamental
-behavior of a type: it still needs an `__init__()` and `__copyinit__()` method
-to be copyable (and it may have a `__del__()` method, if necessary). For example:
+behavior of a type: it still needs an `__init__()` method; you need to add the
+[`Copyable` trait](/mojo/manual/lifecycle/life#copy-constructor) to make it
+copyable; and it may have a
+[custom destructor](/mojo/manual/lifecycle/death#destructor) method, if
+necessary. For example:
 
 ```mojo
 @register_passable
-struct Pair:
+struct Pair(Copyable):
     var a: Int
     var b: Int
 

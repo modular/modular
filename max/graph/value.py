@@ -20,19 +20,19 @@ from typing import (
     Any,
     Generic,
     Protocol,
+    TypeAlias,
+    TypeGuard,
     TypeVar,
-    Union,
     cast,
     runtime_checkable,
 )
 
 import numpy as np
-import numpy.typing as npt
 from max._core import Type as _Type
 from max._core import Value as _Value
 from max._core.dialects import mo
+from max.driver import DLPackArray
 from max.dtype import DType
-from typing_extensions import TypeAlias, TypeGuard
 
 from . import ops
 from .dim import Dim, DimLike
@@ -131,8 +131,9 @@ class Value(Generic[MlirType]):
         if isinstance(self, BufferValue):
             return self
 
-        msg = f"Value is not a BufferValue, was '{type(self).__name__}'"
-        raise TypeError(msg)
+        raise TypeError(
+            f"Value is not a BufferValue, was '{type(self).__name__}'"
+        )
 
     @property
     def tensor(self) -> TensorValue:
@@ -143,8 +144,9 @@ class Value(Generic[MlirType]):
         if isinstance(self, TensorValue):
             return self
 
-        msg = f"Value is not a TensorValue, was '{type(self).__name__}'"
-        raise TypeError(msg)
+        raise TypeError(
+            f"Value is not a TensorValue, was '{type(self).__name__}'"
+        )
 
     @property
     def opaque(self) -> _OpaqueValue:
@@ -155,8 +157,9 @@ class Value(Generic[MlirType]):
         if isinstance(self, _OpaqueValue):
             return self
 
-        msg = f"Value is not a TensorValue, was '{type(self).__name__}'"
-        raise TypeError(msg)
+        raise TypeError(
+            f"Value is not an _OpaqueValue, was '{type(self).__name__}'"
+        )
 
     @property
     def type(self) -> Type[MlirType]:
@@ -215,7 +218,9 @@ class _OpaqueValue(Value[mo.OpaqueType]):
 class BufferValue(Value[mo.BufferType]):
     """Represents a mutable semantic tensor within a `Graph`."""
 
-    def __init__(self, value: Value[Any] | _Value[mo.BufferType]) -> None:
+    def __init__(
+        self, value: Value[Any] | _Value[mo.BufferType] | HasBufferValue
+    ) -> None:
         """Initializes a :obj:`BufferValue` from another value.
 
         Args:
@@ -226,6 +231,8 @@ class BufferValue(Value[mo.BufferType]):
             self._mlir_value = value
         elif isinstance(value, BufferValue):
             self._mlir_value = value._mlir_value
+        elif isinstance(value, HasBufferValue):
+            self._mlir_value = value.__buffervalue__()._mlir_value
         else:
             raise TypeError(
                 "BufferValue() argument must be an mlir.Value of buffer type "
@@ -395,9 +402,9 @@ class TensorValue(Value[mo.TensorType]):
         Args:
             dim: The dimension value.
         """
-        ans = ops.shape_to_tensor([dim])
-        ans.type.device = DeviceRef.CPU()
-        return ans.reshape(())
+        result = ops.shape_to_tensor([dim])
+        result.type.device = DeviceRef.CPU()
+        return result.reshape(())
 
     @staticmethod
     def _from_shape(shape: ShapeLike) -> TensorValue:
@@ -406,9 +413,9 @@ class TensorValue(Value[mo.TensorType]):
         Args:
             shape: An iterable of integers or symbolic dimensions.
         """
-        ans = ops.shape_to_tensor(shape)
-        ans.type.device = DeviceRef.CPU()
-        return ans
+        result = ops.shape_to_tensor(shape)
+        result.type.device = DeviceRef.CPU()
+        return result
 
     def __repr__(self) -> str:
         """Returns a string representation of the :obj:`TensorValue`."""
@@ -1230,17 +1237,22 @@ class TensorValue(Value[mo.TensorType]):
 
 @runtime_checkable
 class HasTensorValue(Protocol):
-    def __tensorvalue__(self) -> Value[Any]: ...
+    def __tensorvalue__(self) -> TensorValue: ...
 
 
-Numeric = Union[
-    int, float, np.integer[Any], np.floating[Any], npt.NDArray[np.number[Any]]
-]
-Scalar = Union[int, float, np.integer[Any], np.floating[Any], Dim]
-StrongTensorValueLike = Union[
-    _Value[mo.TensorType], TensorValue, Shape, Dim, HasTensorValue
-]
-TensorValueLike = Union[StrongTensorValueLike, Numeric]
+@runtime_checkable
+class HasBufferValue(Protocol):
+    def __buffervalue__(self) -> BufferValue: ...
+
+
+Numeric = int | float | np.integer[Any] | np.floating[Any] | DLPackArray
+Scalar = int | float | np.integer[Any] | np.floating[Any] | Dim
+StrongTensorValueLike = (
+    _Value[mo.TensorType] | TensorValue | Shape | Dim | HasTensorValue
+)
+
+TensorValueLike = StrongTensorValueLike | Numeric
+BufferValueLike = BufferValue | HasBufferValue
 
 # This is needed for python 3.9 compatibility.
 # `isinstance` only works with tuples and not unions in 3.9.
@@ -1259,7 +1271,7 @@ def _is_scalar(obj: Any) -> TypeGuard[Scalar]:
 
 
 def _is_strong_tensor_value_like(obj: Any) -> TypeGuard[StrongTensorValueLike]:
-    return isinstance(obj, (TensorValue, Shape, Dim, HasTensorValue)) or (
+    return isinstance(obj, TensorValue | Shape | Dim | HasTensorValue) or (
         isinstance(obj, _Value) and isinstance(obj.type, mo.TensorType)
     )
 

@@ -20,6 +20,7 @@ from memory import ArcPointer
 """
 
 from os.atomic import Atomic, Consistency, fence
+from sys.info import size_of
 
 
 struct _ArcPointerInner[T: Movable]:
@@ -63,9 +64,7 @@ struct _ArcPointerInner[T: Movable]:
 
 
 @register_passable
-struct ArcPointer[T: Movable](
-    Copyable, ExplicitlyCopyable, Identifiable, Movable
-):
+struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
     """Atomic reference-counted pointer.
 
     This smart pointer owns an instance of `T` indirectly managed on the heap.
@@ -120,6 +119,37 @@ struct ArcPointer[T: Movable](
         __get_address_as_uninit_lvalue(self._inner.address) = Self._inner_type(
             value^
         )
+
+    fn __init__(out self, *, unsafe_from_raw_pointer: UnsafePointer[T]):
+        """Constructs an `ArcPointer` from a raw pointer.
+
+        Args:
+            unsafe_from_raw_pointer: A raw pointer previously returned from `ArcPointer.steal_data`.
+
+        ### Safety
+
+        The `unsafe_from_raw_pointer` argument *must* have been previously returned by a call
+        to `ArcPointer.steal_data`. Any other pointer may result in undefined behaviour.
+
+        ### Example
+
+        ```mojo
+        from memory import ArcPointer
+
+        var initial_arc = ArcPointer[Int](42)
+        var raw_ptr = initial_arc^.steal_data()
+
+        # The following will ensure the data is properly destroyed and deallocated.
+        var restored_arc = ArcPointer(unsafe_from_raw_pointer=raw_ptr)
+        ```
+        """
+        var pointer_to_payload = unsafe_from_raw_pointer.bitcast[Byte]()
+
+        # Calculate the offset to the beginning of the `_ArcPointerInner` allocation.
+        var pointer_to_inner = (
+            pointer_to_payload - size_of[__type_of(self._inner[].refcount)]()
+        )
+        self._inner = pointer_to_inner.bitcast[Self._inner_type]()
 
     fn __copyinit__(out self, existing: Self):
         """Copy an existing reference. Increment the refcount to the object.
@@ -176,16 +206,26 @@ struct ArcPointer[T: Movable](
         Returns:
             The current amount of references to the pointee.
         """
-        # TODO: this should use `load[MONOTONIC]()` once load supports memory
-        # orderings.
-        #
         # MONOTONIC is okay here - reading refcount simply needs to be atomic.
         # No synchronization is needed as this is not attempting to free the
         # shared data and it is not possible for the data to be freed until
         # this ArcPointer is destroyed.
-        return self._inner[].refcount.fetch_sub[
-            ordering = Consistency.MONOTONIC
-        ](0)
+        return self._inner[].refcount.load[ordering = Consistency.MONOTONIC]()
+
+    fn steal_data(deinit self) -> UnsafePointer[T]:
+        """Consume this `ArcPointer`, returning a raw pointer to the underlying data.
+
+        Returns:
+            An `UnsafePointer` to the underlying `T` value.
+
+        ### Safety
+
+        To avoid leaking memory, this pointer must be converted back to an `ArcPointer`
+        using `ArcPointer(unsafe_from_raw_pointer=ptr)`.
+        The returned pointer is not guaranteed to point to the beginning of the backing allocation,
+        meaning calling `UnsafePointer.free` may result in undefined behavior.
+        """
+        return UnsafePointer(to=self._inner[].payload)
 
     fn __is__(self, rhs: Self) -> Bool:
         """Returns True if the two `ArcPointer` instances point at the same
@@ -199,16 +239,3 @@ struct ArcPointer[T: Movable](
             False otherwise.
         """
         return self._inner == rhs._inner
-
-    fn __isnot__(self, rhs: Self) -> Bool:
-        """Returns True if the two `ArcPointer` instances point at different
-        objects.
-
-        Args:
-            rhs: The other `ArcPointer`.
-
-        Returns:
-            True if the two `ArcPointer` instances point at different objects
-            and False otherwise.
-        """
-        return self._inner != rhs._inner

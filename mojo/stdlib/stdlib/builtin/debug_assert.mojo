@@ -16,18 +16,16 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 
-from os import abort
-from sys import is_amd_gpu, is_gpu, is_nvidia_gpu
-from sys._build import is_debug_build
-from sys.intrinsics import block_idx, thread_idx, assume
-from sys.param_env import env_get_string
-from io.write import _WriteBufferHeap
 from io.io import _printf
-from sys import is_compile_time
-from sys._amdgpu import printf_begin, printf_append_string_n, printf_append_args
+from io.write import _WriteBufferHeap
+from os import abort
+from sys import is_amd_gpu, is_apple_gpu, is_compile_time, is_gpu, is_nvidia_gpu
+from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
+from sys._build import is_debug_build
+from sys.intrinsics import assume, block_idx, thread_idx
+from sys.param_env import env_get_string
 
 from builtin._location import __call_location, _SourceLocation
-
 
 alias ASSERT_MODE = env_get_string["ASSERT", "safe"]()
 
@@ -50,8 +48,9 @@ fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
         " but must be one of: none, safe",
     ]()
 
+    # FIXME: Enable assertions on Apple GPU after MOCO-2405 is fixed
     @parameter
-    if ASSERT_MODE == "none" or (is_gpu() and cpu_only):
+    if ASSERT_MODE == "none" or (is_gpu() and cpu_only) or is_apple_gpu():
         return False
     elif ASSERT_MODE == "all" or ASSERT_MODE == "warn" or is_debug_build():
         return True
@@ -378,7 +377,7 @@ fn debug_assert[
 
 @no_inline
 fn _debug_assert_msg(
-    message: UnsafePointer[Byte], length: Int, loc: _SourceLocation
+    message: UnsafePointer[Byte, mut=False], length: Int, loc: _SourceLocation
 ):
     """Aborts with (or prints) the given message and location.
 

@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from typing import Literal
 
 import numpy as np
-from max.mlir.dialects import rmo
+from max._core.dialects import kgen, rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
@@ -82,12 +82,13 @@ def pad(
 
     padding_tensor = concat(promoted, axis=0)
 
-    return Graph.current._add_op(
-        rmo.mo_pad_constant,
-        result=result_type.to_mlir(),
+    return Graph.current._add_op_generated(
+        rmo.MoPadConstantOp,
+        result=result_type,
         input=TensorValue(input),
         paddings=padding_tensor,
         constant=dtype_promotion._promote_to_strong(
             value, input.dtype, DeviceRef.CPU()
         ),
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor

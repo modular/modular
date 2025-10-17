@@ -149,7 +149,7 @@ fn append_bytes(
     service_id: UInt32,
     msg_desc: UInt64,
     mut data: Span[UInt8],
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     var msg_desc_ = msg_set_len(msg_desc, (len(data) + 7) // 8)
 
     @parameter
@@ -190,7 +190,7 @@ fn append_bytes(
 @no_inline
 fn message_append_bytes(
     service_id: UInt32, msg_desc: UInt64, data: Span[UInt8]
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     """
     Append an array of bytes to a message.
 
@@ -249,7 +249,7 @@ fn message_append_args(
     arg4: UInt64,
     arg5: UInt64,
     arg6: UInt64,
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     """
     Append up to seven ulong values to a message.
 
@@ -516,7 +516,7 @@ fn printf_append_string_n(
 
 @fieldwise_init
 @register_passable("trivial")
-struct Header(Copyable, Movable):
+struct Header(ImplicitlyCopyable, Movable):
     var _handle: UnsafePointer[
         header_t, address_space = _GPUAddressSpace.GLOBAL
     ]
@@ -554,7 +554,7 @@ struct Header(Copyable, Movable):
 
     fn get_return_value(
         mut self, payload: Payload, me: UInt32, low: UInt32
-    ) -> (UInt64, UInt64):
+    ) -> Tuple[UInt64, UInt64]:
         """
         Wait for the host response and return the first two ulong
         entries per workitem.
@@ -605,7 +605,7 @@ struct Header(Copyable, Movable):
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L104
 @fieldwise_init
 @register_passable("trivial")
-struct header_t(Copyable, Movable):
+struct header_t(ImplicitlyCopyable, Movable):
     var next: UInt64
     var activemask: UInt64
     var service: UInt32
@@ -614,7 +614,7 @@ struct header_t(Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Payload(Copyable, Movable):
+struct Payload(ImplicitlyCopyable, Movable):
     var _handle: UnsafePointer[payload_t]
 
     @always_inline
@@ -633,7 +633,7 @@ struct payload_t(Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Buffer(Copyable, Movable):
+struct Buffer(ImplicitlyCopyable, Movable):
     var _handle: UnsafePointer[
         buffer_t, address_space = _GPUAddressSpace.GLOBAL
     ]
@@ -739,7 +739,7 @@ struct buffer_t(Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ControlOffset(Copyable, Movable):
+struct ControlOffset(ImplicitlyCopyable, Movable):
     var value: UInt32
     alias ready_flag = Self(0)
     alias reserved0 = Self(1)
@@ -755,7 +755,7 @@ struct ControlOffset(Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ControlWidth(Copyable, Movable):
+struct ControlWidth(ImplicitlyCopyable, Movable):
     var value: UInt32
     alias ready_flag = Self(1)
     alias reserved0 = Self(31)
@@ -834,7 +834,7 @@ fn hostcall(
     arg5: UInt64,
     arg6: UInt64,
     arg7: UInt64,
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     """
     Submit a wave-wide hostcall packet.
 

@@ -15,7 +15,7 @@
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul import matmul
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul.gpu import _matmul_gpu
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -39,7 +39,7 @@ fn _create_device_buffer[
     return (
         storage,
         NDBuffer[dtype, rank, _, shape](
-            storage._unsafe_ptr(), dynamic_shape=dynamic_shape
+            storage.unsafe_ptr(), dynamic_shape=dynamic_shape
         ),
     )
 

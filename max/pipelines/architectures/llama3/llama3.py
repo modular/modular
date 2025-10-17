@@ -15,18 +15,16 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Sequence
-from typing import Any, Callable, Optional
+from collections.abc import Callable, Sequence
 
-import numpy as np
-import numpy.typing as npt
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
 from max.nn import (
     MLP,
     AttentionWithRope,
     AttentionWithRopeAndLoRA,
+    ConstantLayerNorm,
     Embedding,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
@@ -39,9 +37,9 @@ from max.nn import (
     TransformerBlock,
 )
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
-    KVCacheStrategy,
+    TPPagedKVCacheManager,
 )
+from max.pipelines.lib.lora import LoRAManager
 
 from .model_config import Llama3Config, create_rope_embedding
 
@@ -50,7 +48,7 @@ class StackedMLP(Module):
     def __init__(
         self,
         dtype: DType,
-        quantization_encoding: Optional[QuantizationEncoding],
+        quantization_encoding: QuantizationEncoding | None,
         hidden_dim: int,
         feed_forward_length: int,
         devices: Sequence[DeviceRef],
@@ -82,46 +80,10 @@ class StackedMLP(Module):
         return self.down_proj(ops.silu(gate) * up_states)
 
 
-class ConstantLayerNorm(Module):
-    """Layer normalization block with constant gamma and beta values."""
-
-    gamma: npt.NDArray[np.floating[Any]]
-    beta: npt.NDArray[np.floating[Any]]
-    eps: float = 1e-5
-    device: DeviceRef
-    dtype: DType
-
-    def __init__(
-        self,
-        dims: int | tuple[int, ...],
-        device: DeviceRef,
-        dtype: DType,
-        eps: float = 1e-5,
-    ) -> None:
-        super().__init__()
-        self.gamma = np.ones(dims)
-        self.beta = np.zeros(dims)
-        self.eps = eps
-        self.device = device
-        self.dtype = dtype
-
-    def __call__(self, input: TensorValue) -> TensorValue:
-        gamma = ops.constant(self.gamma, self.dtype, self.device)
-        beta = ops.constant(self.beta, self.dtype, self.device)
-        return ops.cast(
-            ops.layer_norm(
-                ops.cast(input, DType.float32),
-                gamma=gamma,
-                beta=beta,
-                epsilon=self.eps,
-            ),
-            input.dtype,
-        )
-
-
 class Llama3(Transformer):
     def __init__(self, config: Llama3Config) -> None:
         assert len(config.devices) == 1
+        self.config = config
         rope = create_rope_embedding(
             hidden_size=config.hidden_size,
             num_attention_heads=config.num_attention_heads,
@@ -172,8 +134,7 @@ class Llama3(Transformer):
                 Linear, float8_config=config.float8_config
             )
         if config.stacked_mlp and config.float8_config:
-            msg = "StackedMLP and float8 are not compatible"
-            raise ValueError(msg)
+            raise ValueError("StackedMLP and float8 are not compatible")
         mlp_cls = (
             StackedMLP
             if config.stacked_mlp
@@ -270,16 +231,6 @@ class Llama3(Transformer):
         if config.tie_word_embeddings:
             output.set_shared_weight("weight", embedding_layer.weight)
 
-        kv_collection_cls: type[FetchPagedKVCacheCollection]
-
-        if config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
-            kv_collection_cls = FetchPagedKVCacheCollection
-        else:
-            raise ValueError(
-                "Unsupported caching strategy "
-                + str(config.kv_params.cache_strategy)
-            )
-
         super().__init__(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
@@ -288,11 +239,53 @@ class Llama3(Transformer):
             output=output,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=kv_collection_cls(
-                config.kv_params, num_layers=config.num_hidden_layers
-            ),
             rope=rope,
             return_logits=config.return_logits,
             embedding_multiplier=config.embedding_multiplier,
-            logits_postprocessor=config.logits_postprocessor,
+            logits_scaling=config.logits_scaling,
         )
+
+    def input_types(
+        self,
+        kv_manager: TPPagedKVCacheManager,
+        lora_manager: LoRAManager | None,
+    ) -> tuple[TensorType, ...]:
+        # TODO: Move input symbol computation from the manager classes.
+        # It should be possible to compute the input symbols from the model
+        # config.
+        device_ref = self.config.devices[0]
+
+        # Construct general input types
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
+
+        kv_inputs = kv_manager.input_symbols()
+
+        # Construct Graph Inputs
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
+        if lora_manager is not None:
+            lora_ids, lora_ranks, lora_grouped_offsets = (
+                lora_manager.input_symbols(device_ref)
+            )
+            return (
+                tokens_type,
+                input_row_offsets_type,
+                return_n_logits_type,
+                lora_ids,
+                lora_ranks,
+                lora_grouped_offsets,
+                *kv_inputs[0],
+            )
+        else:
+            return (
+                tokens_type,
+                input_row_offsets_type,
+                return_n_logits_type,
+                *kv_inputs[0],
+            )

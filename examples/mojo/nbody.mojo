@@ -25,7 +25,7 @@ alias DAYS_PER_YEAR = 365.24
 
 
 @fieldwise_init
-struct Planet(Copyable, Movable):
+struct Planet(ImplicitlyCopyable, Movable):
     var pos: SIMD[DType.float64, 4]
     var velocity: SIMD[DType.float64, 4]
     var mass: Float64
@@ -119,8 +119,9 @@ fn offset_momentum(mut bodies: List[Planet]):
 
 @always_inline
 fn advance(mut bodies: List[Planet], dt: Float64):
-    for i in range(len(INITIAL_SYSTEM)):
-        for j in range(len(INITIAL_SYSTEM) - i - 1):
+    alias l = len(INITIAL_SYSTEM)
+    for i in range(l):
+        for j in range(l - i - 1):
             var body_i = bodies[i]
             var body_j = bodies[j + i + 1]
             var diff = body_i.pos - body_j.pos
@@ -140,15 +141,15 @@ fn advance(mut bodies: List[Planet], dt: Float64):
 @always_inline
 fn energy(bodies: List[Planet]) -> Float64:
     var e: Float64 = 0
-
-    for i in range(len(INITIAL_SYSTEM)):
+    alias l = len(INITIAL_SYSTEM)
+    for i in range(l):
         var body_i = bodies[i]
         e += (
             0.5
             * body_i.mass
             * ((body_i.velocity * body_i.velocity).reduce_add())
         )
-        for j in range(len(INITIAL_SYSTEM) - i - 1):
+        for j in range(l - i - 1):
             var body_j = bodies[j + i + 1]
             var diff = body_i.pos - body_j.pos
             var distance = sqrt((diff * diff).reduce_add())
@@ -160,7 +161,7 @@ fn energy(bodies: List[Planet]) -> Float64:
 def run_system():
     print("Starting nbody...")
 
-    var system = INITIAL_SYSTEM
+    var system = materialize[INITIAL_SYSTEM]()
     offset_momentum(system)
 
     print("Energy of System:", energy(system))
@@ -175,7 +176,7 @@ def run_system():
 
 def benchmark():
     fn benchmark_fn():
-        var system = INITIAL_SYSTEM
+        var system = materialize[INITIAL_SYSTEM]()
         offset_momentum(system)
         keep(energy(system))
 

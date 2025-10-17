@@ -14,13 +14,8 @@
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Iterable
-
-if sys.version_info >= (3, 10):
-    from typing import TypeGuard
-else:
-    from typing_extensions import TypeGuard
+from typing import TypeGuard
 
 from max._core.dialects import builtin, mosh
 
@@ -32,7 +27,7 @@ class Shape(list[Dim]):
         super().__init__(Dim(dim) for dim in dims)
 
     @property
-    def rank(self):
+    def rank(self):  # noqa: ANN201
         return len(self)
 
     def to_mlir(self) -> mosh.ShapeAttr:

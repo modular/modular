@@ -73,8 +73,8 @@ trait IntervalElement(Comparable, Copyable, Intable, Movable, Writable):
 
 struct Interval[T: IntervalElement](
     Boolable,
-    Copyable,
     EqualityComparable,
+    ImplicitlyCopyable,
     Movable,
     Representable,
     Sized,
@@ -106,8 +106,8 @@ struct Interval[T: IntervalElement](
         debug_assert(
             start <= end, "invalid interval '(", start, ", ", end, ")'"
         )
-        self.start = start
-        self.end = end
+        self.start = start.copy()
+        self.end = end.copy()
 
     fn __init__(out self, interval: Tuple[T, T], /):
         """Initialize an interval with a tuple of start and end values.
@@ -115,8 +115,8 @@ struct Interval[T: IntervalElement](
         Args:
             interval: A tuple containing the start and end values.
         """
-        self.start = interval[0]
-        self.end = interval[1]
+        self.start = interval[0].copy()
+        self.end = interval[1].copy()
 
     fn __copyinit__(out self, existing: Self, /):
         """Create a new instance of the interval by copying the values
@@ -125,18 +125,8 @@ struct Interval[T: IntervalElement](
         Args:
             existing: The interval to copy values from.
         """
-        self.start = existing.start
-        self.end = existing.end
-
-    fn __moveinit__(out self, deinit existing: Self, /):
-        """Create a new instance of the interval by moving the values
-        from an existing one.
-
-        Args:
-            existing: The interval to move values from.
-        """
-        self.start = existing.start^
-        self.end = existing.end^
+        self.start = existing.start.copy()
+        self.end = existing.end.copy()
 
     fn overlaps(self, other: Self) -> Bool:
         """Returns whether this interval overlaps with another interval.
@@ -166,8 +156,11 @@ struct Interval[T: IntervalElement](
             other,
             "'",
         )
-        var start = self.start if self.start < other.start else other.start
-        var end = self.end if self.end > other.end else other.end
+        var start = (
+            self.start.copy() if self.start
+            < other.start else other.start.copy()
+        )
+        var end = self.end.copy() if self.end > other.end else other.end.copy()
         return Self(start, end)
 
     fn intersection(self, other: Self) -> Self:
@@ -187,8 +180,11 @@ struct Interval[T: IntervalElement](
             other,
             "'",
         )
-        var start = self.start if self.start > other.start else other.start
-        var end = self.end if self.end < other.end else other.end
+        var start = (
+            self.start.copy() if self.start
+            > other.start else other.start.copy()
+        )
+        var end = self.end.copy() if self.end < other.end else other.end.copy()
         return Self(start, end)
 
     fn __contains__(self, other: T) -> Bool:
@@ -200,7 +196,7 @@ struct Interval[T: IntervalElement](
         Returns:
             True if the value is within the interval bounds, False otherwise.
         """
-        return self.start <= other < self.end
+        return self.start <= other.copy() < self.end.copy()
 
     fn __contains__(self, other: Self) -> Bool:
         """Returns whether another interval is fully contained within this
@@ -317,8 +313,9 @@ struct Interval[T: IntervalElement](
 
 
 struct _IntervalNode[
-    T: IntervalElement, U: Copyable & Movable & Stringable & Comparable
-](Copyable, Movable, Stringable, Writable):
+    T: IntervalElement,
+    U: Copyable & Movable & Stringable & Comparable,
+](ImplicitlyCopyable, Movable, Stringable, Writable):
     """A node containing an interval and associated data.
 
     Parameters:
@@ -401,8 +398,8 @@ struct _IntervalNode[
             is_red: Whether this node is red in the red-black tree.
         """
         self.interval = interval
-        self.max_end = interval.end
-        self.data = data
+        self.max_end = interval.end.copy()
+        self.data = data.copy()
         self.left = left.or_else({})
         self.right = right.or_else({})
         self.parent = parent.or_else({})
@@ -416,23 +413,8 @@ struct _IntervalNode[
             existing: The interval node to copy values from.
         """
         self.interval = existing.interval
-        self.data = existing.data
-        self.max_end = existing.max_end
-        self.left = existing.left
-        self.right = existing.right
-        self.parent = existing.parent
-        self._is_red = existing._is_red
-
-    fn __moveinit__(out self, deinit existing: Self, /):
-        """Create a new instance of the interval node by moving the values
-        from an existing one.
-
-        Args:
-            existing: The interval node to move values from.
-        """
-        self.interval = existing.interval^
-        self.data = existing.data^
-        self.max_end = existing.max_end^
+        self.data = existing.data.copy()
+        self.max_end = existing.max_end.copy()
         self.left = existing.left
         self.right = existing.right
         self.parent = existing.parent
@@ -505,7 +487,8 @@ struct _IntervalNode[
 
 
 struct IntervalTree[
-    T: IntervalElement, U: Copyable & Movable & Stringable & Comparable
+    T: IntervalElement,
+    U: Copyable & Movable & Stringable & Comparable,
 ](Defaultable, Writable):
     """An interval tree data structure for efficient range queries.
 
@@ -526,6 +509,18 @@ struct IntervalTree[
         """Initializes an empty IntervalTree."""
         self._root = {}
         self._len = 0
+
+    fn __del__(deinit self):
+        Self._del_helper(self._root)
+
+    @staticmethod
+    fn _del_helper(node: UnsafePointer[_IntervalNode[T, U]]):
+        if node[].left:
+            Self._del_helper(node[].left)
+        if node[].right:
+            Self._del_helper(node[].right)
+        node.destroy_pointee()
+        node.free()
 
     fn _left_rotate(
         mut self, rotation_node: UnsafePointer[_IntervalNode[T, U]]
@@ -570,7 +565,7 @@ struct IntervalTree[
         rotation_right_child[].left = rotation_node
         rotation_node[].parent = rotation_right_child
 
-        rotation_node[].max_end = rotation_node[].interval.end
+        rotation_node[].max_end = rotation_node[].interval.end.copy()
         if rotation_node[].left:
             rotation_node[].max_end = max(
                 rotation_node[].max_end,
@@ -582,7 +577,9 @@ struct IntervalTree[
                 rotation_node[].right[].max_end,
             )
 
-        rotation_right_child[].max_end = rotation_right_child[].interval.end
+        rotation_right_child[].max_end = (
+            rotation_right_child[].interval.end.copy()
+        )
         if rotation_right_child[].left:
             rotation_right_child[].max_end = max(
                 rotation_right_child[].max_end,
@@ -637,7 +634,7 @@ struct IntervalTree[
         rotation_left_child[].right = rotation_node
         rotation_node[].parent = rotation_left_child
 
-        rotation_node[].max_end = rotation_node[].interval.end
+        rotation_node[].max_end = rotation_node[].interval.end.copy()
         if rotation_node[].left:
             rotation_node[].max_end = max(
                 rotation_node[].max_end, rotation_node[].left[].max_end
@@ -647,7 +644,9 @@ struct IntervalTree[
                 rotation_node[].max_end, rotation_node[].right[].max_end
             )
 
-        rotation_left_child[].max_end = rotation_left_child[].interval.end
+        rotation_left_child[].max_end = (
+            rotation_left_child[].interval.end.copy()
+        )
         if rotation_left_child[].left:
             rotation_left_child[].max_end = max(
                 rotation_left_child[].max_end,
@@ -913,7 +912,7 @@ struct IntervalTree[
             var row = List[String]()
             for _ in range(4 * width):
                 row.append(" ")  # Initialize with spaces
-            grid.append(row)
+            grid.append(row^)
 
         var work_list = Deque[
             Tuple[UnsafePointer[_IntervalNode[T, U]], Int, Int, Int]
@@ -1025,7 +1024,7 @@ struct IntervalTree[
             if not current_node:
                 continue
             if current_node[].interval.overlaps(interval):
-                result.append(current_node[].data)
+                result.append(current_node[].data.copy())
             if (
                 current_node[].left
                 and current_node[].left[].interval.start <= interval.end
@@ -1037,4 +1036,4 @@ struct IntervalTree[
             ):
                 work_list.append(current_node[].right)
 
-        return result
+        return result^

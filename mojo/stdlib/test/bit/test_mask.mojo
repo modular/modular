@@ -11,9 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
-from bit._mask import is_negative, splat
 from sys.info import bit_width_of
+
+from bit._mask import is_negative, splat
+from testing import assert_equal
+from testing import TestSuite
 
 
 def test_is_negative():
@@ -22,14 +24,14 @@ def test_is_negative():
         DType.int16,
         DType.int32,
         DType.int64,
-        DType.index,
+        DType.int,
     )
     alias widths = (1, 2, 4, 8)
 
     @parameter
     for i in range(len(dtypes)):
         alias D = dtypes[i]
-        var last_value = 2 ** (bit_width_of[D]() - 1) - 1
+        var last_value = 2 ** (D.bit_width() - 1) - 1
         var values = [1, 2, last_value - 1, last_value]
 
         @parameter
@@ -47,7 +49,7 @@ def test_splat():
         DType.int16,
         DType.int32,
         DType.int64,
-        DType.index,
+        DType.int,
         DType.uint8,
         DType.uint16,
         DType.uint32,
@@ -73,14 +75,14 @@ def test_compare():
         DType.int16,
         DType.int32,
         DType.int64,
-        DType.index,
+        DType.int,
     )
     alias widths = (1, 2, 4, 8)
 
     @parameter
     for i in range(len(dtypes)):
         alias D = dtypes[i]
-        var last_value = 2 ** (bit_width_of[D]() - 1) - 1
+        var last_value = 2 ** (D.bit_width() - 1) - 1
         var values = [1, 2, last_value - 1, last_value]
 
         @parameter
@@ -102,6 +104,4 @@ def test_compare():
 
 
 def main():
-    test_is_negative()
-    test_splat()
-    test_compare()
+    TestSuite.discover_tests[__functions_in_module()]().run()

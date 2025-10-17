@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max.mlir.dialects import mo
+from max._core.dialects import mo
 
 from ..graph import Graph
 from ..type import TensorType, _ChainType
@@ -120,22 +120,31 @@ def allgather(
                 ).to_mlir()
             )
 
-    # Get the current chain for synchronization
-    in_chain = Graph.current._current_chain
+    # Get the current chain for synchronization.
+    graph = Graph.current
+    in_chain = graph._add_op_generated(
+        mo.ChainCreateOp,
+        _ChainType(),
+        [graph._current_chain, *(graph.device_chains[d] for d in devices)],
+    )[0]
 
     # Stage the allgather op with signal buffers and chain.
-    *results, out_chain = Graph.current._add_op(
-        mo.distributed_allgather,
+    *results, out_chain = graph._add_op_generated(
+        mo.DistributedAllgatherOp,
         # Output types: tensors + chain
         output_types,
-        _ChainType().to_mlir(),
+        _ChainType(),
         inputs,
         signal_buffers,
         in_chain,
     )
 
-    # Update the chain
-    Graph.current._update_chain(out_chain)
+    # Update the chain.
+    graph._update_chain(out_chain)
+
+    # Update device chains.
+    for device in devices:
+        graph.device_chains[device] = out_chain
 
     # Convert results to TensorValues.
     all_outputs = [res.tensor for res in results]

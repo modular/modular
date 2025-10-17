@@ -1,0 +1,282 @@
+load("@rules_cc//cc/toolchains:args.bzl", "cc_args")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_args(
+    name = "compile_and_link_args",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = [
+        "-no-canonical-prefixes",
+    ] + select({
+        "//:linux_x86_64": ["--target=x86_64-unknown-linux-gnu"],
+        "//:linux_aarch64": ["--target=aarch64-unknown-linux-gnu"],
+        # TODO: Pull 11.0 from config set in .bazelrc
+        "@platforms//os:macos": ["--target=arm64-apple-macosx11.0"],
+    }) + select({
+        "@platforms//os:linux": [
+            # Compress debug info to improve binary size, not supported on macOS
+            "-gz",
+        ],
+        "@platforms//os:macos": [],
+    }),
+    env = {
+        "ZERO_AR_DATE": "1",  # Required for hermetic links on macOS (default dependent)
+    },
+)
+
+cc_args(
+    name = "compile_warnings",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        # At the top to allow negation
+        "-Wall",
+        "-Wextra",
+        "-pedantic",
+
+        # Other warnings
+        "-Wcast-qual",
+        "-Wcovered-switch-default",
+        "-Wctad-maybe-unsupported",
+        "-Wdelete-non-virtual-dtor",
+        "-Wimplicit-fallthrough",
+        "-Wmisleading-indentation",
+        "-Wmissing-field-initializers",
+        "-Wno-builtin-macro-redefined",
+        "-Wno-c++17-attribute-extensions",
+        "-Wno-c++20-attribute-extensions",
+        "-Wno-dollar-in-identifier-extension",
+        "-Wno-gcc-compat",
+        "-Wno-gnu-statement-expression-from-macro-expansion",
+        "-Wno-gnu-zero-variadic-macro-arguments",
+        "-Wno-long-long",
+        "-Wno-noexcept-type",
+        "-Wno-strict-prototypes",
+        "-Wno-unused-parameter",
+        "-Wnon-virtual-dtor",
+        "-Wself-assign",
+        "-Wstring-conversion",
+        "-Wsuggest-override",
+        "-Wthread-safety",
+        "-Wwrite-strings",
+    ],
+)
+
+cc_args(
+    name = "compile_warnings_as_errors",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        # If this error hits it's a misconfiguration of clang
+        "-Werror=debug-compression-unavailable",
+
+        # Forbid return C++ types from exposed C functions
+        "-Werror=return-type-c-linkage",
+
+        # Build system misconfiguration
+        "-Werror=incomplete-umbrella",
+
+        # Forbid global constructors. These generally break library layering, and have
+        # various more appropriate workarounds.
+        "-Werror=global-constructors",
+    ],
+)
+
+cc_args(
+    name = "compile_args",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fcolor-diagnostics",
+        "-ffile-compilation-dir=.",  # Avoid absolute paths in binaries
+        "-fno-autolink",
+        "-fno-exceptions",
+        "-fno-omit-frame-pointer",
+        "-fno-rtti",
+        "-fPIC",
+        "-fstack-protector",
+        "-funwind-tables",
+        "-fvisibility-inlines-hidden",
+        "-fvisibility=hidden",
+        "-DGOOGLE_PROTOBUF_NO_RTTI=1",
+        "-DLLVM_BUILD_STATIC",
+        "-U_FORTIFY_SOURCE",
+        '-D__DATE__="redacted"',
+        '-D__TIME__="redacted"',
+        '-D__TIMESTAMP__="redacted"',
+        # Use fallback MLIR TypeIDs to allow sending MLIR objects between shared libraries.
+        # This should be defined by any compile target that uses MLIR types.
+        "-DMLIR_USE_FALLBACK_TYPE_IDS=1",
+    ] + select({
+        "@platforms//os:linux": [
+            "-fdata-sections",
+            "-ffunction-sections",
+        ],
+        "@platforms//os:macos": [],
+    }),
+)
+
+cc_args(
+    name = "cpp_compile_args",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions",
+        "@rules_cc//cc/toolchains/actions:objcpp_compile",
+    ],
+    args = [
+        "-std=c++20",
+    ] + select({
+        "@platforms//os:linux": ["-stdlib=libstdc++"],
+        "@platforms//os:macos": ["-stdlib=libc++"],
+    }),
+)
+
+cc_args(
+    name = "link_args",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = [
+        # TODO: Revisit, copied from toolchains_llvm
+        "-fuse-ld=lld",
+    ] + select({
+        "@platforms//os:linux": [
+            "-lm",
+            "-lstdc++",
+            "-Wl,--build-id=md5",
+            "-Wl,--hash-style=gnu",
+            "-Wl,-z,relro,-z,now",
+
+            # This is required for CXXDriver library sideloading to work.
+            # See https://github.com/modularml/modular/pull/2884.
+            # This linker can create the new dynamic tags in ELF. But the older ELF
+            # systems may not understand them. If you specify --enable-new-dtags, the
+            # dynamic tags will be created as needed. If you specify --disable-new-dtags,
+            # no new dynamic tags will be created. By default, the new dynamic tags are
+            # not created. Note that those options are only available for ELF systems.
+            "-Wl,--disable-new-dtags",
+
+            # Virtually disable dlclose, this is copied from HandleLLVMOptions.cmake, but
+            # doesn't seem ideal to be relying on, which we are heavily
+            "-Wl,-z,nodelete",
+        ],
+        "@platforms//os:macos": [
+            "-headerpad_max_install_names",
+            "-lc++",
+            "-Wl,-framework,Foundation",
+            "-Wl,-framework,Metal",
+            "-Wl,-no_warn_duplicate_libraries",
+            "-Wl,-oso_prefix,.",  # Strip absolute paths from debug info file references
+        ],
+    }) + select({
+        # Sanitizers are split across multiple libraries, some of which aren't linked to shared libraries
+        "//:asan_linux": ["-Wl,-z,undefs"],
+        "//:tsan_linux": ["-Wl,-z,undefs"],
+        "//:ubsan_linux": ["-Wl,-z,undefs"],
+        # Error on undefined symbols
+        "@platforms//os:linux": ["-Wl,-z,defs"],
+        "//conditions:default": [],
+    }) + select({
+        "//:modular_config_coverage": ["-fprofile-instr-generate"],
+        "//conditions:default": [],
+    }),
+)
+
+cc_args(
+    name = "link_executable_args",
+    actions = ["@rules_cc//cc/toolchains/actions:link_executable_actions"],
+    args = [
+        "-Wl,-pie",
+    ],
+)
+
+cc_args(
+    name = "opt_compile_args",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-D_FORTIFY_SOURCE=1",
+        "-DNS_BLOCK_ASSERTIONS=1",
+    ],
+)
+
+cc_args(
+    name = "opt_link_args",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = select({
+        "@platforms//os:linux": ["-Wl,--gc-sections"],
+        "@platforms//os:macos": ["-Wl,-dead_strip"],
+    }),
+)
+
+cc_args(
+    name = "non_opt_link_args",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = select({
+        "@platforms//os:macos": ["-Wl,-no_deduplicate"],
+        "//conditions:default": [],
+    }),
+)
+
+cc_args(
+    name = "asan_compile_args",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fno-sanitize-recover=all",
+        "-fsanitize=address",
+    ],
+)
+
+cc_args(
+    name = "asan_link_args",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = [
+        "-fsanitize=address",
+        "-shared-libsan",
+    ],
+)
+
+cc_args(
+    name = "tsan_compile_args",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fno-sanitize-recover=all",
+        "-fsanitize=thread",
+    ],
+)
+
+cc_args(
+    name = "tsan_link_args",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = [
+        "-fsanitize=thread",
+    ],
+)
+
+cc_args(
+    name = "ubsan_compile_args",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fno-sanitize-recover=all",
+        "-fsanitize=undefined",
+        "-fno-sanitize=vptr",  # requires rtti
+    ],
+)
+
+cc_args(
+    name = "ubsan_link_args",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = [
+        "-fsanitize=undefined",
+    ],
+)
+
+cc_args(
+    name = "generate_dsym",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    env = {
+        "MODULAR_BINARY_PATH": "{output_execpath}",
+        "MODULAR_DSYM_PATH": "{dsym_path}",
+    },
+    format = {
+        "dsym_path": "@rules_cc//cc/toolchains/variables:dsym_path",
+        "output_execpath": "@rules_cc//cc/toolchains/variables:output_execpath",
+    },
+    requires_not_none = "@rules_cc//cc/toolchains/variables:dsym_path",
+)

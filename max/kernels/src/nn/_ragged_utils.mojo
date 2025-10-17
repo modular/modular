@@ -14,39 +14,12 @@
 from sys.info import _current_target, simd_width_of
 
 from algorithm.functional import elementwise
-from buffer import NDBuffer
 from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from layout import LayoutTensor
 from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList
-
-
-@always_inline
-fn get_batch_from_row_offsets(
-    row_offsets: NDBuffer[DType.uint32, 1, *_], tok_idx: Int
-) -> Int:
-    """Calculate the batch_idx for the given flattened token_idx using row_offsets.
-    """
-    var row_offsets_size = row_offsets.dim[0]()
-
-    debug_assert(
-        tok_idx >= 0 and tok_idx < Int(row_offsets[row_offsets_size - 1]),
-        "tok_idx is out of range of row_offsets",
-    )
-
-    var low: UInt = 0
-    var high: UInt = UInt(row_offsets_size - 1)
-    while low + 1 != high:
-        var mid = (low + high) // 2
-
-        if tok_idx >= Int(row_offsets[mid]):
-            low = mid
-        elif tok_idx < Int(row_offsets[mid]):
-            high = mid
-
-    return Int(low)
 
 
 @always_inline
@@ -80,14 +53,21 @@ fn merge_ragged_tensors[
     dtype: DType, //,
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, dtype, rank],
-    c_row_offsets: NDBuffer[mut=True, DType.uint32, 1],
-    a: NDBuffer[dtype, rank],
-    a_row_offsets: NDBuffer[DType.uint32, 1],
-    b: NDBuffer[dtype, rank],
-    b_row_offsets: NDBuffer[DType.uint32, 1],
+    c: LayoutTensor[mut=True, dtype, **_],
+    c_row_offsets: LayoutTensor[mut=True, DType.uint32, **_],
+    a: LayoutTensor[dtype, **_],
+    a_row_offsets: LayoutTensor[DType.uint32, **_],
+    b: LayoutTensor[dtype, **_],
+    b_row_offsets: LayoutTensor[DType.uint32, **_],
     ctx: DeviceContextPtr,
 ) raises:
+    constrained[c.rank == rank, "c.rank must equal rank"]()
+    constrained[a.rank == rank, "a.rank must equal rank"]()
+    constrained[b.rank == rank, "b.rank must equal rank"]()
+    constrained[c_row_offsets.rank == 1, "c_row_offsets.rank must be 1"]()
+    constrained[a_row_offsets.rank == 1, "a_row_offsets.rank must be 1"]()
+    constrained[b_row_offsets.rank == 1, "b_row_offsets.rank must be 1"]()
+
     @always_inline
     @parameter
     fn merge_fn[
@@ -138,12 +118,14 @@ fn merge_ragged_tensors[
                 is_first_element = False
 
         if is_first_element:
-            c_row_offsets.store[width=1](batch_id, dst_row_idx)
+            c_row_offsets.store[width=1](IndexList[1](batch_id), dst_row_idx)
 
             # If this is the last batch, also update the last row offset to the total size
             if batch_id == c_row_offsets.dim[0]() - 2:
                 var total_size = a.dim[0]() + b.dim[0]()
-                c_row_offsets.store[width=1](batch_id + 1, total_size)
+                c_row_offsets.store[width=1](
+                    IndexList[1](batch_id + 1), total_size
+                )
 
     alias compile_target = _current_target() if is_cpu[
         target
@@ -156,4 +138,4 @@ fn merge_ragged_tensors[
         simd_width=kernel_simd_width,
         target=target,
         _trace_description="merge_ragged_tensors",
-    ](c.dynamic_shape, ctx)
+    ](c.runtime_layout.shape.value.canonicalize(), ctx)

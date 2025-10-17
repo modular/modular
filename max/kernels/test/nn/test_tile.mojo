@@ -1082,7 +1082,7 @@ fn test_tile_eg14() raises:
     print()
 
 
-fn main() raises:
+def main():
     test_tile_eg1()
     test_tile_eg2()
     test_tile_eg3()

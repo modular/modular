@@ -48,7 +48,7 @@ def main():
     var grid_dim = ceildiv(VECTOR_WIDTH, BLOCK_SIZE)
 
     # Launch the vector_addition function as a GPU kernel
-    ctx.enqueue_function[vector_addition](
+    ctx.enqueue_function_checked[vector_addition, vector_addition](
         lhs_tensor,
         rhs_tensor,
         out_tensor,
@@ -71,5 +71,5 @@ fn vector_addition(
 ):
     """The calculation to perform across the vector on the GPU."""
     var global_tid = global_idx.x
-    if global_tid < size:
+    if global_tid < UInt(size):
         out_tensor[global_tid] = lhs_tensor[global_tid] + rhs_tensor[global_tid]

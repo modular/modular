@@ -15,7 +15,7 @@ from os import abort
 
 
 struct UnsafeMaybeUninitialized[ElementType: AnyType](
-    Copyable, Defaultable, ExplicitlyCopyable, Movable
+    Copyable, Defaultable, Movable
 ):
     """A memory location that may or may not be initialized.
 
@@ -82,7 +82,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
 
     @always_inline
     fn copy_from[
-        CopyableType: ExplicitlyCopyable
+        CopyableType: Copyable
     ](
         mut self: UnsafeMaybeUninitialized[CopyableType],
         other: UnsafeMaybeUninitialized[CopyableType],
@@ -98,11 +98,11 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         Args:
             other: The object to copy.
         """
-        self.unsafe_ptr().init_pointee_explicit_copy(other.assume_initialized())
+        self.unsafe_ptr().init_pointee_copy(other.assume_initialized())
 
     @always_inline
     fn copy_from[
-        CopyableType: ExplicitlyCopyable
+        CopyableType: Copyable
     ](mut self: UnsafeMaybeUninitialized[CopyableType], other: CopyableType):
         """Copy another object.
 
@@ -114,7 +114,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         Args:
             other: The object to copy.
         """
-        self.unsafe_ptr().init_pointee_explicit_copy(other)
+        self.unsafe_ptr().init_pointee_copy(other)
 
     @always_inline
     fn __moveinit__(out self, deinit other: Self):
@@ -176,7 +176,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         Args:
             other: The pointer to the object to move.
         """
-        other.move_pointee_into(self.unsafe_ptr())
+        self.unsafe_ptr().init_pointee_move_from(other)
 
     @always_inline
     fn write[
@@ -195,7 +195,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         self.unsafe_ptr().init_pointee_move(value^)
 
     @always_inline
-    fn assume_initialized(ref self) -> ref [self] Self.ElementType:
+    fn assume_initialized(ref self) -> ref [self._array] Self.ElementType:
         """Returns a reference to the internal value.
 
         Calling this method assumes that the memory is initialized.
@@ -206,7 +206,11 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         return self.unsafe_ptr()[]
 
     @always_inline
-    fn unsafe_ptr(self) -> UnsafePointer[Self.ElementType]:
+    fn unsafe_ptr[
+        mut: Bool, origin: Origin[mut], //
+    ](ref [origin]self) -> UnsafePointer[
+        Self.ElementType, mut=mut, origin = __origin_of(self._array)
+    ]:
         """Get a pointer to the underlying element.
 
         Note that this method does not assumes that the memory is initialized

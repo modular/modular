@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """ops.range tests."""
 
-import numpy as np
 import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
@@ -76,7 +75,7 @@ devices = st.sampled_from([DeviceRef.CPU(), DeviceRef.GPU()])
 
 # Strategy for valid range parameters that produce reasonable output sizes
 @st.composite
-def valid_range_params(draw):  # noqa: ANN001
+def valid_range_params(draw):  # noqa: ANN001, ANN201
     """Generate valid range parameters with reasonable output dimensions."""
     # Generate step first (non-zero)
     step = draw(
@@ -126,13 +125,13 @@ def test_range_tensor_inputs() -> None:
             TensorType(shape=(), dtype=DType.int32, device=DeviceRef.CPU()),
         ),
     ) as graph:
-        start, stop, step = graph.inputs
+        start, stop, step = (v.tensor for v in graph.inputs)
         out = ops.range(
-            start,  # type: ignore
-            stop,  # type: ignore
-            step,  # type: ignore
+            start,
+            stop,
+            step,
             out_dim=10,
-            dtype=start.dtype,  # type: ignore
+            dtype=start.dtype,
             device=DeviceRef.CPU(),
         )
         graph.output(out)
@@ -250,11 +249,9 @@ def test_range_non_scalar_inputs_specific_error() -> None:
         ValueError, match="range expected scalar values as inputs!"
     ):
         with Graph("range_non_scalar", input_types=()) as graph:
-            start_val = ops.constant(
-                np.array([0]), DType.int32, device=DeviceRef.CPU()
-            )  # Non-scalar
+            start_val = ops.constant([0], DType.int32, device=DeviceRef.CPU())
             out = ops.range(
-                start_val,
+                start_val,  # shape [1], non-scalar
                 5,
                 1,
                 out_dim=5,
@@ -276,9 +273,9 @@ def test_range_missing_out_dim_with_dynamic_inputs() -> None:
                 TensorType(shape=(), dtype=DType.int32, device=DeviceRef.CPU()),
             ),
         ) as graph:
-            start_val = graph.inputs[0]  # Dynamic input
+            start_val = graph.inputs[0].tensor  # Dynamic input
             out = ops.range(
-                start_val,  # type: ignore
+                start_val,
                 5,
                 dtype=DType.int32,
                 device=DeviceRef.CPU(),
@@ -311,7 +308,7 @@ def test_range_step_zero() -> None:
 
 # Strategy for sign mismatch cases
 @st.composite
-def sign_mismatch_params(draw):  # noqa: ANN001
+def sign_mismatch_params(draw):  # noqa: ANN001, ANN201
     """Generate parameters where sign(stop-start) != sign(step)."""
     choice = draw(st.integers(min_value=0, max_value=2))
     if choice == 0:

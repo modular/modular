@@ -15,7 +15,7 @@
 
 from .config import AudioGenerationConfig, PipelineConfig
 from .config_enums import PipelineRole, RepoType, RopeType, SupportedEncoding
-from .embeddings_pipeline import EmbeddingsPipeline
+from .embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
 from .hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
@@ -49,11 +49,11 @@ from .profiling_config import ProfilingConfig
 from .ragged_token_merger import ragged_token_merger
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .sampling import (
+    SamplingConfig,
     rejection_sampler,
     rejection_sampler_with_residuals,
     token_sampler,
 )
-from .sampling_config import SamplingConfig
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import (
@@ -70,6 +70,7 @@ __all__ = [
     "PIPELINE_REGISTRY",
     "AudioGenerationConfig",
     "EmbeddingsPipeline",
+    "EmbeddingsPipelineType",
     "HuggingFaceRepo",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",

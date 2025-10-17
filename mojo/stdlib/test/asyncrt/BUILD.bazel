@@ -5,16 +5,36 @@ _TEST_DATA = [
 ]
 
 _CPU_TESTS = [
-    "smoke.mojo",
-    "copies.mojo",
-    "host_mapped.mojo",
-    "timing.mojo",
-    "memset.mojo",
+    "test_smoke.mojo",
+    "test_copies.mojo",
+    "test_host_mapped.mojo",
+    "test_timing.mojo",
+    "test_memset.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
-    "hip.mojo": ["//:amd_gpu"],
-    "cuda.mojo": ["//:nvidia_gpu"],
+    "test_hip.mojo": ["//:amd_gpu"],
+    "test_cuda.mojo": ["//:nvidia_gpu"],
+    "test_copies.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEX-2562
+    "test_smoke.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEX-2554
+    "test_elementwise.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: PRDT-506
+    "test_function.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2433
+    "test_function_regress.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2433
 }
 
 [

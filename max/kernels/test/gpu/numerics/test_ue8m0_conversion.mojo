@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import inf, nan
+
+from builtin.simd import _convert_f32_to_float8_ue8m0
 from gpu.host import DeviceContext
 from memory import bitcast
-from builtin.simd import _convert_f32_to_float8_ue8m0
-from math import inf, nan
 
 
 # CHECK-LABEL: test_simd_f32_to_ue8m0
@@ -62,23 +63,23 @@ fn test_simd_f32_to_ue8m0():
     i += 1
     f32_simd[i] = bitcast[DType.float32, 1]((exp << 23) + mantissa + 1)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](0.0)
+    f32_simd[i] = Float32(0.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](1.0)
+    f32_simd[i] = Float32(1.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](4.0)
+    f32_simd[i] = Float32(4.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](4096.0)
+    f32_simd[i] = Float32(4096.0)
     i += 1
     f32_simd[i] = -inf[DType.float32]()
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-0.0)
+    f32_simd[i] = Float32(-0.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-4096.0)
+    f32_simd[i] = Float32(-4096.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-4.0)
+    f32_simd[i] = Float32(-4.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-1.0)
+    f32_simd[i] = Float32(-1.0)
     i += 1
     f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x7F000000))
     i += 1
@@ -94,10 +95,11 @@ fn test_simd_f32_to_ue8m0():
 fn test_simd_f32_to_ue8m0_ptx_kernel[
     size: Int,
     target: DType,
-](x: SIMD[DType.float32, size], last_idx: Int):
+    idx: Int,
+](x: SIMD[DType.float32, size]):
     var x_casted = _convert_f32_to_float8_ue8m0[target](x)
 
-    for i in range(last_idx):
+    for i in range(idx):
         print(
             x_casted[i],
         )
@@ -147,34 +149,33 @@ fn test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
     i += 1
     f32_simd[i] = bitcast[DType.float32, 1]((exp << 23) + mantissa + 1)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](0.0)
+    f32_simd[i] = Float32(0.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](1.0)
+    f32_simd[i] = Float32(1.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](4.0)
+    f32_simd[i] = Float32(4.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](4096.0)
+    f32_simd[i] = Float32(4096.0)
     i += 1
     f32_simd[i] = -inf[DType.float32]()
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-0.0)
+    f32_simd[i] = Float32(-0.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-4096.0)
+    f32_simd[i] = Float32(-4096.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-4.0)
+    f32_simd[i] = Float32(-4.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-1.0)
+    f32_simd[i] = Float32(-1.0)
     i += 1
     f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x7F000000))
     i += 1
 
-    ctx.enqueue_function[test_simd_f32_to_ue8m0_ptx_kernel[M, DType.uint8]](
-        f32_simd, i, grid_dim=1, block_dim=1
-    )
+    alias kernel = test_simd_f32_to_ue8m0_ptx_kernel[M, DType.uint8, 18]
+    ctx.enqueue_function_experimental[kernel](f32_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
 
-fn main() raises:
+def main():
     test_simd_f32_to_ue8m0()
 
     with DeviceContext() as ctx:

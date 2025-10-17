@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 from utils.numerics import isnan
 
@@ -133,10 +133,4 @@ def test_isnan():
 
 
 def main():
-    test_abs()
-    test_divmod()
-    test_max()
-    test_min()
-    test_round()
-    test_pow()
-    test_isnan()
+    TestSuite.discover_tests[__functions_in_module()]().run()

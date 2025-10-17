@@ -5,17 +5,34 @@ description: Debugging Mojo programs.
 ---
 
 The Mojo extension for Visual Studio Code enables you to use VS Code's built-in
-debugger with Mojo programs. (The Mojo extension also supports debugging C, C++,
-and Objective-C.)
+debugger with Mojo code. This page describes the features available through the
+VS Code Mojo extension, as well as current limitations of the Mojo debugger.
+
+You can install the Mojo extension from either the
+[Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
+or the
+[Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
+See
+[Add the VS Code extension](/mojo/manual/install/#add-the-vs-code-extension) for
+more information.
+
+To use the Mojo extension, you must also
+[install the `mojo` package](/mojo/manual/install)—or, if you're developing for
+the MAX framework, [install the `modular` package](/max/packages), which
+includes the `mojo` package.
+
+:::note
+
+The Mojo extension relies on the Python extension for locating your Python
+environment. In some cases, this appears to default to your globally-installed
+environment, even when a virtual environment exists. If the Mojo extension
+cannot find your SDK installation, try invoking the "Python: Set Project
+Environment" command and selecting your virtual environment.
+
+:::
 
 For complete coverage of VS Code's debugging features, see
 [Debugging in Visual Studio Code](https://code.visualstudio.com/docs/editor/debugging).
-
-This page describes the features available through the Mojo extension, as well
-as current limitations of the Mojo debugger. To use the Mojo debugger, install
-the `mojo` package using Pixi or Conda (or install the `modular` package, which
-includes all of the `mojo` package). For more information, see
-[Packages](/max/packages).
 
 The `mojo` package includes the [LLDB debugger](https://lldb.llvm.org/) and a
 Mojo LLDB plugin. Together these provide the low-level debugging interface for
@@ -27,9 +44,6 @@ The `mojo` package also includes support for debugging Mojo programs running on
 GPU. This requires some extra software and configuration. Currently GPU
 debugging only works with NVIDIA GPUs. For details, see
 [GPU debugging](/mojo/tools/gpu-debugging).
-
-Note that the `uv` and `pip` versions of the `modular` package don't include
-the Mojo development tools (debugger, LSP, and so on).
 
 ## Start debugging
 

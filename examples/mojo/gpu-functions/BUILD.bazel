@@ -69,26 +69,3 @@ modular_run_binary_test(
     binary = "mandelbrot",
     tags = ["gpu"],
 )
-
-mojo_binary(
-    name = "vector_addition_metal",
-    srcs = ["vector_addition_metal.mojo"],
-    env = {
-        "MOJO_ENABLE_HAS_GPU_FOR_APPLE": "1",
-    },
-    target_compatible_with = ["//:apple_gpu"],
-    deps = [
-        "@mojo//:layout",
-        "@mojo//:stdlib",
-    ],
-)
-
-modular_run_binary_test(
-    name = "vector_addition_metal_test",
-    binary = "vector_addition_metal",
-    tags = [
-        "apple_gpu",
-        # This uses MacOS 15 and M2+ specific features
-        "skip-external-ci-macos-15",
-    ],
-)

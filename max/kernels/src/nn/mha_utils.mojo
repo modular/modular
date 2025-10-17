@@ -18,6 +18,7 @@ from sys import (
     CompilationTarget,
     align_of,
     env_get_int,
+    env_get_bool,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
@@ -27,9 +28,11 @@ from sys import (
 )
 from sys.info import _accelerator_arch
 
-from buffer import NDBuffer
+from bit import prev_power_of_two
 from gpu import WARP_SIZE, lane_id
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.memory import AddressSpace
+from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
@@ -44,12 +47,9 @@ from nn.mha_mask import (
     SlidingWindowCausalMask,
 )
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
-from gpu.host._nvidia_cuda import TensorMapSwizzle
 
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf
-
-from bit import prev_power_of_two
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -63,7 +63,7 @@ alias is_sm90or100 = is_sm90 or is_sm100
 
 @register_passable("trivial")
 struct FlashAttentionAlgorithm(
-    Copyable, Defaultable, Movable, Stringable, Writable
+    Defaultable, ImplicitlyCopyable, Movable, Stringable, Writable
 ):
     var _value: Int32
 
@@ -95,12 +95,12 @@ struct FlashAttentionAlgorithm(
         return String.write(self)
 
     @always_inline
-    fn init(self, type: DType) -> Self:
+    fn init(self, dtype: DType) -> Self:
         if self._value == -1:
 
             @parameter
             if is_sm90or100:
-                return FlashAttentionAlgorithm(2 + type.is_half_float())
+                return FlashAttentionAlgorithm(2 + dtype.is_half_float())
             else:
                 return FlashAttentionAlgorithm(2)
         else:
@@ -122,8 +122,8 @@ struct FlashAttentionAlgorithm(
 
 @fieldwise_init
 @register_passable("trivial")
-struct MHAConfig(Copyable, Movable, Writable):
-    var type: DType
+struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
+    var dtype: DType
 
     # Q, K, V, output should have the same type.
     var num_heads: UInt
@@ -235,7 +235,7 @@ struct MHAConfig(Copyable, Movable, Writable):
         if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
             num_smem_elements += self.p_smem_size()
 
-        num_smem_bytes = self.type.size_of() * num_smem_elements
+        num_smem_bytes = self.dtype.size_of() * num_smem_elements
         if sm_90_fa3:
             alias i64_size = size_of[DType.int64]()
             num_smem_bytes += (2 * self.num_pipeline_stages) * i64_size + (
@@ -246,7 +246,7 @@ struct MHAConfig(Copyable, Movable, Writable):
 
     fn __init__(
         out self,
-        type: DType,
+        dtype: DType,
         num_heads: UInt,
         depth: UInt,
         num_queries_per_block: OptionalReg[UInt] = None,
@@ -260,23 +260,24 @@ struct MHAConfig(Copyable, Movable, Writable):
         padded_depth: OptionalReg[UInt] = None,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     ):
-        self.type = type
+        self.dtype = dtype
         self.num_heads = num_heads
         self.depth = depth
         swizzle_granularity = swizzle_mode.bytes() // size_of[DType.bfloat16]()
-        padded_depth_default = (
-            ceildiv(depth, swizzle_granularity) * swizzle_granularity
+        padded_depth_default = UInt(
+            ceildiv(depth, UInt(swizzle_granularity))
+            * UInt(swizzle_granularity)
         )
         self.padded_depth = padded_depth.or_else(padded_depth_default)
         self.num_pipeline_stages = num_pipeline_stages
         self.k_group_size = k_group_size
-        self.algorithm = algorithm.init(type)
+        self.algorithm = algorithm.init(dtype)
         # Not all of these have to be `OptionalReg`, only
         # those that depend on `depth`.
         # Currently, all are `OptionalReg` for consistency.
         if (
             is_sm90or100
-            and type.is_half_float()
+            and dtype.is_half_float()
             and self.algorithm == FlashAttentionAlgorithm(3)
         ):
             # BM
@@ -306,7 +307,7 @@ struct MHAConfig(Copyable, Movable, Writable):
                 #        - 20*persistent) // (depth*pipeline_stages)
                 smem_upper_bound = (
                     smem_total // 2
-                    - self.num_queries_per_block * depth * (1 + persistent)
+                    - self.num_queries_per_block * depth * UInt(1 + persistent)
                     - 8 * num_pipeline_stages
                     - 20 * persistent
                 ) // (depth * num_pipeline_stages)
@@ -321,26 +322,33 @@ struct MHAConfig(Copyable, Movable, Writable):
             self.BK = BK.or_else(64)
             self.WN = WN.or_else(min(self.num_keys_per_block, 256))
         else:
+            alias use_experimental_cdna4_kernel = env_get_bool[
+                "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
+            ]()
             # BN
-            self.num_keys_per_block = num_keys_per_block.or_else(depth)
+            self.num_keys_per_block = num_keys_per_block.or_else(
+                64 if use_experimental_cdna4_kernel else depth
+            )
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
                 UInt(
-                    32 if type
+                    32 if dtype
                     is DType.float32 else (
                         128 if has_amd_gpu_accelerator() else 64
                     )
                 )
             )
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
-            var bk_type_factor = 1 if type is DType.float32 else 2
+            var bk_type_factor = 1 if dtype is DType.float32 else 2
             self.BK = BK.or_else(
                 UInt(16 * bk_arch_factor * bk_type_factor)
             ) if has_nvidia_gpu_accelerator() else 32
-            self.WN = WN.or_else(32 if type is DType.float32 else depth)
+            self.WN = WN.or_else(
+                32 if dtype is DType.float32 else self.num_keys_per_block
+            )
         self.WM = WM.or_else(
             UInt(
-                32 if type
+                32 if dtype
                 is DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
             )
         )
@@ -353,7 +361,7 @@ struct MHAConfig(Copyable, Movable, Writable):
             writer.write("ampere_")
         else:
             writer.write("fa3_")
-        writer.write(self.type, "_")
+        writer.write(self.dtype, "_")
         # Use BNxBM to match MatmulConfig, which matches cublas
         writer.write(self.block_n(), "x", self.block_m(), "_")
         writer.write(self.block_k(), "x")
@@ -365,18 +373,18 @@ struct MHAConfig(Copyable, Movable, Writable):
 
 @always_inline
 fn _kernel_mask[
-    type: DType, width: Int
+    dtype: DType, width: Int
 ](
-    coord: IndexList[2, **_], bound: IndexList[2, **_], vec: SIMD[type, width]
-) -> SIMD[type, width]:
-    var masked_vec = SIMD[type, width]()
+    coord: IndexList[2, **_], bound: IndexList[2, **_], vec: SIMD[dtype, width]
+) -> SIMD[dtype, width]:
+    var masked_vec = SIMD[dtype, width]()
 
     # TODO: use `select` to see if it generates the same code.
     @parameter
     for i in range(width):
         masked_vec[i] = (
             vec[i] if coord[0] < bound[0]
-            and coord[1] + UInt32(i) < bound[1] else min_or_neg_inf[type]()
+            and coord[1] + UInt32(i) < bound[1] else min_or_neg_inf[dtype]()
         )
 
     return masked_vec
@@ -675,11 +683,17 @@ fn dispatch_mask_and_score_mod[
 
 @always_inline
 fn dispatch_materialized_mask_and_score_mod[
-    score_mod_type: String, callback_fn: callback_fn_type, num_heads: Int = -1
+    dtype: DType,
+    layout: Layout, //,
+    score_mod_type: String,
+    callback_fn: callback_fn_type,
+    num_heads: Int = -1,
 ](
-    mask_nd: NDBuffer,
+    mask_nd: LayoutTensor[dtype, layout, MutableAnyOrigin],
     start_pos_nd: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ] = None,
 ) raises -> None:
     var mask = MaterializedMask(mask_nd, start_pos_nd)
@@ -723,7 +737,8 @@ fn _dispatch_score_mod[
 # when passing as a function argument.
 # That is, we want different specializations of a function to have
 # different numbers of arguments post-compilation.
-trait OptionallyStaticInt(Intable):
+@register_passable("trivial")
+trait OptionallyStaticInt(Copyable, Intable):
     alias static_value: OptionalReg[Int]
 
     fn as_uint32(self) -> UInt32:
@@ -773,7 +788,7 @@ fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
 
 
 @register_passable("trivial")
-trait MHAPartitionScheme:
+trait MHAPartitionScheme(Copyable):
     alias do_partition: Bool
     alias accum_dtype: DType
 
@@ -790,7 +805,7 @@ trait MHAPartitionScheme:
 
 @register_passable("trivial")
 struct NoPartition[dtype: DType](
-    Copyable, Defaultable, MHAPartitionScheme, Movable
+    Defaultable, ImplicitlyCopyable, MHAPartitionScheme, Movable
 ):
     alias do_partition: Bool = False
     alias accum_dtype: DType = dtype
@@ -811,7 +826,9 @@ struct NoPartition[dtype: DType](
 
 
 @register_passable("trivial")
-struct SplitKPartition[dtype: DType](Copyable, MHAPartitionScheme, Movable):
+struct SplitKPartition[dtype: DType](
+    ImplicitlyCopyable, MHAPartitionScheme, Movable
+):
     alias do_partition: Bool = True
     alias accum_dtype: DType = Self.dtype
     var ptr: UnsafePointer[Scalar[Self.accum_dtype]]

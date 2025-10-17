@@ -14,7 +14,7 @@
 
 import logging
 import uuid
-from typing import Callable
+from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from max.serve.telemetry.stopwatch import StopWatch
@@ -24,19 +24,18 @@ logger = logging.getLogger("max.serve")
 
 def register_request(app: FastAPI) -> None:
     @app.middleware("http")
-    async def request_session(request: Request, call_next: Callable):
+    async def request_session(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         request_id = uuid.uuid4().hex
         request.state.request_id = request_id
         request.state.request_timer = StopWatch()
         try:
             response: Response = await call_next(request)
-            status_code = response.status_code
-        except HTTPException as e:
-            status_code = e.status_code
-            raise e
+        except HTTPException:
+            raise  # already wrapped
         except Exception as e:
             logger.exception("Exception in request session : %s", request_id)
-            status_code = 500
             raise HTTPException(
                 status_code=500, headers={"X-Request-ID": request_id}
             ) from e

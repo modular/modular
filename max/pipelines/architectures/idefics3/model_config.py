@@ -15,10 +15,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Literal
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue
+from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
@@ -209,7 +209,6 @@ class Idefics3Config(MAXModelConfig, Idefics3ConfigBase):
         llm_state_dict: dict[str, WeightData],
         dtype: DType,
         n_devices: int,
-        logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
@@ -223,7 +222,6 @@ class Idefics3Config(MAXModelConfig, Idefics3ConfigBase):
             llm_state_dict: Model weights dictionary.
             dtype: Data type for model parameters.
             n_devices: Number of devices.
-            logits_postprocessor: Optional logits postprocessor.
             cache_dtype: KV cache data type.
             kv_cache_config: KV cache configuration.
             return_logits: Return logits configuration.
@@ -242,7 +240,6 @@ class Idefics3Config(MAXModelConfig, Idefics3ConfigBase):
             state_dict=llm_state_dict,
             dtype=dtype,
             n_devices=n_devices,
-            logits_postprocessor=logits_postprocessor,
             cache_dtype=cache_dtype,
             kv_cache_config=kv_cache_config,
             return_logits=return_logits,

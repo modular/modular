@@ -38,7 +38,7 @@ fn semaphore_vector_reduce[
 
     sema.wait(block_idx)
 
-    c_ptr[tid] += a_ptr[block_idx * N + tid]
+    c_ptr[tid] += a_ptr[block_idx * UInt(N) + tid]
     var lx: Int
     if num_parts == (block_idx + 1):
         lx = 0
@@ -70,13 +70,14 @@ fn run_vector_reduction[
 
     var a_device = ctx.enqueue_create_buffer[dtype](PN)
     var c_device = ctx.enqueue_create_buffer[dtype](N)
-    var lock_dev = ctx.enqueue_create_buffer[dtype](1)
+    var lock_dev = ctx.enqueue_create_buffer[DType.int32](1)
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    ctx.enqueue_function[semaphore_vector_reduce[dtype, N, num_parts]](
+    alias kernel = semaphore_vector_reduce[dtype, N, num_parts]
+    ctx.enqueue_function_checked[kernel, kernel](
         c_device,
         a_device,
         lock_dev,
@@ -121,7 +122,7 @@ fn semaphore_matrix_reduce[
         var row = x // N
         var col = x % N
         c_ptr[row * N + col] += a_ptr[
-            row * (N * num_parts) + (block_idx * num_parts + col)
+            row * (N * num_parts) + (block_idx * UInt(num_parts) + UInt(col))
         ]
 
     var lx: Int
@@ -157,7 +158,7 @@ fn run_matrix_reduction[
 
     var a_device = ctx.enqueue_create_buffer[dtype](PX)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var lock_dev = ctx.enqueue_create_buffer[dtype](1)
+    var lock_dev = ctx.enqueue_create_buffer[DType.int32](1)
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
@@ -165,7 +166,8 @@ fn run_matrix_reduction[
 
     var block_size = 1024
 
-    ctx.enqueue_function[semaphore_matrix_reduce[dtype, M, N, num_parts]](
+    alias kernel = semaphore_matrix_reduce[dtype, M, N, num_parts]
+    ctx.enqueue_function_checked[kernel, kernel](
         c_device,
         a_device,
         lock_dev,

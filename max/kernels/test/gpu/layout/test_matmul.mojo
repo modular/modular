@@ -16,16 +16,8 @@ from sys import has_nvidia_gpu_accelerator
 from benchmark import Bench
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
-from internal_utils import (
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
-from layout.layout_tensor import (
-    Layout,
-    LayoutTensor,
-)
+from internal_utils import HostNDBuffer, assert_almost_equal, random, zero
+from layout.layout_tensor import Layout, LayoutTensor
 from matmul_kernels import (
     run_cublas,
     run_gemm_kernel_1,
@@ -110,9 +102,9 @@ struct test_matmul[
             self.M,
             self.N,
             self.K,
-            self.a_device_buffer._unsafe_ptr(),
-            self.b_device_buffer._unsafe_ptr(),
-            self.c_device_buffer_ref._unsafe_ptr(),
+            self.a_device_buffer.unsafe_ptr(),
+            self.b_device_buffer.unsafe_ptr(),
+            self.c_device_buffer_ref.unsafe_ptr(),
         )
 
         ctx.enqueue_copy(self.c_host_ref.tensor.data, self.c_device_buffer_ref)
@@ -135,16 +127,16 @@ struct test_matmul[
                 __type_of(result.runtime_layout.shape)(m, n),
                 __type_of(result.runtime_layout.stride)(n, 1),
             )
-            return __type_of(result)(ptr, dynamic_layout)
+            return {ptr, dynamic_layout}
 
         var a = create_tensor[a_layout](
-            self.M, self.K, self.a_device_buffer._unsafe_ptr()
+            self.M, self.K, self.a_device_buffer.unsafe_ptr()
         )
         var b = create_tensor[b_layout](
-            self.K, self.N, self.b_device_buffer._unsafe_ptr()
+            self.K, self.N, self.b_device_buffer.unsafe_ptr()
         )
         var c = create_tensor[c_layout](
-            self.M, self.N, self.c_device_buffer._unsafe_ptr()
+            self.M, self.N, self.c_device_buffer.unsafe_ptr()
         )
 
         gemm(m, ctx, a, b, c)

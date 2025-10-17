@@ -28,6 +28,7 @@ trait Identifiable:
         """
         ...
 
+    @always_inline
     fn __isnot__(self, rhs: Self) -> Bool:
         """Define whether `self` has a different identity than `rhs`.
 
@@ -37,4 +38,4 @@ trait Identifiable:
         Returns:
             True if `self` is not `rhs`.
         """
-        ...
+        return not (self is rhs)

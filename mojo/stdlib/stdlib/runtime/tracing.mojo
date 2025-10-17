@@ -13,20 +13,44 @@
 """Provides tracing utilities."""
 
 
-from collections.optional import OptionalReg, Optional
-from sys import external_call
+from collections.optional import Optional, OptionalReg
+from sys import external_call, stderr
 from sys.param_env import env_get_int, is_defined
 
 import gpu.host._tracing as gpu_tracing
+import logger.logger as logger
 from buffer import NDBuffer
+from gpu.host import DeviceContext
+from gpu.host._tracing import Color
 from gpu.host._tracing import _end_range as _end_gpu_range
 from gpu.host._tracing import _is_enabled as _gpu_is_enabled
 from gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
 from gpu.host._tracing import _mark as _mark_gpu
 from gpu.host._tracing import _start_range as _start_gpu_range
-from gpu.host._tracing import Color
+from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList, Variant
+
+alias log = logger.Logger[logger.Level.INFO](fd=sys.stderr, prefix="[OP] ")
+
+
+fn get_safe_task_id(ctx: DeviceContextPtr) -> OptionalReg[Int]:
+    """Safely extract task_id from DeviceContextPtr, returning None if null/invalid.
+    """
+    # Check if the underlying handle is null
+    if not ctx._handle:
+        return None
+    # If not null, still need try/except as these operations can fail for other reasons
+    try:
+        return OptionalReg(Int(ctx.get_device_context().id()))
+    except:
+        return None
+
+
+fn get_safe_task_id(ctx: DeviceContext) -> OptionalReg[Int]:
+    """Safely extract task_id from DeviceContext, returning None if null/invalid.
+    """
+    return get_safe_task_id(DeviceContextPtr(ctx))
 
 
 fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
@@ -43,7 +67,7 @@ fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
 
 @fieldwise_init
 @register_passable("trivial")
-struct TraceCategory(EqualityComparable, Intable):
+struct TraceCategory(EqualityComparable, Identifiable, Intable):
     """An enum-like struct specifying the type of tracing to perform."""
 
     alias OTHER = Self(0)
@@ -93,18 +117,6 @@ struct TraceCategory(EqualityComparable, Intable):
         return self == rhs
 
     @always_inline("nodebug")
-    fn __isnot__(self, rhs: Self) -> Bool:
-        """Compares for inequality.
-
-        Args:
-            rhs: The value to compare.
-
-        Returns:
-            True if they are not equal.
-        """
-        return self != rhs
-
-    @always_inline("nodebug")
     fn __int__(self) -> Int:
         """Converts the trace category to an integer.
 
@@ -120,7 +132,9 @@ struct TraceCategory(EqualityComparable, Intable):
 
 
 @register_passable("trivial")
-struct TraceLevel(Copyable, EqualityComparable, Movable):
+struct TraceLevel(
+    EqualityComparable, Identifiable, ImplicitlyCopyable, Movable
+):
     """An enum-like struct specifying the level of tracing to perform."""
 
     alias ALWAYS = Self(0)
@@ -192,18 +206,6 @@ struct TraceLevel(Copyable, EqualityComparable, Movable):
             True if they are equal.
         """
         return self == rhs
-
-    @always_inline("nodebug")
-    fn __isnot__(self, rhs: Self) -> Bool:
-        """Compares for inequality.
-
-        Args:
-            rhs: The value to compare.
-
-        Returns:
-            True if they are not equal.
-        """
-        return self != rhs
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:
@@ -288,6 +290,15 @@ fn _is_gpu_profiler_detailed_enabled[
 
 
 @always_inline
+fn _is_op_logging_enabled[level: TraceLevel]() -> Bool:
+    @parameter
+    if logger.DEFAULT_LEVEL == logger.Level.NOTSET:
+        return False
+
+    return level <= TraceLevel.OP
+
+
+@always_inline
 fn _is_mojo_profiling_enabled[level: TraceLevel]() -> Bool:
     """Returns whether Mojo profiling is enabled for the specified level."""
     return is_profiling_enabled[TraceCategory.MAX, level]()
@@ -297,6 +308,22 @@ fn _is_mojo_profiling_enabled[level: TraceLevel]() -> Bool:
 fn _is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
     """Returns whether Mojo profiling is disabled for the specified level."""
     return is_profiling_disabled[TraceCategory.MAX, level]()
+
+
+@always_inline
+fn _validate_single_tracing_enabled() -> Bool:
+    """Validates that at most one tracing system is enabled."""
+    var enabled_count = 0
+
+    # Check AsyncRT profiling
+    if _build_info_asyncrt_max_profiling_level():
+        enabled_count += 1
+
+    # Check GPU profiling
+    if _gpu_is_enabled():
+        enabled_count += 1
+
+    return enabled_count <= 1
 
 
 @always_inline
@@ -358,7 +385,7 @@ struct Trace[
     *,
     category: TraceCategory = TraceCategory.MAX,
     target: Optional[StaticString] = None,
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """An object representing a specific trace.
 
     This struct provides functionality for creating and managing trace events
@@ -422,6 +449,12 @@ struct Trace[
             "the AsyncRT profiler only supports `StaticString` names",
         )
 
+        # Validate that only one tracing system is enabled
+        debug_assert(
+            _validate_single_tracing_enabled(),
+            "only one tracing system should be enabled at a time",
+        )
+
         @parameter
         if _is_gpu_profiler_enabled[category, level]():
             self._name_value = _name_value^
@@ -432,7 +465,10 @@ struct Trace[
             else:
                 self.detail = ""
             self.int_payload = None
-        elif is_profiling_enabled[category, level]():
+        elif (
+            is_profiling_enabled[category, level]()
+            or _is_op_logging_enabled[level]()
+        ):
             self._name_value = _name_value^
             self.detail = detail
 
@@ -532,11 +568,19 @@ struct Trace[
         )
 
     @always_inline
-    fn __enter__(mut self):
+    fn __enter__(mut self) raises:
         """Enters the trace context.
 
         This begins recording of the trace event.
         """
+
+        @parameter
+        if _is_op_logging_enabled[level]():
+            # Since Mojo does not support module-level globals yet, we need to
+            # put this atomic counter variable in C++ code.
+            self.event_id = external_call["KGEN_CompilerRT_GetNextOpId", Int]()
+            self._emit_op_log("LAUNCH")
+            return
 
         @parameter
         if _is_gpu_profiler_enabled[category, level]():
@@ -622,11 +666,16 @@ struct Trace[
         ](self.event_id)
 
     @always_inline
-    fn __exit__(self):
+    fn __exit__(self) raises:
         """Exits the trace context.
 
         This finishes recording of the trace event.
         """
+
+        @parameter
+        if _is_op_logging_enabled[level]():
+            self._emit_op_log("COMPLETE")
+            return
 
         @parameter
         if _is_gpu_profiler_enabled[category, level]():
@@ -646,7 +695,7 @@ struct Trace[
         ](0)
 
     @always_inline
-    fn mark(self):
+    fn mark(self) raises:
         """Marks the tracer with the info at the specific point of time.
 
         This creates a point event in the trace timeline rather than a range.
@@ -691,7 +740,7 @@ struct Trace[
             return ""
 
     @always_inline
-    fn start(mut self):
+    fn start(mut self) raises:
         """Start recording trace event.
 
         This begins recording of the trace event, similar to __enter__.
@@ -699,12 +748,30 @@ struct Trace[
         self.__enter__()
 
     @always_inline
-    fn end(mut self):
+    fn end(mut self) raises:
         """End recording trace event.
 
         This finishes recording of the trace event, similar to __exit__.
         """
         self.__exit__()
+
+    fn _emit_op_log(self, op_name: StringSlice):
+        """
+        Emit a log message for op tracing to stderr.
+        """
+        var detail = self.detail
+        if self.int_payload:
+            detail += String(":", self.int_payload.value())
+        log.info(
+            op_name,
+            " ",
+            self.name(),
+            " [id=",
+            self.event_id,
+            "] ",
+            detail,
+            sep="",
+        )
 
 
 fn get_current_trace_id[level: TraceLevel]() -> Int:

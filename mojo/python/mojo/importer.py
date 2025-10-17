@@ -19,13 +19,8 @@ import sys
 from collections.abc import Sequence
 from importlib.util import spec_from_file_location
 from pathlib import Path
-from typing import Optional
 
-from .paths import (
-    MojoCompilationError,
-    MojoModulePath,
-    find_mojo_module_in_dir,
-)
+from .paths import MojoCompilationError, MojoModulePath, find_mojo_module_in_dir
 from .run import subprocess_run_mojo
 
 # ---------------------------------------
@@ -123,18 +118,18 @@ def _delete_matching_cached_files(
 #    https://docs.python.org/3/library/importlib.html#importlib.machinery.ExtensionFileLoader
 #    https://peps.python.org/pep-0489/#module-creation-phase
 class MojoImporter:
-    def find_spec(
+    def find_spec(  # noqa: ANN201
         self,
         name: str,
-        import_path: Optional[Sequence[str]],
-        target: Optional[object],
+        import_path: Sequence[str] | None,
+        target: object | None,
     ):
         # This importer only handles top-level imports. `import foo.bar` is not
         # supported.
         if "." in name or import_path is not None:
             return None
 
-        mojo_module: Optional[MojoModulePath] = None
+        mojo_module: MojoModulePath | None = None
         # Search sys.path for the Mojo source file or package
         for path_entry in sys.path:
             # Use the helper function to check this directory

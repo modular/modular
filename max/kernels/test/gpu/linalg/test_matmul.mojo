@@ -21,21 +21,14 @@ from sys import (
     simd_width_of,
 )
 
+import linalg.matmul.vendor.blas as vendor_blas
 from algorithm.functional import elementwise
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    arange,
-    random,
-    zero,
-)
+from gpu.host import DeviceContext, get_gpu_target
+from internal_utils import DeviceNDBuffer, HostNDBuffer, arange, random, zero
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg import vendor_blas
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulConfig
 from test_utils import ulp_distance
 from testing import assert_almost_equal
@@ -273,7 +266,7 @@ fn test[
             var actual = c_host_tensor[m, n]
 
             @parameter
-            if bit_width_of[dtype]() <= 16:
+            if dtype.bit_width() <= 16:
                 var ulp_dist = ulp_distance(actual, expect)
                 if ulp_dist <= _max_ulp_distance:
                     continue

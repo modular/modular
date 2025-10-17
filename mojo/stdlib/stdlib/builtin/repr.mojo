@@ -15,7 +15,7 @@
 The functions and traits provided here are built-ins, so you don't need to import them.
 """
 
-from collections import Set, LinkedList, Deque
+from collections import Deque, LinkedList, Set
 
 
 trait Representable:
@@ -87,7 +87,7 @@ fn repr[T: Representable & Movable & Copyable](value: List[T]) -> String:
         value: A `List` of elements `T`.
 
     Parameters:
-        T: A type that implements `RepresentableCollectionElement`.
+        T: A type that implements `Representable`, `Movable`, and `Copyable`.
 
     Returns:
         The string representation of `List[T]`.
@@ -98,7 +98,7 @@ fn repr[T: Representable & Movable & Copyable](value: List[T]) -> String:
 
 fn repr[
     K: KeyElement & Representable,
-    V: ExplicitlyCopyable & Movable & Representable,
+    V: Copyable & Movable & Representable,
 ](value: Dict[K, V]) -> String:
     """Returns the string representation of a `Dict[K,V]`.
 
@@ -148,16 +148,14 @@ fn repr[U: Representable & Copyable & Movable](value: Optional[U]) -> String:
     return value.__repr__()
 
 
-fn repr[
-    U: ExplicitlyCopyable & Movable & Writable
-](value: LinkedList[U]) -> String:
+fn repr[U: Copyable & Movable & Writable](value: LinkedList[U]) -> String:
     """Returns the string representation of an `LinkedList[U]`.
 
     Args:
         value: A `LinkedList` of element type `U`.
 
     Parameters:
-        U: A type that implements `Movable`, `ExplicitlyCopyable` and `Writable`.
+        U: A type that implements `Movable`, `Copyable` and `Writable`.
 
     Returns:
         The string representation of `LinkedList[U]`.
@@ -166,16 +164,14 @@ fn repr[
     return value.__repr__()
 
 
-fn repr[
-    T: Representable & ExplicitlyCopyable & Movable
-](value: Deque[T]) -> String:
+fn repr[T: Representable & Copyable & Movable](value: Deque[T]) -> String:
     """Returns the string representation of an `Deque[U]`.
 
     Args:
         value: A `Deque` of element type `U`.
 
     Parameters:
-        T: A type that implements `Movable`, `ExplicitlyCopyable` and `Representable`.
+        T: A type that implements `Movable`, `Copyable` and `Representable`.
 
     Returns:
         The string representation of `Deque[U]`.

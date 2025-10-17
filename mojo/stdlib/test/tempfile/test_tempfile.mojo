@@ -16,7 +16,7 @@ from os.path import exists, split
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory, gettempdir, mkdtemp
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def test_mkdtemp():
@@ -57,7 +57,7 @@ struct TempEnvWithCleanup:
         vars_to_set: Dict[String, String],
         clean_up_function: fn () raises -> None,
     ):
-        self.vars_to_set = vars_to_set
+        self.vars_to_set = vars_to_set.copy()
         self._vars_back = Dict[String, String]()
         self.clean_up_function = clean_up_function
 
@@ -80,7 +80,7 @@ struct TempEnvWithCleanup:
         return False
 
 
-fn _clean_up_gettempdir_test() raises:
+def _clean_up_gettempdir_test():
     var dir_without_writing_access = Path() / "dir_without_writing_access"
     if exists(dir_without_writing_access):
         os.rmdir(dir_without_writing_access)
@@ -230,8 +230,4 @@ def test_named_temporary_file_write():
 
 
 def main():
-    test_mkdtemp()
-    test_gettempdir()
-    test_temporary_directory()
-    test_named_temporary_file_write()
-    test_named_temporary_file_deletion()
+    TestSuite.discover_tests[__functions_in_module()]().run()

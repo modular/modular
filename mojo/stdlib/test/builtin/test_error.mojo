@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 def raise_an_error():
@@ -35,5 +35,4 @@ def test_from_and_to_string():
 
 
 def main():
-    test_error_raising()
-    test_from_and_to_string()
+    TestSuite.discover_tests[__functions_in_module()]().run()

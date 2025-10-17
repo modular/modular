@@ -19,6 +19,8 @@ from utils import StaticTuple
 ```
 """
 
+from builtin.device_passable import DevicePassable
+from compile import get_type_name
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
@@ -38,7 +40,7 @@ fn _static_tuple_construction_checks[size: Int]():
 
 @register_passable("trivial")
 struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
-    Copyable, Defaultable, Movable, Sized
+    Defaultable, DevicePassable, ImplicitlyCopyable, Movable, Sized
 ):
     """A statically sized tuple type which contains elements of homogeneous types.
 
@@ -50,9 +52,27 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
     alias _mlir_type = __mlir_type[
         `!pop.array<`, size._mlir_value, `, `, Self.element_type, `>`
     ]
+    alias device_type: AnyTrivialRegType = Self
 
     var _mlir_value: Self._mlir_type
     """The underlying storage for the static tuple."""
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return String(
+            "StaticTuple[",
+            get_type_name[Self.element_type](),
+            ", ",
+            size,
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn __init__(out self):

@@ -18,6 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+import numpy.typing as npt
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
 
@@ -81,19 +83,58 @@ class LayerNorm(Module):
         self.eps = eps
 
     def __call__(self, input: TensorValue):
+        weight = self.weight.to(input.device)
         # TODO: AIPIPE-95 Replace with a broadcasting rmo.layer_norm
         bias = (
             ops.cast(self.bias, DType.float32)
             if self.bias
             # If bias wasn't passed then use bias-less layer norm (beta = 0).
             else ops.broadcast_to(
-                ops.constant(0.0, DType.float32, self.weight.device),
+                ops.constant(0.0, DType.float32, weight.device),
                 shape=(input.shape[-1],),
             )
         )
+        bias = bias.to(input.device)
         return ops.layer_norm(
             input.cast(DType.float32),
-            gamma=ops.cast(self.weight, DType.float32),
+            gamma=ops.cast(weight, DType.float32),
             beta=bias,
             epsilon=self.eps,
         ).cast(input.dtype)
+
+
+class ConstantLayerNorm(Module):
+    """Layer normalization block with constant gamma and beta values."""
+
+    gamma: npt.NDArray[np.floating[Any]]
+    beta: npt.NDArray[np.floating[Any]]
+    eps: float = 1e-5
+    device: DeviceRef
+    dtype: DType
+
+    def __init__(
+        self,
+        dims: int | tuple[int, ...],
+        device: DeviceRef,
+        dtype: DType,
+        eps: float = 1e-5,
+    ) -> None:
+        super().__init__()
+        self.gamma = np.ones(dims, dtype=dtype.to_numpy())
+        self.beta = np.zeros(dims, dtype=dtype.to_numpy())
+        self.eps = eps
+        self.device = device
+        self.dtype = dtype
+
+    def __call__(self, input: TensorValue) -> TensorValue:
+        gamma = ops.constant(self.gamma, self.dtype, self.device)
+        beta = ops.constant(self.beta, self.dtype, self.device)
+        return ops.cast(
+            ops.layer_norm(
+                ops.cast(input, DType.float32),
+                gamma=gamma,
+                beta=beta,
+                epsilon=self.eps,
+            ),
+            input.dtype,
+        )

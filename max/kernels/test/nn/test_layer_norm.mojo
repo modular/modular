@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isqrt
+from math import rsqrt
 
-from layout.math import mean, variance
 from layout import (
+    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
+from layout.math import mean, variance
 from nn.normalization import *
 from testing import assert_almost_equal
 
@@ -114,7 +114,7 @@ fn run_layer_norm_cpu[
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = isqrt(var_ref + epsilon)
+        var norm_factor_ref = rsqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = (

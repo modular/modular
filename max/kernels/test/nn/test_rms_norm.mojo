@@ -12,18 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import sqrt
+from sys.info import CompilationTarget
 
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from nn.normalization import *
 from testing import assert_almost_equal
-from sys.info import CompilationTarget
 
 from utils.index import Index, IndexList
 
@@ -34,7 +34,7 @@ fn compute_rms[
     DType.float32
 ]:
     constrained[data.rank == 1, "data.rank must be 1"]()
-    var sum_of_squares = Scalar[DType.float32]()
+    var sum_of_squares = Float32()
     for i in range(size):
         var d = data.ptr[i].cast[DType.float32]()
         sum_of_squares += d * d

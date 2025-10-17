@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -70,9 +71,11 @@ class DeepseekV2ConfigBase(MAXModelConfigBase):
     pretraining_tp: int = 1
     tie_word_embeddings: bool = False
     rope_theta: float = 10000.0
-    rope_scaling: dict | None = None
+    rope_scaling: dict[str, Any] | None = None
     attention_bias: bool = False
     attention_dropout: float = 0.0
+
+    graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
 
     def __post_init__(self):
         if self.hidden_act != "silu":
@@ -129,4 +132,5 @@ class DeepseekV2Config(MAXModelConfig, DeepseekV2ConfigBase):
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
+            is_mla=True,
         )

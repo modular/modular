@@ -40,21 +40,20 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
-    copy_local_to_shared,
     copy_dram_to_sram_async,
     copy_local_to_dram,
+    copy_local_to_shared,
     copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from memory import memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as AddressSpace
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from utils import StaticTuple
 from utils.index import Index, IndexList
@@ -161,7 +160,7 @@ fn multistage_dual_mma[
     fn _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int, out result: __type_of(tensor)
     ):
-        return __type_of(tensor)(
+        return {
             tensor.ptr,
             RuntimeLayout[
                 element_type = tensor.layout_int_type,
@@ -172,11 +171,13 @@ fn multistage_dual_mma[
                 ](num_rows, tensor.dim[1]()),
                 tensor.runtime_layout.stride,
             ),
-        )
+        }
 
     @always_inline
     @parameter
-    fn _copy_single_tensor_to_sram(dst: LayoutTensor, src: LayoutTensor):
+    fn _copy_single_tensor_to_sram(
+        dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor
+    ):
         copy_dram_to_sram_async[
             thread_layout=async_copy_a_layout,
             swizzle=swizzle_a,
@@ -188,8 +189,8 @@ fn multistage_dual_mma[
     @always_inline
     @parameter
     fn _copy_dual_tensor_to_sram(
-        b0_dst: LayoutTensor,
-        b1_dst: LayoutTensor,
+        b0_dst: LayoutTensor[mut=True, *_, **_],
+        b1_dst: LayoutTensor[mut=True, *_, **_],
         b0_src: LayoutTensor,
         b1_src: LayoutTensor,
     ):
@@ -253,7 +254,7 @@ fn multistage_dual_mma[
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // (2 * MMA_N)
     constrained[
-        num_k_mmas % (2 * k_group_size) == 0,
+        num_k_mmas % UInt(2 * k_group_size) == 0,
         "num_k_mmas must be an integer multiple of 2*k_group_size",
     ]()
     constrained[num_n_mmas % 2 == 0]()
@@ -265,27 +266,42 @@ fn multistage_dual_mma[
 
     alias num_reg_tiles = 2 * k_group_size
     # Register tiles.
+    alias a_reg_layout = Layout.row_major(
+        Int(2 * k_group_size * num_m_mmas), a_frag_size
+    )
     var a_reg_tiles = (
-        tb[a_type]()
-        .row_major[Int(2 * k_group_size * num_m_mmas), a_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            a_type,
+            a_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .split[Int(2 * k_group_size)]()
     )
 
+    alias b_reg_layout = Layout.row_major(
+        Int(2 * k_group_size * num_n_mmas), b_frag_size
+    )
     var b0_reg_tiles = (
-        tb[b_type]()
-        .row_major[Int(2 * k_group_size * num_n_mmas), b_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            b_type,
+            b_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .vectorize[1, b_frag_size]()
         .split[Int(2 * k_group_size)]()
     )
     var b1_reg_tiles = (
-        tb[b_type]()
-        .row_major[Int(2 * k_group_size * num_n_mmas), b_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            b_type,
+            b_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .vectorize[1, b_frag_size]()
         .split[Int(2 * k_group_size)]()
     )
@@ -490,7 +506,7 @@ fn multistage_dual_gemm_kernel[
 
     var tid = thread_idx.x
     var ln_id = lane_id()
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
@@ -509,37 +525,27 @@ fn multistage_dual_gemm_kernel[
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
+    alias alignment = align_of[SIMD[a_type, simd_size]]()
     var a_smem = external_memory[
         Scalar[a_type],
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[a_type, simd_size]](),
+        alignment=alignment,
     ]()
-    alias a_smem_size = num_pipeline_stages * BM * BK
+    alias a_smem_size = num_pipeline_stages * UInt(BM) * UInt(BK)
     var a_smem_iter = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
         address_space = a_smem.address_space,
-        alignment = a_smem.alignment,
+        alignment=alignment,
         circular=True,
     ](
-        rebind[
-            __type_of(
-                LayoutTensorIter[
-                    a_type,
-                    Layout.row_major(BM, BK),
-                    MutableAnyOrigin,
-                    address_space = a_smem.address_space,
-                    alignment = a_smem.alignment,
-                    circular=True,
-                ]().ptr
-            )
-        ](a_smem),
+        a_smem,
         a_smem_size,
     )
 
     # There is one pre-allocated shared buffer. Explicitly offset B after at A's end.
     var b_smem = (a_smem + a_smem_size).bitcast[Scalar[b_type]]()
-    alias b_smem_size = num_pipeline_stages * BK * BN // 2
+    alias b_smem_size = num_pipeline_stages * UInt(BK) * UInt(BN) // 2
     alias BD_0 = BN // 2 if transpose_b else BK
     alias BD_1 = BK if transpose_b else BN // 2
     alias b_smem_layout = Layout.row_major(BD_0, BD_1)
@@ -582,18 +588,25 @@ fn multistage_dual_gemm_kernel[
 
     alias frag_size = get_fragment_size[mma_shape]()
     alias c_frag_size = frag_size[2]
+    alias c_reg_layout = Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
     var c0_reg_tile = (
-        tb[accum_type]()
-        .row_major[num_m_mmas * num_n_mmas, c_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            accum_type,
+            c_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()  # ALIGN-TODO: alignment?
         .fill(0)
     )
     var c1_reg_tile = (
-        tb[accum_type]()
-        .row_major[num_m_mmas * num_n_mmas, c_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            accum_type,
+            c_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()  # ALIGN-TODO: alignment?
         .fill(0)
     )
 
@@ -645,12 +658,12 @@ fn multistage_dual_gemm_kernel[
             num_rows = MMA_M // 2, row_size=HWN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = (
-            tb[c_type]()
-            .row_major[WM, HWN]()
-            .shared()
-            .view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * HWN)
-        )
+        var accum_smem_warp_tile = LayoutTensor[
+            c_type,
+            Layout.row_major(WM, HWN),
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * UInt(WM) * UInt(HWN))
 
         copy_local_to_shared[
             thread_layout = Layout.row_major(8, 4),
@@ -767,8 +780,8 @@ fn multistage_dual_gemm_kernel[
 
 
 fn swilu[
-    type: DType, width: Int
-](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int
+](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return (x * y) / (1 + exp(-x))
 
 
@@ -876,13 +889,13 @@ fn config_in_smem[
     var i = 0
     while c.shared_mem_usage() > max_smem:
         if c.block_tile_shape[1] >= 256:
-            c = __type_of(res)(
-                block_tile_shape=Index(
+            c = {
+                block_tile_shape = Index(
                     c.block_tile_shape[0],
                     c.block_tile_shape[1] // 2,
                     c.block_tile_shape[2],
                 ),
-                warp_tile_shape=Index(
+                warp_tile_shape = Index(
                     c.warp_tile_shape[0],
                     c.warp_tile_shape[1] if c.warp_tile_shape[1]
                     >= c.block_tile_shape[1]
@@ -890,17 +903,17 @@ fn config_in_smem[
                     // 2,
                     c.warp_tile_shape[2],
                 ),
-                num_pipeline_stages=c.num_pipeline_stages,
-                num_k_partitions=c.num_k_partitions,
-            )
+                num_pipeline_stages = c.num_pipeline_stages,
+                num_k_partitions = c.num_k_partitions,
+            }
         else:
-            c = __type_of(res)(
-                block_tile_shape=Index(
+            c = {
+                block_tile_shape = Index(
                     c.block_tile_shape[0] // 2,
                     c.block_tile_shape[1],
                     c.block_tile_shape[2],
                 ),
-                warp_tile_shape=Index(
+                warp_tile_shape = Index(
                     c.warp_tile_shape[0] if c.warp_tile_shape[0]
                     >= c.block_tile_shape[0]
                     // 2 else c.block_tile_shape[0]
@@ -908,9 +921,9 @@ fn config_in_smem[
                     c.warp_tile_shape[1],
                     c.warp_tile_shape[2],
                 ),
-                num_pipeline_stages=c.num_pipeline_stages,
-                num_k_partitions=c.num_k_partitions,
-            )
+                num_pipeline_stages = c.num_pipeline_stages,
+                num_k_partitions = c.num_k_partitions,
+            }
         i += 1
         if i > 8:
             abort("too many iterations")
@@ -1249,9 +1262,9 @@ fn dual_gemv_kernel[
                     )
 
     # Warps are arranged along K.
-    alias k_warp_num = num_threads // WARP_SIZE
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
-    var lane_id = tid % WARP_SIZE
+    alias k_warp_num = num_threads // UInt(WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var lane_id = tid % UInt(WARP_SIZE)
     var shmem = stack_allocation[
         Int(k_warp_num * tile_m * tile_n),
         s_type,
@@ -1395,5 +1408,6 @@ fn swishGLU[
     with Trace[TraceLevel.OP, target=target](
         "swish_glu",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(ctx),
     ):
         dual_gemm[transpose_b=True](c, a, b0, b1, ctx=ctx.get_device_context())

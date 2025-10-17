@@ -16,12 +16,12 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max.mlir.dialects import mo
+from max._core.dialects import mo
+from max.mlir.dialects import mo as _mo
 
 from ..graph import Graph
 from ..type import _ChainType
 from ..value import BufferValue, TensorType, TensorValue
-from .fence import fence
 
 
 def sum(
@@ -50,11 +50,10 @@ def sum(
     inputs = list(inputs)
     signal_buffers = list(signal_buffers)
     if len(inputs) != len(signal_buffers):
-        msg = (
+        raise ValueError(
             f"expected number of inputs ({len(inputs)}) and number of "
             f"signal buffers ({len(signal_buffers)}) to match"
         )
-        raise ValueError(msg)
 
     shape = None
     devices = []
@@ -63,64 +62,48 @@ def sum(
         if not shape:
             shape = input.shape
         if input.shape != shape:
-            msg = (
+            raise ValueError(
                 "allreduce.sum operation must have the same shape across all"
                 " input tensors."
             )
-            raise ValueError(msg)
         if not input.device:
-            msg = (
+            raise ValueError(
                 f"allreduce.sum operation input = {input} needs to have an"
                 " explicit device."
             )
-            raise ValueError(msg)
         if input.device in devices:
-            msg = (
+            raise ValueError(
                 "allreduce.sum operation must have unique devices across its"
                 " input tensors."
             )
-            raise ValueError(msg)
         devices.append(input.device)
 
-    in_chain = Graph.current._current_chain
-
     # Per-device execution model:
-    # Create one allreduce op per device, all using the same input chain.
-    # Each op instance:
-    # - Executes on its assigned device (improving thread affinity)
-    # - Reads from ALL devices' inputs (requires P2P access)
-    # - Writes only to its own output buffer
-    # - Synchronizes with other instances via shared signals
-    # This allows the runtime to schedule work more efficiently across GPUs.
+    # Create one allreduce op per device, each threading the destination
+    # device's chain independently.
+    # Do not merge device chains.
     results = []
-    out_chains = []
-    for input_tensor, device in zip(inputs, devices):
+    graph = Graph.current
+    for input_tensor, device in zip(inputs, devices, strict=True):
+        in_chain = graph.device_chains[device]
         # Each op takes all inputs but only produces output for its device.
-        (result, out_chain), allreduce_op = (
-            Graph.current._add_op_get_op_with_results(
-                mo.distributed_allreduce_sum,
-                # Single output tensor type.
-                input_tensor.type.to_mlir(),
-                # Output chain type.
-                _ChainType().to_mlir(),
-                inputs,
-                signal_buffers,
-                in_chain,
-                device.to_mlir(),
-            )
+        (result, out_chain), _ = Graph.current._add_op_get_op_with_results(
+            _mo.distributed_allreduce_sum,
+            # Single output tensor type.
+            input_tensor.type.to_mlir(),
+            # Output chain type.
+            _ChainType().to_mlir(),
+            inputs,
+            signal_buffers,
+            in_chain,
+            device.to_mlir(),
         )
 
         results.append(result.tensor)
-        out_chains.append(out_chain)
+        # Advance only this device's chain.
+        graph.device_chains[device] = out_chain
 
-    # Merge all output chains to ensure proper synchronization.
-    Graph.current._merge_chains(out_chains)
-
-    # Enforce that the per-device allreduce ops execute as a sync group:
-    # before any result is used, all must be ready.
-    results = fence(*results)
-
-    return [val.tensor for val in results]
+    return results
 
 
 def matmul_allreduce(
@@ -141,11 +124,11 @@ def matmul_allreduce(
         )
 
     in_chain = Graph.current._current_chain
-    *results, out_chain = Graph.current._add_op(
-        mo.distributed_matmul_allreduce,
+    *results, out_chain = Graph.current._add_op_generated(
+        mo.DistributedMatmulAllreduceOp,
         # Types for 2 outputs: chain, list of tensors
-        [infer_out_type(a, b) for a, b in zip(inputs, weights)],
-        _ChainType().to_mlir(),
+        [infer_out_type(a, b) for a, b in zip(inputs, weights, strict=True)],
+        _ChainType(),
         list(inputs),
         list(weights),
         signal_buffers,

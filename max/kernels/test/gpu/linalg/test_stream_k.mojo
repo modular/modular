@@ -16,12 +16,12 @@ from math import ceildiv
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import Semaphore, block_dim, block_idx, thread_idx
-from gpu.host import DeviceContext
-from linalg.matmul_gpu import matmul_kernel_naive
+from gpu.host import DeviceBuffer, DeviceContext
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu import matmul_kernel_naive
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 fn swizzle_tile(
@@ -155,24 +155,28 @@ fn first_wave_kernel[
     stride_bn: Int,
     stride_cm: Int,
     stride_cn: Int,
-    total_full_tiles_streamk: UInt,
-    total_partial_tiles_streamk: UInt,
-    iters_per_tile: UInt,
+    total_full_tiles_streamk: Int,
+    total_partial_tiles_streamk: Int,
+    iters_per_tile: Int,
 ):
     var pid = block_idx.x
 
-    var start_iter = pid * total_full_tiles_streamk + (
+    var start_iter = pid * UInt(total_full_tiles_streamk) + (
         pid if pid
-        < total_partial_tiles_streamk else total_partial_tiles_streamk
+        < UInt(total_partial_tiles_streamk) else UInt(
+            total_partial_tiles_streamk
+        )
     )
-    var last_iter = (pid + 1) * total_full_tiles_streamk + (
+    var last_iter = (pid + 1) * UInt(total_full_tiles_streamk) + (
         (pid + 1) if (pid + 1)
-        < total_partial_tiles_streamk else total_partial_tiles_streamk
+        < UInt(total_partial_tiles_streamk) else UInt(
+            total_partial_tiles_streamk
+        )
     )
 
     while start_iter < last_iter:
-        var remainder = iters_per_tile - (start_iter % iters_per_tile)
-        var boundary = start_iter + remainder
+        var remainder = iters_per_tile - (start_iter % UInt(iters_per_tile))
+        var boundary = start_iter + UInt(remainder)
         var end_iter = boundary if (boundary < last_iter) else last_iter
         mac_loop(
             C,
@@ -221,9 +225,9 @@ fn full_tiles_kernel[
     stride_bn: Int,
     stride_cm: Int,
     stride_cn: Int,
-    total_tiles_streamk: UInt,
+    total_tiles_streamk: Int,
 ):
-    var tile_id = block_idx.x + total_tiles_streamk
+    var tile_id = block_idx.x + UInt(total_tiles_streamk)
     var pid: IndexList[2]
     if GROUP_M > 0:
         pid = swizzle_tile(tile_id, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K, GROUP_M)
@@ -345,6 +349,10 @@ fn matmul_stream_k[
         total_partial_tiles_streamk,
     )
 
+    var c_buffer = DeviceBuffer[c_type](ctx, c.data, c.size(), owning=False)
+    var a_buffer = DeviceBuffer[a_type](ctx, a.data, a.size(), owning=False)
+    var b_buffer = DeviceBuffer[b_type](ctx, b.data, b.size(), owning=False)
+
     if total_programs_streamk > 0:
         alias first_wave = first_wave_kernel[
             c_type,
@@ -356,10 +364,10 @@ fn matmul_stream_k[
             GROUP_M,
         ]
 
-        ctx.enqueue_function[first_wave, dump_asm=False](
-            c.data,
-            a.data,
-            b.data,
+        ctx.enqueue_function_checked[first_wave, first_wave](
+            c_buffer,
+            a_buffer,
+            b_buffer,
             M,
             N,
             K,
@@ -388,10 +396,10 @@ fn matmul_stream_k[
             BLK_K,
             GROUP_M,
         ]
-        ctx.enqueue_function[full_tiles](
-            c.data,
-            a.data,
-            b.data,
+        ctx.enqueue_function_checked[full_tiles, full_tiles](
+            c_buffer,
+            a_buffer,
+            b_buffer,
             M,
             N,
             K,
@@ -413,53 +421,53 @@ fn matmul_stream_k[
 
 
 fn run_matmul_stream_k[
-    type: DType,
+    dtype: DType,
     M: Int,
     N: Int,
     K: Int,
 ](ctx: DeviceContext,) raises:
     print("== run_matmul kernel stream_k")
 
-    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
-    var c_host_n = UnsafePointer[Scalar[type]].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
 
     var rng_width = 2
     var rand_min = -1 * rng_width
     var rand_max = rng_width
 
     for i in range(M * K):
-        var val = Scalar[DType.float32](i % 20)
-        a_host[i] = val.cast[type]()
+        var val = Float32(i % 20)
+        a_host[i] = val.cast[dtype]()
 
     for i in range(K * N):
-        var val = Scalar[DType.float32](i % 20)
-        b_host[i] = val.cast[type]()
+        var val = Float32(i % 20)
+        b_host[i] = val.cast[dtype]()
 
     for i in range(M * N):
         var val = Float32(0)
-        c_host[i] = val.cast[type]()
+        c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
     alias a_shape = DimList(M, K)
     alias b_shape = DimList(K, N)
     alias c_shape = DimList(M, N)
 
-    var a_device = ctx.enqueue_create_buffer[type](M * K)
-    var b_device = ctx.enqueue_create_buffer[type](K * N)
-    var c_device = ctx.enqueue_create_buffer[type](M * N)
-    var a_buf = NDBuffer[type, 2, _, a_shape](
-        a_device._unsafe_ptr(), Index(M, K)
+    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device = ctx.enqueue_create_buffer[dtype](K * N)
+    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
+    var a_buf = NDBuffer[dtype, 2, _, a_shape](
+        a_device.unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[type, 2, _, b_shape](
-        b_device._unsafe_ptr(), Index(K, N)
+    var b_buf = NDBuffer[dtype, 2, _, b_shape](
+        b_device.unsafe_ptr(), Index(K, N)
     )
-    var c_buf = NDBuffer[type, 2, _, c_shape](
-        c_device._unsafe_ptr(), Index(M, N)
+    var c_buf = NDBuffer[dtype, 2, _, c_shape](
+        c_device.unsafe_ptr(), Index(M, N)
     )
 
-    var c_device_n = ctx.enqueue_create_buffer[type](M * N)
+    var c_device_n = ctx.enqueue_create_buffer[dtype](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -467,9 +475,9 @@ fn run_matmul_stream_k[
     alias sm_count = ctx.default_device_info.sm_count
 
     matmul_stream_k[total_programs_streamk=sm_count](
-        rebind[NDBuffer[type, 2, c_buf.origin, c_shape]](c_buf),
-        rebind[NDBuffer[type, 2, a_buf.origin, a_shape]](a_buf),
-        rebind[NDBuffer[type, 2, b_buf.origin, b_shape]](b_buf),
+        rebind[NDBuffer[dtype, 2, c_buf.origin, c_shape]](c_buf),
+        rebind[NDBuffer[dtype, 2, a_buf.origin, a_shape]](a_buf),
+        rebind[NDBuffer[dtype, 2, b_buf.origin, b_shape]](b_buf),
         M,
         N,
         K,
@@ -481,23 +489,23 @@ fn run_matmul_stream_k[
 
     alias BLOCK_DIM = 16
 
-    var c_buf_n = NDBuffer[type, 2](c_device_n._unsafe_ptr(), Index(M, N))
+    var c_buf_n = NDBuffer[dtype, 2](c_device_n.unsafe_ptr(), Index(M, N))
 
     var c_tensor = from_ndbuffer_row_major(c_buf_n)
     var a_tensor = from_ndbuffer_row_major(a_buf)
     var b_tensor = from_ndbuffer_row_major(b_buf)
 
-    ctx.enqueue_function[
-        matmul_kernel_naive[
-            type,
-            type,
-            type,
-            c_tensor.layout,
-            a_tensor.layout,
-            b_tensor.layout,
-            BLOCK_DIM,
-        ]
-    ](
+    alias kernel = matmul_kernel_naive[
+        dtype,
+        dtype,
+        dtype,
+        c_tensor.layout,
+        a_tensor.layout,
+        b_tensor.layout,
+        BLOCK_DIM,
+    ]
+
+    ctx.enqueue_function_checked[kernel, kernel](
         c_tensor,
         a_tensor,
         b_tensor,

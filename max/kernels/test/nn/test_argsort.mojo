@@ -130,7 +130,7 @@ fn test_argsort[
     indices_ptr.free()
 
 
-fn main() raises:
+def main():
     fn linear_filler(i: Int, n: Int) -> Float32:
         return i
 

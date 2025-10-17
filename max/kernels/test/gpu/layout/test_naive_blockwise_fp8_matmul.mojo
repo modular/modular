@@ -13,19 +13,20 @@
 
 from math import ceildiv
 
-from buffer import DimList
+from buffer import Dim, DimList
 from gpu.host import DeviceContext
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     assert_almost_equal,
+    fill,
     random,
     zero,
-    fill,
 )
-from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from utils.index import Index, IndexList
 from internal_utils._utils import ValOrDim, dynamic, static
+from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
+
+from utils.index import Index, IndexList
 
 
 fn test_naive_blockwise_fp8_matmul[
@@ -36,8 +37,6 @@ fn test_naive_blockwise_fp8_matmul[
     alias BLOCK_SCALE_M = block_scales_sizes[0]
     alias BLOCK_SCALE_N = block_scales_sizes[1]
     alias BLOCK_SCALE_K = block_scales_sizes[2]
-
-    constrained[BLOCK_SCALE_M == 1, "BLOCK_SCALE_M must be 1"]()
 
     var M = m.value
     var N = n.value
@@ -62,16 +61,6 @@ fn test_naive_blockwise_fp8_matmul[
         transpose_b,
     )
 
-    debug_assert(
-        (M % BLOCK_SCALE_M == 0)
-        and (N % BLOCK_SCALE_N == 0)
-        and (K % BLOCK_SCALE_K == 0),
-        (
-            "M, N, K must be divisible by BLOCK_SCALE_M, BLOCK_SCALE_N,"
-            " BLOCK_SCALE_K"
-        ),
-    )
-
     alias static_a_shape = DimList(m.dim, k.dim)
     alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
@@ -79,12 +68,12 @@ fn test_naive_blockwise_fp8_matmul[
     alias static_c_shape = DimList(m.dim, n.dim)
 
     alias static_a_scale_shape = DimList(
-        k.dim // BLOCK_SCALE_K, m.dim // BLOCK_SCALE_M
+        ceildiv(k.dim, BLOCK_SCALE_K), ceildiv(m.dim, BLOCK_SCALE_M)
     )
     alias static_b_scale_shape = DimList(
-        n.dim // BLOCK_SCALE_N, k.dim // BLOCK_SCALE_K
+        ceildiv(n.dim, BLOCK_SCALE_N), ceildiv(k.dim, BLOCK_SCALE_K)
     ) if transpose_b else DimList(
-        k.dim // BLOCK_SCALE_K, n.dim // BLOCK_SCALE_N
+        ceildiv(k.dim, BLOCK_SCALE_K), ceildiv(n.dim, BLOCK_SCALE_N)
     )
 
     var dynamic_a_shape = DimList(m.value, k.value)
@@ -93,12 +82,12 @@ fn test_naive_blockwise_fp8_matmul[
     )
     var dynamic_c_shape = DimList(m.value, n.value)
     var dynamic_a_scale_shape = DimList(
-        k.value // BLOCK_SCALE_K, m.value // BLOCK_SCALE_M
+        ceildiv(k.value, BLOCK_SCALE_K), ceildiv(m.value, BLOCK_SCALE_M)
     )
     var dynamic_b_scale_shape = DimList(
-        n.value // BLOCK_SCALE_N, k.value // BLOCK_SCALE_K
+        ceildiv(n.value, BLOCK_SCALE_N), ceildiv(k.value, BLOCK_SCALE_K)
     ) if transpose_b else DimList(
-        k.value // BLOCK_SCALE_K, n.value // BLOCK_SCALE_N
+        ceildiv(k.value, BLOCK_SCALE_K), ceildiv(n.value, BLOCK_SCALE_N)
     )
 
     var a_host = HostNDBuffer[input_type, 2, static_a_shape](dynamic_a_shape)
@@ -172,14 +161,37 @@ fn test_naive_blockwise_fp8_matmul[
     ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
     ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
-    naive_blockwise_scaled_fp8_matmul[BLOCK_DIM=16, transpose_b=transpose_b,](
-        c_device.tensor,
-        a_device.tensor,
-        b_device.tensor,
-        a_scale_device.tensor,
-        b_scale_device.tensor,
-        ctx,
-    )
+    if (
+        M % BLOCK_SCALE_M != 0
+        or N % BLOCK_SCALE_N != 0
+        or K % BLOCK_SCALE_K != 0
+    ):
+        naive_blockwise_scaled_fp8_matmul[
+            BLOCK_DIM=16,
+            transpose_b=transpose_b,
+            scales_granularity_mnk = Index(
+                BLOCK_SCALE_M, BLOCK_SCALE_N, BLOCK_SCALE_K
+            ),
+        ](
+            c_device.tensor,
+            a_device.tensor,
+            b_device.tensor,
+            a_scale_device.tensor,
+            b_scale_device.tensor,
+            ctx,
+        )
+    else:
+        naive_blockwise_scaled_fp8_matmul[
+            BLOCK_DIM=16,
+            transpose_b=transpose_b,
+        ](
+            c_device.tensor,
+            a_device.tensor,
+            b_device.tensor,
+            a_scale_device.tensor,
+            b_scale_device.tensor,
+            ctx,
+        )
 
     ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
 
@@ -207,7 +219,7 @@ fn test_naive_blockwise_fp8_matmul[
     _ = b_scale_host^
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
 
         @parameter
@@ -216,7 +228,7 @@ fn main() raises:
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
                 transpose_b=transpose_b,
-            ](ctx, dynamic(120), static[128](), static[128]())
+            ](ctx, dynamic(128), static[128](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
@@ -229,3 +241,21 @@ fn main() raises:
                 Index(1, 64, 16),
                 transpose_b=transpose_b,
             ](ctx, dynamic(128), static[128](), static[128]())
+
+            test_naive_blockwise_fp8_matmul[
+                DType.float8_e4m3fn,
+                Index(1, 128, 128),
+                transpose_b=transpose_b,
+            ](ctx, dynamic(120), static[128](), static[128]())
+
+            test_naive_blockwise_fp8_matmul[
+                DType.float8_e4m3fn,
+                Index(1, 128, 128),
+                transpose_b=transpose_b,
+            ](ctx, dynamic(120), static[129](), static[128]())
+
+            test_naive_blockwise_fp8_matmul[
+                DType.float8_e4m3fn,
+                Index(32, 128, 64),
+                transpose_b=transpose_b,
+            ](ctx, dynamic(120), static[129](), static[129]())

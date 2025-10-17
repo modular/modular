@@ -13,7 +13,7 @@
 
 
 from math import ceildiv
-from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from sys import has_accelerator
 
 from gpu.host import DeviceContext
 from gpu.id import global_idx
@@ -31,8 +31,7 @@ alias gray_layout = Layout.row_major(HEIGHT, WIDTH)
 
 def main():
     constrained[
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
-        "This examples requires a supported GPU",
+        has_accelerator(), "This example requires a supported accelerator"
     ]()
 
     var ctx = DeviceContext()
@@ -63,7 +62,7 @@ def main():
     # Launch the compiled function on the GPU. The target device is specified
     # first, followed by all function arguments. The last two named parameters
     # are the dimensions of the grid in blocks, and the block dimensions.
-    ctx.enqueue_function[color_to_grayscale](
+    ctx.enqueue_function_checked[color_to_grayscale, color_to_grayscale](
         rgb_tensor,
         gray_tensor,
         grid_dim=(num_col_blocks, num_row_blocks),

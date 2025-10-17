@@ -16,7 +16,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max.mlir.dialects import rmo
+from max._core.dialects import kgen, rmo
+from max.mlir.dialects import rmo as _rmo
 
 from ..dim import DimLike
 from ..graph import Graph
@@ -58,13 +59,14 @@ def broadcast_to(
             message = f"must pass out_dims with tensor value shape {shape}"
             raise ValueError(message)
 
-        return Graph.current._add_op(
-            rmo.mo_broadcast_to,
-            TensorType(x.dtype, shape=out_dims, device=x.device).to_mlir(),
+        return Graph.current._add_op_generated(
+            rmo.MoBroadcastToOp,
+            TensorType(x.dtype, shape=out_dims, device=x.device),
             x,
             shape._mlir_value,
+            kgen.ParamDeclArrayAttr([]),
         )[0].tensor
 
     return Graph.current._add_op(
-        rmo.broadcast_to, x, new_shape=Shape(shape).to_mlir()
+        _rmo.broadcast_to, x, new_shape=Shape(shape).to_mlir()
     )[0].tensor

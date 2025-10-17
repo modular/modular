@@ -31,13 +31,12 @@ at a granular level, similar to CUDA's native launch attribute system.
 
 from sys import size_of
 
-
 from utils import StaticTuple
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct LaunchAttributeID(Writable):
+struct LaunchAttributeID(Identifiable, Writable):
     """Identifies the type of launch attribute for GPU kernel execution.
 
     This struct represents the various types of launch attributes that can be specified
@@ -198,17 +197,6 @@ struct LaunchAttributeID(Writable):
         """
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        """Checks if two `LaunchAttribute` instances have different values.
-
-        Args:
-            other: The other `LaunchAttribute` instance to compare with.
-
-        Returns:
-            True if the attributes have different values, False otherwise.
-        """
-        return self != other
-
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the `LaunchAttribute`.
@@ -283,7 +271,7 @@ struct LaunchAttributeValue(Defaultable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct AccessProperty(Writable):
+struct AccessProperty(Identifiable, Writable):
     """Specifies performance hint with AccessPolicyWindow for hit_prop and
     miss_prop fields.
 
@@ -340,17 +328,6 @@ struct AccessProperty(Writable):
         """
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        """Checks if two `AccessProperty` instances have different values.
-
-        Args:
-            other: The `AccessProperty` to compare with.
-
-        Returns:
-            True if the instances have different values, False otherwise.
-        """
-        return self != other
-
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the `AccessProperty`.
@@ -376,7 +353,7 @@ struct AccessProperty(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct LaunchAttribute(Copyable, Defaultable, Movable):
+struct LaunchAttribute(Defaultable, ImplicitlyCopyable, Movable):
     """Represents a complete launch attribute with ID and value.
 
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form

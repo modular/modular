@@ -14,26 +14,34 @@
 from __future__ import annotations
 
 import functools
-import io
 import json
 import logging
 from collections.abc import Sequence
-from typing import Any, Union
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import TextGenerationRequest, TextGenerationRequestMessage
+from max.interfaces import (
+    ImageMetadata,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+)
+from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+    get_seqlens,
+    get_window_index,
+)
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
+    fetch_image,
     process_vision_info,
 )
 from max.pipelines.core import TextAndVisionContext
-from max.pipelines.lib import (
-    TextAndVisionTokenizer,
-    max_tokens_to_generate,
-)
+from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig
+from max.support.image import find_contiguous_ranges
 from PIL import Image
 from transformers import AutoConfig, AutoTokenizer
+
+from .nn.data_processing import get_rope_index, mrope_pos_ids_3d
 
 logger = logging.getLogger("max.pipelines")
 
@@ -129,7 +137,7 @@ def qwen2_5vl_image_preprocessing(
     # Check if spatial merging is possible
     if grid_h % merge_size != 0 or grid_w % merge_size != 0:
         raise ValueError(
-            "Spatial merging is not possible because grid_h % merge_size != 0 or grid_w % merge_size != 0"
+            f"Spatial merging is not possible because grid_h {grid_h} % merge_size {merge_size} != 0 or grid_w {grid_w} % merge_size {merge_size} != 0"
         )
     else:
         # Now reshape with spatial merging
@@ -191,7 +199,7 @@ class Qwen2_5VLImageProcessor:
         images: list[Image.Image] | Image.Image,
         return_tensors: str = "np",
         **kwargs,
-    ) -> dict[str, npt.NDArray]:
+    ) -> tuple[dict[str, npt.NDArray[Any]], list[npt.NDArray[np.float32]]]:
         """Process images for Qwen2.5VL.
 
         Args:
@@ -203,6 +211,7 @@ class Qwen2_5VLImageProcessor:
             Dictionary containing processed image data with keys:
             - pixel_values: Normalized pixel values as numpy array of shape (num_patches, patch_features)
             - image_grid_thw: Grid dimensions as numpy array of shape (num_images, 3) where each row is (temporal, height, width)
+            List of pixel values for each image
         """
         # Handle single image vs list of images
         if isinstance(images, Image.Image):
@@ -229,16 +238,16 @@ class Qwen2_5VLImageProcessor:
         )
 
         return {
-            "pixel_values": pixel_values,
+            "concatenated_pixel_values": pixel_values,
             "image_grid_thw": image_grid_thw_array,
-        }
+        }, pixel_values_list
 
     def preprocess(
         self,
         images: list[Image.Image] | Image.Image,
         return_tensors: str = "np",
         **kwargs,
-    ) -> dict[str, npt.NDArray]:
+    ) -> tuple[dict[str, npt.NDArray[Any]], list[npt.NDArray[np.float32]]]:
         """Alias for __call__ to match transformers interface."""
         return self.__call__(images, return_tensors=return_tensors, **kwargs)
 
@@ -292,13 +301,19 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         vision_config = config.vision_config
         patch_size = getattr(vision_config, "patch_size", 14)
         temporal_patch_size = getattr(vision_config, "temporal_patch_size", 2)
-        spatial_merge_size = getattr(vision_config, "spatial_merge_size", 2)
+        self.spatial_merge_size = getattr(
+            vision_config, "spatial_merge_size", 2
+        )
+
+        # NEW: Add these for window index calculation
+        self.patch_size = patch_size
+        self.window_size = getattr(vision_config, "window_size", 448)
 
         # Create custom image processor instead of AutoImageProcessor
         self.img_processor = Qwen2_5VLImageProcessor(
             patch_size=patch_size,
             temporal_patch_size=temporal_patch_size,
-            merge_size=spatial_merge_size,
+            merge_size=self.spatial_merge_size,
         )
 
         # Initialize EOS token IDs
@@ -315,11 +330,46 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                 elif isinstance(eos_token_id, list):
                     self._default_eos_token_ids.update(eos_token_id)
 
+            if image_token_id := getattr(
+                pipeline_config.model_config.huggingface_config,
+                "image_token_id",
+                None,
+            ):
+                self.image_token_id = image_token_id
+            else:
+                raise ValueError(
+                    "image_token_id not found in model_config config"
+                )
+
+            if video_token_id := getattr(
+                pipeline_config.model_config.huggingface_config,
+                "video_token_id",
+                None,
+            ):
+                self.video_token_id = video_token_id
+
+            if vision_start_token_id := getattr(
+                pipeline_config.model_config.huggingface_config,
+                "vision_start_token_id",
+                None,
+            ):
+                self.vision_start_token_id = vision_start_token_id
+            if vision_config := getattr(
+                huggingface_config, "vision_config", None
+            ):
+                self.tokens_per_second = vision_config.tokens_per_second
+            else:
+                raise ValueError(
+                    "vision_config must be provided in HuggingFace Config"
+                )
+
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]
     ) -> str:
         """Apply chat template using tokenizer directly (not processor)."""
         # Use tokenizer directly instead of processor to avoid AutoProcessor dependency
+        # TODO(E2EOPT-621): Wrap message content more generically.
+        messages = self._wrap_str_message_content(messages)
         templated_message = self.delegate.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
@@ -335,16 +385,32 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         processor and extracts the necessary components for model execution.
         """
         # Determine prompt
-        prompt: Union[str, Sequence[int]]
+        prompt: str | Sequence[int]
         add_special_tokens = True
         if request.prompt is not None:
             prompt = request.prompt
+            if request.images:
+                content = [
+                    {"type": "text", "text": request.prompt},
+                ] + [{"type": "image"} for _ in request.images]
+                messages = [
+                    TextGenerationRequestMessage(
+                        role="user",
+                        content=content,
+                    )
+                ]
+                new_request = TextGenerationRequest(
+                    request_id=request.request_id,
+                    model_name=request.model_name,
+                    messages=messages,
+                )
+                assert new_request.messages is not None
+                prompt = self.apply_chat_template(new_request.messages)
         elif request.messages is not None:
             prompt = self.apply_chat_template(request.messages)
             add_special_tokens = False
         else:
-            msg = f"{request} does not provide messages or prompt."
-            raise ValueError(msg)
+            raise ValueError(f"{request} does not provide messages or prompt.")
 
         # Load and process images
         image_inputs = None
@@ -359,10 +425,11 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         else:
             # Fall back to using the loaded images
             if request.images:
+                logger.info(
+                    "Loading images from request.images rather than messages, not using process_vision_info"
+                )
                 image_inputs = [
-                    _convert_image_mode(
-                        Image.open(io.BytesIO(image_data)), "RGB"
-                    )
+                    fetch_image({"image": image_data})
                     for image_data in request.images
                 ]
 
@@ -374,9 +441,12 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             text = self.delegate.decode(prompt, skip_special_tokens=True)
 
         # Step 2: Process images with custom image processor (if any)
-        processed_images = {}
+        processed_images: dict[str, npt.NDArray[Any]] = {}
+        pixel_values_list: list[npt.NDArray[np.float32]] = []
+
+        image_grid_thw = None
         if image_inputs:
-            processed_images = self.img_processor(
+            processed_images, pixel_values_list = self.img_processor(
                 images=image_inputs, return_tensors="pt"
             )
 
@@ -414,24 +484,37 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
 
         # Add image processing results
         if processed_images:
-            if "pixel_values" in processed_images:
-                processed_inputs["pixel_values"] = processed_images[
-                    "pixel_values"
-                ]
+            if "concatenated_pixel_values" in processed_images:
+                processed_inputs["concatenated_pixel_values"] = (
+                    processed_images["concatenated_pixel_values"]
+                )
             if "image_grid_thw" in processed_images:
                 processed_inputs["image_grid_thw"] = processed_images[
                     "image_grid_thw"
                 ]
 
         if "input_ids" not in processed_inputs:
-            msg = "input_ids not generated by tokenizer"
-            raise ValueError(msg)
+            raise ValueError("input_ids not generated by tokenizer")
+
+        # Prepare extra model arguments
+        extra_model_args = {}
 
         # Extract input_ids
         if isinstance(processed_inputs["input_ids"][0], int):
             encoded_prompt = np.array(processed_inputs["input_ids"])
         else:
             encoded_prompt = np.array(processed_inputs["input_ids"][0])
+
+        if input_ids := processed_inputs.get("input_ids"):
+            if isinstance(input_ids[0], int):
+                seq = np.array(input_ids)
+            else:
+                seq = np.asarray(input_ids[0])
+
+            image_token_indices = (
+                (seq == self.image_token_id).nonzero()[0].astype(np.int32)
+            )
+            extra_model_args["image_token_indices"] = image_token_indices
 
         # Calculate max generation tokens
         max_new_tokens = None
@@ -444,50 +527,131 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             encoded_prompt.shape[0], self.max_length, max_new_tokens
         )
 
-        # Prepare extra model arguments
-        extra_model_args = {}
-
         # Process vision inputs for Qwen2.5VL (image-only)
-        pixel_values: tuple[npt.NDArray[Any], ...] = tuple()
-        if image_inputs is not None:
-            if "pixel_values" in processed_inputs:
-                pixel_values_raw = processed_inputs["pixel_values"]
+        attention_mask = None
+        concatenated_pixel_values: npt.NDArray[Any] | None = None
 
-                # Handle numpy array from custom image processor
-                if isinstance(pixel_values_raw, np.ndarray):
-                    pixel_values = (pixel_values_raw,)
-                else:
+        # Extract attention_mask for use in get_rope_index
+        # This should be extracted regardless of whether images are present
+        # since the tokenizer always provides attention_mask
+        if "attention_mask" in processed_inputs:
+            attention_mask_raw = processed_inputs["attention_mask"]
+            # Handle various formats from tokenizer
+            if hasattr(attention_mask_raw, "numpy"):
+                attention_mask = attention_mask_raw.numpy()
+            elif isinstance(attention_mask_raw, list):
+                attention_mask = np.array(attention_mask_raw)
+            elif isinstance(attention_mask_raw, np.ndarray):
+                attention_mask = attention_mask_raw
+            else:
+                attention_mask = np.array(attention_mask_raw)
+
+        if image_inputs is not None:
+            if "concatenated_pixel_values" in processed_inputs:
+                concatenated_pixel_values = processed_inputs[
+                    "concatenated_pixel_values"
+                ]
+                if not isinstance(concatenated_pixel_values, np.ndarray):
                     raise ValueError(
-                        f"pixel_values is not a PyTorch tensor or numpy array but {type(pixel_values_raw)}"
+                        f"Expected concatenated_pixel_values to be a numpy array but got {type(concatenated_pixel_values)}"
                     )
 
             # Extract image_grid_thw if present (Qwen2.5VL specific)
+            # Note: image_grid_thw is only used locally for computing other values, not passed to model
             if "image_grid_thw" in processed_inputs:
                 image_grid_thw = processed_inputs["image_grid_thw"]
                 # Handle numpy array from custom image processor
-                if isinstance(image_grid_thw, np.ndarray):
-                    extra_model_args["image_grid_thw"] = image_grid_thw
-                else:
-                    extra_model_args["image_grid_thw"] = np.array(
-                        image_grid_thw
-                    )
+                if not isinstance(image_grid_thw, np.ndarray):
+                    image_grid_thw = np.array(image_grid_thw)
 
-            # Extract attention_mask
-            if "attention_mask" in processed_inputs:
-                attention_mask = processed_inputs["attention_mask"]
-                # Handle various formats from tokenizer
-                if hasattr(attention_mask, "numpy"):
-                    extra_model_args["attention_mask"] = attention_mask.numpy()
-                elif isinstance(attention_mask, list):
-                    extra_model_args["attention_mask"] = np.array(
-                        attention_mask
-                    )
-                elif isinstance(attention_mask, np.ndarray):
-                    extra_model_args["attention_mask"] = attention_mask
-                else:
-                    extra_model_args["attention_mask"] = np.array(
-                        attention_mask
-                    )
+                # Precompute vision_position_ids for this context
+                vision_position_ids = mrope_pos_ids_3d(
+                    grid_thw=image_grid_thw,
+                    spatial_merge_size=self.spatial_merge_size,
+                )
+                extra_model_args["vision_position_ids"] = vision_position_ids
+
+                # Precompute window index and cu_window_seqlens
+                window_index, cu_window_seqlens = get_window_index(
+                    grid_thw=image_grid_thw,
+                    window_size=self.window_size,
+                    spatial_merge_size=self.spatial_merge_size,
+                    patch_size=self.patch_size,
+                    spatial_merge_unit=self.spatial_merge_size**2,
+                )
+                extra_model_args["window_index"] = window_index
+                # Note: cu_window_seqlens is only used locally, not passed to model
+
+                # Precompute seqlens values
+                (
+                    cu_seqlens,
+                    cu_window_seqlens_unique,
+                    max_seqlen,
+                    window_max_seqlen,
+                ) = get_seqlens(
+                    grid_thw=image_grid_thw,
+                    cu_win_seqlens=cu_window_seqlens,
+                )
+                extra_model_args["cu_seqlens"] = cu_seqlens
+                extra_model_args["cu_window_seqlens_unique"] = (
+                    cu_window_seqlens_unique
+                )
+                extra_model_args["max_seqlen"] = np.array(
+                    max_seqlen, dtype=np.int32
+                )
+                extra_model_args["window_max_seqlen"] = np.array(
+                    window_max_seqlen, dtype=np.int32
+                )
+
+                # Precompute max_grid_size (max of height and width dimensions)
+                max_grid_size = int(np.max(image_grid_thw[:, 1:]))
+                extra_model_args["max_grid_size"] = np.array(
+                    max_grid_size, dtype=np.int32
+                )
+
+        # Calculate Rope Delta and position ids
+        temp_position_ids, rope_delta = get_rope_index(
+            spatial_merge_size=self.spatial_merge_size,
+            image_token_id=self.image_token_id,
+            video_token_id=self.video_token_id,
+            vision_start_token_id=self.vision_start_token_id,
+            tokens_per_second=self.tokens_per_second,
+            input_ids=encoded_prompt.reshape(1, -1),
+            image_grid_thw=image_grid_thw,
+            # This is never calculated prior to this.
+            video_grid_thw=None,
+            # This is never calculated prior to this.
+            second_per_grid_ts=None,
+            attention_mask=attention_mask,
+        )
+        temp_position_ids = temp_position_ids.squeeze(1)
+
+        extra_model_args["spatial_merge_size"] = np.array(
+            self.spatial_merge_size, dtype=np.int32
+        )
+        extra_model_args["rope_delta"] = rope_delta
+        extra_model_args["image_token_id"] = np.array(
+            self.image_token_id, dtype=np.int32
+        )
+        extra_model_args["video_token_id"] = np.array(
+            self.video_token_id, dtype=np.int32
+        )
+        extra_model_args["vision_start_token_id"] = np.array(
+            self.vision_start_token_id, dtype=np.int32
+        )
+        extra_model_args["tokens_per_second"] = np.array(
+            self.tokens_per_second, dtype=np.int32
+        )
+        # Only add optional values if they are not None
+        if image_grid_thw is not None:
+            extra_model_args["image_grid_thw"] = image_grid_thw
+        if attention_mask is not None:
+            extra_model_args["attention_mask"] = attention_mask
+        extra_model_args["decoder_position_ids"] = temp_position_ids
+        if concatenated_pixel_values is not None:
+            extra_model_args["concatenated_pixel_values"] = (
+                concatenated_pixel_values
+            )
 
         # Handle JSON schema if provided
         json_schema = (
@@ -502,16 +666,40 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         else:
             eos_token_ids = self._default_eos_token_ids
 
+        if self.max_length and encoded_prompt.shape[0] > self.max_length:
+            raise ValueError(
+                "encoded_prompt is greater than the max_length of the tokenizer"
+            )
+
+        if pixel_values_list:
+            start_and_end_idxs = find_contiguous_ranges(
+                encoded_prompt, [self.image_token_id]
+            )
+            images = [
+                ImageMetadata(
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                    pixel_values=pixel_values,
+                )
+                for (start_idx, end_idx), pixel_values in zip(
+                    start_and_end_idxs, pixel_values_list, strict=True
+                )
+            ]
+        else:
+            images = []
+
         # Create and return context
         context = TextAndVisionContext(
             request_id=request.request_id,
             eos_token_ids=eos_token_ids,
-            pixel_values=pixel_values,
             extra_model_args=extra_model_args,
             tokens=encoded_prompt,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            sampling_params=request.sampling_params,
+            images=images,
+            vision_token_ids=[self.image_token_id],
         )
         return context

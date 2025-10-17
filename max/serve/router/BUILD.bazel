@@ -4,6 +4,7 @@ modular_py_library(
     name = "router",
     srcs = glob(["*.py"]),
     deps = [
+        "//SDK/lib/API/python/max/serve/parser",
         "//SDK/lib/API/python/max/serve/pipelines",
         "//SDK/lib/API/python/max/serve/scheduler",
         "//SDK/lib/API/python/max/serve/schemas",

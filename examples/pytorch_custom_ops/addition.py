@@ -18,7 +18,7 @@ import torch
 from max.torch import CustomOpLibrary
 
 # Load the Mojo custom operations from the `operations` directory.
-mojo_kernels = Path(__file__).parent / "operations.mojopkg"
+mojo_kernels = Path(__file__).parent / "operations"
 op_library = CustomOpLibrary(mojo_kernels)
 
 # Register a custom operation that adds a constant value of 10 to a tensor.

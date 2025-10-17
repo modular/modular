@@ -14,12 +14,16 @@
 from math import (
     align_down,
     align_up,
+    acos,
+    asin,
     atanh,
+    cbrt,
     ceil,
     ceildiv,
     clamp,
     copysign,
     cos,
+    erfc,
     exp2,
     factorial,
     floor,
@@ -27,18 +31,21 @@ from math import (
     gcd,
     iota,
     isclose,
-    isqrt,
+    rsqrt,
     lcm,
     log,
-    log2,
     log1p,
+    log2,
     sin,
     sqrt,
     trunc,
     ulp,
+    pi,
 )
+from math.math import _call_libm
 from sys import CompilationTarget
 
+from testing import TestSuite
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
 from utils.numerics import inf, isinf, isnan, nan, neg_inf
@@ -47,14 +54,41 @@ from utils.numerics import inf, isinf, isnan, nan, neg_inf
 fn test_sin() raises:
     assert_almost_equal(sin(Float32(1.0)), 0.841470956802)
 
+    alias s_45 = sin(pi / 4)
+    assert_almost_equal(s_45, 0.7071067811865475)
+
+    alias s_30 = sin(pi / 6)
+    assert_almost_equal(s_30, 0.5)
+
+    alias s_60 = sin(pi / 3)
+    assert_almost_equal(s_60, 0.8660254037844387)
+
+    # Compare the compile time values against the runtime values to make sure
+    # they align.
+    assert_almost_equal(s_45, sin(pi / 4))
+    assert_almost_equal(s_30, sin(pi / 6))
+    assert_almost_equal(s_60, sin(pi / 3))
+
 
 fn test_cos() raises:
     assert_almost_equal(cos(Float32(1.0)), 0.540302276611)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        assert_equal(cos(BFloat16(2.0)), -0.416015625)
+    assert_equal(cos(BFloat16(2.0)), -0.416015625)
+
+    alias c_45 = cos(pi / 4)
+    assert_almost_equal(c_45, 0.7071067811865476)
+
+    alias c_30 = cos(pi / 6)
+    assert_almost_equal(c_30, 0.8660254037844386)
+
+    alias c_60 = cos(pi / 3)
+    assert_almost_equal(c_60, 0.4999999999999999)
+
+    # Compare the compile time values against the runtime values to make sure
+    # they align.
+    assert_almost_equal(c_45, cos(pi / 4))
+    assert_almost_equal(c_30, cos(pi / 6))
+    assert_almost_equal(c_60, cos(pi / 3))
 
 
 fn test_factorial() raises:
@@ -127,8 +161,8 @@ fn test_isclose_numerics[*, symm: Bool]() raises:
             (edge_val[symm](v, atol, rtol), v),
         ]
 
-    for i in range(len(all_close)):
-        var a, b = all_close[i]
+    for item in all_close:
+        var a, b = item
         var res = isclose[symmetrical=symm](a, b, atol=atol, rtol=rtol)
         assert_true(all(res))
 
@@ -152,8 +186,8 @@ fn test_isclose_numerics[*, symm: Bool]() raises:
             (v, edge_val[symm](v, 1.1 * atol, 1.1 * rtol)),
         ]
 
-    for i in range(len(none_close)):
-        var a, b = none_close[i]
+    for item in none_close:
+        var a, b = item
         var res = isclose[symmetrical=symm](a, b, atol=atol, rtol=rtol)
         assert_false(any(res))
 
@@ -269,7 +303,7 @@ def test_sqrt():
     assert_equal(sqrt(10**16), 10**8)
     assert_equal(sqrt(Int.MAX), 3037000499)
 
-    var i = SIMD[DType.index, 4](0, 1, 2, 3)
+    var i = SIMD[DType.int, 4](0, 1, 2, 3)
     assert_equal(sqrt(i**2), i)
 
     var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0)
@@ -301,16 +335,16 @@ def test_sqrt():
     assert_almost_equal(s2_f64[3], 0.86602)
 
 
-def test_isqrt():
+def test_rsqrt():
     var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0) + 1
 
-    var s1_f32 = isqrt(f32x4)
+    var s1_f32 = rsqrt(f32x4)
     assert_equal(s1_f32[0], 1.0)
     assert_almost_equal(s1_f32[1], 0.81649)
     assert_almost_equal(s1_f32[2], 0.70710)
     assert_almost_equal(s1_f32[3], 0.63245)
 
-    var s2_f32 = isqrt(0.5 * f32x4)
+    var s2_f32 = rsqrt(0.5 * f32x4)
     assert_almost_equal(s2_f32[0], 1.41421)
     assert_almost_equal(s2_f32[1], 1.15470)
     assert_equal(s2_f32[2], 1.0)
@@ -318,13 +352,13 @@ def test_isqrt():
 
     var f64x4 = 0.5 * F64x4(0.0, 1.0, 2.0, 3.0) + 1
 
-    var s1_f64 = isqrt(f64x4)
+    var s1_f64 = rsqrt(f64x4)
     assert_equal(s1_f64[0], 1.0)
     assert_almost_equal(s1_f64[1], 0.81649)
     assert_almost_equal(s1_f64[2], 0.70710)
     assert_almost_equal(s1_f64[3], 0.63245)
 
-    var s2_f64 = isqrt(0.5 * f64x4)
+    var s2_f64 = rsqrt(0.5 * f64x4)
     assert_almost_equal(s2_f64[0], 1.41421)
     assert_almost_equal(s2_f64[1], 1.15470)
     assert_equal(s2_f64[2], 1.0)
@@ -457,30 +491,21 @@ def test_frexp():
     _test_frexp_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_frexp_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        _test_frexp_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_frexp_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_log():
     _test_log_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_log_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        _test_log_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_log_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_log2():
     _test_log2_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_log2_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_log1p():
@@ -488,10 +513,7 @@ def test_log1p():
     _test_log1p_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_log1p_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        _test_log1p_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_log1p_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_gcd():
@@ -665,28 +687,48 @@ def test_atanh():
     )
 
 
+def test_asin():
+    alias n = 1_000
+    for i in range(n):
+        var val = Float32(i) / (n * 2) - 1
+        assert_almost_equal(
+            asin(val),
+            _call_libm["asin"](val),
+            msg=String("mismatch for the value = ", val),
+        )
+
+
+def test_erfc():
+    alias n = 10_000
+    for i in range(n):
+        var val = Float32(i) / (n * Float32(2) / 10) - 10
+        assert_almost_equal(
+            erfc(val),
+            _call_libm["erfc"](val),
+        )
+
+
+def test_cbrt():
+    alias n = 1_0000
+    for i in range(n):
+        var val = Float32(i) / (n * Float32(2) / 10) - 10
+        assert_almost_equal(
+            cbrt(val),
+            _call_libm["cbrt"](val),
+            msg=String("mismatch for the value = ", val, " at index = ", i),
+        )
+
+
+def test_acos():
+    alias n = 1_000
+    for i in range(n):
+        var val = Float32(i) / (n * 2) - 1
+        assert_almost_equal(
+            acos(val),
+            _call_libm["acos"](val),
+            msg=String("mismatch for the value = ", val),
+        )
+
+
 def main():
-    test_sin()
-    test_cos()
-    test_factorial()
-    test_copysign()
-    test_isclose()
-    test_ceil()
-    test_floor()
-    test_trunc()
-    test_exp2()
-    test_iota()
-    test_sqrt()
-    test_isqrt()
-    test_frexp()
-    test_log()
-    test_log2()
-    test_log1p()
-    test_gcd()
-    test_lcm()
-    test_ulp()
-    test_ceildiv()
-    test_align_down()
-    test_align_up()
-    test_clamp()
-    test_atanh()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -23,6 +23,7 @@ from sys.intrinsics import assume, likely, unlikely
 
 from memory import memset_zero
 from testing import assert_equal
+from testing import TestSuite
 
 alias F32x4 = SIMD[DType.float32, 4]
 alias F32x8 = SIMD[DType.float32, 8]
@@ -137,11 +138,4 @@ def test_assume():
 
 
 def main():
-    test_intrinsic_comp_eval()
-    test_compressed_store()
-    test_masked_load()
-    test_masked_store()
-    test_strided_load()
-    test_strided_store()
-    test_likely_unlikely()
-    test_assume()
+    TestSuite.discover_tests[__functions_in_module()]().run()

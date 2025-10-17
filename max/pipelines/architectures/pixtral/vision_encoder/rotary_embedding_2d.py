@@ -21,7 +21,7 @@ from max.nn import Module
 
 
 def meshgrid(
-    height: DimLike, width: DimLike, indexing: str = "ij"
+    height: DimLike, width: DimLike, _indexing: str = "ij"
 ) -> TensorValue:
     """Returns row indices and col indices of each point on the grid."""
     height = Dim(height)
@@ -69,7 +69,7 @@ def patch_position_ids(
             2:4
         ]  # img_height/patch_size, img_width/patch_size
         # TODO(MSDK-1194): replace with ops.meshgrid()
-        mesh = meshgrid(height, width, indexing="ij")
+        mesh = meshgrid(height, width)
         # TODO(MSDK-1193): replace ? by ops.chunk() or ops.split_tensor()
         # Combine row and col indices into 1 tensor of paired coordinates. Shape = (height, width, 2)
         # Then split into 2 tensors: 1st and 2nd coordinate of points in the mesh.

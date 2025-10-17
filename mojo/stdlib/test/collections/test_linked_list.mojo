@@ -19,7 +19,13 @@ from test_utils import (
     DelCounter,
     MoveCounter,
 )
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+    TestSuite,
+)
 
 
 def test_construction():
@@ -95,6 +101,26 @@ def test_pop():
     assert_equal(len(l1), 2)
     assert_equal(l1[0], 1)
     assert_equal(l1[1], 2)
+
+
+def test_pop_copies():
+    var l1 = LinkedList[CopyCounter](
+        CopyCounter(),
+        CopyCounter(),
+        CopyCounter(),
+        CopyCounter(),
+        CopyCounter(),
+    )
+    assert_equal(l1.pop().copy_count, 0)
+    assert_equal(len(l1), 4)
+    assert_equal(l1.pop().copy_count, 0)
+    assert_equal(len(l1), 3)
+    assert_equal(l1.pop(1).copy_count, 0)
+    assert_equal(len(l1), 2)
+    assert_equal(l1.maybe_pop(1).value().copy_count, 0)
+    assert_equal(len(l1), 1)
+    assert_equal(l1.maybe_pop().value().copy_count, 0)
+    assert_equal(len(l1), 0)
 
 
 def test_getitem():
@@ -367,8 +393,8 @@ def test_list_insert():
         v4.insert(0, 4 - i)
         v4.insert(len(v4), 4 + i + 1)
 
-    for i in range(len(v4)):
-        assert_equal(v4[i], i + 1)
+    for i, value in enumerate(v4):
+        assert_equal(value, i + 1)
 
 
 def test_list_extend_non_trivial():
@@ -408,7 +434,7 @@ def test_2d_dynamic_list():
         var v = LinkedList[Int]()
         for j in range(3):
             v.append(i + j)
-        list.append(v)
+        list.append(v^)
 
     assert_equal(0, list[0][0])
     assert_equal(1, list[0][1])
@@ -422,6 +448,7 @@ def test_2d_dynamic_list():
     assert_equal(3, len(list[0]))
 
     list[0].clear()
+
     assert_equal(0, len(list[0]))
 
     list.clear()
@@ -441,8 +468,8 @@ def test_list_explicit_copy():
 
     var l2_copy = l2.copy()
     assert_equal(len(l2), len(l2_copy))
-    for i in range(len(l2)):
-        assert_equal(l2[i], l2_copy[i])
+    for i, value in enumerate(l2):
+        assert_equal(value, l2_copy[i])
 
 
 def test_no_extra_copies_with_sugared_set_by_field():
@@ -539,10 +566,11 @@ def test_indexing():
 def test_list_dtor():
     var dtor_count = 0
 
-    var l = LinkedList[DelCounter]()
+    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_any_origin()
+    var l = LinkedList[DelCounter[ptr.origin]]()
     assert_equal(dtor_count, 0)
 
-    l.append(DelCounter(UnsafePointer(to=dtor_count)))
+    l.append(DelCounter(ptr))
     assert_equal(dtor_count, 0)
 
     l^.__del__()
@@ -551,12 +579,12 @@ def test_list_dtor():
 
 def test_iter():
     var l = LinkedList[Int](1, 2, 3)
-    var iter = l.__iter__()
-    assert_true(iter.__has_next__(), "Expected iter to have next")
-    assert_equal(iter.__next_ref__(), 1)
-    assert_equal(iter.__next_ref__(), 2)
-    assert_equal(iter.__next_ref__(), 3)
-    assert_false(iter.__has_next__(), "Expected iter to not have next")
+    var it = l.__iter__()
+    assert_true(it.__has_next__(), "Expected iter to have next")
+    assert_equal(it.__next_ref__(), 1)
+    assert_equal(it.__next_ref__(), 2)
+    assert_equal(it.__next_ref__(), 3)
+    assert_false(it.__has_next__(), "Expected iter to not have next")
 
     var riter = l.__reversed__()
     assert_true(riter.__has_next__(), "Expected iter to have next")
@@ -575,6 +603,9 @@ def test_iter():
         assert_equal(el, l[i])
         i -= 1
 
+    var ll = LinkedList[Int]()
+    assert_equal(iter(ll).__has_next__(), False)
+
 
 def test_repr_wrap():
     var l1 = LinkedList[Int](1, 2, 3)
@@ -582,35 +613,4 @@ def test_repr_wrap():
 
 
 def main():
-    test_construction()
-    test_linkedlist_literal()
-    test_append()
-    test_prepend()
-    test_copy()
-    test_reverse()
-    test_pop()
-    test_getitem()
-    test_setitem()
-    test_str()
-    test_repr()
-    test_pop_on_empty_list()
-    test_optional_pop_on_empty_linked_list()
-    test_list()
-    test_list_clear()
-    test_list_to_bool_conversion()
-    test_list_pop()
-    test_list_variadic_constructor()
-    test_list_reverse()
-    test_list_extend_non_trivial()
-    test_list_explicit_copy()
-    test_no_extra_copies_with_sugared_set_by_field()
-    test_2d_dynamic_list()
-    test_list_boolable()
-    test_list_count()
-    test_list_contains()
-    test_indexing()
-    test_list_dtor()
-    test_list_insert()
-    test_list_eq_ne()
-    test_iter()
-    test_repr_wrap()
+    TestSuite.discover_tests[__functions_in_module()]().run()

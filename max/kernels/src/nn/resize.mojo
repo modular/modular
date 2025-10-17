@@ -16,11 +16,11 @@ from math import ceil, floor
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from memory import memcpy
@@ -28,7 +28,7 @@ from memory import memcpy
 from utils import IndexList, StaticTuple
 
 
-struct CoordinateTransformationMode(Copyable, Movable):
+struct CoordinateTransformationMode(ImplicitlyCopyable, Movable):
     var value: Int
     alias HalfPixel = CoordinateTransformationMode(0)
     alias AlignCorners = CoordinateTransformationMode(1)
@@ -75,7 +75,7 @@ fn coord_transform[
         return 0
 
 
-struct RoundMode(Copyable, Movable):
+struct RoundMode(ImplicitlyCopyable, Movable):
     var value: Int
     alias HalfDown = RoundMode(0)
     alias HalfUp = RoundMode(1)
@@ -92,7 +92,7 @@ struct RoundMode(Copyable, Movable):
 
 
 @fieldwise_init
-struct InterpolationMode(Copyable, Movable):
+struct InterpolationMode(ImplicitlyCopyable, Movable):
     var value: Int
     alias Linear = InterpolationMode(0)
 
@@ -102,7 +102,9 @@ struct InterpolationMode(Copyable, Movable):
 
 
 @register_passable("trivial")
-struct Interpolator[mode: InterpolationMode](Copyable, Defaultable, Movable):
+struct Interpolator[mode: InterpolationMode](
+    Defaultable, ImplicitlyCopyable, Movable
+):
     var cubic_coeff: Float32
 
     @always_inline
@@ -328,9 +330,9 @@ fn _resize[
     ) == rebind[IndexList[input.rank]](
         output.runtime_layout.shape.value.canonicalize()
     ):
-        return memcpy(output.ptr, input.ptr, input.size())
+        return memcpy(dest=output.ptr, src=input.ptr, count=input.size())
     var scales = StaticTuple[Float32, input.rank]()
-    var resize_dims = List[Int, hint_trivial_type=True](capacity=input.rank)
+    var resize_dims = List[Int](capacity=input.rank)
     var tmp_dims = IndexList[input.rank](0)
     for i in range(input.rank):
         # need to consider output dims when upsampling and input dims when downsampling

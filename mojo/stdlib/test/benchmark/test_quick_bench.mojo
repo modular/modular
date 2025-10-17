@@ -16,6 +16,7 @@ from random import randint
 from time import sleep
 
 from benchmark import BenchId, BenchMetric, QuickBench, ThroughputMeasure
+from testing import TestSuite
 
 
 fn vec_reduce[
@@ -106,7 +107,7 @@ fn dummy(
     return x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9
 
 
-fn test_overloaded() raises:
+def test_overloaded():
     var qb = QuickBench()
 
     qb.run[T_out = NoneType._mlir_type](
@@ -264,7 +265,7 @@ fn tanh(x: SIMD[DType.float32, 4]) -> __type_of(x):
     return math.tanh(x)
 
 
-fn test_mojo_math() raises:
+def test_mojo_math():
     var qb = QuickBench()
 
     qb.run(
@@ -287,12 +288,12 @@ fn test_mojo_math() raises:
     qb.dump_report()
 
 
-fn test_custom() raises:
+def test_custom():
     alias N = 1024
     alias alignment = 64
     alias dtype = DType.int32
-    var x = UnsafePointer[Scalar[dtype], alignment=alignment].alloc(N)
-    var y = UnsafePointer[Scalar[dtype], alignment=alignment].alloc(N)
+    var x = UnsafePointer[Scalar[dtype],].alloc(N, alignment=alignment)
+    var y = UnsafePointer[Scalar[dtype],].alloc(N, alignment=alignment)
     randint[dtype](x, N, 0, 255)
     randint[dtype](y, N, 0, 255)
 
@@ -322,7 +323,7 @@ fn test_custom() raises:
     y.free()
 
 
-fn main() raises:
+def test_all():
     # Width of columns is dynamic based on the longest value as a string, so
     # only test the first column.
 
@@ -349,3 +350,7 @@ fn main() raises:
     # CHECK: dummy_9   ,
     # CHECK: dummy_10  ,
     test_overloaded()
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

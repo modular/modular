@@ -10,6 +10,7 @@ mogg_lib_deps = [
     "@mojo//:quantization",
     "@mojo//:tensor_internal",
     "@mojo//:compiler_internal",
+    "@mojo//:shmem",
     "@mojo//:stdlib",
 ]
 
@@ -21,7 +22,6 @@ mojo_kgen_lib(
 
 mojo_library(
     name = "MOGGKernelAPI",
-    testonly = True,
     srcs = glob(["**/*.mojo"]),
     deps = mogg_lib_deps + ["@mojo//:MOGGPrimitives"],
 )

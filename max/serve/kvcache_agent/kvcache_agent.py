@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import grpc
-from max.interfaces import msgpack_numpy_decoder
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     KVCacheStateUpdate,
     MemoryTier,
@@ -215,9 +214,9 @@ class KVCacheAgentServer:
         """
         self.config = config
         self._kv_cache_events_pull_socket = ZmqPullSocket[KVCacheChangeMessage](
-            zmq_endpoint=kv_cache_events_zmq_endpoint,
+            endpoint=kv_cache_events_zmq_endpoint,
             # GENAI-233: This is currently non-functional.
-            deserialize=msgpack_numpy_decoder(int),
+            payload_type=KVCacheChangeMessage,
         )
         self.server = grpc.server(
             concurrent.futures.ThreadPoolExecutor(

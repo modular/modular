@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.sort import _quicksort, _SortWrapper
 from os import abort
+
+from builtin.sort import _quicksort
 
 
 # DO NOT CHANGE
 @register_passable("trivial")
-trait TuningConfig(Copyable, Movable, Stringable):
+trait TuningConfig(ImplicitlyCopyable, Movable, Stringable):
     ...
 
 
@@ -28,7 +29,7 @@ struct Table[type: TuningConfig](Stringable):
     var num_configs: UInt
 
     fn __init__(out self, configs: List[type], name: String):
-        self.configs = configs
+        self.configs = configs.copy()
         self.name = name
         self.num_configs = UInt(len(configs))
 
@@ -79,7 +80,7 @@ struct Table[type: TuningConfig](Stringable):
         @parameter
         if len(domain):
             flag = List[Bool](length=self.num_configs, fill=False)
-            for idx in domain:
+            for idx in materialize[domain]():
                 flag[idx] = True
         else:
             flag = List[Bool](length=self.num_configs, fill=True)
@@ -91,36 +92,34 @@ struct Table[type: TuningConfig](Stringable):
         for i in range(self.num_configs):
             if flag[i]:
                 result_idx_list.append(i)
-        return result_idx_list
+        return result_idx_list^
 
     # Apply rule on all configs in the table and return list of all the unique results.
     fn query_values[
-        ret_type: Comparable & Copyable & Movable,
+        ret_type: Comparable & ImplicitlyCopyable & Movable,
         rule: fn (type) capturing -> ret_type,
-        idx_list: List[Int] = List[Int](),
+        domain: List[Int] = List[Int](),
     ](self) -> List[ret_type]:
         var result = List[ret_type]()
 
         @always_inline
         @parameter
-        fn _get_search_idx_list() -> List[Int]:
-            if idx_list:
-                return idx_list
+        fn _get_search_domain() -> List[Int]:
+            if len(materialize[domain]()):
+                return materialize[domain]()
             else:
                 return [idx for idx in range(self.num_configs)]
 
-        var search_idx_list = _get_search_idx_list()
+        var search_domain = _get_search_domain()
 
-        for idx in search_idx_list:
+        for idx in search_domain:
             value = rule(self.configs[idx])
             if value not in result:
                 result.append(value)
 
         @parameter
-        fn _cmp(
-            lsh: _SortWrapper[ret_type], rhs: _SortWrapper[ret_type]
-        ) -> Bool:
-            return lsh.data < rhs.data
+        fn _cmp(lsh: ret_type, rhs: ret_type) -> Bool:
+            return lsh < rhs
 
         _quicksort[_cmp](result)
-        return result
+        return result^

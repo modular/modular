@@ -41,8 +41,8 @@ Supported Data Types:
 
 Supported Matrix Shapes:
 ----------------------
-- NVIDIA: 16×8×8, 16×8×4, 16×8×16, 8×8×4, 16×8×32
-- AMD: 16×16×4, 16×16×16, 32×32×8
+- NVIDIA: 16x8x8, 16x8x4, 16x8x16, 8x8x4, 16x8x32
+- AMD: 16x16x4, 16x16x16, 32x32x8
 """
 
 from collections import OptionalReg
@@ -57,7 +57,7 @@ from sys import (
 from gpu import WARP_SIZE, lane_id, thread_idx
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
-from gpu.mma import ld_matrix, mma, get_amd_fp8_dtype, get_amd_bf8_dtype
+from gpu.mma import get_amd_bf8_dtype, get_amd_fp8_dtype, ld_matrix, mma
 from layout._utils import load_to_simd
 from layout.int_tuple import product
 from layout.layout import Layout
@@ -145,7 +145,7 @@ struct TensorCore[
     in_type: DType,
     shape: IndexList[3],
     transpose_b: Bool = False,
-](Defaultable):
+](Defaultable, ImplicitlyCopyable):
     """TensorCore provides an abstraction for GPU tensor core hardware to perform optimized matrix operations.
 
     This struct encapsulates the functionality required to efficiently map matrix operations to Tensor Cores
@@ -156,18 +156,18 @@ struct TensorCore[
         out_type: The data type for output/accumulation operations.
         in_type: The data type for input matrix elements.
         shape: The shape parameters for the matrix operation in the form [M, N, K]
-               where M×N is the output shape and K is the inner dimension.
+               where MxN is the output shape and K is the inner dimension.
         transpose_b: Whether to transpose the B matrix before multiplication. Defaults to False.
 
     Note:
         Different shapes and data types are supported depending on the GPU hardware.
         For NVIDIA GPUs:
-          - float32: 16×8×8 or 16×8×4
-          - half-precision: 16×8×16
-          - float8: 16×8×32
+          - float32: 16x8x8 or 16x8x4
+          - half-precision: 16x8x16
+          - float8: 16x8x32
         For AMD GPUs:
-          - float32: 16×16×4
-          - half-precision: 16×16×16 or 32×32×8
+          - float32: 16x16x4
+          - half-precision: 16x16x16 or 32x32x8
     """
 
     # Layout reference => https://github.com/NVIDIA/cutlass/blob/main/include/cute/atom/mma_traits_sm80.hpp#L44.
@@ -215,15 +215,15 @@ struct TensorCore[
         pass
 
     @staticmethod
-    fn get_shapes[out_type: DType, in_type: DType]() -> List[IndexList[3]]:
+    fn get_shapes[_out_type: DType, _in_type: DType]() -> List[IndexList[3]]:
         """
         Get supported shapes for given data types.
 
         Returns a list of valid shapes for the specified output and input data types.
 
         Parameters:
-            out_type: The output/accumulation data type.
-            in_type: The input matrix data type.
+            _out_type: The output/accumulation data type.
+            _in_type: The input matrix data type.
 
         Returns:
             List[IndexList[3]]: Valid shapes for the matrix operations given the specified types.
@@ -234,14 +234,14 @@ struct TensorCore[
         """
 
         @parameter
-        if out_type is DType.float32 and in_type is DType.float32:
+        if _out_type is DType.float32 and _in_type is DType.float32:
             return List[IndexList[3]](shape_16x8x4, shape_16x8x8)
-        elif out_type is DType.float32 and in_type is DType.bfloat16:
+        elif _out_type is DType.float32 and _in_type is DType.bfloat16:
             return List[IndexList[3]](shape_16x8x8, shape_16x8x16)
-        elif out_type is DType.float32 and in_type is DType.float16:
+        elif _out_type is DType.float32 and _in_type is DType.float16:
             return List[IndexList[3]](shape_16x8x8, shape_8x8x4)
-        elif out_type is DType.float32 and (
-            in_type is DType.float8_e4m3fn or in_type is DType.float8_e5m2
+        elif _out_type is DType.float32 and (
+            _in_type is DType.float8_e4m3fn or _in_type is DType.float8_e5m2
         ):
             return List[IndexList[3]](shape_16x8x32)
         else:
@@ -665,7 +665,9 @@ struct TensorCore[
         return c_reg_tile
 
     @always_inline
-    fn store_d(self, d_dst: LayoutTensor, d_src: LayoutTensor):
+    fn store_d(
+        self, d_dst: LayoutTensor[mut=True, *_, **_], d_src: LayoutTensor
+    ):
         """
         Store matrix D to destination memory.
 
@@ -683,7 +685,9 @@ struct TensorCore[
             self._store_d_amd(d_dst, d_src)
 
     @always_inline
-    fn _store_d_amd(self, d_dst: LayoutTensor, d_src: LayoutTensor):
+    fn _store_d_amd(
+        self, d_dst: LayoutTensor[mut=True, *_, **_], d_src: LayoutTensor
+    ):
         constrained[
             d_src.shape[0]() == Self.c_reg_tile_type.shape[0]()
             and d_src.shape[1]() == Self.c_reg_tile_type.shape[1](),
@@ -707,7 +711,9 @@ struct TensorCore[
             constrained[False, "No valid type to store to LayoutTensor d"]()
 
     @always_inline
-    fn _store_d_nvidia(self, d_dst: LayoutTensor, d_src: LayoutTensor):
+    fn _store_d_nvidia(
+        self, d_dst: LayoutTensor[mut=True, *_, **_], d_src: LayoutTensor
+    ):
         constrained[
             d_dst.dtype == out_type,
             "destination tensor must have the same type",
@@ -845,7 +851,9 @@ struct TensorCore[
         alias simd_size = simd_width_of[warp_tile.dtype]()
         alias num_frags = fragments.shape[0]()
 
-        var swizzle_offset = mma_tile_coord_k * shape[2] // simd_size
+        var swizzle_offset = (
+            mma_tile_coord_k * UInt(shape[2]) // UInt(simd_size)
+        )
 
         @parameter
         for i in range(num_frags):
@@ -967,7 +975,9 @@ struct TensorCore[
 
             @parameter
             if in_type is DType.float32:
-                var swizzle_offset = mma_tile_coord_k * shape[2] // simd_size
+                var swizzle_offset = (
+                    mma_tile_coord_k * UInt(shape[2]) // UInt(simd_size)
+                )
 
                 @parameter
                 for i in range(0, num_frags, 2):
@@ -992,7 +1002,9 @@ struct TensorCore[
                     ),
                 ]()
 
-                var swizzle_offset = mma_tile_coord_k * shape[2] // simd_size
+                var swizzle_offset = (
+                    mma_tile_coord_k * UInt(shape[2]) // UInt(simd_size)
+                )
 
                 @parameter
                 for i in range(0, num_frags, 2):
@@ -1036,8 +1048,8 @@ struct TensorCore[
                         Layout.col_major(4, 8)
                     ](lane_id())
                     fragments[i, 0] = rebind[frag_type](
-                        rebind[SIMD[warp_tile.dtype, 4]](frags[0]).join(
-                            rebind[SIMD[warp_tile.dtype, 4]](frags[1])
+                        rebind[SIMD[warp_tile.dtype, 4]](frags[0, 0]).join(
+                            rebind[SIMD[warp_tile.dtype, 4]](frags[0, 1])
                         ),
                     )
 
@@ -1060,14 +1072,14 @@ struct TensorCore[
                 @parameter
                 if WN == 32:  # 32 is the min in practice.
                     var mma_tile_shifted = __type_of(mma_tile)(
-                        mma_tile.ptr - warp_tile_coord_n * WN
+                        mma_tile.ptr - warp_tile_coord_n * UInt(WN)
                     )
 
                     @parameter
                     for i in range(0, num_frags, 2):
-                        var swizzle_offset = (
-                            i + warp_tile_coord_n * WN // simd_size
-                        )
+                        var swizzle_offset = i + warp_tile_coord_n * UInt(
+                            WN
+                        ) // UInt(simd_size)
                         var vec = _load_matrix_frag[
                             swizzle=swizzle, transposed=True
                         ](mma_tile_shifted, Int(swizzle_offset))
@@ -1146,9 +1158,7 @@ struct TensorCore[
         alias repack_tile = Index(64, 16)
 
         @always_inline
-        fn int4tobf16(
-            i4: Int32, scale: SIMD[DType.bfloat16, 1]
-        ) -> SIMD[DType.bfloat16, 2]:
+        fn int4tobf16(i4: Int32, scale: BFloat16) -> SIMD[DType.bfloat16, 2]:
             alias MASK: Int32 = 0x000F000F
             alias I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
 
@@ -1174,7 +1184,7 @@ struct TensorCore[
         ](0, Int(mma_tile_coord_k))
 
         var vec = bitcast[DType.int32, 4](
-            mma_tile.vectorize[1, 4]()[0, Int(thread_idx.x % WARP_SIZE)]
+            mma_tile.vectorize[1, 4]()[0, Int(thread_idx.x % UInt(WARP_SIZE))]
         )
 
         @parameter
@@ -1312,10 +1322,9 @@ fn _load_matrix_frag[
         swizzle.value() if swizzle else Swizzle(0, 0, 1),
     )
 
-    var lane_offset = (
-        eval_composed[ldmatrix_layout](UInt(Int(lane)), UInt(offset))
-        * simd_size
-    )
+    var lane_offset = eval_composed[ldmatrix_layout](
+        UInt(Int(lane)), UInt(offset)
+    ) * UInt(simd_size)
 
     return ld_matrix[res.size, transpose=transposed](
         mma_tile.ptr.offset(lane_offset)
@@ -1339,7 +1348,7 @@ fn get_mma_shape[
 
     Returns:
         An `IndexList[3]` containing the MMA dimensions in the format `[M, N, K]`,
-        where `M×N` is the output matrix size and `K` is the reduction dimension.
+        where `MxN` is the output matrix size and `K` is the reduction dimension.
     """
 
     @parameter
@@ -1414,3 +1423,115 @@ fn get_fragment_size[mma_shape: IndexList[3]]() -> IndexList[3]:
         mma_shape[1] * mma_shape[2] // WARP_SIZE,
         mma_shape[0] * mma_shape[1] // WARP_SIZE,
     )
+
+
+@fieldwise_init
+struct TiledTensorCore[
+    out_type: DType,
+    in_type: DType,
+    shape: IndexList[3],
+    group_size: Int,
+    transpose_b: Bool = False,
+]:
+    """TiledTensorCore provides a wrapper around TensorCore to support multiple MMAs along the K dimension.
+
+    Enables larger K dimension operations by decomposing them into multiple smaller MMA operations.
+    Currently only being used for AMD GPUs to enable 16x16x32 operations using two 16x16x16 MMAs.
+
+    Parameters:
+        out_type: The data type for output/accumulation operations.
+        in_type: The data type for input matrix elements.
+        shape: The shape parameters for individual MMA operations [M, N, K].
+        group_size: Number of MMA operations along the K dimension.
+        transpose_b: Whether to transpose the b matrix. Defaults to False.
+    """
+
+    alias mma_op = TensorCore[out_type, in_type, shape, transpose_b]()
+
+    @staticmethod
+    @always_inline
+    fn mma[
+        swap_a_b: Bool = False
+    ](
+        a_reg_tile: LayoutTensor,
+        b_reg_tile: LayoutTensor,
+        c_reg_tile: LayoutTensor,
+    ):
+        """Perform multiple matrix multiply-accumulate operations along the K dimension.
+
+        Executes group_size MMA operations, processing slices of the K dimension
+        and accumulating results in c_reg_tile.
+
+        Parameters:
+            swap_a_b: Whether to swap a and b operands. Defaults to False.
+
+        Args:
+            a_reg_tile: Input matrix a fragments [num_m_mmas, group_size * a_frag_size].
+            b_reg_tile: Input matrix b fragments [num_n_mmas, group_size * b_frag_size].
+            c_reg_tile: Accumulation matrix c fragments, modified in-place.
+        """
+        alias num_m_mmas = a_reg_tile.shape[0]()
+        alias num_n_mmas = b_reg_tile.shape[0]()
+
+        alias a_frag_size = Self.mma_op.a_reg_type.size
+        alias b_frag_size = Self.mma_op.b_reg_type.size
+        alias c_frag_size = Self.mma_op.c_reg_type.size
+
+        constrained[group_size > 0, "group_size must be greater than 0"]()
+
+        constrained[
+            c_reg_tile.shape[1]() == c_frag_size,
+            "c_reg_tile.shape[1]() must be equal to c_frag_size",
+        ]()
+        constrained[
+            a_reg_tile.shape[1]() == group_size * a_frag_size,
+            "a_reg_tile.shape[1]() must be equal to group_size * a_frag_size",
+        ]()
+        constrained[
+            b_reg_tile.shape[1]() == group_size * b_frag_size,
+            "b_reg_tile.shape[1]() must be equal to group_size * b_frag_size",
+        ]()
+
+        alias c_linear_map = Layout.row_major(
+            num_n_mmas, num_m_mmas
+        ) if swap_a_b else Layout.col_major(num_m_mmas, num_n_mmas)
+
+        @parameter
+        fn _inner_loop(
+            a_frag: LayoutTensor, b_frag: LayoutTensor, c_frag: LayoutTensor
+        ):
+            alias num_m_mmas = a_frag.shape[0]()
+            alias num_n_mmas = b_frag.shape[0]()
+
+            constrained[
+                c_frag.shape[0]() == num_m_mmas * num_n_mmas,
+                "Fragments size mismatch. Expected c_frag shape[0] to be"
+                " num_m_mmas * num_n_mmas = "
+                + String(num_m_mmas * num_n_mmas)
+                + ", got "
+                + String(c_frag.shape[0]()),
+            ]()
+
+            @parameter
+            for m_mma in range(num_m_mmas):
+
+                @parameter
+                for n_mma in range(num_n_mmas):
+                    alias c_idx = c_linear_map(IntTuple(m_mma, n_mma))
+                    mma(
+                        c_frag[c_idx, 0],
+                        a_frag[m_mma, 0],
+                        b_frag[n_mma, 0],
+                        c_frag[c_idx, 0],
+                    )
+
+        # FIXME: this might be more efficient using an iterator
+        @parameter
+        for k in range(group_size):
+            var a_reg_k = a_reg_tile.tile[num_m_mmas, a_frag_size](0, k)
+            var b_reg_k = b_reg_tile.tile[num_n_mmas, b_frag_size](0, k)
+            _inner_loop(
+                b_reg_k.vectorize[1, b_frag_size](),
+                a_reg_k.vectorize[1, a_frag_size](),
+                c_reg_tile.vectorize[1, c_frag_size](),
+            )

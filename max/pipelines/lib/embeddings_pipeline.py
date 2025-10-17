@@ -16,8 +16,10 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, final
 
+import numpy as np
+import numpy.typing as npt
 from max.driver import load_devices
 from max.engine import InferenceSession
 from max.graph.weights import (
@@ -26,29 +28,47 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.interfaces import EmbeddingsGenerator, EmbeddingsOutput, InputContext
+from max.interfaces import (
+    BaseContextType,
+    EmbeddingsContext,
+    EmbeddingsGenerationInputs,
+    EmbeddingsGenerationOutput,
+    Pipeline,
+    PipelineTokenizer,
+    RequestID,
+    TextGenerationRequest,
+)
 from max.nn import ReturnLogits
 from max.profiler import Tracer, traced
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
+
 from .hf_utils import download_weight_files
 from .pipeline import PipelineModel
 
 logger = logging.getLogger("max.pipelines")
-T = TypeVar("T", bound=InputContext)
+
+EmbeddingsPipelineType = Pipeline[
+    EmbeddingsGenerationInputs, EmbeddingsGenerationOutput
+]
 
 
-class EmbeddingsPipeline(EmbeddingsGenerator[T]):
+@final
+class EmbeddingsPipeline(EmbeddingsPipelineType):
     """Generalized token generator pipeline."""
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[EmbeddingsContext]],
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
+        tokenizer: PipelineTokenizer[
+            BaseContextType, npt.NDArray[np.integer[Any]], TextGenerationRequest
+        ],
     ) -> None:
+        del tokenizer  # Unused.
         self._pipeline_config = pipeline_config
         self._weight_adapters = weight_adapters
         # Initialize Session.
@@ -94,14 +114,17 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
         )
 
     @traced
-    def encode(self, batch: dict[str, T]) -> dict[str, EmbeddingsOutput]:
+    def execute(
+        self,
+        inputs: EmbeddingsGenerationInputs,
+    ) -> dict[RequestID, EmbeddingsGenerationOutput]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
 
         tracer: Tracer = Tracer()
         # Flatten our batch for consistent indexing.
-        context_batch = list(batch.values())
+        context_batch = list(inputs.batch.values())
 
         tracer.next("prepare_initial_token_inputs")
         # Prepare inputs for the first token in multistep execution.
@@ -118,14 +141,18 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
         batch_embeddings = model_outputs.logits.to_numpy()
 
         # Prepare the response.
-        res: dict[str, Any] = {}
+        res: dict[RequestID, EmbeddingsGenerationOutput] = {}
         tracer.push("prepare_response")
-        for batch_index, request_id in enumerate(batch.keys()):
+        for batch_index, request_id in enumerate(inputs.batch.keys()):
             request_embeddings = batch_embeddings[batch_index]
             if not self._pipeline_config.pool_embeddings:
                 # Remove padded tokens from embeddings
                 request_embeddings = request_embeddings[
                     : context_batch[batch_index].active_length, :
                 ]
-            res[request_id] = EmbeddingsOutput(request_embeddings)
+            res[request_id] = EmbeddingsGenerationOutput(request_embeddings)
         return res
+
+    def release(self, request_id: RequestID) -> None:
+        # Nothing to release.
+        pass

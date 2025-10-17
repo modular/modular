@@ -33,7 +33,7 @@ def test_slice_basic(graph_builder: GraphBuilder) -> None:
             TensorType(DType.int32, [1, 2, 3, 4, 5], device=DeviceRef.CPU())
         ],
     ) as graph:
-        out = graph.inputs[0][:, 1, ..., 3]  # type: ignore
+        out = graph.inputs[0].tensor[:, 1, ..., 3]
 
         assert out.shape == [1, 3, 4]
         graph.output(out)
@@ -46,15 +46,15 @@ def test_slice_with_tensor_value(graph_builder: GraphBuilder) -> None:
         ],
     ) as graph:
         start = ops.constant(2, DType.int64, device=DeviceRef.CPU())
-        out = graph.inputs[0][
+        out = graph.inputs[0].tensor[
             (slice(start, None), 3), (slice(start, None), "out_dim")
-        ]  # type: ignore
+        ]
 
         assert out.shape == [3, "out_dim"]
         graph.output(out)
 
 
-def dim_indexes(dim: Dim):
+def dim_indexes(dim: Dim):  # noqa: ANN201
     assume(dim != 0)  # still need to test attempting to index with 0 dim
     # Can index symbolic dims at any index, checked at runtime.
     bound = dim.dim if isinstance(dim, StaticDim) else (2**63 - 1)
@@ -65,10 +65,10 @@ def dim_indexes(dim: Dim):
     )
 
 
-def shape_indexes(shape: list[Dim]):
+def shape_indexes(shape: list[Dim]):  # noqa: ANN201
     full_indexes = st.tuples(*(dim_indexes(dim) for dim in shape))
 
-    def with_ellipsis(index, slice):  # noqa: ANN001
+    def with_ellipsis(index, slice):  # noqa: ANN001, ANN202
         # Ellipses can only be contiguous indices.
         assume(slice.step in (None, 1))
         new_index = list(index)
@@ -88,7 +88,7 @@ def shape_indexes(shape: list[Dim]):
 shared_shapes = st.shared(st.from_type(list[Dim]))
 
 
-def expected_slice_shape(shape, index):  # noqa: ANN001
+def expected_slice_shape(shape, index):  # noqa: ANN001, ANN201
     if Ellipsis in index:
         # Split around Ellipsis, fill its with slice(None)
         ei = index.index(Ellipsis)
@@ -100,7 +100,7 @@ def expected_slice_shape(shape, index):  # noqa: ANN001
 
     assert len(effective_index) == len(shape)
 
-    def expected_dim(dim, dim_index):  # noqa: ANN001
+    def expected_dim(dim, dim_index):  # noqa: ANN001, ANN202
         if dim_index == slice(None):
             return dim
         elif isinstance(dim_index, int):
@@ -111,7 +111,8 @@ def expected_slice_shape(shape, index):  # noqa: ANN001
         raise NotImplementedError
 
     expected = (
-        expected_dim(dim, idx) for dim, idx in zip(shape, effective_index)
+        expected_dim(dim, idx)
+        for dim, idx in zip(shape, effective_index, strict=True)
     )
     return [dim for dim in expected if dim is not None]
 
@@ -503,7 +504,11 @@ def test_slice_int_dims(
     assert result_type.rank == len(expected_shape)  # type: ignore
     assert all(
         dim == expected_dim
-        for dim, expected_dim in zip(result_type.shape, expected_shape)  # type: ignore
+        for dim, expected_dim in zip(
+            result_type.shape,  # type: ignore
+            expected_shape,
+            strict=True,
+        )
         if isinstance(expected_dim, int)
     )
 
@@ -514,7 +519,7 @@ def test_slice_invalid_start_stop(graph_builder: GraphBuilder) -> None:
         DType.float32, shape=["dim0"], device=DeviceRef.CPU()
     )
     with graph_builder(input_types=[input_type]) as graph:
-        x = graph.inputs[0]
+        x = graph.inputs[0].tensor
         with pytest.raises(
             ValueError,
             match=(
@@ -522,7 +527,7 @@ def test_slice_invalid_start_stop(graph_builder: GraphBuilder) -> None:
                 "decreasing for negative step, but got start 2, stop 1 for step 1"
             ),
         ):
-            x[2:1]  # type: ignore
+            x[2:1]
 
 
 def test_slice_out_of_bounds_specific_error_message(
@@ -538,7 +543,7 @@ def test_slice_out_of_bounds_specific_error_message(
             ValueError,
             match="rmo.slice stop index 1024 out of range for dimension size 3",
         ):
-            graph.inputs[0][:, 0:1024]  # type: ignore
+            graph.inputs[0].tensor[:, 0:1024]
 
 
 def gen_out_of_bounds_slice(dim_size: int, rand: random.Random) -> slice:

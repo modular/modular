@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: mojo/docs/manual/get-started.mdx
+
 import time
 
 from gridv1 import Grid
@@ -85,4 +87,4 @@ def run_display(
 
 def main():
     start = Grid.random(128, 128)
-    run_display(start)
+    run_display(start^)

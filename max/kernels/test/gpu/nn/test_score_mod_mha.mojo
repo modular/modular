@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import exp2, iota, isqrt
+from math import exp2, iota, rsqrt
 from random import random_ui64, seed
 
 from bit import prev_power_of_two
@@ -23,6 +23,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
@@ -45,9 +46,9 @@ fn generate_alibi_bias[
     width: Int,
     num_heads: Int,
 ](
-    head_idx: SIMD[DType.index, width],
-    q_idx: SIMD[DType.index, width],
-    k_idx: SIMD[DType.index, width],
+    head_idx: SIMD[DType.int, width],
+    q_idx: SIMD[DType.int, width],
+    k_idx: SIMD[DType.int, width],
     max_prompt_len: Int = 0,
 ) -> SIMD[dtype, width]:
     var scale: SIMD[dtype, width]
@@ -70,7 +71,7 @@ fn generate_alibi_bias[
                 )
             )
     var bias = (
-        -(max_prompt_len - 1 - k_idx - iota[DType.index, width]()).cast[dtype]()
+        -(max_prompt_len - 1 - k_idx - iota[DType.int, width]()).cast[dtype]()
         * scale
     )
     return bias
@@ -114,6 +115,14 @@ def execute_flash_attention[
     ctx.enqueue_copy(cache_lengths_dev, cache_valid_length.data)
     var cache_lengths = NDBuffer[DType.uint32, 1](
         cache_lengths_dev.unsafe_ptr(), Index(batch_size)
+    )
+    var cache_lengths_lt = LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        cache_lengths_dev.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            Index(batch_size)
+        ),
     )
 
     # initialize q tensor
@@ -277,8 +286,8 @@ def execute_flash_attention[
     v_cache_device = kv_collection_device.get_value_cache(0)
 
     flash_attention[use_score_mod=True](
-        test_output_device.tensor,
-        q_device.tensor,
+        test_output_device.to_layout_tensor(),
+        q_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
         CausalMask(),
@@ -287,23 +296,37 @@ def execute_flash_attention[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
         ](valid_length_device.tensor),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
 
     # Here pass mask that includes bias in q_idx >= k_idx (to compare).
     flash_attention(
-        ref_output_device.tensor,
-        q_device.tensor,
+        ref_output_device.to_layout_tensor(),
+        q_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
-        MaterializedMask(mask_device_mod.tensor, start_pos=cache_lengths),
+        MaterializedMask(
+            LayoutTensor[
+                mask_device_mod.dtype,
+                __type_of(mask_device_mod.to_layout_tensor()).layout,
+                MutableAnyOrigin,
+            ](
+                mask_device_mod.to_layout_tensor().ptr,
+                RuntimeLayout[
+                    __type_of(mask_device_mod.to_layout_tensor()).layout
+                ].row_major(
+                    mask_device_mod.to_layout_tensor().runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            start_pos=cache_lengths_lt,
+        ),
         IdentityScoreMod(),
         ManagedTensorSlice[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
         ](valid_length_device.tensor),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
 

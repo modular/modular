@@ -19,8 +19,6 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from max.serve.queue.zmq_queue import generate_zmq_ipc_path
-
 from .max_config import MAXConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -37,14 +35,8 @@ class LoRAConfig(MAXConfig):
     max_lora_rank: int = 16
     """Maximum rank of all possible LoRAs"""
 
-    max_num_loras: int = 100
+    max_num_loras: int = 1
     """The maximum number of active LoRAs in a batch"""
-
-    lora_request_endpoint: str = field(default_factory=generate_zmq_ipc_path)
-    """The request endpoint for ZMQ communication"""
-
-    lora_response_endpoint: str = field(default_factory=generate_zmq_ipc_path)
-    """The response endpoint for ZMQ communication"""
 
     _config_file_section_name: str = "lora_config"
     """The section name to use when loading this config from a MAXConfig file.
@@ -63,7 +55,5 @@ class LoRAConfig(MAXConfig):
             "enable_lora": "Enables LoRA on the server",
             "lora_paths": "List of paths to the LoRAs.",
             "max_lora_rank": "The maximum rank of all possible LoRAs. Typically 8 or 16. Default is 16.",
-            "max_num_loras": "The maximum number of active LoRAs in a batch. Default is 100.",
-            "lora_request_endpoint": "The ZMQ request endpoint for IPC.",
-            "lora_response_endpoint": "The ZMQ response endpoint for IPC.",
+            "max_num_loras": "The maximum number of active LoRAs in a batch. Default is 1.",
         }

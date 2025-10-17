@@ -14,17 +14,16 @@
 from math import ceildiv
 from sys import argv
 
+import linalg.matmul.vendor.blas as vendor_blas
 from gpu import block_dim
 from gpu.host import DeviceContext
 from gpu.id import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
-from linalg import vendor_blas
+from testing import assert_almost_equal
 
 from utils.index import IndexList
-
-from testing import assert_almost_equal
 
 
 fn is_benchmark() -> Bool:
@@ -48,7 +47,7 @@ fn kernel_1[
     var row = block_dim.y * block_idx.y + (thread_idx.y)
     var col = block_dim.x * block_idx.x + (thread_idx.x)
 
-    if row < M and col < N:
+    if row < UInt(M) and col < UInt(N):
         # Still accumulate in float32 for precision
         var acc: Float32 = 0
 
@@ -125,9 +124,9 @@ def test_kernel_1[
         @parameter
         fn run_kernel(ctx: DeviceContext) raises:
             ctx.enqueue_function[kernel](
-                c.device_tensor(),
-                a.device_tensor(),
-                b.device_tensor(),
+                c.device_tensor[update=False](),
+                a.device_tensor[update=False](),
+                b.device_tensor[update=False](),
                 grid_dim=(ceildiv(N, BLOCKSIZE), ceildiv(M, BLOCKSIZE)),
                 block_dim=(BLOCKSIZE, BLOCKSIZE),
             )
@@ -147,9 +146,9 @@ def test_kernel_1[
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref.device_buffer(),  # returns an NDBuffer[dtype, 2, MutableAnyOrigin]
-            a.device_buffer(),
-            b_vendor.device_buffer(),
+            c_ref.device_tensor[update=False](),
+            a.device_tensor[update=False](),
+            b_vendor.device_tensor(),
             c_row_major=True,
             transpose_b=transpose_b,
         )

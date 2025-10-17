@@ -16,12 +16,12 @@ from math import iota
 from random import rand, seed
 
 from layout import (
+    UNKNOWN_VALUE,
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    IntTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from nn.topk import _top_k_cpu, _top_k_sampling
@@ -35,15 +35,17 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
 
     fn __init__(out self, shape: IndexList[rank]):
         self.storage = List[Scalar[dtype]](
-            length=shape.flattened_length(), fill=0
+            length=UInt(shape.flattened_length()), fill=0
         )
         self.shape = shape
 
     fn to_layout_tensor(
         ref self,
-    ) -> LayoutTensor[dtype, Layout.row_major[rank](), __origin_of(self)]:
+    ) -> LayoutTensor[
+        dtype, Layout.row_major[rank](), __origin_of(self.storage)
+    ]:
         return {
-            self.storage.unsafe_ptr(),
+            Span[Scalar[dtype]](self.storage),
             RuntimeLayout[Layout.row_major[rank]()].row_major(self.shape),
         }
 
@@ -106,7 +108,7 @@ fn test_case_sampling[
         batch_size = input_shape[0]
     else:
         batch_size = input_shape[0] * input_shape[1]
-    var temperature_ptr = UnsafePointer[Scalar[DType.float32]].alloc(batch_size)
+    var temperature_ptr = UnsafePointer[Float32].alloc(batch_size)
     for i in range(batch_size):
         temperature_ptr[i] = temperature.cast[DType.float32]()
 
@@ -118,7 +120,7 @@ fn test_case_sampling[
         )
     )
 
-    var seed_ptr = UnsafePointer[Scalar[DType.uint64]].alloc(batch_size)
+    var seed_ptr = UnsafePointer[UInt64].alloc(batch_size)
     for i in range(batch_size):
         seed_ptr[i] = 12
     var seed_buf = OptionalReg(
@@ -145,6 +147,12 @@ fn test_case_sampling[
         print(out_idxs.ptr[i], end="")
         print(",", end="")
     print("")
+
+    input_ptr.free()
+    output_vals_ptr.free()
+    output_idxs_ptr.free()
+    temperature_ptr.free()
+    seed_ptr.free()
 
 
 fn test_case[
@@ -187,7 +195,7 @@ fn test_case[
     print("")
 
 
-fn main() raises:
+def main():
     seed(1)
 
     @parameter

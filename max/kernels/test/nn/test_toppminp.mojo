@@ -16,8 +16,7 @@ from random import random_float64
 
 from algorithm.functional import parallelize_over_rows
 from benchmark import Bench, Bencher, BenchId
-from layout import LayoutTensor, Layout, RuntimeLayout
-from nn.softmax import softmax
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.toppminp import min_p_sampling, top_p_sampling
 from testing import assert_equal
 
@@ -28,7 +27,7 @@ alias PRINT_OUTPUT = False
 
 
 struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
-    Copyable, Movable
+    ImplicitlyCopyable, Movable
 ):
     alias is_top_p = _is_top_p
     alias dtype = _dtype
@@ -305,7 +304,7 @@ fn test_all_types[
     test_all_out_idx_types[DType.float32, fill_fn]()
 
 
-fn main() raises:
+def main():
     print("\n====== Testing Fill Iota ======\n")
     test_all_types[fill_iota]()
     print("\n====== Testing Fill Random ======\n")

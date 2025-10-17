@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
+from testing import TestSuite
 
 
 def test_char_validity():
@@ -186,7 +187,7 @@ fn assert_utf8_bytes(codepoint: UInt32, var expected: List[Byte]) raises:
     # Check that the number of bytes written was as expected.
     assert_equal(
         written,
-        len(expected),
+        UInt(len(expected)),
         StaticString("wrong byte count written encoding codepoint: {}").format(
             codepoint
         ),
@@ -207,19 +208,19 @@ fn assert_utf8_bytes(codepoint: UInt32, var expected: List[Byte]) raises:
 
 
 def test_char_utf8_encoding():
-    for elements in SIGNIFICANT_CODEPOINTS:
-        var codepoint, expected_utf8 = elements
-        assert_utf8_bytes(codepoint, expected_utf8)
+    for elements in materialize[SIGNIFICANT_CODEPOINTS]():
+        var codepoint, ref expected_utf8 = elements
+        assert_utf8_bytes(codepoint, expected_utf8.copy())
 
 
 def test_char_utf8_byte_length():
-    for elements in SIGNIFICANT_CODEPOINTS:
-        var codepoint, expected_utf8 = elements
+    for elements in materialize[SIGNIFICANT_CODEPOINTS]():
+        var codepoint, ref expected_utf8 = elements
         var computed_len = (
             Codepoint.from_u32(codepoint).value().utf8_byte_length()
         )
 
-        assert_equal(computed_len, len(expected_utf8))
+        assert_equal(computed_len, UInt(len(expected_utf8)))
 
 
 def test_char_comptime():
@@ -231,16 +232,4 @@ def test_char_comptime():
 
 
 def main():
-    test_char_validity()
-    test_char_from_u8()
-    test_char_comparison()
-    test_char_formatting()
-    test_char_properties()
-    test_char_is_posix_space()
-    test_char_is_lower()
-    test_char_is_upper()
-    test_char_is_digit()
-    test_char_is_printable()
-    test_char_utf8_encoding()
-    test_char_utf8_byte_length()
-    test_char_comptime()
+    TestSuite.discover_tests[__functions_in_module()]().run()

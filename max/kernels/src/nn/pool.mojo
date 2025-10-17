@@ -18,10 +18,10 @@ from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_gpu
 from layout import LayoutTensor, RuntimeTuple
 from layout.int_tuple import fill_like
+from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
-from runtime.asyncrt import DeviceContextPtr
 
 from .shapes import get_sliding_window_out_dim
 
@@ -29,7 +29,7 @@ from .shapes import get_sliding_window_out_dim
 # Pooling method.
 @fieldwise_init
 @register_passable("trivial")
-struct PoolMethod(Copyable, Movable):
+struct PoolMethod(ImplicitlyCopyable, Movable):
     var value: Int
     alias MAX = PoolMethod(0)  # Max pooling.
     alias AVG = PoolMethod(1)  # Average pooling not counting padded regions.
@@ -245,10 +245,10 @@ fn max_pool_cpu[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank, **_],
         IndexList[stencil_rank, **_],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride_h - padding_h_low,
             point[1] * stride_w - padding_w_low,
@@ -446,10 +446,10 @@ fn max_pool_gpu[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride_h - padding_h_low,
             point[1] * stride_w - padding_w_low,
@@ -655,10 +655,10 @@ fn avg_pool_cpu[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride_h - padding_h_low,
             point[1] * stride_w - padding_w_low,
@@ -974,10 +974,10 @@ fn avg_pool_gpu[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride_h - padding_h_low,
             point[1] * stride_w - padding_w_low,
@@ -1186,17 +1186,17 @@ fn avg_pool_gpu[
 
 @always_inline
 fn avg_pool[
-    type: DType,
+    dtype: DType,
     int_type: DType,
     count_boundary: Bool = False,
     target: StaticString = "cpu",
 ](
-    input: LayoutTensor[type, **_],
+    input: LayoutTensor[dtype, **_],
     filter: LayoutTensor[int_type, **_],
     strides: LayoutTensor[int_type, **_],
     dilations: LayoutTensor[int_type, **_],
     paddings: LayoutTensor[int_type, **_],
-    output: LayoutTensor[mut=True, type, **_],
+    output: LayoutTensor[mut=True, dtype, **_],
     ceil_mode: Bool = False,
     ctx_ptr: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1216,16 +1216,16 @@ fn avg_pool[
 
 @always_inline
 fn max_pool[
-    type: DType,
+    dtype: DType,
     int_type: DType,
     target: StaticString = "cpu",
 ](
-    input: LayoutTensor[type, **_],
+    input: LayoutTensor[dtype, **_],
     filter: LayoutTensor[int_type, **_],
     strides: LayoutTensor[int_type, **_],
     dilations: LayoutTensor[int_type, **_],
     paddings: LayoutTensor[int_type, **_],
-    output: LayoutTensor[mut=True, type, **_],
+    output: LayoutTensor[mut=True, dtype, **_],
     ceil_mode: Bool = False,
     ctx_ptr: DeviceContextPtr = DeviceContextPtr(),
 ) raises:

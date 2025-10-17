@@ -20,7 +20,7 @@ from random import (
     shuffle,
 )
 
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, TestSuite
 
 
 def test_random():
@@ -140,14 +140,14 @@ def test_shuffle():
     shuffle(b)
     assert_equal(len(a), len(b))
     assert_true(a != b)
-    for i in range(len(b)):
-        assert_true(b[i] in a)
+    for item in b:
+        assert_true(item in a)
 
     shuffle(d)
     assert_equal(len(c), len(d))
     assert_true(c != d)
-    for i in range(len(d)):
-        assert_true(d[i] in c)
+    for item in d:
+        assert_true(item in c)
 
     var e = L_i(21)
     shuffle(e)
@@ -214,6 +214,4 @@ def test_shuffle():
 
 
 def main():
-    test_random()
-    test_seed()
-    test_shuffle()
+    TestSuite.discover_tests[__functions_in_module()]().run()

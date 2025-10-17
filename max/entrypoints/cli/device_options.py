@@ -65,11 +65,10 @@ class DevicesOptionType(click.ParamType):
                         f"Use valid device IDs or '--devices=cpu'."
                     )
                 else:
-                    msg = (
+                    raise ValueError(
                         f"GPU {gpu_id} requested but only GPU IDs {available_gpu_ids} are "
                         f"available. Use valid device IDs or '--devices=cpu'."
                     )
-                raise ValueError(msg)
 
     @staticmethod
     def device_specs(devices: str | list[int]) -> list[DeviceSpec]:

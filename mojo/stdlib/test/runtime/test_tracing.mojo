@@ -13,11 +13,13 @@
 # RUN: env MODULAR_PROFILE_FILENAME="-" %mojo-no-debug %s | FileCheck %s
 
 
+from os import abort
+
 from runtime.asyncrt import create_task
 from runtime.tracing import Trace, TraceLevel
 
 
-fn test_tracing[level: TraceLevel, enabled: Bool]():
+def test_tracing[level: TraceLevel, enabled: Bool]():
     @parameter
     async fn test_tracing_add[enabled: Bool, lhs: Int](rhs: Int) -> Int:
         alias s1 = "ENABLED: trace event 2" if enabled else StaticString(
@@ -26,10 +28,11 @@ fn test_tracing[level: TraceLevel, enabled: Bool]():
         alias s2 = "ENABLED: detail event 2" if enabled else String(
             "DISABLED: detail event 2"
         )
-        var result: Int
-        with Trace[level](s1, s2):
-            result = lhs + rhs
-        return result
+        try:
+            with Trace[level](s1, s2):
+                return lhs + rhs
+        except e:
+            return abort[Int](String(e))
 
     @parameter
     async fn test_tracing_add_two_of_them[enabled: Bool](a: Int, b: Int) -> Int:
@@ -48,7 +51,7 @@ fn test_tracing[level: TraceLevel, enabled: Bool]():
         _ = task.wait()
 
 
-fn main():
+def main():
     # CHECK-LABEL: test_tracing_enabled
     print("== test_tracing_enabled")
     test_tracing[TraceLevel.ALWAYS, True]()

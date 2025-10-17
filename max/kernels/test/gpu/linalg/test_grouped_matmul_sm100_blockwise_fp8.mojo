@@ -13,35 +13,30 @@
 
 from collections import OptionalReg
 from hashlib import default_comp_time_hasher
-from buffer.dimlist import DimList, Dim
+from sys import align_of, size_of
+
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
+from buffer.dimlist import Dim, DimList
+from gpu.host import DeviceContext
+from gpu.host._nvidia_cuda import TensorMapSwizzle
+
+# Additional imports for testing
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random, zero
+from internal_utils._measure import relative_difference
+from internal_utils._utils import ValOrDim, dynamic, static
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8,
 )
-from linalg.matmul_sm100_blockwise_fp8 import matmul_sm100_blockwise_scaled_fp8
-from sys import size_of
-from gpu.host import DeviceContext
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg import vendor_blas
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from utils.index import Index, IndexList
-from linalg.fp8_quantization import (
-    naive_blockwise_scaled_fp8_matmul,
-    naive_blockwise_scaled_fp8_grouped_matmul,
+from linalg.matmul.gpu.sm100.blockwise_fp8 import (
+    matmul_sm100_blockwise_scaled_fp8,
 )
-from internal_utils._measure import relative_difference
-
-# Additional imports for testing
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    random,
-    zero,
-)
-from testing import assert_almost_equal
-from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.utils import elementwise_epilogue_type
-from sys import align_of
+from testing import assert_almost_equal
+
+from utils.index import Index, IndexList
 
 
 def test_grouped_matmul_sm100_blockwise_scaled_fp8[
@@ -221,14 +216,15 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
+        scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
         c_ref,
         a,
         b,
-        a_offsets,
-        expert_ids,
         a_scales,
         b_scales,
+        a_offsets,
+        expert_ids,
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -249,10 +245,10 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         c,
         a,
         b,
-        a_offsets,
-        expert_ids,
         a_scales,
         b_scales,
+        a_offsets,
+        expert_ids,
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -325,19 +321,34 @@ def main():
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(768, 1024),
+            expert_shape = Index(4096, 7168),
         ](2, List[Int](128, 256), List[Int](0, 2), ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(1280, 1024),
+            expert_shape = Index(7168, 2048),
         ](4, List[Int](20, 1500, 300, 28), List[Int](0, 3, 2, 4), ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
+            num_experts=6,
+            expert_shape = Index(1280, 1024),
+            use_epilogue=True,
+        ](4, List[Int](20, 1500, 300, 28), List[Int](0, 3, 2, 4), ctx)
+
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float32,
+            num_experts=6,
+            expert_shape = Index(7168, 2048),
+        ](4, List[Int](20, 1500, 300, 28), List[Int](0, 3, 2, 4), ctx)
+
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float32,
             num_experts=6,
             expert_shape = Index(1280, 1024),
             use_epilogue=True,

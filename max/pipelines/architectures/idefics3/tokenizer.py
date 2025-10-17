@@ -19,13 +19,18 @@ import functools
 import io
 import json
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import TextGenerationRequest, TextGenerationRequestMessage
+from max.interfaces import (
+    ImageMetadata,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+)
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import TextAndVisionTokenizer
+from max.support.image import find_contiguous_ranges
 from PIL import Image
 from PIL.Image import Image as ImageType
 from transformers import AutoConfig, AutoProcessor, AutoTokenizer
@@ -84,6 +89,11 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             if pipeline_config
             else {}
         )
+
+        if vision_token_id := getattr(config, "image_token_id", None):
+            self.vision_token_ids = [vision_token_id]
+        else:
+            raise ValueError("image_token_id not found in model_config config")
 
         self.processor = AutoProcessor.from_pretrained(
             model_path, revision=revision
@@ -155,7 +165,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
     ) -> TextAndVisionContext:
         """Create a new TextAndVisionContext object, leveraging necessary information from TextGenerationRequest."""
 
-        prompt: Union[str, Sequence[int]]
+        prompt: str | Sequence[int]
         add_special_tokens = True
         if request.prompt is not None:
             prompt = request.prompt
@@ -163,8 +173,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             prompt = self.apply_chat_template(request.messages)
             add_special_tokens = False
         else:
-            msg = f"{request} does not provide messages or prompt."
-            raise ValueError(msg)
+            raise ValueError(f"{request} does not provide messages or prompt.")
 
         # Convert image bytes to PIL Image objects.
         if request.images is not None and len(request.images) > 0:
@@ -194,8 +203,9 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         )
 
         if "input_ids" not in processed_inputs:
-            msg = "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
-            raise ValueError(msg)
+            raise ValueError(
+                "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
+            )
 
         if isinstance(processed_inputs["input_ids"][0], int):
             encoded_prompt = np.array(processed_inputs["input_ids"])
@@ -218,8 +228,9 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
 
         if images is not None:
             if "pixel_values" not in processed_inputs:
-                msg = "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
-                raise ValueError(msg)
+                raise ValueError(
+                    "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
+                )
             pixel_values = processed_inputs["pixel_values"]
 
             if isinstance(pixel_values, list):
@@ -254,16 +265,35 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         else:
             eos_token_ids = self._default_eos_token_ids
 
+        if self.max_length and encoded_prompt.shape[0] > self.max_length:
+            raise ValueError(
+                "encoded_prompt is greater than the max_length of the tokenizer"
+            )
+
+        start_and_end_idxs = find_contiguous_ranges(
+            encoded_prompt, self.vision_token_ids
+        )
         context = TextAndVisionContext(
             request_id=request.request_id,
             eos_token_ids=eos_token_ids,
-            pixel_values=pixel_values,
             extra_model_args=extra_model_args,
             tokens=encoded_prompt,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            sampling_params=request.sampling_params,
+            images=[
+                ImageMetadata(
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                    pixel_values=pixels,
+                )
+                for (start_idx, end_idx), pixels in zip(
+                    start_and_end_idxs, pixel_values, strict=True
+                )
+            ],
+            vision_token_ids=self.vision_token_ids,
         )
         return context
 

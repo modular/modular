@@ -18,7 +18,7 @@ fn slice[
     alias new_size = size // 2
     var result = SIMD[dtype, new_size]()
     for i in range(new_size):
-        result[i] = SIMD[dtype, 1](x[i + offset])
+        result[i] = Scalar[dtype](x[i + offset])
     return result
 
 
@@ -37,6 +37,6 @@ fn reduce_add(x: SIMD) -> Int:
 
 
 def main():
-    var x = SIMD[DType.index, 4](1, 2, 3, 4)
+    var x = SIMD[DType.int, 4](1, 2, 3, 4)
     print(x)
     print("Elements sum:", reduce_add(x))

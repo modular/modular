@@ -32,15 +32,8 @@ gemma3_arch = SupportedArchitecture(
         # pt = Pre-trained.
         "google/gemma-3-1b-it",
         "google/gemma-3-1b-pt",
-        # TODO(MODELS-487): >=4B models have a slightly different architecture
-        # and config and use a different rotary embedding. These will likely
-        # need a separate SupportedArchitecture registration.
-        # "google/gemma-3-4b-it",
-        # "google/gemma-3-4b-pt",
-        # "google/gemma-3-12b-it",
-        # "google/gemma-3-12b-pt",
-        # "google/gemma-3-27b-it",
-        # "google/gemma-3-27b-pt",
+        # We have a different architecture for >=4B models. See gemma3multimodal
+        # for more information.
     ],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={

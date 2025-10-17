@@ -23,6 +23,7 @@ from benchmark import (
     Format,
     ThroughputMeasure,
 )
+from testing import TestSuite
 
 
 @parameter
@@ -43,7 +44,7 @@ fn bench2(mut b: Bencher, mystr: String) raises:
     b.iter[to_bench]()
 
 
-def main():
+def test_mojobench():
     var m = Bench(BenchConfig(max_iters=10_000))
     m.bench_function[bench1](
         BenchId("bench1"),
@@ -54,12 +55,12 @@ def main():
     var inputs = List[String]()
     inputs.append("input1")
     inputs.append("input2")
-    for i in range(len(inputs)):
+    for i, input_val in enumerate(inputs):
         m.bench_with_input[String, bench2](
             BenchId("bench2", String(i)),
-            inputs[i],
-            ThroughputMeasure(BenchMetric.elements, len(inputs[i])),
-            ThroughputMeasure(BenchMetric.flops, len(inputs[i])),
+            input_val,
+            ThroughputMeasure(BenchMetric.elements, len(input_val)),
+            ThroughputMeasure(BenchMetric.flops, len(input_val)),
         )
 
     m.config.verbose_timing = True
@@ -90,3 +91,7 @@ def main():
     m.dump_report()
 
     # CHECK-TEST-COUNT-1: hello
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

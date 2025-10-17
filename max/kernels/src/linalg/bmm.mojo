@@ -13,29 +13,50 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv, gcd
-from sys import align_of
-from sys.info import simd_width_of, has_nvidia_gpu_accelerator
-
+from sys import align_of, size_of
+from sys.info import (
+    has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+    is_amd_gpu,
+    is_nvidia_gpu,
+    simd_width_of,
+)
+from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_start_indices_of_nth_subvolume_uint
 from algorithm.reduction import _reduce_generator
-from buffer import NDBuffer
+from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
 from gpu import block_idx, global_idx
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import is_cpu, is_valid_target, A100
+from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.info import A100, is_cpu, is_valid_target
+from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor, RuntimeLayout
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.tma_async import TMATensorTile, create_tma_tile
+from logger import Logger
 from memory import memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
-from runtime.tracing import Trace, TraceLevel, trace_arg
-
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from gpu.host.info import B200, H100
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from .apple_accelerate import apple_batched_matmul, use_apple_accelerate_lib
-from .matmul import _submatmul_sequential_sync
-from .matmul_gpu import _matmul_gpu
+from utils.static_tuple import StaticTuple
+
+from .matmul.cpu.apple_accelerate import (
+    apple_batched_matmul,
+    use_apple_accelerate_lib,
+)
+from .matmul.cpu.impl import _submatmul_sequential_sync
+from .matmul.gpu import _matmul_gpu
+from .matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
+from .matmul.gpu.amd import gemm_kernel_amd
+from .matmul.gpu.sm100.blockwise_fp8 import (
+    matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
+)
+from .utils import GemmShape
 from .utils import elementwise_epilogue_type as matmul_elementwise_epilogue_type
 from .utils import (
-    GemmShape,
     get_kernel_config,
     get_kernel_type,
     get_matmul_num_tasks,
@@ -45,25 +66,7 @@ from .utils import (
     partition_work,
     use_i8mm_fn,
 )
-from linalg.matmul_sm100_blockwise_fp8 import (
-    matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
-)
-from ._multistage_gemm_gpu import multistage_gemm_kernel
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE, RuntimeLayout, IntTuple
-from buffer import Dim
-from .utils_gpu import (
-    MatmulConfig,
-    MatmulKernels,
-)
-from utils.static_tuple import StaticTuple
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from sys import size_of
-from logger import Logger
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from layout.tma_async import (
-    TMATensorTile,
-    create_tma_tile,
-)
+from .utils_gpu import MatmulConfig, MatmulKernels
 
 alias elementwise_epilogue_type = fn[
     c_type: DType,
@@ -82,18 +85,16 @@ alias elementwise_epilogue_type = fn[
 @always_inline
 fn _get_batch_dims[
     rank: Int
-](flat_index: Int, shape: IndexList[rank, **_]) -> __type_of(shape):
-    var out = __type_of(shape)()
+](flat_index: Int, shape: IndexList[rank, **_], out res: __type_of(shape)):
+    res = {}
     var curr_index = flat_index
 
     @parameter
     for idx in range(rank - 2):
         # Count from the back, skipping last two dims.
         alias i = rank - idx - 3
-        out[i] = curr_index % shape[i]
+        res[i] = curr_index % shape[i]
         curr_index //= shape[i]
-
-    return out
 
 
 # A utility to reshape NDBuffer with rank > 3 to rank-3.
@@ -143,7 +144,7 @@ fn _reshape_nd_buffer_with_batch_to_3d(
 fn _reshape_to_3d[layout: Layout]() -> Layout:
     alias rank = len(layout.shape)
 
-    # NOTE: need to cast becasue int tuple returns comptime int
+    # NOTE: need to cast because int tuple returns comptime int
     alias last = Int(layout.shape[rank - 1])
     alias second_last = Int(layout.shape[rank - 2])
 
@@ -270,12 +271,12 @@ fn _small_batched_matmul[
             @__copy_capture(a_view, b_view)
             @parameter
             fn input_fn[
-                type: DType, width: Int, rank: Int
-            ](idx: IndexList[rank]) -> SIMD[type, width]:
+                dtype: DType, width: Int, rank: Int
+            ](idx: IndexList[rank]) -> SIMD[dtype, width]:
                 return (
-                    a_view.load[width=width](idx[0]).cast[type]()
-                    * b_view.load[width=width](idx[0]).cast[type]()
-                ).cast[type]()
+                    a_view.load[width=width](idx[0]).cast[dtype]()
+                    * b_view.load[width=width](idx[0]).cast[dtype]()
+                ).cast[dtype]()
 
             @always_inline
             @parameter
@@ -402,6 +403,7 @@ fn batched_matmul[
     with Trace[TraceLevel.OP, target=target](
         "batched_matmul",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(context),
     ):
         # TODO: generalize to > rank 3
         @parameter
@@ -546,9 +548,9 @@ fn _batched_matmul_cpu[
             var mh = align_up(m, 2)
             var a_packed_ptr = UnsafePointer[Scalar[a_type]]()
             if use_i8mm:
-                a_packed_ptr = UnsafePointer[
-                    Scalar[a_type], alignment=alignment
-                ].alloc(mh * kh)
+                a_packed_ptr = UnsafePointer[Scalar[a_type]].alloc(
+                    mh * kh, alignment=alignment
+                )
             var a_packed = NDBuffer[a_type, 2](a_packed_ptr, DimList(mh, kh))
 
             if use_i8mm:
@@ -674,9 +676,9 @@ fn batched_matmul_kernel_gpu[
     n: Int,
     k: Int,
 ):
-    var a_ptr = a_tensor.ptr + block_idx.z * (m * k)
-    var b_ptr = b_tensor.ptr + block_idx.z * (n * k)
-    var c_ptr = c_tensor.ptr + block_idx.z * (m * n)
+    var a_ptr = a_tensor.ptr + block_idx.z * UInt(m * k)
+    var b_ptr = b_tensor.ptr + block_idx.z * UInt(n * k)
+    var c_ptr = c_tensor.ptr + block_idx.z * UInt(m * n)
 
     alias static_n = b_tensor.shape[1]() if transpose_b else b_tensor.shape[2]()
     alias static_k = b_tensor.shape[2]() if transpose_b else b_tensor.shape[1]()
@@ -715,25 +717,47 @@ fn batched_matmul_kernel_gpu[
             batch_coords[1] = out_coords[0]
             elementwise_epilogue(batch_coords, val)
 
-    multistage_gemm_kernel[
-        c_type,
-        c.layout,
-        a_type,
-        a.layout,
-        b_type,
-        b.layout,
-        transpose_b,
-        c.layout_int_type,
-        a.layout_int_type,
-        b.layout_int_type,
-        c.linear_idx_type,
-        a.linear_idx_type,
-        b.linear_idx_type,
-        config,
-        OptionalReg[matmul_elementwise_epilogue_type](
-            elementwise_epilogue_fn_wrapper
-        ) if elementwise_lambda_fn else None,
-    ](c, a, b)
+    @parameter
+    if is_nvidia_gpu():
+        multistage_gemm_kernel[
+            c_type,
+            c.layout,
+            a_type,
+            a.layout,
+            b_type,
+            b.layout,
+            transpose_b,
+            c.layout_int_type,
+            a.layout_int_type,
+            b.layout_int_type,
+            c.linear_idx_type,
+            a.linear_idx_type,
+            b.linear_idx_type,
+            config,
+            OptionalReg[matmul_elementwise_epilogue_type](
+                elementwise_epilogue_fn_wrapper
+            ) if elementwise_lambda_fn else None,
+        ](c, a, b)
+    elif is_amd_gpu():
+        gemm_kernel_amd[
+            c_type,
+            c.layout,
+            a_type,
+            a.layout,
+            b_type,
+            b.layout,
+            transpose_b,
+            c.layout_int_type,
+            a.layout_int_type,
+            b.layout_int_type,
+            c.linear_idx_type,
+            a.linear_idx_type,
+            b.linear_idx_type,
+            config,
+            OptionalReg[matmul_elementwise_epilogue_type](
+                elementwise_epilogue_fn_wrapper
+            ) if elementwise_lambda_fn else None,
+        ](c, a, b)
 
 
 @always_inline
@@ -776,6 +800,9 @@ fn _batched_matmul_gpu[
     var n = c_tensor_reshaped.dim(2)
     var k = a_tensor_reshaped.dim(2)
 
+    if batch_size == 0 or m == 0 or n == 0 or k == 0:
+        return
+
     alias has_static_NK = b_tensor_reshaped.shape[
         1
     ]() != UNKNOWN_VALUE and b_tensor_reshaped.shape[
@@ -797,9 +824,9 @@ fn _batched_matmul_gpu[
                 @parameter
                 @__copy_capture(c_buf)
                 fn elementwise_epilogue_fn_wrapper[
-                    type: DType, width: Int, *, alignment: Int = 1
+                    dtype: DType, width: Int, *, alignment: Int = 1
                 ](
-                    out_coords: IndexList[2], val: SIMD[type, width]
+                    out_coords: IndexList[2], val: SIMD[dtype, width]
                 ) capturing -> None:
                     var batch_coords = IndexList[rank](0)
 
@@ -854,7 +881,7 @@ fn _batched_matmul_gpu[
 
         var grid_dim = kernels.ampere_128x128_4.grid_dim(UInt(m), UInt(n))
 
-        ctx.enqueue_function[batched_matmul_type](
+        ctx.enqueue_function_checked[batched_matmul_type, batched_matmul_type](
             c_tensor_reshaped,
             a_tensor_reshaped,
             b_tensor_reshaped,
@@ -868,6 +895,66 @@ fn _batched_matmul_gpu[
                 kernels.ampere_128x128_4.shared_mem_usage()
             ),
         )
+    elif has_static_NK and has_amd_gpu_accelerator() and transpose_b:
+
+        @always_inline
+        @parameter
+        fn kernel_helper[
+            block_m: Int,
+            block_n: Int,
+            *,
+            num_k_partitions: Int = 1,
+            num_pipeline_stages: Int = 1,
+        ]() raises:
+            alias block_k = 64
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=Index(block_m, block_n, block_k),
+                warp_tile_shape=Index(block_m // 2, block_n // 2, block_k),
+                num_pipeline_stages=1,
+                num_k_partitions=1,
+            )
+
+            alias batched_matmul_type = batched_matmul_kernel_gpu[
+                c_tensor_reshaped.dtype,
+                a_tensor_reshaped.dtype,
+                b_tensor_reshaped.dtype,
+                c_tensor_reshaped.layout,
+                a_tensor_reshaped.layout,
+                b_tensor_reshaped.layout,
+                transpose_b,
+                config,
+                elementwise_epilogue_fn,
+            ]
+
+            ctx.enqueue_function_checked[
+                batched_matmul_type, batched_matmul_type
+            ](
+                c_tensor_reshaped,
+                a_tensor_reshaped,
+                b_tensor_reshaped,
+                m,
+                n,
+                k,
+                grid_dim=(
+                    ceildiv(n, block_n),
+                    ceildiv(m, block_m),
+                    batch_size,
+                ),
+                block_dim=(256, 1, 1),
+            )
+
+        # DeepSeek size tuning
+        if m == 256 and n == 128 and k == 512:
+            kernel_helper[128, 64]()
+        elif m == 256 and n == 512 and k == 128:
+            kernel_helper[64, 64]()
+        elif m == 14 and n == 3072 and k == 12288:
+            kernel_helper[32, 32]()
+        elif m == 600 and n == 18256 and k == 4096:
+            kernel_helper[128, 64]()
+        else:
+            kernel_helper[128, 128]()
+
     else:
         # TODO: support non-A100 transposed kernels
         constrained[
@@ -888,7 +975,7 @@ fn _batched_matmul_gpu[
             b_tensor_reshaped.layout,
             elementwise_epilogue_fn,
         ]
-        ctx.enqueue_function[bmm](
+        ctx.enqueue_function_checked[bmm, bmm](
             c_tensor_reshaped,
             a_tensor_reshaped,
             b_tensor_reshaped,
@@ -1043,9 +1130,11 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
     var M = c_tensor.dim(1)
     var N = c_tensor.dim(2)
 
-    var c_ptr = c_tensor.ptr + (block_idx.z * M * N)
+    var c_ptr = c_tensor.ptr + (block_idx.z * UInt(M) * UInt(N))
     var b_scales_ptr = b_scales_tensor.ptr + (
-        block_idx.z * b_scales_tensor.dim(1) * b_scales_tensor.dim(2)
+        block_idx.z
+        * UInt(b_scales_tensor.dim(1))
+        * UInt(b_scales_tensor.dim(2))
     )
 
     var c = LayoutTensor[c_type, c_2d_layout, MutableAnyOrigin](
@@ -1173,6 +1262,9 @@ fn bmm_sm100_blockwise_scaled_fp8[
     var N = c.dim(2)
     var K = a.dim(2)
 
+    if batch_size == 0 or M == 0 or N == 0 or K == 0:
+        return
+
     var a_scales_dim0 = a_scales.dim(1)
     var a_scales_dim1 = a_scales.dim(2)
     var b_scales_dim0 = b_scales.dim(1)
@@ -1204,8 +1296,8 @@ fn bmm_sm100_blockwise_scaled_fp8[
 
     var logger = Logger()
     logger.info(
-        "Executing Basic 1D2D Blockwise Scaled FP8 GEMM (BLOCK_SCALE_SIZE ="
-        " 128)"
+        "Executing SM100 Basic Batched 1D2D Blockwise Scaled FP8 GEMM"
+        " (BLOCK_SCALE_SIZE = 128)"
     )
     logger.info(
         "Problem Shape: MNK=[", batch_size, ", ", M, ", ", N, ", ", K, "]"
@@ -1226,8 +1318,6 @@ fn bmm_sm100_blockwise_scaled_fp8[
     )
 
     var a_tma_op = create_tma_tile[
-        a_type,
-        3,
         Index(1, BM, BK),
         swizzle_mode=a_swizzle,
         __tile_layout = Layout.row_major(1, BM, BK),
@@ -1236,8 +1326,6 @@ fn bmm_sm100_blockwise_scaled_fp8[
     alias b_tile_shape = Index(1, BN, BK) if transpose_b else Index(1, BK, BN)
 
     var b_tma_op = create_tma_tile[
-        b_type,
-        3,
         b_tile_shape,
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
@@ -1245,8 +1333,6 @@ fn bmm_sm100_blockwise_scaled_fp8[
     ](ctx, b)
 
     var a_scales_tma_op = create_tma_tile[
-        a_scales_type,
-        3,
         Index(1, 1, BM),
         __tile_layout = Layout.row_major(1, 1, BM),
         __desc_layout = Layout(IntTuple(1, 1, BM), IntTuple(1, 1, 1)),
@@ -1296,3 +1382,179 @@ fn bmm_sm100_blockwise_scaled_fp8[
         shared_mem_bytes=Int(smem_use),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
+
+
+fn batched_matmul_dynamic_scaled_fp8_naive[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType, //,
+    *,
+    scales_granularity_mnk: IndexList[3],
+    transpose_b: Bool = False,
+](
+    c_device: NDBuffer[c_type, 3, _, _],
+    a_device: NDBuffer[a_type, 3, _, _],
+    b_device: NDBuffer[b_type, 3, _, _],
+    a_scales_device: NDBuffer[a_scales_type, 3, _, _],
+    b_scales_device: NDBuffer[b_scales_type, 3, _, _],
+    ctx: DeviceContext,
+) raises:
+    constrained[
+        a_device.shape.has_value[2]() and c_device.shape.has_value[2](),
+        "N and K must be static",
+    ]()
+
+    constrained[
+        scales_granularity_mnk[0] == 1
+        and scales_granularity_mnk[1] == scales_granularity_mnk[2] == 128,
+        (
+            "Only support (1,128,128) scale granularity. Extend it for other"
+            " cases."
+        ),
+    ]()
+
+    alias BLOCK_SCALE_K = 128
+    var bs = c_device.dim(0)
+    var M = c_device.dim(1)
+    alias N = c_device.shape.get[2]()
+    alias K = a_device.shape.get[2]()
+    alias n_dim = Dim(N)
+    alias k_dim = Dim(K)
+
+    alias static_a_shape_2D = DimList(Dim(), k_dim)
+    alias static_b_shape_2D = DimList(n_dim, k_dim) if transpose_b else DimList(
+        k_dim, n_dim
+    )
+    alias static_c_shape_2D = DimList(Dim(), n_dim)
+
+    alias static_a_scales_shape_2D = DimList(
+        ceildiv(k_dim, BLOCK_SCALE_K), Dim()
+    )
+    alias static_b_scales_shape_2D = DimList(
+        ceildiv(n_dim, BLOCK_SCALE_K), ceildiv(k_dim, BLOCK_SCALE_K)
+    )
+
+    var dynamic_a_shape_2D = DimList(M, K)
+    var dynamic_b_shape_2D = DimList(N, K) if transpose_b else DimList(K, N)
+    var dynamic_c_shape_2D = DimList(M, N)
+    var dynamic_a_scales_shape_2D = DimList(ceildiv(K, BLOCK_SCALE_K), M)
+    var dynamic_b_scales_shape_2D = DimList(
+        ceildiv(N, BLOCK_SCALE_K), ceildiv(K, BLOCK_SCALE_K)
+    )
+
+    for batch in range(bs):
+        var c_ptr = c_device.data + batch * M * N
+        var a_ptr = a_device.data + batch * M * K
+        var b_ptr = b_device.data + batch * N * K
+        var a_scales_ptr = (
+            a_scales_device.data + batch * (K // BLOCK_SCALE_K) * M
+        )
+        var b_scales_ptr = b_scales_device.data + batch * (
+            N // BLOCK_SCALE_K
+        ) * (K // BLOCK_SCALE_K)
+
+        var c_buffer = NDBuffer[c_type, 2, _, static_c_shape_2D](
+            c_ptr, dynamic_c_shape_2D
+        )
+        var a_buffer = NDBuffer[a_type, 2, _, static_a_shape_2D](
+            a_ptr, dynamic_a_shape_2D
+        )
+        var b_buffer = NDBuffer[b_type, 2, _, static_b_shape_2D](
+            b_ptr, dynamic_b_shape_2D
+        )
+        var a_scales_buffer = NDBuffer[
+            a_scales_type, 2, _, static_a_scales_shape_2D
+        ](a_scales_ptr, dynamic_a_scales_shape_2D)
+        var b_scales_buffer = NDBuffer[
+            b_scales_type, 2, _, static_b_scales_shape_2D
+        ](b_scales_ptr, dynamic_b_scales_shape_2D)
+
+        naive_blockwise_scaled_fp8_matmul[
+            BLOCK_DIM=16,
+            transpose_b=transpose_b,
+            scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        ](
+            c_buffer,
+            a_buffer,
+            b_buffer,
+            a_scales_buffer,
+            b_scales_buffer,
+            ctx,
+        )
+
+
+fn batched_matmul_dynamic_scaled_fp8[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType, //,
+    input_scale_granularity: StaticString,
+    weight_scale_granularity: StaticString,
+    m_scale_granularity: Int,
+    n_scale_granularity: Int,
+    k_scale_granularity: Int,
+    transpose_b: Bool = False,
+    target: StaticString = "cpu",
+](
+    c: NDBuffer[mut=True, c_type, 3, _, _],
+    a: NDBuffer[a_type, 3, _, _],
+    b: NDBuffer[b_type, 3, _, _],
+    a_scales: NDBuffer[a_scales_type, 3, _, _],
+    b_scales: NDBuffer[b_scales_type, 3, _, _],
+    ctx: DeviceContext,
+) raises:
+    constrained[
+        ctx.default_device_info is B200 or ctx.default_device_info is H100,
+        "Only support SM100 or SM90",
+    ]()
+    constrained[
+        m_scale_granularity == 1
+        and n_scale_granularity == 128
+        and k_scale_granularity == 128,
+        "Only support (1,128,128) scale granularity",
+    ]()
+    constrained[
+        a_type == b_type == DType.float8_e4m3fn,
+        "input A and B dtype should be float8_e4m3fn",
+    ]()
+    constrained[
+        a_scales_type == b_scales_type == DType.float32,
+        "input A and B scales dtype should be float32",
+    ]()
+
+    constrained[
+        input_scale_granularity == "block"
+        and weight_scale_granularity == "block",
+        "Only support block-wise scale granularity",
+    ]()
+
+    @parameter
+    if ctx.default_device_info is B200:
+        var a_tensor = from_ndbuffer_row_major(a)
+        var b_tensor = from_ndbuffer_row_major(b)
+        var c_tensor = from_ndbuffer_row_major(c)
+        var a_scales_tensor = from_ndbuffer_row_major(a_scales)
+        var b_scales_tensor = from_ndbuffer_row_major(b_scales)
+
+        alias umma_shape = Index(64, 64, 32)
+        alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+        alias swizzle = TensorMapSwizzle.SWIZZLE_128B
+
+        bmm_sm100_blockwise_scaled_fp8[
+            transpose_b=transpose_b,
+            umma_shape=umma_shape,
+            block_tile_shape=block_tile_shape,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+        ](c_tensor, a_tensor, b_tensor, a_scales_tensor, b_scales_tensor, ctx)
+
+    else:
+        batched_matmul_dynamic_scaled_fp8_naive[
+            scales_granularity_mnk = Index(
+                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            ),
+            transpose_b=transpose_b,
+        ](c, a, b, a_scales, b_scales, ctx)

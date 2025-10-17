@@ -135,10 +135,8 @@ for substitution, command in custom_substitutions.items():
 
 new_system_libs = []
 for arg in os.environ.get("MODULAR_MOJO_MAX_SYSTEM_LIBS", "").split(","):
-    if arg.startswith("--sysroot=external/"):
-        arg = "--sysroot=" + os.path.abspath(
-            os.path.join("..", arg[len("--sysroot=external/") :])
-        )
+    if arg.startswith("--sysroot="):
+        arg = "--sysroot=" + os.path.abspath(arg[len("--sysroot=") :])
     new_system_libs.append(arg)
 
 

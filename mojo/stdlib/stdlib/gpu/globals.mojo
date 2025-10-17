@@ -23,12 +23,13 @@ are used to optimize code generation and ensure hardware compatibility.
 
 from sys.info import (
     CompilationTarget,
+    _accelerator_arch,
+    _is_amd_rdna,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
-    _is_amd_rdna,
     is_amd_gpu,
+    is_apple_gpu,
     is_nvidia_gpu,
-    _accelerator_arch,
 )
 
 from .host.info import GPUInfo
@@ -64,6 +65,8 @@ fn _resolve_warp_size() -> Int:
         return 32
     elif is_amd_gpu():
         return 64
+    elif is_apple_gpu():
+        return 32
     elif _accelerator_arch() == "":
         return 0
     else:
@@ -108,6 +111,9 @@ fn _resolve_max_threads_per_block_metadata() -> __mlir_type.`!kgen.string`:
         return "nvvm.maxntid".value
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         return "rocdl.flat_work_group_size".value
+    elif is_apple_gpu():
+        # That attribute is used to represent Metal's [[max_total_threads_per_threadgroup(x)]]
+        return "pop.air.max_work_group_size".value
     else:
         return CompilationTarget.unsupported_target_error[
             __mlir_type.`!kgen.string`,

@@ -30,7 +30,8 @@ trait Named:
 
 trait NamedAnimal(Animal, Named):
     fn emit_name_and_sound(self):
-        ...
+        print("The", self.get_name(), "says ", end="")
+        self.make_sound()
 
 
 @fieldwise_init
@@ -43,10 +44,6 @@ struct Parrot(Bird, Copyable, Movable, NamedAnimal):
 
     fn get_name(self) -> String:
         return "Parrot"
-
-    fn emit_name_and_sound(self):
-        print("The", self.get_name(), "says ", end="")
-        self.make_sound()
 
 
 def main():

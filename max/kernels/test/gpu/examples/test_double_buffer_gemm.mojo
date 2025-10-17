@@ -29,8 +29,7 @@ from layout.layout_tensor import (
     copy_sram_to_local,
 )
 from layout.math import outer_product_acc
-from layout.tensor_builder import LayoutTensorBuild as tb
-from linalg.matmul_gpu import matmul_kernel_naive
+from linalg.matmul.gpu import matmul_kernel_naive
 from memory.pointer import _GPUAddressSpace as AddressSpace
 from testing import assert_almost_equal
 
@@ -75,12 +74,12 @@ fn sgemm_double_buffer[
     alias num_warps_n = (BN // WN)
 
     var tid = thread_idx.x
-    var warp_id = tid // WARP_SIZE
-    var lane_id = tid % WARP_SIZE
+    var warp_id = tid // UInt(WARP_SIZE)
+    var lane_id = tid % UInt(WARP_SIZE)
 
     # Coordinates of the current warp.
-    var warp_x = warp_id % num_warps_n
-    var warp_y = warp_id // num_warps_n
+    var warp_x = warp_id % UInt(num_warps_n)
+    var warp_y = warp_id // UInt(num_warps_n)
 
     # Warp shape in 2D.
     alias warp_dim_x = WN // TN
@@ -155,15 +154,47 @@ fn sgemm_double_buffer[
     b_gmem_tile = b.tile[BK, BN](1, block_idx.x)
 
     # Double buffer in registers (fragments in nvidia terms).
+    alias layout_a = Layout.row_major(TM)
     var a_reg = InlineArray[_, 2](
-        tb[a_type]().row_major[TM]().local().alloc(),
-        tb[a_type]().row_major[TM]().local().alloc(),
+        LayoutTensor[
+            a_type,
+            layout_a,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation(),
+        LayoutTensor[
+            a_type,
+            layout_a,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation(),
     )
+    alias layout_b = Layout.row_major(TN)
     var b_reg = InlineArray[_, 2](
-        tb[b_type]().row_major[TN]().local().alloc(),
-        tb[b_type]().row_major[TN]().local().alloc(),
+        LayoutTensor[
+            b_type,
+            layout_b,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation(),
+        LayoutTensor[
+            b_type,
+            layout_b,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation(),
     )
-    var c_reg = tb[c_type]().row_major[TM, TN]().local().alloc().fill(0)
+    alias layout_c = Layout.row_major(TM, TN)
+    var c_reg = (
+        LayoutTensor[
+            c_type,
+            layout_c,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     # Thread swizzling
     # Warp has 2D Layout [warp_dim_x, warp_dim_y]. Current thread is mapped to
@@ -331,7 +362,7 @@ fn test(ctx: DeviceContext) raises:
         @always_inline
         @parameter
         fn run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function[gemm](
+            ctx.enqueue_function_checked[gemm, gemm](
                 c_tensor,
                 a_tensor,
                 b_tensor,
@@ -348,7 +379,7 @@ fn test(ctx: DeviceContext) raises:
         var TFlop = 2.0 * M * N * K * 1e-12
         print(nrun, "runs avg(s)", sectime, "TFlops/s", TFlop / sectime)
 
-    ctx.enqueue_function[gemm](
+    ctx.enqueue_function_checked[gemm, gemm](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -366,12 +397,12 @@ fn test(ctx: DeviceContext) raises:
         DType.float32,
         DType.float32,
         DType.float32,
+        c_tensor_ref.layout,
         a_tensor.layout,
         b_tensor.layout,
-        c_tensor_ref.layout,
         BLOCK_DIM,
     ]
-    ctx.enqueue_function[gemm_naive](
+    ctx.enqueue_function_checked[gemm_naive, gemm_naive](
         c_tensor_ref,
         a_tensor,
         b_tensor,

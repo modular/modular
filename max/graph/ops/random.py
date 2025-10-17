@@ -18,8 +18,8 @@ import weakref
 from collections.abc import MutableMapping
 
 import numpy as np
+from max._core.dialects import kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
@@ -30,25 +30,25 @@ SEEDS: MutableMapping[Graph, TensorValue] = weakref.WeakKeyDictionary()
 SeedType = TensorType(DType.int64, [], device=DeviceRef.CPU())
 
 
-def _rotate_seed(seed: TensorValue):
+def _rotate_seed(seed: TensorValue):  # noqa: ANN202
     # Let's just get some different random numbers
     # from the initial seed for now.
     return seed + 1
 
 
 def assert_scalar(value: TensorValueLike) -> None:
-    if isinstance(value, (np.ndarray, TensorValue)) and value.shape:
+    if isinstance(value, np.ndarray | TensorValue) and value.shape:
         raise ValueError("Expected a scalar value")
 
 
-def _next_seed():
+def _next_seed():  # noqa: ANN202
     graph = Graph.current
     seed = _peek_seed()
     SEEDS[graph] = _rotate_seed(seed)
     return seed
 
 
-def _peek_seed():
+def _peek_seed():  # noqa: ANN202
     graph = Graph.current
     try:
         return SEEDS[graph]
@@ -81,24 +81,26 @@ def set_seed(seed: TensorValue | int = 0) -> None:
 
 def gaussian(
     like: TensorType,
-    mean: TensorValueLike = 0.0,
-    std: TensorValueLike = 1.0,
+    mean: TensorValueLike = 0,
+    std: TensorValueLike = 1,
 ) -> TensorValue:
     assert_scalar(mean)
     assert_scalar(std)
     # Check whether we have a seed before we add other constants to the graph.
     seed = _next_seed()
-    return Graph.current._add_op(
-        rmo.mo_random_normal,
-        result=like.to_mlir(),
+    scalar_dtype = DType.float32 if like.device.is_cpu() else DType.bfloat16
+    return Graph.current._add_op_generated(
+        rmo.MoRandomNormalOp,
+        result=like,
         shape=TensorValue(like.shape),
         mean=dtype_promotion._promote_to_strong(
-            mean, DType.float32, DeviceRef.CPU()
+            mean, scalar_dtype, DeviceRef.CPU()
         ),
         variance=dtype_promotion._promote_to_strong(
-            std, DType.float32, DeviceRef.CPU()
+            std, scalar_dtype, DeviceRef.CPU()
         ),
         seed=seed,
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 
 
@@ -116,9 +118,9 @@ def uniform(
     assert_scalar(upper)
     # Check whether we have a seed before we add other constants to the graph.
     seed = _next_seed()
-    return Graph.current._add_op(
-        rmo.mo_random_uniform,
-        result=like.to_mlir(),
+    return Graph.current._add_op_generated(
+        rmo.MoRandomUniformOp,
+        result=like,
         shape=TensorValue(like.shape),
         lower_bound=dtype_promotion._promote_to_strong(
             lower, like.dtype, DeviceRef.CPU()
@@ -127,4 +129,5 @@ def uniform(
             upper, like.dtype, DeviceRef.CPU()
         ),
         seed=seed,
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor

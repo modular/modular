@@ -16,10 +16,9 @@ from sys import simd_width_of
 from sys.info import _current_target
 
 from algorithm import elementwise
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
-from layout import LayoutTensor, Layout, RuntimeTuple, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeTuple
 from layout.int_tuple import fill_like
 
 from utils import IndexList, StaticTuple
@@ -30,17 +29,17 @@ from utils import IndexList, StaticTuple
 
 
 fn split[
-    type: DType,
+    dtype: DType,
     num_outputs: Int,
     target: StaticString,
     trace_description: StaticString,
     outputs_origin: MutableOrigin,
     outputs_layout: Layout,
 ](
-    input: LayoutTensor[type, **_],
+    input: LayoutTensor[dtype, **_],
     axis: Int,
     outputs: StaticTuple[
-        LayoutTensor[type, outputs_layout, outputs_origin], num_outputs
+        LayoutTensor[dtype, outputs_layout, outputs_origin], num_outputs
     ],
     ctx: DeviceContext,
 ) raises:
@@ -118,7 +117,7 @@ fn split[
         alias compile_target = _current_target() if is_cpu[
             target
         ]() else get_gpu_target()
-        alias target_simd_width = simd_width_of[type, target=compile_target]()
+        alias target_simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[
             elementwise_fn_wrapper,

@@ -11,37 +11,38 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import c_int, _Global
+from sys.ffi import _Global, c_int
 from sys.info import size_of
+
+from builtin._startup import _ensure_current_or_global_runtime_init
 from compile.reflection import get_type_name
 from memory import stack_allocation
-
 from python import Python, PythonObject
 from python._cpython import (
+    GILAcquired,
     Py_TPFLAGS_DEFAULT,
     PyCFunction,
     PyCFunctionWithKeywords,
     PyMethodDef,
     PyObject,
     PyObjectPtr,
-    PyTypeObject,
-    PyTypeObjectPtr,
     PyType_Slot,
     PyType_Spec,
-    GILAcquired,
+    PyTypeObject,
+    PyTypeObjectPtr,
 )
 from python._python_func import PyObjectFunction
 from python.python_object import _unsafe_alloc, _unsafe_init
+
 from utils import Variant
-from builtin._startup import _ensure_current_or_global_runtime_init
 
 # ===-----------------------------------------------------------------------===#
 # Global `PyTypeObject` Registration
 # ===-----------------------------------------------------------------------===#
 
 alias MOJO_PYTHON_TYPE_OBJECTS = _Global[
+    StorageType = Dict[StaticString, PythonObject],
     "MOJO_PYTHON_TYPE_OBJECTS",
-    Dict[StaticString, PythonObject],
     Dict[StaticString, PythonObject].__init__,
 ]
 """Mapping of Mojo type identifiers to unique `PyTypeObject*` binding
@@ -475,10 +476,10 @@ struct PythonModuleBuilder:
 
         Example signatures:
         ```mojo
-        fn func(arg1: PythonObject) -> PythonObject
-        fn func(arg1: PythonObject, arg2: PythonObject) raises
-        fn func(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject
-        fn func(arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]) raises
+        fn func(arg1: PythonObject) -> PythonObject: ...
+        fn func(arg1: PythonObject, arg2: PythonObject) raises: ...
+        fn func(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject: ...
+        fn func(arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]) raises: ...
         ```
 
         Parameters:
@@ -512,8 +513,10 @@ struct PythonModuleBuilder:
             declared functions or types to the module.
         """
 
-        Python.add_functions(self.module, self.functions)
-        self.functions.clear()
+        var functions = self.functions^
+        self.functions = List[PyMethodDef]()
+
+        Python.add_functions(self.module, functions^)
 
         for ref builder in self.type_builders:
             builder.finalize(self.module)
@@ -945,8 +948,8 @@ struct PythonTypeBuilder(Copyable, Movable):
 
         Example signatures:
         ```mojo
-        fn method(mut self: PythonObject) -> PythonObject
-        fn method(mut self: PythonObject, arg1: PythonObject) raises
+        fn method(mut self: PythonObject) -> PythonObject: ...
+        fn method(mut self: PythonObject, arg1: PythonObject) raises: ...
         ```
 
         Parameters:
@@ -983,8 +986,8 @@ struct PythonTypeBuilder(Copyable, Movable):
 
         Example signatures:
         ```mojo
-        fn static_method(arg1: PythonObject) -> PythonObject
-        fn static_method(arg1: PythonObject, arg2: PythonObject) raises
+        fn static_method(arg1: PythonObject) -> PythonObject: ...
+        fn static_method(arg1: PythonObject, arg2: PythonObject) raises: ...
         ```
 
         Parameters:

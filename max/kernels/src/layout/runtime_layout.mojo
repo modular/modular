@@ -32,9 +32,9 @@ from .layout import make_layout as make_layout_static
 from .runtime_tuple import (
     RuntimeTuple,
     crd2idx,
-    product,
-    idx2crd_int_tuple,
     idx2crd,
+    idx2crd_int_tuple,
+    product,
 )
 
 # A `Layout` like type that uses RuntimeTuple as its storage instead of
@@ -199,28 +199,28 @@ struct RuntimeLayout[
 
     @always_inline
     fn cast[
-        element_type: DType,
+        _element_type: DType,
         /,
         *,
-        linear_idx_type: DType = linear_idx_type,
-    ](
-        self,
-        out result: RuntimeLayout[
-            layout, element_type=element_type, linear_idx_type=linear_idx_type
-        ],
-    ):
+        target_linear_idx_type: DType = linear_idx_type,
+    ](self) -> RuntimeLayout[
+        layout,
+        element_type=_element_type,
+        linear_idx_type=target_linear_idx_type,
+    ]:
         """Cast the layout to use a different element bitwidth.
 
         Parameters:
-            element_type: The target data type.
-            linear_idx_type: The target linear idx type.
+            _element_type: The target data type.
+            target_linear_idx_type: The target linear idx type.
 
         Returns:
             A new `RuntimeLayout` with the shape cast to the specified type.
         """
-        return __type_of(result)(
-            self.shape.cast[element_type](), self.stride.cast[linear_idx_type]()
-        )
+        return {
+            self.shape.cast[_element_type](),
+            self.stride.cast[target_linear_idx_type](),
+        }
 
     @no_inline
     fn __str__(self) -> String:
@@ -266,7 +266,7 @@ struct RuntimeLayout[
             var dim = shape[i + 1]
             stride[i] = dim * c_stride
             c_stride *= dim
-        return __type_of(result)(shape.cast[element_type](), stride)
+        return {shape.cast[element_type](), stride}
 
     @staticmethod
     fn col_major[
@@ -303,7 +303,7 @@ struct RuntimeLayout[
             var dim = shape[i - 1]
             stride[i] = dim * c_stride
             c_stride *= dim
-        return __type_of(result)(shape.cast[element_type](), stride)
+        return {shape.cast[element_type](), stride}
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -337,14 +337,14 @@ struct RuntimeLayout[
         Returns:
             A `RuntimeLayout` representing the nested layout at index i.
         """
-        return __type_of(result)(
+        return {
             rebind[RuntimeTuple[layout[i].shape, element_type=element_type]](
                 self.shape[i]
             ),
             rebind[
                 RuntimeTuple[layout[i].stride, element_type=linear_idx_type]
             ](self.stride[i]),
-        )
+        }
 
     fn dim(self, i: Int) -> Int:
         """Get the size of the dimension at the specified index.
@@ -439,7 +439,7 @@ fn coalesce[
             res_stride.value[idx] = layout.stride.value[i]
             idx += 1
 
-    return __type_of(result)(res_shape, res_stride)
+    return {res_shape, res_stride}
 
 
 fn make_layout[
@@ -494,4 +494,4 @@ fn make_layout[
         res_shape.value[a_length + i] = b.shape.value[i]
         res_stride.value[a_length + i] = b.stride.value[i]
 
-    return __type_of(result)(res_shape, res_stride)
+    return {res_shape, res_stride}

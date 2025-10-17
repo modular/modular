@@ -14,7 +14,7 @@
 
 from collections.abc import Iterable
 
-from max.mlir.dialects import rmo
+from max._core.dialects import kgen, rmo
 
 from .. import dtype_promotion
 from ..dim import Dim, DimLike, StaticDim
@@ -45,15 +45,18 @@ def tile(x: TensorValueLike, repeats: Iterable[DimLike]) -> TensorValue:
     if any(count.dim <= 0 for count in repeats if isinstance(count, StaticDim)):
         raise ValueError(f"Repeats must all be positive: {repeats=}")
 
-    output_dims = [dim * count for dim, count in zip(shape, repeats)]
+    output_dims = [
+        dim * count for dim, count in zip(shape, repeats, strict=True)
+    ]
 
     # TODO(GEX-2056): Add support for GPU kernel for tile and remove manual transfers
     original_device = x.type.device
     x = x.to(DeviceRef.CPU())
-    answer = Graph.current._add_op(
-        rmo.mo_tile,
-        TensorType(dtype=x.dtype, shape=output_dims, device=x.device).to_mlir(),
+    answer = Graph.current._add_op_generated(
+        rmo.MoTileOp,
+        TensorType(dtype=x.dtype, shape=output_dims, device=x.device),
         x,
         TensorValue(Shape(repeats)),
+        kgen.ParamDeclArrayAttr([]),
     )[0].tensor
     return answer.to(original_device)

@@ -17,7 +17,13 @@ from sys import CompilationTarget
 from tempfile import NamedTemporaryFile
 
 from builtin._location import __source_location
-from testing import assert_equal, assert_false, assert_not_equal, assert_true
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+    TestSuite,
+)
 
 
 def test_cwd():
@@ -95,27 +101,16 @@ def test_read_write_bytes():
 
 
 fn get_user_path() -> Path:
-    @parameter
-    if CompilationTarget.is_windows():
-        return Path("C:") / "Users" / "user"
     return Path("/home/user")
 
 
 fn get_current_home() -> String:
-    @parameter
-    if CompilationTarget.is_windows():
-        return os.env.getenv("USERPROFILE")
     return os.env.getenv("HOME")
 
 
 def set_home(path: Path):
     path_str = String(path)
-
-    @parameter
-    if CompilationTarget.is_windows():
-        _ = os.env.setenv("USERPROFILE", path_str)
-    else:
-        _ = os.env.setenv("HOME", path_str)
+    _ = os.env.setenv("HOME", path_str)
 
 
 # More elaborate tests in `os/path/test_expanduser.mojo`
@@ -223,16 +218,4 @@ def test_parts():
 
 
 def main():
-    test_cwd()
-    test_path()
-    test_path_exists()
-    test_path_isdir()
-    test_path_isfile()
-    test_suffix()
-    test_joinpath()
-    test_read_write()
-    test_expand_user()
-    test_home()
-    test_stat()
-    test_name()
-    test_parts()
+    TestSuite.discover_tests[__functions_in_module()]().run()

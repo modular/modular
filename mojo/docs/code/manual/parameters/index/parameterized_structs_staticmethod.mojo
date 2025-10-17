@@ -20,7 +20,7 @@ struct GenericArray[ElementType: Copyable & Movable]:
         self.size = len(elements)
         self.data = UnsafePointer[ElementType].alloc(self.size)
         for i in range(self.size):
-            (self.data + i).init_pointee_move(elements[i])
+            (self.data + i).init_pointee_move(elements[i].copy())
 
     fn __init__(out self, *, count: Int, value: ElementType):
         self.size = count

@@ -68,6 +68,35 @@ def processStructConvention(mojo_json) -> None:  # noqa: ANN001
                 exit(1)
 
 
+def processTraitMethods(mojo_json) -> None:  # noqa: ANN001
+    """Dividing the single list of methods into required and provided lists,
+    where provided methods are those with a default implementation.
+    Note that a single function may have both required overloads and provided
+    overloads."""
+    for trait in mojo_json["traits"]:
+        trait["required_methods"] = []
+        trait["provided_methods"] = []
+
+        for function in trait["functions"]:
+            required_overloads = []
+            provided_overloads = []
+
+            for overload in function["overloads"]:
+                if overload["hasDefaultImplementation"]:
+                    provided_overloads.append(overload)
+                else:
+                    required_overloads.append(overload)
+
+            if len(required_overloads) > 0:
+                required_method = function.copy()
+                required_method["overloads"] = required_overloads
+                trait["required_methods"].append(required_method)
+            if len(provided_overloads) > 0:
+                provided_method = function.copy()
+                provided_method["overloads"] = provided_overloads
+                trait["provided_methods"].append(provided_method)
+
+
 def removeSelfArgumentFromStructMethods(mojo_json) -> None:  # noqa: ANN001
     """If we are in a non-static struct method, we don't want to show the first argument (self) as an
     argument in the documentation. So we remove it from all the functions that are child of structs.
@@ -156,7 +185,7 @@ def removeStaticFromInitializers(mojo_json) -> None:  # noqa: ANN001
 # The slug is the name of the module, except for the index
 # module, which is named "index_" to avoid a name conflict with
 # the index file.
-def nameToSlug(name):  # noqa: ANN001
+def nameToSlug(name):  # noqa: ANN001, ANN201
     return "index_" if name == "index" else name
 
 
@@ -236,6 +265,7 @@ def generateMarkdown(
             addImplicitConversionDecorator,
             copyFieldTypesToValue,
             processStructConvention,
+            processTraitMethods,
             removeParametersWithoutDocumentation,
             removeArgumentsWithoutDocumentation,
             removeSelfArgumentFromStructMethods,
@@ -379,7 +409,7 @@ def main() -> None:
         version = docJson["version"]
         decl = docJson["decl"]
         generateMarkdown(decl, version, args.output, environment, template)
-        os.remove(args.filename)
+        # os.remove(args.filename)
 
 
 if __name__ == "__main__":

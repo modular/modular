@@ -37,6 +37,7 @@ If only non-max objects attempt promotion, it will always fail.
 import numpy as np
 from max.dtype import DType
 
+from ..driver import DLPackArray, Tensor
 from . import ops
 from .graph import DeviceRef
 from .value import TensorValue, TensorValueLike, _is_strong_tensor_value_like
@@ -120,7 +121,7 @@ def _promote_to_strong(
     """
     if _is_strong_tensor_value_like(value):
         return TensorValue(value)
-    elif isinstance(value, (int, np.integer)):
+    elif isinstance(value, int | np.integer):
         min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[strong_dtype]
         if min <= value <= max:
             return ops.constant(value, strong_dtype, device)
@@ -130,7 +131,7 @@ def _promote_to_strong(
             f" dtype({strong_dtype}). It would lose precision."
         )
 
-    elif isinstance(value, (float, np.floating)):
+    elif isinstance(value, float | np.floating):
         if strong_dtype.is_float():
             return ops.constant(value, strong_dtype, device)
 
@@ -138,30 +139,30 @@ def _promote_to_strong(
             f"Unsafe cast: Can't promote python float to dtype({strong_dtype})."
         )
 
-    elif isinstance(value, (np.ndarray)):
-        # In numpy 2.0, booleans compare as signed, which causes issues when doing
-        # comparisons such as `np.array(False) < 2**64-1`, it will fail since it
-        # treats the right value as signed, which fails to cast to a C long.
-        # So we just cast to an unsigned type to make sure we can always do a comparison.
-        if value.dtype == np.bool_:
-            value = value.astype(np.uint8)
-        elif DType.from_numpy(value.dtype).is_float():
-            if strong_dtype.is_float():
-                return ops.constant(value, strong_dtype, device)
-            else:
+    elif isinstance(value, DLPackArray):
+        tensor = Tensor.from_dlpack(value)
+
+        if tensor.dtype.is_float() and strong_dtype.is_integral():
+            raise ValueError(
+                f"Unsafe cast: Refusing to implicitly promote float array "
+                f"to dtype({strong_dtype})."
+            )
+
+        if tensor.dtype.is_integral():
+            min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[strong_dtype]
+            if not all(
+                min <= tensor[idx].item() <= max
+                for idx in tensor._iterate_indices()
+            ):
                 raise ValueError(
-                    "Unsafe cast: Can't promote numpy float array to"
-                    f" dtype({strong_dtype})."
+                    "Unsafe cast: Refusing to implicitly promote external array "
+                    f"with precision loss for DType {strong_dtype}. {value=}"
                 )
 
-        min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[strong_dtype]
-        if np.all(min <= value) and np.all(value <= max):
-            return ops.constant(value, strong_dtype, device)
-
-        raise ValueError(
-            "Unsafe cast: Can't promote numpy integer array with value"
-            f" ({value}) to dtype({strong_dtype}). It would lose precision."
-        )
+        result = ops.constant(tensor, device=device)
+        if result.dtype != strong_dtype:
+            result = result.cast(strong_dtype)
+        return result
 
     else:
         raise TypeError(

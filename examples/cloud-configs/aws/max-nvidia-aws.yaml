@@ -221,7 +221,7 @@ Resources:
             -p 80:8000 \
             --ipc=host \
             modular/max-nvidia-full:latest \
-            --model-path ${HuggingFaceRepoId})
+            --model ${HuggingFaceRepoId})
 
           if [ $? -ne 0 ]; then
             echo "Failed to start container"

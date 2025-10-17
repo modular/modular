@@ -19,8 +19,8 @@ from typing import Any
 from max.mlir.dialects import mo
 
 from ..graph import Graph
-from ..type import _ChainType
-from ..value import Value
+from ..type import DeviceRef, _ChainType
+from ..value import Value, _ChainValue
 
 
 def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
@@ -52,7 +52,7 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
     call_args = list(args)  # mutable so we can add a chain
     # Be careful, input_types are type[Value], output_types are Type
     input_types = [type(input) for input in graph.inputs]
-    output_types = [*graph.output_types, _ChainType()]
+    output_types = list(graph.output_types)
 
     # Mostly leave type checking up to the op builder.
     # We can do some basic type checking to improve error messages,
@@ -63,7 +63,17 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
             f"\n    {graph.name}{tuple(input_types)}"
         )
 
-    call_args.append(current_graph._current_chain)
+    # Collect all device chains into the call args and output type.
+    chain_devices: tuple[DeviceRef, ...] = ()
+    chain_args: list[_ChainValue] = []
+    if graph._has_chain_input:
+        chain_devices = tuple(graph.device_chains)
+        chain_args = [current_graph._current_chain]
+        chain_args.extend(
+            current_graph.device_chains[device] for device in chain_devices
+        )
+        output_types.extend(_ChainType() for _ in chain_args)
+        call_args.extend(chain_args)
 
     # Add a call operation to the current graph
     call_results = current_graph._add_op(
@@ -74,5 +84,17 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
         prefix=prefix,
     )
 
-    *results, current_graph._current_chain = call_results
-    return results
+    chain_result_count = len(chain_args)
+    if not chain_result_count:
+        return call_results
+
+    # Update the device chains.
+    chain_results = call_results[-chain_result_count:]
+    current_graph._current_chain = _ChainValue(chain_results[0])
+    current_graph.device_chains.update(
+        (device, _ChainValue(chain_value))
+        for device, chain_value in zip(
+            chain_devices, chain_results[1:], strict=True
+        )
+    )
+    return call_results[:-chain_result_count]

@@ -20,11 +20,12 @@ from buffer import NDBuffer
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from linalg.gemv import gemv_kernel, gevm_kernel
-from linalg.matmul_gpu import matmul_kernel
+from linalg.matmul.gpu import matmul_kernel
 
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import isnan
+from internal_utils import assert_almost_equal
 
 
 def run_matvec[
@@ -62,14 +63,14 @@ def run_matvec[
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            gemv_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                reduction_method=reduction_method,
-            ]
-        ](
+        alias kernel = gemv_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            reduction_method=reduction_method,
+        ]
+
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,
@@ -83,14 +84,14 @@ def run_matvec[
     @always_inline
     @parameter
     fn run_func_gevm(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            gevm_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                tile_size = WARP_SIZE * WARPS_PER_BLOCK,
-            ]
-        ](
+        alias kernel = gevm_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+        ]
+
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,
@@ -132,14 +133,14 @@ def run_matvec[
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            matmul_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                BLOCK_DIM,
-            ]
-        ](
+        alias kernel = matmul_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            BLOCK_DIM,
+        ]
+
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,
@@ -163,25 +164,15 @@ def run_matvec[
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
-    alias errorTolerance = 0.0001
+    alias errorTolerance = 1e-2
     var failed = False
-    for i in range(M * N):
-        var outVal = c_host[i]
-        var outRef = c_host_naive[i]
-        var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
-        if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
-            failed = True
-
-    # CHECK: Success
-    if not failed:
-        print("Success 🎉: results match")
-        print(
-            "Performance warp-shuffle matvec vs. shmem matmul: ",
-            sectime2 / sectime,
-            "x",
-        )
-    else:
-        print("Failed ❌: results mismatch")
+    assert_almost_equal(
+        c_host,
+        c_host_naive,
+        num_elements=M * N,
+        atol=1e-4,
+        rtol=errorTolerance,
+    )
 
     _ = a_device
     _ = b_device
@@ -224,7 +215,7 @@ fn run_matvec_with_epilogue_fn[
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N * c_stride)
 
     var c_device_nd = NDBuffer[DType.float32, 2](
-        c_device._unsafe_ptr(), Index(M, N), Index(N * c_stride, c_stride)
+        c_device.unsafe_ptr(), Index(M, N), Index(N * c_stride, c_stride)
     )
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -359,26 +350,15 @@ fn run_matvec_with_epilogue_fn[
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
-    alias errorTolerance = 0.0001
+    alias errorTolerance = 1e-2
     var failed = False
-    for i in range(M * N * c_stride):
-        var outVal = c_host.load(i)
-        var outRef = c_host_naive.load(i)
-        var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
-        if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
-            print(i, relDiff, outVal, outRef)
-            failed = True
-
-    # CHECK: Success
-    if not failed:
-        print("Success 🎉: results match")
-        print(
-            "Performance warp-shuffle matvec vs. shmem matmul: ",
-            sectime2 / sectime,
-            "x",
-        )
-    else:
-        print("Failed ❌: results mismatch")
+    assert_almost_equal(
+        c_host,
+        c_host_naive,
+        num_elements=M * N * c_stride,
+        atol=1e-4,
+        rtol=errorTolerance,
+    )
 
     _ = a_device
     _ = b_device

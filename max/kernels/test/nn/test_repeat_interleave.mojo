@@ -311,7 +311,7 @@ fn test_repeat_interleave_3d() raises:
     print()
 
 
-fn main() raises:
+def main():
     test_collapse_dims_around_axis()
     test_repeat_interleave_1d()
     test_repeat_interleave_1d_broadcast_repeats()

@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import sys
-from pathlib import Path
 from collections import Set
+from pathlib import Path
 from subprocess import run
 
 # We can't check much more than this at the moment, because the license year
@@ -70,7 +70,7 @@ fn get_git_files() raises -> Set[String]:
 
             if not is_ignored_file(newfile):
                 result.add(String(newfile))
-        return result
+        return result^
 
     return (_get_files(tracked) | _get_files(untracked)) - _get_files(deleted)
 
@@ -88,7 +88,7 @@ fn check_path(path: Path, mut files_without_license: List[Path]) raises:
         files_without_license.append(path)
 
 
-fn main() raises:
+def main():
     target_paths = sys.argv()
 
     fix = False

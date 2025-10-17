@@ -13,8 +13,9 @@
 
 from math import iota, isclose
 
-from layout import LayoutTensor, Layout, RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.cumsum import cumsum
+
 from utils.index import IndexList
 
 

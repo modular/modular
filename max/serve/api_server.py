@@ -16,17 +16,20 @@
 from __future__ import annotations
 
 import logging
+import os
+import signal
+import socket
+from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
-from functools import partial
+from typing import Any
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
+from max.nn.kv_cache.paged_cache import ResetPrefixCacheFrontend
 from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
-from max.serve.kvcache_agent import DispatcherFactory, TransportMessage
-from max.serve.pipelines.kvcache_worker import start_kv_cache_service
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorPipeline,
@@ -38,7 +41,7 @@ from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
-from max.serve.scheduler.base import PayloadType
+from max.serve.scheduler.queues import SchedulerZmqConfigs
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
 from uvicorn import Config
@@ -52,13 +55,24 @@ ROUTES = {
 logger = logging.getLogger("max.serve")
 
 
+def validate_port_is_free(port: int):  # noqa: ANN201
+    # check if port is already in use
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind(("", port))
+            return port
+        except OSError as e:
+            raise ValueError(
+                f"The network port {port} is already in use"
+            ) from e
+
+
 @dataclass(frozen=True)
 class ServingTokenGeneratorSettings:
     # Pipeline config
-    model_name: str
-    model_factory: PipelinesFactory
+    model_factory: PipelinesFactory  # type: ignore
     pipeline_config: PipelineConfig
-    tokenizer: PipelineTokenizer
+    tokenizer: PipelineTokenizer[Any, Any, Any]
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION
 
 
@@ -67,10 +81,12 @@ async def lifespan(
     app: FastAPI,
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
-):
+) -> AsyncGenerator[None, None]:
     try:
         if not settings.disable_telemetry:
-            send_telemetry_log(serving_settings.model_name)
+            send_telemetry_log(
+                serving_settings.pipeline_config.model_config.model_name
+            )
     except Exception as e:
         logger.warning("Failed to send telemetry log: %s", e)
 
@@ -79,94 +95,78 @@ async def lifespan(
             "It is not valid to start the API Server if the server is in offline inference mode"
         )
 
-    dispatcher_factory = None
-    if serving_settings.pipeline_config.pipeline_role.uses_dispatch_service:
-        dispatcher_factory = DispatcherFactory[PayloadType](
-            settings.dispatcher_config,
-            transport_payload_type=TransportMessage[PayloadType],
+    logger.info("Starting server...")
+
+    async with AsyncExitStack() as exit_stack:
+        # start telemetry worker and configure Metrics to use it
+        metric_client = await exit_stack.enter_async_context(
+            start_telemetry_consumer(settings)
+        )
+        METRICS.configure(client=metric_client)
+
+        # start model worker
+        scheduler_zmq_configs = SchedulerZmqConfigs(
+            serving_settings.pipeline_task
+        )
+        worker_monitor = await exit_stack.enter_async_context(
+            start_model_worker(
+                serving_settings.model_factory,
+                serving_settings.pipeline_config,
+                settings,
+                metric_client,
+                scheduler_zmq_configs=scheduler_zmq_configs,
+            )
         )
 
-    logger.info("Starting server...")
-    try:
-        async with AsyncExitStack() as exit_stack:
-            if dispatcher_factory is not None:
-                logger.info("Starting Dispatch Service...")
-                await exit_stack.enter_async_context(
-                    start_kv_cache_service(settings, dispatcher_factory)
-                )
-                logger.info("Dispatch Service started.")
+        lora_queue: LoRAQueue | None = (
+            LoRAQueue(serving_settings.pipeline_config.zmq_endpoint_base)
+            if serving_settings.pipeline_config.lora_config
+            else None
+        )
 
-            # start telemetry worker and configure Metrics to use it
-            metric_client = await exit_stack.enter_async_context(
-                start_telemetry_consumer(settings)
+        METRICS.pipeline_load(
+            serving_settings.pipeline_config.model_config.model_name
+        )
+
+        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline
+        if serving_settings.pipeline_task in (
+            PipelineTask.TEXT_GENERATION,
+            PipelineTask.EMBEDDINGS_GENERATION,
+        ):
+            pipeline = TokenGeneratorPipeline(
+                model_name=serving_settings.pipeline_config.model_config.model_name,
+                tokenizer=serving_settings.tokenizer,
+                lora_queue=lora_queue,
+                scheduler_zmq_configs=scheduler_zmq_configs,
+                worker_monitor=worker_monitor,
+            )
+        elif serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION:
+            pipeline = AudioGeneratorPipeline(
+                model_name=serving_settings.pipeline_config.model_config.model_name,
+                tokenizer=serving_settings.tokenizer,
+                lora_queue=lora_queue,
+                scheduler_zmq_configs=scheduler_zmq_configs,
+                worker_monitor=worker_monitor,
+            )
+        else:
+            raise ValueError(
+                f"Unsupported pipeline task: {serving_settings.pipeline_task}"
             )
 
-            METRICS.configure(client=metric_client)
-            # start model worker
-            engine_queue = await exit_stack.enter_async_context(
-                start_model_worker(
-                    serving_settings.model_factory,
-                    serving_settings.pipeline_config,
-                    settings,
-                    metric_client,
-                    serving_settings.pipeline_task,
-                    dispatcher_factory,
-                )
-            )
+        app.state.pipeline = pipeline
+        app.state.pipeline_config = serving_settings.pipeline_config
 
-            lora_queue: LoRAQueue | None = (
-                LoRAQueue(
-                    serving_settings.pipeline_config.lora_config.lora_request_endpoint,
-                    serving_settings.pipeline_config.lora_config.lora_response_endpoint,
-                )
-                if serving_settings.pipeline_config.lora_config
-                else None
-            )
+        await exit_stack.enter_async_context(pipeline)
+        logger.info(
+            f"\n\n{'*' * 80}\n\n"
+            f"{f'🚀 Server ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)'.center(80)}\n\n"
+            f"{'*' * 80}\n"
+        )
 
-            METRICS.pipeline_load(serving_settings.model_name)
-            pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline
-            if serving_settings.pipeline_task in (
-                PipelineTask.TEXT_GENERATION,
-                PipelineTask.EMBEDDINGS_GENERATION,
-            ):
-                pipeline = TokenGeneratorPipeline(
-                    model_name=serving_settings.model_name,
-                    tokenizer=serving_settings.tokenizer,
-                    engine_queue=engine_queue,
-                    lora_queue=lora_queue,
-                )
-            elif (
-                serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION
-            ):
-                pipeline = AudioGeneratorPipeline(
-                    model_name=serving_settings.model_name,
-                    tokenizer=serving_settings.tokenizer,
-                    engine_queue=engine_queue,
-                    lora_queue=lora_queue,
-                )
-            else:
-                raise ValueError(
-                    f"Unsupported pipeline task: {serving_settings.pipeline_task}"
-                )
-
-            app.state.pipeline = pipeline
-
-            await exit_stack.enter_async_context(pipeline)
-            logger.info(
-                f"\n\n**********\nServer ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)\n**********\n"
-            )
-            yield
-    # TODO: Will we ever get here? KeyboardInterrupt is handled in the serve.py entrypoint.
-    except KeyboardInterrupt as e:
-        # Exit gracefully if user used Ctrl+C
-        logger.info("Workers have shut down successfully (keyboard interrupt)")
-    except Exception as e:
-        logger.exception("Error occurred in model worker. %s", e)
-    finally:
-        logger.debug("start_model_worker has completed")
+        yield
 
 
-def version():
+def version():  # noqa: ANN201
     """Returns max-serve version information."""
     from importlib.metadata import PackageNotFoundError, version
 
@@ -183,7 +183,7 @@ async def health() -> Response:
     return Response(status_code=200)
 
 
-def make_metrics_app():
+def make_metrics_app():  # noqa: ANN201
     from prometheus_client import disable_created_metrics, make_asgi_app
 
     disable_created_metrics()
@@ -194,14 +194,23 @@ def fastapi_app(
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
-    logger.info(f"Settings: {settings}")
+    @asynccontextmanager
+    async def lifespan_wrap(app: FastAPI) -> AsyncGenerator[None, None]:
+        try:
+            async with lifespan(app, settings, serving_settings):
+                yield
+        except Exception as e:
+            logger.exception("Worker exception, Shutting down. %s", e)
+            # Caught by uvicorn to shutdown the server
+            os.kill(os.getpid(), signal.SIGINT)
+            # Ideally we'd just rethrow here, which is caught by
+            # starlette Router.lifespan() and converted into ASGI
+            # lifespan.shutdown.failed event. However uvicorn only
+            # listens for this event if it's already initiated the
+            # shutdown sequence.
+            # See https://github.com/Kludex/uvicorn/discussions/2298
 
-    app = FastAPI(
-        title="MAX Serve",
-        lifespan=partial(
-            lifespan, settings=settings, serving_settings=serving_settings
-        ),
-    )
+    app = FastAPI(title="MAX Serve", lifespan=lifespan_wrap)
 
     if settings.transaction_recording_file is not None:
         transaction_recording_file = settings.transaction_recording_file
@@ -221,6 +230,25 @@ def fastapi_app(
 
     app.add_api_route("/version", version)
     app.add_api_route("/health", health)
+
+    reset_prefix_cache_frontend = ResetPrefixCacheFrontend(
+        serving_settings.pipeline_config.zmq_endpoint_base
+    )
+
+    async def reset_prefix_cache() -> Response:
+        """Reset the prefix cache."""
+        if not serving_settings.pipeline_config.model_config.kv_cache_config.enable_prefix_caching:
+            return Response(
+                status_code=400,
+                content="Prefix caching is not enabled. Ignoring request",
+            )
+
+        reset_prefix_cache_frontend.enqueue_reset_prefix_cache()
+        return Response(status_code=200, content="Success")
+
+    app.add_api_route(
+        "/reset_prefix_cache", reset_prefix_cache, methods=["POST"]
+    )
 
     for api_type in settings.api_types:
         app.include_router(ROUTES[api_type].router)

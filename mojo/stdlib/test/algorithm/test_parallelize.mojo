@@ -12,20 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from sys.info import num_physical_cores
 
 from algorithm import map, parallelize, sync_parallelize
 from buffer import NDBuffer
-from sys.info import num_physical_cores
+from testing import TestSuite
 
 
 # CHECK-LABEL: test_sync_parallelize
-fn test_sync_parallelize():
+def test_sync_parallelize():
     print("== test_sync_parallelize")
 
     var num_work_items = 4
 
-    var vector_stack = InlineArray[Scalar[DType.index], 20](uninitialized=True)
-    var vector = NDBuffer[DType.index, 1, _, 20](vector_stack)
+    var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
+    var vector = NDBuffer[DType.int, 1, _, 20](vector_stack)
 
     for i in range(len(vector)):
         vector[i] = i
@@ -57,13 +58,13 @@ fn test_sync_parallelize():
 
 
 # CHECK-LABEL: test_parallelize
-fn test_parallelize():
+def test_parallelize():
     print("== test_parallelize")
 
     var num_work_items = num_physical_cores()
 
-    var vector_stack = InlineArray[Scalar[DType.index], 20](uninitialized=True)
-    var vector = NDBuffer[DType.index, 1, _, 20](vector_stack)
+    var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
+    var vector = NDBuffer[DType.int, 1, _, 20](vector_stack)
 
     for i in range(len(vector)):
         vector[i] = i
@@ -94,29 +95,25 @@ fn printme(i: Int):
 
 
 # CHECK-LABEL: test_parallelize_no_workers
-fn test_parallelize_no_workers():
+def test_parallelize_no_workers():
     print("== test_parallelize_no_workers")
     # CHECK: Number of workers must be positive
     parallelize[printme](10, 0)
 
 
 # CHECK-LABEL: test_parallelize_negative_workers
-fn test_parallelize_negative_workers():
+def test_parallelize_negative_workers():
     print("== test_parallelize_negative_workers")
     # CHECK: Number of workers must be positive
     parallelize[printme](10, -1)
 
 
 # CHECK-LABEL: test_parallelize_negative_work
-fn test_parallelize_negative_work():
+def test_parallelize_negative_work():
     print("== test_parallelize_negative_work")
     # This should do nothing
     parallelize[printme](-1, 4)
 
 
-fn main():
-    test_sync_parallelize()
-    test_parallelize()
-    test_parallelize_no_workers()
-    test_parallelize_negative_workers()
-    test_parallelize_negative_work()
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

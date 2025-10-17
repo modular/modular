@@ -20,20 +20,23 @@ import functools
 import io
 import json
 import logging
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, Union
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
+    ImageMetadata,
     PipelineTokenizer,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
+from max.support.image import find_contiguous_ranges
 from PIL import Image
 from transformers import (
+    AutoConfig,
     AutoProcessor,
     AutoTokenizer,
     CodeLlamaTokenizer,
@@ -90,10 +93,10 @@ class PreTrainedPipelineTokenizer(
     ],
 ):
     def __init__(
-        self, delegate: Union[PreTrainedTokenizer, PreTrainedTokenizerFast]
+        self, delegate: PreTrainedTokenizer | PreTrainedTokenizerFast
     ) -> None:
         assert isinstance(
-            delegate, (PreTrainedTokenizer, PreTrainedTokenizerFast)
+            delegate, PreTrainedTokenizer | PreTrainedTokenizerFast
         )
         self.delegate = delegate
 
@@ -151,7 +154,19 @@ class TextTokenizer(
         TextContext, npt.NDArray[np.integer[Any]], TextGenerationRequest
     ]
 ):
-    """Encapsulates creation of TextContext and specific token encode/decode logic."""
+    """Encapsulates creation of TextContext and specific token encode/decode logic.
+
+    Args:
+        model_path: Path to the model/tokenizer
+        revision: Git revision/branch to use
+        max_length: Maximum sequence length
+        trust_remote_code: Whether to trust remote code from the model
+        enable_llama_whitespace_fix: Enable whitespace fix for Llama tokenizers
+        pipeline_config: Optional pipeline configuration
+        chat_template: Optional custom chat template string to override the one
+                        shipped with the HuggingFace model config. This allows
+                        customizing the prompt formatting for different use cases.
+    """
 
     def __init__(
         self,
@@ -159,14 +174,14 @@ class TextTokenizer(
         *,
         revision: str | None = None,
         max_length: int | None = None,
-        max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
         enable_llama_whitespace_fix: bool = False,
         pipeline_config: PipelineConfig | None = None,
+        chat_template: str | None = None,
+        context_validators: list[Callable[[TextContext], None]] | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
-        self.max_new_tokens = max_new_tokens
 
         try:
             self.delegate = AutoTokenizer.from_pretrained(
@@ -178,15 +193,23 @@ class TextTokenizer(
                 model_max_length=max_length,
             )
         except Exception as e:
-            msg = (
+            raise ValueError(
                 f"Failed to load tokenizer from {model_path}. "
                 "This can happen if:\n"
                 "- The model is not fully supported by the transformers python package\n"
                 "- Required configuration files are missing\n"
                 "- The model path is incorrect\n"
-                "- '--trust_remote_code=True' is needed but not set\n"
+                "- '--trust-remote-code' is needed but not set\n"
+            ) from e
+
+        # Override chat template if provided
+        # This will be used by the delegate's apply_chat_template method automatically
+        self._custom_template_provided = chat_template is not None
+        if chat_template is not None:
+            self.delegate.chat_template = chat_template
+            logger.info(
+                f"Set custom chat template on tokenizer for {model_path}"
             )
-            raise ValueError(msg) from e
 
         # As we are adding special tokens during chat templating prior to tokenization,
         # when add_special_tokens=True, we duplicate BOS tokens specifically.
@@ -209,6 +232,10 @@ class TextTokenizer(
 
         # cache tokenizer eos token ids
         self._default_eos_token_ids = set([self.eos])
+
+        self._context_validators = (
+            context_validators if context_validators else []
+        )
 
         if pipeline_config:
             huggingface_config = pipeline_config.model_config.huggingface_config
@@ -264,8 +291,8 @@ class TextTokenizer(
     def apply_chat_template(
         self,
         messages: list[TextGenerationRequestMessage],
-        tools: Optional[list[TextGenerationRequestTool]],
-        chat_template_options: Optional[dict[str, Any]] = None,
+        tools: list[TextGenerationRequestTool] | None,
+        chat_template_options: dict[str, Any] | None = None,
     ) -> str:
         chat_template_options = chat_template_options or {
             "add_generation_prompt": True
@@ -275,12 +302,31 @@ class TextTokenizer(
             messages
         )
 
-        templated_message = self.delegate.apply_chat_template(
-            flattened_messages,
-            tokenize=False,
-            tools=tools,
-            **chat_template_options,
-        )
+        try:
+            templated_message = self.delegate.apply_chat_template(
+                flattened_messages,
+                tokenize=False,
+                tools=tools,
+                **chat_template_options,
+            )
+        except Exception as e:
+            if self._custom_template_provided:
+                # Provide additional context when a custom template is used
+                error_msg = (
+                    f"Failed to apply custom chat template. This may indicate an issue "
+                    f"with your custom prompt template. Please check your template syntax "
+                    f"and ensure it properly handles the provided messages and tools.\n\n"
+                    f"Template variables available:\n"
+                    f"- messages: List of conversation messages with 'role' and 'content' fields\n"
+                    f"- tools: List of available tools (if provided)\n"
+                    f"- add_generation_prompt: Boolean for adding generation prompt\n\n"
+                    f"Original error: {type(e).__name__}: {str(e)}"
+                )
+                raise ValueError(error_msg) from e
+            else:
+                # Re-raise the original error for default templates
+                raise
+
         assert isinstance(templated_message, str)
         return templated_message
 
@@ -293,7 +339,7 @@ class TextTokenizer(
         return False
 
     async def encode(
-        self, prompt: Union[str, Sequence[int]], add_special_tokens: bool = True
+        self, prompt: str | Sequence[int], add_special_tokens: bool = True
     ) -> npt.NDArray[np.integer[Any]]:
         """Transform the provided prompt into a token array."""
 
@@ -342,11 +388,11 @@ class TextTokenizer(
 
     async def _generate_prompt_and_token_ids(
         self,
-        prompt: Optional[Union[Sequence[int], str]],
-        messages: Optional[list[TextGenerationRequestMessage]],
-        tools: Optional[list[TextGenerationRequestTool]] = None,
-        chat_template_options: Optional[dict[str, Any]] = None,
-    ) -> tuple[Union[str, list[int]], npt.NDArray[np.integer[Any]]]:
+        prompt: Sequence[int] | str | None,
+        messages: list[TextGenerationRequestMessage] | None,
+        tools: list[TextGenerationRequestTool] | None = None,
+        chat_template_options: dict[str, Any] | None = None,
+    ) -> tuple[str | list[int], npt.NDArray[np.integer[Any]]]:
         if prompt and messages:
             raise ValueError("both prompt and messages cannot be provided.")
 
@@ -367,8 +413,8 @@ class TextTokenizer(
     async def _get_eos_variables(
         self,
         ignore_eos: bool,
-        stop_token_ids: Optional[list[int]],
-        stop: Optional[list[str]],
+        stop_token_ids: list[int] | None,
+        stop: list[str] | None,
     ) -> tuple[set[int], list[list[int]]]:
         eos_token_ids = self._default_eos_token_ids
         eos_sequences = list()
@@ -408,8 +454,6 @@ class TextTokenizer(
         max_new_tokens = None
         if request.sampling_params.max_new_tokens is not None:
             max_new_tokens = request.sampling_params.max_new_tokens
-        elif self.max_new_tokens != -1:
-            max_new_tokens = self.max_new_tokens
 
         max_gen_tokens = max_tokens_to_generate(
             len(token_ids), self.max_length, max_new_tokens
@@ -430,6 +474,10 @@ class TextTokenizer(
             model_name=request.model_name,
             target_endpoint=request.target_endpoint,
         )
+
+        for validator in self._context_validators:
+            validator(context)
+
         return context
 
     @property
@@ -489,12 +537,13 @@ class TextAndVisionTokenizer(
         *,
         revision: str | None = None,
         max_length: int | None = None,
-        max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
+        pipeline_config: PipelineConfig | None = None,
+        context_validators: list[Callable[[TextAndVisionContext], None]]
+        | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
-        self.max_new_tokens = max_new_tokens
 
         self.delegate = AutoTokenizer.from_pretrained(
             model_path,
@@ -505,6 +554,10 @@ class TextAndVisionTokenizer(
             model_max_length=max_length,
         )
         self.max_length = max_length or self.delegate.model_max_length
+
+        config = AutoConfig.from_pretrained(
+            model_path, revision=revision, trust_remote_code=trust_remote_code
+        )
 
         # As we are adding special tokens during chat templating prior to tokenization,
         # when add_special_tokens=True, we duplicate BOS tokens specifically.
@@ -518,6 +571,31 @@ class TextAndVisionTokenizer(
             model_path, revision=revision, trust_remote_code=trust_remote_code
         )
         self._default_eos_token_ids = set([self.eos])
+
+        self._context_validators = (
+            context_validators if context_validators else []
+        )
+
+        # Llama-3.2-11B-Vision uses image_token_index
+        # Qwen2.5VL uses image_token_id
+        # Pixtral uses image_token_index
+        # ...
+        vision_token_ids: list[int] = []
+        for vision_token_id_name in [
+            "image_token_id",
+            "image_token_index",
+        ]:
+            if vision_token_id := getattr(config, vision_token_id_name, None):
+                vision_token_ids.append(vision_token_id)
+        if not vision_token_ids:
+            raise ValueError("vision_token_id not found in model_config config")
+        self.vision_token_ids = vision_token_ids
+
+        # This is pixtral specific hack as it also has a image_break_token_id
+        if image_break_token_id := getattr(
+            self.processor, "image_break_token_id", None
+        ):
+            self.vision_token_ids.append(image_break_token_id)
 
     def _wrap_str_message_content(
         self, messages: list[TextGenerationRequestMessage]
@@ -559,7 +637,7 @@ class TextAndVisionTokenizer(
         return True
 
     async def encode(
-        self, prompt: Union[str, Sequence[int]], add_special_tokens: bool = True
+        self, prompt: str | Sequence[int], add_special_tokens: bool = True
     ) -> npt.NDArray[np.integer[Any]]:
         """Transform the provided prompt into a token array."""
 
@@ -596,7 +674,7 @@ class TextAndVisionTokenizer(
         self, request: TextGenerationRequest
     ) -> TextAndVisionContext:
         """Create a new TextAndVisionContext object, leveraging necessary information from TextGenerationRequest."""
-        prompt: Union[str, Sequence[int]]
+        prompt: str | Sequence[int]
         add_special_tokens = True
         if request.prompt is not None:
             prompt = request.prompt
@@ -604,8 +682,7 @@ class TextAndVisionTokenizer(
             prompt = self.apply_chat_template(request.messages)
             add_special_tokens = False
         else:
-            msg = f"{request} does not provide messages or prompt."
-            raise ValueError(msg)
+            raise ValueError(f"{request} does not provide messages or prompt.")
 
         # Load images.
         images = (
@@ -616,6 +693,7 @@ class TextAndVisionTokenizer(
             if request.images
             else None
         )
+
         # LlamaVision & InternVL returns a python list
         processed_inputs = self.processor(
             text=prompt,
@@ -625,8 +703,9 @@ class TextAndVisionTokenizer(
         )
 
         if "input_ids" not in processed_inputs:
-            msg = "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
-            raise ValueError(msg)
+            raise ValueError(
+                "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
+            )
 
         # TODO: This is a hack to support both LlamaVision, Pixtral and InternVL.
         if isinstance(processed_inputs["input_ids"][0], int):
@@ -639,8 +718,6 @@ class TextAndVisionTokenizer(
         max_new_tokens = None
         if request.sampling_params.max_new_tokens is not None:
             max_new_tokens = request.sampling_params.max_new_tokens
-        elif self.max_new_tokens != -1:
-            max_new_tokens = self.max_new_tokens
 
         max_gen_tokens = max_tokens_to_generate(
             encoded_prompt.shape[0], self.max_length, max_new_tokens
@@ -650,8 +727,9 @@ class TextAndVisionTokenizer(
 
         if images is not None:
             if "pixel_values" not in processed_inputs:
-                msg = "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
-                raise ValueError(msg)
+                raise ValueError(
+                    "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
+                )
             pixel_values = processed_inputs["pixel_values"][0]
             if isinstance(pixel_values, list):
                 pixel_values = tuple(pixel_values)
@@ -690,17 +768,41 @@ class TextAndVisionTokenizer(
         else:
             eos_token_ids = self._default_eos_token_ids
 
+        if self.max_length and encoded_prompt.shape[0] > self.max_length:
+            raise ValueError(
+                "encoded_prompt is greater than the max_length of the tokenizer"
+            )
+
+        start_and_end_idxs = find_contiguous_ranges(
+            encoded_prompt, self.vision_token_ids
+        )
+
         context = TextAndVisionContext(
             request_id=request.request_id,
             eos_token_ids=eos_token_ids,
-            pixel_values=pixel_values,
             extra_model_args=extra_model_args,
             tokens=encoded_prompt,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            sampling_params=request.sampling_params,
+            images=[
+                ImageMetadata(
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                    pixel_values=pixels,
+                )
+                for (start_idx, end_idx), pixels in zip(
+                    start_and_end_idxs, pixel_values, strict=True
+                )
+            ],
+            vision_token_ids=self.vision_token_ids,
         )
+
+        for validator in self._context_validators:
+            validator(context)
+
         return context
 
 
@@ -715,7 +817,7 @@ def _rgba_to_rgb(
     return converted
 
 
-def _convert_image_mode(image: Image.Image, to_mode: str):
+def _convert_image_mode(image: Image.Image, to_mode: str):  # noqa: ANN202
     if image.mode == to_mode:
         return image
     elif image.mode == "RGBA" and to_mode == "RGB":

@@ -16,15 +16,13 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
-from typing import Callable
+from collections.abc import Callable, Iterable
 
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
     ShardingStrategy,
     TensorValue,
-    _OpaqueValue,
     ops,
 )
 from max.nn.attention import MHAMaskVariant
@@ -38,7 +36,7 @@ from max.nn.kernels import (
     quantize_static_scaled_float8,
     rms_norm_key_cache,
 )
-from max.nn.kv_cache import KVCacheParams, PagedKVCacheCollection
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
@@ -113,7 +111,7 @@ class Gemma3Attention(Module, Shardable):
             dtype: DType of the attention inputs and weights.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used. Use
-                `DistributedAttentionWithRope` to use all devices during
+                `TensorParallelAttentionWithRope` to use all devices during
                 attention computation.
             linear_cls: Linear class to use for the outputs dense layer.
             scale: Value used to scale the results of the attention output.
@@ -270,7 +268,7 @@ class Gemma3Attention(Module, Shardable):
     def __call__(
         self,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         **kwargs,
     ) -> TensorValue:
         # Get attributes from input.
@@ -281,11 +279,6 @@ class Gemma3Attention(Module, Shardable):
         )
 
         if self.float8_config:
-            assert isinstance(kv_collection, PagedKVCacheCollection) or (
-                isinstance(kv_collection, _OpaqueValue)
-                and kv_collection.type.name == "PagedKVCacheCollection"
-            )
-
             x_scales: TensorValue
             weight_scale = self.qkv_weight_scale
             if self.float8_config.is_static:

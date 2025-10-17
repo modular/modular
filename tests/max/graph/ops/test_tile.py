@@ -22,7 +22,7 @@ shared_shapes = st.shared(shapes().filter(lambda shape: 0 not in shape))
 tensor_types_nd = tensor_types(shapes=shared_shapes)
 
 
-def valid_repeat_counts(dim):  # noqa: ANN001
+def valid_repeat_counts(dim):  # noqa: ANN001, ANN201
     if isinstance(dim, StaticDim):
         return st.integers(min_value=1, max_value=MAX_INT64 // dim.dim)
     else:
@@ -37,8 +37,10 @@ valid_repeats = shared_shapes.flatmap(
 @given(input_type=tensor_types_nd, repeats=valid_repeats)
 def test_tile__valid(input_type: TensorType, repeats: list[int]) -> None:
     with Graph("tiles", input_types=[input_type]) as graph:
-        out = ops.tile(graph.inputs[0], repeats)  # type: ignore
-        expected_shape = [dim * r for r, dim in zip(repeats, input_type.shape)]
+        out = ops.tile(graph.inputs[0].tensor, repeats)
+        expected_shape = [
+            dim * r for r, dim in zip(repeats, input_type.shape, strict=True)
+        ]
         assert out.shape == expected_shape
         graph.output(out)
 
@@ -53,8 +55,10 @@ def test_tile__valid_symbolic(
     input_type: TensorType, repeats: list[SymbolicDim]
 ) -> None:
     with Graph("tiles", input_types=[input_type]) as graph:
-        out = ops.tile(graph.inputs[0], repeats)  # type: ignore
-        expected_shape = [dim * r for r, dim in zip(repeats, input_type.shape)]
+        out = ops.tile(graph.inputs[0].tensor, repeats)
+        expected_shape = [
+            dim * r for r, dim in zip(repeats, input_type.shape, strict=True)
+        ]
         assert out.shape == expected_shape
         # TODO(AIPIPE-185): actually enable full graph verification here.
         # While the individual tile op is valid, the graph as a whole is not.
@@ -82,4 +86,4 @@ def test_tile__invalid(input_type: TensorType, repeats: list[int]) -> None:
     assume(len(input_type.shape) != 0)
     with Graph("tiles", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            out = ops.tile(graph.inputs[0], repeats)  # type: ignore
+            out = ops.tile(graph.inputs[0].tensor, repeats)

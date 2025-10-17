@@ -20,6 +20,8 @@ Improved performance compared to naive implementation
 """
 
 
+from math import ceildiv, exp
+
 from compiler import register
 from gpu.host import DeviceContext
 from gpu.id import block_idx
@@ -27,7 +29,6 @@ from layout import Layout, LayoutTensor
 from layout.math import max
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import InputTensor, OutputTensor
-from math import exp, ceildiv
 
 from utils import Index
 
@@ -190,7 +191,7 @@ fn causal_conv1d_kernel[
     var x_vals: SIMD[dtype, elements * 2]
     var out_vals: SIMD[dtype, elements] = 0
     var tmp: SIMD[dtype, width]
-    var B: SIMD[dtype, 1]
+    var B: Scalar[dtype]
     var W: SIMD[dtype, width]
     var prev_input_chunk: SIMD[dtype, elements]
     var input_chunk: SIMD[dtype, elements]
@@ -208,7 +209,7 @@ fn causal_conv1d_kernel[
     if (tidx > 0) or (chunk_id > 0):
         prev_input_chunk = rebind[__type_of(prev_input_chunk)](
             input_v[
-                batch_id * nChannels + channel_id,
+                batch_id * UInt(nChannels) + channel_id,
                 (chunk_id * kChunkSize + tidx - 1),
             ]
         )
@@ -217,7 +218,8 @@ fn causal_conv1d_kernel[
 
     input_chunk = rebind[__type_of(input_chunk)](
         input_v[
-            batch_id * nChannels + channel_id, (chunk_id * kChunkSize + tidx)
+            batch_id * UInt(nChannels) + channel_id,
+            (chunk_id * kChunkSize + tidx),
         ]
     )
 
@@ -232,7 +234,7 @@ fn causal_conv1d_kernel[
         out_vals[i] = tmp2 / (1 + exp(-tmp2))
 
     output_v[
-        batch_id * nChannels + channel_id, tidx + chunk_id * kChunkSize
+        batch_id * UInt(nChannels) + channel_id, tidx + chunk_id * kChunkSize
     ] = rebind[__type_of(output_v[0, 0])](out_vals)
 
 
@@ -264,7 +266,7 @@ def causal_conv1d_gpu[
 
     # Map the problem to the 3D grid to iterate over
     # the batch, channel and chunk the sequence length
-    ctx.enqueue_function[kernel_func, dump_asm=False](
+    ctx.enqueue_function_checked[kernel_func, kernel_func](
         input,
         weight,
         bias,

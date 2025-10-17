@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from collections import OptionalReg
 from math import ceildiv, iota
 from sys.info import simd_width_of
 
 from algorithm import elementwise
 from bit import next_power_of_two
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from runtime.tracing import Trace, TraceLevel
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from utils.index import IndexList, StaticTuple
 
@@ -122,9 +122,14 @@ fn _argsort_gpu_impl[
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
-    fn bitonic_sort_step(
-        indices: LayoutTensor[mut=True, indices.dtype, indices.layout],
-        input: LayoutTensor[mut=True, input.dtype, input.layout],
+    fn bitonic_sort_step[
+        indices_dtype: DType,
+        input_dtype: DType,
+        indices_layout: Layout,
+        input_layout: Layout,
+    ](
+        indices: LayoutTensor[indices_dtype, indices_layout, MutableAnyOrigin],
+        input: LayoutTensor[input_dtype, input_layout, MutableAnyOrigin],
         n: Int,
         step: Int,
         stage: Int,
@@ -144,9 +149,9 @@ fn _argsort_gpu_impl[
         if i >= UInt(n):
             return
 
-        var partner = i ^ step
+        var partner = i ^ UInt(step)
 
-        if partner > i and partner < n:
+        if partner > i and partner < UInt(n):
             var cmp_val: Bool
 
             @parameter
@@ -156,7 +161,7 @@ fn _argsort_gpu_impl[
                 cmp_val = Bool(input[i] < input[partner])
 
             # Determine if we are in ascending or descending part of bitonic merge.
-            var bitonic_merge_direction = (i & stage) == 0
+            var bitonic_merge_direction = (i & UInt(stage)) == 0
 
             if cmp_val == bitonic_merge_direction:
                 swap(input[i], input[partner])
@@ -168,7 +173,10 @@ fn _argsort_gpu_impl[
         var j = k // 2
         while j > 0:
             # Launch GPU kernel for each stage of the bitonic sort
-            ctx.enqueue_function[bitonic_sort_step](
+            alias kernel = bitonic_sort_step[
+                indices.dtype, input.dtype, indices.layout, input.layout
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 indices,
                 input,
                 n,
@@ -353,7 +361,10 @@ fn argsort[
         input: Buffer containing values to sort.
         ctx: Device context for execution.
     """
-    with Trace[TraceLevel.OP, target=target]("argsort"):
+    with Trace[TraceLevel.OP, target=target](
+        "argsort",
+        task_id=get_safe_task_id(ctx),
+    ):
         _validate_argsort(input, output)
 
         @parameter

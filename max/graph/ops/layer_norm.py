@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for layer_norm."""
 
-from max.mlir.dialects import mo
+from max._core.dialects import kgen, mo
 
 from .. import dtype_promotion
 from ..dim import StaticDim
@@ -70,11 +70,12 @@ def layer_norm(
 
     input, gamma = dtype_promotion._promote_weak_dtypes(input, gamma)
     input, beta = dtype_promotion._promote_weak_dtypes(input, beta)
-    return Graph.current._add_op(
-        mo.layer_norm,
+    return Graph.current._add_op_generated(
+        mo.LayerNormOp,
         input._mlir_value.type,
         input,
         gamma,
         beta,
         constant(epsilon, input.dtype, DeviceRef.CPU()),
+        kgen.ParamDeclArrayAttr([]),
     )[0].tensor

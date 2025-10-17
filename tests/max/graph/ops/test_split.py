@@ -17,10 +17,11 @@ import re
 import pytest
 from conftest import (
     GraphBuilder,
+    axes_of,
     new_axes,
-    non_static_axes,
     shapes,
     static_dims,
+    symbolic_dims,
     tensor_types,
 )
 from hypothesis import assume, given
@@ -29,9 +30,12 @@ from max.dtype import DType
 from max.graph import DeviceRef, Dim, StaticDim, TensorType, ops
 
 shared_shapes = st.shared(shapes())
+shared_shapes_with_symbolic_dim = st.shared(
+    shapes(include_dims=[symbolic_dims], min_rank=1)
+)
 
 
-def with_dim(base_type: TensorType, dim: Dim, axis: int):
+def with_dim(base_type: TensorType, dim: Dim, axis: int):  # noqa: ANN201
     # Create a tensor with a static dimension on the specified axis
     # If negative, update the axis for the new dim
     return TensorType(
@@ -66,7 +70,7 @@ def test_split_valid_inputs(
         output = ops.split(graph.inputs[0].tensor, split_sizes, axis)
         assert len(output) == len(split_sizes)
 
-        for out_value, size in zip(output, split_sizes):
+        for out_value, size in zip(output, split_sizes, strict=True):
             expected_shape = list(input_type.shape)
             expected_shape[axis] = size
             assert out_value.shape == expected_shape
@@ -133,9 +137,12 @@ def test_split__splits_dont_sum_to_dim(
 
 
 @given(
-    input_type=tensor_types(shapes=shared_shapes),
+    input_type=tensor_types(shapes=shared_shapes_with_symbolic_dim),
     split_sizes=shapes(dims=static_dims()),
-    axis=non_static_axes(shared_shapes),
+    axis=axes_of(
+        shared_shapes_with_symbolic_dim,
+        lambda dim: not isinstance(dim, StaticDim),
+    ),
 )
 def test_split__non_static_dim(
     graph_builder: GraphBuilder,
@@ -143,7 +150,7 @@ def test_split__non_static_dim(
     split_sizes: list[StaticDim],
     axis: int,
 ) -> None:
-    assume(not isinstance(input_type.shape[axis], StaticDim))
+    assert not isinstance(input_type.shape[axis], StaticDim)
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(Exception):
             ops.split(graph.inputs[0].tensor, split_sizes, axis)
@@ -197,7 +204,7 @@ def test_invalid_split_full_error_message(graph_builder: GraphBuilder) -> None:
     axis = 0
     input_type = TensorType(DType.float32, input_shape, device=DeviceRef.CPU())
     with graph_builder(input_types=[input_type]) as graph:
-        expected_message = "Split sizes must sum to dimension value; x.shape[axis]=Dim(15) != sum(split_sizes=[Dim(10), Dim(6)])"
+        expected_message = "Split sizes must sum to dimension value; x.shape[axis]=Dim(15) != sum(sizes=[10, 6])"
         with pytest.raises(ValueError, match=re.escape(expected_message)):
             ops.split(graph.inputs[0].tensor, split_sizes, axis)
 
@@ -221,8 +228,6 @@ def test_negative_split_size_full_error_message(
     axis = 0
     input_type = TensorType(DType.float32, input_shape, device=DeviceRef.CPU())
     with graph_builder(input_types=[input_type]) as graph:
-        expected_message = (
-            "Split sizes must be positive: split_sizes=[Dim(10), Dim(-6)]"
-        )
+        expected_message = "Split sizes must be positive: sizes=[10, -6]"
         with pytest.raises(ValueError, match=re.escape(expected_message)):
             ops.split(graph.inputs[0].tensor, split_sizes, axis)

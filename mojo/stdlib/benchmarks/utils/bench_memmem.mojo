@@ -159,7 +159,7 @@ fn _memmem_baseline[
     if needle_len == 1:
         return _memchr(
             Span[Scalar[dtype], ImmutableAnyOrigin](
-                ptr=haystack.origin_cast[mut=False](), length=haystack_len
+                ptr=haystack.as_immutable(), length=UInt(haystack_len)
             ),
             needle[0],
         )
@@ -218,7 +218,7 @@ fn bench_find_optimized(mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn():
-        _ = _memmem(haystack.as_bytes(), needle.as_bytes())
+        _ = _memmem(local_haystack.as_bytes(), local_needle.as_bytes())
 
     b.iter[call_fn]()
 

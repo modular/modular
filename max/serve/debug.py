@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import functools
 import logging
+from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
-from typing import Any, Callable, ClassVar, Union
+from typing import Any, ClassVar
 
 from fastapi import FastAPI, Request
 from pydantic import Field
@@ -55,7 +56,7 @@ class ProfileFormat(ProfileFormatMetadata, Enum):
 
     @lru_cache
     @staticmethod
-    def members():
+    def members():  # noqa: ANN205
         return {member.label: member for member in ProfileFormat}
 
     @classmethod
@@ -70,7 +71,7 @@ class ProfileFormat(ProfileFormatMetadata, Enum):
 class ProfileSession:
     DEFAULT_INTERVAL_SECS: ClassVar[float] = 0.001
 
-    request_id: Union[str, None] = None  # Empty when not profiling.
+    request_id: str | None = None  # Empty when not profiling.
 
     interval: float = DEFAULT_INTERVAL_SECS
     profile_format: ProfileFormat = field(
@@ -78,7 +79,7 @@ class ProfileSession:
     )
 
     @classmethod
-    def default_profiler(cls):
+    def default_profiler(cls):  # noqa: ANN206
         # "disabled" is actually the only async_mode that records coroutine
         # frames across all (vs. just one) event loops.
         return Profiler(
@@ -89,7 +90,7 @@ class ProfileSession:
 PROFILE_SESSION_VAR = ContextVar("profile_session", default=ProfileSession())  # noqa: B039
 
 
-def profile_in_session():
+def profile_in_session():  # noqa: ANN201
     return PROFILE_SESSION_VAR.get().request_id is not None
 
 
@@ -103,7 +104,7 @@ def write_profile(profiler: Profiler, session: ProfileSession) -> None:
         out.write(profiler.output(renderer=profile_format.renderer_cls()))
 
 
-async def profile_call(profiler: Profiler, call: Callable):
+async def profile_call(profiler: Profiler, call: Callable):  # noqa: ANN201
     session = PROFILE_SESSION_VAR.get()
     if not session.request_id:
         # Not currently profiling.
@@ -123,7 +124,7 @@ def register_debug(app: FastAPI, settings: DebugSettings) -> None:
         profiler = ProfileSession.default_profiler()
 
         @app.middleware("http")
-        async def profile_session(request: Request, call_next: Callable):
+        async def profile_session(request: Request, call_next: Callable):  # noqa: ANN202
             params = request.query_params
             profiling = params.get("profile", False)
 

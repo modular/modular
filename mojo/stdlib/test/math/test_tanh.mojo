@@ -16,7 +16,7 @@ from random import randn, seed
 
 from buffer import NDBuffer
 from test_utils import compare, libm_call
-from testing import assert_almost_equal
+from testing import assert_almost_equal, TestSuite
 
 
 fn tanh_libm[
@@ -180,8 +180,9 @@ def test_direct():
     )
 
 
+def test_tanh_libm_wrapper():
+    test_tanh_libm[]()
+
+
 def main():
-    test_direct()
-    test_tanh_tfvals_fp32()
-    test_tanh_tfvals_fp64()
-    test_tanh_libm()
+    TestSuite.discover_tests[__functions_in_module()]().run()

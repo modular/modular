@@ -41,7 +41,7 @@ print(info)
 from collections.string.string_slice import _get_kgen_string
 from os import PathLike
 from pathlib import Path
-from sys.info import _current_target, _TargetType, CompilationTarget
+from sys.info import CompilationTarget, _current_target, _TargetType
 
 from .reflection import get_linkage_name
 
@@ -64,6 +64,7 @@ struct _Info:
     var asm: __mlir_type.`!kgen.string`
     var module_name: __mlir_type.`!kgen.string`
     var num_captures: __mlir_type.index
+    var capture_sizes: UnsafePointer[UInt64]
 
 
 @register_passable("trivial")
@@ -112,6 +113,9 @@ struct CompiledFunctionInfo[
 
     var num_captures: Int
     """Number of variables captured by the function closure."""
+
+    var capture_sizes: UnsafePointer[UInt64]
+    """Pointer to the sizes of the variables captured by the function closure."""
 
     alias populate = rebind[fn (OpaquePointer) capturing -> None](
         __mlir_attr[
@@ -268,7 +272,8 @@ fn compile_info[
 
     return CompiledFunctionInfo[func_type, func, target](
         asm=StaticString(offload.asm),
-        function_name=get_linkage_name[target, func](),
+        function_name=get_linkage_name[func, target=target](),
         module_name=StaticString(offload.module_name),
         num_captures=Int(mlir_value=offload.num_captures),
+        capture_sizes=offload.capture_sizes,
     )

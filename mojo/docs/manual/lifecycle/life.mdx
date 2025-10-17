@@ -12,14 +12,13 @@ destroyed](/mojo/manual/lifecycle/death).)
 
 All data types in Mojo—including basic types in the standard library such as
 [`Bool`](/mojo/stdlib/builtin/bool/Bool), [`Int`](/mojo/stdlib/builtin/int/Int),
-and [`String`](/mojo/stdlib/collections/string/string/String), up to complex
-types such as [`SIMD`](/mojo/stdlib/builtin/simd/SIMD)—are defined as
+and [`String`](/mojo/stdlib/collections/string/string/String)—are defined as
 [structs](/mojo/manual/structs). This means the creation and destruction of any
 piece of data follows the same lifecycle rules, and you can define your own data
 types that work exactly the same way.
 
 Mojo structs don't get any default lifecycle methods, such as a
-constructor, copy constructor, or move constructor. That means you can create
+constructor, copy constructor, or move constructor. That means you can define
 a struct without a constructor, but then you can't instantiate it, and it
 would be useful only as a sort of namespace for static methods. For example:
 
@@ -208,7 +207,7 @@ var b = Target(a)
 ```
 
 In general, types should only support implicit conversions when the conversion
-lossless, and ideally inexpensive. For example, converting an integer to a
+is lossless, and ideally inexpensive. For example, converting an integer to a
 floating-point number is usually lossless (except for very large positive and
 negative integers, where the conversion may be approximate), but converting a
 floating-point number to an integer is very likely to lose information. So
@@ -282,35 +281,28 @@ def main():
 
 ## Copy constructor
 
-A Mojo type is *copyable* if one of the following is true:
-
-- It has a copy constructor.
-- It's a [trivial type](#trivial-types) like `Int`, which is trivially copyable
-  and movable.
-
-Just like the `+` and `-` [operators invoke special
-methods](/mojo/manual/operators#implement-operators-for-custom-types) for
-adjacent types, so does the `=` sign. In specific circumstances, the `=` sign
-will try to make a copy of the right-side value by calling upon that type's
-copy constructor: the `__copyinit__()` method.
-
-For example, the `MyPet` type above does not have a copy constructor,
-so this code fails to compile:
+In Mojo, a value can be copied either *explicitly* or  *implicitly*:
 
 ```mojo
-var mine = MyPet("Loki", 4)  # Calls the MyPet constructor
-var yours = mine  # Tries to make a copy, but MyPet has no copy constructor
+# Explicit copy
+var s = "Test string"
+var s2 = s.copy()
+
+# Implicit copy
+var i = 15
+var i2 = i
 ```
 
-To make a struct copyable, you need to:
+To make a struct explicitly copyable, you need to:
 
 - Add the `Copyable` trait.
 - (Optionally) define a custom `__copyinit__()` method if needed.
 
 If you simply add the `Copyable` trait, Mojo will generate a default
 `__copyinit__()` method for you, which copies each field of the existing value
-into the new value. The following example shows what the default copy
-constructor would look like for `MyPet`:
+into the new value. The `Copyable` trait also defines a default `copy()` method, which
+provides a more user-friendly way to copy a value than invoking the
+copy constructor directly.
 
 ```mojo
 @fieldwise_init
@@ -323,7 +315,7 @@ Now this code works to make a copy:
 
 ```mojo
 var mine = MyPet("Loki", 4)
-var yours = mine
+var yours = mine.copy()
 ```
 
 :::note
@@ -428,13 +420,13 @@ here:
 ```mojo
 fn copies():
     var a = HeapArray(2, 1)
-    var b = a    # Calls the copy constructor
-    a.dump()     # Prints [1, 1]
-    b.dump()     # Prints [1, 1]
+    var b = a.copy()  # Calls the copy constructor
+    a.dump()  # Prints [1, 1]
+    b.dump()  # Prints [1, 1]
 
     b.append(2)  # Changes the copied data
-    b.dump()     # Prints [1, 1, 2]
-    a.dump()     # Prints [1, 1] (the original did not change)
+    b.dump()  # Prints [1, 1, 2]
+    a.dump()  # Prints [1, 1] (the original did not change)
 ```
 
 Two other things to note from the `__copyinit__()` method:
@@ -475,94 +467,63 @@ sigil `^`), then Mojo instead invokes the move constructor.
 
 :::
 
-### Explicitly copyable types
+### Implicitly-copyable types
 
-If you want to avoid accidental copies at all costs, but want to allow users to
-copy your type intentionally, you can omit the copy constructor and `Copyable`
-trait, and implement the
-[`ExplicitlyCopyable`](/mojo/stdlib/builtin/value/ExplicitlyCopyable/) trait
-instead, which describes a type that can be explicitly copied by calling its
-`copy()` method.
-
-This can be useful for types that dynamically allocate memory, where you want to
-be very intentional about when you make a deep copy of the value.
-
-Likewise, when designing a collection type, you could require the collection
-elements to be `ExplicitlyCopyable` rather than `Copyable`. For example, the
-following container stores a single element, which must be `ExplictlyCopyable`
-and `Movable`:
+To make a type *implicitly copyable*, add the `ImplicitlyCopyable` trait:
 
 ```mojo
-struct ExplicitCopyOnly[ElementType: ExplicitlyCopyable & Movable](
-    ExplicitlyCopyable, Movable
-):
-    var ptr: UnsafePointer[ElementType]
+@fieldwise_init
+struct MyPair(ImplicitlyCopyable, Movable):
+    var first: Int
+    var second: Int
 
-    fn __init__(out self, var elt: ElementType):
-        """Constructs a new container, storing the given value."""
-        self.ptr = UnsafePointer[ElementType].alloc(1)
-        self.ptr.init_pointee_move(elt^)
-
-    fn copy(self) -> Self:
-        """Performs a deep copy of this container."""
-        elt_copy = self.ptr[].copy()
-        copy = Self(elt_copy^)
-        return copy^
-
-    fn __getitem__(ref self) -> ref [self] ElementType:
-        """Returns a reference to the stored value."""
-        return self.ptr[]
+def main():
+    pair = MyPair(3, 4)
+    copy = pair
+    print(pair.first, copy.second)
 ```
 
-You can construct and use the container like this:
+The `ImplicitlyCopyable` trait inherits from `Copyable`, so adding
+`ImplicitlyCopyable` to your type gives you a copy constructor and a default `copy()`
+method. The trait doesn't define any methods of its own: it serves as a signal
+to the compiler that it can insert calls to `__copyinit__()` as needed. For
+example, in the previous example, the compiler might generate code equivalent
+to:
 
 ```mojo
-    big = BigExpensiveStruct()
-    original = ExplicitCopyOnly(big^)
-    copy = original.copy()
+pair = MyPair(3, 4)
+copy = MyPair.__copyinit__(pair)
 ```
 
-Because it's explicitly copyable, you can't accidentally trigger a deep copy of
-the container and its `BigExpensiveStruct`:
+A type should be implicitly copyable only if copying the type is inexpensive and
+has no side effects. Unnecessary copies can be a big drain on memory and
+performance, so use this trait with caution.
 
-```mojo
-implicit_copy = original
-```
-
-```output
-error: 'ExplicitCopyOnly[BigExpensiveStruct]' is not implicitly copyable because
-it does not conform to 'ImplicitlyCopyable'
-```
-
-Note that a type can be *both* `Copyable` and `ExplicitlyCopyable`. If your type
-is already `Copyable`, you can get explicit copyability for free by adding the
-`ExplicitlyCopyable` trait. In this case, the compiler adds a trivial
-implementation of `copy()`, which calls the copy constructor. This lets you
-use the type with any generic function or struct that requires the
-`ExplicitlyCopyable` trait.
+In particular, any type that dynamically allocates memory or manages other
+resources probably shouldn't be implicitly copyable.
 
 ## Move constructor
-
-A type is *moveable* if one of the following is true:
-
-- It has a move constructor.
-- It's a [register-passable type](/mojo/manual/decorators/register-passable) or
-  [trivial type](#trivial-types) like `Int`. These types can be moved without a
-  custom move constructor.
 
 Although copying values provides predictable behavior that matches Mojo's
 [value semantics](/mojo/manual/values/value-semantics), copying some data
 types can be a significant hit on performance.
 
 Mojo uses the move constructor to transfer ownership of a value from one
-variable to another, **without** copying its fields.
+variable to another, **without** copying its fields. A value that's copyable
+but doesn't have a move constructor can still be transferred by making a copy
+and then discarding the original. So in this case, the move constructor serves
+as an optimization.
 
-To add a move constructor to a type:
+To make a type *movable*:
 
 - Add the `Movable` trait.
 - (Optionally) implement a custom `__moveinit__()` method.
 
-So here's a movable version of the `MyPet` struct:
+Note that [register-passable values](/mojo/manual/decorators/register-passable)
+types are automatically movable, and **cannot** define a custom `__moveinit__()`
+method.
+
+Here's a movable version of the `MyPet` struct:
 
 ```mojo
 @fieldwise_init
@@ -650,7 +611,7 @@ value from one variable to another when the original variable's lifetime ends
 (also called a "destructive move").
 
 A critical feature of `__moveinit__()` is that it takes the incoming value as
-`var`, meaning this method gets unique ownership of the value. Moreover,
+a `deinit` argument, meaning this method gets unique ownership of the value. Moreover,
 because this is a dunder method that Mojo calls only when performing a move
 (during ownership transfer), the `existing` argument is guaranteed to be a
 mutable reference to the original value, *not a copy* (unlike other methods that
@@ -676,24 +637,6 @@ ownership of a stored value, the `OwnedPointer` can be moved, but not copied.
 In some (rare) cases, you may not want a type to be copyable *or* movable. The
 [`Atomic`](/mojo/stdlib/os/atomic/Atomic/) type is an example of a type that's
 neither copyable or movable.
-
-## Simple value types {#simple-value-types}
-
-Up to version 25.5, Mojo provided a `@value` decorator that generated a
-field-wise constructor, copy constructor, and move constructor for a struct.
-Because users frequently want to take advantage of just one or two of these
-generated methods, the `@value` decorator was deprecated in v25.5 in favor of
-separate mechanisms:
-
-- For a field-wise constructor, use the `@fieldwise_init` decorator as described
-  in the section on [constructors](#constructor).
-
-- For a default copy constructor, use the `Copyable` trait, as described in the
-  section on [copy constructors](#copy-constructor).
-
-- For a default move constructor, use the `Movable` trait, as described in the
-  section on [move constructors](#move-constructor).
-
 
 ## Trivial types
 
@@ -730,11 +673,18 @@ it is safe to ignore for general application-level code.
 For more information, see the [`@register_passable`
 documentation](/mojo/manual/decorators/register-passable).
 
-:::note TODO
+### Trivial lifecycle methods
 
-This decorator is due for reconsideration.  Lack of custom
-copy/move/destroy logic and "passability in a register" are orthogonal concerns
-and should be split.  This former logic should be subsumed into a more general
-decorator, which is orthogonal to `@register_passable`.
+The use of a decorator to identify trivial types will be phased out in favor
+of a more granular set of aliases, which are boolean flags set by the compiler:
 
-:::
+- The `Copyable` trait defines the alias `__copyinit__is_trivial`, which is an
+  optimization hint that guarantees that the value can be copied by its bits
+  from one location to another without causing any side effects.
+
+- The `Movable` trait defines the alias `__moveinit__is_trivial`, which is an
+  optimization hint that guarantees that the value can be moved by its bits
+  from one location to another without causing any side effects.
+
+- The `AnyType` trait defines the alias `__del__is_trivial`, which is a hint
+  that the `__del__()` method is a no-op.

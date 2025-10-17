@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Any
 
 from max.driver import Device, Tensor
 from max.engine import InferenceSession, Model
@@ -54,7 +55,8 @@ class WhisperInputs(ModelInputs):
     decoder_input_ids: Tensor
 
 
-class Whisper(PipelineModel):
+# TODO: Need specific Context type, not just this base type.
+class Whisper(PipelineModel[Any]):
     def __init__(
         self,
         pipeline_config: PipelineConfig,

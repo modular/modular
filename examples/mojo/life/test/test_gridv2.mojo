@@ -26,8 +26,8 @@ def grid4x4() -> Grid[4, 4]:
     grid = Grid[4, 4]()
     for row in range(4):
         for col in range(4):
-            grid[row, col] = data4x4[row][col]
-    return grid
+            grid[row, col] = materialize[data4x4]()[row][col]
+    return grid^
 
 
 def test_gridv2_init():
@@ -43,7 +43,7 @@ def test_gridv2_index():
     grid = grid4x4()
     for row in range(4):
         for col in range(4):
-            assert_equal(data4x4[row][col], grid[row, col])
+            assert_equal(materialize[data4x4]()[row][col], grid[row, col])
             grid[row, col] = 1
             assert_equal(Int8(1), grid[row, col])
             grid[row, col] = 0

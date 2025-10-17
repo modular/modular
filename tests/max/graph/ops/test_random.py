@@ -60,7 +60,7 @@ def test_random__static_seed_out_of_bounds(like: TensorType, seed: int) -> None:
 @given(like=supported_tensor_types)
 def test_random__dynamic_seed(like: TensorType) -> None:
     with Graph("dynamic_seed", input_types=[ops.random.SeedType]) as graph:
-        ops.random.set_seed(graph.inputs[0])  # type: ignore
+        ops.random.set_seed(graph.inputs[0].tensor)
         result = ops.random.uniform(like)
     assert result.type == like
 
@@ -70,19 +70,19 @@ def test_random__dynamic_seed__bad_seed_type() -> None:
         "bad_seed", input_types=[TensorType(DType.float32, [], DeviceRef.CPU())]
     ) as graph:
         with pytest.raises(TypeError):
-            ops.random.set_seed(graph.inputs[0])  # type: ignore
+            ops.random.set_seed(graph.inputs[0].tensor)
 
     with Graph(
         "bad_seed", input_types=[TensorType(DType.int64, [2], DeviceRef.CPU())]
     ) as graph:
         with pytest.raises(Exception):
-            ops.random.set_seed(graph.inputs[0])  # type: ignore
+            ops.random.set_seed(graph.inputs[0].tensor)
 
 
 @given(like=supported_tensor_types)
 def test_gaussian(like: TensorType) -> None:
     with Graph("gaussian", input_types=[ops.random.SeedType]) as graph:
-        ops.random.set_seed(graph.inputs[0])  # type: ignore
+        ops.random.set_seed(graph.inputs[0].tensor)
         result = ops.random.gaussian(like)
     assert result.type == like
 
@@ -93,7 +93,7 @@ def test_gaussian__parameterized(
 ) -> None:
     assume(std != 0)
     with Graph("gaussian", input_types=[ops.random.SeedType]) as graph:
-        ops.random.set_seed(graph.inputs[0])  # type: ignore
+        ops.random.set_seed(graph.inputs[0].tensor)
         result = ops.random.gaussian(like, mean=mean, std=std)
     assert result.type == like
 
@@ -102,7 +102,7 @@ def test_gaussian__parameterized(
 @given(like=supported_tensor_types, mean=...)
 def test_gaussian__zero_std(like: TensorType, mean: float) -> None:
     with Graph("gaussian", input_types=[ops.random.SeedType]) as graph:
-        ops.random.set_seed(graph.inputs[0])  # type: ignore
+        ops.random.set_seed(graph.inputs[0].tensor)
         with pytest.raises(Exception):
             result = ops.random.gaussian(like, mean=mean, std=0)
 
@@ -110,7 +110,7 @@ def test_gaussian__zero_std(like: TensorType, mean: float) -> None:
 @given(like=supported_tensor_types)
 def test_uniform(like: TensorType) -> None:
     with Graph("uniform", input_types=[ops.random.SeedType]) as graph:
-        ops.random.set_seed(graph.inputs[0])  # type: ignore
+        ops.random.set_seed(graph.inputs[0].tensor)
         result = ops.random.uniform(like)
     assert result.type == like
 
@@ -121,7 +121,7 @@ def test_uniform__parameterized(
 ) -> None:
     assume(range[0] < range[1])
     with Graph("uniform", input_types=[ops.random.SeedType]) as graph:
-        ops.random.set_seed(graph.inputs[0])  # type: ignore
+        ops.random.set_seed(graph.inputs[0].tensor)
         try:
             result = ops.random.uniform(like, range=range)
         except ValueError as e:
@@ -136,7 +136,7 @@ def test_uniform__parameterized(
 @given(like=supported_tensor_types, lower=...)
 def test_uniform__zero_range(like: TensorType, lower: float) -> None:
     with Graph("gaussian", input_types=[ops.random.SeedType]) as graph:
-        ops.random.set_seed(graph.inputs[0])  # type: ignore
+        ops.random.set_seed(graph.inputs[0].tensor)
         with pytest.raises(Exception):
             result = ops.random.uniform(like, range=(lower, lower))
 
@@ -148,7 +148,7 @@ def test_uniform__inverted_range(
 ) -> None:
     assume(range[0] > range[1])
     with Graph("gaussian", input_types=[ops.random.SeedType]) as graph:
-        ops.random.set_seed(graph.inputs[0])  # type: ignore
+        ops.random.set_seed(graph.inputs[0].tensor)
         with pytest.raises(Exception):
             result = ops.random.uniform(like, range=range)
 

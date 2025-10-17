@@ -29,7 +29,7 @@ from max.graph import DeviceRef, Graph, StaticDim, TensorType, ops
 )
 def test_stack(type: TensorType, stack_size: int, axis: int) -> None:
     with Graph("stack", input_types=[type] * stack_size) as graph:
-        out = ops.stack(graph.inputs, axis)  # type: ignore
+        out = ops.stack((v.tensor for v in graph.inputs), axis)
         target_shape = list(type.shape)
         target_shape.insert(
             axis + type.rank + 1 if axis < 0 else axis, StaticDim(stack_size)
@@ -43,7 +43,7 @@ def test_stack_error_with_empty_list() -> None:
         with pytest.raises(
             ValueError, match="Expected at least one value to stack"
         ):
-            ops.stack(graph.inputs)  # type: ignore
+            ops.stack(v.tensor for v in graph.inputs)
 
 
 def test_stack_error_with_different_ranks() -> None:
@@ -61,7 +61,7 @@ def test_stack_error_with_different_ranks() -> None:
         with pytest.raises(
             ValueError, match="All inputs to stack must be the same rank"
         ):
-            ops.stack(graph.inputs)  # type: ignore
+            ops.stack(v.tensor for v in graph.inputs)
 
 
 def test_stack_error_with_different_dtypes() -> None:
@@ -77,7 +77,7 @@ def test_stack_error_with_different_dtypes() -> None:
         with pytest.raises(
             ValueError, match="All inputs to stack must have the same dtype"
         ):
-            ops.stack(graph.inputs)  # type: ignore
+            ops.stack(v.tensor for v in graph.inputs)
 
 
 def test_stack_error_with_different_devices() -> None:
@@ -95,7 +95,7 @@ def test_stack_error_with_different_devices() -> None:
         with pytest.raises(
             ValueError, match="All inputs to stack must have the same device"
         ):
-            ops.stack(graph.inputs)  # type: ignore
+            ops.stack(v.tensor for v in graph.inputs)
 
 
 shared_static_dim = st.shared(static_dims())
@@ -120,7 +120,7 @@ def test_stack_error_with_many_different_shapes(
         with pytest.raises(
             ValueError, match="All inputs to stack must be the same rank"
         ):
-            ops.stack(graph.inputs)  # type: ignore
+            ops.stack(v.tensor for v in graph.inputs)
 
 
 @given(
@@ -137,13 +137,13 @@ def test_stack_error_with_many_different_dtypes(
         with pytest.raises(
             ValueError, match="All inputs to stack must have the same dtype"
         ):
-            ops.stack(graph.inputs)  # type: ignore
+            ops.stack(v.tensor for v in graph.inputs)
 
 
 shared_shapes_rank_gt_0 = st.shared(shapes(min_rank=1))
 
 
-def invalid_axes(rank: int):
+def invalid_axes(rank: int):  # noqa: ANN201
     lower_bound, upper_bound = -(rank + 1), rank
     return st.one_of(
         st.integers(max_value=lower_bound - 1),
@@ -164,4 +164,4 @@ def test_stack_error_with_axis_out_of_bounds(
 ) -> None:
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(IndexError, match="Axis out of range"):
-            ops.stack([graph.inputs[0]], axis=invalid_axis)  # type: ignore
+            ops.stack([graph.inputs[0].tensor], axis=invalid_axis)

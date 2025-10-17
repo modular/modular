@@ -20,23 +20,23 @@ from memory import Span
 ```
 """
 
-from algorithm import vectorize
+from builtin._location import __call_location
+from collections._index_normalization import normalize_index
 from sys import align_of
 from sys.info import simd_width_of
 
-from collections._index_normalization import normalize_index
+from algorithm import vectorize
 from memory import Pointer
 
 
 @fieldwise_init
 struct _SpanIter[
     mut: Bool, //,
-    T: ExplicitlyCopyable & Movable,
+    T: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = align_of[T](),
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """Iterator for Span.
 
     Parameters:
@@ -45,16 +45,15 @@ struct _SpanIter[
         origin: The origin of the `Span`.
         forward: The iteration direction. False is backwards.
         address_space: The address space associated with the underlying allocated memory.
-        alignment: The minimum alignment of the underlying pointer known statically.
 
     """
 
     var index: Int
-    var src: Span[T, origin, address_space=address_space, alignment=alignment]
+    var src: Span[T, origin, address_space=address_space]
 
     @always_inline
     fn __iter__(self) -> Self:
-        return self
+        return self.copy()
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -80,12 +79,11 @@ struct _SpanIter[
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
-    T: ExplicitlyCopyable & Movable,
+    T: Copyable & Movable,
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = align_of[T](),
-](ExplicitlyCopyable, Copyable, Movable, Sized, Boolable, Defaultable):
+](Boolable, Defaultable, ImplicitlyCopyable, Movable, Sized):
     """A non-owning view of contiguous data.
 
     Parameters:
@@ -93,7 +91,6 @@ struct Span[
         T: The type of the elements in the span.
         origin: The origin of the Span.
         address_space: The address space associated with the allocated memory.
-        alignment: The minimum alignment of the underlying pointer known statically.
     """
 
     # Aliases
@@ -106,7 +103,6 @@ struct Span[
         mut=mut,
         origin=origin,
         address_space=address_space,
-        alignment=alignment,
     ]
     """The UnsafePointer type that corresponds to this `Span`."""
     # Fields
@@ -159,8 +155,7 @@ struct Span[
         self._data = (
             list.unsafe_ptr()
             .address_space_cast[address_space]()
-            .static_alignment_cast[alignment]()
-            .origin_cast[mut, origin]()
+            .unsafe_origin_cast[origin]()
         )
         self._len = list._len
 
@@ -182,8 +177,7 @@ struct Span[
             UnsafePointer(to=array)
             .bitcast[T]()
             .address_space_cast[address_space]()
-            .static_alignment_cast[alignment]()
-            .origin_cast[mut, origin]()
+            .unsafe_origin_cast[origin]()
         )
         self._len = size
 
@@ -237,40 +231,26 @@ struct Span[
     @always_inline
     fn __iter__(
         self,
-    ) -> _SpanIter[
-        T,
-        origin,
-        address_space=address_space,
-        alignment=alignment,
-    ]:
+    ) -> _SpanIter[T, origin, address_space=address_space,]:
         """Get an iterator over the elements of the `Span`.
 
         Returns:
             An iterator over the elements of the `Span`.
         """
-        return _SpanIter[
-            address_space=address_space,
-            alignment=alignment,
-        ](0, self)
+        return _SpanIter[address_space=address_space](0, self)
 
     @always_inline
     fn __reversed__(
         self,
-    ) -> _SpanIter[
-        T,
-        origin,
-        forward=False,
-        address_space=address_space,
-        alignment=alignment,
-    ]:
+    ) -> _SpanIter[T, origin, forward=False, address_space=address_space,]:
         """Iterate backwards over the `Span`.
 
         Returns:
             A reversed iterator of the `Span` elements.
         """
-        return _SpanIter[
-            forward=False, address_space=address_space, alignment=alignment
-        ](len(self), self)
+        return _SpanIter[forward=False, address_space=address_space](
+            len(self), self
+        )
 
     # ===------------------------------------------------------------------===#
     # Trait implementations
@@ -292,7 +272,6 @@ struct Span[
             Scalar[dtype],
             origin,
             address_space=address_space,
-            alignment=alignment,
         ],
         value: Scalar[dtype],
     ) -> Bool:
@@ -423,16 +402,30 @@ struct Span[
         """
         return rebind[Self.Immutable](self)
 
+    @always_inline
+    fn unsafe_get(self, idx: Some[Indexer]) -> ref [origin, address_space] T:
+        """Get a reference to the element at `index` without bounds checking.
+
+        Args:
+            idx: The index of the element to get.
+
+        Safety:
+            - This function does not do bounds checking and assumes the provided
+            index is in: [0, len(self)). Not upholding this contract will result
+            in undefined behavior.
+            - This function does not support wraparound for negative indices.
+        """
+        debug_assert(
+            0 <= index(idx) < len(self),
+            "Index out of bounds: ",
+            index(idx),
+        )
+        return self._data[idx]
+
     @always_inline("builtin")
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[
-        T,
-        mut=mut,
-        origin=origin,
-        address_space=address_space,
-        alignment=alignment,
-    ]:
+    ) -> UnsafePointer[T, mut=mut, origin=origin, address_space=address_space,]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:
@@ -453,22 +446,21 @@ struct Span[
 
     @always_inline
     fn copy_from[
-        origin: MutableOrigin, other_alignment: Int, //
-    ](
-        self: Span[T, origin, alignment=alignment],
-        other: Span[T, _, alignment=other_alignment],
-    ):
+        _origin: MutableOrigin, //
+    ](self: Span[T, _origin], other: Span[T, _],):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
 
         Parameters:
-            origin: The inferred mutable origin of the data within the Span.
-            other_alignment: The inferred alignment of the data within the Span.
+            _origin: The inferred mutable origin of the data within the Span.
 
         Args:
             other: The `Span` to copy all elements from.
         """
-        debug_assert(len(self) == len(other), "Spans must be of equal length")
+        debug_assert(
+            len(self) == len(other),
+            "Spans must be of equal length",
+        )
         for i in range(len(self)):
             self[i] = other[i].copy()
 
@@ -486,17 +478,13 @@ struct Span[
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
     fn __eq__[
-        T: EqualityComparable & Copyable & Movable, rhs_alignment: Int, //
-    ](
-        self: Span[T, origin, alignment=alignment],
-        rhs: Span[T, _, alignment=rhs_alignment],
-    ) -> Bool:
+        _T: EqualityComparable & Copyable & Movable, //,
+    ](self: Span[_T, origin], rhs: Span[_T, _],) -> Bool:
         """Verify if span is equal to another span.
 
         Parameters:
-            T: The type of the elements in the span. Must implement the
+            _T: The type of the elements must implement the
               traits `EqualityComparable`, `Copyable` and `Movable`.
-            rhs_alignment: The inferred alignment of the rhs span.
 
         Args:
             rhs: The span to compare against.
@@ -519,12 +507,12 @@ struct Span[
 
     @always_inline
     fn __ne__[
-        T: EqualityComparable & Copyable & Movable, //
-    ](self: Span[T, origin, alignment=alignment], rhs: Span[T]) -> Bool:
+        _T: EqualityComparable & Copyable & Movable, //
+    ](self: Span[_T, origin], rhs: Span[_T]) -> Bool:
         """Verify if span is not equal to another span.
 
         Parameters:
-            T: The type of the elements in the span. Must implement the
+            _T: The type of the elements in the span. Must implement the
               traits `EqualityComparable`, `Copyable` and `Movable`.
 
         Args:
@@ -535,14 +523,12 @@ struct Span[
         """
         return not self == rhs
 
-    fn fill[
-        origin: MutableOrigin, //
-    ](self: Span[T, origin, alignment=alignment], value: T):
+    fn fill[_origin: MutableOrigin, //](self: Span[T, _origin], value: T):
         """
         Fill the memory that a span references with a given value.
 
         Parameters:
-            origin: The inferred mutable origin of the data within the Span.
+            _origin: The inferred mutable origin of the data within the Span.
 
         Args:
             value: The value to assign to each element.
@@ -550,9 +536,33 @@ struct Span[
         for ref element in self:
             element = value.copy()
 
-    fn swap_elements(
-        self: Span[mut=True, T, alignment=alignment], a: UInt, b: UInt
-    ) raises:
+    @always_inline
+    fn unsafe_swap_elements(self: Span[mut=True, T], a: Int, b: Int):
+        """Swap the values at indices `a` and `b` without performing bounds checking.
+
+        Args:
+            a: The first element's index.
+            b: The second element's index.
+
+        Safety:
+            - Both `a` and `b` must be in: [0, len(self)).
+        """
+        debug_assert(
+            0 <= a < len(self),
+            "Index `a` out of bounds: ",
+            a,
+        )
+        debug_assert(
+            0 <= b < len(self),
+            "Index `b` out of bounds: ",
+            b,
+        )
+        var ptr = self.unsafe_ptr()
+
+        # `a` and `b` may be equal, so we cannot use `swap` directly.
+        ptr.offset(a).swap_pointees(ptr.offset(b))
+
+    fn swap_elements(self: Span[mut=True, T], a: Int, b: Int) raises:
         """
         Swap the values at indices `a` and `b`.
 
@@ -575,17 +585,11 @@ struct Span[
                 ")",
             )
 
-        var ptr = self.unsafe_ptr()
-        var tmp = InlineArray[T, 1](uninitialized=True)
-        ptr.offset(a).move_pointee_into(tmp.unsafe_ptr())
-        ptr.offset(b).move_pointee_into(ptr.offset(a))
-        tmp.unsafe_ptr().move_pointee_into(ptr.offset(b))
+        self.unsafe_swap_elements(a, b)
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(
-            Span[T, _, address_space=address_space, alignment=alignment]
-        ),
+        other_type: __type_of(Span[T, _, address_space=address_space]),
     ](
         self,
         out result: Span[
@@ -593,7 +597,6 @@ struct Span[
             T,
             __origin_of(origin, other_type.origin),
             address_space=address_space,
-            alignment=alignment,
         ],
     ):
         """Returns a pointer merged with the specified `other_type`.
@@ -604,10 +607,12 @@ struct Span[
         Returns:
             A pointer merged with the specified `other_type`.
         """
-        return __type_of(result)(
-            ptr=self._data.origin_cast[result.mut, result.origin](),
-            length=UInt(self._len),
-        )
+        return {
+            ptr = self._data.unsafe_mut_cast[result.mut]().unsafe_origin_cast[
+                result.origin
+            ](),
+            length = UInt(self._len),
+        }
 
     fn reverse[
         dtype: DType, O: MutableOrigin, //
@@ -643,7 +648,7 @@ struct Span[
 
         if is_odd:
             var value = ptr[middle + 1]
-            (ptr + middle - 1).move_pointee_into(ptr + middle + 1)
+            (ptr + middle + 1).init_pointee_move_from(ptr + middle - 1)
             (ptr + middle - 1).init_pointee_move(value)
 
     fn apply[
@@ -683,7 +688,7 @@ struct Span[
         O: MutableOrigin, //,
         func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
         *,
-        where: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+        cond: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
     ](self: Span[Scalar[dtype], O]):
         """Apply the function to the `Span` inplace where the condition is
         `True`.
@@ -692,7 +697,7 @@ struct Span[
             dtype: The DType.
             O: The origin of the `Span`.
             func: The function to evaluate.
-            where: The condition to apply the function.
+            cond: The condition to apply the function.
         """
 
         alias widths = (256, 128, 64, 32, 16, 8, 4)
@@ -709,12 +714,12 @@ struct Span[
                 for _ in range((length - processed) // w):
                     var p_curr = ptr + processed
                     var vec = p_curr.load[width=w]()
-                    p_curr.store(where(vec).select(func(vec), vec))
+                    p_curr.store(cond(vec).select(func(vec), vec))
                     processed += w
 
         for i in range(length - processed):
             var vec = ptr[processed + i]
-            if where(vec):
+            if cond(vec):
                 (ptr + processed + i).init_pointee_move(func(vec))
 
     fn count[
@@ -731,15 +736,15 @@ struct Span[
             The amount of times the function returns `True`.
         """
 
-        alias simdwidth = simd_width_of[DType.index]()
+        alias simdwidth = simd_width_of[DType.int]()
         var ptr = self.unsafe_ptr()
         var length = len(self)
-        var countv = SIMD[DType.index, simdwidth](0)
-        var count = Scalar[DType.index](0)
+        var countv = SIMD[DType.int, simdwidth](0)
+        var count = Scalar[DType.int](0)
 
         @parameter
         fn do_count[width: Int](idx: Int):
-            var vec = func(ptr.load[width=width](idx)).cast[DType.index]()
+            var vec = func(ptr.load[width=width](idx)).cast[DType.int]()
 
             @parameter
             if width == 1:
@@ -750,3 +755,26 @@ struct Span[
         vectorize[do_count, simdwidth](length)
 
         return UInt(countv.reduce_add() + count)
+
+    @always_inline
+    fn unsafe_subspan(self, *, offset: Int, length: Int) -> Self:
+        """Returns a subspan of the current span.
+
+        Args:
+            offset: The starting offset of the subspan (self._data + offset).
+            length: The length of the new subspan.
+
+        Safety:
+            This function does not do bounds checking and assumes the current
+            span contains the specified subspan.
+        """
+        debug_assert(
+            0 <= offset < len(self),
+            "offset out of bounds: ",
+            offset,
+        )
+        debug_assert(
+            0 <= offset + length <= len(self),
+            "subspan out of bounds.",
+        )
+        return Self(ptr=self._data + offset, length=UInt(length))

@@ -11,13 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of, is_nvidia_gpu, simd_width_of, size_of
 from collections import OptionalReg
 from math import ceildiv
+from sys import align_of, is_nvidia_gpu, simd_width_of, size_of
 
 from bit import log2_floor
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -27,7 +25,7 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute
+from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from gpu.host.info import is_gpu
 from gpu.memory import (
     AddressSpace,
@@ -42,21 +40,17 @@ from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
-    copy_local_to_shared,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
     copy_local_to_dram,
+    copy_local_to_shared,
     copy_sram_to_dram,
 )
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
-from linalg._multistage_gemm_gpu import warp_split_k_reduction
+from linalg.matmul.gpu._multistage_gemm_gpu import warp_split_k_reduction
 from linalg.utils import GemmShape, apply_epilogue, elementwise_epilogue_type
-from linalg.utils_gpu import (
-    MatmulConfig,
-    block_swizzle,
-)
+from linalg.utils_gpu import MatmulConfig, block_swizzle
 from memory.unsafe import bitcast
 from runtime.asyncrt import DeviceContextPtr
 
@@ -68,9 +62,9 @@ from utils.numerics import get_accum_type
 fn args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
     @parameter
     if swap:
-        return Tuple(arg_1, arg_0)
+        return (arg_1, arg_0)
     else:
-        return Tuple(arg_0, arg_1)
+        return (arg_0, arg_1)
 
 
 @always_inline
@@ -100,7 +94,7 @@ fn multistage_mma_q[
     /,
     *,
     swizzle_a: Bool = True,
-    static_num_iters: Dim = Dim(),
+    static_num_iters: Int = UNKNOWN_VALUE,
     prefetch_init: Bool = True,
     continue_prefetch_b: Bool = False,
     transpose_b_next: Bool = False,
@@ -112,10 +106,16 @@ fn multistage_mma_q[
     a_iter_arg: LayoutTensorIter[_, a_layout, **_],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, **_],
     a_smem_iter_arg: LayoutTensorIter[
-        a_type, a_smem_layout, address_space = AddressSpace.SHARED, **_
+        mut=True,
+        a_type,
+        a_smem_layout,
+        address_space = AddressSpace.SHARED, **_,
     ],
     mut b_smem_iter: LayoutTensorIter[
-        b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
+        mut=True,
+        b_type,
+        b_smem_layout,
+        address_space = AddressSpace.SHARED, **_,
     ],
     scales_smem_iter_arg: LayoutTensorIter[
         scales_type,
@@ -135,7 +135,7 @@ fn multistage_mma_q[
     ) + 1
     alias repack_tile = Index(64, 16)
 
-    var tid: UInt32 = thread_idx.x % num_threads
+    var tid: UInt32 = thread_idx.x % UInt(num_threads)
     var warp_id = tid // WARP_SIZE
     var lane_id = tid % WARP_SIZE
 
@@ -170,7 +170,7 @@ fn multistage_mma_q[
     @parameter
     fn _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
-    ](dst: LayoutTensor, src: LayoutTensor):
+    ](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
         copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=swizzle](
             dst.vectorize[1, simd_size](),
             src.vectorize[1, simd_size](),
@@ -203,7 +203,9 @@ fn multistage_mma_q[
                 ](
                     b_smem_tile.vectorize[1, simd_b_size](),
                     b_iter[]
-                    .bitcast[b_type, address_space = AddressSpace.GENERIC]()
+                    .bitcast[
+                        b_type, target_address_space = AddressSpace.GENERIC
+                    ]()
                     .vectorize[1, simd_b_size](),
                 )
 
@@ -225,7 +227,7 @@ fn multistage_mma_q[
                             scales_iter[]
                             .bitcast[
                                 scales_type,
-                                address_space = AddressSpace.GENERIC,
+                                target_address_space = AddressSpace.GENERIC,
                             ]()
                             .vectorize[1, async_copy_scales_veclen]()
                             .distribute[async_copy_scales_layout](
@@ -260,29 +262,39 @@ fn multistage_mma_q[
     alias b_frag_size = frag_size[1]
     alias c_frag_size = frag_size[2]
 
+    alias a_reg_layout = Layout.row_major(2 * num_m_mmas, a_frag_size)
     # Register tiles.
     var a_reg_tiles = (
-        tb[a_type]()
-        .row_major[2 * num_m_mmas, a_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            a_type,
+            a_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .split[2]()
     )
-
+    alias b_reg_layout = Layout.row_major(2 * num_n_mmas, b_frag_size)
     var b_reg_tiles = (
-        tb[a_type]()
-        .row_major[2 * num_n_mmas, b_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            a_type,
+            b_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .vectorize[1, b_frag_size]()
         .split[2]()
     )
 
     var scales_reg_tiles = (
-        tb[scales_type]()
-        .row_major[num_n_mmas, 1]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            scales_type,
+            Layout.row_major(num_n_mmas, 1),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .vectorize[1, 1]()
     )
 
@@ -409,7 +421,8 @@ fn multistage_mma_q[
                             b_smem_prefetch_tile.vectorize[1, simd_b_size](),
                             b_iter[]
                             .bitcast[
-                                b_type, address_space = AddressSpace.GENERIC
+                                b_type,
+                                target_address_space = AddressSpace.GENERIC,
                             ]()
                             .vectorize[1, simd_b_size](),
                         )
@@ -433,7 +446,7 @@ fn multistage_mma_q[
                                     scales_iter[]
                                     .bitcast[
                                         scales_type,
-                                        address_space = AddressSpace.GENERIC,
+                                        target_address_space = AddressSpace.GENERIC,
                                     ]()
                                     .vectorize[1, async_copy_scales_veclen]()
                                     .distribute[async_copy_scales_layout](
@@ -522,7 +535,7 @@ fn multistage_qgemm_kernel[
     var warp_k_part_id = (
         tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
     )
-    var warp_id = (tid % num_threads_per_warp_k_part) // WARP_SIZE
+    var warp_id = (tid % num_threads_per_warp_k_part) // UInt(WARP_SIZE)
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
@@ -537,33 +550,22 @@ fn multistage_qgemm_kernel[
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
+    alias alignment = align_of[SIMD[a_type, simd_size]]()
     var a_smem = external_memory[
         Scalar[a_type],
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[a_type, simd_size]](),
+        alignment=alignment,
     ]()
-    alias a_smem_size = num_pipeline_stages * BM * BK
+    alias a_smem_size = num_pipeline_stages * UInt(BM) * UInt(BK)
 
     var a_smem_iter = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = a_smem.alignment,
+        alignment=alignment,
         circular=True,
     ](
-        rebind[
-            __type_of(
-                LayoutTensorIter[
-                    a_type,
-                    Layout.row_major(BM, BK),
-                    MutableAnyOrigin,
-                    address_space = AddressSpace.SHARED,
-                    alignment = a_smem.alignment,
-                    circular=True,
-                ]().ptr
-            )
-        ](a_smem)
-        + warp_k_part_id * a_smem_size,
+        a_smem + warp_k_part_id * a_smem_size,
         a_smem_size,
     )
 
@@ -571,7 +573,9 @@ fn multistage_qgemm_kernel[
     var b_smem = (a_smem + num_warp_k_partitions * a_smem_size).bitcast[
         Scalar[b_type]
     ]()
-    alias b_smem_size = num_pipeline_stages * BK * BN // pack_factor
+    alias b_smem_size = num_pipeline_stages * UInt(BK) * UInt(BN) // UInt(
+        pack_factor
+    )
     alias BD_0 = BN // repack_tile[0]
     alias BD_1 = (BK * repack_tile[0]) // pack_factor
     alias b_smem_layout = Layout.row_major(BD_0, BD_1)
@@ -585,12 +589,14 @@ fn multistage_qgemm_kernel[
 
     # multiple stages may share the same scales
     alias num_scales_stages = ceildiv(
-        (num_pipeline_stages - 1) * BK, group_size
+        (num_pipeline_stages - 1) * UInt(BK), UInt(group_size)
     ) + 1
     var scales_smem = (b_smem + num_warp_k_partitions * b_smem_size).bitcast[
         Scalar[scales_type]
     ]()
-    alias scales_smem_size = num_scales_stages * BN * ceildiv(BK, group_size)
+    alias scales_smem_size = num_scales_stages * UInt(BN) * UInt(
+        ceildiv(BK, group_size)
+    )
     alias scales_smem_layout = Layout.row_major(ceildiv(BK, group_size), BN)
 
     var scales_smem_iter = LayoutTensorIter[
@@ -627,11 +633,15 @@ fn multistage_qgemm_kernel[
     alias frag_size = get_fragment_size[mma_shape]()
     alias c_frag_size = frag_size[2]
 
+    alias c_reg_layout = Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
     var c_reg_tile = (
-        tb[accum_type]()
-        .row_major[num_m_mmas * num_n_mmas, c_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            accum_type,
+            c_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .fill(0)
     )
 
@@ -745,12 +755,12 @@ fn multistage_qgemm_kernel[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = (
-            tb[c_type]()
-            .row_major[WM, WN]()
-            .shared()
-            .view(a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * WM * WN))
-        )
+        var accum_smem_warp_tile = LayoutTensor[
+            c_type,
+            Layout.row_major(WM, WN),
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ](a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * UInt(WM) * UInt(WN)))
 
         copy_local_to_shared[
             thread_layout = Layout.row_major(8, 4),
@@ -963,8 +973,8 @@ fn repack_Q4_0_for_sm8x[
     var tid: UInt = thread_idx.x
     var warp_id = UInt(tid // WARP_SIZE)
     alias num_warps_x = BN // repack_tile[0]
-    var warp_x: UInt = UInt(warp_id % num_warps_x)
-    var warp_y: UInt = UInt(warp_id // num_warps_x)
+    var warp_x: UInt = UInt(warp_id % UInt(num_warps_x))
+    var warp_y: UInt = UInt(warp_id // UInt(num_warps_x))
     var lane_id: Int = Int(tid % WARP_SIZE)
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
@@ -981,7 +991,7 @@ fn repack_Q4_0_for_sm8x[
     @parameter
     fn convert_bytes_to_bf16[
         scales_type: DType
-    ](input_bytes: SIMD[DType.uint8, _]) -> SIMD[scales_type, 1]:
+    ](input_bytes: SIMD[DType.uint8, _]) -> Scalar[scales_type]:
         var f32_values = bitcast[DType.float16, 1](input_bytes).cast[
             DType.float32
         ]()
@@ -1011,7 +1021,7 @@ fn repack_Q4_0_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[DType.uint8, 1]](),
+        alignment = align_of[UInt8](),
     ]()
     var qb_smem = LayoutTensor[
         DType.uint8,
@@ -1050,7 +1060,7 @@ fn repack_Q4_0_for_sm8x[
         copy_dram_to_sram[thread_layout = Layout.row_major(128, 1)](
             qb_smem.vectorize[1, 4](),
             q_gmem_iter[]
-            .bitcast[DType.uint8, address_space = AddressSpace.GENERIC]()
+            .bitcast[DType.uint8, target_address_space = AddressSpace.GENERIC]()
             .vectorize[1, 4](),
         )
         q_gmem_iter._incr()
@@ -1152,11 +1162,11 @@ fn repack_GPTQ_for_sm8x[
     alias BK = 1024
 
     var tid: UInt = thread_idx.x
-    var warp_id = UInt(tid // WARP_SIZE)
+    var warp_id = UInt(tid // UInt(WARP_SIZE))
     alias num_warps_x = BN // repack_tile[0]
-    var warp_x: UInt = UInt(warp_id % num_warps_x)
-    var warp_y: UInt = UInt(warp_id // num_warps_x)
-    var lane_id: Int = Int(tid % WARP_SIZE)
+    var warp_x: UInt = UInt(warp_id % UInt(num_warps_x))
+    var warp_y: UInt = UInt(warp_id // UInt(num_warps_x))
+    var lane_id: Int = Int(tid % UInt(WARP_SIZE))
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
     alias N = Int(in_layout.shape[1])
@@ -1172,7 +1182,7 @@ fn repack_GPTQ_for_sm8x[
     @parameter
     fn convert_bytes_to_bf16[
         scales_type: DType
-    ](input_bytes: SIMD[raw_scales_type, _]) -> SIMD[scales_type, 1]:
+    ](input_bytes: SIMD[raw_scales_type, _]) -> Scalar[scales_type]:
         var f32_values = bitcast[DType.float16, 1](input_bytes).cast[
             DType.float32
         ]()
@@ -1213,7 +1223,7 @@ fn repack_GPTQ_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[DType.uint8, 1]](),
+        alignment = align_of[UInt8](),
     ]()
     var weights_smem = LayoutTensor[
         DType.uint8,
@@ -1384,43 +1394,39 @@ fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * size_of[config.a_type]()
     var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * size_of[DType.uint32]() // pack_factor
     var c_usage = block_mnk[0] * block_mnk[1] * size_of[DType.float32]()
-    var num_scales_stages = ceildiv((num_pipeline_stages - 1) * block_mnk[2], group_size) + 1
+    var num_scales_stages = ceildiv((num_pipeline_stages - 1) * UInt(block_mnk[2]), UInt(group_size)) + 1
     var scales_usage = block_mnk[1] * ceildiv(block_mnk[2], group_size
     ) * num_scales_stages * size_of[config.a_type]()
     var slice_k_reduction: UInt = UInt(block_mnk[0] * block_mnk[1] * (num_warp_k_partitions // 2) * size_of[DType.float32]())
     # fmt: on
 
     var smem_usage: UInt = UInt(
-        num_warp_k_partitions * (a_usage + b_usage + scales_usage)
+        num_warp_k_partitions * UInt(a_usage + b_usage + scales_usage)
     )
     return Int(max(c_usage, Int(smem_usage), Int(slice_k_reduction)))
 
 
 fn multistage_gemm_q[
     c_type: DType,
-    c_shape: DimList,
     a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList, //,
+    b_type: DType, //,
     *,
     group_size: Int,
     pack_factor: Int,
     config: MatmulConfig[a_type, b_type, c_type, True],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, _, c_shape],
-    a: NDBuffer[a_type, 2, _, a_shape],
-    b: NDBuffer[b_type, 2, _, b_shape],
+    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, **_],
+    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, **_],
+    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, **_],
     runtime_config: MatmulConfig[a_type, b_type, c_type, True],
     ctx: DeviceContext,
 ) raises:
+    constrained[c.rank == 2]()
+    constrained[a.rank == 2]()
+    constrained[b.rank == 2]()
     var M = c.dim[0]()
     var N = c.dim[1]()
-
-    var tensor_c = from_ndbuffer_row_major(c)
-    var tensor_a = from_ndbuffer_row_major(a)
-    var tensor_b = from_ndbuffer_row_major(b)
 
     alias smem_usage = q_smem_usage[config, group_size]()
     alias max_smem = ctx.default_device_info.shared_memory_per_multiprocessor
@@ -1447,7 +1453,7 @@ fn multistage_gemm_q[
                     num_k_partitions=UInt(config.num_k_partitions),
                     num_warp_k_partitions=UInt(
                         config.num_warp_k_partitions
-                        // (2**partition_reduction)
+                        // UInt(2**partition_reduction)
                     ),  # Reduce warp partitions by powers of 2
                 )
 
@@ -1459,11 +1465,11 @@ fn multistage_gemm_q[
                 if adjusted_smem < max_smem:
                     alias gemm_kernel_type = multistage_qgemm_kernel[
                         c_type,  # c_type
-                        tensor_c.layout,
+                        c.layout,
                         a_type,  # a_type
-                        tensor_a.layout,
+                        a.layout,
                         b_type,  # b_type
-                        tensor_b.layout,
+                        b.layout,
                         group_size,
                         pack_factor,
                         True,
@@ -1474,9 +1480,9 @@ fn multistage_gemm_q[
                     ctx.enqueue_function_checked[
                         gemm_kernel_type, gemm_kernel_type
                     ](
-                        tensor_c,
-                        tensor_a,
-                        tensor_b,
+                        c,
+                        a,
+                        b,
                         grid_dim=adjusted_config.grid_dim(UInt(M), UInt(N)),
                         block_dim=adjusted_config.block_dim(),
                         shared_mem_bytes=adjusted_smem,
@@ -1489,11 +1495,11 @@ fn multistage_gemm_q[
 
     alias gemm_kernel_type = multistage_qgemm_kernel[
         c_type,  # c_type
-        tensor_c.layout,
+        c.layout,
         a_type,  # a_type
-        tensor_a.layout,
+        a.layout,
         b_type,  # b_type
-        tensor_b.layout,
+        b.layout,
         group_size,
         pack_factor,
         True,
@@ -1502,9 +1508,9 @@ fn multistage_gemm_q[
     ]
 
     ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
-        tensor_c,
-        tensor_a,
-        tensor_b,
+        c,
+        a,
+        b,
         grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
         block_dim=runtime_config.block_dim(),
         shared_mem_bytes=smem_usage,
@@ -1522,11 +1528,14 @@ fn matmul_gpu_qint4[
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[DType.uint8, 2, _, _],
+    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, **_],
+    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, **_],
+    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
+    constrained[c.rank == 2]()
+    constrained[a.rank == 2]()
+    constrained[b.rank == 2]()
     constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
 
@@ -1543,24 +1552,27 @@ fn matmul_gpu_qint4_impl[
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[DType.uint8, 2, _, _],
+    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, **_],
+    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, **_],
+    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
     ctx: Optional[DeviceContext],
 ) raises:
+    constrained[c.rank == 2]()
+    constrained[a.rank == 2]()
+    constrained[b.rank == 2]()
     # constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.value()
 
     alias pack_factor = 8
 
-    alias a_shape = a.shape
-    alias b_shape = b.shape
-    alias c_shape = c.shape
+    alias a_shape = a.layout.shape
+    alias b_shape = b.layout.shape
+    alias c_shape = c.layout.shape
     var shape = GemmShape.get[transpose_b=True](c, a, b)
     var m = shape.M
 
-    alias static_K = a_shape.get[1]()
-    alias static_N = c_shape.get[1]()
+    alias static_K = Int(a_shape[1])
+    alias static_N = Int(c_shape[1])
 
     @parameter
     if static_K == 4096 and static_N == 4096:
@@ -1578,9 +1590,9 @@ fn matmul_gpu_qint4_impl[
                 config=M16_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M16_config,
                 cuda_ctx,
             )
@@ -1599,9 +1611,9 @@ fn matmul_gpu_qint4_impl[
                 config=M32_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M32_config,
                 cuda_ctx,
             )
@@ -1620,9 +1632,9 @@ fn matmul_gpu_qint4_impl[
                 config=M64_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M64_config,
                 cuda_ctx,
             )
@@ -1641,9 +1653,9 @@ fn matmul_gpu_qint4_impl[
                 config=M128_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M128_config,
                 cuda_ctx,
             )
@@ -1662,9 +1674,9 @@ fn matmul_gpu_qint4_impl[
                 config=M512_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M512_config,
                 cuda_ctx,
             )
@@ -1686,9 +1698,9 @@ fn matmul_gpu_qint4_impl[
                 config=M16_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M16_config,
                 cuda_ctx,
             )
@@ -1707,9 +1719,9 @@ fn matmul_gpu_qint4_impl[
                 config=M32_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M32_config,
                 cuda_ctx,
             )
@@ -1728,9 +1740,9 @@ fn matmul_gpu_qint4_impl[
                 config=M64_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M64_config,
                 cuda_ctx,
             )
@@ -1749,9 +1761,9 @@ fn matmul_gpu_qint4_impl[
                 config=M128_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M128_config,
                 cuda_ctx,
             )
@@ -1770,9 +1782,9 @@ fn matmul_gpu_qint4_impl[
                 config=M256_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M256_config,
                 cuda_ctx,
             )
@@ -1794,9 +1806,9 @@ fn matmul_gpu_qint4_impl[
                 config=M16_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M16_config,
                 cuda_ctx,
             )
@@ -1815,9 +1827,9 @@ fn matmul_gpu_qint4_impl[
                 config=M32_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M32_config,
                 cuda_ctx,
             )
@@ -1836,9 +1848,9 @@ fn matmul_gpu_qint4_impl[
                 config=M64_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M64_config,
                 cuda_ctx,
             )
@@ -1857,9 +1869,9 @@ fn matmul_gpu_qint4_impl[
                 config=M128_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M128_config,
                 cuda_ctx,
             )
@@ -1881,9 +1893,9 @@ fn matmul_gpu_qint4_impl[
                 config=M16_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M16_config,
                 cuda_ctx,
             )
@@ -1902,9 +1914,9 @@ fn matmul_gpu_qint4_impl[
                 config=M32_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M32_config,
                 cuda_ctx,
             )
@@ -1923,9 +1935,9 @@ fn matmul_gpu_qint4_impl[
                 config=M64_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M64_config,
                 cuda_ctx,
             )
@@ -1944,9 +1956,9 @@ fn matmul_gpu_qint4_impl[
                 config=M128_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M128_config,
                 cuda_ctx,
             )
@@ -1965,9 +1977,9 @@ fn matmul_gpu_qint4_impl[
                 config=M512_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+                c,
+                a,
+                b,
                 M512_config,
                 cuda_ctx,
             )
@@ -1987,9 +1999,9 @@ fn matmul_gpu_qint4_impl[
         config=default_config,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ](
-        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-        rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
+        c,
+        a,
+        b,
         default_config,
         cuda_ctx,
     )
@@ -2000,10 +2012,14 @@ fn gpu_qint4_repack_Q4_0[
     b_shape: DimList, //,
     target: StaticString,
 ](
-    b: NDBuffer[DType.uint8, 2, _, b_shape],
-    b_packed: NDBuffer[DType.uint8, 2, _, b_shape],
+    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, **_],
+    b_packed: LayoutTensor[
+        DType.uint8, address_space = AddressSpace.GENERIC, **_
+    ],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
+    constrained[b.rank == 2]()
+    constrained[b_packed.rank == 2]()
     constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
 
@@ -2013,25 +2029,18 @@ fn gpu_qint4_repack_Q4_0[
     alias BN = 128
     alias BK = 1024
 
-    alias N = b.shape.get[0]()
-    alias K = b.shape.get[1]() // group_bytes * group_size
-
-    var tensor_b = from_ndbuffer_row_major(
-        rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b)
-    )
-    var tensor_packed_b = from_ndbuffer_row_major(
-        rebind[NDBuffer[DType.uint8, 2, b_packed.origin, b_shape]](b_packed)
-    )
+    alias N = Int(b.layout.shape[0])
+    alias K = Int(b.layout.shape[1]) // group_bytes * group_size
 
     var smem_usage: Int = BN * 2 * group_bytes
 
     alias repack = repack_Q4_0_for_sm8x[
-        tensor_b.layout, tensor_packed_b.layout, DType.bfloat16
+        b.layout, b_packed.layout, DType.bfloat16
     ]
 
     cuda_ctx.enqueue_function_checked[repack, repack](
-        tensor_b,
-        tensor_packed_b,
+        b,
+        b_packed,
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
         block_dim=(128, 1, 1),
         shared_mem_bytes=smem_usage,
@@ -2041,16 +2050,20 @@ fn gpu_qint4_repack_Q4_0[
 
 @always_inline
 fn gpu_qint4_repack_GPTQ[
-    b_shape: DimList,
-    b_packed_shape: DimList, //,
     group_size: Int,
     target: StaticString,
 ](
-    b: NDBuffer[DType.uint8, 2, _, b_shape],
-    b_packed: NDBuffer[DType.uint8, 2, _, b_packed_shape],
-    perm_idx: OptionalReg[NDBuffer[DType.int32, 1, MutableAnyOrigin]] = None,
+    b: LayoutTensor[DType.uint8, **_],
+    b_packed: LayoutTensor[DType.uint8, **_],
+    perm_idx: OptionalReg[
+        LayoutTensor[
+            DType.int32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
+    ] = None,
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
+    constrained[b.rank == 2]()
+    constrained[b_packed.rank == 2]()
     constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
 
@@ -2059,67 +2072,57 @@ fn gpu_qint4_repack_GPTQ[
     alias BN = 128
     alias BK = 1024
 
-    alias N = b.shape.get[1]()
-    alias K = b.shape.get[0]() // group_bytes * group_size
+    alias N = Int(b.layout.shape[1])
+    alias K = Int(b.layout.shape[0]) // group_bytes * group_size
 
     constrained[
-        N == b_packed.shape.get[0](),
+        N == Int(b_packed.layout.shape[0]),
         "qmatmul: Mismatched input/output dimension.",
     ]()
     constrained[
-        K == (b_packed.shape.get[1]() // group_bytes * group_size),
+        K == (Int(b_packed.layout.shape[1]) // group_bytes * group_size),
         "qmatmul: Mismatched input/output dimension.",
     ]()
-
-    var tensor_b = from_ndbuffer_row_major(
-        rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b)
-    )
-    var tensor_packed_b = from_ndbuffer_row_major(
-        rebind[NDBuffer[DType.uint8, 2, b_packed.origin, b_packed_shape]](
-            b_packed
-        )
-    )
 
     var smem_usage: Int = BN * 2 * group_bytes
 
     if perm_idx:
         alias perm_shape = DimList((K,))
-        var tensor_perm = from_ndbuffer_row_major(
-            rebind[NDBuffer[DType.int32, 1, MutableAnyOrigin, perm_shape]](
-                perm_idx.value()
-            )
-        )
 
         alias repack = repack_GPTQ_for_sm8x[
-            tensor_b.layout,
-            tensor_packed_b.layout,
+            b.layout,
+            b_packed.layout,
             DType.bfloat16,
             group_size,
             True,
-            perm_layout = tensor_perm.layout,
+            perm_layout = perm_idx.T.layout,
         ]
 
         cuda_ctx.enqueue_function_checked[repack, repack](
-            tensor_b,
-            tensor_packed_b,
-            tensor_perm,
+            b,
+            b_packed,
+            perm_idx.value(),
             grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
             block_dim=(128, 1, 1),
         )
 
     else:
         alias repack = repack_GPTQ_for_sm8x[
-            tensor_b.layout,
-            tensor_packed_b.layout,
+            b.layout,
+            b_packed.layout,
             DType.bfloat16,
             group_size,
             False,
         ]
 
-        cuda_ctx.enqueue_function[repack](
-            tensor_b,
-            tensor_packed_b,
-            UnsafePointer[Int32](),
+        var null_tensor = LayoutTensor[DType.int32, Layout()](
+            UnsafePointer[Int32]()
+        )
+
+        cuda_ctx.enqueue_function_checked[repack, repack](
+            b,
+            b_packed,
+            null_tensor,
             grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
             block_dim=(128, 1, 1),
             shared_mem_bytes=smem_usage,

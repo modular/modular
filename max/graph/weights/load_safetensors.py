@@ -16,7 +16,6 @@ from __future__ import annotations
 import difflib
 from collections.abc import Mapping, Sequence, Set
 from os import PathLike
-from typing import Optional
 
 from max._core.safetensors import SafeTensor, safe_open
 from max.driver import DLPackArray, Tensor
@@ -75,10 +74,10 @@ class SafetensorWeights(Weights):
         self,
         filepaths: Sequence[PathLike[str]],
         *,
-        tensors: Optional[Set[str]] = None,
+        tensors: Set[str] | None = None,
         tensors_to_file_idx: Mapping[str, int] | None = None,
         prefix: str = "",
-        allocated: Optional[dict[str, DLPackArray]] = None,
+        allocated: dict[str, DLPackArray] | None = None,
         _st_weight_map: dict[str, Tensor] | None = None,
         _st_file_handles: dict[PathLike[str], SafeTensor] | None = None,
     ) -> None:
@@ -110,7 +109,7 @@ class SafetensorWeights(Weights):
         """The current weight name or prefix."""
         return self._prefix
 
-    def items(self):
+    def items(self):  # noqa: ANN201
         """Iterate through all allocable weights that start with the prefix."""
         for name in self._tensors:
             if name.startswith(self.name):
@@ -150,12 +149,17 @@ class SafetensorWeights(Weights):
             return self._st_weight_map[self._prefix]
 
         if self.name not in self._tensors_to_file_idx:
-            msg = f"'{self.name}' is not a weight in the Safetensor checkpoint."
-            if possible_match := difflib.get_close_matches(
+            possible_match = difflib.get_close_matches(
                 self.name, self._tensors_to_file_idx.keys(), n=1
-            ):
-                msg += f" Did you mean '{possible_match[0]}'?"
-            raise KeyError(msg)
+            )
+            hint = (
+                f" Did you mean '{possible_match[0]}'?"
+                if possible_match
+                else ""
+            )
+            raise KeyError(
+                f"'{self.name}' is not a weight in the Safetensor checkpoint.{hint}"
+            )
 
         filepath = self._filepaths[self._tensors_to_file_idx[self.name]]
         tensor = self._st_file_handles[filepath].get_tensor(self.name)
@@ -177,9 +181,9 @@ class SafetensorWeights(Weights):
 
     def allocate(
         self,
-        dtype: Optional[DType] = None,
-        shape: Optional[ShapeLike] = None,
-        quantization_encoding: Optional[QuantizationEncoding] = None,
+        dtype: DType | None = None,
+        shape: ShapeLike | None = None,
+        quantization_encoding: QuantizationEncoding | None = None,
         device: DeviceRef = DeviceRef.CPU(),
     ) -> Weight:
         """Creates a Weight that can be added to a graph."""
@@ -206,17 +210,15 @@ class SafetensorWeights(Weights):
         # Validate the loaded weight.
         weight_shape = tuple(dim for dim in weight.shape)
         if shape is not None and weight_shape != tuple(shape):
-            msg = (
-                f"Value provided to weight '{self.name}' had different shape"
-                f" (expected={shape}, actual={weight_shape})"
+            raise ValueError(
+                f"Value provided to weight '{self.name}' had different shape "
+                f"(expected={shape}, actual={weight_shape})"
             )
-            raise ValueError(msg)
         if dtype is not None and weight_dtype != dtype:
-            msg = (
-                f"Value provided to weight '{self.name}' had different dtype"
-                f" (expected={dtype}, actual={weight_dtype})"
+            raise ValueError(
+                f"Value provided to weight '{self.name}' had different dtype "
+                f"(expected={dtype}, actual={weight_dtype})"
             )
-            raise ValueError(msg)
 
         return weight
 

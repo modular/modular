@@ -28,7 +28,7 @@ shared_types = st.shared(tensor_types())
 def test_transpose_output_shape(input_type: TensorType, a: int, b: int) -> None:
     assume(input_type.rank > 0)
     with Graph("transpose", input_types=[input_type]) as graph:
-        out = graph.inputs[0].transpose(a, b)  # type: ignore
+        out = graph.inputs[0].tensor.transpose(a, b)
         target_shape = list(input_type.shape)
         target_shape[a], target_shape[b] = target_shape[b], target_shape[a]
         assert out.shape == target_shape
@@ -45,7 +45,7 @@ def test_transpose_input_with_rank_zero() -> None:
             TensorType(shape=[], dtype=DType.float32, device=DeviceRef.CPU())
         ],
     ) as graph:
-        out = graph.inputs[0].transpose(0, 0)  # type: ignore
+        out = graph.inputs[0].tensor.transpose(0, 0)
         assert out.shape == []
         graph.output(out)
 
@@ -63,7 +63,7 @@ def test_transpose_error_axis_1_out_of_bounds_input_with_rank_zero() -> None:
                 "Axis axis_1 out of range (expected to be in range of [-1, 0], but got 1)"
             ),
         ):
-            out = graph.inputs[0].transpose(1, 0)  # type: ignore
+            out = graph.inputs[0].tensor.transpose(1, 0)
             graph.output(out)
 
 
@@ -80,7 +80,7 @@ def test_transpose_error_axis_2_out_of_bounds_input_with_rank_zero() -> None:
                 "Axis axis_2 out of range (expected to be in range of [-1, 0], but got 1)"
             ),
         ):
-            out = graph.inputs[0].transpose(0, 1)  # type: ignore
+            out = graph.inputs[0].tensor.transpose(0, 1)
             graph.output(out)
 
 
@@ -99,7 +99,7 @@ def test_transpose_error_axis_1_out_of_bounds() -> None:
                 "Axis axis_1 out of range (expected to be in range of [-2, 1], but got 2)"
             ),
         ):
-            out = graph.inputs[0].transpose(2, 0)  # type: ignore
+            out = graph.inputs[0].tensor.transpose(2, 0)
             graph.output(out)
 
 
@@ -118,14 +118,14 @@ def test_transpose_error_axis_2_out_of_bounds() -> None:
                 "Axis axis_2 out of range (expected to be in range of [-2, 1], but got 2)"
             ),
         ):
-            out = graph.inputs[0].transpose(0, 2)  # type: ignore
+            out = graph.inputs[0].tensor.transpose(0, 2)
             graph.output(out)
 
 
 shared_shapes_rank_gt_0 = st.shared(shapes(min_rank=1))
 
 
-def invalid_axes(rank: int):
+def invalid_axes(rank: int):  # noqa: ANN201
     return st.one_of(
         st.integers(max_value=-rank - 1), st.integers(min_value=rank)
     )
@@ -147,11 +147,11 @@ def test_transpose_error_out_of_bounds_axis_rank_gt_zero(
     """Test that transpose raises an error when an axis is out of bounds."""
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(IndexError, match="out of range"):
-            graph.inputs[0].transpose(valid_axis, invalid_axis)  # type: ignore
+            graph.inputs[0].tensor.transpose(valid_axis, invalid_axis)
         with pytest.raises(IndexError, match="out of range"):
-            graph.inputs[0].transpose(invalid_axis, valid_axis)  # type: ignore
+            graph.inputs[0].tensor.transpose(invalid_axis, valid_axis)
         with pytest.raises(IndexError, match="out of range"):
-            graph.inputs[0].transpose(invalid_axis, invalid_axis)  # type: ignore
+            graph.inputs[0].tensor.transpose(invalid_axis, invalid_axis)
 
 
 @given(
@@ -168,8 +168,8 @@ def test_transpose_error_out_of_bounds_rank_zero(
     assume(axis not in (0, -1))
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(IndexError, match="out of range"):
-            graph.inputs[0].transpose(0, axis)  # type: ignore
+            graph.inputs[0].tensor.transpose(0, axis)
         with pytest.raises(IndexError, match="out of range"):
-            graph.inputs[0].transpose(axis, 0)  # type: ignore
+            graph.inputs[0].tensor.transpose(axis, 0)
         with pytest.raises(IndexError, match="out of range"):
-            graph.inputs[0].transpose(axis, axis)  # type: ignore
+            graph.inputs[0].tensor.transpose(axis, axis)

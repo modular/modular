@@ -30,15 +30,15 @@ def main():
     gridv3 = gridv3.Grid[rows, cols].random(seed=42)
 
     # Warm up
-    warmv1 = gridv1
+    warmv1 = gridv1.copy()
     for _ in range(warmup_iterations):
         warmv1 = warmv1.evolve()
 
-    warmv2 = gridv2
+    warmv2 = gridv2.copy()
     for _ in range(warmup_iterations):
         warmv2 = warmv2.evolve()
 
-    warmv3 = gridv3
+    warmv3 = gridv3.copy()
     for _ in range(warmup_iterations):
         warmv3 = warmv3.evolve()
 

@@ -14,11 +14,7 @@
 from math import align_down, align_up, ceildiv
 from sys import align_of
 from sys._build import is_debug_build
-from sys.info import (
-    CompilationTarget,
-    simd_width_of,
-    size_of,
-)
+from sys.info import CompilationTarget, simd_width_of, size_of
 
 from algorithm import vectorize
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
@@ -67,7 +63,7 @@ struct KernelConfig:
 
 
 @register_passable("trivial")
-struct MicroKernelShape(Copyable, Movable):
+struct MicroKernelShape(ImplicitlyCopyable, Movable):
     """Record describing the inner kernel shape."""
 
     var simd_rows: Int
@@ -81,7 +77,7 @@ struct MicroKernelShape(Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct GemmShape(Copyable, Movable):
+struct GemmShape(ImplicitlyCopyable, Movable):
     """Helper class to unpack gemm dimension and layout."""
 
     var M: Int
@@ -425,7 +421,7 @@ fn get_matmul_num_tasks[
 
 
 @fieldwise_init
-struct SubMatmulConfig(Copyable, Movable):
+struct SubMatmulConfig(ImplicitlyCopyable, Movable):
     """Static configuration of sub-matrices in parallel matmul."""
 
     # Starting Indices of sub-matrices.
@@ -732,7 +728,7 @@ fn packA_i8mm[
 
 @fieldwise_init
 @register_passable("trivial")
-struct InnerKernelID(Copyable, Movable):
+struct InnerKernelID(ImplicitlyCopyable, Movable):
     alias DEFAULT = InnerKernelID(0)
     alias VNNI = InnerKernelID(1)
     alias NEON = InnerKernelID(2)

@@ -49,6 +49,7 @@ custom_op_example_py_binary(
     srcs = ["fused_attention.py"],
     target_compatible_with = select({
         "//:amd_gpu": ["@platforms//:incompatible"],
+        "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
 )

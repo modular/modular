@@ -17,7 +17,9 @@
 # specific. But for now they test behavior and reproducibility.
 
 from hashlib import default_comp_time_hasher
+
 from testing import assert_equal, assert_not_equal, assert_true
+from testing import TestSuite
 
 
 def same_low_bits(i1: UInt64, i2: UInt64, bits: Int = 5) -> UInt8:
@@ -132,7 +134,7 @@ def test_hash_simd():
     )
 
 
-fn test_issue_31111():
+def test_issue_31111():
     _ = hash(Int(1))
 
 
@@ -149,7 +151,4 @@ def test_hash_comptime():
 
 
 def main():
-    test_hash_byte_array()
-    test_hash_simd()
-    test_issue_31111()
-    test_hash_comptime()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -17,10 +17,7 @@ from random import rand
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from nn.conv import (
-    Naive2dConvolution,
-    conv3d_gpu_naive_ndhwc_qrscf,
-)
+from nn.conv import Naive2dConvolution, conv3d_gpu_naive_ndhwc_qrscf
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
@@ -104,13 +101,13 @@ fn test_conv3d_gpu[
 
     # create ndbuffer views, making it easier to work with
     var input_buf = NDBuffer[dtype, 5, _, input_dim](
-        input_dev._unsafe_ptr(), input_dim
+        input_dev.unsafe_ptr(), input_dim
     )
     var filter_buf = NDBuffer[dtype, 5, _, filter_dim](
-        filter_dev._unsafe_ptr(), filter_dim
+        filter_dev.unsafe_ptr(), filter_dim
     )
     var output_buf = NDBuffer[dtype, 5, _, output_dim](
-        output_dev._unsafe_ptr(), output_dim
+        output_dev.unsafe_ptr(), output_dim
     )
 
     # define grid and block dimensions for the gpu kernel
@@ -121,19 +118,19 @@ fn test_conv3d_gpu[
     var grid_dim_y = ceildiv(D_out, block_size)  # depth is the y dimension
     var grid_dim_z = N  # batch size is the z dimension
 
+    alias kernel = conv3d_gpu_naive_ndhwc_qrscf[
+        input_dim,
+        filter_dim,
+        output_dim,
+        dtype,
+        dtype,
+        dtype,
+        block_size,
+        None,
+    ]
+
     # run gpu implementation
-    ctx.enqueue_function[
-        conv3d_gpu_naive_ndhwc_qrscf[
-            input_dim,
-            filter_dim,
-            output_dim,
-            dtype,
-            dtype,
-            dtype,
-            block_size,
-            None,
-        ]
-    ](
+    ctx.enqueue_function_checked[kernel, kernel](
         input_buf,
         filter_buf,
         output_buf,
@@ -164,7 +161,7 @@ fn test_conv3d_gpu[
         output_ref_host.free()
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         # test case 1: small dimensions, starting simple
         test_conv3d_gpu[

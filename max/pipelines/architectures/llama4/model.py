@@ -23,15 +23,16 @@ import numpy.typing as npt
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
-    KVCacheManager,
     KVCacheParams,
+    PagedCacheValues,
     RaggedKVCacheInputs,
+    TPPagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -313,7 +314,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         )
         return model
 
-    def _build_graph(self):
+    def _build_graph(self):  # noqa: ANN202
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
@@ -344,7 +345,6 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             state_dict=state_dict,
             dtype=self.dtype,
             n_devices=len(self.devices),
-            logits_postprocessor=None,
             attention_bias=huggingface_config.text_config.attention_bias,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
@@ -385,23 +385,23 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             ]
 
             # Unmarshal the remaining arguments, which are for KV cache.
-            kv_cache = [v.tensor for v in variadic_args[len(self.devices) :]]
-
-            kv_caches_per_dev = self._unflatten_kv_inputs(kv_cache)
+            kv_collection = self._unflatten_kv_inputs(
+                variadic_args[len(self.devices) :]
+            )
 
             outputs = nn_model(
                 tokens.tensor,
                 cache_positions.tensor,
                 signal_buffers,
-                kv_caches_per_dev,
+                kv_collection,
                 input_row_offsets=input_row_offsets,
             )
             graph.output(*outputs)
         return graph
 
     def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[TensorValue]
-    ) -> list[tuple[TensorValue, ...]]:
+        self, kv_inputs_flat: Sequence[Value[Any]]
+    ) -> list[PagedCacheValues]:
         kv_params = Llama4Config.get_kv_params(
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),
@@ -411,15 +411,17 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         n_devices = kv_params.n_devices
         fetch_types = self.kv_manager.input_symbols()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev = [
-            tuple(
-                kv_inputs_flat[
-                    i * len_of_kv_tuple_per_dev : (i + 1)
-                    * len_of_kv_tuple_per_dev
-                ]
+        kv_caches_per_dev: list[PagedCacheValues] = []
+        for i in range(n_devices):
+            start_idx = i * len_of_kv_tuple_per_dev
+            kv_caches_per_dev.append(
+                PagedCacheValues(
+                    kv_blocks=kv_inputs_flat[start_idx].buffer,
+                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
+                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
+                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
+                )
             )
-            for i in range(n_devices)
-        ]
         return kv_caches_per_dev
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
@@ -560,7 +562,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> KVCacheManager:
+    ) -> TPPagedKVCacheManager:
         """Loads and initializes the KVCacheManager for the Llama 4 model.
 
         Configures the KV cache manager based on model parameters, pipeline settings,

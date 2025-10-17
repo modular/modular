@@ -13,13 +13,17 @@
 
 from os.path import is_absolute
 
-from testing import assert_false, assert_true
+from testing import TestSuite, assert_false, assert_true
 
 
-def main():
+def test_is_absolute():
     assert_true(is_absolute("/"))
     assert_true(is_absolute("/foo"))
     assert_true(is_absolute("/foo/bar"))
 
     assert_false(is_absolute(""))
     assert_false(is_absolute("foo/bar"))
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

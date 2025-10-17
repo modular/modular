@@ -46,7 +46,8 @@ fn test_thread_block_cluster():
 # CHECK-DAG: cluster_ids=( 0 , 1 , 0 ) block_ids=( 1 , 1 ) block_rank=( 1 )
 fn test_tbc_launch_config_2x1x1(ctx: DeviceContext) raises:
     print("== test_tbc_launch_config_2x1x1")
-    ctx.enqueue_function[test_thread_block_cluster](
+    alias kernel = test_thread_block_cluster
+    ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(2, 2),
         block_dim=(1),
         cluster_dim=OptionalReg[Dim]((2, 1, 1)),
@@ -61,7 +62,8 @@ fn test_tbc_launch_config_2x1x1(ctx: DeviceContext) raises:
 # CHECK-DAG: cluster_ids=( 1 , 0 , 0 ) block_ids=( 1 , 0 ) block_rank=( 0 )
 fn test_tbc_launch_config_1x2x1(ctx: DeviceContext) raises:
     print("== test_tbc_launch_config_1x2x1")
-    ctx.enqueue_function[test_thread_block_cluster](
+    alias kernel = test_thread_block_cluster
+    ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(2, 2),
         block_dim=(1),
         cluster_dim=OptionalReg[Dim]((1, 2, 1)),
@@ -104,7 +106,8 @@ fn test_tbc_launch_config_1x2x1(ctx: DeviceContext) raises:
 # CHECK-DAG: cluster_ids=( 1 , 1 , 0 ) block_ids=( 2 , 2 ) block_rank=( 4 )
 fn test_tbc_launch_config_2x2x2(ctx: DeviceContext) raises:
     print("== test_tbc_launch_config_2x2x2")
-    ctx.enqueue_function[test_thread_block_cluster](
+    alias kernel = test_thread_block_cluster
+    ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(4, 4, 2),
         block_dim=(1),
         cluster_dim=OptionalReg[Dim]((2, 2, 2)),

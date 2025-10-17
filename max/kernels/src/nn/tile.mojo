@@ -26,14 +26,14 @@ from utils import IndexList
 
 @always_inline
 fn tile[
-    type: DType, type_repeats: DType
+    dtype: DType, type_repeats: DType
 ](
-    input: LayoutTensor[type, address_space = AddressSpace.GENERIC, **_],
+    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     repeats: LayoutTensor[
         type_repeats, address_space = AddressSpace.GENERIC, **_
     ],
     output: LayoutTensor[
-        mut=True, type, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
     ],
 ) raises:
     """
@@ -41,7 +41,7 @@ fn tile[
     tile, but without broadcast.
 
     Parameters:
-        type: Type of the input and output tensors.
+        dtype: Type of the input and output tensors.
         type_repeats: Type of the repeats tensor.
 
     Args:
@@ -135,7 +135,7 @@ fn tile[
                     var dst_ptr = output.ptr.offset(
                         output_src_index + rep * output_src_stride
                     )
-                    memcpy(dst_ptr, src_ptr, count)
+                    memcpy(dest=dst_ptr, src=src_ptr, count=count)
 
     # Handles tiling across the second lowest dimension (if tensor rank >= 2).
     # Continuing with the example above, this will handle the 'X's, which
@@ -171,7 +171,7 @@ fn tile[
                     var dst_ptr = output.ptr.offset(
                         src_index + (rep + 1) * src_index_stride
                     )
-                    memcpy(dst_ptr, src_ptr, count)
+                    memcpy(dest=dst_ptr, src=src_ptr, count=count)
 
     # Handles tiling across the third dimension from the end (if tensor rank >= 3)
     @parameter
@@ -199,7 +199,7 @@ fn tile[
                 var dst_ptr = output.ptr.offset(
                     src_index + (rep + 1) * src_index_stride
                 )
-                memcpy(dst_ptr, src_ptr, count)
+                memcpy(dest=dst_ptr, src=src_ptr, count=count)
 
     # Handles tiling across the fourth dimension from the end(if tensor rank >= 3)
     @parameter
@@ -222,7 +222,7 @@ fn tile[
             var dst_ptr = output.ptr.offset(
                 src_index + (rep + 1) * src_index_stride
             )
-            memcpy(dst_ptr, src_ptr, count)
+            memcpy(dest=dst_ptr, src=src_ptr, count=count)
 
 
 @always_inline

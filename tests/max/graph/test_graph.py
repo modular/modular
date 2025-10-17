@@ -22,7 +22,6 @@ from conftest import buffer_types, shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
-from max._core import graph as _graph
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.graph import _location
@@ -66,7 +65,7 @@ def test_elementwise_add_graph() -> None:
             )
         ],
     ) as graph:
-        graph.output(graph.inputs[0] + 1)  # type: ignore
+        graph.output(graph.inputs[0].tensor + 1)
 
 
 def test_elementwise_add_graph_with_device_prop() -> None:
@@ -86,7 +85,7 @@ def test_elementwise_add_graph_with_device_prop() -> None:
             ),
         ],
     ) as graph:
-        graph.output(graph.inputs[0] + graph.inputs[1])  # type: ignore
+        graph.output(graph.inputs[0].tensor + graph.inputs[1].tensor)
         # Ensure input tensor has cuda
         for input in graph.inputs:
             assert "gpu" in str(input)
@@ -108,28 +107,12 @@ def test_transpose_graph_with_device_prop() -> None:
             )
         ],
     ) as graph:
-        graph.output(ops.transpose(graph.inputs[0], -1, -2))  # type: ignore
+        graph.output(ops.transpose(graph.inputs[0].tensor, -1, -2))
         for input in graph.inputs:
             assert "gpu" in str(input)
         assert " -> !mo.tensor<[channels, batch], f32, gpu:0>" in str(
             graph._mlir_op
         )
-
-
-def test_location() -> None:
-    with Graph("location") as graph:
-
-        def elided():
-            return _location(ignore_frames=1)
-
-        def foo():
-            return elided()
-
-        loc = foo()
-
-        frames = _graph.get_frame(loc)
-        assert "foo" == frames[-1].name  # type: ignore
-        assert "test_location" == frames[-2].name  # type: ignore
 
 
 def test_location_no_stack() -> None:
@@ -199,9 +182,9 @@ def test_load_from_file() -> None:
         print(graph, file=mlir_text_file, flush=True)
         loaded_graph = Graph("loaded", path=Path(mlir_text_file.name))
 
-    assert isinstance(
-        loaded_graph._mlir_op, (mlir.Operation, mlir.OpView)
-    ) and (str(loaded_graph) == str(graph))
+    assert isinstance(loaded_graph._mlir_op, mlir.Operation | mlir.OpView) and (
+        str(loaded_graph) == str(graph)
+    )
 
 
 def test_parfor() -> None:
@@ -216,7 +199,7 @@ def test_parfor() -> None:
 
         with Graph._async_region() as parallel:
             for buffer in parallel.each(buffers):
-                ops.buffer_store(buffer, tensor)  # type: ignore
+                ops.buffer_store(buffer.buffer, tensor.tensor)
 
         graph.output()
 

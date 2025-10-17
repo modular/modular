@@ -11,47 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of, argv
 from math import ceildiv
+from sys import argv, size_of
 
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-
 from gpu import WARP_SIZE, barrier
 from gpu import lane_id as get_lane_id
+from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, lane_id, thread_idx
 from gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
+from gpu.mma import st_matrix
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
-from gpu.mma import st_matrix
-from layout import (
-    Layout,
-    RuntimeLayout,
-    LayoutTensor,
-    RuntimeTuple,
-    UNKNOWN_VALUE,
-)
-from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
-from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import IntTuple
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    st_matrix_n_layout,
-    tile_to_descriptor,
-)
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from gpu.cluster import block_rank_in_cluster
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from linalg import vendor_blas
-
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
-from stdlib.bit import log2_floor
 
 # Additional imports for testing
 from internal_utils import (
@@ -62,6 +37,30 @@ from internal_utils import (
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
+from layout import (
+    UNKNOWN_VALUE,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+)
+from layout._fillers import arange
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout._utils import ManagedLayoutTensor
+from layout.int_tuple import IntTuple
+from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
+from layout.tensor_core_async import (
+    st_matrix_n_layout,
+    tile_layout_k_major,
+    tile_layout_mn_major,
+    tile_to_descriptor,
+)
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from stdlib.bit import log2_floor
+
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
 
 
 fn is_benchmark() -> Bool:
@@ -131,9 +130,7 @@ fn kernel_4[
     alias c_smem_layout = Layout.row_major(BM, BN)
 
     a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space = AddressSpace.SHARED, alignment=128
-        ]
+        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
@@ -207,17 +204,11 @@ fn kernel_4[
     alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
-    tma_mbar = (
-        (c_smem + c_size)
-        .bitcast[SharedMemBarrier]()
-        .static_alignment_cast[alignment=8]()
-    )
-    mma_mbar = (tma_mbar + 1).static_alignment_cast[alignment=8]()
+    tma_mbar = (c_smem + c_size).bitcast[SharedMemBarrier]()
+    mma_mbar = tma_mbar + 1
 
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (
-        (mma_mbar + 1).bitcast[UInt32]().static_alignment_cast[alignment=16]()
-    )
+    var ptr_tmem_addr = (mma_mbar + 1).bitcast[UInt32]()
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -279,15 +270,18 @@ fn kernel_4[
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
-                    (UInt(i) * BK + k, block_idx.y * BM),
+                    (UInt(i * BK + k), UInt(block_idx.y * BM)),
                 )
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
                     tma_mbar[0],
-                    (UInt(i) * BK + k, block_idx.x * BN) if transpose_b else (
-                        block_idx.x * BN,
-                        UInt(i) * BK + k,
+                    (
+                        UInt(i * BK + k),
+                        UInt(block_idx.x * BN),
+                    ) if transpose_b else (
+                        UInt(block_idx.x * BN),
+                        UInt(i * BK + k),
                     ),
                 )
 
@@ -378,7 +372,7 @@ fn kernel_4[
     # UMMA (tensor memory) → registers → shared memory → global memory
     #           c_frag                   c_smem_tile      c_tma_op
 
-    if elect_one_warp and thread_idx.x < BN // TMA_BN:
+    if elect_one_warp and thread_idx.x < UInt(BN // TMA_BN):
         fence_async_view_proxy()
 
         var smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
@@ -393,7 +387,10 @@ fn kernel_4[
 
         c_tma_op.async_store(
             c_tma_tile,
-            ((block_idx.x * BN + thread_idx.x * TMA_BN), (block_idx.y * BM)),
+            (
+                UInt(block_idx.x * BN + thread_idx.x * TMA_BN),
+                UInt(block_idx.y * BM),
+            ),
         )
         c_tma_op.commit_group()
         # wait for the store to complete
@@ -422,14 +419,14 @@ fn blackwell_kernel_4[
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
     b_device: NDBuffer[b_type, 2, _, b_shape],
-    M: Int,
-    N: Int,
-    K: Int,
     ctx: DeviceContext,
 ) raises:
     var a = from_ndbuffer_row_major(a_device)
     var b = from_ndbuffer_row_major(b_device)
     var c = from_ndbuffer_row_major(c_device)
+    var M = c.dim[0]()
+    var N = c.dim[1]()
+    var K = a.dim[1]()
 
     constrained[
         transpose_b,
@@ -440,12 +437,8 @@ fn blackwell_kernel_4[
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
 
-    a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM, 64), swizzle_mode=a_swizzle
-    ](ctx, a)
+    a_tma_op = create_tma_tile[Index(BM, 64), swizzle_mode=a_swizzle](ctx, a)
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(BN, 64) if transpose_b else Index(64, BN),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
@@ -509,7 +502,7 @@ fn get_dict_of_shapes(
 fn make_dict_of_shapes() -> Dict[Int, Tuple[Int, Int, Int]]:
     var dic = Dict[Int, Tuple[Int, Int, Int]]()
     dic[0] = (4096, 4096, 4096)
-    return dic
+    return dic^
 
 
 fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
@@ -647,9 +640,6 @@ def test_blackwell_kernel_4[
         c_device.tensor,
         a_device.tensor,
         b_device.tensor,
-        M,
-        N,
-        K,
         ctx,
     )
 
@@ -672,9 +662,6 @@ def test_blackwell_kernel_4[
                 c_device.tensor,
                 a_device.tensor,
                 b_device.tensor,
-                M,
-                N,
-                K,
                 ctx,
             )
 

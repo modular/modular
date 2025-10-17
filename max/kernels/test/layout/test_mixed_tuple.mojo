@@ -12,15 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the unified LayoutLike system."""
 
-from testing import assert_equal
+from sys import size_of
+
 from layout._mixed_tuple import (
-    MixedTuple,
-    Idx,
     ComptimeInt,
+    Idx,
+    MixedTuple,
     RuntimeInt,
     mixed_int_tuple_to_int_tuple,
 )
-from sys import size_of
+from testing import assert_equal
 
 
 fn test_nested_layouts() raises:
@@ -46,7 +47,7 @@ fn test_int_tuple_conversion() raises:
 
 fn test_list_literal_construction() raises:
     print("== test_list_literal_construction")
-    var t: MixedTuple[ComptimeInt[2], RuntimeInt[DType.index]] = [
+    var t: MixedTuple[ComptimeInt[2], RuntimeInt[DType.int]] = [
         Idx[2](),
         Idx(3),
     ]
@@ -54,7 +55,7 @@ fn test_list_literal_construction() raises:
     assert_equal(t[1].value(), 3)
 
 
-fn main() raises:
+def main():
     test_nested_layouts()
     test_list_literal_construction()
     test_int_tuple_conversion()

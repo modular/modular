@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+from max.driver import Tensor
+from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 
 # Maps from Qwen2.5VL checkpoint names to Qwen2.5VLLanguageModel weight names.
@@ -52,18 +54,44 @@ def convert_qwen2_5vl_model_state_dict(
     llm_state_dict: dict[str, WeightData] = {}
 
     for checkpoint_name, weight in state_dict.items():
+        if weight.data().dtype != DType.bfloat16:
+            weight_data = weight.data().astype(DType.bfloat16)
+        else:
+            weight_data = weight.data()
         # Special case for lm_head. Because config.tie_word_embeddings is true
         # for some Qwen2.5VL models and false for others.
         if checkpoint_name.startswith("lm_head."):
             llm_name = checkpoint_name.replace(
                 "lm_head.", "language_model.lm_head."
             )
-            llm_state_dict[llm_name] = weight.data()
+            llm_state_dict[llm_name] = weight_data
+        elif "patch_embed.proj." in checkpoint_name:
+            # Convert Conv3D weight to a Linear-equivalent format. MAX uses Linear layer instead of Conv3D for patch embedding.
+            weight_array = Tensor.from_dlpack(weight_data.data)
+            out_channels, in_channels, kernel_h, kernel_w, kernel_d = (
+                weight_array.shape
+            )
+            weight_array = weight_array.view(
+                dtype=weight_array.dtype,
+                shape=(
+                    out_channels,
+                    in_channels * kernel_h * kernel_w * kernel_d,
+                ),
+            )
+            weight_data = WeightData(
+                data=weight_array,
+                name=weight_data.name,
+                dtype=weight_data.dtype,
+                shape=weight_data.shape.__class__(weight_array.shape),
+                quantization_encoding=weight_data.quantization_encoding,
+            )
+            llm_name = "vision_encoder.patch_embed.proj.weight"
+            llm_state_dict[llm_name] = weight_data
         else:
             llm_name = checkpoint_name
             for before, after in QWEN2_5_VL_MODEL_MAPPING.items():
                 llm_name = llm_name.replace(before, after)
 
-            llm_state_dict[llm_name] = weight.data()
+            llm_state_dict[llm_name] = weight_data
 
     return llm_state_dict

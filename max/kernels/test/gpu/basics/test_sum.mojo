@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import warp, block, global_idx
-from gpu.host import DeviceContext
-from gpu.globals import WARP_SIZE
 from math import ceildiv
+
+from gpu import block, global_idx, warp
+from gpu.globals import WARP_SIZE
+from gpu.host import DeviceContext
 from testing import assert_equal
 
 alias dtype = DType.uint64
@@ -28,7 +29,7 @@ fn warp_sum_kernel[
     size: Int,
 ):
     var tid = global_idx.x
-    if tid >= size:
+    if tid >= UInt(size):
         return
     output[tid] = warp.sum(input[tid])
 
@@ -52,9 +53,10 @@ def test_warp_sum(ctx: DeviceContext):
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    ctx.enqueue_function[warp_sum_kernel[dtype=dtype]](
-        out_device.unsafe_ptr(),
-        in_device.unsafe_ptr(),
+    alias kernel = warp_sum_kernel[dtype=dtype]
+    ctx.enqueue_function_checked[kernel, kernel](
+        out_device,
+        in_device,
         size,
         block_dim=BLOCK_SIZE,
         grid_dim=grid_dim,
@@ -89,7 +91,7 @@ fn block_sum_kernel[
     size: Int,
 ):
     var tid = global_idx.x
-    if tid >= size:
+    if tid >= UInt(size):
         return
     output[tid] = block.sum[block_size=block_size, broadcast=True](input[tid])
 
@@ -115,9 +117,10 @@ def test_block_sum(ctx: DeviceContext):
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    ctx.enqueue_function[block_sum_kernel[dtype=dtype, block_size=BLOCK_SIZE]](
-        out_device.unsafe_ptr(),
-        in_device.unsafe_ptr(),
+    alias kernel = block_sum_kernel[dtype=dtype, block_size=BLOCK_SIZE]
+    ctx.enqueue_function_checked[kernel, kernel](
+        out_device,
+        in_device,
         size,
         block_dim=BLOCK_SIZE,
         grid_dim=grid_dim,

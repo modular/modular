@@ -16,7 +16,7 @@ from testing import *
 
 
 def main():
-    assert_true(H100 > A100)
-    assert_false(H100 < A100)
-    assert_true(A100 < H100)
-    assert_false(A100 > MI300X)
+    assert_true(materialize[H100 > A100]())
+    assert_false(materialize[H100 < A100]())
+    assert_true(materialize[A100 < H100]())
+    assert_false(materialize[A100 > MI300X]())

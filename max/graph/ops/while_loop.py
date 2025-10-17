@@ -14,8 +14,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
-from typing import Any, Callable
+from collections.abc import Callable, Iterable
+from typing import Any
 
 from max import mlir
 from max._core import Value as _Value
@@ -24,7 +24,7 @@ from max.mlir.dialects import mo
 
 from ..graph import DeviceRef, Graph
 from ..type import TensorType
-from ..value import BufferValue, TensorValue, Value
+from ..value import BufferValue, TensorValue, Value, _ChainValue
 
 
 def while_loop(
@@ -110,8 +110,17 @@ def while_loop(
     if not initial_values:
         raise ValueError("While loops must have at least one iteration value.")
 
+    num_initial_values = len(initial_values)
+
     # Add execution chain to initial values to track side effects across iterations
-    initial_values = [*initial_values, Graph.current._current_chain]
+    initial_values = [
+        *initial_values,
+        Graph.current._current_chain,
+        *(
+            Graph.current.device_chains[device]
+            for device in Graph.current.device_chains
+        ),
+    ]
 
     # Temporary restriction until buffer support is implemented
     if any(isinstance(arg, BufferValue) for arg in initial_values):
@@ -124,7 +133,7 @@ def while_loop(
     out_types = [arg.type for arg in initial_values]
     out_mlir_types = [t.to_mlir() for t in out_types]
 
-    def wrap_while_block_function(
+    def wrap_while_block_function(  # noqa: ANN202
         user_func,  # noqa: ANN001
         block_args: Iterable[mlir.BlockArgument],
         is_cond_block: bool = False,
@@ -154,16 +163,28 @@ def while_loop(
             across loop iterations.
         """
 
-        def chain_aware_wrapper():
+        def chain_aware_wrapper():  # noqa: ANN202
             # Separate loop variables from the execution chain
-            loop_vars: Sequence[Value[Any]]
+            loop_vars: list[Value[Any]]
             execution_chain: Value[Any]
-            *loop_vars, execution_chain = (
+            all_results = [
                 Value.from_mlir(_Value._from_cmlir(arg)) for arg in block_args
+            ]
+
+            loop_vars, execution_chain, device_chains = (
+                all_results[:num_initial_values],
+                all_results[num_initial_values],
+                all_results[num_initial_values + 1 :],
             )
+
+            assert len(device_chains) == len(Graph.current.device_chains)
 
             # Update the graph's chain state before running user code
             Graph.current._update_chain(execution_chain)
+            for i, device in enumerate(Graph.current.device_chains):
+                new_chain = device_chains[i]
+                assert isinstance(new_chain, _ChainValue)
+                Graph.current.device_chains[device] = new_chain
 
             # Invoke user function with only the loop variables
             result = user_func(*loop_vars)
@@ -189,7 +210,13 @@ def while_loop(
         )
 
     # Separate actual loop results from the execution chain
-    *results, out_chain = results
+    results, out_chain, device_chains = (
+        results[:num_initial_values],
+        results[num_initial_values],
+        results[num_initial_values + 1 :],
+    )
+
+    assert len(device_chains) == len(Graph.current.device_chains)
 
     def while_condition_op(args) -> mlir.OpView:  # noqa: ANN001
         """Adaptor for mo.WhileConditionOp, whose constructor takes the
@@ -208,7 +235,8 @@ def while_loop(
             pred_wrapped_fn,
             while_condition_op,
             "pred_block",
-            [TensorType(DType.bool, [], DeviceRef.CPU())] + out_types[:-1],
+            [TensorType(DType.bool, [], DeviceRef.CPU())]
+            + out_types[:num_initial_values],
         )
 
         body_block = while_op.bodyRegion.blocks[0]
@@ -218,10 +246,15 @@ def while_loop(
             body_wrapped_fn,
             mo.YieldOp,
             "body_block",
-            out_types[:-1],
+            out_types[:num_initial_values],
         )
 
         Graph.current._update_chain(out_chain)
+        for i, device in enumerate(Graph.current.device_chains):
+            new_chain = device_chains[i]
+            assert isinstance(new_chain, _ChainValue)
+            Graph.current.device_chains[device] = new_chain
+
         Graph.current._verify_op(while_op)
         return results
     except Exception as e:

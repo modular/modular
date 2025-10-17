@@ -11,7 +11,9 @@ def custom_op_example_py_binary(
     modular_py_binary(
         name = name,
         srcs = srcs,
-        data = extra_data,
+        data = [
+            ":kernel_sources",
+        ] + extra_data,
         imports = ["."],
         mojo_deps = [
             "@mojo//:compiler",

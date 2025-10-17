@@ -18,10 +18,10 @@ from .attention import (
     AttentionWithRopeQKV,
     AttentionWithRopeV1,
     DistributedAttentionImpl,
-    DistributedAttentionWithRope,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
     RaggedAttention,
+    TensorParallelAttentionWithRope,
 )
 from .clamp import clamp
 from .comm import Allreduce, Signals
@@ -48,6 +48,7 @@ from .linear import (
 )
 from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
 from .norm import (
+    ConstantLayerNorm,
     GroupNorm,
     LayerNorm,
     LayerNormV1,
@@ -85,6 +86,7 @@ __all__ = [
     "AttentionWithRopeQKV",
     "AttentionWithRopeV1",
     "ColumnParallelLinear",
+    "ConstantLayerNorm",
     "Conv1D",
     "Conv1DV1",
     "Conv2d",
@@ -93,7 +95,6 @@ __all__ = [
     "Conv3DV1",
     "ConvTranspose1d",
     "DistributedAttentionImpl",
-    "DistributedAttentionWithRope",
     "DistributedTransformer",
     "DistributedTransformerBlock",
     "Embedding",
@@ -129,6 +130,7 @@ __all__ = [
     "Shardable",
     "Signals",
     "SupportsLoRA",
+    "TensorParallelAttentionWithRope",
     "Transformer",
     "TransformerBlock",
     "VocabParallelEmbedding",

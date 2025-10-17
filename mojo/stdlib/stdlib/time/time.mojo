@@ -30,7 +30,6 @@ from sys import (
     llvm_intrinsic,
 )
 
-
 # ===-----------------------------------------------------------------------===#
 # Utilities
 # ===-----------------------------------------------------------------------===#
@@ -49,16 +48,12 @@ alias _USEC_PER_MSEC = 1000
 alias _MSEC_PER_SEC = 1000
 alias _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC
 
-# LARGE_INTEGER in Windows represent a signed 64 bit integer. Internally it
-# is implemented as a union of one 64 bit integer or two 32 bit integers
-# for 64/32 bit compilers.
-# https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-large_integer-r1
-alias _WINDOWS_LARGE_INTEGER = Int64
-
 
 @fieldwise_init
 @register_passable("trivial")
-struct _CTimeSpec(Copyable, Defaultable, Movable, Stringable, Writable):
+struct _CTimeSpec(
+    Defaultable, ImplicitlyCopyable, Movable, Stringable, Writable
+):
     var tv_sec: Int  # Seconds
     var tv_subsec: Int  # subsecond (nanoseconds on linux and usec on mac)
 
@@ -84,29 +79,6 @@ struct _CTimeSpec(Copyable, Defaultable, Movable, Stringable, Writable):
         writer.write(self.as_nanoseconds(), "ns")
 
 
-@fieldwise_init
-@register_passable("trivial")
-struct _FILETIME(Copyable, Defaultable, Movable):
-    var dw_low_date_time: UInt32
-    var dw_high_date_time: UInt32
-
-    fn __init__(out self):
-        self.dw_low_date_time = 0
-        self.dw_high_date_time = 0
-
-    fn as_nanoseconds(self) -> UInt:
-        # AFTER subtracting windows offset the return value fits in a signed int64
-        # BEFORE subtracting windows offset the return value does not fit in a signed int64
-        # Taken from https://github.com/microsoft/STL/blob/c8d1efb6d504f6392acf8f6d01fd703f7c8826c0/stl/src/xtime.cpp#L50
-        alias windows_to_unix_epoch_offset_ns: Int = 0x19DB1DED53E8000
-        var interval_count: UInt64 = (
-            (self.dw_high_date_time.cast[DType.uint64]() << 32)
-            + self.dw_low_date_time.cast[DType.uint64]()
-            - windows_to_unix_epoch_offset_ns
-        )
-        return UInt(Int(interval_count * 100))
-
-
 @always_inline
 fn _clock_gettime(clockid: Int) -> _CTimeSpec:
     """Low-level call to the clock_gettime libc function"""
@@ -120,6 +92,7 @@ fn _clock_gettime(clockid: Int) -> _CTimeSpec:
 
 @always_inline
 fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
+    @parameter
     if CompilationTarget.is_linux():
         var ts = _clock_gettime(clockid)
         return ts.as_nanoseconds()
@@ -162,13 +135,6 @@ fn _monotonic_nanoseconds() -> UInt:
     @parameter
     if is_gpu():
         return _gpu_clock()
-    elif CompilationTarget.is_windows():
-        var ft = _FILETIME()
-        external_call["GetSystemTimePreciseAsFileTime", NoneType](
-            Pointer(to=ft)
-        )
-
-        return ft.as_nanoseconds()
     else:
         return _gettime_as_nsec_unix(_CLOCK_MONOTONIC)
 
@@ -232,6 +198,32 @@ fn perf_counter_ns() -> UInt:
 
 
 # ===-----------------------------------------------------------------------===#
+# global perf_counter_ns
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn global_perf_counter_ns() -> SIMD[DType.uint64, 1]:
+    """Returns the current value in the global nanosecond resolution timer. This value
+    is common across all SM's. Currently, this is only supported on NVIDIA GPUs, on
+    non-NVIDIA GPUs, this function returns the same value as perf_counter_ns().
+
+    Returns:
+        The current time in ns.
+    """
+
+    @parameter
+    if is_nvidia_gpu():
+        return llvm_intrinsic[
+            "llvm.nvvm.read.ptx.sreg.globaltimer",
+            UInt64,
+            has_side_effect=True,
+        ]()
+
+    return perf_counter_ns()
+
+
+# ===-----------------------------------------------------------------------===#
 # monotonic
 # ===-----------------------------------------------------------------------===#
 
@@ -257,37 +249,6 @@ fn monotonic() -> UInt:
 
 @always_inline
 @parameter
-fn _time_function_windows[
-    func: fn () raises capturing [_] -> None
-]() raises -> UInt:
-    """Calculates elapsed time in Windows"""
-
-    var ticks_per_sec: _WINDOWS_LARGE_INTEGER = 0
-    var ticks_per_sec_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER](
-        to=ticks_per_sec
-    )
-    external_call["QueryPerformanceFrequency", NoneType](ticks_per_sec_ptr)
-
-    var starting_tick_count: _WINDOWS_LARGE_INTEGER = 0
-    var start_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER](
-        to=starting_tick_count
-    )
-    var ending_tick_count: _WINDOWS_LARGE_INTEGER = 0
-    var end_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER](to=ending_tick_count)
-
-    external_call["QueryPerformanceCounter", NoneType](start_ptr)
-    func()
-    external_call["QueryPerformanceCounter", NoneType](end_ptr)
-
-    var elapsed_ticks = ending_tick_count - starting_tick_count
-
-    # Note: Windows performance counter resolution is in µs.
-    var elapsed_time_in_ns = (elapsed_ticks * 1_000_000_000) // ticks_per_sec
-    return UInt(Int(elapsed_time_in_ns))
-
-
-@always_inline
-@parameter
 fn time_function[func: fn () raises capturing [_] -> None]() raises -> UInt:
     """Measures the time spent in the function.
 
@@ -297,11 +258,6 @@ fn time_function[func: fn () raises capturing [_] -> None]() raises -> UInt:
     Returns:
         The time elapsed in the function in ns.
     """
-
-    @parameter
-    if CompilationTarget.is_windows():
-        return _time_function_windows[func]()
-
     var tic = perf_counter_ns()
     func()
     var toc = perf_counter_ns()
@@ -387,9 +343,4 @@ fn sleep(sec: UInt):
     if is_gpu():
         return sleep(Float64(sec))
 
-    @parameter
-    if CompilationTarget.is_windows():
-        # In Windows the argument is in milliseconds.
-        external_call["Sleep", NoneType](sec * 1000)
-    else:
-        external_call["sleep", NoneType](Int32(sec))
+    external_call["sleep", NoneType](Int32(sec))

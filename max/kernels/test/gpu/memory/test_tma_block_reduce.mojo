@@ -11,31 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
+from random import rand
+from sys import argv
+from sys.info import simd_width_of, size_of
+
+import gpu.warp as warp
 from buffer import NDBuffer
 from gpu import WARP_SIZE, lane_id
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
-from gpu.id import block_idx, thread_idx, block_dim
+from gpu.id import block_dim, block_idx, thread_idx
 from gpu.memory import (
     _GPUAddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )
 from gpu.sync import (
+    barrier,
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
-    barrier,
 )
-import gpu.warp as warp
-from math import ceildiv
 from memory import stack_allocation
-from random import rand
-from sys.info import size_of, simd_width_of
 from testing import assert_almost_equal
+
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from sys import argv
 
 
 @always_inline
@@ -60,14 +62,14 @@ fn block_reduce[
 
     var warp_m2 = warp.sum(val)
 
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
     var lane_idx = lane_id()
 
     if lane_idx == 0:
         m2_shared[warp_id] = warp_m2
     barrier()
 
-    if warp_id == 0 and lane_idx < max_warps_per_block:
+    if warp_id == 0 and lane_idx < UInt(max_warps_per_block):
         var block_m2 = warp.lane_group_sum[num_lanes=max_warps_per_block](
             m2_shared[lane_idx]
         )
@@ -88,10 +90,10 @@ fn global_reduction_kernel[
 ](d_out: UnsafePointer[Scalar[accum_type]], num_cols: Int):
     var tid = thread_idx.x
     var row = block_idx.x
-    var idx = tid * simd_width
+    var idx = tid * UInt(simd_width)
     var vec_data = SIMD[accum_type, simd_width](0)
 
-    if idx < num_cols:
+    if idx < UInt(num_cols):
         vec_data = input_fn[simd_width, 2](IndexList[2](row, idx)).cast[
             accum_type
         ]()
@@ -148,8 +150,8 @@ fn tma_reduction_kernel[
 
     # Local thread reduction of loaded data.
     var vec_data = SIMD[accum_type, simd_width](0)
-    var idx = thread_idx.x * simd_width
-    if idx < cols:
+    var idx = thread_idx.x * UInt(simd_width)
+    if idx < UInt(cols):
         vec_data = shmem.load[width=simd_width](idx).cast[accum_type]()
     var local_sum = vec_data.reduce_add()
 

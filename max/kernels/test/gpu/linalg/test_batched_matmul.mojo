@@ -12,24 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from buffer import DimList, NDBuffer
-from gpu.host import DeviceContext
-from linalg.bmm import _batched_matmul_gpu
-from linalg import vendor_blas
-from utils import Index, IndexList
-from internal_utils._utils import ValOrDim, dynamic, static
+from sys import has_nvidia_gpu_accelerator, simd_width_of
+
+import linalg.matmul.vendor.blas as vendor_blas
 from algorithm.functional import elementwise
-from sys import simd_width_of
+from buffer import DimList, NDBuffer
+from gpu.host import DeviceContext, get_gpu_target
+from internal_utils import HostNDBuffer, random, zero
+from internal_utils._utils import ValOrDim, dynamic, static
+from linalg.bmm import _batched_matmul_gpu
 from testing import assert_almost_equal
-from gpu.host import get_gpu_target
-from sys import has_nvidia_gpu_accelerator
 
-
-from internal_utils import (
-    HostNDBuffer,
-    random,
-    zero,
-)
+from utils import Index, IndexList
 
 alias epilogue_func_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
     SIMD[dtype, width]
@@ -121,16 +115,16 @@ fn test[
 
     var a_device = NDBuffer[
         dtype, 3, MutableAnyOrigin, batch_static_a_shape, _
-    ](a_device_buffer._unsafe_ptr(), batch_dynamic_a_shape)
+    ](a_device_buffer.unsafe_ptr(), batch_dynamic_a_shape)
     var b_device = NDBuffer[
         dtype, 3, MutableAnyOrigin, batch_static_b_shape, _
-    ](b_device_buffer._unsafe_ptr(), batch_dynamic_b_shape)
+    ](b_device_buffer.unsafe_ptr(), batch_dynamic_b_shape)
     var c_device = NDBuffer[
         dtype, 3, MutableAnyOrigin, batch_static_c_shape, _
-    ](c_device_buffer._unsafe_ptr(), batch_dynamic_c_shape)
+    ](c_device_buffer.unsafe_ptr(), batch_dynamic_c_shape)
     var c_device_ref = NDBuffer[
         dtype, 3, MutableAnyOrigin, batch_static_c_shape, _
-    ](c_device_ref_buffer._unsafe_ptr(), batch_dynamic_c_shape)
+    ](c_device_ref_buffer.unsafe_ptr(), batch_dynamic_c_shape)
 
     random(a_host.tensor)
     random(b_host.tensor)
@@ -172,6 +166,13 @@ fn test[
         )
 
     ctx.synchronize()
+
+    # Skip equality check if N or K are 0 (causes error in vendor_blas).
+    if N == 0 or K == 0:
+        return
+    if not has_nvidia_gpu_accelerator() and M == 0:
+        # AMD doesn't support matmul with M=0
+        return
 
     for i in range(B):
         var c_ptr = c_device_ref.data + (i * M * N)
@@ -251,6 +252,27 @@ fn test[
 
 def main():
     with DeviceContext() as ctx:
+        # Test zero-dimension edge cases
+        test[
+            DType.bfloat16,
+            transpose_b=False,
+        ](ctx, dynamic(0), dynamic(2), dynamic(2), dynamic(2))
+
+        test[
+            DType.bfloat16,
+            transpose_b=False,
+        ](ctx, dynamic(2), dynamic(0), dynamic(2), dynamic(2))
+
+        test[
+            DType.bfloat16,
+            transpose_b=False,
+        ](ctx, dynamic(2), dynamic(2), dynamic(0), dynamic(2))
+
+        test[
+            DType.bfloat16,
+            transpose_b=False,
+        ](ctx, dynamic(2), dynamic(2), dynamic(2), dynamic(0))
+
         # tests naive kernels
         test[
             DType.bfloat16,

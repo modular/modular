@@ -16,7 +16,6 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Optional
 
 from max.dtype import DType
 from max.graph import (
@@ -44,6 +43,14 @@ class EmbeddingV1(Layer):
     device: DeviceRef
 
     def __call__(self, indices: TensorValueLike) -> TensorValue:
+        """Embeds the input indices by looking up corresponding vectors.
+
+        Args:
+            indices: A tensor of integer indices to look up.
+
+        Returns:
+            A tensor containing the embeddings corresponding to the input indices.
+        """
         self.weights = TensorValue(self.weights).to(self.device)
         indices = TensorValue(indices).to(self.device)
 
@@ -57,8 +64,7 @@ class EmbeddingV1(Layer):
 
 
 class Embedding(Module):
-    """
-    A lookup table for embedding integer indices into dense vectors.
+    """A lookup table for embedding integer indices into dense vectors.
 
     This layer maps each integer index to a dense vector of fixed size.
     Embedding weights are stored on the CPU but are moved to the specified
@@ -94,8 +100,8 @@ class Embedding(Module):
         hidden_dim: int,
         dtype: DType,
         device: DeviceRef,
-        quantization_encoding: Optional[QuantizationEncoding] = None,
-        name: Optional[str] = None,
+        quantization_encoding: QuantizationEncoding | None = None,
+        name: str | None = None,
     ) -> None:
         """Initializes the embedding layer with the given arguments.
 
@@ -107,6 +113,7 @@ class Embedding(Module):
             device: The device where embedding lookups are executed.
                 Model init transfers the initially CPU-resident weights to this
                 device.
+            quantization_encoding: Optional quantization encoding for the weights.
             name: The name identifier for the embedding weight matrix.
         """
         super().__init__()
@@ -132,15 +139,16 @@ class Embedding(Module):
             indices.
             The result resides on the device specified in :obj:`device`.
         """
-        result = ops.gather(TensorValue(self.weight), indices, axis=0)
+        indices = TensorValue(indices).to(self.device)
+        weight = TensorValue(self.weight).to(self.device)
+        result = ops.gather(weight, indices, axis=0)
         if self.weight.quantization_encoding is not None:
             result = ops.dequantize(self.weight.quantization_encoding, result)
         return result
 
 
 class VocabParallelEmbedding(Module):
-    """
-    A lookup table for embedding integer indices into dense vectors.
+    """A lookup table for embedding integer indices into dense vectors.
 
     This layer works like `nn.Embedding` except the embedding table is sharded
     on the vocabulary dimension across all devices.
@@ -168,10 +176,11 @@ class VocabParallelEmbedding(Module):
         hidden_dim: int,
         dtype: DType,
         devices: list[DeviceRef],
-        quantization_encoding: Optional[QuantizationEncoding] = None,
-        name: Optional[str] = None,
+        quantization_encoding: QuantizationEncoding | None = None,
+        name: str | None = None,
     ) -> None:
-        """
+        """Initializes the vocab-parallel embedding layer.
+
         Args:
             vocab_size: The number of unique items in the vocabulary.
                 Indices must be in the range ``[0, vocab_size)``.
@@ -180,6 +189,7 @@ class VocabParallelEmbedding(Module):
             devices: The devices where embedding lookups are executed.
                 Model init transfers the initially CPU-resident weights to this
                 device.
+            quantization_encoding: Optional quantization encoding for the weights.
             name: The name identifier for the embedding weight matrix.
         """
         super().__init__()

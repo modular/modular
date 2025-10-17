@@ -22,7 +22,7 @@ from max.pipelines.lib import (
 )
 
 from ..llama3 import weight_adapters
-from .model import GraniteModel
+from ..llama3.model import Llama3Model
 
 granite_arch = SupportedArchitecture(
     name="GraniteForCausalLM",
@@ -37,7 +37,7 @@ granite_arch = SupportedArchitecture(
         SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
-    pipeline_model=GraniteModel,
+    pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,
     rope_type=RopeType.normal,
     weight_adapters={

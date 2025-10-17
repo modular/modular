@@ -19,7 +19,7 @@ import math
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Generic, TypeVar, Union
+from typing import Any, Generic, TypeVar
 
 from max._core import Attribute, NamedAttribute
 from max._core import Type as _Type
@@ -32,7 +32,7 @@ from .dim import SymbolicDim
 from .shape import Shape, ShapeLike
 
 MlirType = TypeVar("MlirType", bound=_Type)
-OpaqueParameter = Union[bool, int, str, DType]
+OpaqueParameter = bool | int | str | DType
 
 
 class FilterLayout(enum.Enum):
@@ -145,9 +145,7 @@ class DeviceRef:
         """Static Method for creating a GPU device."""
         return DeviceRef(DeviceKind.GPU, id)
 
-    def __init__(
-        self, device_type: Union[DeviceKind, str], id: int = 0
-    ) -> None:
+    def __init__(self, device_type: DeviceKind | str, id: int = 0) -> None:
         if isinstance(device_type, DeviceKind):
             self.device_type = device_type
         else:
@@ -167,6 +165,10 @@ class DeviceRef:
         if not isinstance(other, DeviceRef):
             return False
         return self.device_type is other.device_type and self.id == other.id
+
+    def __hash__(self) -> int:
+        """Hashes based on the immutable identity (device_type, id)."""
+        return hash((self.device_type, self.id))
 
     def to_mlir(self) -> m.DeviceRefAttr:
         """Returns a mlir attribute representing device."""
@@ -306,7 +308,11 @@ class _TensorTypeBase(Type[MlirType]):
             isinstance(other, type(self))
             and (self.dtype == other.dtype)
             and (self.shape == other.shape)
+            and (self.device == other.device)
         )
+
+    def __hash__(self) -> int:
+        return hash((self.dtype, tuple(self.shape), self.device))
 
     # ===------------------------------------------------------------------=== #
     # Utilities
@@ -332,7 +338,7 @@ class _TensorTypeBase(Type[MlirType]):
 
         return math.prod(int(dim) for dim in self.shape)
 
-    def cast(self, dtype: DType):
+    def cast(self, dtype: DType):  # noqa: ANN202
         """Constructs a new tensor type of the same shape with the new `dtype`.
 
         Args:
@@ -382,9 +388,7 @@ class TensorType(_TensorTypeBase[mo.TensorType]):
     device the tensor is associated with.
     """
 
-    _layout: FilterLayout | None = field(
-        default=None, compare=False, repr=False
-    )
+    _layout: FilterLayout | None = field(default=None, repr=False)
 
     def __init__(
         self,
@@ -395,6 +399,9 @@ class TensorType(_TensorTypeBase[mo.TensorType]):
     ) -> None:
         super().__init__(dtype, shape, DeviceRef.from_device(device))
         self._layout = _layout
+
+    def __hash__(self) -> int:
+        return hash((self.dtype, tuple(self.shape), self.device, self._layout))
 
     @classmethod
     def from_mlir(cls, type: mo.TensorType) -> TensorType:
@@ -489,8 +496,7 @@ def _value_to_attribute(param: OpaqueParameter) -> Attribute:
         dtype = _graph.dtype_to_type(param)
         return builtin.TypeAttr(dtype)
 
-    msg = f"unsupported parameter type {type(param)} for custom op"
-    raise TypeError(msg)
+    raise TypeError(f"unsupported parameter type {type(param)} for custom op")
 
 
 def _attribute_to_value(value: Attribute) -> OpaqueParameter:
@@ -499,7 +505,7 @@ def _attribute_to_value(value: Attribute) -> OpaqueParameter:
 
     This function is the inverse of _value_to_attribute.
     """
-    if isinstance(value, (builtin.BoolAttr, builtin.StringAttr)):
+    if isinstance(value, builtin.BoolAttr | builtin.StringAttr):
         return value.value
 
     if isinstance(value, builtin.IntegerAttr):

@@ -14,6 +14,7 @@
 from collections import Deque
 
 from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import TestSuite
 
 # ===-----------------------------------------------------------------------===#
 # Implementation tests
@@ -292,7 +293,7 @@ fn test_impl_extend() raises:
     q = Deque[Int](maxlen=4)
     lst = [0, 1, 2]
 
-    q.extend(lst)
+    q.extend(lst.copy())
     assert_equal(q._head, 0)
     assert_equal(q._tail, 3)
     assert_equal(q._capacity, 8)
@@ -300,7 +301,7 @@ fn test_impl_extend() raises:
     assert_equal((q._data + 1)[], 1)
     assert_equal((q._data + 2)[], 2)
 
-    q.extend(lst)
+    q.extend(lst.copy())
     # has to popleft the first 2 elements
     assert_equal(q._capacity, 8)
     assert_equal(q._head, 2)
@@ -312,7 +313,7 @@ fn test_impl_extend() raises:
 
     # turn off `maxlen` restriction
     q._maxlen = -1
-    q.extend(lst)
+    q.extend(lst.copy())
     assert_equal(q._capacity, 8)
     assert_equal(q._head, 2)
     assert_equal(q._tail, 1)
@@ -326,7 +327,7 @@ fn test_impl_extend() raises:
 
     # turn on `maxlen` and force to re-allocate
     q._maxlen = 8
-    q.extend(lst)
+    q.extend(lst.copy())
     assert_equal(q._capacity, 16)
     assert_equal(q._head, 0)
     assert_equal(q._tail, 8)
@@ -340,7 +341,7 @@ fn test_impl_extend() raises:
     # has to pop all deque elements and some initial
     # elements from the list as well
     lst = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-    q.extend(lst)
+    q.extend(lst.copy())
     assert_equal(q._capacity, 16)
     assert_equal(q._head, 8)
     assert_equal(q._tail, 0)
@@ -354,7 +355,7 @@ fn test_impl_extendleft() raises:
     q = Deque[Int](maxlen=4)
     lst = [0, 1, 2]
 
-    q.extendleft(lst)
+    q.extendleft(lst.copy())
     # head wrapped to the end of the buffer
     assert_equal(q._capacity, 8)
     assert_equal(q._head, 5)
@@ -363,7 +364,7 @@ fn test_impl_extendleft() raises:
     assert_equal((q._data + 6)[], 1)
     assert_equal((q._data + 7)[], 0)
 
-    q.extendleft(lst)
+    q.extendleft(lst.copy())
     # popped the last 2 elements
     assert_equal(q._capacity, 8)
     assert_equal(q._head, 2)
@@ -375,7 +376,7 @@ fn test_impl_extendleft() raises:
 
     # turn off `maxlen` restriction
     q._maxlen = -1
-    q.extendleft(lst)
+    q.extendleft(lst.copy())
     assert_equal(q._capacity, 8)
     assert_equal(q._head, 7)
     assert_equal(q._tail, 6)
@@ -389,7 +390,7 @@ fn test_impl_extendleft() raises:
 
     # turn on `maxlen` and force to re-allocate
     q._maxlen = 8
-    q.extendleft(lst)
+    q.extendleft(lst.copy())
     assert_equal(q._capacity, 16)
     assert_equal(q._head, 13)
     assert_equal(q._tail, 5)
@@ -403,7 +404,7 @@ fn test_impl_extendleft() raises:
     # has to pop all deque elements and some initial
     # elements from the list as well
     lst = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-    q.extendleft(lst)
+    q.extendleft(lst.copy())
     assert_equal(q._capacity, 16)
     assert_equal(q._head, 5)
     assert_equal(q._tail, 13)
@@ -480,8 +481,8 @@ fn test_impl_clear() raises:
 fn test_impl_add() raises:
     l1 = [1, 2, 3, 4, 5, 6, 7, 8]
     l2 = [9, 10, 11, 12, 13, 14, 15, 16]
-    q1 = Deque(elements=l1, capacity=20, maxlen=30)
-    q2 = Deque(elements=l2, min_capacity=200, shrink=False)
+    q1 = Deque(elements=l1^, capacity=20, maxlen=30)
+    q2 = Deque(elements=l2^, min_capacity=200, shrink=False)
 
     assert_equal(q1._capacity, 32)
     assert_equal(q1._maxlen, 30)
@@ -496,8 +497,8 @@ fn test_impl_add() raises:
     assert_equal(q3._shrink, True)
     assert_equal(q3._head, 0)
     assert_equal(q3._tail, 16)
-    for i in range(len(q3)):
-        assert_equal((q3._data + i)[], 1 + i)
+    for i, value in enumerate(q3):
+        assert_equal(value, 1 + i)
 
     q4 = q2 + q1
     # has to inherit q2 properties
@@ -543,8 +544,8 @@ fn test_impl_add() raises:
 fn test_impl_iadd() raises:
     l1 = [1, 2, 3, 4, 5, 6, 7, 8]
     l2 = [9, 10, 11, 12, 13, 14, 15, 16]
-    q1 = Deque(elements=l1, maxlen=10)
-    q2 = Deque(elements=l2, min_capacity=200, shrink=False)
+    q1 = Deque(elements=l1^, maxlen=10)
+    q2 = Deque(elements=l2^, min_capacity=200, shrink=False)
 
     q1 += q2
     # has to keep q1 properties
@@ -556,8 +557,8 @@ fn test_impl_iadd() raises:
     assert_equal(len(q1), 10)
     assert_equal(q1._head, 6)
     assert_equal(q1._tail, 0)
-    for i in range(len(q1)):
-        assert_equal(q1[i], 7 + i)
+    for i, value in enumerate(q1):
+        assert_equal(value, 7 + i)
 
     q2 += q1
     # has to keep q2 properties
@@ -574,7 +575,7 @@ fn test_impl_iadd() raises:
 
 fn test_impl_mul() raises:
     l = [1, 2, 3]
-    q = Deque(elements=l, capacity=3, min_capacity=2, maxlen=7, shrink=False)
+    q = Deque(elements=l^, capacity=3, min_capacity=2, maxlen=7, shrink=False)
 
     q1 = q * 0
     assert_equal(q1._head, 0)
@@ -619,7 +620,9 @@ fn test_impl_mul() raises:
 fn test_impl_imul() raises:
     l = [1, 2, 3]
 
-    q = Deque(elements=l, capacity=3, min_capacity=2, maxlen=7, shrink=False)
+    q = Deque(
+        elements=l.copy(), capacity=3, min_capacity=2, maxlen=7, shrink=False
+    )
     q *= 0
     assert_equal(q._head, 0)
     assert_equal(q._tail, 0)
@@ -629,7 +632,9 @@ fn test_impl_imul() raises:
     assert_equal(q._maxlen, 7)
     assert_equal(q._shrink, False)
 
-    q = Deque(elements=l, capacity=3, min_capacity=2, maxlen=7, shrink=False)
+    q = Deque(
+        elements=l.copy(), capacity=3, min_capacity=2, maxlen=7, shrink=False
+    )
     q *= 1
     assert_equal(q._head, 0)
     assert_equal(q._tail, len(q))
@@ -641,7 +646,9 @@ fn test_impl_imul() raises:
     assert_equal((q._data + 1)[], 2)
     assert_equal((q._data + 2)[], 3)
 
-    q = Deque(elements=l, capacity=3, min_capacity=2, maxlen=7, shrink=False)
+    q = Deque(
+        elements=l.copy(), capacity=3, min_capacity=2, maxlen=7, shrink=False
+    )
     q *= 2
     assert_equal(q._head, 0)
     assert_equal(q._tail, 6)
@@ -652,7 +659,9 @@ fn test_impl_imul() raises:
     assert_equal((q._data + 0)[], 1)
     assert_equal((q._data + 5)[], 3)
 
-    q = Deque(elements=l, capacity=3, min_capacity=2, maxlen=7, shrink=False)
+    q = Deque(
+        elements=l.copy(), capacity=3, min_capacity=2, maxlen=7, shrink=False
+    )
     q *= 3
     # should obey maxlen
     assert_equal(q._head, 2)
@@ -674,7 +683,7 @@ fn test_init_variadic_list() raises:
     lst1 = [0, 1]
     lst2 = [2, 3]
 
-    q = Deque(lst1, lst2)
+    q = Deque(lst1.copy(), lst2.copy())
     assert_equal(q[0], lst1)
     assert_equal(q[1], lst2)
 
@@ -701,8 +710,8 @@ fn test_copy_list() raises:
     q = Deque[List[Int]]()
     lst1 = [1, 2, 3]
     lst2 = [4, 5, 6]
-    q.append(lst1)
-    q.append(lst2)
+    q.append(lst1.copy())
+    q.append(lst2^)
     assert_equal(q[0], lst1)
 
     lst1[0] = 7
@@ -720,8 +729,8 @@ fn test_move_list() raises:
     q = Deque[List[Int]]()
     lst1 = [1, 2, 3]
     lst2 = [4, 5, 6]
-    q.append(lst1)
-    q.append(lst2)
+    q.append(lst1.copy())
+    q.append(lst2^)
     assert_equal(q[0], lst1)
 
     p = q^
@@ -987,8 +996,8 @@ fn test_iter_with_list() raises:
     q = Deque[List[Int]]()
     lst1 = [1, 2, 3]
     lst2 = [4, 5, 6]
-    q.append(lst1)
-    q.append(lst2)
+    q.append(lst1.copy())
+    q.append(lst2.copy())
     assert_equal(len(q), 2)
 
     i = 0
@@ -1018,6 +1027,26 @@ fn test_reversed_iter() raises:
         i -= 1
         assert_equal(e, q[i])
     assert_equal(-i, len(q))
+
+
+def _test_deque_iter_bounds[I: Iterator](var deque_iter: I, deque_len: Int):
+    var iter = deque_iter^
+
+    for i in range(deque_len):
+        var lower, upper = iter.bounds()
+        assert_equal(deque_len - i, lower)
+        assert_equal(deque_len - i, upper.value())
+        _ = iter.__next__()
+
+    var lower, upper = iter.bounds()
+    assert_equal(0, lower)
+    assert_equal(0, upper.value())
+
+
+def test_deque_iter_bounds():
+    var deque = Deque(1, 2, 3)
+    _test_deque_iter_bounds(iter(deque), len(deque))
+    _test_deque_iter_bounds(reversed(deque), len(deque))
 
 
 fn test_str_and_repr() raises:
@@ -1059,49 +1088,4 @@ def test_repr_wrap():
 
 
 def main():
-    test_impl_init_default()
-    test_impl_init_capacity()
-    test_impl_init_min_capacity()
-    test_impl_init_maxlen()
-    test_impl_init_shrink()
-    test_impl_init_list()
-    test_impl_init_list_args()
-    test_impl_init_variadic()
-    test_impl_len()
-    test_impl_bool()
-    test_impl_append()
-    test_impl_append_with_maxlen()
-    test_impl_appendleft()
-    test_impl_appendleft_with_maxlen()
-    test_impl_extend()
-    test_impl_extendleft()
-    test_impl_insert()
-    test_impl_pop()
-    test_popleft()
-    test_impl_clear()
-    test_impl_add()
-    test_impl_iadd()
-    test_impl_mul()
-    test_impl_imul()
-    test_init_variadic_list()
-    test_copy_trivial()
-    test_copy_list()
-    test_move_list()
-    test_getitem()
-    test_setitem()
-    test_eq()
-    test_ne()
-    test_count()
-    test_contains()
-    test_index()
-    test_insert()
-    test_remove()
-    test_peek_and_peekleft()
-    test_reverse()
-    test_rotate()
-    test_iter()
-    test_iter_with_list()
-    test_reversed_iter()
-    test_str_and_repr()
-    test_deque_literal()
-    test_repr_wrap()
+    TestSuite.discover_tests[__functions_in_module()]().run()

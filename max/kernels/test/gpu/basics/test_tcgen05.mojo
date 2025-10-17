@@ -11,28 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
+from gpu.host.compile import _compile_code
 from gpu.memory import AddressSpace
+from gpu.mma_sm100 import MMASmemDescriptor
 from gpu.tcgen05 import (
     tcgen05_alloc,
+    tcgen05_cp,
     tcgen05_dealloc,
     tcgen05_ld,
-    tcgen05_st,
-    tcgen05_cp,
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
+    tcgen05_st,
     tcgen05_store_wait,
 )
+from layout import IntTuple, Layout, LayoutTensor
 from memory import stack_allocation
 from testing import assert_true
-from gpu.mma_sm100 import MMASmemDescriptor
-from layout import LayoutTensor, Layout, IntTuple
 
 
 fn alloc_test_fn[cta_group: Int32]():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space = AddressSpace.SHARED, alignment=16
+        UInt32, address_space = AddressSpace.SHARED
     ]()
     var num_cols: UInt32 = 32
     tcgen05_alloc[cta_group](ptr_tmem_addr, num_cols)
@@ -57,7 +57,7 @@ fn test_tcgen05_alloc() raises:
 
 fn alloc_dealloc_test_fn():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space = AddressSpace.SHARED, alignment=16
+        UInt32, address_space = AddressSpace.SHARED
     ]()
     var tmem_addr: UInt32 = 0
     var num_cols: UInt32 = 32
@@ -79,7 +79,7 @@ fn test_tcgen05_dealloc() raises:
 
 fn ld_test_fn():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space = AddressSpace.SHARED, alignment=16
+        UInt32, address_space = AddressSpace.SHARED
     ]()
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
@@ -107,7 +107,7 @@ fn test_tcgen05_ld() raises:
 
 fn st_test_fn():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space = AddressSpace.SHARED, alignment=16
+        UInt32, address_space = AddressSpace.SHARED
     ]()
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
@@ -134,7 +134,7 @@ fn test_tcgen05_st() raises:
 
 fn cp_test_fn():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space = AddressSpace.SHARED, alignment=16
+        UInt32, address_space = AddressSpace.SHARED
     ]()
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
@@ -170,7 +170,7 @@ fn test_tcgen05_cp() raises:
     )
 
 
-fn main() raises:
+def main():
     test_tcgen05_alloc()
     test_tcgen05_dealloc()
     test_tcgen05_ld()

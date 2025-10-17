@@ -6,6 +6,7 @@ modular_py_library(
     deps = [
         "//SDK/lib/API/python/max/pipelines/core",
         "//SDK/lib/API/python/max/pipelines/lib",
+        "//SDK/lib/API/python/max/serve:exceptions",
         "//SDK/lib/API/python/max/serve/kvcache_agent",
         "//SDK/lib/API/python/max/serve/scheduler",
         "//SDK/lib/API/python/max/serve/telemetry",
@@ -16,5 +17,6 @@ modular_py_library(
         requirement("uvloop"),
         requirement("psutil"),
         requirement("pyzmq"),
+        requirement("taskgroup"),  # only for python < 3.11
     ],
 )

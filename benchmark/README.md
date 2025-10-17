@@ -1,12 +1,16 @@
 # Benchmark MAX
 
-This directory contains tools to benchmark the performance of the
-[MAX inference engine](https://docs.modular.com/max/serve/). You can also use
-these scripts to compare different LLM serving backends such as
+This directory contains tools to benchmark the performance of an LLM model
+server—measuring throughput, latency, and resource utilization. You can use
+these scripts to compare other serving backends such as
 [vLLM](https://github.com/vllm-project/vllm) and
-[TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM) against MAX. The
-benchmarking tools measure throughput, latency, and resource utilization
-metrics.
+[TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM) against MAX.
+
+> [!NOTE]
+> This benchmarking script is also available with the `max benchmark` command,
+> which you can get by installing `modular` with pip, uv, conda, or pixi
+> package managers. Try it now by following the [MAX
+> quickstart guide](https://docs.modular.com/max/get-started).
 
 Key features:
 
@@ -19,20 +23,19 @@ Key features:
 > [vLLM](https://github.com/vllm-project/vllm/blob/main/benchmarks),
 > licensed under Apache 2.0. We forked this script to ensure consistency with
 > vLLM's measurement methodology and extended it with features we found helpful,
-> such as client-side NVIDIA GPU metric collection via `nvitop`.
-
-## Table of contents
-
-- [Get started](#get-started)
-- [Basic usage](#basic-usage)
-- [Reference](#reference)
-- [Troubleshooting](#troubleshooting)
+> such as client-side GPU metric collection via `max.diagnostics`.
 
 ## Get started
 
-If this is your first time benchmarking a MAX endpoint, we recommend that you
-follow our [tutorial to benchmark MAX on a
-GPU](https://docs.modular.com/max/tutorials/benchmark-max-serve/).
+If this is your first time benchmarking MAX, we suggest you read the following
+docs that walk you through the process to create and benchmark an endpoint:
+
+- To benchmark an endpoint created with the `max serve` CLI, read the [MAX
+quickstart guide](https://docs.modular.com/max/get-started).
+
+- To benchmark an endpoint created with our Docker container, read the tutorial
+to [Benchmark MAX on NVIDIA or AMD
+GPUs](https://docs.modular.com/max/tutorials/benchmark-max-serve).
 
 ## Basic usage
 
@@ -41,41 +44,97 @@ OpenAI-compatible APIs as follows.
 
 First enter the local virtual environment:
 
-```cd
-git clone -b stable https://github.com/modular/modular.git
+```bash
+# Either clone main (nightly):
+git clone https://github.com/modular/modular.git
+# Or clone stable:
+# git clone -b stable https://github.com/modular/modular.git
 
 cd modular/benchmark
 
 pixi shell
 ```
 
-Then run the benchmark script while specifying your active
-MAX endpoint, model, and corresponding dataset to
-use for benchmarking (for more detail, see our [benchmarking
-tutorial](https://docs.modular.com/max/tutorials/benchmark-max-serve)):
+Now install `modular` based on whether you cloned the main or stable branch
+(because the benchmarking script depends on `max` modules):
+
+```bash
+pixi add pip
+
+# If you cloned main:
+pip install --pre modular \
+  --index-url https://dl.modular.com/public/nightly/python/simple/
+
+# If you cloned stable:
+# pip install modular
+```
+
+Then run the benchmark script, specifying the model and a dataset:
 
 ```bash
 python benchmark_serving.py \
-    --base-url https://company_url.xyz \
-    --endpoint /v1/completions \
-    --backend modular \
-    --model meta-llama/Meta-Llama-3.1-8B-Instruct \
-    --dataset-name sharegpt \
-    --num-prompts 500
+  --model google/gemma-3-27b-it \
+  --backend modular \
+  --endpoint /v1/chat/completions \
+  --dataset-name sonnet \
+  --num-prompts 500 \
+  --sonnet-input-len 512 \
+  --output-lengths 256 \
+  --sonnet-prefix-len 200
 ```
 
-To exit the virtual environment shell simply run `exit`.
+To see all the available options, run:
 
-### Output
+```sh
+python benchmark_serving.py --help
+```
 
-Results are in JSON format. If you use the `--save-results` flag, the file is
-saved locally with the following naming convention:
+For more information, see the [`max benchmark`
+documentation](/max/max-cli#max-benchmark).
+
+## Config files
+
+When you want to save your benchmark configurations, you can define them in a
+YAML file and pass it with the `--config-file` option.
+
+The YAML file supports all the same properties as the `benchmark_serving.py`
+arguments, except in the YAML file the properties **must use `snake_case`
+names** instead of hyphenated names—for example, `--num-prompts` becomes
+`num_prompts`. And all properties must be nested under a top level
+`benchmark_config` key. For example:
+
+```sh
+benchmark_config:
+  model: google/gemma-3-27b-it
+  backend: modular
+  endpoint: /v1/chat/completions
+  dataset_name: sonnet
+  ...
+```
+
+To help you reproduce our own benchmarks, we've made some of our config files
+available in the [`configs`](configs/) directory. For example, copy our
+[`gemma-3-27b-sonnet-decode-heavy-prefix200.yaml`](https://github.com/modular/modular/tree/main/benchmark/configs)
+file from GitHub, and you can benchmark Gemma3-27B with this command:
+
+```sh
+max benchmark --config-file gemma-3-27b-sonnet-decode-heavy-prefix200.yaml
+```
+
+## Output
+
+Results are printed to the terminal but you can also save a JSON-formatted
+file by adding the `--save-result` flag. It's saved to the local directory
+with this naming convention:
 
 ```bash
 {backend}-{request_rate}qps-{model_name}-{timestamp}.json
 ```
 
-The output should look similar to the following:
+You can change the file name with `--result-filename` and change the directory
+with `--result-dir`.
+
+The output in the terminal should look similar to the following:
 
 ```bash
 ============ Serving Benchmark Result ============
@@ -124,33 +183,6 @@ or token-chunk generations
 - **GPU utilization**: Percentage of time during which at least one GPU kernel
 is being executed
 - **Peak GPU memory used**: Peak memory usage during benchmark run
-
-## Reference
-
-### Command line arguments for `benchmark_serving.py`
-
-- Backend configuration:
-  - `--backend`: Choose from `modular` (MAX `v1/completions` endpoint),
-  `modular-chat` (MAX `v1/chat/completions` endpoint), `vllm` (vLLM), or`trt-llm`
-  (TensorRT-LLM)
-  - `--model`: Hugging Face model ID or local path
-- Load generation:
-  - `--num-prompts`: Number of prompts to process (`int`, default: `500`)
-  - `--request-rate`: Request rate in requests/second (`int`, default: `inf`)
-  - `--seed`: The random seed used to sample the dataset (`int`, default: `0`)
-- Serving options
-  - `--base-url`: Base URL of the API service
-  - `--endpoint`: Specific API endpoint (`/v1/completions` or
-  `/v1/chat/completions`)
-  - `--tokenizer`: Hugging Face tokenizer to use (can be different from model)
-  - `--dataset-name`: (default:`sharegpt`) Real-world conversation data in the
-  form of variable length prompts and responses. ShareGPT is automatically
-  downloaded if not already present.
-- Additional options
-  - `--collect-gpu-stats`: Report GPU utilization and memory consumption.
-  Only works when running `benchmark_serving.py` on the same instance as
-  the server, and only on NVIDIA GPUs.
-  - `--save-results`: Saves results to a local JSON file.
 
 ## Troubleshooting
 

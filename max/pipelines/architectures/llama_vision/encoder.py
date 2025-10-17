@@ -79,7 +79,7 @@ class VisionEncoder(Layer):
         hidden_states: TensorValue,
         attention_mask: TensorValue,
         output_hidden_states: bool,
-    ) -> tuple[TensorValue, tuple[TensorValue] | None]:
+    ) -> tuple[TensorValue, tuple[TensorValue, ...] | None]:
         r"""
         Args:
             hidden_states (Tensor of shape `(batch_size, sequence_length, hidden_size)`):
@@ -92,7 +92,9 @@ class VisionEncoder(Layer):
                 Whether or not to return the hidden states of all layers. See `hidden_states` under returned tensors
                 for more detail.
         """
-        encoder_states: tuple | None = () if output_hidden_states else None
+        encoder_states: tuple[TensorValue, ...] | None = (
+            () if output_hidden_states else None
+        )
         for encoder_layer in self.layers:
             if encoder_states is not None:
                 encoder_states = encoder_states + (hidden_states,)

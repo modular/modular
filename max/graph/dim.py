@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import functools
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Union
+from typing import Any
 
 import numpy as np
 from max._core.dialects import builtin, kgen
@@ -78,15 +78,14 @@ class Dim:
         if isinstance(value, Dim):
             # Directly return existing Dim instance.
             return value
-        elif isinstance(value, (int, np.integer)):
+        elif isinstance(value, int | np.integer):
             return super().__new__(StaticDim)
         elif isinstance(value, str):
             return super().__new__(SymbolicDim)
         elif isinstance(value, kgen.ParamOperatorAttr):
             return super().__new__(AlgebraicDim)
 
-        msg = f"Unsupported dimension type {value} ({type(value)})"
-        raise TypeError(msg)
+        raise TypeError(f"Unsupported dimension type {value} ({type(value)})")
 
     def __index__(self) -> int:
         """Converts this dim to an index as used by indexing and slicing.
@@ -100,11 +99,10 @@ class Dim:
         integer or None.
         Related MyPy discussion: https://github.com/python/mypy/issues/2410
         """
-        msg = (
+        raise TypeError(
             "when using dims to index into a list or NumPy array, explicitly "
             "convert to int with int(dim)"
         )
-        raise TypeError(msg)
 
     def __int__(self) -> int:
         """Conversion to an int only supported for static dims."""
@@ -165,7 +163,7 @@ class Dim:
         return lhs + -self
 
     def __floordiv__(self, rhs: DimLike) -> Dim:
-        if isinstance(rhs, (int, StaticDim)) and int(rhs) == 0:
+        if isinstance(rhs, int | StaticDim) and int(rhs) == 0:
             raise ZeroDivisionError
         return AlgebraicDim.apply(kgen.POC.div, self, rhs)
 
@@ -330,7 +328,7 @@ class AlgebraicDim(Dim):
         )
 
     @classmethod
-    def apply(cls, op: kgen.POC, *operands: DimLike):
+    def apply(cls, op: kgen.POC, *operands: DimLike):  # noqa: ANN206
         # kgen.ParamOperatorAttr eagerly folds on construction!
         #  - this can return static or symbolic dims
         #  - let Dim decide what type to returtn
@@ -346,7 +344,7 @@ class AlgebraicDim(Dim):
         }
         formatter = formatters[format_spec or "str"]
 
-        def format(dim: Dim):
+        def format(dim: Dim):  # noqa: ANN202
             formatted = formatter(dim)
             return (
                 f"({formatted})" if isinstance(dim, AlgebraicDim) else formatted
@@ -445,7 +443,7 @@ class StaticDim(Dim):
             isinstance(other, StaticDim) and self.dim == other.dim
         )
 
-    def __lt__(self, other: Union[int, StaticDim]):
+    def __lt__(self, other: int | StaticDim):
         return self.dim < (other.dim if isinstance(other, StaticDim) else other)
 
     def __hash__(self):
@@ -482,4 +480,4 @@ class StaticDim(Dim):
         return ()
 
 
-DimLike = Union[int, str, Dim, np.integer[Any]]
+DimLike = int | str | Dim | np.integer[Any]

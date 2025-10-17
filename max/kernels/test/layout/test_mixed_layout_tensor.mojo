@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_true
 from layout._mixed_layout import MixedLayout, make_row_major
 from layout._mixed_layout_tensor import MixedLayoutTensor, distribute, tile
-from layout._mixed_tuple import Idx, MixedTuple, ComptimeInt, RuntimeInt
+from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
 from layout.int_tuple import IntTuple
+from testing import assert_equal, assert_true
 
 
-fn main() raises:
+def main():
     test_distribute()
     test_tile()
 
@@ -26,7 +26,8 @@ fn main() raises:
 fn test_distribute() raises:
     alias thread_layout = make_row_major(MixedTuple(Idx[2](), Idx[2]()))
 
-    var ptr = InlineArray[Scalar[DType.uint32], 16](fill=-1).unsafe_ptr()
+    var array = InlineArray[UInt32, 16](fill=-1)
+    var ptr = array.unsafe_ptr()
 
     alias data_layout_shape = MixedTuple[ComptimeInt[4], ComptimeInt[4]]
     alias data_layout_stride = MixedTuple[ComptimeInt[4], ComptimeInt[1]]
@@ -74,14 +75,14 @@ fn test_distribute() raises:
                 frag[MixedTuple(Idx(i), Idx(j))] = counter
                 counter += 1
 
-    alias expected = [0, 4, 1, 5, 8, 12, 9, 13, 2, 6, 3, 7, 10, 14, 11, 15]
+    var expected = [0, 4, 1, 5, 8, 12, 9, 13, 2, 6, 3, 7, 10, 14, 11, 15]
     for i in range(16):
         assert_equal(ptr[i], expected[i])
 
 
 fn test_tile() raises:
     # Create a 4x4 tensor with row-major layout
-    var data = InlineArray[Scalar[DType.uint32], 16](fill=0)
+    var data = InlineArray[UInt32, 16](fill=0)
     var ptr = data.unsafe_ptr()
 
     var layout_tensor = MixedLayoutTensor[dtype = DType.uint32](
@@ -111,6 +112,6 @@ fn test_tile() raises:
     # Tile (0,1): values 4,5,6,7   -> positions [2,3], [6,7]
     # Tile (1,0): values 8,9,10,11 -> positions [8,9], [12,13]
     # Tile (1,1): values 12,13,14,15 -> positions [10,11], [14,15]
-    alias expected = [0, 1, 4, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 14, 15]
+    var expected = [0, 1, 4, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 14, 15]
     for i in range(16):
         assert_equal(ptr[i], expected[i])

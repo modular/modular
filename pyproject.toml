@@ -1,8 +1,10 @@
 [project]
 name = "modular"
 version = "0"
-requires-python = ">= 3.9"
+requires-python = ">= 3.10"
 
+
+# TODO: restrict utils/packaging/conda/test_inputs to only test_format.mojo
 [tool.black]
 include = '\.mojo$'
 line-length = 80
@@ -18,7 +20,9 @@ force-exclude = '''
     | utils/mblack
     | KGEN/test/mojo-parser
     | KGEN/test/mojo-isolated
+    | KGEN/test/mojo-tool/format
     | SDK/lib/API/python/max/serve/schemas
+    | utils/packaging/conda/test_inputs
   )/
 )
 '''
@@ -39,15 +43,15 @@ extend-exclude = [
 ignore = [
   "ANN002", # TODO: Missing type annotation for *args
   "ANN003", # TODO: Missing type annotation for **kwargs
-  "ANN201", # TODO: Missing return type annotation for public function
-  "ANN202", # TODO: Missing return type annotation for private function
   "ANN204", # TODO: Missing return type annotation for special method
-  "ANN205", # TODO: Missing return type annotation for staticmethod
-  "ANN206", # TODO: Missing return type annotation for classmethod
   "ANN401", # TODO: Dynamically typed expressions (typing.Any) are disallowed in `**kwargs`
   "B008", # Do not perform function call in argument defaults
   "B017", # Do not assert blind exception: `Exception`
   "B028", # No explicit `stacklevel` keyword argument found
+  "D100", # TODO: Enable missing docstrings in public modules
+  "D101", # TODO: Enable missing docstrings in public classes
+  "D103", # TODO: Enable missing docstrings in public functions
+  "D104", # TODO: Enable missing docstrings in public packages
   "D105", # undocumented-magic-method
   "E402", # TODO: import top of file
   "E712", # TODO: Unnecessary comparison to bool
@@ -72,8 +76,6 @@ ignore = [
   "SIM117", # Merge with statements
   "SIM300", # YODA conditions
   "SIM905", # Use a list literal instead of str.split
-  "UP007", # TODO: Enable when we drop 3.9
-
 ]
 extend-select = [
   "ANN", # Require function type annotations
@@ -93,14 +95,17 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"] # Ignore unused imports being re-exported
 # Slow rollout of pydocstyle lint:
-"!SDK/lib/API/python/max/{engine/api.py,driver/driver.py}" = ["D"]
+# Enable docstring checks only for SDK modules in SDK/lib/API/python/ that currently pass all D rules.
+# To add more modules to this list, test them with:
+#   ./bazelw run //open-source/max/bazel/lint:ruff.check -- --select=D --no-cache <file>
+# and verify no errors are reported for that specific file.
+"!SDK/lib/API/python/max/{driver/__init__.py,driver/driver.py,driver/tensor.py,dtype/__init__.py,engine/__init__.py,engine/api.py,experimental/__init__.py,experimental/random.py,graph/__init__.py,graph/quantization.py,graph/weight.py,interfaces/context.py,interfaces/status.py,nn/embedding.py,nn/float8_config.py,nn/linear.py}" = ["D"]
 # Ignore ANN001 (function argument missing type annotation) for auto-generated
 # stubfiles
-"*.pyi" = ["ANN001"]
+"*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206"]
 # Disable lints which complain about weird unicode characters in files that include
 # a large number of LLM test prompts.
 "SDK/integration-test/pipelines/python/test_common/test_data.py" = ["RUF001", "RUF003"]
-"CloudInfra/services/sonic/tester/__main__.py" = ["RUF001", "RUF003"]
 
 [tool.pyright]
 # TODO: Upgrade to strict mode

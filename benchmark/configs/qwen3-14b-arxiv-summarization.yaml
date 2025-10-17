@@ -1,0 +1,23 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# max serve --model Qwen/Qwen3-14B
+# max benchmark --config-file qwen3-14b-arxiv-summarization.yaml
+benchmark_config:
+  model: Qwen/Qwen3-14B
+  backend: modular
+  endpoint: /v1/chat/completions
+  dataset_name: arxiv-summarization
+  num_prompts: 400
+  arxiv_summarization_input_len: 12000
+  max_output_len: 1200

@@ -12,11 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Test for MixedTuple GPU memory codegen."""
 
+import sys
+
 from gpu.host.compile import _compile_code, get_gpu_target
-from layout._mixed_tuple import MixedTuple, Idx, ComptimeInt, RuntimeInt
+from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
 from memory.unsafe_pointer import UnsafePointer
 from testing import assert_true
-import sys
 
 
 fn kernel(v: Int, ptr: UnsafePointer[Int32]):
@@ -49,5 +50,5 @@ fn test_mixed_tuple_codegen_memory() raises:
     assert_true("st.global.b32 \t[%rd3+4], %rd1" in nvidia_asm)
 
 
-fn main() raises:
+def main():
     test_mixed_tuple_codegen_memory()

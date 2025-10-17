@@ -57,7 +57,7 @@ fn _6bit_to_byte[width: Int](input: Bytes[width]) -> Bytes[width]:
     constrained[width in [4, 8, 16, 32, 64], "width must be between 4 and 64"]()
 
     fn indices() -> IndexList[width]:
-        alias perm = [1, 0, 2, 1]
+        var perm = [1, 0, 2, 1]
         var res = IndexList[width]()
         for i in range(width // 4):
             for j in range(4):
@@ -254,7 +254,9 @@ fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
         )
 
         var v_ptr = UnsafePointer(to=result_vector_with_equals).bitcast[Byte]()
-        memcpy(res_ptr + res_offset, v_ptr, nb_of_elements_to_store)
+        memcpy(
+            dest=res_ptr + res_offset, src=v_ptr, count=nb_of_elements_to_store
+        )
         res_offset += nb_of_elements_to_store
         input_index += input_simd_width
 
@@ -269,7 +271,7 @@ fn _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
 
     @parameter
     if width == v.size:
-        return v._refine[size=width]()
+        return v._refine[new_size=width]()
     return _repeat_until[width](v.join(v))
 
 

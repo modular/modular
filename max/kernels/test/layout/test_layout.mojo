@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from buffer import Dim, DimList
 from layout import *
+from layout._fillers import arange
 from layout.layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -34,8 +36,8 @@ from layout.layout import (
     zipped_divide,
 )
 from testing import assert_equal
+
 from utils import IndexList
-from buffer import DimList, Dim
 
 
 # CHECK-LABEL: test_layout_basic
@@ -125,6 +127,43 @@ fn test_layout_basic() raises:
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),
         ),
     )
+
+    assert_equal(
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, 128, 576),
+        Layout(
+            IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, 128, 576),
+            IntTuple(-1, 73728, 576, 1),
+        ),
+    )
+
+
+def test_layout_stride_value_access():
+    """Test that Layout stride values can be accessed correctly via `value()` method.
+    """
+    # Test basic 2D row-major layout
+    var layout_2d = Layout.row_major(8, 8)
+    assert_equal(layout_2d.stride.value(0), 8)
+    assert_equal(layout_2d.stride.value(1), 1)
+
+    # Test different sizes
+    var layout_4x16 = Layout.row_major(4, 16)
+    assert_equal(layout_4x16.stride.value(0), 16)
+    assert_equal(layout_4x16.stride.value(1), 1)
+
+    # Test 3D row-major layout
+    var layout_3d = Layout.row_major(3, 4, 5)
+    assert_equal(layout_3d.stride.value(0), 20)
+    assert_equal(layout_3d.stride.value(1), 5)
+    assert_equal(layout_3d.stride.value(2), 1)
+
+    # Test column-major layout (should also work)
+    var col_layout = Layout.col_major(8, 8)
+    assert_equal(col_layout.stride.value(0), 1)
+    assert_equal(col_layout.stride.value(1), 8)
+
+    # Test that shape values are also accessible
+    assert_equal(layout_2d.shape.value(0), 8)
+    assert_equal(layout_2d.shape.value(1), 8)
 
 
 fn test_unknowns() raises:
@@ -363,12 +402,13 @@ fn test_by_mode_composition() raises:
     alias layout0 = Layout.row_major(8, 4)
     alias tiler = MakeLayoutList(Layout(4, 1), Layout(2, 1))
     assert_equal(
-        composition(layout0, tiler), Layout(IntTuple(4, 2), IntTuple(4, 1))
+        composition(layout0, materialize[tiler]()),
+        Layout(IntTuple(4, 2), IntTuple(4, 1)),
     )
 
     alias layout1 = Layout.row_major(IntTuple(IntTuple(8, 6), 4, 2))
     assert_equal(
-        composition(layout1, tiler),
+        composition(layout1, materialize[tiler]()),
         Layout(IntTuple(4, 2, 2), IntTuple(48, 2, 1)),
     )
 
@@ -834,8 +874,69 @@ fn test_transpose() raises:
     assert_equal(col_major.cosize(), trans_col.cosize())
 
 
+def test_iter():
+    var layout = Layout.row_major(1, 2, 3, 4)
+    var it = iter(layout)
+    assert_equal(next(it), Layout(1, 24))
+    assert_equal(next(it), Layout(2, 12))
+    assert_equal(next(it), Layout(3, 4))
+    assert_equal(next(it), Layout(4, 1))
+    assert_equal(it.__has_next__(), False)
+    var layout2 = Layout()
+    assert_equal(iter(layout2).__has_next__(), False)
+
+
+def test_arange_nested_layout():
+    """Test arange function with nested layout structures."""
+    # Test nested layout with tile structure similar to GPU shared memory tiles
+    var nested_tensor = LayoutTensor[
+        DType.float32,
+        Layout(
+            IntTuple(IntTuple(16, 8), IntTuple(32, 2)),
+            IntTuple(IntTuple(32, 1024), IntTuple(1, 512)),
+        ),
+        MutableAnyOrigin,
+        alignment=16,
+    ].stack_allocation()
+    arange(nested_tensor)
+
+    # Test simple 2D layout with row-major for comparison
+    var simple_tensor = LayoutTensor[
+        DType.float32,
+        Layout.row_major(4, 4),
+        MutableAnyOrigin,
+    ].stack_allocation()
+    arange(simple_tensor)
+
+    # Verify values are filled in logical order (row-major)
+    assert_equal(simple_tensor[0, 0], 0.0)
+    assert_equal(simple_tensor[0, 1], 1.0)
+    assert_equal(simple_tensor[0, 2], 2.0)
+    assert_equal(simple_tensor[0, 3], 3.0)
+    assert_equal(simple_tensor[1, 0], 4.0)
+    assert_equal(simple_tensor[1, 1], 5.0)
+    assert_equal(simple_tensor[1, 2], 6.0)
+    assert_equal(simple_tensor[1, 3], 7.0)
+
+    # Test column-major layout
+    var col_major_tensor = LayoutTensor[
+        DType.float32,
+        Layout.col_major(4, 4),
+        MutableAnyOrigin,
+    ].stack_allocation()
+    arange(col_major_tensor)
+
+    # For column-major, values should still be in logical row-major order
+    # when accessed via [i, j] indexing
+    assert_equal(col_major_tensor[0, 0], 0.0)
+    assert_equal(col_major_tensor[0, 1], 1.0)
+    assert_equal(col_major_tensor[1, 0], 4.0)
+    assert_equal(col_major_tensor[1, 1], 5.0)
+
+
 def main():
     test_layout_basic()
+    test_layout_stride_value_access()
     test_unknowns()
     test_coalesce()
     test_composition()
@@ -854,3 +955,5 @@ def main():
     test_upcast()
     test_right_inverse()
     test_transpose()
+    test_iter()
+    test_arange_nested_layout()

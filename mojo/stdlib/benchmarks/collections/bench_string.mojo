@@ -26,7 +26,7 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 # Benchmark Data
 # ===-----------------------------------------------------------------------===#
 fn make_string[
-    length: UInt = 0
+    length: Int = 0
 ](filename: String = "UN_charter_EN.txt") -> String:
     """Make a `String` made of items in the `./data` directory.
 
@@ -44,7 +44,7 @@ fn make_string[
 
         @parameter
         if length > 0:
-            var items = f.read_bytes(Int(length))
+            var items = f.read_bytes(length)
             i = 0
             while length > len(items):
                 items.append(items[i])
@@ -77,7 +77,7 @@ fn bench_string_init(mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_string_count[
-    length: UInt = 0,
+    length: Int = 0,
     filename: StaticString = "UN_charter_EN",
     sequence: StaticString = "a",
 ](mut b: Bencher) raises:
@@ -98,7 +98,7 @@ fn bench_string_count[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_string_split[
-    length: UInt = 0,
+    length: Int = 0,
     filename: StaticString = "UN_charter_EN",
     sequence: Optional[StaticString] = None,
 ](mut b: Bencher) raises:
@@ -153,7 +153,7 @@ fn bench_string_join[short: Bool](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_string_splitlines[
-    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt").as_string_slice()
 
@@ -173,7 +173,7 @@ fn bench_string_splitlines[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_string_lower[
-    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
@@ -192,7 +192,7 @@ fn bench_string_lower[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_string_upper[
-    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
@@ -211,7 +211,7 @@ fn bench_string_upper[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_string_replace[
-    length: UInt = 0,
+    length: Int = 0,
     filename: StaticString = "UN_charter_EN",
     old: StaticString = "a",
     new: StaticString = "A",
@@ -233,7 +233,7 @@ fn bench_string_replace[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_string_find_single[
-    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
@@ -254,7 +254,7 @@ fn bench_string_find_single[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_string_find_multiple[
-    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
     var sequence = "ZZZZ"  # something that probably won't be there
@@ -277,7 +277,7 @@ fn bench_string_find_multiple[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_string_is_valid_utf8[
-    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".html")
 
@@ -296,7 +296,7 @@ fn bench_string_is_valid_utf8[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_write_utf8[
-    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
     var codepoints_iter = items.codepoints()

@@ -10,9 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+import time
+
 from conditional_context_mgr import ConditionalTimer, flaky_identity
 from testing import assert_raises
-import time
 
 
 def test_conditional_timer_no_error():

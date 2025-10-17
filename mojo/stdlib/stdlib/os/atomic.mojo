@@ -33,7 +33,12 @@ from memory import bitcast
 
 @register_passable("trivial")
 struct Consistency(
-    Copyable, EqualityComparable, Movable, Representable, Stringable
+    EqualityComparable,
+    Identifiable,
+    ImplicitlyCopyable,
+    Movable,
+    Representable,
+    Stringable,
 ):
     """Represents the consistency model for atomic operations.
 
@@ -114,18 +119,6 @@ struct Consistency(
             True if the objects are the same, False otherwise.
         """
         return self == other
-
-    @always_inline
-    fn __isnot__(self, other: Self) -> Bool:
-        """Checks if the Consistency object is not the same as another.
-
-        Args:
-            other: The other Consistency object to compare with.
-
-        Returns:
-            True if the objects are not the same, False otherwise.
-        """
-        return self != other
 
     fn __repr__(self) -> String:
         """Returns a string representation of a `Consistency`.
@@ -256,23 +249,52 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         """
         self.value = value
 
-    # TODO: Unfortunate this is mut, but this is using fetch_add to load the
-    # value. There is probably a better way to do this.
-    @always_inline
-    fn load(mut self) -> Scalar[dtype]:
+    @staticmethod
+    @always_inline("nodebug")
+    fn load[
+        *,
+        ordering: Consistency = Consistency.SEQUENTIAL,
+    ](ptr: UnsafePointer[Scalar[dtype], mut=False, **_]) -> Scalar[dtype]:
         """Loads the current value from the atomic.
+
+        Parameters:
+            ordering: The memory ordering of the load.
+
+        Args:
+            ptr: A pointer to the atomic value.
 
         Returns:
             The current value of the atomic.
         """
-        return self.fetch_add(0)
+
+        if is_compile_time():
+            return ptr[]
+
+        return __mlir_op.`pop.load`[
+            ordering = ordering.__mlir_attr(),
+            syncscope = _get_kgen_string[scope](),
+        ](ptr.address)
+
+    @always_inline
+    fn load[
+        *, ordering: Consistency = Consistency.SEQUENTIAL
+    ](self) -> Scalar[dtype]:
+        """Loads the current value from the atomic.
+
+        Parameters:
+            ordering: The memory ordering of the load.
+
+        Returns:
+            The current value of the atomic.
+        """
+        return Self.load[ordering=ordering](UnsafePointer(to=self.value))
 
     @staticmethod
     @always_inline("nodebug")
     fn fetch_add[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
-        ptr: UnsafePointer[Scalar[dtype], mut=True, **_], rhs: Scalar[dtype]
+        ptr: UnsafePointer[Scalar[dtype], mut=False, **_], rhs: Scalar[dtype]
     ) -> Scalar[dtype]:
         """Performs atomic in-place add.
 
@@ -295,7 +317,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         # Comptime interpreter doesn't support these operations.
         if is_compile_time():
             var res = ptr[]
-            ptr[] += rhs
+            # Safety: This is at compile-time so data races will not happen.
+            ptr.unsafe_mut_cast[True]()[] += rhs
             return res
 
         var res = __mlir_op.`pop.atomic.rmw`[
@@ -381,7 +404,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline
     fn fetch_add[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](mut self, rhs: Scalar[dtype]) -> Scalar[dtype]:
+    ](self, rhs: Scalar[dtype]) -> Scalar[dtype]:
         """Performs atomic in-place add.
 
         Atomically replaces the current value with the result of arithmetic
@@ -475,7 +498,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         failure_ordering: Consistency = Consistency.SEQUENTIAL,
         success_ordering: Consistency = Consistency.SEQUENTIAL,
     ](
-        ptr: UnsafePointer[Scalar[dtype], mut=True, **_],
+        ptr: UnsafePointer[Scalar[dtype], mut=False, **_],
         mut expected: Scalar[dtype],
         desired: Scalar[dtype],
     ) -> Bool:
@@ -500,7 +523,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
         if is_compile_time():
             if ptr[] == expected:
-                ptr[] = desired
+                # Safety: This is at compile-time so data races will not happen.
+                ptr.unsafe_mut_cast[True]()[] = desired
                 return True
             expected = ptr[]
             return False

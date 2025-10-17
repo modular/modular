@@ -19,7 +19,6 @@ import os
 import platform
 import uuid
 from time import time
-from typing import Union
 
 import requests
 from max.serve.config import Settings
@@ -91,8 +90,8 @@ metrics_resource = Resource.create(
 )
 
 
-def get_log_level(settings: Settings) -> Union[int, str, None]:
-    otlp_level: Union[int, str, None] = (
+def get_log_level(settings: Settings) -> int | str | None:
+    otlp_level: int | str | None = (
         logging.getLevelName(settings.logs_otlp_level)
         if settings.logs_otlp_level
         else None
@@ -157,7 +156,7 @@ class PrefixFormatter(logging.Formatter):
 # 3rd party imports whose logging you wish to capture.
 # Note that the color is not propagated to subprocesses. eg: ModelWorker
 def configure_logging(
-    settings: Settings, color: str | None = None, silent: bool = False
+    settings: Settings, color: str | None = None, silent: bool = True
 ) -> None:
     otlp_level = get_log_level(settings)
     egress_enabled = not settings.disable_telemetry
@@ -167,6 +166,7 @@ def configure_logging(
     # Set up log filtering
     components_to_log = [
         "root",
+        "max.interfaces",
         "max.entrypoints",
         "max.pipelines",
         "max.serve",
@@ -203,14 +203,13 @@ def configure_logging(
         console_formatter: logging.Formatter
         if settings.structured_logging:
             console_formatter = jsonlogger.JsonFormatter(
-                f"{color_code}%(levelname)s %(process)d %(threadName)s %(name)s %(message)s %(request_id)s %(batch_id)s{color_terminator}",
+                f"{color_code}%(levelname)s: %(message)s %(request_id)s %(batch_id)s{color_terminator}",
                 timestamp=True,
             )
         else:
             console_formatter = logging.Formatter(
                 (
-                    f"{color_code}%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s:"
-                    f" %(name)s:{color_terminator} %(message)s"
+                    f"{color_code}%(asctime)s.%(msecs)03d %(levelname)s:{color_terminator} %(message)s"
                 ),
                 datefmt="%H:%M:%S",
             )
@@ -236,15 +235,12 @@ def configure_logging(
         file_formatter: logging.Formatter
         if settings.structured_logging:
             file_formatter = jsonlogger.JsonFormatter(
-                "%(levelname)s %(process)d %(threadName)s %(name)s %(message)s %(request_id)s %(batch_id)s",
+                "%(levelname)s %(message)s %(request_id)s %(batch_id)s",
                 timestamp=True,
             )
         else:
             file_formatter = logging.Formatter(
-                (
-                    "%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s:"
-                    " %(name)s: %(message)s"
-                ),
+                ("%(asctime)s.%(msecs)03d %(levelname)s: %(message)s"),
                 datefmt="%y:%m:%d-%H:%M:%S",
             )
 

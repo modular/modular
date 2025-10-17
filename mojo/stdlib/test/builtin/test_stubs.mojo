@@ -13,7 +13,7 @@
 
 from sys.intrinsics import _type_is_eq
 
-from testing import assert_false, assert_true
+from testing import assert_false, assert_true, TestSuite
 
 
 def test_uint_for():
@@ -48,5 +48,4 @@ def test_uint_parameter_for():
 
 
 def main():
-    test_uint_for()
-    test_uint_parameter_for()
+    TestSuite.discover_tests[__functions_in_module()]().run()

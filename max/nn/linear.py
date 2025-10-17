@@ -16,10 +16,9 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
-from typing import Callable
 
 import numpy as np
 from max.dtype import DType
@@ -39,6 +38,10 @@ from max.nn.float8_config import (
     Float8Config,
     Float8ScaleGranularity,
 )
+from max.nn.kernels import (
+    convert_weights_to_fp8_fnuz_if_needed,
+)
+from max.support.math import ceildiv
 
 from .clamp import clamp
 from .kernels import (
@@ -52,8 +55,7 @@ from .layer import Layer, Module, Shardable
 
 
 class Linear(Module, Shardable):
-    """
-    Applies a linear transformation to incoming data: :math:`y = xW^T + b`.
+    """Applies a linear transformation to incoming data: :math:`y = xW^T + b`.
 
     This layer implements a fully connected layer where inputs are multiplied
     by a weight matrix and optionally added with a bias vector.
@@ -166,10 +168,11 @@ class Linear(Module, Shardable):
             if float8_config.input_scale.granularity not in (
                 Float8ScaleGranularity.TENSOR,
                 Float8ScaleGranularity.COLWISE,
+                Float8ScaleGranularity.BLOCK,
             ):
                 raise ValueError(
                     f"unsupported input scale granularity {float8_config.input_scale.granularity}. "
-                    "Only tensor and col-wise are supported, currently"
+                    "Only TENSOR, COLWISE and BLOCK granularities are supported, currently"
                 )
 
             weight_scale_shape: tuple[int, ...]
@@ -178,6 +181,18 @@ class Linear(Module, Shardable):
                 weight_scale_shape = (int(self.weight.shape[0]), 1)
             elif weight_scale.is_tensor:
                 weight_scale_shape = ()
+            elif weight_scale.is_block:
+                assert float8_config.weight_scale.block_size is not None
+                weight_scale_shape = (
+                    ceildiv(
+                        int(self.weight.shape[0]),
+                        float8_config.weight_scale.block_size[0],
+                    ),
+                    ceildiv(
+                        int(self.weight.shape[1]),
+                        float8_config.weight_scale.block_size[1],
+                    ),
+                )
             else:
                 raise ValueError(
                     "only row-wise and tensor scaling are "
@@ -212,18 +227,35 @@ class Linear(Module, Shardable):
             # Weight scale should only be added when a float8 config is passed.
             assert self.float8_config
 
-            # When the weight scale is rowwise of shape (M, 1), or tensor of
-            # shape (1,), replicate it across devices when weight sharding is
-            # colwise.
-            should_replicate = self.float8_config.weight_scale.is_tensor or (
-                (strategy.is_colwise or strategy.is_head_aware_colwise)
-                and self.float8_config.weight_scale.is_rowwise
-            )
-            self.weight_scale.sharding_strategy = (
-                ShardingStrategy.replicate(strategy.num_devices)
-                if should_replicate
-                else strategy
-            )
+            # Determine weight scale sharding strategy based on weight scale type
+            # and weight sharding strategy.
+            if self.float8_config.weight_scale.is_tensor:
+                # Tensor scaling: always replicate
+                self.weight_scale.sharding_strategy = (
+                    ShardingStrategy.replicate(strategy.num_devices)
+                )
+            elif self.float8_config.weight_scale.is_rowwise:
+                if strategy.is_colwise or strategy.is_head_aware_colwise:
+                    # Rowwise scale + columnwise weight: replicate to avoid shape mismatch
+                    self.weight_scale.sharding_strategy = (
+                        ShardingStrategy.replicate(strategy.num_devices)
+                    )
+                else:
+                    # Rowwise scale + rowwise weight: shard along same dimension
+                    self.weight_scale.sharding_strategy = strategy
+            elif self.float8_config.weight_scale.is_block:
+                # Block scaling: always follow weight sharding since blocks correspond
+                # to regions in the weight matrix
+                if int(self.weight_scale.shape[0]) % strategy.num_devices != 0:
+                    raise ValueError(
+                        f"Weight scale dim ({self.weight_scale.shape[0]}) is "
+                        f"not divisible by the number of devices ({strategy.num_devices}) for block-wise scaling."
+                    )
+
+                self.weight_scale.sharding_strategy = strategy
+            else:
+                # Colwise scaling (if supported in future)
+                self.weight_scale.sharding_strategy = strategy
 
         if self.bias:
             # Only truly shard the bias across devices when the weight sharding
@@ -277,7 +309,7 @@ class Linear(Module, Shardable):
 
         shards = []
         for shard_idx, (device, weight_shard) in enumerate(
-            zip(devices, sharded_weights)
+            zip(devices, sharded_weights, strict=True)
         ):
             # Create new Linear with same configuration.
             sharded = Linear(
@@ -343,7 +375,7 @@ class Linear(Module, Shardable):
         Raises:
             ValueError: If the last dimension of ``x`` doesn't match ``in_dim``.
         """
-        weight: TensorValue = self.weight
+        weight: TensorValue = self.weight.to(x.device)
         if self.clip_weight:
             weight = clamp(weight, -self.clip_weight, self.clip_weight)
 
@@ -354,12 +386,18 @@ class Linear(Module, Shardable):
         elif self.float8_config:
             assert self.weight_scale is not None
             weight_scale: TensorValue = self.weight_scale
-            if self.input_scale is not None:
-                x = quantize_static_scaled_float8(x, self.input_scale)
 
-                input_scale: TensorValue = self.input_scale
+            weight, weight_scale = convert_weights_to_fp8_fnuz_if_needed(
+                weight, weight_scale
+            )
+
+            if self.input_scale is not None:
+                x = quantize_static_scaled_float8(
+                    x, self.input_scale, out_type=weight.dtype
+                )
+
                 res = matmul_static_scaled_float8(
-                    x, weight, input_scale, weight_scale
+                    x, weight, self.input_scale, weight_scale
                 )
             else:
                 x, x_scales = quantize_dynamic_scaled_float8(
@@ -367,8 +405,8 @@ class Linear(Module, Shardable):
                     self.float8_config.input_scale,
                     self.float8_config.weight_scale,
                     scales_type=weight_scale.dtype,
+                    out_type=weight.dtype,
                 )
-
                 if self.device:
                     weight_scale = weight_scale.to(self.device)
 
@@ -385,7 +423,7 @@ class Linear(Module, Shardable):
             res = x @ weight.T
 
         if self.bias is not None:
-            res += self.bias
+            res += self.bias.to(res.device)
         return res
 
 
@@ -449,7 +487,8 @@ class ColumnParallelLinear(Linear):
         tied_weight: Weight | None = None,
         **kwargs,
     ) -> None:
-        """
+        """Initializes the column-parallel linear layer.
+
         Args:
             in_dim: The dimensionality of the input space.
             out_dim: The dimensionality of the output space.
@@ -458,6 +497,7 @@ class ColumnParallelLinear(Linear):
                 Weights remain on CPU until sharded and moved to device during
                 computation.
             tied_weight: Optional :obj:`Weight` to tie with this layer.
+            **kwargs: Additional keyword arguments passed to the Linear initializer.
         """
         if len(devices) == 0:
             raise ValueError(
@@ -552,6 +592,14 @@ class LinearV1(Layer):
     """Optional bias tensor for the linear transformation."""
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Applies the linear transformation to the input.
+
+        Args:
+            x: Input tensor to transform.
+
+        Returns:
+            The transformed tensor after applying the linear layer.
+        """
         weight = TensorValue(self.weight)
         if weight.type.device != x.type.device:
             weight = weight.to(x.type.device)
@@ -659,6 +707,14 @@ class QLinearV1(LinearV1):
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Applies the quantized linear transformation to the input.
+
+        Args:
+            x: Input tensor to transform.
+
+        Returns:
+            The transformed tensor after applying the quantized linear layer.
+        """
         assert self.quantization_encoding is not None
         weight = TensorValue(self.weight)
         weight = weight.to(x.type.device)
@@ -708,7 +764,6 @@ class GPTQLinearV1(QLinearV1):
         Returns:
             A :obj:`LinearV1` instance.
         """
-
         assert quantization_config, (
             "QuantizationConfig must be provided for GPTQLinear"
         )
@@ -766,6 +821,14 @@ class GPTQLinearV1(QLinearV1):
             return LinearV1(weight, bias_weight)
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Applies the GPTQ quantized linear transformation to the input.
+
+        Args:
+            x: Input tensor to transform.
+
+        Returns:
+            The transformed tensor after applying the GPTQ quantized linear layer.
+        """
         assert self.quantization_encoding is not None
         weight = TensorValue(self.weight)
         if self.perm_idx is not None:
@@ -801,8 +864,9 @@ class GPTQLinear(Linear):
         quantization_config: QuantizationConfig | None = None,
         float8_config: Float8Config | None = None,
     ) -> None:
-        """Initializes the linear layer with weights and optional bias with
-        GPTQ quantization.
+        """Initializes the linear layer with weights and optional bias with GPTQ quantization.
+
+        Initializes the layer for GPTQ quantized linear transformations.
 
         Args:
             in_dim: The dimensionality of the input space.
@@ -855,6 +919,14 @@ class GPTQLinear(Linear):
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Applies the GPTQLinear transformation to the input.
+
+        Args:
+            x: Input tensor to transform.
+
+        Returns:
+            The transformed tensor after applying the GPTQ linear layer.
+        """
         assert self.qweight.quantization_encoding is not None
         qweight_dtype, qweight_shape = self.qweight.original_dtype_and_shape
         qweight = ops.reshape(
@@ -895,8 +967,8 @@ class GPTQLinear(Linear):
 
 @dataclass
 class MLPV1(Layer):
-    """
-    Simple multi-layer perceptron composed of three :obj:`LinearV1` layers.
+    """Simple multi-layer perceptron composed of three :obj:`LinearV1` layers.
+
     Uses SiLU activation function.
 
     .. deprecated:: 25.5
@@ -913,6 +985,14 @@ class MLPV1(Layer):
     """The up projection :obj:`LinearV1` layer."""
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
+        """Applies the MLP transformation to the input.
+
+        Args:
+            x: Input tensor to transform.
+
+        Returns:
+            The transformed tensor after applying the MLP layers.
+        """
         if (
             self.gate_proj.bias is None
             and self.up_proj.bias is None
@@ -940,7 +1020,10 @@ _ACTIVATION_FUNCTIONS = {
 
 @dataclass
 class DistributedGemmConfig:
-    """Configure how distributed GEMM is executed."""
+    """Configure how distributed GEMM is executed.
+
+    Configuration for distributed General Matrix Multiply operations.
+    """
 
     enable_matmul_allreduce: bool
     """If ``True``, use the matmul + all_reduce kernel."""
@@ -961,8 +1044,8 @@ class DistributedGemmConfig:
 
 
 class MLP(Module, Shardable):
-    """
-    Simple multi-layer perceptron composed of three :obj:`Linear` layers.
+    """Simple multi-layer perceptron composed of three :obj:`Linear` layers.
+
     Defaults to SiLU activation function.
     """
 
@@ -979,7 +1062,8 @@ class MLP(Module, Shardable):
         float8_config: Float8Config | None = None,
         dist_gemm_config: DistributedGemmConfig | None = None,
     ) -> None:
-        """
+        """Initializes the MLP layer.
+
         Args:
             dtype: :obj:`DType` to use for the layer weights, which should match the
                 input dtype.
@@ -1044,6 +1128,14 @@ class MLP(Module, Shardable):
         self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
+        """Applies the MLP transformation to the input.
+
+        Args:
+            x: Input tensor to transform.
+
+        Returns:
+            The transformed tensor after applying the MLP layers.
+        """
         if self.quantization_encoding or self.float8_config:
             return self.down_proj(
                 self.activation_function(self.gate_proj(TensorValue(x)))
@@ -1145,7 +1237,11 @@ class MLP(Module, Shardable):
 
         shards = []
         for device, gate_proj, down_proj, up_proj in zip(
-            devices, sharded_gate_projs, sharded_down_projs, sharded_up_projs
+            devices,
+            sharded_gate_projs,
+            sharded_down_projs,
+            sharded_up_projs,
+            strict=True,
         ):
             # Create new MLP instance with the sharded layers
             sharded = MLP(

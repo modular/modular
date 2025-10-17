@@ -10,27 +10,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from abc import ABC, abstractmethod
-from typing import Union
+import asyncio
+from enum import Enum
 
 import msgspec
 from max.interfaces import RequestID
-from max.nn.kv_cache import KVTransferEngineMetadata, XferReqData
+from max.nn.kv_cache import TransferReqData
 from max.pipelines.core import TextAndVisionContext, TextContext
 
 
-class Scheduler(ABC):
-    """Abstract base class defining the interface for schedulers."""
+class SchedulerProgress(Enum):
+    """Indicates whether a scheduler made progress during an iteration."""
 
-    @abstractmethod
-    def run_iteration(self):
-        """The core scheduler routine that creates and executes batches.
+    MADE_PROGRESS = "made_progress"
+    NO_PROGRESS = "no_progress"
 
-        This method should implement the core scheduling logic including:
-        - Batch creation and management
-        - Request scheduling
-        """
-        pass
+
+async def sleep_with_backoff(count_no_progress: int) -> None:
+    """A basic strategy to avoid busy waiting.
+
+    This function sleeps with a linear backoff.
+    The first sleep of 0 enables other async threads to run but otherwise does not sleep.
+    The step size is 1ms because of limitations around asyncio to sleep with finer granularity.
+    The maximum sleep is 10ms because it resolves CPU usage overhead while maintaining minimal waiting.
+    """
+
+    ms_to_sleep = min(max(0, count_no_progress), 10)
+    await asyncio.sleep(ms_to_sleep * 0.001)
 
 
 class PrefillRequest(
@@ -49,7 +55,7 @@ class PrefillRequest(
     """
 
     id: RequestID
-    context: Union[TextContext, TextAndVisionContext]
+    context: TextContext | TextAndVisionContext
     transfer_engine_name: str
     block_ids: list[int]
 
@@ -65,11 +71,23 @@ class PrefillResponse(
     Attributes:
         id: Unique identifier for this request
         context: The input context containing the request data and state
+        transfer_metadata: The transfer metadata for the KV cache transfers
     """
 
     id: RequestID
-    context: Union[TextContext, TextAndVisionContext]
-    transfer_metadata: XferReqData
+    generated_token_id: int
+    transfer_metadata: TransferReqData
 
 
-PayloadType = Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
+class CancelRequest(msgspec.Struct, tag=True, omit_defaults=True, kw_only=True):
+    """A request to cancel an ongoing request.
+
+    Used to signal that a specific request should be cancelled and its resources
+    should be freed. This is typically used to cancel prefill or decode requests
+    that are no longer needed.
+
+    Attributes:
+        id: Unique identifier of the request to cancel
+    """
+
+    id: RequestID

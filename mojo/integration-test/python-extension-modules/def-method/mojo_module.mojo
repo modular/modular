@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OwnedKwargsDict
 from os import abort
 
 from python import Python, PythonObject
 from python.bindings import PythonModuleBuilder
-from collections import OwnedKwargsDict
 
 
 @export
@@ -61,7 +61,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
 
 @fieldwise_init
-struct Person(Copyable, Defaultable, Movable, Representable):
+struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
     var name: String
     var age: Int
 

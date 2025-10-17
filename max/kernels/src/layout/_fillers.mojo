@@ -21,6 +21,7 @@ The module includes:
 - Random value generation (`random`)
 """
 
+from itertools import product
 from random import random_float64
 from sys import is_nvidia_gpu
 
@@ -119,7 +120,7 @@ fn arange[
         from layout import Layout, LayoutTensor
         from layout._fillers import arange
 
-        var storage = InlineArray[Scalar[DType.float32], 16](uninitialized=True)
+        var storage = InlineArray[Float32, 16](uninitialized=True)
         var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
         arange(tensor, 0, 0.5, 10)  # Fills with [0, 0.5, 1, 1.5, ...]
         ```
@@ -129,17 +130,19 @@ fn arange[
     fn filler(i: Int) -> Scalar[tensor.dtype]:
         return (i * step + start) % end
 
-    # Use layout info for 2D tensors
+    # Use layout info for 2D tensors with simple (non-nested) shapes
     @parameter
-    if len(tensor.layout) != 2:
+    if (
+        len(tensor.layout) != 2
+        or len(tensor.layout.shape[0]) != 1
+        or len(tensor.layout.shape[1]) != 1
+    ):
         _filler_impl[filler, use_runtime_layout](tensor)
     else:
-        for m in range(tensor.runtime_layout.shape[0].value[0]):
-            for n in range(tensor.runtime_layout.shape[1].value[0]):
-                tensor[m, n] = (
-                    (m * tensor.runtime_layout.shape[1].value[0] + n) * step
-                    + start
-                ) % end
+        var rows = Int(tensor.runtime_layout.shape[0][0])
+        var cols = Int(tensor.runtime_layout.shape[1][0])
+        for m, n in product(range(rows), range(cols)):
+            tensor[m, n] = ((m * cols + n) * step + start) % end
 
 
 fn random[
@@ -182,7 +185,7 @@ fn random[
         from layout import Layout, LayoutTensor
         from layout._fillers import random
 
-        var storage = InlineArray[Scalar[DType.float32], 16](uninitialized=True)
+        var storage = InlineArray[Float32, 16](uninitialized=True)
         var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
         random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
         ```

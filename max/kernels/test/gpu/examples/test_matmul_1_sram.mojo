@@ -93,11 +93,11 @@ fn matmul_sram(
         @parameter
         if not full_tile:
             a_val = a[row, offset + localCol] if (
-                row < M and offset + localCol < K
+                row < UInt(M) and offset + localCol < K
             ) else 0.0
         else:
-            a_val = a[row, offset + localCol] if row < M else 0.0
-        a_shared[localRow * tile_size + localCol] = a_val
+            a_val = a[row, offset + localCol] if row < UInt(M) else 0.0
+        a_shared[localRow * UInt(tile_size) + localCol] = a_val
 
         # Load B tile into shared memory.
         var b_val: Float32
@@ -105,18 +105,18 @@ fn matmul_sram(
         @parameter
         if not full_tile:
             b_val = b[offset + localRow, col] if (
-                col < N and offset + localRow < K
+                col < UInt(N) and offset + localRow < K
             ) else 0.0
         else:
-            b_val = b[offset + localRow, col] if col < N else 0.0
-        b_shared[localRow * tile_size + localCol] = b_val
+            b_val = b[offset + localRow, col] if col < UInt(N) else 0.0
+        b_shared[localRow * UInt(tile_size) + localCol] = b_val
 
         barrier()
 
         for k in range(tile_size):
-            result += a_shared.load(localRow * tile_size + k) * b_shared.load(
-                k * tile_size + localCol
-            )
+            result += a_shared.load(
+                localRow * UInt(tile_size) + UInt(k)
+            ) * b_shared.load(k * tile_size + localCol)
 
         barrier()
 
@@ -124,7 +124,7 @@ fn matmul_sram(
         0, K, VariadicList[Int](tile_size, K_remainder)
     )
 
-    if row < M and col < N:
+    if row < UInt(M) and col < UInt(N):
         c[Index(row, col)] = result
 
 
@@ -162,7 +162,7 @@ fn run_matmul(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_function[matmul_sram](
+    ctx.enqueue_function_checked[matmul_sram, matmul_sram](
         a_device,
         b_device,
         c_device,

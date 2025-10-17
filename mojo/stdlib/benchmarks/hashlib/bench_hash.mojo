@@ -14,7 +14,6 @@
 from hashlib import Hasher
 from hashlib._ahash import AHasher
 from hashlib._fnv1a import Fnv1a
-from hashlib._djbx33a import DJBX33A
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
@@ -577,7 +576,7 @@ fn gen_word_pairs[words: String = words_en]() -> List[String]:
         for w in list:
             var w2 = w.strip()
             result.append(w1 + " " + w2)
-    return result
+    return result^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -619,18 +618,12 @@ def main():
     m.bench_function[bench_small_keys[words_ar, Fnv1a]](
         BenchId("bench_fnv1a_small_keys_ar")
     )
-    m.bench_function[bench_small_keys[words_ar, DJBX33A]](
-        BenchId("bench_djbx33a_small_keys_ar")
-    )
 
     m.bench_function[
         bench_long_key[words_ar, AHasher[SIMD[DType.uint64, 4](0)]]
     ](BenchId("bench_ahash_long_keys_ar"))
     m.bench_function[bench_long_key[words_ar, Fnv1a]](
         BenchId("bench_fnv1a_long_keys_ar")
-    )
-    m.bench_function[bench_long_key[words_ar, DJBX33A]](
-        BenchId("bench_djbx33a_long_keys_ar")
     )
 
     m.bench_function[
@@ -639,18 +632,12 @@ def main():
     m.bench_function[bench_small_keys[words_el, Fnv1a]](
         BenchId("bench_fnv1a_small_keys_el")
     )
-    m.bench_function[bench_small_keys[words_el, DJBX33A]](
-        BenchId("bench_djbx33a_small_keys_el")
-    )
 
     m.bench_function[
         bench_long_key[words_el, AHasher[SIMD[DType.uint64, 4](0)]]
     ](BenchId("bench_ahash_long_keys_el"))
     m.bench_function[bench_long_key[words_el, Fnv1a]](
         BenchId("bench_fnv1a_long_keys_el")
-    )
-    m.bench_function[bench_long_key[words_el, DJBX33A]](
-        BenchId("bench_djbx33a_long_keys_el")
     )
 
     m.bench_function[
@@ -659,18 +646,12 @@ def main():
     m.bench_function[bench_small_keys[words_en, Fnv1a]](
         BenchId("bench_fnv1a_small_keys_en")
     )
-    m.bench_function[bench_small_keys[words_en, DJBX33A]](
-        BenchId("bench_djbx33a_small_keys_en")
-    )
 
     m.bench_function[
         bench_long_key[words_en, AHasher[SIMD[DType.uint64, 4](0)]]
     ](BenchId("bench_ahash_long_keys_en"))
     m.bench_function[bench_long_key[words_en, Fnv1a]](
         BenchId("bench_fnv1a_long_keys_en")
-    )
-    m.bench_function[bench_long_key[words_en, DJBX33A]](
-        BenchId("bench_djbx33a_long_keys_en")
     )
 
     m.bench_function[
@@ -679,18 +660,12 @@ def main():
     m.bench_function[bench_small_keys[words_he, Fnv1a]](
         BenchId("bench_fnv1a_small_keys_he")
     )
-    m.bench_function[bench_small_keys[words_he, DJBX33A]](
-        BenchId("bench_djbx33a_small_keys_he")
-    )
 
     m.bench_function[
         bench_long_key[words_he, AHasher[SIMD[DType.uint64, 4](0)]]
     ](BenchId("bench_ahash_long_keys_he"))
     m.bench_function[bench_long_key[words_he, Fnv1a]](
         BenchId("bench_fnv1a_long_keys_he")
-    )
-    m.bench_function[bench_long_key[words_he, DJBX33A]](
-        BenchId("bench_djbx33a_long_keys_he")
     )
 
     m.bench_function[
@@ -699,18 +674,12 @@ def main():
     m.bench_function[bench_small_keys[words_lv, Fnv1a]](
         BenchId("bench_fnv1a_small_keys_lv")
     )
-    m.bench_function[bench_small_keys[words_lv, DJBX33A]](
-        BenchId("bench_djbx33a_small_keys_lv")
-    )
 
     m.bench_function[
         bench_long_key[words_lv, AHasher[SIMD[DType.uint64, 4](0)]]
     ](BenchId("bench_ahash_long_keys_lv"))
     m.bench_function[bench_long_key[words_lv, Fnv1a]](
         BenchId("bench_fnv1a_long_keys_lv")
-    )
-    m.bench_function[bench_long_key[words_lv, DJBX33A]](
-        BenchId("bench_djbx33a_long_keys_lv")
     )
 
     m.bench_function[
@@ -719,18 +688,12 @@ def main():
     m.bench_function[bench_small_keys[words_pl, Fnv1a]](
         BenchId("bench_fnv1a_small_keys_pl")
     )
-    m.bench_function[bench_small_keys[words_pl, DJBX33A]](
-        BenchId("bench_djbx33a_small_keys_pl")
-    )
 
     m.bench_function[
         bench_long_key[words_pl, AHasher[SIMD[DType.uint64, 4](0)]]
     ](BenchId("bench_ahash_long_keys_pl"))
     m.bench_function[bench_long_key[words_pl, Fnv1a]](
         BenchId("bench_fnv1a_long_keys_pl")
-    )
-    m.bench_function[bench_long_key[words_pl, DJBX33A]](
-        BenchId("bench_djbx33a_long_keys_pl")
     )
 
     m.bench_function[
@@ -739,18 +702,12 @@ def main():
     m.bench_function[bench_small_keys[words_ru, Fnv1a]](
         BenchId("bench_fnv1a_small_keys_ru")
     )
-    m.bench_function[bench_small_keys[words_ru, DJBX33A]](
-        BenchId("bench_djbx33a_small_keys_ru")
-    )
 
     m.bench_function[
         bench_long_key[words_ru, AHasher[SIMD[DType.uint64, 4](0)]]
     ](BenchId("bench_ahash_long_keys_ru"))
     m.bench_function[bench_long_key[words_ru, Fnv1a]](
         BenchId("bench_fnv1a_long_keys_ru")
-    )
-    m.bench_function[bench_long_key[words_ru, DJBX33A]](
-        BenchId("bench_djbx33a_long_keys_ru")
     )
 
     m.dump_report()

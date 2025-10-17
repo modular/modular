@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from io.io import _printf
 from math import ceildiv
 from os import abort
 from sys import size_of
 from sys.info import align_of, simd_width_of
 
 from buffer.dimlist import Dim
-from io.io import _printf
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -29,24 +29,20 @@ from gpu import (
     thread_idx,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.memory import (
-    AddressSpace,
-    external_memory,
-)
+from gpu.memory import AddressSpace, external_memory
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import size
 from layout.layout_tensor import (
     LayoutTensorIter,
-    copy_local_to_shared,
     copy_local_to_dram,
+    copy_local_to_shared,
     copy_sram_to_dram,
 )
 from layout.swizzle import make_swizzle
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import get_fragment_size, get_mma_shape
-from linalg._multistage_gemm_gpu import multistage_mma
+from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import block_swizzle
 from testing import assert_almost_equal
@@ -77,24 +73,24 @@ struct BackToBackMatmulConfig[
     var num_pipeline_stages: UInt
 
     fn num_warps_m(self) -> UInt:
-        return self.block_tile_shape[0] // self.warp_tile_shape[0]
+        return UInt(self.block_tile_shape[0] // self.warp_tile_shape[0])
 
     fn num_warps_n(self) -> UInt:
-        return self.block_tile_shape[1] // self.warp_tile_shape[1]
+        return UInt(self.block_tile_shape[1] // self.warp_tile_shape[1])
 
     fn num_threads(self) -> UInt:
-        return self.num_warps_m() * self.num_warps_n() * WARP_SIZE
+        return UInt(self.num_warps_m() * self.num_warps_n() * UInt(WARP_SIZE))
 
     fn shared_mem_usage(self, K: UInt) -> Int:
         return (
             self.block_tile_shape[0] * K
             + self.num_pipeline_stages
-            * self.block_tile_shape[1]
-            * self.block_tile_shape[2]
+            * UInt(self.block_tile_shape[1])
+            * UInt(self.block_tile_shape[2])
         ) * size_of[src_type]()
 
     fn grid_dim(self, M: UInt) -> IndexList[3]:
-        return Index(1, Int(ceildiv(M, self.block_tile_shape[0])), 1)
+        return Index(1, Int(ceildiv(M, UInt(self.block_tile_shape[0]))), 1)
 
     fn block_dim(self) -> IndexList[3]:
         return Index(Int(self.num_threads()), 1, 1)
@@ -173,13 +169,13 @@ fn b2b_gemm[
     # B is K x L
     # C is L x N
     # B is M x N
-    var M: UInt = D.dim[0]()
-    var L: UInt = B.dim[0 if transpose_b else 1]()
+    var M: UInt = UInt(D.dim[0]())
+    var L: UInt = UInt(B.dim[0 if transpose_b else 1]())
     # var K: UInt = B.dim[1 if transpose_b else 0]()
     # TODO: allow dynamic `K`, so long as it still
     # fits in shared memory, we shouldn't require static.
-    alias K: UInt = Int(A.layout.shape[1])
-    alias N: UInt = Int(D.layout.shape[1])
+    alias K: UInt = UInt(Int(A.layout.shape[1]))
+    alias N: UInt = UInt(Int(D.layout.shape[1]))
 
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
@@ -200,22 +196,23 @@ fn b2b_gemm[
     #             D += AB[0:BM,(0:BK)+bk*BK] * C[0:BK,0:BN]
 
     # To avoid recalculating `A*B`:
-    constrained[N == BN]()
+    constrained[N == UInt(BN)]()
     # TODO: lift this restriction
-    constrained[K % BK == 0, "K must be an integer multiple of BK"]()
+    constrained[K % UInt(BK) == 0, "K must be an integer multiple of BK"]()
     constrained[BN % BK == 0, "BN must be an integer multiple of BK"]()
     constrained[
-        K == BK, "FIXME: currently, K == BK must be true, but that is a bug."
+        K == UInt(BK),
+        "FIXME: currently, K == BK must be true, but that is a bug.",
     ]()
 
-    var num_l_iter = ceildiv(L, BN)
+    var num_l_iter = ceildiv(L, UInt(BN))
     alias num_warps_m = config.num_warps_m()
     alias num_warps_n = config.num_warps_n()
     alias num_threads = config.num_threads()
 
     var tid = thread_idx.x
     # var ln_id = lane_id()
-    var warp_id = tid // WARP_SIZE
+    var warp_id = tid // UInt(WARP_SIZE)
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = in_type.is_half_float()
@@ -244,22 +241,12 @@ fn b2b_gemm[
         Layout.row_major(BM, BK),
         address_space = a_smem.address_space,
     ](
-        rebind[
-            __type_of(
-                LayoutTensorIter[
-                    in_type,
-                    Layout.row_major(BM, BK),
-                    MutableAnyOrigin,
-                    address_space = a_smem.address_space,
-                    alignment = a_smem.alignment,
-                ]().ptr
-            )
-        ](a_smem),
+        a_smem,
         a_smem_size,
     )
 
     # Each pipeline stage has its own buffer.
-    # We re-use `b_smem` for both `B` and `C`
+    # We reuse `b_smem` for both `B` and `C`
     var b_smem = (a_smem + a_smem_size).bitcast[Scalar[in_type]]()
     alias b_smem_size = num_pipeline_stages * BK * BN
     alias BD_0 = BN if transpose_b else BK
@@ -302,25 +289,29 @@ fn b2b_gemm[
     # alias c_frag_size = b_frag_size
     alias d_frag_size = frag_size[2]
     # (WM*WN // WARP_SIZE)
+    alias layout = Layout.row_major(num_m_mmas * num_n_mmas, d_frag_size)
     var d_reg_tile = (
-        tb[accum_type]()
-        .row_major[num_m_mmas * num_n_mmas, d_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            accum_type,
+            layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .fill(0)
     )
 
-    var ab_reg_tile = (
-        tb[accum_type]()
-        .row_major[num_m_mmas * num_n_mmas, d_frag_size]()
-        .local()
-        .alloc()
-    )
+    var ab_reg_tile = LayoutTensor[
+        accum_type,
+        layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
     for l in range(num_l_iter):
         _ = ab_reg_tile.fill(0)
         var b_tile_coords = (Int(l), 0) if transpose_b else (0, Int(l))
-        var c_tile_coords = (0, Int(l * (BN // BK))) if transpose_c else (
-            Int(l * (BN // BK)),
+        var c_tile_coords = (0, Int(l * UInt(BN // BK))) if transpose_c else (
+            Int(l * UInt(BN // BK)),
             0,
         )
         # We fetch c_gmem_iter when done
@@ -330,7 +321,7 @@ fn b2b_gemm[
         var c_gmem_iter = C.tiled_iterator[CD_0, CD_1, axis=c_tile_axis](
             c_tile_coords[0], c_tile_coords[1]
         )
-        var num_rows_b = min(BN, Int(L - BN * l))
+        var num_rows_b = min(BN, Int(L - UInt(BN * l)))
         # FIXME: this is a lot of code duplication, for only
         # a few different branches within `multistage_mma`!
         # Maybe fetch `A` outside, and always use `prefetch_a=False`?
@@ -357,7 +348,7 @@ fn b2b_gemm[
                 b_gmem_iter,
                 a_smem_iter,
                 b_smem_iter,
-                ceildiv(K, BK),
+                ceildiv(K, UInt(BK)),
                 num_b_rows=num_rows_b,
                 next_op_b_iter=c_gmem_iter.bitcast[in_type](),
             )
@@ -383,7 +374,7 @@ fn b2b_gemm[
                 b_gmem_iter,
                 a_smem_iter,
                 b_smem_iter,
-                ceildiv(K, BK),
+                ceildiv(K, UInt(BK)),
                 num_b_rows=num_rows_b,
                 next_op_b_iter=c_gmem_iter.bitcast[in_type](),
             )
@@ -434,7 +425,7 @@ fn b2b_gemm[
             c_gmem_iter,
             a_smem_iter,  # ignored
             c_smem_iter,
-            ceildiv(N, BK),
+            ceildiv(N, UInt(BK)),
             num_b_rows=num_rows_b,
         )
 
@@ -456,12 +447,12 @@ fn b2b_gemm[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = (
-            tb[accum_type]()
-            .row_major[WM, WN]()
-            .shared()
-            .view(a_smem.bitcast[Scalar[accum_type]]() + warp_id * WM * WN)
-        )
+        var accum_smem_warp_tile = LayoutTensor[
+            accum_type,
+            Layout.row_major(WM, WN),
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ](a_smem.bitcast[Scalar[accum_type]]() + warp_id * UInt(WM) * UInt(WN))
 
         copy_local_to_shared[
             thread_layout = Layout.row_major(8, 4),
@@ -552,7 +543,9 @@ fn b2b_gemm[
             @parameter
             for i in range(__type_of(d_gmem_frag).layout.size()):
                 alias src_idx = d_reg_frag.layout(i)
-                alias dst_static_idx: UInt = __type_of(d_gmem_frag).layout(i)
+                alias dst_static_idx: UInt = UInt(
+                    __type_of(d_gmem_frag).layout(i)
+                )
 
                 @parameter
                 if d_layout.all_dims_known():
@@ -609,15 +602,15 @@ fn multistage_b2b_gemm[
             elementwise_lambda_fn,
         ]
         var smem_use: Int = config.shared_mem_usage(
-            size(Layout(A.layout.shape[1]))
+            UInt(size(Layout(A.layout.shape[1])))
         )
         print("smem_use =", smem_use)
-        ctx.enqueue_function[b2b_fn](
+        ctx.enqueue_function_checked[b2b_fn, b2b_fn](
             D,
             A,
             B,
             C,
-            grid_dim=config.grid_dim(Int(D.runtime_layout.shape[0])),
+            grid_dim=config.grid_dim(UInt(Int(D.runtime_layout.shape[0]))),
             block_dim=config.block_dim(),
             shared_mem_bytes=smem_use,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -676,9 +669,19 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
     var mat_b = ManagedLayoutTensor[src_type, layout_b](ctx)
     var mat_c = ManagedLayoutTensor[src_type, layout_c](ctx)
     var mat_d = ManagedLayoutTensor[dst_type, layout_d](ctx)
-    var host_d_ref = tb[dst_type]().row_major[M, N]().alloc()
-    var host_ab = tb[dst_type]().row_major[M, L]().alloc()
-    var host_ab_downcast = tb[src_type]().row_major[M, L]().alloc()
+    var stack_d = InlineArray[Scalar[dst_type], layout_d.size()](
+        uninitialized=True
+    )
+    alias layout_ab = Layout.row_major(M, L)
+    var stack_ab = InlineArray[Scalar[dst_type], layout_ab.size()](
+        uninitialized=True
+    )
+    var stack_ab_downcast = InlineArray[Scalar[src_type], layout_ab.size()](
+        uninitialized=True
+    )
+    var host_d_ref = LayoutTensor[dst_type, layout_d](stack_d)
+    var host_ab = LayoutTensor[dst_type, layout_ab](stack_ab)
+    var host_ab_downcast = LayoutTensor[src_type, layout_ab](stack_ab_downcast)
 
     var mat_a_tensor = mat_a.tensor()
     var mat_b_tensor = mat_b.tensor()
@@ -731,6 +734,6 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
     _ = mat_d^
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_b2b_matmul(ctx)

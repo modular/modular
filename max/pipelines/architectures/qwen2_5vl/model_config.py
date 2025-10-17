@@ -15,10 +15,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Literal
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue
+from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
@@ -34,8 +34,11 @@ class VisionConfig:
     dtype: DType
     """DType of the Qwen2.5VL vision model weights."""
 
+    llm_dtype: DType
+    """DType of the Qwen2.5VL language model weights."""
+
     devices: list[DeviceRef]
-    """Devices that the Qwen2.5VL model is parallelized over."""
+    """Devices that the Qwen2.5VL vision encoder model is parallelized over."""
 
     patch_size: int
     """Vision transformer patch size."""
@@ -77,6 +80,7 @@ class VisionConfig:
     def generate(
         vision_config: AutoConfig,
         dtype: DType,
+        llm_dtype: DType,
         pipeline_config: PipelineConfig,
     ) -> VisionConfig:
         """Generate VisionConfig from HuggingFace vision config.
@@ -89,6 +93,7 @@ class VisionConfig:
         """
         return VisionConfig(
             dtype=dtype,
+            llm_dtype=llm_dtype,
             devices=[
                 DeviceRef(spec.device_type, spec.id)
                 for spec in pipeline_config.model_config.device_specs
@@ -199,9 +204,9 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         llm_state_dict: dict[str, WeightData],
+        vision_state_dict: dict[str, WeightData],
         dtype: DType,
         n_devices: int,
-        logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
@@ -216,7 +221,6 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
             vision_state_dict: Vision model weights dictionary.
             dtype: Data type for model parameters.
             n_devices: Number of devices.
-            logits_postprocessor: Optional logits postprocessor.
             cache_dtype: KV cache data type.
             kv_cache_config: KV cache configuration.
             return_logits: Return logits configuration.
@@ -231,7 +235,8 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
             raise ValueError("vision_config not found in huggingface_config")
         vision_config = VisionConfig.generate(
             hf_vision_config,
-            dtype,
+            vision_state_dict["vision_encoder.patch_embed.proj.weight"].dtype,
+            llm_state_dict["language_model.embed_tokens.weight"].dtype,
             pipeline_config,
         )
 
@@ -242,7 +247,6 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
             state_dict=llm_state_dict,
             dtype=dtype,
             n_devices=n_devices,
-            logits_postprocessor=logits_postprocessor,
             cache_dtype=cache_dtype,
             kv_cache_config=kv_cache_config,
             return_logits=return_logits,

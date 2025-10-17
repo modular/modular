@@ -29,4 +29,8 @@ internvl_arch = SupportedArchitecture(
     tokenizer=InternVLTokenizer,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
+    required_arguments={
+        "enable_prefix_caching": False,
+        "enable_chunked_prefill": False,
+    },
 )

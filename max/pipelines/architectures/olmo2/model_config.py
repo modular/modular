@@ -15,10 +15,9 @@
 from __future__ import annotations
 
 import math
-from typing import Callable, Literal
+from typing import Literal
 
 from max.dtype import DType
-from max.graph import TensorValue
 from max.graph.weights import WeightData
 from max.nn import DistributedGemmConfig, ReturnLogits
 from max.nn.kv_cache import KVCacheParams
@@ -41,7 +40,7 @@ class Olmo2Config(Llama3Config):
         n_devices: int,
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-        pipeline_parallel_degree: int = 1,
+        data_parallel_degree: int = 1,
     ) -> KVCacheParams:
         """Override the default Llama3Config.get_kv_params to use head_dim from config.
         Olmo2 models have an explicit head_dim field in their configuration,
@@ -113,14 +112,12 @@ class Olmo2Config(Llama3Config):
         state_dict: dict[str, WeightData],
         dtype: DType,
         n_devices: int,
-        logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
         norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
         attention_bias: bool = False,
-        pipeline_parallel_degree: int = 1,
-        tensor_parallel_degree: int = 1,
+        data_parallel_degree: int = 1,
     ) -> Olmo2Config:
         """Generate an Olmo2Config from the provided parameters.
         This method largely delegates to Llama3Config.generate but ensures
@@ -131,7 +128,6 @@ class Olmo2Config(Llama3Config):
             state_dict: Model state dictionary.
             dtype: Model data type.
             n_devices: Number of devices.
-            logits_postprocessor: Optional logits postprocessor.
             cache_dtype: KV cache data type.
             kv_cache_config: KV cache configuration.
             return_logits: Return logits configuration.
@@ -147,12 +143,12 @@ class Olmo2Config(Llama3Config):
             state_dict=state_dict,
             dtype=dtype,
             n_devices=n_devices,
-            logits_postprocessor=logits_postprocessor,
             cache_dtype=cache_dtype,
             kv_cache_config=kv_cache_config,
             return_logits=return_logits,
             norm_method=norm_method,
             attention_bias=attention_bias,
+            data_parallel_degree=data_parallel_degree,
         )
 
         # Override the KV parameters and attention multiplier with Olmo2-specific calculations
@@ -194,7 +190,6 @@ class Olmo2Config(Llama3Config):
             tie_word_embeddings=base_config.tie_word_embeddings,
             stacked_mlp=base_config.stacked_mlp,
             stacked_qkv=base_config.stacked_qkv,
-            logits_postprocessor=base_config.logits_postprocessor,
             attention_multiplier=olmo2_attention_multiplier,  # Use Olmo2-specific attention multiplier
             embedding_multiplier=base_config.embedding_multiplier,
             residual_multiplier=base_config.residual_multiplier,

@@ -43,12 +43,10 @@ fn _get_nvml_library_paths() raises -> List[Path]:
         var path = CUDA_NVML_LIBRARY_DIR / fd
         if CUDA_NVML_LIBRARY_BASE_NAME in String(fd):
             paths.append(path)
-    return paths
+    return paths^
 
 
-alias CUDA_NVML_LIBRARY = _Global[
-    "CUDA_NVML_LIBRARY", _OwnedDLHandle, _init_dylib
-]
+alias CUDA_NVML_LIBRARY = _Global["CUDA_NVML_LIBRARY", _init_dylib]
 
 
 fn _init_dylib() -> _OwnedDLHandle:
@@ -80,11 +78,14 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-struct DriverVersion(Copyable, Movable, StringableRaising):
+struct DriverVersion(ImplicitlyCopyable, Movable, StringableRaising):
     var _value: List[String]
 
-    fn __init__(out self, value: List[String]):
-        self._value = value
+    fn __init__(out self, var value: List[String]):
+        self._value = value^
+
+    fn __copyinit__(out self, other: Self):
+        self._value = other._value.copy()
 
     fn major(self) raises -> Int:
         return Int(self._value[0])
@@ -106,7 +107,9 @@ struct DriverVersion(Copyable, Movable, StringableRaising):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Result(Copyable, EqualityComparable, Movable, Stringable, Writable):
+struct Result(
+    EqualityComparable, ImplicitlyCopyable, Movable, Stringable, Writable
+):
     var code: Int32
 
     alias SUCCESS = Self(0)
@@ -284,7 +287,7 @@ fn _check_error(err: Result) raises:
 
 @fieldwise_init
 @register_passable("trivial")
-struct EnableState(Copyable, EqualityComparable, Movable):
+struct EnableState(EqualityComparable, ImplicitlyCopyable, Movable):
     var code: Int32
 
     alias DISABLED = Self(0)
@@ -305,7 +308,7 @@ struct EnableState(Copyable, EqualityComparable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ClockType(Copyable, EqualityComparable, Movable):
+struct ClockType(EqualityComparable, ImplicitlyCopyable, Movable):
     var code: Int32
 
     alias GRAPHICS = Self(0)
@@ -332,7 +335,7 @@ struct ClockType(Copyable, EqualityComparable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _DeviceImpl(Copyable, Defaultable, Movable):
+struct _DeviceImpl(Defaultable, ImplicitlyCopyable, Movable):
     var handle: OpaquePointer
 
     @always_inline
@@ -359,10 +362,6 @@ struct Device(Writable):
         self.idx = idx
         self.device = device
 
-    fn __copyinit__(out self, existing: Self):
-        self.idx = existing.idx
-        self.device = existing.device
-
     fn get_driver_version(self) raises -> DriverVersion:
         """Returns NVIDIA driver version."""
         alias max_length = 16
@@ -374,7 +373,7 @@ struct Device(Writable):
                 fn (UnsafePointer[c_char], UInt32) -> Result,
             ]()(driver_version_buffer, UInt32(max_length))
         )
-        var driver_version_list = StaticString(
+        var driver_version_list = StringSlice(
             unsafe_from_utf8_ptr=driver_version_buffer
         ).split(".")
         return DriverVersion(_to_string_list(driver_version_list))
@@ -395,7 +394,7 @@ struct Device(Writable):
     fn max_graphics_clock(self) raises -> Int:
         return self._max_clock(ClockType.GRAPHICS)
 
-    fn mem_clocks(self) raises -> List[Int, hint_trivial_type=True]:
+    fn mem_clocks(self) raises -> List[Int]:
         var num_clocks = UInt32()
 
         var result = _get_dylib_function[
@@ -422,15 +421,13 @@ struct Device(Writable):
             ]()(self.device, UnsafePointer(to=num_clocks), clocks.unsafe_ptr())
         )
 
-        var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
+        var res = List[Int](capacity=len(clocks))
         for clock in clocks:
             res.append(Int(clock))
 
-        return res
+        return res^
 
-    fn graphics_clocks(
-        self, memory_clock_mhz: Int
-    ) raises -> List[Int, hint_trivial_type=True]:
+    fn graphics_clocks(self, memory_clock_mhz: Int) raises -> List[Int]:
         var num_clocks = UInt32()
 
         var result = _get_dylib_function[
@@ -449,7 +446,7 @@ struct Device(Writable):
         )
 
         if result == Result.SUCCESS:
-            return List[Int, hint_trivial_type=True]()
+            return List[Int]()
 
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
@@ -473,11 +470,11 @@ struct Device(Writable):
             )
         )
 
-        var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
+        var res = List[Int](capacity=len(clocks))
         for clock in clocks:
             res.append(Int(clock))
 
-        return res
+        return res^
 
     fn set_clock(self, mem_clock: Int, graphics_clock: Int) raises:
         _check_error(
@@ -552,16 +549,16 @@ struct Device(Writable):
         var max_graphics_clock = device.graphics_clocks(max_mem_clock[-1])
         sort(max_graphics_clock)
 
-        for i in reversed(range(len(max_graphics_clock))):
+        for clock_val in reversed(max_graphics_clock):
             try:
-                device.set_clock(max_mem_clock[-1], max_graphics_clock[i])
+                device.set_clock(max_mem_clock[-1], clock_val)
                 print(
                     "the device clocks for device=",
                     device,
                     " were set to mem=",
                     max_mem_clock[-1],
                     " and graphics=",
-                    max_graphics_clock[i],
+                    clock_val,
                     sep="",
                 )
                 return
@@ -585,7 +582,7 @@ struct Device(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _EnableState(Copyable, Movable):
+struct _EnableState(ImplicitlyCopyable, Movable):
     var state: Int32
 
     alias DISABLED = _EnableState(0)  # Feature disabled

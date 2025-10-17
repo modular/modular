@@ -25,7 +25,7 @@ import numpy.typing as npt
 from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -35,8 +35,9 @@ from max.graph.weights import (
 from max.nn import ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheManager,
     KVCacheParams,
+    PagedCacheValues,
+    TPPagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -122,7 +123,7 @@ def _cast_to_dtype(
                 )
             ],
         ) as graph:
-            graph.output(graph.inputs[0].cast(new_dtype))  # type: ignore
+            graph.output(graph.inputs[0].tensor.cast(new_dtype))
 
         _CAST_MODEL = _INF_SESSION.load(graph)
 
@@ -382,7 +383,6 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
             llm_state_dict=llm_weights_dict,
             dtype=self.dtype,
             n_devices=len(self.devices),
-            logits_postprocessor=None,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
@@ -537,8 +537,8 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
     def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[TensorValue]
-    ) -> list[tuple[TensorValue, ...]]:
+        self, kv_inputs_flat: Sequence[Value[Any]]
+    ) -> list[PagedCacheValues]:
         kv_params = Idefics3Config.get_kv_params(
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),
@@ -548,15 +548,17 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         n_devices = kv_params.n_devices
         fetch_types = self.kv_manager.input_symbols()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev = [
-            tuple(
-                kv_inputs_flat[
-                    i * len_of_kv_tuple_per_dev : (i + 1)
-                    * len_of_kv_tuple_per_dev
-                ]
+        kv_caches_per_dev: list[PagedCacheValues] = []
+        for i in range(n_devices):
+            start_idx = i * len_of_kv_tuple_per_dev
+            kv_caches_per_dev.append(
+                PagedCacheValues(
+                    kv_blocks=kv_inputs_flat[start_idx].buffer,
+                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
+                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
+                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
+                )
             )
-            for i in range(n_devices)
-        ]
         return kv_caches_per_dev
 
     def _build_language_graph(
@@ -592,12 +594,12 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
             ) = graph.inputs
 
             # Unmarshal the remaining arguments, which are for KV cache
-            kv_cache = [v.tensor for v in variadic_args]
+            kv_cache = self._unflatten_kv_inputs(variadic_args)
 
             # Execute language model: text + image embeddings -> logits
             outputs = language_model(
                 tokens=tokens.tensor,
-                kv_cache_inputs=self._unflatten_kv_inputs(kv_cache)[0],
+                kv_collection=kv_cache[0],
                 return_n_logits=return_n_logits.tensor,
                 input_row_offsets=input_row_offsets.tensor,
                 image_embeddings=image_embeddings.tensor,
@@ -615,7 +617,13 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         images = []
         for context in context_batch:
             if context.needs_vision_encoding:
-                image = context.pixel_values[0]
+                # We only support one image per request for Idefics3.
+                next_images = context.next_images
+                if len(next_images) != 1:
+                    raise ValueError(
+                        "Idefics3 only supports one image per request"
+                    )
+                image = next_images[0].pixel_values
 
                 for patch_group in image:
                     images.append(patch_group)
@@ -769,11 +777,6 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Batch image token indices, offsetting for position in the batch.
         image_token_indices = self._batch_image_token_indices(context_batch)
 
-        # Mark that vision encoding is complete for all contexts in the batch.
-        # This prevents re-encoding on subsequent calls.
-        for ctx in context_batch:
-            ctx.needs_vision_encoding = False
-
         return Idefics3Inputs(
             input_ids=input_ids,
             input_row_offsets=input_row_offsets,
@@ -806,8 +809,8 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> KVCacheManager:
-        """Loads and initializes the KVCacheManager for the Idefics3 model."""
+    ) -> TPPagedKVCacheManager:
+        """Loads and initializes the TPPagedKVCacheManager for the Idefics3 model."""
         return load_kv_manager(
             params=Idefics3Config.get_kv_params(
                 huggingface_config=self.huggingface_config,

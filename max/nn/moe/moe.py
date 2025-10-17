@@ -14,8 +14,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import Callable
+from collections.abc import Callable, Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import (
@@ -24,7 +23,10 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from typing_extensions import Self
 
+from ..comm.ep import EPBatchManager
+from ..float8_config import Float8Config
 from ..kernels import grouped_matmul_ragged, moe_create_indices
 from ..layer import LayerList, Module, Shardable
 from ..linear import MLP, Linear
@@ -54,6 +56,7 @@ class MoEGate(Module):
         self.hidden_dim = hidden_dim
         self.num_experts = num_experts
         self.num_experts_per_token = num_experts_per_token
+        self.dtype = dtype
 
         self.gate_score = Linear(
             in_dim=hidden_dim,
@@ -79,9 +82,61 @@ class MoEGate(Module):
 
         return topk_indices, topk_scores
 
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the sharding strategy for the module."""
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Set the sharding strategy for the module."""
+        if strategy.is_replicate:
+            self._sharding_strategy = strategy
+            self.gate_score.sharding_strategy = ShardingStrategy.replicate(
+                strategy.num_devices
+            )
+        else:
+            raise ValueError(
+                "Only replicate sharding strategy is supported for MoEGate."
+            )
+
+    def shard(self, devices: Iterable[DeviceRef]) -> Sequence[MoEGate]:
+        """Create sharded views of this MoEGate module across multiple devices.
+
+        Args:
+            devices: Iterable of devices to place the shards on.
+
+        Returns:
+            List of sharded MoEGate instances, one for each device."""
+        if not self._sharding_strategy:
+            raise ValueError(
+                "MoEGate module cannot be sharded because no sharding strategy was provided."
+            )
+
+        # Get sharded weights
+        gate_score_shards = self.gate_score.shard(devices)
+
+        shards = []
+        for shard_idx, device in enumerate(devices):
+            sharded = MoEGate(
+                devices=[device],
+                hidden_dim=self.hidden_dim,
+                num_experts=self.num_experts,
+                num_experts_per_token=self.num_experts_per_token,
+                dtype=self.dtype,
+            )
+
+            # Replace the weights with sharded versions.
+            sharded.gate_score = gate_score_shards[shard_idx]
+            shards.append(sharded)
+        return shards
+
 
 class MoE(Module, Shardable):
     """Implementation of Mixture of Experts (MoE)."""
+
+    _ep_batch_manager: EPBatchManager | None = None
+    """The expert parallel batch manager."""
 
     _sharding_strategy: ShardingStrategy | None = None
     """The sharding strategy for the module."""
@@ -99,6 +154,8 @@ class MoE(Module, Shardable):
         ep_size: int = 1,
         dtype: DType = DType.bfloat16,
         apply_router_weight_first: bool = False,
+        ep_batch_manager: EPBatchManager | None = None,
+        float8_config: Float8Config | None = None,
     ):
         """
         Args:
@@ -113,6 +170,7 @@ class MoE(Module, Shardable):
             ep_size: The expert parallelism size.
             dtype: The data type of the MoE.
             apply_router_weight_first: Whether to apply the router weight first.
+            ep_batch_manager: The expert parallel batch manager.
         """
         super().__init__()
         self.devices = devices
@@ -131,9 +189,10 @@ class MoE(Module, Shardable):
             hidden_dim=hidden_dim,
             num_experts=num_experts,
             num_experts_per_token=num_experts_per_token,
-            dtype=dtype,
+            dtype=DType.bfloat16,
         )
         self.num_local_experts = num_experts // ep_size
+        self.float8_config = float8_config
 
         if has_shared_experts:
             assert shared_experts_dim > 0, (
@@ -145,7 +204,15 @@ class MoE(Module, Shardable):
                 hidden_dim=self.hidden_dim,
                 feed_forward_length=self.shared_experts_dim,
                 devices=self.devices,
+                float8_config=self.float8_config,
             )
+
+        if ep_batch_manager:
+            assert not apply_router_weight_first, (
+                "apply_router_weight_first is not supported for expert parallel strategy"
+            )
+
+            self._ep_batch_manager = ep_batch_manager
 
         self._init_experts()
 
@@ -158,10 +225,19 @@ class MoE(Module, Shardable):
                     hidden_dim=self.hidden_dim,
                     feed_forward_length=self.moe_dim,
                     devices=self.devices,
+                    float8_config=self.float8_config,
                 )
                 for _ in range(self.num_experts)
             ]
         )
+
+    @property
+    def ep_batch_manager(self) -> EPBatchManager:
+        """Get the expert parallel batch manager."""
+        assert self._ep_batch_manager is not None, (
+            "EPBatchManager must be provided if using expert parallel strategy"
+        )
+        return self._ep_batch_manager
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -173,7 +249,7 @@ class MoE(Module, Shardable):
         """Set the sharding strategy for the module."""
         if strategy.is_tensor_parallel:
             self._sharding_strategy = strategy
-            self.gate.gate_score.sharding_strategy = ShardingStrategy.replicate(
+            self.gate.sharding_strategy = ShardingStrategy.replicate(
                 strategy.num_devices
             )
             if self.has_shared_experts:
@@ -181,12 +257,24 @@ class MoE(Module, Shardable):
 
             for expert in self.experts:
                 expert.sharding_strategy = strategy
+        elif strategy.is_expert_parallel:
+            self._sharding_strategy = strategy
+            self.gate.sharding_strategy = ShardingStrategy.replicate(
+                strategy.num_devices
+            )
+            if self.has_shared_experts:
+                self.shared_experts.sharding_strategy = (
+                    ShardingStrategy.replicate(strategy.num_devices)
+                )
+            for expert in self.experts:
+                # each expert will only present on one device
+                expert.sharding_strategy = ShardingStrategy.replicate(1)
         else:
             raise ValueError(
-                "Only tensor parallel sharding strategy is supported for MoE"
+                "Only tensor parallel or expert parallel sharding strategies are supported for MoE"
             )
 
-    def shard(self, devices: Iterable[DeviceRef]) -> list[MoE]:
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Self]:
         """Create sharded views of this MoE module across multiple devices.
 
         Args:
@@ -200,38 +288,70 @@ class MoE(Module, Shardable):
             )
 
         # Get sharded weights
-        gate_score_shards = self.gate.gate_score.shard(devices)
+        gate_shards = self.gate.shard(devices)
 
         if self.has_shared_experts:
             shared_experts_shards = self.shared_experts.shard(devices)
 
         # Shard each expert's MLP
-        expert_mlps_shards = [expert.shard(devices) for expert in self.experts]
+        expert_mlps_shards: list[list[MLP]] = []
+        if self._sharding_strategy.is_tensor_parallel:
+            # If use tensor parallel, each expert is sharded to all devices
+            expert_mlps_shards = [
+                expert.shard(devices) for expert in self.experts
+            ]
 
         shards = []
+        num_devices = self._sharding_strategy.num_devices
+        sharded_moe_dim = self.moe_dim // num_devices
+        sharded_shared_experts_dim = self.shared_experts_dim // num_devices
+        if self._sharding_strategy.is_expert_parallel:
+            sharded_moe_dim = self.moe_dim
+            sharded_shared_experts_dim = self.shared_experts_dim
         for shard_idx, device in enumerate(devices):
-            sharded = MoE(
+            sharded = self.__class__(
                 devices=[device],
                 hidden_dim=self.hidden_dim,
                 num_experts=self.num_experts,
                 num_experts_per_token=self.num_experts_per_token,
-                moe_dim=self.moe_dim // self._sharding_strategy.num_devices,
+                moe_dim=sharded_moe_dim,
                 gate_cls=self.gate_cls,
                 has_shared_experts=self.has_shared_experts,
-                shared_experts_dim=self.shared_experts_dim
-                // self._sharding_strategy.num_devices,
+                shared_experts_dim=sharded_shared_experts_dim,
                 ep_size=self.ep_size,
                 dtype=self.dtype,
                 apply_router_weight_first=self.apply_router_weight_first,
+                float8_config=self.float8_config,
             )
 
-            # Replace the weights with sharded versions.
-            sharded.gate.gate_score = gate_score_shards[shard_idx]
+            # Replace layers and weights with sharded versions.
+            sharded.gate = gate_shards[shard_idx]
             if self.has_shared_experts:
                 sharded.shared_experts = shared_experts_shards[shard_idx]
 
-            for idx, sharded_mlps in enumerate(expert_mlps_shards):
-                sharded.experts[idx] = sharded_mlps[shard_idx]
+            if self._sharding_strategy.is_tensor_parallel:
+                for idx, sharded_mlps in enumerate(expert_mlps_shards):
+                    sharded.experts[idx] = sharded_mlps[shard_idx]
+            elif self._sharding_strategy.is_expert_parallel:
+                # Assume there is only one node for now.
+                curr_node_idx = 0
+                num_experts_per_node = (
+                    self.num_experts // self.ep_batch_manager.config.n_nodes
+                )
+                expert_idx = (
+                    curr_node_idx * num_experts_per_node
+                    + shard_idx * self.num_local_experts
+                )
+
+                experts_list: list[MLP] = []
+                for _ in range(self.num_local_experts):
+                    curr_expert = self.experts[expert_idx]
+                    assert isinstance(curr_expert, MLP)
+                    experts_list.append(curr_expert.shard([device])[0])
+                    expert_idx += 1
+
+                sharded.experts = LayerList(experts_list)
+                sharded._ep_batch_manager = self.ep_batch_manager
 
             shards.append(sharded)
 
@@ -243,7 +363,7 @@ class MoE(Module, Shardable):
         up_list = [expert.up_proj.weight for expert in self.experts]
 
         gate_up_list: list[TensorValue] = []
-        for tensors in zip(gate_list, up_list):
+        for tensors in zip(gate_list, up_list, strict=True):
             gate_up_list.extend(tensors)
 
         return ops.stack(gate_up_list, axis=0).reshape(
@@ -257,6 +377,46 @@ class MoE(Module, Shardable):
         )
         return down_proj
 
+    def _ep_call(
+        self,
+        x: TensorValue,
+        router_idx: TensorValue,
+        router_weight: TensorValue,
+    ) -> TensorValue:
+        device_id = self.devices[0].id
+        self.ep_batch_manager.ep_dispatch(x, router_idx, device_id)
+        expert_inputs = self.ep_batch_manager.ep_dispatch_cb(device_id)
+
+        gate_up_projs = grouped_matmul_ragged(
+            expert_inputs[0],
+            self.gate_up_proj,
+            *expert_inputs[1:],
+        )
+
+        gate_up_projs = (
+            ops.silu(gate_up_projs[:, : self.moe_dim])
+            * gate_up_projs[:, self.moe_dim :]
+        )
+
+        down_projs = grouped_matmul_ragged(
+            gate_up_projs,
+            self.down_proj,
+            *expert_inputs[1:],
+        )
+
+        self.ep_batch_manager.ep_combine(down_projs, device_id)
+        combined_down_projs = self.ep_batch_manager.ep_combine_cb(device_id)
+
+        routed_expert_out = (
+            ops.unsqueeze(router_weight, axis=1) @ combined_down_projs
+        )
+        routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(x.dtype)
+
+        if self.has_shared_experts:
+            routed_expert_out += self.shared_experts(x)
+
+        return routed_expert_out
+
     def __call__(self, x: TensorValue) -> TensorValue:
         """
         Args:
@@ -269,6 +429,11 @@ class MoE(Module, Shardable):
 
         # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)
+        if self._ep_batch_manager:
+            return self._ep_call(
+                x, ops.cast(router_idx, DType.int32), router_weight
+            )
+
         router_idx = ops.reshape(
             router_idx, [-1]
         )  # (seq_len * n_expert_per_token,)
@@ -285,7 +450,9 @@ class MoE(Module, Shardable):
 
         permutated_states = ops.gather(
             x,
-            token_expert_order / self.num_experts_per_token,
+            ops.cast(
+                token_expert_order // self.num_experts_per_token, DType.int32
+            ),
             axis=0,
         )
 

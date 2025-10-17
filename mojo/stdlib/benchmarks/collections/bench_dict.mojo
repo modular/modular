@@ -31,7 +31,7 @@ fn make_dict[size: Int, *, random: Bool = False]() -> Dict[Int, Int]:
             d[i] = Int(random_si64(0, size))
         else:
             d[i] = i
-    return d
+    return d^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -156,7 +156,7 @@ def main():
             BenchId(String("bench_dict_contains[", size, "]"))
         )
 
-    results = Dict[String, (Float64, Int)]()
+    results = Dict[String, Tuple[Float64, Int]]()
     for info in m.info_vec:
         n = info.name
         time = info.result.mean("ms")

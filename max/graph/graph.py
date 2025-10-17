@@ -19,11 +19,12 @@ import functools
 import inspect
 import itertools
 import traceback
-from collections.abc import Generator, Iterable, Sequence
+from collections import OrderedDict
+from collections.abc import Callable, Generator, Iterable, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional, TypeVar, cast
+from typing import Any, TypeGuard, TypeVar, cast
 
 from max import mlir
 from max._core import Attribute as _Attribute
@@ -32,6 +33,7 @@ from max._core import Type as _Type
 from max._core import Value as _Value
 from max._core import graph as _graph
 from max._core.dialects import builtin, kgen
+from max._core.dialects import kgen as _kgen
 from max._core.dialects import mo as _mo
 
 # TODO(GEX-1846): Get rid of this include.
@@ -59,6 +61,66 @@ CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 _KERNEL_LIBRARY_PATHS_ATTR_NAME = "_kernel_library_paths"
 
 T = TypeVar("T")
+
+
+def _is_chain_value(value: _Value[Any]) -> TypeGuard[_Value[_mo.ChainType]]:
+    return isinstance(value.type, _mo.ChainType)
+
+
+class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
+    """Dictionary that lazily registers per-device chains on access."""
+
+    def __init__(self, graph: Graph) -> None:
+        super().__init__()
+        self._graph = graph
+
+    @staticmethod
+    def _sort_key(device: DeviceRef) -> tuple[str, int]:
+        return (device.device_type.value, device.id)
+
+    def __getitem__(self, device: DeviceRef) -> _ChainValue:
+        if device not in self:
+            self[device] = (
+                self._graph._add_chain_block_arg()
+                if self._graph._has_chain_input
+                else self._graph._current_chain
+            )
+        return super().__getitem__(device)
+
+    def __setitem__(self, device: DeviceRef, chain: _ChainValue) -> None:
+        assert isinstance(chain, _ChainValue)
+        super().__setitem__(device, chain)
+
+    def __iter__(self):
+        return iter(sorted(super().keys(), key=self._sort_key))
+
+    def _value(self, device: DeviceRef) -> _ChainValue:
+        return super().__getitem__(device)
+
+    def ordered_values(self) -> Generator[_ChainValue]:
+        for device in self:
+            yield self._value(device)
+
+    def copy(self) -> _DeviceChainMap:
+        result = _DeviceChainMap(self._graph)
+        for device in self:
+            result[device] = self._value(device)
+        return result
+
+    def _merge_chains(self, others: Sequence[_DeviceChainMap]) -> None:
+        for device in self:
+            # Collect all chains for this device
+            chains = [self[device]] + [other[device] for other in others]
+            # Unique them
+            chains = list(dict.fromkeys(chains).keys())
+            # Create the new chain
+            chain = self._graph._add_op(mo.chain_create, chains)[0]
+            assert isinstance(chain, _ChainValue)
+            self[device] = chain
+
+    def __repr__(self) -> str:
+        items = ", ".join(f"{device}: {self._value(device)}" for device in self)
+        return f"_DeviceChainMap({{{items}}})"
 
 
 class KernelLibrary:
@@ -167,7 +229,7 @@ class _GraphWeight:
     value: TensorValue
 
 
-def _location(ignore_frames: int = 1):
+def _location(ignore_frames: int = 1):  # noqa: ANN202
     """Creates an MLIR Location with the current Python call stack."""
     if not mlir.Context.current:
         raise RuntimeError("Can't create location: No MLIR context active")
@@ -188,7 +250,7 @@ def _to_mlir(o: Any) -> Any:
     # Convert args from instances of Python graph-api Value() to mlir.Value
     if hasattr(o, "to_mlir"):
         return o.to_mlir()
-    elif isinstance(o, (list, tuple)):
+    elif isinstance(o, list | tuple):
         return type(o)(_to_mlir(ov) for ov in o)
     elif isinstance(o, dict):
         return {k: _to_mlir(v) for k, v in o.items()}
@@ -217,7 +279,7 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
             value.type.parameters
             for result in op.results
             if isinstance(
-                value := Value.from_mlir(result), (TensorValue, BufferValue)
+                value := Value.from_mlir(result), TensorValue | BufferValue
             )
         )
     )
@@ -297,6 +359,8 @@ class Graph:
     _current_block: mlir.Block
     _should_verify_ops: bool
     _has_chain_input: bool
+    # Per-device chains that ensure the correct sequence of device execution.
+    device_chains: _DeviceChainMap
 
     _kernel_library: KernelLibrary
 
@@ -308,12 +372,12 @@ class Graph:
         forward: Callable[..., None | Value[Any] | Iterable[Value[Any]]]
         | None = None,
         input_types: Iterable[Type[Any]] = (),
-        path: Optional[Path] = None,
+        path: Path | None = None,
         *args,
         custom_extensions: list[Path] = [],  # noqa: B006
-        context: Optional[mlir.Context] = None,
-        kernel_library: Optional[KernelLibrary] = None,
-        module: Optional[mlir.Module] = None,
+        context: mlir.Context | None = None,
+        kernel_library: KernelLibrary | None = None,
+        module: mlir.Module | None = None,
         **kwargs,
     ) -> None:
         """
@@ -333,7 +397,7 @@ class Graph:
         self._params = dict.fromkeys(
             dim.name
             for t in input_types
-            if isinstance(t, (TensorType, BufferType))
+            if isinstance(t, TensorType | BufferType)
             for dim in t.shape
             if isinstance(dim, SymbolicDim)
         )
@@ -349,7 +413,9 @@ class Graph:
             )
             builder = OpBuilder(_module.body.end)
 
-            op = builder.create(_mo.GraphOp, loc)(
+            op = _mo.GraphOp(
+                builder,
+                loc,
                 name=name,
                 input_types=[t.to_mlir() for t in input_types],
                 result_types=[],
@@ -361,27 +427,35 @@ class Graph:
                 [kgen.ParamDeclAttr(p, si64) for p in self._params]
             )
 
-            self._mlir_op = mlir.Operation._CAPICreate(op._CAPIPtr)  # type: ignore
+            self._mlir_op = mlir.Operation._CAPICreate(op._CAPIPtr)
             self._current_block = self._mlir_op.regions[0].blocks[0]
             self._graph_body = self._current_block
 
         self._weights = {}
         self._has_chain_input = False
+        self.device_chains = _DeviceChainMap(self)
 
         if self._graph_body.arguments:
             mlir_maybe_chain_value = _Value._from_cmlir(
-                self._graph_body.arguments[-1]
+                self._graph_body.arguments[-1]  # type: ignore
             )
-            if isinstance(mlir_maybe_chain_value.type, _mo.ChainType):
+            if _is_chain_value(mlir_maybe_chain_value):
                 self._has_chain_input = True
                 self._current_chain = _ChainValue.from_mlir(
-                    cast(_Value[_mo.ChainType], mlir_maybe_chain_value)
+                    mlir_maybe_chain_value
                 )
 
+        # Create an always-ready chain that is never advanced by the graph.
+        # Use it for operations that are safe to schedule without per-device
+        # ordering constraints (e.g., host→device transfers for staging).
+        self._always_ready_chain = _ChainValue(
+            self._add_op(mo.chain_create, [])[0]
+        )
+
         if not self._has_chain_input:
-            self._current_chain = cast(
-                _ChainValue, self._add_op(mo.chain_create, [])[0]
-            )
+            # Start the graph's mutable sequencing chain from the always-ready
+            # chain by default; the always-ready chain itself remains immutable.
+            self._current_chain = self._always_ready_chain
 
         assert isinstance(self._current_chain, _ChainValue)
 
@@ -411,8 +485,11 @@ class Graph:
     def inputs(self) -> Sequence[Value[Any]]:
         """The input values of the graph."""
         body_args = self._graph_body.arguments
-        if body_args and self._has_chain_input:
-            body_args = body_args[:-1]
+        chain_count = 0
+        if self._has_chain_input:
+            chain_count = 1 + len(self.device_chains)
+        if body_args and chain_count:
+            body_args = body_args[:-chain_count]  # type: ignore
 
         return tuple(
             Value.from_mlir(_Value._from_cmlir(arg))
@@ -429,7 +506,7 @@ class Graph:
         forward: Callable[..., None | Value[Any] | Iterable[Value[Any]]]
         | None = None,
         input_types: Iterable[Type[Any]] = (),
-        path: Optional[Path] = None,
+        path: Path | None = None,
         custom_extensions: list[Path] = [],  # noqa: B006
     ) -> Graph:
         """Creates and adds a subgraph to the current graph.
@@ -477,18 +554,43 @@ class Graph:
     def _update_chain(self, new_chain: _ChainValue) -> None:
         self._current_chain = new_chain
 
-    def _merge_chains(self, chains: Sequence[_ChainValue]) -> None:
-        chain = self._add_op(mo.chain_create, chains)[0]
+    def _merge_chains(self, chains: Sequence[_ChainValue]) -> _ChainValue:
+        unique_chains = list(dict.fromkeys(chains))
+        if len(unique_chains) == 1:
+            return unique_chains[0]
+
+        chain = self._add_op(mo.chain_create, unique_chains)[0]
         assert isinstance(chain, _ChainValue)
         self._current_chain = chain
+        return self._current_chain
 
-    @contextlib.contextmanager
+    def _add_chain_block_arg(self) -> _ChainValue:
+        """Add a new chain as a graph block argument."""
+        with self._context, _location() as loc:
+            block = Block._from_cmlir(self._graph_body)
+            block.add_argument(_ChainType().to_mlir(), loc)
+        mlir_value = _Value._from_cmlir(self._graph_body.arguments[-1])  # type: ignore
+        assert _is_chain_value(mlir_value)
+
+        return _ChainValue.from_mlir(mlir_value)
+
+    @property
+    def always_ready_chain(self) -> _ChainValue:
+        """A graph-global, immutable chain that is always ready.
+
+        Created once per graph and never advanced/merged by the graph itself.
+        Use it for operations that are safe to schedule without threading
+        per-device ordering (e.g., host→device transfers for staging).
+        """
+        return self._always_ready_chain
+
     @staticmethod
-    def _async_region():
+    @contextlib.contextmanager
+    def _async_region():  # noqa: ANN205
         """Create a region of the graph with tasks guaranteed to execute
         independently.
 
-        Overrides the implicit chaining of the graph to allow for asyncronous
+        Overrides the implicit chaining of the graph to allow for asynchronous
         execution of operations which might mutate state.
 
         Returns:
@@ -505,16 +607,21 @@ class Graph:
         """
 
         old_chain = Graph.current._current_chain
+        old_device_chains = Graph.current.device_chains.copy()
         new_chains = []
+        new_device_chains = []
 
         class Async:
             def __enter__(self):
                 Graph.current._update_chain(old_chain)
+                Graph.current.device_chains = old_device_chains
                 return self
 
             def __exit__(self, *exc):
                 new_chains.append(Graph.current._current_chain)
+                new_device_chains.append(Graph.current.device_chains.copy())
                 Graph.current._update_chain(old_chain)
+                Graph.current.device_chains = old_device_chains
 
             def __call__(self):
                 return self
@@ -533,6 +640,7 @@ class Graph:
 
             if new_chains:
                 Graph.current._merge_chains(new_chains)
+                Graph.current.device_chains._merge_chains(new_device_chains)
 
     def __enter__(self) -> Graph:
         self._context_state.append(state := self._enter())
@@ -551,7 +659,7 @@ class Graph:
             CURRENT_GRAPH.reset(token)
 
     @contextlib.contextmanager
-    def local_weights_and_chain(self):
+    def _local_weights_and_chain(self):  # noqa: ANN202
         """Creates a local scope for weights and chain state modifications.
 
         Provides a context manager that creates an isolated scope where the
@@ -567,15 +675,17 @@ class Graph:
         """
         weights = self._weights.copy()
         current_chain = self._current_chain
+        device_chains = self.device_chains.copy()
         try:
             yield
         finally:
             self._weights = weights
             self._current_chain = current_chain
+            self.device_chains = device_chains
 
     @contextlib.contextmanager
-    def _block(self, block: mlir.Block):
-        with self.local_weights_and_chain():
+    def _block(self, block: mlir.Block):  # noqa: ANN202
+        with self._local_weights_and_chain():
             current_block, self._current_block = self._current_block, block
             try:
                 yield self._current_block
@@ -583,7 +693,7 @@ class Graph:
                 self._current_block = current_block
 
     @contextlib.contextmanager
-    def _pause_verification(self):
+    def _pause_verification(self):  # noqa: ANN202
         """Temporarily disable verification."""
         old_value = self._should_verify_ops
         try:
@@ -598,7 +708,7 @@ class Graph:
                 op.verify()
 
     @contextlib.contextmanager
-    def _capturing_mlir_diagnostics(self):
+    def _capturing_mlir_diagnostics(self):  # noqa: ANN202
         diagnostics = []
 
         def handler(d: mlir.Diagnostic) -> bool:
@@ -617,7 +727,7 @@ class Graph:
             diags = "\n  ".join(diagnostics)
             raise ValueError(f"Diagnostics:\n    {diags}\n{e}") from None
         finally:
-            handle.detach()
+            handle.detach()  # type: ignore
 
     @_classproperty
     def current(cls) -> Graph:
@@ -646,9 +756,7 @@ class Graph:
         """Wrapper for clients that only require the op results."""
         with self._context, _location() as location:
             builder = OpBuilder(Block._from_cmlir(self._current_block).end)
-            op = builder.create(op_type, location)(
-                *_to_mlir(args), **_to_mlir(kwargs)
-            )
+            op = op_type(builder, location, *_to_mlir(args), **_to_mlir(kwargs))  # type: ignore
             op.verify()
         _set_output_param_decls(op, self._params)
         return [Value.from_mlir(result) for result in op.results]
@@ -662,7 +770,7 @@ class Graph:
         self,
         op,  # noqa: ANN001
         *args,
-        _ip: Optional[mlir.InsertionPoint] = None,
+        _ip: mlir.InsertionPoint | None = None,
         **kwargs,
     ) -> tuple[list[Value[Any]], mlir.OpView]:
         # Convert args from instances of Python graph-api Value() to mlir.Value
@@ -670,8 +778,8 @@ class Graph:
             if isinstance(arg, Value):
                 return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)  # type: ignore
             elif isinstance(arg, Type):
-                return mlir.Type._CAPICreate(arg.to_mlir()._CAPIPtr)
-            elif isinstance(arg, (list, tuple)):
+                return mlir.Type._CAPICreate(arg.to_mlir()._CAPIPtr)  # type: ignore
+            elif isinstance(arg, list | tuple):
                 return [unwrap(elem) for elem in arg]
             elif isinstance(arg, _Attribute):
                 return mlir.Attribute._CAPICreate(arg._CAPIPtr)  # type: ignore
@@ -732,7 +840,7 @@ class Graph:
                 ) from None
 
         _set_output_param_decls(Operation._from_cmlir(staged_op), self._params)
-        if isinstance(results, (mlir.Operation, mlir.OpView)):
+        if isinstance(results, mlir.Operation | mlir.OpView):
             return [], staged_op
 
         # Convert op results from  mlir.Value to instances of Value graph-api
@@ -790,7 +898,12 @@ class Graph:
                 )
 
             _ = self._add_op(
-                block_terminator_op, results + [self._current_chain]
+                block_terminator_op,
+                [
+                    *results,
+                    self._current_chain,
+                    *self.device_chains.ordered_values(),
+                ],
             )
 
     def output(self, *outputs: Value[Any] | TensorValueLike) -> None:
@@ -801,12 +914,16 @@ class Graph:
         outputs = cast(tuple[Value[Any], ...], outputs)
         # mo.output doesn't support infer_type
         graph_body_args = self._graph_body.arguments
-        mlir_values = [o._mlir_value for o in outputs]
+        mlir_values: list[_Value[Any]] = [o._mlir_value for o in outputs]
         if self._has_chain_input:
-            mlir_values.append(self._current_chain._mlir_value)
+            chain_values = [self._current_chain]
+            chain_values.extend(
+                self.device_chains[device] for device in self.device_chains
+            )
+            mlir_values.extend(chain._mlir_value for chain in chain_values)
 
         # We have a type mismatch now, these are MLIR types
-        output_types = [value.type for value in mlir_values]
+        output_types: list[mlir.Type] = [value.type for value in mlir_values]
 
         # Need to set some more stuff.
         function_type = mlir.FunctionType.get(
@@ -819,7 +936,9 @@ class Graph:
             function_type
         )
 
-        self._add_op(mo.output, mlir_values)
+        self._add_op_generated(
+            _mo.OutputOp, mlir_values, _kgen.ParameterExprArrayAttr([])
+        )
 
         # Set the result_names metadata on the staged op, which is needed by
         # the engine for execution.
@@ -854,16 +973,17 @@ class Graph:
     def output_types(self) -> list[Type[Any]]:
         """View of the types of the graph output terminator."""
         terminator = self._body.operations[-1]
-        terminator_operands = terminator.operands
-        if terminator_operands and self._has_chain_input:
-            terminator_operands = terminator_operands[:-1]
-
         if not isinstance(terminator, mo.OutputOp):
             raise TypeError("Graph not yet terminated by a call to output")
-        return [
-            Value.from_mlir(_Value._from_cmlir(v)).type
-            for v in terminator_operands  # type: ignore
+
+        operand_values = [
+            _Value._from_cmlir(terminator.operands[i])
+            for i in range(len(terminator.operands))
         ]
+        while operand_values and _is_chain_value(operand_values[-1]):
+            operand_values.pop()
+
+        return [Value.from_mlir(val).type for val in operand_values]
 
     def _load_mlir(self, path: Path) -> None:
         self._context_state = []
@@ -872,7 +992,7 @@ class Graph:
                 # Create the top level module op.
                 self._module = mlir.Module.create()
                 with mlir.InsertionPoint(self._module.body):
-                    self._module = self._module.parse(f.read(), ctx)
+                    self._module = self._module.parse(f.read(), ctx)  # type: ignore
                     # Set the mo.graph op, which is the first operation in the
                     # module body block.
                     self._mlir_op = self._module.body.operations[0]

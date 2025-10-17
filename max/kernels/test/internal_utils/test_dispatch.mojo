@@ -11,15 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from internal_utils import arg_parse
 from bit import next_power_of_two
 
 # from internal_utils import Table, TuningConfig
-from internal_utils import TuningTableNvidia, TuningConfigNvidia
-from internal_utils import TuningTableAMD, TuningConfigAMD
+from internal_utils import (
+    TuningConfigAMD,
+    TuningConfigNvidia,
+    TuningTableAMD,
+    TuningTableNvidia,
+    arg_parse,
+)
 from testing import assert_equal
 
-# Highly recommneded to use "vendor_arch_dtype" format for table names.
+# Highly recommended to use "vendor_arch_dtype" format for table names.
 # For example:
 # nvidia_sm90_fp8 = Table[...]
 # import nvidia_sm90_fp8_configs
@@ -56,11 +60,11 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
 
     alias m_values = TuningTableAMD.query_values[Int, get_m, nk_idx_list]()
     alias expected_m_values = List[Int](1, 2, 16)
-    assert_equal(len(m_values), len(expected_m_values))
+    constrained[len(m_values) == len(expected_m_values)]()
 
     @parameter
     for i in range(len(m_values)):
-        assert_equal(m_values[i], expected_m_values[i])
+        constrained[m_values[i] == expected_m_values[i]]()
 
     @parameter
     for i in range(1, len(m_values)):
@@ -68,16 +72,16 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
         @parameter
         @always_inline
         fn rule_m(x: TuningConfigAMD) -> Bool:
-            return x.m == m_values[i]
+            return x.m == materialize[m_values[i]]()
 
-        if m_values[i - 1] < m <= m_values[i]:
+        if materialize[m_values[i - 1]]() < m <= materialize[m_values[i]]():
             print(
                 "Searching for m: prev_m=",
-                m_values[i - 1],
+                materialize[m_values[i - 1]](),
                 "/m=",
                 m,
                 "/next_m=",
-                m_values[i],
+                materialize[m_values[i]](),
                 sep="",
             )
             alias idx_list = TuningTableAMD.query_index[
@@ -87,7 +91,9 @@ fn dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
             @parameter
             if idx_list:
                 print("Found dispatch for next value of m", m)
-                print(String(TuningTableAMD.configs[idx_list[0]]))
+                print(
+                    String(materialize[TuningTableAMD.configs[idx_list[0]]]())
+                )
                 # call dispatch with this config
                 # return
 
@@ -109,7 +115,7 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
     """
     equivalently:
     - select n==static_n
-    alias n_idx_list = TuningTable.query_index[rule(n==static_n)]() 
+    alias n_idx_list = TuningTable.query_index[rule(n==static_n)]()
     - select k==static_k where n==static_n
     alias nk_idx_list = TuningTable.query_index[rule(k==static_k), n_idx_list]()
     """
@@ -126,11 +132,11 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
     alias expected_m_values = List[Int](
         1, 8, 16, 32, 64, 128, 256, 65536, 128000
     )
-    assert_equal(len(m_values), len(expected_m_values))
+    constrained[len(m_values) == len(expected_m_values)]()
 
     @parameter
     for i in range(len(m_values)):
-        assert_equal(m_values[i], expected_m_values[i])
+        constrained[m_values[i] == expected_m_values[i]]()
 
     @parameter
     for i in range(1, len(m_values)):
@@ -138,16 +144,16 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
         @parameter
         @always_inline
         fn rule_m(x: TuningConfigNvidia) -> Bool:
-            return x.M == m_values[i]
+            return x.M == materialize[m_values[i]]()
 
-        if m_values[i - 1] < m <= m_values[i]:
+        if materialize[m_values[i - 1]]() < m <= materialize[m_values[i]]():
             print(
                 "Searching for m: prev_m=",
-                m_values[i - 1],
+                materialize[m_values[i - 1]](),
                 "/m=",
                 m,
                 "/next_m=",
-                m_values[i],
+                materialize[m_values[i]](),
                 sep="",
             )
             alias idx_list = TuningTableNvidia.query_index[
@@ -157,16 +163,20 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
             @parameter
             if idx_list:
                 print("Found dispatch for next value of m", m)
-                print(String(TuningTableNvidia.configs[idx_list[0]]))
+                print(
+                    String(
+                        materialize[TuningTableNvidia.configs[idx_list[0]]]()
+                    )
+                )
                 # call dispatch with this config
                 # return
 
 
-fn main() raises:
+def main():
     var m = arg_parse("m", 0)
-    print(String(TuningTableAMD))
+    print(String(materialize[TuningTableAMD]()))
     dispatch_matmul_amd[static_n=1, static_k=1](m)
 
     print("-----------------------------------------------------------")
-    print(String(TuningTableNvidia))
+    print(String(materialize[TuningTableNvidia]()))
     dispatch_matmul_nvidia[static_n=8192, static_k=8192](m)

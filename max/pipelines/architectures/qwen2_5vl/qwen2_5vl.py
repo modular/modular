@@ -32,26 +32,13 @@ class Qwen2_5VL(Module):
         self.language_model = self.build_language_model()
 
     def build_vision_encoder(self) -> VisionTransformer:
-        config = self.config.vision_config
         return VisionTransformer(
-            dtype=config.dtype,
-            device=config.devices[0],
-            patch_size=config.patch_size,
-            temporal_patch_size=config.temporal_patch_size,
-            in_channels=config.in_channels,
-            embed_dim=config.hidden_size,
-            num_heads=config.num_attention_heads,
-            depth=config.depth,
-            intermediate_size=config.intermediate_size,
-            out_hidden_size=config.out_hidden_size,
-            spatial_merge_size=config.spatial_merge_size,
-            fullatt_block_indexes=config.fullatt_block_indexes,
-            rms_norm_eps=config.rms_norm_eps,
+            config=self.config.vision_config,
         )
 
     def build_language_model(self) -> Qwen25VLDecoder:
         """Return the language model component."""
-        return Qwen25VLDecoder(self.config)
+        return Qwen25VLDecoder(self.config.llm_config)
 
     def __call__(self, *args, **kwargs):
         """This class is not meant to be called directly. Use the component models instead."""

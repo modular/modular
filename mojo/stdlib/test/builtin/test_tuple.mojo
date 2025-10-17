@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_false, assert_true, assert_equal
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def test_tuple_contains():
@@ -117,5 +117,4 @@ def test_tuple_unpack():
 
 
 def main():
-    test_tuple_contains()
-    test_tuple_unpack()
+    TestSuite.discover_tests[__functions_in_module()]().run()

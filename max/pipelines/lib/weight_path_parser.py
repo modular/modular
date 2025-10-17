@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional, Union
 
 import huggingface_hub
 
@@ -29,15 +28,13 @@ class WeightPathParser:
     @staticmethod
     def parse(
         model_path: str,
-        weight_path: Union[
-            list[Path],
-            list[str],
-            tuple[Path, ...],
-            tuple[str, ...],
-            Path,
-            str,
-        ],
-    ) -> tuple[list[Path], Optional[str]]:
+        weight_path: list[Path]
+        | list[str]
+        | tuple[Path, ...]
+        | tuple[str, ...]
+        | Path
+        | str,
+    ) -> tuple[list[Path], str | None]:
         """Parse weight paths and extract any weights repo ID.
 
         Args:
@@ -119,7 +116,7 @@ class WeightPathParser:
     @staticmethod
     def _parse_huggingface_repo_path(
         model_path: str, path: Path
-    ) -> tuple[Path, Optional[str]]:
+    ) -> tuple[Path, str | None]:
         """Parse a path that may contain a Hugging Face repo ID.
 
         Args:

@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from sys import align_of
 
 from buffer.dimlist import DimList
 from layout import IntTuple, Layout
-from sys import align_of
 
 from utils import IndexList
 
@@ -52,12 +52,12 @@ fn _row_major_strides[rank: Int](shape: DimList) -> DimList:
         return -1
 
 
-# Compile time Tensor informations
+# Compile time Tensor information
 @register_passable("trivial")
 struct StaticTensorSpec[
     dtype: DType,
     rank: Int,
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     # Represents the DimList type (not accessible from KGEN tests).
     alias in_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
         IndexList[rank]

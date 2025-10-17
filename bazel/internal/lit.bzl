@@ -87,6 +87,7 @@ def _generate_site_cfg_impl(ctx):
         arguments = [ctx.file.src.path, tools_loader.path],
         inputs = [ctx.file.src, tools_loader],
         outputs = [combined_cfg],
+        use_default_shell_env = True,
     )
 
     ctx.actions.expand_template(
@@ -212,11 +213,12 @@ def lit_tests(
             outs = [name + ".cfg.py"],
             cmd = """
 cat > $(OUTS) <<EOF
-config.name = "//{package}"
+import os
+
+config.name = os.environ["TEST_TARGET"]
 config.suffixes = [{extensions_string}]
 EOF
             """.format(
-                package = native.package_name(),
                 extensions_string = extensions_string,
             ),
             testonly = True,

@@ -54,9 +54,9 @@ fn _inline_array_construction_checks[size: Int]():
 
 
 struct InlineArray[
-    ElementType: ExplicitlyCopyable & Movable,
+    ElementType: Copyable & Movable,
     size: Int,
-](Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized):
+](Defaultable, ImplicitlyCopyable, Movable, Sized):
     """A fixed-size sequence of homogeneous elements where size is a constant
     expression.
 
@@ -159,8 +159,8 @@ struct InlineArray[
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         for i in range(Self.size):
-            unsafe_assume_initialized[i].unsafe_ptr().move_pointee_into(
-                self.unsafe_ptr() + i
+            (self.unsafe_ptr() + i).init_pointee_move_from(
+                unsafe_assume_initialized[i].unsafe_ptr()
             )
 
     @always_inline
@@ -245,10 +245,14 @@ struct InlineArray[
         self = Self(storage=elems^)
 
     @always_inline
-    fn __init__(
+    fn __init__[
+        origin: MutableOrigin, //,
+    ](
         out self,
         *,
-        var storage: VariadicListMem[Self.ElementType, _],
+        var storage: VariadicListMem[
+            Self.ElementType, origin=origin, is_owned=True
+        ],
     ):
         """Construct an array from a low-level internal representation.
 
@@ -272,18 +276,21 @@ struct InlineArray[
         # Move each element into the array storage.
         @parameter
         for i in range(size):
-            UnsafePointer(to=storage[i]).move_pointee_into(ptr)
+            # Safety: We own the elements in the variadic list.
+            ptr.init_pointee_move_from(
+                UnsafePointer(to=storage[i]).unsafe_mut_cast[True]()
+            )
             ptr += 1
 
         # Do not destroy the elements when their backing storage goes away.
         # FIXME: Why doesn't consume_elements work here?
         storage^._anihilate()
 
-    fn copy(self, out copy: Self):
-        """Creates a deep copy of the array.
+    fn __copyinit__(out self, other: Self):
+        """Copy constructs the array from another array.
 
-        Returns:
-            A new array containing copies of all elements.
+        Args:
+            other: The array to copy from.
 
         Examples:
 
@@ -293,23 +300,11 @@ struct InlineArray[
         ```
         """
 
-        copy = Self(uninitialized=True)
+        self = Self(uninitialized=True)
 
         for idx in range(size):
-            var ptr = copy.unsafe_ptr() + idx
-            ptr.init_pointee_copy(self.unsafe_get(idx))
-
-    fn __copyinit__(out self, other: Self):
-        """Copy constructs the array from another array.
-
-        Args:
-            other: The array to copy from.
-
-        Notes:
-            Creates a deep copy by copying each element individually.
-        """
-
-        self = other.copy()
+            var ptr = self.unsafe_ptr() + idx
+            ptr.init_pointee_copy(other.unsafe_get(idx))
 
     fn __moveinit__(out self, deinit other: Self):
         """Move constructs the array from another array.
@@ -325,7 +320,7 @@ struct InlineArray[
 
         for idx in range(size):
             var other_ptr = other.unsafe_ptr() + idx
-            other_ptr.move_pointee_into(self.unsafe_ptr() + idx)
+            (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
 
     fn __del__(deinit self):
         """Deallocates the array and destroys its elements.
@@ -530,7 +525,7 @@ struct InlineArray[
         return (
             UnsafePointer(to=self._array)
             .bitcast[Self.ElementType]()
-            .origin_cast[origin.mut, origin]()
+            .unsafe_origin_cast[origin]()
             .address_space_cast[address_space]()
         )
 

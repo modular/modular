@@ -11,9 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys.info import CompilationTarget, _current_target
+
 from compile.reflection import get_linkage_name, get_type_name
 from testing import assert_equal
-from sys.info import _current_target, CompilationTarget
+from testing import TestSuite
 
 
 fn my_func() -> Int:
@@ -163,15 +165,4 @@ def test_get_type_name_alias():
 
 
 def main():
-    test_get_linkage_name()
-    test_get_linkage_name_nested()
-    test_get_linkage_name_parameterized()
-    test_get_linkage_name_on_itself()
-    test_get_type_name()
-    test_get_type_name_nested()
-    test_get_type_name_simd()
-    test_get_type_name_non_scalar_simd_value()
-    test_get_type_name_struct()
-    test_get_type_name_partially_bound_type()
-    test_get_type_name_unprintable()
-    test_get_type_name_alias()
+    TestSuite.discover_tests[__functions_in_module()]().run()

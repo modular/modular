@@ -15,19 +15,18 @@ from collections import OptionalReg
 from math import exp2
 from os import abort
 from random import rand, randn
-from sys import argv, simd_width_of
+from sys import align_of, argv, simd_width_of
 
 import benchmark
 from algorithm.functional import elementwise
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import Layout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from linalg._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.dual_gemm import binary_fn_type, multistage_dual_gemm
+from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, _bk_base
 from testing import assert_almost_equal
@@ -38,8 +37,8 @@ from utils.numerics import FPUtils
 
 
 fn binary_sub[
-    type: DType, width: Int
-](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int
+](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return x - y
 
 
@@ -82,11 +81,11 @@ fn multistage_gemm_simple[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         c,
         a,
         b,
-        grid_dim=config.grid_dim(M, N),
+        grid_dim=config.grid_dim(UInt(M), UInt(N)),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -396,7 +395,7 @@ fn test_dual_matmul[
     _ = mat_c01^
 
 
-fn main() raises:
+def main():
     var do_benchmark: Bool = False
     var args = argv()
     for i in range(len(args)):

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeTuple
 from layout.int_tuple import fill_like
 
 from utils.index import IndexList
@@ -20,7 +20,7 @@ from utils.index import IndexList
 # Padding handling method.
 @fieldwise_init
 @register_passable("trivial")
-struct PadHandling(Copyable, Movable):
+struct PadHandling(ImplicitlyCopyable, Movable):
     var value: Int
     alias EXCLUDE_PAD = PadHandling(0)  # Do not count padding.
     alias INCLUDE_PAD = PadHandling(2)  # Count padding.
@@ -37,7 +37,7 @@ struct PadHandling(Copyable, Movable):
 # Data layout encoding.
 @fieldwise_init
 @register_passable("trivial")
-struct Image2DLayout(Copyable, Movable):
+struct Image2DLayout(ImplicitlyCopyable, Movable):
     var value: Int
     alias UNKNOWN = Image2DLayout(-1)  # statically unknown layout.
     alias NHWC = Image2DLayout(0)  # channels last layout.
@@ -70,17 +70,17 @@ struct ImageData[
     fn __init__(
         out self,
         data: LayoutTensor[dtype, layout, origin],
-        layout: Image2DLayout,
+        _layout: Image2DLayout,
     ):
         """Construct of an image data instance with dynamic layout param.
 
         Args:
             data: A 4d buffer containing the actual data.
-            layout: Data layout tag.
+            _layout: Data layout tag.
         """
         constrained[static_image_layout == Image2DLayout.UNKNOWN]()
         self.data = data
-        self.dynamic_image_layout = layout
+        self.dynamic_image_layout = _layout
 
     fn __init__(out self, data: LayoutTensor[dtype, layout, origin]):
         constrained[static_image_layout != Image2DLayout.UNKNOWN]()
@@ -281,7 +281,7 @@ struct ImageData[
 
 
 @register_passable("trivial")
-struct ImageShape(Copyable, Movable):
+struct ImageShape(ImplicitlyCopyable, Movable):
     """A data-layout agnostic representation of tensor shapes used in conv2d."""
 
     var N: Int

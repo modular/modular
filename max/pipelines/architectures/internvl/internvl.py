@@ -36,7 +36,6 @@ from max.nn import (
     MLP,
     Allreduce,
     ColumnParallelLinear,
-    DistributedAttentionWithRope,
     DynamicRotaryEmbedding,
     LayerList,
     LayerNorm,
@@ -44,11 +43,16 @@ from max.nn import (
     Module,
     RMSNorm,
     Shardable,
+    TensorParallelAttentionWithRope,
     VocabParallelEmbedding,
 )
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu
-from max.nn.kv_cache import FetchPagedKVCacheCollection, PagedKVCacheCollection
+from max.nn.kv_cache import PagedCacheValues
+from max.pipelines.architectures.llama3.model_config import (
+    Llama3Config as Qwen2Config,
+)
+from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 
 from .embedding_utils import merge_multimodal_embeddings
 from .layers.attention import (
@@ -109,7 +113,20 @@ class InternVLDecoderLayer(Module):
         llm_config = config.llm_config
         devices = config.devices
 
-        self.self_attn = DistributedAttentionWithRope(
+        if isinstance(llm_config, Qwen3Config):
+            # Qwen3: no bias, uses QK-Norm
+            has_bias = False
+            use_qk_norm = True
+        elif isinstance(llm_config, Qwen2Config):
+            # Qwen2: has bias, no QK-Norm
+            has_bias = True
+            use_qk_norm = False
+        else:
+            # Default / unknown model family
+            has_bias = getattr(config, "attention_bias", True)
+            use_qk_norm = getattr(config, "use_qk_norm", not has_bias)
+
+        self.self_attn = TensorParallelAttentionWithRope(
             stacked_qkv=llm_config.stacked_qkv,
             scale=llm_config.attention_multiplier,
             clip_qkv=llm_config.clip_qkv,
@@ -121,7 +138,9 @@ class InternVLDecoderLayer(Module):
             rope=rope,
             linear_cls=Linear,
             devices=devices,
-            has_bias=True,  # Qwen2 uses attention bias
+            has_bias=has_bias,
+            use_qk_norm=use_qk_norm,
+            rms_norm_eps=getattr(config.llm_config, "rms_norm_eps", 1e-6),
         )
 
         self.mlp = MLP(
@@ -168,7 +187,7 @@ class InternVLDecoderLayer(Module):
         layer_idx: TensorValue,
         xs: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
-        kv_collections: Sequence[PagedKVCacheCollection],
+        kv_collections: Sequence[PagedCacheValues],
         freqs_cis: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
@@ -187,7 +206,9 @@ class InternVLDecoderLayer(Module):
         # Apply input layer norm to each shard
         norm_xs = [
             norm_shard(x)
-            for norm_shard, x in zip(self.input_layernorm_shards, xs)
+            for norm_shard, x in zip(
+                self.input_layernorm_shards, xs, strict=True
+            )
         ]
 
         attn_outs = self.self_attn(
@@ -200,18 +221,23 @@ class InternVLDecoderLayer(Module):
         )
 
         # Add residual.
-        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
+        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
 
         # Apply post attention layer norm to each shard
         normed_hs = [
             norm_shard(h)
-            for norm_shard, h in zip(self.post_attention_layernorm_shards, hs)
+            for norm_shard, h in zip(
+                self.post_attention_layernorm_shards, hs, strict=True
+            )
         ]
-        mlp_outs = [shard(x) for shard, x in zip(self.mlp_shards, normed_hs)]
+        mlp_outs = [
+            shard(x)
+            for shard, x in zip(self.mlp_shards, normed_hs, strict=True)
+        ]
         mlp_outs = self.mlp_allreduce(mlp_outs, signal_buffers)
 
         # Add residual.
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs)]
+        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
         return hs
 
@@ -255,16 +281,19 @@ class InternVLLanguageModel(Module):
         llm_config = config.llm_config
         self.devices = config.devices
 
-        if config.llm_config.tie_word_embeddings:
+        if llm_config.tie_word_embeddings:
             raise ValueError("tied embeddings unsupported by InternVL")
 
-        # Create RoPE embeddings.
+        interleaved_rope = getattr(
+            llm_config, "interleaved_rope_weights", True
+        ) or isinstance(llm_config, Qwen3Config)
+
         self.rope = DynamicRotaryEmbedding(
             dim=llm_config.hidden_size,
             n_heads=llm_config.num_attention_heads,
             theta=llm_config.rope_theta,
             max_seq_len=llm_config.max_seq_len,
-            interleaved=llm_config.interleaved_rope_weights,
+            interleaved=interleaved_rope,
             device=self.devices[0],
         )
 
@@ -305,12 +334,6 @@ class InternVLLanguageModel(Module):
             quantization_encoding=None,
         )
 
-        # Always assume paged KV cache for InternVL.
-        self.kv_collection_constructor = FetchPagedKVCacheCollection(
-            llm_config.kv_params,
-            num_layers=llm_config.num_hidden_layers,
-        )
-
         # Store image context token ID.
         self.image_context_token_id = image_context_token_id
 
@@ -318,7 +341,7 @@ class InternVLLanguageModel(Module):
         self,
         tokens: TensorValue,
         signal_buffers: Iterable[BufferValue],
-        kv_cache_inputs_per_dev: Sequence[tuple[TensorValue, ...]],
+        kv_collections: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
         image_embeddings: Sequence[TensorValue],
@@ -351,14 +374,8 @@ class InternVLLanguageModel(Module):
                 image_token_indices=img_tok_indices,
             )
             for h_device, img_embed, img_tok_indices in zip(
-                h, image_embeddings, image_token_indices
+                h, image_embeddings, image_token_indices, strict=True
             )
-        ]
-
-        # Create KV cache collections.
-        kv_collections = [
-            self.kv_collection_constructor(*kv_cache_inputs)
-            for kv_cache_inputs in kv_cache_inputs_per_dev
         ]
 
         # Create position embeddings shared across the decoder layers.
@@ -379,14 +396,16 @@ class InternVLLanguageModel(Module):
         last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
         last_token_h = [
             ops.gather(h_device, indices, axis=0)
-            for h_device, indices in zip(h, last_token_indices)
+            for h_device, indices in zip(h, last_token_indices, strict=True)
         ]
         last_logits = ops.cast(
             # Take only the device 0 logits to device-to-host transfer.
             self.lm_head(
                 [
                     norm_shard(h)
-                    for norm_shard, h in zip(self.norm_shards, last_token_h)
+                    for norm_shard, h in zip(
+                        self.norm_shards, last_token_h, strict=True
+                    )
                 ],
                 signal_buffers,
             )[0],
@@ -498,6 +517,7 @@ class InternVisionEmbeddings(Module, Shardable):
             patch_embedding_shards,
             class_embedding_shards,
             position_embedding_shards,
+            strict=True,
         ):
             # Create the new sharded embedding.
             sharded = InternVisionEmbeddings(self.config, device)
@@ -699,7 +719,7 @@ class InternVLVisionMLP(Module, Shardable):
 
         shards = []
         for device, fc1_shard, fc2_shard in zip(
-            devices, fc1_shards, fc2_shards
+            devices, fc1_shards, fc2_shards, strict=True
         ):
             # Create new MLP instance with the same configuration
             sharded = InternVLVisionMLP(
@@ -1139,7 +1159,7 @@ class InternVisionEncoderLayer(Module):
     ) -> list[TensorValue]:
         """Apply layer scaling to tensors on their respective devices."""
         scale_tensors = [scale_weight.to(device) for device in devices]
-        return [t * s for t, s in zip(tensors, scale_tensors)]
+        return [t * s for t, s in zip(tensors, scale_tensors, strict=True)]
 
     def _split_qkv_per_device(
         self, qkv_outs: Sequence[TensorValue]
@@ -1184,7 +1204,9 @@ class InternVisionEncoderLayer(Module):
 
         # 1. Apply first normalization per device (using per-device instances)
         # x: [1025, 3200]
-        norm1_outs = [norm(x) for x, norm in zip(xs, self.norm1_per_device)]
+        norm1_outs = [
+            norm(x) for x, norm in zip(xs, self.norm1_per_device, strict=True)
+        ]
 
         # 2. Apply QKV projection per device (rowwise)
         qkv_outs = []
@@ -1294,18 +1316,22 @@ class InternVisionEncoderLayer(Module):
         orig_dtype = original_hidden_states[0].dtype
         hidden_states = [
             out + orig.cast(DType.float32)
-            for out, orig in zip(attn_outs_scaled, original_hidden_states)
+            for out, orig in zip(
+                attn_outs_scaled, original_hidden_states, strict=True
+            )
         ]
 
         # 4. Apply second normalization per device
         norm2_outs = [
             norm(hidden).cast(orig_dtype)
-            for norm, hidden in zip(self.norm2_per_device, hidden_states)
+            for norm, hidden in zip(
+                self.norm2_per_device, hidden_states, strict=True
+            )
         ]
 
         # 5. Apply MLP with reshaping using per-device MLPs
         mlp_outs = []
-        for mlp, norm_out in zip(self.mlp_per_device, norm2_outs):
+        for mlp, norm_out in zip(self.mlp_per_device, norm2_outs, strict=True):
             batch_size, seq_len, hidden_dim = norm_out.shape
             # Reshape to 2D for MLP
             mlp_out_2d = mlp(
@@ -1327,7 +1353,7 @@ class InternVisionEncoderLayer(Module):
         # Second residual connection
         outputs = [
             out + hidden.cast(orig_dtype)
-            for out, hidden in zip(mlp_outs_scaled, hidden_states)
+            for out, hidden in zip(mlp_outs_scaled, hidden_states, strict=True)
         ]
 
         return outputs
@@ -1456,7 +1482,9 @@ class InternVLVisionModel(Module):
         # Get vision embeddings from each device
         vit_embeds = [
             embed(pixels)
-            for embed, pixels in zip(self.embeddings_list, pixel_values)
+            for embed, pixels in zip(
+                self.embeddings_list, pixel_values, strict=True
+            )
         ]
 
         # Pass through encoder layers on all devices
@@ -1509,7 +1537,8 @@ class InternVLVisionModel(Module):
 
         # Apply mlp1 projection (includes layer norm, fc1, gelu, fc2).
         mlp_out = [
-            mlp(embeds) for mlp, embeds in zip(self.mlp1_list, seq_embeds)
+            mlp(embeds)
+            for mlp, embeds in zip(self.mlp1_list, seq_embeds, strict=True)
         ]
         mlp_out = self.allreduce(mlp_out, signal_buffers)
 

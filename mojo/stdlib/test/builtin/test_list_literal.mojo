@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def test_variadic_list():
@@ -41,5 +41,4 @@ def test_contains():
 
 
 def main():
-    test_variadic_list()
-    test_contains()
+    TestSuite.discover_tests[__functions_in_module()]().run()

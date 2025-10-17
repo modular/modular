@@ -13,8 +13,9 @@
 
 from gpu.host import DeviceContext
 from internal_utils._utils import dynamic, static
-from linalg.matmul_sm90_testbed import test_matmul_sm90
-from linalg.matmul_tile_scheduler import MatmulSchedule
+from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
+from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
+
 from utils.index import Index
 
 # Helper to calculate block_tile_shape based on dtype and wgmma_n
@@ -28,7 +29,7 @@ alias wgmma_shape[wgmma_n: Int, a_dtype: DType] = Index(
 ) if a_dtype is DType.float8_e4m3fn else Index(64, wgmma_n, 16)
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_matmul_sm90[
             DType.bfloat16,

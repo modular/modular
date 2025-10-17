@@ -13,7 +13,7 @@
 from math import ceil, ceildiv
 from sys.info import size_of
 
-from layout import LayoutTensor, Layout
+from layout import Layout, LayoutTensor
 from memory import bitcast, memcpy
 
 from utils import IndexList, StaticTuple, product
@@ -49,10 +49,10 @@ fn _to_SIMD[
 @always_inline
 fn calculate_symmetric_vector[
     input_dtype: DType, simd_width: Int, output_bits: Int
-](data: SIMD[input_dtype, simd_width]) -> (
+](data: SIMD[input_dtype, simd_width]) -> Tuple[
     SIMD[DType.uint8, simd_width],
-    SIMD[input_dtype, 1],
-):
+    Scalar[input_dtype],
+]:
     """
     Symmetrically quantizes the given SIMD vector `data` with input type
     `input_dtype` and `simd_width` elements, assuming we want
@@ -215,7 +215,7 @@ struct Q4sym[
             DType.uint16
         ]()
         upcast_bytes[1] = upcast_bytes[1] << 8
-        var final_result: SIMD[DType.uint16, 1] = upcast_bytes.reduce_add()
+        var final_result: UInt16 = upcast_bytes.reduce_add()
         var scale_decoded = bitcast[DType.float16, 1](final_result)
         return scale_decoded
 
@@ -333,7 +333,7 @@ struct Q4sym[
                 var src_ptr = UnsafePointer(to=encoded_data).address_space_cast[
                     output_ptr.address_space
                 ]()
-                memcpy(output_ptr, src_ptr, 1)
+                memcpy(dest=output_ptr, src=src_ptr, count=1)
                 _ = encoded_data^
 
     @staticmethod
@@ -390,9 +390,9 @@ struct Q4sym[
                 var flat_index_input = input_inner_dim * i + j
                 var encoded = Q4sym[group_size, float_dtype]()
                 memcpy(
-                    UnsafePointer(to=encoded),
-                    base_block_ptr + flat_index_input,
-                    1,
+                    dest=UnsafePointer(to=encoded),
+                    src=base_block_ptr + flat_index_input,
+                    count=1,
                 )
 
                 var flat_index_output = output_inner_dim * i + j * group_size
@@ -429,7 +429,7 @@ fn scale_min_k4(
         block_Q4_K, address_space = AddressSpace.GENERIC, **_
     ],
     g: Int,
-) -> (Float32, Float32):
+) -> Tuple[Float32, Float32]:
     if g < 4:
         var q_scale = src_ptr[].q_scales_and_mins[g] & 63
         var q_min = src_ptr[].q_scales_and_mins[g + 4] & 63

@@ -16,7 +16,7 @@
 # logic and shift instruction: lop3
 # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#logic-and-shift-instructions-lop3
 
-from sys.info import CompilationTarget, is_amd_gpu
+from sys.info import CompilationTarget, is_amd_gpu, is_apple_gpu
 
 from buffer import NDBuffer
 from gpu.host import DeviceContext
@@ -51,7 +51,7 @@ fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
         var t: Int32
 
         @parameter
-        if is_amd_gpu() or no_lop:
+        if is_apple_gpu() or is_amd_gpu() or no_lop:
             t = (i4s & MASK) | I4s_TO_BF16s_MAGIC_NUM
         else:
             t = lop[lut](i4s, MASK, I4s_TO_BF16s_MAGIC_NUM)
@@ -65,10 +65,7 @@ fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
 
 fn call_int4tobf16[
     no_lop: Bool
-](
-    i4: Int32,
-    out_ptr: UnsafePointer[BFloat16, address_space = AddressSpace.GLOBAL],
-):
+](i4: Int32, out_ptr: UnsafePointer[BFloat16],):
     var v = int4tobf16[no_lop](i4)
     out_ptr.bitcast[Int32]().store[alignment=16](0, bitcast[DType.int32, 4](v))
 
@@ -79,8 +76,9 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
     ].stack_allocation()
     var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 
-    ctx.enqueue_function[call_int4tobf16[no_lop]](
-        UInt32(0x76543210), out_device, grid_dim=1, block_dim=1
+    alias kernel = call_int4tobf16[no_lop]
+    ctx.enqueue_function_checked[kernel, kernel](
+        Int32(0x76543210), out_device, grid_dim=1, block_dim=1
     )
 
     ctx.enqueue_copy(out_host.data, out_device)
@@ -90,9 +88,6 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
 
 
 def main():
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        with DeviceContext() as ctx:
-            test_int4tobfloat16[no_lop=False](ctx)
-            test_int4tobfloat16[no_lop=True](ctx)
+    with DeviceContext() as ctx:
+        test_int4tobfloat16[no_lop=False](ctx)
+        test_int4tobfloat16[no_lop=True](ctx)

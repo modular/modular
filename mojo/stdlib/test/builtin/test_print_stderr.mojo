@@ -15,9 +15,11 @@
 
 import sys
 
+from testing import TestSuite
+
 
 # CHECK-LABEL: test_print_stderr
-fn test_print_stderr():
+def test_print_stderr():
     # CHECK-STDERR: stderr
     print("stderr", file=sys.stderr)
     # CHECK-STDERR: a/b/c
@@ -30,5 +32,5 @@ fn test_print_stderr():
     print("hello world", file=sys.stderr)
 
 
-fn main():
-    test_print_stderr()
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

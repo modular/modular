@@ -234,7 +234,7 @@ fn gelu_approximate[
 @always_inline
 fn leaky_relu[
     dtype: DType, simd_width: Int
-](x: SIMD[dtype, simd_width], negative_slope: SIMD[dtype, 1]) -> SIMD[
+](x: SIMD[dtype, simd_width], negative_slope: Scalar[dtype]) -> SIMD[
     dtype, simd_width
 ]:
     """Compute the Leaky ReLU using the equation

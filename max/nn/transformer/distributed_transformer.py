@@ -13,9 +13,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from itertools import islice
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from max.dtype import DType
 from max.graph import (
@@ -34,9 +34,8 @@ from max.nn.comm.allreduce import Allreduce
 
 from ..embedding import VocabParallelEmbedding
 from ..kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
-    PagedKVCacheCollection,
+    PagedCacheValues,
 )
 from ..layer import LayerList, Module, Shardable
 from ..linear import ColumnParallelLinear, DistributedGemmConfig
@@ -82,7 +81,7 @@ def forward_sharded_layers(
     assert len(xs) == len(layers), (
         f"Number of layers ({len(layers)}) must match number of inputs ({len(xs)})"
     )
-    return [layer(x) for layer, x in zip(layers, xs)]
+    return [layer(x) for layer, x in zip(layers, xs, strict=True)]
 
 
 class DistributedTransformerBlock(Module):
@@ -129,12 +128,28 @@ class DistributedTransformerBlock(Module):
         layer_idx: TensorValue,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_collections: list[PagedKVCacheCollection],
+        kv_blocks: list[BufferValue],
+        kv_cache_lengths: list[TensorValue],
+        kv_lookup_table: list[TensorValue],
+        kv_max_lengths: list[TensorValue],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
+
+        # We have to unpack our PagedCacheValues into constituent parts so
+        # subgraphs have only max.graph.Values as arguments.
+        # Re-pack those arguments into a nice structured type.
+        kv_collections = [
+            PagedCacheValues(
+                kv_blocks[i],
+                kv_cache_lengths[i],
+                kv_lookup_table[i],
+                kv_max_lengths[i],
+            )
+            for i in range(len(kv_blocks))
+        ]
 
         attn_outs = self.self_attn(
             layer_idx,
@@ -145,7 +160,7 @@ class DistributedTransformerBlock(Module):
             input_row_offsets=input_row_offsets,
         )
 
-        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
+        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
 
         # Apply post attention layer norm to each shard
         norm_outs = forward_sharded_layers(
@@ -168,7 +183,7 @@ class DistributedTransformerBlock(Module):
                 signal_buffers,
             )
 
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs)]
+        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
         return hs
 
@@ -185,12 +200,12 @@ class DistributedTransformer(Module):
         output: ColumnParallelLinear,
         embedding: VocabParallelEmbedding,
         kv_params: KVCacheParams,
-        kv_collection_constructor: FetchPagedKVCacheCollection,
         devices: list[DeviceRef],
         rope: RotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         use_subgraphs: bool = False,
         subgraph_layer_groups: list[list[int]] | None = None,
+        logits_scaling: float = 1.0,
     ) -> None:
         super().__init__()
         self.dim = dim
@@ -203,7 +218,6 @@ class DistributedTransformer(Module):
         self.lm_head = output
         self.embed_tokens = embedding
         self.kv_params = kv_params
-        self.kv_collection_constructor = kv_collection_constructor
         self.return_logits = return_logits
         self.devices = devices
         self.rope = rope
@@ -213,32 +227,38 @@ class DistributedTransformer(Module):
             # are in a single group.
             subgraph_layer_groups = [[i for i in range(len(layers))]]
         self.subgraph_layer_groups = subgraph_layer_groups
+        self.logits_scaling = logits_scaling
 
     def __call__(
         self,
         tokens: TensorValueLike,
         signal_buffers: list[BufferValue],
-        kv_cache_inputs_per_dev: list[tuple[TensorValue, ...]],
+        kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens, signal_buffers)
 
-        kv_collections = [
-            self.kv_collection_constructor(*kv_cache_inputs)
-            for kv_cache_inputs in kv_cache_inputs_per_dev
-        ]
-
         freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
 
         input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
+
+        kv_cache_arguments = [
+            [kv_collection.kv_blocks for kv_collection in kv_collections],
+            [kv_collection.cache_lengths for kv_collection in kv_collections],
+            [kv_collection.lookup_table for kv_collection in kv_collections],
+            [kv_collection.max_lengths for kv_collection in kv_collections],
+        ]
 
         if self.use_subgraphs:
             subgraph_input_types: Sequence[Type[Any] | list[Type[Any]]] = [
                 TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
                 [hidden.type for hidden in h],
                 [signal_buffer.type for signal_buffer in signal_buffers],
-                [kv_collection.type for kv_collection in kv_collections],
+                [kv_collection[0].type for kv_collection in kv_collections],
+                [kv_collection[1].type for kv_collection in kv_collections],
+                [kv_collection[2].type for kv_collection in kv_collections],
+                [kv_collection[3].type for kv_collection in kv_collections],
                 [freq.type for freq in freqs_cis],
                 [offset.type for offset in input_row_offsets_],
             ]
@@ -278,7 +298,22 @@ class DistributedTransformer(Module):
                                 ),
                                 *h,
                                 *signal_buffers,
-                                *kv_collections,
+                                *[
+                                    kv_collection[0]
+                                    for kv_collection in kv_collections
+                                ],
+                                *[
+                                    kv_collection[1]
+                                    for kv_collection in kv_collections
+                                ],
+                                *[
+                                    kv_collection[2]
+                                    for kv_collection in kv_collections
+                                ],
+                                *[
+                                    kv_collection[3]
+                                    for kv_collection in kv_collections
+                                ],
                                 *freqs_cis,
                                 *input_row_offsets_,
                                 prefix=f"layers.{idx}.",
@@ -291,7 +326,7 @@ class DistributedTransformer(Module):
                         ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                         h,
                         signal_buffers,
-                        kv_collections,
+                        *kv_cache_arguments,
                         freqs_cis=freqs_cis,
                         input_row_offsets=input_row_offsets_,
                     )
@@ -301,7 +336,7 @@ class DistributedTransformer(Module):
                     ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                     h,
                     signal_buffers,
-                    kv_collections,
+                    *kv_cache_arguments,
                     freqs_cis=freqs_cis,
                     input_row_offsets=input_row_offsets_,
                 )
@@ -362,6 +397,11 @@ class DistributedTransformer(Module):
                 DType.float32,
             )
             offsets = input_row_offsets
+
+        if self.logits_scaling != 1.0:
+            last_logits = last_logits / self.logits_scaling
+            if logits is not None:
+                logits = logits / self.logits_scaling
 
         if logits is not None and offsets is not None:
             return (last_logits, logits, offsets)

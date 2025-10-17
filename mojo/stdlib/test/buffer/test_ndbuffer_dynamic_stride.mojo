@@ -13,12 +13,13 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from testing import TestSuite
 
 from utils.index import Index
 
 
 # CHECK-LABEL: test_sub_matrix
-fn test_sub_matrix():
+def test_sub_matrix():
     print("== test_sub_matrix")
     alias num_row = 4
     alias num_col = 4
@@ -80,7 +81,7 @@ fn test_sub_matrix():
 
 
 # CHECK-LABEL: test_broadcast
-fn test_broadcast():
+def test_broadcast():
     print("== test_broadcast")
 
     # Create a buffer holding a single value with zero stride.
@@ -97,6 +98,5 @@ fn test_broadcast():
     print(stride_buf[99])
 
 
-fn main():
-    test_sub_matrix()
-    test_broadcast()
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

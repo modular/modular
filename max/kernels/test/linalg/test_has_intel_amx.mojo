@@ -16,7 +16,7 @@
 
 from sys import CompilationTarget
 
-from linalg.intel_amx_intrinsics import init_intel_amx
+from linalg.arch.cpu.intel_amx_intrinsics import init_intel_amx
 from testing import assert_true
 
 
@@ -26,5 +26,5 @@ fn test_has_intel_amx() raises:
     assert_true(init_intel_amx())
 
 
-fn main() raises:
+def main():
     test_has_intel_amx()

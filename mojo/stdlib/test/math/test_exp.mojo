@@ -16,14 +16,11 @@ from random import randn_float64, seed
 from sys import CompilationTarget
 
 from test_utils import libm_call
-from testing import assert_almost_equal, assert_equal
+from testing import assert_almost_equal, assert_equal, TestSuite
 
 
 def test_exp_bfloat16():
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        assert_equal(exp(BFloat16(2.0)), 7.375)
+    assert_equal(exp(BFloat16(2.0)), 7.375)
 
 
 def test_exp_float16():
@@ -112,10 +109,4 @@ def test_exapble_trait():
 
 
 def main():
-    test_exp_bfloat16()
-    test_exp_float16()
-    test_exp_float32()
-    test_exp_float64()
-    test_exp_libm[DType.float32]()
-    test_exp_libm[DType.float64]()
-    test_exapble_trait()
+    TestSuite.discover_tests[__functions_in_module()]().run()

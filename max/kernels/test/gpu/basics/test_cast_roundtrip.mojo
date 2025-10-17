@@ -15,7 +15,7 @@ from gpu import *
 from gpu.host import DeviceContext
 from testing import assert_equal, assert_true
 
-from utils.numerics import inf, nan, neg_inf, isnan
+from utils.numerics import inf, isnan, nan, neg_inf
 
 
 fn id(
@@ -24,7 +24,7 @@ fn id(
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= UInt(len):
         return
     output[tid] = Float32(BFloat16(input[tid]))
 
@@ -52,7 +52,8 @@ fn run_vec_add(ctx: DeviceContext) raises:
 
     var block_dim = 32
 
-    ctx.enqueue_function[id](
+    alias kernel = id
+    ctx.enqueue_function_checked[kernel, kernel](
         in_device,
         out_device,
         length,

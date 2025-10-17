@@ -12,6 +12,12 @@ build --enable_platform_specific_config=true
 # Show more output files when you build multiple targets
 common --show_result=10
 
+# https://github.com/bazelbuild/bazel/pull/27030
+common --experimental_objc_fastbuild_options=
+
+# Don't inherit magic copts for objc_library rules
+common --incompatible_avoid_hardcoded_objc_compilation_flags
+
 # https://github.com/aspect-build/tools_telemetry
 common --repo_env=ASPECT_TOOLS_TELEMETRY=-all
 
@@ -25,7 +31,7 @@ common --platforms=@mojo_host_platform
 common --host_platform=@mojo_host_platform
 
 # TODO: remove when https://github.com/bazelbuild/bazel/issues/25145 is fixed
-info --platforms=
+info --platforms=@platforms//host
 
 # Improve sandboxed build performance by reusing symlink trees
 common --reuse_sandbox_directories
@@ -65,6 +71,11 @@ build --flag_alias=mojocopt=@rules_mojo//:mojo_copt
 # Disable cc_library's underlying shared library because of circular dependency linking issues
 build --dynamic_mode=off
 build --features=-supports_dynamic_linker
+
+# Make sure we use llvm-ar on macOS for exec config too
+common --experimental_propagate_custom_flag=@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos
+# Always use llvm-ar which works fine for macOS
+common --@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos=false
 
 # Disable layering check for third parties since we don't care about their
 # layers, and we're not using this ourselves yet.
@@ -117,10 +128,15 @@ build --experimental_output_paths=strip
 build --macos_minimum_os=11.0 --host_macos_minimum_os=11.0
 
 build --@llvm_zstd//:llvm_enable_zstd=false
+build --experimental_propagate_custom_flag=@llvm_zstd//:llvm_enable_zstd
 build --@llvm-project//lldb:enable_libedit=true
+build --experimental_propagate_custom_flag=@llvm-project//lldb:enable_libedit
 build --@llvm-project//lldb:enable_curses=true
+build --experimental_propagate_custom_flag=@llvm-project//lldb:enable_curses
 build --@llvm-project//llvm:pfm=disable
+build --experimental_propagate_custom_flag=@llvm-project//llvm:pfm
 build --@llvm-project//mlir:enable_cuda=true
+build --experimental_propagate_custom_flag=@llvm-project//mlir:enable_cuda
 
 build --remote_download_outputs=toplevel
 build --remote_download_regex='.*\.(inc|h)$'
@@ -153,6 +169,11 @@ build:macos --spawn_strategy=remote,worker,sandboxed,standalone
 # https://github.com/bazelbuild/bazel/issues/25221
 build --strategy=TestRunner=remote,worker,sandboxed,standalone
 
+build:linux --build_metadata=TAG_HOST_OS=linux
+build:linux --build_metadata=TAG_TARGET_OS=linux
+build:macos --build_metadata=TAG_HOST_OS=macos
+build:macos --build_metadata=TAG_TARGET_OS=macos
+
 # Separate CI config that doesn't affect build output for verifying we share caches
 build:ci-no-config --build_metadata=ROLE=CI
 build:ci-no-config --config=cache
@@ -165,6 +186,7 @@ build:ci-no-config --spawn_strategy=remote,worker,sandboxed,standalone
 build:ci --config=ci-no-config
 # Set CI builds to lower priority than local builds, some CI builds override this
 build:ci --remote_execution_priority=20
+test:ci --remote_download_outputs=minimal
 
 build:ci-gpu-common --config=ci
 build:ci-gpu-common --test_tag_filters=gpu,-lint-test
@@ -175,10 +197,11 @@ build:remote-h100 --platforms=//:h100-platform
 build:remote-h100 --extra_execution_platforms=//:m7i-platform,//:h100-platform,@mojo_host_platform
 build:remote-h100 --spawn_strategy=remote,worker,sandboxed,standalone
 build:remote-h100 --repo_env=MODULAR_TARGET=linux:x86_64
+build:remote-h100 --build_metadata=TAG_GPU=h100
+build:remote-h100 --build_metadata=TAG_TARGET_OS=linux
 
 build:ci-remote-h100 --config=ci-gpu-common
 build:ci-remote-h100 --config=remote-h100
-build:ci-remote-h100 --build_metadata=TAGS=h100
 build:ci-remote-h100 --test_keep_going=false
 
 build:remote-b200 --config=remote
@@ -187,10 +210,11 @@ build:remote-b200 --platforms=//:b200-platform
 build:remote-b200 --extra_execution_platforms=//:m7i-platform,//:b200-platform,@mojo_host_platform
 build:remote-b200 --spawn_strategy=remote,worker,sandboxed,standalone
 build:remote-b200 --repo_env=MODULAR_TARGET=linux:x86_64
+build:remote-b200 --build_metadata=TAG_GPU=b200
+build:remote-b200 --build_metadata=TAG_TARGET_OS=linux
 
 build:ci-remote-b200 --config=ci-gpu-common
 build:ci-remote-b200 --config=remote-b200
-build:ci-remote-b200 --build_metadata=TAGS=b200
 build:ci-remote-b200 --test_keep_going=false
 
 build:remote-mi300 --config=remote
@@ -199,13 +223,26 @@ build:remote-mi300 --platforms=//:mi300-platform
 build:remote-mi300 --extra_execution_platforms=//:m7i-platform,//:mi300-platform,@mojo_host_platform
 build:remote-mi300 --spawn_strategy=remote,worker,sandboxed,standalone
 build:remote-mi300 --repo_env=MODULAR_TARGET=linux:x86_64
+build:remote-mi300 --build_metadata=TAG_GPU=mi300
+build:remote-mi300 --build_metadata=TAG_TARGET_OS=linux
 
 build:ci-remote-mi300 --config=ci-gpu-common
 build:ci-remote-mi300 --config=remote-mi300
-build:ci-remote-mi300 --build_metadata=TAGS=mi300
 build:ci-remote-mi300 --test_keep_going=false
 
-test:ci-test --config=ci-no-config
-test:ci-test --remote_download_outputs=minimal
+build:remote-mi355 --config=remote
+build:remote-mi355 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
+build:remote-mi355 --platforms=//:mi355-platform
+build:remote-mi355 --extra_execution_platforms=//:m7i-platform,//:mi355-platform,@mojo_host_platform
+build:remote-mi355 --spawn_strategy=remote,worker,sandboxed,standalone
+build:remote-mi355 --repo_env=MODULAR_TARGET=linux:x86_64
+build:remote-mi355 --build_metadata=TAG_GPU=mi355
+build:remote-mi355 --build_metadata=TAG_TARGET_OS=linux
 
-test:ci-gpu-common --config=ci-test
+build:ci-remote-mi355 --config=ci-gpu-common
+build:ci-remote-mi355 --config=remote-mi355
+# TODO: Enable once tests are fixed
+# build:ci-remote-mi355 --test_keep_going=false
+
+# TODO: Remove once transitives are fixed
+common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo

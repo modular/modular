@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import ceildiv, isqrt
+from math import ceildiv, rsqrt
 from random import random_ui64, seed
 
 from buffer import Dim, DimList
@@ -26,6 +26,7 @@ from memory import memcpy
 from nn.flash_attention import flash_attention_kv_cache
 from nn.mha_mask import CausalMask
 from testing import assert_almost_equal
+from sys import size_of
 
 from utils import IndexList
 
@@ -164,21 +165,39 @@ def execute_ragged_flash_attention[
             paged_lut.tensor[bs, block_idx] = randval
 
             for kv_idx in range(2):
+                var dest = kv_block_paged.tensor._offset(
+                    IndexList[6](randval, kv_idx, layer_idx, 0, 0, 0)
+                )
+                var src = kv_block_continuous.tensor._offset(
+                    IndexList[6](
+                        continuous_idx,
+                        kv_idx,
+                        layer_idx,
+                        block_idx * page_size,
+                        0,
+                        0,
+                    )
+                )
+                var dest_byte_offset = UInt(Int(dest)) - UInt(
+                    Int(kv_block_paged.tensor.data)
+                )
+                var src_byte_offset = UInt(Int(src)) - UInt(
+                    Int(kv_block_continuous.tensor.data)
+                )
+                var dest_len = (
+                    kv_block_paged.tensor.bytecount() - dest_byte_offset
+                )
+                var src_len = (
+                    kv_block_continuous.tensor.bytecount() - src_byte_offset
+                )
                 memcpy(
-                    kv_block_paged.tensor._offset(
-                        IndexList[6](randval, kv_idx, layer_idx, 0, 0, 0)
+                    dest=dest,
+                    src=src,
+                    count=min(
+                        dest_len // size_of[dest.type](),
+                        src_len // size_of[src.type](),
+                        page_size * kv_params.num_heads * kv_params.head_size,
                     ),
-                    kv_block_continuous.tensor._offset(
-                        IndexList[6](
-                            continuous_idx,
-                            kv_idx,
-                            layer_idx,
-                            block_idx * page_size,
-                            0,
-                            0,
-                        )
-                    ),
-                    page_size * kv_params.num_heads * kv_params.head_size,
                 )
 
     kv_collection_paged = PagedKVCacheCollection[dtype, kv_params, page_size](
@@ -191,28 +210,28 @@ def execute_ragged_flash_attention[
 
     # continuous execution
     flash_attention_kv_cache(
-        q_ragged.tensor,
-        input_row_offsets.tensor,
+        q_ragged.to_layout_tensor(),
+        input_row_offsets.to_layout_tensor(),
         # Assume self attention: Q and KV sequence lengths are equal.
-        input_row_offsets.tensor,
+        input_row_offsets.to_layout_tensor(),
         kv_collection_continuous.get_key_cache(layer_idx),
         kv_collection_continuous.get_value_cache(layer_idx),
         CausalMask(),
-        isqrt(Float32(kv_params.head_size)),
-        ref_output.tensor,
+        rsqrt(Float32(kv_params.head_size)),
+        ref_output.to_layout_tensor(),
     )
 
     # paged execution
     flash_attention_kv_cache(
-        q_ragged.tensor,
-        input_row_offsets.tensor,
+        q_ragged.to_layout_tensor(),
+        input_row_offsets.to_layout_tensor(),
         # Assume self attention: Q and KV sequence lengths are equal.
-        input_row_offsets.tensor,
+        input_row_offsets.to_layout_tensor(),
         kv_collection_paged.get_key_cache(layer_idx),
         kv_collection_paged.get_value_cache(layer_idx),
         CausalMask(),
-        isqrt(Float32(kv_params.head_size)),
-        test_output.tensor,
+        rsqrt(Float32(kv_params.head_size)),
+        test_output.to_layout_tensor(),
     )
 
     ref_out = ref_output.tensor

@@ -11,22 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from sys import size_of, argv
 from hashlib import default_comp_time_hasher
+from math import align_up, ceildiv
+from sys import argv, size_of
+
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from linalg import vendor_blas
-from linalg.matmul_sm100_warp_specialized_blockwise_fp8 import (
-    blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8,
-)
-from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -35,9 +28,18 @@ from internal_utils import (
     random,
     zero,
 )
-from linalg.utils_gpu import MatmulConfig
-from internal_utils._utils import ValOrDim, dynamic, static
 from internal_utils._measure import relative_difference
+from internal_utils._utils import ValOrDim, dynamic, static
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
+from linalg.matmul.gpu.sm100.warp_specialized_blockwise_fp8 import (
+    sm100_warp_specialized_blockwise_fp8,
+)
+from linalg.utils_gpu import MatmulConfig
+
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
 
 
 fn is_benchmark() -> Bool:
@@ -61,6 +63,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
+    scales_type: DType = DType.float32,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -75,13 +78,6 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
 
     if M * size_of[DType.float32]() % 16 != 0:
         raise Error("TMA expects M to be divisible by 16 bytes")
-
-    if not benchmark:
-        if N % BLOCK_SCALE_K != 0:
-            raise Error("N must be divisible by BLOCK_SCALE_K")
-
-    if K % BLOCK_SCALE_K != 0:
-        raise Error("K must be divisible by BLOCK_SCALE_K")
 
     if not benchmark:
         print(
@@ -150,19 +146,19 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         dynamic_c_shape, ctx=ctx
     )
 
-    var a_scales_host = HostNDBuffer[DType.float32, 2, static_a_scales_shape](
+    var a_scales_host = HostNDBuffer[scales_type, 2, static_a_scales_shape](
         dynamic_a_scales_shape
     )
-    var b_scales_host = HostNDBuffer[DType.float32, 2, static_b_scales_shape](
+    var b_scales_host = HostNDBuffer[scales_type, 2, static_b_scales_shape](
         dynamic_b_scales_shape
     )
 
-    var a_scales_device = DeviceNDBuffer[
-        DType.float32, 2, static_a_scales_shape
-    ](dynamic_a_scales_shape, ctx=ctx)
-    var b_scales_device = DeviceNDBuffer[
-        DType.float32, 2, static_b_scales_shape
-    ](dynamic_b_scales_shape, ctx=ctx)
+    var a_scales_device = DeviceNDBuffer[scales_type, 2, static_a_scales_shape](
+        dynamic_a_scales_shape, ctx=ctx
+    )
+    var b_scales_device = DeviceNDBuffer[scales_type, 2, static_b_scales_shape](
+        dynamic_b_scales_shape, ctx=ctx
+    )
 
     zero(c_host.tensor)
     zero(c_host_ref.tensor)
@@ -173,19 +169,21 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         var bt = b_host.tensor
         for m in range(M):
             for k in range(K):
-                at[m, k] = Float32(1.0).cast[a_type]()
+                at[m, k] = Scalar[a_type](1.0)
         for n in range(N):
             for k in range(K):
-                bt[n, k] = Float32(1.0).cast[b_type]()
+                bt[n, k] = Scalar[b_type](1.0)
 
         for m in range(M):
             for k in range(K):
-                a_scales_host.tensor[k // BLOCK_SCALE_K, m] = Float32(0.5)
+                a_scales_host.tensor[k // BLOCK_SCALE_K, m] = Scalar[
+                    scales_type
+                ](0.5)
         for n in range(N):
             for k in range(K):
                 b_scales_host.tensor[
                     n // BLOCK_SCALE_K, k // BLOCK_SCALE_K
-                ] = Float32(0.5)
+                ] = Scalar[scales_type](0.5)
 
     else:
         random(a_host.tensor)
@@ -214,7 +212,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         ),
     )
 
-    blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
+    sm100_warp_specialized_blockwise_fp8[
         transpose_b=transpose_b,
         config=matmul_config,
         cta_group=2,
@@ -235,7 +233,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         @always_inline
         @parameter
         fn run_kernel(ctx: DeviceContext) raises:
-            blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
+            sm100_warp_specialized_blockwise_fp8[
                 transpose_b=transpose_b,
                 config=matmul_config,
                 cta_group=2,
@@ -272,6 +270,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
+            scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         ](
             c_device_ref.tensor,
             a_device.tensor,
@@ -334,7 +333,7 @@ fn make_shapes_dict() -> Dict[Int, Tuple[Int, Int], default_comp_time_hasher]:
         4: (4096, 7168),
         5: (7168, 2048),
     }
-    return dic
+    return dic^
 
 
 fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
@@ -361,16 +360,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             for mma_m_scale in range(1, 3):
 
                 @parameter
-                for mma_n_scale in range(1, 17):
-                    # from 16*1 till 16*16 which is 256
-                    # basically, if MMA_M is 64, then BN must be multiple of 16 (mma_n_scale must be even)
-                    @parameter
-                    if mma_m_scale == 1 and mma_n_scale % 2 != 0:
-                        continue
-                    # TODO: support the increments of 8 for float 8 dtype at a later point
-                    # currently it works with increments of BN = 32
-                    if mma_n_scale % 4 != 0:
-                        continue
+                for mma_n_scale in [2, 4, 6, 8, 10, 12, 16]:
                     alias block_tile_shape = Index(
                         64 * mma_m_scale, 8 * mma_n_scale, BK
                     )
@@ -423,17 +413,7 @@ def main():
         for mma_m_scale in range(1, 3):
 
             @parameter
-            for mma_n_scale in range(1, 17):
-                # from 16*1 till 16*16 which is 256
-                # basically, if MMA_M is 64, then BN must be multiple of 16 (mma_n_scale must be even)
-                @parameter
-                if mma_m_scale == 1 and mma_n_scale % 2 != 0:
-                    continue
-                # TODO: support the increments of 8 for float 8 dtype at a later point
-                # currently it works with increments of BN = 32
-                if mma_n_scale % 4 != 0:
-                    continue
-
+            for mma_n_scale in [2, 4, 6, 8, 10, 12, 16]:
                 alias block_tile_shape = Index(
                     64 * mma_m_scale, 8 * mma_n_scale, BK
                 )
@@ -454,14 +434,47 @@ def main():
                     out_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
                 ](
                     ctx,
                     dynamic(1000),
+                    static[576](),
+                    static[7168](),
+                )
+
+                _ = test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
+                    in_dtype,
+                    in_dtype,
+                    out_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                ](
+                    ctx,
+                    dynamic(1000),
+                    static[576](),
+                    static[256 + 64](),
+                )
+
+                _ = test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
+                    in_dtype,
+                    in_dtype,
+                    out_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    scales_type = DType.bfloat16,
+                ](
+                    ctx,
+                    dynamic(1000),
+                    static[32768](),
                     static[512](),
-                    static[512 + 128](),
                 )
 
                 _ = test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -492,8 +505,8 @@ def main():
                 ](
                     ctx,
                     dynamic(500),
-                    static[2048](),
-                    static[4096](),
+                    static[24576](),
+                    static[1536](),
                 )
 
                 _ = test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -508,8 +521,8 @@ def main():
                 ](
                     ctx,
                     dynamic(1024),
-                    static[256](),
-                    static[128](),
+                    static[1536](),
+                    static[7168](),
                 )
 
                 _ = test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -521,6 +534,7 @@ def main():
                     cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
+                    scales_type = DType.bfloat16,
                 ](
                     ctx,
                     static[1024](),

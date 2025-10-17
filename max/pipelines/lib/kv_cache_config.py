@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """MAX KVCache configuration."""
 
-from __future__ import annotations
-
 import enum
 import logging
 from collections.abc import Mapping
@@ -40,7 +38,7 @@ class KVCacheConfig(MAXConfig):
     kv_cache_page_size: int = 128
     """The number of tokens in a single page in the paged KVCache."""
 
-    enable_prefix_caching: bool = False
+    enable_prefix_caching: bool = True
     """Whether to enable prefix caching for the paged attention KVCache."""
 
     enable_kvcache_swapping_to_host: bool = False
@@ -62,6 +60,7 @@ class KVCacheConfig(MAXConfig):
     This space is only allocated when kvcache_swapping_to_host is enabled.
     """
 
+    # Need to use `Optional` here to support `click` with 3.9.
     _available_cache_memory: int | None = None
     """The amount of available cache memory in bytes. This should only be set by internal code."""
 
@@ -82,7 +81,7 @@ class KVCacheConfig(MAXConfig):
         return {
             "cache_strategy": "Force a specific cache strategy: 'paged' or 'continuous'. If not provided, the optimal caching strategy for the model requested will be selected.",
             "kv_cache_page_size": "The number of tokens in a single page in the paged KVCache. Default is set to 128.",
-            "enable_prefix_caching": "Whether to enable prefix caching for the paged attention KVCache. This defaults to false.",
+            "enable_prefix_caching": "Whether to enable prefix caching for the paged attention KVCache. Prefix caching is enabled by default for supported models.",
             "enable_kvcache_swapping_to_host": "Whether to enable swapping the paged attention KVCache blocks to host memory when device blocks are evicted. This defaults to false.",
             "device_memory_utilization": "The fraction of available device memory that the process should consume. This is used to inform the size of the KVCache workspace: kv_cache_workspace = (total_free_memory * device_memory_utilization) - model_weights_size. Default is set to 0.9.",
             "host_kvcache_swap_space_gb": "The amount of host memory to use for the host KVCache in GiB. This is only used when kvcache_swapping_to_host is enabled. Default is set to 50.0.",

@@ -33,6 +33,7 @@ from sys.ffi import (
     c_ssize_t,
     c_uint,
 )
+
 from utils import Variant
 
 alias Py_ssize_t = c_ssize_t
@@ -110,9 +111,9 @@ struct PyThreadState:
 @register_passable("trivial")
 struct PyObjectPtr(
     Boolable,
-    Copyable,
     Defaultable,
     EqualityComparable,
+    ImplicitlyCopyable,
     Intable,
     Movable,
     Stringable,
@@ -214,7 +215,7 @@ struct PyObjectPtr(
 
 @fieldwise_init
 @register_passable
-struct PythonVersion(Copyable, Movable):
+struct PythonVersion(ImplicitlyCopyable, Movable):
     """Represents a Python version with major, minor, and patch numbers."""
 
     var major: Int
@@ -262,7 +263,7 @@ fn _py_get_version(lib: DLHandle) -> StaticString:
 
 
 @fieldwise_init
-struct PyMethodDef(Copyable, Defaultable, Movable):
+struct PyMethodDef(Defaultable, ImplicitlyCopyable, Movable):
     """Represents a Python method definition. This struct is used to define
     methods for Python modules or types.
 
@@ -308,10 +309,10 @@ struct PyMethodDef(Copyable, Defaultable, Movable):
 
         This is suitable for use terminating an array of PyMethodDef values.
         """
-        self.method_name = UnsafePointer[c_char]()
-        self.method_impl = OpaquePointer()
+        self.method_name = {}
+        self.method_impl = {}
         self.method_flags = 0
-        self.method_docstring = UnsafePointer[c_char]()
+        self.method_docstring = {}
 
     @staticmethod
     fn function[
@@ -385,7 +386,7 @@ struct PyType_Spec:
     - https://docs.python.org/3/c-api/type.html#c.PyType_Spec
     """
 
-    var name: UnsafePointer[c_char]
+    var name: UnsafePointer[c_char, mut=False]
     var basicsize: c_int
     var itemsize: c_int
     var flags: c_uint
@@ -421,7 +422,7 @@ alias Typed_newfunc = fn (
 
 @fieldwise_init
 @register_passable("trivial")
-struct PyType_Slot(Copyable, Movable):
+struct PyType_Slot(ImplicitlyCopyable, Movable):
     """Structure defining optional functionality of a type, containing a slot ID
     and a value pointer.
 
@@ -460,7 +461,12 @@ struct PyType_Slot(Copyable, Movable):
 
 @fieldwise_init
 struct PyObject(
-    Copyable, Defaultable, Movable, Representable, Stringable, Writable
+    Defaultable,
+    ImplicitlyCopyable,
+    Movable,
+    Representable,
+    Stringable,
+    Writable,
 ):
     """All object types are extensions of this type. This is a type which
     contains the information Python needs to treat a pointer to an object as an
@@ -618,10 +624,10 @@ struct PyModuleDef(Movable, Representable, Stringable, Writable):
 
     var base: PyModuleDef_Base
 
-    var name: UnsafePointer[c_char]
+    var name: UnsafePointer[c_char, mut=False]
     """Name for the new module."""
 
-    var docstring: UnsafePointer[c_char]
+    var docstring: UnsafePointer[c_char, mut=False]
     """Points to the contents of the docstring for the module."""
 
     var size: Py_ssize_t
@@ -765,6 +771,11 @@ alias PyEval_EvalCode = ExternalFunction[
 ]
 
 # Reference Counting
+alias Py_NewRef = ExternalFunction[
+    "Py_NewRef",
+    # PyObject *Py_NewRef(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
 alias Py_IncRef = ExternalFunction[
     "Py_IncRef",
     # void Py_IncRef(PyObject *o)
@@ -1166,20 +1177,6 @@ fn _PyType_GetName_dummy(type: PyTypeObjectPtr) -> PyObjectPtr:
     )
 
 
-fn _PyModule_AddObjectRef_dummy(
-    module: PyObjectPtr,
-    name: UnsafePointer[c_char, mut=False],
-    value: PyObjectPtr,
-) -> c_int:
-    return abort[c_int](
-        "PyModule_AddObjectRef is not available in this Python version"
-    )
-
-
-fn _Py_Is_dummy(x: PyObjectPtr, y: PyObjectPtr) -> c_int:
-    return abort[c_int]("Py_Is is not available in this Python version")
-
-
 # ===-------------------------------------------------------------------===#
 # Context Managers for Python GIL and Threading
 # ===-------------------------------------------------------------------===#
@@ -1296,6 +1293,7 @@ struct CPython(Defaultable, Movable):
     var _Py_CompileString: Py_CompileString.type
     var _PyEval_EvalCode: PyEval_EvalCode.type
     # Reference Counting
+    var _Py_NewRef: Py_NewRef.type
     var _Py_IncRef: Py_IncRef.type
     var _Py_DecRef: Py_DecRef.type
     # Exception Handling
@@ -1450,6 +1448,7 @@ struct CPython(Defaultable, Movable):
         self._Py_CompileString = Py_CompileString.load(self.lib)
         self._PyEval_EvalCode = PyEval_EvalCode.load(self.lib)
         # Reference Counting
+        self._Py_NewRef = Py_NewRef.load(self.lib)
         self._Py_IncRef = Py_IncRef.load(self.lib)
         self._Py_DecRef = Py_DecRef.load(self.lib)
         # Exception Handling
@@ -1554,10 +1553,7 @@ struct CPython(Defaultable, Movable):
         self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
         self._PyModule_Create2 = PyModule_Create2.load(self.lib)
         self._PyModule_AddFunctions = PyModule_AddFunctions.load(self.lib)
-        if self.version.minor >= 10:
-            self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(self.lib)
-        else:
-            self._PyModule_AddObjectRef = _PyModule_AddObjectRef_dummy
+        self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(self.lib)
         # Slice Objects
         self._PySlice_New = PySlice_New.load(self.lib)
         # Capsules
@@ -1567,10 +1563,7 @@ struct CPython(Defaultable, Movable):
         self._PyObject_Free = PyObject_Free.load(self.lib)
         # Object Implementation Support
         # Common Object Structures
-        if self.version.minor >= 10:
-            self._Py_Is = Py_Is.load(self.lib)
-        else:
-            self._Py_Is = _Py_Is_dummy
+        self._Py_Is = Py_Is.load(self.lib)
 
     fn __del__(deinit self):
         pass
@@ -1585,19 +1578,20 @@ struct CPython(Defaultable, Movable):
         raise an error if one occurred when initializing the global CPython.
         """
         if self.init_error:
-            var error = String(self.init_error)
             var mojo_python = getenv("MOJO_PYTHON")
             var python_lib = getenv("MOJO_PYTHON_LIBRARY")
             var python_exe = getenv("PYTHONEXECUTABLE")
-            if mojo_python:
-                error += String("\nMOJO_PYTHON: ", mojo_python)
-            if python_lib:
-                error += String("\nMOJO_PYTHON_LIBRARY: ", python_lib)
-            if python_exe:
-                error += String("\npython executable: ", python_exe)
-            error += "\n\nMojo/Python interop error, troubleshooting docs at:"
-            error += "\n    https://modul.ar/fix-python\n"
-            raise error
+            raise Error(
+                self.init_error,
+                "\nMOJO_PYTHON: " if mojo_python else "",
+                mojo_python if mojo_python else "",
+                "\nMOJO_PYTHON_LIBRARY: " if python_lib else "",
+                python_lib if python_lib else "",
+                "\npython executable: " if python_exe else "",
+                python_exe if python_exe else "",
+                "\n\nMojo/Python interop error, troubleshooting docs at:",
+                "\n    https://modul.ar/fix-python\n",
+            )
 
     fn unsafe_get_error(self) -> Error:
         """Get the `Error` object corresponding to the current CPython
@@ -1758,6 +1752,18 @@ struct CPython(Defaultable, Movable):
     # ref: https://docs.python.org/3/c-api/refcounting.html
     # ===-------------------------------------------------------------------===#
 
+    fn Py_NewRef(self, o: PyObjectPtr) -> PyObjectPtr:
+        """Create a new strong reference to an object: call `Py_INCREF()` on `o`
+        and return the object `o`.
+
+        The object `o` must not be `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/refcounting.html#c.Py_NewRef
+        """
+        debug_assert(Bool(o), "Py_NewRef called with NULL")
+        return self._Py_NewRef(o)
+
     fn Py_IncRef(self, ptr: PyObjectPtr):
         """Indicate taking a new strong reference to the object `ptr` points to.
 
@@ -1828,7 +1834,7 @@ struct CPython(Defaultable, Movable):
     fn PyErr_SetString(
         self,
         type: PyObjectPtr,
-        message: UnsafePointer[c_char],
+        message: UnsafePointer[c_char, mut=False],
     ):
         """This is the most common way to set the error indicator. The first
         argument specifies the exception type; it is normally one of the
@@ -2350,7 +2356,7 @@ struct CPython(Defaultable, Movable):
     # TODO: fix signature to take unicode and size as args
     fn PyUnicode_AsUTF8AndSize(
         self, obj: PyObjectPtr
-    ) -> StringSlice[MutableAnyOrigin]:
+    ) -> StringSlice[ImmutableAnyOrigin]:
         """Return a pointer to the UTF-8 encoding of the Unicode object, and
         store the size of the encoded representation (in bytes) in `size`.
 
@@ -2359,7 +2365,7 @@ struct CPython(Defaultable, Movable):
         """
         var length = Py_ssize_t(0)
         var ptr = self._PyUnicode_AsUTF8AndSize(obj, UnsafePointer(to=length))
-        return StringSlice[MutableAnyOrigin](
+        return StringSlice[ImmutableAnyOrigin](
             ptr=ptr.bitcast[Byte](), length=UInt(length)
         )
 
@@ -2603,7 +2609,7 @@ struct CPython(Defaultable, Movable):
     fn PyModule_AddObjectRef(
         self,
         module: PyObjectPtr,
-        name: UnsafePointer[c_char],
+        name: UnsafePointer[c_char, mut=False],
         value: PyObjectPtr,
     ) -> c_int:
         """Add an object to `module` as `name`.
@@ -2700,13 +2706,10 @@ struct CPython(Defaultable, Movable):
         Python.
 
         Part of the Stable ABI since version 3.10.
-        This function is patched to work with Python 3.9 and earlier versions.
 
         References:
         - https://docs.python.org/3/c-api/structures.html#c.Py_Is
         """
-        if self.version.minor < 11:
-            return c_int(Int(x == y))
         return self._Py_Is(x, y)
 
     fn Py_TYPE(self, obj: PyObjectPtr) -> PyTypeObjectPtr:

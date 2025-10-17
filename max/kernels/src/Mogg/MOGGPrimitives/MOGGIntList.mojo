@@ -20,7 +20,7 @@ from utils.index import IndexList
 
 
 struct IntList[static_values: DimList = DimList()](
-    Copyable, Defaultable, Movable, Sized
+    Defaultable, ImplicitlyCopyable, Movable, Sized
 ):
     # Array must be >= 1 length, so we clamp to that if we have unknown
     # length shape. DimList of size 0 represents a dynamically ranked list.

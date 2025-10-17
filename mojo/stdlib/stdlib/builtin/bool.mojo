@@ -19,10 +19,10 @@ from collections import List, Set
 from hashlib.hasher import Hasher
 
 from python import (
-    Python,
-    PythonObject,
     ConvertibleFromPython,
     ConvertibleToPython,
+    Python,
+    PythonObject,
 )
 
 from utils._select import _select_register_value as select
@@ -87,13 +87,14 @@ trait ImplicitlyBoolable(Boolable):
     ```
     """
 
+    @always_inline
     fn __as_bool__(self) -> Bool:
         """Get the boolean representation of the value.
 
         Returns:
             The boolean representation of the value.
         """
-        ...
+        return self.__bool__()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -107,12 +108,11 @@ struct Bool(
     Comparable,
     ConvertibleFromPython,
     ConvertibleToPython,
-    Copyable,
     Defaultable,
-    ExplicitlyCopyable,
     Floatable,
     Hashable,
     ImplicitlyBoolable,
+    ImplicitlyCopyable,
     ImplicitlyIntable,
     Indexer,
     Intable,
@@ -139,6 +139,14 @@ struct Bool(
 
     alias MAX = Bool(True)
     """The maximum value of a Bool."""
+
+    # ===-------------------------------------------------------------------===#
+    # Trivial bits for special functions.
+    # ===-------------------------------------------------------------------===#
+
+    alias __del__is_trivial: Bool = True
+    alias __moveinit__is_trivial: Bool = True
+    alias __copyinit__is_trivial: Bool = True
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -208,7 +216,7 @@ struct Bool(
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, value: SIMD[DType.bool, 1]):
+    fn __init__(out self, value: Scalar[DType.bool]):
         """Convert a scalar SIMD value to a Bool.
 
         Args:
@@ -300,7 +308,7 @@ struct Bool(
         return self.__int__()
 
     @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:

@@ -16,31 +16,88 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import multiprocessing
-import multiprocessing.process
 import os
 import queue
 from collections.abc import AsyncGenerator, Generator
-from typing import Generic, TypeVar
+from typing import Any, Generic
 
+import zmq
 from max.interfaces import (
+    BaseContext,
     BaseContextType,
+    PipelineOutput,
+    PipelineOutputType,
     PipelineTask,
     RequestID,
-    msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
+    SchedulerResult,
 )
-from max.serve.process_control import ProcessControl
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
+from max.interfaces.queue import MAXPullQueue, MAXPushQueue
+from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
+from max.serve.process_control import ProcessMonitor
+from max.serve.queue.zmq_queue import ZmqConfig
+from max.serve.scheduler.base import sleep_with_backoff
 
 logger = logging.getLogger("max.serve")
 
-ReqOutput = TypeVar("ReqOutput")
 
-"""The sentinel used to indicate a queue is finished."""
+def _get_request_type_from_pipeline_task(
+    pipeline_task: PipelineTask,
+) -> Any:
+    if pipeline_task in [
+        PipelineTask.TEXT_GENERATION,
+        PipelineTask.EMBEDDINGS_GENERATION,
+    ]:
+        return TextContext | TextAndVisionContext
+    elif pipeline_task in [PipelineTask.AUDIO_GENERATION]:
+        return TTSContext
+    else:
+        raise ValueError(
+            f"no request payload for pipeline task ({pipeline_task})"
+        )
 
 
-class EngineQueue(Generic[BaseContextType, ReqOutput]):
+class SchedulerZmqConfigs:
+    def __init__(
+        self,
+        pipeline_task: PipelineTask,
+    ) -> None:
+        request_type = _get_request_type_from_pipeline_task(pipeline_task)
+        response_type = pipeline_task.output_type
+
+        self.request_queue_config = ZmqConfig[BaseContext](request_type)
+        self.response_queue_config = ZmqConfig[
+            dict[RequestID, SchedulerResult[PipelineOutput]]
+        ](response_type)
+        self.cancel_queue_config = ZmqConfig[list[RequestID]](list[RequestID])
+
+    def api_worker_queues(
+        self,
+    ) -> tuple[
+        MAXPushQueue[Any],
+        MAXPullQueue[dict[RequestID, SchedulerResult[Any]]],
+        MAXPushQueue[list[RequestID]],
+    ]:
+        return (
+            self.request_queue_config.push(),
+            self.response_queue_config.pull(),
+            self.cancel_queue_config.push(),
+        )
+
+    def model_worker_queues(
+        self,
+    ) -> tuple[
+        MAXPullQueue[Any],
+        MAXPushQueue[dict[RequestID, SchedulerResult[Any]]],
+        MAXPullQueue[list[RequestID]],
+    ]:
+        return (
+            self.request_queue_config.pull(),
+            self.response_queue_config.push(),
+            self.cancel_queue_config.pull(),
+        )
+
+
+class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
     """Container for managing interactions between a remote model worker process
 
     As part of its work, response_worker will verify that the remote process is
@@ -50,49 +107,18 @@ class EngineQueue(Generic[BaseContextType, ReqOutput]):
 
     def __init__(
         self,
-        context: multiprocessing.context.BaseContext,
-        worker_pc: ProcessControl,
-        request_zmq_endpoint: str,
-        response_zmq_endpoint: str,
-        cancel_zmq_endpoint: str,
-        pipeline_task: PipelineTask,
+        worker_monitor: ProcessMonitor,
+        scheduler_zmq_configs: SchedulerZmqConfigs,
     ) -> None:
-        super().__init__()
-        self.context = context
-
         # Create Queues
-        self.request_push_socket = ZmqPushSocket[
-            tuple[RequestID, BaseContextType]
-        ](
-            zmq_endpoint=request_zmq_endpoint,
-            serialize=msgpack_numpy_encoder(use_shared_memory=True),
+        self.request_queue, self.response_queue, self.cancel_queue = (
+            scheduler_zmq_configs.api_worker_queues()
         )
 
-        self.response_pull_socket = ZmqPullSocket[dict[RequestID, ReqOutput]](
-            zmq_endpoint=response_zmq_endpoint,
-            deserialize=msgpack_numpy_decoder(pipeline_task.output_type),
-        )
-
-        self.cancel_push_socket = ZmqPushSocket[list[str]](
-            zmq_endpoint=cancel_zmq_endpoint,
-            serialize=msgpack_numpy_encoder(),
-        )
-
-        self.pending_out_queues: dict[RequestID, asyncio.Queue] = {}
-        self.worker_pc: ProcessControl = worker_pc
-        self._proc: multiprocessing.process.BaseProcess | None = None
-
-    def use_process_healthcheck(
-        self, proc: multiprocessing.process.BaseProcess
-    ) -> None:
-        """Register a Process to health check.
-
-        Instead of verifying heartbeats, EngineQueue will verify that the
-        process is alive. Verifying liveness is a more lenient check than
-        verifying heartbeats. Heartbeats prove progress while liveness only
-        proves that the process has not crashed (it could be wedged).
-        """
-        self._proc = proc
+        self.pending_out_queues: dict[
+            RequestID, asyncio.Queue[SchedulerResult[PipelineOutputType]]
+        ] = {}
+        self.worker_monitor = worker_monitor
 
     def is_worker_healthy(self) -> bool:
         """Is the worker healthy?
@@ -100,14 +126,14 @@ class EngineQueue(Generic[BaseContextType, ReqOutput]):
         By default, verify health with ProcessControl.is_alive().  If a Process
         is registered, used Process.is_alive() instead.
         """
-        if self._proc:
-            return self._proc.is_alive()
-        return self.worker_pc.is_healthy()
+        return self.worker_monitor.is_healthy()
 
     @contextlib.contextmanager
     def open_channel(
         self, req_id: RequestID, data: BaseContextType
-    ) -> Generator[asyncio.Queue, None, None]:
+    ) -> Generator[
+        asyncio.Queue[SchedulerResult[PipelineOutputType]], None, None
+    ]:
         """
         Context manager to open a communication channel for a specific request.
 
@@ -133,20 +159,22 @@ class EngineQueue(Generic[BaseContextType, ReqOutput]):
                     "Please ensure that the `req_id` is unique for each request."
                 )
 
-            out_queue: asyncio.Queue = asyncio.Queue()
+            out_queue: asyncio.Queue[SchedulerResult[PipelineOutputType]] = (
+                asyncio.Queue()
+            )
             self.pending_out_queues[req_id] = out_queue
 
             # put_nowait will fail if the request_push_socket is unavailable
             # this will immediately trigger the finally block, resulting in
             # the request being purged, and returned without result.
-            self.request_push_socket.put_nowait((req_id, data))
+            self.request_queue.put_nowait(data)
             yield out_queue
         finally:
             del self.pending_out_queues[req_id]
 
     async def stream(
         self, req_id: RequestID, data: BaseContextType
-    ) -> AsyncGenerator[ReqOutput, None]:
+    ) -> AsyncGenerator[PipelineOutputType, None]:
         """
         Asynchronously streams results for a given request ID and input data.
 
@@ -197,9 +225,10 @@ class EngineQueue(Generic[BaseContextType, ReqOutput]):
             asyncio.CancelledError: If the response worker task is cancelled.
         """
         try:
+            count_no_progress = 0
             while True:
                 try:
-                    response_dict = self.response_pull_socket.get_nowait()
+                    response_dict = self.response_queue.get_nowait()
                     cancelled = set()
                     for request_id, response in response_dict.items():
                         if request_id in self.pending_out_queues:
@@ -210,18 +239,25 @@ class EngineQueue(Generic[BaseContextType, ReqOutput]):
                             cancelled.add(request_id)
 
                     if cancelled:
-                        self.cancel_push_socket.put_nowait(list(cancelled))
+                        self.cancel_queue.put_nowait(list(cancelled))
 
-                except queue.Empty:
+                    count_no_progress = 0
+
+                except (queue.Empty, zmq.error.Again) as e:
                     # If the worker dies this loop will keep running,
                     # so we have to check the worker status.
-                    if not self.is_worker_healthy():
+                    if (
+                        isinstance(e, zmq.error.Again)
+                        or not self.is_worker_healthy()
+                    ):
                         logger.error("Model worker process is not healthy")
-                        self.worker_pc.set_canceled()
-                        raise Exception("Worker failed!")  # noqa: B904
-                    await asyncio.sleep(0)
+                        self.worker_monitor.pc.set_canceled()
+                        raise Exception(
+                            "Worker stopped unexpectedly."
+                        ) from None
 
-        except asyncio.CancelledError:
-            raise
+                    await sleep_with_backoff(count_no_progress)
+                    count_no_progress += 1
+
         finally:
             logger.debug("Terminating response worker [self=%s]", os.getpid())

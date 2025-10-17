@@ -10,7 +10,7 @@ what we publish.
 [//]: ### ✨ Highlights
 [//]: ### Language enhancements
 [//]: ### Language changes
-[//]: ### Standard library changes
+[//]: ### Library changes
 [//]: ### Tooling changes
 [//]: ### ❌ Removed
 [//]: ### 🛠️ Fixed
@@ -19,382 +19,151 @@ what we publish.
 
 ### ✨ Highlights
 
-### 🔥 Legendary
+### Language enhancements {#25-7-language-enhancements}
 
-- Mojo now has support for default trait methods, allowing traits to provide
-  reusable behavior without requiring every conforming struct to re-implement it.
-  Default methods are automatically inherited by conforming structs unless
-  explicitly overridden. For example:
+- Literals now have a default type. For example, you can now bind `[1,2,3]` to
+  `T` in a call to a function defined as `fn zip[T: Iterable](impl:T)` because
+  it will default to the standard library's List type.
+
+- Mojo now has a `__functions_in_module` experimental intrinsic that allows
+  reflection over the functions declared in the module where it is called. For
+  example:
 
   ```mojo
-  # Any struct conforming to EqualityComparable now only needs to define one of
-  # __ne__ ~or~ __eq__ and will get a definition of the other with no
-  # additional code!
+  fn foo(): pass
 
-  # For instance:
-  trait EqualityComparable:
-      fn __eq__(self, other: Self) -> Bool:
-          ...
+  def bar(x: Int): pass
 
-      fn __ne__(self, other: Self) -> Bool:
-          return not self == other
-
-  @value
-  struct Point(EqualityComparable):
-      var x: Int
-      var y: Int
-
-      fn __eq__(self, other: Self) -> Bool:
-          # Since __eq__ is implemented we now get __ne__ defined for free!
-          return self.x == other.x and self.y == other.y
-
-      # Defaulted methods can also be overriden if we want different behavior.
-      # fn __ne__(self, other: Self) -> Bool:
-      #     return self.x != other.x or self.y != other.y
+  def main():
+    alias funcs = __functions_in_module()
+    # equivalent to:
+    alias same_funcs = Tuple(foo, bar)
   ```
 
-  Currently a trait method is considered to be non-defaulted if the first thing in
-  it's body is either a '...' or a 'pass' i.e.
+  The intrinsic is currently limited for use from within `main`.
+
+- The `@implicit` decorator now accepts an optional `deprecated` keyword
+  argument. This can be used to phase out implicit conversions instead of just
+  removing the decorator (which can result in another, unintended implicit
+  conversion path). For example, the compiler now warns about the following:
 
   ```mojo
+  struct MyStuff:
+    @implicit(deprecated=True)
+    fn __init__(out self, value: Int):
+      pass
 
-  trait Foo:
-    # Either of the following are non-defaulted
-    # fn foo(self):
-    #   ...
-    #
-    # fn foo(self):
-    #   pass
+  fn deprecated_implicit_conversion():
+    # warning: deprecated implicit conversion from 'IntLiteral[1]' to 'MyStuff'
+    _: MyStuff = 1
 
-    # While this is not:
-    fn foo(self):
-      print("Foo.foo")
+    _ = MyStuff(1)  # this is okay, because the conversion is already explicit.
   ```
 
-  Note that in the future only '...' will mark a trait method as not defaulted.
-
-### Documentation
-
-- New [Mojo vision](/mojo/vision) doc explains our motivations and design
-decisions for the Mojo language.
-
-- New [Mojo roadmap](/mojo/roadmap) provides a high-level roadmap for the
-language across multiple phases.
-
-### Language enhancements
-
-- Methods on structs may now declare their `self` argument with a `deinit`
-  argument convention.  This argument convention is used for methods like
-  `__del__` and `__moveinit__` to indicate that they tear down the corresponding
-  value without needing its destructor to be run again. Beyond these two
-  methods, this convention can be used to declare "named" destructors, which are
-  methods that consume and destroy the value without themselves running the
-  values destructor.  For example, the standard `VariadicPack` type has these
-  methods:
+- The `@deprecated` decorator can now take a target symbol with the `use` keyword
+  argument. This is mutually exclusive with the existing positional string
+  argument. A deprecation warning will be automatically generated.
 
   ```mojo
-  struct VariadicPack[...]:
-      # implicit destructor
-      fn __del__(deinit self): ...
-      # move constructor
-      fn __moveinit__(out self, deinit existing: Self): ...
-      # custom explicit destructor that destroys "self" by transferring all of
-      # the stored elements.
-      fn consume_elements[
-        elt_handler: fn (idx: Int, var elt: element_type) capturing
-    ](deinit self): ...
+  @deprecated(use=new)
+  fn old():
+    pass
+
+  fn new():
+    pass
+
+  fn main():
+    old() # 'old' is deprecated, use 'new' instead
   ```
 
-  This argument convention is a fairly narrow power-user feature that is
-  important to clarify the destruction model and make linear types fit into the
-  model better.  A linear types are just types where all of the destructors are
-  explicit - it has no `__del__`.
+### Language changes {#25-7-language-changes}
 
-- Uncaught exceptions or segmentation faults in Mojo programs can now
-  generate stack traces. This is currently only for CPU-based code. To generate
-  a fully symbolicated stack trace, set the `MOJO_ENABLE_STACK_TRACE_ON_ERROR`
-  environment variable, use `mojo build` with debug info enabled, e.g.
-  `-debug-level=line-tables`, and then run the resulting binary.
+- Expressions like `(Int, Float)` is no longer a syntax sugar for
+  `Tuple[Int, Float]`. It instead creates a tuple instance of two type values,
+  i.e., `(Int, Float) : Tuple[__typeof(Int), __typeof(Float)]`.
 
-- Mojo now allows the use of keywords in function names (after `def` and `fn`)
-  and in attribute references after a `.`. This notably allows the use of the
-  `match` method in regex libraries even though Mojo takes this as a hard
-  keyword.  Uses in other locations can still use backticks:
-
-  ```mojo
-  struct MatchExample:
-      fn match(self): # This is ok now.
-          pass
-
-  fn test_match(a: MatchExample):
-      a.match() # This is ok now.
-      a.`match`() # This is still valid.
-  ```
-
-- When generating error messages for complex types involving parameter calls,
-  the Mojo compiler now prints functions parameter values correctly, eliminating
-  a large class of `T != T` errors that happen with GPU layouts.
-
-### Language changes
-
-- The `__del__` and `__moveinit__` methods should now take their `self` and
-  `existing` arguments as `deinit` instead of either `owned`.
-
-- The Mojo compiler now warns about use of the deprecated `owned` keyword,
-  please move to `var` or `deinit` as the warning indicates.
-
-- The `__disable_del` keyword and statement has been removed, use `deinit`
-  methods instead.
-
-- The previously deprecated `@value` decorator has been removed.
-
-- Accesses to associated aliases and methods within a trait now require
-  qualified references (prepended with `Self.`), making it consistent with how
-  accesses to member aliases and methods in a struct require `self.`.
-
-### Standard library changes
-
-- Added `Path(...).parts()` method to the `Path` type, for example instead of
-  writing:
-
-  ```mojo
-  var path = Path("path/to/file")
-  var parts = path.path.split(DIR_SEPARATOR)
-  ```
-
-  you can now write:
-
-  ```mojo
-  var path = Path("path/to/file")
-  var parts = path.parts()
-  ```
+### Library changes {#25-7-library-changes}
 
-- Added `Path(..).name()` method to the `Path` type, which returns the name of
-  the file or directory.
+- Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
 
-- The `index()` free function now returns an `Int`, instead of a raw MLIR
-  `__mlir_type.index` value.
-
-- There is now an `iter` module which exposes the `next`, `iter`,
-  and `enumerate` methods.
+- The deprecated `DType.index` is now removed in favor of the `DType.int`.
 
-- The `Copyable` trait now requires `ExplicitlyCopyable`, ensuring that all
-  all types that can be implicitly copied may also be copied using an explicit
-  `.copy()` method call.
+- `math.isqrt` has been renamed to `rsqrt` since it performs reciprocal square
+  root functionality.
 
-  If a type conforms to `Copyable` and an `ExplicitlyCopyable` `.copy()`
-  implementation is not provided by the type, a default implementation will be
-  synthesized by the compiler.
+- Added `swap_pointees` function to `UnsafePointer` as an alternative to `swap`
+  when the pointers may potentially alias each other.
 
-  - The following standard library types and functions now require only
-    `ExplicitlyCopyable`, enabling their use with types that are not implicitly
-    copyable:
-    `List`, `Span`, `InlineArray`, `Optional`, `Variant`, `Tuple`, `Dict`,
-    `Set`, `Counter`, `LinkedList`, `Deque`, `reversed`.
+- `memcpy` and `parallel_memcpy` without keyword arguments are deprecated.
 
-    Additionally, the following traits now require `ExplicitlyCopyable` instead
-    of implicit `Copyable`:
-    `KeyElement`
+- The `math` package now has a mojo native implementation of `acos`, `asin`,
+  `cbrt`, and `erfc`.
 
-- A new `Some` utility is introduced to reduce the syntactic load of declaring
-  function arguments of a type that implements a given trait or trait
-  composition. For example, instead of writing
-
-  ```mojo
-  fn foo[T: Intable, //](x: T) -> Int:
-      return x.__int__()
-  ```
+- Added support for NVIDIA GeForce GTX 970.
 
-  one can now write:
-
-  ```mojo
-  fn foo(x: Some[Intable]) -> Int:
-      return x.__int__()
-  ```
+- Added support for NVIDIA Jetson Thor.
 
-- The comparison operators (e.g. `__eq__` and `__le__`) of the `SIMD` type now
-  return a single `Bool` instead of a boolean `SIMD` mask. Moreover, `SIMD` now
-  has explicit elementwise comparisons that return boolean masks, e.g. `eq()`
-  and `le()`.
-  - This allows `SIMD` to conform to the `EqualityComparable` trait, enabling
-    the use of `SIMD` vectors in sets, as keys to dictionaries, generic search
-    algorithms, etc. Moreover, `Scalar` now conforms to the `Comparable` trait,
-    i.e. `SIMD` conforms to `Comparable` when the size is 1.
-  - As a consequence, `SIMD.__bool__` no longer needs to be restricted to
-    scalars, and instead performs an `any` reduction on the elements of vectors.
-
-- Non-scalar `SIMD` constructors no longer allow implicit splatting of `Bool`
-  values. This could lead to subtle bugs that cannot be caught at compile time,
-  for example:
-
-  ```mojo
-  fn foo[w: Int](v: SIMD[_, w]) -> SIMD[DType.bool, w]:
-    return v == 42  # this silently reduced to a single bool, and then splat
-  ```
+- `Optional` now conforms to `Iterable` and `Iterator` acting as a collection of
+  size 1 or 0.
 
-  Similarly to `InlineArray`, an explicit constructor with the `fill`
-  keyword-only argument can be used to express the same logic more safely:
+- `origin_cast` for `LayoutTensor`, `NDBuffer` and `UnsafePointer` has been
+  deprecated and removed. `LayoutTensor` and `NDBuffer` now supports a safer
+  `as_any_origin()` origin casting. `UnsafePointer` has the same
+  safe alternative and in addition, it has an additional safe `as_immutable`
+  casting function and explicitly unsafe `unsafe_mut_cast` and
+  `unsafe_origin_cast` casting function.
 
-  ```mojo
-  ```mojo
-  fn foo[w: Int](v: SIMD[_, w]) -> SIMD[DType.bool, w]:
-    return SIMD[DType.bool, w](fill=(v == 42))  # highlights the splat logic
+- The `@implicit` decorator on `UInt.__init__(Int)` has been deprecated.
+  Conversion from `Int` to `UInt` should now be done explicitly using
+  `UInt(int_value)`.
 
-  fn bar(Scalar[_]) -> Scalar[DType.bool]:
-    # still works, since implicit splatting to a scalar is never ambiguous
-    return v == 42
-  ```
+- `assert_equal` now displays colored character-by-character diffs when string
+  comparisons fail, making it easier to spot differences. Differing characters
+  are highlighted in red for the left string and green for the right string.
 
-- Several types that wrap MLIR types have been changed to further
-  encapsulate their behavior, hiding this low-level behavior from non-advanced
-  users.
+- Added `sys.compile.SanitizeAddress` providing a way for mojo code to detect
+  `--sanitize address` at compile time.
 
-  - Types that can be constructed from raw MLIR values now require the use
-    of an `mlir_value` keyword-only argument initializer.
-    Affected types include: `SIMD`, `UInt`.
-
-  - Types with raw MLIR type fields have had their `value` fields renamed to
-    `_mlir_value`.
-    Affected types include: `Bool`, `DType`.
+### Tooling changes {#25-7-tooling-changes}
 
-- Added `os.path.realpath` to resolve symbolic links to an absolute path and
+- Error messages now preserve symbolic calls to `always_inline("builtin")`
+  functions rather than inlining them into the error message.
 
-  remove relative path components (`.`, `..`, etc.). Behaves the same as the
-  Python equivalent function.
+### ❌ Removed {#25-7-removed}
 
-- `Span` is now `Representable` if its elements implement trait
-  `Representable`.
-
-- `Optional` and `OptionalReg` can now be composed with `Bool` in
-  expressions, both at comptime and runtime:
-
-  ```mojo
-  alias value = Optional[Int](42)
-
-  @parameter
-  if CompilationTarget.is_macos() and value:
-      print("is macos and value is:", value.value())
-
-- Added `sys.info.platform_map` for specifying types that can have different
-
-  values depending on the platform:
-
-  ```mojo
-  from sys.info import platform_map
+- `LayoutTensorBuild` type has been removed.  Use `LayoutTensor` with parameters
+  directly instead.
 
-  alias EDEADLK = platform_map["EDEADLK", linux = 35, macos = 11]()
-  ```
+### 🛠️ Fixed {#25-7-fixed}
 
-- Deprecated the following functions with `flatcase` names in `sys.info`:
-  - `alignof`
-  - `bitwidthof`
-  - `simdbitwidth`
-  - `simdbytewidth`
-  - `simdwidthof`
-  - `sizeof`
+- The `math.cos` and `math.sin` function can now be evaluated at compile time
+  (fixes #5111).
 
-  in favor of `snake_case` counterparts, respectively:
-  - `align_of`
-  - `bit_width_of`
-  - `simd_bit_width`
-  - `simd_byte_width`
-  - `simd_width_of`
-  - `size_of`
-
-- Added support for AMD RX 6900 XT consumer-grade GPU.
-
-- Added support for AMD RDNA3.5 consumer-grade GPUs in the `gfx1150`,
-`gfx1151`, and `gfx1152` architectures. Representative configurations have been
-added for AMD Radeon 860M, 880M, and 8060S GPUs.
-
-- Added support for NVIDIA GTX 1080 Ti consumer-grade GPUs.
-
-- Added support for NVIDIA Tesla P100 datacenter GPUs.
-
-- Updated `layout_tensor` copy related functions to support 2D and 3D
-  threadblock dimensions.
-
-- The `compile.reflection.get_type_name` utility now has limited capability to
-  print parametric types, e.g. `SIMD[DType.float32, 4]` instead of just `SIMD`.
-  If the parameter is not printable, an `<unprintable>` placeholder is printed
-  instead. A new `qualified_builtins` flag also allows users to control the
-  verbosity for the most common (but not all) builtin types.
-
-- Add `repr` support for `List`, `Deque`, `Dict`, `LinkedList`, `Optional`, `Set`.
-  [PR #5189](https://github.com/modular/modular/pull/5189) by rd4com.
-
-- `InlineArray` now automatically detects whether its element types are
-  trivially destructible to not invoke the destructors in its `__del__`
-  function.  This improves performance for trivially destructible types
-  (such as `Int` and friends).
-
-- The `SIMD.from_bits` factory method is now a constructor, use
-  `SIMD(from_bits=...)` instead.
-
-- `StringSlice.from_utf8` factory method is now a constructor, use
-  `StringSlice(from_utf8=...)` instead.
-
-- Added `os.atomic.fence` for creating atomic memory fences.
-  ([#5216](https://github.com/modular/modular/pull/5216) by
-  [@nate](https://github.com/NathanSWard))
-
-  ```mojo
-    from os.atomic import Atomic, Consistency, fence
-
-    fn decrease_ref_count(ref_count: Atomic[DType.uint64]):
-      if atomic.fetch_sub[ordering = Consistency.MONOTONIC](1) == 1:
-        fence[Consistency.ACQUIRE]()
-        # ...
-  ```
-
-- `Span` now implements a generic `.count()` method which can be passed a
-  function that returns a boolean SIMD vector. The function counts how many
-  times it returns `True` evaluating it in a vectorized manner. This works for
-  any `Span[Scalar[D]]` e.g. `Span[Byte]`. PR
-  [#3792](https://github.com/modularml/mojo/pull/3792) by [@martinvuyk](https://github.com/martinvuyk).
-
-### Tooling changes
-
-- `mojo test` now ignores folders with a leading `.` in the name. This will
-  exclude hidden folders on Unix systems ([#4686](https://github.com/modular/modular/issues/4686))
-
-- `mojo doc --validate-doc-strings` now emits a warning when an `fn` function
-is declared to raise an error (`raises`) and it has no [`Raises`
-docstring](https://github.com/modular/modular/blob/main/mojo/stdlib/docs/docstring-style-guide.md#errors).
-However, because Mojo automatically treats all `def` functions as [raising
-functions](/mojo/manual/functions#raising-and-non-raising-functions), we do not
-enforce `Raises` docs for `def` functions (to avoid noisy false positives).
-
-- Nightly `mojo` Python wheels are now available. To install everything needed
-  for Mojo development in a Python virtual environment, you can use
-
-  ```sh
-  pip install mojo --index-url https://dl.modular.com/public/nightly/python/simple/
-  ```
-
-- In preparation for a future Mojo 1.0, the `mojo` and `mojo-compiler` packages
-now have a `0.` prefixed to the version. Until the previous nightly packages
-and 25.5 on Conda have been removed or yanked, we recommend specifying `<1.0.0`
-as the version for these packages.
-
-### Kernels changes
-
-- A fast matmul for SM100 is available in Mojo. Please check it out in `matmul_sm100.mojo`.
-
-- Moved `mojo/stdlib/stdlib/gpu/comm/` to `max/kernels/src/comm/`
-
-### ❌ Removed
-
-### 🛠️ Fixed
-
-- Fixed <https://github.com/modular/modular/issues/4695> - `Dict.__getitem__`
-  always returns immutable references.
-- Fixed <https://github.com/modular/modular/issues/4705> - Wrong mutability
-  inferred for `__getitem__` if `[]` operator is used and `__setitem__` is present.
-- Fixed <https://github.com/modular/modular/issues/5190>
-- Fixed <https://github.com/modular/modular/issues/5139> - Crash on malformed initializer.
-- Fixed <https://github.com/modular/modular/issues/5183> - Log1p not working on GPUs.
-- Fixed <https://github.com/modular/modular/issues/5105> - Outdated `CLAUDE.md`
-  docs.
-- Fixed <https://github.com/modular/modular/issues/5239> - Contextual type not
-  detected inside an inline if-else.
+- Fixed `IntTuple.value(i)` method returning incorrect values when elements are
+  stored as nested single-element tuples. Previously, calling
+  `Layout.row_major(M, N).stride.value(i)` would return negative offset values
+  (e.g., -65536, -65537) instead of the actual stride values. This affected any
+  code that accessed layout stride or shape values using the `value()` method.
+
+- Fixed `LayoutTensor.shape[idx]()` method returning incorrect values for nested
+  layouts. The bug occurred when accessing shape dimensions of tensors with
+  nested layouts like `((32, 2), (32, 4))`, where the method would return
+  garbage values instead of the correct product (e.g., 64).
+
+  - Fixed `LayoutTensor` element-wise arithmetic operations (`+`, `-`, `*`, `/`)
+  between tensors with different memory layouts. Previously, operations like
+  `a.transpose() - b` would produce incorrect results when the operands had
+  different layouts, because the same layout index was incorrectly used for both
+  operands. This now correctly computes separate indices for each tensor based
+  on its layout.
+
+- Fixed `LayoutTensor.shape[idx]()` method returning incorrect values for nested
+  layouts. The bug occurred when accessing shape dimensions of tensors with
+  nested layouts like `((32, 2), (32, 4))`, where the method would return
+  garbage values instead of the correct product (e.g., 64).
+
+- Fixed `arange()` function in `layout._fillers` to properly handle nested
+  layout structures. Previously, the function would fail when filling
+  tensors with nested layouts like
+  `Layout(IntTuple(IntTuple(16, 8), IntTuple(32, 2)), ...)` because it
+  attempted to extract shape values from nested tuples incorrectly.

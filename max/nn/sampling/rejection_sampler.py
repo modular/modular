@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Rejection Sampler custom ops."""
 
-from typing import Optional
-
 import numpy as np
 from max import nn
 from max.dtype import DType
@@ -22,7 +20,7 @@ from max.nn.kernels import topk_fused_sampling
 
 
 def _multinomial(
-    probs: TensorValue, residual_rand: Optional[TensorValue] = None
+    probs: TensorValue, residual_rand: TensorValue | None = None
 ) -> TensorValue:
     # Generate exponential random numbers (equivalent to torch.empty_like(probs).exponential_(1.0))
     # For exponential distribution with rate=1, we use: -log(uniform_random)
@@ -198,7 +196,7 @@ class RejectionSamplerWithResiduals(nn.Module):
         target_logits: TensorValue,
         draft_tokens: TensorValue,
         batch_draft_logits: TensorValue,
-        rejection_rand: Optional[TensorValue] = None,
+        rejection_rand: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
         target_logits_reshaped = ops.rebind(
             target_logits,
@@ -288,7 +286,7 @@ class RejectionSamplerWithResiduals(nn.Module):
         )
 
         rejected_with_sentinel = rejected_with_sentinel.cast(DType.int32)
-        # argmax is not reliable for getting the first max occurence when dealing with int tensors with [0,1] values so we weight them here to get the first occurence.
+        # argmax is not reliable for getting the first max occurrence when dealing with int tensors with [0,1] values, so we weight them here to get the first occurrence.
         # TODO: remove this when/if KERN-1862 is resolved
         argmax_weights = ops.range(
             rejected_with_sentinel.shape[1],
@@ -335,8 +333,8 @@ class RejectionSamplerWithResiduals(nn.Module):
         target_logits: TensorValue,
         target_logit_offsets: TensorValue,
         all_draft_logits: TensorValue,
-        rejection_rand: Optional[TensorValue] = None,
-        residual_rand: Optional[TensorValue] = None,
+        rejection_rand: TensorValue | None = None,
+        residual_rand: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
         batch_draft_logits = ops.permute(
             all_draft_logits,

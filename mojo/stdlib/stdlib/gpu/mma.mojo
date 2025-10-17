@@ -18,26 +18,26 @@ from collections.string.string_slice import _get_kgen_string
 from sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, size_of
 from sys._assembly import inlined_assembly
 from sys.info import (
-    is_amd_gpu,
-    _is_amd_rdna,
-    _cdna_4_or_newer,
     CompilationTarget,
+    _cdna_4_or_newer,
+    _is_amd_rdna,
+    is_amd_gpu,
 )
 
+from gpu._utils import (
+    array_to_llvm_struct,
+    dtype_to_llvm_type,
+    llvm_struct_to_array,
+    llvm_struct_to_simd,
+    simd_to_llvm_struct,
+)
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.mma_operand_descriptor import MMAOperandDescriptor
 from gpu.memory import AddressSpace
+from gpu.mma_operand_descriptor import MMAOperandDescriptor
 from memory import bitcast
 
 from utils import StaticTuple
 from utils.index import Index
-from gpu._utils import (
-    simd_to_llvm_struct,
-    llvm_struct_to_simd,
-    array_to_llvm_struct,
-    llvm_struct_to_array,
-    dtype_to_llvm_type,
-)
 
 
 fn get_amd_fp8_dtype() -> DType:
@@ -889,11 +889,15 @@ fn st_matrix[
     @parameter
     if num_matrices == 1:
         alias ins = base + get_suffix() + ".x1.shared.b16 [$0], {$1};\n"
-        inlined_assembly[ins, NoneType, constraints="r,r"](ptr, d[0])
+        inlined_assembly[ins, NoneType, constraints="r,r"](
+            Int32(Int(ptr)), d[0]
+        )
 
     elif num_matrices == 2:
         alias ins = base + get_suffix() + ".x2.shared.b16 [$0], {$1, $2};\n"
-        inlined_assembly[ins, NoneType, constraints="r,r,r"](ptr, d[0], d[1])
+        inlined_assembly[ins, NoneType, constraints="r,r,r"](
+            Int32(Int(ptr)), d[0], d[1]
+        )
 
     else:
         constrained[
@@ -903,7 +907,7 @@ fn st_matrix[
 
         alias ins = base + get_suffix() + ".x4.shared.b16 [$0], {$1, $2, $3, $4};\n"
         inlined_assembly[ins, NoneType, constraints="r,r,r,r,r"](
-            ptr, d[0], d[1], d[2], d[3]
+            Int32(Int(ptr)), d[0], d[1], d[2], d[3]
         )
 
 
@@ -921,20 +925,18 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
     and access patterns for warp group matrix multiply operations. The descriptor contains
     the following bit fields:
 
-    - Start address (14 bits): Base address in shared memory.
-    - Leading byte offset (14 bits): Leading dimension stride in bytes.
-    - Stride byte offset (14 bits): Stride dimension offset in bytes.
-    - Base offset (3 bits): Additional offset.
-    - Swizzle mode (2 bits): Memory access pattern.
+    | Bit field | Size | Description |
+    |-----------|------|-------------|
+    | 0-13   |  14  | Base address in shared memory |
+    | 16-29   |  14  | LBO: leading dim byte offset |
+    | 32-45   |  14  | SBO: stride dim byte offset |
+    | 49-51   |   3  | Matrix base offset, 0 for canonical layouts |
+    | 62-63   |   2  | Swizzle mode: <br>&nbsp;&nbsp;0: no swizzle, <br>&nbsp;&nbsp;1: 128B swizzle, <br>&nbsp;&nbsp;2: 64B swizzle, <br>&nbsp;&nbsp;3: 32B swizzle |
 
-    The bit layout is:
-    +----------+----+------------+----+------------+----+-----+----------+-----+
-    |   0-13   |14-15|   16-29   |30-31|   32-45   |46-48|49-51|  52-61  |62-63|
-    +----------+----+------------+----+------------+----+-----+----------+-----+
-    |  14bits  |2bits|  14bits   |2bits|  14bits   |2bits|3bits| 10bits  |2bits|
-    +----------+----+------------+----+------------+----+-----+----------+-----+
-    | BaseAddr |  0  |LeadingDim |  0  |  Stride   |  0  |Offst|    0    |Swzle|
-    +----------+----+------------+----+------------+----+-----+----------+-----+
+    Note:
+
+    - Some bits are unused.
+    - Base address, LBO, and SBO ignore 4 least significant bits.
 
     Parameters:
         dtype: The data type of the shared memory operand. This affects memory alignment
@@ -992,7 +994,8 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](
         smem_ptr: UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.SHARED
+            Scalar[dtype],
+            address_space = AddressSpace.SHARED, **_,
         ],
     ) -> Self:
         """Create a descriptor for shared memory operand.

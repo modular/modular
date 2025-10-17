@@ -10,55 +10,86 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys.info import CompilationTarget, is_nvidia_gpu
-from sys import argv
 from collections.string.string_slice import get_static_string
+from os import abort
 from pathlib import Path
-from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import CUstream, CUmodule
-from ._mpi import MPIComm, MPI_Init, MPI_Comm_rank, get_mpi_comm_world
-from sys import size_of
+from sys import argv, size_of
 from sys.ffi import (
     _find_dylib,
+    _get_dylib_function,
     _Global,
     _OwnedDLHandle,
-    external_call,
-    _get_dylib_function,
     c_int,
+    c_uint,
     c_size_t,
+    external_call,
 )
+from sys.info import CompilationTarget, is_nvidia_gpu
+
+from gpu.host import DeviceContext
+from gpu.host._nvidia_cuda import CUmodule, CUstream
+
+from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
 alias NVSHMEM_LIBRARY_PATHS = List[Path](
-    "libnvshmem_host.so.3.3.9",
+    "libnvshmem_host.so.3.4.5",
     "libnvshmem_host.so.3",
     "libnvshmem_host.so",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/libnvshmem_host.so.3.3.9",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/libnvshmem_host.so.3",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/libnvshmem_host.so",
 )
 
+
+@register_passable
+struct NVSHMEMIVersion:
+    var major: c_int
+    var minor: c_int
+    var patch: c_int
+
+    fn __init__(out self):
+        self.major = 3
+        self.minor = 4
+        self.patch = 5
+
+
+fn _on_error_msg() -> Error:
+    return Error(
+        (
+            "Cannot find the NVShmem libraries. Please make sure that "
+            "the CUDA toolkit is installed and that the library path is "
+            "correctly set in one of the following paths ["
+        ),
+        ", ".join(materialize[NVSHMEM_LIBRARY_PATHS]()),
+        (
+            "]. You may need to make sure that you are using the non-slim"
+            " version of the MAX container."
+        ),
+    )
+
+
 alias NVSHMEM_LIBRARY = _Global[
-    "NVSHMEM_LIBRARY", _OwnedDLHandle, _init_nvshmem_dylib
+    "NVSHMEM_LIBRARY", _init_nvshmem_dylib, on_error_msg=_on_error_msg
 ]
 
 
 fn _init_nvshmem_dylib() -> _OwnedDLHandle:
-    return _find_dylib["NVSHMEM"](NVSHMEM_LIBRARY_PATHS)
+    return _find_dylib["NVSHMEM"](materialize[NVSHMEM_LIBRARY_PATHS]())
 
 
 @always_inline
 fn _get_nvshmem_function[
     func_name: StaticString, result_type: AnyTrivialRegType
 ]() -> result_type:
-    return _get_dylib_function[
-        NVSHMEM_LIBRARY(),
-        func_name,
-        result_type,
-    ]()
+    try:
+        return _get_dylib_function[
+            NVSHMEM_LIBRARY(),
+            func_name,
+            result_type,
+        ]()
+    except e:
+        return abort[result_type](String(e))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -189,18 +220,6 @@ struct NVSHMEMXUniqueID:
         self.internal = InlineArray[Byte, 124](fill=0)
 
 
-@register_passable
-struct NVSHMEMIVersion:
-    var major: c_int
-    var minor: c_int
-    var patch: c_int
-
-    fn __init__(out self):
-        self.major = 3
-        self.minor = 3
-        self.patch = 9
-
-
 fn _get_prefix[scope: SHMEMScope]() -> StaticString:
     @parameter
     if scope == SHMEMScope.default:
@@ -278,7 +297,7 @@ fn _dtype_to_nvshmem_type[
         return get_static_string[prefix, "int64", suffix, scope]()
     elif dtype is DType.uint64:
         return get_static_string[prefix, "uint64", suffix, scope]()
-    elif dtype is DType.index:
+    elif dtype is DType.int:
         return get_static_string[prefix, "size", suffix, scope]()
     else:
         return CompilationTarget.unsupported_target_error[
@@ -292,15 +311,11 @@ fn _dtype_to_nvshmem_type[
 # ===-----------------------------------------------------------------------===#
 
 
-# TODO: calculate how many jobs are set to launch on the current node and number
-# of devices, splitting up jobs evenly between devices. To enable launching
-# multiple kernels on the same device, and avoid initializing DeviceContext
-# twice. This doesn't work in MPI and UID initialization examples, but does
-# in nvshmem_init examples, so follow that logic.
+# Run one GPU per process
 fn nvshmemx_init() raises:
     var _argv = argv()
     var argc = len(_argv)
-    var mpi_status = MPI_Init(argc, _argv)
+    MPI_Init(argc, _argv)
 
     # Get MPI rank and size
     var rank = c_int(0)
@@ -313,6 +328,10 @@ fn nvshmemx_init() raises:
 
     # Initialize NVSHMEM with MPI
     var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
+    # For single process per GPU, fallback to one device per process per node.
+    attr.args.uid_args.myrank = 0
+    attr.args.uid_args.nranks = 1
+
     _ = nvshmemx_hostlib_init_attr(
         NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr)
     )
@@ -320,6 +339,35 @@ fn nvshmemx_init() raises:
     # Check initialization status
     if nvshmemx_init_status() != 2:
         raise Error("failed to initialize NVSHMEM")
+
+
+# Modular specific, initialize a DeviceContext on this thread to be SHMEM
+# enabled.
+fn nvshmemx_init_thread(
+    ctx: DeviceContext, number_of_devices_node: Int = -1
+) raises:
+    # Must set the associated CUcontext on this thread prior to init
+    ctx.set_as_current()
+    var nranks = (
+        number_of_devices_node if number_of_devices_node
+        > 0 else ctx.number_of_devices()
+    )
+
+    # Initialize NVSHMEM with MPI
+    var mpi_comm = get_mpi_comm_world()
+    var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
+    attr.args.uid_args.myrank = Int32(ctx.id())
+    attr.args.uid_args.nranks = nranks
+
+    var status = nvshmemx_hostlib_init_attr(
+        NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr)
+    )
+    if status:
+        raise Error("failed to initialize NVSHMEM with status:", status)
+    # Check initialization status
+    status = nvshmemx_init_status()
+    if status != 2:
+        raise Error("failed to initialize NVSHMEM with status:", status)
 
 
 fn nvshmemx_hostlib_init_attr(
@@ -342,6 +390,13 @@ fn nvshmemx_hostlib_finalize():
 fn nvshmemx_cumodule_init(module: CUmodule) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_cumodule_init",
+        fn (CUmodule) -> c_int,
+    ]()(module)
+
+
+fn nvshmemx_cumodule_finalize(module: CUmodule) -> c_int:
+    return _get_nvshmem_function[
+        "nvshmemx_cumodule_finalize",
         fn (CUmodule) -> c_int,
     ]()(module)
 

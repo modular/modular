@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string_slice import get_static_string
+from collections.string.string_slice import _to_string_list, get_static_string
 from sys.info import size_of
 
 from testing import assert_equal, assert_false, assert_true
+from testing import TestSuite
 
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data
@@ -481,13 +482,58 @@ def test_is_codepoint_boundary():
     assert_false(empty.is_codepoint_boundary(1))
 
 
+def test_comparison_operators():
+    var abc = StringSlice("abc")
+    var de = StringSlice("de")
+    var ABC = StringSlice("ABC")
+    var ab = StringSlice("ab")
+    var abcd = StringSlice("abcd")
+
+    # Test equality and inequality
+    assert_true(StringSlice.__eq__(abc, abc))
+    assert_true(StringSlice.__eq__(abc, "abc"))
+    assert_false(StringSlice.__eq__(abc, de))
+    assert_false(StringSlice.__eq__(abc, "xyz"))
+
+    # Test less than and greater than
+    assert_true(StringSlice.__lt__(abc, de))
+    assert_false(StringSlice.__lt__(de, abc))
+    assert_false(StringSlice.__lt__(abc, abc))
+    assert_true(StringSlice.__lt__(ab, abc))
+    assert_true(StringSlice.__gt__(abc, ab))
+    assert_false(StringSlice.__gt__(abc, abcd))
+
+    # Test less than or equal to and greater than or equal to
+    assert_true(StringSlice.__le__(abc, de))
+    assert_true(StringSlice.__le__(abc, abc))
+    assert_false(StringSlice.__le__(de, abc))
+    assert_true(StringSlice.__ge__(abc, abc))
+    assert_false(StringSlice.__ge__(ab, abc))
+    assert_true(StringSlice.__ge__(abcd, abc))
+
+    # Test case sensitivity in comparison (assuming ASCII order)
+    assert_true(StringSlice.__gt__(abc, ABC))
+    assert_false(StringSlice.__le__(abc, ABC))
+
+    # Testing with implicit conversion
+    assert_true(StringSlice.__lt__(abc, "defgh"))
+    assert_false(StringSlice.__gt__(abc, "xyz"))
+    assert_true(StringSlice.__ge__(abc, "abc"))
+    assert_false(StringSlice.__le__(abc, "ab"))
+
+    # Test comparisons involving empty strings
+    assert_true(StringSlice.__lt__("", abc))
+    assert_false(StringSlice.__lt__(abc, ""))
+    assert_true(StringSlice.__le__("", ""))
+    assert_true(StringSlice.__ge__("", ""))
+
+
 def test_split():
     alias S = StaticString
     alias L = List[StaticString]
 
     # Should add all whitespace-like chars as one
     # test all unicode separators
-    # 0 is to build a String with null terminator
     var next_line = List[UInt8](0xC2, 0x85)
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
@@ -563,16 +609,8 @@ def test_split():
 
 
 def test_splitlines():
-    alias S = StringSlice[StaticConstantOrigin]
-    alias L = List[StringSlice[StaticConstantOrigin]]
-
-    # FIXME: remove once we can compare Lists of different element types
-    fn _assert_equal[
-        O1: ImmutableOrigin
-    ](l1: List[StringSlice[O1]], l2: List[String]) raises:
-        assert_equal(len(l1), len(l2))
-        for i in range(len(l1)):
-            assert_equal(String(l1[i]), l2[i])
+    alias S = StaticString
+    alias L = List[StaticString]
 
     # Test with no line breaks
     assert_equal(S("hello world").splitlines(), L("hello world"))
@@ -614,12 +652,15 @@ def test_splitlines():
     var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
     var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
 
-    for u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
-        item = String().join("hello", u, "world", u, "mojo", u, "language", u)
-        s = StringSlice(item)
-        assert_equal(s.splitlines(), hello_mojo)
-        items = ["hello" + u, "world" + u, "mojo" + u, "language" + u]
-        _assert_equal(s.splitlines(keepends=True), items)
+    for ref u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
+        item = StaticString("").join(
+            "hello", u, "world", u, "mojo", u, "language", u
+        )
+        assert_equal(item.splitlines(), hello_mojo)
+        assert_equal(
+            _to_string_list(item.splitlines(keepends=True)),
+            List("hello" + u, "world" + u, "mojo" + u, "language" + u),
+        )
 
 
 def test_rstrip():
@@ -1011,38 +1052,4 @@ def test_merge():
 
 
 def main():
-    test_string_slice_layout()
-    test_constructors()
-    test_string_literal_byte_span()
-    test_string_byte_span()
-    test_heap_string_from_string_slice()
-    test_slice_len()
-    test_slice_char_length()
-    test_slice_eq()
-    test_slice_bool()
-    test_slice_repr()
-    test_find()
-    test_find_compile_time()
-    test_is_codepoint_boundary()
-    test_split()
-    test_splitlines()
-    test_rstrip()
-    test_lstrip()
-    test_strip()
-    test_startswith()
-    test_endswith()
-    test_isupper()
-    test_islower()
-    test_lower()
-    test_upper()
-    test_is_ascii_digit()
-    test_is_ascii_printable()
-    test_rjust()
-    test_ljust()
-    test_center()
-    test_count()
-    test_chars_iter()
-    test_string_slice_from_pointer()
-    test_replace()
-    test_join()
-    test_string_slice_intern()
+    TestSuite.discover_tests[__functions_in_module()]().run()

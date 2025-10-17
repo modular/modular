@@ -10,17 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-# REQUIRES: NVIDIA-GPU
-
-# RUN: NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # RUN: %mojo-build %s -o %t
-# RUN: %mpirun -n $NUM_GPUS %t
+# RUN: %t
 
+from os import abort
+
+from gpu import block_dim, block_idx, global_idx
 from shmem import *
 from testing import assert_equal
-from gpu import global_idx, block_dim, block_idx
-from os import abort
 
 
 fn set_and_shift_kernel(
@@ -62,7 +59,7 @@ fn set_and_shift_kernel(
 
 fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
     alias num_elems: UInt = 8192
-    alias threads_per_block: UInt = 1024
+    alias threads_per_block: UInt = 256
     debug_assert(
         num_elems % threads_per_block == 0,
         "num_elems must be divisible by threads_per_block",
@@ -110,9 +107,10 @@ fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
 
 
 def main():
-    with SHMEMContext() as ctx:
+    def test_both(ctx: SHMEMContext):
         test_shmem_put[False](ctx)
-
         # Test the non-blocking version of `shmem_put` primitive, which returns
         # after initiating the operation.
         test_shmem_put[True](ctx)
+
+    shmem_launch[test_both]()

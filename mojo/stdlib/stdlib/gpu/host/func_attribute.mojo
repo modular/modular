@@ -29,7 +29,7 @@ such as shared memory allocation, cache behavior, and cluster configuration.
 
 @fieldwise_init
 @register_passable("trivial")
-struct Attribute(Writable):
+struct Attribute(Identifiable, Writable):
     """Represents GPU kernel function attributes.
 
     This struct defines constants for various function attributes that can be queried
@@ -157,18 +157,6 @@ struct Attribute(Writable):
         """
         return self == other
 
-    @always_inline("nodebug")
-    fn __isnot__(self, other: Self) -> Bool:
-        """Negative identity comparison operator for Attribute instances.
-
-        Args:
-            other: The Attribute to compare with.
-
-        Returns:
-            True if the attributes are not identical, False otherwise.
-        """
-        return not (self is other)
-
     fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `Attribute` to the provided writer.
 
@@ -204,7 +192,7 @@ struct Attribute(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct FuncAttribute(Copyable, EqualityComparable, Movable):
+struct FuncAttribute(EqualityComparable, ImplicitlyCopyable, Movable):
     """Implements CUDA's CUfunction_attribute enum for GPU kernel function attributes.
 
     This struct represents function attributes that can be set or queried for GPU kernels,

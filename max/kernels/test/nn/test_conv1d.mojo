@@ -199,7 +199,7 @@ fn test[
     print("Succeed")
 
 
-fn main() raises:
+def main():
     alias dtype = DType.float32
     # No packing or padding.
     test[dtype, False](1, 5, 1, 4, 4, 2, 1, Index(0, 0), 1)

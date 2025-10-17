@@ -15,7 +15,7 @@ from math import erf
 from random import randn, seed
 
 from test_utils import compare, libm_call
-from testing import assert_almost_equal, assert_equal
+from testing import assert_almost_equal, assert_equal, TestSuite
 
 
 def test_erf_float32():
@@ -83,6 +83,4 @@ def test_erf_libm():
 
 
 def main():
-    test_erf_float32()
-    test_erf_float64()
-    test_erf_libm()
+    TestSuite.discover_tests[__functions_in_module()]().run()

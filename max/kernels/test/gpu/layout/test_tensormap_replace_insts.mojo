@@ -13,6 +13,7 @@
 
 from sys import size_of
 
+from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle, TMADescriptor
@@ -110,9 +111,9 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
     arange(old_src.tensor(), 1)
     arange(new_src.tensor(), 1001)
 
-    var template_tma_tensormap = create_tma_tile[
-        DType.bfloat16, 2, Index(M, N)
-    ](ctx, old_src.device_tensor())
+    var template_tma_tensormap = create_tma_tile[Index(M, N)](
+        ctx, old_src.device_tensor()
+    )
 
     var device_tensormaps = ctx.enqueue_create_buffer[DType.uint8](
         128 * num_of_tensormaps
@@ -148,7 +149,9 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
 
     ctx.enqueue_function[kernel](
         dst.device_tensor(),
-        new_src.device_buffer(),
+        rebind[NDBuffer[DType.bfloat16, 2, MutableAnyOrigin]](
+            new_src.device_buffer()
+        ),
         template_tma_tensormap,
         tensormaps,
         grid_dim=(num_of_tensormaps),
@@ -266,9 +269,9 @@ def test_tma_replace_global_addr_in_smem_descriptor[
     arange(old_src.tensor(), 1)
     arange(new_src.tensor(), 1001)
 
-    var template_tma_tensormap = create_tma_tile[
-        DType.bfloat16, 2, Index(M, N)
-    ](ctx, old_src.device_tensor())
+    var template_tma_tensormap = create_tma_tile[Index(M, N)](
+        ctx, old_src.device_tensor()
+    )
 
     var device_tensormaps = ctx.enqueue_create_buffer[DType.uint8](
         128 * num_of_tensormaps
@@ -304,7 +307,9 @@ def test_tma_replace_global_addr_in_smem_descriptor[
 
     ctx.enqueue_function[kernel](
         dst.device_tensor(),
-        new_src.device_buffer(),
+        rebind[NDBuffer[DType.bfloat16, 2, MutableAnyOrigin]](
+            new_src.device_buffer()
+        ),
         template_tma_tensormap,
         tensormaps,
         grid_dim=(num_of_tensormaps),
@@ -459,7 +464,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     arange(old_src.tensor(), 1)
 
     var template_tma_tensormap = create_tma_tile[
-        dtype, 2, Index(cta_tile_M, cta_tile_N), swizzle_mode=swizzle_mode
+        Index(cta_tile_M, cta_tile_N), swizzle_mode=swizzle_mode
     ](ctx, old_src.device_tensor())
 
     alias dst_layout = Layout.row_major(
@@ -503,7 +508,9 @@ def test_tma_replace_global_dim_in_smem_descriptor[
 
     ctx.enqueue_function[kernel](
         dst.device_tensor(),
-        new_src.device_buffer(),
+        rebind[NDBuffer[DType.bfloat16, 2, MutableAnyOrigin]](
+            new_src.device_buffer()
+        ),
         template_tma_tensormap,
         subtensors_m,
         tensormaps,

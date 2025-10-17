@@ -20,11 +20,11 @@ from tempfile import gettempdir
 """
 
 import os
+from io.write import _WriteBufferStack
 from pathlib import Path
 from sys import CompilationTarget
 
 from memory import Span
-from io.write import _WriteBufferStack
 
 alias TMP_MAX = 10_000
 
@@ -43,10 +43,6 @@ fn _get_random_name(size: Int = 8) -> String:
 fn _candidate_tempdir_list() -> List[String]:
     """Generate a list of candidate temporary directories which
     _get_default_tempdir will try."""
-
-    constrained[
-        not CompilationTarget.is_windows(), "windows not supported yet"
-    ]()
 
     var dirlist = List[String]()
     var possible_env_vars = List[StaticString]("TMPDIR", "TEMP", "TMP")
@@ -67,7 +63,7 @@ fn _candidate_tempdir_list() -> List[String]:
     except:
         pass
 
-    return dirlist
+    return dirlist^
 
 
 fn _get_default_tempdir() raises -> String:
@@ -262,7 +258,7 @@ struct TemporaryDirectory:
             return False
 
 
-struct NamedTemporaryFile:
+struct NamedTemporaryFile(Movable):
     """A handle to a temporary file.
 
     Example:
@@ -353,16 +349,6 @@ struct NamedTemporaryFile:
         self._file_handle.close()
         if self._delete:
             os.remove(self.name)
-
-    fn __moveinit__(out self, deinit existing: Self):
-        """Moves constructor for the file handle.
-
-        Args:
-            existing: The existing file handle.
-        """
-        self._file_handle = existing._file_handle^
-        self._delete = existing._delete
-        self.name = existing.name^
 
     fn read(self, size: Int = -1) raises -> String:
         """Reads the data from the file.

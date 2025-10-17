@@ -81,26 +81,19 @@ from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
     CodepointSliceIter,
     _to_string_list,
+    _unsafe_strlen,
 )
 from hashlib.hasher import Hasher
+from io.write import STACK_BUFFER_BYTES, _TotalWritableBytes, _WriteBufferStack
 from os import PathLike, abort
 from os.atomic import Atomic, Consistency, fence
-from sys import bit_width_of, size_of
-from sys.info import is_32bit
+from sys import size_of
 from sys.ffi import c_char
+from sys.info import is_32bit
 
 from bit import count_leading_zeros
-from memory import memcpy, memset, memcmp
-from python import PythonObject, ConvertibleFromPython, ConvertibleToPython
-
-from io.write import (
-    _TotalWritableBytes,
-    _WriteBufferStack,
-    STACK_BUFFER_BYTES,
-)
-from io.write import _WriteBufferStack
-from collections.string.string_slice import _unsafe_strlen
-
+from memory import memcmp, memcpy, memset
+from python import ConvertibleFromPython, ConvertibleToPython, PythonObject
 
 # ===----------------------------------------------------------------------=== #
 # String
@@ -174,7 +167,7 @@ struct String(
     alias INLINE_LENGTH_MASK = UInt(0b1_1111 << Self.INLINE_LENGTH_START)
     # This is the size to offset the pointer by, to get access to the
     # atomic reference count prepended to the UTF-8 data.
-    alias REF_COUNT_SIZE = size_of[Atomic[DType.index]]()
+    alias REF_COUNT_SIZE = size_of[Atomic[DType.int]]()
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -218,7 +211,11 @@ struct String(
             data: The static constant string to refer to.
         """
         self._len_or_data = data._slice._len
-        self._ptr_or_data = data._slice._data
+        # TODO: Validate the safety of this.
+        # Safety: This should be safe since we set `capacity_or_data` to 0.
+        # Meaning any mutation will cause us to either reallocate or inline
+        # the string.
+        self._ptr_or_data = data._slice._data.unsafe_mut_cast[True]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = 0
@@ -250,7 +247,7 @@ struct String(
         """
         var length = len(bytes)
         self = Self(unsafe_uninit_length=UInt(length))
-        memcpy(self.unsafe_ptr_mut(), bytes.unsafe_ptr(), length)
+        memcpy(dest=self.unsafe_ptr_mut(), src=bytes.unsafe_ptr(), count=length)
 
     fn __init__[T: Stringable](out self, value: T):
         """Initialize from a type conforming to `Stringable`.
@@ -605,6 +602,10 @@ struct String(
         return self._capacity_or_data << 3
 
     @always_inline("nodebug")
+    fn _set_nul_terminated(mut self):
+        self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
+
+    @always_inline("nodebug")
     fn _has_nul_terminator(self) -> Bool:
         return Bool(self._capacity_or_data & Self.FLAG_HAS_NUL_TERMINATOR)
 
@@ -632,20 +633,18 @@ struct String(
     # out-of-line strings, which is stored before the UTF-8 data.
 
     @always_inline("nodebug")
-    fn _refcount(self) -> ref [self._ptr_or_data.origin] Atomic[DType.index]:
+    fn _refcount(self) -> ref [self._ptr_or_data.origin] Atomic[DType.int]:
         # The header is stored before the string data.
         return (self._ptr_or_data - Self.REF_COUNT_SIZE).bitcast[
-            Atomic[DType.index]
+            Atomic[DType.int]
         ]()[]
 
     @always_inline("nodebug")
     fn _is_unique(mut self) -> Bool:
         """Return true if the refcount is 1."""
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
-            # TODO: use `load[MONOTONIC]` once load supports memory orderings.
             return (
-                self._refcount().fetch_sub[ordering = Consistency.MONOTONIC](0)
-                == 1
+                self._refcount().load[ordering = Consistency.MONOTONIC]() == 1
             )
         else:
             return False
@@ -665,7 +664,7 @@ struct String(
         # If indirect or inline we don't need to do anything.
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             var ptr = self._ptr_or_data - Self.REF_COUNT_SIZE
-            var refcount = ptr.bitcast[Atomic[DType.index]]()
+            var refcount = ptr.bitcast[Atomic[DType.int]]()
             if refcount[].fetch_sub[ordering = Consistency.RELEASE](1) == 1:
                 fence[Consistency.ACQUIRE]()
                 ptr.free()
@@ -677,8 +676,8 @@ struct String(
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(
-            ptr.bitcast[Atomic[DType.index]]().address
-        ) = Atomic[DType.index](1)
+            ptr.bitcast[Atomic[DType.int]]().address
+        ) = Atomic[DType.int](1)
 
         # Return a pointer to right after the header, which is where the string
         # data will be stored.
@@ -851,8 +850,8 @@ struct String(
 
         var result = String(unsafe_uninit_length=UInt(lhs_len + rhs_len))
         var result_ptr = result.unsafe_ptr_mut()
-        memcpy(result_ptr, lhs.unsafe_ptr(), lhs_len)
-        memcpy(result_ptr + lhs_len, rhs.unsafe_ptr(), rhs_len)
+        memcpy(dest=result_ptr, src=lhs.unsafe_ptr(), count=lhs_len)
+        memcpy(dest=result_ptr + lhs_len, src=rhs.unsafe_ptr(), count=rhs_len)
         return result^
 
     fn __add__(self, other: StringSlice) -> String:
@@ -896,9 +895,9 @@ struct String(
         var old_len = self.byte_length()
         var new_len = old_len + other_len
         memcpy(
-            self.unsafe_ptr_mut(UInt(new_len)) + old_len,
-            other.unsafe_ptr(),
-            other_len,
+            dest=self.unsafe_ptr_mut(UInt(new_len)) + old_len,
+            src=other.unsafe_ptr(),
+            count=other_len,
         )
         self.set_byte_length(new_len)
         self._clear_nul_terminator()
@@ -1174,10 +1173,13 @@ struct String(
             return (
                 UnsafePointer(to=self)
                 .bitcast[Byte]()
-                .origin_cast[False, __origin_of(self)]()
+                .as_immutable()
+                .unsafe_origin_cast[__origin_of(self)]()
             )
         else:
-            return self._ptr_or_data.origin_cast[False, __origin_of(self)]()
+            return self._ptr_or_data.as_immutable().unsafe_origin_cast[
+                __origin_of(self)
+            ]()
 
     fn unsafe_ptr_mut(
         mut self, var capacity: UInt = 0
@@ -1200,7 +1202,7 @@ struct String(
         elif not self._is_unique() or new_cap > self.capacity():
             self._realloc_mutable(new_cap)
 
-        return self.unsafe_ptr().origin_cast[True, __origin_of(self)]()
+        return self.unsafe_ptr().unsafe_mut_cast[True]()
 
     fn unsafe_cstr_ptr(
         mut self,
@@ -1453,10 +1455,12 @@ struct String(
         """
         return self.as_string_slice().split(sep, maxsplit=maxsplit)
 
-    fn splitlines(self, keepends: Bool = False) -> List[String]:
+    fn splitlines(
+        self, keepends: Bool = False
+    ) -> List[StringSlice[__origin_of(self)]]:
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
-            https://docs.python.org/3/library/stdtypes.html#str.splitlines)
+        https://docs.python.org/3/library/stdtypes.html#str.splitlines)
         `"\\r\\n"` and `"\\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
 
         Args:
@@ -1465,7 +1469,7 @@ struct String(
         Returns:
             A List of Strings containing the input split by line boundaries.
         """
-        return _to_string_list(self.as_string_slice().splitlines(keepends))
+        return self.as_string_slice().splitlines(keepends)
 
     fn replace(self, old: StringSlice, new: StringSlice) -> String:
         """Return a copy of the string with all occurrences of substring `old`
@@ -1862,7 +1866,7 @@ struct String(
         var old_ptr = self.unsafe_ptr()
         var new_capacity = (max(capacity, self.capacity() * 2) + 7) >> 3
         var new_ptr = self._alloc(new_capacity << 3)
-        memcpy(new_ptr, old_ptr, byte_len)
+        memcpy(dest=new_ptr, src=old_ptr, count=byte_len)
         # If mutable buffer drop the ref count
         self._drop_ref()
         self._len_or_data = byte_len
@@ -2150,7 +2154,9 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     return result
 
 
-fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
+fn _trim_and_handle_sign(
+    str_slice: StringSlice, str_len: Int
+) -> Tuple[Int, Bool]:
     """Trims leading whitespace, handles the sign of the number in the string.
 
     Args:
@@ -2173,7 +2179,7 @@ fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
 
 fn _handle_base_prefix(
     pos: Int, str_slice: StringSlice, str_len: Int, base: Int
-) -> (Int, Bool):
+) -> Tuple[Int, Bool]:
     """Adjusts the starting position if a valid base prefix is present.
 
     Handles "0b"/"0B" for base 2, "0o"/"0O" for base 8, and "0x"/"0X" for base
@@ -2333,9 +2339,7 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
         42949672960,
     )
     var n = UInt32(n0)
-    var log2 = Int(
-        (bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
-    )
+    var log2 = Int((DType.uint32.bit_width() - 1) ^ count_leading_zeros(n | 1))
     return (n0 + lookup_table[Int(log2)]) >> 32
 
 
@@ -2373,7 +2377,7 @@ fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
         var sign = 0 if n0 > 0 else 1
 
         @parameter
-        if is_32bit() or bit_width_of[dtype]() <= 32:
+        if is_32bit() or dtype.bit_width() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (

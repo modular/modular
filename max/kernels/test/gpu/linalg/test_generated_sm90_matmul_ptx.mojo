@@ -14,35 +14,31 @@
 from collections import OptionalReg
 from math import ceildiv
 from sys import size_of
-from testing import assert_true
+
 from gpu.globals import WARPGROUP_SIZE
-from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.compile import _compile_code
 from gpu.host.info import H100
 from layout import Layout
-from linalg.matmul_tile_scheduler import MatmulSchedule
-from stdlib.bit import log2_floor
-
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
-
+from layout.tma_async import _tma_desc_tile_layout
+from linalg.matmul.gpu.sm90.matmul import (
+    HopperMatmulSM90Kernel,
+    _get_c_smem_layout,
+    _get_grid_shape,
+    _is_valid_grid_shape,
+)
+from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from linalg.utils_gpu import (
-    MatmulConfig,
-)
-from layout.tma_async import _tma_desc_tile_layout
+from linalg.utils_gpu import MatmulConfig
+from stdlib.bit import log2_floor
+from testing import assert_true
 
-from linalg.matmul_sm90 import (
-    _is_valid_grid_shape,
-    _get_grid_shape,
-    _get_c_smem_layout,
-    tma_wgmma_warp_specialized_gemm_kernel,
-    tma_wgmma_warp_specialized_gemm_kernel_persistent,
-)
+from utils.index import Index, IndexList
+from utils.static_tuple import StaticTuple
 
 
 fn compile_sm90_matmul_ptx[
@@ -190,34 +186,39 @@ fn compile_sm90_matmul_ptx[
 
     @parameter
     if schedule != MatmulSchedule.NONE:
-        alias kernel = tma_wgmma_warp_specialized_gemm_kernel_persistent[
+        alias kernel = HopperMatmulSM90Kernel[
             a_type,
             b_type,
             c_type,
             a_layout,
             b_layout,
-            a_tile_layout,
-            b_tile_layout,
             c_layout,
+            c_smem_layout,
             config.block_tile_shape,
             config.mma_shape,
-            a_tma_desc_layout,
-            b_tma_desc_layout,
-            c_tma_desc_layout,
-            c_tile_layout,
-            c_smem_layout,
-            c_swizzle=c_swizzle,
-            cluster_shape=cluster_shape,
-            grid_shape=grid_shape_adjusted,
-            schedule=schedule,
+            cluster_shape,
+            config.num_pipeline_stages,
+            num_threads,
             transpose_b=True,
-            num_threads=num_threads,
-            pipeline_stages = config.num_pipeline_stages,
+            a_swizzle=a_swizzle,
+            b_swizzle=b_swizzle,
+            c_swizzle=c_swizzle,
             partitioned_multicast = config.partitioned_multicast,
             use_tma_store=use_tma_store,
+            promotion_frequency=1,
             pdl_level = config.pdl_level(),
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            hilbert_swizzle=False,
+        ].run_persistent[
+            a_tile_layout,
+            b_tile_layout,
+            c_tile_layout,
+            a_tma_desc_layout,
+            b_tma_desc_layout,
+            c_tma_desc_layout,
+            grid_shape=grid_shape_adjusted,
+            schedule=schedule,
         ]
 
         var asm = _compile_code[
@@ -226,33 +227,37 @@ fn compile_sm90_matmul_ptx[
         ]().asm
         assert_true("ld.local" not in asm and "st.local" not in asm)
     else:
-        alias kernel = tma_wgmma_warp_specialized_gemm_kernel[
+        alias kernel = HopperMatmulSM90Kernel[
             a_type,
             b_type,
             c_type,
             a_layout,
             b_layout,
-            a_tile_layout,
-            b_tile_layout,
             c_layout,
+            c_smem_layout,
             config.block_tile_shape,
             config.mma_shape,
-            a_tma_desc_layout,
-            b_tma_desc_layout,
-            c_tma_desc_layout,
-            c_tile_layout,
-            c_smem_layout,
-            c_swizzle=c_swizzle,
-            cluster_shape=cluster_shape,
+            cluster_shape,
+            config.num_pipeline_stages,
+            num_threads,
             transpose_b=True,
-            num_threads=num_threads,
-            pipeline_stages = config.num_pipeline_stages,
+            a_swizzle=a_swizzle,
+            b_swizzle=b_swizzle,
+            c_swizzle=c_swizzle,
             partitioned_multicast = config.partitioned_multicast,
             use_tma_store=use_tma_store,
+            promotion_frequency=1,
             pdl_level = config.pdl_level(),
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             hilbert_swizzle=hilbert_swizzle,
+        ].run[
+            a_tile_layout,
+            b_tile_layout,
+            c_tile_layout,
+            a_tma_desc_layout,
+            b_tma_desc_layout,
+            c_tma_desc_layout,
         ]
         var asm = _compile_code[
             kernel,
@@ -422,5 +427,5 @@ fn test_local_memory_access() raises:
     ]()
 
 
-fn main() raises:
+def main():
     test_local_memory_access()

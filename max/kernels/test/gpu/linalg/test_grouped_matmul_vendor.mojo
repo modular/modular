@@ -15,12 +15,8 @@ from collections import OptionalReg
 
 from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    random,
-)
-from linalg.grouped_matmul import naive_grouped_matmul, grouped_matmul_vendor
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
+from linalg.grouped_matmul import grouped_matmul_vendor, naive_grouped_matmul
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -336,7 +332,7 @@ fn test_negative_lora_id_vendor[
     )
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         # Single matmul
         test_vendor[

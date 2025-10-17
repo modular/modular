@@ -16,32 +16,22 @@ from os.env import getenv, setenv
 from os.path import expanduser, join
 from sys.info import CompilationTarget
 
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 
 fn get_user_path() -> String:
-    @parameter
-    if CompilationTarget.is_windows():
-        return join("C:", "Users", "user")
     return "/home/user"
 
 
 fn get_current_home() -> String:
-    @parameter
-    if CompilationTarget.is_windows():
-        return getenv("USERPROFILE")
     return getenv("HOME")
 
 
 def set_home(path: String):
-    @parameter
-    if CompilationTarget.is_windows():
-        _ = os.env.setenv("USERPROFILE", path)
-    else:
-        _ = os.env.setenv("HOME", path)
+    _ = os.env.setenv("HOME", path)
 
 
-fn main() raises:
+def test_expanduser():
     alias user_path = get_user_path()
     var original_home = get_current_home()
     set_home(user_path)
@@ -68,3 +58,7 @@ fn main() raises:
     assert_equal(join(user_path, "~folder"), expanduser("~/~folder"))
 
     set_home(original_home)
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

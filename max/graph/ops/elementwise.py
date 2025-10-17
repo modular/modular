@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Elementwise ops."""
 
-from typing import Callable
+from collections.abc import Callable
 
 from max.dtype import DType
 from max.mlir.dialects import rmo
@@ -21,6 +21,7 @@ from .. import dtype_promotion
 from ..graph import Graph
 from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
+from .cast import cast
 
 # ===----------------------------------------------------------------------=== #
 # Utilities
@@ -50,7 +51,7 @@ def _accum_type(x: TensorValue, preferred_type: DType = DType.float32) -> DType:
 # Note: Keep alphabetized.
 
 
-def _elementwise_binary(op):  # noqa: ANN001
+def _elementwise_binary(op):  # noqa: ANN001, ANN202
     def elementwise_op(
         lhs: TensorValueLike, rhs: TensorValueLike
     ) -> TensorValue:
@@ -104,35 +105,44 @@ Raises:
     Error: If one of the input values has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-div = _elementwise_binary(rmo.div)
-"""
-Divides two symbolic tensors.
 
-Creates a new op node to compute the division of two symbol tensor values
-and adds it to the graph, returning the symbolic result.
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted according
-        to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to the
-        same shape according to broadcasting rules` before the operation.
+def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
+    """
+    Divides two symbolic tensors using true division (Python operator `/`).
 
-Args:
-    lhs: The symbol to use as left side of the division.
-    rhs: The symbol to use as right side of the division.
-    location: An optional location for a more specific error message.
+    For integer operands, this performs true division by promoting to float,
+    matching Python's `/` operator behavior. For floating-point operands,
+    this performs standard floating-point division.
 
-Returns:
-    A symbolic tensor value representing the output of the division.
-    The result will have:
-    - the same dtype as the type-promotion of the two input dtypes
-    - the same shape as the broadcast of the two input shapes.
+    Creates a new op node to compute the division of two symbol tensor values
+    and adds it to the graph, returning the symbolic result.
 
-Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
-    Error: If the two symbols are parts of different graphs.
-"""
+    Args:
+        lhs: The symbol to use as left side of the division.
+        rhs: The symbol to use as right side of the division.
+
+    Returns:
+        A symbolic tensor value representing the output of the division. The
+          result will have:
+            - floating-point dtype for integer operands, promoted dtype for mixed types
+            - the same shape as the broadcast of the two input shapes.
+
+    Raises:
+        Error: If the input values' shapes are not compatible for broadcasting.
+        Error: If one of the input values has an unsupported dtype.
+        Error: If the two symbols are parts of different graphs.
+    """
+    lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
+
+    if lhs.dtype.is_integral() and rhs.dtype.is_integral():
+        float_dtype = DType.float64  # Use double precision for accuracy
+        lhs = cast(lhs, float_dtype)
+        rhs = cast(rhs, float_dtype)
+
+    return Graph.current._add_op(rmo.div, lhs, rhs)[0].tensor
+
+
 max = _elementwise_binary(rmo.max)
 """
 Computes the elementwise maximum of two symbolic tensors.
@@ -558,7 +568,7 @@ Raises:
 # Note: Keep alphabetized.
 
 
-def _elementwise_unary(op):  # noqa: ANN001
+def _elementwise_unary(op):  # noqa: ANN001, ANN202
     def elementwise_op(x: TensorValueLike) -> TensorValue:
         x = dtype_promotion._restrict_to_strong_dtypes(x)
         return Graph.current._add_op(op, x._mlir_value.type, x)[0].tensor
@@ -679,7 +689,7 @@ Raises:
 """
 
 
-def _gelu_quick(x: TensorValue):
+def _gelu_quick(x: TensorValue):  # noqa: ANN202
     """
     Computes the elementwise quick gelu of a symbolic tensor.
 
@@ -707,7 +717,7 @@ def _gelu_quick(x: TensorValue):
     return (x_cast * sigmoid(x_cast * 1.702)).cast(x.dtype)
 
 
-def _gelu_tanh(x: TensorValue):
+def _gelu_tanh(x: TensorValue):  # noqa: ANN202
     """
     Computes the elementwise gelu of a symbolic tensor.
 
@@ -733,7 +743,7 @@ def _gelu_tanh(x: TensorValue):
     ).cast(x.dtype)
 
 
-def gelu(x: TensorValue, approximate: str = "none"):
+def gelu(x: TensorValue, approximate: str = "none"):  # noqa: ANN201
     """
     Computes the elementwise gelu of a symbolic tensor.
 
@@ -893,7 +903,7 @@ Raises:
 """
 
 
-def silu(x: TensorValue):
+def silu(x: TensorValue):  # noqa: ANN201
     """
     Computes the elementwise silu of a symbolic tensor.
 

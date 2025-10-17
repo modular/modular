@@ -240,7 +240,7 @@ fn test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]() raises:
     print()
 
 
-fn main() raises:
+def main():
     alias l2_tolerance = 0.1
 
     test_fake_quant_error[l2_tolerance]()

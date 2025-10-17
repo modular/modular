@@ -24,9 +24,9 @@ from internal_utils import (
     random,
     zero,
 )
-from linalg.matmul_gpu import matmul_kernel_naive
-from linalg.vendor_blas import matmul
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu import matmul_kernel_naive
+from linalg.matmul.vendor.blas import matmul
 
 
 fn test_matmul[
@@ -75,18 +75,17 @@ fn test_matmul[
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
-    ctx.enqueue_function[
-        matmul_kernel_naive[
-            DType.float32,
-            input_type,
-            input_type,
-            c_tensor_ref.layout,
-            a_tensor.layout,
-            b_tensor.layout,
-            BLOCK_DIM,
-            transpose_b=True,
-        ]
-    ](
+    alias kernel = matmul_kernel_naive[
+        DType.float32,
+        input_type,
+        input_type,
+        c_tensor_ref.layout,
+        a_tensor.layout,
+        b_tensor.layout,
+        BLOCK_DIM,
+        transpose_b=True,
+    ]
+    ctx.enqueue_function_checked[kernel, kernel](
         c_tensor_ref,
         a_tensor,
         b_tensor,
@@ -128,7 +127,7 @@ fn test_matmul[input_types: List[DType]]() raises:
             test_matmul[input_type, 512, 2560, 512](ctx)
 
 
-fn main() raises:
+def main():
     @parameter
     if has_amd_gpu_accelerator():
         test_matmul[[DType.float8_e4m3fnuz, DType.bfloat16]]()

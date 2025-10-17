@@ -16,6 +16,7 @@ from random import random_ui64
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.index_tensor import _index_tensor_impl
 from testing import assert_equal, assert_true
 
@@ -59,10 +60,28 @@ def execute_index_tensor_test[
     ctx.enqueue_copy(indices_device.buffer, indices_host.tensor.data)
 
     # execute the kernel
+    alias data_dyn_layout = Layout.row_major[data_device.rank]()
+    alias indices_dyn_layout = Layout.row_major[indices_device.rank]()
+    alias output_dyn_layout = Layout.row_major[actual_output_device.rank]()
     _index_tensor_impl[batch_dims, target="gpu"](
-        data_device.tensor.make_dims_unknown(),
-        indices_device.tensor.make_dims_unknown(),
-        actual_output_device.tensor.make_dims_unknown(),
+        LayoutTensor[data_device.dtype, data_dyn_layout](
+            data_device.to_layout_tensor().ptr,
+            RuntimeLayout[data_dyn_layout].row_major(
+                data_device.to_layout_tensor().runtime_layout.shape.value.canonicalize()
+            ),
+        ),
+        LayoutTensor[indices_device.dtype, indices_dyn_layout](
+            indices_device.to_layout_tensor().ptr,
+            RuntimeLayout[indices_dyn_layout].row_major(
+                indices_device.to_layout_tensor().runtime_layout.shape.value.canonicalize()
+            ),
+        ),
+        LayoutTensor[actual_output_device.dtype, output_dyn_layout](
+            actual_output_device.to_layout_tensor().ptr,
+            RuntimeLayout[output_dyn_layout].row_major(
+                actual_output_device.to_layout_tensor().runtime_layout.shape.value.canonicalize()
+            ),
+        ),
         ctx,
     )
 

@@ -239,6 +239,8 @@ fn test_tile_and_distribute():
                 print("----fragments-data[", th_i, "]----")
                 print(tile_2x2)
 
+    storage.free()
+
 
 # CHECK-LABEL: test_tile_and_vectorize
 fn test_tile_and_vectorize():
@@ -459,6 +461,8 @@ fn test_tile_and_vectorize():
             print("----vectorized-matrix----")
             print(tensor_v_8x2)
 
+    storage.free()
+
 
 # CHECK-LABEL: test_copy_from
 fn test_copy_from():
@@ -492,6 +496,9 @@ fn test_copy_from():
     print(dst_tensor)
     dst_tensor.copy_from(src_tensor)
     print(dst_tensor)
+
+    src_tensor.ptr.free()
+    dst_tensor.ptr.free()
 
 
 # CHECK-LABEL: test_linspace_fill
@@ -556,6 +563,8 @@ fn test_linspace_fill():
     print(src_tensor_copy)
     print(src_tensor.ptr == src_tensor_copy.ptr)
 
+    src_tensor.ptr.free()
+
 
 # CHECK-LABEL: test_random_fill
 fn test_random_fill():
@@ -587,7 +596,7 @@ fn test_random_fill():
         var diff = rebind[Float32](src_tensor[i]) - mean
         variance += diff * diff
     variance = sqrt(variance / src_tensor.runtime_layout.size())
-
+    src_tensor.ptr.free()
     # Check that the mean value is close to 0.5 and variance is more than 0.1
     # CHECK: ----mean-variance----
     # CHECK: True
@@ -778,9 +787,9 @@ fn test_split():
         layout_int_type = DType.int32,
         linear_idx_type = DType.int32,
     ](ptr, dynamic_layout_Ux8)
-    var tensor_Ux8_split0 = tensor_Ux8.split[1, alignment=3](3, 0)
-    var tensor_Ux8_split1 = tensor_Ux8.split[1, alignment=3](3, 1)
-    var tensor_Ux8_split2 = tensor_Ux8.split[1, alignment=3](3, 2)
+    var tensor_Ux8_split0 = tensor_Ux8.split[1, split_alignment=3](3, 0)
+    var tensor_Ux8_split1 = tensor_Ux8.split[1, split_alignment=3](3, 1)
+    var tensor_Ux8_split2 = tensor_Ux8.split[1, split_alignment=3](3, 2)
 
     # CHECK: ((-1, -1):(8, 1))
     print(tensor_Ux8_split0.layout)
@@ -808,8 +817,8 @@ fn test_split():
 
     alias layout_8x2 = Layout(IntTuple(8, 2), IntTuple(2, 1))
     var tensor_8x2 = LayoutTensor[DType.float32, layout_8x2](ptr)
-    var tensor_8x2_split1 = tensor_8x2.split[0, alignment=3](3, 1)
-    var tensor_8x2_split2 = tensor_8x2.split[0, alignment=3](3, 2)
+    var tensor_8x2_split1 = tensor_8x2.split[0, split_alignment=3](3, 1)
+    var tensor_8x2_split2 = tensor_8x2.split[0, split_alignment=3](3, 2)
 
     # CHECK: ((-1, 2):(2, 1))
     print(tensor_8x2_split1.layout)

@@ -21,6 +21,7 @@ from sys import (
 )
 
 from testing import assert_equal, assert_true
+from testing import TestSuite
 
 
 fn test_size_of() raises:
@@ -53,7 +54,7 @@ fn test_cores() raises:
     assert_true(num_performance_cores() > 0)
 
 
-fn test_target_has_feature():
+fn test_target_has_feature() raises:
     # Ensures target feature check functions exist and return a boolable value.
     var _has_feature: Bool = CompilationTarget.has_avx()
     _has_feature = CompilationTarget.has_avx2()
@@ -68,7 +69,4 @@ fn test_target_has_feature():
 
 
 def main():
-    test_size_of()
-    test_align_of()
-    test_cores()
-    test_target_has_feature()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -79,10 +79,10 @@ def test_conditional_execution_with_results(session: InferenceSession) -> None:
     ) as graph:
         cond = graph.inputs[0]
 
-        def then_fn():
+        def then_fn():  # noqa: ANN202
             return ops.constant(1, DType.int32, device=device_ref)
 
-        def else_fn():
+        def else_fn():  # noqa: ANN202
             return ops.constant(0, DType.int32, device=device_ref)
 
         result = ops.cond(
@@ -112,10 +112,10 @@ def test_conditional_shape_to_tensor_solo_dim(
     with Graph("input_shape", input_types=(input_type,)) as graph:
         shape = graph.inputs[0].tensor.shape
 
-        def then_fn():
+        def then_fn():  # noqa: ANN202
             return ops.constant(1, DType.int32, device=device_ref)
 
-        def else_fn():
+        def else_fn():  # noqa: ANN202
             return ops.constant(0, DType.int32, device=device_ref)
 
         result = ops.cond(
@@ -293,7 +293,7 @@ def test_conditional_with_same_name_weight(session: InferenceSession) -> None:
         input_types=[TensorType(DType.bool, [], device=device_ref)],
     ) as graph:
 
-        def true_fn():
+        def true_fn():  # noqa: ANN202
             w = Weight(
                 "random_weight",
                 dtype=DType.int64,
@@ -302,7 +302,7 @@ def test_conditional_with_same_name_weight(session: InferenceSession) -> None:
             )
             return w.to(device_ref) * 2
 
-        def false_fn():
+        def false_fn():  # noqa: ANN202
             w = Weight(
                 "random_weight",
                 dtype=DType.int64,
@@ -341,7 +341,7 @@ def test_conditional_with_diff_names_weights(session: InferenceSession) -> None:
         true_weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
         false_weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
 
-        def true_fn():
+        def true_fn():  # noqa: ANN202
             w = Weight(
                 "true_weight",
                 dtype=DType.int64,
@@ -351,7 +351,7 @@ def test_conditional_with_diff_names_weights(session: InferenceSession) -> None:
             graph.add_weight(w)
             return w.to(device_ref) * 2
 
-        def false_fn():
+        def false_fn():  # noqa: ANN202
             w = Weight(
                 "false_weight",
                 dtype=DType.int64,
@@ -430,7 +430,7 @@ def test_cond_returned_diff_weights(session: InferenceSession) -> None:
         true_weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
         false_weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
 
-        def true_fn():
+        def true_fn():  # noqa: ANN202
             w = Weight(
                 "true_weight",
                 dtype=DType.int64,
@@ -440,7 +440,7 @@ def test_cond_returned_diff_weights(session: InferenceSession) -> None:
             graph.add_weight(w)
             return w.to(device_ref)
 
-        def false_fn():
+        def false_fn():  # noqa: ANN202
             w = Weight(
                 "false_weight",
                 dtype=DType.int64,

@@ -14,26 +14,19 @@
 from collections import OptionalReg
 from math import align_down, ceildiv
 from sys import align_of, simd_width_of
-from nn.conv import (
-    check_cudnn_error,
-    _get_cudnn_meta,
-)
-from .conv_utils import elementwise_simd_epilogue_type
 
-from gpu.host import DeviceContext
-from gpu._cudnn.cnn_infer import (
+from _cudnn.cnn_infer import (
+    cudnnConvolutionBackwardData,
     cudnnConvolutionMode_t,
     cudnnSetConvolution2dDescriptor,
-    cudnnConvolutionBackwardData,
 )
-from gpu._cudnn.infer import (
+from _cudnn.infer import (
     cudnnConvolutionBwdDataAlgo_t,
     cudnnDataType_t,
     cudnnSetFilter4dDescriptor,
     cudnnSetTensor4dDescriptor,
     cudnnTensorFormat_t,
 )
-
 from algorithm import (
     elementwise,
     sync_parallelize,
@@ -41,17 +34,18 @@ from algorithm import (
     tile_middle_unswitch_boundaries,
     vectorize,
 )
-from buffer import Dim
+from gpu.host import DeviceContext
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
+from nn.conv import _get_cudnn_meta, check_cudnn_error
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -63,6 +57,7 @@ from .conv_utils import (
     ConvShape,
     align_down_residual,
     elementwise_epilogue_type,
+    elementwise_simd_epilogue_type,
     get_conv_num_tasks,
     get_conv_shape,
     get_conv_tile_shape,
@@ -402,7 +397,7 @@ struct ConvTransposedPacked[
     output_type: DType,
     conv_attr: ConvInfoStatic[input_layout.rank() - 2],
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     var output: LayoutTensor[
         mut=True,
         output_type,
@@ -438,7 +433,7 @@ struct ConvTransposedPacked[
     var conv_shape: ConvShape[input_layout.rank() - 2]
 
     # Support partition in 4 dims: (n, c, f, ho_or_howo). If the input is
-    # padded, the output spacial dims are merged into one as howo. If not
+    # padded, the output spatial dims are merged into one as howo. If not
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 
@@ -485,8 +480,8 @@ struct ConvTransposedPacked[
         alias simd_size = simd_width_of[output_type]()
         alias micro_kernel_shape = get_micro_kernel_shape[
             input_layout.rank() - 2,
-            output_layout.shape[output_layout.rank() - 2],  # WO
-            output_layout.shape[output_layout.rank() - 1],  # F
+            Int(output_layout.shape[output_layout.rank() - 2]),  # WO
+            Int(output_layout.shape[output_layout.rank() - 1]),  # F
             conv_attr,
             simd_size,
         ]()
@@ -501,9 +496,9 @@ struct ConvTransposedPacked[
         )
 
         @parameter
-        if conv_attr.num_groups:
+        if conv_attr.num_groups != UNKNOWN_VALUE:
             constrained[
-                conv_attr.num_groups == Dim(1),
+                conv_attr.num_groups == 1,
                 "Don't support grouped transposed conv for now.",
             ]()
 
@@ -1640,7 +1635,7 @@ fn conv_transposed_gpu[
         )
 
 
-fn conv_transposed_cudnn[
+fn _conv_transposed_cudnn[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -1743,3 +1738,23 @@ fn conv_transposed_cudnn[
     # ---------------- Cleanup ---------------------------------------------
     if workspace_ptr:
         workspace_ptr.free()
+
+
+fn conv_transposed_cudnn[
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+](
+    input: LayoutTensor[input_type, **_],
+    filter: LayoutTensor[filter_type, **_],
+    output: LayoutTensor[output_type, **_],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    padding: IndexList[2],
+    ctx: DeviceContext,
+) raises:
+    # Set the CUcontext as current to satisfy stateful cuDNN APIs.
+    with ctx.push_context():
+        _conv_transposed_cudnn(
+            input, filter, output, stride, dilation, padding, ctx
+        )

@@ -72,7 +72,6 @@ methods.
 
 from collections.string.string import _chr_ascii
 
-
 from utils import Variant
 
 # TODO: _FormatCurlyEntry and _FormatSpec should be public in the future for
@@ -91,7 +90,7 @@ from utils import Variant
 # And going a step further it might even be worth it adding custom format
 # specification start character, and custom format specs themselves (by defining
 # a trait that all format specifications conform to)
-struct _FormatCurlyEntry(Copyable, ExplicitlyCopyable, Movable):
+struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
     """The struct that handles string formatting by curly braces entries.
     This is internal for the types: `StringSlice` compatible types.
     """
@@ -196,7 +195,9 @@ struct _FormatCurlyEntry(Copyable, ExplicitlyCopyable, Movable):
             The result.
         """
         alias len_pos_args = __type_of(args).__len__()
-        entries, size_estimation = Self._create_entries(fmt_src, len_pos_args)
+        ref entries, size_estimation = Self._create_entries(
+            fmt_src, len_pos_args
+        )
         var fmt_len = fmt_src.byte_length()
 
         var res = String(capacity=UInt(fmt_len + size_estimation))
@@ -222,7 +223,7 @@ struct _FormatCurlyEntry(Copyable, ExplicitlyCopyable, Movable):
     @staticmethod
     fn _create_entries(
         fmt_src: StringSlice, len_pos_args: Int
-    ) raises -> (List[Self], Int):
+    ) raises -> Tuple[List[Self], Int]:
         """Returns a list of entries and its total estimated entry byte width.
         """
         var manual_indexing_count = 0
@@ -484,7 +485,7 @@ will be less constrained.
 
 
 @register_passable("trivial")
-struct _FormatSpec(Copyable, Movable):
+struct _FormatSpec(ImplicitlyCopyable, Movable):
     """Store every field of the format specifier in a byte (e.g., ord("+") for
     sign). It is stored in a byte because every [format specifier](
     https://docs.python.org/3/library/string.html#formatspec) is an ASCII

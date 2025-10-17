@@ -15,7 +15,7 @@
 """Metric-gathering utilities for the pipelines."""
 
 import time
-from typing import Any, Union
+from typing import Any
 
 import psutil
 
@@ -25,10 +25,10 @@ class TextGenerationMetrics:
 
     prompt_size: int
     output_size: int
-    startup_time: Union[float, str]
-    time_to_first_token: Union[float, str]
-    prompt_eval_throughput: Union[float, str]
-    eval_throughput: Union[float, str]
+    startup_time: float | str
+    time_to_first_token: float | str
+    prompt_eval_throughput: float | str
+    eval_throughput: float | str
 
     _start_time: float
     _signposts: dict[str, float]
@@ -156,7 +156,7 @@ class TextGenerationMetrics:
 
 class EmbeddingsMetrics:
     prompt_size: int
-    startup_time: Union[float, str]
+    startup_time: float | str
 
     _start_time: float
     _signposts: dict[str, float]

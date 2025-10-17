@@ -10,22 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from buffer import DimList
 from gpu.host import DeviceContext
 from gpu.host.info import Vendor
-
-from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-)
-from buffer import DimList
-from nn.conv_transpose import conv_transpose_naive
-from nn.conv_transpose import conv_transposed_cudnn
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    random,
-)
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
+from layout import Layout, LayoutTensor, RuntimeLayout
+from nn.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
@@ -234,7 +224,7 @@ fn test_conv_transposed_cudnn[
     _ = d_output^
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         # Check if we're running on an NVIDIA GPU
         if ctx.default_device_info.vendor != Vendor.NVIDIA_GPU:
@@ -324,3 +314,35 @@ fn main() raises:
             dilation_val=1,
             pad_val=3,
         ](ctx=ctx)
+
+    # Test with multiple device contexts consecutively
+    print("\n== Testing with multiple device contexts ==")
+
+    # First context - default device (GPU 0)
+    print("Creating first device context (default device)...")
+    with DeviceContext() as ctx1:
+        test_conv_transposed_cudnn[
+            input_len=9,
+            kernel_len=4,
+            in_channels=2,
+            out_channels=2,
+            stride_val=1,
+            dilation_val=1,
+            pad_val=0,
+        ](ctx=ctx1)
+
+    if DeviceContext.number_of_devices() >= 2:
+        # Second context - device 1
+        print("Creating second device context (device 1)...")
+        with DeviceContext(device_id=1) as ctx2:
+            test_conv_transposed_cudnn[
+                input_len=9,
+                kernel_len=4,
+                in_channels=2,
+                out_channels=2,
+                stride_val=1,
+                dilation_val=1,
+                pad_val=0,
+            ](ctx=ctx2)
+
+        print("Multiple device context test completed successfully!")

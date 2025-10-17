@@ -100,7 +100,7 @@ def _mojo_env() -> dict[str, str]:
     return _sdk_default_env() | dict(os.environ)
 
 
-def subprocess_run_mojo(
+def subprocess_run_mojo(  # noqa: ANN201
     mojo_args: list[str],
     **kwargs: Any,
 ):

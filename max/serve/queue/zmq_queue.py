@@ -16,75 +16,103 @@
 from __future__ import annotations
 
 import logging
-import pickle
 import queue
 import tempfile
 import uuid
 import weakref
-from typing import Any, Callable, Generic, Optional, TypeVar
+from collections.abc import Callable
+from typing import Any, Generic, NewType, TypeVar
 
 import psutil
 import zmq
-import zmq.constants
+from max.interfaces import msgpack_numpy_decoder, msgpack_numpy_encoder
+from max.interfaces.queue import MAXPullQueue, MAXPushQueue
 
 logger = logging.getLogger("max.serve")
 
 T = TypeVar("T")
 
+Request = TypeVar("Request")
+Reply = TypeVar("Reply")
+
+DEFAULT_MSGPACK_NUMPY_ENCODER = msgpack_numpy_encoder(
+    use_shared_memory=True,
+    shared_memory_threshold=0,
+)
+
 
 def generate_zmq_ipc_path() -> str:
     """Generate a unique ZMQ IPC path."""
     base_rpc_path = tempfile.gettempdir()
-    return f"ipc://{base_rpc_path}/{uuid.uuid4()}"
+    # The full UUID is 36 chars (8-4-4-4-12 hex)
+    # However, this may cause the full path to be too long for ZMQ if you append
+    # additional characters to it. As such, we truncate the UUID to 18 chars.
+    # The chances of collision are still very low, because we don't really make
+    # that many ZMQs anyways.
+    short_uuid = uuid.uuid4().hex[:18]
+    return f"ipc://{base_rpc_path}/{short_uuid}"
 
 
-def generate_zmq_inproc_endpoint() -> str:
-    """Generate a unique ZMQ inproc endpoint."""
-    return f"inproc://{uuid.uuid4()}"
-
-
-def is_valid_zmq_address(address: str) -> bool:
+def _validate_zmq_address(address: str) -> None:
     """
     Check if a ZMQ address is valid.
     """
     # Check for supported protocols
     if not address.startswith(("tcp://", "ipc://", "inproc://")):
-        return False
+        raise ValueError(
+            f"ZMQ address must start with tcp://, ipc://, or inproc://. Found: {address}"
+        )
 
     # Protocol-specific validation
     if address.startswith("tcp://"):
         # TCP requires host:port format
         parts = address[6:].split(":")
         if len(parts) != 2:
-            return False
-        # Check if port is numeric
+            raise ValueError(
+                f"ZMQ tcp address must be in the format tcp://host:port. Found: {address}"
+            )
         try:
             port = int(parts[1])
-            return 1 <= port <= 65535
         except ValueError:
-            return False
+            raise ValueError(
+                f"ZMQ tcp port must be a number. Found: {parts[1]}"
+            ) from None
+        if not (1 <= port <= 65535):
+            raise ValueError(
+                f"ZMQ tcp port must be between 1 and 65535. Found: {port}"
+            )
     elif address.startswith("ipc://"):
-        # IPC requires a path after the protocol
-        return len(address) > 6
+        # On linux, IPC_PATH_MAX_LEN is 107.
+        # This is the length of `char sun_path[108]` field of `struct sockaddr_un`
+        # subtracted by 1 for the null terminator.
+        length = len(address) - len("ipc://")
+        if length > zmq.IPC_PATH_MAX_LEN:
+            raise ValueError(
+                f"ZMQ IPC path is too long: {address}.\n"
+                f"The maximum length is {zmq.IPC_PATH_MAX_LEN} characters. Found {length} characters."
+            )
+        if length == 0:
+            raise ValueError(
+                f"ZMQ IPC requires a path after the protocol. Found: {address}"
+            )
     elif address.startswith("inproc://"):
-        # inproc requires a name after the protocol
-        return len(address) > 9
-
-    return True
+        length = len(address) - len("inproc://")
+        if length == 0:
+            raise ValueError(
+                f"ZMQ inproc requires a name after the protocol. Found: {address}"
+            )
 
 
 # Adapted from:
 #  - vllm: https://github.com/vllm-project/vllm/blob/46c759c165a5a985ce62f019bf684e4a6109e41c/vllm/utils.py#L2093
 #  - sglang: https://github.com/sgl-project/sglang/blob/efc52f85e2d5c9b31545d4092f2b361b6ff04d67/python/sglang/srt/utils.py#L783
-def _open_zmq_socket(
-    path: str,
-    mode: int,
-    bind: bool = True,
-) -> zmq.Socket:
+def _open_zmq_socket(path: str, mode: int) -> zmq.Socket[bytes]:
     """Open a ZMQ socket with the proper bind/connect semantics."""
     mem = psutil.virtual_memory()
 
     # Grab the singleton global zmq ctx
+    # https://zguide.zeromq.org/docs/chapter2/
+    # "one I/O thread per gigabyte of data per second"
     zmq_ctx = zmq.Context.instance(io_threads=2)
     socket = zmq_ctx.socket(mode)
 
@@ -101,333 +129,186 @@ def _open_zmq_socket(
         buf_size = -1
 
     # Configure socket options based on type
-    if mode == zmq.constants.PULL:
-        socket.setsockopt(zmq.constants.RCVHWM, 0)
-        socket.setsockopt(zmq.constants.RCVBUF, buf_size)
-        socket.setsockopt(zmq.constants.LINGER, 0)
+    if mode == zmq.PULL:
+        socket.setsockopt(zmq.RCVHWM, 0)
+        socket.setsockopt(zmq.RCVBUF, buf_size)
+        socket.setsockopt(zmq.LINGER, 0)
         socket.connect(path)
-    elif mode == zmq.constants.PUSH:
-        socket.setsockopt(zmq.constants.SNDHWM, 0)
-        socket.setsockopt(zmq.constants.SNDBUF, buf_size)
-        socket.setsockopt(zmq.constants.LINGER, 0)
+    elif mode == zmq.PUSH:
+        socket.setsockopt(zmq.SNDHWM, 0)
+        socket.setsockopt(zmq.SNDBUF, buf_size)
+        socket.setsockopt(zmq.LINGER, 0)
         socket.bind(path)
-    elif mode == zmq.constants.ROUTER:
-        socket.setsockopt(zmq.constants.RCVHWM, 0)
-        socket.setsockopt(zmq.constants.SNDHWM, 0)
-        socket.setsockopt(zmq.constants.RCVBUF, buf_size)
-        socket.setsockopt(zmq.constants.SNDBUF, buf_size)
-        socket.setsockopt(zmq.constants.LINGER, 0)
-        socket.setsockopt(zmq.constants.ROUTER_MANDATORY, 1)
-        if bind:
-            socket.bind(path)
-        else:
-            socket.connect(path)
-    elif mode == zmq.constants.DEALER:
-        socket.setsockopt(zmq.constants.RCVHWM, 0)
-        socket.setsockopt(zmq.constants.SNDHWM, 0)
-        socket.setsockopt(zmq.constants.RCVBUF, buf_size)
-        socket.setsockopt(zmq.constants.SNDBUF, buf_size)
-        socket.setsockopt(zmq.constants.LINGER, 0)
-        if bind:
-            socket.bind(path)
-        else:
-            socket.connect(path)
+    elif mode == zmq.ROUTER:
+        socket.setsockopt(zmq.RCVHWM, 0)
+        socket.setsockopt(zmq.SNDHWM, 0)
+        socket.setsockopt(zmq.RCVBUF, buf_size)
+        socket.setsockopt(zmq.SNDBUF, buf_size)
+        socket.setsockopt(zmq.LINGER, 0)
+        socket.setsockopt(zmq.ROUTER_MANDATORY, 1)
+        socket.bind(path)
+    elif mode == zmq.DEALER:
+        socket.setsockopt(zmq.RCVHWM, 0)
+        socket.setsockopt(zmq.SNDHWM, 0)
+        socket.setsockopt(zmq.RCVBUF, buf_size)
+        socket.setsockopt(zmq.SNDBUF, buf_size)
+        socket.setsockopt(zmq.LINGER, 0)
+        socket.connect(path)
     else:
         raise ValueError(f"Unknown Socket Mode: {mode}")
 
     return socket
 
 
-class ZmqPushSocket(Generic[T]):
+def _put_helper(func: Callable[[], Any]) -> None:
+    while True:
+        try:
+            func()
+
+            # Exit since we succeeded
+            break
+        except zmq.ZMQError as e:
+            # If we get EAGAIN, we just try again.
+            # This could be due to:
+            #   - the pull socket not being opened yet
+            #   - a full queue
+            if e.errno == zmq.EAGAIN:
+                continue
+            raise RuntimeError("Failed to put message on ZMQ socket") from e
+
+
+def _get_helper(func: Callable[[], Any]) -> Any:
+    try:
+        msg = func()
+    except zmq.ZMQError as e:
+        if e.errno == zmq.EAGAIN:
+            raise queue.Empty() from e
+        raise RuntimeError("Failed to get message on ZMQ socket") from e
+    return msg
+
+
+class ZmqConfig(Generic[T]):
+    def __init__(self, payload_type: Any) -> None:
+        self._payload_type = payload_type
+        self._endpoint = generate_zmq_ipc_path()
+
+    def push(self) -> ZmqPushSocket[T]:
+        return ZmqPushSocket(
+            endpoint=self._endpoint, payload_type=self._payload_type
+        )
+
+    def pull(self) -> ZmqPullSocket[T]:
+        return ZmqPullSocket(
+            endpoint=self._endpoint, payload_type=self._payload_type
+        )
+
+    def pair(self) -> tuple[ZmqPushSocket[T], ZmqPullSocket[T]]:
+        return self.push(), self.pull()
+
+
+class ZmqSocket:
     def __init__(
         self,
         *,
-        serialize: Callable[[Any], bytes],
-        zmq_endpoint: Optional[str] = None,
+        endpoint: str,
+        mode: int,
     ) -> None:
-        self.zmq_endpoint = (
-            zmq_endpoint
-            if zmq_endpoint is not None
-            else generate_zmq_ipc_path()
-        )
-        self.push_socket = _open_zmq_socket(self.zmq_endpoint, mode=zmq.PUSH)
-        self.serialize = serialize
-        self._closed = False
-        self._finalize = weakref.finalize(self, self._cleanup)
-
-    def _cleanup(self) -> None:
-        if not self.push_socket.closed:
-            self.push_socket.close()
+        _validate_zmq_address(endpoint)
+        self._endpoint = endpoint
+        self._socket = _open_zmq_socket(endpoint, mode)
+        self._finalize = weakref.finalize(self, self.close)
+        self._is_closed = False
 
     def close(self) -> None:
-        """Explicitly close the ZMQ socket."""
-        if not self._closed:
-            self._closed = True
-            if not self.push_socket.closed:
-                self.push_socket.close()
-            # Cancel the weakref finalizer since we've manually cleaned up
-            self._finalize.detach()
+        """Clean up resources during garbage collection."""
+        if not self._is_closed:
+            self._is_closed = True
+            self._socket.close()
 
-    def put_nowait(
-        self,
-        msg: Any,
-        **kwargs,
-    ) -> None:
-        self.put(msg, flags=zmq.NOBLOCK, **kwargs)
 
-    def put(
-        self,
-        msg: Any,
-        **kwargs,
-    ) -> None:
-        if self._closed:
+class ZmqPushSocket(Generic[T], ZmqSocket, MAXPushQueue[T]):
+    def __init__(self, *, endpoint: str, payload_type: Any) -> None:
+        self._serialize = DEFAULT_MSGPACK_NUMPY_ENCODER
+        super().__init__(endpoint=endpoint, mode=zmq.PUSH)
+
+    def put_nowait(self, msg: T) -> None:
+        if self._is_closed:
             raise RuntimeError("Socket is closed")
-
-        while True:
-            try:
-                serialized_msg = self.serialize(msg)
-            except Exception as e:
-                logger.exception(f"Failed to serialize message: {e}")
-                raise
-
-            try:
-                self.push_socket.send(serialized_msg, **kwargs)
-
-                # Exit since we succeeded
-                break
-            except zmq.ZMQError as e:
-                # If we get EAGAIN, we just try again.
-                # This could be due to:
-                #   - the pull socket not being opened yet
-                #   - a full queue
-                if e.errno == zmq.EAGAIN:
-                    continue
-
-                # Unknown error, log it and let caller handle it
-                logger.exception(
-                    f"Failed to send message on ZMQ socket for unknown reason: {e}"
-                )
-                raise
+        serialized_msg = self._serialize(msg)
+        _put_helper(
+            lambda: self._socket.send(serialized_msg, flags=zmq.NOBLOCK)
+        )
 
 
-class ZmqPullSocket(Generic[T]):
+class ZmqPullSocket(Generic[T], ZmqSocket, MAXPullQueue[T]):
+    def __init__(self, *, endpoint: str, payload_type: Any) -> None:
+        self._deserialize = msgpack_numpy_decoder(payload_type)
+        super().__init__(endpoint=endpoint, mode=zmq.PULL)
+
+    def get_nowait(self) -> T:
+        if self._is_closed:
+            raise RuntimeError("Socket is closed")
+        serialized_msg = _get_helper(
+            lambda: self._socket.recv(flags=zmq.NOBLOCK)
+        )
+        msg = self._deserialize(serialized_msg)
+        return msg
+
+
+ClientIdentity = NewType("ClientIdentity", bytes)
+
+
+class ZmqRouterSocket(Generic[Request, Reply], ZmqSocket):
     def __init__(
-        self,
-        *,
-        deserialize: Callable[[Any], Any],
-        zmq_endpoint: Optional[str] = None,
+        self, *, endpoint: str, request_type: Any, reply_type: Any
     ) -> None:
-        self.zmq_endpoint = (
-            zmq_endpoint
-            if zmq_endpoint is not None
-            else generate_zmq_ipc_path()
-        )
-        self.pull_socket = _open_zmq_socket(self.zmq_endpoint, mode=zmq.PULL)
-        self.deserialize = deserialize
-        self._closed = False
-        self._finalize = weakref.finalize(self, self._cleanup)
+        self._endpoint = endpoint
+        self._serialize = DEFAULT_MSGPACK_NUMPY_ENCODER
+        self._deserialize = msgpack_numpy_decoder(request_type)
+        super().__init__(endpoint=endpoint, mode=zmq.ROUTER)
 
-    def _cleanup(self) -> None:
-        if not self.pull_socket.closed:
-            self.pull_socket.close()
-
-    def close(self) -> None:
-        """Explicitly close the ZMQ socket."""
-        if not self._closed:
-            self._closed = True
-            if not self.pull_socket.closed:
-                self.pull_socket.close()
-            # Cancel the weakref finalizer since we've manually cleaned up
-            self._finalize.detach()
-
-    def _pull_from_socket(self, **kwargs) -> T:
-        if self._closed:
+    def send_reply_nowait(self, msg: Reply, identity: ClientIdentity) -> None:
+        if self._is_closed:
             raise RuntimeError("Socket is closed")
-
-        try:
-            msg = self.pull_socket.recv(**kwargs)
-        except zmq.ZMQError as e:
-            if e.errno == zmq.EAGAIN:
-                raise queue.Empty()  # noqa: B904
-
-            logger.exception(
-                f"Failed to receive message on ZMQ socket for unknown reason: {e}"
+        serialized_msg = self._serialize(msg)
+        _put_helper(
+            lambda: self._socket.send_multipart(
+                [identity, serialized_msg], flags=zmq.NOBLOCK
             )
-            raise
+        )
 
-        try:
-            return self.deserialize(msg)
-        except Exception as e:
-            logger.exception(e)
-            raise
-
-    def get(self, **kwargs) -> T:
-        if self._closed:
+    def recv_request_nowait(self) -> tuple[Request, ClientIdentity]:
+        if self._is_closed:
             raise RuntimeError("Socket is closed")
-
-        return self._pull_from_socket(**kwargs)
-
-    def get_nowait(self, **kwargs) -> T:
-        return self.get(flags=zmq.NOBLOCK, **kwargs)
-
-    def drain_nowait(self) -> list[T]:
-        msgs = []
-        while True:
-            try:
-                msgs.append(self.get_nowait())
-            except queue.Empty:
-                break
-        return msgs
+        identity, serialized_msg = _get_helper(
+            lambda: self._socket.recv_multipart(flags=zmq.NOBLOCK)
+        )
+        msg = self._deserialize(serialized_msg)
+        return msg, ClientIdentity(identity)
 
 
-class ZmqRouterSocket(Generic[T]):
-    """ZMQ ROUTER socket for N:1 communication patterns with identity-based routing."""
-
+class ZmqDealerSocket(Generic[Request, Reply], ZmqSocket):
     def __init__(
-        self,
-        zmq_endpoint: str,
-        bind: bool = True,
-        serialize: Callable[[Any], bytes] = pickle.dumps,
-        deserialize: Callable[[Any], Any] = pickle.loads,
+        self, *, endpoint: str, request_type: Any, reply_type: Any
     ) -> None:
-        self.zmq_endpoint = zmq_endpoint
-        self.router_socket = _open_zmq_socket(
-            self.zmq_endpoint, mode=zmq.ROUTER, bind=bind
+        self._endpoint = endpoint
+        self._serialize = DEFAULT_MSGPACK_NUMPY_ENCODER
+        self._deserialize = msgpack_numpy_decoder(reply_type)
+        super().__init__(endpoint=endpoint, mode=zmq.DEALER)
+
+    def send_request_nowait(self, msg: Request) -> None:
+        if self._is_closed:
+            raise RuntimeError("Socket is closed")
+        serialized_msg = self._serialize(msg)
+        _put_helper(
+            lambda: self._socket.send(serialized_msg, flags=zmq.NOBLOCK)
         )
-        self._closed = False
-        self._finalize = weakref.finalize(self, self._cleanup)
-        self.serialize = serialize
-        self.deserialize = deserialize
 
-    def _cleanup(self) -> None:
-        if not self.router_socket.closed:
-            self.router_socket.close()
-
-    def close(self) -> None:
-        """Explicitly close the ZMQ socket."""
-        if not self._closed:
-            self._closed = True
-            if not self.router_socket.closed:
-                self.router_socket.close()
-            self._finalize.detach()
-
-    def send_multipart(
-        self, identity: bytes, message: T, flags: int = 0
-    ) -> None:
-        """Send a message to a specific identity."""
-        if self._closed:
+    def recv_reply_nowait(self) -> Reply:
+        if self._is_closed:
             raise RuntimeError("Socket is closed")
-
-        try:
-            serialized_msg = self.serialize(message)
-        except Exception as e:
-            logger.exception(f"Failed to serialize message: {e}")
-            raise
-
-        try:
-            self.router_socket.send_multipart(
-                [identity, serialized_msg], flags=flags
-            )
-        except zmq.ZMQError as e:
-            if e.errno != zmq.EAGAIN:
-                logger.exception(f"Failed to send multipart message: {e}")
-            raise
-
-    def recv_multipart(self, flags: int = 0) -> tuple[bytes, T]:
-        """Receive a message with sender identity."""
-        if self._closed:
-            raise RuntimeError("Socket is closed")
-
-        try:
-            identity, message_data = self.router_socket.recv_multipart(
-                flags=flags
-            )
-        except zmq.ZMQError as e:
-            if e.errno == zmq.EAGAIN:
-                raise queue.Empty()  # noqa: B904
-            logger.exception(f"Failed to receive multipart message: {e}")
-            raise
-
-        try:
-            message = self.deserialize(message_data)
-            return identity, message
-        except Exception as e:
-            logger.exception(f"Failed to deserialize message: {e}")
-            raise
-
-    def recv_multipart_nowait(self) -> tuple[bytes, T]:
-        """Non-blocking receive."""
-        return self.recv_multipart(flags=zmq.NOBLOCK)
-
-
-class ZmqDealerSocket(Generic[T]):
-    """ZMQ DEALER socket for 1:N communication patterns."""
-
-    def __init__(
-        self,
-        zmq_endpoint: str,
-        bind: bool = False,
-        serialize: Callable[[Any], bytes] = pickle.dumps,
-        deserialize: Callable[[Any], Any] = pickle.loads,
-    ) -> None:
-        self.zmq_endpoint = zmq_endpoint
-        self.dealer_socket = _open_zmq_socket(
-            self.zmq_endpoint, mode=zmq.DEALER, bind=bind
+        serialized_msg = _get_helper(
+            lambda: self._socket.recv(flags=zmq.NOBLOCK)
         )
-        self.serialize = serialize
-        self.deserialize = deserialize
-        self._closed = False
-        self._finalize = weakref.finalize(self, self._cleanup)
-
-    def _cleanup(self) -> None:
-        if not self.dealer_socket.closed:
-            self.dealer_socket.close()
-
-    def close(self) -> None:
-        """Explicitly close the ZMQ socket."""
-        if not self._closed:
-            self._closed = True
-            if not self.dealer_socket.closed:
-                self.dealer_socket.close()
-            self._finalize.detach()
-
-    def send_pyobj(self, message: T, flags: int = 0) -> None:
-        """Send a message."""
-        if self._closed:
-            raise RuntimeError("Socket is closed")
-
-        try:
-            serialized_msg = self.serialize(message)
-        except Exception as e:
-            logger.exception(f"Failed to serialized message: {e}")
-            raise
-
-        try:
-            self.dealer_socket.send(serialized_msg, flags=flags)
-        except zmq.ZMQError as e:
-            if e.errno != zmq.EAGAIN:
-                logger.exception(f"Failed to send message: {e}")
-            raise
-
-    def recv_pyobj(self, flags: int = 0) -> T:
-        """Receive a message."""
-        if self._closed:
-            raise RuntimeError("Socket is closed")
-
-        try:
-            message = self.dealer_socket.recv(flags=flags)
-        except zmq.ZMQError as e:
-            if e.errno == zmq.EAGAIN:
-                raise queue.Empty()  # noqa: B904
-            logger.exception(f"Failed to receive message: {e}")
-            raise
-
-        try:
-            return self.deserialize(message)
-        except Exception as e:
-            logger.exception(f"Failed to deserialize message: {e}")
-            raise
-
-    def recv_pyobj_nowait(self) -> T:
-        """Non-blocking receive."""
-        return self.recv_pyobj(flags=zmq.NOBLOCK)
+        msg = self._deserialize(serialized_msg)
+        return msg

@@ -16,7 +16,6 @@ from random import *
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
-
 alias INIT_LOOP_SIZE: UInt = 1000000
 """Bench loop size for BitSet init tests."""
 
@@ -30,7 +29,7 @@ fn bench_empty_bitset_init[size: Int](mut b: Bencher) raises:
     @parameter
     fn call_fn():
         for _ in range(0, INIT_LOOP_SIZE):
-            var b = BitSet[size]()
+            var b = BitSet[UInt(size)]()
             keep(len(b))
 
     b.iter[call_fn]()
@@ -56,12 +55,12 @@ fn bench_bitset_set[size: Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn() raises:
-        var bitset = BitSet[size]()
+        var bitset = BitSet[UInt(size)]()
         for _ in range(0, OP_LOOP_SIZE):
 
             @parameter
             for i in range(0, bitset.size):
-                bitset.set(i)
+                bitset.set(UInt(i))
         keep(len(bitset))
 
     b.iter[call_fn]()
@@ -75,12 +74,12 @@ fn bench_bitset_clear[width: Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn() raises:
-        var bitset = BitSet[width](initial)
+        var bitset = BitSet[UInt(width)](initial)
         for _ in range(0, OP_LOOP_SIZE):
 
             @parameter
             for i in range(0, bitset.size):
-                bitset.clear(i)
+                bitset.clear(UInt(i))
 
         keep(len(bitset))
 
@@ -95,12 +94,12 @@ fn bench_bitset_toggle[width: Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn() raises:
-        var bitset = BitSet[width](initial)
+        var bitset = BitSet[UInt(width)](initial)
         for _ in range(0, OP_LOOP_SIZE):
 
             @parameter
             for i in range(0, bitset.size):
-                bitset.toggle(i)
+                bitset.toggle(UInt(i))
 
         keep(len(bitset))
 
@@ -115,12 +114,12 @@ fn bench_bitset_test[width: Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn() raises:
-        var bitset = BitSet[width](initial)
+        var bitset = BitSet[UInt(width)](initial)
         for _ in range(0, OP_LOOP_SIZE):
 
             @parameter
             for i in range(0, bitset.size):
-                keep(bitset.test(i))
+                keep(bitset.test(UInt(i)))
 
     b.iter[call_fn]()
 
@@ -135,8 +134,8 @@ fn bench_bitset_union[width: Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn() raises:
-        var lhs = BitSet[width](lhs_init)
-        var rhs = BitSet[width](rhs_init)
+        var lhs = BitSet[UInt(width)](lhs_init)
+        var rhs = BitSet[UInt(width)](rhs_init)
 
         for _ in range(0, OP_LOOP_SIZE):
             var new = lhs.union(rhs)
@@ -155,8 +154,8 @@ fn bench_bitset_intersection[width: Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn() raises:
-        var lhs = BitSet[width](lhs_init)
-        var rhs = BitSet[width](rhs_init)
+        var lhs = BitSet[UInt(width)](lhs_init)
+        var rhs = BitSet[UInt(width)](rhs_init)
 
         for _ in range(0, OP_LOOP_SIZE):
             var new = lhs.intersection(rhs)
@@ -175,8 +174,8 @@ fn bench_bitset_difference[width: Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn() raises:
-        var lhs = BitSet[width](lhs_init)
-        var rhs = BitSet[width](rhs_init)
+        var lhs = BitSet[UInt(width)](lhs_init)
+        var rhs = BitSet[UInt(width)](rhs_init)
 
         for _ in range(0, OP_LOOP_SIZE):
             var new = lhs.difference(rhs)

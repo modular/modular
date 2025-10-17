@@ -13,7 +13,7 @@
 
 
 from algorithm.functional import _get_start_indices_of_nth_subvolume
-from layout import LayoutTensor, RuntimeTuple, IntTuple
+from layout import IntTuple, LayoutTensor, RuntimeTuple
 from layout.int_tuple import fill_like
 from runtime.tracing import Trace, TraceLevel
 
@@ -31,7 +31,7 @@ fn arg_nonzero[
 ](
     input_buffer: LayoutTensor[dtype, **_],
     output_buffer: LayoutTensor[mut=True, output_type, **_],
-):
+) raises:
     """Gather the indices of all non-zero elements in input buffer storing
     the indices in the output_buffer.
 

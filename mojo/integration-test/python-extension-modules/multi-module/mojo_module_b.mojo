@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from os import abort
+
 from common import TestStruct
 from python import PythonObject
 from python.bindings import PythonModuleBuilder
-from os import abort
 
 
 @export

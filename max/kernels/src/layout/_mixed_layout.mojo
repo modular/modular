@@ -12,27 +12,29 @@
 # ===----------------------------------------------------------------------=== #
 """Mixed layout implementation that unifies compile-time and runtime indices."""
 
-from builtin.variadics import VariadicOf
-from sys.intrinsics import _type_is_eq
 from os import abort
-from .int_tuple import IntTuple
-from .layout import LayoutTrait
+from sys.intrinsics import _type_is_eq
+
+from builtin.variadics import VariadicOf
+
 from ._mixed_tuple import (
-    Idx,
     ComptimeInt,
-    RuntimeInt,
+    Idx,
     MixedTuple,
     MixedTupleLike,
-    to_mixed_int_tuple,
-    mixed_int_tuple_to_int_tuple,
+    RuntimeInt,
     crd2idx,
+    mixed_int_tuple_to_int_tuple,
+    to_mixed_int_tuple,
 )
+from .int_tuple import IntTuple
+from .layout import LayoutTrait
 
 
 struct MixedLayout[
     shape_types: VariadicOf[MixedTupleLike],
     stride_types: VariadicOf[MixedTupleLike],
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """A layout that supports mixed compile-time and runtime dimensions.
 
     This layout provides a unified interface for layouts where some dimensions

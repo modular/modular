@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+# DOC: mojo/docs/manual/gpu/intro-tutorial.mdx
+
 from math import ceildiv
 from sys import has_accelerator
 
@@ -87,7 +90,7 @@ def main():
         result_tensor = LayoutTensor[float_dtype, layout](result_device_buffer)
 
         # Compile and enqueue the kernel
-        ctx.enqueue_function[vector_addition](
+        ctx.enqueue_function_checked[vector_addition, vector_addition](
             lhs_tensor,
             rhs_tensor,
             result_tensor,

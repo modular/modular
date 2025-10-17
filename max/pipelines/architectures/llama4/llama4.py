@@ -36,8 +36,7 @@ from max.nn import (
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
-    PagedKVCacheCollection,
+    PagedCacheValues,
 )
 from max.nn.layer import LayerList
 
@@ -141,7 +140,7 @@ class Llama4DecoderLayer(Module):
         xs: list[TensorValue],
         distributed_cache_positions: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_collections: list[PagedKVCacheCollection],
+        kv_collections: list[PagedCacheValues],
         **kwargs,
     ) -> list[TensorValue]:
         # Apply input layer norm to each shard
@@ -157,7 +156,9 @@ class Llama4DecoderLayer(Module):
             **kwargs,
         )
 
-        hidden_states = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
+        hidden_states = [
+            x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)
+        ]
         # Apply post attention layer norm to each shard
         post_norm_states = [
             self.post_attention_layernorm_shards[i](hidden_states[i])
@@ -171,11 +172,14 @@ class Llama4DecoderLayer(Module):
         else:
             mlp_outs = [
                 shard(x)
-                for shard, x in zip(self.feed_forward_shards, post_norm_states)
+                for shard, x in zip(
+                    self.feed_forward_shards, post_norm_states, strict=True
+                )
             ]
             mlp_outs = self.feed_forward_allreduce(mlp_outs, signal_buffers)
         hidden_states = [
-            h + mlp_out for h, mlp_out in zip(hidden_states, mlp_outs)
+            h + mlp_out
+            for h, mlp_out in zip(hidden_states, mlp_outs, strict=True)
         ]
         return hidden_states
 
@@ -226,9 +230,6 @@ class Llama4TextModel(Module):
             quantization_encoding=None,
         )
         self.kv_params = config.kv_params
-        self.kv_collection_constructor = FetchPagedKVCacheCollection(
-            config.kv_params, num_layers=config.num_hidden_layers
-        )
         self.return_logits = config.return_logits
         self.devices = config.devices
 
@@ -242,15 +243,10 @@ class Llama4TextModel(Module):
         tokens: TensorValueLike,
         cache_positions: TensorValueLike,
         signal_buffers: list[BufferValue],
-        kv_cache_inputs_per_dev: list[tuple[TensorValue, ...]],
+        kv_collections: list[PagedCacheValues],
         **kwargs,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens, signal_buffers)
-
-        kv_collections = [
-            self.kv_collection_constructor(*kv_cache_inputs)
-            for kv_cache_inputs in kv_cache_inputs_per_dev
-        ]
 
         input_row_offsets = kwargs["input_row_offsets"]
         distributed_cache_positions = distribute_value(
@@ -312,7 +308,7 @@ class Llama4(Module):
         tokens: TensorValueLike,
         cache_positions: TensorValueLike,
         signal_buffers: list[BufferValue],
-        kv_cache_inputs_per_dev: list[tuple[TensorValue, ...]],
+        kv_cache_inputs_per_dev: list[PagedCacheValues],
         **kwargs,
     ) -> tuple[TensorValue, ...]:
         return self.language_model(

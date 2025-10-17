@@ -16,22 +16,24 @@ from __future__ import annotations
 
 import functools
 import logging
+from collections import defaultdict
 
 from max.dtype import DType
+from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
 from max.nn import (
     MLP,
     ColumnParallelLinear,
-    DistributedAttentionWithRope,
     DistributedTransformer,
     DistributedTransformerBlock,
     Linear,
     RMSNorm,
+    Signals,
+    TensorParallelAttentionWithRope,
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
-    KVCacheStrategy,
+    TPPagedKVCacheManager,
 )
 
 logger = logging.getLogger("max.pipelines")
@@ -41,6 +43,7 @@ from .model_config import Llama3Config, create_rope_embedding
 class DistributedLlama3(DistributedTransformer):
     def __init__(self, config: Llama3Config) -> None:
         assert len(config.devices) > 1
+        self.config = config
 
         if config.quantization_config:
             raise ValueError(
@@ -66,7 +69,7 @@ class DistributedLlama3(DistributedTransformer):
             interleaved_rope_weights=config.interleaved_rope_weights,
             rope_scaling_params=config.rope_scaling_params,
             longrope_scaling_params=config.longrope_scaling_params,
-            device=config.devices[0],
+            device=DeviceRef.CPU(),
         )
 
         create_distributed_norm = functools.partial(
@@ -80,6 +83,8 @@ class DistributedLlama3(DistributedTransformer):
         linear_cls = functools.partial(Linear, float8_config=fp8_cfg)
 
         layers = []
+        sublayer_groupings_dict = defaultdict(list)
+
         for layer_idx in range(config.num_hidden_layers):
             # Deal with the float8 case where individual layers are ignored
             # specially: assume bfloat16 dtype for "ignored" layers in fp8
@@ -93,6 +98,10 @@ class DistributedLlama3(DistributedTransformer):
                 DType.bfloat16
                 if fp8_cfg and layer_idx not in fp8_cfg.mlp_in_float8
                 else config.dtype
+            )
+
+            sublayer_groupings_dict[(attn_qkv_dtype, mlp_dtype)].append(
+                layer_idx
             )
 
             mlp = MLP(
@@ -112,7 +121,7 @@ class DistributedLlama3(DistributedTransformer):
 
             layers.append(
                 DistributedTransformerBlock(
-                    attention=DistributedAttentionWithRope(
+                    attention=TensorParallelAttentionWithRope(
                         stacked_qkv=config.stacked_qkv,
                         scale=config.attention_multiplier,
                         clip_qkv=config.clip_qkv,
@@ -143,6 +152,8 @@ class DistributedLlama3(DistributedTransformer):
                 )
             )
 
+        subgraph_layer_groups = list(sublayer_groupings_dict.values())
+
         # Create Embedding and output layers.
         embedding_output_dtype = config.dtype
         embedding_output_quantization = config.model_quantization_encoding
@@ -170,15 +181,6 @@ class DistributedLlama3(DistributedTransformer):
             quantization_encoding=embedding_output_quantization,
         )
 
-        kv_collection_cls: type[FetchPagedKVCacheCollection]
-        if config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
-            kv_collection_cls = FetchPagedKVCacheCollection
-        else:
-            raise ValueError(
-                "Unsupported caching strategy "
-                + str(config.kv_params.cache_strategy)
-            )
-
         super().__init__(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
@@ -187,14 +189,55 @@ class DistributedLlama3(DistributedTransformer):
             output=output,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=kv_collection_cls(
-                config.kv_params, num_layers=config.num_hidden_layers
-            ),
             devices=config.devices,
             rope=rope,
             return_logits=config.return_logits,
             use_subgraphs=config.use_subgraphs,
+            subgraph_layer_groups=subgraph_layer_groups,
             # TODO: Support the following config options.
             # embedding_multiplier=config.embedding_multiplier,
-            # logits_postprocessor=config.logits_postprocessor,
+            logits_scaling=config.logits_scaling,
         )
+
+    def input_types(
+        self, kv_manager: TPPagedKVCacheManager
+    ) -> tuple[TensorType | BufferType, ...]:
+        # TODO: Move input symbol computation from the manager classes.
+        # It should be possible to compute the input symbols from the model
+        # config.
+        device_ref = self.config.devices[0]
+
+        # Construct general input types
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
+
+        kv_inputs = kv_manager.input_symbols()
+
+        # Construct Graph Inputs
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
+        # Flatten kv types for each device
+        flattened_kv_types: list[TensorType] = [
+            kv_type for sublist in kv_inputs for kv_type in sublist
+        ]
+
+        signals = Signals(devices=self.config.devices)
+
+        # Explicitly construct tuple with mixed types
+        signal_buffer_types: list[BufferType] = signals.input_types()
+
+        # Build the complete input types list
+        all_input_types: list[TensorType | BufferType] = [
+            tokens_type,
+            input_row_offsets_type,
+            return_n_logits_type,
+        ]
+        all_input_types.extend(signal_buffer_types)
+        all_input_types.extend(flattened_kv_types)
+
+        return tuple(all_input_types)

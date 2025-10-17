@@ -4,10 +4,13 @@ huggingface_hub[hf_transfer]
 huggingface_hub
 msgspec
 numpy
+prometheus-client
 protobuf
+psutil
+taskgroup
 tqdm
 transformers
-nvitop
+typing-extensions
 Jinja2
 Pillow
 

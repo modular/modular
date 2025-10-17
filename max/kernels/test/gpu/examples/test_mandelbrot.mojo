@@ -24,7 +24,7 @@ from testing import assert_equal
 from utils.index import Index
 
 alias float_type = DType.float64
-alias int_type = DType.index
+alias int_type = DType.int
 
 
 alias width = 4096
@@ -94,7 +94,7 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
     @always_inline
     @parameter
     fn run_mandelbrot(ctx: DeviceContext) raises:
-        ctx.enqueue_function[mandelbrot](
+        ctx.enqueue_function_checked[mandelbrot, mandelbrot](
             out_device,
             grid_dim=(ceildiv(height, BLOCK_SIZE),),
             block_dim=(BLOCK_SIZE,),

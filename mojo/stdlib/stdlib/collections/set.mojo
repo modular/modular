@@ -12,12 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the  Set datatype."""
 
-from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
 from hashlib import Hasher, default_hasher
+
+from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
 
 
 struct Set[T: KeyElement, H: Hasher = default_hasher](
-    Boolable, Comparable, Copyable, Hashable, KeyElement, Movable, Sized
+    Boolable,
+    Comparable,
+    Copyable,
+    Hashable,
+    Iterable,
+    KeyElement,
+    Movable,
+    Sized,
 ):
     """A set data type.
 
@@ -44,6 +52,10 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         T: The element type of the set. Must implement KeyElement.
         H: The tpe of the hasher used to hash keys.
     """
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _DictKeyIter[T, NoneType, H, iterable_origin]
 
     # Fields
     var _data: Dict[T, NoneType, H]
@@ -75,14 +87,6 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         self = Self()
         for e in elements:
             self.add(e)
-
-    fn __copyinit__(out self, other: Self):
-        """Copy constructor.
-
-        Args:
-            other: The existing Set instance to copy from.
-        """
-        self._data = other._data.copy()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -268,13 +272,13 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return len(self._data)
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    fn __hash__[_H: Hasher](self, mut hasher: _H):
         """Updates hasher with the underlying values.
 
         The update is order independent, so s1 == s2 -> hash(s1) == hash(s2).
 
         Parameters:
-            H: The hasher type.
+            _H: The hasher type.
 
         Args:
             hasher: The hasher instance.
@@ -341,14 +345,16 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
 
     fn __iter__(
         ref self,
-    ) -> _DictKeyIter[T, NoneType, H, __origin_of(self._data)]:
+    ) -> Self.IteratorType[__origin_of(self)]:
         """Iterate over elements of the set, returning immutable references.
 
         Returns:
             An iterator of immutable references to the set elements.
         """
         # here we rely on Set being a trivial wrapper of a Dict
-        return _DictKeyIter(_DictEntryIter(0, 0, self._data))
+        return rebind[Self.IteratorType[__origin_of(self)]](
+            _DictKeyIter(_DictEntryIter(0, 0, self._data))
+        )
 
     fn add(mut self, t: T):
         """Add an element to the set.
@@ -399,7 +405,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             A new set containing any elements which appear in either
             this set or the `other` set.
         """
-        var result = self
+        var result = self.copy()
         for o in other:
             result.add(o)
 

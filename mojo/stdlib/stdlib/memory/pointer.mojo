@@ -26,7 +26,9 @@ from memory import Pointer
 
 
 @register_passable("trivial")
-struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
+struct _GPUAddressSpace(
+    EqualityComparable, Identifiable, ImplicitlyCopyable, Movable
+):
     var _value: Int
 
     # See https://docs.nvidia.com/cuda/nvvm-ir-spec/#address-space
@@ -41,6 +43,8 @@ struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
     """Constant address space."""
     alias LOCAL = AddressSpace(5)
     """Local address space."""
+    alias SHARED_CLUSTER = AddressSpace(7)
+    """Shared cluster address space."""
 
     @always_inline("builtin")
     fn __init__(out self, value: Int):
@@ -119,18 +123,6 @@ struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
         return self.value() == other.value()
 
     @always_inline("nodebug")
-    fn __isnot__(self, other: Self) -> Bool:
-        """Checks if the two address spaces are not equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are not equal and False otherwise.
-        """
-        return self.value() != other.value()
-
-    @always_inline("nodebug")
     fn __isnot__(self, other: AddressSpace) -> Bool:
         """Checks if the two address spaces are not equal.
 
@@ -145,7 +137,13 @@ struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
 
 @register_passable("trivial")
 struct AddressSpace(
-    Copyable, EqualityComparable, Intable, Movable, Stringable, Writable
+    EqualityComparable,
+    Identifiable,
+    ImplicitlyCopyable,
+    Intable,
+    Movable,
+    Stringable,
+    Writable,
 ):
     """Address space of the pointer."""
 
@@ -189,15 +187,6 @@ struct AddressSpace(
           The integral value of the address space.
         """
         return self._value
-
-    @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
-        """Convert to index.
-
-        Returns:
-            The corresponding __mlir_type.index value.
-        """
-        return self._value._mlir_value
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
@@ -268,7 +257,7 @@ struct Pointer[
     type: AnyType,
     origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](Copyable, ExplicitlyCopyable, Movable, Stringable):
+](ImplicitlyCopyable, Movable, Stringable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
@@ -317,7 +306,7 @@ struct Pointer[
         Args:
             other: The `Pointer` to cast.
         """
-        self = __type_of(self)(_mlir_value=other._value)
+        self = {_mlir_value = other._value}
 
     @doc_private
     @always_inline("nodebug")
@@ -425,6 +414,4 @@ struct Pointer[
         Returns:
             A pointer merged with the specified `other_type`.
         """
-        return __type_of(result)(
-            _mlir_value=self._value
-        )  # allow lit.ref to convert.
+        return {_mlir_value = self._value}  # allow lit.ref to convert.

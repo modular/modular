@@ -12,12 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from sys import size_of
+
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allgather import allgather
 from comm.allreduce import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
-from sys import size_of
 from testing import assert_equal, assert_true
 
 
@@ -83,7 +84,7 @@ def all_gather_test[
             device_outputs.append(
                 list_of_ctx[device_idx].create_buffer_sync[dtype](length)
             )
-        out_bufs_list.append(device_outputs)
+        out_bufs_list.append(device_outputs^)
 
     # Create input NDBuffers.
     var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
@@ -92,7 +93,7 @@ def all_gather_test[
 
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[dtype, rank](
-            in_bufs_list[i]._unsafe_ptr(), DimList(lengths[i])
+            in_bufs_list[i].unsafe_ptr(), DimList(lengths[i])
         )
 
     # Create flat output buffer array (ngpus * ngpus).
@@ -104,7 +105,7 @@ def all_gather_test[
         for input_idx in range(ngpus):
             var output_idx = device_idx * ngpus + input_idx
             out_bufs[output_idx] = NDBuffer[dtype, rank](
-                out_bufs_list[device_idx][input_idx]._unsafe_ptr(),
+                out_bufs_list[device_idx][input_idx].unsafe_ptr(),
                 DimList(lengths[input_idx]),
             )
 
@@ -223,4 +224,6 @@ def main() -> None:
             ctx.append(DeviceContext(device_id=i))
 
         print("  Testing configuration:", test_idx, "with", num_gpus, "GPUs")
-        all_gather_test[DType.bfloat16, rank=1, ngpus=num_gpus](ctx, lengths)
+        all_gather_test[DType.bfloat16, rank=1, ngpus=num_gpus](
+            ctx, materialize[lengths]()
+        )

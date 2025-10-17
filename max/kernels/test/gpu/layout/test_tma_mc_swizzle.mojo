@@ -86,18 +86,18 @@ fn tma_swizzle_multicast_load_kernel[
 
     if thread_idx.x == 0:
         mbar[0].expect_bytes(expected_bytes)
-        var slice_cord_y = (
-            cluster_idx.y * cluster_tileM + rank_m * subcluster_tileM
+        var slice_cord_y = cluster_idx.y * UInt(cluster_tileM) + UInt(
+            rank_m * subcluster_tileM
         )
-        var slice_cord_x = (
-            cluster_idx.x * cluster_tileN + rank_n * subcluster_tileN
+        var slice_cord_x = cluster_idx.x * UInt(cluster_tileN) + UInt(
+            rank_n * subcluster_tileN
         )
         var copy_offset = subcluster_tileM * subcluster_tileN * block_rank
 
         tma_tile.async_multicast_load(
             __type_of(tile)(tile.ptr + copy_offset),
             mbar[0],
-            (slice_cord_x, slice_cord_y),
+            (UInt(slice_cord_x), UInt(slice_cord_y)),
             tma_multicast_mask,
         )
 
@@ -141,7 +141,7 @@ def test_tma_multicast_swizzle[
         arange(dst.tensor(), 0)
 
     var tma_tensor = create_tma_tile[
-        dtype, 2, subcluster_tile_shape, swizzle_mode=swizzle_mode
+        subcluster_tile_shape, swizzle_mode=swizzle_mode
     ](ctx, src.device_tensor())
 
     # print test info

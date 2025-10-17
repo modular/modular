@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from testing import assert_false, assert_true, assert_equal
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 # ===-----------------------------------------------------------------------===#
 # Triviality Struct
@@ -25,9 +25,9 @@ alias EVENT_COPY = 0b1000  # 8
 alias EVENT_MOVE = 0b10000  # 16
 
 
-struct ConditionalTriviality[
-    O: MutableOrigin, //, T: Movable & ExplicitlyCopyable
-](ExplicitlyCopyable, Movable):
+struct ConditionalTriviality[O: MutableOrigin, //, T: Movable & Copyable](
+    Copyable, Movable
+):
     var events: Pointer[List[Int], O]
 
     fn add_event(mut self, event: Int):
@@ -63,9 +63,7 @@ struct ConditionalTriviality[
             self.add_event(EVENT_MOVE)
 
 
-struct StructInheritTriviality[T: Movable & ExplicitlyCopyable](
-    Movable & ExplicitlyCopyable
-):
+struct StructInheritTriviality[T: Movable & Copyable](Movable & Copyable):
     alias __moveinit__is_trivial = T.__moveinit__is_trivial
     alias __copyinit__is_trivial = T.__copyinit__is_trivial
     alias __del__is_trivial = T.__del__is_trivial
@@ -76,11 +74,11 @@ struct StructInheritTriviality[T: Movable & ExplicitlyCopyable](
 # ===-----------------------------------------------------------------------===#
 
 
-def test_type_trivial[T: Movable & ExplicitlyCopyable]():
+def _test_type_trivial[T: Movable & Copyable]():
     var events = List[Int]()
     var value = ConditionalTriviality[T](events)
     var value_copy = value.copy()
-    var value_move = value_copy^
+    var _value_move = value_copy^
     assert_equal(
         events,
         [
@@ -93,21 +91,29 @@ def test_type_trivial[T: Movable & ExplicitlyCopyable]():
     )
 
 
-def test_type_not_trivial[T: Movable & ExplicitlyCopyable]():
+def test_type_trivial():
+    _test_type_trivial[Int]()
+
+
+def _test_type_not_trivial[T: Movable & Copyable]():
     var events = List[Int]()
     var value = ConditionalTriviality[T](events)
     var value_copy = value.copy()
-    var value_move = value_copy^
+    var _value_move = value_copy^
     assert_equal(
         events, [EVENT_INIT, EVENT_COPY, EVENT_DEL, EVENT_MOVE, EVENT_DEL]
     )
 
 
-def test_type_inherit_triviality[T: Movable & ExplicitlyCopyable]():
+def test_type_not_trivial():
+    _test_type_not_trivial[String]()
+
+
+def _test_type_inherit_triviality[T: Movable & Copyable]():
     var events = List[Int]()
     var value = ConditionalTriviality[StructInheritTriviality[T]](events)
     var value_copy = value.copy()
-    var value_move = value_copy^
+    var _value_move = value_copy^
     assert_equal(
         events,
         [
@@ -120,25 +126,25 @@ def test_type_inherit_triviality[T: Movable & ExplicitlyCopyable]():
     )
 
 
-def test_type_inherit_non_triviality[T: Movable & ExplicitlyCopyable]():
+def test_type_inherit_triviality():
+    _test_type_inherit_triviality[Float64]()
+    # _test_type_inherit_triviality[InlineArray[InlineArray[Int, 4], 4]]()
+
+
+def _test_type_inherit_non_triviality[T: Movable & Copyable]():
     var events = List[Int]()
     var value = ConditionalTriviality[StructInheritTriviality[T]](events)
     var value_copy = value.copy()
-    var value_move = value_copy^
+    var _value_move = value_copy^
     assert_equal(
         events, [EVENT_INIT, EVENT_COPY, EVENT_DEL, EVENT_MOVE, EVENT_DEL]
     )
 
 
-# ===-----------------------------------------------------------------------===#
-# Main
-# ===-----------------------------------------------------------------------===#
+def test_type_inherit_non_triviality():
+    _test_type_inherit_non_triviality[String]()
+    # _test_type_inherit_non_triviality[InlineArray[InlineArray[String, 4], 4]]()
 
 
 def main():
-    test_type_trivial[Int]()
-    test_type_not_trivial[String]()
-    test_type_inherit_triviality[Float64]()
-    test_type_inherit_non_triviality[String]()
-    # test_type_inherit_triviality[InlineArray[InlineArray[Int, 4], 4]]()
-    # test_type_inherit_non_triviality[InlineArray[InlineArray[String, 4], 4]]()
+    TestSuite.discover_tests[__functions_in_module()]().run()

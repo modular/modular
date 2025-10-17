@@ -15,14 +15,12 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string.format import _CurlyEntryFormattable
+from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import CodepointSliceIter, StaticString
 from os import PathLike
 from sys.ffi import c_char
-from collections.string.format import _FormatCurlyEntry
 
 from python import ConvertibleToPython, PythonObject
-
 
 # ===-----------------------------------------------------------------------===#
 # StringLiteral
@@ -34,10 +32,9 @@ from python import ConvertibleToPython, PythonObject
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
     ConvertibleToPython,
-    Copyable,
     Defaultable,
-    ExplicitlyCopyable,
     FloatableRaising,
+    ImplicitlyCopyable,
     IntableRaising,
     Movable,
     PathLike,
@@ -335,7 +332,11 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         # TODO(MSTDL-555):
         #   Remove bitcast after changing pop.string.address
         #   return type.
-        return ptr.bitcast[Byte]().origin_cast[False, StaticConstantOrigin]()
+        return (
+            ptr.bitcast[Byte]()
+            .as_immutable()
+            .unsafe_origin_cast[StaticConstantOrigin]()
+        )
 
     @always_inline
     fn unsafe_cstr_ptr(

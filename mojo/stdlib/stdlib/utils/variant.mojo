@@ -15,15 +15,12 @@
 from os import abort
 from sys.intrinsics import _type_is_eq
 
-
 # ===----------------------------------------------------------------------=== #
 # Variant
 # ===----------------------------------------------------------------------=== #
 
 
-struct Variant[*Ts: ExplicitlyCopyable & Movable](
-    Copyable, ExplicitlyCopyable, Movable
-):
+struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
     """A union that can hold a runtime-variant value from a set of predefined
     types.
 
@@ -120,7 +117,7 @@ struct Variant[*Ts: ExplicitlyCopyable & Movable](
 
     Parameters:
         Ts: The possible types that this variant can hold. All types must
-            implement `ExplicitlyCopyable` and `Movable`.
+            implement `Copyable` and `Movable`.
     """
 
     # Fields
@@ -158,24 +155,6 @@ struct Variant[*Ts: ExplicitlyCopyable & Movable](
         self._get_discr() = idx
         self._get_ptr[T]().init_pointee_move(value^)
 
-    fn copy(self, out copy: Self):
-        """Explicitly creates a deep copy of an existing variant.
-
-        Returns:
-            A copy of the value.
-        """
-        copy = Self(unsafe_uninitialized=())
-        copy._get_discr() = self._get_discr()
-
-        @parameter
-        for i in range(len(VariadicList(Ts))):
-            alias T = Ts[i]
-            if copy._get_discr() == i:
-                copy._get_ptr[T]().init_pointee_move(
-                    self._get_ptr[T]()[].copy()
-                )
-                return
-
     fn __copyinit__(out self, other: Self):
         """Creates a deep copy of an existing variant.
 
@@ -183,8 +162,17 @@ struct Variant[*Ts: ExplicitlyCopyable & Movable](
             other: The variant to copy from.
         """
 
-        # Delegate to explicit copy initializer.
-        self = other.copy()
+        self = Self(unsafe_uninitialized=())
+        self._get_discr() = other._get_discr()
+
+        @parameter
+        for i in range(len(VariadicList(Ts))):
+            alias T = Ts[i]
+            if self._get_discr() == i:
+                self._get_ptr[T]().init_pointee_move(
+                    other._get_ptr[T]()[].copy()
+                )
+                return
 
     fn __moveinit__(out self, deinit other: Self):
         """Move initializer for the variant.
@@ -200,7 +188,7 @@ struct Variant[*Ts: ExplicitlyCopyable & Movable](
             alias T = Ts[i]
             if self._get_discr() == i:
                 # Calls the correct __moveinit__
-                other._get_ptr[T]().move_pointee_into(self._get_ptr[T]())
+                self._get_ptr[T]().init_pointee_move_from(other._get_ptr[T]())
                 return
 
     fn __del__(deinit self):

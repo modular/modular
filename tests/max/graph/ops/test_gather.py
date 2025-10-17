@@ -40,14 +40,14 @@ def test_gather(
 ) -> None:
     assume(indices_type.rank > 0)
     with Graph("gather", input_types=[input_type, indices_type]) as graph:
-        input, indices = graph.inputs
-        out = ops.gather(input, indices, axis)  # type: ignore
+        input, indices = graph.inputs[0].tensor, graph.inputs[1].tensor
+        out = ops.gather(input, indices, axis)
         target_shape = [
-            *input.shape[:axis],  # type: ignore
-            *indices.shape,  # type: ignore
-            *input.shape[axis + 1 :],  # type: ignore
+            *input.shape[:axis],
+            *indices.shape,
+            *input.shape[axis + 1 :],
         ]
-        assert out.type == TensorType(input.dtype, target_shape, input.device)  # type: ignore
+        assert out.type == TensorType(input.dtype, target_shape, input.device)
         graph.output(out)
 
 

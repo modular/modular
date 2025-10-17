@@ -31,10 +31,11 @@ with open("my_file.txt", "r") as f:
 
 """
 
+from io.write import _WriteBufferStack
 from os import PathLike, abort
 from sys import external_call, size_of
+
 from memory import AddressSpace, Span
-from io.write import _WriteBufferStack
 
 
 # This type is used to pass into CompilerRT functions.  It is an owning
@@ -125,15 +126,6 @@ struct FileHandle(Defaultable, Movable, Writer):
             raise err_msg^.consume_as_error()
 
         self.handle = OpaquePointer()
-
-    fn __moveinit__(out self, deinit existing: Self):
-        """Moves constructor for the file handle.
-
-        Args:
-          existing: The existing file handle.
-        """
-        self.handle = existing.handle
-        # Destructor is already disabled on existing.
 
     fn read(self, size: Int = -1) raises -> String:
         """Reads data from a file and sets the file handle seek position. If
