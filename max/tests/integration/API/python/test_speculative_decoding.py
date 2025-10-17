@@ -13,7 +13,12 @@ from unittest.mock import Mock, patch
 import numpy as np
 import pytest
 from max.driver import DeviceSpec, Tensor
-from max.interfaces import PipelineTokenizer, RequestID, TextGenerationInputs
+from max.interfaces import (
+    PipelineTokenizer,
+    RequestID,
+    SamplingParams,
+    TextGenerationInputs,
+)
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
@@ -68,6 +73,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
         request_id=req_id1,
         tokens=tokens1,
         max_length=1024,
+        sampling_params=SamplingParams(top_k=1),
     )
 
     req_id2 = RequestID()
@@ -92,6 +98,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
         request_id=req_id2,
         tokens=tokens2,
         max_length=1024,
+        sampling_params=SamplingParams(top_k=1),
     )
     pipeline_request = {req_id1: context1, req_id2: context2}
     context_batch = [context1, context2]
@@ -580,7 +587,10 @@ def test_kv_cache_claiming_protocol() -> None:
     # Create a test context
     tokens = np.array([1, 450, 6593], dtype=np.int64)
     context = TextContext(
-        request_id=RequestID(), tokens=tokens, max_length=1024
+        request_id=RequestID(),
+        tokens=tokens,
+        max_length=1024,
+        sampling_params=SamplingParams(top_k=1),
     )
     batch = [context]
 

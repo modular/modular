@@ -80,6 +80,10 @@ def test_gumbel_sampling(
                     max_k_input,
                     temperature_input,
                     top_p_input,
+                    # min_top_p must be a scalar; set to 1.0 to match top_p default
+                    ops.constant(
+                        1.0, dtype=DType.float32, device=DeviceRef.CPU()
+                    ),
                     seed_input,
                     logits_input,
                 ],
