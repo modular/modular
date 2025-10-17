@@ -25,7 +25,7 @@ There are a few main tools in this module:
     These are useful helpers to specialize for the general bytes implementation.
 """
 
-from memory import UnsafePointer
+from memory import UnsafePointer, Span
 
 from .hasher import Hasher, default_hasher
 
@@ -102,6 +102,6 @@ fn hash[
     n: Int,
 ) -> UInt64:
     var hasher = HasherType()
-    hasher._update_with_bytes(bytes, n)
+    hasher._update_with_bytes(Span(ptr=bytes, length=UInt(n)))
     var value = hasher^.finish()
     return value

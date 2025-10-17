@@ -92,6 +92,10 @@ what we publish.
   terminal. This function accepts an `Int` file descriptor. If you have a
   `FileDescriptor` object, use its `isatty()` method instead.
 
+- The `Hasher` trait's `_update_with_bytes` method now takes `Span[Byte]`
+  instead of `UnsafePointer[UInt8]` and a separate length parameter. This
+  change applies to all hasher implementations including `AHasher` and `Fnv1a`.
+
 - Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
 
 - The deprecated `DType.index` is now removed in favor of the `DType.int`.

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from bit import rotate_bits_left
-from memory import bitcast
+from memory import bitcast, Span
 
 from .hasher import Hasher
 
@@ -121,39 +121,34 @@ struct AHasher[key: U256](Defaultable, Hasher):
         var combined = _folded_multiply(xored[0], xored[1])
         self.buffer = rotate_bits_left[ROT]((self.buffer + self.pad) ^ combined)
 
-    fn _update_with_bytes(
-        mut self,
-        data: UnsafePointer[
-            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-        ],
-        length: Int,
-    ):
+    fn _update_with_bytes(mut self, data: Span[Byte, _]):
         """Consume provided data to update the internal buffer.
 
         Args:
-            data: Pointer to the byte array.
-            length: The length of the byte array.
+            data: Span of bytes to hash.
         """
+        var length = len(data)
+        var ptr = data.unsafe_ptr()
         self.buffer = (self.buffer + length) * MULTIPLE
         if length > 8:
             if length > 16:
                 var tail = (
-                    data.offset(length - 16).bitcast[UInt64]().load[width=2]()
+                    ptr.offset(length - 16).bitcast[UInt64]().load[width=2]()
                 )
                 self._large_update(tail)
                 var offset = 0
                 while length - offset > 16:
                     var block = (
-                        data.offset(offset).bitcast[UInt64]().load[width=2]()
+                        ptr.offset(offset).bitcast[UInt64]().load[width=2]()
                     )
                     self._large_update(block)
                     offset += 16
             else:
-                var a = data.bitcast[UInt64]().load()
-                var b = data.offset(length - 8).bitcast[UInt64]().load()
+                var a = ptr.bitcast[UInt64]().load()
+                var b = ptr.offset(length - 8).bitcast[UInt64]().load()
                 self._large_update(U128(a, b))
         else:
-            var value = _read_small(data, length)
+            var value = _read_small(ptr, length)
             self._large_update(value)
 
     fn _update_with_simd(mut self, new_data: SIMD[_, _]):
