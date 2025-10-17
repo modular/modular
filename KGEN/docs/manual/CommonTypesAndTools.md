@@ -327,7 +327,7 @@ destination is an l-value.
 `SRValue` only holds register-passable types: primitives like `int64`,
 `float32`, and any struct marked `@register_passable` or
 `@register_passable("trivial")` (see
-[Life of Mojo reg-passable arguments](KGEN/docs/overviews/LifeOfMojoRegPassableArgs.md))
+[Life of Mojo reg-passable arguments](../overviews/LifeOfMojoRegPassableArgs.md))
 
 `MValue` only holds memory types (non-register passable things, like most
 structs).
@@ -448,7 +448,7 @@ first filling in the particular witness table (a.k.a. vtable a.k.a.
 Major players involved: `doesNominalTypeConformTo` calls
 `DeclResolver::resolveBody(ConformanceOp, ASTDecl &)` which calls `verifyConformance`.
 
-See [Conformance.md](KGEN/docs/arcana/Conformance.md) for more on how this
+See [Conformance.md](../arcana/Conformance.md) for more on how this
 all works.
 
 ### Allocation
