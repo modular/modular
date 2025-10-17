@@ -857,6 +857,40 @@ alias GTX1080Ti = GPUInfo.from_family(
 
 
 # ===-----------------------------------------------------------------------===#
+# GTX1060
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_gtx1060_target() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for NVIDIA GTX 1060 GPU.
+
+    Returns:
+        MLIR target configuration for GTX 1060.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_61", `,
+        `features = "+ptx50,+sm_61", `,`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `> : !kgen.target`,
+    ]
+
+
+alias GTX1060 = GPUInfo.from_family(
+    family=NvidiaPascalFamily,
+    name="NVIDIA GeForce GTX 1060",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="pascal",
+    compute=6.1,
+    version="sm_61",
+    sm_count=10,
+)
+
+
+# ===-----------------------------------------------------------------------===#
 # GTX970
 # ===-----------------------------------------------------------------------===#
 
@@ -959,45 +993,6 @@ alias RTX2060 = GPUInfo.from_family(
 )
 
 
-# ===-----------------------------------------------------------------------===#
-# GTX1060
-# ===-----------------------------------------------------------------------===#
-
-
-fn _get_gtx1060_target() -> __mlir_type.`!kgen.target`:
-    """
-    Creates an MLIR target configuration for NVIDIA GTX 1060 GPU.
-
-    Returns:
-        MLIR target configuration for GTX 1060.
-    """
-
-    return __mlir_attr[
-        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_61", `,
-        `features = "+ptx63,+sm_61", `,
-        `tune_cpu = "sm_61", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `index_bit_width = 64,`,
-        `simd_bit_width = 128`,
-        `> : !kgen.target`,
-    ]
-
-
-alias GTX1060 = GPUInfo(
-    name="NVIDIA GeForce GTX 1060",
-    vendor=Vendor.NVIDIA_GPU,
-    api="cuda",
-    arch_name="pascal",
-    compute=6.1,
-    version="sm_61",
-    sm_count=10,
-    warp_size=32,
-    threads_per_sm=2048,
-    shared_memory_per_multiprocessor=49152,
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,
-)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1415,6 +1410,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
         if self.name == "NVIDIA Tesla P100":
             return _get_teslap100_target()
         if self.name == "NVIDIA GeForce GTX 1060":
+            print("======GTX1060======")
             return _get_gtx1060_target()
         if self.name == "NVIDIA GeForce GTX 1080 Ti":
             return _get_gtx1080ti_target()
@@ -1758,6 +1754,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     if target_arch == "52":
         return materialize[GTX970]()
     elif target_arch == "61":
+        print("======Target Arch 61======")
         # FIXME GTX1060 and GTX1080Ti architecture wise are different. We need to differentiate between them here.
         return materialize[GTX1060]()
     elif target_arch == "75":
