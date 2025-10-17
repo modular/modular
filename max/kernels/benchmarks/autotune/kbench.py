@@ -869,12 +869,13 @@ class Scheduler:
     @staticmethod
     def kbench_mkdir(output_dir):  # noqa: ANN001, ANN205
         """Run the following command:
-        `rm -rf {output_dir} && mkdir -p {output_dir}`
+        `mkdir -p {output_dir}`
         """
-        # "rm -rf {output_dir} && mkdir -p {output_dir}"
         if os.path.exists(output_dir) and os.path.isdir(output_dir):
-            shutil.rmtree(output_dir)
-        os.makedirs(output_dir, exist_ok=False)
+            logging.warning(
+                f"output dir [{str(output_dir)}] already exists and will be overwritten!"
+            )
+        os.makedirs(output_dir, exist_ok=True)
         return output_dir
 
     def get_chunksize(self, num_elements: int) -> int:
