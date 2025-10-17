@@ -97,38 +97,6 @@ fn top_k_shape_impl[
 
 
 @always_inline
-fn top_k_shape[
-    dtype: DType,
-    single_thread_blocking_override: Bool,
-](
-    input: LayoutTensor[dtype, **_],
-    max_k: Int,
-    axis: Int,
-) raises -> IndexList[
-    input.rank
-]:
-    return top_k_shape_impl[
-        single_thread_blocking_override=single_thread_blocking_override
-    ](input, max_k, axis)
-
-
-@always_inline
-fn bottom_k_shape[
-    dtype: DType,
-    single_thread_blocking_override: Bool,
-](
-    input: LayoutTensor[dtype, **_],
-    max_k: Int,
-    axis: Int,
-) raises -> IndexList[
-    input.rank
-]:
-    return top_k_shape_impl[
-        single_thread_blocking_override=single_thread_blocking_override
-    ](input, max_k, axis)
-
-
-@always_inline
 fn _adjust_top_p[
     T: DType
 ](
