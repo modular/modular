@@ -79,12 +79,9 @@ LLVMDataLayout::getTypeABIAlignAndType(Type type) const {
     return {target.getDataLayout().getFloatABIAlign(fpType.getWidth()), fpType};
   if (auto ptrType = dyn_cast<LLVM::LLVMPointerType>(type))
     return {target.getDataLayout().getPointerABIAlign(), ptrType};
-  if (auto vecType = dyn_cast<VectorType>(type)) {
-    return {target.getDataLayout().getVectorABIAlign(
-                vecType.getNumElements(),
-                getTypeSizeInBits(vecType.getElementType())),
-            vecType};
-  }
+  // Use the natural alignment for vector to be conservative
+  if (auto vecType = dyn_cast<VectorType>(type))
+    return getTypeABIAlignAndType(vecType.getElementType());
   if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(type))
     return getTypeABIAlignAndType(arrayType.getElementType());
   if (auto structType = dyn_cast<LLVM::LLVMStructType>(type)) {
