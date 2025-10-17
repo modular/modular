@@ -7854,6 +7854,7 @@ struct Struct_fused_token_sampling:
         max_k: Scalar,
         temperature: InputTensor[dtype = DType.float32, rank=1],
         top_p: InputTensor[dtype = DType.float32, rank=1],
+        min_top_p: Float32,
         seed: InputTensor[dtype = DType.uint64, rank=1],
         input: InputTensor[dtype=dtype, rank=rank],
         ctx: DeviceContextPtr,
@@ -7933,6 +7934,7 @@ struct Struct_fused_token_sampling:
                 _fused_token_sampling_gpu(
                     cuda_ctx,
                     Int(max_k),
+                    min_top_p,
                     input_buf,
                     out_idxs_buf,
                     k=K_buf,

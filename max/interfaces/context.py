@@ -136,8 +136,7 @@ class SamplingParams:
     """Request specific sampling parameters that are only known at run time."""
 
     top_k: int = -1
-    """Limits the sampling to the K most probable tokens. This defaults to -1 (which evaluates the top 255 tokens).
-    For greedy sampling, set to 1."""
+    """Limits the sampling to the K most probable tokens. This defaults to -1 (to sample all tokens), for greedy sampling set to 1."""
 
     top_p: float = 1
     """Only use the tokens whose cumulative probability is within the top_p threshold. This applies to the top_k tokens."""
@@ -232,7 +231,7 @@ class SamplingParams:
             # If do_sample is False, set greedy defaults (unless user overrides)
             if not defaults["do_sample"]:
                 defaults["temperature"] = 0
-                defaults["top_k"] = 0
+                defaults["top_k"] = 1
 
             # This isnt included in SamplingParams, therefore we should remove it.
             del defaults["do_sample"]
@@ -296,16 +295,16 @@ class SamplingParams:
         if self.repetition_penalty <= 0:
             raise ValueError("repetition_penalty must be greater than 0.")
 
-        # TODO(E2EOPT-315) -- this is a temporary band-aid, we will add support for top_k = -1 in the future.
-        if self.top_k in [0, -1]:
-            self.top_k = 255
-        elif self.top_k < -1 or self.top_k > 255:
+        if self.top_k == 0:
+            self.top_k = -1
+        if self.top_k < -1 or self.top_k > 255:
             raise ValueError(
                 f"top_k must be -1 or greater than 0 and less than or equal to 255, was {self.top_k}."
             )
 
+        # If temperature is 0, set top_k to 1.
         if self.temperature == 0:
-            # Set top_k to 1 to ensure greedy sampling.
+            logger.debug("Temperature is 0, overriding top_k to 1.")
             self.top_k = 1
 
 

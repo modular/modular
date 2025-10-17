@@ -18,7 +18,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from os import getenv
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -100,25 +99,16 @@ class FusedSamplingProcessor:
         )
         self.top_k = Tensor.from_numpy(top_k_np).to(device)
         max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
-        if max_k_np == 255:
-            gumbel_flag = getenv(
-                "MAX_INTERNAL_USE_GUMBEL_SAMPLING", "false"
-            ).lower()
-            if gumbel_flag == "true" or (
-                gumbel_flag == "1" and np.min(top_k_np) != max_k_np
-            ):
-                logger.warning(
-                    "Gumbel-max sampling is enabled, but current batch has request with top_k != -1, ignoring"
-                )
-
         self.max_k = Tensor.from_numpy(max_k_np)
 
-        self.top_p = Tensor.from_numpy(
-            np.array(
-                [context.sampling_params.top_p for context in context_batch],
-                dtype=np.float32,
-            )
-        ).to(device)
+        top_p_np = np.array(
+            [context.sampling_params.top_p for context in context_batch],
+            dtype=np.float32,
+        )
+        self.top_p = Tensor.from_numpy(top_p_np).to(device)
+        min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
+        self.min_top_p = Tensor.from_numpy(min_top_p_np)
+
         self.seed = Tensor.from_numpy(
             np.array(
                 [
@@ -222,6 +212,7 @@ class FusedSamplingProcessor:
             self.max_k,
             self.temperature,
             self.top_p,
+            self.min_top_p,
             self.seed,
             logit_offsets=logit_offsets,
             bitmask=tensor_bitmask,
@@ -369,6 +360,7 @@ def _sample_logits(
     max_k: Tensor,
     temperature: Tensor,
     top_p: Tensor,
+    min_top_p: Tensor,
     seed: Tensor,
     *,
     logit_offsets: Tensor | None = None,
@@ -388,6 +380,7 @@ def _sample_logits(
         max_k,
         temperature,
         top_p,
+        min_top_p,
         seed,
     ]
 

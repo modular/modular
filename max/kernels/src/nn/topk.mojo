@@ -274,9 +274,14 @@ fn _top_k_cpu[
             iota(idxs)
 
             var batch_idx = indices[0] if axis != 0 else 0
-            var k_val = max_k
+            var k_val = 255 if max_k == -1 else max_k
             if k:
-                k_val = Int(k.value()[batch_idx])
+                var k_raw = Int(k.value()[batch_idx])
+                k_val = 255 if k_raw == -1 else k_raw
+
+            # Clamp k to the size of the axis to avoid out-of-bounds access
+            if k_val > shape[axis]:
+                k_val = shape[axis]
 
             @parameter
             @always_inline
@@ -429,7 +434,7 @@ fn fused_token_sampling_cpu[
     constrained[out_idx_type is DType.int64, "out_idx_type must be int64"]()
     # materialize the out_vals which is of shape [input[:-1]] + [k]
     var out_vals_shape = input.runtime_layout.shape.value.canonicalize()
-    out_vals_shape[input.rank - 1] = max_k
+    out_vals_shape[input.rank - 1] = 255 if max_k == -1 else max_k
     var out_vals = LayoutTensor[dtype, Layout.row_major[input.rank]()](
         UnsafePointer[Scalar[dtype]].alloc(out_vals_shape.flattened_length()),
         RuntimeLayout[Layout.row_major[input.rank]()].row_major(out_vals_shape),
@@ -571,9 +576,10 @@ fn _top_k_sampling[
         if temperature:
             temperature_val = temperature.value()[batch][0]
 
-        var k_val = max_k
+        var k_val = 255 if max_k == -1 else max_k
         if k:
-            k_val = Int(k.value()[batch])
+            var k_raw = Int(k.value()[batch])
+            k_val = 255 if k_raw == -1 else k_raw
 
         # Calculate softmax normalization
         var max_val = internal_out_vals[batch, 0][0]
@@ -872,7 +878,8 @@ fn _topk_stage1_old[
         barrier()
         var k_batch = max_k
         if K:
-            k_batch = Int(K[batch_id])
+            var k_raw = Int(K[batch_id])
+            k_batch = 255 if k_raw == -1 else k_raw
         # Prepare for K iterations to find the local top-K elements
         for k in range(k_batch):
             # Initialize each thread with its own TopK_2 value and index
@@ -968,7 +975,8 @@ fn _topk_stage1[
 
     var k_batch = max_k
     if K:
-        k_batch = Int(K[batch_id])
+        var k_raw = Int(K[batch_id])
+        k_batch = 255 if k_raw == -1 else k_raw
 
     # Allocate shared memory for the values and indices
     var topk_sram = external_memory[
@@ -1723,6 +1731,7 @@ fn fused_token_sampling_gpu[
 ](
     ctx: DeviceContext,
     max_k: Int,
+    min_top_p: Float32,
     input: LayoutTensor[dtype, **_],
     out_idxs: LayoutTensor[mut=True, out_idx_type, **_],
     block_size: OptionalReg[Int] = None,
@@ -1754,22 +1763,17 @@ fn fused_token_sampling_gpu[
     dimension of the input tensor for each row/subvolume.
     """
 
-    var gumbel_flag = getenv(
-        "MAX_INTERNAL_USE_GUMBEL_SAMPLING", "False"
-    ).lower()
-    if gumbel_flag == "true" or gumbel_flag == "1":
-        # TODO(E2EOPT-315) -- Gumbel trick could only be used when top_k = vocab_size.
-        # However, for a request requires top_k = -1 (vocab_size), MAX automatically rewrites top_k to 255.
-        # if max_k == input.shape[1]():
-        if max_k >= 255:
-            gumbel_sampling_gpu(
-                ctx,
-                input,
-                out_idxs,
-                temperature,
-                seed,
-            )
-            return
+    # If all items in the batch, want to sample all tokens (top_k==-1, top_p=1)
+    # We can use gumbel sampling.
+    if max_k == -1 and min_top_p == 1.0:
+        gumbel_sampling_gpu(
+            ctx,
+            input,
+            out_idxs,
+            temperature,
+            seed,
+        )
+        return
 
     constrained[
         input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
