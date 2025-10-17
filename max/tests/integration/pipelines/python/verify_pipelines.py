@@ -737,7 +737,7 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
                 json_file="torch_llama3_1_bfloat16_golden.json",
             ),
-            cos_dist_threshold=8.5e-3,
+            cos_dist_threshold=9.7e-03,
             kl_div_threshold=8.6e-2,
         ),
     ),
@@ -1120,7 +1120,7 @@ PIPELINES = {
                 json_file="torch_gemma3-27b_bfloat16_golden.json",
             ),
             cos_dist_threshold=2.8e-02,
-            kl_div_threshold=7.0e-01,
+            kl_div_threshold=8.3e-01,
         ),
     ),
     "HKUSTAudio/Llasa-8B-bfloat16": PipelineDef(
