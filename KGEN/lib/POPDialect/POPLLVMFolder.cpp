@@ -6,7 +6,7 @@
 
 #include "KGEN/POPDialect/POPOps.h"
 
-#include "KGEN/Interpreter/InterpreterState.h"
+#include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/IR/Constants.h"
@@ -398,5 +398,131 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
                          " != " + stringize(getResult(0).getType()));
 
   state.mapResults(attr);
+  return success();
+}
+
+ErrorTreeOrSuccess
+CallLLVMIntrinsicOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                          ParametricInterpreterState &state) {
+
+  // Check to see if we can resolve which intrinsic is being called.  If not,
+  // then we can't fold it.
+  auto name = dyn_cast<StringAttr>(state.getReboundAttribute(getIntrinAttr()));
+  if (!name)
+    return ErrorTree(getLoc(), "unknown intrinsic opcode");
+
+  // Handle some special case used as pop intrinsics first.
+  bool interpreted = false;
+  ErrorTreeOrSuccess popInterpResult =
+      interpretPOPIntrinsics(name, getLoc(), operands, state, interpreted);
+  if (interpreted)
+    return popInterpResult;
+
+  // See if LLVM knows what this is.
+  llvm::Intrinsic::ID id = llvm::Intrinsic::lookupIntrinsicID(name.strref());
+  if (!id)
+    return ErrorTree(getLoc(),
+                     "could not find LLVM intrinsic: '" + name.str() + "'");
+
+  llvm::LLVMContext llvmContext;
+
+  // Figure out the LLVM representation for all the operands.
+  SmallVector<llvm::Value *> loweredOperands;
+  SmallVector<llvm::Constant *> loweredOperandsCst;
+  for (auto v : expandOperands(operands)) {
+    // Try to understand what this value is.
+    auto typedOp = ::dyn_cast<TypedAttr>(v);
+    if (!typedOp)
+      return ErrorTree(getLoc(), "LLVM intrinsic call has unknown operand: " +
+                                     stringize(v));
+    llvm::Constant *loweredValue =
+        convertAttrToLLVM(typedOp, llvmContext, state.getTarget());
+    if (!loweredValue)
+      return ErrorTree(getLoc(), "LLVM intrinsic operand has unknown value: " +
+                                     stringize(typedOp));
+    loweredOperands.push_back(loweredValue);
+    loweredOperandsCst.push_back(loweredValue);
+  }
+
+  // Compute the LLVM result type.
+  if (getNumResults() == 0)
+    return ErrorTree(getLoc(),
+                     "cannot constant fold zero-result LLVM intrinsic: " +
+                         name.str());
+  if (getNumResults() != 1)
+    return ErrorTree(getLoc(), "LLVM intrinsic operand has multiple results: " +
+                                   name.str());
+  Type resultType = state.getReboundType(getResult(0).getType());
+  llvm::Type *resultTy =
+      convertTypeToLLVM(resultType, llvmContext, state.getTarget());
+  if (!resultTy)
+    return ErrorTree(getLoc(), "LLVM intrinsic has unknown result type: " +
+                                   stringize(resultType));
+
+  // Try using "ConstantFoldBinaryIntrinsic" first - if it works, it avoids us
+  // having to create a bunch of IR.
+  llvm::Constant *result = nullptr;
+  if (loweredOperands.size() == 2) {
+    result = ConstantFoldBinaryIntrinsic(id, loweredOperandsCst[0],
+                                         loweredOperandsCst[1], resultTy,
+                                         /*FMFSource*/ nullptr);
+  }
+
+  if (!result) {
+    // Otherwise, we handle this by creating a module with a call to the
+    // intrinsic.
+    llvm::Module module("folding", llvmContext);
+
+    // Resolve the overloaded (or not) callee for the intrinsic call.
+    llvm::Function *fn = nullptr;
+    if (!llvm::Intrinsic::isOverloaded(id)) {
+      fn = llvm::Intrinsic::getOrInsertDeclaration(&module, id, {});
+      assert(fn && "should always succeed");
+    } else {
+      SmallVector<llvm::Type *, 8> argTys;
+      for (auto val : loweredOperands)
+        argTys.push_back(val->getType());
+      fn = getOverloadedDeclaration(argTys, resultTy, id, &module);
+      if (!fn)
+        return ErrorTree(
+            getLoc(),
+            "could not find overloaded declaration of LLVM intrinsic: " +
+                name.str());
+    }
+
+    // Okay, we got the prototype for the intrinsic to call.  Generate a call
+    // to it in another function.  We need a basic block to hold the call -
+    // just abuse the intrinsic itself to own it.
+    auto *block = llvm::BasicBlock::Create(llvmContext, Twine(), fn);
+
+    auto *call =
+        llvm::CallInst::Create(fn->getFunctionType(), fn, loweredOperands,
+                               /*name*/ Twine(), block);
+
+    // Now that we have a call, we can finally try to constant fold!
+    // NOTE: we aren't passing in a TargetLibraryInfo, which prevents folding
+    // random libc functions, but that seems ok.
+    result = llvm::ConstantFoldCall(call, fn, loweredOperandsCst,
+                                    /*TLI*/ nullptr);
+  }
+
+  if (!result)
+    return ErrorTree(getLoc(),
+                     "LLVM could not constant fold intrinsic: " + name.str());
+
+  // If we got something back from LLVM, repackage it back up for MLIR to look
+  // at.
+  auto attr = convertLLVMToAttr(result, resultType);
+  if (!attr)
+    return ErrorTree(getLoc(), "could not convert result of intrinsic: " +
+                                   stringize(*result));
+
+  if (attr.getType() != resultType)
+    return ErrorTree(getLoc(),
+                     "result type mismatch: " + stringize(attr.getType()) +
+                         " != " + stringize(resultType));
+
+  state.mapResults(attr);
+
   return success();
 }
