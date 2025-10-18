@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/Interpreter/InterpreterState.h"
+#include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
@@ -697,6 +697,17 @@ ErrorTreeOrSuccess LoadOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess
+LoadOp::parametric_interpret(ArrayRef<Attribute> operands,
+                             ParametricInterpreterState &state) {
+  ErrorOr<Attribute> result = state.readAttributeFromPointer(
+      operands[0], state.getReboundType(getType()));
+  if (result.isError())
+    return ErrorTree(getLoc(), result.takeError());
+  state.mapResults(result.takeValue());
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // CmpOp
 //===----------------------------------------------------------------------===//
@@ -718,6 +729,112 @@ static bool compareConstants(CmpPredicate pred, ArgT lhs, ArgT rhs) {
     return lhs >= rhs;
   }
   llvm_unreachable("invalid cmp predicate");
+}
+
+static OpFoldResult cmpOpfoldHelper(SIMDType lhsType, SIMDType resultType,
+                                    Value lhs, Value rhs,
+                                    POP::CmpPredicate pred,
+                                    ArrayRef<Attribute> operands) {
+  std::optional<KGENDType> operandTy = lhsType.getResolvedDType();
+  std::optional<int64_t> size = resultType.getResolvedSize();
+
+  // Handle the case of inputs being the same but non-constant. Avoid floats as
+  // they could be NAN.
+  if (operandTy && size && operandTy->isIntLike() && lhs == rhs) {
+    // Create a SIMD constant of all trues or all false.
+    SmallVector<DTypeValue> allTrues(*size, {true, KGENDType::kBool});
+    SmallVector<DTypeValue> allFalse(*size, {false, KGENDType::kBool});
+
+    switch (pred) {
+    case CmpPredicate::EQ:
+      return SIMDAttr::get(allTrues, resultType);
+    case CmpPredicate::NE:
+      return SIMDAttr::get(allFalse, resultType);
+    case CmpPredicate::LT:
+      return SIMDAttr::get(allFalse, resultType);
+    case CmpPredicate::GT:
+      return SIMDAttr::get(allFalse, resultType);
+    case CmpPredicate::LE:
+      return SIMDAttr::get(allTrues, resultType);
+    case CmpPredicate::GE:
+      return SIMDAttr::get(allTrues, resultType);
+    }
+  }
+
+  // Handle the case of applying the operation at compile time on the constant
+  // values.
+  if (OpFoldResult result = foldSIMDOpResult<::Detail::kOtherResult>(
+          operands, KGENDType::kBool,
+          [&](APSInt lhs, APSInt rhs) {
+            return compareConstants(pred, lhs, rhs);
+          },
+          [&](APFloat lhs, APFloat rhs) {
+            return compareConstants(pred, lhs, rhs);
+          },
+          [&](bool lhs, bool rhs) { return compareConstants(pred, lhs, rhs); }))
+    return result;
+
+  // Fold `eq(true, x) -> x` and `ne(false, x) -> x`.
+  if (operandTy && operandTy == DType::kBool &&
+      llvm::is_contained({CmpPredicate::EQ, CmpPredicate::NE}, pred)) {
+    // Only one input will be constant.
+    auto lhs = dyn_cast_or_null<SIMDAttr>(operands[0]);
+    auto rhs = dyn_cast_or_null<SIMDAttr>(operands[1]);
+    assert(!(lhs && rhs) && "constant case should be handled");
+    // If `rhs` contains the constant, move it to `lhs`.
+    if (rhs)
+      lhs = rhs;
+    // Check that the constant is either all true or all false elements, then
+    // match `eq` with `true` or `ne` with `false`.
+    if (lhs && llvm::all_equal(lhs.getValues()) &&
+        (pred == CmpPredicate::EQ) == lhs.getValues().front().getBoolVal())
+      return rhs ? lhs : rhs;
+  }
+
+  // Fold
+  // * `gt(0, unsigned_val)` into false
+  // * `le(0, unsigned_val)` into true
+  // * `ge(unsigned_val, 0)` into true
+  // * `lt(unsigned_val, 0)` into false
+  if (operandTy && operandTy->isUInt()) {
+    auto foldUnsignedCmp = [&](CmpPredicate foldIntoTrue,
+                               CmpPredicate foldIntoFalse, CmpPredicate pred,
+                               Attribute op1, Attribute op2) -> OpFoldResult {
+      if (!llvm::is_contained({foldIntoTrue, foldIntoFalse}, pred))
+        return {};
+
+      // Only one input will be constant.
+      [[maybe_unused]] auto op1SimdAttr = dyn_cast_or_null<SIMDAttr>(op1);
+      auto op2SimdAttr = dyn_cast_or_null<SIMDAttr>(op2);
+      assert(!(op1SimdAttr && op2SimdAttr) &&
+             "constant case should be handled");
+
+      if (!op2SimdAttr) {
+        // Always expect constant value in op2
+        return {};
+      }
+
+      // If the `op2SimdAttr` is constant and zero, then we can simplify the
+      // comparison.
+      if (llvm::all_equal(op2SimdAttr.getValues()) &&
+          op2SimdAttr.getValues()[0].getData().isZero()) {
+
+        SmallVector<DTypeValue> values(
+            *size, DTypeValue(pred == foldIntoTrue, KGENDType::kBool));
+        return SIMDAttr::get(values, resultType);
+      }
+      return {};
+    };
+
+    if (OpFoldResult res = foldUnsignedCmp(CmpPredicate::LE, CmpPredicate::GT,
+                                           pred, operands[1], operands[0]))
+      return res;
+    if (OpFoldResult res = foldUnsignedCmp(CmpPredicate::GE, CmpPredicate::LT,
+                                           pred, operands[0], operands[1]))
+      return res;
+  }
+
+  return {};
 }
 
 OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
@@ -825,6 +942,22 @@ OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
   }
 
   return {};
+}
+
+ErrorTreeOrSuccess
+CmpOp::parametric_interpret(ArrayRef<Attribute> operands,
+                            ParametricInterpreterState &state) {
+  auto lhsType = cast<SIMDType>(cast<TypedAttr>(operands[0]).getType());
+  auto resultType = cast<SIMDType>(state.getReboundType(getType()));
+  if (OpFoldResult result = cmpOpfoldHelper(lhsType, resultType, getLhs(),
+                                            getRhs(), getPred(), operands)) {
+    if (auto attr = dyn_cast<Attribute>(result)) {
+      state.mapResults(attr);
+      return success();
+    }
+  }
+
+  return ErrorTree(getLoc(), "POP::CmpOp interpret failed");
 }
 
 //===----------------------------------------------------------------------===//
@@ -1026,16 +1159,14 @@ static OpFoldResult reshape(SIMDAttr operand, KGENDType inputDType,
       typeValues, SIMDType::get(operand.getContext(), outSize, outputDType));
 }
 
-OpFoldResult evaluate(BitcastOp bitcastOp, TargetInfoAttr target,
-                      Attribute operand) {
+static OpFoldResult evaluate(SIMDType resultType, SIMDType inputType,
+                             TargetInfoAttr target, Attribute operand) {
   // Don't fold if the size changes. This requires knowing the endianness of the
   // target.
-  std::optional<KGENDType> dtype = bitcastOp.getType().getResolvedDType();
-  std::optional<KGENDType> inputDType =
-      bitcastOp.getInput().getType().getResolvedDType();
-  std::optional<unsigned> inputSize =
-      bitcastOp.getInput().getType().getResolvedSize();
-  std::optional<unsigned> outputSize = bitcastOp.getType().getResolvedSize();
+  std::optional<KGENDType> dtype = resultType.getResolvedDType();
+  std::optional<KGENDType> inputDType = inputType.getResolvedDType();
+  std::optional<unsigned> inputSize = inputType.getResolvedSize();
+  std::optional<unsigned> outputSize = resultType.getResolvedSize();
   if (!dtype || !inputDType || !inputSize || !outputSize)
     return {};
 
@@ -1083,7 +1214,24 @@ OpFoldResult evaluate(BitcastOp bitcastOp, TargetInfoAttr target,
 
 ErrorTreeOrSuccess BitcastOp::interpret(ArrayRef<Attribute> operands,
                                         InterpreterState &state) {
-  OpFoldResult result = evaluate(*this, state.getTarget(), operands.front());
+  OpFoldResult result = evaluate(getType(), getInput().getType(),
+                                 state.getTarget(), operands.front());
+
+  if (result && isa<Attribute>(result)) {
+    state.mapResults(cast<Attribute>(result));
+    return success();
+  }
+  return ErrorTree(getLoc(), "failed to interpret bitcast");
+}
+
+ErrorTreeOrSuccess
+BitcastOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                ParametricInterpreterState &state) {
+  auto resultType = cast<SIMDType>(state.getReboundType(getType()));
+  auto inputType = cast<SIMDType>(cast<TypedAttr>(operands[0]).getType());
+
+  OpFoldResult result =
+      evaluate(resultType, inputType, state.getTarget(), operands.front());
   if (result && isa<Attribute>(result)) {
     state.mapResults(cast<Attribute>(result));
     return success();
@@ -1092,7 +1240,9 @@ ErrorTreeOrSuccess BitcastOp::interpret(ArrayRef<Attribute> operands,
 }
 
 OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
-  return evaluate(*this, lookupTargetInfo(*this),
+  SIMDType resultType = getType();
+  SIMDType inputType = getInput().getType();
+  return evaluate(resultType, inputType, lookupTargetInfo(*this),
                   adaptor.getOperands().front());
 }
 
@@ -1126,16 +1276,33 @@ LogicalResult PointerBitcastOp::canonicalize(PointerBitcastOp op,
   return success();
 }
 
+ErrorTreeOrSuccess
+PointerBitcastOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                       ParametricInterpreterState &state) {
+  Type type = state.getReboundType(getType());
+
+  if (auto ptr = dyn_cast_or_null<PointerAttr>(operands.front())) {
+    state.mapResults(PointerAttr::get(ptr.getAddr(), type));
+    return success();
+  }
+
+  state.mapResults(operands);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // CastOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
-  auto in = dyn_cast_if_present<SIMDAttr>(adaptor.getInput());
-  std::optional<KGENDType> dtype = getType().getResolvedDType();
+static OpFoldResult castOpfoldHelper(CastOp op, ArrayRef<Attribute> operands,
+                                     SIMDType resultType, SIMDType inputType,
+                                     SIMDType outputType) {
+  auto in = dyn_cast_if_present<SIMDAttr>(operands.front());
+
+  std::optional<KGENDType> dtype = resultType.getResolvedDType();
   if (!in || !dtype) {
-    if (getInput().getType() == getOutput().getType())
-      return getInput();
+    if (inputType == outputType)
+      return op.getInput();
     return {};
   }
 
@@ -1151,7 +1318,7 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
     if (!sem)
       return {};
     return foldSIMDOpResult<::Detail::kOtherResult>(
-        adaptor.getOperands(), *dtype,
+        operands, *dtype,
         [&](const APSInt &in) -> APFloat {
           APFloat fp(*sem);
           fp.convertFromAPInt(in, in.isSigned(), APFloat::rmNearestTiesToEven);
@@ -1169,7 +1336,7 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
     // too large to fit in the integer dtype.
     unsigned width = dtype->getIntegerWidthInBits();
     return foldSIMDOpResult<::Detail::kOtherResult>(
-        adaptor.getOperands(), *dtype,
+        operands, *dtype,
         [&](const APSInt &in) -> APSInt { return in.extOrTrunc(width); },
         [&](const APFloat &in) -> std::optional<APSInt> {
           APSInt iv(width, /*isUnsigned=*/dtype->isUInt());
@@ -1188,7 +1355,7 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
     // between platform-dependent types.
     if (inType->isIndex() || inType->isUIndex() || inType->isAddress()) {
       return ::Detail::foldSIMDOpImpl(
-          std::make_index_sequence<1>(), adaptor.getOperands(),
+          std::make_index_sequence<1>(), operands,
           [inType](const APSInt &in) -> int64_t {
             return inType->isSInt() ? in.getSExtValue() : in.getZExtValue();
           },
@@ -1201,7 +1368,7 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
 
     // Cast to index like it's a 64-bit integer. Address is handled like index.
     return foldSIMDOpResult<::Detail::kOtherResult>(
-        adaptor.getOperands(), *dtype,
+        operands, *dtype,
         [inType](const APSInt &in) -> int64_t {
           if (in.getSignificantBits() > 64) {
             auto truncated = in.trunc(64);
@@ -1226,9 +1393,13 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
   }
   assert(dtype->isBool());
   return foldSIMDOpResult<::Detail::kOtherResult>(
-      adaptor.getOperands(), *dtype,
-      [](const APSInt &in) -> bool { return !in.isZero(); },
+      operands, *dtype, [](const APSInt &in) -> bool { return !in.isZero(); },
       [](const APFloat &in) -> bool { return !in.isZero(); });
+}
+
+OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
+  return castOpfoldHelper(*this, adaptor.getOperands(), getType(),
+                          getInput().getType(), getOutput().getType());
 }
 
 /// Canonicalize integer type `cast(cast(x : T1 to T2) : T3) -> cast(T1 to T3)`,
@@ -1320,13 +1491,72 @@ LogicalResult CastOp::canonicalize(CastOp op, PatternRewriter &b) {
 ErrorTreeOrSuccess CastOp::interpret(ArrayRef<Attribute> operands,
                                      InterpreterState &state) {
   // First try to fold the cast. If that fails, fallback to special cases.
-  if (auto result = fold(operands)) {
+  auto resultType = cast<SIMDType>(getType());
+  auto inputType = cast<SIMDType>(cast<TypedAttr>(operands[0]).getType());
+  auto outputType = cast<SIMDType>(getOutput().getType());
+
+  // if (auto result = fold(operands)) {
+  if (auto result = castOpfoldHelper(*this, operands, resultType, inputType,
+                                     outputType)) {
     state.mapResults(cast<Attribute>(result));
     return success();
   }
 
   auto in = dyn_cast_if_present<SIMDAttr>(operands[0]);
   std::optional<KGENDType> dtype = getType().getResolvedDType();
+  if (!in || !dtype)
+    return ErrorTree(getLoc(), "types must be known at this point");
+
+  auto inDType = in.getType().getResolvedDType();
+  if (!(inDType->isIndex() || inDType->isUIndex()) || !dtype->isInt() ||
+      dtype->getIntegerWidthInBits() != 64)
+    return ErrorTree(getLoc(), "not implemented");
+
+  // A special case when the input is index type and output is 64-bit integer.
+  // Currently, it's only one known case when folder can fail that makes
+  // interpreter unhappy.
+  unsigned ptrWidth =
+      state.getTarget() ? state.getTarget().resolveIndexBitWidth() : 64;
+  unsigned width = 64;
+  auto res = foldSIMDOpResult<::Detail::k64BitResult>(
+      operands, *dtype,
+      [&](const APSInt &in) -> APSInt {
+        // First extend or truncate to pointer width and only after that to
+        // 64-bit integer
+        return in.extOrTrunc(ptrWidth).extOrTrunc(width);
+      },
+      [&](const APFloat &in) -> std::optional<APSInt> {
+        APSInt iv(width, dtype->isUInt());
+        bool ignored;
+        if (in.convertToInteger(iv, APFloat::rmTowardZero, &ignored) ==
+            APFloat::opInvalidOp)
+          return {};
+        return iv;
+      },
+      [&](bool in) { return APSInt(APInt(width, in), dtype->isUInt()); });
+  state.mapResults(res);
+  return success();
+}
+
+ErrorTreeOrSuccess
+CastOp::parametric_interpret(ArrayRef<Attribute> operands,
+                             ParametricInterpreterState &state) {
+  // First try to fold the cast. If that fails, fallback to special cases.
+  auto resultType = cast<SIMDType>(state.getReboundType(getType()));
+
+  auto inputType = cast<SIMDType>(
+      state.getReboundType(cast<TypedAttr>(operands[0]).getType()));
+  auto outputType = cast<SIMDType>(state.getReboundType(getOutput().getType()));
+
+  if (auto result = castOpfoldHelper(*this, operands, resultType, inputType,
+                                     outputType)) {
+    state.mapResults(cast<Attribute>(result));
+    return success();
+  }
+
+  auto in = dyn_cast_if_present<SIMDAttr>(operands[0]);
+  std::optional<KGENDType> dtype = resultType.getResolvedDType();
+
   if (!in || !dtype)
     return ErrorTree(getLoc(), "types must be known at this point");
 
@@ -1380,6 +1610,29 @@ OpFoldResult SIMDExtractElementOp::fold(FoldAdaptor adaptor) {
   return SIMDAttr::get(vec.getValues()[idx.getInt()], getType());
 }
 
+ErrorTreeOrSuccess
+SIMDExtractElementOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                           ParametricInterpreterState &state) {
+  // cast<SIMDType>(state.getReboundType(getVector().getType()));
+  auto vectorType = cast<SIMDType>(
+      state.getReboundType(cast<TypedAttr>(operands[0]).getType()));
+
+  if (vectorType.isScalar()) {
+    state.mapResults(operands[0]);
+    return success();
+  }
+
+  auto vec = dyn_cast_if_present<SIMDAttr>(operands[0]);
+  auto idx = dyn_cast_if_present<IntegerAttr>(operands[1]);
+  if (!vec || !idx)
+    return ErrorTree(getLoc(), "non-constant inputs");
+
+  state.mapResults(
+      SIMDAttr::get(vec.getValues()[idx.getInt()],
+                    cast<SIMDType>(state.getReboundType(getType()))));
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // SIMDInsertElementOp
 //===----------------------------------------------------------------------===//
@@ -1401,6 +1654,30 @@ OpFoldResult SIMDInsertElementOp::fold(FoldAdaptor adaptor) {
   SmallVector<DTypeValue> values(vec.getValues());
   values[idx.getInt()] = val.getValues().front();
   return SIMDAttr::get(values, getType());
+}
+
+ErrorTreeOrSuccess
+SIMDInsertElementOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                          ParametricInterpreterState &state) {
+  auto vec = dyn_cast_if_present<SIMDAttr>(operands[0]);
+  auto type = cast<SIMDType>(state.getReboundType(getType()));
+
+  // Treat insert into undef as being an insert into zero.
+  if (!vec) {
+    if (auto vecCst = operands[0])
+      if (isa<UninitMemAttr, UnknownAttr>(vecCst))
+        vec = SIMDAttr::getZeroValue(type);
+  }
+
+  auto val = dyn_cast_if_present<SIMDAttr>(operands[1]);
+  auto idx = dyn_cast_if_present<IntegerAttr>(operands[2]);
+  if (!vec || !val || !idx)
+    return ErrorTree(getLoc(), "non-constant inputs");
+
+  SmallVector<DTypeValue> values(vec.getValues());
+  values[idx.getInt()] = val.getValues().front();
+  state.mapResults(SIMDAttr::get(values, type));
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1481,6 +1758,70 @@ LogicalResult SIMDSelectOp::canonicalize(SIMDSelectOp op, PatternRewriter &b) {
   return success();
 }
 
+ErrorTreeOrSuccess
+SIMDSelectOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                   ParametricInterpreterState &state) {
+  auto condVals = dyn_cast_or_null<SIMDAttr>(operands[0]);
+  auto trueVals = dyn_cast_or_null<SIMDAttr>(operands[1]);
+  auto falseVals = dyn_cast_or_null<SIMDAttr>(operands[2]);
+  auto type = cast<SIMDType>(state.getReboundType(getType()));
+
+  if (condVals && trueVals && falseVals) {
+    SmallVector<DTypeValue> results;
+    for (auto [cond, trueVal, falseVal] : llvm::zip(
+             condVals.getValues(), trueVals.getValues(), falseVals.getValues()))
+      results.push_back(cond.getBoolVal() ? trueVal : falseVal);
+    state.mapResults(SIMDAttr::get(results, type));
+    return success();
+  }
+
+  // Fold `select(x, y, y) -> y`.
+  if (getTrueValue() == getFalseValue()) {
+    state.mapResults(operands[1]);
+    return success();
+  }
+
+  // Check if all the values are true or false then fold to either of the
+  // operands in that case.
+  if (condVals) {
+    bool allTrue = true, allFalse = true;
+    for (auto cond : condVals.getValues()) {
+      if (cond.getBoolVal())
+        allFalse = false;
+      else
+        allTrue = false;
+    }
+
+    // Fold `select(true, x, y) -> x`
+    if (allTrue) {
+      state.mapResults(operands[1]);
+      return success();
+    }
+
+    // Fold `select(false, x, y) -> y`
+    if (allFalse) {
+      state.mapResults(operands[2]);
+      return success();
+    }
+  }
+
+  // Fold `select(x, true, false) -> x`.
+  if (type.getResolvedDType() == KGENDType::kBool && trueVals && falseVals) {
+    if (llvm::all_of(
+            trueVals.getValues(),
+            [](const DTypeValue &value) { return value.getBoolVal(); }) &&
+        llvm::all_of(falseVals.getValues(), [](const DTypeValue &value) {
+          return !value.getBoolVal();
+        })) {
+
+      state.mapResults(operands[0]);
+      return success();
+    }
+  }
+
+  return ErrorTree(getLoc(), "cannot interpret SIMDSelect");
+}
+
 //===----------------------------------------------------------------------===//
 // SIMDShuffleOp
 //===----------------------------------------------------------------------===//
@@ -1512,6 +1853,38 @@ OpFoldResult SIMDShuffleOp::fold(FoldAdaptor adaptor) {
   return SIMDAttr::get(result, getType());
 }
 
+ErrorTreeOrSuccess
+SIMDShuffleOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                    ParametricInterpreterState &state) {
+  auto type = cast<SIMDType>(state.getReboundType(getType()));
+  std::optional<int64_t> size = type.getResolvedSize();
+  auto lhs = dyn_cast_if_present<SIMDAttr>(operands[0]);
+  auto rhs = dyn_cast_if_present<SIMDAttr>(operands[1]);
+  auto mask =
+      dyn_cast_if_present<ArrayAttr>(state.getReboundAttribute(getMaskAttr()));
+  if (!size || !lhs || !rhs || !mask)
+    return ErrorTree(getLoc(), "non-constant inputs");
+
+  // Is the mask a known constant.
+  if (llvm::any_of(mask.getValues(), [](Attribute operand) {
+        return !isa_and_nonnull<IntegerAttr>(operand);
+      }))
+    return ErrorTree(getLoc(), "mask is unknown constant");
+
+  // Concatenate the input simd vectors.
+  SmallVector<DTypeValue> args(lhs.getValues());
+  llvm::append_range(args, rhs.getValues());
+
+  // Perform the permutation based on the mask.
+  SmallVector<DTypeValue> result;
+  result.reserve(mask.getValues().size());
+  for (TypedAttr maskVal : mask.getValues())
+    result.emplace_back(args[cast<IntegerAttr>(maskVal).getInt()]);
+
+  state.mapResults(SIMDAttr::get(result, type));
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // SIMDSplatOp
 //===----------------------------------------------------------------------===//
@@ -1530,6 +1903,26 @@ OpFoldResult SIMDSplatOp::fold(FoldAdaptor adaptor) {
     return {};
   SmallVector<DTypeValue> values(*size, scalar.getValues().front());
   return SIMDAttr::get(values, getType());
+}
+
+ErrorTreeOrSuccess
+SIMDSplatOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                  ParametricInterpreterState &state) {
+  SIMDType resultType = cast<SIMDType>(state.getReboundType(getType()));
+  std::optional<int64_t> size = resultType.getResolvedSize();
+
+  if (size == 1) {
+    state.mapResults(operands.front());
+    return success();
+  }
+
+  auto scalar = dyn_cast_if_present<SIMDAttr>(operands.front());
+  if (!size || !scalar)
+    return ErrorTree(getLoc(), "cannot find size or is not a scalar");
+
+  SmallVector<DTypeValue> values(*size, scalar.getValues().front());
+  state.mapResults(SIMDAttr::get(values, resultType));
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1586,6 +1979,20 @@ ErrorTreeOrSuccess StoreOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess
+StoreOp::parametric_interpret(ArrayRef<Attribute> operands,
+                              ParametricInterpreterState &state) {
+  auto value = cast_or_null<TypedAttr>(operands[0]);
+  auto ptr = dyn_cast_or_null<PointerAttr>(operands[1]);
+  if (!value || !ptr)
+    return ErrorTree(getLoc(), "non-constant inputs");
+
+  ErrorOrSuccess result = state.writeAttributeToMemory(ptr.getAddr(), value);
+  if (result.isError())
+    return ErrorTree(getLoc(), result.takeError());
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // OffsetOp
 //===----------------------------------------------------------------------===//
@@ -1605,6 +2012,28 @@ ErrorTreeOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "could not query pointer element size");
   state.mapResults(PointerAttr::get(ptr.getAddr() + *elSize * offset.getInt(),
                                     ptr.getType()));
+  return success();
+}
+
+ErrorTreeOrSuccess
+OffsetOp::parametric_interpret(ArrayRef<Attribute> operands,
+                               ParametricInterpreterState &state) {
+  if (!state.getTarget())
+    return ErrorTree(getLoc(), "operation requires a target model");
+
+  auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
+  auto offset = dyn_cast_or_null<IntegerAttr>(operands[1]);
+  if (!ptr || !offset)
+    return ErrorTree(getLoc(), "non-constant inputs");
+  auto ptrType = state.getReboundType(ptr.getType());
+  auto elemType = cast<PointerType>(ptrType).getElementType();
+
+  std::optional<int64_t> elSize =
+      DataLayoutInterface::getTypeAllocSize(state.getTarget(), elemType);
+  if (!elSize)
+    return ErrorTree(getLoc(), "could not query pointer element size");
+  state.mapResults(
+      PointerAttr::get(ptr.getAddr() + *elSize * offset.getInt(), ptrType));
   return success();
 }
 
@@ -1800,6 +2229,54 @@ ErrorOrSuccess StackAllocationOp::compile(Payload &payload,
   return success();
 }
 
+ErrorOrSuccess
+StackAllocationOp::parametric_compile(Payload &payload, TargetInfoAttr target,
+                                      ParametricInterpreterState &state) {
+  auto countAttr = dyn_cast<IntegerAttr>(state.getReboundAttribute(getCount()));
+  // auto countAttr = dyn_cast<IntegerAttr>(getCount());
+
+  if (!countAttr)
+    return Error("array size is not a constant");
+  int64_t count = countAttr.getInt();
+
+  if (!target) {
+    if (count != 1)
+      return Error("array allocation requires a target model");
+    return success();
+  }
+
+  Type reboundType = state.getReboundType(getType());
+
+  // Determine the allocation size.
+  Type type = cast<PointerType>(reboundType).getElementType();
+  std::optional<int64_t> size =
+      DataLayoutInterface::getTypeAllocSize(target, type);
+  if (!size)
+    return Error("could not query type size");
+
+  // Determine the alignment. If the alignment is unspecified or zero, query
+  // the natural alignment of the type.
+  int64_t align = 0;
+  if (getAlignmentAttr()) {
+    TypedAttr alignAttr = state.getReboundAttribute(getAlignmentAttr());
+    align = cast<IntegerAttr>(alignAttr).getInt();
+  }
+
+  if (align < 0)
+    return Error("invalid alignment value: " + Twine(align));
+  if (align == 0) {
+    std::optional<int64_t> typeAlign =
+        DataLayoutInterface::getTypeABIAlign(target, type);
+    if (!typeAlign)
+      return Error("could not query type alignment");
+    align = *typeAlign;
+  }
+
+  payload.size = count * *size;
+  payload.align = align;
+  return success();
+}
+
 ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
                                                 const Payload &payload,
                                                 InterpreterState &state) {
@@ -1815,6 +2292,23 @@ ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess
+StackAllocationOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                        const Payload &payload,
+                                        ParametricInterpreterState &state) {
+  // If there is no target model, we know it is a count 1 alloc.
+  if (!state.getTarget())
+    return ErrorTree(getLoc(), "stack allocation requires a target model");
+
+  ErrorOr<int64_t> addr =
+      state.allocateStackMemory(payload.size, payload.align);
+  if (addr.isError())
+    return ErrorTree(getLoc(), addr.takeError());
+  state.mapResults(
+      PointerAttr::get(addr.takeValue(), state.getReboundType(getType())));
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // StackAllocLifetimeStartOp
 //===----------------------------------------------------------------------===//
@@ -1825,6 +2319,11 @@ StackAllocLifetimeStartOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess StackAllocLifetimeStartOp::parametric_interpret(
+    ArrayRef<Attribute> operands, ParametricInterpreterState &state) {
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // StackAllocLifetimeEndOp
 //===----------------------------------------------------------------------===//
@@ -1832,6 +2331,11 @@ StackAllocLifetimeStartOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 StackAllocLifetimeEndOp::interpret(ArrayRef<Attribute> operands,
                                    InterpreterState &state) {
+  return success();
+}
+
+ErrorTreeOrSuccess StackAllocLifetimeEndOp::parametric_interpret(
+    ArrayRef<Attribute> operands, ParametricInterpreterState &state) {
   return success();
 }
 
@@ -1879,12 +2383,32 @@ ErrorTreeOrSuccess AlignedAllocOp::interpret(ArrayRef<Attribute> operands,
                              getType(), state);
 }
 
+ErrorTreeOrSuccess
+AlignedAllocOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                     ParametricInterpreterState &state) {
+  auto alignAttr = dyn_cast_or_null<IntegerAttr>(operands.front());
+  auto sizeAttr = dyn_cast_or_null<IntegerAttr>(operands.back());
+  if (!alignAttr || !sizeAttr)
+    return ErrorTree(getLoc(), "non-concrete inputs");
+  return interpretAllocation(sizeAttr.getInt(), alignAttr.getInt(), getLoc(),
+                             state.getReboundType(getType()), state);
+}
+
 //===----------------------------------------------------------------------===//
 // AlignedFreeOp
 //===----------------------------------------------------------------------===//
 
 ErrorTreeOrSuccess AlignedFreeOp::interpret(ArrayRef<Attribute> operands,
                                             InterpreterState &state) {
+  auto ptr = cast<PointerAttr>(operands.front());
+  if (ErrorOrSuccess err = state.freeHeapMemory(ptr.getAddr()); err.isError())
+    return ErrorTree(getLoc(), err.takeError());
+  return success();
+}
+
+ErrorTreeOrSuccess
+AlignedFreeOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                    ParametricInterpreterState &state) {
   auto ptr = cast<PointerAttr>(operands.front());
   if (ErrorOrSuccess err = state.freeHeapMemory(ptr.getAddr()); err.isError())
     return ErrorTree(getLoc(), err.takeError());
@@ -1908,13 +2432,29 @@ OpFoldResult ArrayCreateOp::fold(FoldAdaptor adaptor) {
   return POP::ArrayAttr::get(values, getType());
 }
 
+ErrorTreeOrSuccess
+ArrayCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                    ParametricInterpreterState &state) {
+  SmallVector<TypedAttr> values;
+  values.reserve(operands.size());
+  for (Attribute operand : operands) {
+    auto value = llvm::cast_if_present<TypedAttr>(operand);
+    if (!value)
+      return {};
+    values.push_back(value);
+  }
+  state.mapResults(POP::ArrayAttr::get(
+      values, cast<ArrayType>(state.getReboundType(getType()))));
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ArrayRepeatOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult ArrayRepeatOp::fold(FoldAdaptor adaptor) {
-  ArrayRef<Attribute> operands = adaptor.getOperands();
-  std::optional<int64_t> size = getType().getResolvedSize();
+static Attribute foldInterpretArrayRepeatOp(ArrayRef<Attribute> operands,
+                                            POP::ArrayType type) {
+  std::optional<int64_t> size = type.getResolvedSize();
   if (!size)
     return {};
   assert(size >= 0 && "size is non-negative");
@@ -1930,7 +2470,24 @@ OpFoldResult ArrayRepeatOp::fold(FoldAdaptor adaptor) {
   values.reserve(*size);
   while (static_cast<int64_t>(values.size()) < *size)
     values.append(args);
-  return POP::ArrayAttr::get(ArrayRef(values).take_front(*size), getType());
+  return POP::ArrayAttr::get(ArrayRef(values).take_front(*size), type);
+}
+
+OpFoldResult ArrayRepeatOp::fold(FoldAdaptor adaptor) {
+  ArrayRef<Attribute> operands = adaptor.getOperands();
+  return foldInterpretArrayRepeatOp(operands, getType());
+}
+
+ErrorTreeOrSuccess
+ArrayRepeatOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                    ParametricInterpreterState &state) {
+  auto boundResultType = cast<POP::ArrayType>(state.getReboundType(getType()));
+  if (Attribute attr = foldInterpretArrayRepeatOp(operands, boundResultType)) {
+    state.mapResults(attr);
+    return success();
+  }
+
+  return ErrorTree(getLoc(), "cannot interpret pop.array.repeat");
 }
 
 //===----------------------------------------------------------------------===//
@@ -1977,6 +2534,29 @@ OpFoldResult ArrayGetOp::fold(FoldAdaptor adaptor) {
     return repeat.getOperand(idx % repeat.getNumOperands());
 
   return {};
+}
+
+ErrorTreeOrSuccess
+ArrayGetOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                 ParametricInterpreterState &state) {
+  auto index = dyn_cast<IntegerAttr>(state.getReboundAttribute(getIndex()));
+  std::optional<int64_t> size =
+      cast<ArrayType>(cast<TypedAttr>(operands[0]).getType()).getResolvedSize();
+  if (!index || !size)
+    return ErrorTree(getLoc(), "non-constant inputs");
+
+  // Bounds check the array access.
+  int64_t idx = index.getInt();
+  if (idx < 0 || idx >= *size)
+    return ErrorTree(getLoc(), "out-of-bound array get");
+
+  // Try fold if the array is a constant.
+  auto array = dyn_cast_if_present<POP::ArrayAttr>(operands[0]);
+  if (!array)
+    return ErrorTree(getLoc(), "non-constant inputs");
+
+  state.mapResults(array.getValues()[idx]);
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2028,6 +2608,23 @@ LogicalResult ArrayReplaceOp::canonicalize(ArrayReplaceOp op,
       op, "array must be a constant or an ArrayCreateOp");
 }
 
+ErrorTreeOrSuccess
+ArrayReplaceOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                     ParametricInterpreterState &state) {
+  auto value = llvm::cast_if_present<TypedAttr>(operands[0]);
+  auto array = dyn_cast_if_present<POP::ArrayAttr>(operands[1]);
+  auto index = dyn_cast<IntegerAttr>(state.getReboundAttribute(getIndex()));
+  if (!value || !array || !index)
+    return ErrorTree(getLoc(), "non-constant inputs");
+
+  SmallVector<TypedAttr> values(array.getValues());
+  values[index.getInt()] = value;
+
+  state.mapResults(POP::ArrayAttr::get(
+      values, cast<ArrayType>(state.getReboundType(getType()))));
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ArrayGEPOp
 //===----------------------------------------------------------------------===//
@@ -2043,6 +2640,30 @@ ErrorTreeOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "non-constant inputs");
 
   auto arrayType = getArray().getType().getElementAs<POP::ArrayType>();
+  Type elementType = arrayType.getElementType();
+  auto dl = cast<DataLayoutInterface>(elementType);
+  int64_t addr =
+      ptr.getAddr() +
+      index.getInt() * (llvm::alignTo(*dl.getTypeSize(state.getTarget()),
+                                      *dl.getTypeAlign(state.getTarget())));
+  state.mapResults(PointerAttr::get(addr, PointerType::get(elementType)));
+  return success();
+}
+
+ErrorTreeOrSuccess
+ArrayGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                 ParametricInterpreterState &state) {
+
+  if (!state.getTarget())
+    return ErrorTree(getLoc(), "operation requires a target model");
+
+  auto ptr = dyn_cast_if_present<PointerAttr>(operands[0]);
+  auto index = dyn_cast_if_present<IntegerAttr>(operands[1]);
+  if (!ptr || !index)
+    return ErrorTree(getLoc(), "non-constant inputs");
+
+  auto arrayType = cast<PointerType>(cast<TypedAttr>(operands[0]).getType())
+                       .getElementAs<POP::ArrayType>();
   Type elementType = arrayType.getElementType();
   auto dl = cast<DataLayoutInterface>(elementType);
   int64_t addr =
@@ -2100,12 +2721,35 @@ LogicalResult PointerToIndexOp::canonicalize(PointerToIndexOp op,
   return success();
 }
 
+ErrorTreeOrSuccess
+PointerToIndexOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                       ParametricInterpreterState &state) {
+  if (auto ptr = dyn_cast_if_present<PointerAttr>(operands.front())) {
+    state.mapResults(Builder(getContext()).getIndexAttr(ptr.getAddr()));
+    return success();
+  }
+
+  return ErrorTree(getLoc(), "input pointer is not an index");
+}
+
 //===----------------------------------------------------------------------===//
 // CompilerGlobalLoadOp
 //===----------------------------------------------------------------------===//
 
 ErrorTreeOrSuccess CompilerGlobalLoadOp::interpret(ArrayRef<Attribute> operands,
                                                    InterpreterState &state) {
+  Attribute value = state.getNamedGlobal(getNameAttr());
+  if (!value)
+    return ErrorTree(
+        getLoc(),
+        "cannot evaluate standalone capturing closure at compile time");
+  state.mapResults(value);
+  return success();
+}
+
+ErrorTreeOrSuccess
+CompilerGlobalLoadOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                           ParametricInterpreterState &state) {
   Attribute value = state.getNamedGlobal(getNameAttr());
   if (!value)
     return ErrorTree(
@@ -2122,6 +2766,13 @@ ErrorTreeOrSuccess CompilerGlobalLoadOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 CompilerGlobalStoreOp::interpret(ArrayRef<Attribute> operands,
                                  InterpreterState &state) {
+  state.setNamedGlobal(getNameAttr(), operands.front());
+  return success();
+}
+
+ErrorTreeOrSuccess
+CompilerGlobalStoreOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                            ParametricInterpreterState &state) {
   state.setNamedGlobal(getNameAttr(), operands.front());
   return success();
 }
@@ -2237,6 +2888,71 @@ OpFoldResult CastFromBuiltinOp::fold(FoldAdaptor adaptor) {
   return SIMDAttr::get({cast<FloatAttr>(val).getValue(), *dtype}, getType());
 }
 
+ErrorTreeOrSuccess
+CastFromBuiltinOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                        ParametricInterpreterState &state) {
+  auto val = llvm::cast_if_present<TypedAttr>(operands.front());
+  SIMDType type = cast<SIMDType>(state.getReboundType(getType()));
+
+  if (!val) {
+    state.mapResults(operands);
+    return success();
+  }
+
+  // Ensure the incoming value is an expected constant kind.
+  if (!isa<IntArrayElementsAttr, FloatArrayElementsAttr, IndexArrayElementsAttr,
+           IntegerAttr, FloatAttr>(val)) {
+    state.mapResults(operands);
+    return success();
+  }
+
+  // Conversion from vector constant.
+  std::optional<KGENDType> dtype = type.getResolvedDType();
+
+  if (!dtype)
+    return {};
+  if (auto vector = dyn_cast<VectorType>(val.getType())) {
+    SmallVector<DTypeValue> values;
+    if (dtype->isBool())
+      for (APInt value : cast<IntArrayElementsAttr>(val).getValues())
+        values.emplace_back(!value.isZero(), *dtype);
+    else if (dtype->isIndex())
+      for (int64_t value : cast<IndexArrayElementsAttr>(val))
+        values.emplace_back(value, *dtype);
+    else if (dtype->isInt())
+      for (APInt value : cast<IntArrayElementsAttr>(val).getValues())
+        values.emplace_back(value, *dtype);
+    else
+      for (APFloat value : cast<FloatArrayElementsAttr>(val).getValues())
+        values.emplace_back(value, *dtype);
+    state.mapResults(SIMDAttr::get(values, getType()));
+    return success();
+  }
+
+  // Handle scalar constants.
+  if (dtype->isBool()) {
+    state.mapResults(
+        SIMDAttr::get({cast<BoolAttr>(val).getValue(), *dtype}, type));
+    return success();
+  }
+
+  if (dtype->isIndex()) {
+    state.mapResults(
+        SIMDAttr::get({cast<IntegerAttr>(val).getInt(), *dtype}, type));
+    return success();
+  }
+  if (dtype->isInt()) {
+    state.mapResults(
+        SIMDAttr::get({cast<IntegerAttr>(val).getValue(), *dtype}, type));
+    return success();
+  }
+
+  assert(dtype->isFloat() && "unexpected dtype");
+  state.mapResults(
+      SIMDAttr::get({cast<FloatAttr>(val).getValue(), *dtype}, type));
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // VariadicCreateOp
 //===----------------------------------------------------------------------===//
@@ -2272,6 +2988,24 @@ LogicalResult VariadicCreateOp::canonicalize(VariadicCreateOp op,
   return failure();
 }
 
+ErrorTreeOrSuccess
+VariadicCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                       ParametricInterpreterState &state) {
+  // Check to see if all the inputs are constant, if so, convert to
+  // VariadicAttr.
+  SmallVector<TypedAttr> values;
+  values.reserve(operands.size());
+  for (Attribute operand : operands) {
+    auto value = llvm::cast_if_present<TypedAttr>(operand);
+    if (!value)
+      return ErrorTree(getLoc(), "non-const input");
+    values.push_back(value);
+  }
+  state.mapResults(VariadicAttr::get(
+      values, cast<VariadicType>(state.getReboundType(getType()))));
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // VariadicSplatOp
 //===----------------------------------------------------------------------===//
@@ -2293,6 +3027,32 @@ OpFoldResult VariadicSplatOp::fold(FoldAdaptor adaptor) {
     return KGEN::VariadicAttr::get(ArrayRef<TypedAttr>(), getType());
 
   return {};
+}
+
+ErrorTreeOrSuccess
+VariadicSplatOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      ParametricInterpreterState &state) {
+  // We can poke at this only if the result #elts is a known constant.
+  auto numEltsCst =
+      dyn_cast<IntegerAttr>(state.getReboundAttribute(getNumElements()));
+  if (!numEltsCst)
+    return ErrorTree(getLoc(), "non-const input");
+
+  auto type = cast<VariadicType>(state.getReboundType(getType()));
+  // Fold a splat to zero values to a constant.
+  if (numEltsCst.getValue().isZero()) {
+    state.mapResults(VariadicAttr::get(ArrayRef<TypedAttr>(), type));
+    return success();
+  }
+
+  // If the input is constant, splat to a VariadicAttr.
+  if (Attribute cst = operands[0]) {
+    SmallVector<TypedAttr> values(numEltsCst.getInt(), cast<TypedAttr>(cst));
+    state.mapResults(VariadicAttr::get(values, type));
+    return success();
+  }
+
+  return ErrorTree(getLoc(), "non-const input");
 }
 
 //===----------------------------------------------------------------------===//
@@ -2344,6 +3104,28 @@ OpFoldResult VariadicSizeOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+ErrorTreeOrSuccess
+VariadicSizeOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                     ParametricInterpreterState &state) {
+  auto indexType = IndexType::get(getContext());
+  if (auto variadic = dyn_cast_if_present<KGEN::VariadicAttr>(operands[0])) {
+    state.mapResults(IntegerAttr::get(indexType, variadic.getValues().size()));
+    return success();
+  }
+
+  if (auto create = getOperand().getDefiningOp<VariadicCreateOp>()) {
+    state.mapResults(IntegerAttr::get(indexType, create.getOperands().size()));
+    return success();
+  }
+
+  if (auto splat = getOperand().getDefiningOp<VariadicSplatOp>()) {
+    state.mapResults(state.getReboundAttribute(splat.getNumElements()));
+    return success();
+  }
+
+  return ErrorTree(getLoc(), "non-const input");
+}
+
 //===----------------------------------------------------------------------===//
 // StringAddressOp
 //===----------------------------------------------------------------------===//
@@ -2364,6 +3146,27 @@ ErrorTreeOrSuccess StringAddressOp::interpret(ArrayRef<Attribute> operands,
   if (addr.isError())
     return ErrorTree(getLoc(), addr.takeError());
   state.mapResults(PointerAttr::get(getContext(), addr.takeValue(), getType()));
+  return success();
+}
+
+ErrorTreeOrSuccess
+StringAddressOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      ParametricInterpreterState &state) {
+  // Ensure the string is null-terminated. This is safe because `StringAttr`
+  // always stores a null terminator.
+  auto value = dyn_cast<StringAttr>(operands.front());
+  if (!value)
+    return ErrorTree(getLoc(), Error("argument is not a concrete string"));
+  StringRef str(value.data(), value.size() + 1);
+  if (value.getValue().empty())
+    str = "\0";
+
+  MemoryHandleAttr hdl = MemoryHandleAttr::get(getContext(), str);
+  ErrorOr<int64_t> addr = state.mapConstGlobalMemory(hdl);
+  if (addr.isError())
+    return ErrorTree(getLoc(), addr.takeError());
+  state.mapResults(PointerAttr::get(getContext(), addr.takeValue(),
+                                    state.getReboundType(getType())));
   return success();
 }
 
@@ -2412,6 +3215,17 @@ OpFoldResult VariantBitcastOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+ErrorTreeOrSuccess
+VariantBitcastOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                       ParametricInterpreterState &state) {
+  if (auto ptr = dyn_cast_or_null<PointerAttr>(operands[0])) {
+    state.mapResults(PointerAttr::get(
+        ptr.getAddr(), cast<PointerType>(state.getReboundType(getType()))));
+    return success();
+  }
+  return ErrorTree(getLoc(), "non-const input");
+}
+
 //===----------------------------------------------------------------------===//
 // VariantDiscrGEPOp
 //===----------------------------------------------------------------------===//
@@ -2429,6 +3243,22 @@ ErrorOrSuccess VariantDiscrGEPOp::compile(Payload &payload,
   return success();
 }
 
+ErrorOrSuccess
+VariantDiscrGEPOp::parametric_compile(Payload &payload, TargetInfoAttr target,
+                                      ParametricInterpreterState &state) {
+  if (!target)
+    return Error("requires a target model");
+
+  auto variantType =
+      cast<PointerType>(state.getReboundTypeAlways(getVariant().getType()))
+          .getElementAs<VariantType>();
+  std::optional<int64_t> size = variantType.getContentSize(target);
+  if (!size)
+    return Error("failed to compute size");
+  payload.offset = *size;
+  return success();
+}
+
 ErrorTreeOrSuccess VariantDiscrGEPOp::interpret(ArrayRef<Attribute> operands,
                                                 const Payload &payload,
                                                 InterpreterState &state) {
@@ -2437,6 +3267,19 @@ ErrorTreeOrSuccess VariantDiscrGEPOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "non-constant inputs");
 
   state.mapResults(PointerAttr::get(ptr.getAddr() + payload.offset, getType()));
+  return success();
+}
+
+ErrorTreeOrSuccess
+VariantDiscrGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                        const Payload &payload,
+                                        ParametricInterpreterState &state) {
+  auto ptr = dyn_cast_if_present<PointerAttr>(operands.front());
+  if (!ptr)
+    return ErrorTree(getLoc(), "non-constant inputs");
+
+  state.mapResults(PointerAttr::get(ptr.getAddr() + payload.offset,
+                                    state.getReboundType(getType())));
   return success();
 }
 
@@ -2466,6 +3309,33 @@ ErrorOrSuccess GlobalAllocOp::compile(Payload &payload, TargetInfoAttr target) {
   return success();
 }
 
+ErrorOrSuccess
+GlobalAllocOp::parametric_compile(Payload &payload, TargetInfoAttr target,
+                                  ParametricInterpreterState &state) {
+  if (!target)
+    return Error("global alloc requires a target");
+
+  auto countAttr = dyn_cast<IntegerAttr>(state.getReboundAttribute(getCount()));
+  if (!countAttr)
+    return Error("count is not concrete");
+
+  auto resultType = cast<PointerType>(state.getReboundType(getType()));
+
+  Type type = resultType.getElementType();
+  payload.size =
+      countAttr.getInt() * *DataLayoutInterface::getTypeAllocSize(target, type);
+
+  if (auto alignAttr = dyn_cast_or_null<IntegerAttr>(
+          state.getReboundAttribute(getAlignmentAttr())))
+    payload.align = alignAttr.getInt();
+  else
+    payload.align = *DataLayoutInterface::getTypeABIAlign(target, type);
+
+  payload.addressSpace =
+      cast<IntegerAttr>(resultType.getAddressSpace()).getInt();
+  return success();
+}
+
 ErrorTreeOrSuccess GlobalAllocOp::interpret(ArrayRef<Attribute> operands,
                                             const Payload &payload,
                                             InterpreterState &state) {
@@ -2475,6 +3345,20 @@ ErrorTreeOrSuccess GlobalAllocOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), addr.takeError());
 
   state.mapResults(PointerAttr::get(addr.takeValue(), getType()));
+  return success();
+}
+
+ErrorTreeOrSuccess
+GlobalAllocOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                    const Payload &payload,
+                                    ParametricInterpreterState &state) {
+  ErrorOr<int64_t> addr = state.allocatePersistentMemory(
+      payload.size, payload.align, payload.addressSpace);
+  if (addr.isError())
+    return ErrorTree(getLoc(), addr.takeError());
+
+  state.mapResults(
+      PointerAttr::get(addr.takeValue(), state.getReboundType(getType())));
   return success();
 }
 
@@ -2592,6 +3476,38 @@ ErrorTreeOrSuccess ExternalCallOp::interpret(ArrayRef<Attribute> operands,
           .str());
 }
 
+ErrorTreeOrSuccess
+ExternalCallOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                     ParametricInterpreterState &state) {
+  // external_call can take things through a !kgen.pack.  Expand that out before
+  // we try to interpret it.
+  SmallVector<Attribute> expandedOperands;
+  expandedOperands.reserve(operands.size());
+  for (auto attr : operands) {
+    if (auto pack = dyn_cast<PackAttr>(attr)) {
+      expandedOperands.append(pack.getValues().begin(), pack.getValues().end());
+    } else {
+      expandedOperands.push_back(attr);
+    }
+  }
+
+  StringRef callee = cast<StringAttr>(state.getReboundAttribute(getFunc()));
+
+  if (callee == "malloc")
+    return interpretMalloc(*this, expandedOperands, state);
+  if (callee == "free")
+    return interpretFree(*this, expandedOperands, state);
+  if (callee == "write")
+    return interpreterWrite(*this, expandedOperands, state);
+  if (callee == "KGEN_CompilerRT_GetStackTrace")
+    return interpretGetStackTrace(*this, expandedOperands, state);
+
+  return ErrorTree(
+      getLoc(),
+      Twine("unable to interpret call to unknown external function: " + callee)
+          .str());
+}
+
 //===----------------------------------------------------------------------===//
 // UnionBitcastOp
 //===----------------------------------------------------------------------===//
@@ -2601,6 +3517,18 @@ OpFoldResult UnionBitcastOp::fold(FoldAdaptor adaptor) {
   if (!ptr)
     return {};
   return PointerAttr::get(ptr.getAddr(), getType());
+}
+
+ErrorTreeOrSuccess
+UnionBitcastOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                     ParametricInterpreterState &state) {
+  auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
+  if (!ptr)
+    return ErrorTree(getLoc(), "non-const input");
+
+  state.mapResults(
+      PointerAttr::get(ptr.getAddr(), state.getReboundType(getType())));
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2619,6 +3547,16 @@ OpFoldResult UnionWrapOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+ErrorTreeOrSuccess
+UnionWrapOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                  ParametricInterpreterState &state) {
+  if (auto attr = dyn_cast_or_null<TypedAttr>(operands[0])) {
+    state.mapResults(UnionAttr::get(attr, getType()));
+    return success();
+  }
+  return ErrorTree(getLoc(), "non-const input");
+}
+
 //===----------------------------------------------------------------------===//
 // UnionUnwrapOp
 //===----------------------------------------------------------------------===//
@@ -2634,4 +3572,16 @@ OpFoldResult UnionUnwrapOp::fold(FoldAdaptor adaptor) {
     return wrap.getValue();
 
   return {};
+}
+
+ErrorTreeOrSuccess
+UnionUnwrapOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                    ParametricInterpreterState &state) {
+  if (auto attr = dyn_cast_or_null<UnionAttr>(operands[0])) {
+    if (attr.getValue().getType() == state.getReboundType(getType())) {
+      state.mapResults(attr.getValue());
+      return success();
+    }
+  }
+  return ErrorTree(getLoc(), "non-const input");
 }
