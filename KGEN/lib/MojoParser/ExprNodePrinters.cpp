@@ -89,6 +89,8 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
   case ExprNode::kTypeOfDeprecated:
   case ExprNode::kTypeOf:
     return "TypeOf";
+  case ExprNode::kConformsTo:
+    return "ConformsTo";
   case ExprNode::kFunctionsInModule:
     return "FunctionsInModule";
   case ExprNode::kNeg:

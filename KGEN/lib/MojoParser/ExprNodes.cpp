@@ -3918,6 +3918,14 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     return emitFunctionsInModule(dest, emitter);
   }
 
+  if (kind == kConformsTo) {
+    if (subExprs.size() != 2) {
+      emitter.emitError(getLoc(), "expected two arguments") << getRange();
+      return {};
+    }
+    return emitConformsTo(dest, emitter);
+  }
+
   // All other magic function types take exactly one argument.
   if (subExprs.size() != 1) {
     emitter.emitError(getLoc(), "expected a single argument") << getRange();
@@ -4036,6 +4044,59 @@ AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
     return {};
 
   return emitter.emitResult(PValue(resultType), this, dest);
+}
+
+AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
+                                           IREmitter &emitter) const {
+
+  // Two cases, either a !lit.trait, or a !meta<struct>
+  PValue typeToCheck = emitter.emitExprPValue(subExprs[0], EC_ConformsTo);
+  if (!typeToCheck || !typeToCheck.getIfTypeValue()) {
+    emitter.emitError(subExprs[0]->getLoc(),
+                      "expected a type for the first argument")
+        << subExprs[0]->getRange();
+    return {};
+  }
+
+  auto metaType = ASTType(typeToCheck.getIfTypeValue()).getMetaType();
+  if (!isa_and_nonnull<LIT::TraitType>(metaType) &&
+      !isa_and_nonnull<LIT::StructMetaType>(metaType)) {
+    // TODO: we should fold to constant when the metatype is `StructMetaType`,
+    // that means we know the concrete type to check at parsing time:
+    emitter.emitError(subExprs[0]->getLoc())
+        << typeToCheck << " is not an 'AnyType'" << subExprs[0]->getRange();
+    return {};
+  }
+
+  // The second operand must be a !lit.anytrait
+  PValue traitToCheck = emitter.emitExprPValue(subExprs[1], EC_ConformsTo);
+  if (!traitToCheck ||
+      !isa_and_nonnull<TraitType>(traitToCheck.getIfTypeValue())) {
+    emitter.emitError(subExprs[1]->getLoc(),
+                      "expected a concrete trait for the second argument")
+        << subExprs[1]->getRange();
+    return {};
+  }
+
+  auto traitType = cast<TraitType>(traitToCheck.getIfTypeValue());
+  SmallVector<mlir::SymbolRefAttr> symbols(traitType.getSymbols());
+  canonicalizeTraitCompositionSymbols(emitter.shared, symbols);
+
+  // Fold trait symbol into a list of string, as trait type will be discarded
+  // after lowering lit.
+  auto stringType = KGEN::StringType::get(traitType.getContext());
+  SmallVector<TypedAttr> traitNames;
+  for (SymbolRefAttr traitSymbol : symbols) {
+    std::string traitName = getFlattenedSymbolName(traitSymbol);
+    traitNames.push_back(StringAttr::get(traitName, stringType));
+  }
+  VariadicAttr foldedTraitNames = VariadicAttr::get(
+      traitType.getContext(), traitNames, VariadicType::get(stringType));
+
+  auto conformToI1 =
+      TypeConformsToTraitAttr::get(typeToCheck, foldedTraitNames);
+
+  return emitter.emitBool({conformToI1, this}, dest);
 }
 
 AnyValue MagicFunctionNode::emitFunctionsInModule(ValueDest &dest,

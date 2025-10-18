@@ -2332,3 +2332,37 @@ kgen.generator export @entry() {
         :!kgen.generator<<index> !kgen.generator<<index> index>> myReversedCurriedDiv>)>
   kgen.return
 }
+
+// -----
+
+// COM: Type conformance check
+
+kgen.struct.generator @S0 = struct_inst<"S0" memoryOnly>{
+  kgen.conformance @"A" {}
+  kgen.conformance @"B" {}
+}
+kgen.struct.generator @S1 = struct_inst<"S1" memoryOnly>{}
+
+// CHECK-LABEL: kgen.func @"conformance_check,T=[typevalue<#kgen.instref<{{.*}}S0>>, struct<() memoryOnly>]"() always_inline
+// CHECK-NEXT: "sink-conforms-to"() : () -> ()
+// CHECK-NEXT: kgen.return
+
+// CHECK-LABEL: kgen.func @"conformance_check,T=[typevalue<#kgen.instref<{{.*}}S1>>, struct<() memoryOnly>]"() always_inline
+// CHECK-NEXT: "sink-does-not-conform-to"() : () -> ()
+// CHECK-NEXT: kgen.return
+kgen.generator @conformance_check<T: type>() always_inline {
+  kgen.param.if <#kgen.type_conforms_to_trait<#kgen.param.decl.ref<"T"> : !kgen.type, #kgen.variadic<"A", "B"> : !kgen.variadic<string>>> {
+    "sink-conforms-to"() : () -> ()
+    kgen.param.yield
+  } else {
+    "sink-does-not-conform-to"() : () -> ()
+    kgen.param.yield
+  }
+  kgen.return
+}
+
+kgen.generator export @foo() -> ()  {
+  kgen.call @conformance_check<:type #kgen.type<typevalue<#kgen.genref<@S0>>, struct<() memoryOnly>>>() : () -> ()
+  kgen.call @conformance_check<:type #kgen.type<typevalue<#kgen.genref<@S1>>, struct<() memoryOnly>>>() : () -> ()
+  kgen.return
+}
