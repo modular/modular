@@ -19,6 +19,11 @@ using namespace KGEN;
 // ParamApplyOp
 //===----------------------------------------------------------------------===//
 
+ErrorTreeOrSuccess ParamApplyOp::interpret(ArrayRef<Attribute> operands,
+                                           InterpreterState &state) {
+  llvm_unreachable("kgen.param.apply interpret undefined");
+}
+
 ErrorTreeOrSuccess
 ParamApplyOp::parametric_interpret(ArrayRef<Attribute> operands,
                                    ParametricInterpreterState &state) {
@@ -100,6 +105,7 @@ ErrorOrSuccess ParamConstantOp::compile(Payload &payload,
 
 ErrorOrSuccess
 ParamConstantOp::parametric_compile(Payload &payload, TargetInfoAttr target,
+                                    ArrayRef<Attribute> operands,
                                     ParametricInterpreterState &state) {
   return populateContainsPtrPayload(state.getReboundAttribute(getValue()),
                                     payload);
@@ -127,6 +133,11 @@ ParamConstantOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 // ParamDeclareOp
 //===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess ParamDeclareOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  llvm_unreachable("kgen.param.declare interpret undefined");
+}
 
 ErrorTreeOrSuccess
 ParamDeclareOp::parametric_interpret(ArrayRef<Attribute> operands,
@@ -172,6 +183,7 @@ ErrorOrSuccess ParamMaterializeOp::compile(Payload &payload,
 
 ErrorOrSuccess
 ParamMaterializeOp::parametric_compile(Payload &payload, TargetInfoAttr target,
+                                       ArrayRef<Attribute> operands,
                                        ParametricInterpreterState &state) {
   auto value = state.getReboundAttribute(getValue());
   return populateContainsPtrPayload(value, payload);
@@ -223,6 +235,11 @@ OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+ErrorTreeOrSuccess RebindOp::interpret(ArrayRef<Attribute> operands,
+                                       InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 RebindOp::parametric_interpret(ArrayRef<Attribute> operands,
                                ParametricInterpreterState &state) {
@@ -255,6 +272,11 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
   return failure();
 }
 
+ErrorTreeOrSuccess ParamAssertOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  llvm_unreachable("kgen.param.assert interpret undefined");
+}
+
 ErrorTreeOrSuccess
 ParamAssertOp::parametric_interpret(ArrayRef<Attribute> operands,
                                     ParametricInterpreterState &state) {
@@ -275,6 +297,12 @@ ParamAssertOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 // ParamForOp
 //===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess ParamForOp::interpret(ArrayRef<Attribute> operands,
+                                         InterpreterState &state) {
+  llvm_unreachable("kgen.param.for interpret undefined");
+}
+
 ErrorTreeOrSuccess
 ParamForOp::parametric_interpret(ArrayRef<Attribute> operands,
                                  ParametricInterpreterState &state) {
@@ -374,6 +402,12 @@ ParamForOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 // ParamForBreakOp
 //===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess ParamForBreakOp::interpret(ArrayRef<Attribute> operands,
+                                              InterpreterState &state) {
+  llvm_unreachable("kgen.param.for.break interpret undefined");
+}
+
 ErrorTreeOrSuccess
 ParamForBreakOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
@@ -387,6 +421,12 @@ ParamForBreakOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 // ParamForContinueOp
 //===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess ParamForContinueOp::interpret(ArrayRef<Attribute> operands,
+                                                 InterpreterState &state) {
+  llvm_unreachable("kgen.param.for.continue interpret undefined");
+}
+
 ErrorTreeOrSuccess
 ParamForContinueOp::parametric_interpret(ArrayRef<Attribute> operands,
                                          ParametricInterpreterState &state) {
@@ -496,6 +536,11 @@ LogicalResult ParamIfOp::canonicalize(ParamIfOp op, PatternRewriter &b) {
   return success();
 }
 
+ErrorTreeOrSuccess ParamIfOp::interpret(ArrayRef<Attribute> operands,
+                                        InterpreterState &state) {
+  llvm_unreachable("kgen.param.if interpret undefined");
+}
+
 ErrorTreeOrSuccess
 ParamIfOp::parametric_interpret(ArrayRef<Attribute> operands,
                                 ParametricInterpreterState &state) {
@@ -521,6 +566,11 @@ ParamIfOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 // ParamYieldOp
 //===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess ParamYieldOp::interpret(ArrayRef<Attribute> operands,
+                                           InterpreterState &state) {
+  llvm_unreachable("kgen.param.yield interpret undefined");
+}
 
 ErrorTreeOrSuccess
 ParamYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
@@ -587,6 +637,11 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
   rewriter.replaceOpWithNewOp<CallOp>(op, op.getResultTypes(), callee,
                                       op.getOperands());
   return success();
+}
+
+ErrorTreeOrSuccess CallParamOp::interpret(ArrayRef<Attribute> operands,
+                                          InterpreterState &state) {
+  llvm_unreachable("kgen.call_param interpret undefined");
 }
 
 ErrorTreeOrSuccess
@@ -980,6 +1035,11 @@ OpFoldResult PackCreateOp::fold(FoldAdaptor adaptor) {
   return PackAttr::get(values, getType());
 }
 
+ErrorTreeOrSuccess PackCreateOp::interpret(ArrayRef<Attribute> operands,
+                                           InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 PackCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
                                    ParametricInterpreterState &state) {
@@ -1013,6 +1073,11 @@ OpFoldResult PackExtractOp::fold(FoldAdaptor adaptor) {
     return create.getOperands()[index.getInt()];
 
   return {};
+}
+
+ErrorTreeOrSuccess PackExtractOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -1187,6 +1252,11 @@ OpFoldResult VariantCreateOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+ErrorTreeOrSuccess VariantCreateOp::interpret(ArrayRef<Attribute> operands,
+                                              InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 VariantCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
@@ -1235,6 +1305,11 @@ OpFoldResult VariantGetOp::fold(FoldAdaptor adaptor) {
       create.getIndex() != getIndex())
     return {};
   return create.getOperand();
+}
+
+ErrorTreeOrSuccess VariantGetOp::interpret(ArrayRef<Attribute> operands,
+                                           InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -1297,6 +1372,11 @@ OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+ErrorTreeOrSuccess StructCreateOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 StructCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
                                      ParametricInterpreterState &state) {
@@ -1322,6 +1402,11 @@ OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+ErrorTreeOrSuccess StructExtractOp::interpret(ArrayRef<Attribute> operands,
+                                              InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 StructExtractOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
@@ -1343,6 +1428,11 @@ OpFoldResult StructReplaceOp::fold(FoldAdaptor adaptor) {
   SmallVector<TypedAttr> values(container.getValues());
   values[getIndexAttr().getInt()] = value;
   return StructAttr::get(values, getType());
+}
+
+ErrorTreeOrSuccess StructReplaceOp::interpret(ArrayRef<Attribute> operands,
+                                              InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
 }
 
 ErrorTreeOrSuccess

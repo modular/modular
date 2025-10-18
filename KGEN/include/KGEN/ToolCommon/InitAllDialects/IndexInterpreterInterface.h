@@ -13,7 +13,7 @@
 
 #include "KGEN/Interpreter/InterpreterDialect.h"
 #include "KGEN/Interpreter/InterpreterInterface.h"
-#include "KGEN/Interpreter/InterpreterState.h"
+#include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "KGEN/Interpreter/Utils.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -25,6 +25,7 @@ template <typename Interface, typename Concrete>
 struct IndexOpInterpretInterface
     : public BytecodeInterpreterOpInterface::ExternalModel<
           IndexOpInterpretInterface<Interface, Concrete>, Concrete> {
+
   static OpBytecodeGenerator getBytecodeGenerator() {
     return {
         0, nullptr,
@@ -44,6 +45,24 @@ struct IndexOpInterpretInterface
           }
           Concrete concrete = cast<Concrete>(op);
           return Interface::interpret(concrete, operands, state);
+        },
+        nullptr,
+        +[](Operation *op, ArrayRef<Attribute> operands, const void *payload,
+            ParametricInterpreterState &state) -> ErrorTreeOrSuccess {
+          if (!state.getTarget()) {
+            SmallVector<OpFoldResult> foldResults;
+            if (LLVM_UNLIKELY(failed(op->fold(operands, foldResults))))
+              return reportFoldError(op, operands, "failed to fold operation ");
+
+            SmallVector<Attribute> results =
+                llvm::map_to_vector(foldResults, [](OpFoldResult foldResult) {
+                  return cast<Attribute>(foldResult);
+                });
+            state.mapResults(results);
+            return success();
+          }
+          Concrete concrete = cast<Concrete>(op);
+          return Interface::parametric_interpret(concrete, operands, state);
         }};
   }
 };
@@ -58,6 +77,12 @@ struct IndexOpInterpretInterfaceImplementation
           IndexOpInterpretInterfaceImplementation<IndexOpT>, IndexOpT> {
   static ErrorTreeOrSuccess interpret(IndexOpT op, ArrayRef<Attribute> operands,
                                       InterpreterState &state);
+
+  static ErrorTreeOrSuccess
+  parametric_interpret(IndexOpT op, ArrayRef<Attribute> operands,
+                       ParametricInterpreterState &state) {
+    return interpret(op, operands, state);
+  }
 };
 
 using CmpOpInterpretInterface =

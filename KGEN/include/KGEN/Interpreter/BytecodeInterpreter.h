@@ -99,6 +99,10 @@ public:
                              ArrayRef<Attribute> arguments) override;
   void mapResults(ArrayRef<Attribute> results) override;
 
+  /// Interpret a generic operation by trying to use its operation folder.
+  ErrorTreeOrSuccess
+  interpretOpWithFolder(Operation *op, ArrayRef<Attribute> operands) override;
+
 private:
   struct StackFrame {
     Operation *func;

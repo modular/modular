@@ -6,7 +6,7 @@
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/HLCFDialect/HLCFUtils.h"
-#include "KGEN/Interpreter/InterpreterState.h"
+#include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
@@ -133,6 +133,12 @@ ErrorTreeOrSuccess ForOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess
+ForOp::parametric_interpret(ArrayRef<Attribute> operands,
+                            ParametricInterpreterState &state) {
+  return interpret(operands, state);
+}
+
 std::optional<int64_t> ForOp::getLowerBoundAsInt() {
   Value lowerBound = getLowerBound();
   IntegerAttr value;
@@ -249,6 +255,12 @@ ErrorTreeOrSuccess LoopOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess
+LoopOp::parametric_interpret(ArrayRef<Attribute> operands,
+                             ParametricInterpreterState &state) {
+  return interpret(operands, state);
+}
+
 bool LoopOp::isFullUnroll() {
   HLCF::UnrollLevelAttr level =
       dyn_cast_if_present<HLCF::UnrollLevelAttr>(getUnrollLevelAttr());
@@ -304,6 +316,12 @@ ErrorTreeOrSuccess IfOp::interpret(ArrayRef<Attribute> operands,
   state.transferControlFlowTo(
       cond.getValue() ? getThenRegion() : getElseRegion(), {});
   return success();
+}
+
+ErrorTreeOrSuccess
+IfOp::parametric_interpret(ArrayRef<Attribute> operands,
+                           ParametricInterpreterState &state) {
+  return interpret(operands, state);
 }
 
 OpBuilder IfOp::getThenBodyBuilder() {
@@ -395,6 +413,12 @@ ErrorTreeOrSuccess SwitchOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess
+SwitchOp::parametric_interpret(ArrayRef<Attribute> operands,
+                               ParametricInterpreterState &state) {
+  return interpret(operands, state);
+}
+
 LogicalResult SwitchOp::verify() {
   if (!llvm::is_sorted(getCaseValues()))
     return emitOpError("expected case values to be sorted");
@@ -432,6 +456,12 @@ ErrorTreeOrSuccess ContinueOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess
+ContinueOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                 ParametricInterpreterState &state) {
+  return interpret(operands, state);
+}
+
 //===----------------------------------------------------------------------===//
 // BreakOp
 //===----------------------------------------------------------------------===//
@@ -466,6 +496,12 @@ ErrorTreeOrSuccess BreakOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess
+BreakOp::parametric_interpret(ArrayRef<Attribute> operands,
+                              ParametricInterpreterState &state) {
+  return interpret(operands, state);
+}
+
 //===----------------------------------------------------------------------===//
 // YieldOp
 //===----------------------------------------------------------------------===//
@@ -485,6 +521,12 @@ ErrorTreeOrSuccess YieldOp::interpret(ArrayRef<Attribute> operands,
                                       InterpreterState &state) {
   state.transferControlFlowTo((*this)->getParentOp(), operands);
   return success();
+}
+
+ErrorTreeOrSuccess
+YieldOp::parametric_interpret(ArrayRef<Attribute> operands,
+                              ParametricInterpreterState &state) {
+  return interpret(operands, state);
 }
 
 //===----------------------------------------------------------------------===//
@@ -668,6 +710,12 @@ ErrorTreeOrSuccess ElifOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess
+ElifOp::parametric_interpret(ArrayRef<Attribute> operands,
+                             ParametricInterpreterState &state) {
+  return interpret(operands, state);
+}
+
 //===----------------------------------------------------------------------===//
 // ElifYieldOp
 //===----------------------------------------------------------------------===//
@@ -720,6 +768,12 @@ ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
     return success();
   }
   return ErrorTree(getLoc(), "non-constant condition in elif chain.");
+}
+
+ErrorTreeOrSuccess
+ElifYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                  ParametricInterpreterState &state) {
+  return interpret(operands, state);
 }
 
 //===----------------------------------------------------------------------===//

@@ -46,12 +46,17 @@ struct DebugOpInterpreterInterface
   /// Implement the interpret hook for this operation. Since the operation has
   /// no results, we cannot use the fold hook.
   static OpBytecodeGenerator getBytecodeGenerator() {
-    return {0, nullptr,
-            +[](Operation *op, ArrayRef<Attribute> operands,
-                const void *payload,
-                InterpreterState &state) -> ErrorTreeOrSuccess {
-              return success();
-            }};
+    return {
+        0, nullptr,
+        +[](Operation *op, ArrayRef<Attribute> operands, const void *payload,
+            InterpreterState &state) -> ErrorTreeOrSuccess {
+          return success();
+        },
+        nullptr,
+        +[](Operation *op, ArrayRef<Attribute> operands, const void *payload,
+            ParametricInterpreterState &state) -> ErrorTreeOrSuccess {
+          return success();
+        }};
   }
 };
 

@@ -944,6 +944,11 @@ OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+ErrorTreeOrSuccess CmpOp::interpret(ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 CmpOp::parametric_interpret(ArrayRef<Attribute> operands,
                             ParametricInterpreterState &state) {
@@ -1274,6 +1279,11 @@ LogicalResult PointerBitcastOp::canonicalize(PointerBitcastOp op,
   // Erase the intermediate cast -- its only use has been removed.
   b.eraseOp(cast);
   return success();
+}
+
+ErrorTreeOrSuccess PointerBitcastOp::interpret(ArrayRef<Attribute> operands,
+                                               InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -1610,6 +1620,11 @@ OpFoldResult SIMDExtractElementOp::fold(FoldAdaptor adaptor) {
   return SIMDAttr::get(vec.getValues()[idx.getInt()], getType());
 }
 
+ErrorTreeOrSuccess SIMDExtractElementOp::interpret(ArrayRef<Attribute> operands,
+                                                   InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 SIMDExtractElementOp::parametric_interpret(ArrayRef<Attribute> operands,
                                            ParametricInterpreterState &state) {
@@ -1654,6 +1669,11 @@ OpFoldResult SIMDInsertElementOp::fold(FoldAdaptor adaptor) {
   SmallVector<DTypeValue> values(vec.getValues());
   values[idx.getInt()] = val.getValues().front();
   return SIMDAttr::get(values, getType());
+}
+
+ErrorTreeOrSuccess SIMDInsertElementOp::interpret(ArrayRef<Attribute> operands,
+                                                  InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -1758,6 +1778,11 @@ LogicalResult SIMDSelectOp::canonicalize(SIMDSelectOp op, PatternRewriter &b) {
   return success();
 }
 
+ErrorTreeOrSuccess SIMDSelectOp::interpret(ArrayRef<Attribute> operands,
+                                           InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 SIMDSelectOp::parametric_interpret(ArrayRef<Attribute> operands,
                                    ParametricInterpreterState &state) {
@@ -1853,6 +1878,11 @@ OpFoldResult SIMDShuffleOp::fold(FoldAdaptor adaptor) {
   return SIMDAttr::get(result, getType());
 }
 
+ErrorTreeOrSuccess SIMDShuffleOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 SIMDShuffleOp::parametric_interpret(ArrayRef<Attribute> operands,
                                     ParametricInterpreterState &state) {
@@ -1903,6 +1933,11 @@ OpFoldResult SIMDSplatOp::fold(FoldAdaptor adaptor) {
     return {};
   SmallVector<DTypeValue> values(*size, scalar.getValues().front());
   return SIMDAttr::get(values, getType());
+}
+
+ErrorTreeOrSuccess SIMDSplatOp::interpret(ArrayRef<Attribute> operands,
+                                          InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -2231,9 +2266,9 @@ ErrorOrSuccess StackAllocationOp::compile(Payload &payload,
 
 ErrorOrSuccess
 StackAllocationOp::parametric_compile(Payload &payload, TargetInfoAttr target,
+                                      ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
   auto countAttr = dyn_cast<IntegerAttr>(state.getReboundAttribute(getCount()));
-  // auto countAttr = dyn_cast<IntegerAttr>(getCount());
 
   if (!countAttr)
     return Error("array size is not a constant");
@@ -2432,6 +2467,11 @@ OpFoldResult ArrayCreateOp::fold(FoldAdaptor adaptor) {
   return POP::ArrayAttr::get(values, getType());
 }
 
+ErrorTreeOrSuccess ArrayCreateOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 ArrayCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
                                     ParametricInterpreterState &state) {
@@ -2476,6 +2516,11 @@ static Attribute foldInterpretArrayRepeatOp(ArrayRef<Attribute> operands,
 OpFoldResult ArrayRepeatOp::fold(FoldAdaptor adaptor) {
   ArrayRef<Attribute> operands = adaptor.getOperands();
   return foldInterpretArrayRepeatOp(operands, getType());
+}
+
+ErrorTreeOrSuccess ArrayRepeatOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -2534,6 +2579,11 @@ OpFoldResult ArrayGetOp::fold(FoldAdaptor adaptor) {
     return repeat.getOperand(idx % repeat.getNumOperands());
 
   return {};
+}
+
+ErrorTreeOrSuccess ArrayGetOp::interpret(ArrayRef<Attribute> operands,
+                                         InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -2606,6 +2656,11 @@ LogicalResult ArrayReplaceOp::canonicalize(ArrayReplaceOp op,
 
   return rewriter.notifyMatchFailure(
       op, "array must be a constant or an ArrayCreateOp");
+}
+
+ErrorTreeOrSuccess ArrayReplaceOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -2719,6 +2774,11 @@ LogicalResult PointerToIndexOp::canonicalize(PointerToIndexOp op,
     return failure();
   b.modifyOpInPlace(op, [&] { op.getValueMutable().set(bitcast.getInput()); });
   return success();
+}
+
+ErrorTreeOrSuccess PointerToIndexOp::interpret(ArrayRef<Attribute> operands,
+                                               InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -2888,6 +2948,11 @@ OpFoldResult CastFromBuiltinOp::fold(FoldAdaptor adaptor) {
   return SIMDAttr::get({cast<FloatAttr>(val).getValue(), *dtype}, getType());
 }
 
+ErrorTreeOrSuccess CastFromBuiltinOp::interpret(ArrayRef<Attribute> operands,
+                                                InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 CastFromBuiltinOp::parametric_interpret(ArrayRef<Attribute> operands,
                                         ParametricInterpreterState &state) {
@@ -2988,6 +3053,11 @@ LogicalResult VariadicCreateOp::canonicalize(VariadicCreateOp op,
   return failure();
 }
 
+ErrorTreeOrSuccess VariadicCreateOp::interpret(ArrayRef<Attribute> operands,
+                                               InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 VariadicCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
                                        ParametricInterpreterState &state) {
@@ -3027,6 +3097,11 @@ OpFoldResult VariadicSplatOp::fold(FoldAdaptor adaptor) {
     return KGEN::VariadicAttr::get(ArrayRef<TypedAttr>(), getType());
 
   return {};
+}
+
+ErrorTreeOrSuccess VariadicSplatOp::interpret(ArrayRef<Attribute> operands,
+                                              InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -3102,6 +3177,11 @@ OpFoldResult VariadicSizeOp::fold(FoldAdaptor adaptor) {
     return splat.getNumElements();
 
   return {};
+}
+
+ErrorTreeOrSuccess VariadicSizeOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -3215,6 +3295,11 @@ OpFoldResult VariantBitcastOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+ErrorTreeOrSuccess VariantBitcastOp::interpret(ArrayRef<Attribute> operands,
+                                               InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 VariantBitcastOp::parametric_interpret(ArrayRef<Attribute> operands,
                                        ParametricInterpreterState &state) {
@@ -3245,13 +3330,13 @@ ErrorOrSuccess VariantDiscrGEPOp::compile(Payload &payload,
 
 ErrorOrSuccess
 VariantDiscrGEPOp::parametric_compile(Payload &payload, TargetInfoAttr target,
+                                      ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
   if (!target)
     return Error("requires a target model");
 
-  auto variantType =
-      cast<PointerType>(state.getReboundTypeAlways(getVariant().getType()))
-          .getElementAs<VariantType>();
+  auto variantType = cast<PointerType>(cast<TypedAttr>(operands[0]).getType())
+                         .getElementAs<VariantType>();
   std::optional<int64_t> size = variantType.getContentSize(target);
   if (!size)
     return Error("failed to compute size");
@@ -3311,6 +3396,7 @@ ErrorOrSuccess GlobalAllocOp::compile(Payload &payload, TargetInfoAttr target) {
 
 ErrorOrSuccess
 GlobalAllocOp::parametric_compile(Payload &payload, TargetInfoAttr target,
+                                  ArrayRef<Attribute> operands,
                                   ParametricInterpreterState &state) {
   if (!target)
     return Error("global alloc requires a target");
@@ -3519,6 +3605,11 @@ OpFoldResult UnionBitcastOp::fold(FoldAdaptor adaptor) {
   return PointerAttr::get(ptr.getAddr(), getType());
 }
 
+ErrorTreeOrSuccess UnionBitcastOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 UnionBitcastOp::parametric_interpret(ArrayRef<Attribute> operands,
                                      ParametricInterpreterState &state) {
@@ -3547,6 +3638,11 @@ OpFoldResult UnionWrapOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+ErrorTreeOrSuccess UnionWrapOp::interpret(ArrayRef<Attribute> operands,
+                                          InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
 ErrorTreeOrSuccess
 UnionWrapOp::parametric_interpret(ArrayRef<Attribute> operands,
                                   ParametricInterpreterState &state) {
@@ -3572,6 +3668,11 @@ OpFoldResult UnionUnwrapOp::fold(FoldAdaptor adaptor) {
     return wrap.getValue();
 
   return {};
+}
+
+ErrorTreeOrSuccess UnionUnwrapOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
 }
 
 ErrorTreeOrSuccess

@@ -452,8 +452,7 @@ class KGEN_CallOpBase<string mnemonic, list<Trait> traits = []>
 //===----------------------------------------------------------------------===//
 
 def KGEN_CallOp : KGEN_CallOpBase<"call",
-    [DeclareOpInterfaceMethods<InterpreterOpInterface>,
-     DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Call a func, generator, or generator interface";
   let description = [{
     The `kgen.call` operation invokes a parametric function. The callee must be
@@ -533,7 +532,7 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
 
 def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
     [CalleeArgumentTypes, CalleeResultTypes,
-     DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Call declaration specified by a parameter expression";
   let description = [{
     The `kgen.call_param` operation invokes a parametric callee. The callee is
@@ -621,7 +620,9 @@ def KGEN_ParamConstantOp : KGENOp<"param.constant", [ConstantLike,
     struct alignas(8) Payload { bool containsPtr; Attribute value; };
     ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
     ErrorOrSuccess parametric_compile(Payload &payload,
-      TargetInfoAttr target, ParametricInterpreterState& state);
+      TargetInfoAttr target,
+      ArrayRef<Attribute> operands,
+      ParametricInterpreterState& state);
     ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
       const Payload &payload, InterpreterState &state);
     ErrorTreeOrSuccess parametric_interpret(ArrayRef<Attribute> operands,
@@ -670,7 +671,9 @@ def KGEN_ParamMaterializeOp : KGENOp<"param.materialize", [
     struct alignas(8) Payload { bool containsPtr; Attribute value; };
     ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
     ErrorOrSuccess parametric_compile(Payload &payload,
-      TargetInfoAttr target, ParametricInterpreterState& state);
+      TargetInfoAttr target,
+      ArrayRef<Attribute> operands,
+      ParametricInterpreterState& state);
     ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
       const Payload &payload, InterpreterState &state);
     ErrorTreeOrSuccess parametric_interpret(ArrayRef<Attribute> operands,
@@ -684,7 +687,7 @@ def KGEN_ParamMaterializeOp : KGENOp<"param.materialize", [
 
 def KGEN_ParamDeclareOp : KGENOp<"param.declare",
     [DeclareOpInterfaceMethods<ParamOpInterface>,
-     DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]>,
+     DeclareOpInterfaceMethods<InterpreterOpInterface>]>,
     OneParamDecl {
   let summary = "Declare a single parameter value.";
   let description = [{
@@ -812,7 +815,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 def KGEN_ParamApplyOp : KGENOp<"param.apply",
     [DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>,
      DeclareOpInterfaceMethods<ParamOpInterface>,
-     DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Function call in parameter domain.";
   let description = [{
     The `kgen.param.apply` operation is a call operation entirely in the
@@ -846,7 +849,6 @@ def KGEN_ParamApplyOp : KGENOp<"param.apply",
 
 def KGEN_CostOfOp : KGENOp<"cost_of", [
     DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
     DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>]> {
   let summary = "Return the 'cost' of the function.";
   let description = [{
@@ -889,7 +891,6 @@ def KGEN_CostOfOp : KGENOp<"cost_of", [
 
 def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike,
     DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
     DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let summary = "return operation for kgen declarations";
   let description = [{
@@ -950,7 +951,7 @@ def KGEN_UnreachableOp : KGENOp<"unreachable", [Terminator,
 
 def KGEN_ParamAssertOp : KGENOp<"param.assert",
     [DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>,
-     DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]>,
+     DeclareOpInterfaceMethods<InterpreterOpInterface>]>,
     NoParamDecls {
   let summary = "check a parameter expression at elaboration time";
   let description = [{
@@ -976,7 +977,7 @@ def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
     DeclareOpInterfaceMethods<ControlFlowNode>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric",
       "collectParameterUsesBelow"]>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]>, NoParamDecls {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]>, NoParamDecls {
   let summary = "compile-time for loop";
   let description = [{
     The `kgen.param.for` operation instantiates its body with values according
@@ -1032,7 +1033,7 @@ def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
 
 def KGEN_ParamForBreakOp : KGENOp<"param.for.break", [Terminator,
     DeclareOpInterfaceMethods<ControlFlowTerminator>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "param loop exit operation";
   let description = [{
     The `kgen.param.for.break` operation represents an exit from a
@@ -1054,7 +1055,7 @@ def KGEN_ParamForBreakOp : KGENOp<"param.for.break", [Terminator,
 
 def KGEN_ParamForContinueOp : KGENOp<"param.for.continue", [Terminator,
     DeclareOpInterfaceMethods<ControlFlowTerminator>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "param loop continue operation";
   let description = [{
     The `kgen.param.for.continue` operation branches to the next generated
@@ -1094,7 +1095,7 @@ def KGEN_ParamForGotoElseOp : KGENOp<"param.for.goto.else", [Terminator,
 
 def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
     DeclareOpInterfaceMethods<ControlFlowNode>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric",
       "collectParameterUsesBelow"]>]>, NoParamDecls {
   let summary = "compile-time constant if";
@@ -1167,7 +1168,7 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
 
 def KGEN_ParamYieldOp : KGENOp<"param.yield", [Pure, Terminator,
     ParentOneOf<["ParamIfOp", "ParamForOp"]>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let summary = "conditional yield operation";
   let description = [{
@@ -1207,7 +1208,7 @@ def KGEN_ParamYieldOp : KGENOp<"param.yield", [Pure, Terminator,
 //===----------------------------------------------------------------------===//
 
 def KGEN_RebindOp : KGENOp<"rebind", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "rebind parametric types";
   let description = [{
     The `kgen.rebind` operation rebinds values with parametric types into other
@@ -1254,8 +1255,7 @@ def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
     "arguments",
     "cast<FuncTypeGeneratorType>($_self).getBody().getArguments()">,
     CalleeResultTypes,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Call a signature typed instance";
   let description = [{
     The `kgen.call_indirect` operation takes an SSA value of `!kgen.generator`
@@ -1328,8 +1328,7 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure",
 
 def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure", [Pure,
     InferTypeOpAdaptor,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Create a closure from variables and a function.";
   let description = [{
     The `kgen.create_closure` operation represents the instantiation of
@@ -1453,8 +1452,7 @@ def KGEN_CreateRegStubOp : KGENOp<"create_reg_stub", [Pure,
 //===----------------------------------------------------------------------===//
 
 def KGEN_SourceLocOp : KGENOp<"source_loc", [Pure,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Track source location and update conditionally during inlining";
   let description = [{
     The `kgen.source_loc` operation enables implementing location capture of
@@ -1522,7 +1520,7 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_PackCreateOp : KGENOp<"pack.create", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "create a pack";
   let description = [{
     The `kgen.pack.create` operation creates a value of `!kgen.pack` type,
@@ -1564,7 +1562,7 @@ def KGEN_PackCreateOp : KGENOp<"pack.create", [Pure,
 //===----------------------------------------------------------------------===//
 
 def KGEN_PackExtractOp : KGENOp<"pack.extract", [Pure, InferTypeOpAdaptor,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pack get element";
   let description = [{
     The `kgen.pack.extract` operation returns the element of a pack at the
@@ -1609,8 +1607,7 @@ def KGEN_PackExtractOp : KGENOp<"pack.extract", [Pure, InferTypeOpAdaptor,
 
 def KGEN_PackGEPOp : KGENOp<"pack.gep", [Pure,
     InferTypeOpAdaptor,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pack get element pointer";
   let description = [{
     The `kgen.pack.gep` operation returns a pointer to the element of a pack at
@@ -1659,8 +1656,7 @@ def KGEN_PackSizeOp : KGENOp<"pack.size", [Pure]> {
 
 def KGEN_PackLoadOp : KGENOp<"pack.load", [Pure,
     InferTypeOpAdaptor,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "load all pack elements";
   let description = [{
     The `kgen.pack.load` operation takes a pack of !kgen.pointer values and
@@ -1678,7 +1674,7 @@ def KGEN_PackLoadOp : KGENOp<"pack.load", [Pure,
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructCreateOp : KGENOp<"struct.create", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     TypesMatchWith<"operand types match struct element types",
                    "result", "elements",
                    "llvm::cast<StructType>($_self).getElementTypes()">
@@ -1713,7 +1709,7 @@ def KGEN_StructCreateOp : KGENOp<"struct.create", [Pure,
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructExtractOp : KGENOp<"struct.extract", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     InferTypeOpAdaptor]> {
   let summary = "struct extract value";
   let description = [{
@@ -1748,7 +1744,7 @@ def KGEN_StructExtractOp : KGENOp<"struct.extract", [Pure,
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructReplaceOp : KGENOp<"struct.replace", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     AllTypesMatch<["container", "result"]>]> {
   let summary = "struct insert value";
   let description = [{
@@ -1787,8 +1783,7 @@ def KGEN_StructReplaceOp : KGENOp<"struct.replace", [Pure,
 
 def KGEN_StructGEPOp : KGENOp<"struct.gep", [Pure,
     InferTypeOpAdaptor,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "struct get element pointer";
   let description = [{
     The `kgen.struct.gep` operation takes a pointer to a `!kgen.struct` and a
@@ -1826,7 +1821,7 @@ def KGEN_StructGEPOp : KGENOp<"struct.gep", [Pure,
 //===----------------------------------------------------------------------===//
 
 def KGEN_VariantCreateOp : KGENOp<"variant.create", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Create a parametric variant.";
   let description = [{
     The `kgen.variant.create` operation creates a variant of the referred type
@@ -1890,7 +1885,7 @@ def KGEN_VariantIsOp : KGENOp<"variant.is", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_VariantGetOp : KGENOp<"variant.get", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     InferTypeOpAdaptor]> {
   let summary = "Take a register value out of a variant.";
   let description = [{
@@ -2044,8 +2039,7 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
 //===----------------------------------------------------------------------===//
 
 def KGEN_IsCompileTimeOp: KGENOp<"is_compile_time",
-    [DeclareOpInterfaceMethods<InterpreterOpInterface>,
-     DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Evaluated as true for compile time and false otherwise.";
   let description = [{
     The `kgen.is_compile_time` represents a boolean value which is `true`

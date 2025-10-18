@@ -20,27 +20,21 @@ using InterpretHook = ErrorTreeOrSuccess (*)(Operation *, ArrayRef<Attribute>,
                                              const void *, InterpreterState &);
 using GenBytecodeHook = ErrorOrSuccess (*)(Operation *, void *, TargetInfoAttr);
 
+using ParametricInterpretHook =
+    ErrorTreeOrSuccess (*)(Operation *, ArrayRef<Attribute>, const void *,
+                           ParametricInterpreterState &);
+using ParametricGenBytecodeHook =
+    ErrorOrSuccess (*)(Operation *, void *, TargetInfoAttr, ArrayRef<Attribute>,
+                       ParametricInterpreterState &);
+
 struct OpBytecodeGenerator {
   uint32_t payloadSize;
   GenBytecodeHook genBytecode;
   InterpretHook interpret;
-  // The alignment of the payload. Has to be a maximum of allowed alignment of
-  // all Payloads in KGEN Dialect.
-  // Ideally we want to use `alignof(KGEN*::Payload)` here, but that will
-  // introduce extra dependency to interpreter.
-  static constexpr uint64_t payloadAlignment = 8;
-};
 
-using ParametricInterpretHook =
-    ErrorTreeOrSuccess (*)(Operation *, ArrayRef<Attribute>, const void *,
-                           ParametricInterpreterState &);
-using ParametricGenBytecodeHook = ErrorOrSuccess (*)(
-    Operation *, void *, TargetInfoAttr, ParametricInterpreterState &);
+  ParametricGenBytecodeHook genParametricBytecode;
+  ParametricInterpretHook parametric_interpret;
 
-struct ParametricOpBytecodeGenerator {
-  uint32_t payloadSize;
-  ParametricGenBytecodeHook genBytecode;
-  ParametricInterpretHook interpret;
   // The alignment of the payload. Has to be a maximum of allowed alignment of
   // all Payloads in KGEN Dialect.
   // Ideally we want to use `alignof(KGEN*::Payload)` here, but that will
@@ -64,8 +58,6 @@ struct ParametricOpBytecodeGenerator {
 namespace M::detail {
 class InterpreterDelegateOpInterface;
 class BytecodeDelegateOpInterface;
-class ParametricInterpreterDelegateOpInterface;
-class ParametricBytecodeDelegateOpInterface;
 
 /// This class defines a delegate op interface to
 /// `BytecodeInterpreterOpInterface` for operations that define a simple
@@ -86,6 +78,12 @@ struct InterpreterDelegateOpInterfaceTraits
               +[](Operation *op, ArrayRef<Attribute> operands,
                   const void *payload, InterpreterState &state) {
                 return cast<ConcreteOp>(op).interpret(operands, state);
+              },
+              nullptr,
+              +[](Operation *op, ArrayRef<Attribute> operands,
+                  const void *payload, ParametricInterpreterState &state) {
+                return cast<ConcreteOp>(op).parametric_interpret(operands,
+                                                                 state);
               }};
     }
   };
@@ -97,28 +95,47 @@ struct BytecodeDelegateOpInterfaceTraits
   class Model : public Concept {
   public:
     using Interface = InterpreterDelegateOpInterface;
-    Model() : Concept{getInterpretHook} {}
+    Model() : Concept{.getBytecodeGenerator = getInterpretHook} {}
 
     static inline OpBytecodeGenerator getInterpretHook() {
       using Payload = typename ConcreteOp::Payload;
-      return {sizeof(Payload),
-              +[](Operation *op, void *payload, TargetInfoAttr target) {
-                assert(llvm::isAddrAligned(
-                           llvm::Align(OpBytecodeGenerator::payloadAlignment),
-                           payload) &&
-                       "payload is not properly aligned");
-                return cast<ConcreteOp>(op).compile(*(Payload *)payload,
-                                                    target);
-              },
-              +[](Operation *op, ArrayRef<Attribute> operands,
-                  const void *payload, InterpreterState &state) {
-                assert(llvm::isAddrAligned(
-                           llvm::Align(OpBytecodeGenerator::payloadAlignment),
-                           payload) &&
-                       "payload is not properly aligned");
-                return cast<ConcreteOp>(op).interpret(
-                    operands, *(const Payload *)payload, state);
-              }};
+      return {
+          sizeof(Payload),
+          +[](Operation *op, void *payload, TargetInfoAttr target) {
+            assert(llvm::isAddrAligned(
+                       llvm::Align(OpBytecodeGenerator::payloadAlignment),
+                       payload) &&
+                   "payload is not properly aligned");
+            return cast<ConcreteOp>(op).compile(*(Payload *)payload, target);
+          },
+          +[](Operation *op, ArrayRef<Attribute> operands, const void *payload,
+              InterpreterState &state) {
+            assert(llvm::isAddrAligned(
+                       llvm::Align(OpBytecodeGenerator::payloadAlignment),
+                       payload) &&
+                   "payload is not properly aligned");
+            return cast<ConcreteOp>(op).interpret(
+                operands, *(const Payload *)payload, state);
+          },
+          +[](Operation *op, void *payload, TargetInfoAttr target,
+              ArrayRef<Attribute> operands, ParametricInterpreterState &state) {
+            assert(llvm::isAddrAligned(
+                       llvm::Align(OpBytecodeGenerator::payloadAlignment),
+                       payload) &&
+                   "payload is not properly aligned");
+            return cast<ConcreteOp>(op).parametric_compile(
+                *(Payload *)payload, target, operands, state);
+          },
+
+          +[](Operation *op, ArrayRef<Attribute> operands, const void *payload,
+              ParametricInterpreterState &state) {
+            assert(llvm::isAddrAligned(
+                       llvm::Align(OpBytecodeGenerator::payloadAlignment),
+                       payload) &&
+                   "payload is not properly aligned");
+            return cast<ConcreteOp>(op).parametric_interpret(
+                operands, *(const Payload *)payload, state);
+          }};
     }
   };
 };
@@ -149,97 +166,6 @@ struct BytecodeDelegateOpInterfaceTrait
     : public mlir::OpInterface<
           BytecodeDelegateOpInterface,
           BytecodeDelegateOpInterfaceTraits>::Trait<ConcreteOp> {};
-
-/// This class defines a delegate op interface to
-/// `ParametricBytecodeInterpreterOpInterface` for operations that define a
-/// simple `parametric_interpret` method with no additional bytecode payload.
-/// This is poor man's interface inheritance. Most of the code here is
-/// boilerplate.
-struct ParametricInterpreterDelegateOpInterfaceTraits
-    : public ParametricBytecodeInterpreterOpInterfaceInterfaceTraits {
-  template <typename ConcreteOp>
-  class Model : public Concept {
-  public:
-    using Interface = ParametricInterpreterDelegateOpInterface;
-    Model() : Concept{getInterpretHook} {}
-
-    /// This method defines the delegate `interpret` hook to call into the
-    /// concrete operation's `interpret` method.
-    static inline ParametricOpBytecodeGenerator getInterpretHook() {
-      return {0, nullptr,
-              +[](Operation *op, ArrayRef<Attribute> operands,
-                  const void *payload, ParametricInterpreterState &state) {
-                return cast<ConcreteOp>(op).parametric_interpret(operands,
-                                                                 state);
-              }};
-    }
-  };
-};
-
-struct ParametricBytecodeDelegateOpInterfaceTraits
-    : public ParametricBytecodeInterpreterOpInterfaceInterfaceTraits {
-  template <typename ConcreteOp>
-  class Model : public Concept {
-  public:
-    using Interface = ParametricInterpreterDelegateOpInterface;
-    Model() : Concept{getInterpretHook} {}
-
-    static inline ParametricOpBytecodeGenerator getInterpretHook() {
-      using Payload = typename ConcreteOp::Payload;
-      return {sizeof(Payload),
-              +[](Operation *op, void *payload, TargetInfoAttr target) {
-                assert(llvm::isAddrAligned(
-                           llvm::Align(
-                               ParametricOpBytecodeGenerator::payloadAlignment),
-                           payload) &&
-                       "payload is not properly aligned");
-                return cast<ConcreteOp>(op).parametric_compile(
-                    *(Payload *)payload, target);
-              },
-              +[](Operation *op, ArrayRef<Attribute> operands,
-                  const void *payload, ParametricInterpreterState &state) {
-                assert(llvm::isAddrAligned(
-                           llvm::Align(
-                               ParametricOpBytecodeGenerator::payloadAlignment),
-                           payload) &&
-                       "payload is not properly aligned");
-                return cast<ConcreteOp>(op).parametric_interpret(
-                    operands, *(const Payload *)payload, state);
-              }};
-    }
-  };
-};
-
-template <typename ConcreteOp>
-struct ParametricInterpreterDelegateOpInterfaceTrait;
-template <typename ConcreteOp>
-struct ParametricBytecodeDelegateOpInterfaceTrait;
-
-class ParametricInterpreterDelegateOpInterface
-    : public ParametricBytecodeInterpreterOpInterface {
-public:
-  template <typename ConcreteOp>
-  struct Trait
-      : public ParametricInterpreterDelegateOpInterfaceTrait<ConcreteOp> {};
-};
-class ParametricBytecodeDelegateOpInterface
-    : public ParametricBytecodeInterpreterOpInterface {
-public:
-  template <typename ConcreteOp>
-  struct Trait : public ParametricBytecodeDelegateOpInterfaceTrait<ConcreteOp> {
-  };
-};
-
-template <typename ConcreteOp>
-struct ParametricInterpreterDelegateOpInterfaceTrait
-    : public mlir::OpInterface<
-          ParametricInterpreterDelegateOpInterface,
-          ParametricInterpreterDelegateOpInterfaceTraits>::Trait<ConcreteOp> {};
-template <typename ConcreteOp>
-struct ParametricBytecodeDelegateOpInterfaceTrait
-    : public mlir::OpInterface<
-          ParametricBytecodeDelegateOpInterface,
-          ParametricBytecodeDelegateOpInterfaceTraits>::Trait<ConcreteOp> {};
 
 } // namespace M::detail
 

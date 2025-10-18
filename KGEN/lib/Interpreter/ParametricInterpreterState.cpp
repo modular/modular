@@ -135,15 +135,16 @@ ParametricIRInterpreter::interpretFunction(Region &body,
 
     if (auto interpItf = dyn_cast<BytecodeInterpreterOpInterface>(op)) {
       OpBytecodeGenerator gen = interpItf.getBytecodeGenerator();
-      if (GenBytecodeHook genBytecode = gen.genBytecode) {
+
+      if (ParametricGenBytecodeHook genBytecode = gen.genParametricBytecode) {
         payload.reserve(gen.payloadSize);
-        // Use commented out code after fixing ParametricInterpreter interfaces
-        // if (auto err = genBytecode(&op, payload.data(), getTarget(), this))
-        if (auto err = genBytecode(&op, payload.data(), getTarget()))
+        if (auto err =
+                genBytecode(&op, payload.data(), getTarget(), operands, *this))
           return ErrorTree(op.getLoc(), err.takeError());
       }
-      ErrorTreeOrSuccess err = interpItf.getBytecodeGenerator().interpret(
-          &op, operands, payload.data(), *this);
+      ErrorTreeOrSuccess err =
+          interpItf.getBytecodeGenerator().parametric_interpret(
+              &op, operands, payload.data(), *this);
       if (err.isError())
         return reportFoldError(&*pc, operands, "failed to interpret operation ")
             .addCause(err.takeError());

@@ -1397,6 +1397,12 @@ ErrorTreeOrSuccess TryOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess
+TryOp::parametric_interpret(ArrayRef<Attribute> operands,
+                            ParametricInterpreterState &state) {
+  llvm_unreachable("lit.try parametric_interpret undefined");
+}
+
 bool TryOp::hasTrivialFinally() {
   Block &finally = getFinallyRegion().front();
   return llvm::hasSingleElement(finally) &&
@@ -1458,6 +1464,12 @@ ErrorTreeOrSuccess TryYieldOp::interpret(ArrayRef<Attribute> operands,
   }
 }
 
+ErrorTreeOrSuccess
+TryYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                 ParametricInterpreterState &state) {
+  llvm_unreachable("lit.try.yield parametric_interpret undefined");
+}
+
 //===----------------------------------------------------------------------===//
 // TryRaiseOp
 //===----------------------------------------------------------------------===//
@@ -1494,6 +1506,12 @@ ErrorTreeOrSuccess TryRaiseOp::interpret(ArrayRef<Attribute> operands,
 
   state.transferControlFlowTo(tryOp.getExceptRegion(), operands);
   return success();
+}
+
+ErrorTreeOrSuccess
+TryRaiseOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                 ParametricInterpreterState &state) {
+  llvm_unreachable("lit.try.raise parametric_interpret undefined");
 }
 
 //===----------------------------------------------------------------------===//
