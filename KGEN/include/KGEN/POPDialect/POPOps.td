@@ -364,7 +364,7 @@ def POP_FMAOp : POP_ArithmeticTernaryOp<"fma",
 
 def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands,
     DeclareOpInterfaceMethods<InferTypeOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     DeclareOpInterfaceMethods<ComputeOpInterface>]>, Comparison {
   let summary = "comparison";
   let description = [{
@@ -488,9 +488,7 @@ def POP_SIMDXOrOp : POP_BitwiseOp<"simd.xor"> {
 //===----------------------------------------------------------------------===//
 
 def POP_BitcastOp : POPOp<"bitcast", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "scalar and simd bitcast";
   let description = [{
     Bitcast an integer or floating point value to an integer or floating point
@@ -523,7 +521,7 @@ def POP_BitcastOp : POPOp<"bitcast", [Pure,
 
 def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
     DeclareOpInterfaceMethods<CastOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pointer bitcast";
   let description = [{
     The `pop.pointer.bitcast` operation reinterprets a pointer or function
@@ -564,9 +562,7 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
 
 def POP_CastOp : POPOp<"cast", [Pure,
     DeclareOpInterfaceMethods<CastOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "element wise cast";
   let description = [{
     Perform an element-wise cast between SIMD vectors types or between scalar
@@ -604,7 +600,7 @@ def POP_CastOp : POPOp<"cast", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     SIMDSizeOneOfSameDType<"vector", "result">]> {
   let summary = "extractelement operation";
   let description = [{
@@ -636,7 +632,7 @@ def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [Pure,
 
 def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [Pure,
     SIMDSizeOneOfSameDType<"vector", "value">,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     AllTypesMatch<["result", "vector"]>]> {
   let summary = "extractelement operation";
   let description = [{
@@ -669,7 +665,7 @@ def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     AllTypesMatch<["lhs", "rhs"]>]> {
   let summary = "shufflevector operation";
   let description = [{
@@ -701,7 +697,7 @@ def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_SIMDSelectOp : POPOp<"simd.select", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     AllTypesMatch<["trueValue", "falseValue", "result"]>,
     TypesMatchWith<"bool of same branch type", "result", "condition",
                    "getBoolOfSameParentType($_self)">]> {
@@ -737,7 +733,7 @@ def POP_SIMDSelectOp : POPOp<"simd.select", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     SIMDSizeOneOfSameDType<"result", "scalar">]> {
   let summary = "SIMD splat";
   let description = [{
@@ -766,7 +762,6 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pointer load operation";
   let description = [{
@@ -832,7 +827,6 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
 //===----------------------------------------------------------------------===//
 
 def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pointer store operation";
   let description = [{
@@ -887,7 +881,6 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
 //===----------------------------------------------------------------------===//
 
 def POP_OffsetOp : POPOp<"offset", [Pure, AllTypesMatch<["result", "ptr"]>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pointer offset operation";
   let description = [{
@@ -1015,7 +1008,7 @@ def POP_XOrOp : POP_BoolOp<"xor"> {
 //===----------------------------------------------------------------------===//
 
 def POP_ArrayCreateOp : POPOp<"array.create", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     ArrayElementType<"result", "operands">]> {
   let summary = "create an array";
   let description = [{
@@ -1056,7 +1049,7 @@ def POP_ArrayCreateOp : POPOp<"array.create", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_ArrayRepeatOp : POPOp<"array.repeat", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     ArrayElementType<"result", "operands">]> {
   let summary = "create an array";
   let description = [{
@@ -1096,7 +1089,7 @@ def POP_ArrayRepeatOp : POPOp<"array.repeat", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_ArrayGetOp : POPOp<"array.get", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     ArrayElementType<"array", "result">]> {
   let summary = "array get element";
   let description = [{
@@ -1132,7 +1125,7 @@ def POP_ArrayGetOp : POPOp<"array.get", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_ArrayReplaceOp : POPOp<"array.replace", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     AllTypesMatch<["array", "result"]>, ArrayElementType<"result", "value">]> {
   let summary = "array replace element";
   let description = [{
@@ -1171,7 +1164,6 @@ def POP_ArrayReplaceOp : POPOp<"array.replace", [Pure,
 def POP_ArrayGEPOp : POPOp<"array.gep", [Pure,
     TypesMatchWith<"pointer to array element type", "array", "result",
                    "getPointerToArrayElementType($_self)">,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "array get element pointer";
   let description = [{
@@ -1292,7 +1284,9 @@ def POP_StackAllocationOp : POPOp<"stack_allocation", [BytecodeOpInterface]> {
     struct Payload { int32_t size, align; };
     ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
     ErrorOrSuccess parametric_compile(Payload &payload,
-      TargetInfoAttr target, ParametricInterpreterState& state);
+      TargetInfoAttr target,
+      ArrayRef<Attribute> operands,
+      ParametricInterpreterState& state);
     ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
       const Payload &payload, InterpreterState &state);
     ErrorTreeOrSuccess parametric_interpret(ArrayRef<Attribute> operands,
@@ -1307,7 +1301,6 @@ def POP_StackAllocationOp : POPOp<"stack_allocation", [BytecodeOpInterface]> {
 
 def POP_StackAllocLifetimeStartOp : POPOp<"stack_alloc.lifetime.start", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Marks the start of stack allocated values lifetimes";
   let description = [{
@@ -1335,7 +1328,6 @@ def POP_StackAllocLifetimeStartOp : POPOp<"stack_alloc.lifetime.start", [
 
 def POP_StackAllocLifetimeEndOp : POPOp<"stack_alloc.lifetime.end", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Marks the end of stack allocated values lifetimes";
   let description = [{
@@ -1362,8 +1354,7 @@ def POP_StackAllocLifetimeEndOp : POPOp<"stack_alloc.lifetime.end", [
 //===----------------------------------------------------------------------===//
 
 def POP_AlignedAllocOp : POPOp<"aligned_alloc", [
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "aligned heap allocation";
   let description = [{
     The `pop.aligned_alloc` operation performs an aligned allocation of memory
@@ -1389,8 +1380,7 @@ def POP_AlignedAllocOp : POPOp<"aligned_alloc", [
 //===----------------------------------------------------------------------===//
 
 def POP_AlignedFreeOp : POPOp<"aligned_free", [
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "free aligned heap memory";
   let description = [{
     The `pop.aligned_free` operation frees heap memory allocated by
@@ -1443,7 +1433,6 @@ def POP_NoAliasPointerCastOp : POPOp<"noalias_pointer_cast", [Pure,
 
 def POP_ExternalCallOp : POPOp<"external_call", [
     DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>
   ]> {
   let summary = "call an external function";
@@ -1573,7 +1562,9 @@ def POP_GlobalAllocOp : POPOp<"global_alloc", [Pure,
     struct Payload { int32_t size, align, addressSpace; };
     ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
     ErrorOrSuccess parametric_compile(Payload &payload,
-      TargetInfoAttr target, ParametricInterpreterState& state);
+      TargetInfoAttr target,
+      ArrayRef<Attribute> operands,
+      ParametricInterpreterState& state);
     ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
       const Payload &payload, InterpreterState &state);
     ErrorTreeOrSuccess parametric_interpret(ArrayRef<Attribute> operands,
@@ -1622,8 +1613,7 @@ def POP_GlobalConstantOp : POPOp<"global_constant", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def POP_CompilerGlobalLoadOp : POPOp<"compiler.global_load", [Pure,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "load the value of a global variable";
   let description = [{
     The `pop.compiler.global_load` operation loads a global variable by
@@ -1648,8 +1638,7 @@ def POP_CompilerGlobalLoadOp : POPOp<"compiler.global_load", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_CompilerGlobalStoreOp : POPOp<"compiler.global_store", [
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "store a value into a global variable";
   let description = [{
     The `pop.compiler.global_store` operation stores a value into a global
@@ -1675,7 +1664,7 @@ def POP_CompilerGlobalStoreOp : POPOp<"compiler.global_store", [
 //===----------------------------------------------------------------------===//
 
 def POP_PointerToIndexOp : POPOp<"pointer_to_index", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     DeclareOpInterfaceMethods<CastOpInterface>]> {
   let summary = "gets the address of the pointer as an index type.";
   let description = [{
@@ -1737,7 +1726,7 @@ def POP_CastToBuiltinOp : POPOp<"cast_to_builtin", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Unmaterialized type raising conversion.";
   let description = [{
     The `pop.cast_from_builtin` operation casts an MLIR builtin type to a POP
@@ -1790,8 +1779,7 @@ def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [Pure,
 def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic",[
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
     DeclareOpInterfaceMethods<ConditionallySpeculatable>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Call to an LLVM intrinsic function.";
   let description = [{
     The `pop.call_llvm_intrinsic` operation calls an llvm intrinsic using the
@@ -1858,7 +1846,7 @@ def POP_InlineAsmOp : POPOp<"inline_asm"> {
 //===----------------------------------------------------------------------===//
 
 def POP_VariadicCreateOp : POPOp<"variadic.create", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     VariadicElementType<"result", "operands">]> {
   let summary = "create a value of variadic type from a sequence of values";
   let description = [{
@@ -1897,7 +1885,7 @@ def POP_VariadicCreateOp : POPOp<"variadic.create", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_VariadicSplatOp : POPOp<"variadic.splat", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
     VariadicElementType<"result", "operand">]> {
   let summary = "create a value of variadic type from one replicated value";
   let description = [{
@@ -1968,7 +1956,7 @@ def POP_VariadicGetOp : POPOp<"variadic.get",
 //===----------------------------------------------------------------------===//
 
 def POP_VariadicSizeOp : POPOp<"variadic.size", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "given a sequence of variadic type, return its size";
   let description = [{
     The `pop.variadic.size` operation takes an operand of `!kgen.variadic` type
@@ -2175,8 +2163,7 @@ def POP_FenceOp : POPOp<"fence"> {
 //===----------------------------------------------------------------------===//
 
 def POP_StringAddressOp : POPOp<"string.address", [Pure,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Get the address of a string.";
   let description = [{
     The `pop.string.address` operation gets the pointer of the first byte of a
@@ -2272,7 +2259,7 @@ def POP_DTypeFromUI8 : POPOp<"dtype.from_ui8", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def POP_VariantBitcastOp : POPOp<"variant.bitcast", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Bitcast a pointer to a variant to one of its element types.";
   let description = [{
     The `pop.variant.bitcast` operation takes a pointer to a variant type and
@@ -2346,7 +2333,9 @@ def POP_VariantDiscrGEPOp : POPOp<"variant.discr_gep", [Pure,
     struct Payload { int32_t offset; };
     ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
     ErrorOrSuccess parametric_compile(Payload &payload,
-      TargetInfoAttr target, ParametricInterpreterState& state);
+      TargetInfoAttr target,
+      ArrayRef<Attribute> operands,
+      ParametricInterpreterState& state);
     ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
       const Payload &payload, InterpreterState &state);
     ErrorTreeOrSuccess parametric_interpret(ArrayRef<Attribute> operands,
@@ -2359,7 +2348,7 @@ def POP_VariantDiscrGEPOp : POPOp<"variant.discr_gep", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_UnionBitcastOp : POPOp<"union.bitcast", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "bitcast a union pointer to an element type";
   let description = [{
     The `pop.union.bitcast` operation casts a pointer of a union to a pointer of
@@ -2385,7 +2374,7 @@ def POP_UnionBitcastOp : POPOp<"union.bitcast", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_UnionWrapOp : POPOp<"union.wrap", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "wrap a value as a union value";
   let description = [{
     The `pop.union.wrap` operation wraps a value into a union type where the
@@ -2410,7 +2399,7 @@ def POP_UnionWrapOp : POPOp<"union.wrap", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_UnionUnwrapOp : POPOp<"union.unwrap", [Pure,
-    DeclareOpInterfaceMethods<ParametricInterpreterOpInterface>]> {
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "unwrap a union as one of its element types";
   let description = [{
     The `pop.union.unwrap` operation takes a union and converts it to a value of

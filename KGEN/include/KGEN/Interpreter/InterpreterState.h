@@ -277,6 +277,9 @@ public:
   /// Map the results of the current operation.
   virtual void mapResults(ArrayRef<Attribute> results) = 0;
 
+  virtual ErrorTreeOrSuccess
+  interpretOpWithFolder(Operation *op, ArrayRef<Attribute> operands) = 0;
+
 protected:
   void reset() {
     resetExecutor();
@@ -543,8 +546,8 @@ private:
   };
 
   /// Interpret a generic operation by trying to use its operation folder.
-  ErrorTreeOrSuccess interpretOpWithFolder(Operation *op,
-                                           ArrayRef<Attribute> operands);
+  ErrorTreeOrSuccess
+  interpretOpWithFolder(Operation *op, ArrayRef<Attribute> operands) override;
 
   /// Push a new stack frame.
   void pushFrame(Operation *origin, Operation *func) {

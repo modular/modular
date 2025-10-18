@@ -67,9 +67,11 @@ private:
 class alignas(8) BCOperation final
     : public llvm::TrailingObjects<BCOperation, BCOperand, BCResult> {
 public:
-  BCOperation(Operation *op, InterpretHook interpret, unsigned numOperands,
-              unsigned numResults, unsigned payloadOffset)
-      : op(op), interpret(interpret), numOperands(numOperands),
+  BCOperation(Operation *op, InterpretHook interpret,
+              ParametricInterpretHook parametric_interpret,
+              unsigned numOperands, unsigned numResults, unsigned payloadOffset)
+      : op(op), interpret(interpret),
+        parametric_interpret(parametric_interpret), numOperands(numOperands),
         numResults(numResults), payloadOffset(payloadOffset), nextOffset(-1) {}
 
   BCOperand *getOperand(unsigned i) {
@@ -97,6 +99,8 @@ public:
   /// A precomputed interpreter hook, which is used to interpret the operation.
   /// If null, then the folder is used.
   InterpretHook interpret;
+
+  ParametricInterpretHook parametric_interpret;
 
   uint32_t numOperands;
   uint32_t numResults;
@@ -225,7 +229,12 @@ ErrorTreeOrSuccess BytecodeBuilder::writeOperation(Operation *op) {
 
   // Get the interpret hook for the operation. If it does not implement the
   // interpreter interface, use the operation folder.
-  OpBytecodeGenerator generator{0, nullptr, nullptr};
+  OpBytecodeGenerator generator{.payloadSize = 0,
+                                .genBytecode = nullptr,
+                                .interpret = nullptr,
+                                .genParametricBytecode = nullptr,
+                                .parametric_interpret = nullptr};
+
   if (auto itf = dyn_cast<BytecodeInterpreterOpInterface>(op))
     generator = itf.getBytecodeGenerator();
 
@@ -237,7 +246,8 @@ ErrorTreeOrSuccess BytecodeBuilder::writeOperation(Operation *op) {
   auto [bc, bcIdx] =
       stream.next<BCOperation>(totalSize + generator.payloadSize);
   ::new (bc)
-      BCOperation(op, generator.interpret, numOperands, numResults, totalSize);
+      BCOperation(op, generator.interpret, generator.parametric_interpret,
+                  numOperands, numResults, totalSize);
 
   // Now create the trailing objects.
   for (unsigned i = 0; i != numOperands; ++i) {
@@ -571,4 +581,30 @@ BytecodeInterpreter::interpretFunction(Region &body,
         Twine(stack.size()));
   }
   return llvm::to_vector(exitValues);
+}
+
+ErrorTreeOrSuccess
+BytecodeInterpreter::interpretOpWithFolder(Operation *op,
+                                           ArrayRef<Attribute> operands) {
+  SmallVector<OpFoldResult> results;
+  // Otherwise, use the folder.
+  if (LLVM_UNLIKELY(failed(op->fold(operands, results)))) {
+    return reportFoldError(op, operands, "failed to fold operation ");
+  }
+  SmallVector<Attribute> resultAttrs;
+  resultAttrs.reserve(results.size());
+
+  for (auto result : results) {
+    auto value = dyn_cast<Attribute>(result);
+    // The bytecode interpreter doesn't support arbitrary value returns.
+    // Enforce that the folder returned an attribute!
+    if (LLVM_UNLIKELY(!value)) {
+      llvm::report_fatal_error(
+          "INTERNAL ERROR: operation '" + op->getName().getStringRef() +
+          "' folder returned a relative value in the interpreter");
+    }
+    resultAttrs.push_back(value);
+  }
+  mapResults(resultAttrs);
+  return success();
 }
