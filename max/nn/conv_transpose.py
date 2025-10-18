@@ -180,7 +180,7 @@ class ConvTranspose1d(Module):
              a tensor of shape (batch_size, new_length, out_channels).
              if self.permute, then the output shape will be (batch_size, out_channels, new_length)
         """
-        weight: TensorValue = self.weight.to(x.device)
+        weight: TensorValue = self.weight
 
         if self.permute:
             # Use Pyotorch and CuDNN layout.
@@ -198,11 +198,6 @@ class ConvTranspose1d(Module):
             # Reshape [kernel_length, in_channels, out_channels] to [kernel_height=1, kernel_length, out_channels, in_channels].
             weight = ops.unsqueeze(weight, 0)
 
-        if self.bias is not None:
-            bias = self.bias.to(x.device)
-        else:
-            bias = None
-
         res = ops.conv2d_transpose(
             x=x,
             filter=weight,
@@ -210,7 +205,7 @@ class ConvTranspose1d(Module):
             dilation=self.dilation,
             padding=self.padding,
             output_paddings=self.output_padding,
-            bias=bias,
+            bias=self.bias,
             input_layout=ConvInputLayout.NCHW
             if self.permute
             else ConvInputLayout.NHWC,
@@ -351,14 +346,12 @@ class WeightNormConvTranspose1d(Module):
         """
         if not hasattr(self.conv, "weight"):
             # Compute normalized weight sqrt(sum(x**2))
-            weight_v = self.weight_v.to(x.device)
-            weight_g = self.weight_g.to(x.device)
-            in_channels = weight_v.shape[0]
+            in_channels = self.weight_v.shape[0]
             v_norm = ops.sqrt(
-                ops.sum((weight_v**2).reshape([in_channels, -1]), axis=1)
+                ops.sum((self.weight_v**2).reshape([in_channels, -1]), axis=1)
             ).reshape([in_channels, 1, 1])
-            w = weight_v / v_norm
-            w = w * weight_g
+            w = self.weight_v / v_norm
+            w = w * self.weight_g
 
             # Update conv layer weight and apply convolution
             self.conv.weight = w
