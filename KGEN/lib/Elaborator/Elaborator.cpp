@@ -11,6 +11,7 @@
 
 #include "Elaborator.h"
 #include "IREvaluator.h"
+#include "ParametricElaborator.h"
 
 #include "AsyncRT/CompilerSupport/Context.h"
 #include "AsyncRT/Support/ForkJoin.h"
@@ -2820,10 +2821,18 @@ public:
     VerboseCompilerTimeTraceScope traceScope("elaborate-generators");
 
     // Now, construct and run the elaborator.
-    Elaborator impl(symtab, paramCache, target, options, compileAsmFn,
-                    compileOffloadFn, config);
-    if (failed(impl.run(theModule, roots.takeVector())))
-      return signalPassFailure();
+    if (useParametricInterpreter) {
+      ParametricElaborator impl(symtab, paramCache, target, options,
+                                compileAsmFn, compileOffloadFn, config);
+      if (failed(impl.run(theModule, roots.takeVector())))
+        return signalPassFailure();
+
+    } else {
+      Elaborator impl(symtab, paramCache, target, options, compileAsmFn,
+                      compileOffloadFn, config);
+      if (failed(impl.run(theModule, roots.takeVector())))
+        return signalPassFailure();
+    }
 
     // Invalidate nested symbol tables and recompute a new top level symbol
     // table.

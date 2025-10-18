@@ -150,6 +150,7 @@ void KGEN::buildElaborateModulePipeline(
       options.debugLevel == CompilationOptions::kFullDebugInfo;
   // When compiling with -O0, optimize functions before interpreting them.
   elaboratorOptions.optimizeInterpreter = options.optimizationLevel == 0;
+  elaboratorOptions.useParametricInterpreter = options.useParametricInterpreter;
   pm.addPass(createElaborateGenerators(target, elaboratorOptions, options,
                                        compileAsmFn, compileOffloadFn));
 }

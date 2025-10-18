@@ -276,6 +276,10 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       clOptions.enableLocalMLIRReproducer;
 
   options.isCrossCompilation = !clOptions.targetAccelerator.empty();
+  if (clOptions.cmd == Command::kElaborateUseParametricInterpreter)
+    options.useParametricInterpreter = true;
+  else if (clOptions.cmd == Command::kElaborateNoUseParametricInterpreter)
+    options.useParametricInterpreter = false;
 
   KGENCompiler compiler(*ctx, options, std::move(pmOptions));
 
@@ -392,7 +396,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // If all we're doing is generating a library file or elaborating, we're done
   // now.
-  if (clOptions.cmd == Command::kElaborate)
+  if (clOptions.cmd == Command::kElaborate ||
+      clOptions.cmd == Command::kElaborateUseParametricInterpreter ||
+      clOptions.cmd == Command::kElaborateNoUseParametricInterpreter)
     return emitModuleIR(*theModule, clOptions);
 
   // Construct the symbol table and the export map.

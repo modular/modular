@@ -58,10 +58,7 @@ public:
   ErrorOr<std::pair<Region *, Operation *>>
   lookupParametricFunctionBody(SymbolRefAttr symbol) override;
 
-  ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override {
-    llvm_unreachable(
-        "ParametricIREvaluator::lookupFunctionBody not implemented.");
-  }
+  ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
 
   ErrorOr<Type> lookupFuncTypeGenerator(SymbolRefAttr symbol) override;
 

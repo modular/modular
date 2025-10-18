@@ -46,6 +46,16 @@ ParametricIREvaluator::lookupParametricFunctionBody(SymbolRefAttr symbol) {
   return std::make_pair(&func.getBodyRegion(), nullptr);
 }
 
+ErrorOr<Region *>
+ParametricIREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
+  ErrorOr<std::pair<Region *, Operation *>> result =
+      lookupParametricFunctionBody(symbol);
+  if (result.isError())
+    return result.takeError();
+
+  return result->first;
+}
+
 ErrorOr<Type>
 ParametricIREvaluator::lookupFuncTypeGenerator(SymbolRefAttr symbol) {
   StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();

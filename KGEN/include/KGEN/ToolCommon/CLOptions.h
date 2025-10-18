@@ -23,7 +23,15 @@ class ExecutionEngine;
 
 /// What to do with a given KGEN file.
 enum class Command {
+  // (FIXME) put 3 different config of elaborate here
+  // to be flexible with different default value for
+  // whether to use parametric interpreter or not.
+  // Default value for whether use parametric interpreter or not.
   kElaborate,
+  // Do not use parametric interpreter.
+  kElaborateNoUseParametricInterpreter,
+  // Use parametric interpreter.
+  kElaborateUseParametricInterpreter,
   kEmit,
   kEmitAssembly,
   kEmitAssemblyVerbose,
@@ -472,6 +480,13 @@ private:
       cl::desc("The command to execute"),
       cl::values(
           clEnumValN(Command::kElaborate, "elaborate", "Elaborate the input."),
+          clEnumValN(Command::kElaborateUseParametricInterpreter,
+                     "elaborate=use-parametric-interpreter",
+                     "Elaborate the input with the parametric interpreter."),
+          clEnumValN(
+              Command::kElaborateNoUseParametricInterpreter,
+              "elaborate=no-use-parametric-interpreter",
+              "Elaborate the input but don't use the parametric interpreter."),
           clEnumValN(Command::kEmitLLVM, "emit-llvm", "Emit funcs as LLVM IR."),
           clEnumValN(Command::kEmitLLVMOpt, "emit-llvm=opt",
                      "Emit funcs as optimized LLVM IR."),

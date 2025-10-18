@@ -107,6 +107,7 @@ public:
 
   std::string targetAccelerator = "";
   bool isCrossCompilation = false;
+  bool useParametricInterpreter = false;
 
   llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_;
   DebugInfoLanguage debugInfoLanguage = kLangMojo;

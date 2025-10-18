@@ -10,7 +10,7 @@
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/CODialect/COUtils.h"
-#include "KGEN/Interpreter/InterpreterState.h"
+#include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -1400,7 +1400,7 @@ ErrorTreeOrSuccess TryOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 TryOp::parametric_interpret(ArrayRef<Attribute> operands,
                             ParametricInterpreterState &state) {
-  llvm_unreachable("lit.try parametric_interpret undefined");
+  return interpret(operands, state);
 }
 
 bool TryOp::hasTrivialFinally() {
@@ -1467,7 +1467,7 @@ ErrorTreeOrSuccess TryYieldOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 TryYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
                                  ParametricInterpreterState &state) {
-  llvm_unreachable("lit.try.yield parametric_interpret undefined");
+  return interpret(operands, state);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1511,7 +1511,7 @@ ErrorTreeOrSuccess TryRaiseOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 TryRaiseOp::parametric_interpret(ArrayRef<Attribute> operands,
                                  ParametricInterpreterState &state) {
-  llvm_unreachable("lit.try.raise parametric_interpret undefined");
+  return interpret(operands, state);
 }
 
 //===----------------------------------------------------------------------===//

@@ -576,7 +576,6 @@ ErrorTreeOrSuccess
 ParamYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
                                    ParametricInterpreterState &state) {
   state.popEvalFrame();
-  state.popEvalFrame();
   state.popParamValues(false, this->getOperation());
   state.transferControlFlowTo((*this)->getParentOp(), operands);
   return success();
@@ -764,6 +763,7 @@ static ErrorTreeOrSuccess computeCost(SymbolConstantAttr func, Location loc,
                                       MutableArrayRef<int64_t> compute,
                                       size_t depth) {
   ErrorOr<Region *> body = state.lookupFunctionBody(func.getSymbol());
+
   if (body.isError())
     return ErrorTree(loc, body.takeError());
 
