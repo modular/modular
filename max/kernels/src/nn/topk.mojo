@@ -1821,7 +1821,7 @@ fn apply_gumbel_noise_kernel[
     num_threads: Int,
 ](
     output: LayoutTensor[dtype, input_layout, MutableAnyOrigin],
-    input: LayoutTensor[dtype, input_layout, ImmutableAnyOrigin],
+    input: LayoutTensor[dtype, input_layout, MutableAnyOrigin],
     temperature: UnsafePointer[Float32],
     seed: UnsafePointer[UInt64],
 ):
@@ -1951,6 +1951,7 @@ fn gumbel_sampling_gpu[
         temp_ptr = rebind[UnsafePointer[Float32]](temperature.value().ptr)
     else:
         temp_ptr = UnsafePointer[Float32]()  # null pointer
+    var temp_size = temperature.value().size() if temperature else 0
 
     # Handle optional seed parameter
     var seed_ptr: UnsafePointer[UInt64]
@@ -1958,6 +1959,7 @@ fn gumbel_sampling_gpu[
         seed_ptr = rebind[UnsafePointer[UInt64]](seed.value().ptr)
     else:
         seed_ptr = UnsafePointer[UInt64]()  # null pointer
+    var seed_size = seed.value().size() if seed else 0
 
     alias hw_info = ctx.default_device_info
     alias gumbel_kernel = apply_gumbel_noise_kernel[
@@ -1967,11 +1969,11 @@ fn gumbel_sampling_gpu[
         hw_info.max_thread_block_size,
     ]
 
-    ctx.enqueue_function[gumbel_kernel](
+    ctx.enqueue_function_checked[gumbel_kernel, gumbel_kernel](
         noised_input,
         input,
-        temp_ptr,
-        seed_ptr,
+        temperature.value().to_device_buffer(ctx),
+        seed.value().to_device_buffer(ctx),
         grid_dim=hw_info.sm_count,
         block_dim=hw_info.max_thread_block_size,
         attributes=pdl_launch_attributes(),

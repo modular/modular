@@ -555,7 +555,7 @@ struct HopperMatmulSM90Kernel[
         a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
         b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
         c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-        lut_ptr: DeviceBuffer[DType.uint32],
+        lut_ptr: UnsafePointer[UInt32],
     ):
         """Main kernel entry point for matrix multiplication.
 
@@ -595,7 +595,7 @@ struct HopperMatmulSM90Kernel[
                 # - Upper 16 bits = y coordinate
                 # - Lower 16 bits = x coordinate
                 var linear = UInt32(block_idx.y * grid_dim.x + block_idx.x)
-                var packed = lut_ptr.unsafe_ptr()[linear]
+                var packed = lut_ptr[linear]
                 var new_x = packed & 0xFFFF
                 var new_y = packed >> 16
                 block_idx_swizzle = Index[dtype = DType.uint32](new_x, new_y)
@@ -1062,7 +1062,7 @@ struct HopperMatmulSM90Kernel[
         c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
         c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
         workspace_buffer: NDBuffer[Self.accum_type, 3, MutableAnyOrigin],
-        locks_ptr: UnsafePointer[NoneType],
+        locks_ptr: UnsafePointer[UInt8],
         problem_shape: IndexList[3],
     ):
         """Split-K variant of the kernel for better load balancing on small problems.
@@ -1267,13 +1267,14 @@ struct HopperMatmulSM90Kernel[
     fn run_grouped[
         a_tile_layout: Layout,
         b_tile_layout: Layout,
+        c_tile_layout: Layout,
         a_desc_layout: Layout,
         b_desc_layout: Layout,
         c_desc_layout: Layout,
     ](
         a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-        c_tma_op: TMATensorTile[c_type, c_smem_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[c_type, c_tile_layout, c_desc_layout],
         a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
         expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
         c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],

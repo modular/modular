@@ -66,6 +66,7 @@ from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from memory.pointer import _GPUAddressSpace
 
 from utils.index import Index, IndexList
+from builtin.device_passable import DevicePassable
 
 
 # Returns an IntTuple of variadic Int values.
@@ -567,7 +568,7 @@ struct TMATensorTile[
     layout: Layout,
     desc_layout: Layout = layout,
     is_k_major: Bool = True,
-](ImplicitlyCopyable, Movable):
+](DevicePassable, ImplicitlyCopyable, Movable):
     """
     A hardware-accelerated tensor memory access (TMA) tile for efficient asynchronous data movement.
 
@@ -604,6 +605,44 @@ struct TMATensorTile[
     The descriptor is used by the GPU's Tensor Memory Accelerator hardware to
     efficiently transfer data between global and shared memory.
     """
+
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return String(
+            "TMATensorTile[dtype = ",
+            dtype,
+            ", layout = ",
+            layout,
+            ", desc_layout = ",
+            desc_layout,
+            ", is_k_major = ",
+            is_k_major,
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing arguments
+        to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return Self.get_type_name()
 
     @always_inline
     @implicit
@@ -1812,7 +1851,7 @@ struct TMATensorTileArray[
     dtype: DType,
     cta_tile_layout: Layout,
     desc_layout: Layout,
-](ImplicitlyCopyable, Movable):
+](DevicePassable, ImplicitlyCopyable, Movable):
     """An array of TMA descripotr.
 
     Parameters:
@@ -1844,6 +1883,44 @@ struct TMATensorTileArray[
     This is a constant value that represents the size of the TMA descriptor in bytes.
     It is used to calculate the offset of the TMA descriptor in the device memory.
     """
+
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return String(
+            "TMATensorTileArray[num_of_tensormaps = ",
+            num_of_tensormaps,
+            ", dtype = ",
+            dtype,
+            ", cta_tile_layout = ",
+            cta_tile_layout,
+            ", desc_layout = ",
+            desc_layout,
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing arguments
+        to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return Self.get_type_name()
 
     @always_inline
     fn __init__(

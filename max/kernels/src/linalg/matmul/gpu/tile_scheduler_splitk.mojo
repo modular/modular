@@ -131,7 +131,7 @@ struct SplitKTileScheduler[
         out self,
         prob_shape: IndexList[3],
         block_id_in_cluster: IndexList[2],
-        locks_ptr: UnsafePointer[NoneType],
+        locks_ptr: UnsafePointer[UInt8],
     ):
         _check_scheduler_constraints[
             problem_shape_nk,

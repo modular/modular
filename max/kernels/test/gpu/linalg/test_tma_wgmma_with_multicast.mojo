@@ -415,7 +415,7 @@ def test_multicast_tma_wgmma[
         partitioned_multicast=partitioned_multicast,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),

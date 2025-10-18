@@ -147,11 +147,9 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
         type_of(template_tma_tensormap).layout,  # thread layout
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         dst.device_tensor(),
-        rebind[NDBuffer[DType.bfloat16, 2, MutableAnyOrigin]](
-            new_src.device_buffer()
-        ),
+        new_src.device_tensor(),
         template_tma_tensormap,
         tensormaps,
         grid_dim=(num_of_tensormaps),
@@ -305,11 +303,9 @@ def test_tma_replace_global_addr_in_smem_descriptor[
         type_of(template_tma_tensormap).layout,  # thread layout
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         dst.device_tensor(),
-        rebind[NDBuffer[DType.bfloat16, 2, MutableAnyOrigin]](
-            new_src.device_buffer()
-        ),
+        new_src.device_tensor(),
         template_tma_tensormap,
         tensormaps,
         grid_dim=(num_of_tensormaps),
@@ -506,11 +502,9 @@ def test_tma_replace_global_dim_in_smem_descriptor[
         type_of(template_tma_tensormap).desc_layout,  # desc layout
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         dst.device_tensor(),
-        rebind[NDBuffer[DType.bfloat16, 2, MutableAnyOrigin]](
-            new_src.device_buffer()
-        ),
+        new_src.device_tensor(),
         template_tma_tensormap,
         subtensors_m,
         tensormaps,

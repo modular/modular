@@ -625,7 +625,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         a_offsets,
@@ -633,7 +633,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         c,
         a_scales_tma_op,
         b_scales,
-        ceildiv(K, BK),
+        UInt(ceildiv(K, BK)),
         grid_dim=(
             ceildiv(N, BN),
             ceildiv(max_num_tokens_per_expert, BM),

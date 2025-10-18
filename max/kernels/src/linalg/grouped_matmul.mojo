@@ -200,7 +200,7 @@ fn naive_epilogue[
     var N = c.dim[1]()
     alias simd_size = simd_width_of[c_type]()
     var block_dim = (128 // simd_size, simd_size, 1)
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         c,
         grid_dim=(ceildiv(N, block_dim[0]), ceildiv(M, block_dim[1]), 1),
         block_dim=block_dim,
@@ -650,7 +650,7 @@ fn grouped_matmul_sm100[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         a_offsets,
@@ -882,7 +882,7 @@ fn grouped_matmul_amd[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         c_tensor,
         a_tensor,
         b_tensor,

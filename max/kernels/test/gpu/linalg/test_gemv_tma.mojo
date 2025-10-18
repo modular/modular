@@ -290,15 +290,15 @@ def gemv_tma[
         NUM_PIPELINE_STAGES,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         tma_desc_a,
         tma_desc_b,
         c,
         a,
         b,
-        M,
-        N,
-        K,
+        UInt(M),
+        UInt(N),
+        UInt(K),
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
         block_dim=(THREAD_NUM),
         shared_mem_bytes=Int(smem_use),

@@ -345,12 +345,12 @@ def test_tma_wgmma[
         a_smem=a_smem,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         # ctx.enqueue_function[kernel, dump_llvm=Path("invalid.ll")](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),
-        K // BK,
+        UInt(K // BK),
         grid_dim=(1, 1),
         block_dim=(128),
     )

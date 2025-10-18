@@ -63,6 +63,7 @@ from nn.mha_utils import (
 )
 
 from utils.index import Index, IndexList
+from builtin.device_passable import DevicePassable
 
 
 @register_passable("trivial")

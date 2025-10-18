@@ -691,11 +691,11 @@ def test_tma_umma[
             b_swizzle=b_swizzle,
             num_threads=block_dim,
         ]
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             a_tma_op,
             b_tma_op,
             c.device_tensor(),
-            K // BK,
+            UInt(K // BK),
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=Int(smem_use),
@@ -721,11 +721,11 @@ def test_tma_umma[
             num_threads=block_dim,
         ]
 
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             a.device_tensor(),
             b_tma_op,
             c.device_tensor(),
-            K // BK,
+            UInt(K // BK),
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=Int(smem_use),

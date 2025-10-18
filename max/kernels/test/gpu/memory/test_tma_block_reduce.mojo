@@ -204,9 +204,8 @@ def test_tma_block_reduce[
             )
             # Calculate shared memory size needed per row.
             var shared_mem_bytes = cols * size_of[dtype]()
-            ctx.enqueue_function[
-                tma_reduction_kernel[dtype, accum_type, simd_width]
-            ](
+            alias kernel = tma_reduction_kernel[dtype, accum_type, simd_width]
+            ctx.enqueue_function_checked[kernel, kernel,](
                 tma_desc,
                 rows,
                 cols,

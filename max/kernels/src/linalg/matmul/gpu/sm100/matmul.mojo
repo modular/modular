@@ -2190,11 +2190,11 @@ fn matmul_sm100_fallback[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c,
-        ceildiv(K, BK),
+        UInt(ceildiv(K, BK)),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=Int(smem_use),

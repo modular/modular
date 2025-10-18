@@ -2827,7 +2827,8 @@ fn mla_prefill_plan[
 
     if batch_size == 0:
         # Fill buffer lengths with 0
-        ctx.enqueue_function[set_buffer_lengths_to_zero[buffer_lengths.layout]](
+        alias kernel = set_buffer_lengths_to_zero[buffer_lengths.layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             buffer_lengths, grid_dim=1, block_dim=1
         )
     else:

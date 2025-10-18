@@ -1370,13 +1370,13 @@ fn bmm_sm100_blockwise_scaled_fp8[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c,
         a_scales_tma_op,
         b_scales,
-        ceildiv(K, BK),
+        UInt(ceildiv(K, BK)),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
         block_dim=(block_dim),
         shared_mem_bytes=Int(smem_use),
