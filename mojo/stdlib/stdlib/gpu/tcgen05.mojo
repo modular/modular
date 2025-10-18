@@ -184,12 +184,14 @@ fn tcgen05_ld[
         ),
     ]()
 
-    alias shape_str = String(datapaths) + "x" + String(bits)
+    alias shape_str = String(datapaths, "x", bits)
     alias num_str = String(repeat)
     alias pack_str = ".pack::16b" if pack else ""
     alias constraints_str = "=r," * width + "r"
-    alias output_args_str = "{" + _str_iota[width, prefix="$", sep=","]() + "}"
-    alias addr_str = "[$" + String(width) + "]"
+    alias output_args_str = String(
+        "{", _str_iota[UInt(width), prefix="$", sep=","](), "}"
+    )
+    alias addr_str = String("[$", width, "]")
 
     @parameter
     @always_inline("nodebug")
@@ -333,12 +335,14 @@ fn tcgen05_st[
         ),
     ]()
 
-    alias shape_str = String(datapaths) + "x" + String(bits)
+    alias shape_str = String(datapaths, "x", bits)
     alias num_str = String(repeat)
     alias pack_str = ".unpack::16b" if pack else ""
     alias constraints_str = "r," * width + "r"
-    alias addr_str = "[$" + String(width) + "]"
-    alias input_args_str = "{" + _str_iota[width, prefix="$", sep=","]() + "}"
+    alias addr_str = String("[$", String(width), "]")
+    alias input_args_str = String(
+        "{", _str_iota[UInt(width), prefix="$", sep=","](), "}"
+    )
 
     alias asm_str = (
         "tcgen05.st.sync.aligned."
