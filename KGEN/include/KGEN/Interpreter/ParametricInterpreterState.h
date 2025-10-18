@@ -64,11 +64,6 @@ public:
 
   virtual bool overwriteDeclBinding(Attribute decl, Attribute value) = 0;
 
-  virtual ErrorTreeOr<SmallVector<Attribute>>
-  interpretParamFunction(Attribute callee,
-                         llvm::ArrayRef<TypedAttr> paramValues,
-                         Attribute operandsAttr, Location loc) = 0;
-
   virtual ErrorTreeOr<TypedAttr>
   interpretGenerator(Attribute calleeAttr,
                      llvm::ArrayRef<TypedAttr> paramValues,
