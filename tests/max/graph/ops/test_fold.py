@@ -116,7 +116,7 @@ def test_fold_invalid_inputs(
 
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(
-            ValueError, match=".*must match the calculated number of blocks.*"
+            ValueError, match=r".*must match the calculated number of blocks.*"
         ):
             _ = ops.fold(
                 graph.inputs[0].tensor,
@@ -135,7 +135,7 @@ def test_fold_invalid_inputs(
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(
             ValueError,
-            match=".*must be a multiple of the product of the total kernel size.*",
+            match=r".*must be a multiple of the product of the total kernel size.*",
         ):
             _ = ops.fold(
                 graph.inputs[0].tensor,

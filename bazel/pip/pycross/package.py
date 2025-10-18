@@ -165,8 +165,9 @@ class Package:
         if len(unique_downloads) == 1:
             actual = f'"{next(iter(unique_downloads))}",'
         else:
+            newline = "\n"
             actual = f"""select({{
-            {",\n            ".join(sorted(f'"{k}": "{v}"' for k, v in select_values.items()))},
+            {f",{newline}            ".join(sorted(f'"{k}": "{v}"' for k, v in select_values.items()))},
         }}),"""
 
         tags_line = ""

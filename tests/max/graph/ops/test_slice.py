@@ -326,7 +326,7 @@ def test_slice_dim_overflow(
 ) -> None:
     """Tests cases that would overflow an int64 slice index."""
     with pytest.raises(
-        ValueError, match="rmo.slice index computation overflow"
+        ValueError, match=r"rmo.slice index computation overflow"
     ):
         Graph(
             "slice",
@@ -541,7 +541,7 @@ def test_slice_out_of_bounds_specific_error_message(
     ) as graph:
         with pytest.raises(
             ValueError,
-            match="rmo.slice stop index 1024 out of range for dimension size 3",
+            match=r"rmo.slice stop index 1024 out of range for dimension size 3",
         ):
             graph.inputs[0].tensor[:, 0:1024]
 
@@ -608,7 +608,7 @@ def test_slice_out_of_bounds(
     with graph_builder(input_types=[tensor_type]) as graph:
         with pytest.raises(
             ValueError,
-            match="rmo.slice.*(out of range|start and stop should be)",
+            match=r"rmo.slice.*(out of range|start and stop should be)",
         ):
             ops.slice_tensor(graph.inputs[0].tensor, index)
 

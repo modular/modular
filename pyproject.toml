@@ -62,6 +62,7 @@ ignore = [
   "F405", # TODO: glob imports undefined
   "F821", # TODO: Undefined names, means script is invalid
   "F841", # TODO: unused variables
+  "FURB122", # Questionable readability improvement
   "RUF005", # Consider iterable unpacking instead of concatenation
   "RUF009", # Do not perform function call in dataclass defaults
   "RUF010", # Use explicit conversion flag

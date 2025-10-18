@@ -93,7 +93,7 @@ class ConvInputLayout(enum.Enum):
         return ConvInputLayout(attr.value)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True)  # noqa: RUF049  # TODO: investigate why this breaks
 class DeviceKind(str, Enum):
     """A device type representation."""
 

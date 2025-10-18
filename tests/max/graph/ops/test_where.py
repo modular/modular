@@ -82,7 +82,7 @@ def test_where_error_message_with_non_bool_condition() -> None:
         cond, x, y = graph.inputs
         with pytest.raises(
             ValueError,
-            match="Expected condition to be a boolean tensor, but got a tensor with dtype DType.float32",
+            match=r"Expected condition to be a boolean tensor, but got a tensor with dtype DType.float32",
         ):
             ops.where(cond.tensor, x.tensor, y.tensor)
 

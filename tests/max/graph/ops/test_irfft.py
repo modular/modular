@@ -112,6 +112,6 @@ def test_invalid_device() -> None:
     input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
     with Graph("irfft", input_types=[input_type]) as graph:
         with pytest.raises(
-            ValueError, match="IRFFT is currently only supported on GPU."
+            ValueError, match=r"IRFFT is currently only supported on GPU."
         ):
             ops.irfft(graph.inputs[0].tensor, n=1, axis=0)

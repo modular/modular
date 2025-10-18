@@ -35,8 +35,8 @@ def test_allreduce_rep_device() -> None:
     with pytest.raises(
         ValueError,
         match=(
-            "allreduce.sum operation must have unique devices across its input"
-            " tensors."
+            r"allreduce.sum operation must have unique devices across its input"
+            r" tensors."
         ),
     ):
         with Graph(
@@ -82,8 +82,8 @@ def test_allreduce_wrong_shape() -> None:
     with pytest.raises(
         ValueError,
         match=(
-            "allreduce.sum operation must have the same shape across all input"
-            " tensors."
+            r"allreduce.sum operation must have the same shape across all input"
+            r" tensors."
         ),
     ):
         with Graph(

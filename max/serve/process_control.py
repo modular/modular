@@ -221,7 +221,7 @@ class ProcessMonitor:
         completed_task = loop.create_task(self.until_completed())
         dead_task = loop.create_task(self.until_dead())
 
-        completed_tasks, pending_tasks = await asyncio.wait(
+        await asyncio.wait(
             [completed_task, dead_task], return_when=asyncio.FIRST_COMPLETED
         )
 

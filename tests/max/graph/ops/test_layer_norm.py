@@ -162,7 +162,6 @@ def test_layer_norm__error__zero_last_dim(
     input_type: TensorType,
 ) -> None:
     """Test that layer_norm handles zero-sized last dimension gracefully."""
-    *_, last_dim = input_type.shape
     # Create input with zero-sized last dimension
     zero_last_dim_type = TensorType(
         input_type.dtype, [*input_type.shape[:-1], 0], input_type.device

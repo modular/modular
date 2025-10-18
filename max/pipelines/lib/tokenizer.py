@@ -431,7 +431,7 @@ class TextTokenizer(
     async def new_context(self, request: TextGenerationRequest) -> TextContext:
         """Create a new TextContext object, leveraging necessary information from TextGenerationRequest."""
         # Encode Prompt / Messages
-        prompt, token_ids = await self._generate_prompt_and_token_ids(
+        _prompt, token_ids = await self._generate_prompt_and_token_ids(
             prompt=request.prompt,
             messages=request.messages,
             tools=request.tools,

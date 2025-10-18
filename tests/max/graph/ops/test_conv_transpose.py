@@ -173,8 +173,8 @@ def test_conv_dtype_promote_weight_failed() -> None:
         with pytest.raises(
             ValueError,
             match=(
-                "Failed to resolve valid dtype: Unsafe cast from si32 to f32."
-                " Insert an explicit cast op if this conversion is wanted"
+                r"Failed to resolve valid dtype: Unsafe cast from si32 to f32."
+                r" Insert an explicit cast op if this conversion is wanted"
             ),
         ):
             out = ops.conv2d(

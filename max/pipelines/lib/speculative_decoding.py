@@ -654,7 +654,7 @@ class SpeculativeDecodingTextGenerationPipeline(
         all_draft_logits: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
         # Prepare next token inputs for target model
-        target_inputs, target_num_steps = self.prepare_batch(
+        target_inputs, _target_num_steps = self.prepare_batch(
             self._target_model,
             context_batch,
             # I believe, num steps in this scenario is 1, as we are only
