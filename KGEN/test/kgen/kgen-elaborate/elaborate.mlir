@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -elaborate-generators -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=false" -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: kgen.func @parameter_use_chain()
 kgen.generator @parameter_use_chain() {

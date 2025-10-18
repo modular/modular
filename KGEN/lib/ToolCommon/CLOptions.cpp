@@ -136,7 +136,13 @@ bool CommandLineFuncParser::parse(llvm::cl::Option &o, StringRef argName,
 bool KGENCLOptionsParser::parse(llvm::cl::Option &o, StringRef argName,
                                 StringRef argValue, Command &val) {
   if (argName == "elaborate") {
-    val = Command::kElaborate;
+    if (argValue == "no-use-parametric-interpreter")
+      val = Command::kElaborateNoUseParametricInterpreter;
+    else if (argValue == "use-parametric-interpreter")
+      val = Command::kElaborateUseParametricInterpreter;
+    else
+      val = Command::kElaborate;
+
     return false;
   }
   if (argName == "emit-llvm") {

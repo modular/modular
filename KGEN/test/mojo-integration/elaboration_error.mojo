@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen %s -elaborate -verify-diagnostics
+# RUN: kgen %s -elaborate=no-use-parametric-interpreter -verify-diagnostics
 
 
 from collections.string.string_slice import StaticString, _get_kgen_string

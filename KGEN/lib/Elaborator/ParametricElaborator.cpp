@@ -50,6 +50,134 @@ static constexpr StringRef kLLVMMetadataArrayAttrName =
 static constexpr StringRef kLLVMArgMetadataArrayAttrName =
     "kgen.elaborator.llvm_arg_metadata_array";
 
+//===----------------------------------------------------------------------===//
+// ExpansionGraph
+//===----------------------------------------------------------------------===//
+
+PImplNode::PImplNode(PParamNode *parent)
+    : parent(parent), paramGraph(parent->gen.getBodyRegion()) {}
+
+void PImplNode::initialize(InstantiatedOpInterface inst,
+                           ParameterUseDefGraph &&graph) {
+  this->inst = inst;
+  this->paramGraph = std::move(graph);
+}
+
+static std::mutex &getGlobalMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+void PImplNode::setToError(ErrorTree &&err) {
+  if (error) {
+#ifndef MODULAR_PRODUCTION
+    std::lock_guard<std::mutex> guard(getGlobalMutex());
+    llvm::errs() << "INTERNAL ELABORATOR ERROR PROCESSING: ";
+    if (parent && parent->gen)
+      llvm::errs() << parent->getMangledName().strref();
+    else if (inst)
+      llvm::errs() << inst.getName();
+    else
+      llvm::errs() << "[ROOT NODE]";
+    llvm::errs() << "\n";
+    std::move(*error).emit([](Location loc) { return mlir::emitError(loc); },
+                           "HERE");
+#endif // MODULAR_PRODUCTION
+    llvm_unreachable("impl node already has an error");
+  }
+  hasError.store(true);
+  error = std::move(err);
+}
+
+void PParamNode::andThenAsync(AsyncValue::Waiter &&waiter) {
+  expansionGraph->didAddTask();
+  paramCh.andThenAsync([waiter = std::move(waiter), this]() mutable {
+    waiter();
+    expansionGraph->didCompleteTask();
+  });
+}
+
+void PParamNode::emplace() {
+  if (done.exchange(DoneState::DONE) == DoneState::NOT_DONE)
+    paramCh.copy().emplace();
+}
+
+AsyncValueRef<Chain> PParamNode::copy() const { return paramCh.copy(); }
+
+void PParamNode::setToError() {
+  if (done.exchange(DoneState::ERROR) == DoneState::NOT_DONE)
+    paramCh.copy().emplace();
+}
+
+ParametricExpansionGraph::~ParametricExpansionGraph() {
+  if (--numOutstandingResources == 0) {
+    quiesceChain.copy().emplace();
+    return;
+  }
+  // If we have outstanding tasks at destruction time, set all outstanding
+  // tasks to the error state and await completion.
+  for (auto &[key, node] : nodes.get())
+    node->setToError();
+  AsyncRT::await(quiesceChain);
+}
+
+void ParametricExpansionGraph::didCompleteTask() {
+  if (--numOutstandingResources == 0)
+    quiesceChain.copy().emplace();
+}
+
+void ParametricExpansionGraph::didAddTask() { ++numOutstandingResources; }
+
+ErrorTreeOr<PImplNode *> PParamNode::getFirstConcreteNode() {
+  if (!impl.error)
+    return &impl;
+  // Propagate the error trivially if the current generator has no parameters.
+  if (inputParams.empty())
+    return impl.error->copy();
+  return ErrorTree(gen.getLoc(), "function instantiation failed",
+                   impl.error->copy());
+}
+
+ErrorTreeOr<FuncOp> PParamNode::getFirstConcreteFunc() {
+  ErrorTreeOr<PImplNode *> impl = getFirstConcreteNode();
+  if (impl.isError())
+    return impl.takeError();
+  FuncOp func = dyn_cast<FuncOp>(*impl.takeValue()->inst);
+  assert(func && "concrete instance not a FuncOp");
+  return func;
+}
+
+ErrorTreeOrSuccess PParamNode::collectErrorsOrSuccess() {
+  if (!impl.error)
+    return success();
+  // Propagate the error trivially if the current generator has no parameters.
+  if (inputParams.empty())
+    return impl.error->copy();
+  return ErrorTree(gen.getLoc(), "function instantiation failed",
+                   impl.error->copy());
+}
+
+StringAttr PParamNode::getMangledName() {
+  // Check cached result.
+  if (const void *namePtr = mangledName.load())
+    return StringAttr::getFromOpaquePointer(namePtr);
+
+  // Bind all parameter values in this scope.
+  ArrayRef<TypedAttr> inputParamValues = inputParams.getValue();
+  [[maybe_unused]] ArrayRef<ParamDeclAttr> inputParamDecls =
+      gen.getInputParams();
+  assert(inputParamValues.size() == inputParamDecls.size() &&
+         "incorrect # input parameter values");
+  std::string baseName = mangleParameterValues(gen, inputParamValues,
+                                               [](StringRef) { return ""; });
+  StringAttr name = StringAttr::get(gen->getContext(), baseName);
+
+  const void *existing = nullptr;
+  if (mangledName.compare_exchange_strong(existing, name.getAsOpaquePointer()))
+    return name;
+  return StringAttr::getFromOpaquePointer(existing);
+}
+
 #define HANDLE_EVALUATOR_CONC(VAR, INODE, LOC, EXPR)                           \
   do {                                                                         \
     auto exprResult =                                                          \
@@ -128,10 +256,6 @@ static ElaborationState processParamAssertOp(PImplNode *inode,
   if (resultInt.getValue().isZero()) {
     // Evaluate the string to report it.
     HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getMessage());
-    llvm::dbgs() << "ParamAssertOp: " << op << "\n";
-    llvm::dbgs() << "getCond(): " << op.getCond() << "\n";
-    inode->getEvaluator().dumpParams();
-
     inode->setToError(
         ErrorTree(op.getLoc(),
                   "constraint failed: " + cast<StringAttr>(value).getValue()));

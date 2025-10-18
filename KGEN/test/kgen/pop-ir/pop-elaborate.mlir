@@ -1,4 +1,4 @@
-// RUN: kgen-opt -elaborate-generators --kgen-print-inline-type-values %s | FileCheck %s
+// RUN: kgen-opt -elaborate-generators="use-parametric-interpret=false" --kgen-print-inline-type-values %s | FileCheck %s
 
 // NOTE: Bytes are encoded backwards in resource blobs.
 

@@ -428,8 +428,11 @@ def ElaborateGenerators : Pass<"elaborate-generators", "ModuleOp"> {
            "The maximum elaborator instantiation depth.">,
     Option<"elaborateDebugInfo", "elaborate-debuginfo", "bool", "false",
            "If true, parameter references in debuginfo will be concretized.">,
-    Option<"optimizeInterpreter", "optimize-interp", "bool", "false",
-           "Whether to optimize interpreter functions.">
+    Option<"optimizeInterpreter", "optimize-interpret", "bool", "false",
+           "Whether to optimize interpreter functions.">,
+    Option<"useParametricInterpreter", "use-parametric-interpret",
+           "bool", "false",
+           "If true, use interpreter that interprets parametric functions.">
   ];
 }
 
