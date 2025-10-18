@@ -85,6 +85,7 @@ enum ExprContext {
   EC_Closure,              // closure formation
   EC_Origin,               // origin specifier
   EC_TypeOf,               // type_of(x)
+  EC_ConformsTo,           // conforms_to
   EC_FunctionsInModule,    // __functions_in_module()
   EC_PyBindGen,            // within Python binding generation
   EC_MergeWith,            // implicit __merge_with__ call

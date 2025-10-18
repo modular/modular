@@ -12,6 +12,7 @@
 #include "MojoUtils.h"
 #include "ParameterInference.h"
 #include "ParserEvaluationContext.h"
+#include "Traits.h"
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"

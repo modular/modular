@@ -87,6 +87,7 @@ public:
     kOriginOf,                 // origin_of(x)
     kTypeOfDeprecated,         // __type_of(x), TODO(MOCO-2604): remove this.
     kTypeOf,                   // type_of(x)
+    kConformsTo,               // conforms_to(T, Trait)
     kFunctionsInModule,        // __functions_in_module()
     kFirstMagicFunction = kGetMValueAsLitRef,
     kLastMagicFunction = kFunctionsInModule,

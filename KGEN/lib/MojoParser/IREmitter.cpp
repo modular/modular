@@ -138,6 +138,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in origin specifier";
   case EC_TypeOf:
     return " in type_of";
+  case EC_ConformsTo:
+    return " in conforms_to";
   case EC_FunctionsInModule:
     return " in __functions_in_module";
   case EC_PyBindGen:

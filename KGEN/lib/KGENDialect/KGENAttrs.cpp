@@ -290,6 +290,25 @@ TypedAttr UpcastAttr::get(Type type, TypedAttr inputTypeValue) {
 bool UpcastAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
+// TypeConformsToAttr
+//===----------------------------------------------------------------------===//
+
+Type TypeConformsToTraitAttr::getType() const {
+  return IntegerType::get(getContext(), 1);
+}
+
+LogicalResult
+TypeConformsToTraitAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                TypedAttr typeValue, VariadicAttr traitNames) {
+  if (!isa<KGEN::StringType>(traitNames.getType().getElementType()))
+    return emitError()
+           << "expected a variadic of strings for trait names, but got "
+           << traitNames.getType();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // GetWitnessAttr
 //===----------------------------------------------------------------------===//
 

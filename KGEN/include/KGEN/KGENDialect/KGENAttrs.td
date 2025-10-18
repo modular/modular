@@ -14,6 +14,7 @@
 include "KGEN/KGENDialect/KGENAttrInterfaces.td"
 include "KGEN/KGENDialect/KGENDialect.td"
 include "KGEN/KGENDialect/KGENEnums.td"
+include "KGEN/KGENDialect/KGENTypes.td"
 include "Support/Compiler/AttrBase.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
@@ -357,6 +358,46 @@ def KGEN_TypeParamAttr : KGEN_ExprAttr<"TypeParam", "type"> {
   let hasCustomAssemblyFormat = 1;
   let skipDefaultBuilders = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// TypeConformToTraitAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms_to_trait",
+  [TypedAttrInterface, ContextuallyEvaluatedAttrInterface]> {
+  let summary = "check whether the type conforms to specific traits";
+  let description = [{
+    This represents a flag to indicate the type, specified by `typeValue`,
+    conforms to specific traits, specified by a list of trait names.
+
+    FIXME: The only reason that we uses a list of string to represent trait in
+    this attr is because trait types are not preserved after lower-lit, meaning
+    that the only way to refer to a specific trait during elaboration time is
+    through symbol names.
+  }];
+
+  let assemblyFormat = "`<` $typeValue `,` qualified($traitNames) `>`";
+
+  let parameters = (ins
+    "TypedAttr":$typeValue,
+    "::M::KGEN::VariadicAttr":$traitNames
+  );
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
+                                        "KGEN::VariadicAttr":$traitNames), [{
+      return $_get(typeValue.getContext(), typeValue, traitNames);
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Get the type of the attribute. It is always I1 type.
+    Type getType() const;
+  }];
+
+  let genVerifyDecl = 1;
+}
+
 
 //===----------------------------------------------------------------------===//
 // UpcastAttr
