@@ -24,6 +24,7 @@ from gpu.host.info import B200
 
 from utils import IndexList
 from utils.index import Index
+import itertools
 
 
 @always_inline
@@ -39,6 +40,7 @@ fn test[
     num_experts: Int,
     expert_shape: IndexList[2],
     has_epilogue: Bool = False,
+    qkv_perm_dim: Bool = False,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -80,8 +82,10 @@ fn test[
     alias static_a_shape = DimList(Dim(), K)
     var dynamic_a_shape = DimList(total_num_tokens, K)
     var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    alias static_c_shape = DimList(Dim(), N)
-    var dynamic_c_shape = DimList(total_num_tokens, N)
+    alias actual_N = 3 * N if qkv_perm_dim else N
+    alias static_c_shape = DimList(Dim(), actual_N)
+    var dynamic_c_shape = DimList(total_num_tokens, actual_N)
+
     var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
     var c_ref_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
     var a_offsets_host = HostNDBuffer[DType.uint32, 1, DimList(Dim())](
@@ -89,7 +93,7 @@ fn test[
     )
 
     # Create host B buffers
-    alias static_b_shape = DimList(num_experts, N, K)
+    alias static_b_shape = DimList(num_experts, 3 * N if qkv_perm_dim else N, K)
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
     var expert_ids_host = HostNDBuffer[DType.int32, 1](num_experts)
 
@@ -144,6 +148,11 @@ fn test[
 
     var c_dev_ndbuffer = c_dev.tensor
 
+    constrained[
+        not (qkv_perm_dim and has_epilogue),
+        "qkv_perm_dim and has_epilogue cannot be True at the same time",
+    ]()
+
     @always_inline
     @__copy_capture(c_dev_ndbuffer)
     @parameter
@@ -156,15 +165,36 @@ fn test[
         for i in range(width):
             new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
 
-        c_dev_ndbuffer.store[width=width, alignment=alignment](
-            idx, new_val.cast[out_type]()
-        )
+        ptr = c_dev_ndbuffer.data + idx[0] * N + idx[1]
 
-    grouped_matmul[
-        elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+        ptr.store[width=width, alignment=alignment](new_val.cast[out_type]())
+
+    @always_inline
+    @__copy_capture(c_dev_ndbuffer, total_num_tokens)
+    @parameter
+    fn perm_dim_fn[
+        dtype: DType, width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
+        var new_val = val
+        var i = idx[0]
+        var j = idx[1]
+        var new_j, new_k = divmod(j, N)
+        constrained[N % width == 0, "N must be divisible by width"]()
+        # The current index is [i, new_j, new_k] in the M x 3 x N row major
+        # tensor.
+        # The permdim tensor has the shape 3 x M x N, so the index is then
+        # [new_j, i, new_k].
+        ptr = c_dev_ndbuffer.data + new_j * total_num_tokens * N + i * N + new_k
+        ptr.store[width=width, alignment=alignment](new_val.cast[out_type]())
+
+    alias elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+        perm_dim_fn
+    ) if qkv_perm_dim else (
+        OptionalReg[elementwise_epilogue_type](
             epilogue_fn
-        ) if has_epilogue else None,
-    ](
+        ) if has_epilogue else None
+    )
+    grouped_matmul[elementwise_lambda_fn=elementwise_lambda_fn,](
         c_dev.tensor,
         a_dev.tensor,
         b_dev.tensor,
@@ -183,8 +213,36 @@ fn test[
     rtol = 1e-2
     c_ref_host_buffer = c_ref_host.tensor
     c_host_buffer = c_host.tensor
-    for m in range(total_num_tokens):
-        for n in range(N):
+
+    @parameter
+    if qkv_perm_dim:
+        for qkv_idx, m, n in itertools.product(
+            range(3), range(total_num_tokens), range(N)
+        ):
+            var expect = c_ref_host_buffer[m, qkv_idx * N + n]
+
+            var actual = c_host_buffer.data[
+                qkv_idx * total_num_tokens * N + m * N + n
+            ]
+            assert_almost_equal(
+                actual,
+                expect,
+                msg=String(
+                    "qkv_idx: ",
+                    qkv_idx,
+                    " m: ",
+                    m,
+                    " n: ",
+                    n,
+                    " ref: ",
+                    expect,
+                    " actual: ",
+                    actual,
+                ),
+                rtol=rtol,
+            )
+    else:
+        for m, n in itertools.product(range(total_num_tokens), range(N)):
             var expect: Scalar[out_type]
 
             @parameter
@@ -519,3 +577,12 @@ def main():
                     num_experts=2,
                     expert_shape = Index(n, m),
                 ](2, List[Int](64, 128), List[Int](0, -1), ctx)
+
+        # QKV perm dim test
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            num_experts=6,
+            expert_shape = Index(192, 1024),
+            qkv_perm_dim=True,
+        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)

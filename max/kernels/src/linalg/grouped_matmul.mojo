@@ -992,6 +992,7 @@ fn grouped_matmul[
             cta_group=cta_group,
             a_swizzle=a_swizzle,
             b_swizzle=b_swizzle,
+            elementwise_lambda_fn=elementwise_lambda_fn,
         ](
             c,
             a,
@@ -1002,16 +1003,6 @@ fn grouped_matmul[
             num_active_experts,
             ctx,
         )
-
-        @parameter
-        if elementwise_lambda_fn:
-            alias elementwise_lambda = elementwise_lambda_fn.value()
-            naive_epilogue[
-                c_type, c_shape, elementwise_lambda_fn=elementwise_lambda
-            ](
-                c,
-                ctx,
-            )
     elif is_amd_kernel_applicable:
         grouped_matmul_amd[elementwise_lambda_fn=elementwise_lambda_fn](
             c,
