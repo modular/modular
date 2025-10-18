@@ -70,6 +70,22 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "smoke_test",
+    testonly = True,
+    srcs = ["smoke_tests/smoke_test.py"],
+    data = glob([
+        "smoke_tests/chartqa_modular/**",
+    ]),
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("click"),
+        requirement("requests"),
+        requirement("lm-eval"),
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
+    ],
+)
+
+modular_py_binary(
     name = "verify_layers_e2e",
     testonly = True,
     srcs = glob(["verify_layers/*.py"]),

@@ -17,6 +17,9 @@ Where the serve environment should already have either MAX/VLLM/SGLang installed
 The lm-eval environment should already have lm-eval installed.
 These dependencies are to be removed once this script
 has been integrated into bazel.
+
+Note that if you're running this script inside bazel, only available for max-ci,
+then the virtualenvs are not needed.
 """
 
 import json
@@ -24,6 +27,7 @@ import logging
 import os
 import signal
 import subprocess
+import sys
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -41,6 +45,10 @@ URL = "http://localhost:8000/v1/chat/completions"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _inside_bazel() -> bool:
+    return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
 
 
 def test_single_request(model: str, task: str) -> None:
@@ -112,38 +120,45 @@ def server_is_ready() -> bool:
 
 
 def get_server_cmd(framework: str, model: str) -> list[str]:
-    interpreter = [".venv-serve/bin/python", "-m"]
-    commands = {
-        "sglang": [
-            *interpreter,
-            "sglang.launch_server",
-            "--host",
-            "0.0.0.0",
-            "--attention-backend",
-            "triton" if "b200" in get_gpu_model().lower() else "fa3",
-            "--mem-fraction-static",
-            "0.8",
-        ],
-        "vllm": [
-            *interpreter,
-            "vllm.entrypoints.openai.api_server",
-            "--host",
-            "0.0.0.0",
-            "--max-model-len",
-            "16384",
-        ],
-        "max": [*interpreter, "max.entrypoints.pipelines", "serve"],
-        "max-ci": [
-            "./bazelw",
-            "run",
-            "--config=ci",
-            "--config=disable-mypy",
-            "max",
-            "--",
-            "serve",
-        ],
-    }
-    return commands[framework] + [
+    if _inside_bazel():
+        assert framework == "max-ci", (
+            "Only max-ci supported when running in bazel"
+        )
+        cmd = [sys.executable, "-m", "max.entrypoints.pipelines", "serve"]
+    else:
+        interpreter = [".venv-serve/bin/python", "-m"]
+        commands = {
+            "sglang": [
+                *interpreter,
+                "sglang.launch_server",
+                "--host",
+                "0.0.0.0",
+                "--attention-backend",
+                "triton" if "b200" in get_gpu_model().lower() else "fa3",
+                "--mem-fraction-static",
+                "0.8",
+            ],
+            "vllm": [
+                *interpreter,
+                "vllm.entrypoints.openai.api_server",
+                "--host",
+                "0.0.0.0",
+                "--max-model-len",
+                "16384",
+            ],
+            "max": [*interpreter, "max.entrypoints.pipelines", "serve"],
+            "max-ci": [
+                "./bazelw",
+                "run",
+                "--config=ci",
+                "--config=disable-mypy",
+                "max",
+                "--",
+                "serve",
+            ],
+        }
+        cmd = commands[framework]
+    return cmd + [
         "--port",
         "8000",
         "--trust-remote-code",
@@ -162,8 +177,12 @@ def get_lm_eval_cmd(model: str, task: str) -> list[str]:
         "qwen/qwen3-8b": ",max_gen_toks=4096",
     }.get(model, "")
 
+    interpreter = (
+        sys.executable if _inside_bazel() else ".venv-lm-eval/bin/python"
+    )
+
     return [
-        ".venv-lm-eval/bin/python",
+        interpreter,
         "-m",
         "lm_eval",
         "--model",
@@ -284,7 +303,8 @@ def build_eval_summary(
 @click.option(
     "--framework",
     type=click.Choice(["sglang", "vllm", "max", "max-ci"]),
-    required=True,
+    default="max-ci",
+    required=False,
 )
 @click.option(
     "--model",
