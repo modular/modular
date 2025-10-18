@@ -55,7 +55,7 @@ def test_unsupported_arg_type_error(op_library: CustomOpLibrary) -> None:
     # because it has a String parameter which is not a supported type.
     with pytest.raises(
         ValueError,
-        match="Unsupported argument type 'stdlib::String' in custom op 'unsupported_type_op'.",
+        match=r"Unsupported argument type 'stdlib::String' in custom op 'unsupported_type_op'.",
     ):
         _ = op_library.unsupported_type_op
 

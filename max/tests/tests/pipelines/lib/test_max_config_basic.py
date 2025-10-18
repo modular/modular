@@ -316,7 +316,7 @@ class TestMAXConfigTypeConversion:
         """Test boolean conversion with invalid string values."""
         invalid_values = ["maybe", "unknown", "invalid", "2"]
         for value in invalid_values:
-            with pytest.raises(ValueError, match="Cannot convert .* to bool"):
+            with pytest.raises(ValueError, match=r"Cannot convert .* to bool"):
                 convert_max_config_value(TestConfig, value, bool, "test_field")
 
     def test_enum_conversion_gpu_profiling_mode(self) -> None:

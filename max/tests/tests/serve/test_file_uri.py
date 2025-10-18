@@ -94,7 +94,7 @@ async def test_file_uri_size_limit(tmp_path) -> None:  # noqa: ANN001
     settings.allowed_image_roots = [str(tmp_path)]
     settings.max_local_image_bytes = 20 * 1024 * 1024  # 20MB
 
-    with pytest.raises(ValueError, match="exceeds.*size limit"):
+    with pytest.raises(ValueError, match=r"exceeds.*size limit"):
         await resolve_image_from_url(AnyUrl(f"file://{large_file}"), settings)
 
 

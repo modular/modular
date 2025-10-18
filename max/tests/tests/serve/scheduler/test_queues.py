@@ -223,13 +223,13 @@ def test_zmq_push_pull_queue_endpoint_validation() -> None:
     """Test that invalid endpoints raise ValueError."""
     with pytest.raises(
         ValueError,
-        match="ZMQ address must start with tcp://, ipc://, or inproc://. Found: invalid://endpoint",
+        match=r"ZMQ address must start with tcp://, ipc://, or inproc://. Found: invalid://endpoint",
     ):
         ZmqPushSocket(endpoint="invalid://endpoint", payload_type=int)
 
     with pytest.raises(
         ValueError,
-        match="ZMQ address must start with tcp://, ipc://, or inproc://. Found: ",
+        match=r"ZMQ address must start with tcp://, ipc://, or inproc://. Found: ",
     ):
         ZmqPullSocket(endpoint="", payload_type=int)
 
@@ -240,7 +240,7 @@ def test_zmq_push_pull_queue_endpoint_validation() -> None:
     # Not OK because path is empty
     with pytest.raises(
         ValueError,
-        match="ZMQ IPC requires a path after the protocol. Found: ipc://",
+        match=r"ZMQ IPC requires a path after the protocol. Found: ipc://",
     ):
         ZmqPullSocket(endpoint="ipc://", payload_type=int)
 

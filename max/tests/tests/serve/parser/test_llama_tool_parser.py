@@ -210,7 +210,7 @@ def test_json_missing_name_raises_error() -> None:
 
     with pytest.raises(
         ValueError,
-        match="Both name and parameters not present in parsed JSON response.",
+        match=r"Both name and parameters not present in parsed JSON response.",
     ):
         parser(response)
 
@@ -227,7 +227,7 @@ def test_json_missing_parameters_raises_error() -> None:
 
     with pytest.raises(
         ValueError,
-        match="Both name and parameters not present in parsed JSON response.",
+        match=r"Both name and parameters not present in parsed JSON response.",
     ):
         parser(response)
 
@@ -244,7 +244,7 @@ def test_json_missing_both_fields_raises_error() -> None:
 
     with pytest.raises(
         ValueError,
-        match="Both name and parameters not present in parsed JSON response.",
+        match=r"Both name and parameters not present in parsed JSON response.",
     ):
         parser(response)
 
@@ -267,7 +267,7 @@ def test_mixed_valid_and_invalid_json() -> None:
 
     with pytest.raises(
         ValueError,
-        match="Both name and parameters not present in parsed JSON response.",
+        match=r"Both name and parameters not present in parsed JSON response.",
     ):
         parser(response)
 
