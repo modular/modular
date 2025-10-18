@@ -175,7 +175,7 @@ def test_multi_tensor_transfer_multiprocessing(
     )
 
     # Capture and display output from subprocesses
-    out, err = capfd.readouterr()
+    out, _err = capfd.readouterr()
 
     # Display the bandwidth information
     with capfd.disabled():

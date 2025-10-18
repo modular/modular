@@ -97,8 +97,8 @@ def test_io_device_output_errors() -> None:
     with pytest.raises(
         ValueError,
         match=(
-            "Loaded Model .* uses device=gpu:0 which was not set up"
-            " in InferenceSession"
+            r"Loaded Model .* uses device=gpu:0 which was not set up"
+            r" in InferenceSession"
         ),
     ):
         compiled = session.load(graph)

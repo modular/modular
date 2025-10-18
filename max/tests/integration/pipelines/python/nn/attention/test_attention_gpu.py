@@ -519,7 +519,7 @@ def causal_max_flash_attn(
     q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
 ) -> np.ndarray:
     dtype = DType.from_torch(q.dtype)
-    batch, q_seq_len, nheads, head_dim = q.shape
+    _batch, _q_seq_len, nheads, head_dim = q.shape
 
     # Graph types.
     q_type = TensorType(
@@ -604,7 +604,7 @@ def null_mask_max_flash_attn(
     q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
 ) -> np.ndarray:
     dtype = DType.from_torch(q.dtype)
-    batch, q_seq_len, nheads, head_dim = q.shape
+    _batch, _q_seq_len, nheads, head_dim = q.shape
 
     # Graph types.
     q_type = TensorType(
@@ -695,7 +695,7 @@ def padded_max_flash_attn(
     valid_length: torch.Tensor,
 ) -> torch.Tensor:
     dtype = DType.from_torch(q.dtype)
-    batch, q_seq_len, nheads, head_dim = q.shape
+    _batch, _q_seq_len, nheads, head_dim = q.shape
 
     # Graph types.
     q_type = TensorType(

@@ -110,8 +110,6 @@ def generate_torch_outputs(
     attention_layer.eval()
 
     # Generate appropriate cu_seqlens based on attention type
-    seq_len, hidden_size = input_tensor.shape
-
     if use_window_attention:
         cu_seqlens = generate_cu_seqlens_window_attention(cu_window_seqlens)
     else:

@@ -151,6 +151,6 @@ def test_group_norm_invalid_input_shapes() -> None:
 def test_group_norm_invalid_init() -> None:
     with pytest.raises(
         ValueError,
-        match="num_channels.* should be divisible by num_groups.*",
+        match=r"num_channels.* should be divisible by num_groups.*",
     ):
         _ = GroupNorm(5, 11)

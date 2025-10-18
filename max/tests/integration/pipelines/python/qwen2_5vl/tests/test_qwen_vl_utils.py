@@ -271,11 +271,11 @@ class TestOriginalQwenVLUtils:
         max_result = process_vision_info(
             conversations, return_video_kwargs=False
         )
-        max_images, max_videos, max_kwargs = max_result
+        max_images, _max_videos, _max_kwargs = max_result
 
         # Test original implementation
         original_result = original_utils.process_vision_info(conversations)
-        orig_images, orig_videos = original_result  # type: ignore
+        orig_images, _orig_videos = original_result  # type: ignore
 
         # Should handle all three image formats
         assert max_images is not None
@@ -426,16 +426,12 @@ class TestOriginalQwenVLUtils:
         ]
 
         # Test if either implementation can handle video-only content
-        original_result = original_utils.process_vision_info(
+        original_utils.process_vision_info(
             conversations, return_video_kwargs=True
         )
-        orig_images, orig_videos, orig_kwargs = original_result
 
         with pytest.raises(ImportError, match="No video reader backend"):
-            max_result = process_vision_info(
-                conversations, return_video_kwargs=True
-            )
-            max_images, max_videos, max_kwargs = max_result
+            process_vision_info(conversations, return_video_kwargs=True)
 
     def test_smart_resize_comparison(self) -> None:
         """Compare smart_resize outputs between implementations."""

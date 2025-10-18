@@ -568,7 +568,7 @@ def test_weight_device_mismatch(
 
     # This will load but set up invalid device configuration
     with pytest.raises(
-        ValueError, match="Mismatch in device type for weight 'w'."
+        ValueError, match=r"Mismatch in device type for weight 'w'."
     ):
         model = session.load(
             g,
@@ -657,7 +657,7 @@ def test_weight_device_implicit_mismatch(
 
     # This will load but set up invalid device configuration
     with pytest.raises(
-        ValueError, match="Mismatch in device type for weight 'w'."
+        ValueError, match=r"Mismatch in device type for weight 'w'."
     ):
         model = session.load(
             g,

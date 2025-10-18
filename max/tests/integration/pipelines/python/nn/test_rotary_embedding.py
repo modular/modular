@@ -340,7 +340,7 @@ def apply_rotary_emb(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
 def test_rope(
     session: InferenceSession, input_type: TensorType, start_pos: Dim
 ) -> None:
-    _, seqlen, _, head_dim = input_type.shape
+    _, _seqlen, _, head_dim = input_type.shape
     freqs_cis_type = TensorType(
         input_type.dtype, [MAX_SEQ_LEN, head_dim], device=DeviceRef.CPU()
     )
@@ -363,7 +363,7 @@ def test_rope(
         inputs: Sequence[Tensor],
         torch_inputs: Sequence[torch.Tensor],
     ) -> None:
-        x, freqs_cis, cache = inputs
+        x, _freqs_cis, cache = inputs
         start_pos = cache.shape[0]
         seq_len = x.shape[1]
         assume(start_pos + seq_len < MAX_SEQ_LEN)

@@ -77,7 +77,7 @@ class MultiHeadAttention(Module):
         return self.query.out_dim
 
     def __call__(self, x: Tensor) -> Tensor:
-        b, num_tokens, in_dim = x.shape
+        b, num_tokens, _in_dim = x.shape
 
         keys = self.key(x)  # Shape: (b, num_tokens, out_dim)
         queries = self.query(x)

@@ -574,7 +574,7 @@ def test_sampling_with_seed(session: InferenceSession) -> None:
     # Test 1: Sample multiple times with seed=42, results should be identical
     for _ in range(num_trials):
         # Sample with the same logits and seed
-        tokens, new_prev_tokens = sampler_42(
+        _tokens, new_prev_tokens = sampler_42(
             logits_tensor,
             prev_tokens,
             top_k_tensor,
@@ -1080,7 +1080,7 @@ def test_rejection_sampler_with_residuals(session: InferenceSession) -> None:
 
     draft_logits_tensor = draft_logits.permute(1, 0, 2).contiguous()
 
-    first_rejected_token, recovered_tokens, bonus_tokens = sampler(
+    first_rejected_token, recovered_tokens, _bonus_tokens = sampler(
         Tensor.from_dlpack(draft_token_ids).to(device),
         Tensor.from_dlpack(draft_logits_for_sampled_tokens).to(device),
         Tensor.from_dlpack(target_logits_tensor).to(device),

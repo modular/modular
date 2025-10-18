@@ -67,7 +67,7 @@ def test_pipelines_cli__custom_model(smollm_135m_local_path: str) -> None:
     path = os.getenv("PIPELINES_CUSTOM_ARCHITECTURE")
 
     with pytest.raises(
-        ValueError, match=".*'SupportedEncoding.q4_k' not supported.*"
+        ValueError, match=r".*'SupportedEncoding.q4_k' not supported.*"
     ):
         pipelines.main(
             [

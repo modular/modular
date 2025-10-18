@@ -158,7 +158,6 @@ def generate_max_outputs(
 
     # Get input dimensions
     input_dims = input_tensor.shape
-    batch_size, seq_len, vision_hidden_size = input_dims
 
     def build_connector_model() -> Graph:
         with Graph(

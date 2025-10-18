@@ -336,7 +336,7 @@ class TorchRoPEAttentionWithLoRA(nn.Module):
         return result.reshape(x.shape)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch_size, seq_len, hidden_size = x.shape
+        batch_size, seq_len, _hidden_size = x.shape
 
         q_proj_out = self.q_proj(x)
         q = (

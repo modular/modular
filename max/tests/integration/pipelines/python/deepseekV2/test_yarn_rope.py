@@ -49,7 +49,7 @@ def generate_torch_outputs(
         **kwargs,
     )
     cos, sin = layer(input_tensor_rope, seq_len=input_tensor_rope.shape[2])
-    output, output_dummy = apply_rotary_pos_emb(
+    output, _output_dummy = apply_rotary_pos_emb(
         input_tensor_rope,
         input_tensor_rope,
         cos,

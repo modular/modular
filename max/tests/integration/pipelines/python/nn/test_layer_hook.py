@@ -78,7 +78,7 @@ def test_hook_nested_layers(mocker: MockerFixture) -> None:
     )
 
     # Third call should be to outer_layer.
-    layer3, args3, kwargs3, outputs3 = hook.call_args_list[2][0]
+    layer3, args3, _kwargs3, outputs3 = hook.call_args_list[2][0]
     assert layer3 is outer_layer
     assert len(args3) == 1
     assert args3[0] is g.inputs[0]

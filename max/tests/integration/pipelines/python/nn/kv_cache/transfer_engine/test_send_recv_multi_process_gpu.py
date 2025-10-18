@@ -163,7 +163,7 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
         f"Receiver process failed with exit code {receiver_proc.exitcode}"
     )
 
-    out, err = capfd.readouterr()
+    out, _err = capfd.readouterr()
 
     # Let some print statements actually be printed
     with capfd.disabled():

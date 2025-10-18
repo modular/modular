@@ -262,7 +262,7 @@ def test_speculative_decoding_partial_rejection(
     assert context2.start_idx == 0
 
     # Generate draft tokens.
-    draft_inputs, draft_num_steps = pipeline.prepare_batch(
+    draft_inputs, _draft_num_steps = pipeline.prepare_batch(
         pipeline._draft_model,
         context_batch,
         num_steps,
@@ -581,7 +581,7 @@ def test_kv_cache_claiming_protocol() -> None:
     pipeline_config.model_config.kv_cache_config.kv_cache_page_size = 128
     pipeline_config.model_config.kv_cache_config.device_memory_utilization = 0.3
 
-    tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
+    _tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
     assert isinstance(pipeline, SpeculativeDecodingTextGenerationPipeline)
 
     # Create a test context

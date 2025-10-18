@@ -54,7 +54,9 @@ def convert_hf_to_max_weights(
                         # Convert Conv2d weight to a Linear-equivalent format.
                         # PyTorch Conv2d weight: (out_C, in_C, kH, kW)
                         # Reshape to (out_C, in_C * kH * kW)
-                        out_channels, in_channels, kernel_h, kernel_w = v.shape
+                        out_channels, _in_channels, _kernel_h, _kernel_w = (
+                            v.shape
+                        )
                         v = v.reshape(out_channels, -1)
 
             # Handle MLP1 (multimodal projector) key transformations
@@ -91,7 +93,7 @@ def convert_hf_to_max_weights(
                 # Handle patch embedding transformations
                 if new_key.endswith(".weight") and len(v.shape) == 4:
                     # Convert Conv2d weight to a Linear-equivalent format.
-                    out_channels, in_channels, kernel_h, kernel_w = v.shape
+                    out_channels, _in_channels, _kernel_h, _kernel_w = v.shape
                     v = v.reshape(out_channels, -1)
 
             result[new_key] = v

@@ -56,7 +56,7 @@ def max_flash_attention_with_sinks(
     session = InferenceSession(devices=[cuda])
 
     # Extract dimensions
-    total_seq_len, num_heads, head_dim = query.shape
+    _total_seq_len, num_heads, head_dim = query.shape
     batch_size = len(input_row_offsets) - 1
 
     # Setup KV cache parameters

@@ -156,11 +156,6 @@ def generate_max_outputs(
 
     # Get input dimensions - handle both 2D and 3D tensors
     input_dims = input_tensor.shape
-    if len(input_dims) == 2:
-        batch_size, hidden_dim = input_dims
-        seq_len = None
-    else:  # 3D tensor
-        batch_size, seq_len, hidden_dim = input_dims
 
     def build_mlp_model() -> Graph:
         with Graph(

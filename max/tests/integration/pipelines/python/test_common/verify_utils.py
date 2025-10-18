@@ -710,7 +710,7 @@ def _print_pareto_tolerances(
     pareto = valid_arr[_is_pareto(valid_arr)]
 
     def percent_passing_rtol_only(vals: tuple[float, float]) -> float:
-        (atol, rtol) = vals
+        (_atol, rtol) = vals
         return (
             np.sum(
                 _is_close(

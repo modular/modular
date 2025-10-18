@@ -35,6 +35,6 @@ def test_arange_defaults() -> None:
 def test_invalid() -> None:
     t = Tensor.arange(10, dtype=DType.float32, device=CPU())
     with pytest.raises(
-        AssertionError, match="atol: tensors not close at index 0, 2.0 > 1e-06"
+        AssertionError, match=r"atol: tensors not close at index 0, 2.0 > 1e-06"
     ):
         assert_all_close(range(2, 12), t)

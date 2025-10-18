@@ -829,7 +829,7 @@ def test_integration_full_config_initialization_do_penalties_speculative_decodin
 
     with pytest.raises(
         ValueError,
-        match="frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding.",
+        match=r"frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding.",
     ):
         _ = PipelineConfig(**kwargs)
 

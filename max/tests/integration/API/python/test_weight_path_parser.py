@@ -140,8 +140,8 @@ class TestWeightPathParser:
 
         with pytest.raises(
             ValueError,
-            match="Unable to derive model_path from weight_path, "
-            "please provide a valid Hugging Face repository id.",
+            match=r"Unable to derive model_path from weight_path, "
+            r"please provide a valid Hugging Face repository id.",
         ):
             WeightPathParser.parse(model_path, weight_path)
 
@@ -188,8 +188,8 @@ class TestWeightPathParser:
 
         with pytest.raises(
             ValueError,
-            match="Unable to derive model_path from weight_path, "
-            "please provide a valid Hugging Face repository id.",
+            match=r"Unable to derive model_path from weight_path, "
+            r"please provide a valid Hugging Face repository id.",
         ):
             WeightPathParser.parse(model_path, weight_path)
 
