@@ -291,26 +291,40 @@ alias eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
 
 
-struct NVIDIASharedMemoryManager[
+trait SharedMemoryBasePtr:
+    alias alignment: Int
+
+    @always_inline
+    @staticmethod
+    fn ptr() -> UnsafePointer[Int8, address_space = AddressSpace.SHARED]:
+        ...
+
+
+struct NVIDIASharedMemoryBasePtr[
     name: StaticString = "extern_ptr_syml",
     memory_alignment: Int = 8,
-]:
-    """NVIDIA shared memory allocator with alignment support.
-
-    Parameters:
-        name: External shared memory symbol.
-        memory_alignment: Base alignment (default: 8).
-    """
-
+](SharedMemoryBasePtr):
     alias alignment: Int = 128
 
+    @always_inline
+    @staticmethod
+    fn ptr() -> UnsafePointer[Int8, address_space = AddressSpace.SHARED]:
+        return external_memory[
+            Int8,
+            address_space = AddressSpace.SHARED,
+            alignment=memory_alignment,
+            name=name,
+        ]()
+
+
+struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
     alias Tile[dtype: DType, layout: Layout] = SMemTileType[
-        dtype, layout, alignment = Self.alignment
+        dtype, layout, alignment = SMBP.alignment
     ]
 
     alias TileArray[
         dtype: DType, layout: Layout, num_tiles: Int
-    ] = SMemTileArrayType[dtype, layout, num_tiles, Self.alignment]
+    ] = SMemTileArrayType[dtype, layout, num_tiles, SMBP.alignment]
 
     alias Array[type: AnyType, size: Int] = SMemArrayType[type, size]
 
@@ -320,12 +334,7 @@ struct NVIDIASharedMemoryManager[
     @always_inline
     fn __init__(out self):
         """Initialize the shared memory manager."""
-        self.base_ptr = external_memory[
-            Int8,
-            address_space = AddressSpace.SHARED,
-            alignment=memory_alignment,
-            name=name,
-        ]()
+        self.base_ptr = SMBP.ptr()
         self.offset = 0
 
     @always_inline
@@ -377,3 +386,6 @@ struct NVIDIASharedMemoryManager[
         var result = self.base_ptr.offset(self.offset).bitcast[type]()
         self.offset += T.storage_size
         return T(result)
+
+
+alias NVIDIASharedMemoryManager = SharedMemoryManager[NVIDIASharedMemoryBasePtr]

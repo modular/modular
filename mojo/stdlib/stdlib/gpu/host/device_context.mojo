@@ -2613,7 +2613,7 @@ struct DeviceFunction[
         # time.
         @parameter
         fn calculate_args_size() -> Int:
-            var tmp_args_size = 0
+            var tmp_args_size = 8  # always reserve 8 extra bytes for aligment.
 
             @parameter
             for i in range(num_passed_args):
@@ -2628,6 +2628,8 @@ struct DeviceFunction[
         # Space to store the arguments to the kernel that have been converted
         # from host dtype to device dtype.
         var translated_args = InlineArray[Byte, args_size](uninitialized=True)
+        var start_addr = UInt(Int(translated_args.unsafe_ptr()))
+        var extra_align = align_up(start_addr, 8) - start_addr
 
         # NOTE: Manual short buffer optimization. We could use a
         # Variant[List, InlineArray] instead, but it would look a lot more
@@ -2664,7 +2666,9 @@ struct DeviceFunction[
             if translated_arg_offset >= 0:
                 alias actual_arg_type = Ts[i]
                 var first_word_addr = UnsafePointer(
-                    to=translated_args.unsafe_ptr()[translated_arg_offset]
+                    to=translated_args.unsafe_ptr()[
+                        translated_arg_offset + extra_align
+                    ]
                 ).bitcast[NoneType]()
                 args[i]._to_device_type(first_word_addr)
                 dense_args_addrs[translated_arg_idx] = first_word_addr

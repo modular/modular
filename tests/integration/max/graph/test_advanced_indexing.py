@@ -178,7 +178,7 @@ def test_advanced_indexing_get_item(
     torch_slice = [slice(None, None, None)] * RANK
     for i in range(num_indexing_tensors):
         torch_slice[i + start_axis] = index_tensors[i]
-    expected = input_tensor[*torch_slice].cpu().numpy()
+    expected = input_tensor[tuple(torch_slice)].cpu().numpy()
 
     graph_inputs = [input_tensor] + index_tensors
     actual = model(*graph_inputs)[0]
@@ -242,7 +242,7 @@ def test_advanced_indexing_set_item(
 
     # PT does it in-place unfortunately, so make a copy
     expected = input_tensor.clone()
-    expected[*torch_slice] = update_tensor
+    expected[tuple(torch_slice)] = update_tensor
     expected = expected.cpu().numpy()
 
     graph_inputs = [input_tensor, update_tensor] + index_tensors
@@ -307,7 +307,7 @@ def test_advanced_indexing_set_item_inplace(
 
     # PT does it in-place unfortunately, so make a copy
     expected = input_tensor.clone()
-    expected[*torch_slice] = update_tensor
+    expected[tuple(torch_slice)] = update_tensor
     expected = expected.cpu().numpy()
 
     # This modifies input_tensor in-place

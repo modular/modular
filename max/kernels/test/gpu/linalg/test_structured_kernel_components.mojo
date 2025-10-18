@@ -11,31 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from linalg.matmul.gpu.amd.structured import (
-    AmdTileOperator,
-    AmdWarpBlockScatterGather,
-    ThreadRole,
-    RingBuffer,
-    SharedMemoryBuffer,
-    batched_copy_dram_to_local,
-)
+from linalg.matmul.gpu.amd.structured import batched_copy_dram_to_local
+from linalg.matmul.gpu.amd.warp_spec_matmul import warp_specialized_matmul
 
 from gpu import (
     WARP_SIZE,
-    block_idx,
     thread_idx,
-    barrier,
     warp_id as get_warp_id,
 )
 
 from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
-from layout.layout_tensor import (
-    ThreadScope,
-    copy_local_to_dram,
-)
+from layout.layout_tensor import ThreadScope
 from gpu.host import DeviceContext
-from utils import IndexList
 from layout._fillers import random
 from memory import stack_allocation
 import linalg.matmul.vendor.blas as vendor_blas
@@ -43,343 +31,6 @@ from testing import assert_equal
 from random import random_si64
 from gpu import MAX_THREADS_PER_BLOCK_METADATA
 from utils import StaticTuple
-
-
-# NOTE: This is a hardcoded pipeline but in reality this should be struct
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-        (producer_warps_a + producer_warps_b + consumer_warps) * WARP_SIZE
-    )
-)
-fn test_producer_consumer[
-    in_type: DType,
-    out_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
-    BM: Int,
-    BN: Int,
-    BK: Int,
-    WM: Int,
-    WN: Int,
-    WK: Int,
-    producer_warps_a: Int = 1,
-    producer_warps_b: Int = 1,
-    consumer_warps: Int = 1,
-    pipeline_stages: Int = 1,
-](
-    a: LayoutTensor[
-        in_type, a_layout, MutableAnyOrigin, address_space = AddressSpace.GLOBAL
-    ],
-    b: LayoutTensor[
-        in_type, b_layout, MutableAnyOrigin, address_space = AddressSpace.GLOBAL
-    ],
-    c: LayoutTensor[
-        out_type,
-        c_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.GLOBAL,
-    ],
-):
-    var K = a.shape[1]()
-
-    # NOTE: hardcoded MMA for now, but in theory this pipeline will work with
-    # any MMA
-    alias MMA_M = 16
-    alias MMA_N = 16
-    alias MMA_K = 16
-
-    alias m_warps_per_block = BM // WM
-    alias n_warps_per_block = BN // WN
-
-    constrained[m_warps_per_block % producer_warps_a == 0]()
-    constrained[n_warps_per_block % producer_warps_b == 0]()
-    constrained[m_warps_per_block * n_warps_per_block % consumer_warps == 0]()
-    constrained[
-        consumer_warps >= producer_warps_a
-        and consumer_warps >= producer_warps_b
-    ]()
-    constrained[
-        consumer_warps.is_power_of_two(), "consumer_warps must be a power of 2"
-    ]()
-
-    var role: ThreadRole
-    var warp_id = get_warp_id()
-    alias producer_thread_count = (
-        producer_warps_a + producer_warps_b
-    ) * WARP_SIZE
-
-    if thread_idx.x < UInt(producer_thread_count):
-        role = ThreadRole.PRODUCER
-    else:
-        role = ThreadRole.CONSUMER
-
-    alias thread_layout = Layout.row_major(16, 4)
-    alias smem_layout_a = Layout.row_major(pipeline_stages, BM, BK)
-    alias smem_layout_b = Layout.row_major(pipeline_stages, BN, BK)
-
-    var smem_buffer_a = SharedMemoryBuffer[
-        in_type,
-        smem_layout_a,
-        pipeline_stages,
-        WM,
-        WK,
-    ]()
-
-    var smem_buffer_b = SharedMemoryBuffer[
-        in_type,
-        smem_layout_b,
-        pipeline_stages,
-        WN,
-        WK,
-    ]()
-
-    # NOTE: Every thread needs access to the ring buffer
-    var ring_buffer = RingBuffer[
-        pipeline_stages,
-        smem_buffer_a.layout,
-        smem_buffer_b.layout,
-        in_type,
-        in_type,
-        WM,
-        WN,
-        WK,
-        m_warps_per_block,
-        n_warps_per_block,
-        consumer_warps,
-    ](smem_buffer_a, smem_buffer_b)
-
-    barrier()  # NOTE: probably not nessecary but I saw it in the HF code around the same point
-
-    # if thread_idx.x == 0:
-    #     for i in range(64):
-    #         for j in range(64):
-    #             print(b[i, j], end=" ")
-    #         print()
-
-    var tile_count = K // BK
-
-    # NOTE: the 2 producer blocks are almost identical, you can proabbly make this a
-    # a function
-    if role is ThreadRole.PRODUCER:
-        if warp_id < UInt(producer_warps_a):
-            # NOTE: If there is a way to hide the phases that would be great, maybe the ringbuffer
-            # handles the thread specific phase, or its encapsulated in the ThreadRole Struct.
-
-            var phases = InlineArray[
-                Int, pipeline_stages * (m_warps_per_block // producer_warps_a)
-            ](
-                fill=0,
-            )
-
-            var scatter_gather_a = AmdWarpBlockScatterGather[
-                in_type,
-                thread_layout,
-                smem_buffer_a.WarpTileType.layout,
-                8,  # NOTE: hardcoded simd width for now, but in theory this should be derived
-                True,
-                WM,
-                WK,
-            ]()
-
-            for tile_num in range(tile_count):
-                var a_tile = a.tile[BM, BK](block_idx.x, tile_num)
-                var local_tile_count = 0
-
-                # NOTE: producers and consumers can process more than one tile this loop
-                # makes sure this is possible
-                for warp_tile_idx in range(
-                    warp_id, m_warps_per_block, producer_warps_a
-                ):
-                    # NOTE: my code already has support for double buffering, no extra
-                    # work should be needed
-                    var stage = tile_num % pipeline_stages
-
-                    ref phase = phases[
-                        local_tile_count * pipeline_stages + stage
-                    ]
-
-                    scatter_gather_a.load_compute_tile[
-                        a_tile.dtype,
-                        a_tile.layout,
-                    ](
-                        ring_buffer,
-                        phase,
-                        rebind[
-                            LayoutTensor[
-                                a_tile.dtype,
-                                a_tile.layout,
-                                MutableAnyOrigin,
-                                address_space = AddressSpace.GLOBAL,
-                            ]
-                        ](a_tile),
-                        stage,
-                        warp_tile_idx,
-                    )
-
-                    local_tile_count += 1
-        else:
-            var relative_warp_id = warp_id - UInt(producer_warps_a)
-
-            var phases = InlineArray[
-                Int, pipeline_stages * (n_warps_per_block // producer_warps_b)
-            ](
-                fill=0,
-            )
-
-            var scatter_gather_b = AmdWarpBlockScatterGather[
-                in_type,
-                thread_layout,
-                smem_buffer_b.WarpTileType.layout,
-                8,
-                False,
-                WN,
-                WK,
-            ]()
-
-            for tile_num in range(tile_count):
-                var b_tile = b.tile[BN, BK](block_idx.y, tile_num)
-                var local_tile_count = 0
-
-                for warp_tile_idx in range(
-                    relative_warp_id, n_warps_per_block, producer_warps_b
-                ):
-                    var stage = tile_num % pipeline_stages
-
-                    ref phase = phases[
-                        local_tile_count * pipeline_stages + stage
-                    ]
-
-                    scatter_gather_b.load_compute_tile[
-                        b_tile.dtype,
-                        b_tile.layout,
-                    ](
-                        ring_buffer,
-                        phase,
-                        rebind[
-                            LayoutTensor[
-                                b_tile.dtype,
-                                b_tile.layout,
-                                MutableAnyOrigin,
-                                address_space = AddressSpace.GLOBAL,
-                            ]
-                        ](b_tile),
-                        stage,
-                        warp_tile_idx,
-                    )
-
-                    local_tile_count += 1
-
-    else:
-        alias total_consumer_operations = m_warps_per_block * n_warps_per_block
-
-        var phases_a = InlineArray[
-            Int, pipeline_stages * (total_consumer_operations // consumer_warps)
-        ](
-            fill=1,
-        )
-
-        var phases_b = InlineArray[
-            Int, pipeline_stages * (total_consumer_operations // consumer_warps)
-        ](
-            fill=1,
-        )
-
-        var tile_operator = AmdTileOperator[
-            in_type,
-            out_type,
-            smem_buffer_a.WarpTileType.layout,
-            smem_buffer_b.WarpTileType.layout,
-            IndexList[3](MMA_M, MMA_N, MMA_K),
-            True,
-            simd_width=8,
-            warps_being_processed = total_consumer_operations // consumer_warps,
-        ]()
-
-        var relative_warp_id = warp_id - UInt(
-            producer_warps_a + producer_warps_b
-        )
-
-        for i in range(tile_count):
-            var local_tile_count = 0
-            for warp_tile_idx in range(
-                relative_warp_id, total_consumer_operations, consumer_warps
-            ):
-                var m_warp_idx = warp_tile_idx // n_warps_per_block
-                var n_warp_idx = warp_tile_idx % n_warps_per_block
-
-                var stage = i % pipeline_stages
-
-                ref phase_a = phases_a[
-                    local_tile_count * pipeline_stages + stage
-                ]
-                ref phase_b = phases_b[
-                    local_tile_count * pipeline_stages + stage
-                ]
-
-                tile_operator.mma(
-                    ring_buffer,
-                    phase_a,
-                    phase_b,
-                    stage,
-                    m_warp_idx,
-                    n_warp_idx,
-                    local_tile_count,
-                    i,
-                )
-
-                local_tile_count += 1
-
-        var local_tile_count = 0
-        for warp_tile_idx in range(
-            relative_warp_id, total_consumer_operations, consumer_warps
-        ):
-            var m_warp_idx = warp_tile_idx // n_warps_per_block
-            var n_warp_idx = warp_tile_idx % n_warps_per_block
-
-            var c_reg_tile = tile_operator.get_c_reg_tile_slice(
-                local_tile_count
-            )
-            store_c[
-                c.dtype,
-                c.layout,
-                c_reg_tile.layout,
-                BM,
-                BN,
-                WM,
-                WN,
-                c.shape[1](),
-            ](c, c_reg_tile, m_warp_idx, n_warp_idx)
-
-            local_tile_count += 1
-
-
-fn store_c[
-    c_type: DType,
-    c_layout: Layout,
-    c_reg_layout: Layout,
-    BM: Int,
-    BN: Int,
-    WM: Int,
-    WN: Int,
-    static_N: Int,
-](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin, *_, **_],
-    c_reg_tile: LayoutTensor[c_type, c_reg_layout, MutableAnyOrigin, *_, **_],
-    warp_m: Int,
-    warp_n: Int,
-):
-    var c_block_tile = c.tile[BM, BN](Int(block_idx.x), Int(block_idx.y))
-    var c_warp_tile = c_block_tile.tile[WM, WN](Int(warp_m), Int(warp_n))
-
-    # NOTE: these numbers are hardcoded based on register fragments shapes
-    # these should be derived
-
-    alias output_thread_layout = Layout.col_major(16, 4)
-
-    copy_local_to_dram[output_thread_layout, thread_scope = ThreadScope.WARP](
-        c_warp_tile.vectorize[1, 4](), c_reg_tile.vectorize[1, 4](), c
-    )
 
 
 @__llvm_metadata(
@@ -562,7 +213,7 @@ def test_warp_specialization_amd[
             AddressSpace.GLOBAL
         ]()
 
-        alias kernel = test_producer_consumer[
+        alias kernel = warp_specialized_matmul[
             a_device_tensor.dtype,
             c_device_tensor.dtype,
             a_device_tensor.layout,
@@ -630,11 +281,11 @@ def main():
 
         print("Running AMD Warp Specialization Tests")
         test_warp_specialization_amd[
-            4096, 4096, 4096, 64, 64, 64, 32, 32, 64, 2, 2, 4, pipeline_stages=1
+            4096, 4096, 4096, 64, 64, 64, 32, 32, 64, 2, 2, 4, pipeline_stages=2
         ](ctx)
 
         test_warp_specialization_amd[
-            1024, 1024, 256, 64, 64, 64, 32, 32, 64, 2, 2, 4, pipeline_stages=1
+            1024, 1024, 256, 64, 64, 64, 32, 32, 64, 2, 2, 4, pipeline_stages=2
         ](ctx)
 
         test_warp_specialization_amd[

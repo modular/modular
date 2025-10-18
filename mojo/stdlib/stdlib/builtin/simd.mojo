@@ -44,7 +44,7 @@ import math
 from collections import InlineArray
 from hashlib.hasher import Hasher
 from math import Ceilable, CeilDivable, Floorable, Truncable
-from math.math import _call_ptx_intrinsic
+from math.math import _call_ptx_intrinsic, trunc
 from sys import (
     CompilationTarget,
     _RegisterPackType,
@@ -73,7 +73,7 @@ from bit import bit_width, byte_swap, pop_count
 from builtin._format_float import _write_float
 from builtin.device_passable import DevicePassable
 from builtin.format_int import _try_write_int
-from builtin.math import Powable
+from builtin.math import DivModable, Powable
 from documentation import doc_private
 from memory import bitcast, memcpy
 from python import ConvertibleToPython, Python, PythonObject
@@ -294,12 +294,11 @@ struct SIMD[dtype: DType, size: Int](
     Comparable,
     Defaultable,
     DevicePassable,
+    DivModable,
     Floorable,
     Hashable,
-    ImplicitlyCopyable,
     Indexer,
     Intable,
-    Movable,
     Powable,
     Representable,
     Roundable,
@@ -1027,13 +1026,44 @@ struct SIMD[dtype: DType, size: Int](
 
             @parameter
             if dtype.is_floating_point():
-                div = llvm_intrinsic["llvm.trunc", Self, has_side_effect=False](
-                    div
-                )
+                div = trunc(div)
 
             var mod = self - div * rhs
             var mask = (rhs.lt(0) ^ self.lt(0)) & mod.ne(0)
             return mod + mask.select(rhs, Self(0))
+
+    @always_inline("nodebug")
+    fn __divmod__(self, denominator: Self) -> Tuple[Self, Self]:
+        """Computes both the quotient and remainder using floor division.
+
+        Args:
+            denominator: The value to divide on.
+
+        Returns:
+            The quotient and remainder as a
+            `Tuple(self // denominator, self % denominator)`.
+        """
+        if not all(denominator):
+            # this should raise an exception.
+            return Self(0), Self(0)
+
+        @parameter
+        if dtype.is_unsigned():
+            return self // denominator, self % denominator
+
+        var div = self / denominator
+
+        @parameter
+        if dtype.is_floating_point():
+            div = trunc(div)
+
+        var mod = self - div * denominator
+        var mask = (denominator.lt(0) ^ self.lt(0)) & mod.ne(0)
+
+        if any(mask):
+            div = div - mask.cast[dtype]()
+
+        return div, mod + mask.select(denominator, Self(0))
 
     @always_inline("nodebug")
     fn __pow__(self, exp: Int) -> Self:

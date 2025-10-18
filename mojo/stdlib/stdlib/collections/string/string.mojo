@@ -246,7 +246,9 @@ struct String(
             bytes: The bytes to copy.
         """
         var length = len(bytes)
-        self = Self(unsafe_uninit_length=UInt(length))
+        self = Self(
+            unsafe_uninit_length=UInt(length)
+        )  # TODO: make `unsafe_uninit_length` an `Int`
         memcpy(dest=self.unsafe_ptr_mut(), src=bytes.unsafe_ptr(), count=length)
 
     fn __init__[T: Stringable](out self, value: T):
@@ -738,7 +740,7 @@ struct String(
             return String(
                 StringSlice(
                     ptr=self.unsafe_ptr() + start,
-                    length=UInt(len(r)),
+                    length=len(r),
                 )
             )
 
@@ -848,7 +850,9 @@ struct String(
         var lhs_len = len(lhs)
         var rhs_len = len(rhs)
 
-        var result = String(unsafe_uninit_length=UInt(lhs_len + rhs_len))
+        var result = String(
+            unsafe_uninit_length=UInt(lhs_len + rhs_len)
+        )  # TODO: make unsafe_uninit_length an `Int`
         var result_ptr = result.unsafe_ptr_mut()
         memcpy(dest=result_ptr, src=lhs.unsafe_ptr(), count=lhs_len)
         memcpy(dest=result_ptr + lhs_len, src=rhs.unsafe_ptr(), count=rhs_len)
@@ -1042,7 +1046,7 @@ struct String(
             writer: The object to write to.
         """
         writer.write_bytes(
-            Span(ptr=self.unsafe_ptr(), length=UInt(self.byte_length()))
+            Span(ptr=self.unsafe_ptr(), length=self.byte_length())
         )
 
     fn join[*Ts: Writable](self, *elems: *Ts) -> String:
@@ -1058,7 +1062,7 @@ struct String(
             The joined string.
         """
         var sep = rebind[StaticString](  # FIXME(#4414): this should not be so
-            StringSlice(ptr=self.unsafe_ptr(), length=UInt(self.byte_length()))
+            StringSlice(ptr=self.unsafe_ptr(), length=self.byte_length())
         )
         return String(elems, sep=sep)
 
@@ -1232,7 +1236,7 @@ struct String(
         """
 
         return Span[Byte, origin_of(self)](
-            ptr=self.unsafe_ptr(), length=UInt(self.byte_length())
+            ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
     fn as_bytes_mut(mut self) -> Span[Byte, origin_of(self)]:
@@ -1244,7 +1248,7 @@ struct String(
             A contiguous slice pointing to the bytes owned by this string.
         """
         return Span[Byte, origin_of(self)](
-            ptr=self.unsafe_ptr_mut(), length=UInt(self.byte_length())
+            ptr=self.unsafe_ptr_mut(), length=self.byte_length()
         )
 
     fn as_string_slice(self) -> StringSlice[origin_of(self)]:
