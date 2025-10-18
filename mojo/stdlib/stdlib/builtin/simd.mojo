@@ -44,7 +44,7 @@ import math
 from collections import InlineArray
 from hashlib.hasher import Hasher
 from math import Ceilable, CeilDivable, Floorable, Truncable
-from math.math import _call_ptx_intrinsic
+from math.math import _call_ptx_intrinsic, trunc
 from sys import (
     CompilationTarget,
     _RegisterPackType,
@@ -1026,9 +1026,7 @@ struct SIMD[dtype: DType, size: Int](
 
             @parameter
             if dtype.is_floating_point():
-                div = llvm_intrinsic["llvm.trunc", Self, has_side_effect=False](
-                    div
-                )
+                div = trunc(div)
 
             var mod = self - div * rhs
             var mask = (rhs.lt(0) ^ self.lt(0)) & mod.ne(0)
@@ -1049,7 +1047,23 @@ struct SIMD[dtype: DType, size: Int](
             # this should raise an exception.
             return Self(0), Self(0)
 
-        return self // denominator, self % denominator
+        @parameter
+        if dtype.is_unsigned():
+            return self // denominator, self % denominator
+
+        var div = self / denominator
+
+        @parameter
+        if dtype.is_floating_point():
+            div = trunc(div)
+
+        var mod = self - div * denominator
+        var mask = (denominator.lt(0) ^ self.lt(0)) & mod.ne(0)
+
+        if any(mask):
+            div = div - mask.cast[dtype]()
+
+        return div, mod + mask.select(denominator, Self(0))
 
     @always_inline("nodebug")
     fn __pow__(self, exp: Int) -> Self:
