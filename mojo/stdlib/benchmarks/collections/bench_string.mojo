@@ -180,8 +180,9 @@ fn bench_string_lower[
     @always_inline
     @parameter
     fn call_fn() raises:
-        var res = items.lower()
-        keep(res.unsafe_ptr())
+        for _ in range(10**6 // length):
+            var res = items.lower()
+            keep(res.unsafe_ptr())
 
     b.iter[call_fn]()
     keep(Bool(items))
@@ -199,8 +200,9 @@ fn bench_string_upper[
     @always_inline
     @parameter
     fn call_fn() raises:
-        var res = items.upper()
-        keep(res.unsafe_ptr())
+        for _ in range(10**6 // length):
+            var res = items.upper()
+            keep(res.unsafe_ptr())
 
     b.iter[call_fn]()
     keep(Bool(items))
@@ -457,4 +459,14 @@ def main():
         BenchId(String("bench_string_join_long"))
     )
 
-    print(m)
+    # NOTE: do not use print(m). This is supposed to measure the average for
+    # different languages.
+    results = Dict[String, (Float64, Int)]()
+    for info in m.info_vec:
+        n = info.name
+        time = info.result.mean("ms")
+        avg, amnt = results.get(n, (Float64(0), 0))
+        results[n] = ((avg * amnt + time) / (amnt + 1), amnt + 1)
+    print("")
+    for k_v in results.items():
+        print(k_v.key, k_v.value[0], sep=", ")
