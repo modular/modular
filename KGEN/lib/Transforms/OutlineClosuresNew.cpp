@@ -82,6 +82,7 @@ struct ClosureLifter {
 
   /// Symbol name uniquer requires a counter.
   unsigned counter;
+
   /// The symbol table of the module.
   SymbolTable &symtab;
 
@@ -103,14 +104,19 @@ struct ClosureLifter {
   /// capture, or a struct type in the case of multiple captures.
   DenseMap<ParamClosureType, Type> paramClosureTypeToType;
 
-  /// Pair a closure symbol with the symbol of the lifted function so that the
-  /// closure symbols can be replaced.
-  DenseMap<ClosureSymbolAttr, SymbolConstantAttr> liftedClosureSymbols;
+  /// Pair a (parent symbol, nested function name, method) with the symbol of
+  /// the lifted function so that closure symbols can be replaced robustly even
+  /// if types embedded in attributes are rewritten later.
+  struct ClosureMethodKey {
+    SymbolRefAttr parent;
+    StringAttr nestedName;
+    ClosureMethodAttr method;
+  };
+  DenseMap<ClosureMethodKey, SymbolConstantAttr> liftedClosureSymbols;
   /// Pair the closure type with the struct type of the generated capture struct
   /// so that the closure types can be replaced.
   DenseMap<ClosureType, Type> closureTypeToStructTypes;
   DenseMap<ClosureType, Type> packedClosureType;
-
   /// True if built with debug metadata.
   bool debugBuild;
   struct ClosureInitData {
@@ -233,6 +239,34 @@ private:
                         GeneratorOp generator, Region &region);
 };
 } // namespace
+
+namespace llvm {
+
+template <>
+struct DenseMapInfo<ClosureLifter::ClosureMethodKey> {
+  static inline ClosureLifter::ClosureMethodKey getEmptyKey() {
+    return {SymbolRefAttr(), StringAttr(), ClosureMethodAttr()};
+  }
+  static inline ClosureLifter::ClosureMethodKey getTombstoneKey() {
+    auto p = SymbolRefAttr::getFromOpaquePointer(reinterpret_cast<void *>(1));
+    auto n = StringAttr::getFromOpaquePointer(reinterpret_cast<void *>(1));
+    auto m =
+        ClosureMethodAttr::getFromOpaquePointer(reinterpret_cast<void *>(1));
+    return {p, n, m};
+  }
+  static unsigned getHashValue(const ClosureLifter::ClosureMethodKey &k) {
+    return ::llvm::hash_combine(k.parent.getAsOpaquePointer(),
+                                k.nestedName.getAsOpaquePointer(),
+                                k.method.getAsOpaquePointer());
+  }
+  static bool isEqual(const ClosureLifter::ClosureMethodKey &a,
+                      const ClosureLifter::ClosureMethodKey &b) {
+    return a.parent == b.parent && a.nestedName == b.nestedName &&
+           a.method == b.method;
+  }
+};
+
+} // namespace llvm
 
 ClosureLifter::ClosureInitData::ClosureInitData(
     llvm::SetVector<ParamDeclAttr> const &&capturedParamDecls,
@@ -465,7 +499,9 @@ void ClosureLifter::createClosureGenerator(
                                  /*effects=*/{},
                                  /*fnMetadata=*/{}, /*genMetadata=*/{}),
       boundParams);
-  liftedClosureSymbols[closureAttr] = sym;
+  liftedClosureSymbols[{closureAttr.getParentSymbol(),
+                        closureAttr.getNestedFuncName(),
+                        closureAttr.getMethod()}] = sym;
 }
 
 void ClosureLifter::liftDelFunction(OpBuilder &b,
@@ -736,7 +772,9 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
                     loweredClosureTypeMapped, closureInitData))
       return failure();
   }
-  liftedClosureSymbols[closureAttr] = sym;
+  liftedClosureSymbols[{closureAttr.getParentSymbol(),
+                        closureAttr.getNestedFuncName(),
+                        closureAttr.getMethod()}] = sym;
   return success();
 }
 
@@ -1095,97 +1133,34 @@ static StringAttr getFullName(ClosureType closureType) {
   return StringAttr::get(ctx, fullName);
 }
 
-static LogicalResult
-liftClosuresFromRegion(ModuleOp theModule, SymbolTable &symtab,
-                       ParameterCollector::Analysis &paramCache,
-                       bool debugBuild, Operation *enclosingOp) {
-  ClosureLifter lifter(symtab, paramCache, debugBuild);
+static LogicalResult liftClosuresFromRegion(ModuleOp theModule,
+                                            ClosureLifter &lifter,
+                                            Operation *enclosingOp) {
   SmallVector<std::pair<ClosureType, StructGeneratorOp>> structGenerators;
   bool hasFailure = false;
   GeneratorOp parent = isa<GeneratorOp>(enclosingOp)
                            ? cast<GeneratorOp>(enclosingOp)
                            : enclosingOp->getParentOfType<GeneratorOp>();
-  enclosingOp->walk([&](ClosureInitOp closureInit) {
-    if (closureInit.getOperation() == enclosingOp)
-      return;
+  for (ClosureInitOp closureInit : llvm::make_early_inc_range(
+           enclosingOp->getRegions().front().getOps<ClosureInitOp>())) {
     ClosureType closureType = getClosureType(closureInit);
     StringAttr symbol = getFullName(closureType);
     if (StructGeneratorOp structGeneratorOp =
-            symtab.lookup<StructGeneratorOp>(symbol)) {
+            lifter.symtab.lookup<StructGeneratorOp>(symbol)) {
       hasFailure = hasFailure | failed(lifter.liftClosureInit(
                                     closureInit, parent, structGeneratorOp));
-      structGenerators.push_back(std::pair<ClosureType, StructGeneratorOp>(
-          closureType, structGeneratorOp));
     } else {
       mlir::emitError(theModule.getLoc())
           << "missing struct generator op for closure "
           << getClosureType(closureInit).getName();
       hasFailure = true;
     }
-  });
+  }
   if (hasFailure)
     return failure();
   if (lifter.closureTypeToStructTypes.empty())
     return success();
-  // update all references to the closure with the lifted symbols and struct
-  // types.
-  mlir::AttrTypeReplacer replacer;
-  hasFailure = false;
-  auto paramTypeReplacement = [&](ParamClosureType type) -> Type {
-    auto ptr = lifter.paramClosureTypeToType.find(type);
-    if (ptr != lifter.paramClosureTypeToType.end())
-      return ptr->second;
-    mlir::emitError(theModule.getLoc())
-        << "no type found for paramclosure type " << type;
-    hasFailure = true;
-    return type;
-  };
-  mlir::AttrTypeReplacer generatorReplacer;
-  generatorReplacer.addReplacement([&](ClosureType type) -> Type {
-    auto ptr = lifter.closureTypeToStructTypes.find(type);
-    if (ptr != lifter.closureTypeToStructTypes.end())
-      return ptr->second;
-    return type;
-  });
-  generatorReplacer.addReplacement([&](ClosureAttr attr) -> Attribute {
-    auto ptr = lifter.paramCaptureToStructAttr.find(attr);
-    if (ptr != lifter.paramCaptureToStructAttr.end())
-      return ptr->second;
-    mlir::emitError(theModule.getLoc())
-        << "no capture struct attr found for closure attr " << attr;
-    hasFailure = true;
-    return attr;
-  });
-  generatorReplacer.addReplacement(paramTypeReplacement);
-  generatorReplacer.recursivelyReplaceElementsIn(enclosingOp, true, true, true);
 
-  for (auto [closureType, structGenerator] : structGenerators) {
-    SmallVector<ParamDeclAttr> newParams;
-    for (auto param : structGenerator.getInputParams()) {
-      if (auto abstractType = dyn_cast<ParamClosureType>(param.getType())) {
-        newParams.push_back(ParamDeclAttr::get(
-            param.getName(), paramTypeReplacement(abstractType)));
-        continue;
-      }
-      newParams.push_back(param);
-    }
-    structGenerator.setInputParams(newParams);
-    structGenerator.walk([&](WitnessOp w) {
-      if (auto sym = dyn_cast<ClosureSymbolAttr>(w.getValue())) {
-        auto it = lifter.liftedClosureSymbols.find(sym);
-        assert(
-            it != lifter.liftedClosureSymbols.end() &&
-            "should not be possible to reach here unless the front end "
-            "compiled a conformance table but then did not store the symbols "
-            "necessary to generate the function the witness points to.");
-        w.setValueAttr(it->second);
-      }
-    });
-
-    auto packedClosureType = lifter.packedClosureType[closureType];
-    assert(packedClosureType && "expected a replaced closure type");
-    structGenerator.setValueDomainType(packedClosureType);
-  }
   return hasFailure ? failure() : success();
 }
 
@@ -1195,20 +1170,74 @@ void OutlineClosuresNewPass::runOnOperation() {
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
-
+  ClosureLifter lifter(symtab, paramCache, debugBuild);
   for (auto generator : theModule.getOps<GeneratorOp>()) {
-    bool hasFailure = false;
-    generator.walk<mlir::WalkOrder::PostOrder>([&](Operation *operation) {
-      if (!isa<GeneratorOp, ClosureInitOp>(operation))
-        return WalkResult::advance();
-      if (failed(liftClosuresFromRegion(theModule, symtab, paramCache,
-                                        debugBuild, operation))) {
-        hasFailure = true;
-        return WalkResult::interrupt();
-      }
-      return WalkResult::advance();
-    });
-    if (hasFailure)
+    WalkResult walkResult =
+        generator.walk<mlir::WalkOrder::PostOrder>([&](Operation *operation) {
+          if (operation->getRegions().empty())
+            return WalkResult::advance();
+          if (failed(liftClosuresFromRegion(theModule, lifter, operation)))
+            return WalkResult::interrupt();
+
+          return WalkResult::advance();
+        });
+    if (walkResult.wasInterrupted())
       return signalPassFailure();
   }
+  // nested operations appear first.
+  mlir::AttrTypeReplacer closureTypeReplacer;
+  closureTypeReplacer.addReplacement([&](ClosureType closureType) -> Type {
+    auto it = lifter.closureTypeToStructTypes.find(closureType);
+    if (it != lifter.closureTypeToStructTypes.end())
+      return it->second;
+    mlir::emitError(theModule.getLoc())
+        << "no type found for closure type " << closureType;
+    return closureType;
+  });
+  closureTypeReplacer.addReplacement(
+      [&](ParamClosureType paramClosureType) -> Type {
+        auto it = lifter.paramClosureTypeToType.find(paramClosureType);
+        if (it != lifter.paramClosureTypeToType.end())
+          return it->second;
+        mlir::emitError(theModule.getLoc())
+            << "no type found for paramclosure type " << paramClosureType;
+        return paramClosureType;
+      });
+  closureTypeReplacer.addReplacement(
+      [&](ClosureSymbolAttr symbol) -> Attribute {
+        ClosureLifter::ClosureMethodKey key{symbol.getParentSymbol(),
+                                            symbol.getNestedFuncName(),
+                                            symbol.getMethod()};
+        auto it = lifter.liftedClosureSymbols.find(key);
+
+        if (it != lifter.liftedClosureSymbols.end())
+          return it->second;
+        mlir::emitError(theModule.getLoc())
+            << "no symbol found for closure symbol " << symbol;
+        return symbol;
+      });
+  closureTypeReplacer.addReplacement([&](ClosureAttr closureAttr) -> Attribute {
+    auto it = lifter.paramCaptureToStructAttr.find(closureAttr);
+    if (it != lifter.paramCaptureToStructAttr.end())
+      return it->second;
+    mlir::emitError(theModule.getLoc())
+        << "no capture struct attr found for closure attr " << closureAttr;
+    return closureAttr;
+  });
+  theModule.walk<mlir::WalkOrder::PreOrder>([&](Operation *operation) {
+    if (isa<ModuleOp>(operation))
+      return WalkResult::advance();
+    if (isa<GeneratorOp, StructGeneratorOp>(operation)) {
+      if (StructGeneratorOp structGeneratorOp =
+              dyn_cast<StructGeneratorOp>(operation)) {
+        if (ClosureType closureType =
+                dyn_cast<ClosureType>(structGeneratorOp.getValueDomainType()))
+          structGeneratorOp.setValueDomainType(
+              lifter.packedClosureType[closureType]);
+      }
+      closureTypeReplacer.recursivelyReplaceElementsIn(operation, true, true,
+                                                       true);
+    }
+    return WalkResult::skip();
+  });
 }
