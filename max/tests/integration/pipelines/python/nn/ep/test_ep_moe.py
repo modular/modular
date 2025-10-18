@@ -75,7 +75,21 @@ def torch_moe(
     reason="NVSHMEM library requires H100 or H200 or B200",
 )
 @pytest.mark.parametrize("n_devices", [4])
-def test_ep_moe(n_devices: int, moe_weights: dict[str, torch.Tensor]) -> None:
+@pytest.mark.parametrize(
+    "input_lengths",
+    [
+        [128, 128, 128, 128],  # Equal distribution
+        [128, 0, 0, 0],  # All tokens on first device
+        [64, 32, 16, 8],  # Decreasing distribution
+        [0, 0, 0, 128],  # All tokens on last device
+        [0, 0, 0, 0],  # All zero tokens (needed for multi-node EP)
+    ],
+)
+def test_ep_moe(
+    n_devices: int,
+    input_lengths: list[int],
+    moe_weights: dict[str, torch.Tensor],
+) -> None:
     assert n_devices <= accelerator_count(), (
         "Devices are not enough to run EP test"
     )
@@ -138,7 +152,10 @@ def test_ep_moe(n_devices: int, moe_weights: dict[str, torch.Tensor]) -> None:
         )
         for i in range(n_devices)
     ]
-    input_lengths = torch.randint(1, max_tokens_per_rank, (n_devices,))
+    # Convert input_lengths list to torch tensor for validation
+    assert len(input_lengths) == n_devices, (
+        f"input_lengths length {len(input_lengths)} must match n_devices {n_devices}"
+    )
     per_device_inputs_torch = [
         torch.randn(
             input_lengths[i],
