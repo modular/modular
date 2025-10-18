@@ -620,6 +620,8 @@ def KGEN_ParamConstantOp : KGENOp<"param.constant", [ConstantLike,
   let extraClassDeclaration = [{
     struct alignas(8) Payload { bool containsPtr; Attribute value; };
     ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
+    ErrorOrSuccess parametric_compile(Payload &payload,
+      TargetInfoAttr target, ParametricInterpreterState& state);
     ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
       const Payload &payload, InterpreterState &state);
     ErrorTreeOrSuccess parametric_interpret(ArrayRef<Attribute> operands,
@@ -667,6 +669,8 @@ def KGEN_ParamMaterializeOp : KGENOp<"param.materialize", [
   let extraClassDeclaration = [{
     struct alignas(8) Payload { bool containsPtr; Attribute value; };
     ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
+    ErrorOrSuccess parametric_compile(Payload &payload,
+      TargetInfoAttr target, ParametricInterpreterState& state);
     ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
       const Payload &payload, InterpreterState &state);
     ErrorTreeOrSuccess parametric_interpret(ArrayRef<Attribute> operands,

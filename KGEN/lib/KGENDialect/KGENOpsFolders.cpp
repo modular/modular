@@ -22,6 +22,22 @@ using namespace KGEN;
 ErrorTreeOrSuccess
 ParamApplyOp::parametric_interpret(ArrayRef<Attribute> operands,
                                    ParametricInterpreterState &state) {
+  auto ops = state.getReboundAttribute(getOperandsAttr());
+  auto callee = state.getReboundAttribute(getCalleeAttr());
+  auto calleeAttr = cast<SymbolConstantAttr>(callee);
+
+  auto operandsAttr = cast<ParameterExprArrayAttr>(ops);
+  ErrorTreeOr<TypedAttr> result = state.interpretGenerator(
+      calleeAttr, calleeAttr.getParamValues(), operandsAttr, getLoc());
+
+  if (result.isError())
+    return result.takeError();
+
+  state.appendParamValues({result.getValue()}, 0, this->getOperation());
+  bool overwrite =
+      state.overwriteDeclBinding(getParamDecl(), result.getValue());
+  if (overwrite)
+    state.clearParameterCache();
 
   return success();
 }
@@ -52,6 +68,23 @@ ErrorOrSuccess interpretIfContainsPtr(const Payload &payload,
   return success();
 }
 
+template <typename Payload>
+ErrorOrSuccess
+parametricInterpretIfContainsPtr(const Payload &payload,
+                                 ParametricInterpreterState &state) {
+  Attribute attr = state.getReboundAttribute(payload.value);
+  if (payload.containsPtr) {
+    SmallVector<Attribute> attributes;
+    attributes.push_back(payload.value);
+    if (ErrorOrSuccess err = state.internalizeMemory(attributes); err.isError())
+      return err.takeError();
+    state.mapResults(attributes.front());
+  } else {
+    state.mapResults(attr);
+  }
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ParamConstantOp
 //===----------------------------------------------------------------------===//
@@ -63,6 +96,13 @@ OpFoldResult ParamConstantOp::fold(FoldAdaptor adaptor) {
 ErrorOrSuccess ParamConstantOp::compile(Payload &payload,
                                         TargetInfoAttr target) {
   return populateContainsPtrPayload(getValue(), payload);
+}
+
+ErrorOrSuccess
+ParamConstantOp::parametric_compile(Payload &payload, TargetInfoAttr target,
+                                    ParametricInterpreterState &state) {
+  return populateContainsPtrPayload(state.getReboundAttribute(getValue()),
+                                    payload);
 }
 
 ErrorTreeOrSuccess ParamConstantOp::interpret(ArrayRef<Attribute> operands,
@@ -78,6 +118,9 @@ ErrorTreeOrSuccess
 ParamConstantOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       const Payload &payload,
                                       ParametricInterpreterState &state) {
+  if (ErrorOrSuccess err = parametricInterpretIfContainsPtr(payload, state);
+      err.isError())
+    return ErrorTree(getLoc(), err.takeError());
   return success();
 }
 
@@ -88,6 +131,12 @@ ParamConstantOp::parametric_interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ParamDeclareOp::parametric_interpret(ArrayRef<Attribute> operands,
                                      ParametricInterpreterState &state) {
+  Attribute value = state.getReboundAttribute(getValue());
+  if (!value)
+    return ErrorTree(getLoc(), "cannot interpret kgen.param.declare");
+
+  state.appendParamValues({cast<TypedAttr>(value)}, 1, this->getOperation());
+  state.overwriteDeclBinding(getParamDecl(), value);
   return success();
 }
 
@@ -121,6 +170,13 @@ ErrorOrSuccess ParamMaterializeOp::compile(Payload &payload,
   return populateContainsPtrPayload(getValue(), payload);
 }
 
+ErrorOrSuccess
+ParamMaterializeOp::parametric_compile(Payload &payload, TargetInfoAttr target,
+                                       ParametricInterpreterState &state) {
+  auto value = state.getReboundAttribute(getValue());
+  return populateContainsPtrPayload(value, payload);
+}
+
 ErrorTreeOrSuccess ParamMaterializeOp::interpret(ArrayRef<Attribute> operands,
                                                  const Payload &payload,
                                                  InterpreterState &state) {
@@ -134,13 +190,16 @@ ErrorTreeOrSuccess
 ParamMaterializeOp::parametric_interpret(ArrayRef<Attribute> operands,
                                          const Payload &payload,
                                          ParametricInterpreterState &state) {
+
+  if (ErrorOrSuccess err = parametricInterpretIfContainsPtr(payload, state);
+      err.isError())
+    return ErrorTree(getLoc(), err.takeError());
   return success();
 }
 
 //===----------------------------------------------------------------------===//
 // RebindOp
 //===----------------------------------------------------------------------===//
-
 /// Fold away the rebind if the input and output types are the same.
 OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
   if (getInput().getType() == getType()) {
@@ -167,7 +226,15 @@ OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
 ErrorTreeOrSuccess
 RebindOp::parametric_interpret(ArrayRef<Attribute> operands,
                                ParametricInterpreterState &state) {
-  return success();
+  Type type = state.getReboundType(getType());
+  if (TypedAttr attr = llvm::dyn_cast_if_present<TypedAttr>(operands.front())) {
+    if (attr.getType() == type) {
+      state.mapResults(attr);
+      return success();
+    }
+  }
+
+  return ErrorTree(getLoc(), "type mismatch");
 }
 
 //===----------------------------------------------------------------------===//
@@ -191,6 +258,17 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
 ErrorTreeOrSuccess
 ParamAssertOp::parametric_interpret(ArrayRef<Attribute> operands,
                                     ParametricInterpreterState &state) {
+  Attribute cond = state.getFailableReboundAttribute(getCond());
+  if (!cond)
+    return ErrorTree(getLoc(), "evaluate kgen.param.assert's cond failed");
+
+  auto resultInt = cast<IntegerAttr>(cond);
+  if (resultInt.getValue().isZero()) {
+    Attribute message = state.getReboundAttribute(getMessage());
+    return ErrorTree(getLoc(), "constraint failed: " +
+                                   cast<StringAttr>(message).getValue());
+  }
+
   return success();
 }
 
@@ -200,6 +278,96 @@ ParamAssertOp::parametric_interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ParamForOp::parametric_interpret(ArrayRef<Attribute> operands,
                                  ParametricInterpreterState &state) {
+  SmallVector<Type> resultTypes;
+  Attribute hasNext = state.getReboundAttribute(getHasNext());
+  Attribute getNext = state.getReboundAttribute(getGetNextIter());
+  for (Type type : getResultTypes()) {
+    resultTypes.push_back(state.getReboundType(type));
+  }
+
+  auto hasNextCall = cast<SymbolConstantAttr>(hasNext);
+  auto iter = state.currOpSideEffectState().find(this->getOperation());
+  bool firstIteration =
+      (iter == state.currOpSideEffectState().end() || !iter->second.iterator);
+
+  // Can probably cache this for each iteration.
+  SmallVector<TypedAttr> paramValues;
+  for (auto pv : hasNextCall.getParamValues()) {
+    paramValues.push_back(state.getReboundAttribute(pv));
+  }
+
+  ErrorOr<Type> hasNextTypeResult =
+      state.lookupFuncTypeGenerator(hasNextCall.getSymbol());
+  if (hasNextTypeResult.isError()) {
+    return ErrorTree(getLoc(), hasNextTypeResult.takeError());
+  }
+
+  FuncType hasNextType =
+      cast<FuncTypeGeneratorType>(*hasNextTypeResult).getBody();
+
+  // Push an empty slot to paramValues count to mark this is the boundary
+  // of a ParamFor so that we know how much to pop once hitting
+  // kgen.param.for.break or kgen.param.for.continue
+  // state.pushParamValues({}, false, this->getOperation());
+  Attribute initial = state.getReboundAttribute(getInitial());
+  TypedAttr iterator =
+      cast<TypedAttr>(firstIteration ? initial : iter->second.iterator);
+
+  TypedAttr hasNextInput = iterator;
+  if (hasAddress(hasNextType.getArgConvention(0)))
+    hasNextInput = StoreToMemAttr::get(iterator, hasNextType.getArguments()[0]);
+
+  ErrorTreeOr<TypedAttr> hasNextResult =
+      state.interpretGenerator(hasNextCall, paramValues, iterator, getLoc());
+  if (hasNextResult.isError()) {
+    return hasNextResult.takeError();
+  }
+
+  if (!cast<BoolAttr>(*hasNextResult).getValue()) {
+    // Go to else region
+    ArrayRef<Attribute> arguments =
+        firstIteration ? operands : iter->second.operands;
+    state.currOpSideEffectState().erase(this->getOperation());
+    state.transferControlFlowTo(this->getOperation(), arguments);
+
+  } else {
+    state.overwriteDeclBinding(getParamDecl(), iterator);
+    iterator =
+        StoreToMemAttr::get(iterator, PointerType::get(iterator.getType()));
+
+    auto getNextCall = cast<SymbolConstantAttr>(getNext);
+    paramValues.clear();
+    for (auto pv : getNextCall.getParamValues()) {
+      paramValues.push_back(state.getReboundAttribute(pv));
+    }
+
+    ErrorTreeOr<TypedAttr> getNextResult =
+        state.interpretGeneratorWithResultSlot(getNextCall, paramValues,
+                                               iterator, getLoc());
+    if (getNextResult.isError())
+      return getNextResult.takeError();
+
+    if (firstIteration) {
+      state.currOpSideEffectState()[this->getOperation()] = {
+          {}, {}, *getNextResult};
+    } else {
+      // Clear up iterator in case function returns in the body of the ParamFor
+      // so that the iterator value doesn't carry over to another round of
+      // interpreting this ParamFor by mistake.
+      iter->second.iterator = {};
+      // Set nextIterator value so that kgen.param.for.continue can set the
+      // iterator value correctly for the next iteration.
+      iter->second.nextIterator = *getNextResult;
+    }
+
+    ArrayRef<Attribute> arguments =
+        firstIteration ? operands : iter->second.operands;
+
+    state.pushParamValues({iterator}, false, this->getOperation());
+    state.pushEvalFrame(getOperation(), &getBody(), {}, 5);
+    state.transferControlFlowTo(getBody(), arguments);
+  }
+
   return success();
 }
 
@@ -209,6 +377,10 @@ ParamForOp::parametric_interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ParamForBreakOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
+  auto parent = this->getOperation()->getParentOfType<ParamForOp>();
+  state.popEvalFrame();
+  state.popParamValues(false, this->getOperation(), parent);
+  state.transferControlFlowTo(parent, operands);
   return success();
 }
 
@@ -218,7 +390,18 @@ ParamForBreakOp::parametric_interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ParamForContinueOp::parametric_interpret(ArrayRef<Attribute> operands,
                                          ParametricInterpreterState &state) {
-  return success();
+  if (auto parent = this->getOperation()->getParentOfType<KGEN::ParamForOp>()) {
+    state.popEvalFrame();
+    state.popParamValues(false, this->getOperation(), parent);
+    state.transferControlFlowToParent(parent, operands);
+    auto iter = state.currOpSideEffectState().find(parent.getOperation());
+    assert(iter != state.currOpSideEffectState().end() &&
+           "kgen.param.for.continue has broken state");
+    iter->second.operands = SmallVector<Attribute>(operands);
+    iter->second.iterator = iter->second.nextIterator;
+    return success();
+  }
+  return ErrorTree(getLoc(), "INTERNAL ERROR: cannot find parent ParamForOp");
 }
 
 //===----------------------------------------------------------------------===//
@@ -316,7 +499,23 @@ LogicalResult ParamIfOp::canonicalize(ParamIfOp op, PatternRewriter &b) {
 ErrorTreeOrSuccess
 ParamIfOp::parametric_interpret(ArrayRef<Attribute> operands,
                                 ParametricInterpreterState &state) {
-  return success();
+  Attribute cond = state.getReboundAttribute(getCond());
+  unsigned regionId = 2;
+  if (auto result = dyn_cast<BoolAttr>(cond)) {
+    regionId = result.getValue() == 0 ? 1 : 0;
+  } else if (auto result = dyn_cast<IntegerAttr>(cond)) {
+    regionId = result.getValue() == 0 ? 1 : 0;
+  }
+
+  if (regionId < 2) {
+    Region &target = getRegion(regionId);
+    state.pushParamValues({}, false);
+    state.pushEvalFrame(getOperation(), &target, {}, 6);
+    state.transferControlFlowTo(target, {});
+    return success();
+  }
+
+  return ErrorTree(getLoc(), "wrong param if condition");
 }
 
 //===----------------------------------------------------------------------===//
@@ -326,6 +525,10 @@ ParamIfOp::parametric_interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ParamYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
                                    ParametricInterpreterState &state) {
+  state.popEvalFrame();
+  state.popEvalFrame();
+  state.popParamValues(false, this->getOperation());
+  state.transferControlFlowTo((*this)->getParentOp(), operands);
   return success();
 }
 
@@ -348,6 +551,25 @@ ErrorTreeOrSuccess CallOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 CallOp::parametric_interpret(ArrayRef<Attribute> operands,
                              ParametricInterpreterState &state) {
+  auto callee =
+      dyn_cast<SymbolConstantAttr>(state.getReboundAttribute(getCallee()));
+
+  if (!callee)
+    return ErrorTree(getLoc(), "cannot find callee");
+
+  auto bodyOr = state.lookupParametricFunctionBody(callee.getSymbol());
+  if (bodyOr.isError())
+    return ErrorTree(getLoc(), bodyOr.takeError());
+  Region &body = (*bodyOr->first);
+
+  state.pushParamValues(callee.getParamValues(), true);
+  state.pushEvalFrame(bodyOr->second, bodyOr->first, callee.getParamValues(),
+                      7);
+  if (auto err = state.callFunctionBody(body, operands))
+    return err.takeError();
+
+  state.setDeclBindings(bodyOr->second, callee.getParamValues());
+
   return success();
 }
 
@@ -370,6 +592,24 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
 ErrorTreeOrSuccess
 CallParamOp::parametric_interpret(ArrayRef<Attribute> operands,
                                   ParametricInterpreterState &state) {
+  auto callee =
+      dyn_cast<SymbolConstantAttr>(state.getReboundAttribute(getCallee()));
+  if (!callee)
+    return ErrorTree(getLoc(), "cannot find callee");
+
+  auto bodyOr = state.lookupParametricFunctionBody(callee.getSymbol());
+
+  if (bodyOr.isError())
+    return ErrorTree(getLoc(), bodyOr.takeError());
+  Region &body = *bodyOr->first;
+
+  state.pushParamValues(callee.getParamValues(), true);
+  state.pushEvalFrame(bodyOr->second, bodyOr->first, callee.getParamValues(),
+                      8);
+  if (auto err = state.callFunctionBody(body, operands))
+    return err.takeError();
+
+  state.setDeclBindings(bodyOr->second, callee.getParamValues());
   return success();
 }
 
@@ -411,6 +651,25 @@ ErrorTreeOrSuccess CallIndirectOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 CallIndirectOp::parametric_interpret(ArrayRef<Attribute> operands,
                                      ParametricInterpreterState &state) {
+  auto callee = dyn_cast<SymbolConstantAttr>(operands[0]);
+  if (!callee)
+    return ErrorTree(getLoc(), "couldn't resolve kgen.call_indirect callee");
+
+  auto calleeAttr = cast<SymbolConstantAttr>(state.getReboundAttribute(callee));
+
+  auto bodyOr = state.lookupParametricFunctionBody(calleeAttr.getSymbol());
+  // calleeAttr.getParamValues());
+  if (bodyOr.isError())
+    return ErrorTree(getLoc(), bodyOr.takeError());
+
+  Region &body = *bodyOr->first;
+  state.pushParamValues(callee.getParamValues(), true);
+  state.pushEvalFrame(bodyOr->second, bodyOr->first, callee.getParamValues(),
+                      9);
+  if (auto err = state.callFunctionBody(body, operands.drop_front()))
+    return err.takeError();
+
+  state.setDeclBindings(bodyOr->second, callee.getParamValues());
   return success();
 }
 
@@ -431,6 +690,11 @@ ErrorTreeOrSuccess CreateClosureOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 CreateClosureOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
+  // We have no representation for closing over runtime values.
+  if (!operands.empty())
+    return ErrorTree(getLoc(), "TODO: cannot form a closure at compile time");
+
+  state.mapResults(state.getReboundAttribute(getCallee()));
   return success();
 }
 
@@ -530,6 +794,31 @@ ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 CostOfOp::parametric_interpret(ArrayRef<Attribute> operands,
                                ParametricInterpreterState &state) {
+  int64_t loads = 0, stores = 0;
+  std::array<int64_t, getMaxEnumValForComputeKind() + 1> compute{};
+  auto callee =
+      dyn_cast<SymbolConstantAttr>(state.getReboundAttribute(getCallee()));
+
+  if (!callee)
+    return ErrorTree(getLoc(), "callee is not found");
+
+  ErrorTreeOrSuccess result =
+      computeCost(callee, getLoc(), state, loads, stores, compute, /*depth=*/0);
+  if (result.isError())
+    return result;
+
+  Builder builder(getContext());
+  auto getComputeOpsAttr = [&builder, &compute](ComputeKind kind) {
+    return builder.getIndexAttr(compute[static_cast<int>(kind)]);
+  };
+
+  state.mapResults({builder.getIndexAttr(loads), builder.getIndexAttr(stores),
+                    getComputeOpsAttr(ComputeKind::Addition),
+                    getComputeOpsAttr(ComputeKind::Comparison),
+                    getComputeOpsAttr(ComputeKind::Division),
+                    getComputeOpsAttr(ComputeKind::Multiplication),
+                    getComputeOpsAttr(ComputeKind::MultiplyAdd),
+                    getComputeOpsAttr(ComputeKind::Other)});
   return success();
 }
 
@@ -548,6 +837,9 @@ ErrorTreeOrSuccess IsCompileTimeOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 IsCompileTimeOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
+  // Always return true during interpreting time.
+  Builder builder(getContext());
+  state.mapResults(builder.getBoolAttr(true));
   return success();
 }
 
@@ -641,6 +933,17 @@ ErrorTreeOrSuccess SourceLocOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 SourceLocOp::parametric_interpret(ArrayRef<Attribute> operands,
                                   ParametricInterpreterState &state) {
+  // The inline count must be an immediate at interpretation time.
+  Attribute inlineCount = state.getReboundAttribute(getInlineCount());
+  auto inlineCountIntAttr = dyn_cast<IntegerAttr>(inlineCount);
+  if (!inlineCountIntAttr)
+    return ErrorTree(getLoc(), Error("inlineCount must be an "
+                                     "integer immediate"));
+
+  SmallVector<Attribute> results;
+  (void)sourceLocOpHelper(inlineCountIntAttr.getInt(), getContext(), getLoc(),
+                          &state, results);
+  state.mapResults(results);
   return success();
 }
 
@@ -657,6 +960,7 @@ ErrorTreeOrSuccess ReturnOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ReturnOp::parametric_interpret(ArrayRef<Attribute> operands,
                                ParametricInterpreterState &state) {
+  state.returnFromFunction(operands);
   return success();
 }
 
@@ -679,6 +983,16 @@ OpFoldResult PackCreateOp::fold(FoldAdaptor adaptor) {
 ErrorTreeOrSuccess
 PackCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
                                    ParametricInterpreterState &state) {
+  SmallVector<TypedAttr> values;
+  values.reserve(operands.size());
+  for (Attribute operand : operands) {
+    auto value = llvm::cast_if_present<TypedAttr>(operand);
+    if (!value)
+      return ErrorTree(getLoc(), "input type ill formed");
+    values.push_back(value);
+  }
+  state.mapResults(
+      PackAttr::get(values, cast<PackType>(state.getReboundType(getType()))));
   return success();
 }
 
@@ -704,7 +1018,18 @@ OpFoldResult PackExtractOp::fold(FoldAdaptor adaptor) {
 ErrorTreeOrSuccess
 PackExtractOp::parametric_interpret(ArrayRef<Attribute> operands,
                                     ParametricInterpreterState &state) {
-  return success();
+  auto index =
+      dyn_cast_or_null<IntegerAttr>(state.getReboundAttribute(getIndexAttr()));
+  if (!index) {
+    return ErrorTree(getLoc(), "cannot get PackExtractOp index");
+  }
+
+  if (auto pack = dyn_cast_or_null<PackAttr>(operands.front())) {
+    state.mapResults(pack.getValues()[index.getInt()]);
+    return success();
+  }
+
+  return ErrorTree(getLoc(), "failed to interpret PackExtractOp");
 }
 
 //===----------------------------------------------------------------------===//
@@ -759,6 +1084,37 @@ ErrorTreeOrSuccess PackGEPOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 PackGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
                                 ParametricInterpreterState &state) {
+  auto ptr = dyn_cast_if_present<PointerAttr>(operands[0]);
+  auto idxAttr =
+      dyn_cast_if_present<IntegerAttr>(state.getReboundAttribute(getIndex()));
+  if (!ptr || !idxAttr)
+    return ErrorTree(getLoc(), "non-constant inputs");
+
+  int64_t offset = 0;
+  auto variadic = cast<PointerType>(ptr.getType())
+                      .getElementAs<PackType>()
+                      .getVariadicIfResolved();
+  if (!variadic)
+    return ErrorTree(getLoc(), "unknown type list");
+
+  ArrayRef<TypedAttr> typeElts = variadic.getValues();
+
+  // Move the address over the elements before the one we are reading.
+  unsigned index = idxAttr.getInt();
+  for (unsigned i = 0; i != index; ++i) {
+    auto eltType = cast<TypeParamAttr>(typeElts[i]).getMlirType();
+    auto dl = cast<DataLayoutInterface>(eltType);
+    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+    offset += *dl.getTypeSize(state.getTarget());
+  }
+
+  // Align the address to the target element.
+  Type targetType = cast<TypeParamAttr>(typeElts[index]).getMlirType();
+  offset = llvm::alignTo(
+      offset,
+      *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
+  state.mapResults(
+      PointerAttr::get(ptr.getAddr() + offset, PointerType::get(targetType)));
   return success();
 }
 
@@ -791,7 +1147,26 @@ ErrorTreeOrSuccess PackLoadOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 PackLoadOp::parametric_interpret(ArrayRef<Attribute> operands,
                                  ParametricInterpreterState &state) {
-  return success();
+  if (auto pack = dyn_cast<PackAttr>(operands[0])) {
+    auto packType = cast<PackType>(state.getReboundType(getType()));
+    auto variadic = packType.getVariadicIfResolved();
+
+    if (!variadic)
+      return ErrorTree(getLoc(), "unknown type list");
+    ArrayRef<TypedAttr> typeElts = variadic.getValues();
+
+    SmallVector<TypedAttr> values;
+    for (auto [ptr, type] : llvm::zip(pack.getValues(), typeElts)) {
+      ErrorOr<Attribute> result = state.readAttributeFromPointer(
+          ptr, cast<TypeParamAttr>(type).getMlirType());
+      if (result.isError())
+        return ErrorTree(getLoc(), result.takeError());
+      values.push_back(cast<TypedAttr>(result.takeValue()));
+    }
+    state.mapResults(PackAttr::get(values, packType));
+    return success();
+  }
+  return ErrorTree(getLoc(), "non-constant inputs");
 }
 
 //===----------------------------------------------------------------------===//
@@ -815,7 +1190,16 @@ OpFoldResult VariantCreateOp::fold(FoldAdaptor adaptor) {
 ErrorTreeOrSuccess
 VariantCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
-  return success();
+  if (auto value = llvm::cast_if_present<TypedAttr>(operands.front())) {
+    auto type = state.getReboundType(cast<TypedAttr>(operands[0]).getType());
+    auto resultType = cast<VariantType>(state.getReboundType(getType()));
+    if (type == value.getType()) {
+      state.mapResults(VariantAttr::get(value, getIndex(), resultType));
+      return success();
+    }
+  }
+
+  return ErrorTree(getLoc(), "cannot interpret kgen.variant.create");
 }
 
 //===----------------------------------------------------------------------===//
@@ -856,14 +1240,21 @@ OpFoldResult VariantGetOp::fold(FoldAdaptor adaptor) {
 ErrorTreeOrSuccess
 VariantGetOp::parametric_interpret(ArrayRef<Attribute> operands,
                                    ParametricInterpreterState &state) {
-  return success();
+  if (auto variant = dyn_cast_if_present<VariantAttr>(operands.front())) {
+    //// If the variant value type is not equal to the result type, this is
+    //// undefined behaviour.
+    // if (variant.getValue().getType() != state.getReboundType(getType()))
+    state.mapResults(variant.getValue());
+    return success();
+  }
+  return ErrorTree(getLoc(), "input ill formed");
 }
 
 //===----------------------------------------------------------------------===//
 // StructCreateOp
 //===----------------------------------------------------------------------===//
 
-static StructAttr foldStructCreateConstant(StructCreateOp op,
+static StructAttr foldStructCreateConstant(StructType resultType,
                                            ArrayRef<Attribute> operands) {
   SmallVector<TypedAttr> values;
   values.reserve(operands.size());
@@ -873,7 +1264,7 @@ static StructAttr foldStructCreateConstant(StructCreateOp op,
       return {};
     values.push_back(value);
   }
-  return StructAttr::get(values, op.getType());
+  return StructAttr::get(values, resultType);
 }
 
 static Value foldTrivialStructCopy(StructCreateOp op) {
@@ -897,7 +1288,8 @@ static Value foldTrivialStructCopy(StructCreateOp op) {
 }
 
 OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
-  if (StructAttr cst = foldStructCreateConstant(*this, adaptor.getOperands()))
+  if (StructAttr cst =
+          foldStructCreateConstant(getType(), adaptor.getOperands()))
     return cst;
   if (Value container = foldTrivialStructCopy(*this))
     return container;
@@ -908,7 +1300,13 @@ OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
 ErrorTreeOrSuccess
 StructCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
                                      ParametricInterpreterState &state) {
-  return success();
+  if (StructAttr cst = foldStructCreateConstant(
+          cast<StructType>(state.getReboundType(getType())), operands)) {
+    state.mapResults(cst);
+    return success();
+  }
+
+  return ErrorTree(getLoc(), "can't interpret POP::StructCreateOp");
 }
 
 //===----------------------------------------------------------------------===//
@@ -927,6 +1325,9 @@ OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
 ErrorTreeOrSuccess
 StructExtractOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
+  auto result = StructExtractAttr::get(cast<TypedAttr>(operands.front()),
+                                       getIndexAttr().getInt());
+  state.mapResults(result);
   return success();
 }
 
@@ -947,6 +1348,14 @@ OpFoldResult StructReplaceOp::fold(FoldAdaptor adaptor) {
 ErrorTreeOrSuccess
 StructReplaceOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
+  auto value = llvm::cast_if_present<TypedAttr>(operands[0]);
+  auto container = dyn_cast_if_present<StructAttr>(operands[1]);
+  if (!value || !container)
+    return ErrorTree(getLoc(), "input ill formed");
+  SmallVector<TypedAttr> values(container.getValues());
+  values[getIndexAttr().getInt()] = value;
+  state.mapResults(StructAttr::get(
+      values, cast<StructType>(state.getReboundType(getType()))));
   return success();
 }
 
@@ -983,5 +1392,29 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 StructGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
                                   ParametricInterpreterState &state) {
+  auto ptr = dyn_cast_if_present<PointerAttr>(operands.front());
+  if (!ptr)
+    return ErrorTree(getLoc(), "non-constant inputs");
+
+  int64_t offset = 0;
+  auto structType =
+      cast<KGEN::PointerType>(cast<TypedAttr>(operands[0]).getType())
+          .getElementAs<StructType>();
+
+  // Move the address over the elements before the one we are reading.
+  unsigned index = getIndexAttr().getInt();
+  for (unsigned i = 0; i != index; ++i) {
+    auto dl = cast<DataLayoutInterface>(structType.getElementTypes()[i]);
+    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+    offset += *dl.getTypeSize(state.getTarget());
+  }
+
+  // Align the address to the target element.
+  Type targetType = structType.getElementTypes()[index];
+  offset = llvm::alignTo(
+      offset,
+      *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
+  state.mapResults(PointerAttr::get(ptr.getAddr() + offset,
+                                    state.getReboundType(getType())));
   return success();
 }
