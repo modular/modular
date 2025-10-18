@@ -21,6 +21,8 @@ from testing import assert_almost_equal, assert_equal, TestSuite
 
 def test_exp_bfloat16():
     assert_equal(exp(BFloat16(2.0)), 7.375)
+    assert_equal(exp(5.0)*exp(6.0), exp(5.0 + 6.0))
+    assert_equal(exp(5.0)/exp(2.0), exp(5.0 - 2.0))
 
 
 def test_exp_float16():
