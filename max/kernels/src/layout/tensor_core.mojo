@@ -54,6 +54,16 @@ from sys import (
     size_of,
 )
 
+from sys.info import (
+    _is_amd_rdna,
+    _is_amd_rdna1,
+    _is_amd_rdna2,
+    _is_amd_rdna3,
+    _is_amd_rdna4,
+    _is_amd_cdna,
+)
+
+
 from gpu import WARP_SIZE, lane_id, thread_idx
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
@@ -1391,15 +1401,47 @@ fn get_mma_shape[
     else:
 
         @parameter
-        if accum_type is DType.float32 and input_type is DType.float32:
-            return shape_16x16x4
-        elif accum_type is DType.float32 and input_type.is_half_float():
-            return shape_16x16x16
-        elif accum_type is DType.float32 and input_type.is_float8():
-            return shape_16x16x32
+        if _is_amd_rdna():
+
+            @parameter
+            if _is_amd_rdna1() or _is_amd_rdna2():
+                constrained[
+                    False,
+                    (
+                        "RDNA1/RDNA2 tensor core support requires fallback"
+                        " paths (not yet implemented)"
+                    ),
+                ]()
+                return shape_null
+
+            @parameter
+            if accum_type is DType.float32 and input_type is DType.float32:
+                return shape_16x16x16
+            elif accum_type is DType.float32 and input_type.is_half_float():
+                return shape_16x16x16
+            elif accum_type is DType.float32 and input_type.is_float8():
+                return shape_16x16x32
+            elif accum_type is DType.int32 and (
+                input_type is DType.int8 or input_type is DType.uint8
+            ):
+                return shape_16x16x16
+            elif accum_type is DType.int32 and (input_type is DType._uint4):
+                return shape_16x16x16
+            else:
+                constrained[False, "Unsupported RDNA mma shape."]()
+                return shape_null
         else:
-            constrained[False, "Unsupported mma shape."]()
-            return shape_null
+
+            @parameter
+            if accum_type is DType.float32 and input_type is DType.float32:
+                return shape_16x16x4
+            elif accum_type is DType.float32 and input_type.is_half_float():
+                return shape_16x16x16
+            elif accum_type is DType.float32 and input_type.is_float8():
+                return shape_16x16x32
+            else:
+                constrained[False, "Unsupported CDNA mma shape."]()
+                return shape_null
 
 
 @always_inline

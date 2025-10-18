@@ -562,6 +562,56 @@ fn is_nvidia_gpu[subarch: StaticString]() -> Bool:
 
 
 @always_inline("nodebug")
+fn _is_amd_rdna1() -> Bool:
+    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    and we are compiling for the any of the Radeon RX 5000 series
+    sub-architectures:
+
+        amdgpu:gfx1010: Navi 10 (RX 5700 XT/5700)
+        amdgpu:gfx1011: Navi 12
+        amdgpu:gfx1012: Navi 14 (RX 5500 XT/5500)
+        amdgpu:gfx1013: Navi 14
+
+    Returns:
+        True if the RDNA1 and False otherwise.
+    """
+    return (
+        is_amd_gpu["amdgpu:gfx1010"]()
+        or is_amd_gpu["amdgpu:gfx1011"]()
+        or is_amd_gpu["amdgpu:gfx1012"]()
+        or is_amd_gpu["amdgpu:gfx1013"]()
+    )
+
+
+@always_inline("nodebug")
+fn _is_amd_rdna2() -> Bool:
+    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    and we are compiling for the any of the Radeon RX 6000 series
+    sub-architectures:
+
+        amdgpu:gfx1030: Navi 21 (RX 6900/6800)
+        amdgpu:gfx1031: Navi 22 (RX 6700)
+        amdgpu:gfx1032: Navi 23 (RX 6600)
+        amdgpu:gfx1033: Navi 24
+        amdgpu:gfx1034: Navi 24
+        amdgpu:gfx1035: Rembrandt APU
+        amdgpu:gfx1036: Raphael APU
+
+    Returns:
+        True if the RDNA2 and False otherwise.
+    """
+    return (
+        is_amd_gpu["amdgpu:gfx1030"]()
+        or is_amd_gpu["amdgpu:gfx1031"]()
+        or is_amd_gpu["amdgpu:gfx1032"]()
+        or is_amd_gpu["amdgpu:gfx1033"]()
+        or is_amd_gpu["amdgpu:gfx1034"]()
+        or is_amd_gpu["amdgpu:gfx1035"]()
+        or is_amd_gpu["amdgpu:gfx1036"]()
+    )
+
+
+@always_inline("nodebug")
 fn _is_amd_rdna3() -> Bool:
     return (
         is_amd_gpu["gfx1100"]()
@@ -582,7 +632,9 @@ fn _is_amd_rdna4() -> Bool:
 
 @always_inline("nodebug")
 fn _is_amd_rdna() -> Bool:
-    return _is_amd_rdna3() or _is_amd_rdna4()
+    return (
+        _is_amd_rdna1() or _is_amd_rdna2() or _is_amd_rdna3() or _is_amd_rdna4()
+    )
 
 
 @always_inline("nodebug")
