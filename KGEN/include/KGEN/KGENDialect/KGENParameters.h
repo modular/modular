@@ -205,6 +205,7 @@ struct ParamDeclaration {
 struct ParameterUseDefGraph {
   ParameterUseDefGraph(Region &scope) : scope(&scope) {}
   ParameterUseDefGraph(Region *scope) : scope(scope) {}
+  virtual ~ParameterUseDefGraph() = default;
 
   /// Map of parameter name to its declaration.
   DenseMap<StringAttr, ParamDeclaration> decls;
