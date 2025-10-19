@@ -138,7 +138,7 @@ OptionalParseResult VariadicType::parseValue(AsmParser &p,
 }
 
 LogicalResult VariadicType::printValue(AsmPrinter &p, TypedAttr value) const {
-  auto variadic = llvm::dyn_cast<VariadicAttr>(value);
+  auto variadic = ::dyn_cast<VariadicAttr>(value);
   if (!variadic)
     return failure();
   p << '[';
@@ -228,20 +228,21 @@ TypedAttr TypeParamAttr::get(MLIRContext *ctx, Type typeValue, Type mlirType,
   // If this is a trivial mlir Type (i.e. has identical type & value
   // representation), and the trivial type is a ParamType, then we're
   // unwrapping a wrapper. Remove this to keep the types canonical.
-  if (mlirType == typeValue) {
-    if (auto refType = ::dyn_cast<ParamType>(mlirType))
-      if (refType.getParam().getType() == metaType)
-        return refType.getParam();
-    if (auto typeValueType = ::dyn_cast<TypeValueType>(mlirType))
-      if (typeValueType.getTypeValue().getType() == metaType)
-        return typeValueType.getTypeValue();
+  if (isEqualCanon(mlirType, typeValue)) {
+    TypedAttr result;
+    if (auto refType = sugarDynCast<ParamType>(mlirType))
+      result = refType.getParam();
+    if (auto typeValueType = sugarDynCast<TypeValueType>(mlirType))
+      result = typeValueType.getTypeValue();
+    if (result && isEqualCanon(result.getType(), metaType))
+      return ParamOperatorAttr::getRebind(result, metaType);
   }
 
   // Unwrap immediately-nested TypeParamAttr as the typeValue. This is
   // casting the metatype of the inner type constant.
-  if (auto typeValueType = ::dyn_cast<TypeValueType>(typeValue))
+  if (auto typeValueType = sugarDynCast<TypeValueType>(typeValue))
     if (auto innerTypeConstant =
-            ::dyn_cast<TypeParamAttr>(typeValueType.getTypeValue()))
+            sugarDynCast<TypeParamAttr>(typeValueType.getTypeValue()))
       typeValue = innerTypeConstant.getTypeValue();
 
   return Base::get(ctx, typeValue, mlirType, metaType);
@@ -275,13 +276,13 @@ bool TypeParamAttr::hasIdenticalRepresentation() {
 TypedAttr UpcastAttr::get(Type type, TypedAttr inputTypeValue) {
   // If this is a constant type coming in, we can fold this.  If not, stage it
   // until elaboration or something else simplifies things.
-  if (auto typeAttr = ::dyn_cast<TypeParamAttr>(inputTypeValue)) {
+  if (auto typeAttr = sugarDynCast<TypeParamAttr>(inputTypeValue)) {
     return TypeParamAttr::get(typeAttr.getTypeValue(), typeAttr.getMlirType(),
                               type);
   }
 
   // upcast(upcast(x)) = upcast(x)
-  if (auto upcast = ::dyn_cast<UpcastAttr>(inputTypeValue))
+  if (auto upcast = sugarDynCast<UpcastAttr>(inputTypeValue))
     return get(type, upcast.getInputTypeValue());
 
   return Base::get(type.getContext(), type, inputTypeValue);
@@ -300,7 +301,7 @@ Type TypeConformsToTraitAttr::getType() const {
 LogicalResult
 TypeConformsToTraitAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                 TypedAttr typeValue, VariadicAttr traitNames) {
-  if (!isa<KGEN::StringType>(traitNames.getType().getElementType()))
+  if (!isa<StringType>(traitNames.getType().getElementType()))
     return emitError()
            << "expected a variadic of strings for trait names, but got "
            << traitNames.getType();
@@ -316,19 +317,19 @@ bool GetWitnessAttr::isConstant() const { return false; }
 
 TypedAttr GetWitnessAttr::getTypeRefIfResolved() {
   TypedAttr typeRef = getTypeValue();
-  if (::isa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
-    return typeRef;
+  if (sugarIsa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
+    return SugarAttr::strip(typeRef);
 
-  auto typeParam = ::dyn_cast<TypeParamAttr>(typeRef);
+  auto typeParam = sugarDynCast<TypeParamAttr>(typeRef);
   if (!typeParam)
     return {};
 
-  auto typeValueType = ::dyn_cast<TypeValueType>(typeParam.getTypeValue());
+  auto typeValueType = sugarDynCast<TypeValueType>(typeParam.getTypeValue());
   if (!typeValueType)
     return {};
 
   typeRef = typeValueType.getTypeValue();
-  if (!::isa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
+  if (!sugarIsa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
     return {};
 
   return typeRef;
@@ -350,9 +351,14 @@ FailureOr<TypedAttr> GetWitnessAttr::simplify(ConformanceOp witnessTable,
         return TypedAttr();
     }
 
-    if (entryType == getType())
-      return evaluator ? evaluator->getReboundAttribute(entry.getValue())
-                       : entry.getValue();
+    if (isEqualCanon(entryType, getType())) {
+      auto value = evaluator ? evaluator->getReboundAttribute(entry.getValue())
+                             : entry.getValue();
+      if (!value)
+        return TypedAttr();
+      // Realign sugar if needed.
+      return ParamOperatorAttr::getRebind(value, getType());
+    }
   }
   return failure();
 }
@@ -470,7 +476,7 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
 
   // If the actual generator is a BindParamsAttr, then we can flatten the new
   // bindings into the existing ones.
-  if (auto bindParams = ::dyn_cast<BindParamsAttr>(generator)) {
+  if (auto bindParams = sugarDynCast<BindParamsAttr>(generator)) {
     SmallVector<TypedAttr> mergedParamValues =
         mergeParamBindings(bindParams.getParamValues(), paramValues);
     if (typeOpt)
@@ -482,7 +488,7 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
   }
 
   // Can simplify if the generator is a GeneratorAttr.
-  if (auto genAttr = dyn_cast<GeneratorAttr>(generator)) {
+  if (auto genAttr = sugarDynCast<GeneratorAttr>(generator)) {
     assert(
         evalContext &&
         "A foldable BindParamsAttr must be created with an evaluation context");
@@ -513,7 +519,7 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
   // If the actual generator is a SymbolConstantAttr, then we can simplify by
   // folding the parameter values into it directly (this will be cleaned up once
   // we remove param bindings from SymbolConstantAttr).
-  if (auto symbolConstant = ::dyn_cast<SymbolConstantAttr>(generator)) {
+  if (auto symbolConstant = sugarDynCast<SymbolConstantAttr>(generator)) {
     [[maybe_unused]] bool hasUnboundParameters =
         symbolConstant.getParamValues().empty();
     hasUnboundParameters |=
@@ -588,7 +594,7 @@ LogicalResult
 BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        TypedAttr generator, ArrayRef<TypedAttr> paramValues,
                        Type type) {
-  auto genType = ::dyn_cast<GeneratorType>(generator.getType());
+  auto genType = sugarDynCast<GeneratorType>(generator.getType());
   if (!genType)
     return emitError()
            << "bind_params generator operand must have a GeneratorType, got "
@@ -684,7 +690,7 @@ bool DTypeConstantAttr::isConvertibleTo(Type type) {
   // un-opposing signedness; signed integer dtypes can be converted to signless
   // and signed MLIR integer types but not unsigned.
   if (dtype.isInt()) {
-    auto intType = llvm::dyn_cast<IntegerType>(type);
+    auto intType = sugarDynCast<IntegerType>(type);
     if (!intType || intType.getWidth() != dtype.getWidthInBits())
       return false;
     return intType.isSignless() || intType.isSigned() == dtype.isSInt();
@@ -692,7 +698,7 @@ bool DTypeConstantAttr::isConvertibleTo(Type type) {
 
   // Floating point dtypes can be converted to equivalent MLIR float types.
   if (dtype.isFloat()) {
-    if (auto fpType = llvm::dyn_cast<FloatType>(type))
+    if (auto fpType = sugarDynCast<FloatType>(type))
       return areEquivalentFloatTypes(dtype, fpType);
     return false;
   }
@@ -704,17 +710,17 @@ bool DTypeConstantAttr::isConvertibleFrom(Type type) {
   KGENDType dtype = getDType();
 
   if (dtype.isBool())
-    return llvm::isa<IntegerType>(type);
+    return ::isa<IntegerType>(type);
 
   // Signless integers cannot be converted.
   if (type.isSignlessInteger() && !dtype.isIndex() && !dtype.isUIndex())
     return false;
 
   // Index dtypes can be converted if the type is an IndexType.
-  if ((dtype.isIndex() || dtype.isUIndex()) && llvm::isa<IndexType>(type))
+  if ((dtype.isIndex() || dtype.isUIndex()) && ::isa<IndexType>(type))
     return true;
 
-  if (auto intType = llvm::dyn_cast<IntegerType>(type)) {
+  if (auto intType = sugarDynCast<IntegerType>(type)) {
     if (dtype.isIndex() || dtype.isUIndex())
       return true;
     // Integers can be converted to dtypes of the same width and signedness.
@@ -726,7 +732,7 @@ bool DTypeConstantAttr::isConvertibleFrom(Type type) {
   }
 
   // Floating point types can be converted to equivalent dtypes.
-  if (auto fpType = llvm::dyn_cast<FloatType>(type))
+  if (auto fpType = ::dyn_cast<FloatType>(type))
     return dtype.isFloat() && areEquivalentFloatTypes(dtype, fpType);
 
   return false;
@@ -935,7 +941,7 @@ TypedAttr GeneratorAttr::getInstantiatedValue() {
 //===----------------------------------------------------------------------===//
 
 Attribute TargetParamAttr::parse(AsmParser &p, Type type) {
-  auto targetType = llvm::dyn_cast_or_null<TargetType>(type);
+  auto targetType = ::dyn_cast_or_null<TargetType>(type);
   if (!targetType) {
     p.emitError(p.getCurrentLocation(),
                 "target parameter expected a target type");
@@ -1660,8 +1666,8 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'function_get_arg_types' expects one "
                             "!kgen.func operand, but got nothing.";
     auto operand = operands[0];
-    if (auto paramRef1 = ::dyn_cast<ParamDeclRefAttr>(operand)) {
-      if (auto paramRefType1 = ::dyn_cast<ParamType>(paramRef1.getType())) {
+    if (auto paramRef1 = sugarDynCast<ParamDeclRefAttr>(operand)) {
+      if (auto paramRefType1 = sugarDynCast<ParamType>(paramRef1.getType())) {
         auto param1 = paramRefType1.getParam();
         if (!::isa<ParamDeclRefAttr>(param1))
           return emitError() << "'function_get_arg_types' operand paramref's "
@@ -1672,14 +1678,14 @@ LogicalResult ParamOperatorAttr::verify(
                               "type should be a signature, but got: "
                            << paramRef1.getType();
       }
-    } else if (auto typeConstAttr = ::dyn_cast<TypeParamAttr>(operand)) {
+    } else if (auto typeConstAttr = sugarDynCast<TypeParamAttr>(operand)) {
       auto mlirType = typeConstAttr.getMlirType();
       if (!::isa<FuncTypeGeneratorType>(mlirType))
         return emitError()
                << "'function_get_arg_types' operand typeconstantattr's mlir "
                   "type should be a signature, but got: "
                << mlirType;
-    } else if (auto paramIndexRef = ::dyn_cast<ParamIndexRefAttr>(operand)) {
+    } else if (auto paramIndexRef = sugarDynCast<ParamIndexRefAttr>(operand)) {
       auto mlirType = paramIndexRef.getType();
       if (::isa<ParamType>(mlirType)) {
         // Do nothing, is fine
@@ -1705,8 +1711,8 @@ LogicalResult ParamOperatorAttr::verify(
 
 /// If the specified attribute is a ParamOperatorAttr with the specified opcode,
 /// return it.  Otherwise return null.
-static ParamOperatorAttr dyn_castPE(POC opcode, Attribute value) {
-  if (auto expr = dyn_cast<ParamOperatorAttr>(value))
+static ParamOperatorAttr dyn_castPE(POC opcode, TypedAttr value) {
+  if (auto expr = sugarDynCast<ParamOperatorAttr>(value))
     if (expr.getOpcode() == opcode)
       return expr;
   return {};
@@ -1854,9 +1860,9 @@ struct DecomposedAddend {
 /// (e.g. `a*b` and `42`).  Otherwise return the operand as the first value and
 /// null as the second (standin for "multiplication by 1").
 static DecomposedAddend decomposeAddend(TypedAttr operand) {
-  auto mul = dyn_cast<ParamOperatorAttr>(operand);
+  auto mul = sugarDynCast<ParamOperatorAttr>(operand);
   if (mul && llvm::is_contained({POC::MulNoWrap, POC::Mul}, mul.getOpcode())) {
-    if (auto cst = dyn_cast<IntegerAttr>(mul.getOperands().back())) {
+    if (auto cst = sugarDynCast<IntegerAttr>(mul.getOperands().back())) {
       auto nonCst = ParamOperatorAttr::get(mul.getOpcode(),
                                            mul.getOperands().drop_back());
       return {mul.getOpcode(), nonCst, cst};
@@ -2026,7 +2032,7 @@ static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
 
     // The product must end with a constant integer attribute, which (if
     // present) will be canonicalized to be in the back
-    auto factor = dyn_cast<IntegerAttr>(mulAttr.getOperands().back());
+    auto factor = sugarDynCast<IntegerAttr>(mulAttr.getOperands().back());
     if (!factor)
       return {};
 
@@ -2080,8 +2086,8 @@ foldBinaryOp(ArrayRef<TypedAttr> operands,
              llvm::function_ref<APInt(const APInt &, const APInt &)> unsignedFn,
              llvm::function_ref<APInt(const APInt &, const APInt &)> signedFn) {
   assert(operands.size() == 2 && "binary operator always has two operands");
-  if (auto lhs = dyn_cast<IntegerAttr>(operands[0]))
-    if (auto rhs = dyn_cast<IntegerAttr>(operands[1])) {
+  if (auto lhs = sugarDynCast<IntegerAttr>(operands[0]))
+    if (auto rhs = sugarDynCast<IntegerAttr>(operands[1])) {
       if (auto resultConstant =
               foldBinaryValues(unsignedFn, signedFn, lhs.getValue(),
                                rhs.getValue(), lhs.getType()))
@@ -2097,8 +2103,8 @@ static IntegerAttr foldCompareOp(
     llvm::function_ref<bool(const APInt &, const APInt &)> unsignedCompareFn,
     llvm::function_ref<bool(const APInt &, const APInt &)> signedCompareFn =
         {}) {
-  if (auto lhsInt = dyn_cast<IntegerAttr>(lhs))
-    if (auto rhsInt = dyn_cast<IntegerAttr>(rhs)) {
+  if (auto lhsInt = sugarDynCast<IntegerAttr>(lhs))
+    if (auto rhsInt = sugarDynCast<IntegerAttr>(rhs)) {
       if (auto resultConstant = foldBinaryValues(
               unsignedCompareFn,
               signedCompareFn ? signedCompareFn : unsignedCompareFn,
@@ -2135,7 +2141,7 @@ static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
 static Attribute simplifyShl(SmallVectorImpl<TypedAttr> &operands) {
   // Canonicalize `x << cst` => `x * (1<<cst)` to compose correctly with
   // add/mul canonicalization (also handles constant folding).
-  if (auto rhs = dyn_cast<IntegerAttr>(operands[1])) {
+  if (auto rhs = sugarDynCast<IntegerAttr>(operands[1])) {
     // NOTE: This is correct even for index types because an overlong shift will
     // turn the result to zero.
     if (rhs.getValue().getZExtValue() >= rhs.getValue().getBitWidth())
@@ -2150,7 +2156,7 @@ static Attribute simplifyShl(SmallVectorImpl<TypedAttr> &operands) {
 }
 
 static Attribute simplifyShr(SmallVectorImpl<TypedAttr> &operands) {
-  if (auto rhs = dyn_cast<IntegerAttr>(operands[1]))
+  if (auto rhs = sugarDynCast<IntegerAttr>(operands[1]))
     if (rhs.getValue().isZero())
       return operands[0]; // `x >> 0 = x`.
   // TODO: 0 >> x, -1 >>> x
@@ -2211,14 +2217,14 @@ struct DivOperandInfo {
     constant = IntegerAttr::get(attr.getType(), 1).getValue();
     attrType = attr.getType();
 
-    if (auto constAttr = dyn_cast<IntegerAttr>(attr)) {
+    if (auto constAttr = sugarDynCast<IntegerAttr>(attr)) {
       updateConstant(constAttr);
       return;
     }
 
     if (auto mulAttr = dyn_castPE(POC::MulNoWrap, attr)) {
       for (TypedAttr numOpAttr : mulAttr.getOperands()) {
-        if (auto constAttr = dyn_cast<IntegerAttr>(numOpAttr)) {
+        if (auto constAttr = sugarDynCast<IntegerAttr>(numOpAttr)) {
           updateConstant(constAttr);
         } else {
           ++symOccurrences[numOpAttr];
@@ -2227,7 +2233,7 @@ struct DivOperandInfo {
       return;
     }
 
-    if (auto declAttr = dyn_cast<KGEN::ParamDeclRefAttr>(attr)) {
+    if (auto declAttr = sugarDynCast<KGEN::ParamDeclRefAttr>(attr)) {
       ++symOccurrences[declAttr];
       return;
     }
@@ -2338,7 +2344,7 @@ static Attribute simplifyDiv(SmallVectorImpl<TypedAttr> &operands) {
   simplifyDivOperands(operands);
 
   // Implement support for identities like `x/1 = x` and guard against `x/0`
-  if (auto rhs = dyn_cast<IntegerAttr>(operands[1])) {
+  if (auto rhs = sugarDynCast<IntegerAttr>(operands[1])) {
     if (rhs.getValue().isOne())
       return operands[0];
     if (rhs.getValue().isZero())
@@ -2368,7 +2374,7 @@ static Attribute simplifyCeilDiv(SmallVectorImpl<TypedAttr> &operands) {
   simplifyDivOperands(operands);
 
   // Implement support for identities like `x/1 = x` and guard against `x/0`
-  if (auto rhs = dyn_cast<IntegerAttr>(operands[1])) {
+  if (auto rhs = sugarDynCast<IntegerAttr>(operands[1])) {
     if (rhs.getValue().isOne())
       return operands[0];
     if (rhs.getValue().isZero())
@@ -2393,7 +2399,7 @@ static Attribute simplifyFloorDiv(SmallVectorImpl<TypedAttr> &operands) {
   simplifyDivOperands(operands);
 
   // Implement support for identities like `x/1 = x` and guard against `x/0`
-  if (auto rhs = dyn_cast<IntegerAttr>(operands[1])) {
+  if (auto rhs = sugarDynCast<IntegerAttr>(operands[1])) {
     if (rhs.getValue().isOne())
       return operands[0];
     if (rhs.getValue().isZero())
@@ -2427,7 +2433,7 @@ static Attribute simplifyMod(SmallVectorImpl<TypedAttr> &operands) {
     return IntegerAttr::get(rhs.getType(), 0);
 
   // Implement support for identities like `x%1 = 0`
-  if (auto rhs = dyn_cast<IntegerAttr>(operands[1])) {
+  if (auto rhs = sugarDynCast<IntegerAttr>(operands[1])) {
     if (rhs.getValue().isOne())
       return IntegerAttr::get(rhs.getType(), 0);
     if (rhs.getValue().isZero())
@@ -2450,8 +2456,8 @@ static Attribute simplifyEQ(SmallVectorImpl<TypedAttr> &operands) {
 /// Simplify the < and <= operations.
 static Attribute
 simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
-  auto rhs = dyn_cast<IntegerAttr>(operands[1]);
-  auto lhs = dyn_cast<IntegerAttr>(operands[0]);
+  auto rhs = sugarDynCast<IntegerAttr>(operands[1]);
+  auto lhs = sugarDynCast<IntegerAttr>(operands[0]);
 
   if (rhs && !lhs) {
     // If this is a `(le x, RHS)` and RHS is a constant, canonicalize to `lt`.
@@ -2488,8 +2494,8 @@ simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
 }
 
 static Attribute simplifyHasFeature(SmallVectorImpl<TypedAttr> &operands) {
-  auto target = dyn_cast<TargetParamAttr>(operands[0]);
-  auto feature = dyn_cast<StringAttr>(operands[1]);
+  auto target = sugarDynCast<TargetParamAttr>(operands[0]);
+  auto feature = sugarDynCast<StringAttr>(operands[1]);
   if (!target || !feature)
     return {};
   return Builder(target.getContext())
@@ -2498,8 +2504,8 @@ static Attribute simplifyHasFeature(SmallVectorImpl<TypedAttr> &operands) {
 
 static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
                                         Type &resultType) {
-  auto target = dyn_cast<TargetParamAttr>(operands[0]);
-  auto field = dyn_cast<StringAttr>(operands[1]);
+  auto target = sugarDynCast<TargetParamAttr>(operands[0]);
+  auto field = sugarDynCast<StringAttr>(operands[1]);
   if (!field)
     return {};
 
@@ -2594,8 +2600,8 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
   if (!resultType)
     resultType = b.getIndexType();
 
-  auto typeCst = dyn_cast<TypeParamAttr>(operands[0]);
-  auto target = dyn_cast<TargetParamAttr>(operands[1]);
+  auto typeCst = sugarDynCast<TypeParamAttr>(operands[0]);
+  auto target = sugarDynCast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
   std::optional<int64_t> size = DataLayoutInterface::getTypeStoreSize(
@@ -2614,8 +2620,8 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
   if (!resultType)
     resultType = b.getIndexType();
 
-  auto typeCst = dyn_cast<TypeParamAttr>(operands[0]);
-  auto target = dyn_cast<TargetParamAttr>(operands[1]);
+  auto typeCst = sugarDynCast<TypeParamAttr>(operands[0]);
+  auto target = sugarDynCast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
   std::optional<int64_t> size = DataLayoutInterface::getTypeABIAlign(
@@ -2698,12 +2704,12 @@ static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
   resultType = cast<VariadicType>(operands.front().getType()).getElementType();
 
   // Attempt to simplify variadic get when the first operand is a known array.
-  auto variadic = dyn_cast<VariadicAttr>(operands.front());
+  auto variadic = sugarDynCast<VariadicAttr>(operands.front());
   if (!variadic)
     return {};
 
   // If the index is known-constant and in-range, we can simplify it.
-  if (auto index = dyn_cast<IntegerAttr>(operands.back());
+  if (auto index = sugarDynCast<IntegerAttr>(operands.back());
       index && size_t(index.getInt()) < variadic.getValues().size())
     return variadic.getValues()[index.getInt()];
 
@@ -2740,7 +2746,7 @@ static TypedAttr cloneOperandsWithSubstitution(
   if (depth_left <= 0)
     return op;
 
-  auto opParamOperator = dyn_cast<ParamOperatorAttr>(op);
+  auto opParamOperator = sugarDynCast<ParamOperatorAttr>(op);
   if (!opParamOperator)
     return op;
 
@@ -2775,7 +2781,7 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
   // But A != B is represented as Xor(A == B, true)
   if (auto xorAttr = dyn_castPE(POC::Xor, condAttr)) {
     auto eqAttr = dyn_castPE(POC::EQ, xorAttr.getOperand(0));
-    auto intAttr = dyn_cast<IntegerAttr>(xorAttr.getOperand(1));
+    auto intAttr = sugarDynCast<IntegerAttr>(xorAttr.getOperand(1));
     if (eqAttr && intAttr && intAttr.getValue().isOne() &&
         eqAttr.getOperand(0) == thenAttr && eqAttr.getOperand(1) == elseAttr)
       return thenAttr;
@@ -2788,8 +2794,8 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
     if (thenAttr == rhsEq && elseAttr == lhsEq)
       return lhsEq;
 
-    auto rhsEqAsIntegral = dyn_cast<IntegerAttr>(rhsEq);
-    auto lhsEqAsIntegral = dyn_cast<IntegerAttr>(lhsEq);
+    auto rhsEqAsIntegral = sugarDynCast<IntegerAttr>(rhsEq);
+    auto lhsEqAsIntegral = sugarDynCast<IntegerAttr>(lhsEq);
 
     // If in form cond(A == 5, f(A, ...), ...)
     // Substitute all occurrences of A in the then branch with '5' up to
@@ -2807,11 +2813,11 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
   }
 
   // cond(X, false, X) == X
-  if (auto then = dyn_cast<IntegerAttr>(thenAttr))
+  if (auto then = sugarDynCast<IntegerAttr>(thenAttr))
     if (then.getValue().isZero() && condAttr == elseAttr)
       return thenAttr;
 
-  auto c = dyn_cast<IntegerAttr>(condAttr);
+  auto c = sugarDynCast<IntegerAttr>(condAttr);
   if (!c)
     return {};
   if (c.getValue().isOne())
@@ -2845,7 +2851,7 @@ static TypedAttr simplifyVariadicPtrMap(TypedAttr variadicOperand,
                                         TypedAttr addrSpaceOperand,
                                         Type resultType) {
   // Fold a concrete variadic list of types.
-  auto variadic = dyn_cast<VariadicAttr>(variadicOperand);
+  auto variadic = sugarDynCast<VariadicAttr>(variadicOperand);
   if (!variadic)
     return {};
 
@@ -2866,7 +2872,7 @@ static TypedAttr simplifyVariadicPtrMap(TypedAttr variadicOperand,
 static TypedAttr simplifyVariadicPtrRemoveMap(TypedAttr variadicOperand,
                                               Type resultType) {
   // Fold a concrete variadic list of types.
-  auto variadic = dyn_cast<VariadicAttr>(variadicOperand);
+  auto variadic = sugarDynCast<VariadicAttr>(variadicOperand);
   if (!variadic)
     return {};
 
@@ -2875,7 +2881,7 @@ static TypedAttr simplifyVariadicPtrRemoveMap(TypedAttr variadicOperand,
   SmallVector<TypedAttr> results;
   // Map each type from a PointerType of the element type.
   for (auto elt : variadic.getValues()) {
-    auto eltCst = dyn_cast<TypeParamAttr>(elt);
+    auto eltCst = sugarDynCast<TypeParamAttr>(elt);
     if (!eltCst || !isa<PointerType>(eltCst.getMlirType()))
       return {};
 
@@ -2888,11 +2894,11 @@ static TypedAttr simplifyVariadicPtrRemoveMap(TypedAttr variadicOperand,
 }
 
 static TypedAttr simplifyStrConcat(TypedAttr lhs, TypedAttr rhs) {
-  auto lhsS = dyn_cast<StringAttr>(lhs);
+  auto lhsS = sugarDynCast<StringAttr>(lhs);
   if (!lhsS)
     return {};
 
-  auto rhsS = dyn_cast<StringAttr>(rhs);
+  auto rhsS = sugarDynCast<StringAttr>(rhs);
   if (!rhsS)
     return {};
   SmallString<80> buffer;
@@ -2909,25 +2915,25 @@ static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
 
   if (!::isa<VariadicType>(resultType))
     return {};
-  auto variadicType = ::dyn_cast<VariadicType>(resultType);
+  auto variadicType = sugarDynCast<VariadicType>(resultType);
   auto traitType = variadicType.getElementType();
 
   Type mlirType;
 
-  if (auto paramRef1 = ::dyn_cast<ParamDeclRefAttr>(operand)) {
+  if (auto paramRef1 = sugarDynCast<ParamDeclRefAttr>(operand)) {
     return {};
-  } else if (auto typeConstAttr = ::dyn_cast<TypeParamAttr>(operand)) {
+  } else if (auto typeConstAttr = sugarDynCast<TypeParamAttr>(operand)) {
     mlirType = typeConstAttr.getMlirType();
-  } else if (auto paramIndexRef = ::dyn_cast<ParamIndexRefAttr>(operand)) {
+  } else if (auto paramIndexRef = sugarDynCast<ParamIndexRefAttr>(operand)) {
     mlirType = paramIndexRef.getType();
-  } else if (auto symConstAttr = ::dyn_cast<SymbolConstantAttr>(operand)) {
+  } else if (auto symConstAttr = sugarDynCast<SymbolConstantAttr>(operand)) {
     mlirType = symConstAttr.getType();
   } else {
     return {};
   }
 
   ArrayRef<Type> argTypes;
-  if (auto sigGen = dyn_cast<FuncTypeGeneratorType>(mlirType))
+  if (auto sigGen = sugarDynCast<FuncTypeGeneratorType>(mlirType))
     argTypes = sigGen.getBody().getArguments();
   else
     return {};
@@ -3176,8 +3182,7 @@ TypedAttr ParamOperatorAttr::getSub(TypedAttr lhs, TypedAttr rhs) {
 /// If the specified attribute is a rebind, return its operand, otherwise
 /// return the rebind itself.
 TypedAttr ParamOperatorAttr::stripRebind(TypedAttr src) {
-  if (auto rebind = ::dyn_cast<ParamOperatorAttr>(src);
-      rebind && rebind.getOpcode() == POC::Rebind)
+  if (auto rebind = dyn_castPE(POC::Rebind, src))
     return rebind.getOperand(0);
   return src;
 }
