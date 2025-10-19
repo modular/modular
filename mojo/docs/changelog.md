@@ -21,6 +21,18 @@ what we publish.
 
 ### Language enhancements {#25-7-language-enhancements}
 
+- [Issue #3925](https://github.com/modular/modular/issues/3925): Mojo now allows
+  methods to be overloaded based on "owned" vs "by-ref" argument conventions,
+  selecting the owned overload when given an owned value, and selecting the
+  by-ref version otherwise.  This allows somewhat more efficient algorithms,
+  e.g. consuming vs borrowing iterators:
+
+  ```mojo
+  struct MyCollection:
+    fn __iter__(var self) -> Self.ConsumingIterator: ...
+    fn __iter__(self) -> Self.BorrowingIterator: ...
+  ```
+
 - Literals now have a default type. For example, you can now bind `[1,2,3]` to
   `T` in a call to a function defined as `fn zip[T: Iterable](impl:T)` because
   it will default to the standard library's List type.
