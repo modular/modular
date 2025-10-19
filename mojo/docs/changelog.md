@@ -191,3 +191,6 @@ what we publish.
   tensors with nested layouts like
   `Layout(IntTuple(IntTuple(16, 8), IntTuple(32, 2)), ...)` because it
   attempted to extract shape values from nested tuples incorrectly.
+
+- Fixed [PR5479](https://github.com/modular/modular/issues/5479): mojo crashes
+  when compiling standalone `__del__` function without struct context.
