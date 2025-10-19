@@ -32,6 +32,7 @@ from sys.ffi import (
     c_size_t,
     c_ssize_t,
     c_uint,
+    c_ulong,
 )
 
 from utils import Variant
@@ -52,6 +53,17 @@ alias Py_func_type_input: c_int = 345
 # 0 when Stackless Python is disabled
 # ref: https://github.com/python/cpython/blob/main/Include/object.h
 alias Py_TPFLAGS_DEFAULT = 0
+
+# These flags are used to determine if a type is a subclass.
+# ref: https://github.com/python/cpython/blob/main/Include/object.h
+alias Py_TPFLAGS_LONG_SUBCLASS = (1 << 24)
+alias Py_TPFLAGS_LIST_SUBCLASS = (1 << 25)
+alias Py_TPFLAGS_TUPLE_SUBCLASS = (1 << 26)
+alias Py_TPFLAGS_BYTES_SUBCLASS = (1 << 27)
+alias Py_TPFLAGS_UNICODE_SUBCLASS = (1 << 28)
+alias Py_TPFLAGS_DICT_SUBCLASS = (1 << 29)
+alias Py_TPFLAGS_BASE_EXC_SUBCLASS = (1 << 30)
+alias Py_TPFLAGS_TYPE_SUBCLASS = (1 << 31)
 
 
 # TODO(MOCO-1138):
@@ -971,6 +983,11 @@ alias PyType_FromSpec = ExternalFunction[
     # PyObject *PyType_FromSpec(PyType_Spec *spec)
     fn (UnsafePointer[PyType_Spec]) -> PyObjectPtr,
 ]
+alias PyType_GetFlags = ExternalFunction[
+    "PyType_GetFlags",
+    # unsigned long PyType_GetFlags(PyTypeObject *type)
+    fn (PyTypeObjectPtr) -> c_ulong,
+]
 
 # Integer Objects
 alias PyLong_FromSsize_t = ExternalFunction[
@@ -1338,12 +1355,14 @@ struct CPython(Defaultable, Movable):
     var _PyType_GenericAlloc: PyType_GenericAlloc.type
     var _PyType_GetName: PyType_GetName.type
     var _PyType_FromSpec: PyType_FromSpec.type
+    var _PyType_GetFlags: PyType_GetFlags.type
     # The None Object
     var _Py_None: PyObjectPtr
     # Integer Objects
     var _PyLong_FromSsize_t: PyLong_FromSsize_t.type
     var _PyLong_FromSize_t: PyLong_FromSize_t.type
     var _PyLong_AsSsize_t: PyLong_AsSsize_t.type
+    var _PyLong_Type: PyTypeObjectPtr
     # Boolean Objects
     var _PyBool_FromLong: PyBool_FromLong.type
     # Floating-Point Objects
@@ -1501,6 +1520,7 @@ struct CPython(Defaultable, Movable):
         else:
             self._PyType_GetName = _PyType_GetName_dummy
         self._PyType_FromSpec = PyType_FromSpec.load(self.lib)
+        self._PyType_GetFlags = PyType_GetFlags.load(self.lib)
         # The None Object
         if self.version.minor >= 13:
             # Py_GetConstantBorrowed is part of the Stable ABI since version 3.13
@@ -1521,6 +1541,10 @@ struct CPython(Defaultable, Movable):
         self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib)
         self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib)
         self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib)
+        self._PyLong_Type = PyTypeObjectPtr(
+            # PyTypeObject PyLong_Type
+            self.lib.get_symbol[PyTypeObject]("PyLong_Type")
+        )
         # Boolean Objects
         self._PyBool_FromLong = PyBool_FromLong.load(self.lib)
         # Floating-Point Objects
@@ -2237,6 +2261,19 @@ struct CPython(Defaultable, Movable):
         """
         return self._PyType_FromSpec(spec)
 
+    fn PyType_GetFlags(
+        self,
+        type: PyTypeObjectPtr,
+    ) -> c_ulong:
+        """Return the feature flags for the `type` pointer.
+
+        Return value: Feature flags.
+
+        References:
+        - https://docs.python.org/3/c-api/type.html#c.PyType_GetFlags
+        """
+        return self._PyType_GetFlags(type)
+
     # ===-------------------------------------------------------------------===#
     # The None Object
     # ref: https://docs.python.org/3/c-api/none.html
@@ -2289,6 +2326,28 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/long.html#c.PyLong_AsSsize_t
         """
         return self._PyLong_AsSsize_t(pylong)
+
+    fn PyLong_Check(self, obj: PyObjectPtr) -> Bool:
+        """Return True if `obj` is a long integer or a class derived from it.
+
+        References:
+        - https://docs.python.org/3/c-api/long.html#c.PyLong_Check
+        - https://github.com/python/cpython/blob/main/Include/longobject.h
+        """
+        # Note: this a C macro in the Python C API.
+        return self.PyType_HasFeature(
+            self.Py_TYPE(obj), Py_TPFLAGS_LONG_SUBCLASS
+        )
+
+    fn PyLong_CheckExact(self, obj: PyObjectPtr) -> Bool:
+        """Return True if the `obj` is a long integer.
+
+        References:
+        - https://docs.python.org/3/c-api/long.html#c.PyLong_CheckExact
+        - https://github.com/python/cpython/blob/main/Include/longobject.h
+        """
+        # Note: this a C macro in the Python C API.
+        return self.Py_TYPE(obj) == self._PyLong_Type
 
     # ===-------------------------------------------------------------------===#
     # Boolean Objects
@@ -2730,3 +2789,9 @@ struct CPython(Defaultable, Movable):
 
         # TODO(MSTDL-950): Should use something like `addr_of!`
         return obj._unsized_obj_ptr[].object_type
+
+    fn PyType_HasFeature(self, ptr: PyTypeObjectPtr, feature: c_ulong) -> Bool:
+        """Helper function to check if the given feature is set in the flags of the `ptr` type.
+        """
+        # Note this is another static helper function in the C API.
+        return (self.PyType_GetFlags(ptr) & feature) != 0

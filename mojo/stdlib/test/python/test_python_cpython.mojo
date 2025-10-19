@@ -161,10 +161,16 @@ def _test_integer_object_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(-42)
     assert_true(n)
     assert_equal(cpy.PyLong_AsSsize_t(n), -42)
+    assert_true(cpy.PyLong_Check(n))
+    assert_true(cpy.PyLong_CheckExact(n))
 
     var z = cpy.PyLong_FromSize_t(57)
     assert_true(z)
     assert_equal(cpy.PyLong_AsSsize_t(z), 57)
+
+    var none = cpy.Py_None()
+    assert_false(cpy.PyLong_Check(none))
+    assert_false(cpy.PyLong_CheckExact(none))
 
 
 def _test_boolean_object_api(cpy: CPython):
