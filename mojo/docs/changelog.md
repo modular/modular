@@ -145,6 +145,9 @@ what we publish.
 
 - `SIMD` now implements the `DivModable` trait.
 
+- `TestSuite` now can generate test reports with `.generate_report()`. Also
+  a `TestReport` and `TestSuiteReport` structs were added.
+
 ### Tooling changes {#25-7-tooling-changes}
 
 - `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)
