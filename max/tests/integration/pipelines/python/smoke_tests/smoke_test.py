@@ -72,10 +72,12 @@ def test_single_request(model: str, task: str) -> None:
     else:
         m = [{"role": "user", "content": "Say: 'hello world'"}]
 
+    connection_timeout = 10
+    read_timeout = 60
     r = requests.post(
         URL,
         json={"model": model, "messages": m, "max_tokens": 8, "temperature": 0},
-        timeout=10,
+        timeout=(connection_timeout, read_timeout),
     )
     r.raise_for_status()
     resp = r.json()["choices"][0]["message"]["content"]
