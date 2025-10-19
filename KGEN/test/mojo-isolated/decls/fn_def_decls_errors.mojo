@@ -17,13 +17,14 @@ fn test_never_declared_fn():
 fn implicit_var_decl(a: Index):
     c = a  # implicit declaration of c
 
-# expected-error @+1 {{'__add__' requires 2 operands}}
-fn __add__():
-    pass
+struct BadMethod:
+    # expected-error @+1 {{'__add__' requires 2 operands}}
+    fn __add__(self):
+        pass
 
-# expected-error @+1 {{'__sub__' must be a method}}
+# expected-error @+1 {{'__sub__' must be a method, not a global function}}
 fn __sub__(self: Index, a: Index):
-    pass
+     pass
 
 fn missing_colon()  # expected-error {{expected ':' in function definition}}
     # Don't get confused by comments or blank lines!

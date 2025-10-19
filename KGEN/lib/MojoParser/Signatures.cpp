@@ -2029,6 +2029,13 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
     cast<FnOp>(*fnDecl->getIfOperation()).setIsStatic(true);
 
+  if (fnInfo.isInstMethod() && !selfType) {
+    shared.emitError(fnDecl->getLoc())
+        << "'" << fnInfo.name << "' must be a method, not a global function";
+    fnDecl->setErroneous();
+    fnInfo = SpecialFunctionInfo();
+  }
+
   // Trivial types are copyable with memcpy so they can't define copyinit.
   if (fnInfo.kind == SpecialFunctionKind::kDel &&
       selfType.isTrivial(fnDecl->getLoc(), shared)) {
