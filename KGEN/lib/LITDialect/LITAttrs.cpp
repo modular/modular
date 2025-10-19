@@ -637,7 +637,7 @@ TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
 
     // Flatten any of the same operation into the operand list:
     // `(union x, (union y, z))` => `(union x, y, z)`.
-    if (auto subexpr = ::dyn_cast<OriginUnionAttr>(operand)) {
+    if (auto subexpr = sugarDynCast<OriginUnionAttr>(operand)) {
       operandSet.insert(subexpr.getOperands().begin(),
                         subexpr.getOperands().end());
     } else {
@@ -713,13 +713,13 @@ OriginMutCastAttr OriginMutCastAttr::getFromBytecode(TypedAttr operand,
 }
 
 TypedAttr OriginMutCastAttr::get(TypedAttr operand, TypedAttr isMutable) {
-  if (auto curTy = ::dyn_cast<OriginType>(operand.getType()))
+  if (auto curTy = sugarDynCast<OriginType>(operand.getType()))
     if (curTy.isMutable() == isMutable)
       return operand;
 
   // Fold some common cases to canonicalize.
   // mutcast(mutcast(x)) -> mutcast(x), often canceling out.
-  if (auto mutCast = ::dyn_cast<OriginMutCastAttr>(operand))
+  if (auto mutCast = sugarDynCast<OriginMutCastAttr>(operand))
     return get(mutCast.getOperand(), isMutable);
 
   // Singletons don't need a cast, just form one with the new mutability.
@@ -727,7 +727,7 @@ TypedAttr OriginMutCastAttr::get(TypedAttr operand, TypedAttr isMutable) {
     return AnyOriginAttr::get(isMutable);
 
   // Push into union so it cancels out.
-  if (auto unionAttr = ::dyn_cast<OriginUnionAttr>(operand)) {
+  if (auto unionAttr = sugarDynCast<OriginUnionAttr>(operand)) {
     SmallVector<TypedAttr> elts;
     for (auto elt : unionAttr.getOperands())
       elts.push_back(OriginMutCastAttr::get(elt, isMutable));
@@ -749,7 +749,7 @@ TypedAttr OriginMutCastAttr::get(TypedAttr operand, Type type) {
 }
 
 TypedAttr OriginMutCastAttr::get(TypedAttr operand, bool isMutable) {
-  if (auto curTy = ::dyn_cast<OriginType>(operand.getType()))
+  if (auto curTy = sugarDynCast<OriginType>(operand.getType()))
     if (curTy.isMutableKnown(isMutable))
       return operand;
   return get(operand, BoolAttr::get(operand.getContext(), isMutable));
@@ -775,14 +775,14 @@ TypedAttr OriginFieldAttr::get(TypedAttr structOrigin, StringAttr field) {
 
   // We push any mutability casts outside of ourselves.
   //     mutcast(x).myfield => mutcast(x.myfield)
-  if (auto mutCast = ::dyn_cast<OriginMutCastAttr>(structOrigin)) {
+  if (auto mutCast = sugarDynCast<OriginMutCastAttr>(structOrigin)) {
     auto inner = OriginFieldAttr::get(mutCast.getOperand(), field);
     return OriginMutCastAttr::get(inner, mutCast.getType());
   }
 
   // We push this inside a origin.union as well, so we get the union on the
   // outside.
-  if (auto unionAttr = ::dyn_cast<OriginUnionAttr>(structOrigin)) {
+  if (auto unionAttr = sugarDynCast<OriginUnionAttr>(structOrigin)) {
     SmallVector<TypedAttr> elts;
     for (auto elt : unionAttr.getOperands())
       elts.push_back(OriginFieldAttr::get(elt, field));
@@ -829,14 +829,14 @@ TypedAttr IndirectOriginAttr::get(TypedAttr baseOrigin) {
 
   // We push any mutability casts outside of ourselves.
   //     mutcast(x)[] => mutcast(x[])
-  if (auto mutCast = ::dyn_cast<OriginMutCastAttr>(baseOrigin)) {
+  if (auto mutCast = sugarDynCast<OriginMutCastAttr>(baseOrigin)) {
     auto inner = IndirectOriginAttr::get(mutCast.getOperand());
     return OriginMutCastAttr::get(inner, mutCast.getType());
   }
 
   // We push this inside a origin.union as well, so we get the union on the
   // outside.
-  if (auto unionAttr = ::dyn_cast<OriginUnionAttr>(baseOrigin)) {
+  if (auto unionAttr = sugarDynCast<OriginUnionAttr>(baseOrigin)) {
     SmallVector<TypedAttr> elts;
     for (auto elt : unionAttr.getOperands())
       elts.push_back(IndirectOriginAttr::get(elt));
@@ -907,7 +907,7 @@ TypedAttr OriginSetAttr::get(ArrayRef<TypedAttr> operands, OriginSetType type) {
       continue;
     }
     // Break up unions into their constituents without mutcasts.
-    if (auto unionAttr = ::dyn_cast<OriginUnionAttr>(operand)) {
+    if (auto unionAttr = sugarDynCast<OriginUnionAttr>(operand)) {
       for (TypedAttr origin : unionAttr.getOperands())
         newOperands.push_back(OriginMutCastAttr::strip(origin));
       continue;
@@ -929,7 +929,7 @@ TypedAttr OriginSetAttr::get(ArrayRef<TypedAttr> operands, OriginSetType type) {
 
   // If we find a set union and there is only one operand, collapse the union.
   if (newOperands.size() == 1)
-    if (auto setUnion = ::dyn_cast<OriginSetUnionAttr>(newOperands.front()))
+    if (auto setUnion = sugarDynCast<OriginSetUnionAttr>(newOperands.front()))
       return setUnion.getValue();
 
   return Base::get(type.getContext(), newOperands, type);
@@ -946,7 +946,7 @@ OriginSetUnionAttr OriginSetUnionAttr::getFromBytecode(TypedAttr value,
 
 TypedAttr OriginSetUnionAttr::get(TypedAttr value, OriginType type) {
   // Fold `set.union(set) -> union`.
-  if (auto set = ::dyn_cast<OriginSetAttr>(value)) {
+  if (auto set = sugarDynCast<OriginSetAttr>(value)) {
     return OriginMutCastAttr::get(
         OriginUnionAttr::get(type.getContext(), set.getOperands()), type);
   }
@@ -965,7 +965,7 @@ TypedAttr LITStructAttr::get(MLIRContext *ctx,
   // Origin and AddressSpace etc.
   if (values.size() == 1) {
     auto [fieldName, value] = values[0];
-    if (auto extract = ::dyn_cast<LIT::StructExtractAttr>(value))
+    if (auto extract = sugarDynCast<LIT::StructExtractAttr>(value))
       if (extract.getField() == fieldName &&
           extract.getStructValue().getType() == type)
         return extract.getStructValue();
@@ -1102,7 +1102,7 @@ TypedAttr LIT::StructExtractAttr::get(MLIRContext *context,
                                       TypedAttr structValue, StringAttr field,
                                       Type resultType) {
 
-  if (auto value = dyn_cast_if_present<LITStructAttr>(structValue)) {
+  if (auto value = sugarDynCastIfPresent<LITStructAttr>(structValue)) {
     auto it = llvm::find_if(value.getValues(), [&](const auto &p) {
       return std::get<0>(p) == field;
     });

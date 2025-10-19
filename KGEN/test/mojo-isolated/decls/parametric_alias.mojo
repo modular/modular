@@ -31,7 +31,7 @@ alias myDefaultAdd[x: Int, y: Int = 1] = x + y
 alias myDependentDefaultAdd[x: Int, y: Int = x] = x + y
 
 # CHECK: lit.alias.decl *"myIntFMA{{.*}}": !lit.generator<<"x": !Int, "y": !Int, "z": !Int>!Int> = <#kgen.gen<
-# CHECK-SAME: {_mlir_value = add(#lit.struct.extract<:!Int *(0,2), "_mlir_value">, {{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)
+# CHECK-SAME: {_mlir_value = add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">), #lit.struct.extract<:!Int *(0,2), "_mlir_value">)}
 alias myIntFMA[x: Int, y: Int, z: Int] = x * y + z
 
 
