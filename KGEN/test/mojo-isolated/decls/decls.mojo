@@ -1474,7 +1474,7 @@ fn use_constraint_struct_autoparam[cs: ConstraintStruct[_]]():
 # CHECK-LABEL: lit.fn @"use_constraint_struct_in_constraint
 # CHECK-SAME: <x: !Int {
 # CHECK-SAME: ge(#lit.struct.extract<:!Int x, "_mlir_value">, 1)
-# CHECK-SAME: ge({{.*}}add(#lit.struct.extract<:!Int x, "_mlir_value">, 1)}>, "_mlir_value">, 2)
+# CHECK-SAME: ge(add(#lit.struct.extract<:!Int x, "_mlir_value">, 1), 2)
 fn use_constraint_struct_in_constraint[
     x: Int
         where x > 0

@@ -79,9 +79,15 @@ Type getCanonicalType(Type type);
 bool isEqualCanon(Type t1, Type t2);
 bool isEqualCanon(TypedAttr ta1, TypedAttr ta2);
 
+template <typename T>
+constexpr bool isValidSugarCastType =
+    (std::is_convertible_v<T, TypedAttr> || std::is_convertible_v<T, Type>);
+
 // Helpers for sugar-aware casting.
 template <typename... To, typename From>
 [[nodiscard]] inline bool sugarIsa(From val) {
+  static_assert(isValidSugarCastType<From>,
+                "sugared casts only work with Type and TypedAttr");
   auto stripped = SugarAttr::strip(val);
   return (isa<To>(stripped) || ...);
 }
@@ -91,17 +97,24 @@ template <typename... To, typename From>
 [[nodiscard]] inline bool sugarIsaAndNonNull(From val) {
   if (!val)
     return false;
+
+  static_assert(isValidSugarCastType<From>,
+                "sugared casts only work with Type and TypedAttr");
   val = SugarAttr::strip(val);
   return (isa<To>(val) || ...);
 }
 
 template <typename To, typename From>
 [[nodiscard]] inline decltype(auto) sugarCast(From val) {
+  static_assert(isValidSugarCastType<From>,
+                "sugared casts only work with Type and TypedAttr");
   return cast<To>(SugarAttr::strip(val));
 }
 
 template <typename To, typename From>
 [[nodiscard]] inline decltype(auto) sugarDynCast(From val) {
+  static_assert(isValidSugarCastType<From>,
+                "sugared casts only work with Type and TypedAttr");
   return dyn_cast<To>(SugarAttr::strip(val));
 }
 

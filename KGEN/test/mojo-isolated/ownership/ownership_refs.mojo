@@ -24,11 +24,11 @@ struct MemExample(ImplicitlyCopyable, Movable):
   fn noop(self): pass
   fn mutate(mut self): pass
 
-# CHECK-LABEL: lit.fn @"borrow{{.*}}"<lt: origin<0>>(%a: !lit.ref<!MemExample, imm {{.*}}lt)
+# CHECK-LABEL: lit.fn @"borrow{{.*}}"<lt: origin<0>>(%a: !lit.ref<!MemExample, imm lt>
 fn borrow[lt: ImmutableOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
-# CHECK-LABEL: lit.fn @"mutate{{.*}}"<lt: origin<1>>(%a: !lit.ref<!MemExample, mut {{.*}}lt)
+# CHECK-LABEL: lit.fn @"mutate{{.*}}"<lt: origin<1>>(%a: !lit.ref<!MemExample, mut lt>
 fn mutate[lt: MutableOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
@@ -46,8 +46,8 @@ fn implicit_owned(var a: MemExample):
 
 # This preserves reference mutability
 # CHECK-LABEL: lit.fn @"parametricMut
-# CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "_mlir_value">, {{.*}}life){{.*}}"_mlir_origin">>)  ->
-# CHECK-SAME: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "_mlir_value">, {{.*}}life}>
+# CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "_mlir_value">, life>) ->
+# CHECK-SAME: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "_mlir_value">, life>
 fn parametricMut[isMut: Bool,
                  life: Origin[isMut]._mlir_type](a: Pointer[MemExample, life]._mlir_type)
    -> Pointer[MemExample, life]._mlir_type:
@@ -56,11 +56,11 @@ fn parametricMut[isMut: Bool,
 # CHECK-LABEL: lit.fn @"testParametricMut
 fn testParametricMut(i: MemExample, mut m: MemExample):
   # This infers an immutable reference.
-  # CHECK:  lit.call {{.*}}parametricMut{{.*}}!lit.ref<!MemExample, imm {{.*}}*"i`"}>
+  # CHECK:  lit.call {{.*}}parametricMut{{.*}}!lit.ref<!MemExample, imm *"i`">
   _ = parametricMut(__get_mvalue_as_litref(i))
 
   # This infers a mutable reference.
-  # CHECK: lit.call {{.*}}parametricMut{{.*}}!lit.ref<!MemExample, mut {{.*}}*"m`1"}>
+  # CHECK: lit.call {{.*}}parametricMut{{.*}}!lit.ref<!MemExample, mut *"m`1">
   _ = parametricMut(__get_mvalue_as_litref(m))
 
 ##===----------------------------------------------------------------------===##
@@ -228,10 +228,10 @@ fn testLifetimeOf1(a: MemExample) -> Pointer[MemExample, origin_of(a)]:
 
 # CHECK-LABEL: lit.fn @"testLifetimeOf2
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
-# CHECK-SAME: !lit.ref<!MemExample, imm {{.*}}*"a`")
+# CHECK-SAME: !lit.ref<!MemExample, imm *"a`">
 fn testLifetimeOf2(a: MemExample) -> Pointer[MemExample, origin_of(a)]._mlir_type:
 
-  # CHECK: kgen.return {{.*}} : !lit.ref<!MemExample, imm {{.*}}*"a`")
+  # CHECK: kgen.return {{.*}} : !lit.ref<!MemExample, imm *"a`">
   return Pointer(to=a)._value
 
 # CHECK-LABEL: lit.fn @"callByRefResultLifetime
