@@ -862,6 +862,18 @@ struct ImplicitCopyableStructWithExplicitBody(ImplicitlyCopyable):
     var begin: ExplicitlyCopyableStructWithoutBody
 
 
+# MOCO-2186: Initializer syntax should reject incorrect result type
+struct StructWithSpecificInit[X: Int]:
+    fn __init__(out self: StructWithSpecificInit[4]): # expected-note {{function declared here}}
+        pass
+def testStructWithSpecificInit():
+    # expected-error @+1 {{invalid initialization: return type 'StructWithSpecificInit[4]' parameter 'X' doesn't match expected value '1'}}
+    var a = StructWithSpecificInit[1]()  # Infers to A[4]
+
+    # This is ok.
+    var b = StructWithSpecificInit[4]()
+
+
 ##===----------------------------------------------------------------------===##
 # Traits
 ##===----------------------------------------------------------------------===##

@@ -3624,6 +3624,12 @@ bool KGEN::isEqualCanon(Type t1, Type t2) {
   return getCanonicalType(t1) == getCanonicalType(t2);
 }
 
+bool KGEN::isEqualCanon(TypedAttr ta1, TypedAttr ta2) {
+  if (ta1 == ta2)
+    return true;
+  return getCanonicalAttr(ta1) == getCanonicalAttr(ta2);
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
