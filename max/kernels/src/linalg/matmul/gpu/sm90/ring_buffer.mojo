@@ -203,7 +203,7 @@ struct RingBuffer[
     num_pipeline_stages: Int,
     num_consumers: Int,
     cluster_size: Int,
-    use_async_copy: Bool = False,
+    tma_transfer: Bool = True,
 ](ImplicitlyCopyable):
     """Ring buffer for managing pipeline synchronization between producers and consumers.
 
@@ -223,7 +223,7 @@ struct RingBuffer[
         num_pipeline_stages: Number of stages in the circular buffer
         num_consumers: Number of consumer warp groups
         cluster_size: Number of blocks in the cluster (1 for single-block)
-        use_async_copy: Whether to use cp.async instructions (default: False)
+        tma_transfer: Whether the RingBuffer is used for TMA transfers (default: True)
     """
 
     alias SMM = NVIDIASharedMemoryManager[]
@@ -288,7 +288,7 @@ struct RingBuffer[
             for i in range(num_pipeline_stages):
                 # Full barrier: expects arrivals from producer threads
                 # For async_copy, all threads in warp group participate
-                self.full_mbar[i].init(WARPGROUP_SIZE if use_async_copy else 1)
+                self.full_mbar[i].init(1 if tma_transfer else WARPGROUP_SIZE)
                 # Empty barrier: expects arrivals from all consumers across cluster
                 self.empty_mbar[i].init(num_consumers * cluster_size)
 
@@ -317,8 +317,8 @@ struct RingBuffer[
         var write_idx = self.write_state.index()
         # Wait for all consumers to signal this slot is empty
         self.empty_mbar[Int(write_idx)].wait(self.write_state.phase())
-        # For TMA transfers, set expected bytes for the barrier
-        if not use_async_copy:
+        if tma_transfer:
+            # For TMA transfers, set expected bytes for the barrier
             alias expected_bytes = Self.get_expected_bytes()
             self.full_mbar[Int(write_idx)].expect_bytes(expected_bytes)
         return write_idx
@@ -332,11 +332,11 @@ struct RingBuffer[
         Returns:
             Tuple of (barrier, a_tile, b_tile) for the producer to use.
         """
-        var idx = self.get_slot()
+        var slot = self.get_slot()
         return (
-            self.full_mbar.offset(idx),
-            self.a_tiles[idx],
-            self.b_tiles[idx],
+            SMemBarrier(to=self.full_mbar[slot]),
+            self.a_tiles[slot],
+            self.b_tiles[slot],
         )
 
     @always_inline
@@ -349,10 +349,10 @@ struct RingBuffer[
 
         After signaling, advances to the next pipeline stage.
         """
-        if use_async_copy:
+        if not tma_transfer:
             var write_idx = self.write_state.index()
             # Signal that async copy operations have been issued
-            async_copy_arrive(self.full_mbar[write_idx].unsafe_ptr())
+            async_copy_arrive(SMemBarrier(to=self.full_mbar[write_idx]))
             # Arrive at barrier to signal tile is ready
             _ = self.full_mbar[write_idx].arrive()
         # Move to next slot in the ring buffer

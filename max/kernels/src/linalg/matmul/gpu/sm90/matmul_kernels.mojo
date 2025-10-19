@@ -260,7 +260,7 @@ struct HopperMatmulSM90Kernel[
         Self.cluster_size,
     ]
 
-    alias RingBuffer[async_copy: Bool = False] = RingBuffer[
+    alias RingBuffer[tma_transfer: Bool = True] = RingBuffer[
         a_type,
         b_type,
         Self.a_smem_layout,
@@ -268,16 +268,16 @@ struct HopperMatmulSM90Kernel[
         num_pipeline_stages,
         Self.num_consumer,
         Self.cluster_size,
-        async_copy,
+        tma_transfer,
     ]
 
     alias RingBufferConsumer[
-        origin: Origin[True], async_copy: Bool = False
-    ] = RingBufferConsumer[origin, Self.RingBuffer[async_copy]]
+        origin: Origin[True], tma_transfer: Bool
+    ] = RingBufferConsumer[origin, Self.RingBuffer[tma_transfer]]
 
     alias RingBufferProducer[
-        origin: Origin[True], async_copy: Bool = False
-    ] = RingBufferProducer[origin, Self.RingBuffer[async_copy]]
+        origin: Origin[True], tma_transfer: Bool
+    ] = RingBufferProducer[origin, Self.RingBuffer[tma_transfer]]
 
     alias WgmmaOp = TensorCoreAsync[
         Self.accum_type,
@@ -392,7 +392,7 @@ struct HopperMatmulSM90Kernel[
                     ](
                         a_tma_op,
                         tiles.a_tile,
-                        tiles.barrier[],
+                        tiles.barrier,
                         rank_n,
                         (k_offset, m_coord),
                         multicast_row_mask,
@@ -403,7 +403,7 @@ struct HopperMatmulSM90Kernel[
                     ](
                         b_tma_op,
                         tiles.b_tile,
-                        tiles.barrier[],
+                        tiles.barrier,
                         rank_m,
                         (k_offset, n_coord),
                         multicast_column_mask << rank_n,
@@ -470,8 +470,10 @@ struct HopperMatmulSM90Kernel[
                     ](
                         a,
                         tiles.a_tile,
-                        Int(block_idx_m),
-                        k_iter * num_pipeline_stages + j,
+                        (
+                            UInt(block_idx_m),
+                            UInt(k_iter * num_pipeline_stages + j),
+                        ),
                     )
 
                     ScatterGather.load_tile[
@@ -481,8 +483,10 @@ struct HopperMatmulSM90Kernel[
                     ](
                         b,
                         tiles.b_tile,
-                        Int(block_idx_n),
-                        k_iter * num_pipeline_stages + j,
+                        (
+                            UInt(block_idx_n),
+                            UInt(k_iter * num_pipeline_stages + j),
+                        ),
                     )
 
         @parameter
@@ -961,7 +965,7 @@ struct HopperMatmulSM90Kernel[
         # This variant is configured for use with cp.async instructions which provide
         # unaligned memory access capabilities. The ring buffer still manages producer-
         # consumer synchronization but uses different memory access patterns
-        var ring_buffer = Self.RingBuffer[True](
+        var ring_buffer = Self.RingBuffer[tma_transfer=False](
             smem.full_mbar.ptr,
             smem.empty_mbar.ptr,
             warp_group_thread_idx,
