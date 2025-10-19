@@ -180,3 +180,16 @@ fn valid_sbvalue_borrow(value: SBValue):
 # expected-error @+1 {{multiple specification of address space isn't valid}}
 fn bad_ref_as[a: AddressSpace](ref [a, a] x: Int):
     pass
+
+struct HasOwnedOverloadedMethod:
+    fn method(var self) -> Int: pass
+    fn method(self) -> String: pass
+
+fn testOverloadedMethod():
+  var x : HasOwnedOverloadedMethod
+
+  _: Int = x.method()    # expected-error {{cannot implicitly convert 'String' value to 'Int'}}
+  _: String = x.method()
+
+  _: Int = x^.method()
+  _: String = x^.method() # expected-error {{cannot implicitly convert 'Int' value to 'String'}}

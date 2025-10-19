@@ -469,6 +469,34 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
                                  bool allowImplicitConversions, SMLoc loc,
                                  ASTDecl &declScope) {
 
+  ASTType expectedRVType =
+      RefType::stripRefConvention(expectedType, expectedConvention);
+
+  // Allow overloading on "owned" vs "by-ref" arguments.
+  // If the argument convention is owned but the operand is not an RValue then
+  // we'll need to copy the value (or this is entirely invalid).  If the
+  // argument convention is borrowed/ref but the value is an RValue then we have
+  // an RValue decay.  Model these so that APIs can overload on owned vs
+  // borrowed effectively.
+  bool argTypesMatchOrIsUValue = !operand.ir.getIfCValue();
+  if (!argTypesMatchOrIsUValue)
+    argTypesMatchOrIsUValue =
+        operand.ir.getIfCValue().getRValueType().isEqualCanon(expectedRVType);
+
+  if (argTypesMatchOrIsUValue) {
+    if (operand.ir.getIfBValue() || operand.ir.getIfLValue()) {
+      // Heavily penalize implicit copies.
+      if (expectedConvention == ArgConvention::OwnedMem)
+        payload.numMismatchedConventions += 2;
+    } else {
+      assert((operand.ir.getIfUValue() || operand.ir.getIfRValue()) &&
+             "UValue and RValue expressions are always owned");
+      // Slightly penalize RValue->ref conversions.
+      if (expectedConvention != ArgConvention::OwnedMem)
+        ++payload.numMismatchedConventions;
+    }
+  }
+
   SharedState &shared = declScope.getShared();
   switch (expectedConvention) {
   case ArgConvention::OwnedReg:
@@ -482,26 +510,20 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       return {kNotLValue, expectedType};
 
     // ByRef argument types must exactly match, no conversions are allowed.
-    ASTType elementType = expectedType.getReferenceElementType();
-    if (!argVal.getRValueType().isEqualCanon(elementType))
+    if (!argVal.getRValueType().isEqualCanon(expectedRVType))
       return {kWrongLVType, expectedType};
     // Notice if a register-passable type is being passed in-memory. This allows
     // 'mut' arguments overloads to be more expensive than borrowed.
     payload.numMismatchedConventions +=
-        elementType.isRegisterPassable(loc, shared);
+        expectedRVType.isRegisterPassable(loc, shared);
     return {kValidType, expectedType};
   }
   case ArgConvention::Ref:
   case ArgConvention::MutRef: {
-    // Element type and address have to match and the mutability has to be
-    // compatible.
-    RefType valueRefType;
-    if (operand.ir.isMValue())
-      valueRefType = operand.ir.getMValueType();
-
     // If we are binding to something that is already a reference, check for
     // compatibility of the references and we're done.
-    if (valueRefType) {
+    if (operand.ir.isMValue()) {
+      RefType valueRefType = operand.ir.getMValueType();
       if (IREmitter::canZeroCostConvert(valueRefType, expectedType, shared))
         return {kValidType, expectedType};
       // Otherwise this is the wrong type for the argument.
@@ -532,13 +554,9 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
   }
   case ArgConvention::ReadMem:
   case ArgConvention::OwnedMem:
-    // Ignore the pointer type on memory conventions when matching types.
-    // Note: We do not support overloading on borrow/owned currently,
-    // but we could add this if there is a reason to.
-    expectedType = expectedType.getReferenceElementType();
     // If a register-passable type is being passed in-memory, remember this.
     payload.numMismatchedConventions +=
-        expectedType.isRegisterPassable(loc, shared);
+        expectedRVType.isRegisterPassable(loc, shared);
     [[fallthrough]];
   case ArgConvention::ReadReg: {
     // Get the argument if it has a concrete type.
@@ -550,70 +568,70 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       if (auto initValue = operand.ir.getIfInitializer()) {
         IREmitter emitter(declScope, ExprContext::EC_CallArgValue);
         CallOperands operands =
-            initValue->getOperandsForInferredType(expectedType, emitter);
+            initValue->getOperandsForInferredType(expectedRVType, emitter);
 
         // Initializer lists are good if we can construct the expected type.
         FailureOr<PValue> initFn = OverloadSet::canConstructType(
-            expectedType, std::move(operands), operand.expr, declScope,
+            expectedRVType, std::move(operands), operand.expr, declScope,
             /*isImplicitConversion=*/false);
         // If there were declaration errors, assume construction is possible
         // to avoid spurious errors.
         bool valid = (bool)failed(initFn) || initFn.value();
         // If so, all is good, if not, we fail.
-        return {valid ? kValidType : kWrongType, expectedType};
+        return {valid ? kValidType : kWrongType, expectedRVType};
       }
 
       auto orValue = operand.ir.getIfOverloadSet();
       assert(orValue && "Unknown UValue!");
 
       // Try to refine the OverloadSetUValue into a PValue.
-      argVal = orValue->getDirectSymbol(expectedType, declScope);
+      argVal = orValue->getDirectSymbol(expectedRVType, declScope);
       if (!argVal)
-        return {kWrongType, expectedType};
+        return {kWrongType, expectedRVType};
 
       // If we have a reference to an overloaded method like foo(a.method),
       // then we can't resolve it.
       // TODO(partial application => closures): Given we just resolved argVal,
       // we could form the "a.method" expression with a closure.
       if (orValue->baseValue) // Cannot merge base value.
-        return {kWrongType, expectedType};
+        return {kWrongType, expectedRVType};
     }
 
     ASTType argType = argVal.getRValueType();
     // Otherwise, we pass as an r-value.  If the argument types match, then
     // they are good.
-    if (argType.isEqualCanon(expectedType))
-      return {kValidType, expectedType};
+    if (argType.isEqualCanon(expectedRVType))
+      return {kValidType, expectedRVType};
 
     if (auto nonmaterializableTarget =
             argType.getNonmaterializableTarget(shared)) {
-      if (nonmaterializableTarget.isEqualCanon(expectedType)) {
+      if (nonmaterializableTarget.isEqualCanon(expectedRVType)) {
         // Implicit conversion for nonmaterializable types to their target
         // type is allowed even if !allowImplicitConversions and count as half
         // as much of a mismatch as a normal implicit conversion.  This enables
         // exact matches to be more specific, and literals to be more compatible
         // than an actual conversion.
         ++payload.numImplicitConversions;
-        return {kValidType, expectedType};
+        return {kValidType, expectedRVType};
       }
     }
 
     // Argument name mismatches don't count as implicit conversions.
-    if (IREmitter::canZeroCostConvert(argType, expectedType, shared))
-      return {kValidType, expectedType};
+    if (IREmitter::canZeroCostConvert(argType, expectedRVType, shared))
+      return {kValidType, expectedRVType};
 
     // If implicit conversions are possible and one will work, then we succeed
     // with that conversion.
     if (allowImplicitConversions &&
         IREmitter::canImplicitlyConvertToType({argVal, operand.expr},
-                                              expectedType, declScope)) {
+                                              expectedRVType, declScope)) {
       // If we had one, this bumps our # implicit conversions.
       payload.numImplicitConversions += 2;
-      return {kValidType, expectedType};
+      return {kValidType, expectedRVType};
     }
 
     // Otherwise this is the wrong type for the argument.
-    return {kWrongType, expectedType};
+    return {kWrongType, expectedRVType};
   }
   }
 

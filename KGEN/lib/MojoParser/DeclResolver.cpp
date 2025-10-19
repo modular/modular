@@ -1181,6 +1181,8 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     case ArgConvention::OwnedReg:
       llvm_unreachable("not used by the parser");
     case ArgConvention::OwnedMem:
+      mangledName += '$';
+      break;
     case ArgConvention::ReadReg:
     case ArgConvention::ReadMem:
       break;
