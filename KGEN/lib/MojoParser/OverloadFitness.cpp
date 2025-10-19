@@ -1143,6 +1143,34 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   assert(posOperandIdx == numOperands &&
          "should handle argument mismatch above");
 
+  // Fail if this is a constructor call that returns the wrong result type. This
+  // can happen with weird things like this:
+  //     struct A[X: Int]: fn __init__(out self: A[4]): pass
+  //     var a = A[1]()  # Infers to A[4]; error!
+  //     var b = A[4]()  # Ok!
+  if (callable.syntax == CallSyntax::kTypeCall) {
+    // Check to see if any of the parameter bound to the result type disagree
+    // with the 'Self' parameters, which are bound into newBindings.
+    auto resultType = ASTType(signature.getUserResultType());
+    auto numBindings = resultType.getParamBindings().size();
+    for (auto [paramIdx, actual, expected] :
+         llvm::enumerate(resultType.getParamBindings(),
+                         newBindings.getValue().take_front(numBindings))) {
+      if (!isEqualCanon(actual, expected)) {
+        DeclResolver::DeclScopeChanger x(funcIfDirect);
+        auto declOp =
+            cast<StructDeclOp>(resultType.getDecl(shared)->getIfOperation());
+        auto paramType = declOp.getSignature().getInputParamTypes()[paramIdx];
+        diag = shared.emitError(callLoc);
+        diag << "return type " << resultType << " parameter "
+             << ParamDeclRefAttr::get(declOp.getParams()[paramIdx].getName(),
+                                      paramType)
+             << " doesn't match expected value " << expected;
+        return std::move(diag);
+      }
+    }
+  }
+
   // Fail if this is an implicit conversion but the ctor is not marked @implicit
   if (funcIfDirect && callable.syntax == CallSyntax::kImplicitConvert &&
       !cast<FnOp>(funcIfDirect->getIfOperation()).isImplicitConversion()) {
