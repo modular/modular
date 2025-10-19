@@ -34,7 +34,7 @@ SF(kNew,      "__new__"     , 0, -1, kInvalid, kImplicitlyStaticMethod|kSelfResu
 SF(kInit,     "__init__"    , 0, -1, kInvalid, kInitializer)
 SF(kCopyInit, "__copyinit__", 1, 1, kInvalid, kInitializer | kCannotRaise)
 SF(kMoveInit, "__moveinit__", 1, 1, kInvalid, kInitializer | kCannotRaise)
-SF(kDel,      "__del__",      1, 1, kInvalid, kNoneResult | kCannotRaise)
+SF(kDel, "__del__", 1, 1, kInvalid, kNoneResult | kCannotRaise | kInstMethod)
 
 SF(kBool,    "__bool__"  ,  1, 1, kInvalid, kInstMethod)
 SF(kMLIRI1,  "__mlir_i1__", 1, 1, kInvalid, kInstMethod)
