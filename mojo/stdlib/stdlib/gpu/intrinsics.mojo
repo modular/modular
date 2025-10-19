@@ -744,6 +744,47 @@ fn store_release[
 
 
 @always_inline
+fn store_relaxed[
+    dtype: DType, //,
+    *,
+    scope: Scope = Scope.SYSTEM,
+    memory: Bool = True,
+    alignment: Int = align_of[Scalar[dtype]](),
+](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
+    """Performs an atomic store with relaxed memory ordering semantics.
+
+    On NVIDIA, maps to PTX st.relaxed; on AMD, maps to POP atomic store with MONOTONIC ordering.
+    """
+    constrained[is_gpu(), "atomic store only supported on GPU"]()
+
+    @parameter
+    if is_nvidia_gpu():
+        alias mem_constraint = StaticString(",~{memory}") if memory else ""
+        alias constraints = _get_nvtx_register_constraint[
+            dtype
+        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
+        alias scope_str = scope.mnemonic()
+        inlined_assembly[
+            "st.relaxed."
+            + ((scope_str + ".") if scope_str else "")
+            + "global."
+            + _get_type_suffix[dtype]()
+            + " [$1], $0;",
+            NoneType,
+            constraints=constraints,
+        ](value, ptr)
+    elif is_amd_gpu():
+        __mlir_op.`pop.store`[
+            alignment = alignment._mlir_value,
+            ordering = Consistency.MONOTONIC.__mlir_attr(),
+        ](value, ptr.address)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="store_relaxed"
+        ]()
+
+
+@always_inline
 fn load_acquire[
     dtype: DType, //,
     *,
@@ -802,6 +843,48 @@ fn load_acquire[
         return CompilationTarget.unsupported_target_error[
             Scalar[dtype],
             operation="load_acquire",
+        ]()
+
+
+@always_inline
+fn load_relaxed[
+    dtype: DType, //,
+    *,
+    scope: Scope = Scope.SYSTEM,
+    memory: Bool = True,
+    alignment: Int = align_of[Scalar[dtype]](),
+](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
+    """Performs an atomic load with relaxed memory ordering semantics.
+
+    On NVIDIA, maps to PTX ld.relaxed; on AMD, maps to POP atomic load with MONOTONIC ordering.
+    """
+    constrained[is_gpu(), "atomic load only supported on GPU"]()
+
+    @parameter
+    if is_nvidia_gpu():
+        alias mem_constraint = StaticString(",~{memory}") if memory else ""
+        alias constraints = "=" + _get_nvtx_register_constraint[
+            dtype
+        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
+        alias scope_str = scope.mnemonic()
+        return inlined_assembly[
+            "ld.relaxed."
+            + ((scope_str + ".") if scope_str else "")
+            + "global."
+            + _get_type_suffix[dtype]()
+            + " $0, [$1];",
+            Scalar[dtype],
+            constraints=constraints,
+        ](ptr.address_space_cast[AddressSpace.GENERIC]())
+    elif is_amd_gpu():
+        return __mlir_op.`pop.load`[
+            alignment = alignment._mlir_value,
+            ordering = Consistency.MONOTONIC.__mlir_attr(),
+        ](ptr.address)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            Scalar[dtype],
+            operation="load_relaxed",
         ]()
 
 
