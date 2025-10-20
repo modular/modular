@@ -48,7 +48,7 @@ private:
 // Since we are using a hacked version of TCMalloc that doesn't replace malloc,
 // we want to limit the scope of these functions to the TCMallocAllocator class.
 struct TCMallocGlobals {
-  static MODULAR_CXX_EXPORT void *tc_new(size_t size, size_t alignment);
+  static MODULAR_CXX_EXPORT void *tc_new(size_t alignment, size_t size);
   static MODULAR_CXX_EXPORT void tc_delete(void *ptr);
 };
 

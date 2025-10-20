@@ -36,8 +36,8 @@ M::AsyncRT::Globals::getRuntimeTableSingleton(
   return *table;
 }
 
-MODULAR_CXX_EXPORT void *TCMallocGlobals::tc_new(size_t size,
-                                                 size_t alignment) {
+MODULAR_CXX_EXPORT void *TCMallocGlobals::tc_new(size_t alignment,
+                                                 size_t size) {
 #if defined(__APPLE__)
   return ::tc_new_aligned(size, std::align_val_t(alignment));
 #else
