@@ -1,4 +1,5 @@
-// RUN: kgen-opt %s -elaborate-generators -verify-diagnostics -allow-unregistered-dialect
+// RUN: kgen-opt %s -elaborate-generators="use-parametric-interpret=false" -verify-diagnostics -allow-unregistered-dialect
+// RUN: kgen-opt %s -elaborate-generators="use-parametric-interpret=true" -verify-diagnostics -allow-unregistered-dialect
 
 kgen.generator @"__mlir_i1__"(%arg0: !pop.scalar<bool> read) -> i1 always_inline_no_debug {
   %0 = pop.cast_to_builtin %arg0 : !pop.scalar<bool> to i1

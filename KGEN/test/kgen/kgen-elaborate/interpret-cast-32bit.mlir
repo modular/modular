@@ -1,4 +1,5 @@
-// RUN: kgen-opt %s -elaborate-generators -o - | FileCheck %s
+// RUN: kgen-opt %s -elaborate-generators="use-parametric-interpret=false" -o - | FileCheck %s
+// RUN: kgen-opt %s -elaborate-generators="use-parametric-interpret=true" -o - | FileCheck %s
 
 // COM: Compilation should succeed.
 
@@ -26,4 +27,3 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     kgen.return
   }
 }
-

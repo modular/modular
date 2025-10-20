@@ -1,4 +1,5 @@
-// RUN: kgen-opt %s -split-input-file -elaborate-generators="elaborate-debuginfo=true" -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="elaborate-debuginfo=true use-parametric-interpret=false" -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="elaborate-debuginfo=true use-parametric-interpret=true" -mlir-print-debuginfo | FileCheck %s
 
 // CHECK-LABEL: kgen.func @loc_ref
 kgen.generator @loc_ref() {

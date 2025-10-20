@@ -1,4 +1,5 @@
-// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=false" -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=false" -allow-unregistered-dialect | FileCheck --check-prefixes=CHECK,CHECK-MAIN %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=true" -allow-unregistered-dialect | FileCheck --check-prefixes=CHECK,CHECK-PARAMINTERP %s
 
 // CHECK-LABEL: kgen.func @parameter_use_chain()
 kgen.generator @parameter_use_chain() {
@@ -1042,19 +1043,23 @@ kgen.generator @add_param<a : index>(%v : index) -> index {
   kgen.return %1 : index
 }
 
-// CHECK-LABEL: kgen.func @"add_param,a=1"
+// CHECK-MAIN-LABEL: kgen.func @"add_param,a=1"
+// CHECK-PARAMINTERP-NOT: kgen.func @"add_param,a=1"
 // CHECK-NOT: kgen.func @"add_param,a=2"
 // CHECK-NOT: kgen.func @"add_param,a=3"
-// CHECK: kgen.func @"add_param,a=4"
+// CHECK-MAIN: kgen.func @"add_param,a=4"
+// CHECK-PARAMINTERP-NOT: kgen.func @"add_param,a=4"
 // CHECK-LABEL: kgen.func @param_cond
 kgen.generator @param_cond() -> () {
   kgen.param.declare cond_false : i1 = <0>
   kgen.param.declare cond_true : i1 = <1>
 
   // COM: This should NOT evaluate @add_param<2> during parameter evaluation
+  // CHECK-PARAMINTERP:  kgen.param.constant = <1>
   %5 = kgen.param.constant: index = <cond(cond_true,
         apply(:(index) -> index @add_param<1>, 0), apply(:(index) -> index @add_param<2>, 0))>
   // COM: This should NOT evaluate @add_param<3> during parameter evaluation
+  // CHECK-PARAMINTERP:  kgen.param.constant = <4>
   %6 = kgen.param.constant: index = <cond(cond_false,
         apply(:(index) -> index @add_param<3>, 0), apply(:(index) -> index @add_param<4>, 0))>
 
@@ -1173,7 +1178,7 @@ kgen.generator @count_ops(%arg0: i1) -> index {
 
 kgen.generator @cost_of<fn: (i1) -> index>() -> index {
   %0:8 = kgen.cost_of[(i1) -> index: fn]
-  // CHECK: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(i1) -> index: @count_ops]
+  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(i1) -> index: @count_ops]
   kgen.return %0#7  : index
 }
 
@@ -1191,14 +1196,15 @@ kgen.generator @pop_add(%arg1: !pop.scalar<si32>) -> !pop.scalar<si32> {
   kgen.return %0 : !pop.scalar<si32>
 }
 
-kgen.generator @cost_of_pop_add<fn: (!pop.scalar<si32>) -> !pop.scalar<si32>>() -> index {
-  // CHECK: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(!pop.scalar<si32>) -> !pop.scalar<si32>: @pop_add]
+kgen.generator
+@cost_of_pop_add<fn: (!pop.scalar<si32>) -> !pop.scalar<si32>>() -> index {
+  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(!pop.scalar<si32>) -> !pop.scalar<si32>: @pop_add]
   %0:8 = kgen.cost_of[(!pop.scalar<si32>) -> !pop.scalar<si32>: fn]
   kgen.return %0#2  : index
 }
 
 kgen.generator @index_add(%arg1: index) -> index {
-  // CHECK: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(index) -> index: @index_add]
+  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(index) -> index: @index_add]
   %0 = index.add %arg1, %arg1
   kgen.return %0 : index
 }
@@ -1675,7 +1681,7 @@ kgen.generator @call_it(%arg0: !kgen.generator<() -> index>) -> index {
   kgen.return %0 : index
 }
 
-// CHECK-LABEL: kgen.func @"give,a=1"
+// CHECK-MAIN-LABEL: kgen.func @"give,a=1"
 kgen.generator @give<a>() -> index {
   %idx0 = kgen.param.constant = <a>
   kgen.return %idx0 : index
@@ -2093,15 +2099,15 @@ kgen.generator @gen_structs(%arg0: !kgen.struct<(index)>) {
 
 // Intermixing of function apply and struct instantiation.
 
-// CHECK: kgen.func @"get_array_type,T=index"
-// CHECK-NEXT: kgen.param.constant: type = <array<[[SIZEOF:.+]], index>>
+// CHECK-MAIN: kgen.func @"get_array_type,T=index"
+// CHECK-MAIN-NEXT: kgen.param.constant: type = <array<[[SIZEOF:.+]], index>>
 kgen.generator @get_array_type<T: type>() -> !kgen.type {
   %0 = kgen.param.constant: type = <array<get_sizeof(T, current_target()), index>>
   kgen.return %0 : !kgen.type
 }
 
-// CHECK: kgen.struct.instance @"WeirdStruct,T=index"
-// CHECK-SAME: struct_inst<"WeirdStruct"(data: array<[[SIZEOF]], index>)>
+// CHECK-MAIN: kgen.struct.instance @"WeirdStruct,T=index"
+// CHECK-MAIN-SAME: struct_inst<"WeirdStruct"(data: array<[[SIZEOF]], index>)>
 kgen.struct.generator @WeirdStruct<T: type> = struct_inst<"WeirdStruct"(data: typevalue<apply(:() -> !kgen.type @get_array_type<:type T>)>)>
 
 kgen.generator @use_type<T: type>() {
@@ -2112,7 +2118,7 @@ kgen.generator @use_type<T: type>() {
 
 // CHECK: kgen.func @gen_structs
 kgen.generator @gen_structs() {
-  // CHECK-NEXT: kgen.call {{.*}}WeirdStruct,T=index{{.*}}, struct<(array<[[SIZEOF]], index>)>
+  // CHECK-NEXT: kgen.call {{.*}}WeirdStruct,T=index{{.*}}, struct<(array<[[SIZEOF:.+]], index>)>
   kgen.call @use_type<:type #weird_struct>() : () -> ()
   kgen.return
 }

@@ -1,8 +1,14 @@
-// RUN: kgen-opt -elaborate-generators %s -verify-diagnostics -split-input-file
+// RUN: kgen-opt -elaborate-generators="use-parametric-interpret=false" %s -verify-diagnostics -split-input-file
+// RUN: kgen-opt -elaborate-generators="use-parametric-interpret=true" %s -split-input-file 2>&1 | FileCheck %s --check-prefix=CHECK-PARAM
+
+// COM: use-parametric-interpret=true has slight difference from =false for error messages. 
+//      Using FileCheck instead to check those with CHECK-PRAMA prefix.
 
 // expected-note @below {{failed to interpret function @out_of_range_read}}
 kgen.generator @out_of_range_read() -> i32 {
   %0 = pop.stack_allocation 0 x i32
+  // CHECK-PARAM: failed to interpret operation pop.load
+  // CHECK-PARAM: memory access size 4 is out-of-bounds
   // expected-note @below {{failed to interpret operation pop.load}}
   // expected-note @below {{memory access size 4 is out-of-bounds}}
   %1 = pop.load %0 : !kgen.pointer<i32>
@@ -11,6 +17,7 @@ kgen.generator @out_of_range_read() -> i32 {
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator @call_it() {
+  // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   %0 = kgen.param.constant: i32 = <apply(:() -> i32 @out_of_range_read)>
   kgen.return
@@ -26,6 +33,8 @@ kgen.generator @return_stack_addr() -> !kgen.pointer<index> {
 // expected-note @below {{failed to interpret function @stack_use_after_free}}
 kgen.generator @stack_use_after_free() -> index {
   %0 = kgen.call @return_stack_addr() : () -> !kgen.pointer<index>
+  // CHECK-PARAM: failed to interpret operation pop.load{ordering: #pop<atomic_ordering not_atomic>}(#interp.pointer
+  // CHECK-PARAM: address is out-of-bounds
   // expected-note @below {{failed to interpret operation pop.load{ordering: #pop<atomic_ordering not_atomic>}(#interp.pointer}}
   // expected-note @below {{address is out-of-bounds}}
   %1 = pop.load %0 : !kgen.pointer<index>
@@ -34,6 +43,7 @@ kgen.generator @stack_use_after_free() -> index {
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator @call_it() {
+  // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant = <apply(:() -> index @stack_use_after_free)>
   kgen.return
@@ -47,6 +57,8 @@ kgen.generator @heap_use_after_free() -> i64 {
   %idx8 = index.constant 8
   %0 = pop.aligned_alloc %idx32, %idx8 : <i64>
   pop.aligned_free %0 : <i64>
+  // CHECK-PARAM: failed to interpret operation pop.load{ordering: #pop<atomic_ordering not_atomic>}(#interp.pointer
+  // CHECK-PARAM: accessing memory that was freed
   // expected-note @below {{failed to interpret operation pop.load{ordering: #pop<atomic_ordering not_atomic>}(#interp.pointer}}
   // expected-note @below {{accessing memory that was freed}}
   %1 = pop.load %0 : !kgen.pointer<i64>
@@ -55,6 +67,7 @@ kgen.generator @heap_use_after_free() -> i64 {
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator @call_it() {
+  // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant: i64 = <apply(:() -> i64 @heap_use_after_free)>
   kgen.return
@@ -70,6 +83,8 @@ kgen.generator @clobber_pointer(%arg0: i16) -> i16 {
   %2 = pop.pointer.bitcast %1 : !kgen.pointer<pointer<i64>> to !kgen.pointer<i16>
   %idx1 = index.constant 1
   %3 = pop.offset %2[%idx1] : !kgen.pointer<i16>
+  // CHECK-PARAM: failed to interpret operation pop.store
+  // CHECK-PARAM: write clobbers a pointer region
   // expected-note @below {{failed to interpret operation pop.store}}
   // expected-note @below {{write clobbers a pointer region}}
   pop.store %arg0, %3 : !kgen.pointer<i16>
@@ -78,6 +93,7 @@ kgen.generator @clobber_pointer(%arg0: i16) -> i16 {
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator @call_it() {
+  // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant: i16 = <apply(:(i16) -> i16 @clobber_pointer, 5)>
   kgen.return
@@ -98,6 +114,8 @@ kgen.generator @clobber_pointer(%arg0: i64) -> i64 {
   %idx1 = index.constant 1
   %5 = pop.offset %4[%idx1] : !kgen.pointer<i32>
   %6 = pop.pointer.bitcast %5 : !kgen.pointer<i32> to !kgen.pointer<i64>
+  // CHECK-PARAM: failed to interpret operation pop.store
+  // CHECK-PARAM: write clobbers a pointer region
   // expected-note @below {{failed to interpret operation pop.store}}
   // expected-note @below {{write clobbers a pointer region}}
   pop.store %arg0, %6 : !kgen.pointer<i64>
@@ -106,6 +124,7 @@ kgen.generator @clobber_pointer(%arg0: i64) -> i64 {
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator @call_it() {
+  // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant: i64 = <apply(:(i64) -> i64 @clobber_pointer, 1)>
   kgen.return
@@ -119,6 +138,8 @@ module attributes {M.target = #M.target<triple="", arch="", features="", data_la
 
 // expected-note @below {{failed to interpret function @parameter_closure}}
 kgen.generator @parameter_closure() -> index {
+  // CHECK-PARAM: failed to interpret operation pop.compiler.global_load{name: "named_global"}()
+  // CHECK-PARAM: cannot evaluate standalone capturing closure at compile time
   // expected-note @below {{failed to interpret operation pop.compiler.global_load{name: "named_global"}()}}
   // expected-note @below {{cannot evaluate standalone capturing closure at compile time}}
   %0 = pop.compiler.global_load "named_global" : index
@@ -127,6 +148,7 @@ kgen.generator @parameter_closure() -> index {
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator export @use_it() {
+  // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant = <apply(:() -> index @parameter_closure)>
   kgen.return
@@ -143,6 +165,8 @@ kgen.generator @load_union() -> !pop.union<index> {
   %0 = pop.stack_allocation 1 x union<index>
   %1 = kgen.param.constant: union<index> = <{42}>
   pop.store %1, %0 : !kgen.pointer<union<index>>
+  // CHECK-PARAM: failed to interpret operation pop.load
+  // CHECK-PARAM: cannot read a union-typed value
   // expected-note @below {{failed to interpret operation pop.load}}
   // expected-note @below {{cannot read a union-typed value}}
   %2 = pop.load %0 : !kgen.pointer<union<index>>
@@ -151,6 +175,7 @@ kgen.generator @load_union() -> !pop.union<index> {
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator export @use_it() {
+  // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant: union<index> = <apply(:() -> !pop.union<index> @load_union)>
   kgen.return

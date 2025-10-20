@@ -32,8 +32,12 @@ ParamApplyOp::parametric_interpret(ArrayRef<Attribute> operands,
   auto calleeAttr = cast<SymbolConstantAttr>(callee);
 
   auto operandsAttr = cast<ParameterExprArrayAttr>(ops);
+  SmallVector<Attribute> arguments(operandsAttr.size());
+  for (auto [idx, attr] : llvm::enumerate(operandsAttr.getValue()))
+    arguments[idx] = attr;
+
   ErrorTreeOr<TypedAttr> result = state.interpretGenerator(
-      calleeAttr, calleeAttr.getParamValues(), operandsAttr, getLoc());
+      calleeAttr, calleeAttr.getParamValues(), arguments, getLoc());
 
   if (result.isError())
     return result.takeError();
