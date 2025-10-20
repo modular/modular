@@ -8,7 +8,6 @@
 #include "AsyncRT/Runtime/Globals/Globals.h"
 #include "AsyncRT/Runtime/Runtime.h"
 #include "Support/SymbolExport.h"
-#include <malloc.h>
 using namespace M;
 
 namespace {
