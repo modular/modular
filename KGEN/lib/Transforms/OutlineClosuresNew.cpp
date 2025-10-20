@@ -537,6 +537,28 @@ void ClosureLifter::liftDelFunction(OpBuilder &b,
                          {ArgConvention::OwnedMem});
 }
 
+static void emitCopyMoveCall(mlir::OpBuilder &b, Location location,
+                             GeneratorOp function, Value original, Value slot,
+                             SymbolConstantAttr symbol) {
+  if (function.getNumArguments() == 2) {
+    SmallVector<Value> values = {original, slot};
+    b.create<KGEN::CallOp>(location, function.getFunctionType().getResults(),
+                           symbol, ValueRange(values));
+  } else {
+    // copy init returns copy in register
+    auto baseSig = function.getFuncTypeGenerator();
+    FuncTypeGeneratorType boundSig = baseSig.getSpecializedGenerator(
+        symbol.getParamValues(), /*evaluationContext=*/nullptr,
+        function.getLoc());
+    auto symbolConstant = SymbolConstantAttr::get(symbol.getSymbol(), boundSig,
+                                                  symbol.getParamValues());
+    auto callOp =
+        b.create<KGEN::CallOp>(location, boundSig.getBody().getResults(),
+                               symbolConstant, ValueRange(original));
+    b.create<POP::StoreOp>(location, callOp->getResults().front(), slot);
+  }
+}
+
 void ClosureLifter::liftMoveOrCopyFunction(OpBuilder &b,
                                            ClosureInitData &closureInitData,
                                            Type loweredClosureType,
@@ -568,8 +590,10 @@ void ClosureLifter::liftMoveOrCopyFunction(OpBuilder &b,
           symbol = closureInitData.getMoveSymbols()[symIndex++];
         else
           symbol = closureInitData.getCopySymbols()[symIndex++];
-        b.create<KGEN::CallOp>(loc, symbol,
-                               ValueRange{sourceField, targetField});
+        emitCopyMoveCall(
+            b, loc,
+            symtab.lookup<GeneratorOp>(symbol.getSymbol().getRootReference()),
+            sourceField, targetField, symbol);
       }
     }
     auto noneAttr = b.create<KGEN::ParamConstantOp>(
@@ -790,9 +814,8 @@ void ClosureLifter::storeCaptures(OpBuilder &b, Value captureStruct,
       StringRef name = symbol.getSymbol().getRootReference();
       Operation *op = symtab.lookup(name);
       GeneratorOp function = cast<GeneratorOp>(op);
-      SmallVector<Value> values = {captureMechanism.origin, slot};
-      b.create<KGEN::CallOp>(location, function.getFunctionType().getResults(),
-                             symbol, ValueRange(values));
+      emitCopyMoveCall(b, location, function, captureMechanism.origin, slot,
+                       symbol);
     } else {
       b.create<POP::StoreOp>(location, captureMechanism.origin, slot);
     }
