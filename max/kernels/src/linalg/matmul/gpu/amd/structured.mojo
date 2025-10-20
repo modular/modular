@@ -15,15 +15,14 @@ from sys import align_of
 from collections import OptionalReg
 from gpu import WARP_SIZE, thread_idx
 from gpu.memory import AddressSpace
-from layout import IntTuple, Layout, LayoutTensor
+from layout import Layout, LayoutTensor
 from layout.layout_tensor import (
     ThreadScope,
     copy_local_to_shared,
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TensorCore
-from memory import stack_allocation
-from utils import IndexList, StaticTuple
+from utils import IndexList
 from layout.swizzle import Swizzle
 from sys._assembly import inlined_assembly
 from gpu.mma import mma
@@ -32,6 +31,9 @@ from itertools import product
 
 from layout.layout_tensor import _get_worker_idx
 from gpu import warp_id as get_warp_id
+
+from layout.tensor_core import num_matrix_reg
+from layout.int_tuple import product as prod
 
 
 @always_inline
@@ -273,15 +275,20 @@ struct ThreadRole(Copyable, ImplicitlyCopyable, Movable, Stringable, Writable):
         writer.write(String(self))
 
 
-@fieldwise_init
+# TODO: replace with Fabio's implementation
 struct SharedMemoryBuffer[
     BufferType: DType,
     layout: Layout,
     pipeline_stages: Int,
+    block_rows: Int,
+    block_cols: Int,
     warp_rows: Int,
     warp_cols: Int,
 ](ImplicitlyCopyable):
-    alias SmemTileType = LayoutTensor[
+
+    """Manages shared memory and returns 2D tile slices of the buffer."""
+
+    alias SmemTensorType = LayoutTensor[
         BufferType,
         layout,
         MutableAnyOrigin,
@@ -289,62 +296,74 @@ struct SharedMemoryBuffer[
         alignment=128,
     ]
 
-    alias smem_2D_tile_layout[tensor_layout: Layout] = Layout(
-        IntTuple(tensor_layout.shape[1], tensor_layout.shape[2]),
-        IntTuple(tensor_layout.stride[1], tensor_layout.stride[2]),
-    ) if tensor_layout.rank() != 2 else tensor_layout
+    alias SmemTileType = Self.SmemTensorType.TileType[block_rows, block_cols]
+    alias WarpTileType = Self.SmemTileType.TileType[warp_rows, warp_cols]
 
-    alias SmemTileType2D = LayoutTensor[
-        BufferType,
-        Self.smem_2D_tile_layout[layout],
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
-
-    alias WarpTileType = Self.SmemTileType2D.TileType[warp_rows, warp_cols]
-
-    var buffer: Self.SmemTileType
+    var buffer: Self.SmemTensorType
 
     fn __init__(out self):
         constrained[
-            (pipeline_stages == 1 and layout.rank() == 2)
-            or (pipeline_stages == layout.shape[0].value()),
+            layout.rank() == 2,
+            "layout must be 2D",
+        ]()
+
+        constrained[
+            prod(layout.shape[0]) == block_rows
+            and prod(layout.shape[1]) % block_cols == 0,
             (
-                "shared memory buffers must either be 2 dimensional with 1"
-                " pipeline"
+                "shared memory rows must match block_rows and columns must be a"
+                " multiple of block_cols"
             ),
         ]()
-        self.buffer = Self.SmemTileType.stack_allocation()
 
-    fn get_tile(self, stage: Int) -> Self.SmemTileType2D:
-        var buffer_ptr = self.buffer.ptr
+        constrained[
+            prod(layout.shape[1]) // block_cols == pipeline_stages,
+            (
+                "number of stated pipeline stages is not compatible with shared"
+                " memory layout"
+            ),
+        ]()
 
-        alias size = layout.size()
+        constrained[
+            block_rows % warp_rows == 0 and block_cols % warp_cols == 0,
+            (
+                "block_rows and block_cols must be a multiple of warp_rows and"
+                " warp_cols"
+            ),
+        ]()
 
-        var offset = size * stage
-        buffer_ptr += offset
+        self.buffer = Self.SmemTensorType.stack_allocation()
 
-        return Self.SmemTileType2D(buffer_ptr)
+    fn get_tile(self, stage: Int) -> Self.SmemTileType:
+        return self.buffer.tile[block_rows, block_cols](0, stage)
 
 
 struct RingBuffer[
     pipeline_stages: Int,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    TileTypeA: DType,
-    TileTypeB: DType,
+    a_buffer_layout: Layout,
+    b_buffer_layout: Layout,
+    SmemBufferDataType: DType,
+    BM: Int,
+    BN: Int,
+    BK: Int,
     WM: Int,
     WN: Int,
-    WK: Int,
-    warps_per_block_m: Int,
-    warps_per_block_n: Int,
+    WK: Int, //,
+    SmemBufferTypeA: type_of(
+        SharedMemoryBuffer[
+            SmemBufferDataType, a_buffer_layout, pipeline_stages, BM, BK, WM, WK
+        ]
+    ),
+    SmemBufferTypeB: type_of(
+        SharedMemoryBuffer[
+            SmemBufferDataType, b_buffer_layout, pipeline_stages, BN, BK, WN, WK
+        ]
+    ),
     consumer_warps: Int,
 ]:
 
-    """Simulates A TMA barriers on AMD. This pipeline can be used for both multistage
-    (double buffering) where all threads are producers and consumers, and for warp
-    specialized pipelines."""
+    """Manages access to shared memory tiles using barriers based in shared memory.
+    """
 
     # NOTE: smem can be 3D if pipelined, in that case we need a way to extract
     # the 2D tiles that's what this does
@@ -356,6 +375,9 @@ struct RingBuffer[
     # There are also consumer_warps slots for each pipeline stage, since each warp can write to the barrier
     # at the same time causing race conditions.
 
+    alias warps_per_block_m = BM // WM
+    alias warps_per_block_n = BN // WN
+
     alias BarrierTensorType[warp_tile_count: Int] = LayoutTensor[
         DType.int32,
         Layout.row_major(warp_tile_count, consumer_warps * pipeline_stages),
@@ -364,37 +386,39 @@ struct RingBuffer[
         alignment=32,
     ]
 
-    var barrier_a: Self.BarrierTensorType[warps_per_block_m]
-    var barrier_b: Self.BarrierTensorType[warps_per_block_n]
+    var barrier_a: Self.BarrierTensorType[Self.warps_per_block_m]
+    var barrier_b: Self.BarrierTensorType[Self.warps_per_block_n]
 
     alias SharedMemoryBufferType[is_a: Bool] = SharedMemoryBuffer[
-        TileTypeA if is_a else TileTypeB,
-        a_tile_layout if is_a else b_tile_layout,
+        SmemBufferDataType,
+        a_buffer_layout if is_a else b_buffer_layout,
         pipeline_stages,
+        BM if is_a else BN,
+        BK,
         WM if is_a else WN,
         WK,
     ]
 
-    var smem_tile_a: Self.SharedMemoryBufferType[True]
-    var smem_tile_b: Self.SharedMemoryBufferType[False]
+    var smem_buffer_a: SmemBufferTypeA
+    var smem_buffer_b: SmemBufferTypeB
 
     fn __init__(
         out self,
-        smem_tile_a: SharedMemoryBuffer[
-            TileTypeA, a_tile_layout, pipeline_stages, WM, WK
-        ],
-        smem_tile_b: SharedMemoryBuffer[
-            TileTypeB, b_tile_layout, pipeline_stages, WN, WK
-        ],
+        smem_buffer_a: SmemBufferTypeA,
+        smem_buffer_b: SmemBufferTypeB,
     ):
-        self.smem_tile_a = smem_tile_a
-        self.smem_tile_b = smem_tile_b
+        self.smem_buffer_a = smem_buffer_a
+        self.smem_buffer_b = smem_buffer_b
 
         self.barrier_a = (
-            Self.BarrierTensorType[warps_per_block_m].stack_allocation().fill(0)
+            Self.BarrierTensorType[Self.warps_per_block_m]
+            .stack_allocation()
+            .fill(0)
         )
         self.barrier_b = (
-            Self.BarrierTensorType[warps_per_block_n].stack_allocation().fill(0)
+            Self.BarrierTensorType[Self.warps_per_block_n]
+            .stack_allocation()
+            .fill(0)
         )
 
     @always_inline
@@ -403,14 +427,14 @@ struct RingBuffer[
     ](
         self,
         out bar: Self.BarrierTensorType[
-            warps_per_block_m if is_a else warps_per_block_n
+            Self.warps_per_block_m if is_a else Self.warps_per_block_n
         ],
     ):
         @parameter
         if is_a:
-            return rebind[__type_of(bar)](self.barrier_a)
+            return rebind[type_of(bar)](self.barrier_a)
         else:
-            return rebind[__type_of(bar)](self.barrier_b)
+            return rebind[type_of(bar)](self.barrier_b)
 
     @always_inline
     fn _get_current_barrier_value[
@@ -440,16 +464,16 @@ struct RingBuffer[
     ](
         self,
         stage: Int,
-        out smem_tile: Self.SharedMemoryBufferType[is_a].SmemTileType2D,
+        out smem_tile: Self.SharedMemoryBufferType[is_a].SmemTileType,
     ):
         @parameter
         if is_a:
-            return rebind[__type_of(smem_tile)](
-                self.smem_tile_a.get_tile(stage)
+            return rebind[type_of(smem_tile)](
+                self.smem_buffer_a.get_tile(stage)
             )
         else:
-            return rebind[__type_of(smem_tile)](
-                self.smem_tile_b.get_tile(stage)
+            return rebind[type_of(smem_tile)](
+                self.smem_buffer_b.get_tile(stage)
             )
 
     @always_inline
@@ -471,12 +495,12 @@ struct RingBuffer[
 
         phase += phase_inc
         var staged_smem_tile = self._get_shared_memory_tile[is_a](stage)
-        return rebind[__type_of(smem_warp_tile)](
+        return rebind[type_of(smem_warp_tile)](
             staged_smem_tile.tile[WM if is_a else WN, WK](tile_idx, 0)
         )
 
     @always_inline
-    fn await_shared_memory_tile[
+    fn await_shared_memory_warp_tile[
         is_a: Bool, is_producer: Bool
     ](
         mut self, mut phase: Int, stage: Int, tile_idx: Int
@@ -485,9 +509,9 @@ struct RingBuffer[
 
         @parameter
         if is_a:
-            phase_inc = 1 + warps_per_block_n
+            phase_inc = 1 + Self.warps_per_block_n
         else:
-            phase_inc = 1 + warps_per_block_m
+            phase_inc = 1 + Self.warps_per_block_m
 
         return self._get_shared_memory_warp_tile[is_a, is_producer](
             phase, tile_idx, stage, phase_inc
@@ -497,7 +521,7 @@ struct RingBuffer[
     fn commit[is_a: Bool](mut self, stage: Int, tile_idx: Int):
         var bar = self._get_barrier[is_a]()
         var bar_tile = bar.tile[1, consumer_warps](tile_idx, stage)
-        var warp_id = get_warp_id() % consumer_warps
+        var warp_id = get_warp_id() % UInt(consumer_warps)
         bar_tile[1, warp_id] = bar_tile[1, warp_id] + 1
 
 
@@ -514,25 +538,16 @@ struct AmdWarpBlockScatterGather[
 
     """
     Transports data from global -> register -> shared memory. Does this by warp tile
-    each warp is resposible for moving one warp block of smem.
+    each warp is responsible for moving one warp block of smem.
     """
 
-    alias SmemTensorType = LayoutTensor[
-        SmemType,
-        smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ]
+    alias total_participating_threads = thread_layout.size()
+    alias elements_loaded_per_thread = smem_layout.size() // Self.total_participating_threads
+    alias simd_loads_per_thread = Self.elements_loaded_per_thread // Self.simd_width
 
-    alias LoadFragmentShape = Self.SmemTensorType.DistributeType[
-        thread_layout
-    ].layout.shape
-    alias LoadFragmentLayout = Layout.row_major(
-        Self.LoadFragmentShape[0].value(), Self.LoadFragmentShape[1].value()
-    )
     alias LoadFragmentType = LayoutTensor[
         SmemType,
-        Self.LoadFragmentLayout,
+        Layout.row_major(Self.simd_loads_per_thread, Self.simd_width),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ]
@@ -541,11 +556,8 @@ struct AmdWarpBlockScatterGather[
 
     fn __init__(out self):
         constrained[
-            len(Self.LoadFragmentShape) == 2,
-            (
-                "LoadFragmentShape must be equal to"
-                " SmemTensorType.DistributeType[thread_layout].layout.shape"
-            ),
+            Self.simd_loads_per_thread > 0,
+            "simd_loads_per_thread must be greater than 0",
         ]()
 
         self.fragment = Self.LoadFragmentType.stack_allocation()
@@ -589,7 +601,7 @@ struct AmdWarpBlockScatterGather[
             has_side_effect=True,
         ]()
 
-        var warp_tile = cache_manager.await_shared_memory_tile[is_a, True](
+        var warp_tile = cache_manager.await_shared_memory_warp_tile[is_a, True](
             phase, stage, tile_idx
         )
 
@@ -645,8 +657,9 @@ fn load_from_gmem_to_reg_no_waitcnt[
         @parameter
         for j in range(N):
             alias idx = src_fragments.layout([i, j])
+            alias dst_frag_idx = Layout.col_major(M, N)([i, j])
 
-            dst[i, j] = inlined_assembly[
+            dst[dst_frag_idx, 0] = inlined_assembly[
                 asm,
                 SIMD[dst.dtype, dst.element_layout.size()],
                 constraints="=v,v,~{memory}",
@@ -784,12 +797,12 @@ struct AmdTileOperator[
         linear_warp_idx: Int,  # tells us which set of registers to use
         block_tile_num: Int,
     ):
-        var smem_tile_a = cache_manager.await_shared_memory_tile[True, False](
-            phase_a, stage, smem_warp_tile_idx_a
-        )
-        var smem_tile_b = cache_manager.await_shared_memory_tile[False, False](
-            phase_b, stage, smem_warp_tile_idx_b
-        )
+        var smem_tile_a = cache_manager.await_shared_memory_warp_tile[
+            True, False
+        ](phase_a, stage, smem_warp_tile_idx_a)
+        var smem_tile_b = cache_manager.await_shared_memory_warp_tile[
+            False, False
+        ](phase_b, stage, smem_warp_tile_idx_b)
 
         @parameter
         for k_tile_idx in range(Self.k_tiles_per_simd_a):
@@ -862,7 +875,7 @@ struct AmdTileOperator[
                     ):
                         c_vector = SIMD[OutType, Self.register_count_a](0)
                     else:
-                        c_vector = rebind[__type_of(c_vector)](
+                        c_vector = rebind[type_of(c_vector)](
                             c_fragment.vectorize[1, Self.register_count_a]()[
                                 0, 0
                             ]

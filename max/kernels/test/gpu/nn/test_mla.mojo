@@ -1330,14 +1330,14 @@ def main():
             # tests with mask tensor
             test_decoding[27, 1, False, False](ctx, False)
 
-            # tests with casual mask
-            test_decoding[27, 1, False, True](ctx, False)
-
             # test mla cascade prefill
             test_mla_cascade_prefill[2](ctx)
             test_mla_cascade_prefill[0](ctx)
             test_decoding[0, 1, False, False](ctx, False)
-            test_decoding[0, 1, False, True](ctx, False)
+
+        # tests with causal mask
+        test_decoding[27, 1, False, True](ctx, False)
+        test_decoding[0, 1, False, True](ctx, False)
 
         # test mla prefill
         test_mla_prefill[2](ctx)

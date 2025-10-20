@@ -17,6 +17,7 @@ from sys.info import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from itertools import product
 from layout import IntTuple
 from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
 from nn.conv_utils import (
@@ -195,33 +196,30 @@ fn test[
     packed_filter_ptr_static.free()
 
     # Check results, return on the first failed comparison.
-    for n in range(N):
-        for ho in range(HO):
-            for wo in range(WO):
-                for f in range(F):
-                    if not isclose(
-                        output_dynamic[n, ho, wo, f],
-                        output_static[n, ho, wo, f],
-                        atol=1e-4,  # absolute error tolerance
-                        rtol=1e-5,  # relative error tolerance
-                    ):
-                        var expected = output_dynamic[n, ho, wo, f]
-                        var actual = output_static[n, ho, wo, f]
-                        print("Input shape NHWC: ", Index(N, H, W, C))
-                        print("filter shape RSCF: ", Index(R, S, C, F))
-                        print(
-                            "Failed at",
-                            Index(n, ho, wo, f),
-                            "expected",
-                            expected,
-                            "actual",
-                            actual,
-                            "rerr",
-                            abs(actual - expected) / abs(expected + 1e-10),
-                        )
-                        output_ptr_dynamic.free()
-                        output_ptr_static.free()
-                        return
+    for n, ho, wo, f in product(range(N), range(HO), range(WO), range(F)):
+        if not isclose(
+            output_dynamic[n, ho, wo, f],
+            output_static[n, ho, wo, f],
+            atol=1e-4,  # absolute error tolerance
+            rtol=1e-5,  # relative error tolerance
+        ):
+            var expected = output_dynamic[n, ho, wo, f]
+            var actual = output_static[n, ho, wo, f]
+            print("Input shape NHWC: ", Index(N, H, W, C))
+            print("filter shape RSCF: ", Index(R, S, C, F))
+            print(
+                "Failed at",
+                Index(n, ho, wo, f),
+                "expected",
+                expected,
+                "actual",
+                actual,
+                "rerr",
+                abs(actual - expected) / abs(expected + 1e-10),
+            )
+            output_ptr_dynamic.free()
+            output_ptr_static.free()
+            return
 
     output_ptr_dynamic.free()
     output_ptr_static.free()

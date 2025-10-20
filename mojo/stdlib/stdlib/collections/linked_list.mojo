@@ -110,7 +110,7 @@ struct _LinkedListIter[
         else:
             self.curr = self.src[]._tail
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     fn __has_next__(self) -> Bool:
@@ -687,7 +687,7 @@ struct LinkedList[
         """
         return self._size
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
 
         Returns:
@@ -702,7 +702,7 @@ struct LinkedList[
 
     fn __reversed__(
         self,
-    ) -> _LinkedListIter[ElementType, __origin_of(self), forward=False]:
+    ) -> _LinkedListIter[ElementType, origin_of(self), forward=False]:
         """Iterate backwards over the list, returning immutable references.
 
         Returns:
@@ -713,7 +713,7 @@ struct LinkedList[
             - O(1) for iterator construction.
             - O(n) in len(self) for a complete iteration of the list.
         """
-        return _LinkedListIter[ElementType, __origin_of(self), forward=False](
+        return _LinkedListIter[ElementType, origin_of(self), forward=False](
             Pointer(to=self)
         )
 

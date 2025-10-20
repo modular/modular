@@ -151,16 +151,16 @@ def test_tma_3d_load_row_major[
 
     print("src layout:", src_layout)
     print("cta tile layout:", cta_tile_layout)
-    print("desc layout:", __type_of(tma_tensor).desc_layout)
+    print("desc layout:", type_of(tma_tensor).desc_layout)
 
     alias kernel = test_tma_3d_load_kernel[
-        __type_of(tma_tensor).dtype,
+        type_of(tma_tensor).dtype,
         dst_layout,  # dst layout
-        __type_of(tma_tensor).layout,  # cta_tile
-        __type_of(tma_tensor).desc_layout,  # desc_tile
+        type_of(tma_tensor).layout,  # cta_tile
+        type_of(tma_tensor).desc_layout,  # desc_tile
         smem_tile_layout,  # smem layout
     ]
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(
@@ -178,9 +178,9 @@ def test_tma_3d_load_row_major[
 
     alias cta_tile_size = cta_tile_layout.size()
 
-    alias desc_tile_dim0 = __type_of(tma_tensor).desc_layout.shape[0].value()
-    alias desc_tile_dim1 = __type_of(tma_tensor).desc_layout.shape[1].value()
-    alias desc_tile_dim2 = __type_of(tma_tensor).desc_layout.shape[2].value()
+    alias desc_tile_dim0 = type_of(tma_tensor).desc_layout.shape[0].value()
+    alias desc_tile_dim1 = type_of(tma_tensor).desc_layout.shape[1].value()
+    alias desc_tile_dim2 = type_of(tma_tensor).desc_layout.shape[2].value()
 
     alias desc_tile_size = desc_tile_dim1 * desc_tile_dim2
 

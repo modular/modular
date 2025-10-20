@@ -99,12 +99,12 @@ class DPPagedKVCacheManager(TPPagedKVCacheManager):
         )
 
         # The effective total number of pages is .
-        self.num_replicas = params.data_parallel_degree
-        assert len(devices) % self.num_replicas == 0, (
+        num_replicas = params.data_parallel_degree
+        assert len(devices) % num_replicas == 0, (
             "Number of devices must be divisible by number of replicas"
         )
         self.devices = devices
-        self.devices_per_replica = split_into_groups(devices, self.num_replicas)
+        self.devices_per_replica = split_into_groups(devices, num_replicas)
 
         self._replica_managers: list[TPPagedKVCacheManager] = []
         dp_1_params = params.copy_as_dp_1()
@@ -135,7 +135,7 @@ class DPPagedKVCacheManager(TPPagedKVCacheManager):
 
         # Track requests to replicas.
         self._request_to_replica_idx: dict[RequestID, int] = {}
-        self._request_count_per_replica: list[int] = [0] * self.num_replicas
+        self._request_count_per_replica: list[int] = [0] * num_replicas
 
         # Store session for model loading
         self.session = session
@@ -241,19 +241,13 @@ class DPPagedKVCacheManager(TPPagedKVCacheManager):
         self._replica_managers[replica_idx].release(request_id)
 
     def external_claim(
-        self, request_id: RequestID, replica_idx: int | None = None
+        self, request_id: RequestID, replica_idx: int = -1
     ) -> None:
         """Reserve a sequence ID for the given request ID."""
-
-        if replica_idx is None:
-            if self.num_replicas > 1:
-                raise ValueError(
-                    "replica_idx must be specified for DPPagedKVCacheManager when DP > 1"
-                )
-            else:
-                # If we only have one replica, just set this to the first one.
-                replica_idx = 0
-
+        if replica_idx == -1:
+            raise ValueError(
+                "replica_idx must be specified for DPPagedKVCacheManager"
+            )
         if request_id in self._request_to_replica_idx:
             raise ValueError(
                 f"Request ID {request_id} is already claimed for replica {self._request_to_replica_idx[request_id]}"

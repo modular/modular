@@ -49,7 +49,7 @@ def test_band_part__lower_triangle(
     base_type: TensorType,
 ) -> None:
     """Test band_part with lower triangle (num_lower=None, num_upper=0)."""
-    *_, m, n = base_type.shape
+    *_, _m, n = base_type.shape
     assume(n != 0)
     with graph_builder(input_types=[base_type]) as graph:
         out = ops.band_part(graph.inputs[0].tensor, num_upper=0)
@@ -63,7 +63,7 @@ def test_band_part__upper_triangle(
     base_type: TensorType,
 ) -> None:
     """Test band_part with upper triangle (num_lower=0, num_upper=None)."""
-    *_, m, n = base_type.shape
+    *_, m, _n = base_type.shape
     assume(m != 0)
     with graph_builder(input_types=[base_type]) as graph:
         out = ops.band_part(graph.inputs[0].tensor, num_lower=0)

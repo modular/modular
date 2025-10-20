@@ -197,8 +197,8 @@ fn causal_conv1d_kernel[
     var input_chunk: SIMD[dtype, elements]
 
     W_v = weight.vectorize[1, width]()
-    W = rebind[__type_of(W)](W_v[0, channel_id])
-    B = rebind[__type_of(B)](bias[channel_id])
+    W = rebind[type_of(W)](W_v[0, channel_id])
+    B = rebind[type_of(B)](bias[channel_id])
 
     var input_v = input.reshape[layout_2d]().vectorize[1, elements]()
     var output_v = output.reshape[layout_2d]().vectorize[1, elements]()
@@ -207,7 +207,7 @@ fn causal_conv1d_kernel[
     n_chunks = seq_length // kChunkSize + 1
 
     if (tidx > 0) or (chunk_id > 0):
-        prev_input_chunk = rebind[__type_of(prev_input_chunk)](
+        prev_input_chunk = rebind[type_of(prev_input_chunk)](
             input_v[
                 batch_id * UInt(nChannels) + channel_id,
                 (chunk_id * kChunkSize + tidx - 1),
@@ -216,7 +216,7 @@ fn causal_conv1d_kernel[
     else:
         prev_input_chunk = 0
 
-    input_chunk = rebind[__type_of(input_chunk)](
+    input_chunk = rebind[type_of(input_chunk)](
         input_v[
             batch_id * UInt(nChannels) + channel_id,
             (chunk_id * kChunkSize + tidx),
@@ -235,7 +235,7 @@ fn causal_conv1d_kernel[
 
     output_v[
         batch_id * UInt(nChannels) + channel_id, tidx + chunk_id * kChunkSize
-    ] = rebind[__type_of(output_v[0, 0])](out_vals)
+    ] = rebind[type_of(output_v[0, 0])](out_vals)
 
 
 # Mojo operation using LayoutTensor launching gpu kernel

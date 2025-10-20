@@ -1274,6 +1274,34 @@ class ToStringDeferredAttr(max._core.Attribute):
     @property
     def need_elide_type(self) -> max._core.dialects.builtin.UnitAttr: ...
 
+class TypeConformsToTraitAttr(max._core.Attribute):
+    """
+    This represents a flag to indicate the type, specified by `typeValue`,
+    conforms to specific traits, specified by a list of trait names.
+
+    FIXME: The only reason that we uses a list of string to represent trait in
+    this attr is because trait types are not preserved after lower-lit, meaning
+    that the only way to refer to a specific trait during elaboration time is
+    through symbol names.
+    """
+
+    @overload
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        trait_names: VariadicAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        trait_names: VariadicAttr,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def trait_names(self) -> VariadicAttr: ...
+
 class TypeGeneratorRefAttr(max._core.Attribute):
     """
     This is a symbolic reference to a type-value generator. Its type is the

@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 import requests
 from prometheus_client.parser import text_string_to_metric_families
 
-from benchmark_shared.config import Backend
+from .config import Backend
 
 if TYPE_CHECKING:
     from prometheus_client.metrics_core import Metric

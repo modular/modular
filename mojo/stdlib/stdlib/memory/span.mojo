@@ -75,7 +75,6 @@ struct _SpanIter[
             return self.src[self.index]
 
 
-@fieldwise_init
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
@@ -131,10 +130,10 @@ struct Span[
         Args:
             other: The Span to cast.
         """
-        self = rebind[__type_of(self)](other)
+        self = rebind[type_of(self)](other)
 
     @always_inline("builtin")
-    fn __init__(out self, *, ptr: Self.UnsafePointerType, length: UInt):
+    fn __init__(out self, *, ptr: Self.UnsafePointerType, length: Int):
         """Unsafe construction from a pointer and length.
 
         Args:
@@ -142,7 +141,7 @@ struct Span[
             length: The length of the view.
         """
         self._data = ptr
-        self._len = Int(length)
+        self._len = length
 
     @always_inline
     @implicit
@@ -589,13 +588,13 @@ struct Span[
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(Span[T, _, address_space=address_space]),
+        other_type: type_of(Span[T, _, address_space=address_space]),
     ](
         self,
         out result: Span[
             mut = mut & other_type.origin.mut,
             T,
-            __origin_of(origin, other_type.origin),
+            origin_of(origin, other_type.origin),
             address_space=address_space,
         ],
     ):
@@ -748,9 +747,9 @@ struct Span[
 
             @parameter
             if width == 1:
-                count += rebind[__type_of(count)](vec)
+                count += rebind[type_of(count)](vec)
             else:
-                countv += rebind[__type_of(countv)](vec)
+                countv += rebind[type_of(countv)](vec)
 
         vectorize[do_count, simdwidth](length)
 

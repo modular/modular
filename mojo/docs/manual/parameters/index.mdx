@@ -1145,7 +1145,7 @@ For example, if you want your function to take two SIMD vectors with the same
 type and size, you can write code like this:
 
 ```mojo
-fn interleave(v1: SIMD, v2: __type_of(v1)) -> SIMD[v1.type, v1.size*2]:
+fn interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.type, v1.size*2]:
     var result = SIMD[v1.type, v1.size*2]()
     for i in range(v1.size):
         result[i*2] = SIMD[v1.type, 1](v1[i])
@@ -1162,7 +1162,7 @@ print(c)
 [1, 0, 2, 0, 3, 0, 4, 0]
 ```
 
-As shown in the example, you can use the magic `__type_of(x)` call if you just want to
+As shown in the example, you can use the magic `type_of(x)` call if you just want to
 match the type of an argument. In this case, it's more convenient and compact that
 writing the equivalent `SIMD[v1.type, v1.size]`.
 

@@ -90,7 +90,7 @@ def test_tma_tile_copy(ctx: DeviceContext):
         gmem_dev, (8, 8), (8, 1), (4, 4)
     )
 
-    ctx.enqueue_function[kernel_copy_async_tma](
+    ctx.enqueue_function_checked[kernel_copy_async_tma, kernel_copy_async_tma](
         descriptor, grid_dim=(2, 2), block_dim=(1)
     )
     ctx.synchronize()

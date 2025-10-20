@@ -83,21 +83,19 @@ class LayerNorm(Module):
         self.eps = eps
 
     def __call__(self, input: TensorValue):
-        weight = self.weight.to(input.device)
         # TODO: AIPIPE-95 Replace with a broadcasting rmo.layer_norm
         bias = (
             ops.cast(self.bias, DType.float32)
             if self.bias
             # If bias wasn't passed then use bias-less layer norm (beta = 0).
             else ops.broadcast_to(
-                ops.constant(0.0, DType.float32, weight.device),
+                ops.constant(0.0, DType.float32, self.weight.device),
                 shape=(input.shape[-1],),
             )
         )
-        bias = bias.to(input.device)
         return ops.layer_norm(
             input.cast(DType.float32),
-            gamma=ops.cast(weight, DType.float32),
+            gamma=ops.cast(self.weight, DType.float32),
             beta=bias,
             epsilon=self.eps,
         ).cast(input.dtype)

@@ -669,7 +669,7 @@ def test_tma_umma[
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
-    alias block_dim: UInt = UInt(2 * MMA_M)
+    alias block_dim = UInt(2 * MMA_M)
 
     @parameter
     if a_smem:
@@ -678,11 +678,11 @@ def test_tma_umma[
             a_type,
             b_type,
             c_type,
-            __type_of(a_tma_op).layout,
-            __type_of(b_tma_op).layout,
+            type_of(a_tma_op).layout,
+            type_of(b_tma_op).layout,
             Layout.row_major(M, N),
-            __type_of(a_tma_op).desc_layout,
-            __type_of(b_tma_op).desc_layout,
+            type_of(a_tma_op).desc_layout,
+            type_of(b_tma_op).desc_layout,
             block_tile_shape,
             mma_shape,
             transpose_b=transpose_b,
@@ -691,11 +691,11 @@ def test_tma_umma[
             b_swizzle=b_swizzle,
             num_threads=block_dim,
         ]
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             a_tma_op,
             b_tma_op,
             c.device_tensor(),
-            K // BK,
+            UInt(K // BK),
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=Int(smem_use),
@@ -711,9 +711,9 @@ def test_tma_umma[
             b_type,
             c_type,
             Layout.row_major(M, K),
-            __type_of(b_tma_op).layout,
+            type_of(b_tma_op).layout,
             Layout.row_major(M, N),
-            __type_of(b_tma_op).desc_layout,
+            type_of(b_tma_op).desc_layout,
             block_tile_shape,
             mma_shape,
             transpose_b=transpose_b,
@@ -721,11 +721,11 @@ def test_tma_umma[
             num_threads=block_dim,
         ]
 
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             a.device_tensor(),
             b_tma_op,
             c.device_tensor(),
-            K // BK,
+            UInt(K // BK),
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=Int(smem_use),

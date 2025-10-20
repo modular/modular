@@ -105,60 +105,56 @@ struct HopperMatmulSM90Kernel_SMem[
     alias SMM = SharedMemoryManager[]
 
     # Tile iterator types - manage cycling through pipeline stages
-    alias ATileArrayType = Self.SMM.TileArray[
-        a_type, a_layout, num_pipeline_stages
-    ]
-    alias BTileArrayType = Self.SMM.TileArray[
-        b_type, b_layout, num_pipeline_stages
-    ]
-    alias CTileType = Self.SMM.Tile[c_type, c_layout]
+    alias ATileArray = Self.SMM.TileArray[a_type, a_layout, num_pipeline_stages]
+    alias BTileArray = Self.SMM.TileArray[b_type, b_layout, num_pipeline_stages]
+    alias CTile = Self.SMM.Tile[c_type, c_layout]
 
     # Pipeline barrier types - for producer/consumer synchronization
-    alias PipelineBarrierType = Self.SMM.Array[
+    alias PipelineBarrier = Self.SMM.Array[
         SharedMemBarrier, num_pipeline_stages
     ]
 
     # Tile iterators - cycle through pipeline stages
-    var a_tiles: Self.ATileArrayType.T
-    var b_tiles: Self.BTileArrayType.T
-    var c_tile: Self.CTileType.T
+    var a_tiles: Self.ATileArray
+    var b_tiles: Self.BTileArray
+    var c_tile: Self.CTile
 
     # Pipeline barriers:
     # - full_mbar: Signals when tiles are loaded and ready for consumption
     # - empty_mbar: Signals when tiles have been consumed and can be reused
-    var full_mbar: Self.PipelineBarrierType.T
-    var empty_mbar: Self.PipelineBarrierType.T
+    var full_mbar: Self.PipelineBarrier
+    var empty_mbar: Self.PipelineBarrier
 
     fn __init__(out self):
         var smem_mgr = Self.SMM()
         # Initialize tile iterators
-        self.a_tiles = Self.ATileArrayType.build(smem_mgr)
-        self.b_tiles = Self.BTileArrayType.build(smem_mgr)
-        self.c_tile = Self.CTileType.build(smem_mgr)
+        self.a_tiles = smem_mgr.build[T = Self.ATileArray]()
+        self.b_tiles = smem_mgr.build[T = Self.BTileArray]()
+        self.c_tile = smem_mgr.build[T = Self.CTile]()
         # Initialize barriers
-        self.full_mbar = Self.PipelineBarrierType.build(smem_mgr)
-        self.empty_mbar = Self.PipelineBarrierType.build(smem_mgr)
+        self.full_mbar = smem_mgr.build[T = Self.PipelineBarrier]()
+        self.empty_mbar = smem_mgr.build[T = Self.PipelineBarrier]()
 
     @staticmethod
     @always_inline
     fn pipeline_storage_size() -> Int:
         """Calculate the memory size for all pipeline stages."""
-        var a_size = Self.ATileArrayType.storage_size
-        var b_size = Self.BTileArrayType.storage_size
+        var a_size = Self.ATileArray.storage_size
+        var b_size = Self.BTileArray.storage_size
 
         return (
             # A and B tile iterators with padding
             a_size
             + b_size
             # Pipeline barriers (full + empty)
-            + 2 * Self.PipelineBarrierType.storage_size
+            + 2 * Self.PipelineBarrier.storage_size
         )
 
     @staticmethod
     @always_inline
     fn output_storage_size() -> Int:
         """Calculate the memory size for output tile."""
-        return Self.CTileType.storage_size
+        return Self.CTile.storage_size
 
     @staticmethod
     @always_inline
@@ -264,7 +260,7 @@ struct HopperMatmulSM90Kernel[
         Self.cluster_size,
     ]
 
-    alias RingBuffer[async_copy: Bool = False] = RingBuffer[
+    alias RingBuffer[tma_transfer: Bool = True] = RingBuffer[
         a_type,
         b_type,
         Self.a_smem_layout,
@@ -272,16 +268,16 @@ struct HopperMatmulSM90Kernel[
         num_pipeline_stages,
         Self.num_consumer,
         Self.cluster_size,
-        async_copy,
+        tma_transfer,
     ]
 
     alias RingBufferConsumer[
-        origin: Origin[True], async_copy: Bool = False
-    ] = RingBufferConsumer[origin, Self.RingBuffer[async_copy]]
+        origin: Origin[True], tma_transfer: Bool
+    ] = RingBufferConsumer[origin, Self.RingBuffer[tma_transfer]]
 
     alias RingBufferProducer[
-        origin: Origin[True], async_copy: Bool = False
-    ] = RingBufferProducer[origin, Self.RingBuffer[async_copy]]
+        origin: Origin[True], tma_transfer: Bool
+    ] = RingBufferProducer[origin, Self.RingBuffer[tma_transfer]]
 
     alias WgmmaOp = TensorCoreAsync[
         Self.accum_type,
@@ -396,7 +392,7 @@ struct HopperMatmulSM90Kernel[
                     ](
                         a_tma_op,
                         tiles.a_tile,
-                        tiles.barrier[],
+                        tiles.barrier,
                         rank_n,
                         (k_offset, m_coord),
                         multicast_row_mask,
@@ -407,7 +403,7 @@ struct HopperMatmulSM90Kernel[
                     ](
                         b_tma_op,
                         tiles.b_tile,
-                        tiles.barrier[],
+                        tiles.barrier,
                         rank_m,
                         (k_offset, n_coord),
                         multicast_column_mask << rank_n,
@@ -474,8 +470,10 @@ struct HopperMatmulSM90Kernel[
                     ](
                         a,
                         tiles.a_tile,
-                        Int(block_idx_m),
-                        k_iter * num_pipeline_stages + j,
+                        (
+                            UInt(block_idx_m),
+                            UInt(k_iter * num_pipeline_stages + j),
+                        ),
                     )
 
                     ScatterGather.load_tile[
@@ -485,8 +483,10 @@ struct HopperMatmulSM90Kernel[
                     ](
                         b,
                         tiles.b_tile,
-                        Int(block_idx_n),
-                        k_iter * num_pipeline_stages + j,
+                        (
+                            UInt(block_idx_n),
+                            UInt(k_iter * num_pipeline_stages + j),
+                        ),
                     )
 
         @parameter
@@ -559,7 +559,7 @@ struct HopperMatmulSM90Kernel[
         a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
         b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
         c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-        lut_ptr: DeviceBuffer[DType.uint32],
+        lut_ptr: UnsafePointer[UInt32],
     ):
         """Main kernel entry point for matrix multiplication.
 
@@ -599,7 +599,7 @@ struct HopperMatmulSM90Kernel[
                 # - Upper 16 bits = y coordinate
                 # - Lower 16 bits = x coordinate
                 var linear = UInt32(block_idx.y * grid_dim.x + block_idx.x)
-                var packed = lut_ptr.unsafe_ptr()[linear]
+                var packed = lut_ptr[linear]
                 var new_x = packed & 0xFFFF
                 var new_y = packed >> 16
                 block_idx_swizzle = Index[dtype = DType.uint32](new_x, new_y)
@@ -647,8 +647,8 @@ struct HopperMatmulSM90Kernel[
         # It uses two sets of barriers (full_mbar, empty_mbar) to synchronize access
         # between producers and consumers
         var ring_buffer = Self.RingBuffer[](
-            smem.full_mbar,
-            smem.empty_mbar,
+            smem.full_mbar.ptr,
+            smem.empty_mbar.ptr,
             warp_group_thread_idx,
             smem.a_tiles,
             smem.b_tiles,
@@ -799,8 +799,8 @@ struct HopperMatmulSM90Kernel[
         # It uses two sets of barriers (full_mbar, empty_mbar) to synchronize access
         # between producers and consumers
         var ring_buffer = Self.RingBuffer[](
-            smem.full_mbar,
-            smem.empty_mbar,
+            smem.full_mbar.ptr,
+            smem.empty_mbar.ptr,
             warp_group_thread_idx,
             smem.a_tiles,
             smem.b_tiles,
@@ -965,9 +965,9 @@ struct HopperMatmulSM90Kernel[
         # This variant is configured for use with cp.async instructions which provide
         # unaligned memory access capabilities. The ring buffer still manages producer-
         # consumer synchronization but uses different memory access patterns
-        var ring_buffer = Self.RingBuffer[True](
-            smem.full_mbar,
-            smem.empty_mbar,
+        var ring_buffer = Self.RingBuffer[tma_transfer=False](
+            smem.full_mbar.ptr,
+            smem.empty_mbar.ptr,
             warp_group_thread_idx,
             smem.a_tiles,
             smem.b_tiles,
@@ -1066,7 +1066,7 @@ struct HopperMatmulSM90Kernel[
         c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
         c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
         workspace_buffer: NDBuffer[Self.accum_type, 3, MutableAnyOrigin],
-        locks_ptr: UnsafePointer[NoneType],
+        locks_ptr: UnsafePointer[UInt8],
         problem_shape: IndexList[3],
     ):
         """Split-K variant of the kernel for better load balancing on small problems.
@@ -1131,8 +1131,8 @@ struct HopperMatmulSM90Kernel[
         # It uses two sets of barriers (full_mbar, empty_mbar) to synchronize access
         # between producers and consumers
         var ring_buffer = Self.RingBuffer[](
-            smem.full_mbar,
-            smem.empty_mbar,
+            smem.full_mbar.ptr,
+            smem.empty_mbar.ptr,
             warp_group_thread_idx,
             smem.a_tiles,
             smem.b_tiles,
@@ -1271,13 +1271,14 @@ struct HopperMatmulSM90Kernel[
     fn run_grouped[
         a_tile_layout: Layout,
         b_tile_layout: Layout,
+        c_tile_layout: Layout,
         a_desc_layout: Layout,
         b_desc_layout: Layout,
         c_desc_layout: Layout,
     ](
         a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-        c_tma_op: TMATensorTile[c_type, c_smem_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[c_type, c_tile_layout, c_desc_layout],
         a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
         expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
         c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
@@ -1342,8 +1343,8 @@ struct HopperMatmulSM90Kernel[
         # It uses two sets of barriers (full_mbar, empty_mbar) to synchronize access
         # between producers and consumers
         var ring_buffer = Self.RingBuffer[](
-            smem.full_mbar,
-            smem.empty_mbar,
+            smem.full_mbar.ptr,
+            smem.empty_mbar.ptr,
             warp_group_thread_idx,
             smem.a_tiles,
             smem.b_tiles,
@@ -2227,7 +2228,7 @@ fn warp_specialized_gemm_output[
         ):
             # Output dimensions in global memory.
             alias N = c_layout.shape[1].value()
-            var M: UInt = UInt(c.dim[0]())
+            var M = UInt(c.dim[0]())
 
             var lane = lane_id()
 

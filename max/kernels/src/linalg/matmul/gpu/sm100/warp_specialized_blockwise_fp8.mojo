@@ -210,10 +210,10 @@ fn load_AB[
     var b_smem_tile = b_smem.next(stage)[]
     var a_scales_smem_tile = a_scales_smem.next(stage)[]
 
-    var a_smem_slice = __type_of(a_smem_tile)(
+    var a_smem_slice = type_of(a_smem_tile)(
         a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
     )
-    var b_smem_slice = __type_of(b_smem_tile)(
+    var b_smem_slice = type_of(b_smem_tile)(
         b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
@@ -1456,13 +1456,13 @@ fn sm100_warp_specialized_blockwise_fp8[
 
     var problem_shape = StaticTuple[Int32, 3](M, N, K)
 
-    ctx.enqueue_function[kernel, dump_asm=False](
+    ctx.enqueue_function_checked[kernel, kernel, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,
         a_scales_tma_op,
         cluster_dim,
-        ceildiv(K, BK),
+        UInt(ceildiv(K, BK)),
         b_scales,
         problem_shape,
         grid_dim=grid_dim,

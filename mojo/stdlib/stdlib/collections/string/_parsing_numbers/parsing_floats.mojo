@@ -78,7 +78,7 @@ fn _get_w_and_q_from_float_string(
     significand = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
 
     alias array_ptr = Pointer[
-        __type_of(exponent), __origin_of(exponent, significand)
+        type_of(exponent), origin_of(exponent, significand)
     ]
     prt_to_array = array_ptr(to=exponent)
     array_index = CONTAINER_SIZE
@@ -152,11 +152,11 @@ fn _get_w_and_q_from_float_string(
     return (significand_as_integer, Int64(exponent_as_integer))
 
 
-fn strip_unused_characters(x: StringSlice[mut=False]) -> __type_of(x):
+fn strip_unused_characters(x: StringSlice[mut=False]) -> type_of(x):
     return x.strip().removeprefix("+").removesuffix("f").removesuffix("F")
 
 
-fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, __type_of(x)]:
+fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, type_of(x)]:
     if x.startswith("-"):
         return (-1.0, x[1:])
     return (1.0, x)

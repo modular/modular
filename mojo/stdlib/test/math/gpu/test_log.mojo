@@ -24,7 +24,7 @@ from utils import Index, IndexList
 
 
 def run_elementwise[
-    dtype: DType, log_fn: fn (x: SIMD) -> __type_of(x)
+    dtype: DType, log_fn: fn (x: SIMD) -> type_of(x)
 ](ctx: DeviceContext):
     alias length = 8192
 

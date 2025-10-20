@@ -271,14 +271,9 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = [
-            Tensor.from_numpy(
-                np.arange(
-                    self.pipeline_config.max_batch_size + 1, dtype=np.uint32
-                )
-            ).to(dev)
-            for dev in self.devices
-        ]
+        self._input_row_offsets_prealloc = Tensor.from_numpy(
+            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+        ).to(self.devices)
 
         # Get LLM weights dictionary. Needed before model config generation
         # because we need to know if word embeddings are tied or not.
@@ -662,35 +657,26 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     @cached_property
     def _empty_image_embeddings(self) -> list[Tensor]:
         """Create empty image embeddings for text-only inputs on multi-device."""
-        return [
-            Tensor.zeros(
-                shape=[0, self.huggingface_config.text_config.hidden_size],
-                dtype=self.dtype,
-            ).to(device)
-            for device in self.devices
-        ]
+        return Tensor.zeros(
+            shape=[0, self.huggingface_config.text_config.hidden_size],
+            dtype=self.dtype,
+        ).to(self.devices)
 
     @cached_property
     def _empty_image_scatter_indices(self) -> list[Tensor]:
         """Create empty image scatter indices for text-only inputs on multi-device."""
-        return [
-            Tensor.zeros(
-                shape=[0],
-                dtype=DType.int32,
-            ).to(device)
-            for device in self.devices
-        ]
+        return Tensor.zeros(
+            shape=[0],
+            dtype=DType.int32,
+        ).to(self.devices)
 
     @cached_property
     def _empty_image_gather_indices(self) -> list[Tensor]:
         """Create empty image gather indices for text-only inputs on multi-device."""
-        return [
-            Tensor.zeros(
-                shape=[0],
-                dtype=DType.int64,
-            ).to(device)
-            for device in self.devices
-        ]
+        return Tensor.zeros(
+            shape=[0],
+            dtype=DType.int64,
+        ).to(self.devices)
 
     def _batch_image_token_indices(
         self, context_batch: Sequence[TextAndVisionContext]
@@ -787,13 +773,10 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             )
 
         # Create tensor and distribute to devices
-        return [
-            Tensor.from_numpy(np_scatter_indices).to(device)
-            for device in self.devices
-        ], [
-            Tensor.from_numpy(np_gather_indices).to(device)
-            for device in self.devices
-        ]
+        return (
+            Tensor.from_numpy(np_scatter_indices).to(self.devices),
+            Tensor.from_numpy(np_gather_indices).to(self.devices),
+        )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Qwen2.5VL model with the prepared inputs."""
@@ -914,10 +897,9 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 [0] + [ctx.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
-            input_row_offsets_tensors = [
-                Tensor.from_numpy(input_row_offsets).to(device)
-                for device in self.devices
-            ]
+            input_row_offsets_tensors = Tensor.from_numpy(input_row_offsets).to(
+                self.devices
+            )
 
         with Tracer("prepare_decoder_position_ids"):
             position_ids_list = []
@@ -1076,9 +1058,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     ]
                 )
             )
-            pixel_values = [
-                pixel_values_tensor.to(device) for device in self.devices
-            ]
+            pixel_values = pixel_values_tensor.to(self.devices)
 
         with Tracer("preparing_window_index"):
             # Concatenate per-context window_index with cross-context offsets so indices are unique
@@ -1093,9 +1073,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     index_offset += int(per_ctx_index.shape[0])
             window_index_np = np.concatenate(window_index_parts, axis=0)
             window_index_tensor = Tensor.from_numpy(window_index_np)
-            window_index = [
-                window_index_tensor.to(device) for device in self.devices
-            ]
+            window_index = window_index_tensor.to(self.devices)
 
         with Tracer("preparing_vision_position_ids"):
             vision_position_ids_tensor = Tensor.from_numpy(
@@ -1107,9 +1085,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     ]
                 ).astype(np.int64)
             )
-            vision_position_ids = [
-                vision_position_ids_tensor.to(device) for device in self.devices
-            ]
+            vision_position_ids = vision_position_ids_tensor.to(self.devices)
 
         with Tracer("preparing_max_grid_size"):
             max_grid_size_value = max(
@@ -1139,9 +1115,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     [np.array([0], dtype=np.uint32), *cu_seqlens_list]
                 ).astype(np.uint32)
             )
-            cu_seqlens = [
-                cu_seqlens_tensor.to(device) for device in self.devices
-            ]
+            cu_seqlens = cu_seqlens_tensor.to(self.devices)
 
         with Tracer("preparing_cu_window_seqlens"):
             # cu_window_seqlens_unique is already scaled by spatial_merge_unit per-context.
@@ -1164,10 +1138,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             cu_window_seqlens_unique_tensor = Tensor.from_numpy(
                 cu_window_seqlens_np
             )
-            cu_window_seqlens = [
-                cu_window_seqlens_unique_tensor.to(device)
-                for device in self.devices
-            ]
+            cu_window_seqlens = cu_window_seqlens_unique_tensor.to(self.devices)
 
         with Tracer("preparing_max_seqlen"):
             max_seqlen_value = max(

@@ -169,13 +169,13 @@ fn b2b_gemm[
     # B is K x L
     # C is L x N
     # B is M x N
-    var M: UInt = UInt(D.dim[0]())
-    var L: UInt = UInt(B.dim[0 if transpose_b else 1]())
+    var M = UInt(D.dim[0]())
+    var L = UInt(B.dim[0 if transpose_b else 1]())
     # var K: UInt = B.dim[1 if transpose_b else 0]()
     # TODO: allow dynamic `K`, so long as it still
     # fits in shared memory, we shouldn't require static.
-    alias K: UInt = UInt(Int(A.layout.shape[1]))
-    alias N: UInt = UInt(Int(D.layout.shape[1]))
+    alias K = UInt(Int(A.layout.shape[1]))
+    alias N = UInt(Int(D.layout.shape[1]))
 
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
@@ -337,7 +337,7 @@ fn b2b_gemm[
                 num_pipeline_stages,
                 transpose_b,
                 b_next_smem_layout=c_smem_layout,
-                next_op_b_iter_masked = __type_of(c_gmem_iter).masked,
+                next_op_b_iter_masked = type_of(c_gmem_iter).masked,
                 continue_prefetch_b=True,
                 prefetch_init=True,
                 transpose_b_next=transpose_c,
@@ -363,7 +363,7 @@ fn b2b_gemm[
                 num_pipeline_stages,
                 transpose_b,
                 b_next_smem_layout=c_smem_layout,
-                next_op_b_iter_masked = __type_of(c_gmem_iter).masked,
+                next_op_b_iter_masked = type_of(c_gmem_iter).masked,
                 continue_prefetch_b=True,
                 prefetch_init=True,
                 transpose_b_next=transpose_c,
@@ -481,7 +481,7 @@ fn b2b_gemm[
                 1, simd_size
             ]().distribute[warp_layout](thread_idx.x)
             var thread_offset = d_gmem_frag.distance(D.ptr)
-            alias num_stores_per_thread = __type_of(d_gmem_frag).layout.size()
+            alias num_stores_per_thread = type_of(d_gmem_frag).layout.size()
             alias src_align = align_of[
                 SIMD[accum_type, simd_width_of[accum_type]()]
             ]()
@@ -493,14 +493,14 @@ fn b2b_gemm[
 
             @parameter
             for i in range(num_stores_per_thread):
-                alias src_idx = __type_of(d_smem_frag).layout(i)
+                alias src_idx = type_of(d_smem_frag).layout(i)
                 alias src_idx_base = src_idx % swizzle.size()
                 alias src_idx_diff = src_idx - src_idx_base
                 var swizzled_idx = (
                     swizzle(d_smem_frag_offset + src_idx_base) + src_idx_diff
                 )
 
-                alias dst_static_idx = __type_of(d_gmem_frag).layout(i)
+                alias dst_static_idx = type_of(d_gmem_frag).layout(i)
 
                 @parameter
                 if d_layout.all_dims_known():
@@ -541,11 +541,9 @@ fn b2b_gemm[
             var thread_offset = d_gmem_frag.distance(D.ptr)
 
             @parameter
-            for i in range(__type_of(d_gmem_frag).layout.size()):
+            for i in range(type_of(d_gmem_frag).layout.size()):
                 alias src_idx = d_reg_frag.layout(i)
-                alias dst_static_idx: UInt = UInt(
-                    __type_of(d_gmem_frag).layout(i)
-                )
+                alias dst_static_idx = UInt(type_of(d_gmem_frag).layout(i))
 
                 @parameter
                 if d_layout.all_dims_known():

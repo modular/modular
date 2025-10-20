@@ -137,8 +137,6 @@ class RejectionSampler(nn.Module):
             shape=[Dim("batch_size"), Dim("total_num_steps")],
         )
 
-        _, total_num_steps = rejected_tokens.shape
-
         # Calculate first rejected_token idx
         first_rejected_token = ops.argmax(
             ops.broadcast_to(

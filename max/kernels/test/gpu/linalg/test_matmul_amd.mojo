@@ -19,6 +19,7 @@ from random import random_si64
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
+from gpu.host.info import MI355X
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul.gpu import (
@@ -335,7 +336,14 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext):
 def main():
     with DeviceContext() as ctx:
         test_bf16(ctx)
-        test_float8[DType.float8_e4m3fnuz](ctx)
-        test_float8[DType.float8_e5m2fnuz](ctx)
+
+        @parameter
+        if ctx.default_device_info is MI355X:
+            test_float8[DType.float8_e4m3fn](ctx)
+            test_float8[DType.float8_e5m2](ctx)
+        else:
+            test_float8[DType.float8_e4m3fnuz](ctx)
+            test_float8[DType.float8_e5m2fnuz](ctx)
+
         test_block_k(ctx)
         test_warp_k_partitions(ctx)

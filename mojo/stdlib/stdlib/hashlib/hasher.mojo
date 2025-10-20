@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from memory import Span
+
 from ._ahash import AHasher
 from ._fnv1a import Fnv1a
 
@@ -21,13 +23,7 @@ trait Hasher:
     fn __init__(out self):
         ...
 
-    fn _update_with_bytes(
-        mut self,
-        data: UnsafePointer[
-            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-        ],
-        length: Int,
-    ):
+    fn _update_with_bytes(mut self, data: Span[Byte, _]):
         ...
 
     fn _update_with_simd(mut self, value: SIMD[_, _]):

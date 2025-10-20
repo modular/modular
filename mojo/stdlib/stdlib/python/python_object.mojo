@@ -115,7 +115,7 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
         self.next_item = cpy.PyIter_Next(self.iterator._obj_ptr)
         return PythonObject(from_owned=curr_item)
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
 

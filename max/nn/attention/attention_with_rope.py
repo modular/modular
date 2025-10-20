@@ -121,10 +121,7 @@ class AttentionWithRopeV1(AttentionImpl):
         # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
-        if xq.device is not None:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
@@ -734,19 +731,13 @@ class AttentionWithRope(Module, Shardable):
 
             # 2) Normalize Q per head across the last dim (head_dim).
             q_gamma = self.q_norm_weight
-            if xq.device is not None:
-                q_gamma_tensor = q_gamma.to(xq.device)
-            else:
-                q_gamma_tensor = q_gamma
+            q_gamma_tensor = q_gamma.to(xq.device)
             q_gamma_tensor = ops.cast(q_gamma_tensor, xq.dtype)
             eps_q = ops.constant(self.rms_norm_eps, xq.dtype, device=xq.device)
             inv_rms = ops.rsqrt(ops.mean(xq * xq, axis=-1) + eps_q)
             xq = (xq * inv_rms) * q_gamma_tensor
 
-        if xq.device is not None:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
@@ -926,7 +917,9 @@ class GGUFQAttentionWithRope(AttentionWithRope):
 
         # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-        freqs_cis = ops.cast(freqs_cis, xq.dtype)
+
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
+
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
@@ -1107,10 +1100,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
         # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
-        if xq.device is not None:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
@@ -1461,7 +1451,7 @@ class AttentionWithRopeQKV(AttentionImplQKV):
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Cast freqs_cis to xq's dtype to match the fused_qk_ragged_rope kernel.
-        freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
@@ -1536,6 +1526,13 @@ class AttentionWithRopeNoOpaque(Module):
         self.rope = rope
         self.n_heads = num_attention_heads
         self.kv_params = kv_params
+
+        if num_key_value_heads != self.kv_params.n_kv_heads:
+            raise ValueError(
+                f"Inconsistent KV head counts: num_key_value_heads={num_key_value_heads}, "
+                f"kv_params.n_kv_heads={self.kv_params.n_kv_heads}"
+            )
+
         self.scale = (
             scale
             if scale is not None
@@ -1581,8 +1578,8 @@ class AttentionWithRopeNoOpaque(Module):
         k_end = q_end + self.kv_params.n_kv_heads * self.kv_params.head_dim
         v_end = k_end + self.kv_params.n_kv_heads * self.kv_params.head_dim
         x_q = x_qkv[:, :q_end]
-        x_k = x_qkv[:, k_end:v_end]
-        x_v = x_qkv[:, v_end:]
+        x_k = x_qkv[:, q_end:k_end]
+        x_v = x_qkv[:, k_end:v_end]
 
         freqs_cis = ops.cast(self.rope.freqs_cis, x_q.dtype)
 

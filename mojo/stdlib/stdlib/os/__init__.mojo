@@ -33,6 +33,7 @@ from .os import (
     SEEK_SET,
     abort,
     getuid,
+    isatty,
     listdir,
     makedirs,
     mkdir,

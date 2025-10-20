@@ -56,6 +56,7 @@ from layout.tma_async import (
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
+from builtin.device_passable import DevicePassable
 
 import ...vendor
 from ....arch.sm100 import MmaOpSM100_SS
@@ -67,7 +68,7 @@ trait OpArgs(ImplicitlyCopyable):
 
 
 # @register_passable("trivial")
-trait LoadOp:
+trait LoadOp(DevicePassable):
     alias args_type: OpArgs
 
     fn __init__(out self, args: Self.args_type):
@@ -127,7 +128,7 @@ struct TMALoadOp[
     cluster_shape: IndexList[3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-](LoadOp):
+](ImplicitlyCopyable, LoadOp):
     alias a_tma_layout = Layout.row_major(
         block_tile_shape[0] // cluster_shape[0], block_tile_shape[2]
     )
@@ -164,6 +165,56 @@ struct TMALoadOp[
     alias b_tma_type = TMATensorTile[
         b_type, Self.b_tma_layout, Self.b_tma_desc_layout
     ]
+
+    alias device_type = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+        """
+        return String(
+            "TMALoadOp[a_type = ",
+            String(a_type),
+            ", b_type = ",
+            String(b_type),
+            ", block_tile_shape = ",
+            String(block_tile_shape),
+            ", cluster_shape = ",
+            String(cluster_shape),
+            ", a_swizzle = ",
+            String(a_swizzle),
+            ", b_swizzle = ",
+            String(b_swizzle),
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing arguments
+        to kernels.
+        """
+        return String(
+            "TMALoadOp[a_type = ",
+            String(a_type),
+            ", b_type = ",
+            String(b_type),
+            ", block_tile_shape = ",
+            String(block_tile_shape),
+            ", cluster_shape = ",
+            String(cluster_shape),
+            ", a_swizzle = ",
+            String(a_swizzle),
+            ", b_swizzle = ",
+            String(b_swizzle),
+            "]",
+        )
 
     var a_tma_ptr: UnsafePointer[Self.a_tma_type]
     var b_tma_ptr: UnsafePointer[Self.b_tma_type]
@@ -226,7 +277,7 @@ struct TMALoadOp[
         )
 
 
-trait OutputOp:
+trait OutputOp(DevicePassable):
     alias args_type: OpArgs
 
     fn __init__(out self, args: Self.args_type):
@@ -263,10 +314,60 @@ struct R2GOutputOp[
     mma_shape: IndexList[3],
     block_tile_shape: IndexList[3],
     o: Origin,
-](OutputOp):
+](ImplicitlyCopyable, OutputOp):
     alias args_type = STOutputOpArgs[dtype, layout, o]
 
     var c: LayoutTensor[dtype, layout, o]
+
+    alias device_type = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+        """
+        return String(
+            "R2GOutputOp[accum_type = ",
+            String(accum_type),
+            ", dtype = ",
+            String(dtype),
+            ", layout = ",
+            String(layout),
+            ", num_threads = ",
+            String(num_threads),
+            ", mma_shape = ",
+            String(mma_shape),
+            ", block_tile_shape = ",
+            String(block_tile_shape),
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing arguments
+        to kernels.
+        """
+        return String(
+            "R2GOutputOp[accum_type = ",
+            String(accum_type),
+            ", dtype = ",
+            String(dtype),
+            ", layout = ",
+            String(layout),
+            ", num_threads = ",
+            String(num_threads),
+            ", mma_shape = ",
+            String(mma_shape),
+            ", block_tile_shape = ",
+            String(block_tile_shape),
+            "]",
+        )
 
     @always_inline
     fn __init__(out self, args: Self.args_type):
@@ -352,7 +453,41 @@ trait PipelineOp:
 struct PipelineArgs[
     loadop_t: LoadOp,
     outputop_t: OutputOp,
-](OpArgs):
+](DevicePassable, OpArgs):
+    alias device_type = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+        """
+        return String(
+            "PipelineArgs[loadop_t = ",
+            loadop_t.get_type_name(),
+            ", outputop_t = ",
+            outputop_t.get_type_name(),
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing arguments
+        to kernels.
+        """
+        return String(
+            "PipelineArgs[loadop_t = ",
+            loadop_t.get_device_type_name(),
+            ", outputop_t = ",
+            outputop_t.get_device_type_name(),
+            "]",
+        )
+
     var load_args: loadop_t.args_type
     var output_args: outputop_t.args_type
     var num_iters: UInt
@@ -557,7 +692,7 @@ fn matmul_sm100[
     var M = c.dim[0]()
     var N = c.dim[1]()
     alias K = a_shape.get[1]()
-    alias num_iters: UInt = UInt(K // BK)
+    alias num_iters = UInt(K // BK)
 
     alias smem_use = (BM * size_of[a_type]() + BN * size_of[b_type]()) * BK + 24
 
@@ -601,7 +736,7 @@ fn matmul_sm100[
     )
 
     alias kernel = matmul_kernel[pipeline_t]
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         args,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),

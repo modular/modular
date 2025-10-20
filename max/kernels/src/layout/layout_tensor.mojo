@@ -311,7 +311,7 @@ struct LayoutTensor[
     """
 
     # `trait DevicePassable` implementation, to allow LayoutTensor to be passed directly to kernels
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -324,16 +324,26 @@ struct LayoutTensor[
         Returns:
             The host type's name.
         """
-        return (
-            "LayoutTensor[mut = "
-            + String(mut)
-            + ", dtype = "
-            + String(dtype)
-            + ", layout = "
-            + String(layout)
-            + ", address_space = "
-            + String(address_space)
-            + "]"
+        return String(
+            "LayoutTensor[mut = ",
+            mut,
+            ", dtype = ",
+            dtype,
+            ", layout = ",
+            layout,
+            ", address_space = ",
+            address_space,
+            ", element_layout = ",
+            element_layout,
+            ", layout_int_type = ",
+            layout_int_type,
+            ", linear_idx_type = ",
+            linear_idx_type,
+            ", masked = ",
+            masked,
+            ", alignment = ",
+            alignment,
+            "]",
         )
 
     @staticmethod
@@ -359,6 +369,8 @@ struct LayoutTensor[
 
     This pointer respects the specified address space, alignment, mutability,
     and origin tracking for memory safety and performance optimization."""
+
+    alias storage_size = size_of[dtype]() * layout.size()
 
     alias RuntimeLayoutType = RuntimeLayout[
         layout,
@@ -767,7 +779,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(
+        other_type: type_of(
             LayoutTensor[
                 dtype,
                 layout,
@@ -786,7 +798,7 @@ struct LayoutTensor[
             mut = mut & other_type.origin.mut,
             dtype,
             layout,
-            __origin_of(origin, other_type.origin),
+            origin_of(origin, other_type.origin),
             alignment=alignment,
             address_space=address_space,
             element_layout=element_layout,
@@ -875,7 +887,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn as_any_origin(
         self: Self._AsMut,
-    ) -> __type_of(self).OriginCastType[True, MutableAnyOrigin]:
+    ) -> type_of(self).OriginCastType[True, MutableAnyOrigin]:
         """Casts the origin of the mutable `LayoutTensor` to `MutableAnyOrigin`.
 
         Returns:
@@ -898,7 +910,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn as_any_origin(
         self: LayoutTensor[mut=False, *_, **_],
-    ) -> __type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
+    ) -> type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
         """Casts the origin of the immutable `LayoutTensor` to `ImmutableAnyOrigin`.
 
         Returns:
@@ -918,7 +930,7 @@ struct LayoutTensor[
     @doc_private
     fn as_any_origin(
         self: LayoutTensor[*_, **_],
-        out result: __type_of(self).OriginCastType[False, ImmutableAnyOrigin],
+        out result: type_of(self).OriginCastType[False, ImmutableAnyOrigin],
     ):
         constrained[
             False,
@@ -928,7 +940,7 @@ struct LayoutTensor[
                 " mutability explicitly before calling this function."
             ),
         ]()
-        result = abort[__type_of(result)]()
+        result = abort[type_of(result)]()
 
     alias AddressSpaceCastType[
         address_space: AddressSpace = Self.address_space,
@@ -3643,11 +3655,11 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(fragments_layout_stride)):
-                alias fragments_stride_i: UInt = UInt(
+                alias fragments_stride_i = UInt(
                     mlir_value=Int(fragments_layout_stride[i])._mlir_value
                 )
-                alias shape_i: UInt = UInt(Int(thread_projected_shape[i]))
-                alias stride_i: UInt = UInt(Int(thread_projected_stride[i]))
+                alias shape_i = UInt(Int(thread_projected_shape[i]))
+                alias stride_i = UInt(Int(thread_projected_stride[i]))
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset += thread_coord_i * fragments_stride_i
 
@@ -3708,10 +3720,10 @@ struct LayoutTensor[
             @parameter
             for i in range(len(flatten(Self.layout.stride))):
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
-                alias shape_i: UInt = UInt(
+                alias shape_i = UInt(
                     mlir_value=Int(thread_projected_shape[i])._mlir_value
                 )
-                alias stride_i: UInt = UInt(
+                alias stride_i = UInt(
                     mlir_value=Int(thread_projected_stride[i])._mlir_value
                 )
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
@@ -3818,11 +3830,11 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(fragments_layout_stride)):
-                alias fragments_stride_i: UInt = UInt(
+                alias fragments_stride_i = UInt(
                     mlir_value=Int(fragments_layout_stride[i])._mlir_value
                 )
-                alias shape_i: UInt = UInt(Int(thread_projected_shape[i]))
-                alias stride_i: UInt = UInt(Int(thread_projected_stride[i]))
+                alias shape_i = UInt(Int(thread_projected_shape[i]))
+                alias stride_i = UInt(Int(thread_projected_stride[i]))
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset_coords[i] = Int(thread_coord_i)
                 offset += thread_coord_i * fragments_stride_i
@@ -3892,10 +3904,10 @@ struct LayoutTensor[
             @parameter
             for i in range(len(flatten(Self.layout.stride))):
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
-                alias shape_i: UInt = UInt(
+                alias shape_i = UInt(
                     mlir_value=Int(thread_projected_shape[i])._mlir_value
                 )
-                alias stride_i: UInt = UInt(
+                alias stride_i = UInt(
                     mlir_value=Int(thread_projected_stride[i])._mlir_value
                 )
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
@@ -3963,7 +3975,7 @@ struct LayoutTensor[
         vector_len: Int,
         linear_vectorize: Bool = True,
     ](self) -> Self.ShapeVectorizedType[
-        __origin_of(),
+        origin_of(),
         IntTuple(vector_len),
         linear_vectorize=linear_vectorize,
     ]:
@@ -3979,7 +3991,7 @@ struct LayoutTensor[
             vector length.
         """
         return self._vectorize_2[
-            __origin_of(),
+            origin_of(),
             IntTuple(vector_len),
             linear_vectorize=linear_vectorize,
         ]()
@@ -4159,7 +4171,7 @@ struct LayoutTensor[
         """
 
         alias shape = IntTuple(vector_shape)
-        alias _origin = __origin_of()  # FIXME: MOCO-1912
+        alias _origin = origin_of()  # FIXME: MOCO-1912
         var ret = self._vectorize_2[
             _origin,
             shape,
@@ -5212,9 +5224,9 @@ struct LayoutTensor[
         use_runtime_layout: Bool = (
             not layout.all_dims_known() or layout.size() > BATCH_SIZE
         ),
-    ](
-        self: LayoutTensor[mut=True, dtype, **_], val: Scalar[dtype]
-    ) -> __type_of(self):
+    ](self: LayoutTensor[mut=True, dtype, **_], val: Scalar[dtype]) -> type_of(
+        self
+    ):
         """Fill the entire tensor with a single value.
 
         This method sets all elements of the tensor to the specified value. It

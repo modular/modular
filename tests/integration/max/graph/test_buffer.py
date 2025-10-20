@@ -154,7 +154,7 @@ def test_store_slice_load_slice(
         buf_idx = [(slice(0, int(d)), d) for d in tensor.shape]
         y = tensor * tensor
         # Store slice.
-        buffer[*buf_idx] = y + buffer[*buf_idx]
+        buffer[tuple(buf_idx)] = y + buffer[tuple(buf_idx)]
 
         graph.output()
 
@@ -323,8 +323,8 @@ def test_custom_buffer_error(custom_ops_path: Path) -> None:
         with pytest.raises(
             TypeError,
             match=(
-                "custom ops that take buffers or opaque values to do in-place "
-                "updates should use ops.inplace_custom instead"
+                r"custom ops that take buffers or opaque values to do in-place "
+                r"updates should use ops.inplace_custom instead"
             ),
         ):
             _ = ops.custom(

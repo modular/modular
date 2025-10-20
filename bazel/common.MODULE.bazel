@@ -38,15 +38,10 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = Tr
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-fOkBbbvPAZmBji2zJ7KSXxpvCgxSTi6buwMJal4zOEE=",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/modular/rules_mojo/pull/63
-        "//bazel/public-patches:rules_mojo_mi355.patch",
-    ],
-    strip_prefix = "rules_mojo-ffd2636629835c1f1287dcf6846251e088eec1d8",
+    integrity = "sha256-w7hPwnIRS1yyx0j6nZCD/yGqM0AZiFfJiF9U9DxIr5k=",
+    strip_prefix = "rules_mojo-87f860f96f73ce624d51fe8e836978888e14344c",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/ffd2636629835c1f1287dcf6846251e088eec1d8.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/87f860f96f73ce624d51fe8e836978888e14344c.tar.gz",
     ],
 )
 
@@ -220,7 +215,7 @@ module_versions(
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-RUFF_VERSION = "0.11.13"
+RUFF_VERSION = "0.14.0"
 
 [
     http_archive(
@@ -234,9 +229,9 @@ RUFF_VERSION = "0.11.13"
         ),
     )
     for arch, sha in [
-        ("x86_64-unknown-linux-gnu", "01aa32d29d00876b8d1429c617ed63a00b1fc81abfa4183bb05c9cb647fbc3d0"),
-        ("aarch64-unknown-linux-gnu", "551af2ebc439d8268dcaf871ea60ad035f688728d30943dcbb2bf775e105213e"),
-        ("aarch64-apple-darwin", "7d5e8feea7ee5c3962807996cad557e8a0c4d676c1cba6223bfb0e8b2ca07723"),
+        ("x86_64-unknown-linux-gnu", "28fe06f700caf99eee235f90e6e349f48b7f9a4b0d42e3ee5b3686f9259649a3"),
+        ("aarch64-unknown-linux-gnu", "60fc3b464a723456ba1bc8cd91d29806753c885f72e26ac67b718cee6b35aaca"),
+        ("aarch64-apple-darwin", "0b7c193d5c45eda02226720eb75239fabeca995d5a0eb3830fd2973caa3030ec"),
     ]
 ]
 

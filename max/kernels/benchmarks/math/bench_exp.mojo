@@ -361,7 +361,7 @@ fn llvm_ldexp[
 ](x: SIMD[dtype, simd_width], exp: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
-    return llvm_intrinsic["llvm.ldexp", __type_of(x)](x, exp)
+    return llvm_intrinsic["llvm.ldexp", type_of(x)](x, exp)
 
 
 @always_inline

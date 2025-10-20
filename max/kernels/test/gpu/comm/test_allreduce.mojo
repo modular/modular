@@ -64,7 +64,12 @@ fn _human_memory(size: Int) -> String:
 
 
 fn allreduce_test[
-    dtype: DType, rank: Int, ngpus: Int, use_multimem: Bool
+    dtype: DType,
+    rank: Int,
+    ngpus: Int,
+    *,
+    use_multimem: Bool,
+    use_quickreduce: Bool = False,
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
     alias num_warmups = 5
     alias num_iters = 100
@@ -185,6 +190,7 @@ fn allreduce_test[
                 ngpus=ngpus,
                 output_lambda = outputs_lambda[input_index=i],
                 use_multimem=use_multimem,
+                use_quickreduce=use_quickreduce,
             ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
 
     # Synchronize all devices.
@@ -202,6 +208,7 @@ fn allreduce_test[
                 ngpus=ngpus,
                 output_lambda = outputs_lambda[input_index=i],
                 use_multimem=use_multimem,
+                use_quickreduce=use_quickreduce,
             ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
 
     # Synchronize all devices.
@@ -239,15 +246,17 @@ fn allreduce_test[
 
 
 fn _get_test_str[
-    dtype: DType, use_multimem: Bool
+    dtype: DType, use_multimem: Bool, use_quickreduce: Bool = False
 ](ngpus: Int, length: Int) -> String:
     var multimem_tag = "-multimem" if use_multimem else ""
+    var quickreduce_tag = "-quickreduce" if use_quickreduce else ""
     return String(
         "====allreduce-",
         dtype,
         "-",
         ngpus,
         multimem_tag,
+        quickreduce_tag,
         "-",
         _human_memory(size_of[dtype]() * length),
     )
@@ -347,7 +356,9 @@ def allreduce_naive_test() -> None:
 
 
 @parameter
-fn run_allreduce_sweep[use_multimem: Bool]() raises:
+fn run_allreduce_sweep[
+    use_multimem: Bool, use_quickreduce: Bool = False
+]() raises:
     # Run tests for each configuration.
     @parameter
     for gpu_idx in range(len(test_gpu_counts)):
@@ -369,19 +380,24 @@ fn run_allreduce_sweep[use_multimem: Bool]() raises:
             for length_idx in range(len(test_lengths)):
                 alias length = test_lengths[length_idx]
 
-                print(_get_test_str[dtype, use_multimem](num_gpus, length))
+                print(
+                    _get_test_str[dtype, use_multimem, use_quickreduce](
+                        num_gpus, length
+                    )
+                )
                 try:
                     allreduce_test[
                         dtype=dtype,
                         rank=1,
                         ngpus=num_gpus,
                         use_multimem=use_multimem,
+                        use_quickreduce=use_quickreduce,
                     ](ctx, length)
                 except e:
                     if "OUT_OF_MEMORY" in String(e):
                         print(
                             "Out of memory error occurred for ",
-                            _get_test_str[dtype, use_multimem](
+                            _get_test_str[dtype, use_multimem, use_quickreduce](
                                 num_gpus, length
                             ),
                         )
@@ -408,3 +424,4 @@ def main():
 
     # Standard (non-multimem) sweep
     run_allreduce_sweep[use_multimem=False]()
+    run_allreduce_sweep[use_multimem=False, use_quickreduce=True]()

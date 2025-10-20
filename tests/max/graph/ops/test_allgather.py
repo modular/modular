@@ -35,8 +35,8 @@ def test_allgather_rep_device() -> None:
     with pytest.raises(
         ValueError,
         match=(
-            "allgather operation must have unique devices across its input"
-            " tensors."
+            r"allgather operation must have unique devices across its input"
+            r" tensors."
         ),
     ):
         with Graph(

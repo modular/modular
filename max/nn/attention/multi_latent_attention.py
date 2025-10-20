@@ -661,10 +661,7 @@ class LatentAttentionWithRope(Module, Shardable):
         )
 
         # Apply rope.
-        if xq.device is not None:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq_rope = fused_qk_ragged_rope(
             self.kv_params,

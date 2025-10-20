@@ -341,10 +341,7 @@ class Gemma3Attention(Module, Shardable):
         use_local = bool((self.layer_idx + 1) % self.sliding_window_pattern)
         rope = self.rope_local if use_local else self.rope_global
 
-        if xq.device is not None:
-            freqs_cis = ops.cast(rope.freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(rope.freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(rope.freqs_cis, xq.dtype).to(xq.device)
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,

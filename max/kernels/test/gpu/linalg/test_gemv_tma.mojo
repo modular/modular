@@ -209,7 +209,7 @@ fn gemv_tma_kernel[
                     var row_idx = warp_row_offset + i
                     if global_row_idx + i < M:
                         var a_val = current_a_tile[row_idx, col_idx]
-                        dot_products[i] += rebind[__type_of(dot_products[i])](
+                        dot_products[i] += rebind[type_of(dot_products[i])](
                             a_val.cast[accum_type]() * b_val.cast[accum_type]()
                         )
 
@@ -290,15 +290,15 @@ def gemv_tma[
         NUM_PIPELINE_STAGES,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         tma_desc_a,
         tma_desc_b,
         c,
         a,
         b,
-        M,
-        N,
-        K,
+        UInt(M),
+        UInt(N),
+        UInt(K),
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
         block_dim=(THREAD_NUM),
         shared_mem_bytes=Int(smem_use),

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import functools
 import math
 from collections.abc import Callable, Iterable, Sequence
 
@@ -750,10 +751,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         )
 
         # Apply rope.
-        if xq.device is not None:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq_rope = fused_qk_ragged_rope(
             self.kv_params,
@@ -770,6 +768,10 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         )
 
         return self.o_proj(attn_out)
+
+
+def _create_zero_attn_out(xs: TensorValue) -> TensorValue:
+    return ops.constant(0, xs.dtype, device=xs.device).broadcast_to(xs.shape)
 
 
 class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
@@ -827,13 +829,19 @@ class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 outs.append(xs[i])
                 continue
 
-            outs.append(
-                self.list_of_attentions[i](
+            out = ops.cond(
+                ops.shape_to_tensor(xs[i].shape)[0] > 0,
+                [xs[i].type],
+                functools.partial(
+                    self.list_of_attentions[i],
                     layer_idx,
                     xs[i],
                     kv_collections[i],
                     freqs_cis=freqs_cis[i],
                     input_row_offsets=input_row_offsets[i],
-                )
-            )
+                ),
+                functools.partial(_create_zero_attn_out, xs[i]),
+            )[0]
+            outs.append(out)
+
         return outs

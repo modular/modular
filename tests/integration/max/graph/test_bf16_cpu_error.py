@@ -34,7 +34,7 @@ def test_bf16_cpu_input_error(session: InferenceSession) -> None:
 
     with pytest.raises(
         ValueError,
-        match="The bf16 data type is not supported on device 'cpu:0'.",
+        match=r"The bf16 data type is not supported on device 'cpu:0'.",
     ):
         session.load(graph)
 
@@ -58,6 +58,6 @@ def test_bf16_cpu_output_error(session: InferenceSession) -> None:
 
     with pytest.raises(
         ValueError,
-        match="The bf16 data type is not supported on device 'cpu:0'.",
+        match=r"The bf16 data type is not supported on device 'cpu:0'.",
     ):
         session.load(graph)

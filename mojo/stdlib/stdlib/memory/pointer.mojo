@@ -396,13 +396,13 @@ struct Pointer[
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(Pointer[type, _, address_space]),
+        other_type: type_of(Pointer[type, _, address_space]),
     ](
         self,
         out result: Pointer[
             mut = mut & other_type.origin.mut,
             type=type,
-            origin = __origin_of(origin, other_type.origin),
+            origin = origin_of(origin, other_type.origin),
             address_space=address_space,
         ],
     ):

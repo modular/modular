@@ -484,7 +484,7 @@ fn _log2_ceil(n: Int) -> Int:
 
 
 @always_inline
-fn _log2_ceil(n: Scalar) -> __type_of(n):
+fn _log2_ceil(n: Scalar) -> type_of(n):
     return {ceil(log2(Float64(n)))}
 
 
