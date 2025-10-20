@@ -19,7 +19,7 @@ from sys import external_call
 
 
 # TODO: When we have global variables, this should be a global list.
-fn argv() -> VariadicList[StringSlice[StaticConstantOrigin]]:
+fn argv() -> VariadicList[StaticString]:
     """Gets the list of command line arguments given to the `mojo` CLI.
 
     For example:
@@ -46,8 +46,8 @@ fn argv() -> VariadicList[StringSlice[StaticConstantOrigin]]:
         The list of command line arguments provided when mojo was invoked.
     """
     # SAFETY:
-    #   It is valid to use `StringSlice` here because `StringSlice` is
-    #   guaranteed to be ABI compatible with llvm::StringRef.
-    var result = VariadicList[StringSlice[StaticConstantOrigin]]("")
+    #   It is valid to use `StringSlice` (and thus `StaticString`) here because
+    #   `StringSlice` is guaranteed to be ABI compatible with `llvm::StringRef`.
+    var result = VariadicList[StaticString]("")
     external_call["KGEN_CompilerRT_GetArgV", NoneType](Pointer(to=result))
     return result

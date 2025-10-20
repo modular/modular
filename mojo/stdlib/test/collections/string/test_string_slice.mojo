@@ -959,9 +959,7 @@ def test_chars_iter():
 
 def test_string_slice_from_pointer():
     var a = StringSlice("AAA")
-    var b = StringSlice[StaticConstantOrigin](
-        unsafe_from_utf8_ptr=a.unsafe_ptr()
-    )
+    var b = StaticString(unsafe_from_utf8_ptr=a.unsafe_ptr())
     assert_equal(3, len(a))
     assert_equal(3, len(b))
     var c = "ABCD"
