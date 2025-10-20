@@ -28,9 +28,6 @@ from sys.info import simd_width_of
 from algorithm import vectorize
 from memory import Pointer
 
-from compile import get_type_name
-from builtin.device_passable import DevicePassable
-
 
 @fieldwise_init
 struct _SpanIter[
@@ -85,7 +82,7 @@ struct Span[
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-](Boolable, Defaultable, DevicePassable, ImplicitlyCopyable, Movable, Sized):
+](Boolable, Defaultable, ImplicitlyCopyable, Movable, Sized):
     """A non-owning view of contiguous data.
 
     Parameters:
@@ -110,33 +107,6 @@ struct Span[
     # Fields
     var _data: Self.UnsafePointerType
     var _len: Int
-
-    alias device_type: AnyType = Self
-
-    fn _to_device_type(self, target: OpaquePointer):
-        """Convert the host type object to a device_type and store it at the
-        target address.
-
-        Args:
-            target: The target address to store the device type.
-        """
-        target.bitcast[Self.device_type]()[] = self
-
-    @staticmethod
-    fn get_type_name() -> String:
-        return String(
-            "Span[",
-            get_type_name[T](),
-            ", ",
-            get_type_name[origin](),
-            ", ",
-            String(address_space),
-            "]",
-        )
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     # ===------------------------------------------------------------------===#
     # Life cycle methods
