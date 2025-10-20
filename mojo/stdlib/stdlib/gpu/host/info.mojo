@@ -567,6 +567,40 @@ alias JetsonThor = GPUInfo.from_family(
 )
 
 # ===-----------------------------------------------------------------------===#
+# DGX Spark
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_dgx_spark_target() -> _TargetType:
+    """Creates an MLIR target configuration for NVIDIA DGX Spark.
+
+    Returns:
+        MLIR target configuration for DGX Spark.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_121", `,
+        `features = "+ptx86,+sm_121", `,
+        `tune_cpu = "sm_121", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+alias DGXSpark = GPUInfo.from_family(
+    family=NvidiaBlackwellFamily,
+    name="DGX Spark",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="blackwell",
+    compute=12.1,
+    version="sm_121",
+    sm_count=48,
+)
+
+# ===-----------------------------------------------------------------------===#
 # L4
 # ===-----------------------------------------------------------------------===#
 
@@ -1395,6 +1429,8 @@ struct GPUInfo(Identifiable, Stringable, Writable):
             return _get_h100_target()
         if self.name == "B100" or self.name == "B200":
             return _get_b100_target()
+        if self.name == "DGX Spark":
+            return _get_dgx_spark_target()
         if self.name == "RTX5090":
             return _get_rtx5090_target()
         if self.name == "Jetson Thor":
@@ -1684,6 +1720,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
             StaticString("110a"),
             StaticString("120"),
             StaticString("120a"),
+            StaticString("121"),
+            StaticString("121a"),
             # AMD
             StaticString("mi300x"),
             StaticString("mi355x"),
@@ -1736,6 +1774,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         return materialize[JetsonThor]()
     elif target_arch == "120" or target_arch == "120a":
         return materialize[RTX5090]()
+    elif target_arch == "121" or target_arch == "121a":
+        return materialize[DGXSpark]()
     elif target_arch == "gfx942" or target_arch == "mi300x":
         return materialize[MI300X]()
     elif target_arch == "gfx950" or target_arch == "mi355x":

@@ -131,6 +131,8 @@ what we publish.
 
 - Added support for NVIDIA Jetson Thor.
 
+- Added support for NVIDIA DGX Spark.
+
 - `Optional` now conforms to `Iterable` and `Iterator` acting as a collection of
   size 1 or 0.
 
