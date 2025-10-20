@@ -471,7 +471,7 @@ class MultimodalKVCacheManager:
         return 0
 
     def external_claim(
-        self, request_id: RequestID, replica_idx: int = 0
+        self, request_id: RequestID, replica_idx: int | None = None
     ) -> None:
         """Reserves sequence IDs for the given request ID in both modalities' KV caches.
 
