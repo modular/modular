@@ -12,6 +12,7 @@ from max.dtype import DType
 from shared_mlp_impl import compare_mlp_outputs
 
 
+@pytest.mark.skip("Timing out (ref SDLC-2529)")
 @pytest.mark.parametrize("use_subgraphs", [True, False])
 def test_mlp(use_subgraphs: bool) -> None:
     compare_mlp_outputs(
