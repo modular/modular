@@ -31,7 +31,7 @@ from gpu.memory import (
     AddressSpace,
     async_copy,
 )
-from ....structuring import SharedMemBarrier, SMemBarrier
+from ....structuring import SharedMemBarrier, SMemBarrier, SMemTileType
 from layout.swizzle import make_swizzle
 from gpu.id import thread_idx
 from sys import simd_width_of
@@ -39,68 +39,112 @@ from gpu.host._nvidia_cuda import TensorMapSwizzle
 from layout.layout import coalesce
 
 
-trait ScatterGatherTrait:
-    alias dtype: DType
+@register_passable("trivial")
+trait ScatterGather:
+    """Base trait for tile loading mechanisms in matrix multiplication.
 
-    fn load_tile[
-        dst_layout: Layout,
-    ](
+    This trait defines the interface for loading tiles from global memory
+    to shared memory, abstracting over different hardware mechanisms.
+    """
+
+    alias _dtype: DType
+
+    @always_inline
+    fn load_tile(
         self,
-        dst: LayoutTensor[
-            Self.dtype,
-            dst_layout,
-            MutableAnyOrigin,
-            address_space = AddressSpace.SHARED,
-            alignment=128,
-            *_, **_,
-        ],
+        dst: SMemTileType[Self._dtype, _, alignment=128],
+        mem_barrier: SMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
+        """Load a tile from global memory to shared memory.
+
+        Args:
+            dst: Destination tile in shared memory (must be 128-byte aligned).
+            mem_barrier: Memory barrier for synchronization.
+            coords: Tile coordinates (row, column) in the source matrix.
+        """
         ...
 
 
+@register_passable("trivial")
 struct ScatterGatherTMA[
-    _dtype: DType,
+    tma_origin: Origin[False],
+    dtype: DType,
     tile_layout: Layout,
     desc_layout: Layout,
-    cluster_size: Int,
+    /,
+    *,
+    BK: UInt,
+    cluster_size: Int32,
     use_partitioned_multicast: Bool,
-](ScatterGatherTrait):
-    alias dtype = _dtype
+](ScatterGather):
+    """TMA-based tile loader for hardware-accelerated memory transfers.
 
-    var tma_op: TMATensorTile[Self.dtype, tile_layout, desc_layout]
-    var mem_barrier: SMemBarrier
+    This loader uses NVIDIA's Tensor Memory Accelerator (TMA) for efficient
+    2D tile transfers from global to shared memory, with optional multicast
+    support for multi-block clusters.
+
+    Parameters:
+        tma_origin: Origin type for the TMA operation.
+        dtype: Data type of the elements being loaded.
+        tile_layout: Layout of the complete tile in shared memory.
+        desc_layout: Layout described by the TMA descriptor (may be smaller).
+        BK: Block size in the K dimension (for coordinate conversion).
+        cluster_size: Number of blocks in the cluster (1 for no clustering).
+        use_partitioned_multicast: Whether to use partitioned multicast loading.
+    """
+
+    alias _dtype = Self.dtype
+
+    alias TMATensorTilePtr = Pointer[
+        TMATensorTile[dtype, tile_layout, desc_layout], tma_origin
+    ]
+    var tma_op: Self.TMATensorTilePtr
     var rank: UInt
     var multicast_mask: UInt16
 
     @always_inline
     fn __init__(
         out self,
-        tma_op: TMATensorTile[Self.dtype, tile_layout, desc_layout],
-        mem_barrier: SMemBarrier,
+        tma_op: Self.TMATensorTilePtr,
         rank: UInt,
-        coords: Tuple[UInt, UInt],
         multicast_mask: UInt16,
     ):
+        """Initialize the TMA tile loader.
+
+        Args:
+            tma_op: Pointer to the TMA tensor descriptor.
+            rank: Rank of this block within the cluster.
+            multicast_mask: Bit mask for multicast targets.
+        """
         self.tma_op = tma_op
-        self.mem_barrier = mem_barrier
         self.rank = rank
         self.multicast_mask = multicast_mask
 
-    fn load_tile[
-        dst_layout: Layout,
-    ](
+    @always_inline
+    fn load_tile(
         self,
-        dst: LayoutTensor[
-            Self.dtype,
-            dst_layout,
-            MutableAnyOrigin,
-            address_space = AddressSpace.SHARED,
-            alignment=128,
-            *_, **_,
-        ],
-        coords: Tuple[UInt, UInt],
+        dst: SMemTileType[Self._dtype, _, alignment=128],
+        mem_barrier: SMemBarrier,
+        _coords: Tuple[UInt, UInt],
     ):
+        """Load a tile using TMA hardware acceleration.
+
+        Converts tile indices to element coordinates and initiates a TMA
+        transfer. For clusters, uses multicast to share data across blocks.
+
+        Args:
+            dst: Destination tile in shared memory.
+            mem_barrier: Memory barrier for synchronization.
+            _coords: Tile coordinates (row_tile_idx, col_tile_idx).
+
+        Note:
+            Coordinates are converted from (row, col) tile indices to
+            (k_elements, row/col_elements) for TMA's K-major ordering.
+        """
+        # Switch coordinates to k-minor and multiply k by BK to match the CPAsync API.
+        var coords = (_coords[1] * BK, _coords[0])  # (m/n, k) -> (k, m/n)
+
         alias tma_load_size = desc_layout.size()
         alias tma_rows = desc_layout.shape[0].value()
 
@@ -112,11 +156,11 @@ struct ScatterGatherTMA[
             if use_partitioned_multicast:
                 # Partitioned multicast: Each block loads a portion of the tile
                 # This is more efficient for large tiles as it distributes the load
-                self.tma_op.async_multicast_load_partitioned[
+                self.tma_op[].async_multicast_load_partitioned[
                     tma_rows, tma_load_size
                 ](
                     dst,
-                    self.mem_barrier[],
+                    mem_barrier[],
                     self.rank,
                     coords,
                     self.multicast_mask,
@@ -126,224 +170,97 @@ struct ScatterGatherTMA[
                 # Standard multicast: Only rank 0 loads and broadcasts to others
                 # This is simpler but can create a bottleneck for large tiles
                 if self.rank == 0:
-                    self.tma_op.async_multicast_load(
+                    self.tma_op[].async_multicast_load(
                         dst,
-                        self.mem_barrier[],
+                        mem_barrier[],
                         coords,
                         self.multicast_mask,
                     )
 
         else:
             # Single block: Direct TMA copy without multicast overhead
-            self.tma_op.async_copy(
-                dst,
-                self.mem_barrier[],
-                coords,
-            )
-
-
-struct ScatterGatherCP[
-    _dtype: DType,
-    src_layout: Layout,
-    thread_layout: Layout,
-    swizzle_mode: TensorMapSwizzle,
-    vector_size: Int,
-](ScatterGatherTrait):
-    alias dtype = _dtype
-
-    alias SrcTensor = LayoutTensor[
-        Self.dtype,
-        src_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.GENERIC,
-    ]
-
-    var src: Self.SrcTensor
-
-    @always_inline
-    fn __init__(out self, src: Self.SrcTensor):
-        self.src = src
-
-    fn load_tile[
-        dst_layout: Layout,
-    ](
-        self,
-        dst: LayoutTensor[
-            Self.dtype,
-            dst_layout,
-            MutableAnyOrigin,
-            address_space = AddressSpace.SHARED,
-            alignment=128,
-            *_, **_,
-        ],
-        coords: Tuple[UInt, UInt],
-    ):
-        # Coalesce the destination layout for optimal memory access patterns
-        alias coalesced_dst_layout = coalesce(dst_layout)
-        alias BM = coalesced_dst_layout.shape[0].value()
-        alias BN = coalesced_dst_layout.shape[1].value()
-
-        # Extract the requested tile from global memory and vectorize it
-        var a_gmem_tile = self.src.tile[BM, BN](
-            Int(coords[0]),
-            Int(coords[1]),
-        ).vectorize[1, vector_size]()
-
-        # Perform the async copy with bounds checking and swizzling
-        async_copy_with_bound_check[
-            thread_layout,
-            swizzle_mode,
-        ](a_gmem_tile, dst.vectorize[1, vector_size]())
-
-
-@register_passable("trivial")
-struct ScatterGather:
-    """Utilities for efficient tile loading from global to shared memory.
-
-    This struct provides static methods for loading matrix tiles using either
-    TMA (Tensor Memory Accelerator) or cp.async instructions, depending on the
-    hardware capabilities and memory alignment requirements.
-    """
-
-    @staticmethod
-    @always_inline
-    fn load_tile[
-        dtype: DType,
-        tile_layout: Layout,
-        desc_layout: Layout,
-        dst_layout: Layout, //,
-        cluster_size: Int,
-        use_partitioned_multicast: Bool,
-    ](
-        tma_op: TMATensorTile[dtype, tile_layout, desc_layout],
-        dst: LayoutTensor[
-            dtype,
-            dst_layout,
-            MutableAnyOrigin,
-            address_space = AddressSpace.SHARED,
-            alignment=128,
-            *_, **_,
-        ],
-        mem_barrier: SMemBarrier,
-        rank: UInt,
-        coords: Tuple[UInt, UInt],
-        multicast_mask: UInt16,
-    ):
-        """Load a tile using TMA (Tensor Memory Accelerator) with optional multicast.
-
-        This method uses hardware-accelerated TMA instructions to efficiently load
-        2D tiles from global memory to shared memory. It supports multicasting the
-        load across multiple thread blocks in a cluster for improved efficiency.
-
-        Template Parameters:
-            dtype: Data type of the tile elements.
-            tile_layout: Layout of the source tile in global memory.
-            desc_layout: Layout described by the TMA descriptor.
-            dst_layout: Layout of the destination tile in shared memory.
-            cluster_size: Number of blocks in the cluster (1 for single-block).
-            use_partitioned_multicast: Whether to use partitioned multicast mode.
-
-        Args:
-            tma_op: TMA descriptor for the tile operation.
-            dst: Destination tensor in shared memory.
-            mem_barrier: Barrier for synchronizing the TMA operation.
-            rank: Rank of this block within the cluster.
-            coords: (row, col) coordinates of the tile to load.
-            multicast_mask: Bitmask indicating which blocks receive the data.
-        """
-        alias tma_load_size = desc_layout.size()
-        alias tma_rows = desc_layout.shape[0].value()
-
-        @parameter
-        if cluster_size > 1:
-            # Multi-block cluster: Use multicast to share data across blocks
-
-            @parameter
-            if use_partitioned_multicast:
-                # Partitioned multicast: Each block loads a portion of the tile
-                # This is more efficient for large tiles as it distributes the load
-                tma_op.async_multicast_load_partitioned[
-                    tma_rows, tma_load_size
-                ](
-                    dst,
-                    mem_barrier[],
-                    rank,
-                    coords,
-                    multicast_mask,
-                )
-
-            else:
-                # Standard multicast: Only rank 0 loads and broadcasts to others
-                # This is simpler but can create a bottleneck for large tiles
-                if rank == 0:
-                    tma_op.async_multicast_load(
-                        dst,
-                        mem_barrier[],
-                        coords,
-                        multicast_mask,
-                    )
-
-        else:
-            # Single block: Direct TMA copy without multicast overhead
-            tma_op.async_copy(
+            self.tma_op[].async_copy(
                 dst,
                 mem_barrier[],
                 coords,
             )
 
-    @staticmethod
+
+@register_passable("trivial")
+struct ScatterGatherCPAsync[
+    dtype: DType,
+    src_layout: Layout,
+    thread_layout: Layout,
+    swizzle_mode: TensorMapSwizzle,
+    vector_size: Int,
+](ScatterGather):
+    """Software-based tile loader using cp.async instructions.
+
+    This loader uses CUDA's cp.async instructions for asynchronous memory
+    transfers with manual bounds checking and shared memory swizzling for
+    optimal bank conflict avoidance.
+
+    Parameters:
+        dtype: Data type of the elements being loaded.
+        src_layout: Layout of the source matrix in global memory.
+        thread_layout: Thread arrangement for distributed copying.
+        swizzle_mode: Swizzling pattern for shared memory access.
+        vector_size: Number of elements loaded per thread.
+    """
+
+    alias _dtype = Self.dtype
+
+    var src: LayoutTensor[
+        dtype,
+        src_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.GENERIC,
+    ]
+
     @always_inline
-    fn load_tile[
-        dtype: DType,
-        src_layout: Layout,
-        dst_layout: Layout, //,
-        thread_layout: Layout,
-        swizzle_mode: TensorMapSwizzle,
-        vector_size: Int,
-    ](
+    fn __init__(
+        out self,
         src: LayoutTensor[
             dtype,
             src_layout,
             MutableAnyOrigin,
             address_space = AddressSpace.GENERIC,
-            *_, **_,
         ],
-        dst: LayoutTensor[
-            dtype,
-            dst_layout,
-            MutableAnyOrigin,
-            address_space = AddressSpace.SHARED,
-            alignment=128,
-            *_, **_,
-        ],
-        coords: Tuple[UInt, UInt],
     ):
-        """Load a tile using cp.async instructions with bounds checking.
-
-        This method uses cp.async instructions for asynchronous memory copies when
-        TMA is not available or suitable. It handles unaligned memory access and
-        performs bounds checking to ensure safe operation.
-
-        Template Parameters:
-            dtype: Data type of the tile elements.
-            src_layout: Layout of the source tile in global memory.
-            dst_layout: Layout of the destination tile in shared memory.
-            thread_layout: Layout describing how threads map to data.
-            swizzle_mode: Swizzling pattern for optimal shared memory access.
-            vector_size: Number of elements to load per thread at once.
+        """Initialize the cp.async tile loader.
 
         Args:
             src: Source tensor in global memory.
-            dst: Destination tensor in shared memory.
-            coords: Coordinates of the tile to load.
+        """
+        self.src = src
+
+    fn load_tile(
+        self,
+        dst: SMemTileType[Self._dtype, _, alignment=128],
+        mem_barrier: SMemBarrier,
+        coords: Tuple[UInt, UInt],
+    ):
+        """Load a tile using cp.async instructions.
+
+        Extracts a tile from the source tensor and performs an asynchronous
+        copy to shared memory with bounds checking and swizzling.
+
+        Args:
+            dst: Destination tile in shared memory.
+            mem_barrier: Memory barrier for synchronization (currently unused).
+            coords: Tile indices (row_tile, col_tile) in the source matrix.
+
+        Note:
+            Unlike TMA, this method expects tile indices and handles the
+            conversion to element offsets internally via the tile() method.
         """
         # Coalesce the destination layout for optimal memory access patterns
-        alias coalesced_dst_layout = coalesce(dst_layout)
+        alias coalesced_dst_layout = coalesce(dst.layout)
         alias BM = coalesced_dst_layout.shape[0].value()
         alias BN = coalesced_dst_layout.shape[1].value()
 
         # Extract the requested tile from global memory and vectorize it
-        var a_gmem_tile = src.tile[BM, BN](
+        var a_gmem_tile = self.src.tile[BM, BN](
             Int(coords[0]),
             Int(coords[1]),
         ).vectorize[1, vector_size]()
