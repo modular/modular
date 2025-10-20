@@ -5,10 +5,38 @@
 from collections.abc import Callable
 from typing import overload
 
+import max._mlir._mlir_libs._mlir.ir
 import max._mlir.ir
 
 class PatternRewriter:
-    pass
+    @property
+    def ip(self) -> max._mlir._mlir_libs._mlir.ir.InsertionPoint:
+        """The current insertion point of the PatternRewriter."""
+
+    @overload
+    def replace_op(
+        self, op: max._mlir.ir.Operation, new_op: max._mlir.ir.Operation
+    ) -> None:
+        """Replace an operation with a new operation."""
+
+    @overload
+    def replace_op(
+        self, op: max._mlir.ir.Operation, values: list[max._mlir.ir.Value]
+    ) -> None:
+        """Replace an operation with a list of values."""
+
+    def erase_op(self, op: max._mlir.ir.Operation) -> None:
+        """Erase an operation."""
+
+class RewritePatternSet:
+    def __init__(self, context: Context | None = None) -> None: ...
+    def add(self, root: object, fn: Callable, benefit: int = 1) -> None:
+        """
+        Add a new rewrite pattern on the given root operation with the callable as the matching and rewriting function and the given benefit.
+        """
+
+    def freeze(self) -> FrozenRewritePatternSet:
+        """Freeze the pattern set into a frozen one."""
 
 class PDLResultList:
     @overload

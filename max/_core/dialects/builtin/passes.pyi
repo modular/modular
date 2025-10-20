@@ -135,7 +135,7 @@ def ControlFlowSink() -> max._core.Pass:
     sunk as they may contain uses of their results
     """
 
-def GenerateRuntimeVerification() -> max._core.Pass:
+def GenerateRuntimeVerification(verbose_level: int = 1) -> max._core.Pass:
     """
     This pass generates op-specific runtime checks using the
     `RuntimeVerifiableOpInterface`. It can be run for debugging purposes after

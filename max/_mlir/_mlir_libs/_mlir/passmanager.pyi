@@ -2,10 +2,16 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+import enum
 from collections.abc import Callable
 from typing import overload
 
 import max._mlir.ir
+
+class PassDisplayMode(enum.Enum):
+    LIST = 0
+
+    PIPELINE = 1
 
 class ExternalPass:
     def signal_pass_failure(self) -> None: ...
@@ -38,6 +44,11 @@ class PassManager:
 
     def enable_timing(self) -> None:
         """Enable pass timing."""
+
+    def enable_statistics(
+        self, displayMode: PassDisplayMode = PassDisplayMode.PIPELINE
+    ) -> None:
+        """Enable pass statistics."""
 
     @staticmethod
     def parse(
