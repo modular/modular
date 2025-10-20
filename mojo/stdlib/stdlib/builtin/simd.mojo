@@ -612,9 +612,6 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             value: The object to get the float point representation of.
         """
-
-        # TODO(MOCO-2186): remove when the parser ensures this for constructors.
-        constrained[_type_is_eq[type_of(self), Self]()]()
         self = value.__float__()
 
     @always_inline
@@ -630,8 +627,6 @@ struct SIMD[dtype: DType, size: Int](
         Raises:
             If the type does not have a float point representation.
         """
-        # TODO(MOCO-2186): remove when the parser ensures this for constructors.
-        constrained[_type_is_eq[type_of(self), Self]()]()
         self = value.__float__()
 
     @always_inline("nodebug")
@@ -686,11 +681,6 @@ struct SIMD[dtype: DType, size: Int](
             ),
         ]()
 
-        # TODO(MOCO-2186): remove when the parser ensures this for constructors.
-        constrained[
-            _type_is_eq[type_of(self), Self](),
-            "Target type doesn't support conversion from `Bool`",
-        ]()
         _simd_construction_checks[dtype, size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<bool>`
@@ -707,11 +697,6 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             fill: The bool value to fill each element of the SIMD vector with.
         """
-        # TODO(MOCO-2186): remove when the parser ensures this for constructors.
-        constrained[
-            _type_is_eq[type_of(self), Self](),
-            "Target type doesn't support conversion from `Bool`",
-        ]()
         _simd_construction_checks[dtype, size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<bool>`
