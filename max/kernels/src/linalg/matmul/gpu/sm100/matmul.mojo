@@ -1827,7 +1827,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
             ptr=UnsafePointer[UInt64, origin=MutableAnyOrigin](), length=0
         )
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
