@@ -17,6 +17,7 @@ from .manager import (
     KVCacheInputsSequence,
     RaggedKVCacheInputs,
 )
+from .metrics import KVCacheMetrics
 from .paged_cache import (
     DPPagedKVCacheManager,
     KVTransferEngine,
@@ -38,6 +39,7 @@ __all__ = [
     "DPPagedKVCacheManager",
     "KVCacheInputs",
     "KVCacheInputsSequence",
+    "KVCacheMetrics",
     "KVCacheParams",
     "KVCacheStrategy",
     "KVTransferEngine",

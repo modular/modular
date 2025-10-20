@@ -490,14 +490,25 @@ class KVCacheMixin(Protocol):
 def get_paged_manager(
     pipeline: Pipeline[Any, Any],
 ) -> TPPagedKVCacheManager | None:
-    if (
-        hasattr(pipeline, "_pipeline_model")
-        and hasattr(pipeline._pipeline_model, "kv_manager")
-        and isinstance(
-            pipeline._pipeline_model.kv_manager, TPPagedKVCacheManager
-        )
+    if hasattr(pipeline, "_pipeline_model") and hasattr(
+        pipeline._pipeline_model, "kv_manager"
     ):
-        return pipeline._pipeline_model.kv_manager
+        kv_manager = pipeline._pipeline_model.kv_manager
+        # Accept standard TPPagedKVCacheManager
+        if isinstance(kv_manager, TPPagedKVCacheManager):
+            return kv_manager
+        # Duck-type acceptance for multimodal managers exposing the same interface
+        required_attrs = [
+            "maybe_reserve",
+            "fetch",
+            "step",
+            "release",
+            "contains",
+            "device_tensors",
+            "total_num_pages",
+        ]
+        if all(hasattr(kv_manager, a) for a in required_attrs):
+            return kv_manager
 
     return None
 

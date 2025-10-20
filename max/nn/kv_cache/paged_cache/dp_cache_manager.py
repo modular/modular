@@ -27,8 +27,8 @@ from max.interfaces import RequestID, TextGenerationContext
 from ..cache_params import KVCacheParams
 from ..data_parallelism_utils import split_input_row_offsets, split_into_groups
 from ..manager import RaggedKVCacheInputs
+from ..metrics import KVCacheMetrics
 from .tp_cache_manager import (
-    KVCacheMetrics,
     PagedCacheInputSymbols,
     TPPagedKVCacheManager,
 )

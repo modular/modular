@@ -48,9 +48,10 @@ from max.support.math import ceildiv
 
 from ..cache_params import KVCacheParams
 from ..manager import RaggedKVCacheInputs
+from ..metrics import KVCacheMetrics
 from ..utils import build_max_lengths_tensor
 from .block_copy_engine import BlockCopyEngine
-from .block_manager import BlockManager, InsufficientBlocksError, KVCacheMetrics
+from .block_manager import BlockManager, InsufficientBlocksError
 
 logger = logging.getLogger("max.pipelines")
 
