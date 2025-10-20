@@ -114,7 +114,10 @@ def main():
 
     var ctx = DeviceContext()
 
-    ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
+    ctx.enqueue_function_checked[printing_kernel, printing_kernel](
+        grid_dim=1,
+        block_dim=4
+    )
     ctx.synchronize()
 ```
 
@@ -163,8 +166,8 @@ condition. See [Functions](/mojo/manual/functions) more information.
 
 :::
 
-We can pass this function as a parameter to `enqueue_function()` to compile it
-for your attached GPU and launch it. First we need to get the
+We can pass this function as a parameter to `enqueue_function_checked()` to
+compile it for your attached GPU and launch it. First we need to get the
 [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext) for your
 GPU:
 
@@ -175,7 +178,10 @@ var ctx = DeviceContext()
 Now we have the `DeviceContext` we can compile and launch the kernel:
 
 ```mojo :once
-ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
+ctx.enqueue_function_checked[printing_kernel, printing_kernel](
+    grid_dim=1,
+    block_dim=4
+)
 
 # Wait for the kernel to finish executing before handing back to CPU
 ctx.synchronize()
@@ -216,7 +222,10 @@ using a tuple with up to three values will determine the (x, y, z) dimensions.
 :::
 
 ```mojo :once
-ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=(2, 2, 2))
+ctx.enqueue_function_checked[printing_kernel, printing_kernel](
+    grid_dim=1,
+    block_dim=(2, 2, 2)
+)
 ctx.synchronize()
 ```
 
@@ -245,7 +254,10 @@ instance, printing from the CPU without first synchronizing might result in
 out-of-order output:
 
 ```mojo :once
-ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
+ctx.enqueue_function_checked[printing_kernel, printing_kernel](
+    grid_dim=1,
+    block_dim=4
+)
 print("This might print before the GPU has completed its work")
 ```
 
@@ -262,7 +274,10 @@ host, the device could be slightly slower to finish its work, so you might
 see that output after the host output. Let's add a `synchronize()` call:
 
 ```mojo :once
-ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
+ctx.enqueue_function_checked[printing_kernel, printing_kernel](
+    grid_dim=1,
+    block_dim=4
+)
 ctx.synchronize()
 print("This will print after the GPU has completed its work")
 ```
@@ -322,7 +337,10 @@ fn block_kernel():
         "]"
     )
 
-ctx.enqueue_function[block_kernel](grid_dim=(2, 2), block_dim=2)
+ctx.enqueue_function_checked[block_kernel, block_kernel](
+    grid_dim=(2, 2),
+    block_dim=2
+)
 ctx.synchronize()
 ```
 
@@ -476,8 +494,10 @@ fn print_values_kernel(in_tensor: InTensor):
     var tid = thread_idx.x
     print("block:", bid, "thread:", tid, "val:", in_tensor[bid, tid])
 
-ctx.enqueue_function[print_values_kernel](
-    in_tensor, grid_dim=blocks, block_dim=threads,
+ctx.enqueue_function_checked[print_values_kernel, print_values_kernel](
+    in_tensor,
+    grid_dim=blocks,
+    block_dim=threads
 )
 ctx.synchronize()
 ```
@@ -515,10 +535,10 @@ launch a kernel to multiply each value:
 fn multiply_kernel[multiplier: Int](in_tensor: InTensor):
     in_tensor[block_idx.x, thread_idx.x] *= multiplier
 
-ctx.enqueue_function[multiply_kernel[2]](
+ctx.enqueue_function_checked[multiply_kernel[2], multiply_kernel[2]](
     in_tensor,
     grid_dim=blocks,
-    block_dim=threads,
+    block_dim=threads
 )
 
 # Map to host and print as 2D array
@@ -597,11 +617,11 @@ fn sum_reduce_kernel(
         for i in range(threads):
             out_tensor[block_idx.x] += shared[i]
 
-ctx.enqueue_function[sum_reduce_kernel](
+ctx.enqueue_function_checked[sum_reduce_kernel, sum_reduce_kernel](
     in_tensor,
     out_tensor,
     grid_dim=blocks,
-    block_dim=threads,
+    block_dim=threads
 )
 
 # Copy the data back to the host and print out the buffer
@@ -640,11 +660,11 @@ fn simd_reduce_kernel(
     # The [4] means it loads 4 sequential values before doing the `reduce_add`
     out_tensor[block_idx.x] = in_tensor.load[4](block_idx.x, 0).reduce_add()
 
-ctx.enqueue_function[simd_reduce_kernel](
+ctx.enqueue_function_checked[simd_reduce_kernel, simd_reduce_kernel](
     in_tensor,
     out_tensor,
     grid_dim=blocks,
-    block_dim=1, # one thread per block
+    block_dim=1  # one thread per block
 )
 
 # Ensure we have the same result
@@ -703,11 +723,11 @@ fn warp_reduce_kernel(
     if thread_idx.x == 0:
         out_tensor[block_idx.x] = value
 
-ctx.enqueue_function[warp_reduce_kernel](
+ctx.enqueue_function_checked[warp_reduce_kernel, warp_reduce_kernel](
     in_tensor,
     out_tensor,
     grid_dim=blocks,
-    block_dim=threads,
+    block_dim=threads
 )
 
 # Ensure we have the same result
@@ -796,11 +816,11 @@ fn reduce_sum(in_tensor: InTensor, out_tensor: OutTensor):
     if thread_idx.x == 0:
         out_tensor[block_idx.x] = value
 
-ctx.enqueue_function[reduce_sum](
+ctx.enqueue_function_checked[reduce_sum, reduce_sum](
     in_tensor,
     out_tensor,
     grid_dim=blocks,
-    block_dim=threads,
+    block_dim=threads
 )
 
 with out_buffer.map_to_host() as host_buffer:
