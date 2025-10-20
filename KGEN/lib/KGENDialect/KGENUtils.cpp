@@ -1065,6 +1065,34 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
         return success();
       }
 
+      if (keyword == "conforms_to" && operandType) {
+        TypedAttr operand;
+        if (parseParamValue(p, operand, operandType))
+          return failure();
+
+        SmallVector<TypedAttr> traitNames;
+        auto parseSingleName = [&]() -> ParseResult {
+          std::string name;
+          if (p.parseString(&name))
+            return failure();
+          traitNames.emplace_back(
+              StringAttr::get(name, KGEN::StringType::get(p.getContext())));
+          return success();
+        };
+
+        if (p.parseComma() ||
+            p.parseCommaSeparatedList(AsmParser::Delimiter::Square,
+                                      parseSingleName) ||
+            p.parseRParen())
+          return failure();
+
+        auto nameVariadic = VariadicAttr::get(
+            traitNames,
+            VariadicType::get(KGEN::StringType::get(p.getContext())));
+        value = TypeConformsToTraitAttr::get(operand, nameVariadic);
+        return success();
+      }
+
       return p.emitError(loc, "unknown expression ") << keyword;
     }
 
@@ -1368,6 +1396,20 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
     }
 
     return printExpr(stringifyEnum(expr.getOpcode()), expr.getOperands());
+  }
+
+  if (auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(value)) {
+    p << "conforms_to(:";
+    printKGENType(p, conformsTo.getTypeValue().getType());
+    p << ' ';
+    printParamValue(p, conformsTo.getTypeValue());
+    p << ", [";
+    llvm::interleaveComma(
+        conformsTo.getTraitNames().getValues(), p, [&](TypedAttr traitName) {
+          p.printString(cast<StringAttr>(traitName).getValue());
+        });
+    p << "])";
+    return;
   }
 
   // Handle other expressions with the same syntax as ParamOperatorAttr
