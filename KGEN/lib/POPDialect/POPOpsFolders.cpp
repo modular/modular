@@ -3335,8 +3335,9 @@ VariantDiscrGEPOp::parametric_compile(Payload &payload, TargetInfoAttr target,
   if (!target)
     return Error("requires a target model");
 
-  auto variantType = cast<PointerType>(cast<TypedAttr>(operands[0]).getType())
-                         .getElementAs<VariantType>();
+  auto variantType =
+      cast<PointerType>(state.getReboundTypeAlways(getVariant().getType()))
+          .getElementAs<VariantType>();
   std::optional<int64_t> size = variantType.getContentSize(target);
   if (!size)
     return Error("failed to compute size");

@@ -487,6 +487,9 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateExpression(
     return evaluateGetLinkageNameAttr(getLinkageNameAttr);
   if (auto getTypeNameAttr = dyn_cast<GetTypeNameAttr>(attr))
     return evaluateGetTypeNameAttr(getTypeNameAttr);
+  if (auto typeConformToTraitAttr = dyn_cast<TypeConformsToTraitAttr>(attr))
+    return evaluateTypeConformToTraitAttr(typeConformToTraitAttr);
+
   if (auto compileOffloadClosureAttr =
           dyn_cast<CompileOffloadClosureAttr>(attr))
     return evaluateCompileOffloadClosureAttr(compileOffloadClosureAttr);
@@ -495,7 +498,8 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateExpression(
 
   // Must be a parameter operator then.
   auto op = dyn_cast<ParamOperatorAttr>(attr);
-  assert(op && "unknown attribute with ContextuallyEvaluatedAttrInterface");
+  if (!op)
+    assert(op && "unknown attribute with ContextuallyEvaluatedAttrInterface");
 
   // Try to narrow this operator to an expression we can evaluate. We only need
   // to emit an error during the evaluation attempt.
@@ -1162,6 +1166,37 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateGetTypeNameAttr(
   return {StringAttr::get(
       stringifyTypeInstanceRef(instanceRef, qualifiedBuiltins.getValue()),
       getTypeNameAttr.getType())};
+}
+
+FailureOr<TypedAttr> ParametricIREvaluator::evaluateTypeConformToTraitAttr(
+    TypeConformsToTraitAttr typeConformToTraitAttr) {
+  // This is the list of trait names (`alias T = T1 & T2 & ....`) we need to
+  // check.
+  auto traitNames =
+      dyn_cast<VariadicAttr>(typeConformToTraitAttr.getTraitNames());
+  if (!traitNames) {
+    emitError({*errorLoc, "'" + TypeConformsToTraitAttr::name + "'" +
+                              " did not narrow to concrete trait names"});
+    return failure();
+  }
+
+  // Find the struct generator for the instantiated type ref.
+  TypedAttr typeRef = typeConformToTraitAttr.getTypeValue();
+  if (!isa<TypeInstanceRefAttr>(typeRef)) {
+    typeRef = cast<TypeValueType>(cast<TypeParamAttr>(typeRef).getTypeValue())
+                  .getTypeValue();
+  }
+  TypeInstanceRefAttr instanceRef = cast<TypeInstanceRefAttr>(typeRef);
+  PParamNode *genNode =
+      elaborator->lookupImplNode(instanceRef.getSymbol())->parent;
+  StructGeneratorOp genOp = cast<StructGeneratorOp>(genNode->gen);
+
+  // Check when the struct conforms to all the traits.
+  for (auto toCheck : traitNames.getValues())
+    if (!genOp.lookupSymbol(cast<StringAttr>(toCheck).getValue()))
+      return {BoolAttr::get(getContext(), false)};
+
+  return {BoolAttr::get(getContext(), true)};
 }
 
 //===----------------------------------------------------------------------===//

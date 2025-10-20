@@ -1,4 +1,5 @@
-// RUN: kgen-opt %s -pass-pipeline='builtin.module(outline-closures,elaborate-generators,resolve-compiler-promises,automatic-inline,canonicalize)' | FileCheck %s
+// RUN: kgen-opt %s -pass-pipeline='builtin.module(outline-closures,elaborate-generators{use-parametric-interpret=false},resolve-compiler-promises,automatic-inline,canonicalize)' | FileCheck %s
+// RUN: kgen-opt %s -pass-pipeline='builtin.module(outline-closures,elaborate-generators{use-parametric-interpret=true},resolve-compiler-promises,automatic-inline,canonicalize)' | FileCheck %s
 
 // COM: https://github.com/modularml/modular/issues/19175
 

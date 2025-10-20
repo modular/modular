@@ -1,4 +1,5 @@
-// RUN: kgen-opt %s -elaborate-generators=elaborate-debuginfo=true -split-input-file -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt %s -elaborate-generators="elaborate-debuginfo=true use-parametric-interpret=false" -split-input-file -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt %s -elaborate-generators="elaborate-debuginfo=true use-parametric-interpret=true" -split-input-file -mlir-print-debuginfo | FileCheck %s
 
 // Check that debug info gets resolved during elaboration.
 

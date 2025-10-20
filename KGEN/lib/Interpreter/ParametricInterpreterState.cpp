@@ -14,10 +14,10 @@ using namespace M;
 ParametricInterpreterState::ParametricInterpreterState(MLIRContext *ctx,
                                                        unsigned maxDepth,
                                                        TargetInfoAttr target)
-    : InterpreterState(ctx, target) {}
+    : InterpreterState(ctx, target), maxDepth(maxDepth) {}
 ParametricInterpreterState::ParametricInterpreterState(unsigned maxDepth,
                                                        TargetInfoAttr target)
-    : InterpreterState(target) {}
+    : InterpreterState(target), maxDepth(maxDepth) {}
 
 /// Execute a region that has a ByRefResult argument.
 ErrorTreeOr<TypedAttr> ParametricInterpreterState::executeRegionWithResultSlot(

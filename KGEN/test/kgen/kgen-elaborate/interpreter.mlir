@@ -1,4 +1,5 @@
-// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=false" -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=false" -allow-unregistered-dialect | FileCheck --check-prefixes=CHECK,CHECK-MAIN %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=true" -allow-unregistered-dialect | FileCheck --check-prefixes=CHECK,CHECK-PARAM %s
 
 kgen.generator @recursive(%arg0: index) -> index {
   %idx1 = index.constant 1
@@ -173,9 +174,9 @@ kgen.generator @call_it() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @"rebind_value,dtype=ui8"
+// CHECK-MAIN-LABEL: kgen.func @"rebind_value,dtype=ui8"
 kgen.generator @rebind_value<dtype: dtype>(%a: !pop.scalar<ui8>) -> !pop.scalar<dtype> {
-  // CHECK-NEXT: return %arg0 : !pop.scalar<ui8>
+  // CHECK-MAIN-NEXT: return %arg0 : !pop.scalar<ui8>
   %result = kgen.rebind %a : !pop.scalar<ui8> to !pop.scalar<dtype>
   kgen.return %result : !pop.scalar<dtype>
 }
@@ -568,7 +569,7 @@ kgen.generator export @materialize() -> index {
 
 // -----
 
-// CHECK-DAG: #memory_handle = #interp.memory_handle<8, "0x0000000000000000">
+// CHECK-MAIN-DAG: #memory_handle = #interp.memory_handle<8, "0x0000000000000000">
 kgen.generator @target(%arg0 : index) -> index {
   kgen.return %arg0 : index
 }
@@ -577,10 +578,10 @@ kgen.generator @testExternalization(%arg0: !kgen.pointer<(index) -> index>) -> !
    kgen.return %arg0 : !kgen.pointer<(index) -> index>
 }
 
-// CHECK-LABEL: kgen.func @"testInternalization{{.*}}() -> index {
+// CHECK-MAIN-LABEL: kgen.func @"testInternalization{{.*}}() -> index {
 kgen.generator @testInternalization<ptr: !kgen.pointer<(index) -> index>>() -> index {
   %0 = kgen.param.constant = <7>
-  // CHECK: %pointer = kgen.param.constant: pointer<(index) -> index> = <#interp.memref<{[(#memory_handle, stack, [], [0])], [#kgen.symbol.constant<@target> : !kgen.generator<(index) -> index>]}, 0, 0>>
+  // CHECK-MAIN: %pointer = kgen.param.constant: pointer<(index) -> index> = <#interp.memref<{[(#memory_handle, stack, [], [0])], [#kgen.symbol.constant<@target> : !kgen.generator<(index) -> index>]}, 0, 0>>
   %pointer = kgen.param.constant: pointer<(index) -> index> = <ptr>
   %3 = pop.load %pointer : !kgen.pointer<(index) -> index>
   %4 = kgen.call_indirect %3(%0) : (index) -> index
@@ -628,11 +629,11 @@ kgen.generator export @top() {
 // The target symbol must have the following to trigger error state:
 // A bound parameter that contains a MemRef attribute
 // An unbound parameter (idx_type) to prevent the symbol from being concretized before its stored to mem.
-// CHECK-DAG: [[MHVal:#.*]] = #interp.memory_handle<64, "0x0300000000000000">
-// CHECK-DAG: [[MHSig:#.*]] = #interp.memory_handle<8, "0x0000000000000000">
-// CHECK-LABEL: kgen.func @"captureIt{{.*}}"(%arg0: index) -> index {
+// CHECK-MAIN-DAG: [[MHVal:#.*]] = #interp.memory_handle<64, "0x0300000000000000">
+// CHECK-MAIN-DAG: [[MHSig:#.*]] = #interp.memory_handle<8, "0x0000000000000000">
+// CHECK-MAIN-LABEL: kgen.func @"captureIt{{.*}}"(%arg0: index) -> index {
 kgen.generator @"captureIt"<dst_layout: pointer<index>, idx_type: dtype>(%arg0: index) -> index {
-  // CHECK-NEXT: %pointer = kgen.param.constant: pointer<index> = <#interp.memref<{[([[MHVal]], heap, [], []), ([[MHSig]], stack, [], [0])], [#kgen.symbol.constant<@captureIt<:pointer<index> #interp<coord(0, 0)>, :dtype ?>> : !kgen.generator<<dtype>(index) -> index>]}, 0, 0>>
+  // CHECK-MAIN-NEXT: %pointer = kgen.param.constant: pointer<index> = <#interp.memref<{[([[MHVal]], heap, [], []), ([[MHSig]], stack, [], [0])], [#kgen.symbol.constant<@captureIt<:pointer<index> #interp<coord(0, 0)>, :dtype ?>> : !kgen.generator<<dtype>(index) -> index>]}, 0, 0>>
   %pointer = kgen.param.constant: pointer<index> = <dst_layout>
   %3 = pop.load %pointer : !kgen.pointer<index>
   kgen.return %3 : index
@@ -826,6 +827,51 @@ kgen.generator export @top() -> () {
     )
   >
   kgen.return
+}
+
+// -----
+
+kgen.generator @count_to_zero(%arg0: !kgen.pointer<index> read_mem, %arg1: !kgen.pointer<index> byref_result) -> !kgen.none {
+  %i0 = pop.load %arg0 : !kgen.pointer<index>
+  %idx1 = index.constant 1
+  %1 = index.sub %i0, %idx1
+  pop.store %1, %arg1 : !kgen.pointer<index>
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+kgen.generator @count_to_zero_has_next(%arg0: index) -> i1 {
+  %idx0 = index.constant 0
+  %0 = index.cmp ne(%idx0, %arg0)
+  kgen.return %0 : i1
+}
+
+kgen.generator @sum_from_zero<upper>() -> index {
+  %idx0 = index.constant 0
+  %0 = kgen.param.for i in upper
+    has_next :(index) -> i1 @count_to_zero_has_next
+    get_next_iter :(!kgen.pointer<index> read_mem, !kgen.pointer<index> byref_result) -> !kgen.none @count_to_zero
+    (%arg0 = %idx0 : index) -> index {
+
+    kgen.param.if <apply(:!lit.generator<(index) -> i1> @count_to_zero_has_next, i)> {
+      %1 = kgen.param.constant = <i>
+      %2 = index.add %arg0, %1
+      kgen.param.for.continue %2 : index
+    } else {
+      kgen.param.for.break %arg0 : index
+    }
+    kgen.unreachable
+  } else {
+    kgen.unreachable
+  }
+  kgen.return %0 : index
+}
+
+// CHECK-PARAM-LABEL @top
+kgen.generator export @top()->() {
+    // CHECK-PARAM: kgen.param.materialize = <15>
+    %0 = kgen.param.materialize: index = <apply(:()-> index @sum_from_zero<:index 5>)>
+    kgen.return
 }
 
 // -----

@@ -1,4 +1,5 @@
-// RUN: kgen-opt %s -split-input-file -elaborate-generators -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=false" -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=true" -allow-unregistered-dialect | FileCheck %s
 
 kgen.generator @select_pred<*"cmp`2x": i1>() -> !kgen.deferred {
   kgen.param.if <*"cmp`2x"> {

@@ -191,6 +191,8 @@ private:
   FailureOr<TypedAttr>
   evaluateGetLinkageNameAttr(GetLinkageNameAttr getLinkageNameAttr);
   FailureOr<TypedAttr> evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr);
+  FailureOr<TypedAttr> evaluateTypeConformToTraitAttr(
+      TypeConformsToTraitAttr typeConformToTraitAttr);
   FailureOr<TypedAttr> evaluateCompileOffloadClosureAttr(
       CompileOffloadClosureAttr compileOffloadClosureAttr);
   FailureOr<TypedAttr> evaluateCompileAssemblyAttr(CompileAssemblyAttr attr);

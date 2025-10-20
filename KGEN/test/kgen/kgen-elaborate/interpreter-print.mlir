@@ -1,4 +1,5 @@
-// RUN: kgen-opt %s -elaborate-generators -o /dev/null | FileCheck %s
+// RUN: kgen-opt %s -elaborate-generators="use-parametric-interpret=false" -o /dev/null | FileCheck %s
+// RUN: kgen-opt %s -elaborate-generators="use-parametric-interpret=true" -o /dev/null | FileCheck %s
 
 // COM: pop.external call for 'write'
 
