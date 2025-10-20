@@ -4,6 +4,7 @@ mojo_library(
     name = "test_user_op",
     testonly = True,
     srcs = glob(["Inputs/test_user_op/*.mojo"]),
+    validate_missing_docs = False,
     visibility = ["//visibility:public"],
     deps = [
         "//SDK/lib/API/mojo/max/tensor",
@@ -16,6 +17,7 @@ mojo_library(
     name = "counter_ops",
     testonly = True,
     srcs = glob(["Inputs/counter_ops/*.mojo"]),
+    validate_missing_docs = False,
     visibility = [":__subpackages__"],
     deps = [
         "//SDK/lib/API/mojo/max/tensor",
@@ -29,6 +31,7 @@ mojo_library(
     name = "compile_config_ops",
     testonly = True,
     srcs = glob(["Inputs/compile_config_ops/*.mojo"]),
+    validate_missing_docs = False,
     visibility = [":__subpackages__"],
     deps = [
         "//SDK/lib/API/mojo/max/max",
@@ -43,6 +46,7 @@ mojo_library(
     name = "kernel_verification_ops",
     testonly = True,
     srcs = glob(["Inputs/kernel_verification_ops/*.mojo"]),
+    validate_missing_docs = False,
     visibility = [":__subpackages__"],
     deps = [
         "//SDK/lib/API/mojo/max/tensor",
