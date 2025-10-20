@@ -2435,9 +2435,12 @@ void ClosureEmitter::addConformanceToDevicePassable(
       auto parent = alias.getInheritedFrom();
       if (parent && parent != devicePassableSymbol)
         continue;
+      assert(alias.getDeclName().getValue().contains("device_type") &&
+             "we assume we are implementing device_type.");
       devicePassableWitnesses.push_back(
-          {alias.getDeclName().getValue(),
-           TypeParamAttr::get(paramType, paramType)});
+          {"device_type",
+           TypeParamAttr::get(structDecl.getTypeDeclSelf().mlirType,
+                              KGEN::TypeType::get(ctx))});
       continue;
     }
     llvm_unreachable(("unexpected member type '" +

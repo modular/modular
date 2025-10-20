@@ -472,7 +472,7 @@ fn makeIt[T: AnyTrivialRegType](a: T):
 
 fn conditionallyDevicePassable(x: Int):
     # CHECK: kgen.conformance @"{{.*}}::DevicePassable" {
-    # CHECK-NEXT: kgen.witness "device_type`1" : !kgen.param<:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable impl> =
+    # CHECK-NEXT: kgen.witness "device_type" : type =
     # CHECK-NEXT: kgen.witness "_to_device_type" : !lit.generator
     # CHECK-NEXT: kgen.witness "get_type_name" : !lit.generator
     # CHECK-NEXT: kgen.witness "get_device_type_name" : !lit.generator
