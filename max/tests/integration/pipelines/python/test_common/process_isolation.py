@@ -5,9 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """Utilities for running functions in an isolated process."""
 
+import faulthandler
 import multiprocessing
+import os
+import signal
 import sys
-import time
 from collections.abc import Callable
 from pickle import PicklingError
 from queue import Empty
@@ -31,6 +33,14 @@ def _isolated_process_wrapper(
         result_queue: A Queue to store the (success, payload) tuple.
     """
     try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(line_buffering=True)
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(line_buffering=True)
+
+        faulthandler.enable(file=sys.stderr)
+        faulthandler.register(signal.SIGUSR2, file=sys.stderr, all_threads=True)
+
         result = func()
         result_queue.put((True, result))
     except Exception as e:
@@ -78,16 +88,22 @@ def run_in_isolated_process(
         # this means it's still running after the timeout
         if process.is_alive():
             print("Reached timeout, subprocess still running", file=sys.stderr)
+            print("Asking process to print its stack trace", file=sys.stderr)
+
+            assert isinstance(process.pid, int)
+            os.kill(process.pid, signal.SIGUSR2)
+            process.join(5)
+
             print("Attempting to terminate process gracefully", file=sys.stderr)
             process.terminate()
-            time.sleep(5)
+            process.join(5)
             if process.is_alive():
                 print(
                     "No response after 5 seconds, killing process forcefully",
                     file=sys.stderr,
                 )
                 process.kill()
-                time.sleep(2)  # Provide time for process to be killed
+                process.join(2)  # Provide time for process to be killed
             raise multiprocessing.TimeoutError(
                 f"Function execution timed out after {timeout} seconds"
             )
