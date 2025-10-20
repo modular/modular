@@ -18,7 +18,7 @@ class TCMallocAllocator : public Allocator {
   void *allocateBytes(size_t size, size_t alignment) override {
     TimeTraceScope scope(MemAllocFreeProfilerEntry::create("mem.alloc.tcmalloc",
                                                            (uint64_t)size));
-    return TCMallocGlobals::tc_new(size, alignment);
+    return TCMallocGlobals::tc_new(alignment, size);
   }
 
   /// Deallocate the specified pointer that has the specified size.
