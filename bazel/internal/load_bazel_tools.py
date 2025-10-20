@@ -30,6 +30,11 @@ from python.runfiles import runfiles
 
 _R = runfiles.Create()
 
+if os.getenv("MODULAR_PYTEST_DEBUG") == "1":
+    raise SystemExit(
+        "\033[31mERROR\033[0m: 'bd' doesn't support lit tests, instead us 'br install' and manually debug the RUN command"
+    )
+
 # llvm_config.config.substitutions = substitutions_before
 for index, pair in enumerate(llvm_config.config.substitutions):
     path = pair[1]
