@@ -3,6 +3,7 @@
 
 // CHECK-DAG: #[[LOC_C1:.+]] = loc("test.mojo":10:5)
 // CHECK-DAG: #[[LOC_C2:.+]] = loc("test.mojo":15:10)
+// CHECK-DAG: #[[LOC_C3:.+]] = loc("test.mojo":20:15)
 
 // CHECK: *"mangled_fn{{.*}}int
 "some.op"() {decl = #kgen<param.decl *"mangled_fn(Pointer[!lit.struct<_\22int\22::_Int>])" : index>} : () -> ()
@@ -199,7 +200,9 @@ kgen.generator @closureSymbol(){
   // CHECK: constraint1 = #kgen.constraint<1, #[[LOC_C1]]>
   constraint1 = #kgen.constraint<1, loc("test.mojo":10:5)>,
   // CHECK-SAME: constraint2 = #kgen.constraint<ge(a, 4), #[[LOC_C2]]>
-  constraint2 = #kgen.constraint<ge(a, 4), loc("test.mojo":15:10)>
+  constraint2 = #kgen.constraint<ge(a, 4), loc("test.mojo":15:10)>,
+  // CHECK-SAME: #kgen.constraint<conforms_to(:type array<1, i1>, ["trait_1", "trait_2"]), #[[LOC_C3]]>
+  constraint3 = #kgen.constraint<conforms_to(:type array<1, i1>, ["trait_1", "trait_2"]), loc("test.mojo":20:15)>
 } : () -> ()
 
 // CHECK: llvm_bitcode_lib_packaged = #kgen.llvm.bitcode.packaged<"mypackage", dense_resource<bitcode_1> : tensor<100xui8>>
