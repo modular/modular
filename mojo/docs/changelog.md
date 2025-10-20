@@ -157,6 +157,12 @@ what we publish.
 
 - `SIMD` now implements the `DivModable` trait.
 
+- Mojo now uses system allocators in programs built with `mojo build --sanitize address`.
+  This means asan can see mojo heap allocations and should now be able to
+  detect many more heap memory errors.
+
+### ❌ Removed
+
 - `TestSuite` now can generate test reports with `.generate_report()`. Also
   a `TestReport` and `TestSuiteReport` structs were added.
 

@@ -9,6 +9,7 @@ _FILECHECK_TESTS = [
 _NO_ASAN = [
     "string/test_string.mojo",
     "string/test_string_slice.mojo",  # TODO(MOCO-2316): Takes too long to compile
+    "string/test_utf8.mojo",  # TODO(MSTDL-1881): materialization leak
 ]
 
 _PLATFORM_CONSTRAINTS = {
