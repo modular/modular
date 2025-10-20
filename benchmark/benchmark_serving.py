@@ -414,7 +414,7 @@ async def async_request_openai_chat_completions(
         for img in request_func_input.images:
             # TODO: Remove this type ignore
             # (error: Value of type "object" is not indexable)
-            payload["messages"][0]["content"].append(img)  # type: ignore[index]
+            payload["messages"][0]["content"].append(img)  # type: ignore[index, union-attr]
 
         headers = {
             "Content-Type": "application/json",

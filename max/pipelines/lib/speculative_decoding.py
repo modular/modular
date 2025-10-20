@@ -803,7 +803,7 @@ class SpeculativeDecodingTextGenerationPipeline(
 
         for idx, rejected_token_idx in enumerate(first_rejected_tokens):
             context = context_batch[idx]
-            rejected_token_idx = rejected_token_idx.item()  # type: ignore
+            rejected_token_idx = rejected_token_idx.item()
 
             context.bump_token_indices(
                 active_idx=-num_draft_tokens_generated,
@@ -837,7 +837,7 @@ class SpeculativeDecodingTextGenerationPipeline(
             total_draft_generated,
             total_draft_accepted,
             total_bonus_used,
-            acceptance_lengths,  # type: ignore
+            acceptance_lengths,
         )
 
     def build_response(
