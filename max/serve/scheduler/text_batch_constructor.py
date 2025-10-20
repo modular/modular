@@ -363,6 +363,11 @@ class TextBatchConstructor:
             for _, ctx in self.tg_reqs.items():
                 if self._lora_manager.is_lora(ctx.model_name):
                     active_loras.add(ctx.model_name)
+                    # Refresh LRU position for TG LoRAs to protect them from eviction.
+                    # This ensures they are marked as most-recently-used before we
+                    # activate any new CE LoRAs.
+                    if self._lora_manager.is_active_lora(ctx.model_name):
+                        self._lora_manager.activate_adapter(ctx.model_name)
 
             deferred_lora_requests = {}
 

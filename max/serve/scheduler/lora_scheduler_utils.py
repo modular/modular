@@ -20,7 +20,22 @@ from max.pipelines.lib import LoRAManager
 def can_allocate_lora_request(
     ctx: TextContext, active_loras: set[str], lora_manager: LoRAManager | None
 ) -> bool:
-    """Checks if the LoRA request can be allocated and serviced"""
+    """Checks if the LoRA request can be allocated and serviced.
+
+    This function ensures that activating a new LoRA during CE batch construction
+    will not cause eviction of LoRAs needed by the TG batch. It allows evicting
+    non-protected LoRAs from previous batches to make room for new requests.
+
+    Args:
+        ctx: The text context containing the request and model name.
+        active_loras: Set of LoRA names that are currently protected (from TG batch).
+            These LoRAs must not be evicted.
+        lora_manager: The LoRA manager instance.
+
+    Returns:
+        True if the LoRA request can be safely allocated without evicting
+        protected LoRAs, False otherwise.
+    """
     # This should only be called when lora_manager exists
     assert lora_manager is not None
 
@@ -28,14 +43,21 @@ def can_allocate_lora_request(
     if not lora_manager.is_lora(ctx.model_name):
         return True
 
-    # LoRA requests can be allocated if:
-    # - Already in active set for this batch (no additional LoRA slot needed)
-    # - There's room for more LoRAs in this batch
-    return (
-        ctx.model_name in active_loras
-        or lora_manager.is_active_lora(ctx.model_name)
-        or len(active_loras) < lora_manager.max_num_loras
-    )
+    # If this LoRA is already in the protected set, no additional slot needed
+    if ctx.model_name in active_loras:
+        return True
+
+    # If this LoRA is already globally active (even if not protected),
+    # calling activate_adapter() will just refresh its LRU position
+    # without triggering eviction
+    if lora_manager.is_active_lora(ctx.model_name):
+        return True
+
+    # We need a new slot for this LoRA.
+    # Check if (protected LoRAs + new LoRA) fits within capacity.
+    # Non-protected globally active LoRAs can be evicted to make room.
+    num_protected = len(active_loras)
+    return num_protected + 1 <= lora_manager.max_num_loras
 
 
 def is_lora(ctx: TextContext, lora_manager: LoRAManager | None) -> bool:
