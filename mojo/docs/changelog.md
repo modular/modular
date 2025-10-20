@@ -124,6 +124,9 @@ what we publish.
 - Added `sys.compile.SanitizeAddress` providing a way for mojo code to detect
   `--sanitize address` at compile time.
 
+- `Codepoint` now conforms to `Comparable` adding `__le__`, `__lt__`, `__ge__`,
+  and `__gt__` implementations.
+
 ### Tooling changes {#25-7-tooling-changes}
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`
