@@ -886,8 +886,9 @@ fn _topk_stage1_old[
                 ](vector_idx).cast[out_idx_type]()
 
                 # Remove the found maximum from consideration in the next iteration
-                var orig_tid = (vector_idx - block_offset) % stride
-                topk_sram[orig_tid].u = _topk_dead_val[T, largest]()
+                if total.p >= 0:
+                    var orig_tid = (vector_idx - block_offset) % stride
+                    topk_sram[orig_tid].u = _topk_dead_val[T, largest]()
 
             barrier()
 
