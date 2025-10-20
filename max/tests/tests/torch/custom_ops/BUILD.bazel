@@ -6,6 +6,7 @@ mojo_library(
     name = "custom_ops",
     testonly = True,
     srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
     deps = [
         "@mojo//:MOGGPrimitives",
         "@mojo//:compiler_internal",
