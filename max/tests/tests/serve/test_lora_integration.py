@@ -433,3 +433,133 @@ def test_lora_bias_none_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
         # Attempt to load the adapter should succeed with bias='none'
         status = manager.load_adapter(f"good_adapter={tmpdir}")
         assert status == LoRAStatus.SUCCESS
+
+
+def test_lora_allocation_respects_protected_tg_loras(
+    monkeypatch: pytest.MonkeyPatch, temp_adapters: list[str]
+) -> None:
+    """Test that can_allocate_lora_request correctly handles protected TG LoRAs.
+
+    This test verifies the fix for a scheduler deadlock where:
+    1. TG batch has multiple LoRAs active (protected)
+    2. LoRA capacity is reached
+    3. CE requests want a different LoRA
+    4. can_allocate_lora_request must return False to defer the request
+    5. Without proper deferral, empty CE batches are created indefinitely
+
+    Scenarios tested:
+    - Can allocate when protected LoRAs + new LoRA <= capacity
+    - Cannot allocate when protected LoRAs + new LoRA > capacity
+    - Can allocate when LoRA is already active (just refreshes LRU)
+    - Non-protected globally active LoRAs can be evicted
+    """
+    from max.pipelines.core.context import TextContext
+    from max.serve.scheduler.lora_scheduler_utils import (
+        can_allocate_lora_request,
+    )
+
+    # Mock the LoRARequestProcessor to avoid ZMQ setup
+    monkeypatch.setattr(
+        "max.pipelines.lib.lora.LoRARequestProcessor", MockLoRARequestProcessor
+    )
+
+    mock_load_weights = MagicMock()
+    monkeypatch.setattr(
+        "max.pipelines.lib.lora.load_weights", mock_load_weights
+    )
+
+    # Create a LoRAManager with max_num_loras=2 (simulating the deadlock scenario)
+    config = LoRAConfig(
+        enable_lora=True,
+        max_num_loras=2,
+        max_lora_rank=16,
+        lora_paths=[],
+    )
+
+    manager = LoRAManager(
+        config=config,
+        base_model_path="/mock/path",
+        base_dtype=DType.float32,
+        zmq_endpoint_base="fake",
+    )
+
+    manager._validate_lora_path = lambda _: LoRAStatus.SUCCESS  # type: ignore
+
+    # Load three LoRA adapters
+    for i in range(3):
+        adapter_path = temp_adapters[i % len(temp_adapters)]
+        status = manager.load_adapter(f"adapter_{i}={adapter_path}")
+        assert status == LoRAStatus.SUCCESS
+
+    # === Scenario 1: TG has 2 protected LoRAs, CE wants a 3rd ===
+    # This reproduces the deadlock from the logs:
+    # - decode_reqs has adapter_0 and adapter_1 (protected)
+    # - pending_reqs want adapter_2
+    # - All CE requests should be deferred
+
+    # Activate adapter_0 and adapter_1 (simulating TG batch)
+    manager.activate_adapter("adapter_0")
+    manager.activate_adapter("adapter_1")
+
+    # Track protected LoRAs from TG batch
+    active_loras = {"adapter_0", "adapter_1"}
+
+    # Try to allocate a CE request with adapter_2
+    ce_ctx = MagicMock(spec=TextContext)
+    ce_ctx.model_name = "adapter_2"
+
+    # Should return False: 2 protected + 1 new = 3 > 2 capacity
+    can_allocate = can_allocate_lora_request(ce_ctx, active_loras, manager)
+    assert not can_allocate, (
+        "Should defer CE request when protected LoRAs + new LoRA exceeds capacity. "
+        "This prevents the deadlock where empty CE batches are created indefinitely."
+    )
+
+    # === Scenario 2: TG has 1 protected LoRA, CE wants a 2nd (can allocate) ===
+    active_loras = {"adapter_0"}
+    manager.activate_adapter("adapter_0")
+
+    ce_ctx.model_name = "adapter_1"
+
+    # Should return False because adapter_1 is already globally active
+    # (it will just refresh LRU, no eviction needed)
+    can_allocate = can_allocate_lora_request(ce_ctx, active_loras, manager)
+    assert can_allocate, (
+        "Should allow allocation when LoRA is already globally active "
+        "(just refreshes LRU)"
+    )
+
+    # === Scenario 3: Non-protected LoRAs can be evicted ===
+    # Start fresh: activate adapter_0 (protected) and adapter_1 (not protected)
+    manager.activate_adapter("adapter_0")
+    manager.activate_adapter("adapter_1")
+
+    active_loras = {"adapter_0"}  # Only adapter_0 is protected (from TG)
+
+    # Refresh adapter_0 to make it most recently used
+    manager.activate_adapter("adapter_0")
+
+    # Try to allocate adapter_2
+    ce_ctx.model_name = "adapter_2"
+    can_allocate = can_allocate_lora_request(ce_ctx, active_loras, manager)
+
+    # Should return True: 1 protected + 1 new = 2 <= 2 capacity
+    assert can_allocate, (
+        "Should allow allocation when protected + new fits within capacity"
+    )
+
+    # Activate adapter_2 (will evict adapter_1, not adapter_0)
+    manager.activate_adapter("adapter_2")
+
+    # Verify adapter_0 (protected) is still active
+    assert manager.is_active_lora("adapter_0"), (
+        "Protected TG LoRA should not be evicted"
+    )
+
+    # Verify adapter_1 (non-protected) was evicted
+    assert not manager.is_active_lora("adapter_1"), (
+        "Non-protected LoRA should be evicted to make room"
+    )
+
+    # Verify adapter_2 is now active
+    assert manager.is_active_lora("adapter_2"), "New LoRA should be active"
