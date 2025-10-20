@@ -35,6 +35,8 @@ var filled = InlineArray[Int, 5](fill=42)
 import math
 from collections._index_normalization import normalize_index
 
+from builtin.device_passable import DevicePassable
+from compile import get_type_name
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 
 # ===-----------------------------------------------------------------------===#
@@ -56,7 +58,7 @@ fn _inline_array_construction_checks[size: Int]():
 struct InlineArray[
     ElementType: Copyable & Movable,
     size: Int,
-](Defaultable, ImplicitlyCopyable, Movable, Sized):
+](Defaultable, DevicePassable, ImplicitlyCopyable, Movable, Sized):
     """A fixed-size sequence of homogeneous elements where size is a constant
     expression.
 
@@ -89,6 +91,37 @@ struct InlineArray[
     ]
     var _array: Self.type
     """The underlying storage for the array."""
+
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Convert the host type object to a device_type and store it at the
+        target address.
+
+        Args:
+            target: The target address to store the device type.
+        """
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """Gets the name of the host type (the one implementing this trait).
+
+        Returns:
+            The host type's name.
+        """
+        return String(
+            "InlineArray[", get_type_name[Self.ElementType](), ", ", size, "]"
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """Gets device_type's name.
+
+        Returns:
+            The device type's name.
+        """
+        return Self.get_type_name()
 
     # ===------------------------------------------------------------------===#
     # Life cycle methods

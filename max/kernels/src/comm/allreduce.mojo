@@ -386,7 +386,9 @@ fn _allreduce_naive_single[
     var grid_size = min(max_num_blocks, ceildiv(num_elements, BLOCK_SIZE))
 
     # Reduce local buffer first.
-    ctx.enqueue_function[_naive_reduce_kernel[dtype]](
+    ctx.enqueue_function_checked[
+        _naive_reduce_kernel[dtype], _naive_reduce_kernel[dtype]
+    ](
         accum,
         dev_inputs[my_rank],
         num_elements,
@@ -401,7 +403,9 @@ fn _allreduce_naive_single[
 
         # Copy remote input into device-local scratch, then accumulate.
         ctx.enqueue_copy(scratch, dev_inputs[i])
-        ctx.enqueue_function[_naive_reduce_kernel[dtype]](
+        ctx.enqueue_function_checked[
+            _naive_reduce_kernel[dtype], _naive_reduce_kernel[dtype]
+        ](
             accum,
             scratch,
             num_elements,
@@ -410,14 +414,15 @@ fn _allreduce_naive_single[
         )
 
     # Apply elementwise epilogue to write into the output buffer.
-    ctx.enqueue_function[
-        _naive_reduce_kernel_with_lambda[
-            dtype,
-            rank,
-            width=simd_width,
-            alignment = align_of[SIMD[dtype, simd_width]](),
-            output_lambda=output_lambda,
-        ]
+    alias naive_reduce_with_lambda_kernel = _naive_reduce_kernel_with_lambda[
+        dtype,
+        rank,
+        width=simd_width,
+        alignment = align_of[SIMD[dtype, simd_width]](),
+        output_lambda=output_lambda,
+    ]
+    ctx.enqueue_function_checked[
+        naive_reduce_with_lambda_kernel, naive_reduce_with_lambda_kernel
     ](
         out_buf,
         accum,
@@ -891,21 +896,22 @@ fn _allreduce_p2p[
         )
 
         # Use the 1-stage allreduce when transfer is latency bound.
-        ctx.enqueue_function[
-            _allreduce_1stage_kernel[
-                dtype,
-                rank,
-                ngpus,
-                BLOCK_SIZE=BLOCK_SIZE,
-                output_lambda=output_lambda,
-                num_buffers=num_buffers,
-            ]
+        alias allreduce_1stage_kernel = _allreduce_1stage_kernel[
+            dtype,
+            rank,
+            ngpus,
+            BLOCK_SIZE=BLOCK_SIZE,
+            output_lambda=output_lambda,
+            num_buffers=num_buffers,
+        ]
+        ctx.enqueue_function_checked[
+            allreduce_1stage_kernel, allreduce_1stage_kernel
         ](
             out_buf,
             list_of_in_ptrs,
             rank_sigs,
             num_elements,
-            ctx.id(),
+            Int(ctx.id()),
             grid_dim=grid_size,
             block_dim=BLOCK_SIZE,
         )
@@ -922,21 +928,23 @@ fn _allreduce_p2p[
 
             var grid_size = min(max_num_blocks, num_tiles_total)
 
-            ctx.enqueue_function[
-                allreduce_2stage_quickreduce[
-                    dtype,
-                    rank,
-                    ngpus,
-                    BLOCK_SIZE=BLOCK_SIZE,
-                    output_lambda=output_lambda,
-                    atom_size=atom_size,
-                ]
-            ](
+            alias kernel = allreduce_2stage_quickreduce[
+                dtype,
+                rank,
+                ngpus,
+                BLOCK_SIZE=BLOCK_SIZE,
+                output_lambda=output_lambda,
+                atom_size=atom_size,
+            ]
+
+            ctx.enqueue_function_checked[kernel, kernel](
                 out_buf,
-                list_of_in_ptrs[ctx.id()],
+                DeviceBuffer[dtype](
+                    ctx, list_of_in_ptrs[ctx.id()], num_elements, owning=False
+                ),
                 rank_sigs,
                 num_elements,
-                ctx.id(),
+                Int(ctx.id()),
                 iteration,
                 num_tiles_total,
                 grid_dim=grid_size,
@@ -951,22 +959,21 @@ fn _allreduce_p2p[
             )
 
             # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
-            ctx.enqueue_function[
-                _allreduce_2stage_kernel[
-                    dtype,
-                    rank,
-                    ngpus,
-                    BLOCK_SIZE=BLOCK_SIZE,
-                    output_lambda=output_lambda,
-                    pdl_level=pdl_level,
-                    num_buffers=num_buffers,
-                ]
-            ](
+            alias kernel = _allreduce_2stage_kernel[
+                dtype,
+                rank,
+                ngpus,
+                BLOCK_SIZE=BLOCK_SIZE,
+                output_lambda=output_lambda,
+                pdl_level=pdl_level,
+                num_buffers=num_buffers,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 out_buf,
                 list_of_in_ptrs,
                 rank_sigs,
                 num_elements,
-                ctx.id(),
+                Int(ctx.id()),
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
                 attributes=pdl_launch_attributes(pdl_level),

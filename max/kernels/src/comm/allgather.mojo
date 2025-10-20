@@ -203,13 +203,14 @@ fn _allgather_p2p[
         )
 
         # Launch kernel.
-        curr_ctx.enqueue_function[
-            _allgather_p2p_kernel[
-                dtype,
-                rank,
-                ngpus,
-                BLOCK_SIZE=BLOCK_SIZE,
-            ]
+        alias allgather_p2p_kernel = _allgather_p2p_kernel[
+            dtype,
+            rank,
+            ngpus,
+            BLOCK_SIZE=BLOCK_SIZE,
+        ]
+        curr_ctx.enqueue_function_checked[
+            allgather_p2p_kernel, allgather_p2p_kernel
         ](
             output_ptrs,
             list_of_in_ptrs,

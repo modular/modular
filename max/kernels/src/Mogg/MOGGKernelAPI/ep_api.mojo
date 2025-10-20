@@ -457,15 +457,27 @@ struct Struct_ep_dispatch_cb:
             var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
                 Int(recv_count_ptrs[gpu_id])
             )
+            var recv_buf_p_dev = DeviceBuffer[DType.uint8](
+                gpu_ctx, recv_buf_p, 1, owning=False
+            )
+            var recv_count_p_dev = DeviceBuffer[DType.uint64](
+                gpu_ctx, recv_count_p, 1, owning=False
+            )
+            var atomic_counters_0_dev = DeviceBuffer[DType.int32](
+                gpu_ctx,
+                atomic_counters_0._ptr,
+                atomic_counters_0.size(),
+                owning=False,
+            )
 
-            gpu_ctx.enqueue_function[dispatch_cb](
+            gpu_ctx.enqueue_function_checked[dispatch_cb, dispatch_cb](
                 format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
                 src_info_tensor,
-                recv_buf_p,
-                recv_count_p,
-                atomic_counters_0._ptr,
+                recv_buf_p_dev,
+                recv_count_p_dev,
+                atomic_counters_0_dev,
                 Int32(gpu_id),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -774,15 +786,27 @@ struct Struct_ep_dispatch_cb_fp8:
             var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
                 Int(recv_count_ptrs[gpu_id])
             )
+            var recv_buf_p_dev = DeviceBuffer[DType.uint8](
+                gpu_ctx, recv_buf_p, 1, owning=False
+            )
+            var recv_count_p_dev = DeviceBuffer[DType.uint64](
+                gpu_ctx, recv_count_p, 1, owning=False
+            )
+            var atomic_counters_0_dev = DeviceBuffer[DType.int32](
+                gpu_ctx,
+                atomic_counters_0._ptr,
+                atomic_counters_0.size(),
+                owning=False,
+            )
 
-            gpu_ctx.enqueue_function[dispatch_cb](
+            gpu_ctx.enqueue_function_checked[dispatch_cb, dispatch_cb](
                 format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
                 src_info_tensor,
-                recv_buf_p,
-                recv_count_p,
-                atomic_counters_0._ptr,
+                recv_buf_p_dev,
+                recv_count_p_dev,
+                atomic_counters_0_dev,
                 Int32(gpu_id),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -1031,12 +1055,24 @@ struct Struct_ep_combine_cb:
             var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
                 Int(recv_count_ptrs[gpu_id])
             )
-
-            gpu_ctx.enqueue_function[combine_cb](
-                output_tokens_tensor,
-                recv_buf_p,
-                recv_count_p,
+            var recv_buf_p_dev = DeviceBuffer[DType.uint8](
+                gpu_ctx, recv_buf_p, 1, owning=False
+            )
+            var recv_count_p_dev = DeviceBuffer[DType.uint64](
+                gpu_ctx, recv_count_p, 1, owning=False
+            )
+            var atomic_counters_1_dev = DeviceBuffer[DType.int32](
+                gpu_ctx,
                 atomic_counters_1._ptr,
+                atomic_counters_1.size(),
+                owning=False,
+            )
+
+            gpu_ctx.enqueue_function_checked[combine_cb, combine_cb](
+                output_tokens_tensor,
+                recv_buf_p_dev,
+                recv_count_p_dev,
+                atomic_counters_1_dev,
                 Int32(gpu_id),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,

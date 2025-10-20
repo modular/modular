@@ -41,6 +41,8 @@ from shmem import SHMEM_SIGNAL_SET, SHMEMScope, shmem_put_nbi, shmem_signal_op
 
 from utils.index import IndexList, StaticTuple
 
+from builtin.device_passable import DevicePassable
+
 alias RtTuple_2 = RuntimeTuple[
     IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), element_type = DType.int32
 ]
@@ -57,7 +59,7 @@ alias EP_DATA_READY_FLAG = 1 << 10
 
 
 @register_passable("trivial")
-trait TokenFormat:
+trait TokenFormat(DevicePassable):
     alias hid_dim: Int
     alias top_k: Int
     alias alignment: Int
@@ -132,6 +134,35 @@ struct BF16TokenFormat[
         DType.bfloat16, output_layout, MutableAnyOrigin
     ]
     var output_tokens: Self.TensorType
+
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Convert the host type object to a device_type and store it at the
+        target address.
+
+        Args:
+            target: The target address to store the device type.
+        """
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return String(
+            "BF16TokenFormat[output_layout = ",
+            String(output_layout),
+            ", hid_dim = ",
+            String(Self.hid_dim),
+            ", top_k = ",
+            String(Self.top_k),
+            ", alignment = ",
+            String(Self.alignment),
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn __init__(out self, output_tokens: Self.TensorType):
@@ -209,6 +240,41 @@ struct BlockwiseFP8TokenFormat[
     var output_scales: Self.ScalesTensorType
 
     alias group_size = 128
+
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Convert the host type object to a device_type and store it at the
+        target address.
+
+        Args:
+            target: The target address to store the device type.
+        """
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return String(
+            "BlockwiseFP8TokenFormat[fp8_dtype = ",
+            String(Self.fp8_dtype),
+            ", scales_dtype = ",
+            String(Self.scales_dtype),
+            ", output_layout = ",
+            String(Self.output_layout),
+            ", scales_layout = ",
+            String(Self.scales_layout),
+            ", hid_dim = ",
+            String(Self.hid_dim),
+            ", top_k = ",
+            String(Self.top_k),
+            ", alignment = ",
+            String(Self.alignment),
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn __init__(
