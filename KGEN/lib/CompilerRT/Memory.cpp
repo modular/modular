@@ -7,6 +7,7 @@
 #include "./Memory.h"
 #include "AsyncRT/Runtime/Globals/Globals.h"
 #include "AsyncRT/Runtime/Runtime.h"
+#include "Support/AlignedAlloc.h"
 #include "Support/SymbolExport.h"
 using namespace M;
 
@@ -17,6 +18,11 @@ struct {
   void (*free)(void *ptr) = AsyncRT::TCMallocGlobals::tc_delete;
 } constinit static KGEN_Allocators{};
 } // namespace
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_SetAsanAllocators() {
+  KGEN_Allocators = {.alloc = M::alignedAlloc, .free = M::alignedFree};
+}
 
 /// Returns an alignment allocated memory. If the alignment value is not
 /// positive, then the default alignment is used.

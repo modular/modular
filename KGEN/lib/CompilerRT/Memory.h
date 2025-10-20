@@ -13,6 +13,12 @@
 #include <unistd.h>
 #endif // _MSC_VER
 
+// Set allocators to system memalign/free to support asan
+// this function is NOT thread safe and needs to be called
+// before any allocations
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_SetAsanAllocators();
+
 /// Returns an alignment allocated memory. If the alignment value is not
 /// positive, then the default alignment is used.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *

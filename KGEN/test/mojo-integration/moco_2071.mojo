@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
+# see MSTDL-1901
+# XFAIL: asan
 # RUN: %mojo %s | FileCheck %s
 
 from collections import Dict
