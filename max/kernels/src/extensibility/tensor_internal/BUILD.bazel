@@ -5,6 +5,7 @@ exports_files(["__init__.mojo"])
 mojo_library(
     name = "tensor_internal",
     srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
     visibility = ["//visibility:public"],
     deps = [
         "@mojo//:compiler_internal",

@@ -10,7 +10,7 @@ def mojo_library(
         srcs,
         data = [],
         deps = [],
-        validate_missing_docs = False,
+        validate_missing_docs = True,
         docs_base_path = "",
         testonly = False,
         visibility = ["//visibility:public"],

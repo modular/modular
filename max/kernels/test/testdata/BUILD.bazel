@@ -6,6 +6,7 @@ mojo_library(
     name = "testdata",
     testonly = True,
     srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
     deps = [
         "@mojo//:stdlib",
     ],
