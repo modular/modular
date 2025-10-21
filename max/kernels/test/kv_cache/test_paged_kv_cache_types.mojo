@@ -29,8 +29,8 @@ def do_test[page_size: Int, layout_block_size: Int]():
             2,
             1,
             page_size,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         )
     )
     var cache_lengths = HostNDBuffer[DType.uint32, 1](IndexList[1](batch_size))

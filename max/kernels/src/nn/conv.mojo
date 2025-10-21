@@ -3127,12 +3127,12 @@ fn conv2d_gpu_naive_nhwc_rscf[
             for s in range(S):
                 var h_in = h * UInt(stride_h) - UInt(pad_h) + UInt(r * dil_h)
                 var w_in = w * UInt(stride_w) - UInt(pad_w) + UInt(s * dil_w)
-                if 0 <= h_in < UInt(H) and 0 <= w_in < UInt(W):
+                if 0 <= Int(h_in) < H and 0 <= Int(w_in) < W:
                     for ci in range(C_in):
                         value += (
-                            input.load(IndexList[4](n, h_in, w_in, ci)).cast[
-                                accum_type
-                            ]()
+                            input.load(
+                                IndexList[4](Int(n), Int(h_in), Int(w_in), ci)
+                            ).cast[accum_type]()
                             * filter.load(IndexList[4](r, s, ci, co)).cast[
                                 accum_type
                             ]()
@@ -3141,9 +3141,15 @@ fn conv2d_gpu_naive_nhwc_rscf[
         @parameter
         if maybe_epilogue_func:
             alias epilogue_func = maybe_epilogue_func.value()
-            epilogue_func(IndexList[4](n, h, w, co), value.cast[output_type]())
+            epilogue_func(
+                IndexList[4](Int(n), Int(h), Int(w), co),
+                value.cast[output_type](),
+            )
         else:
-            output.store(IndexList[4](n, h, w, co), value.cast[output_type]())
+            output.store(
+                IndexList[4](Int(n), Int(h), Int(w), co),
+                value.cast[output_type](),
+            )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3647,7 +3653,7 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
                         for ci in range(C_in):
                             value += (
                                 input.load(
-                                    IndexList[5](n, d_in, h_in, w_in, ci)
+                                    IndexList[5](Int(n), d_in, h_in, w_in, ci)
                                 ).cast[accum_type]()
                                 * filter.load(
                                     IndexList[5](q, r, s, ci, co)
@@ -3658,11 +3664,15 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
         if maybe_epilogue_func:
             alias epilogue_func = maybe_epilogue_func.value()
             epilogue_func(
-                IndexList[5](n, d_out_idx, h_out_idx, w_out_idx, co),
+                IndexList[5](
+                    Int(n), Int(d_out_idx), Int(h_out_idx), Int(w_out_idx), co
+                ),
                 value.cast[output_type](),
             )
         else:
             output.store(
-                IndexList[5](n, d_out_idx, h_out_idx, w_out_idx, co),
+                IndexList[5](
+                    Int(n), Int(d_out_idx), Int(h_out_idx), Int(w_out_idx), co
+                ),
                 value.cast[output_type](),
             )

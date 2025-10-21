@@ -636,7 +636,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
 
     var q_dim = output.dim[1]()
     var k_dim = kv_params.head_size * kv_params.num_heads
-    var qk_offset = q_dim + k_dim
+    var qk_offset = q_dim + Int(k_dim)
     var batch_size = input_row_offsets.dim[0]() - 1
 
     if batch_size == 0:
@@ -682,9 +682,9 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
         var cache_token_idx = token_idx + cache_length
         cache.store(
             batch_idx,
-            h_idx,
+            Int(h_idx),
             cache_token_idx,
-            hd_idx,
+            Int(hd_idx),
             rebind[SIMD[kv_type, width]](output_val),
         )
 
@@ -771,7 +771,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
 
     var q_dim = output.dim[1]()
     var k_dim = kv_params.head_size * kv_params.num_heads
-    var qk_offset = q_dim + k_dim
+    var qk_offset = q_dim + Int(k_dim)
     var batch_size = input_row_offsets.dim[0]() - 1
 
     if batch_size == 0:
@@ -819,9 +819,9 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
         var cache_token_idx = token_idx + cache_length
         cache.store(
             batch_idx,
-            h_idx,
+            Int(h_idx),
             cache_token_idx,
-            hd_idx,
+            Int(hd_idx),
             rebind[SIMD[kv_type, width]](output_val),
         )
 
@@ -911,7 +911,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
 
     var q_dim = output.dim[1]()
     var k_dim = kv_params.head_size * kv_params.num_heads
-    var qk_offset = q_dim + k_dim
+    var qk_offset = q_dim + Int(k_dim)
     var batch_size = input_row_offsets.dim[0]() - 1
 
     if batch_size == 0:
@@ -989,9 +989,9 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         var cache_token_idx = token_idx + cache_length
         cache.store(
             batch_idx,
-            h_idx,
+            Int(h_idx),
             cache_token_idx,
-            hd_idx,
+            Int(hd_idx),
             rebind[SIMD[kv_type, width]](output_val.cast[kv_type]()),
         )
 
@@ -1333,7 +1333,7 @@ fn _matmul_kv_cache_ragged_impl[
         )
         token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
-        if idx[1] < k_offset:
+        if idx[1] < Int(k_offset):
             # Write this element to the K cache.
             cache = k_cache
             h_idx, hd_idx = divmod(UInt(idx[1]), kv_params.head_size)
@@ -1346,9 +1346,9 @@ fn _matmul_kv_cache_ragged_impl[
         cache_token_idx = token_idx + cache_length
         cache.store(
             batch_idx,
-            h_idx,
+            Int(h_idx),
             cache_token_idx,
-            hd_idx,
+            Int(hd_idx),
             rebind[SIMD[kv_type, width]](val),
         )
 
@@ -1547,9 +1547,9 @@ fn _matmul_k_cache_ragged_impl[
         cache_token_idx = token_idx + cache_length
         k_cache.store(
             batch_idx,
-            h_idx,
+            Int(h_idx),
             cache_token_idx,
-            hd_idx,
+            Int(hd_idx),
             rebind[SIMD[kv_type, width]](val),
         )
 
@@ -1720,9 +1720,9 @@ fn _matmul_k_cache_ragged_scale_impl[
         var cache_token_idx = token_idx + cache_length
         k_cache.store(
             batch_idx,
-            h_idx,
+            Int(h_idx),
             cache_token_idx,
-            hd_idx,
+            Int(hd_idx),
             rebind[SIMD[kv_type, width]](val),
         )
 
@@ -2015,9 +2015,9 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
 
         cache.store(
             batch_idx,
-            h_idx,
+            Int(h_idx),
             cache_token_idx,
-            hd_idx,
+            Int(hd_idx),
             rebind[SIMD[k_or_v_type, width]](val),
         )
 
@@ -2458,7 +2458,7 @@ fn _flash_attention_dispatch[
         score_mod_str,
         _dispatch_flash_attention,
         local_window_size,
-        collection_t.kv_params.num_heads,
+        Int(collection_t.kv_params.num_heads),
     ]()
 
 
@@ -2664,7 +2664,7 @@ fn _flare_mla_decode_kv_cache_ragged[
         score_mod_str,
         _dispatch_mla,
         local_window_size,
-        collection_t.kv_params.num_heads,
+        Int(collection_t.kv_params.num_heads),
     ]()
 
 
@@ -2887,7 +2887,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
         score_mod_str,
         _mla_dispatch,
         local_window_size,
-        collection_t.kv_params.num_heads,
+        Int(collection_t.kv_params.num_heads),
     ]()
 
 
@@ -3090,7 +3090,7 @@ fn _cross_attention_dispatch[
         score_mod_str,
         _dispatch_flash_attention,
         local_window_size,
-        collection_t.kv_params.num_heads,
+        Int(collection_t.kv_params.num_heads),
     ]()
 
 
@@ -3201,7 +3201,7 @@ fn generic_kv_cache_radd_dispatch[
         "Input tensor must have known shape in last dim",
     ]()
     constrained[
-        Int(a.layout.shape[1]) == hidden_size * 2,
+        Int(a.layout.shape[1]) == Int(hidden_size * 2),
         "Mismatch in hidden size between input "
         + String(Int(a.layout.shape[1]))
         + " and KV tensors "
@@ -3229,12 +3229,12 @@ fn generic_kv_cache_radd_dispatch[
 
         var cache: collection_t.CacheType
         var corrected_dim: UInt
-        if idx[1] < hidden_size:
+        if idx[1] < Int(hidden_size):
             cache = k_cache
             corrected_dim = UInt(idx[1])
         else:
             cache = v_cache
-            corrected_dim = UInt(idx[1] - hidden_size)
+            corrected_dim = UInt(idx[1] - Int(hidden_size))
 
         var h_idx: UInt
         var hd_idx: UInt
@@ -3246,15 +3246,15 @@ fn generic_kv_cache_radd_dispatch[
         var cache_token_idx = Int(tok_idx) + cache_length
 
         var old_val = cache.load[width=width](
-            Int(corrected_batch_idx), h_idx, cache_token_idx, hd_idx
+            Int(corrected_batch_idx), Int(h_idx), cache_token_idx, Int(hd_idx)
         )
         var a_val = rebind[type_of(old_val)](a.load[width=width](idx))
 
         cache.store(
             Int(corrected_batch_idx),
-            h_idx,
+            Int(h_idx),
             cache_token_idx,
-            hd_idx,
+            Int(hd_idx),
             a_val + old_val,
         )
 

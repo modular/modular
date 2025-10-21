@@ -349,7 +349,7 @@ fn radix_sort_pairs_kernel[
 
         @parameter
         for t in range(BLOCK_SIZE):
-            sum += s_counts[t * NUM_BUCKETS + bucket_offset]
+            sum += s_counts[t * NUM_BUCKETS + Int(bucket_offset)]
         total_counts[bucket_offset] = sum
     barrier()
 

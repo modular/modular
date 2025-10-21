@@ -85,16 +85,16 @@ def execute_ragged_flash_attention[
 
     q_ragged = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
     random(q_ragged.tensor)
 
     # initialize reference output
     test_output = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
     ref_output = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
 
     # initialize our KVCache
     kv_block_continuous = HostNDBuffer[dtype, 6](
@@ -103,8 +103,8 @@ def execute_ragged_flash_attention[
             2,
             num_layers,
             max_seq_len_cache,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         ),
     )
 
@@ -143,8 +143,8 @@ def execute_ragged_flash_attention[
             2,
             num_layers,
             page_size,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         )
     )
 
@@ -184,11 +184,11 @@ def execute_ragged_flash_attention[
                 var src_byte_offset = UInt(Int(src)) - UInt(
                     Int(kv_block_continuous.tensor.data)
                 )
-                var dest_len = (
-                    kv_block_paged.tensor.bytecount() - dest_byte_offset
+                var dest_len = kv_block_paged.tensor.bytecount() - Int(
+                    dest_byte_offset
                 )
-                var src_len = (
-                    kv_block_continuous.tensor.bytecount() - src_byte_offset
+                var src_len = kv_block_continuous.tensor.bytecount() - Int(
+                    src_byte_offset
                 )
                 memcpy(
                     dest=dest,
@@ -196,7 +196,9 @@ def execute_ragged_flash_attention[
                     count=min(
                         dest_len // size_of[dest.type](),
                         src_len // size_of[src.type](),
-                        page_size * kv_params.num_heads * kv_params.head_size,
+                        page_size
+                        * Int(kv_params.num_heads)
+                        * Int(kv_params.head_size),
                     ),
                 )
 
@@ -244,8 +246,8 @@ def execute_ragged_flash_attention[
                 for hd in range(kv_params.head_size):
                     try:
                         assert_almost_equal(
-                            ref_out[ragged_offset + s, h, hd],
-                            test_out[ragged_offset + s, h, hd],
+                            ref_out[ragged_offset + s, h, Int(hd)],
+                            test_out[ragged_offset + s, h, Int(hd)],
                             atol=1e-2,
                         )
                     except e:
@@ -255,8 +257,8 @@ def execute_ragged_flash_attention[
                             s,
                             h,
                             hd,
-                            ref_out[ragged_offset + s, h, hd],
-                            test_out[ragged_offset + s, h, hd],
+                            ref_out[ragged_offset + s, h, Int(hd)],
+                            test_out[ragged_offset + s, h, Int(hd)],
                         )
                         raise e
 

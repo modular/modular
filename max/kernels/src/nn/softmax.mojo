@@ -1238,7 +1238,7 @@ fn _online_softmax_iter_for_mma_output[
                 score_frag_rowmax[col_tile, row]
             )
 
-    var coords = idx2crd[warp_layout](lane)
+    var coords = idx2crd[warp_layout](Int(lane))
     var lane_contains_first_column = coords[1] == 0
     var lane_row = coords[0]
 
@@ -1600,7 +1600,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     # 3-4. ((WM*WN)//frag_size) x frag_size: the two trailing dimensions of
     #    output_reg_tile
     alias warp_tile_size = WM * WN  # ((WM*WN)//frag_size) x frag_size
-    alias row_warp_tile_size = (num_warps_n - 1) * warp_tile_size
+    alias row_warp_tile_size = (num_warps_n - 1) * Int(warp_tile_size)
     # Makes sure arithmetic is optimized away when `num_warps_m == 1`.
     var o_smem_ptr = (
         o_smem_ptr_base
@@ -1614,7 +1614,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     var out_reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](0, 0)
 
     alias o_smem_layout = Layout.row_major(
-        WM * WN // UInt(2 * frag_size), frag_size
+        Int(WM * WN // UInt(2 * frag_size)), frag_size
     )
 
     alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
@@ -1799,7 +1799,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         var reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](
             warp_n, 0
         )
-        if warp_n == warp_x:
+        if warp_n == Int(warp_x):
 
             @parameter
             if warp_n > 0:
@@ -1818,9 +1818,9 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
             # `N\X` refer to `warp_n`, `warp_x`
             alias row = warp_n
             var col = warp_x - UInt(1 if warp_x > UInt(warp_n) else 0)
-            var o_smem_ptr_write = (
-                o_smem_ptr + (row * (num_warps_n - 1) + col) * warp_tile_size
-            )
+            var o_smem_ptr_write = o_smem_ptr + (
+                row * (num_warps_n - 1) + Int(col)
+            ) * Int(warp_tile_size)
             var o_smem_write = (
                 LayoutTensor[
                     dtype,

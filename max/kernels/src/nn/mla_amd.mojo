@@ -321,7 +321,7 @@ fn mla_prefill_single_batch_amd[
     alias BM = config.block_m()
     alias BN = config.block_n()
     alias depth = config.depth
-    alias rope_depth = q_depth - depth
+    alias rope_depth = q_depth - Int(depth)
     alias num_heads = config.num_heads
     alias BK = config.block_k()
     alias simd_width = simd_width_of[q_type]()
@@ -357,7 +357,9 @@ fn mla_prefill_single_batch_amd[
     var out_reg_tile = (
         LayoutTensor[
             accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas_output, output_frag_size),
+            Layout.row_major(
+                Int(num_m_mmas * num_n_mmas_output), output_frag_size
+            ),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
@@ -396,7 +398,7 @@ fn mla_prefill_single_batch_amd[
     var rowmax = (
         LayoutTensor[
             accum_type,
-            Layout.row_major(num_m_mmas, fragment_layout.shape[0].value()),
+            Layout.row_major(Int(num_m_mmas), fragment_layout.shape[0].value()),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
@@ -407,7 +409,7 @@ fn mla_prefill_single_batch_amd[
     var rowsum = (
         LayoutTensor[
             accum_type,
-            Layout.row_major(num_m_mmas, fragment_layout.shape[0].value()),
+            Layout.row_major(Int(num_m_mmas), fragment_layout.shape[0].value()),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
@@ -416,7 +418,13 @@ fn mla_prefill_single_batch_amd[
     )
 
     var smem_manager = SharedMemoryManager[
-        q_type, BM, BN, BK, depth, num_warps_n, token_gen
+        q_type,
+        Int(BM),
+        Int(BN),
+        Int(BK),
+        Int(depth),
+        Int(num_warps_n),
+        token_gen,
     ]()
 
     var warp_scratch = smem_manager.get_warp_scratch_tensor()
@@ -430,10 +438,10 @@ fn mla_prefill_single_batch_amd[
     var q_buffer = QRegisterBuffer[
         mma_shape=mma_shape,
         k_group_size=k_group_size,
-        WM=WM,
-        WN=WN,
-        BN=BN,
-        BK=BK,
+        WM = Int(WM),
+        WN = Int(WN),
+        BN = Int(BN),
+        BK = Int(BK),
         depth=q_depth,
         thread_layout=warp_layout,
     ](q_tile)
@@ -460,17 +468,21 @@ fn mla_prefill_single_batch_amd[
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         var k_tile = gmem_manager.get_kv_tensor(
-            k.block_paged_ptr[BN](batch_idx, kv_tile_start_row, kv_head_idx, 0),
+            k.block_paged_ptr[Int(BN)](
+                batch_idx, kv_tile_start_row, kv_head_idx, 0
+            ),
             kv_tile_num_rows,
         )
 
         var v_tile = gmem_manager.get_kv_tensor(
-            v.block_paged_ptr[BN](batch_idx, kv_tile_start_row, kv_head_idx, 0),
+            v.block_paged_ptr[Int(BN)](
+                batch_idx, kv_tile_start_row, kv_head_idx, 0
+            ),
             kv_tile_num_rows,
         )
 
         var k_rope_tile = gmem_manager.get_krope_tensor(
-            k_rope.block_paged_ptr[BN](
+            k_rope.block_paged_ptr[Int(BN)](
                 batch_idx,
                 kv_tile_start_row + cache_start_pos,
                 Int(kv_head_idx // UInt(group)),
@@ -482,8 +494,8 @@ fn mla_prefill_single_batch_amd[
         var p_buffer = PRegisterBuffer[
             accum_type,
             q_type,
-            num_m_mmas,
-            num_n_mmas,
+            Int(num_m_mmas),
+            Int(num_n_mmas),
             output_frag_size,
         ]()
 
@@ -493,20 +505,20 @@ fn mla_prefill_single_batch_amd[
         var v_buffer = VBuffer[
             mma_shape=mma_shape,
             k_group_size=k_group_size,
-            BN=BN,
-            BK=BK,
-            depth=depth,
-            num_threads=num_threads,
+            BN = Int(BN),
+            BK = Int(BK),
+            depth = Int(depth),
+            num_threads = Int(num_threads),
         ](v_tile, smem_manager.get_kv_ptr[v_tile.dtype]())
 
         var k_buffer = KBuffer[
             mma_shape=mma_shape,
             k_group_size=k_group_size,
             swizzle=None,
-            BN=BN,
-            WN=BN,
-            BK=BK,
-            num_threads=num_threads,
+            BN = Int(BN),
+            WN = Int(BN),
+            BK = Int(BK),
+            num_threads = Int(num_threads),
         ](
             k_tile,
             num_b_rows,
@@ -517,10 +529,10 @@ fn mla_prefill_single_batch_amd[
             mma_shape=mma_shape,
             k_group_size=k_group_size,
             swizzle=None,
-            BN=BN,
-            WN=BN,
-            BK=BK,
-            num_threads=num_threads,
+            BN = Int(BN),
+            WN = Int(BN),
+            BK = Int(BK),
+            num_threads = Int(num_threads),
         ](
             k_rope_tile,
             num_b_rows,
@@ -555,7 +567,7 @@ fn mla_prefill_single_batch_amd[
 
             @parameter
             for k_mma in range(num_k_mmas2):
-                var q_mma_tile = q_buffer.get_mma_tile[i, k_mma]()
+                var q_mma_tile = q_buffer.get_mma_tile[Int(i), Int(k_mma)]()
                 k_buffer.load_from_shared[
                     # TODO: I should be able to use tensor_core_mma here
                     # but getting compiler errors
@@ -564,7 +576,7 @@ fn mla_prefill_single_batch_amd[
                     mma_shape,
                     k_group_size,
                     True,
-                    k_mma,
+                    Int(k_mma),
                 ]()
                 var k_mma_tile = k_buffer.get_mma_tile()
                 tensor_core_mma.mma[swap_a_b=swap_a_b](
@@ -576,23 +588,25 @@ fn mla_prefill_single_batch_amd[
         # I tried this and previous block as a lambda but compiler was crashing
         # so duplicating code for now
         @parameter
-        for i in range(rope_depth // BK):
+        for i in range(rope_depth // Int(BK)):
             k_rope_buffer.copy_to_shared()
 
             barrier()
 
             @parameter
-            if i < rope_depth // BK - 1:
+            if i < rope_depth // Int(BK) - 1:
                 k_rope_buffer.load_from_dram()
 
                 @parameter
-                if i == rope_depth // BK - 2:
+                if i == rope_depth // Int(BK) - 2:
                     # prefetch v from dram
                     v_buffer.load_from_dram()
 
             @parameter
             for k_mma in range(num_k_mmas2):
-                var q_mma_tile = q_buffer.get_mma_tile[i + depth // BK, k_mma]()
+                var q_mma_tile = q_buffer.get_mma_tile[
+                    i + Int(depth // BK), Int(k_mma)
+                ]()
                 k_rope_buffer.load_from_shared[
                     # TODO: I should be able to use tensor_core_mma here
                     # but getting compiler errors
@@ -601,7 +615,7 @@ fn mla_prefill_single_batch_amd[
                     mma_shape,
                     k_group_size,
                     True,
-                    k_mma,
+                    Int(k_mma),
                 ]()
                 var k_mma_tile = k_rope_buffer.get_mma_tile()
                 tensor_core_mma.mma[swap_a_b=swap_a_b](
@@ -625,8 +639,8 @@ fn mla_prefill_single_batch_amd[
                 token_gen=token_gen,
                 MMA_M = mma_shape[0],
                 MMA_N = mma_shape[1],
-                num_m_mmas=num_m_mmas,
-                num_n_mmas=num_n_mmas,
+                num_m_mmas = Int(num_m_mmas),
+                num_n_mmas = Int(num_n_mmas),
                 mask_t=mask_t,
                 group=1,
                 fragment_layout=fragment_layout_nested,
@@ -652,7 +666,7 @@ fn mla_prefill_single_batch_amd[
 
         mask_warp_col += BN
         alias reg_layout_by_mma_unit = Layout.row_major(
-            num_m_mmas * num_n_mmas, output_frag_size
+            Int(num_m_mmas * num_n_mmas), output_frag_size
         )
         # don't know why we need this barrier but i get random failures without it
         barrier()
@@ -660,9 +674,9 @@ fn mla_prefill_single_batch_amd[
             accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(num_m_mmas, num_n_mmas),
+            Layout.row_major(Int(num_m_mmas), Int(num_n_mmas)),
             # threads layout by warp
-            Layout.row_major(num_warps_m, num_warps_n),
+            Layout.row_major(Int(num_warps_m), Int(num_warps_n)),
             warp_layout,
             use_exp2=use_exp2,
             fragment_layout=fragment_layout,
@@ -673,7 +687,7 @@ fn mla_prefill_single_batch_amd[
             p_buffer.reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
                 1, output_frag_size
             ](),
-            warp_scratch.tile[2 * num_warps_n, WM](0, Int(warp_row)),
+            warp_scratch.tile[2 * Int(num_warps_n), Int(WM)](0, Int(warp_row)),
             rowmax.ptr.address_space_cast[AddressSpace.GENERIC](),
             rowsum.ptr.address_space_cast[AddressSpace.GENERIC](),
         )
@@ -696,14 +710,14 @@ fn mla_prefill_single_batch_amd[
 
             v_buffer.load_from_shared()
 
-            var p_mma_tile_interleaved = p_buffer.interleave[i]()
+            var p_mma_tile_interleaved = p_buffer.interleave[Int(i)]()
 
             @parameter
             for k_mma_idx in range(v_buffer.num_k_tiles):
                 tensor_core_mma.mma[swap_a_b=swap_a_b](
                     p_mma_tile_interleaved.tile[1, simd_width](0, k_mma_idx),
                     v_buffer.mma_tile.tile[
-                        depth // UInt(mma_shape[0]), simd_width
+                        Int(depth // UInt(mma_shape[0])), simd_width
                     ](k_mma_idx, 0),
                     out_reg_tile,
                 )
@@ -712,16 +726,18 @@ fn mla_prefill_single_batch_amd[
 
     for i in range(UInt32(0), UInt32(num_keys), UInt32(BN)):
         var end = min(i + BN, num_keys)
-        loop_over_kvcache[BN](i, end, end != num_keys)
+        loop_over_kvcache[Int(BN)](i, end, end != num_keys)
 
     # Apply softmax denominator.
     apply_softmax_denominator[
-        num_m_mmas=num_m_mmas,
-        num_n_mmas=num_n_mmas,
+        num_m_mmas = Int(num_m_mmas),
+        num_n_mmas = Int(num_n_mmas),
         fragment_layout=fragment_layout,
     ](out_reg_tile, rowsum)
 
-    var output_warp_tile = output_tile.tile[WM, WN](warp_row, warp_col)
+    var output_warp_tile = output_tile.tile[Int(WM), Int(WN)](
+        Int(warp_row), Int(warp_col)
+    )
 
     copy_local_to_dram2[
         dst_thread_layout=warp_layout,
@@ -807,7 +823,9 @@ fn mla_decoding_single_batch_amd[
     var out_reg_tile = (
         LayoutTensor[
             accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas_depth, output_frag_size),
+            Layout.row_major(
+                Int(num_m_mmas * num_n_mmas_depth), output_frag_size
+            ),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
@@ -852,13 +870,13 @@ fn mla_decoding_single_batch_amd[
 
     var rowmax = LayoutTensor[
         accum_type,
-        Layout.row_major(num_m_mmas, fragment_layout.shape[0].value()),
+        Layout.row_major(Int(num_m_mmas), fragment_layout.shape[0].value()),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     var rowsum = LayoutTensor[
         accum_type,
-        Layout.row_major(num_m_mmas, fragment_layout.shape[0].value()),
+        Layout.row_major(Int(num_m_mmas), fragment_layout.shape[0].value()),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
@@ -879,7 +897,14 @@ fn mla_decoding_single_batch_amd[
         rowsum = rowsum.fill(0)
 
     var smem_manager = SharedMemoryManager[
-        q_type, BM, BN, BK, depth, num_warps_n, token_gen, nope_depth
+        q_type,
+        Int(BM),
+        Int(BN),
+        Int(BK),
+        Int(depth),
+        Int(num_warps_n),
+        token_gen,
+        Int(nope_depth),
     ]()
 
     var p_smem_iter = smem_manager.get_p_iter()
@@ -898,19 +923,21 @@ fn mla_decoding_single_batch_amd[
     alias q_reg_size = (depth // BK) * num_m_mmas * UInt(simd_width)
 
     var q_reg_data = stack_allocation[
-        q_reg_size,
+        Int(q_reg_size),
         q_type,
         address_space = AddressSpace.LOCAL,
     ]()
 
     var q_reg_tile_iter = LayoutTensorIter[
         q_type,
-        Layout.row_major(num_m_mmas, simd_width),
+        Layout.row_major(Int(num_m_mmas), simd_width),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ](q_reg_data, q_reg_size)
 
-    var q_gmem_warp_iter = q_tile.tiled_iterator[WM, BK, axis=1](warp_row, 0)
+    var q_gmem_warp_iter = q_tile.tiled_iterator[Int(WM), Int(BK), axis=1](
+        Int(warp_row), 0
+    )
 
     @parameter
     for i in range(depth // BK):
@@ -946,24 +973,32 @@ fn mla_decoding_single_batch_amd[
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         var k_tile = gmem_manager.get_kv_tensor(
-            k.block_paged_ptr[BN](batch_idx, kv_tile_start_row, kv_head_idx, 0),
+            k.block_paged_ptr[Int(BN)](
+                batch_idx, kv_tile_start_row, kv_head_idx, 0
+            ),
             kv_tile_num_rows,
         )
-        var k_global_iterator = k_tile.tiled_iterator[BN, BK, axis=1](0, 0)
+        var k_global_iterator = k_tile.tiled_iterator[Int(BN), Int(BK), axis=1](
+            0, 0
+        )
 
         var v_tile = gmem_manager.get_kv_tensor(
-            v.block_paged_ptr[BN](batch_idx, kv_tile_start_row, kv_head_idx, 0),
+            v.block_paged_ptr[Int(BN)](
+                batch_idx, kv_tile_start_row, kv_head_idx, 0
+            ),
             kv_tile_num_rows,
         )
 
         var v_global_iterator = v_tile.slice[
             :, : Int(nope_depth)
-        ]().tiled_iterator[BK, nope_depth, axis=0](0, 0)
+        ]().tiled_iterator[Int(BK), Int(nope_depth), axis=0](0, 0)
 
         var p_reg_tile = (
             LayoutTensor[
                 accum_type,
-                Layout.row_major(num_m_mmas * num_n_mmas, output_frag_size),
+                Layout.row_major(
+                    Int(num_m_mmas * num_n_mmas), output_frag_size
+                ),
                 MutableAnyOrigin,
                 address_space = AddressSpace.LOCAL,
             ]
@@ -981,7 +1016,7 @@ fn mla_decoding_single_batch_amd[
         # will fix it with better interface later
         var q_smem_iter = LayoutTensorIter[
             q_type,
-            Layout.row_major(num_m_mmas, simd_width),
+            Layout.row_major(Int(num_m_mmas), simd_width),
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
         ](
@@ -1035,8 +1070,8 @@ fn mla_decoding_single_batch_amd[
                 token_gen=token_gen,
                 MMA_M=MMA_M,
                 MMA_N=MMA_N,
-                num_m_mmas=num_m_mmas,
-                num_n_mmas=num_n_mmas,
+                num_m_mmas = Int(num_m_mmas),
+                num_n_mmas = Int(num_n_mmas),
                 mask_t=mask_t,
                 group=group,
                 fragment_layout=fragment_layout,
@@ -1073,10 +1108,10 @@ fn mla_decoding_single_batch_amd[
             _apply_mask_impl[masked=True]()
 
         alias reg_layout_by_mma_unit = Layout.row_major(
-            num_m_mmas * num_n_mmas, output_frag_size
+            Int(num_m_mmas * num_n_mmas), output_frag_size
         )
         alias reg_layout_by_mma_unit_depth = Layout.row_major(
-            num_m_mmas * num_n_mmas_depth, output_frag_size
+            Int(num_m_mmas * num_n_mmas_depth), output_frag_size
         )
 
         # Not sure why we need this barrier here, but the code hangs without it
@@ -1086,9 +1121,9 @@ fn mla_decoding_single_batch_amd[
             accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(num_m_mmas, num_n_mmas),
+            Layout.row_major(Int(num_m_mmas), Int(num_n_mmas)),
             # threads layout by warp
-            Layout.row_major(num_warps_m, num_warps_n),
+            Layout.row_major(Int(num_warps_m), Int(num_warps_n)),
             warp_layout,
             use_exp2=use_exp2,
             fragment_layout=fragment_layout,
@@ -1099,7 +1134,7 @@ fn mla_decoding_single_batch_amd[
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
                 1, output_frag_size
             ](),
-            warp_scratch.tile[2 * num_warps_n, WM](0, Int(warp_row)),
+            warp_scratch.tile[2 * Int(num_warps_n), Int(WM)](0, Int(warp_row)),
             rowmax.ptr.address_space_cast[AddressSpace.GENERIC](),
             rowsum.ptr.address_space_cast[AddressSpace.GENERIC](),
         )
@@ -1108,22 +1143,22 @@ fn mla_decoding_single_batch_amd[
         barrier()
 
         copy_fragment_to_smem[
-            BM,
-            BN,
-            BK,
-            WM,
-            WN,
+            Int(BM),
+            Int(BN),
+            Int(BK),
+            Int(WM),
+            Int(WN),
             MMA_M,
             MMA_N,
-            num_m_mmas,
-            num_n_mmas,
+            Int(num_m_mmas),
+            Int(num_n_mmas),
             fragment_layout,
             warp_layout,
         ](
             p_smem_iter,
             p_reg_vectorized,
-            warp_row,
-            warp_col,
+            Int(warp_row),
+            Int(warp_col),
         )
 
         barrier()
@@ -1157,18 +1192,18 @@ fn mla_decoding_single_batch_amd[
         # ensure that smem for v is not required anymore
         barrier()
 
-    start, end = get_start_and_end_for_partitions[BN](
-        num_keys, num_partitions, block_idx.x
+    start, end = get_start_and_end_for_partitions[Int(BN)](
+        num_keys, num_partitions, Int(block_idx.x)
     )
 
     for i in range(start, end, BN):
-        var end_ = min(i + BN, end)
-        loop_over_kvcache[BN](i, end_, end_ != end)
+        var end_ = min(i + Int(BN), end)
+        loop_over_kvcache[Int(BN)](i, end_, end_ != end)
 
     # Apply softmax denominator.
     apply_softmax_denominator[
-        num_m_mmas=num_m_mmas,
-        num_n_mmas=num_n_mmas_depth,
+        num_m_mmas = Int(num_m_mmas),
+        num_n_mmas = Int(num_n_mmas_depth),
         fragment_layout=fragment_layout,
     ](out_reg_tile, rowsum)
 
@@ -1180,9 +1215,9 @@ fn mla_decoding_single_batch_amd[
             exp_sum_ptr[q_head_idx] = row_sum
             qk_max_ptr[q_head_idx] = row_max
 
-    var output_warp_tile = output_tile.tile[WM, nope_depth // num_warps_n](
-        warp_row, warp_col
-    )
+    var output_warp_tile = output_tile.tile[
+        Int(WM), Int(nope_depth // num_warps_n)
+    ](Int(warp_row), Int(warp_col))
 
     copy_local_to_dram[
         dst_thread_layout=warp_layout,

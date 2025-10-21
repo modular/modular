@@ -207,7 +207,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
 
     var q_dim = output.dim[2]()
     var k_dim = kv_params.head_size * kv_params.num_heads
-    var qk_offset = q_dim + k_dim
+    var qk_offset = q_dim + Int(k_dim)
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
@@ -242,13 +242,13 @@ fn _fused_qkv_matmul_kv_cache_impl[
                 UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
             )
 
-        var valid_len = cache.cache_length(b_idx)
+        var valid_len = cache.cache_length(Int(b_idx))
         var cache_t_idx = t_idx + UInt(valid_len)
         cache.store(
-            b_idx,
-            h_idx,
-            cache_t_idx,
-            hd_idx,
+            Int(b_idx),
+            Int(h_idx),
+            Int(cache_t_idx),
+            Int(hd_idx),
             rebind[SIMD[cache_dtype, width]](output_val),
         )
 
@@ -641,7 +641,7 @@ fn _flash_attention_dispatch_materialized_mask[
     return dispatch_materialized_mask_and_score_mod[
         score_mod_str,
         _dispatch_flash_attention,
-        collection_t.kv_params.num_heads,
+        Int(collection_t.kv_params.num_heads),
     ](
         LayoutTensor[mask_nd.dtype, mask_nd.layout, MutableAnyOrigin](
             mask_nd.ptr,
@@ -709,7 +709,8 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         gamma.layout.shape[0] != UNKNOWN_VALUE, "Need static shape for gamma"
     ]()
     constrained[
-        rms_norm_cols <= kv_collection.kv_params.head_size or not per_head_norm,
+        rms_norm_cols <= Int(kv_collection.kv_params.head_size)
+        or not per_head_norm,
         "Length of gamma must be smaller or equal to head size",
     ]()
 
@@ -752,8 +753,8 @@ def rms_norm_kv_cache_ragged_continuous_batching[
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
-            head_idx = idx[1] // params.head_size
-            head_dim_idx = idx[1] % params.head_size
+            head_idx = idx[1] // Int(params.head_size)
+            head_dim_idx = idx[1] % Int(params.head_size)
 
         return k_cache.load[width=width](
             bs=batch_idx,
@@ -785,8 +786,8 @@ def rms_norm_kv_cache_ragged_continuous_batching[
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
-            head_idx = idx[1] // params.head_size
-            head_dim_idx = idx[1] % params.head_size
+            head_idx = idx[1] // Int(params.head_size)
+            head_dim_idx = idx[1] % Int(params.head_size)
 
         k_cache.store(
             bs=batch_idx,
@@ -873,7 +874,8 @@ def rms_norm_kv_cache_ragged_paged[
         gamma.layout.shape[0] != UNKNOWN_VALUE, "Need static shape for gamma"
     ]()
     constrained[
-        rms_norm_cols <= kv_collection.kv_params.head_size or not per_head_norm,
+        rms_norm_cols <= Int(kv_collection.kv_params.head_size)
+        or not per_head_norm,
         "Length of gamma must be smaller or equal to head size",
     ]()
 
@@ -916,8 +918,8 @@ def rms_norm_kv_cache_ragged_paged[
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
-            head_idx = idx[1] // params.head_size
-            head_dim_idx = idx[1] % params.head_size
+            head_idx = idx[1] // Int(params.head_size)
+            head_dim_idx = idx[1] % Int(params.head_size)
 
         return k_cache.load[width=width](
             bs=batch_idx,
@@ -949,8 +951,8 @@ def rms_norm_kv_cache_ragged_paged[
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
-            head_idx = idx[1] // params.head_size
-            head_dim_idx = idx[1] % params.head_size
+            head_idx = idx[1] // Int(params.head_size)
+            head_dim_idx = idx[1] % Int(params.head_size)
         k_cache.store(
             bs=batch_idx,
             tok_idx=cache_token_idx,

@@ -80,13 +80,13 @@ def execute_ragged_flash_attention[
 
     q_ragged = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
     random(q_ragged.tensor)
     q_padded = HostNDBuffer[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_length, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_length, num_q_heads, Int(kv_params.head_size)
         )
     )
 
@@ -102,7 +102,7 @@ def execute_ragged_flash_attention[
         memcpy(
             dest=padded_ptr,
             src=ragged_ptr,
-            count=unpadded_seq_len * num_q_heads * kv_params.head_size,
+            count=unpadded_seq_len * num_q_heads * Int(kv_params.head_size),
         )
 
     # initialize reference output
@@ -110,13 +110,13 @@ def execute_ragged_flash_attention[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_length, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_length, num_q_heads, Int(kv_params.head_size)
         ),
     )
 
     test_output = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
 
     # initialize our KVCache
     kv_block = HostNDBuffer[dtype, 6](
@@ -125,8 +125,8 @@ def execute_ragged_flash_attention[
             2,
             num_layers,
             max_seq_len_cache,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         ),
     )
     random(kv_block.tensor)
@@ -191,8 +191,8 @@ def execute_ragged_flash_attention[
                 for hd in range(kv_params.head_size):
                     try:
                         assert_almost_equal(
-                            ref_out[bs, s, h, hd],
-                            test_out[ragged_offset + s, h, hd],
+                            ref_out[bs, s, h, Int(hd)],
+                            test_out[ragged_offset + s, h, Int(hd)],
                         )
                     except e:
                         print(
@@ -201,8 +201,8 @@ def execute_ragged_flash_attention[
                             s,
                             h,
                             hd,
-                            ref_out[bs, s, h, hd],
-                            test_out[ragged_offset + s, h, hd],
+                            ref_out[bs, s, h, Int(hd)],
+                            test_out[ragged_offset + s, h, Int(hd)],
                         )
                         raise e
 
