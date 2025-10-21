@@ -182,6 +182,18 @@ what we publish.
   - `Codepoint.unsafe_write_utf8() -> Int` - Changed return type from `UInt` to `Int`
   - `Codepoint.utf8_byte_length() -> Int` - Changed return type from `UInt` to `Int`
 
+- Added `repeat()` function to the `itertools` module that creates an iterator
+  which repeats an element a specified number of times. Unlike Python's
+  `itertools.repeat()`, infinite iteration is not currently supported - the
+  `times` parameter is required. Example usage:
+
+  ```mojo
+  from itertools import repeat
+
+  for val in repeat(42, times=3):
+      print(val)  # Prints: 42, 42, 42
+  ```
+
 ### Tooling changes {#25-7-tooling-changes}
 
 - `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)

@@ -359,3 +359,81 @@ fn product[
         iter(iterable_c),
         iter(iterable_d),
     }
+
+
+# ===-----------------------------------------------------------------------===#
+# repeat
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _RepeatIterator[ElementType: Copyable & Movable](
+    Copyable, Iterable, Iterator, Movable
+):
+    """Iterator that repeats an element a specified number of times.
+
+    Parameters:
+        ElementType: The type of the element to repeat.
+    """
+
+    alias Element = ElementType
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+
+    var element: ElementType
+    var remaining: Int
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    @always_inline
+    fn copy(self) -> Self:
+        return Self(self.element.copy(), self.remaining)
+
+    @always_inline
+    fn __next__(mut self) -> ElementType:
+        self.remaining -= 1
+        return self.element.copy()
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self.remaining > 0
+
+
+@always_inline
+fn repeat[
+    ElementType: Copyable & Movable
+](element: ElementType, *, times: Int) -> _RepeatIterator[ElementType]:
+    """Constructs an iterator that repeats the given element a specified number of times.
+
+    This function creates an iterator that returns the same element over and over
+    for the specified number of times.
+
+    Parameters:
+        ElementType: The type of the element to repeat.
+
+    Args:
+        element: The element to repeat.
+        times: The number of times to repeat the element.
+
+    Returns:
+        An iterator that repeats the element the specified number of times.
+
+    Examples:
+
+    ```mojo
+    # Repeat a value 3 times
+    var it = repeat(42, times=3)
+    for val in it:
+        print(val)  # Prints: 42, 42, 42
+
+    # Repeat a string 5 times
+    var str_it = repeat("hello", times=5)
+    for s in str_it:
+        print(s)  # Prints: hello, hello, hello, hello, hello
+    ```
+    """
+    debug_assert(times >= 0, "The `times` argument must be non-negative")
+    return {element.copy(), times}

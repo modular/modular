@@ -11,4 +11,4 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .itertools import product, count
+from .itertools import count, product, repeat
