@@ -25,6 +25,15 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.core import TextAndVisionContext
+from max.pipelines.lib import (
+    ModelInputs,
+    ModelOutputs,
+    KVCacheConfig,
+    KVCacheMixin,
+    PipelineConfig,
+    PipelineModel,
+    SupportedEncoding
+)
 from transformers import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
