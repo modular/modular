@@ -659,8 +659,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     // then this is a compiler generated trait
     // used to implement a closure
     UnitAttr:$definesClosure,
-    OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$dtorSig,
-    OptionalAttr<StrAttr>:$dtorWitnessTrait,
+    OptionalAttr<KGEN_GetWitnessAttr>:$dtorWitness,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
     // This is the error message to produce if a non-destructible type needs an

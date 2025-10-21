@@ -41,8 +41,7 @@ __extension Spaceship(Flying):
 
 
 # CHECK: kgen.conformance @"struct_extensions_2::Flying" {
-# CHECK-NEXT: kgen.witness "fly_to"
-# CHECK-SAME: = @struct_extensions_2::@"extension:Spaceship"::@"fly_to
+# CHECK-NEXT: kgen.witness "fly_to{{.*}}" : {{.*}} = @struct_extensions_2::@"extension:Spaceship"::@"fly_to{{.*}}"
 # ConformanceOp's immediateParents should match the trait's immediateParents.
 # Since Flying inherits from AnyType, the conformance should have AnyType.
 # CHECK-NEXT: } attributes {immediateParents = #M<symbols[@{{.*}}::@AnyType]>, traitRef = @struct_extensions_2::@Flying}

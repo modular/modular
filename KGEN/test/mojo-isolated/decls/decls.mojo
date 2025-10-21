@@ -1262,7 +1262,7 @@ struct Bound[T: AnyType]:
 struct Match[lt: __mlir_type.`!lit.origin<0>`]:
     pass
     # CHECK: kgen.conformance {{.*}}::AnyType
-    # CHECK-NEXT: kgen.witness "__del__" : !lit.generator<[1]("self": !lit.ref<@decls::@Match<:origin<0> lt>, mut *[0,0]> owned_in_mem,
+    # CHECK-NEXT: kgen.witness "__del__{{.*}}" : !lit.generator<[1]("self": !lit.ref<@decls::@Match<:origin<0> lt>, mut *[0,0]> owned_in_mem,
 
 
 ##===----------------------------------------------------------------------===##

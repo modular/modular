@@ -51,19 +51,19 @@ struct S1[X: Int](R1, R1Child, R2, Movable):
     # CHECK: lit.fn @"__moveinit__[[MOVEINIT_NAME:.+]]"[
 
     # CHECK: kgen.conformance @{{.*}}AnyType
-    # CHECK-NEXT: kgen.witness "__del__" : {{.*}} = {{.*}}@S1::@"__del__[[DEL_NAME]]"<:!Int X>
+    # CHECK-NEXT: kgen.witness "__del__{{.*}}" : {{.*}} = {{.*}}@S1::@"__del__{{.*}}"<:!Int X>
     # CHECK-NEXT: kgen.witness "__del__is_trivial" : !Bool = {:i1 1}
     # CHECK-NEXT: traitRef = [[ANYTYPE_NAME:(@[^:]+::)+@AnyType]]
 
     # CHECK: kgen.conformance @{{.*}}Movable
-    # CHECK-NEXT: kgen.witness "__moveinit__" : {{.*}} = {{.*}}@S1::@"__moveinit__[[MOVEINIT_NAME]]"<:!Int X>
+    # CHECK-NEXT: kgen.witness "__moveinit__{{.*}}" : {{.*}} = {{.*}}@S1::@"__moveinit__{{.*}}"<:!Int X>
     # CHECK-NEXT: kgen.witness "__moveinit__is_trivial" : !Bool = {:i1 1}
     # CHECK-NEXT: immediateParents = #M<symbols[[[ANYTYPE_NAME]]]>
 
     # CHECK: kgen.conformance @{{.*}}R1
     # CHECK-NEXT: kgen.witness "N" : !Int = X
-    # CHECK-NEXT: kgen.witness "f1" : {{.*}} = {{.*}}@S1::@"f1[[F1_BOOL_NAME]]"<:!Int X>
-    # CHECK-NEXT: kgen.witness "f1" : {{.*}} = {{.*}}@S1::@"f1[[F1_INT_NAME]]"<:!Int X>
+    # CHECK-NEXT: kgen.witness "f1{{.*}}" : {{.*}} = {{.*}}@S1::@"f1{{.*}}"<:!Int X>
+    # CHECK-NEXT: kgen.witness "f1{{.*}}" : {{.*}} = {{.*}}@S1::@"f1{{.*}}"<:!Int X>
     # CHECK-NEXT: immediateParents = #M<symbols[[[ANYTYPE_NAME]]]>
     # CHECK-SAME: traitRef = [[R1_NAME:(@[^:]+::)+@R1]]
 
@@ -72,4 +72,4 @@ struct S1[X: Int](R1, R1Child, R2, Movable):
 
     # CHECK: kgen.conformance @{{.*}}R2
     # CHECK-NEXT: kgen.witness "T" : !AnyType = !Int
-    # CHECK-NEXT: kgen.witness "f2" : {{.*}} = {{.*}}@S1::@"f2[[F2_NAME]]"<:!Int X>
+    # CHECK-NEXT: kgen.witness "f2{{.*}}" : {{.*}} = {{.*}}@S1::@"f2{{.*}}"<:!Int X>

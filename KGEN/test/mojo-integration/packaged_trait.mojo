@@ -23,7 +23,7 @@ struct MyType(PackageTrait):
         pass
 
     # CHECK: kgen.conformance {{.*}}::PackageTrait
-    # CHECK: kgen.witness "method" {{.*}} = {{.*}}::@MyType::@"method
+    # CHECK: kgen.witness "method{{.*}}" {{.*}} = {{.*}}::@MyType::@"method
 
 
 # CHECK: lit.struct.decl @MyRegType({{.*}}PackageTrait
@@ -33,7 +33,7 @@ struct MyRegType(PackageTrait):
         pass
 
     # CHECK: kgen.conformance {{.*}}::PackageTrait
-    # CHECK: kgen.witness "method" : !lit.generator<[1]("self": !lit.ref<!MyRegType, imm *[0,0]> read_mem) -> !kgen.none> = {{.*}}::@MyRegType::@"method
+    # CHECK: kgen.witness "method{{.*}}" : !lit.generator<[1]("self": !lit.ref<!MyRegType, imm *[0,0]> read_mem) -> !kgen.none> = {{.*}}::@MyRegType::@"method
 
 
 fn bind_trait[T: PackageTrait]():
@@ -66,8 +66,8 @@ fn use_trait[T: PackageTrait](x: UseTrait, y: T):
 
 # CHECK-LABEL: lit.struct.decl @UseTrait
 # CHECK: kgen.conformance {{.*}}::UsedInPackageTrait
-# CHECK: kgen.witness "method" {{.*}} = {{.*}}::@UseTrait::@"method
+# CHECK: kgen.witness "method{{.*}}" {{.*}} = {{.*}}::@UseTrait::@"method
 
 # CHECK-LABEL: lit.struct.decl @UseTraitReg
 # CHECK: kgen.conformance {{.*}}::UsedInPackageTrait
-# CHECK: kgen.witness "method" : !lit.generator<[1]("self": !lit.ref<!UseTraitReg, imm *[0,0]> read_mem) -> !kgen.none> = {{.*}}::@UseTraitReg::@"method
+# CHECK: kgen.witness "method{{.*}}" : !lit.generator<[1]("self": !lit.ref<!UseTraitReg, imm *[0,0]> read_mem) -> !kgen.none> = {{.*}}::@UseTraitReg::@"method

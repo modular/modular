@@ -124,22 +124,22 @@ struct CFMStructParams[t1: AnyTrivialRegType, t2: AnyTrivialRegType](
 # CHECK-SAME: %x: !lit.ref<:!Trait T, imm {{.*}}> read_mem
 fn generic_trait_fn[T: Trait](x: T):
     # CHECK: lit.call[!lit.generator<[1]("self": {{.*}} read_mem) -> !kgen.none>:
-    # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "f0">]{{.*}}(%x)
+    # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "f0{{.*}}">]{{.*}}(%x)
     x.f0()
 
     # CHECK: lit.call[!lit.generator<[1]("self": {{[^)]*}}) -> !kgen.none>:
-    # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "overloaded">]{{.*}}(%x)
+    # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "overloaded{{.*}}">]{{.*}}(%x)
     x.overloaded()
     # CHECK: lit.call[!lit.generator<[1]("self": {{.*}}, "x": index)
-    # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "overloaded">]{{.*}}(%x, %{{.*}})
+    # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "overloaded{{.*}}">]{{.*}}(%x, %{{.*}})
     x.overloaded(`1`)
     # CHECK: lit.call[!lit.generator<[1]("self": {{.*}}, "x": !kgen.string)
-    # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "overloaded">]{{.*}}(%x, %{{.*}})
+    # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "overloaded{{.*}}">]{{.*}}(%x, %{{.*}})
     x.overloaded(__mlir_attr.`"trait" : !kgen.string`)
 
     # CHECK: lit.call[!lit.generator<[1]("self": {{[^)]*}} read_mem)
     # CHECK-SAME: bind_params(:!lit.generator<<"x": index>[1](
-    # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "parametric">, 1)
+    # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "parametric{{.*}}">, 1)
     x.parametric[`1`]()
 
 
@@ -216,7 +216,7 @@ struct StaticMethodStruct(StaticMethodTrait, ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"trait_static_method{{.*}}<T: !StaticMethodTrait
 fn trait_static_method[T: StaticMethodTrait]():
-    # CHECK: call[!lit.generator<() -> !kgen.none>: #kgen.get_witness<:!StaticMethodTrait T, "traits::StaticMethodTrait", "foobar">]()
+    # CHECK: call[!lit.generator<() -> !kgen.none>: #kgen.get_witness<:!StaticMethodTrait T, "traits::StaticMethodTrait", "foobar{{.*}}">]()
     T.foobar()
 
 
@@ -226,7 +226,7 @@ fn trait_static_method[T: StaticMethodTrait]():
 # CHECK-SAME: %__result__: !lit.ref<:!ImplicitlyCopyable T, mut {{.*}}> byref_result
 fn copy_me[T: ImplicitlyCopyable](value: T) -> T:
     # CHECK-NEXT: call[!lit.generator<[2]("existing": {{.*}}T, {{.*}}> read_mem, |, ?, "self": {{.*}}T, {{.*}}> byref_result) -> !kgen.none>:
-    # CHECK-SAME: #kgen.get_witness<:!ImplicitlyCopyable T, "stdlib::builtin::stubs::Copyable", "__copyinit__">]{{.*}}(%value, %__result__)
+    # CHECK-SAME: #kgen.get_witness<:!ImplicitlyCopyable T, "stdlib::builtin::stubs::Copyable", "__copyinit__{{.*}}">]{{.*}}(%value, %__result__)
     return value
 
 
@@ -236,7 +236,7 @@ fn copy_me[T: ImplicitlyCopyable](value: T) -> T:
 # CHECK-SAME: :!Movable T, {{.*}}> byref_result
 fn move_me[T: Movable](var value: T) -> T:
     # CHECK-NEXT: lit.ownership.use %value
-    # CHECK-NEXT: call[{{.*}}#kgen.get_witness<:!Movable T, "stdlib::builtin::stubs::Movable", "__moveinit__">]{{.*}}(%value, %__result__)
+    # CHECK-NEXT: call[{{.*}}#kgen.get_witness<:!Movable T, "stdlib::builtin::stubs::Movable", "__moveinit__{{.*}}">]{{.*}}(%value, %__result__)
     return value^
 
 
@@ -284,9 +284,9 @@ struct RegTraitType(TraitForReg):
 
 # CHECK-LABEL: lit.fn @"raising_method
 fn raising_method[T: TraitForReg](x: T) raises:
-    # CHECK: lit.call[{{.*}}: #kgen.get_witness<:!TraitForReg T, "traits::TraitForReg", "may_throw">][{{.*}}](%__error__, %__call_result_tmp__
+    # CHECK: lit.call[{{.*}}: #kgen.get_witness<:!TraitForReg T, "traits::TraitForReg", "may_throw{{.*}}">][{{.*}}](%__error__, %__call_result_tmp__
     _ = T.may_throw()
-    # CHECK: lit.call[{{.*}}: #kgen.get_witness<:!TraitForReg T, "traits::TraitForReg", "throwing_method">][{{.*}}](%{{.*}}, %__error__, %__call_result_tmp__
+    # CHECK: lit.call[{{.*}}: #kgen.get_witness<:!TraitForReg T, "traits::TraitForReg", "throwing_method{{.*}}">][{{.*}}](%{{.*}}, %__error__, %__call_result_tmp__
     x.throwing_method()
 
 
@@ -314,7 +314,7 @@ struct ChangedResultTypeStruct(ChangedResultTypeTrait):
         pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}ChangedResultTypeTrait
-    # CHECK-NEXT: kgen.witness "result_type" : !lit.generator<{{.*}}"__result__": !lit.ref<!ChangedResultTypeStruct, {{.*}}> byref_result) -> !kgen.none>{{.*}}fn() -> traits::ChangedResultTypeStruct
+    # CHECK-NEXT: kgen.witness "result_type{{.*}}" : !lit.generator<{{.*}}"__result__": !lit.ref<!ChangedResultTypeStruct, {{.*}}> byref_result) -> !kgen.none>{{.*}}fn() -> traits::ChangedResultTypeStruct
 
 # CHECK-LABEL: lit.fn @"convert_result_type
 fn convert_result_type():
@@ -337,7 +337,7 @@ struct VariadicTrait[*I: Index](SimpleTraitMethod):
         pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}SimpleTraitMethod
-    # CHECK-NEXT: kgen.witness "foo" : !lit.generator<[1]("self": {{.*}}<:variadic<index> I>{{.*}} read_mem) -> !kgen.none> = {{.*}}@"foo{{.*}}"<:variadic<index> I>
+    # CHECK-NEXT: kgen.witness "foo{{.*}}" : !lit.generator<[1]("self": {{.*}}<:variadic<index> I>{{.*}} read_mem) -> !kgen.none> = {{.*}}@"foo{{.*}}"<:variadic<index> I>
 
 # CHECK-LABEL: lit.fn @"test_bind_variadic
 fn test_bind_variadic():
@@ -464,7 +464,7 @@ struct RegPassableRequiredType(RequiredType):
         pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}RequiredType
-    # CHECK: kgen.witness "use_it" : {{.*}}fn(::Int) -> ::Int
+    # CHECK: kgen.witness "use_it{{.*}}" : {{.*}}fn(::Int) -> ::Int
 
 
 # CHECK-LABEL: lit.fn @"bind_regpassable_required_type
@@ -603,13 +603,13 @@ struct TraitInheritance(Father):
         pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}Father
-    # CHECK-NEXT: kgen.witness "baz"
+    # CHECK-NEXT: kgen.witness "baz{{.*}}"
 
     # CHECK-LABEL: kgen.conformance @{{.*}}GrandFather
-    # CHECK-NEXT: kgen.witness "bar"
+    # CHECK-NEXT: kgen.witness "bar{{.*}}"
 
     # CHECK-LABEL: kgen.conformance @{{.*}}GreatGrandFather
-    # CHECK-NEXT: kgen.witness "foo"
+    # CHECK-NEXT: kgen.witness "foo{{.*}}"
 
 
 # CHECK-LABEL: lit.fn @"test_trait_inheritance
@@ -669,7 +669,7 @@ struct Item(InCollection):
     pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}Movable
-    # CHECK-NEXT: kgen.witness "__moveinit__"
+    # CHECK-NEXT: kgen.witness "__moveinit__{{.*}}"
 
 
 fn take_movable(x: MovableType[Item]):
@@ -774,13 +774,13 @@ struct KeysContainer[end: Index](KeysBuilder):
 
 # CHECK-LABEL: lit.fn @"param_trait
 fn param_trait[T: SimpleTrait, value: T]():
-    # CHECK-NEXT: apply({{.*}} #kgen.get_witness<:!SimpleTrait T, "traits::SimpleTrait", "method">{{.*}} store_to_mem(value), 1)
+    # CHECK-NEXT: apply({{.*}} #kgen.get_witness<:!SimpleTrait T, "traits::SimpleTrait", "method{{.*}}">{{.*}} store_to_mem(value), 1)
     alias param = value.method(`1`)
     # CHECK-NEXT: [[VAR:%.*]] = lit.var.decl
     # CHECK-NEXT: [[VALUE:%.*]] = kgen.param.materialize
     # CHECK-NEXT: store [[VALUE]], [[VAR]]
     # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[VAR]]
-    # CHECK: call[{{.*}}#kgen.get_witness<:!SimpleTrait T, "traits::SimpleTrait", "method">{{.*}}([[IMM]], %index2)
+    # CHECK: call[{{.*}}#kgen.get_witness<:!SimpleTrait T, "traits::SimpleTrait", "method{{.*}}">{{.*}}([[IMM]], %index2)
     value.method(`2`)
 
 

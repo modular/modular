@@ -132,7 +132,7 @@ struct FieldwiseInitExample1[T: Movable]:
 # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[x]
 # CHECK-NEXT: lit.ref.store %x, [[TMP]]
 # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[y]
-# CHECK-NEXT: lit.call{{.*}}"__moveinit__"{{.*}}(%y, [[TMP]])
+# CHECK-NEXT: lit.call{{.*}}"__moveinit__{{.*}}"{{.*}}(%y, [[TMP]])
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 
 
