@@ -402,17 +402,10 @@ fn test_winograd_conv_gpu[
     var device_input = host_input.copy_to_device(ctx)
     var device_filter = host_filter.copy_to_device(ctx)
 
-    conv_gpu[
-        type_of(device_input.to_layout_tensor()).layout,
-        type_of(device_filter.to_layout_tensor()).layout,
-        type_of(device_output_ref.to_layout_tensor()).layout,
-        dtype,
-        dtype,
-        dtype,
-    ](
-        device_input.to_layout_tensor().as_any_origin(),
-        device_filter.to_layout_tensor().as_any_origin(),
-        device_output_ref.to_layout_tensor().as_any_origin(),
+    conv_gpu[4, 4, input_dim, filter_dim, output_dim, dtype, dtype, dtype](
+        device_input.tensor,
+        device_filter.tensor,
+        device_output_ref.tensor,
         stride,
         dilation,
         pad,

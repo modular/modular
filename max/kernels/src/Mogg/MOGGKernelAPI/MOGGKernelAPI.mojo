@@ -4707,9 +4707,9 @@ struct Conv:
         alias filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
         alias filter_is_fcrs = filter_layout == "FCRS"
 
-        var input_buf = input.to_layout_tensor()
-        var filter_buf = filter.to_layout_tensor()
-        var output_buf = output.to_layout_tensor()
+        var input_buf = managed_tensor_slice_to_ndbuffer(input)
+        var filter_buf = managed_tensor_slice_to_ndbuffer(filter)
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
@@ -4722,9 +4722,11 @@ struct Conv:
                     "Filter layout FCRS is not supported on CPU",
                 ]()
                 conv_nhwc_direct[
-                    input_buf.layout,
-                    filter_buf.layout,
-                    output_buf.layout,
+                    input.rank,
+                    filter.rank,
+                    input._static_shape,  # input shape
+                    filter._static_shape,  # filter shape
+                    output._static_shape,  # output shape
                     input.dtype,
                     filter.dtype,
                     output.dtype,
@@ -4767,9 +4769,11 @@ struct Conv:
                     pad_tuple[2] = pad_w_tuple[0]
 
                 conv_gpu[
-                    input_buf.layout,
-                    filter_buf.layout,
-                    output_buf.layout,
+                    input.rank,
+                    filter.rank,
+                    input._static_shape,  # input shape
+                    filter._static_shape,  # filter shape
+                    output._static_shape,  # output shape
                     input.dtype,
                     filter.dtype,
                     output.dtype,
@@ -4797,15 +4801,13 @@ struct Conv:
         paddings: InputTensor[rank=1],
         num_groups: Scalar,
     ) raises -> IndexList[input.rank]:
-        return rebind[IndexList[input.rank]](
-            conv_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
-                strides.to_layout_tensor(),
-                dilations.to_layout_tensor(),
-                paddings.to_layout_tensor(),
-                num_groups,
-            )
+        return conv_shape[single_thread_blocking_override=True](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(filter),
+            managed_tensor_slice_to_ndbuffer(strides),
+            managed_tensor_slice_to_ndbuffer(dilations),
+            managed_tensor_slice_to_ndbuffer(paddings),
+            num_groups,
         )
 
 
@@ -7343,19 +7345,17 @@ struct PackConvFilterShape:
             The output shape.
         """
 
-        return rebind[IndexList[rank + 1]](
-            pack_filter_shape_conv[
-                filter_type,
-                input_shape,
-                filter_shape,
-                output_shape,
-                strides,
-                dilations,
-                paddings,
-                num_groups,
-                False,
-            ](filter_buf.to_layout_tensor())
-        )
+        return pack_filter_shape_conv[
+            filter_type,
+            input_shape,
+            filter_shape,
+            output_shape,
+            strides,
+            dilations,
+            paddings,
+            num_groups,
+            False,
+        ](managed_tensor_slice_to_ndbuffer(filter_buf))
 
 
 @compiler.register("pack_conv_transpose_filter_shape")
@@ -7395,8 +7395,8 @@ fn layout_transform_conv_filter_common[
     # last param is num_groups which is currently not an available
     # arg for the MO level op
     _pack_conv_filter(
-        filter.to_layout_tensor(),
-        packed_filter.to_layout_tensor(),
+        managed_tensor_slice_to_ndbuffer(filter),
+        managed_tensor_slice_to_ndbuffer(packed_filter),
         num_groups,
     )
 

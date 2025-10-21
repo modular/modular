@@ -16,7 +16,9 @@
 from math import ceildiv
 from sys.info import simd_width_of
 
-from layout import IntTuple, LayoutTensor, Layout, RuntimeLayout
+from buffer import NDBuffer
+from buffer.dimlist import Dim, DimList
+from layout import IntTuple
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,
@@ -64,11 +66,13 @@ alias num_micro_tile = ceildiv(F, micro_kernel_f_size)
 
 @export(ABI="C")
 fn static_conv(
-    output: LayoutTensor[mut=True, value_type, Layout.row_major(N, HO, WO, F)],
-    input: LayoutTensor[value_type, Layout.row_major(N, H, W, C)],
-    filter: LayoutTensor[
+    output: NDBuffer[mut=True, value_type, 4, _, DimList(N, HO, WO, F)],
+    input: NDBuffer[value_type, 4, _, DimList(N, H, W, C)],
+    filter: NDBuffer[
         value_type,
-        Layout.row_major(num_micro_tile, R, S, C, micro_kernel_f_size),
+        5,
+        _,
+        DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
     ],
 ):
     var conv_shape = ConvShape[2](
@@ -93,12 +97,15 @@ fn static_conv(
 
     try:
         ConvDirectNHWC[
-            Layout.row_major(N, H, W, C),
-            Layout.row_major(num_micro_tile, R, S, C, micro_kernel_f_size),
-            Layout.row_major(N, HO, WO, F),
+            4,
+            5,
+            4,
             _,
             _,
             _,
+            DimList(N, H, W, C),
+            DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
+            DimList(N, HO, WO, F),
             value_type,
             value_type,
             value_type,
@@ -116,22 +123,24 @@ def test_static_conv():
     var output_stack = InlineArray[Scalar[value_type], N * HO * WO * F](
         uninitialized=True
     )
-    var output = LayoutTensor[value_type, Layout.row_major(N, HO, WO, F)](
-        output_stack
-    ).fill(0.0)
+    var output = NDBuffer[value_type, 4, _, DimList(N, HO, WO, F)](output_stack)
     var input_stack = InlineArray[Scalar[value_type], N * H * W * C](
         uninitialized=True
     )
-    var input = LayoutTensor[value_type, Layout.row_major(N, H, W, C)](
-        input_stack
-    ).fill(1.0)
+    var input = NDBuffer[value_type, 4, _, DimList(N, H, W, C)](input_stack)
     var filter_stack = InlineArray[
         Scalar[value_type], num_micro_tile * R * S * C * micro_kernel_f_size
     ](uninitialized=True)
-    var filter = LayoutTensor[
+    var filter = NDBuffer[
         value_type,
-        Layout.row_major(num_micro_tile, R, S, C, micro_kernel_f_size),
-    ](filter_stack).fill(1.0)
+        5,
+        _,
+        DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
+    ](filter_stack)
+
+    output.fill(0.0)
+    input.fill(1.0)
+    filter.fill(1.0)
 
     static_conv(output, input, filter)
 

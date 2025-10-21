@@ -18,7 +18,8 @@ from sys.param_env import env_get_int, env_get_string
 
 from benchmark import *
 from benchmark import keep
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from buffer import NDBuffer
+from buffer.dimlist import DimList
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,
@@ -145,39 +146,42 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
         @always_inline
         @parameter
         fn bench_fn():
-            alias layout_2 = Layout.row_major[spec.static_info.rank + 2]()
-            alias layout_3 = Layout.row_major[spec.static_info.rank + 3]()
-            var input = LayoutTensor[input_type, layout_2](
+            var input = NDBuffer[input_type, spec.static_info.rank + 2](
                 input_ptr + (counter % num_copies) * input_alloc_size,
-                RuntimeLayout[layout_2].row_major(input_shape),
+                input_shape,
             )
-            var filter = LayoutTensor[filter_type, layout_3](
+            var filter = NDBuffer[filter_type, spec.static_info.rank + 3](
                 filter_ptr + (counter % num_copies) * filter_alloc_size,
-                RuntimeLayout[layout_3].row_major(packed_filter_shape),
+                packed_filter_shape,
             )
-            var output = LayoutTensor[output_type, layout_2](
+            var output = NDBuffer[output_type, spec.static_info.rank + 2](
                 output_ptr + (counter % num_copies) * output_alloc_size,
-                RuntimeLayout[layout_2].row_major(output_shape),
+                output_shape,
             )
 
             try:
                 ConvDirectNHWC[
-                    layout_2,
-                    layout_3,
-                    layout_2,
+                    spec.static_info.rank + 2,
+                    spec.static_info.rank + 3,
+                    spec.static_info.rank + 2,
                     _,
                     _,
                     _,
+                    DimList.create_unknown[spec.static_info.rank + 2](),
+                    DimList.create_unknown[spec.static_info.rank + 3](),
+                    DimList.create_unknown[spec.static_info.rank + 2](),
                     input_type,
                     filter_type,
                     output_type,
                     True,
-                    ConvInfoStatic[spec.static_info.rank](),
+                    ConvInfoStatic[spec.static_info.rank + 2 - 2](),
                 ].run(
                     output,
                     input,
                     filter,
-                    conv_shape,
+                    rebind[ConvShape[spec.static_info.rank + 2 - 2]](
+                        conv_shape
+                    ),
                 )
 
                 counter += 1
@@ -185,7 +189,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
             except e:
                 print(e)
 
-            keep(output.ptr)
+            keep(output.data)
 
         b.iter[bench_fn]()
 
