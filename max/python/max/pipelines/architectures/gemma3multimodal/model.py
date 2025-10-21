@@ -14,14 +14,17 @@
 from __future__ import annotations
 
 import logging
+import numpy as np
+import numpy.typing as npt
 
-from max.driver import Device
+from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.graph import DeviceRef, Graph, TensorType, Type, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
+from max.pipelines.core import TextAndVisionContext
 from transformers import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -30,7 +33,8 @@ logger = logging.getLogger("max.pipelines")
 from max.pipelines.architectures.gemma3.model import Gemma3Model
 
 
-class Gemma3_MultiModalModel(Gemma3Model):
+
+class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     """Gemma 3 multimodal pipeline model for text generation.
 
     This class integrates the Gemma 3 multimodal architecture with the MAX Engine pipeline
@@ -38,8 +42,11 @@ class Gemma3_MultiModalModel(Gemma3Model):
     for inference.
     """
 
-    model: Model
+    language_model: Model
     """The compiled and initialized MAX Engine model ready for inference."""
+
+    vision_model: Model
+    """The compiled and initialized MAX Engine vision model ready for inference."""
 
     # The vision and text towers are in the same weights file, but are in
     # separate models, so load_state_dict will naturally be loading subsets in
@@ -99,6 +106,8 @@ class Gemma3_MultiModalModel(Gemma3Model):
             return_logits,
         )
 
+        # TODO will it work, using the gemma3.load_model() approach? consider session and init argsZZ
+        self.vision_model, self.language_model = self.load_model(session)
     @classmethod
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
@@ -191,3 +200,156 @@ class Gemma3_MultiModalModel(Gemma3Model):
             kv_cache_config,
             cache_dtype,
         )
+
+    def __call__(
+        self,
+        tokens: TensorValue,
+        signal_buffers: Sequence[BufferValue],
+        kv_collections: Sequence[PagedCacheValues],
+        return_n_logits: TensorValue,
+        input_row_offsets: Sequence[TensorValue],
+        **kwargs,
+    ) -> tuple[TensorValue, ...]:
+        """
+        Args: etc
+        """
+        print("CALL OVERRIDDEN!")
+    def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
+        """Loads the compiled Gemma3 MultiModal models into the MAX Engine session.
+
+        Returns:
+            A tuple of (vision_model, language_model).
+        """
+
+        # *** language model (code from gemma3/model.py) ***
+        # self._input_row_offsets_prealloc = Tensor.from_numpy(
+        #     np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+        # ).to(self.devices[0])
+
+        # graph = self._build_graph()
+        # language_model = session.load(graph, weights_registry=self.state_dict)
+        language_model = gemma3.load_model(session)
+
+
+        # *** vision model (code from InternVL/model.py) ***
+        # Pre-allocation for multi-step execution
+        assert self.pipeline_config.max_batch_size, (
+            "Expected max_batch_size to be set"
+        )
+        input_row_offsets_prealloc_host = Tensor.from_numpy(
+            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+        )
+        self._input_row_offsets_prealloc = [
+            input_row_offsets_prealloc_host.to(dev) for dev in self.devices
+        ]
+
+        # Get processed state dict for language and vision models.
+        # NOTE: use weights_dict to mean WeightData, and state dict to mean
+        # DLPack arrays, since state dict is overloaded.
+        weights_dict = dict(self.weights.items())
+        llm_weights_dict = convert_internvl_language_model_state_dict(
+            weights_dict
+        )
+        vision_model_weights_dict = convert_internvl_vision_model_state_dict(
+            weights_dict
+        )
+
+        # Generate Gemma3 config from HuggingFace config
+        gemma3_vl_config = Gemma3VLConfig.generate(
+            pipeline_config=self.pipeline_config,
+            huggingface_config=self.huggingface_config,
+            llm_state_dict=llm_weights_dict,
+            vision_state_dict=vision_model_weights_dict,
+            dtype=self.dtype,
+            n_devices=len(self.devices),
+            cache_dtype=self.encoding.cache_dtype,
+            kv_cache_config=self.kv_cache_config,
+            return_logits=self.return_logits,
+        )
+
+        # Build and compile vision model
+        vision_graph, vision_model_state_dict = self._build_vision_graph(
+            gemma3_vl_config, vision_model_weights_dict
+        )
+        
+        vision_model = session.load(
+            vision_graph, weights_registry=vision_model_state_dict
+        )
+
+        return vision_model, language_model
+
+    @staticmethod
+    def calculate_max_seq_len(
+        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        max_seq_len = pipeline_config.max_length
+        if max_seq_len:
+            return max_seq_len
+
+
+    def _build_vision_graph(
+        self, config: Gemma3VLConfig, state_dict: dict[str, WeightData]
+    ) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Build the vision model graph for processing images."""
+        # Define input types for the vision model
+        # Use static dimensions from the vision config
+        image_size = config.vision_config.image_size
+        patch_size = config.vision_config.patch_size
+        # Calculate number of patches in each dimension
+        height_patches = image_size // patch_size
+        width_patches = image_size // patch_size
+
+        # Expect pre-extracted patches from the tokenizer.
+        # Use bfloat16 to match the tokenizer's output.
+        pixel_values_types = [
+            TensorType(
+                DType.bfloat16,
+                shape=[
+                    "batch_size",
+                    height_patches,
+                    width_patches,
+                    3,
+                    patch_size,
+                    patch_size,
+                ],
+                device=DeviceRef.from_device(dev),
+            )
+            for dev in self.devices
+        ]
+
+        # Create signal types for distributed communication
+        signals = Signals(
+            devices=(DeviceRef(d.label, d.id) for d in self.devices)
+        )
+
+        # Initialize graph with input types
+        with Graph(
+            "gemma3_vision",
+            input_types=[*pixel_values_types, *signals.input_types()],
+        ) as graph:
+            # Build vision model architecture.
+            vision_model = Gemma3VLVisionModel(config)
+            vision_model.load_state_dict(
+                state_dict=state_dict,
+                override_quantization_encoding=True,
+                weight_alignment=1,
+                strict=True,
+            )
+
+            # Unpack inputs (one per device).
+            pixel_values = [
+                inp.tensor for inp in graph.inputs[: len(self.devices)]
+            ]
+
+            # Extract signal buffers (one per device).
+            signal_buffers = [
+                inp.buffer for inp in graph.inputs[len(self.devices) :]
+            ]
+
+            # Execute vision model: pixel_values -> image_embeddings.
+            image_embeddings = vision_model(pixel_values, signal_buffers)
+
+            # Set graph outputs.
+            graph.output(*image_embeddings)
+
+            return graph, vision_model.state_dict()
