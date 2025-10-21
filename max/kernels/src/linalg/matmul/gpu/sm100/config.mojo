@@ -13,6 +13,7 @@
 
 from hashlib.hasher import Hasher
 
+from bit import next_power_of_two
 from collections.set import Set
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import B200
@@ -92,13 +93,33 @@ struct MatmulConfig[
         )
         var output_tile_n = 32 if c_tile_n % 32 == 0 else 16
 
+        # MMA_M=128/256 cta_group=2 all use 128 rows in output tile.
+        var output_tile_m = 128 if self.cta_group == 2 else self.mma_shape[0]
         self.output_tile_shape = Index(
-            output_tile_n, self.block_tile_shape[0]
-        ) if self.AB_swapped else Index(self.block_tile_shape[0], output_tile_n)
+            output_tile_n, output_tile_m
+        ) if self.AB_swapped else Index(output_tile_m, output_tile_n)
 
         self.num_clc_pipeline_stages = 2
-        self.num_accum_pipeline_stages = 2
+        self.num_accum_pipeline_stages = UInt(
+            512 // next_power_of_two(self.mma_shape[1])
+        )
         self.num_output_stages = 2
+
+        self.a_swizzle = TensorMapSwizzle.SWIZZLE_128B
+        self.b_swizzle = TensorMapSwizzle.SWIZZLE_128B
+        self.c_swizzle = TensorMapSwizzle.SWIZZLE_32B if self.AB_swapped else (
+            TensorMapSwizzle.SWIZZLE_64B if output_tile_n
+            == 32 else TensorMapSwizzle.SWIZZLE_32B
+        )
+
+        self.num_pipeline_stages = 4  # Need for compilation
+        self._maximize_pipline_stages_by_default()
+
+        if num_pipeline_stages:
+            self.num_pipeline_stages = num_pipeline_stages.value()
+
+    fn _maximize_pipline_stages_by_default(mut self):
+        alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
         var c_smem_bytes = (
             self.output_tile_shape[0]
@@ -106,8 +127,15 @@ struct MatmulConfig[
             * self.num_output_stages
             * size_of[c_type]()
         )
+        # Add tmem addr (4) and tmem dealloc mbar(8)
+        var output_smem_bytes = c_smem_bytes + 12
 
-        alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
+        # response 128B, clc mbar 16B, clc-load pipeline mbar 16B
+        var clc_smem_bytes = 160 * self.num_clc_pipeline_stages
+
+        # Usage by mma-output-pipeline
+        var mma_output_smem_bytes = self.num_accum_pipeline_stages * 16
+
         var a_smem_bytes_per_stage = (
             self.block_tile_shape[0]
             * self.block_tile_shape[2]
@@ -118,20 +146,20 @@ struct MatmulConfig[
             * self.block_tile_shape[2]
             * size_of[b_type]()
         )
-        var AB_smem_per_stage = a_smem_bytes_per_stage + b_smem_bytes_per_stage
-        # Substract 512B for mbar usage etc
-        self.num_pipeline_stages = UInt(
-            (b200_smem - c_smem_bytes - 512) // AB_smem_per_stage
+        # Include 16 for comsumer and producer mbar per stage
+        var AB_smem_per_stage = (
+            a_smem_bytes_per_stage + b_smem_bytes_per_stage + 16
         )
 
-        if num_pipeline_stages:
-            self.num_pipeline_stages = num_pipeline_stages.value()
-
-        self.a_swizzle = TensorMapSwizzle.SWIZZLE_128B
-        self.b_swizzle = TensorMapSwizzle.SWIZZLE_128B
-        self.c_swizzle = TensorMapSwizzle.SWIZZLE_32B if self.AB_swapped else (
-            TensorMapSwizzle.SWIZZLE_64B if output_tile_n
-            == 32 else TensorMapSwizzle.SWIZZLE_32B
+        # Substract 511B for mbar usage etc
+        self.num_pipeline_stages = UInt(
+            (
+                b200_smem
+                - output_smem_bytes
+                - clc_smem_bytes
+                - mma_output_smem_bytes
+            )
+            // AB_smem_per_stage
         )
 
     fn copy_field(mut self, other: MatmulConfig):
@@ -209,9 +237,15 @@ struct MatmulConfig[
         writer.write("clc", self.num_clc_pipeline_stages, "_")
         writer.write("accum", self.num_accum_pipeline_stages, "_")
         writer.write("out", self.num_output_stages, "_")
+        writer.write(
+            self.output_tile_shape[0], "x", self.output_tile_shape[1], "_"
+        )
         writer.write("swap" if self.AB_swapped else "noswap", "_")
-        writer.write("K", "_")
-        writer.write("K" if transpose_b else "MN")
+        writer.write("K_")
+        writer.write("K_" if transpose_b else "MN_")
+        writer.write("asz", self.a_swizzle.bytes(), "_")
+        writer.write("bsz", self.b_swizzle.bytes(), "_")
+        writer.write("csz", self.c_swizzle.bytes(), "_")
         writer.write("bz", self.block_swizzle_size, "_", self.raster_order)
 
     fn __repr__(self) -> String:

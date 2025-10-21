@@ -6,16 +6,16 @@
 .target sm_100a
 .address_size 64
 
-	// .globl	linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_36a779223cd15184
+	// .globl	linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_c6310043ad7f1a8d
 .extern .shared .align 128 .b8 extern_ptr_syml[];
 
-.visible .entry linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_36a779223cd15184(
-	.param .align 64 .b8 linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_36a779223cd15184_param_0[128],
-	.param .align 64 .b8 linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_36a779223cd15184_param_1[128],
-	.param .align 64 .b8 linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_36a779223cd15184_param_2[128],
-	.param .align 4 .b8 linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_36a779223cd15184_param_3[12],
-	.param .align 4 .b8 linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_36a779223cd15184_param_4[12],
-	.param .align 8 .b8 linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_36a779223cd15184_param_5[16]
+.visible .entry linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_c6310043ad7f1a8d(
+	.param .align 64 .b8 linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_c6310043ad7f1a8d_param_0[128],
+	.param .align 64 .b8 linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_c6310043ad7f1a8d_param_1[128],
+	.param .align 64 .b8 linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_c6310043ad7f1a8d_param_2[128],
+	.param .align 4 .b8 linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_c6310043ad7f1a8d_param_3[12],
+	.param .align 4 .b8 linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_c6310043ad7f1a8d_param_4[12],
+	.param .align 8 .b8 linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_c6310043ad7f1a8d_param_5[16]
 )
 .explicitcluster
 .reqnctapercluster 2, 1, 1
@@ -25,10 +25,10 @@
 	.reg .b32 	%r<1061>;
 	.reg .b64 	%rd<412>;
 
-	ld.param.b32 	%r27, [linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_36a779223cd15184_param_4+8];
-	mov.b64 	%rd4, linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_36a779223cd15184_param_0;
-	mov.b64 	%rd1, linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_36a779223cd15184_param_2;
-	mov.b64 	%rd3, linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_36a779223cd15184_param_1;
+	ld.param.b32 	%r27, [linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_c6310043ad7f1a8d_param_4+8];
+	mov.b64 	%rd4, linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_c6310043ad7f1a8d_param_0;
+	mov.b64 	%rd1, linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_c6310043ad7f1a8d_param_2;
+	mov.b64 	%rd3, linalg_matmul_gpu_sm100_matm6A6A6A6A6A6A6A6A_c6310043ad7f1a8d_param_1;
 	cvta.param.u64 	%rd2, %rd1;
 	cvta.param.u64 	%rd7, %rd3;
 	cvta.param.u64 	%rd6, %rd4;
