@@ -147,6 +147,8 @@ def get_server_cmd(framework: str, model: str) -> list[str]:
                 "0.0.0.0",
                 "--max-model-len",
                 "16384",
+                "--limit-mm-per-prompt.video",  # Needed for InternVL 3 on B200
+                "0",
             ],
             "max": [*interpreter, "max.entrypoints.pipelines", "serve"],
             "max-ci": [
