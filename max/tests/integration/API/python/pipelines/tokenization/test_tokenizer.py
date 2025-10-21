@@ -753,3 +753,56 @@ ASSISTANT: """
     assert "USER: Test message" in decoded_prompt, (
         f"Custom template not applied in new_context. Decoded prompt: {decoded_prompt}"
     )
+
+
+@pytest.mark.asyncio
+async def test_tokenizer_decode_overflow_error_with_invalid_token_ids(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    """Test that decode raises a helpful OverflowError when token IDs exceed vocab size."""
+    tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
+
+    vocab_size = len(tokenizer.delegate.vocab)
+
+    # Create a token array with values exceeding vocab size
+    invalid_tokens = np.array(
+        [1, 2, vocab_size + 100000, 5, vocab_size + 5000, 281474976710656],
+        dtype=np.int64,
+    )
+
+    with pytest.raises(OverflowError) as exc_info:
+        await tokenizer.decode(invalid_tokens)
+
+    error_message = str(exc_info.value)
+
+    # Verify the error message contains helpful diagnostics
+    assert "Invalid token IDs detected" in error_message
+    assert "Token IDs exceeding vocab size" in error_message
+    assert f"({vocab_size})" in error_message
+    assert (
+        "[2, 4, 5]" in error_message
+    )  # Indices where invalid tokens are located
+
+
+@pytest.mark.asyncio
+async def test_tokenizer_decode_overflow_error_with_negative_token_ids(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    """Test that decode raises a helpful OverflowError when negative token IDs are present."""
+    tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
+
+    # Create a token array with negative values
+    negative_tokens = np.array([1, -5, 3, -100, 5], dtype=np.int64)
+
+    with pytest.raises(OverflowError) as exc_info:
+        await tokenizer.decode(negative_tokens)
+
+    error_message = str(exc_info.value)
+
+    # Verify the error message contains helpful diagnostics
+    assert "Invalid token IDs detected" in error_message
+    assert "Negative token IDs at indices" in error_message
+    assert (
+        "[1, 3]" in error_message
+    )  # Indices where negative tokens are located
+    assert "[-5, -100]" in error_message  # The actual negative values
