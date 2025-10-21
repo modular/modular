@@ -132,7 +132,7 @@ struct String(
     """The underlying storage for the string data."""
     var _len_or_data: Int
     """The number of bytes in the string data."""
-    var _capacity_or_data: UInt
+    var _capacity_or_data: Int
     """The capacity and bit flags for this String."""
 
     # Useful string aliases.
@@ -151,20 +151,20 @@ struct String(
     # This is the number of bytes that can be stored inline in the string value.
     # 'String' is 3 words in size and we use the top byte of the capacity field
     # to store flags.
-    alias INLINE_CAPACITY = UInt(Int.BITWIDTH // 8 * 3 - 1)
+    alias INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
-    alias FLAG_HAS_NUL_TERMINATOR = UInt(1) << UInt(UInt.BITWIDTH - 3)
+    alias FLAG_HAS_NUL_TERMINATOR = 1 << (Int.BITWIDTH - 3)
     # When FLAG_IS_REF_COUNTED is set, the string is pointing to a mutable buffer
     # that may have other references to it.
-    alias FLAG_IS_REF_COUNTED = UInt(1) << UInt(UInt.BITWIDTH - 2)
+    alias FLAG_IS_REF_COUNTED = 1 << (Int.BITWIDTH - 2)
     # When FLAG_IS_INLINE is set, the string is inline or "Short String
     # Optimized" (SSO). The first 23 bytes of the fields are treated as UTF-8
     # data
-    alias FLAG_IS_INLINE = UInt(1) << UInt(UInt.BITWIDTH - 1)
+    alias FLAG_IS_INLINE = 1 << (Int.BITWIDTH - 1)
     # gives us 5 bits for the length.
-    alias INLINE_LENGTH_START = UInt(Int.BITWIDTH - 8)
-    alias INLINE_LENGTH_MASK = UInt(0b1_1111 << Self.INLINE_LENGTH_START)
+    alias INLINE_LENGTH_START = Int.BITWIDTH - 8
+    alias INLINE_LENGTH_MASK = 0b1_1111 << Self.INLINE_LENGTH_START
     # This is the size to offset the pointer by, to get access to the
     # atomic reference count prepended to the UTF-8 data.
     alias REF_COUNT_SIZE = size_of[Atomic[DType.int]]()
@@ -197,7 +197,7 @@ struct String(
                 __get_mvalue_as_litref(self)
             )
         else:
-            self._capacity_or_data = UInt(capacity + 7) >> 3
+            self._capacity_or_data = (capacity + 7) >> 3
             self._ptr_or_data = Self._alloc(self._capacity_or_data << 3)
             self._len_or_data = 0
             self._set_ref_counted()
@@ -246,9 +246,7 @@ struct String(
             bytes: The bytes to copy.
         """
         var length = len(bytes)
-        self = Self(
-            unsafe_uninit_length=UInt(length)
-        )  # TODO: make `unsafe_uninit_length` an `Int`
+        self = Self(unsafe_uninit_length=length)
         memcpy(dest=self.unsafe_ptr_mut(), src=bytes.unsafe_ptr(), count=length)
 
     fn __init__[T: Stringable](out self, value: T):
@@ -491,7 +489,7 @@ struct String(
         if total_bytes.size <= Self.INLINE_CAPACITY:
             _write(self)
         else:
-            self.reserve(UInt(total_bytes.size))
+            self.reserve(total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
             _write(buffer)
             buffer.flush()
@@ -516,7 +514,7 @@ struct String(
         return result^
 
     @always_inline("nodebug")
-    fn __init__(out self, *, unsafe_uninit_length: UInt):
+    fn __init__(out self, *, unsafe_uninit_length: Int):
         """Construct a String with the specified length, with uninitialized
         memory. This is unsafe, as it relies on the caller initializing the
         elements with unsafe operations, not assigning over the uninitialized
@@ -525,8 +523,8 @@ struct String(
         Args:
             unsafe_uninit_length: The number of bytes to allocate.
         """
-        self = Self(capacity=Int(unsafe_uninit_length))
-        self.set_byte_length(Int(unsafe_uninit_length))
+        self = Self(capacity=unsafe_uninit_length)
+        self.set_byte_length(unsafe_uninit_length)
 
     fn __init__(
         out self,
@@ -595,12 +593,12 @@ struct String(
     # stored in the capacity field.
 
     @always_inline("nodebug")
-    fn capacity(self) -> UInt:
+    fn capacity(self) -> Int:
         # Max inline capacity before reallocation.
         if self._is_inline():
             return Self.INLINE_CAPACITY
         if not self._is_ref_counted():
-            return UInt(self._len_or_data)
+            return self._len_or_data
         return self._capacity_or_data << 3
 
     @always_inline("nodebug")
@@ -672,9 +670,9 @@ struct String(
                 ptr.free()
 
     @staticmethod
-    fn _alloc(capacity: UInt) -> UnsafePointer[Byte]:
+    fn _alloc(capacity: Int) -> UnsafePointer[Byte]:
         """Allocate space for a new out-of-line string buffer."""
-        var ptr = UnsafePointer[Byte].alloc(Int(capacity) + Self.REF_COUNT_SIZE)
+        var ptr = UnsafePointer[Byte].alloc(capacity + Self.REF_COUNT_SIZE)
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(
@@ -850,9 +848,7 @@ struct String(
         var lhs_len = len(lhs)
         var rhs_len = len(rhs)
 
-        var result = String(
-            unsafe_uninit_length=UInt(lhs_len + rhs_len)
-        )  # TODO: make unsafe_uninit_length an `Int`
+        var result = String(unsafe_uninit_length=lhs_len + rhs_len)
         var result_ptr = result.unsafe_ptr_mut()
         memcpy(dest=result_ptr, src=lhs.unsafe_ptr(), count=lhs_len)
         memcpy(dest=result_ptr + lhs_len, src=rhs.unsafe_ptr(), count=rhs_len)
@@ -877,9 +873,9 @@ struct String(
         """
         self._clear_nul_terminator()
         var len = self.byte_length()
-        self.reserve(UInt(len) + 1)
+        self.reserve(len + 1)
         self.unsafe_ptr_mut()[len] = byte
-        self.set_byte_length(Int(len + 1))
+        self.set_byte_length(len + 1)
 
     fn __radd__(self, other: StringSlice[mut=False]) -> String:
         """Creates a string by prepending another string slice to the start.
@@ -899,7 +895,7 @@ struct String(
         var old_len = self.byte_length()
         var new_len = old_len + other_len
         memcpy(
-            dest=self.unsafe_ptr_mut(UInt(new_len)) + old_len,
+            dest=self.unsafe_ptr_mut(new_len) + old_len,
             src=other.unsafe_ptr(),
             count=other_len,
         )
@@ -1186,7 +1182,7 @@ struct String(
             ]()
 
     fn unsafe_ptr_mut(
-        mut self, var capacity: UInt = 0
+        mut self, var capacity: Int = 0
     ) -> UnsafePointer[Byte, mut=True, origin = origin_of(self)]:
         """Retrieves a mutable pointer to the unique underlying memory. Passing
         a larger capacity will reallocate the string to the new capacity if
@@ -1220,7 +1216,7 @@ struct String(
         """
         # Add a nul terminator, making the string mutable if not already
         if not self._has_nul_terminator():
-            var ptr = self.unsafe_ptr_mut(capacity=UInt(len(self)) + 1)
+            var ptr = self.unsafe_ptr_mut(capacity=len(self) + 1)
             var len = self.byte_length()
             ptr[len] = 0
             self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
@@ -1288,7 +1284,7 @@ struct String(
         if self._is_inline():
             self._capacity_or_data = (
                 self._capacity_or_data & ~Self.INLINE_LENGTH_MASK
-            ) | UInt(new_len << Self.INLINE_LENGTH_START)
+            ) | (new_len << Self.INLINE_LENGTH_START)
         else:
             self._len_or_data = new_len
 
@@ -1812,7 +1808,7 @@ struct String(
         var old_len = self.byte_length()
         if length > old_len:
             memset(
-                self.unsafe_ptr_mut(UInt(length)) + old_len,
+                self.unsafe_ptr_mut(length) + old_len,
                 fill_byte,
                 length - old_len,
             )
@@ -1830,11 +1826,11 @@ struct String(
             unsafe_uninit_length: The new size.
         """
         self._clear_nul_terminator()
-        if UInt(unsafe_uninit_length) > self.capacity():
-            self.reserve(UInt(unsafe_uninit_length))
+        if unsafe_uninit_length > self.capacity():
+            self.reserve(unsafe_uninit_length)
         self.set_byte_length(unsafe_uninit_length)
 
-    fn reserve(mut self, new_capacity: UInt):
+    fn reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
 
         Args:
@@ -1862,7 +1858,7 @@ struct String(
     # This is the out-of-line implementation of reserve called when we need
     # to grow the capacity of the string. Make sure our capacity at least
     # doubles to avoid O(n^2) behavior, and make use of extra space if it exists.
-    fn _realloc_mutable(mut self, capacity: UInt):
+    fn _realloc_mutable(mut self, capacity: Int):
         # Get these fields before we change _capacity_or_data
         var byte_len = self.byte_length()
         var old_ptr = self.unsafe_ptr()

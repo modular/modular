@@ -531,7 +531,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Stringable):
     @always_inline
     fn unsafe_write_utf8[
         optimize_ascii: Bool = True, branchless: Bool = False
-    ](self, ptr: UnsafePointer[Byte, mut=True, **_]) -> UInt:
+    ](self, ptr: UnsafePointer[Byte, mut=True, **_]) -> Int:
         """Shift unicode to utf8 representation.
 
         Parameters:
@@ -619,10 +619,10 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Stringable):
                 for i in range(1, num_bytes):
                     shift -= 6
                     ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
-        return num_bytes
+        return Int(num_bytes)
 
     @always_inline
-    fn utf8_byte_length(self) -> UInt:
+    fn utf8_byte_length(self) -> Int:
         """Returns the number of UTF-8 bytes required to encode this character.
 
         Returns:
@@ -638,4 +638,4 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Stringable):
 
         # Count how many of the minimums this codepoint exceeds, which is equal
         # to the number of bytes needed to encode it.
-        return UInt(sizes.le(self.to_u32()).cast[DType.uint8]().reduce_add())
+        return Int(sizes.le(self.to_u32()).cast[DType.uint8]().reduce_add())

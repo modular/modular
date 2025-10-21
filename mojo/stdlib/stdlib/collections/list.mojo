@@ -279,7 +279,7 @@ struct List[T: Copyable & Movable](
         self._len = 0
         self.capacity = capacity
 
-    fn __init__(out self, *, length: UInt, fill: T):
+    fn __init__(out self, *, length: Int, fill: T):
         """Constructs a list with the given capacity.
 
         Args:
@@ -287,7 +287,7 @@ struct List[T: Copyable & Movable](
             fill: The element to fill each element of the list.
         """
         self = Self()
-        self.resize(Int(length), fill)
+        self.resize(length, fill)
 
     @always_inline
     fn __init__(out self, var *values: T, __list_literal__: () = ()):

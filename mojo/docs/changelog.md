@@ -163,13 +163,24 @@ what we publish.
   This means asan can see mojo heap allocations and should now be able to
   detect many more heap memory errors.
 
-### ❌ Removed
-
 - `TestSuite` now can generate test reports with `.generate_report()`. Also
   a `TestReport` and `TestSuiteReport` structs were added.
-  
+
 - `Codepoint` now conforms to `Comparable` adding `__le__`, `__lt__`, `__ge__`,
   and `__gt__` implementations.
+
+- Several standard library APIs have been updated to use `Int` instead of `UInt`
+  for improved ergonomics, eliminating the need for explicit casts when using
+  `Int` values (the default type for integer literals and loop indices):
+  - `BitSet[size: Int]` - Changed parameter from `UInt` to `Int`
+  - `BitSet.set(idx: Int)`, `BitSet.clear(idx: Int)`, `BitSet.toggle(idx: Int)`,
+    `BitSet.test(idx: Int)` - Changed from `UInt` to `Int`
+  - `String(unsafe_uninit_length: Int)` - Changed from `UInt` to `Int`
+  - `String.capacity() -> Int` - Changed return type from `UInt` to `Int`
+  - `String.reserve(new_capacity: Int)` - Changed from `UInt` to `Int`
+  - `List(length: Int, fill: T)` - Changed from `UInt` to `Int`
+  - `Codepoint.unsafe_write_utf8() -> Int` - Changed return type from `UInt` to `Int`
+  - `Codepoint.utf8_byte_length() -> Int` - Changed return type from `UInt` to `Int`
 
 ### Tooling changes {#25-7-tooling-changes}
 
