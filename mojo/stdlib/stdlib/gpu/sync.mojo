@@ -328,6 +328,8 @@ fn syncwarp(mask: Int = -1):
     This function creates a synchronization point where threads in a warp must wait until all
     threads specified by the mask reach this point. On NVIDIA GPUs, it uses warp-level
     synchronization primitives. On AMD GPUs, this is a no-op since threads execute in lock-step.
+    On Apple GPUs, this acts as a SIMDGROUP execution barrier. Lane masks are not supported,
+    so the mask argument is ignored and all active lanes must reach this point.
 
     Args:
         mask: An integer bitmask specifying which lanes (threads) in the warp should be
@@ -338,6 +340,9 @@ fn syncwarp(mask: Int = -1):
     Note:
         - On NVIDIA GPUs, this maps to the nvvm.bar.warp.sync intrinsic.
         - On AMD GPUs, this is a no-op since threads execute in lock-step.
+        - On Apple GPUs, this provides *execution synchronization only* via a SIMDGROUP
+          barrier with `mem_none` (no memory fence). Use `barrier()` for threadgroup
+          memory ordering.
         - Threads not participating in the sync must still execute the instruction.
     """
 
@@ -348,6 +353,12 @@ fn syncwarp(mask: Int = -1):
         )
     elif is_amd_gpu():
         # In AMD GPU this is a nop (everything executed in lock-step).
+        return
+    elif is_apple_gpu():
+        # simdgroup.barrier(i32 mem_flags, i32 scope) with mem_flags = mem_none
+        llvm_intrinsic["llvm.air.simdgroup.barrier", NoneType](
+            Int32(0), Int32(4)
+        )
         return
     else:
         return CompilationTarget.unsupported_target_error[
