@@ -1050,8 +1050,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
                       getFlattenedSymbolName(funcOp.getInheritedFrom().value_or(
                           traitDecl.getSymbolRef())));
   TypedAttr fnRef = shared.getEvaluationContext().getGetWitnessAttr(
-      selfExpr, traitName, StringAttr::get(funcOp.getContext(), baseName),
-      signature);
+      selfExpr, traitName, funcOp.getSymNameAttr(), signature);
 
   if (bindings.empty())
     return fnRef;

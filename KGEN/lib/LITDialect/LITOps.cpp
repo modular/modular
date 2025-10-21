@@ -1367,7 +1367,7 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
         SymbolRefArrayAttr::get(ctx, {}),
         /*convention=*/TypeConvention::Unspecified,
         /*definesClosure=*/none,
-        /*dtorSig=*/{}, /*dtorWitnessTrait=*/{}, /*docString=*/{},
+        /*dtorWitness=*/{}, /*docString=*/{},
         /*deprecationWarning=*/{}, /*linearTypeErrorMsg*/ {});
   result.regions[0]->push_back(new Block());
 }

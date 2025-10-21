@@ -307,8 +307,12 @@ ClosureLifter::ClosureInitData::ClosureInitData(
   paramClosureType = ParamClosureType::get(cxt, closureType.getParentSymbol(),
                                            StringAttr::get(cxt, regionName()));
   structGeneratorOp->walk([&](WitnessOp witness) {
-    if (auto closureSym = dyn_cast<ClosureSymbolAttr>(witness.getValue()))
-      abstractSymbolMap[witness.getName()] = closureSym;
+    if (auto closureSym = dyn_cast<ClosureSymbolAttr>(witness.getValue())) {
+      // TODO(MOCO-2636): Remove dependency on mangled witness name.
+      StringRef witnessName = witness.getName().strref();
+      StringRef baseName = witnessName.split('(').first;
+      abstractSymbolMap[baseName] = closureSym;
+    }
   });
 
   // Captures parameter is always last.

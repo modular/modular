@@ -50,10 +50,10 @@ struct Bar(Foo):
     # CHECK-SAME: always_inline
 
     # CHECK: kgen.conformance{{.*}}:Foo
-    # CHECK-DAG: kgen.witness "rp"
-    # CHECK-DAG: kgen.witness "non_rp"
-    # CHECK-DAG: kgen.witness "no_inline"
-    # CHECK-DAG: kgen.witness "always_inline"
+    # CHECK-DAG: kgen.witness "rp{{.*}}"
+    # CHECK-DAG: kgen.witness "non_rp{{.*}}"
+    # CHECK-DAG: kgen.witness "no_inline{{.*}}"
+    # CHECK-DAG: kgen.witness "always_inline{{.*}}"
     pass
 
 
@@ -79,7 +79,7 @@ struct TAA(AA1):
     # CHECK: lit.call @default_trait_methods::@AA1::@"zork($0,$0.X)"{{.*}}([[SELF]], [[X]], [[RESULT]])
 
     # CHECK: kgen.conformance{{.*}}:AA1
-    # CHECK-DAG: kgen.witness "zork"
+    # CHECK-DAG: kgen.witness "zork{{.*}}"
 
 
 # Test parameterized types in default trait methods
@@ -115,8 +115,8 @@ struct SimpleTestStruct(ParamInputTrait):
     # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"return_parameterized
 
     # CHECK: kgen.conformance{{.*}}:ParamInputTrait
-    # CHECK-DAG: kgen.witness "process_parameterized"
-    # CHECK-DAG: kgen.witness "return_parameterized"
+    # CHECK-DAG: kgen.witness "process_parameterized{{.*}}"
+    # CHECK-DAG: kgen.witness "return_parameterized{{.*}}"
     pass
 
 
@@ -138,8 +138,8 @@ struct ParamTestStruct[T: Int, x: Bool](ParamInputTrait):
     # CHECK-SAME: <:!ParamInputTrait @default_trait_methods::@ParamTestStruct<:!Int T, :!Bool x>, :!Int *"x`1", :!Int y>
 
     # CHECK: kgen.conformance{{.*}}:ParamInputTrait
-    # CHECK-DAG: kgen.witness "process_parameterized"
-    # CHECK-DAG: kgen.witness "return_parameterized"
+    # CHECK-DAG: kgen.witness "process_parameterized{{.*}}"
+    # CHECK-DAG: kgen.witness "return_parameterized{{.*}}"
     pass
 
 

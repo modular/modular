@@ -310,11 +310,7 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
     if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
       for (SymbolRefAttr symbol : trait.getSymbols()) {
         TraitDeclOp traitDecl = traitMap.at(symbol);
-        FuncTypeGeneratorType dtorSig =
-            traitDecl.getDtorSig().value_or(FuncTypeGeneratorType());
-        if (dtorSig) {
-          // Bind the *(0,0) parameter to a concrete type we're using in this
-          // context.
+        if (auto dtorWitness = traitDecl.getDtorWitness()) {
           TypedAttr selfParam = generic.getParam();
           if (trait.getSymbols().size() > 1) {
             // For trait compositions, upcast the self parameter to the dtor
@@ -322,13 +318,13 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
             auto expectedSelfType = TraitType::get(symbol);
             selfParam = UpcastAttr::get(expectedSelfType, selfParam);
           }
-          auto specSig = dtorSig.getSpecializedGenerator(
-              {selfParam}, &evaluationContext, loc);
-          auto delStr =
-              StringAttr::get("__del__", StringType::get(type.getContext()));
-          auto traitName = StringAttr::get(type.getContext(),
-                                           *traitDecl.getDtorWitnessTrait());
-          return GetWitnessAttr::get(selfParam, traitName, delStr, specSig);
+          // Bind the *(0,0) parameter to a concrete type we're using in this
+          // context.
+          auto specSig = cast<FuncTypeGeneratorType>(dtorWitness->getType())
+                             .getSpecializedGenerator({selfParam},
+                                                      &evaluationContext, loc);
+          return GetWitnessAttr::get(selfParam, dtorWitness->getTraitName(),
+                                     dtorWitness->getWitnessName(), specSig);
         }
       }
     }

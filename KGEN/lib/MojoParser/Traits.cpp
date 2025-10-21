@@ -494,11 +494,10 @@ LogicalResult LIT::verifyAndBuildConformance(ASTDecl &structDecl,
         function_ref<InflightDiag &(SMLoc)>([&](SMLoc loc) -> InflightDiag & {
           return diag->attachNote(traitFnDecl->getLoc());
         }));
-    if (result)
-      b.create<WitnessOp>(name, result.get());
-    else {
+    if (!result)
       return failure();
-    }
+
+    b.create<WitnessOp>(traitFn.getSymNameAttr(), result.get());
     return success();
   };
 
@@ -1014,6 +1013,7 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared,
 
   ASTDecl &entry = *entries.front();
   Type resultType;
+  StringRef witnessName = entryName;
   // TODO(BillyZ): Fix trait alias replacement here once #60811 lands. Currently
   // this function does not properly replace alias mentions with the struct
   // type, but that does not impact any use case since this is only ever called
@@ -1021,8 +1021,14 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared,
   if (auto aliasDecl = dyn_cast_or_null<AliasDeclOp>(entry.getIfOperation())) {
     resultType = aliasDecl.getType();
   } else if (auto fnDecl = dyn_cast_or_null<FnOp>(entry.getIfOperation())) {
+    // Ensure the function is signature resolved so we can access the mangled
+    // name.
+    if (failed(shared.declResolver->resolveSignature(entry, errorLoc)))
+      return failure();
     resultType =
         createRequirementSignature(fnDecl, type, nullptr, *shared.declResolver);
+    // Use the mangled name from the trait declaration for function witnesses.
+    witnessName = *fnDecl.getSymName();
   } else {
     llvm_unreachable("expected an alias or a function");
   }
@@ -1033,7 +1039,7 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared,
       PValue(type),
       StringAttr::get(ctx,
                       getFlattenedSymbolName(parentTraitDecl->getSymbolRef())),
-      StringAttr::get(ctx, entryName), resultType);
+      StringAttr::get(ctx, witnessName), resultType);
 }
 
 /// Emit a metatype conversion to a trait type by materializing the meta type

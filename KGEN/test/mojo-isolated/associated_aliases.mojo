@@ -144,7 +144,7 @@ trait TraitWithAliasArgMethod:
 struct StructWithAliasArgMethod(TraitWithAliasArgMethod):
     # CHECK: kgen.conformance {{.*}}::TraitWithAliasArgMethod
     # CHECK: kgen.witness "T" : !ATrait = !ZInt
-    # CHECK: kgen.witness "lork" : {{.*}} = {{.*}}::@StructWithAliasArgMethod::@"lork(
+    # CHECK: kgen.witness "lork{{.*}}" : {{.*}} = {{.*}}::@StructWithAliasArgMethod::@"lork{{.*}}"
     alias T: ATrait = ZInt
 
     fn lork(self, thing: SIMD[ZInt]):
@@ -242,7 +242,7 @@ fn callTraitMethodWithAliasArg[
 ](t: X, thing: SIMD[X.T]):
     # CHECK:  %0 = lit.call
     # CHECK-SAME: "thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait #kgen.get_witness<:!TraitWithAliasArgMethod X, "associated_aliases::TraitWithAliasArgMethod", "T">>
-    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasArgMethod X, "associated_aliases::TraitWithAliasArgMethod", "lork">
+    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasArgMethod X, "associated_aliases::TraitWithAliasArgMethod", "lork{{.*}}">
     t.lork(thing)
 
 
@@ -280,7 +280,7 @@ fn callTraitMethodWithAliasArg[
 ](t: X, thing: SIMD[X.T]):
     # CHECK:  %0 = lit.call
     # CHECK-SAME: "thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait #kgen.get_witness<:!TraitWithAliasArgMethod X, "associated_aliases::TraitWithAliasArgMethod", "T">>
-    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasArgMethod X, "associated_aliases::TraitWithAliasArgMethod", "lork">
+    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasArgMethod X, "associated_aliases::TraitWithAliasArgMethod", "lork{{.*}}">
     t.lork(thing)
 
 
@@ -317,7 +317,7 @@ trait TraitWithAliasReturnMethod:
 struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
     # CHECK: kgen.conformance {{.*}}::TraitWithAliasReturnMethod
     # CHECK: kgen.witness "T" : !ATrait = !ZInt
-    # CHECK: kgen.witness "bork" : {{.*}} = {{.*}}::@ExplicitStructWithAliasMethod::@"bork(
+    # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@ExplicitStructWithAliasMethod::@"bork{{.*}}"
     alias T: ATrait = ZInt
 
     fn bork(self) -> SIMD[ZInt]:
@@ -408,7 +408,7 @@ trait TraitWithAliasReturnMethod:
 fn callTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
     # CHECK: {{.*}}lit.call
     # CHECK-SAME: "__result__": !lit.ref<@associated_aliases::@SIMD<:!ATrait #kgen.get_witness<:!TraitWithAliasReturnMethod X, "associated_aliases::TraitWithAliasReturnMethod", "T">>
-    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasReturnMethod X, "associated_aliases::TraitWithAliasReturnMethod", "bork">
+    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasReturnMethod X, "associated_aliases::TraitWithAliasReturnMethod", "bork{{.*}}">
     _ = t.bork()
 
 
@@ -438,7 +438,7 @@ trait TraitWithAliasReturnMethod:
 fn callTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
     # CHECK: {{.*}}lit.call
     # CHECK-SAME: "__result__": !lit.ref<@associated_aliases::@SIMD<:!ATrait #kgen.get_witness<:!TraitWithAliasReturnMethod X, "associated_aliases::TraitWithAliasReturnMethod", "T">>
-    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasReturnMethod X, "associated_aliases::TraitWithAliasReturnMethod", "bork">
+    # CHECK-SAME: #kgen.get_witness<:!TraitWithAliasReturnMethod X, "associated_aliases::TraitWithAliasReturnMethod", "bork{{.*}}">
     _ = t.bork()
 
 
@@ -477,7 +477,7 @@ trait TraitWithAliasReturnMethod:
 struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
     # CHECK: kgen.conformance {{.*}}::TraitWithAliasReturnMethod
     # CHECK: kgen.witness "T" : !ATrait = Z
-    # CHECK: kgen.witness "bork" : {{.*}} = {{.*}}::@GenericStructWithAliasMethod::@"bork(
+    # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@GenericStructWithAliasMethod::@"bork{{.*}}"
     alias T: ATrait = Z
 
     fn bork(self) -> SIMD[Z]:
@@ -578,7 +578,7 @@ trait TraitWithSelfDotAliasReturnMethod:
 struct StructWithSelfDotAliasReturnMethod(TraitWithSelfDotAliasReturnMethod):
     # CHECK: kgen.conformance {{.*}}::TraitWithSelfDotAliasReturnMethod
     # CHECK: kgen.witness "T" : !ATrait = !ZInt
-    # CHECK: kgen.witness "bork" : {{.*}} = {{.*}}::@StructWithSelfDotAliasReturnMethod::@"bork(
+    # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@StructWithSelfDotAliasReturnMethod::@"bork{{.*}}"
     alias T: ATrait = ZInt
 
     fn bork(self) -> SIMD[Self.T]:
@@ -689,7 +689,7 @@ struct GenericStructWithSelfDotAliasReturnMethod[Z: ATrait](
 ):
     # CHECK: kgen.conformance {{.*}}::TraitWithSelfDotAliasReturnMethod
     # CHECK: kgen.witness "T" : !ATrait = Z
-    # CHECK: kgen.witness "bork" : {{.*}} = {{.*}}::@GenericStructWithSelfDotAliasReturnMethod::@"bork(
+    # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@GenericStructWithSelfDotAliasReturnMethod::@"bork{{.*}}"
     alias T: ATrait = Z
 
     fn bork(self) -> SIMD[Self.T]:

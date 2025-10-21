@@ -679,7 +679,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(
     StringAttr parentName = closureParent.getFullSymbolName(moduleDecl);
     TypedAttr symbol = GetWitnessAttr::get(
         ctx, ParamDeclRefAttr::get(implType.getName(), implType.getType()),
-        parentName, op.getSourceNameAttr(), wrappedSignature);
+        parentName, traitFnOp.getSymNameAttr(), wrappedSignature);
     SmallVector<TypedAttr> paramArgs;
     llvm::append_range(
         paramArgs,
@@ -749,7 +749,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(
     FnOp impl = nameToImpl[name];
     SymbolConstantAttr symbolConstant =
         buildSymbol(impl, implType, originSetParam);
-    b.create<WitnessOp>(StringAttr::get(ctx, name), symbolConstant);
+    b.create<WitnessOp>(fnOp.getSymNameAttr(), symbolConstant);
 
     return witnessTable;
   };
@@ -795,7 +795,6 @@ ASTDecl *ClosureEmitter::createStructWrapper(
 
   // Generate the body of the constructor, which should contain a call to the
   // move constructor.
-  StringAttr moveName = StringAttr::get("__moveinit__", StringType::get(ctx));
   FnOp moveFn = moveParent.getDefiningOp(moduleDecl);
   FnTypeGeneratorType moveSignature =
       specializeSignature(moveFn, paramType, *shared.declResolver);
@@ -803,7 +802,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(
 
   TypedAttr moveSymbol = GetWitnessAttr::get(
       ctx, ParamDeclRefAttr::get(implType.getName(), implType.getType()),
-      moveParentStrAttr, moveName, moveSignature);
+      moveParentStrAttr, moveFn.getSymNameAttr(), moveSignature);
   SmallVector<Value> operands;
   SmallVector<TypedAttr> origins;
   llvm::SmallDenseSet<StringRef> explicitParameters;
@@ -1780,7 +1779,7 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
     TypedAttr symbol = ClosureSymbolAttr::get(
         ctx, parentSymbolRef, closureType.getName(),
         ClosureMethodAttr::get(ctx, method), paramValues, sig);
-    builder.create<WitnessOp>(fnOp.getSourceNameAttr(), symbol);
+    builder.create<WitnessOp>(fnOp.getSymNameAttr(), symbol);
   };
 
   for (ClosureParent &closureParent : closureParents) {
@@ -2281,7 +2280,8 @@ ClosureEmitter::augmentWitnessTablesToConformTo(ASTType structType,
     addConformanceTable(structDecl,
                         ClosureEmitter::ClosureParent(traitDeclOp, callFunction,
                                                       ClosureMethod::CALL),
-                        newWitness.get(), name, fileModule);
+                        newWitness.get(), callFunction.getSymNameAttr(),
+                        fileModule);
     return success();
   }
   return failure();
@@ -2363,12 +2363,10 @@ void ClosureEmitter::addConformanceToDevicePassable(
         FnOp copyFn = copyParent.getDefiningOp(moduleDecl);
         FnTypeGeneratorType copySignature =
             specializeSignature(copyFn, paramType, *shared.declResolver);
-        StringAttr copyName =
-            StringAttr::get(ctx, copyParent.getDefiningOpName());
         StringAttr parentName = copyParent.getFullSymbolName(moduleDecl);
         TypedAttr copySymbol =
             GetWitnessAttr::get(ctx, ParamDeclRefAttr::get(impl), parentName,
-                                copyName, copySignature);
+                                copyFn.getSymNameAttr(), copySignature);
         SmallVector<Value> operands{closureMemberRef, targetRef};
         SmallVector<TypedAttr> origins;
         origins.push_back(
@@ -2381,8 +2379,7 @@ void ClosureEmitter::addConformanceToDevicePassable(
         IREmitter::emitNormalReturn(b, noneAttr);
 
         devicePassableWitnesses.push_back(
-            {*function.getSourceName(),
-             buildSymbol(toDevice, impl, originSet)});
+            {*function.getSymName(), buildSymbol(toDevice, impl, originSet)});
         continue;
       }
       /// If this is a static method that returns a string, return the trait's
@@ -2424,7 +2421,7 @@ void ClosureEmitter::addConformanceToDevicePassable(
             KGEN::NoneAttr::get(b.getContext()));
         IREmitter::emitNormalReturn(b, noneAttr);
         devicePassableWitnesses.push_back(
-            {*function.getSourceName(),
+            {*function.getSymName(),
              buildSymbol(implementation, impl, originSet)});
 
         continue;

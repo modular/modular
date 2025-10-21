@@ -3528,9 +3528,14 @@ void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,
 
   auto [dtor, inheritedFrom] = lookupDestructor(traitDecl, shared);
   if (dtor) {
-    traitOp.setDtorSig(dtor.getType());
-    traitOp.setDtorWitnessTrait(getFlattenedSymbolName(
-        inheritedFrom.value_or(traitDecl.getSymbolRef())));
+    std::string traitName = getFlattenedSymbolName(
+        inheritedFrom.value_or(traitDecl.getSymbolRef()));
+    // No need to fold here since the typeValue is always non-concrete.
+    auto getWitnessAttr = GetWitnessAttr::get(
+        PValue(traitDecl.getTypeDeclSelf()),
+        StringAttr::get(traitDecl.getContext(), traitName),
+        dtor.getSymbol().getLeafReference(), dtor.getType());
+    traitOp.setDtorWitnessAttr(getWitnessAttr);
   }
 }
 

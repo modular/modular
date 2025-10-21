@@ -147,8 +147,7 @@ __extension Spaceship(Flying):
         self.set_location(new_location)
 
 # CHECK: kgen.conformance @"struct_extensions::Flying" {
-# CHECK-NEXT: kgen.witness "fly_to"
-# CHECK-SAME: = @struct_extensions::@"extension:Spaceship"::@"fly_to
+# CHECK-NEXT: kgen.witness "fly_to{{.*}}" : {{.*}} = @struct_extensions::@"extension:Spaceship"::@"fly_to{{.*}}"
 # CHECK-NEXT: } attributes {traitRef = @struct_extensions::@Flying}
 # Flying trait has no parents, so ConformanceOp should not have immediateParents
 # CHECK-NOT: } attributes {{{.*}}immediateParents
