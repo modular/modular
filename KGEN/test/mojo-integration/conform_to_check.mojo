@@ -23,7 +23,7 @@ struct S(A, B):
     pass
 
 
-struct S1:
+struct S1(C):
     pass
 
 
@@ -33,6 +33,16 @@ fn foo[T: AnyType]():
         print("T conforms to 'A & B'")
     else:
         print("T does not conform to 'A & B'")
+
+
+fn bar[T: AnyType]() where conforms_to(T, A & B):
+    print("overload A")
+    return
+
+
+fn bar[T: AnyType]() where conforms_to(T, C):
+    print("overload B")
+    return
 
 
 fn main():
@@ -51,3 +61,9 @@ fn main():
 
     # CHECK: T does not conform to 'A & B'
     foo[S1]()
+
+    # CHECK: overload A
+    bar[S]()
+
+    # CHECK: overload B
+    bar[S1]()

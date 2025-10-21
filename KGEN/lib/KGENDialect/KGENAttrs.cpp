@@ -294,8 +294,41 @@ bool UpcastAttr::isConstant() const { return false; }
 // TypeConformsToAttr
 //===----------------------------------------------------------------------===//
 
+static TypedAttr getTypeRefForTypeValueIfResolved(TypedAttr typeRef) {
+  if (sugarIsa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
+    return SugarAttr::strip(typeRef);
+
+  auto typeParam = sugarDynCast<TypeParamAttr>(typeRef);
+  if (!typeParam)
+    return {};
+
+  auto typeValueType = sugarDynCast<TypeValueType>(typeParam.getTypeValue());
+  if (!typeValueType)
+    return {};
+
+  typeRef = typeValueType.getTypeValue();
+  if (!sugarIsa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
+    return {};
+
+  return typeRef;
+}
+
 Type TypeConformsToTraitAttr::getType() const {
   return IntegerType::get(getContext(), 1);
+}
+
+TypedAttr TypeConformsToTraitAttr::getTypeRefIfResolved() {
+  return getTypeRefForTypeValueIfResolved(getTypeValue());
+}
+
+FailureOr<TypedAttr>
+TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp) {
+  // Check when the trait symbol table contains all the traits required.
+  for (auto toCheck : getTraitNames().getValues())
+    if (!traitTableOp.lookup(cast<StringAttr>(toCheck).getValue()))
+      return {BoolAttr::get(getContext(), false)};
+
+  return {BoolAttr::get(getContext(), true)};
 }
 
 LogicalResult
@@ -316,23 +349,7 @@ TypeConformsToTraitAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 bool GetWitnessAttr::isConstant() const { return false; }
 
 TypedAttr GetWitnessAttr::getTypeRefIfResolved() {
-  TypedAttr typeRef = getTypeValue();
-  if (sugarIsa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
-    return SugarAttr::strip(typeRef);
-
-  auto typeParam = sugarDynCast<TypeParamAttr>(typeRef);
-  if (!typeParam)
-    return {};
-
-  auto typeValueType = sugarDynCast<TypeValueType>(typeParam.getTypeValue());
-  if (!typeValueType)
-    return {};
-
-  typeRef = typeValueType.getTypeValue();
-  if (!sugarIsa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
-    return {};
-
-  return typeRef;
+  return getTypeRefForTypeValueIfResolved(getTypeValue());
 }
 
 FailureOr<TypedAttr> GetWitnessAttr::simplify(ConformanceOp witnessTable,
