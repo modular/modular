@@ -1153,6 +1153,13 @@ LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
 // ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
 
+static LIT::StructType getStructTypeForTypeValue(TypedAttr typeValue) {
+  auto typeParam = dyn_cast<TypeParamAttr>(typeValue);
+  if (!typeParam)
+    return nullptr;
+  return dyn_cast<LIT::StructType>(typeParam.getTypeValue());
+}
+
 FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateExpression(
     ContextuallyEvaluatedAttrInterface attr) {
   if (auto getWitness = dyn_cast<GetWitnessAttr>(attr)) {
@@ -1161,18 +1168,24 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateExpression(
       return simplified.value();
   }
 
+  if (auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(attr)) {
+    auto structType = getStructTypeForTypeValue(conformsTo.getTypeValue());
+    if (structType) {
+      auto structDecl =
+          symtab.lookupSymbolIn<StructDeclOp>(module, structType.getSymbol());
+      if (!structDecl)
+        return failure();
+      return conformsTo.simplify(SymbolTable(structDecl));
+    }
+  }
+
   // Delegate to base class logic.
   return SymTabEvaluationContext::evaluateExpression(attr);
 }
 
 FailureOr<TypedAttr>
 LITSymTabEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
-  // We can only simplify if the type reference is resolved already.
-  auto typeParam = dyn_cast<TypeParamAttr>(getWitness.getTypeValue());
-  if (!typeParam)
-    return failure();
-
-  auto structType = dyn_cast<LIT::StructType>(typeParam.getTypeValue());
+  StructType structType = getStructTypeForTypeValue(getWitness.getTypeValue());
   if (!structType)
     return failure();
 

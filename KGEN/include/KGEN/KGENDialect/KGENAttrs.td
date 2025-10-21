@@ -393,6 +393,16 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
   let extraClassDeclaration = [{
     /// Get the type of the attribute. It is always I1 type.
     Type getType() const;
+
+    /// Extract the type reference if the type value field is already resolved.
+    /// This will return either a TypeGeneratorRefAttr / TypeInstanceRefAttr,
+    /// or a null attribute if the type value is not resolved.
+    TypedAttr getTypeRefIfResolved();
+
+    /// Fold the attribute given the operations that holds a symbol table for
+    /// the trait it implemented, it should either be a `kgen.struct.generator`
+    /// or a `lit.struct.decl` which contains symbol table for `conformance_op`.
+    FailureOr<TypedAttr> simplify(const SymbolTable &traitTableOp);
   }];
 
   let genVerifyDecl = 1;

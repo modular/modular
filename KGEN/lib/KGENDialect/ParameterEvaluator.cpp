@@ -110,6 +110,21 @@ FailureOr<TypedAttr> SymTabEvaluationContext::evaluateExpression(
   if (auto getWitness = dyn_cast<GetWitnessAttr>(attr))
     return evaluateGetWitness(getWitness);
 
+  if (auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(attr)) {
+    auto genRef = dyn_cast_if_present<TypeGeneratorRefAttr>(
+        conformsTo.getTypeRefIfResolved());
+    if (!genRef)
+      return failure();
+
+    // Find the struct decl for the instance.
+    auto structDecl =
+        symtab.lookupSymbolIn<StructGeneratorOp>(module, genRef.getSymbol());
+    if (!structDecl)
+      return failure();
+
+    return conformsTo.simplify(SymbolTable(structDecl));
+  }
+
   return failure();
 }
 

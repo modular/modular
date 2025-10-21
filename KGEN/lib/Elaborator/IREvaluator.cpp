@@ -799,12 +799,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateTypeConformToTraitAttr(
       elaborator->lookupImplNode(instanceRef.getSymbol())->parent;
   StructGeneratorOp genOp = cast<StructGeneratorOp>(genNode->gen);
 
-  // Check when the struct conforms to all the traits.
-  for (auto toCheck : traitNames.getValues())
-    if (!genOp.lookupSymbol(cast<StringAttr>(toCheck).getValue()))
-      return {BoolAttr::get(getContext(), false)};
-
-  return {BoolAttr::get(getContext(), true)};
+  return typeConformToTraitAttr.simplify(SymbolTable(genOp));
 }
 
 //===----------------------------------------------------------------------===//

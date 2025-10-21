@@ -15,6 +15,19 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
+static ASTDecl *getDeclForTypeValue(SharedState &shared, TypedAttr typeValue) {
+  // We can only simplify if the type reference is resolved already.
+  auto typeParam = dyn_cast<TypeParamAttr>(typeValue);
+  if (!typeParam)
+    return nullptr;
+
+  auto structType = dyn_cast<LIT::StructType>(typeParam.getTypeValue());
+  if (!structType)
+    return nullptr;
+
+  return &shared.declResolver->getDeclForTypeSymbol(structType.getSymbol());
+}
+
 FailureOr<TypedAttr> ParserEvaluationContext::evaluateExpression(
     ContextuallyEvaluatedAttrInterface attr) {
   // Handle simplifiable cases here.
@@ -22,6 +35,13 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateExpression(
     return evaluateGetWitness(
         getWitness.getTypeValue(), getWitness.getTraitName(),
         getWitness.getWitnessName(), getWitness.getType());
+
+  if (auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(attr)) {
+    if (auto *decl = getDeclForTypeValue(shared, conformsTo.getTypeValue())) {
+      auto structDeclOp = cast<StructDeclOp>(decl->getIfOperation());
+      return conformsTo.simplify(SymbolTable(structDeclOp));
+    }
+  }
 
   // Otherwise, this is not something we can evaluate, which is ok, because
   // the parser won't be able to evaluate everything. The user is expected to
