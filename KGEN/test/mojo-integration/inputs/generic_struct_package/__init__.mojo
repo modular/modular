@@ -4,9 +4,4 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Minimal struct for testing extensions without stdlib dependencies
-
-
-@fieldwise_init
-struct PlainStruct:
-    pass
+from .generic import Container
