@@ -1252,9 +1252,16 @@ fn allreduce_2stage_quickreduce_tile[
     output_lambda: elementwise_epilogue_type,
     atom_size: Int,
 ](
-    result: NDBuffer[dtype, rank, MutableAnyOrigin],
-    buffer_list: InlineArray[UnsafePointer[Scalar[DType.uint8]], ngpus],
-    src_buffer: UnsafePointer[Scalar[dtype]],
+    result_data: UnsafePointer[
+        Scalar[dtype], address_space=_target_address_space
+    ],
+    buffer_list: InlineArray[
+        UnsafePointer[Scalar[DType.uint8], address_space=_target_address_space],
+        ngpus,
+    ],
+    src_buffer: UnsafePointer[
+        Scalar[dtype], address_space=_target_address_space
+    ],
     num_elements: Int,
     my_rank: Int,
     tile: Int,
@@ -1273,29 +1280,41 @@ fn allreduce_2stage_quickreduce_tile[
     # Per-tile byte offsets matching CUDA pattern
     alias bytes_per_elem = size_of[Scalar[dtype]]()
     alias flag_t_bytes = size_of[Scalar[_flag_t]]()
-    # Keep Int like C++ and only widen where necessary.
-    alias tile_bytes = tile_elems * bytes_per_elem
-    alias rank_tile_bytes = rank_tile_elems * bytes_per_elem
-    var flags_per_tile: Int = ngpus * flag_t_bytes
     # Note: In the C++ reference implementation, data_offset is a 64-bit long.
-    var data_offset: Int = 2 * num_tiles * flags_per_tile
-    var comm_data0_offset = data_offset + tile * tile_bytes
-    var comm_data1_offset = num_tiles * tile_bytes + comm_data0_offset
-    var comm_flags0_offset = tile * flags_per_tile
-    var comm_flags1_offset = num_tiles * flags_per_tile + comm_flags0_offset
-
-    var my_rank_rank_tile_bytes = my_rank * rank_tile_bytes
-    var my_rank_flag_bytes = my_rank * flag_t_bytes
+    var data_offset: Int = (
+        2 * num_tiles * ngpus * flag_t_bytes // bytes_per_elem
+    )
+    # Element-indexed offsets
+    var comm_data0_offset = data_offset + tile * tile_elems
+    var comm_data1_offset = comm_data0_offset + num_tiles * tile_elems
+    var comm_flags0_offset = tile * ngpus
+    var comm_flags1_offset = comm_flags0_offset + num_tiles * ngpus
 
     var flag_color = iteration + 1
 
     var tA = InlineArray[SIMD[dtype, simd_width], atom_size](uninitialized=True)
     var tR = InlineArray[SIMD[dtype, simd_width], atom_size](uninitialized=True)
     var tR_acc = InlineArray[SIMD[accum_type, simd_width], atom_size](fill=0)
+    var data_buf = InlineArray[
+        UnsafePointer[Scalar[dtype], address_space=_target_address_space],
+        ngpus,
+    ](uninitialized=True)
+    var flag_buf = InlineArray[
+        UnsafePointer[Scalar[_flag_t], address_space=_target_address_space],
+        ngpus,
+    ](uninitialized=True)
+
+    @parameter
+    for r in range(ngpus):
+        data_buf[r] = buffer_list[r].bitcast[Scalar[dtype]]()
+        flag_buf[r] = buffer_list[r].bitcast[Scalar[_flag_t]]()
 
     @parameter
     fn wait_for_flag(
-        ptr: UnsafePointer[Scalar[_flag_t]], expected: Scalar[_flag_t]
+        ptr: UnsafePointer[
+            Scalar[_flag_t], address_space=_target_address_space
+        ],
+        expected: Scalar[_flag_t],
     ):
         # Spin using relaxed atomic loads for minimal latency. Using relaxed atomics
         # ensures correct visibility with minimal overhead: producers publish with
@@ -1305,8 +1324,11 @@ fn allreduce_2stage_quickreduce_tile[
             pass
 
     @parameter
+    @always_inline
     fn send(
-        send_buffer: UnsafePointer[Scalar[dtype]],
+        send_buffer: UnsafePointer[
+            Scalar[dtype], address_space=_target_address_space
+        ],
         tA: InlineArray[SIMD[dtype, simd_width], atom_size],
         tile_offset: Int,
     ):
@@ -1314,72 +1336,67 @@ fn allreduce_2stage_quickreduce_tile[
         for i in range(rank_atoms):
             var atom_idx = Int(thread_idx.x) * simd_width + atom_stride * i
             var atom_data = tA[tile_offset + i]
-            send_buffer.address_space_cast[_target_address_space]().store[
-                alignment=alignment
-            ](atom_idx, atom_data)
+            send_buffer.store[alignment=alignment](atom_idx, atom_data)
 
     @parameter
-    fn recv(recv_buffer: UnsafePointer[Scalar[dtype]], tile_offset: Int):
+    @always_inline
+    fn recv(
+        recv_buffer: UnsafePointer[
+            Scalar[dtype], address_space=_target_address_space
+        ],
+        tile_offset: Int,
+    ):
         @parameter
         for i in range(rank_atoms):
             var atom_idx = Int(thread_idx.x) * simd_width + atom_stride * i
-            tA[tile_offset + i] = recv_buffer.address_space_cast[
-                _target_address_space
-            ]().load[width=simd_width, alignment=alignment, invariant=True](
-                atom_idx
-            )
+            tA[tile_offset + i] = recv_buffer.load[
+                width=simd_width, alignment=alignment, invariant=True
+            ](atom_idx)
 
     @parameter
+    @always_inline
     fn phase1a_scatter():
         # Load this GPU's tile slice: offset by tile index and lane within the tile.
         var src_offset = tile * tile_elems + Int(thread_idx.x) * simd_width
 
         @parameter
         for i in range(atom_size):
-            tA[i] = src_buffer.address_space_cast[_target_address_space]().load[
+            tA[i] = src_buffer.load[
                 width=simd_width, alignment=alignment, invariant=True
             ](src_offset + i * atom_stride)
 
         @parameter
         for r in range(ngpus):
-            var send_buffer = buffer_list[r] + (
-                comm_data0_offset + my_rank_rank_tile_bytes
-            )
             send(
-                send_buffer.bitcast[Scalar[dtype]](),
+                data_buf[r] + comm_data0_offset + my_rank * rank_tile_elems,
                 tA,
                 r * rank_atoms,
             )
         barrier()
 
         if thread_idx.x < UInt(ngpus):
-            var flag_ptr = (
-                buffer_list[thread_idx.x]
-                + (comm_flags0_offset + my_rank_flag_bytes)
-            ).bitcast[Scalar[_flag_t]]()
-            store_release(flag_ptr, flag_color)
+            store_release(
+                flag_buf[thread_idx.x] + comm_flags0_offset + my_rank,
+                flag_color,
+            )
         # No additional barrier: the next phase waits on all flags and then
         # synchronizes the block.
 
     phase1a_scatter()
 
     @parameter
+    @always_inline
     fn phase1b_reduce():
-        var recv_buffer = buffer_list[my_rank] + comm_data0_offset
-        var flag_ptr = (buffer_list[my_rank] + comm_flags0_offset).bitcast[
-            Scalar[_flag_t]
-        ]()
-
         if thread_idx.x < UInt(ngpus):
-            wait_for_flag(flag_ptr + thread_idx.x, flag_color)
+            wait_for_flag(
+                flag_buf[my_rank] + comm_flags0_offset + thread_idx.x,
+                flag_color,
+            )
         barrier()
 
         @parameter
         for r in range(ngpus):
-            recv(
-                recv_buffer.bitcast[Scalar[dtype]]() + r * rank_tile_elems,
-                0,
-            )
+            recv(data_buf[my_rank] + comm_data0_offset + r * rank_tile_elems, 0)
 
             @parameter
             for i_red in range(rank_atoms):
@@ -1392,36 +1409,36 @@ fn allreduce_2stage_quickreduce_tile[
     phase1b_reduce()
 
     @parameter
+    @always_inline
     fn phase2_allgather():
         @parameter
         for r in range(ngpus):
-            var send_buffer = buffer_list[r] + (
-                comm_data1_offset + my_rank_rank_tile_bytes
+            send(
+                data_buf[r] + comm_data1_offset + my_rank * rank_tile_elems,
+                tR,
+                0,
             )
-            send(send_buffer.bitcast[Scalar[dtype]](), tR, 0)
         barrier()
 
         if thread_idx.x < UInt(ngpus):
-            var flag_ptr = (
-                buffer_list[thread_idx.x] + comm_flags1_offset
-            ).bitcast[Scalar[_flag_t]]()
-            store_release(flag_ptr + my_rank, flag_color)
+            store_release(
+                flag_buf[thread_idx.x] + comm_flags1_offset + my_rank,
+                flag_color,
+            )
         # No additional barrier: thread 0 will wait on all flags below and
         # a barrier after the wait will synchronize the block.
 
-        var recv_buffer = buffer_list[my_rank] + comm_data1_offset
-        var flag_ptr = (buffer_list[my_rank] + comm_flags1_offset).bitcast[
-            Scalar[_flag_t]
-        ]()
-
         if thread_idx.x < UInt(ngpus):
-            wait_for_flag(flag_ptr + thread_idx.x, flag_color)
+            wait_for_flag(
+                flag_buf[my_rank] + comm_flags1_offset + thread_idx.x,
+                flag_color,
+            )
         barrier()
 
         @parameter
         for r in range(ngpus):
             recv(
-                recv_buffer.bitcast[Scalar[dtype]]() + r * rank_tile_elems,
+                data_buf[my_rank] + comm_data1_offset + r * rank_tile_elems,
                 r * rank_atoms,
             )
 
@@ -1432,9 +1449,7 @@ fn allreduce_2stage_quickreduce_tile[
     @parameter
     for i in range(atom_size):
         var elem_idx_out = dst_offset + i * atom_stride
-        result.data.address_space_cast[_target_address_space]().store[
-            alignment=alignment
-        ](elem_idx_out, tA[i])
+        result_data.store[alignment=alignment](elem_idx_out, tA[i])
 
 
 @__llvm_metadata(
@@ -1479,17 +1494,21 @@ fn allreduce_2stage_quickreduce[
     alias simd_width = simd_width_of[dtype]()
     alias alignment = align_of[SIMD[dtype, simd_width]]()
 
-    # Build buffer_list (payload planes) from rank_sigs once and pass to the tile kernel
-    var buffer_list = InlineArray[UnsafePointer[Scalar[DType.uint8]], ngpus](
-        uninitialized=True
-    )
+    # Build payload planes from rank_sigs once and pass to the tile kernel
+    var buffer_list = InlineArray[
+        UnsafePointer[Scalar[DType.uint8], address_space=_target_address_space],
+        ngpus,
+    ](uninitialized=True)
 
     @parameter
     for rr in range(ngpus):
         # The '+ 1' skips the signal header (1 byte) to access the payload buffer.
-        buffer_list[rr] = (
-            rank_sigs[rr].address_space_cast[GPUAddressSpace.GENERIC]() + 1
-        ).bitcast[Scalar[DType.uint8]]()
+        var payload_generic = (
+            (rank_sigs[rr].address_space_cast[GPUAddressSpace.GENERIC]() + 1)
+            .bitcast[Scalar[DType.uint8]]()
+            .address_space_cast[_target_address_space]()
+        )
+        buffer_list[rr] = payload_generic
 
     for tile in range(block_idx.x, num_tiles_total, grid_dim.x):
         allreduce_2stage_quickreduce_tile[
@@ -1500,9 +1519,9 @@ fn allreduce_2stage_quickreduce[
             output_lambda=output_lambda,
             atom_size=atom_size,
         ](
-            result,
+            result.data.address_space_cast[_target_address_space](),
             buffer_list,
-            local_src,
+            local_src.address_space_cast[_target_address_space](),
             num_elements,
             my_rank,
             tile,
