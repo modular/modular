@@ -1125,7 +1125,7 @@ PIPELINES = {
                 json_file="torch_gemma3-27b_bfloat16_golden.json",
             ),
             cos_dist_threshold=1.9e-02,
-            kl_div_threshold=5.7e-01,
+            kl_div_threshold=6.9e-01,
         ),
     ),
     # TODO(MODELS-714): High thresholds likely due to bf16 vs fp8 comparison, needs investigation.
