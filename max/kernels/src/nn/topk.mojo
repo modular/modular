@@ -1861,14 +1861,22 @@ fn apply_gumbel_noise_kernel[
             if seed:
                 seed_val = seed[tok_idx]
 
+            var ld_ptr = input.ptr + tok_idx * N
+            var st_ptr = output.ptr + tok_idx * N
+            alias align = align_of[SIMD[dtype, simd_width]]()
+
             for i in range(tid_in_group, N // simd_width, group_size):
                 var rng_state = Random(
                     seed=seed_val * N + i,
                 )
-                var input_val = input.aligned_load[simd_width](
-                    tok_idx, i * simd_width
-                ).cast[DType.float32]()
-                var noised_logits = input_val / temp_val
+                var input_val: SIMD[dtype, simd_width]
+                if N % simd_width == 0:
+                    input_val = ld_ptr.load[width=simd_width, alignment=align](
+                        i * simd_width
+                    )
+                else:
+                    input_val = ld_ptr.load[width=simd_width](i * simd_width)
+                var noised_logits = input_val.cast[DType.float32]() / temp_val
 
                 @parameter
                 for loop_i in range(simd_width // 4):
@@ -1879,9 +1887,14 @@ fn apply_gumbel_noise_kernel[
                     for vec_i in range(4):
                         noised_logits[4 * loop_i + vec_i] += rnd_val[vec_i]
 
-                output.aligned_store(
-                    tok_idx, i * simd_width, noised_logits.cast[dtype]()
-                )
+                if N % simd_width == 0:
+                    st_ptr.store[width=simd_width, alignment=align](
+                        i * simd_width, noised_logits.cast[dtype]()
+                    )
+                else:
+                    st_ptr.store[width=simd_width](
+                        i * simd_width, noised_logits.cast[dtype]()
+                    )
 
             # If N is not divisible by simd_width, handle remaining elements
             if N % simd_width != 0:
@@ -1890,15 +1903,14 @@ fn apply_gumbel_noise_kernel[
                     seed=seed_val * N + (N - N_res) + tid_in_group,
                 )
                 if tid_in_group < N_res:
-                    var input_val = input.load[1](
-                        tok_idx, (N - N_res) + tid_in_group
+                    var input_val = ld_ptr.load(
+                        (N - N_res) + tid_in_group
                     ).cast[DType.float32]()
                     var noised_logit = input_val / temp_val
                     var rnd_val = rng_state.step_uniform()[0]
                     rnd_val = -LOG2 * log2(-log2(rnd_val + EPS) + EPS)
                     noised_logit += rnd_val
-                    output.store(
-                        tok_idx,
+                    st_ptr.store(
                         (N - N_res) + tid_in_group,
                         noised_logit.cast[dtype](),
                     )
