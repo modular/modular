@@ -30,6 +30,8 @@ from itertools import product
 
 from gpu import warp_id as get_warp_id
 from layout.int_tuple import product as prod
+from layout.tensor_core import num_matrix_reg
+from layout.layout import blocked_product
 
 
 # NOTE: this struct might be a little overkill. may be consider simplifying this
@@ -72,10 +74,18 @@ struct ThreadRole(Copyable, ImplicitlyCopyable, Movable, Stringable, Writable):
         writer.write(String(self))
 
 
+@parameter
+fn pipeline_layout[layout: Layout, pipeline_stages: Int]() -> Layout:
+    constrained[layout.rank() == 2]()
+    return blocked_product(
+        layout, Layout.row_major(1, pipeline_stages), coalesce_output=True
+    )
+
+
 # TODO: replace with Fabio's implementation
 struct SharedMemoryBuffer[
     BufferType: DType,
-    layout: Layout,
+    smem_tile_layout: Layout,
     pipeline_stages: Int,
     block_rows: Int,
     block_cols: Int,
@@ -87,7 +97,7 @@ struct SharedMemoryBuffer[
 
     alias SmemTensorType = LayoutTensor[
         BufferType,
-        layout,
+        pipeline_layout[smem_tile_layout, pipeline_stages](),
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
@@ -100,24 +110,16 @@ struct SharedMemoryBuffer[
 
     fn __init__(out self):
         constrained[
-            layout.rank() == 2,
+            smem_tile_layout.rank() == 2,
             "layout must be 2D",
         ]()
 
         constrained[
-            prod(layout.shape[0]) == block_rows
-            and prod(layout.shape[1]) % block_cols == 0,
+            prod(smem_tile_layout.shape[0]) == block_rows
+            and prod(smem_tile_layout.shape[1]) == block_cols,
             (
-                "shared memory rows must match block_rows and columns must be a"
-                " multiple of block_cols"
-            ),
-        ]()
-
-        constrained[
-            prod(layout.shape[1]) // block_cols == pipeline_stages,
-            (
-                "number of stated pipeline stages is not compatible with shared"
-                " memory layout"
+                "shared memory rows must match block_rows and columns must"
+                " match block_cols"
             ),
         ]()
 
@@ -325,7 +327,7 @@ struct RingBuffer[
 struct AmdWarpBlockScatterGather[
     SmemType: DType,
     thread_layout: Layout,
-    smem_layout: Layout,
+    warp_tile_layout: Layout,
     simd_width: Int,
     is_a: Bool,
     warp_rows: Int,
@@ -339,7 +341,7 @@ struct AmdWarpBlockScatterGather[
     """
 
     alias total_participating_threads = thread_layout.size()
-    alias elements_loaded_per_thread = smem_layout.size() // Self.total_participating_threads
+    alias elements_loaded_per_thread = warp_tile_layout.size() // Self.total_participating_threads
     alias simd_loads_per_thread = Self.elements_loaded_per_thread // Self.simd_width
 
     alias LoadFragmentType = LayoutTensor[
@@ -415,7 +417,6 @@ struct AmdWarpBlockScatterGather[
 fn load_from_gmem_to_reg[
     simd_width: Int,
     src_thread_layout: Layout,
-    num_threads: Int = src_thread_layout.size(),
 ](dst: LayoutTensor, src: LayoutTensor):
     var worker_idx = thread_idx.x
 
@@ -445,58 +446,72 @@ fn load_from_gmem_to_reg[
             ](src_fragments[i, j])
 
 
-# needs warp rows and cols to be passed in
-struct AmdTileOperator[
+struct MMAConfig[
     InType: DType,
     OutType: DType,
-    warp_block_layout_a: Layout,
-    warp_block_layout_b: Layout,
     mma_shape: IndexList[3],
-    transpose_b: Bool,
-    swizzle: OptionalReg[Swizzle] = None,
-    simd_width: Int = 1,
-    warps_being_processed: Int = 1,
+    transpose_b: Bool = True,
 ]:
-    alias type_alignment = align_of[SIMD[InType, Self.simd_width]]()
-    alias tensor_core_mma = TensorCore[
+    alias mma = TensorCore[
         OutType,
         InType,
         mma_shape,
         transpose_b,
     ]()
 
-    alias num_m_mmas = warp_block_layout_a.shape[0].value() // mma_shape[0]
-    alias num_n_mmas = warp_block_layout_b.shape[0].value() // mma_shape[1]
+    alias simd_width = simd_width_of[InType]()
+    alias registers_per_thread_a = num_matrix_reg[mma_shape[0], mma_shape[2]]()
+    alias registers_per_thread_b = num_matrix_reg[mma_shape[1], mma_shape[2]]()
 
-    alias full_out_mma_fragment_layout = Layout.row_major(
-        warps_being_processed,
-        Self.num_m_mmas * Self.num_n_mmas,
-        Self.tensor_core_mma.c_reg_type.size,
-    )
+    alias k_group_size_a = Self.simd_width // Self.registers_per_thread_a
+    alias k_group_size_b = Self.simd_width // Self.registers_per_thread_b
 
-    alias out_mma_fragment_layout = Layout.row_major(
-        Self.num_m_mmas * Self.num_n_mmas, Self.tensor_core_mma.c_reg_type.size
-    )
+    @parameter
+    @staticmethod
+    fn adjusted_mma_k_shape_a() -> Int:
+        return mma_shape[2] * Self.k_group_size_a
 
-    alias a_matrix_size = mma_shape[0] * mma_shape[2]
-    alias b_matrix_size = mma_shape[1] * mma_shape[2]
+    @parameter
+    @staticmethod
+    fn adjusted_mma_k_shape_b() -> Int:
+        return mma_shape[2] * Self.k_group_size_b
 
-    alias register_count_a = Self.a_matrix_size // WARP_SIZE
-    alias register_count_b = Self.b_matrix_size // WARP_SIZE
 
-    alias WK = warp_block_layout_a.shape[1].value()
+# needs warp rows and cols to be passed in
+struct AmdTileOperator[
+    InType: DType,
+    OutType: DType,
+    mma_shape: IndexList[3],
+    transpose_b: Bool, //,
+    mma_config: type_of(MMAConfig[InType, OutType, mma_shape, transpose_b]),
+    warp_block_layout_a: Layout,
+    warp_block_layout_b: Layout,
+    swizzle: OptionalReg[Swizzle] = None,
+    tile_being_processed_per_warp: Int = 1,
+]:
+    alias type_alignment = align_of[SIMD[InType, mma_config.simd_width]]()
+
+    alias num_m_mmas = prod(warp_block_layout_a.shape[0]) // mma_shape[0]
+    alias num_n_mmas = prod(warp_block_layout_b.shape[0]) // mma_shape[1]
+
+    alias out_frag_rows = Self.num_m_mmas * Self.num_n_mmas
+    alias out_frag_cols = mma_config.mma.c_reg_type.size
+
+    alias out_mma_fragment_layout = pipeline_layout[
+        Layout.row_major(Self.out_frag_rows, Self.out_frag_cols),
+        tile_being_processed_per_warp,
+    ]()
+
+    alias WK = prod(warp_block_layout_a.shape[1])
     alias num_k_tiles = Self.WK // mma_shape[2]
 
-    alias fragments_per_simd_a = Self.simd_width // Self.register_count_a
-    alias fragments_per_simd_b = Self.simd_width // Self.register_count_b
-
-    alias k_tiles_per_simd_a = Self.num_k_tiles // Self.fragments_per_simd_a
-    alias k_tiles_per_simd_b = Self.num_k_tiles // Self.fragments_per_simd_b
+    alias k_tiles_per_simd_a = Self.num_k_tiles // mma_config.k_group_size_a
+    alias k_tiles_per_simd_b = Self.num_k_tiles // mma_config.k_group_size_b
 
     alias in_layout[
         num_mmas: Int,
         k_tiles_per_simd: Int,
-    ] = Layout.row_major(k_tiles_per_simd * num_mmas, Self.simd_width)
+    ] = Layout.row_major(k_tiles_per_simd * num_mmas, mma_config.simd_width)
 
     alias InMmaFragmentTypeA = LayoutTensor[
         InType,
@@ -514,14 +529,6 @@ struct AmdTileOperator[
         alignment = Self.type_alignment,
     ]
 
-    alias FullOutMmaFragmentType = LayoutTensor[
-        OutType,
-        Self.full_out_mma_fragment_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-        alignment = Self.type_alignment,
-    ]
-
     alias OutMmaFragmentType = LayoutTensor[
         OutType,
         Self.out_mma_fragment_layout,
@@ -530,17 +537,18 @@ struct AmdTileOperator[
         alignment = Self.type_alignment,
     ]
 
-    var full_c_reg_tile: Self.FullOutMmaFragmentType
+    alias OutMmaFragmentTileType = Self.OutMmaFragmentType.TileType[
+        Self.out_frag_rows, Self.out_frag_cols
+    ]
+
+    var full_c_reg_tile: Self.OutMmaFragmentType
     var a_reg_tile: Self.InMmaFragmentTypeA
     var b_reg_tile: Self.InMmaFragmentTypeB
 
     fn __init__(out self):
         constrained[
-            Self.WK % Self.simd_width == 0, "WK must be divisible by simd_width"
-        ]()
-        constrained[
-            Self.simd_width >= Self.register_count_a
-            and Self.simd_width >= Self.register_count_b,
+            mma_config.simd_width >= mma_config.registers_per_thread_a
+            and mma_config.simd_width >= mma_config.registers_per_thread_b,
             (
                 "simd_width must be greater than or equal to required mma"
                 " fragments size"
@@ -551,15 +559,14 @@ struct AmdTileOperator[
         self.b_reg_tile = Self.InMmaFragmentTypeB.stack_allocation()
 
         # BUG: this operation fails for some blocks see KERN-2090 for more details.
-        self.full_c_reg_tile = (
-            Self.FullOutMmaFragmentType.stack_allocation().fill(0)
+        self.full_c_reg_tile = Self.OutMmaFragmentType.stack_allocation().fill(
+            0
         )
 
-    fn get_c_reg_tile_slice(self, warp_idx: Int) -> Self.OutMmaFragmentType:
-        alias size = Self.out_mma_fragment_layout.size()
-        return Self.OutMmaFragmentType(
-            self.full_c_reg_tile.ptr + warp_idx * size
-        )
+    fn get_c_reg_tile_slice(self, tile_idx: Int) -> Self.OutMmaFragmentTileType:
+        return self.full_c_reg_tile.tile[
+            Self.out_frag_rows, Self.out_frag_cols
+        ](0, tile_idx)
 
     @always_inline
     fn mma[
@@ -584,21 +591,21 @@ struct AmdTileOperator[
 
         @parameter
         for k_tile_idx in range(Self.k_tiles_per_simd_a):
-            Self.tensor_core_mma.load_a[swizzle=swizzle](
+            mma_config.mma.load_a[swizzle=swizzle](
                 smem_tile_a,
-                self.a_reg_tile.tile[Self.num_m_mmas, Self.simd_width](
+                self.a_reg_tile.tile[Self.num_m_mmas, mma_config.simd_width](
                     k_tile_idx, 0
-                ).vectorize[1, Self.simd_width](),
+                ).vectorize[1, mma_config.simd_width](),
                 UInt(k_tile_idx),
             )
 
         @parameter
         for k_tile_idx in range(Self.k_tiles_per_simd_b):
-            Self.tensor_core_mma.load_b[swizzle=swizzle](
+            mma_config.mma.load_b[swizzle=swizzle](
                 smem_tile_b,
-                self.b_reg_tile.tile[Self.num_n_mmas, Self.simd_width](
+                self.b_reg_tile.tile[Self.num_n_mmas, mma_config.simd_width](
                     k_tile_idx, 0
-                ).vectorize[1, Self.simd_width](),
+                ).vectorize[1, mma_config.simd_width](),
                 UInt(k_tile_idx),
             )
 
@@ -616,34 +623,36 @@ struct AmdTileOperator[
         # NOTE: maybe you can use TensorCoreKGrouo
         @parameter
         for k_tile_idx in range(Self.k_tiles_per_simd_a):
-            var a_tile = self.a_reg_tile.tile[Self.num_m_mmas, Self.simd_width](
-                k_tile_idx, 0
-            )
-            var b_tile = self.b_reg_tile.tile[Self.num_n_mmas, Self.simd_width](
-                k_tile_idx, 0
-            )
+            var a_tile = self.a_reg_tile.tile[
+                Self.num_m_mmas, mma_config.simd_width
+            ](k_tile_idx, 0)
+            var b_tile = self.b_reg_tile.tile[
+                Self.num_n_mmas, mma_config.simd_width
+            ](k_tile_idx, 0)
 
             @parameter
             for fragment, mma_m_idx in product(
-                range(Self.fragments_per_simd_a), range(Self.num_m_mmas)
+                range(mma_config.k_group_size_a), range(Self.num_m_mmas)
             ):
-                var a_fragment = a_tile.tile[1, Self.register_count_a](
-                    mma_m_idx, fragment
-                )
+                var a_fragment = a_tile.tile[
+                    1, mma_config.registers_per_thread_a
+                ](mma_m_idx, fragment)
 
                 @parameter
                 for mma_n_idx in range(Self.num_n_mmas):
-                    var b_fragment = b_tile.tile[1, Self.register_count_b](
-                        mma_n_idx, fragment
-                    )
+                    var b_fragment = b_tile.tile[
+                        1, mma_config.registers_per_thread_b
+                    ](mma_n_idx, fragment)
 
                     # NOTE: this storage scheme is column major, because distribute needs it
                     # when writing back to global memory
 
-                    var c_vector: SIMD[OutType, Self.register_count_a]
-                    var c_fragment = c_slice.tile[1, Self.register_count_a](
-                        mma_n_idx * Self.num_m_mmas + mma_m_idx, 0
-                    )
+                    var c_vector: SIMD[
+                        OutType, mma_config.registers_per_thread_a
+                    ]
+                    var c_fragment = c_slice.tile[
+                        1, mma_config.registers_per_thread_a
+                    ](mma_n_idx * Self.num_m_mmas + mma_m_idx, 0)
 
                     # required because of BUG: where fill fails for some blocks
                     if (
@@ -651,18 +660,26 @@ struct AmdTileOperator[
                         and fragment == 0
                         and block_tile_num == 0
                     ):
-                        c_vector = SIMD[OutType, Self.register_count_a](0)
+                        c_vector = SIMD[
+                            OutType, mma_config.registers_per_thread_a
+                        ](0)
                     else:
                         c_vector = rebind[type_of(c_vector)](
-                            c_fragment.vectorize[1, Self.register_count_a]()[
-                                0, 0
-                            ]
+                            c_fragment.vectorize[
+                                1, mma_config.registers_per_thread_a
+                            ]()[0, 0]
                         )
 
                     mma(
-                        c_fragment.vectorize[1, Self.register_count_a]()[0, 0],
-                        b_fragment.vectorize[1, Self.register_count_b]()[0, 0],
-                        a_fragment.vectorize[1, Self.register_count_a]()[0, 0],
+                        c_fragment.vectorize[
+                            1, mma_config.registers_per_thread_a
+                        ]()[0, 0],
+                        b_fragment.vectorize[
+                            1, mma_config.registers_per_thread_b
+                        ]()[0, 0],
+                        a_fragment.vectorize[
+                            1, mma_config.registers_per_thread_a
+                        ]()[0, 0],
                         c_vector,
                     )
 

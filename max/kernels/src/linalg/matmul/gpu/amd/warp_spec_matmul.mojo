@@ -16,6 +16,7 @@ from linalg.matmul.gpu.amd.structured import (
     ThreadRole,
     RingBuffer,
     SharedMemoryBuffer,
+    MMAConfig,
 )
 
 from gpu import (
@@ -36,14 +37,94 @@ from utils import IndexList
 from gpu import MAX_THREADS_PER_BLOCK_METADATA
 from utils import StaticTuple
 from layout.layout import blocked_product
+from layout.swizzle import Swizzle
 
 
 @parameter
-fn pipeline_layout[layout: Layout, pipeline_stages: Int]() -> Layout:
-    constrained[layout.rank() == 2]()
-    return blocked_product(
-        layout, Layout.row_major(1, pipeline_stages), coalesce_output=True
+fn smem_tile_layout[
+    k_tile_size: Int, block_rows: Int, block_cols: Int
+]() -> Layout:
+    # Shared memory layout
+    #
+    # - base_layout: Layout.row_major(block_rows, k_tile_size) -> block_rows x k_tile_size tiles
+    # - tiler_layout: Layout.row_major(1, num_repeats) -> repeat tiles num_repeats times horizontally
+    # - smem_layout: blocked_product(base_layout, tiler_layout) -> tiled blocked layout
+    #
+    # Resulting shape: block_rowsx(k_tile_size x num_repeats) = block_rows x block_cols tensor
+    # Where block_cols = k_tile_size x num_repeats, k_tile_size = MMA_K x k_group_size
+    #
+    # This creates num_repeats blocks of block_rows x k_tile_size arranged horizontally:
+    # Within each k_tile_size-column block, elements are consecutive (stride 1)
+    # Between blocks: stride = block_rows x k_tile_size
+    #
+    # ASCII diagram for block_rows=64, k_tile_size=32, block_cols=64 (showing first 2 of 2 blocks):
+    # ┌─────────────────────────────────────────────────────────────────────────┐
+    # │         Block 0 (64x32)             │         Block 1 (64x32)           │
+    # ├─────────────────────────────────────┼───────────────────────────────────┤
+    # │   0    1    2  ...   30   31        │ 2048 2049 2050 ... 2078 2079      │
+    # │  32   33   34  ...   62   63        │ 2080 2081 2082 ... 2110 2111      │
+    # │  64   65   66  ...   94   95        │ 2112 2113 2114 ... 2142 2143      │
+    # │  96   97   98  ...  126  127        │ 2144 2145 2146 ... 2174 2175      │
+    # │ ...                                 │  ...                              │
+    # │2016 2017 2018  ... 2046 2047        │ 4064 4065 4066 ... 4094 4095      │
+    # └─────────────────────────────────────────────────────────────────────────┘
+    # stride between blocks = block_rows x k_tile_size = 64 x 32 = 2048
+
+    constrained[
+        block_cols % k_tile_size == 0,
+        "block_cols must be a multiple of k_tile_size",
+    ]()
+
+    alias base_layout = Layout.row_major(block_rows, k_tile_size)
+    alias num_repeats = block_cols // k_tile_size
+    alias tiler_layout = Layout.row_major(1, num_repeats)
+    return blocked_product(base_layout, tiler_layout, coalesce_output=True)
+
+
+@parameter
+fn get_producer_warp_thread_layout[
+    k_tile_size: Int, simd_width: Int, block_rows: Int, block_cols: Int
+]() -> Layout:
+    # TODO: Document the logic behind this layout
+    # Define a layout that corresponds to the below pattern:
+    #
+    # | T00 T01 T02 T03 | T16 T17 T18 T19 |
+    # | T04 T05 T06 T07 | T20 T21 T22 T23 |
+    # | T08 T09 T10 T11 | T24 T25 T26 T27 |
+    # | T12 T13 T14 T15 | T28 T29 T30 T31 |
+    # | T32 T33 T34 T35 | T48 T49 T50 T51 |
+    # | T36 T37 T38 T39 | T52 T53 T54 T55 |
+    # | T40 T41 T42 T43 | T56 T57 T58 T59 |
+    # | T44 T45 T46 T47 | T60 T61 T62 T63 |
+
+    alias inner_block_size = 16  # total number of threads in the inner block
+
+    # a row of inner blocks will load one k_tile, so here we calculate
+    # threads per row
+    alias inner_block_cols = k_tile_size // simd_width
+    alias inner_block_rows = inner_block_size // inner_block_cols
+
+    alias base_layout = Layout.row_major(inner_block_rows, inner_block_cols)
+
+    alias num_repeats_col = block_cols // k_tile_size
+
+    constrained[
+        num_repeats_col < (WARP_SIZE // inner_block_size),
+        "not enough threads per warp to cover block k dimension",
+    ]()
+    alias outer_block_size = num_repeats_col * inner_block_size
+    alias num_repeats_row = WARP_SIZE // UInt(outer_block_size)
+
+    constrained[
+        block_rows % (inner_block_rows * num_repeats_row) == 0,
+        "shared block size is not evenly distributable among threads",
+    ]()
+
+    alias tiler_layout = Layout.row_major(
+        num_repeats_row,
+        num_repeats_col,
     )
+    return blocked_product(base_layout, tiler_layout)
 
 
 # NOTE: This is a hardcoded pipeline but in reality this should be struct
@@ -115,18 +196,33 @@ fn warp_specialized_matmul[
     else:
         role = ThreadRole.CONSUMER
 
-    alias thread_layout = Layout.row_major(16, 4)
-    alias smem_layout_a = Layout.row_major(BM, BK)
-    alias smem_layout_b = Layout.row_major(BN, BK)
+    alias MMAConfigType = MMAConfig[
+        in_type,
+        out_type,
+        IndexList[3](MMA_M, MMA_N, MMA_K),
+        True,
+    ]
 
-    alias pipelined_layout_a = pipeline_layout[smem_layout_a, pipeline_stages]()
-    alias pipelined_layout_b = pipeline_layout[smem_layout_b, pipeline_stages]()
+    alias swizzle = None
+
+    constrained[
+        MMAConfigType.adjusted_mma_k_shape_a()
+        == MMAConfigType.adjusted_mma_k_shape_b(),
+        "MMA_K shapes must be equal",
+    ]()
+
+    alias smem_layout_a = smem_tile_layout[
+        MMAConfigType.adjusted_mma_k_shape_a(), BM, BK
+    ]()
+    alias smem_layout_b = smem_tile_layout[
+        MMAConfigType.adjusted_mma_k_shape_b(), BN, BK
+    ]()
 
     alias SmemBufferTypeA = SharedMemoryBuffer[
-        in_type, pipelined_layout_a, pipeline_stages, BM, BK, WM, WK
+        in_type, smem_layout_a, pipeline_stages, BM, BK, WM, WK
     ]
     alias SmemBufferTypeB = SharedMemoryBuffer[
-        in_type, pipelined_layout_b, pipeline_stages, BN, BK, WN, WK
+        in_type, smem_layout_b, pipeline_stages, BN, BK, WN, WK
     ]
 
     var smem_buffer_a = SmemBufferTypeA()
@@ -138,6 +234,14 @@ fn warp_specialized_matmul[
         SmemBufferTypeB,
         consumer_warps,
     ](smem_buffer_a, smem_buffer_b)
+
+    alias consumer_thread_layout_a = get_producer_warp_thread_layout[
+        MMAConfigType.adjusted_mma_k_shape_a(), MMAConfigType.simd_width, BK, BM
+    ]()
+
+    alias consumer_thread_layout_b = get_producer_warp_thread_layout[
+        MMAConfigType.adjusted_mma_k_shape_b(), MMAConfigType.simd_width, BK, BN
+    ]()
 
     barrier()  # NOTE: probably not nessecary but I saw it in the HF code around the same point
 
@@ -164,12 +268,13 @@ fn warp_specialized_matmul[
 
             var scatter_gather_a = AmdWarpBlockScatterGather[
                 in_type,
-                thread_layout,
+                consumer_thread_layout_a,
                 smem_buffer_a.WarpTileType.layout,
-                8,  # NOTE: hardcoded simd width for now, but in theory this should be derived
+                MMAConfigType.simd_width,  # NOTE: hardcoded simd width for now, but in theory this should be derived
                 True,
                 WM,
                 WK,
+                swizzle=swizzle,
             ]()
 
             @parameter
@@ -220,12 +325,13 @@ fn warp_specialized_matmul[
 
             var scatter_gather_b = AmdWarpBlockScatterGather[
                 in_type,
-                thread_layout,
+                consumer_thread_layout_b,
                 smem_buffer_b.WarpTileType.layout,
-                8,
+                MMAConfigType.simd_width,
                 False,
                 WN,
                 WK,
+                swizzle=swizzle,
             ]()
 
             @parameter
@@ -277,14 +383,12 @@ fn warp_specialized_matmul[
         )
 
         var tile_operator = AmdTileOperator[
-            in_type,
-            out_type,
+            MMAConfigType,
             smem_buffer_a.WarpTileType.layout,
             smem_buffer_b.WarpTileType.layout,
-            IndexList[3](MMA_M, MMA_N, MMA_K),
-            True,
-            simd_width=8,
-            warps_being_processed = total_consumer_operations // consumer_warps,
+            tile_being_processed_per_warp = total_consumer_operations
+            // consumer_warps,
+            swizzle=swizzle,
         ]()
 
         var relative_warp_id = warp_id - UInt(
