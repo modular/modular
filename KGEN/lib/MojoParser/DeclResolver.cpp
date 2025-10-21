@@ -158,6 +158,48 @@ ASTDecl &DeclResolver::createUnlistedDecl(Operation *declOp, SMLoc loc,
                             endCursor, indentation);
 }
 
+// Check whether we're merging in a bunch of ASTDecls that could all contribute
+// to a single struct's namespace.
+// For example, say we have these imports:
+//     from module_a import MyStruct  # imports a struct
+//     from module_b import MyStruct  # imports an extension for it
+//     from module_c import MyStruct  # imports an extension for it
+// and the first two are resolved. That means that these three entries all
+// coexist under the name "MyStruct":
+// - struct ASTDecl for module_a's MyStruct struct
+// - extension ASTDecl for module_b's MyStruct extension
+// - unresolved import for module_c's MyStruct extension
+// Basically, any entries for things that might contribute to a single
+// struct's namespace is allowed to coexist.
+// TODO(MOCO-522): Arcana doc mention on how multiple extensions and one
+// struct and multiple imports can all coexist with the same name, because
+// struct extensions are importable via their target struct's name.
+static LogicalResult
+canMergeSingleNamespaceDecls(ArrayRef<ASTDecl *> incoming,
+                             ArrayRef<ASTDecl *> existing) {
+  // Check if all declarations (both incoming and existing) could contribute
+  // to a single struct's namespace.
+  bool structFound = false;
+
+  for (ASTDecl *decl : llvm::concat<ASTDecl *const>(existing, incoming)) {
+    auto op = decl->getIfOperation();
+    bool couldContribute = isa_and_nonnull<StructDeclOp>(op) ||
+                           isa_and_nonnull<ExtensionDeclOp>(op) ||
+                           isa_and_nonnull<UnresolvedImportOp>(op);
+    if (!couldContribute)
+      return failure();
+    if (isa_and_nonnull<StructDeclOp>(op)) {
+      if (structFound) {
+        // User is trying to add a second struct with the same name, fail.
+        return failure();
+      }
+      structFound = true;
+    }
+  }
+
+  return success();
+}
+
 void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
   ASTDecl *parentDecl = decl->getParentDecl();
 
@@ -270,13 +312,21 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
     // Check if we are adding an identical unresolved import.
     auto op = decl->getIfOperation();
     if (auto import = dyn_cast_or_null<UnresolvedImportOp>(op)) {
-      auto prevOp = entries.front()->getIfOperation();
-      if (auto prevImportOp = dyn_cast_or_null<UnresolvedImportOp>(prevOp)) {
-        if (import.getModuleNameAttr() == prevImportOp.getModuleNameAttr() &&
-            import.getDeclNameAttr() == prevImportOp.getDeclNameAttr()) {
-          entries.push_back(decl);
-          return;
+      // First check for duplicate imports
+      for (ASTDecl *existing : entries) {
+        if (auto prevImportOp = dyn_cast_or_null<UnresolvedImportOp>(
+                existing->getIfOperation())) {
+          if (import.getModuleNameAttr() == prevImportOp.getModuleNameAttr() &&
+              import.getDeclNameAttr() == prevImportOp.getDeclNameAttr()) {
+            // This is a duplicate UnresolvedImportOp, just ignore it.
+            return;
+          }
         }
+      }
+      // TODO(MOCO-522): Arcana docs mention for decls sharing a namespace.
+      if (succeeded(canMergeSingleNamespaceDecls({decl}, entries))) {
+        entries.push_back(decl);
+        return;
       }
     }
 
@@ -429,7 +479,15 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
     }
     return success();
   }
-  ASTDecl *existing = it->second.back();
+
+  // TODO(MOCO-522): Arcana docs mention for decls sharing a namespace.
+  if (succeeded(canMergeSingleNamespaceDecls(decls, entries))) {
+    for (ASTDecl *decl : decls)
+      entries.push_back(decl);
+    return success();
+  }
+
+  ASTDecl *existing = entries.back();
 
   // If the decls are functions, try to merge them into the existing set.
   if (isa_and_nonnull<FnOp>(frontDecl->getIfOperation()) &&
@@ -473,18 +531,6 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
         entries.push_back(decl);
       return success();
     }
-  }
-
-  // If we're trying to add a struct and there's already an extension (or vice
-  // versa), allow them to coexist by merging them into the existing set.
-  if ((isa_and_nonnull<StructDeclOp>(frontDecl->getIfOperation()) &&
-       isa_and_nonnull<ExtensionDeclOp>(existing->getIfOperation())) ||
-      (isa_and_nonnull<ExtensionDeclOp>(frontDecl->getIfOperation()) &&
-       isa_and_nonnull<StructDeclOp>(existing->getIfOperation()))) {
-    // Merge the new decls into the existing set
-    for (ASTDecl *decl : decls)
-      entries.push_back(decl);
-    return success();
   }
 
   // Rejecting overlap is conservative and not what python does, but we can
