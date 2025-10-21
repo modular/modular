@@ -1830,7 +1830,7 @@ fn apply_gumbel_noise_kernel[
     alias LOG2 = Float32(0.6931471806)
 
     alias simd_width = simd_width_of[dtype]()
-    alias N = input.shape[1]()
+    var N = input.dim(1)
     alias num_blocks_per_token = 8
     alias group_size = num_blocks_per_token * num_threads
     alias num_groups = num_sms // num_blocks_per_token
@@ -1884,9 +1884,8 @@ fn apply_gumbel_noise_kernel[
                 )
 
             # If N is not divisible by simd_width, handle remaining elements
-            @parameter
             if N % simd_width != 0:
-                alias N_res = N % simd_width
+                var N_res = N % simd_width
                 var rng_state = Random(
                     seed=seed_val * N + (N - N_res) + tid_in_group,
                 )
