@@ -83,6 +83,13 @@ class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
             self[device] = (
                 self._graph._add_chain_block_arg()
                 if self._graph._has_chain_input
+                # prevent block arguments from being added when we're inside a
+                # region of a control flow op (mo.if, mo.while). For simplicity
+                # currently control flow ops merge new device chains with the
+                # global chain instead of shuttling device chains from the
+                # parent scope via block arguments. Any device chains that
+                # exist prior to the control flow op will be used as expected.
+                and self._graph._graph_body == self._graph._current_block
                 else self._graph._current_chain
             )
         return super().__getitem__(device)
@@ -374,7 +381,7 @@ class Graph:
         input_types: Iterable[Type[Any]] = (),
         path: Path | None = None,
         *args,
-        custom_extensions: list[Path] = [],  # noqa: B006
+        custom_extensions: Iterable[Path] = [],
         context: mlir.Context | None = None,
         kernel_library: KernelLibrary | None = None,
         module: mlir.Module | None = None,
@@ -507,7 +514,8 @@ class Graph:
         | None = None,
         input_types: Iterable[Type[Any]] = (),
         path: Path | None = None,
-        custom_extensions: list[Path] = [],  # noqa: B006
+        custom_extensions: Iterable[Path] = [],
+        devices: Iterable[DeviceRef] = [],
     ) -> Graph:
         """Creates and adds a subgraph to the current graph.
 
@@ -531,6 +539,7 @@ class Graph:
             custom_extensions: The list of paths to custom operation libraries
                 to load for the subgraph. Supports ``.mojopkg`` files and Mojo
                 source directories.
+            devices: The list of devices this subgraph is meant to use.
         """
         subgraph = Graph(
             name=name,
@@ -559,6 +568,8 @@ class Graph:
             [kgen.ParamDeclAttr(name, si64) for name in union_names]
         )
         subgraph._params = dict.fromkeys(union_names)
+        for device in devices:
+            subgraph.device_chains[device] = subgraph._add_chain_block_arg()
         self._subgraphs[name] = subgraph
         return subgraph
 

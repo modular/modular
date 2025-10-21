@@ -244,7 +244,9 @@ class Module(Layer, ABC):
 
         flatten(input_types, subgraph_input_types)
         with Graph.current.add_subgraph(
-            name, input_types=subgraph_input_types
+            name,
+            input_types=subgraph_input_types,
+            devices=list(Graph.current.device_chains.keys()),
         ) as subgraph:
             subgraph_inputs = []
             inputs = iter(subgraph.inputs)
