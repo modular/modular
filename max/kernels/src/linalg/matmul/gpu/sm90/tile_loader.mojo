@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""ScatterGather module for efficient tile loading in GPU matrix multiplication.
+"""TileLoader module for efficient tile loading in GPU matrix multiplication.
 
 This module provides utilities for loading matrix tiles from global memory to
 shared memory using two different mechanisms:
@@ -22,7 +22,7 @@ shared memory using two different mechanisms:
 2. cp.async: Software-based asynchronous copy instructions with manual bounds
    checking and swizzling for optimal shared memory access patterns.
 
-The ScatterGather struct abstracts these loading mechanisms to provide a unified
+The TileLoader struct abstracts these loading mechanisms to provide a unified
 interface for the matmul kernel's producer threads.
 """
 from layout.tma_async import TMATensorTile
@@ -40,7 +40,7 @@ from layout.layout import coalesce
 
 
 @register_passable("trivial")
-trait ScatterGather:
+trait TileLoader:
     """Base trait for tile loading mechanisms in matrix multiplication.
 
     This trait defines the interface for loading tiles from global memory
@@ -67,7 +67,7 @@ trait ScatterGather:
 
 
 @register_passable("trivial")
-struct ScatterGatherTMA[
+struct TileLoaderTMA[
     tma_origin: Origin[False],
     dtype: DType,
     tile_layout: Layout,
@@ -77,7 +77,7 @@ struct ScatterGatherTMA[
     BK: UInt,
     cluster_size: Int32,
     use_partitioned_multicast: Bool,
-](ScatterGather):
+](TileLoader):
     """TMA-based tile loader for hardware-accelerated memory transfers.
 
     This loader uses NVIDIA's Tensor Memory Accelerator (TMA) for efficient
@@ -187,13 +187,13 @@ struct ScatterGatherTMA[
 
 
 @register_passable("trivial")
-struct ScatterGatherCPAsync[
+struct TileLoaderCPAsync[
     dtype: DType,
     src_layout: Layout,
     thread_layout: Layout,
     swizzle_mode: TensorMapSwizzle,
     vector_size: Int,
-](ScatterGather):
+](TileLoader):
     """Software-based tile loader using cp.async instructions.
 
     This loader uses CUDA's cp.async instructions for asynchronous memory
