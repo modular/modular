@@ -424,7 +424,7 @@ fn print[
                 var msg = printf_begin()
                 _ = printf_append_string_n(
                     msg,
-                    Span(ptr=buffer.data, length=UInt(buffer.pos)),
+                    Span(ptr=buffer.data, length=buffer.pos),
                     is_last=True,
                 )
             else:

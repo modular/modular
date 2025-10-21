@@ -51,6 +51,9 @@ def test_reference_counting_api(cpy: CPython):
     cpy.Py_DecRef(n)
     assert_equal(cpy._Py_REFCNT(n), 1)
 
+    var m = cpy.Py_NewRef(n)
+    assert_equal(cpy._Py_REFCNT(m), 2)
+
 
 def test_exception_handling_api(cpy: CPython):
     var ValueError = cpy.get_error_global("PyExc_ValueError")
@@ -94,8 +97,7 @@ def test_object_protocol_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(42)
     var z = cpy.PyLong_FromSsize_t(0)
     var l = cpy.PyList_New(1)
-    cpy.Py_IncRef(z)
-    _ = cpy.PyList_SetItem(l, 0, z)
+    _ = cpy.PyList_SetItem(l, 0, cpy.Py_NewRef(z))
 
     assert_equal(cpy.PyObject_HasAttrString(n, "__hash__"), 1)
     assert_true(cpy.PyObject_GetAttrString(n, "__hash__"))
@@ -141,8 +143,7 @@ def test_number_protocol_api(cpy: CPython):
 def test_iterator_protocol_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(42)
     var l = cpy.PyList_New(1)
-    cpy.Py_IncRef(n)
-    _ = cpy.PyList_SetItem(l, 0, n)
+    _ = cpy.PyList_SetItem(l, 0, cpy.Py_NewRef(n))
 
     var it = cpy.PyObject_GetIter(l)
 
@@ -264,14 +265,11 @@ def test_module_object_api(cpy: CPython):
     assert_equal(cpy.PyModule_AddFunctions(mod, funcs.unsafe_ptr()), 0)
     _ = funcs
 
-    if cpy.version.minor >= 10:
-        var n = cpy.PyLong_FromSsize_t(0)
-        var name = "n"
-        # returns 0 on success, -1 on failure
-        assert_equal(
-            cpy.PyModule_AddObjectRef(mod, name.unsafe_cstr_ptr(), n), 0
-        )
-        _ = name
+    var n = cpy.PyLong_FromSsize_t(0)
+    var name = "n"
+    # returns 0 on success, -1 on failure
+    assert_equal(cpy.PyModule_AddObjectRef(mod, name.unsafe_cstr_ptr(), n), 0)
+    _ = name
 
 
 def test_slice_object_api(cpy: CPython):
@@ -461,30 +459,4 @@ def test_with_cpython_common_object_structure_api():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_with_cpython_very_high_level_api]()
-    suite.test[test_with_cpython_reference_counting_api]()
-    suite.test[test_with_cpython_exception_handling_api]()
-    suite.test[test_with_cpython_threading_api]()
-    suite.test[test_with_cpython_importing_module_api]()
-    suite.test[test_with_cpython_object_protocol_api]()
-    suite.test[test_with_cpython_call_protocol_api]()
-    suite.test[test_with_cpython_number_protocol_api]()
-    suite.test[test_with_cpython_iterator_protocol_api]()
-    suite.test[test_with_cpython_type_object_api]()
-    suite.test[test_with_cpython_integer_object_api]()
-    suite.test[test_with_cpython_boolean_object_api]()
-    suite.test[test_with_cpython_floating_point_object_api]()
-    suite.test[test_with_cpython_unicode_object_api]()
-    suite.test[test_with_cpython_tuple_object_api]()
-    suite.test[test_with_cpython_list_object_api]()
-    suite.test[test_with_cpython_dictionary_object_api]()
-    suite.test[test_with_cpython_set_object_api]()
-    suite.test[test_with_cpython_module_object_api]()
-    suite.test[test_with_cpython_slice_object_api]()
-    suite.test[test_with_cpython_capsule_api]()
-    suite.test[test_with_cpython_memory_management_api]()
-    suite.test[test_with_cpython_common_object_structure_api]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

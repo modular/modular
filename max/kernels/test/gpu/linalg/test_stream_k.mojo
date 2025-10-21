@@ -161,13 +161,13 @@ fn first_wave_kernel[
 ):
     var pid = block_idx.x
 
-    var start_iter = pid * total_full_tiles_streamk + (
+    var start_iter = pid * UInt(total_full_tiles_streamk) + (
         pid if pid
         < UInt(total_partial_tiles_streamk) else UInt(
             total_partial_tiles_streamk
         )
     )
-    var last_iter = (pid + 1) * total_full_tiles_streamk + (
+    var last_iter = (pid + 1) * UInt(total_full_tiles_streamk) + (
         (pid + 1) if (pid + 1)
         < UInt(total_partial_tiles_streamk) else UInt(
             total_partial_tiles_streamk
@@ -175,8 +175,8 @@ fn first_wave_kernel[
     )
 
     while start_iter < last_iter:
-        var remainder = iters_per_tile - (start_iter % iters_per_tile)
-        var boundary = start_iter + remainder
+        var remainder = iters_per_tile - (start_iter % UInt(iters_per_tile))
+        var boundary = start_iter + UInt(remainder)
         var end_iter = boundary if (boundary < last_iter) else last_iter
         mac_loop(
             C,
@@ -227,7 +227,7 @@ fn full_tiles_kernel[
     stride_cn: Int,
     total_tiles_streamk: Int,
 ):
-    var tile_id = block_idx.x + total_tiles_streamk
+    var tile_id = block_idx.x + UInt(total_tiles_streamk)
     var pid: IndexList[2]
     if GROUP_M > 0:
         pid = swizzle_tile(tile_id, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K, GROUP_M)

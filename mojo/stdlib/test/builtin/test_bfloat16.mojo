@@ -82,10 +82,4 @@ def check_float64_values():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[check_float64_values]()
-    suite.test[test_methods]()
-    suite.test[test_bf_primitives]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -25,8 +25,4 @@ def test_spin_waiter():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_spin_waiter]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

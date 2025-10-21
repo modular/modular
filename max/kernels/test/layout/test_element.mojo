@@ -99,7 +99,7 @@ fn test_element_store():
     print("vector_1x4")
     for i in range(8):
         for j in range(2):
-            var tensor_8x8_v_1_4 = tensor_8x8.get_immutable().vectorize[1, 4]()
+            var tensor_8x8_v_1_4 = tensor_8x8.vectorize[1, 4]()
             var offset = tensor_8x8_v_1_4.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_1_4.dtype, tensor_8x8_v_1_4.element_layout
@@ -120,7 +120,7 @@ fn test_element_store():
     print("vector_4x1")
     for i in range(2):
         for j in range(8):
-            var tensor_8x8_v_4_1 = tensor_8x8.get_immutable().vectorize[4, 1]()
+            var tensor_8x8_v_4_1 = tensor_8x8.vectorize[4, 1]()
             var offset = tensor_8x8_v_4_1.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_4_1.dtype, tensor_8x8_v_4_1.element_layout
@@ -141,7 +141,7 @@ fn test_element_store():
     print("vector_4x4")
     for i in range(2):
         for j in range(2):
-            var tensor_8x8_v_4_4 = tensor_8x8.get_immutable().vectorize[4, 4]()
+            var tensor_8x8_v_4_4 = tensor_8x8.vectorize[4, 4]()
             var offset = tensor_8x8_v_4_4.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_4_4.dtype, tensor_8x8_v_4_4.element_layout
@@ -291,7 +291,7 @@ fn test_element_masked_load():
             index_type = tensor_1x3_v4.linear_idx_type,
         ].masked_load(
             tensor_1x3_v4.ptr,
-            __type_of(tensor_1x3_v4.runtime_element_layout).row_major(
+            type_of(tensor_1x3_v4.runtime_element_layout).row_major(
                 IndexList[2, element_type = DType.int32](1, 3)
             ),
         )
@@ -307,7 +307,7 @@ fn test_element_masked_load():
     print(
         Element[index_type = tensor_3x1_v4.linear_idx_type].masked_load(
             tensor_3x1_v4.ptr,
-            __type_of(tensor_3x1_v4.runtime_element_layout).row_major(
+            type_of(tensor_3x1_v4.runtime_element_layout).row_major(
                 IndexList[2, element_type = DType.int32](3, 1)
             ),
         )
@@ -319,7 +319,7 @@ fn test_element_masked_load():
     print(
         Element[index_type = tensor_3x4_v4x4.linear_idx_type].masked_load(
             tensor_3x4_v4x4.ptr,
-            __type_of(tensor_3x4_v4x4.runtime_element_layout).row_major(
+            type_of(tensor_3x4_v4x4.runtime_element_layout).row_major(
                 IndexList[2, element_type = DType.int32](3, 4)
             ),
         )
@@ -334,14 +334,14 @@ fn test_element_masked_store():
         tensor_4x4_stack
     ).fill(-1)
 
-    var tensor_4x4_vec_1_4 = tensor_4x4.get_immutable().vectorize[1, 4]()
+    var tensor_4x4_vec_1_4 = tensor_4x4.vectorize[1, 4]()
     var element_v_1_4 = Element[
         index_type = tensor_4x4_vec_1_4.linear_idx_type
     ](
         SIMD[
             tensor_4x4_vec_1_4.dtype, tensor_4x4_vec_1_4.element_layout.size()
         ](1),
-        __type_of(tensor_4x4_vec_1_4.runtime_element_layout).row_major(
+        type_of(tensor_4x4_vec_1_4.runtime_element_layout).row_major(
             IndexList[2, element_type = DType.int32](1, 3)
         ),
     )
@@ -355,14 +355,14 @@ fn test_element_masked_store():
     print(tensor_4x4)
     _ = tensor_4x4.fill(-1)
 
-    var tensor_4x4_vec_4_1 = tensor_4x4.get_immutable().vectorize[4, 1]()
+    var tensor_4x4_vec_4_1 = tensor_4x4.vectorize[4, 1]()
     var element_v_4_1 = Element[
         index_type = tensor_4x4_vec_4_1.linear_idx_type
     ](
         SIMD[
             tensor_4x4_vec_4_1.dtype, tensor_4x4_vec_4_1.element_layout.size()
         ](1),
-        __type_of(tensor_4x4_vec_4_1.runtime_element_layout).row_major(
+        type_of(tensor_4x4_vec_4_1.runtime_element_layout).row_major(
             IndexList[2, element_type = DType.int32](2, 1)
         ),
     )
@@ -376,12 +376,12 @@ fn test_element_masked_store():
     print(tensor_4x4)
     _ = tensor_4x4.fill(-1)
 
-    var tensor_4x4_vec_4_4 = tensor_4x4.get_immutable().vectorize[4, 4]()
+    var tensor_4x4_vec_4_4 = tensor_4x4.vectorize[4, 4]()
     var element_v_4_4 = Element[index_type = tensor_4x4.linear_idx_type](
         SIMD[
             tensor_4x4_vec_4_4.dtype, tensor_4x4_vec_4_4.element_layout.size()
         ](1),
-        __type_of(tensor_4x4_vec_4_4.runtime_element_layout).row_major(
+        type_of(tensor_4x4_vec_4_4.runtime_element_layout).row_major(
             IndexList[2, element_type = DType.int32](3, 2)
         ),
     )

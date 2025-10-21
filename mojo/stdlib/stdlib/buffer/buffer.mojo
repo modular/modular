@@ -184,7 +184,7 @@ fn _compute_ndbuffer_offset(
 @always_inline
 fn _compute_ndbuffer_stride[
     rank: Int
-](shape: IndexList[rank, **_]) -> __type_of(shape):
+](shape: IndexList[rank, **_]) -> type_of(shape):
     """Computes the NDBuffer's default dynamic strides using the input shape.
     The default strides correspond to contiguous memory layout.
 
@@ -233,13 +233,13 @@ struct NDBuffer[
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = True,
 ](
+    Defaultable,
+    DevicePassable,
+    ImplicitlyCopyable,
+    Movable,
     Sized,
     Stringable,
     Writable,
-    ImplicitlyCopyable,
-    Movable,
-    Defaultable,
-    DevicePassable,
 ):
     """An N-dimensional buffer.
 
@@ -392,7 +392,7 @@ struct NDBuffer[
             "cannot convert between buffers with incompatible strides",
         ]()
 
-        self.data = rebind[__type_of(self.data)](other.data)
+        self.data = rebind[type_of(self.data)](other.data)
         self.dynamic_shape = other.dynamic_shape
         self.dynamic_stride = other.dynamic_stride
 
@@ -418,8 +418,8 @@ struct NDBuffer[
             dynamic_shape: A static tuple of size 'rank' representing shapes.
         """
         self.data = ptr.bitcast[Scalar[dtype]]()
-        self.dynamic_shape = rebind[__type_of(self.dynamic_shape)](
-            dynamic_shape.cast[__type_of(self.dynamic_shape).element_type]()
+        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
+            dynamic_shape.cast[type_of(self.dynamic_shape).element_type]()
         )
         self.dynamic_stride = _compute_ndbuffer_stride[rank](self.dynamic_shape)
 
@@ -442,8 +442,8 @@ struct NDBuffer[
             dynamic_shape: A static tuple of size 'rank' representing shapes.
         """
         self.data = ptr
-        self.dynamic_shape = rebind[__type_of(self.dynamic_shape)](
-            dynamic_shape.cast[__type_of(self.dynamic_shape).element_type]()
+        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
+            dynamic_shape.cast[type_of(self.dynamic_shape).element_type]()
         )
         self.dynamic_stride = _compute_ndbuffer_stride[rank](self.dynamic_shape)
 
@@ -524,11 +524,11 @@ struct NDBuffer[
             dynamic_stride: A static tuple of size 'rank' representing strides.
         """
         self.data = ptr
-        self.dynamic_shape = rebind[__type_of(self.dynamic_shape)](
-            dynamic_shape.cast[__type_of(self.dynamic_shape).element_type]()
+        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
+            dynamic_shape.cast[type_of(self.dynamic_shape).element_type]()
         )
-        self.dynamic_stride = rebind[__type_of(self.dynamic_stride)](
-            dynamic_stride.cast[__type_of(self.dynamic_shape).element_type]()
+        self.dynamic_stride = rebind[type_of(self.dynamic_stride)](
+            dynamic_stride.cast[type_of(self.dynamic_shape).element_type]()
         )
 
     @always_inline
@@ -597,13 +597,10 @@ struct NDBuffer[
         """
         self = Self(span.unsafe_ptr(), dynamic_shape, dynamic_stride)
 
-    @always_inline("nodebug")
-    fn origin_cast[
-        target_mut: Bool = Self.mut,
-        target_origin: Origin[target_mut] = Origin[target_mut].cast_from[
-            Self.origin
-        ],
-    ](self) -> NDBuffer[
+    alias OriginCastType[
+        target_mut: Bool,
+        target_origin: Origin[target_mut],
+    ] = NDBuffer[
         dtype,
         rank,
         target_origin,
@@ -612,19 +609,62 @@ struct NDBuffer[
         alignment2=alignment2,
         address_space=address_space,
         exclusive=exclusive,
-    ]:
-        """Changes the origin or mutability of a pointer.
+    ]
 
-        Parameters:
-            target_mut: Whether the origin is mutable.
-            target_origin: Origin of the destination pointer.
+    @always_inline("nodebug")
+    fn get_immutable(
+        self,
+    ) -> Self.OriginCastType[False, ImmutableOrigin.cast_from[origin]]:
+        """Changes the mutability of the `NDBuffer` to immutable.
 
         Returns:
-            A new `NDBuffer` object with the same type and the same address,
-            as the original `NDBuffer` and the new specified mutability and origin.
+            A buffer with the mutability set to immutable.
         """
         return {
-            self.data.origin_cast[target_mut, target_origin](),
+            self.data.as_immutable(),
+            self.dynamic_shape,
+            self.dynamic_stride,
+        }
+
+    @always_inline("nodebug")
+    fn as_any_origin(
+        self: NDBuffer[mut=True, *_, **_],
+    ) -> type_of(self).OriginCastType[True, MutableAnyOrigin]:
+        """Changes the origin of the `NDBuffer` to `MutableAnyOrigin`.
+
+        Returns:
+            A buffer with the origin set to `MutableAnyOrigin`.
+
+        This requires the buffer to already be mutable as casting mutability
+        is inherently very unsafe.
+
+        It is usually preferred to maintain concrete origin values instead of
+        using `MutableAnyOrigin`. However, if it is needed, keep in mind that
+        `MutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        destruction will not apply during the lifetime of the buffer.
+        """
+        return {
+            self.data.as_any_origin(),
+            self.dynamic_shape,
+            self.dynamic_stride,
+        }
+
+    @always_inline("nodebug")
+    fn as_any_origin(
+        self: NDBuffer[mut=False, *_, **_],
+    ) -> type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
+        """Changes the origin of the `NDBuffer` to `ImmutableAnyOrigin`.
+
+        Returns:
+            A buffer with the origin set to `ImmutableAnyOrigin`.
+
+        It is usually preferred to maintain concrete origin values instead of
+        using `ImmutableAnyOrigin`. However, if it is needed, keep in mind that
+        `ImmutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        destruction will not apply during the lifetime of the buffer.
+        """
+        return {
+            self.data.as_any_origin(),
             self.dynamic_shape,
             self.dynamic_stride,
         }
@@ -1217,7 +1257,7 @@ struct NDBuffer[
         Returns:
             The rebound NDBuffer with unknown shape.
         """
-        return rebind[__type_of(result)](self)
+        return rebind[type_of(result)](self)
 
     @always_inline
     fn bytecount(self) -> Int:
@@ -1346,12 +1386,16 @@ struct NDBuffer[
                 " allocation"
             ),
         ]()
-        var data_pointer = stack_allocation[
-            shape.product[rank]().get(),
-            dtype,
-            alignment=alignment,
-            address_space=address_space,
-        ]().origin_cast[mut, origin]()
+        var data_pointer = (
+            stack_allocation[
+                shape.product[rank]().get(),
+                dtype,
+                alignment=alignment,
+                address_space=address_space,
+            ]()
+            .unsafe_mut_cast[mut]()
+            .unsafe_origin_cast[origin]()
+        )
         return Self(data_pointer)
 
     @always_inline
@@ -1379,7 +1423,7 @@ struct NDBuffer[
         prefetch[params](self._offset(indices))
 
     # `trait DevicePassable` implementation
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         """Convert the host type object to a device_type and store it at the

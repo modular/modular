@@ -52,7 +52,7 @@ fn memcpy_or_fuse[
 ](
     dest_data: UnsafePointer[Int8],
     out_byte_offset: Int,
-    src_data: __type_of(dest_data),
+    src_data: type_of(dest_data),
     n: Int,
     out_shape: IndexList[rank, **_],
 ) raises:
@@ -675,7 +675,7 @@ fn concat[
             _concat_gpu[dtype, epilogue_fn](
                 # This is safe since `output` being an arg will keep the origin alive
                 # for the duration of this call.
-                output.origin_cast[True, MutableAnyOrigin](),
+                output.as_any_origin(),
                 axis,
                 inputs,
                 context.get_device_context(),
@@ -1115,6 +1115,6 @@ fn fused_concat[
             return _fused_concat_gpu[rank, dtype, input_fn, output_0_fn](
                 axis,
                 input_shapes,
-                output.origin_cast[True, MutableAnyOrigin](),
+                output.as_any_origin(),
                 ctx.get_device_context(),
             )

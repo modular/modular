@@ -322,7 +322,7 @@ struct Deque[ElementType: Copyable & Movable](
 
     fn __iter__(
         ref self,
-    ) -> Self.IteratorType[__origin_of(self)]:
+    ) -> Self.IteratorType[origin_of(self)]:
         """Iterates over elements of the deque, returning the references.
 
         Returns:
@@ -332,7 +332,7 @@ struct Deque[ElementType: Copyable & Movable](
 
     fn __reversed__(
         ref self,
-    ) -> _DequeIter[ElementType, __origin_of(self), False]:
+    ) -> _DequeIter[ElementType, origin_of(self), False]:
         """Iterate backwards over the deque, returning the references.
 
         Returns:
@@ -863,7 +863,7 @@ struct Deque[ElementType: Copyable & Movable](
 
     fn _compute_pop_and_move_counts(
         self, len_self: Int, len_values: Int
-    ) -> (Int, Int, Int, Int, Int):
+    ) -> Tuple[Int, Int, Int, Int, Int]:
         """
         Calculates the number of elements to retain, move or discard in the deque and
         in the list of the new values based on the current length of the deque,
@@ -999,7 +999,7 @@ struct _DequeIter[
     var index: Int
     var src: Pointer[Deque[T], origin]
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     @always_inline

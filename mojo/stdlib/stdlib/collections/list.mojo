@@ -19,7 +19,7 @@ These APIs are imported automatically, just like builtins.
 from collections._index_normalization import normalize_index
 from os import abort
 from sys import size_of
-from sys.intrinsics import _type_is_eq
+from sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
 from memory import Pointer, memcpy
 
@@ -56,7 +56,7 @@ struct _ListIter[
     var src: Pointer[List[Self.Element], origin]
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     @always_inline
@@ -329,6 +329,21 @@ struct List[T: Copyable & Movable](
         for value in span:
             self.append(value.copy())
 
+    fn __init__[
+        IterableType: Iterable
+    ](out self, iterable: IterableType) where _type_is_eq_parse_time[
+        T, IterableType.IteratorType[origin_of(iterable)].Element
+    ]():
+        """Constructs a list from an iterable of values.
+
+        Args:
+            iterable: The iterable of values to populate the list with.
+        """
+        var lower, _ = iter(iterable).bounds()
+        self = Self(capacity=lower)
+        for value in iterable:
+            self.append(rebind[T](value).copy())
+
     @always_inline
     fn __init__(out self, *, unsafe_uninit_length: Int):
         """Construct a list with the specified length, with uninitialized
@@ -508,7 +523,7 @@ struct List[T: Copyable & Movable](
         """
         self.extend(other^)
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
 
         Returns:
@@ -518,7 +533,7 @@ struct List[T: Copyable & Movable](
 
     fn __reversed__(
         ref self,
-    ) -> _ListIter[T, __origin_of(self), False]:
+    ) -> _ListIter[T, origin_of(self), False]:
         """Iterate backwards over the list, returning immutable references.
 
         Returns:
@@ -1205,17 +1220,19 @@ struct List[T: Copyable & Movable](
         Returns:
             The pointer to the underlying memory.
         """
-        return self._data.origin_cast[origin.mut, origin]().address_space_cast[
-            address_space
-        ]()
+        return (
+            self._data.unsafe_mut_cast[origin.mut]()
+            .unsafe_origin_cast[origin]()
+            .address_space_cast[address_space]()
+        )
 
     @always_inline
     fn _unsafe_next_uninit_ptr(
         ref self,
     ) -> UnsafePointer[
         T,
-        mut = Origin(__origin_of(self)).mut,
-        origin = __origin_of(self),
+        mut = Origin(origin_of(self)).mut,
+        origin = origin_of(self),
     ]:
         """Retrieves a pointer to the next uninitialized element position.
 

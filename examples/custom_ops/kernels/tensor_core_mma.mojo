@@ -1491,7 +1491,7 @@ fn mma_tile_buffers[
 
     var a_tiles = MMATileBuffers[
         get_smem_layout[BM](),
-        tensor_type = __type_of(A),
+        tensor_type = type_of(A),
         thread_layout = get_thread_layout(),
         block_rows=BM,
         warp_rows=WM,
@@ -1503,7 +1503,7 @@ fn mma_tile_buffers[
     # B (weights matrix) memory
     var b_tiles = MMATileBuffers[
         get_smem_layout[BN](),
-        tensor_type = __type_of(B),
+        tensor_type = type_of(B),
         thread_layout = get_thread_layout(),
         block_rows=BN,
         warp_rows=WN,

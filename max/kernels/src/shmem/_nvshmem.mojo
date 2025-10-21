@@ -341,16 +341,23 @@ fn nvshmemx_init() raises:
         raise Error("failed to initialize NVSHMEM")
 
 
-# Modular specific init, run one GPU per thread and return associated DeviceContext
-fn nvshmemx_init(mype_node: Int, npes_node: Int) raises -> DeviceContext:
-    var ctx = DeviceContext(mype_node)
+# Modular specific, initialize a DeviceContext on this thread to be SHMEM
+# enabled.
+fn nvshmemx_init_thread(
+    ctx: DeviceContext, number_of_devices_node: Int = -1
+) raises:
+    # Must set the associated CUcontext on this thread prior to init
     ctx.set_as_current()
+    var nranks = (
+        number_of_devices_node if number_of_devices_node
+        > 0 else ctx.number_of_devices()
+    )
 
     # Initialize NVSHMEM with MPI
     var mpi_comm = get_mpi_comm_world()
     var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
-    attr.args.uid_args.myrank = mype_node
-    attr.args.uid_args.nranks = npes_node
+    attr.args.uid_args.myrank = Int32(ctx.id())
+    attr.args.uid_args.nranks = nranks
 
     var status = nvshmemx_hostlib_init_attr(
         NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr)
@@ -361,8 +368,6 @@ fn nvshmemx_init(mype_node: Int, npes_node: Int) raises -> DeviceContext:
     status = nvshmemx_init_status()
     if status != 2:
         raise Error("failed to initialize NVSHMEM with status:", status)
-
-    return ctx
 
 
 fn nvshmemx_hostlib_init_attr(

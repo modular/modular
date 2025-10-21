@@ -19,7 +19,7 @@ struct MyType(Copyable, Movable):
     def __bool__(self) -> Bool:
         return self.val > 0
 
-    def __merge_with__[other_type: __type_of(Int)](self) -> Int:
+    def __merge_with__[other_type: type_of(Int)](self) -> Int:
         return Int(self.val)
 
 

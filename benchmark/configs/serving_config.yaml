@@ -85,13 +85,8 @@ benchmark_config:
   collect_server_stats: false  # Enable server stats collection for serving benchmarks
 
   # Result saving (serving-specific extensions)
-  server_args: ""  # Server arguments string
-
-  # Result saving (serving-specific extensions)
-  save_result: false  # Specify to save benchmark results to a json file
   record_output_lengths: null  # Path to save output lengths in YAML format
-  result_dir: null # Directory to save results
-  result_filename: null  # Custom filename (auto-generated if null)
+  result_filename: null  # JSON filename for results. If null, no results are saved. Can include directory path.
   metadata: []  # Key-value pairs for metadata (format: ["key=value", ...])
 
   # LoRA-specific parameters (serving workloads)

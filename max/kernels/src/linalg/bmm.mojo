@@ -21,7 +21,7 @@ from sys.info import (
     is_nvidia_gpu,
     simd_width_of,
 )
-
+from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_start_indices_of_nth_subvolume_uint
 from algorithm.reduction import _reduce_generator
@@ -38,7 +38,7 @@ from logger import Logger
 from memory import memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from gpu.host.info import B200
+from gpu.host.info import B200, H100
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
@@ -85,7 +85,7 @@ alias elementwise_epilogue_type = fn[
 @always_inline
 fn _get_batch_dims[
     rank: Int
-](flat_index: Int, shape: IndexList[rank, **_], out res: __type_of(shape)):
+](flat_index: Int, shape: IndexList[rank, **_], out res: type_of(shape)):
     res = {}
     var curr_index = flat_index
 
@@ -626,10 +626,10 @@ fn naive_batched_matmul_kernel[
     b_tensor: LayoutTensor[b_type, b_layout, MutableAnyOrigin],  # 1 * k
     c_buff_nd_shape: IndexList[rank],
 ) -> None:
-    var batch_size: UInt = UInt(c_tensor.dim(0))
-    var m: UInt = UInt(c_tensor.dim(1))
-    var n: UInt = UInt(c_tensor.dim(2))
-    var k: UInt = UInt(a_tensor.dim(2))
+    var batch_size = UInt(c_tensor.dim(0))
+    var m = UInt(c_tensor.dim(1))
+    var n = UInt(c_tensor.dim(2))
+    var k = UInt(a_tensor.dim(2))
 
     var x = Int(global_idx.x)
     var y = Int(global_idx.y)
@@ -896,41 +896,65 @@ fn _batched_matmul_gpu[
             ),
         )
     elif has_static_NK and has_amd_gpu_accelerator() and transpose_b:
-        alias block_m = 128
-        alias block_n = 128
-        alias block_k = 64
-        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            block_tile_shape=Index(block_m, block_n, block_k),
-            warp_tile_shape=Index(block_m // 2, block_n // 2, block_k),
-            num_pipeline_stages=1,
-            num_k_partitions=1,
-        )
-        alias batched_matmul_type = batched_matmul_kernel_gpu[
-            c_tensor_reshaped.dtype,
-            a_tensor_reshaped.dtype,
-            b_tensor_reshaped.dtype,
-            c_tensor_reshaped.layout,
-            a_tensor_reshaped.layout,
-            b_tensor_reshaped.layout,
-            transpose_b,
-            config,
-            elementwise_epilogue_fn,
-        ]
 
-        ctx.enqueue_function_checked[batched_matmul_type, batched_matmul_type](
-            c_tensor_reshaped,
-            a_tensor_reshaped,
-            b_tensor_reshaped,
-            m,
-            n,
-            k,
-            grid_dim=(
-                ceildiv(n, block_n),
-                ceildiv(m, block_m),
-                batch_size,
-            ),
-            block_dim=(256, 1, 1),
-        )
+        @always_inline
+        @parameter
+        fn kernel_helper[
+            block_m: Int,
+            block_n: Int,
+            *,
+            num_k_partitions: Int = 1,
+            num_pipeline_stages: Int = 1,
+        ]() raises:
+            alias block_k = 64
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=Index(block_m, block_n, block_k),
+                warp_tile_shape=Index(block_m // 2, block_n // 2, block_k),
+                num_pipeline_stages=1,
+                num_k_partitions=1,
+            )
+
+            alias batched_matmul_type = batched_matmul_kernel_gpu[
+                c_tensor_reshaped.dtype,
+                a_tensor_reshaped.dtype,
+                b_tensor_reshaped.dtype,
+                c_tensor_reshaped.layout,
+                a_tensor_reshaped.layout,
+                b_tensor_reshaped.layout,
+                transpose_b,
+                config,
+                elementwise_epilogue_fn,
+            ]
+
+            ctx.enqueue_function_checked[
+                batched_matmul_type, batched_matmul_type
+            ](
+                c_tensor_reshaped,
+                a_tensor_reshaped,
+                b_tensor_reshaped,
+                m,
+                n,
+                k,
+                grid_dim=(
+                    ceildiv(n, block_n),
+                    ceildiv(m, block_m),
+                    batch_size,
+                ),
+                block_dim=(256, 1, 1),
+            )
+
+        # DeepSeek size tuning
+        if m == 256 and n == 128 and k == 512:
+            kernel_helper[128, 64]()
+        elif m == 256 and n == 512 and k == 128:
+            kernel_helper[64, 64]()
+        elif m == 14 and n == 3072 and k == 12288:
+            kernel_helper[32, 32]()
+        elif m == 600 and n == 18256 and k == 4096:
+            kernel_helper[128, 64]()
+        else:
+            kernel_helper[128, 128]()
+
     else:
         # TODO: support non-A100 transposed kernels
         constrained[
@@ -1148,15 +1172,15 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
         a_scales_type,
         b_scales_type,
         a_layout,
-        __type_of(c).layout,
+        type_of(c).layout,
         a_scales_layout,
-        __type_of(b_scales).layout,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
-        __type_of(a_scales_tma_op).layout,
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
-        __type_of(a_scales_tma_op).desc_layout,
+        type_of(b_scales).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
+        type_of(a_scales_tma_op).layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
+        type_of(a_scales_tma_op).desc_layout,
         block_tile_shape,
         mma_shape,
         transpose_b=True,
@@ -1327,16 +1351,16 @@ fn bmm_sm100_blockwise_scaled_fp8[
         c_type,
         a_scales_type,
         b_scales_type,
-        __type_of(a).layout,
-        __type_of(c).layout,
-        __type_of(a_scales).layout,
-        __type_of(b_scales).layout,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
-        __type_of(a_scales_tma_op).layout,
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
-        __type_of(a_scales_tma_op).desc_layout,
+        type_of(a).layout,
+        type_of(c).layout,
+        type_of(a_scales).layout,
+        type_of(b_scales).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
+        type_of(a_scales_tma_op).layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
+        type_of(a_scales_tma_op).desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=True,
@@ -1360,6 +1384,107 @@ fn bmm_sm100_blockwise_scaled_fp8[
     )
 
 
+fn batched_matmul_dynamic_scaled_fp8_naive[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType, //,
+    *,
+    scales_granularity_mnk: IndexList[3],
+    transpose_b: Bool = False,
+](
+    c_device: NDBuffer[c_type, 3, _, _],
+    a_device: NDBuffer[a_type, 3, _, _],
+    b_device: NDBuffer[b_type, 3, _, _],
+    a_scales_device: NDBuffer[a_scales_type, 3, _, _],
+    b_scales_device: NDBuffer[b_scales_type, 3, _, _],
+    ctx: DeviceContext,
+) raises:
+    constrained[
+        a_device.shape.has_value[2]() and c_device.shape.has_value[2](),
+        "N and K must be static",
+    ]()
+
+    constrained[
+        scales_granularity_mnk[0] == 1
+        and scales_granularity_mnk[1] == scales_granularity_mnk[2] == 128,
+        (
+            "Only support (1,128,128) scale granularity. Extend it for other"
+            " cases."
+        ),
+    ]()
+
+    alias BLOCK_SCALE_K = 128
+    var bs = c_device.dim(0)
+    var M = c_device.dim(1)
+    alias N = c_device.shape.get[2]()
+    alias K = a_device.shape.get[2]()
+    alias n_dim = Dim(N)
+    alias k_dim = Dim(K)
+
+    alias static_a_shape_2D = DimList(Dim(), k_dim)
+    alias static_b_shape_2D = DimList(n_dim, k_dim) if transpose_b else DimList(
+        k_dim, n_dim
+    )
+    alias static_c_shape_2D = DimList(Dim(), n_dim)
+
+    alias static_a_scales_shape_2D = DimList(
+        ceildiv(k_dim, BLOCK_SCALE_K), Dim()
+    )
+    alias static_b_scales_shape_2D = DimList(
+        ceildiv(n_dim, BLOCK_SCALE_K), ceildiv(k_dim, BLOCK_SCALE_K)
+    )
+
+    var dynamic_a_shape_2D = DimList(M, K)
+    var dynamic_b_shape_2D = DimList(N, K) if transpose_b else DimList(K, N)
+    var dynamic_c_shape_2D = DimList(M, N)
+    var dynamic_a_scales_shape_2D = DimList(ceildiv(K, BLOCK_SCALE_K), M)
+    var dynamic_b_scales_shape_2D = DimList(
+        ceildiv(N, BLOCK_SCALE_K), ceildiv(K, BLOCK_SCALE_K)
+    )
+
+    for batch in range(bs):
+        var c_ptr = c_device.data + batch * M * N
+        var a_ptr = a_device.data + batch * M * K
+        var b_ptr = b_device.data + batch * N * K
+        var a_scales_ptr = (
+            a_scales_device.data + batch * (K // BLOCK_SCALE_K) * M
+        )
+        var b_scales_ptr = b_scales_device.data + batch * (
+            N // BLOCK_SCALE_K
+        ) * (K // BLOCK_SCALE_K)
+
+        var c_buffer = NDBuffer[c_type, 2, _, static_c_shape_2D](
+            c_ptr, dynamic_c_shape_2D
+        )
+        var a_buffer = NDBuffer[a_type, 2, _, static_a_shape_2D](
+            a_ptr, dynamic_a_shape_2D
+        )
+        var b_buffer = NDBuffer[b_type, 2, _, static_b_shape_2D](
+            b_ptr, dynamic_b_shape_2D
+        )
+        var a_scales_buffer = NDBuffer[
+            a_scales_type, 2, _, static_a_scales_shape_2D
+        ](a_scales_ptr, dynamic_a_scales_shape_2D)
+        var b_scales_buffer = NDBuffer[
+            b_scales_type, 2, _, static_b_scales_shape_2D
+        ](b_scales_ptr, dynamic_b_scales_shape_2D)
+
+        naive_blockwise_scaled_fp8_matmul[
+            BLOCK_DIM=16,
+            transpose_b=transpose_b,
+            scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        ](
+            c_buffer,
+            a_buffer,
+            b_buffer,
+            a_scales_buffer,
+            b_scales_buffer,
+            ctx,
+        )
+
+
 fn batched_matmul_dynamic_scaled_fp8[
     c_type: DType,
     a_type: DType,
@@ -1368,6 +1493,9 @@ fn batched_matmul_dynamic_scaled_fp8[
     b_scales_type: DType, //,
     input_scale_granularity: StaticString,
     weight_scale_granularity: StaticString,
+    m_scale_granularity: Int,
+    n_scale_granularity: Int,
+    k_scale_granularity: Int,
     transpose_b: Bool = False,
     target: StaticString = "cpu",
 ](
@@ -1378,8 +1506,16 @@ fn batched_matmul_dynamic_scaled_fp8[
     b_scales: NDBuffer[b_scales_type, 3, _, _],
     ctx: DeviceContext,
 ) raises:
-    constrained[ctx.default_device_info is B200, "Only support B200"]()
-    constrained[c_type == DType.float32, "output dtype should be float32"]()
+    constrained[
+        ctx.default_device_info is B200 or ctx.default_device_info is H100,
+        "Only support SM100 or SM90",
+    ]()
+    constrained[
+        m_scale_granularity == 1
+        and n_scale_granularity == 128
+        and k_scale_granularity == 128,
+        "Only support (1,128,128) scale granularity",
+    ]()
     constrained[
         a_type == b_type == DType.float8_e4m3fn,
         "input A and B dtype should be float8_e4m3fn",
@@ -1395,20 +1531,30 @@ fn batched_matmul_dynamic_scaled_fp8[
         "Only support block-wise scale granularity",
     ]()
 
-    var a_tensor = from_ndbuffer_row_major(a)
-    var b_tensor = from_ndbuffer_row_major(b)
-    var c_tensor = from_ndbuffer_row_major(c)
-    var a_scales_tensor = from_ndbuffer_row_major(a_scales)
-    var b_scales_tensor = from_ndbuffer_row_major(b_scales)
+    @parameter
+    if ctx.default_device_info is B200:
+        var a_tensor = from_ndbuffer_row_major(a)
+        var b_tensor = from_ndbuffer_row_major(b)
+        var c_tensor = from_ndbuffer_row_major(c)
+        var a_scales_tensor = from_ndbuffer_row_major(a_scales)
+        var b_scales_tensor = from_ndbuffer_row_major(b_scales)
 
-    alias umma_shape = Index(64, 64, 32)
-    alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
-    alias swizzle = TensorMapSwizzle.SWIZZLE_128B
+        alias umma_shape = Index(64, 64, 32)
+        alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+        alias swizzle = TensorMapSwizzle.SWIZZLE_128B
 
-    bmm_sm100_blockwise_scaled_fp8[
-        transpose_b=transpose_b,
-        umma_shape=umma_shape,
-        block_tile_shape=block_tile_shape,
-        a_swizzle=swizzle,
-        b_swizzle=swizzle,
-    ](c_tensor, a_tensor, b_tensor, a_scales_tensor, b_scales_tensor, ctx)
+        bmm_sm100_blockwise_scaled_fp8[
+            transpose_b=transpose_b,
+            umma_shape=umma_shape,
+            block_tile_shape=block_tile_shape,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+        ](c_tensor, a_tensor, b_tensor, a_scales_tensor, b_scales_tensor, ctx)
+
+    else:
+        batched_matmul_dynamic_scaled_fp8_naive[
+            scales_granularity_mnk = Index(
+                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            ),
+            transpose_b=transpose_b,
+        ](c, a, b, a_scales, b_scales, ctx)

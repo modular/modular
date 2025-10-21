@@ -22,6 +22,7 @@ from builtin.simd import _simd_construction_checks
 from memory import memcpy
 from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
+from os import abort
 from python import PythonObject
 
 # ===----------------------------------------------------------------------=== #
@@ -473,7 +474,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     fn __merge_with__[
-        other_type: __type_of(
+        other_type: type_of(
             UnsafePointer[
                 type,
                 address_space=address_space,
@@ -484,7 +485,7 @@ struct UnsafePointer[
     ](self) -> UnsafePointer[
         type=type,
         mut = mut & other_type.origin.mut,
-        origin = __origin_of(origin, other_type.origin),
+        origin = origin_of(origin, other_type.origin),
         address_space=address_space,
     ]:
         """Returns a pointer merged with the specified `other_type`.
@@ -509,15 +510,6 @@ struct UnsafePointer[
             Whether the pointer is null.
         """
         return Int(self) != 0
-
-    @always_inline
-    fn __as_bool__(self) -> Bool:
-        """Return true if the pointer is non-null.
-
-        Returns:
-            Whether the pointer is null.
-        """
-        return self.__bool__()
 
     @always_inline
     fn __int__(self) -> Int:
@@ -1083,32 +1075,186 @@ struct UnsafePointer[
             ]._mlir_type,
         ](self.address)
 
-    @always_inline("builtin")
-    fn origin_cast[
-        target_mut: Bool = Self.mut,
-        target_origin: Origin[target_mut] = Origin[target_mut].cast_from[
-            Self.origin
-        ],
-    ](self) -> UnsafePointer[
+    alias _OriginCastType[
+        target_mut: Bool, target_origin: Origin[target_mut]
+    ] = UnsafePointer[
         type,
         address_space=address_space,
         mut=target_mut,
         origin=target_origin,
+    ]
+
+    @always_inline("nodebug")
+    fn mut_cast[
+        target_mut: Bool
+    ](self) -> Self._OriginCastType[
+        target_mut, Origin[target_mut].cast_from[origin]
     ]:
-        """Changes the origin or mutability of a pointer.
+        """Changes the mutability of a pointer.
+
+        This is a safe way to change the mutability of a pointer with an
+        unbounded mutability. This function will emit a compile time error if
+        you try to cast an immutable pointer to mutable.
 
         Parameters:
-            target_mut: Whether the origin is mutable.
+            target_mut: Mutability of the destination pointer.
+
+        Returns:
+            A pointer with the same type, origin and address space as the
+            original pointer, but with the newly specified mutability.
+        """
+        constrained[
+            target_mut == False or target_mut == mut,
+            "Cannot safely cast an immutable pointer to mutable",
+        ]()
+        return self.unsafe_mut_cast[target_mut]()
+
+    @always_inline("builtin")
+    fn unsafe_mut_cast[
+        target_mut: Bool
+    ](self) -> Self._OriginCastType[
+        target_mut, Origin[target_mut].cast_from[origin]
+    ]:
+        """Changes the mutability of a pointer.
+
+        Parameters:
+            target_mut: Mutability of the destination pointer.
+
+        Returns:
+            A pointer with the same type, origin and address space as the
+            original pointer, but with the newly specified mutability.
+
+        If you are unconditionally casting the mutability to `False`, use
+        `as_immutable` instead.
+        If you are casting to mutable or a parameterized mutability, prefer
+        using the safe `mut_cast` method instead.
+
+        Safety:
+            Casting the mutability of a pointer is inherently very unsafe.
+            Improper usage can lead to undefined behavior. Consider restricting
+            types to their proper mutability at the function signature level.
+            For example, taking an `UnsafePointer[T, mut=True, **_]` as an
+            argument over an unbound `UnsafePointer[T, **_]` is preferred.
+        """
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type = Self._OriginCastType[
+                target_mut, Origin[target_mut].cast_from[origin]
+            ]._mlir_type,
+        ](self.address)
+
+    @always_inline("builtin")
+    fn unsafe_origin_cast[
+        target_origin: Origin[mut]
+    ](self) -> Self._OriginCastType[mut, target_origin]:
+        """Changes the origin of a pointer.
+
+        Parameters:
             target_origin: Origin of the destination pointer.
 
         Returns:
-            A new UnsafePointer object with the same type and the same address,
-            as the original UnsafePointer and the new specified mutability and origin.
+            A pointer with the same type, mutability and address space as the
+            original pointer, but with the newly specified origin.
+
+        If you are unconditionally casting the origin to an `AnyOrigin`, use
+        `as_any_origin` instead.
+
+        Safety:
+            Casting the origin of a pointer is inherently very unsafe.
+            Improper usage can lead to undefined behavior or unexpected variable
+            destruction. Considering parameterizing the origin at the function
+            level to avoid unnecessary casts.
         """
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type = Self._OriginCastType[mut, target_origin]._mlir_type,
+        ](self.address)
+
+    @always_inline("builtin")
+    fn as_immutable(
+        self,
+    ) -> Self._OriginCastType[False, ImmutableOrigin.cast_from[origin]]:
+        """Changes the mutability of a pointer to immutable.
+
+        Unlike `unsafe_mut_cast`, this function is always safe to use as casting
+        from (im)mutable to immutable is always safe.
+
+        Returns:
+            A pointer with the mutability set to immutable.
+        """
+        return self.unsafe_mut_cast[False]()
+
+    @doc_private
+    fn as_any_origin(
+        self: UnsafePointer[type, **_],
+        out result: Self._OriginCastType[False, ImmutableAnyOrigin],
+    ):
+        constrained[
+            False,
+            (
+                "An UnsafePointer with unbound mutability cannot be cast to"
+                " 'AnyOrigin'. Consider using `as_immutable` first, or binding"
+                " the mutability explicitly before calling this function."
+            ),
+        ]()
+        result = abort[type_of(result)]()
+
+    @always_inline("builtin")
+    fn as_any_origin(
+        self: UnsafePointer[type, mut=False, **_],
+    ) -> UnsafePointer[
+        type,
+        address_space=address_space,
+        mut=False,
+        origin=ImmutableAnyOrigin,
+    ]:
+        """Casts the origin of an immutable pointer to `ImmutableAnyOrigin`.
+
+        Returns:
+            A pointer with the origin set to `ImmutableAnyOrigin`.
+
+        It is usually preferred to maintain concrete origin values instead of
+        using `ImmutableAnyOrigin`. However, if it is needed, keep in mind that
+        `ImmutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        destruction will not apply during the lifetime of the pointer.
+        """
+        # TODO: compiler error if using self.unsafe_origin_cast
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointer[
                 type,
                 address_space=address_space,
+                mut=False,
+                origin=ImmutableAnyOrigin,
+            ]._mlir_type,
+        ](self.address)
+
+    @always_inline("builtin")
+    fn as_any_origin(
+        self: UnsafePointer[type, mut=True, **_],
+    ) -> UnsafePointer[
+        type,
+        address_space=address_space,
+        mut=True,
+        origin=MutableAnyOrigin,
+    ]:
+        """Casts the origin of a mutable pointer to `MutableAnyOrigin`.
+
+        Returns:
+            A pointer with the origin set to `MutableAnyOrigin`.
+
+        This requires the pointer to already be mutable as casting mutability
+        is inherently very unsafe.
+
+        It is usually preferred to maintain concrete origin values instead of
+        using `MutableAnyOrigin`. However, if it is needed, keep in mind that
+        `MutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        destruction will not apply during the lifetime of the pointer.
+        """
+        # TODO: compiler error if using self.unsafe_origin_cast
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type = UnsafePointer[
+                type,
+                address_space=address_space,
+                mut=True,
+                origin=MutableAnyOrigin,
             ]._mlir_type,
         ](self.address)
 

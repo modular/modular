@@ -77,8 +77,4 @@ def test_dirname():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_dirname]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

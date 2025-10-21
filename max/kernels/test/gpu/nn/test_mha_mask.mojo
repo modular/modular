@@ -157,7 +157,7 @@ def test_sliding_window_causal_mask():
     @always_inline
     def check_status(
         offset: IndexList[2, **_],
-        size: __type_of(offset),
+        size: type_of(offset),
         expected: TileMaskStatus,
     ):
         var status = mask.status(offset, size)

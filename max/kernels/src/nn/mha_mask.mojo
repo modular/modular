@@ -192,7 +192,7 @@ struct CausalMask(ImplicitlyCopyable, MHAMask, Movable):
     alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = False
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -295,7 +295,7 @@ struct NullMask(ImplicitlyCopyable, MHAMask, Movable):
     alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = False
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -363,7 +363,7 @@ struct ChunkedMask[local_window_size: Int](
     alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = True
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -490,7 +490,7 @@ struct SlidingWindowCausalMask[window_size: Int](
     alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = True
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -632,7 +632,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
     ]
     var is_multiple_of_2: Bool
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -761,7 +761,7 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     alias mask_safe_out_of_bounds: Bool = T.mask_safe_out_of_bounds and S.mask_safe_out_of_bounds
     alias check_mask_during_decoding: Bool = T.check_mask_during_decoding and S.check_mask_during_decoding
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -830,7 +830,7 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     alias mask_safe_out_of_bounds: Bool = T.mask_safe_out_of_bounds and S.mask_safe_out_of_bounds
     alias check_mask_during_decoding: Bool = T.check_mask_during_decoding or S.check_mask_during_decoding
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self

@@ -117,7 +117,7 @@ struct BitSet[size: UInt](
 
     fn __init__(out self):
         """Initializes an empty BitSet with zero capacity and size."""
-        self._words = __type_of(self._words)(fill=0)
+        self._words = type_of(self._words)(fill=0)
 
     fn __init__(init: SIMD[DType.bool, _], out self: BitSet[UInt(init.size)]):
         """Initializes a BitSet with the given SIMD vector of booleans.
@@ -128,7 +128,7 @@ struct BitSet[size: UInt](
         constrained[
             max(init.size, _WORD_BITS) // _WORD_BITS == Self._words_size
         ]()
-        self._words = __type_of(self._words)(uninitialized=True)
+        self._words = type_of(self._words)(uninitialized=True)
         alias step = min(init.size, _WORD_BITS)
 
         @parameter

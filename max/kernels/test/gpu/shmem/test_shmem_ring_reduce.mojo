@@ -64,8 +64,8 @@ fn ring_reduce(
     if elems_per_block * (block_idx + 1) > nreduce:
         return
 
-    src += block_idx * elems_per_block
-    dst += block_idx * elems_per_block
+    src += block_idx * UInt(elems_per_block)
+    dst += block_idx * UInt(elems_per_block)
     nreduce = elems_per_block
     signal += block_idx
 

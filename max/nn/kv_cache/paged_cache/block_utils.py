@@ -21,6 +21,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from max._core_mojo import block_hasher
+from max.interfaces import ImageMetadata
 from max.profiler import traced
 
 # Note that we use 'None' as a string here instead of None because
@@ -37,13 +38,39 @@ def hash_request_tokens(
     token_ids: npt.NDArray[np.integer[Any]],
     block_size: int,
     parent_hash: int | None = None,
+    prefix_length: int = -1,
+    images: list[ImageMetadata] | None = None,
 ) -> list[int]:
-    """Hash the tokens of a request using the Mojo implementation."""
+    """Hash the tokens of a request using the Mojo implementation.
+
+    If images are provided, we will set the first vision_token_id to the value
+    of the image hash.
+
+    This method should leave the contents of the array unchanged on return.
+    """
     if parent_hash is None:
         parent_hash = DEFAULT_PARENT_HASH
 
+    # If images are provided, temporarily replace the first vision_token_id with the image hash
+    token_to_reset: dict[int, int] = {}
+    if images:
+        if prefix_length == -1:
+            raise ValueError(
+                "prefix_length must be set when images are provided"
+            )
+        for img in images:
+            idx = img.start_idx - prefix_length
+            if 0 <= idx < len(token_ids):
+                token_to_reset[idx] = token_ids[idx]
+                token_ids[idx] = img.image_hash
+
+    # Call into the super fast Mojo block hasher
     hash_vals = block_hasher(token_ids, block_size, parent_hash)
     assert len(hash_vals) == len(token_ids) // block_size
+
+    # Reset the contents of the array to the original values
+    for idx, token in token_to_reset.items():
+        token_ids[idx] = token
 
     return hash_vals
 

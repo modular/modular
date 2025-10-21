@@ -106,7 +106,7 @@ struct TestIter(ImplicitlyCopyable, Iterable, Iterator, Movable):
     var lower: Int
     var upper: Optional[Int]
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     fn __has_next__(self) -> Bool:
@@ -147,13 +147,4 @@ fn test_zip_bounds() raises:
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_zip2]()
-    suite.test[test_zip3]()
-    suite.test[test_zip4]()
-    suite.test[test_zip_destructure]()
-    suite.test[test_zip_unequal_lengths]()
-    suite.test[test_zip_bounds]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

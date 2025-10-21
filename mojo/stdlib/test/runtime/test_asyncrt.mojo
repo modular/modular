@@ -56,9 +56,4 @@ def test_runtime_taskgroup():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_runtime_task]()
-    suite.test[test_runtime_taskgroup]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

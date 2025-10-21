@@ -123,7 +123,7 @@ class Embedding(Module):
                 [0, vocab_size) for the embedding.
         Returns:
             A dense tensor made by looking up each index in the vector embedding.
-            For an input of shape (*batch, indices) and an embedding of shape
-            (vocab_size, *dims), the result will have shape (*batch, indices, *dims).
+            For an input of shape ``(*batch, indices)`` and an embedding of shape
+            ``(vocab_size, *dims)``, the result will have shape ``(*batch, indices, *dims)``.
         """
         return F.gather(self.weight, indices, axis=0)

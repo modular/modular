@@ -32,11 +32,21 @@ from pathlib import Path
 from typing import Any
 
 import pyarrow.parquet
-from benchmark_shared.config import BaseBenchmarkConfig
-from benchmark_shared.datasets import (
-    BenchmarkDataset,
-    CodeDebugBenchmarkDataset,
-)
+
+try:
+    from max.benchmark.benchmark_shared.config import BaseBenchmarkConfig
+    from max.benchmark.benchmark_shared.datasets import (
+        BenchmarkDataset,
+        CodeDebugBenchmarkDataset,
+    )
+except ImportError:
+    from benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        BaseBenchmarkConfig,
+    )
+    from benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        BenchmarkDataset,
+        CodeDebugBenchmarkDataset,
+    )
 from huggingface_hub import hf_hub_download
 from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import (
@@ -384,6 +394,7 @@ async def all_tokens(
     request_id: int,
     request_payload: RequestPayload,
     top_k: int | None,
+    config: PipelineConfig,
 ) -> tuple[str, list[TokenGeneratorOutput]]:
     """Generate all tokens for a request."""
     prompt = request_payload.prompt
@@ -395,7 +406,10 @@ async def all_tokens(
         ignore_eos=True,
         top_k=top_k,
     )
-    sampling_params = SamplingParams.from_input(params)
+    sampling_params = SamplingParams.from_input_and_generation_config(
+        params,
+        sampling_params_defaults=config.model_config.sampling_params_defaults,
+    )
     request = TextGenerationRequest(
         request_id=RequestID(str(request_id)),
         model_name=model_name,
@@ -436,7 +450,6 @@ async def pipeline_encode(
 ) -> tuple[str, EmbeddingsGenerationOutput]:
     """Encodes the request."""
     prompt = request_payload.prompt
-    output_len = request_payload.output_len
 
     request = TextGenerationRequest(
         request_id=RequestID(str(request_id)),
@@ -455,7 +468,7 @@ async def run_max_async(
     model_name: str,
     requests: list[RequestPayload],
     config: PipelineConfig,
-    model_factory: PipelinesFactory,
+    model_factory: PipelinesFactory,  # type: ignore[type-arg]  # TODO
     tokenizer: TextTokenizer,
     show_text: bool,
     pipeline_task: PipelineTask,
@@ -475,7 +488,7 @@ async def run_max_async(
         # to feed the model worker process.
         TokenGeneratorPipeline(
             model_name=model_name,
-            tokenizer=tokenizer,  # type: ignore
+            tokenizer=tokenizer,
             scheduler_zmq_configs=scheduler_zmq_configs,
             worker_monitor=worker_monitor,
         ) as pipeline,
@@ -488,7 +501,9 @@ async def run_max_async(
         # Submit all request for execution in the model worker.
         if pipeline_task == PipelineTask.TEXT_GENERATION:
             all_tokens_tasks = [
-                all_tokens(model_name, pipeline, pbar, i, request, top_k)
+                all_tokens(
+                    model_name, pipeline, pbar, i, request, top_k, config
+                )
                 for i, request in enumerate(requests)
             ]
         elif pipeline_task == PipelineTask.EMBEDDINGS_GENERATION:
@@ -540,7 +555,7 @@ def load_model_config(
     max_num_steps: int | None,
     trust_remote_code: bool | None,
     pipeline_task: PipelineTask,
-) -> tuple[PipelinesFactory, PipelineConfig, TextTokenizer]:
+) -> tuple[PipelinesFactory, PipelineConfig, TextTokenizer]:  # type: ignore[type-arg]  # TODO
     config_kwargs: dict[str, Any] = {}
 
     # Match what we already do in SDK/lib/API/python/max/entrypoints/cli/config.py

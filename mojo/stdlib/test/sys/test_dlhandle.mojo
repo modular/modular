@@ -29,9 +29,4 @@ def check_invalid_dlhandle_path():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[check_invalid_dlhandle]()
-    suite.test[check_invalid_dlhandle_path]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

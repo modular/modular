@@ -107,11 +107,4 @@ def test_b16decode():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_b64encode]()
-    suite.test[test_b64decode]()
-    suite.test[test_b16encode]()
-    suite.test[test_b16decode]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -19,6 +19,7 @@ import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
     GenerationStatus,
+    Pipeline,
     PipelineTokenizer,
     RequestID,
     TextGenerationInputs,
@@ -27,7 +28,6 @@ from max.interfaces import (
     TextGenerationRequestMessage,
 )
 from max.pipelines.core import TextContext
-from max.pipelines.lib.pipeline import TextGenerationPipelineType
 
 
 @dataclass
@@ -133,7 +133,9 @@ class EchoPipelineTokenizer(
 
 
 @dataclass
-class EchoTokenGenerator(TextGenerationPipelineType[TextContext]):
+class EchoTokenGenerator(
+    Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput]
+):
     """Token generator that echoes the prompt tokens in their original order."""
 
     def __init__(self) -> None:

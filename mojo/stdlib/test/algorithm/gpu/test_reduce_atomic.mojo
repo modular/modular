@@ -88,7 +88,7 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
 
     alias kernel = reduce
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         res_add_device,
         res_min_device,
         res_max_device,
@@ -143,6 +143,8 @@ def test_reduce_atomic():
 
 
 def main():
+    # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
+    # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()
 
     suite.test[test_reduce_atomic]()

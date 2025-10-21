@@ -36,7 +36,7 @@ from max.graph import (
     ops,
 )
 from max.graph.weights import Weights, WeightsAdapter
-from max.interfaces import InputContext
+from max.interfaces import TextGenerationContext
 from max.interfaces.nested_iterable import NestedIterableDataclass
 from max.interfaces.request import RequestID
 from max.nn import LinearV1, ReturnLogits
@@ -44,15 +44,15 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheInputSymbols,
     PagedCacheValues,
-    PagedKVCacheManager,
     RaggedKVCacheInputs,
+    TPPagedKVCacheManager,
     build_max_lengths_tensor,
     estimate_kv_cache_size,
     infer_optimal_batch_size,
     load_kv_manager,
 )
-from max.nn.kv_cache.paged_cache.paged_cache import PagedCacheInputSymbols
 from max.nn.layer import Layer
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
@@ -89,7 +89,7 @@ class MultimodalKVCacheInputs(KVCacheInputs):
     vision_kv_cache_inputs: KVCacheInputs
 
 
-class MultimodalKVCacheManager(PagedKVCacheManager):
+class MultimodalKVCacheManager(TPPagedKVCacheManager):
     """A lightweight wrapper around text and vision KV managers.
 
     Note on runtime and graph build time return types:
@@ -104,10 +104,10 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
       extensible KVCacheInput type.
     """
 
-    text_kv_manager: PagedKVCacheManager
+    text_kv_manager: TPPagedKVCacheManager
     """KV cache manager for text inputs."""
 
-    vision_kv_manager: PagedKVCacheManager
+    vision_kv_manager: TPPagedKVCacheManager
     """KV cache manager for image inputs."""
 
     def __init__(
@@ -136,7 +136,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
             page_size=page_size,
             session=session,
         )
-        assert isinstance(paged_text_kv_manager, PagedKVCacheManager)
+        assert isinstance(paged_text_kv_manager, TPPagedKVCacheManager)
         self.text_kv_manager = paged_text_kv_manager
 
         # Assume the number of vision tokens is fixed per batch.
@@ -170,7 +170,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
         cache_memory = cache_memory_per_image * max_batch_size
 
         # Always use paged KV cache for the vision KV projections.
-        self.vision_kv_manager = PagedKVCacheManager(
+        self.vision_kv_manager = TPPagedKVCacheManager(
             params=self.vision_kv_params,
             max_batch_size=max_batch_size,
             max_seq_len=vision_max_seq_len,
@@ -202,7 +202,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
         assert "max_vision_seq_len" in kwargs, "max_vision_seq_len must be set"
         max_vision_seq_len = kwargs["max_vision_seq_len"]
 
-        vision_kv_cache_size = PagedKVCacheManager.estimated_memory_size(
+        vision_kv_cache_size = TPPagedKVCacheManager.estimated_memory_size(
             params,
             max_batch_size,
             max_vision_seq_len,
@@ -256,7 +256,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
         text_batch_size = infer_optimal_batch_size(
             params, max_seq_len, num_layers, text_cache_size, devices
         )
-        vision_batch_size = PagedKVCacheManager.infer_optimal_batch_size(
+        vision_batch_size = TPPagedKVCacheManager.infer_optimal_batch_size(
             params,
             max_vision_seq_len,
             num_vision_layers,
@@ -268,7 +268,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
 
     @final
     def fetch(
-        self, batch: Sequence[InputContext], num_steps: int = 1
+        self, batch: Sequence[TextGenerationContext], num_steps: int = 1
     ) -> Sequence[RaggedKVCacheInputs]:
         """Returns KV cache inputs for both modalities' KV managers."""
         # Here we call into the text KV manager's fetch method to update
@@ -384,12 +384,12 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
             )
         ]
 
-    def step(self, batch: Sequence[InputContext]) -> None:
+    def step(self, batch: Sequence[TextGenerationContext]) -> None:
         """Steps both text and vision modalities' KV managers."""
         # Step the text KV manager as usual for autoregressive text generation.
         self.text_kv_manager.step(batch)
 
-    def get_or_recommend_replica(self, _: InputContext) -> int:
+    def get_or_recommend_replica(self, _: TextGenerationContext) -> int:
         """Return idx of the replica that should be used for the given request."""
         # As there is only one replica, we always return 0
         return 0
@@ -1171,7 +1171,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager:
+    ) -> TPPagedKVCacheManager:
         """Loads KV cache management objects for Llama vision.
 
         Args:

@@ -162,10 +162,10 @@ def test_tma_load_row_major[
     @parameter
     if load_along_last_dim:
         alias kernel = test_tma_multiple_loads_kernel[
-            __type_of(tma_tensor).dtype,
+            type_of(tma_tensor).dtype,
             Layout.row_major(M_roundup, N_roundup),  # dst layout
-            __type_of(tma_tensor).layout,  # smem layout
-            __type_of(tma_tensor).layout,  # thread layout
+            type_of(tma_tensor).layout,  # smem layout
+            type_of(tma_tensor).layout,  # thread layout
         ]
         ctx.enqueue_function[kernel](
             dst.device_tensor(),
@@ -175,10 +175,10 @@ def test_tma_load_row_major[
         )
     else:
         alias kernel = test_tma_load_kernel[
-            __type_of(tma_tensor).dtype,
+            type_of(tma_tensor).dtype,
             Layout.row_major(M_roundup, N_roundup),  # dst layout
-            __type_of(tma_tensor).layout,  # smem layout
-            __type_of(tma_tensor).layout,  # thread layout
+            type_of(tma_tensor).layout,  # smem layout
+            type_of(tma_tensor).layout,  # thread layout
         ]
         ctx.enqueue_function[kernel](
             dst.device_tensor(),
@@ -302,9 +302,9 @@ def test_tma_async_store[
     @parameter
     if load_along_last_dim:
         alias kernel = test_tma_async_multiple_store_kernel[
-            __type_of(tma_tensor).dtype,
-            __type_of(tma_tensor).layout,
-            __type_of(tma_tensor).layout,
+            type_of(tma_tensor).dtype,
+            type_of(tma_tensor).layout,
+            type_of(tma_tensor).layout,
             src_layout,
         ]
         ctx.enqueue_function[kernel](
@@ -315,10 +315,10 @@ def test_tma_async_store[
         )
     else:
         alias kernel = test_tma_async_store_kernel[
-            __type_of(tma_tensor).dtype,
-            __type_of(tma_tensor).layout,
-            __type_of(tma_tensor).desc_layout,
-            __type_of(tma_tensor).layout,
+            type_of(tma_tensor).dtype,
+            type_of(tma_tensor).layout,
+            type_of(tma_tensor).desc_layout,
+            type_of(tma_tensor).layout,
             src_layout,
         ]
         ctx.enqueue_function[kernel](
@@ -437,9 +437,9 @@ def test_tma_async_reduce[
     @parameter
     if load_along_last_dim:
         alias kernel = test_tma_async_multiple_reduce_kernel[
-            __type_of(tma_tensor).dtype,
-            __type_of(tma_tensor).layout,
-            __type_of(tma_tensor).layout,
+            type_of(tma_tensor).dtype,
+            type_of(tma_tensor).layout,
+            type_of(tma_tensor).layout,
             src_layout,
         ]
         ctx.enqueue_function[kernel](
@@ -450,9 +450,9 @@ def test_tma_async_reduce[
         )
     else:
         alias kernel = test_tma_async_reduce_kernel[
-            __type_of(tma_tensor).dtype,
-            __type_of(tma_tensor).layout,
-            __type_of(tma_tensor).layout,
+            type_of(tma_tensor).dtype,
+            type_of(tma_tensor).layout,
+            type_of(tma_tensor).layout,
             src_layout,
         ]
         ctx.enqueue_function[kernel](
@@ -585,13 +585,13 @@ def test_tma_load_two_buffers_row_major[
     ctx.synchronize()
 
     alias kernel = test_tma_loads_two_buffers_kernel[
-        __type_of(a_tma_tensor).dtype,
+        type_of(a_tma_tensor).dtype,
         Layout.row_major(M_roundup, N_roundup),  # dst layout
         Layout.row_major(M_roundup, N_roundup),  # dst layout
-        __type_of(a_tma_tensor).layout,  # smem layout
-        __type_of(b_tma_tensor).layout,  # smem layout
-        __type_of(a_tma_tensor).layout,  # thread layout
-        __type_of(b_tma_tensor).layout,  # thread layout
+        type_of(a_tma_tensor).layout,  # smem layout
+        type_of(b_tma_tensor).layout,  # smem layout
+        type_of(a_tma_tensor).layout,  # thread layout
+        type_of(b_tma_tensor).layout,  # thread layout
     ]
     ctx.enqueue_function[kernel](
         a_dst.device_tensor(),
@@ -769,11 +769,11 @@ def test_tma_load_and_store_two_buffers_row_major[
     ctx.synchronize()
 
     alias kernel = test_tma_loads_and_store_two_buffers_kernel[
-        __type_of(a_tma_src_tensor).dtype,
-        __type_of(a_tma_src_tensor).layout,  # smem layout
-        __type_of(a_tma_src_tensor).layout,  # smem layout
-        __type_of(a_tma_src_tensor).desc_layout,
-        __type_of(b_tma_src_tensor).desc_layout,
+        type_of(a_tma_src_tensor).dtype,
+        type_of(a_tma_src_tensor).layout,  # smem layout
+        type_of(a_tma_src_tensor).layout,  # smem layout
+        type_of(a_tma_src_tensor).desc_layout,
+        type_of(b_tma_src_tensor).desc_layout,
         a_layout=dst_layout,  # dst layout
         b_layout=dst_layout,  # dst layout
     ]

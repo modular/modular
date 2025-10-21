@@ -33,18 +33,14 @@ from ._cpython import (
 )
 from .python_object import PythonObject
 
-alias _PYTHON_GLOBAL = _Global["Python", _init_python_global]
-
-
-fn _init_python_global() -> _PythonGlobal:
-    return _PythonGlobal()
+alias _PYTHON_GLOBAL = _Global["Python", _PythonGlobal.__init__]
 
 
 struct _PythonGlobal(Defaultable, Movable):
     var cpython: CPython
 
     fn __init__(out self):
-        self.cpython = CPython()
+        self.cpython = {}
 
     fn __del__(deinit self):
         self.cpython.destroy()
@@ -57,11 +53,13 @@ fn _get_python_interface() raises -> Pointer[CPython, StaticConstantOrigin]:
     this global variable. Once it is initialized, it may not be mutated.
     """
 
-    var ptr = _PYTHON_GLOBAL.get_or_create_indexed_ptr(_Global._python_idx)
-    var ptr2 = UnsafePointer(to=ptr[].cpython).origin_cast[
-        False, StaticConstantOrigin
-    ]()
-    return Pointer(to=ptr2[])
+    var python = _PYTHON_GLOBAL.get_or_create_indexed_ptr(_Global._python_idx)
+    var cpython_instance = (
+        UnsafePointer(to=python[].cpython)
+        .as_immutable()
+        .unsafe_origin_cast[StaticConstantOrigin]()
+    )
+    return Pointer(to=cpython_instance[])
 
 
 struct Python(Defaultable, ImplicitlyCopyable):
@@ -112,15 +110,15 @@ struct Python(Defaultable, ImplicitlyCopyable):
             `True` if the code executed successfully or `False` if the code
             raised an exception.
         """
-        ref cpython = self.cpython()
+        ref cpy = Self().cpython()
         # return 0 if the code executed successfully, -1 if it raised an exception.
-        return cpython.PyRun_SimpleString(code^) == 0
+        return cpy.PyRun_SimpleString(code^) == 0
 
     @staticmethod
     fn evaluate(
         var expr: String,
         file: Bool = False,
-        name: StringSlice[StaticConstantOrigin] = "__main__",
+        name: StaticString = "__main__",
     ) raises -> PythonObject:
         """Executes the given Python code.
 
@@ -132,14 +130,10 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             `PythonObject` containing the result of the evaluation.
         """
-        ref cpython = Self().cpython()
-        # PyImport_AddModule returns a read-only reference.
-        var module = PythonObject(
-            from_borrowed=cpython.PyImport_AddModule(name)
-        )
-        var dict_obj = PythonObject(
-            from_borrowed=cpython.PyModule_GetDict(module._obj_ptr)
-        )
+        ref cpy = Self().cpython()
+
+        var mod = PythonObject(from_borrowed=cpy.PyImport_AddModule(name))
+        var dict_ptr = cpy.PyModule_GetDict(mod._obj_ptr)
         if file:
             # We compile the code as provided and execute in the module
             # context. Note that this may be an existing module if the provided
@@ -149,38 +143,33 @@ struct Python(Defaultable, ImplicitlyCopyable):
             # The Py_file_input is the code passed to the parsed to indicate
             # the initial state: this is essentially whether it is expecting
             # to compile an expression, a file or statements (e.g. repl).
-            var code_obj_ptr = cpython.Py_CompileString(
+            var code_ptr = cpy.Py_CompileString(
                 expr^, "<evaluate>", Py_file_input
             )
-            if not code_obj_ptr:
-                raise cpython.get_error()
-            var code = PythonObject(from_owned=code_obj_ptr)
-
+            if not code_ptr:
+                raise cpy.unsafe_get_error()
             # For this evaluation, we pass the dictionary both as the globals
             # and the locals. This is because the globals is defined as the
             # dictionary for the module scope, and locals is defined as the
             # dictionary for the *current* scope. Since we are executing at
             # the module scope for this eval, they should be the same object.
-            var result_ptr = cpython.PyEval_EvalCode(
-                code._obj_ptr, dict_obj._obj_ptr, dict_obj._obj_ptr
-            )
-            if not result_ptr:
-                raise cpython.get_error()
-
-            var result = PythonObject(from_owned=result_ptr)
-            _ = result^
-            _ = code^
-            return module
+            var res_ptr = cpy.PyEval_EvalCode(code_ptr, dict_ptr, dict_ptr)
+            cpy.Py_DecRef(code_ptr)
+            if not res_ptr:
+                raise cpy.unsafe_get_error()
+            cpy.Py_DecRef(res_ptr)
+            return mod
         else:
             # We use the result of evaluating the expression directly, and allow
             # all the globals/locals to be discarded. See above re: why the same
             # dictionary is being used here for both globals and locals.
-            var result = cpython.PyRun_String(
-                expr^, Py_eval_input, dict_obj._obj_ptr, dict_obj._obj_ptr
+            var res_ptr = cpy.PyRun_String(
+                expr^, Py_eval_input, dict_ptr, dict_ptr
             )
-            if not result:
-                raise cpython.get_error()
-            return PythonObject(from_owned=result)
+            _ = mod^
+            if not res_ptr:
+                raise cpy.unsafe_get_error()
+            return PythonObject(from_owned=res_ptr)
 
     @staticmethod
     fn add_to_path(dir_path: StringSlice) raises:
@@ -203,8 +192,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             dir_path: The path to a Python module you want to import.
         """
         var sys = Python.import_module("sys")
-        var directory: PythonObject = dir_path
-        _ = sys.path.append(directory)
+        _ = sys.path.append(PythonObject(dir_path))
 
     # ===-------------------------------------------------------------------===#
     # PythonObject "Module" Operations
@@ -233,13 +221,14 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             The Python module.
         """
-        ref cpython = Python().cpython()
-        # Throw error if it occurred during initialization
-        cpython.check_init_error()
-        var module_ptr = cpython.PyImport_ImportModule(module^)
-        if not module_ptr:
-            raise cpython.get_error()
-        return PythonObject(from_owned=module_ptr)
+        # Initialize the global interpreter and check for errors.
+        ref cpy = Self().cpython()
+        cpy.check_init_error()
+
+        var mod_ptr = cpy.PyImport_ImportModule(module^)
+        if not mod_ptr:
+            raise cpy.unsafe_get_error()
+        return PythonObject(from_owned=mod_ptr)
 
     @staticmethod
     fn create_module(name: StaticString) raises -> PythonObject:
@@ -255,19 +244,14 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             The Python module.
         """
-        # Initialize the global instance to the Python interpreter
-        # in case this is our first time.
+        # Initialize the global interpreter and check for errors.
+        ref cpy = Self().cpython()
+        cpy.check_init_error()
 
-        ref cpython = Python().cpython()
-
-        # This will throw an error if there are any errors during initialization.
-        cpython.check_init_error()
-
-        var module_ptr = cpython.PyModule_Create(name)
-        if not module_ptr:
-            raise cpython.get_error()
-
-        return PythonObject(from_owned=module_ptr)
+        var mod_ptr = cpy.PyModule_Create(name)
+        if not mod_ptr:
+            raise cpy.unsafe_get_error()
+        return PythonObject(from_owned=mod_ptr)
 
     @staticmethod
     fn add_functions(
@@ -283,16 +267,12 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Raises:
             If we fail to add the functions to the module.
         """
-
-        # Write a zeroed entry at the end as a terminator.
-        functions.append(PyMethodDef())
-
+        # Null terminate the functions list.
+        functions.append({})
         # FIXME(MSTDL-910):
         #   This is an intentional memory leak, because we don't store this
         #   in a global variable (yet).
-        var ptr: UnsafePointer[PyMethodDef] = functions.steal_data()
-
-        return Self._unsafe_add_functions(module, ptr)
+        return Self._unsafe_add_functions(module, functions.steal_data())
 
     @staticmethod
     fn _unsafe_add_functions(
@@ -312,17 +292,15 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Raises:
             If we fail to add the functions to the module.
         """
-        ref cpython = Python().cpython()
-
-        var result = cpython.PyModule_AddFunctions(
+        ref cpy = Self().cpython()
+        var errno = cpy.PyModule_AddFunctions(
             # Safety: `module` pointer lives long enough because its reference
             #   argument.
             module._obj_ptr,
             functions,
         )
-
-        if result != 0:
-            raise cpython.get_error()
+        if errno == -1:
+            raise cpy.unsafe_get_error()
 
     @staticmethod
     fn add_object(
@@ -343,17 +321,14 @@ struct Python(Defaultable, ImplicitlyCopyable):
             name: The name of the new object.
             value: The python object value.
         """
-
-        ref cpython = Python().cpython()
-
-        var result = cpython.PyModule_AddObjectRef(
+        ref cpy = Self().cpython()
+        var errno = cpy.PyModule_AddObjectRef(
             module._obj_ptr,
             name.unsafe_cstr_ptr(),
             value._obj_ptr,
         )
-
-        if result != 0:
-            raise cpython.get_error()
+        if errno == -1:
+            raise cpy.unsafe_get_error()
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -368,21 +343,19 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
         Return value: New reference.
         """
-        ref cpy = Python().cpython()
-        var dict_obj = cpy.PyDict_New()
-
+        ref cpy = Self().cpython()
+        var dict_ptr = cpy.PyDict_New()
         for entry in kwargs.items():
-            var key = cpy.PyUnicode_DecodeUTF8(entry.key.as_string_slice())
-            if not key:
+            var key_ptr = cpy.PyUnicode_DecodeUTF8(entry.key.as_string_slice())
+            if not key_ptr:
                 raise cpy.unsafe_get_error()
-
             var val = entry.value.copy().to_python_object()
-            var errno = cpy.PyDict_SetItem(dict_obj, key, val._obj_ptr)
-            cpy.Py_DecRef(key)
+            var errno = cpy.PyDict_SetItem(dict_ptr, key_ptr, val._obj_ptr)
+            cpy.Py_DecRef(key_ptr)
+            _ = val
             if errno == -1:
                 raise cpy.unsafe_get_error()
-
-        return dict_obj
+        return dict_ptr
 
     @staticmethod
     fn dict[
@@ -430,22 +403,17 @@ struct Python(Defaultable, ImplicitlyCopyable):
             On failure to construct the dictionary or convert the keys or values
             to Python objects.
         """
-
-        ref cpython = Python().cpython()
-        var dict_obj_ptr = cpython.PyDict_New()
-        if not dict_obj_ptr:
-            raise Error("internal error: PyDict_New failed")
-
+        ref cpy = Self().cpython()
+        var dict_ptr = cpy.PyDict_New()
         for i in range(len(tuples)):
-            var key_obj = tuples[i][0].copy().to_python_object()
-            var val_obj = tuples[i][1].copy().to_python_object()
-            var result = cpython.PyDict_SetItem(
-                dict_obj_ptr, key_obj._obj_ptr, val_obj._obj_ptr
-            )
-            if result == -1:
-                raise cpython.get_error()
-
-        return PythonObject(from_owned=dict_obj_ptr)
+            var key = tuples[i][0].copy().to_python_object()
+            var val = tuples[i][1].copy().to_python_object()
+            var errno = cpy.PyDict_SetItem(dict_ptr, key._obj_ptr, val._obj_ptr)
+            _ = key
+            _ = val
+            if errno == -1:
+                raise cpy.unsafe_get_error()
+        return PythonObject(from_owned=dict_ptr)
 
     @staticmethod
     fn list[
@@ -462,14 +430,12 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             A PythonObject representing the list.
         """
-        ref cpython = Python().cpython()
-        var obj_ptr = cpython.PyList_New(len(values))
-
+        ref cpy = Self().cpython()
+        var list_ptr = cpy.PyList_New(len(values))
         for i in range(len(values)):
             var obj = values[i].copy().to_python_object()
-            cpython.Py_IncRef(obj._obj_ptr)
-            _ = cpython.PyList_SetItem(obj_ptr, i, obj._obj_ptr)
-        return PythonObject(from_owned=obj_ptr)
+            _ = cpy.PyList_SetItem(list_ptr, i, obj.steal_data())
+        return PythonObject(from_owned=list_ptr)
 
     @staticmethod
     fn _list[
@@ -488,15 +454,14 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             A PythonObject representing the list.
         """
-        ref cpython = Python().cpython()
-        var obj_ptr = cpython.PyList_New(len(values))
+        ref cpy = Self().cpython()
+        var list_ptr = cpy.PyList_New(len(values))
 
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].copy().to_python_object()
-            cpython.Py_IncRef(obj._obj_ptr)
-            _ = cpython.PyList_SetItem(obj_ptr, i, obj._obj_ptr)
-        return PythonObject(from_owned=obj_ptr)
+            _ = cpy.PyList_SetItem(list_ptr, i, obj.steal_data())
+        return PythonObject(from_owned=list_ptr)
 
     @always_inline
     @staticmethod
@@ -533,15 +498,14 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             A PythonObject representing the tuple.
         """
-        ref cpython = Python().cpython()
-        var obj_ptr = cpython.PyTuple_New(len(values))
+        ref cpy = Self().cpython()
+        var tup_ptr = cpy.PyTuple_New(len(values))
 
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].copy().to_python_object()
-            cpython.Py_IncRef(obj._obj_ptr)
-            _ = cpython.PyTuple_SetItem(obj_ptr, i, obj._obj_ptr)
-        return PythonObject(from_owned=obj_ptr)
+            _ = cpy.PyTuple_SetItem(tup_ptr, i, obj.steal_data())
+        return PythonObject(from_owned=tup_ptr)
 
     @always_inline
     @staticmethod
@@ -563,18 +527,18 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @no_inline
     fn as_string_slice(
-        self, str_obj: PythonObject
+        self, obj: PythonObject
     ) -> StringSlice[ImmutableAnyOrigin]:
         """Return a string representing the given Python object.
 
         Args:
-            str_obj: The Python object.
+            obj: The Python object.
 
         Returns:
             Mojo string representing the given Python object.
         """
-        ref cpython = self.cpython()
-        return cpython.PyUnicode_AsUTF8AndSize(str_obj._obj_ptr)
+        ref cpy = Self().cpython()
+        return cpy.PyUnicode_AsUTF8AndSize(obj._obj_ptr)
 
     @staticmethod
     fn type(obj: PythonObject) -> PythonObject:
@@ -586,8 +550,8 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             A PythonObject that holds the type object.
         """
-        ref cpython = Python().cpython()
-        return PythonObject(from_owned=cpython.PyObject_Type(obj._obj_ptr))
+        ref cpy = Self().cpython()
+        return PythonObject(from_owned=cpy.PyObject_Type(obj._obj_ptr))
 
     @staticmethod
     fn none() -> PythonObject:
@@ -611,12 +575,11 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Raises:
             An error if the conversion failed.
         """
-        ref cpython = Python().cpython()
-        var py_str_ptr = cpython.PyObject_Str(obj._obj_ptr)
-        if not py_str_ptr:
-            raise cpython.get_error()
-
-        return PythonObject(from_owned=py_str_ptr)
+        ref cpy = Self().cpython()
+        var str_ptr = cpy.PyObject_Str(obj._obj_ptr)
+        if not str_ptr:
+            raise cpy.unsafe_get_error()
+        return PythonObject(from_owned=str_ptr)
 
     @staticmethod
     fn int(obj: PythonObject) raises -> PythonObject:
@@ -632,12 +595,11 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             A PythonObject representing the result of the conversion to `int`.
         """
-        ref cpython = Python().cpython()
-        var py_obj_ptr = cpython.PyNumber_Long(obj._obj_ptr)
-        if not py_obj_ptr:
-            raise cpython.get_error()
-
-        return PythonObject(from_owned=py_obj_ptr)
+        ref cpy = Self().cpython()
+        var int_ptr = cpy.PyNumber_Long(obj._obj_ptr)
+        if not int_ptr:
+            raise cpy.unsafe_get_error()
+        return PythonObject(from_owned=int_ptr)
 
     @staticmethod
     fn float(obj: PythonObject) raises -> PythonObject:
@@ -652,13 +614,11 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Raises:
             If the conversion fails.
         """
-        ref cpython = Python().cpython()
-
-        var float_obj = cpython.PyNumber_Float(obj._obj_ptr)
-        if not float_obj:
-            raise cpython.get_error()
-
-        return PythonObject(from_owned=float_obj)
+        ref cpy = Self().cpython()
+        var float_ptr = cpy.PyNumber_Float(obj._obj_ptr)
+        if not float_ptr:
+            raise cpy.unsafe_get_error()
+        return PythonObject(from_owned=float_ptr)
 
     # ===-------------------------------------------------------------------===#
     # Checked Conversions
@@ -678,14 +638,13 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             The value of the `long` object as a `Py_ssize_t`.
         """
-        ref cpython = Python().cpython()
-        var long: Py_ssize_t = cpython.PyLong_AsSsize_t(obj._obj_ptr)
-        if long == -1 and cpython.PyErr_Occurred():
+        ref cpy = Self().cpython()
+        var num = cpy.PyLong_AsSsize_t(obj._obj_ptr)
+        if num == -1 and cpy.PyErr_Occurred():
             # Note that -1 does not guarantee an error, it just means we need to
             # check if there was an exception.
-            raise cpython.unsafe_get_error()
-
-        return long
+            raise cpy.unsafe_get_error()
+        return num
 
     @staticmethod
     fn is_true(obj: PythonObject) raises -> Bool:
@@ -702,9 +661,8 @@ struct Python(Defaultable, ImplicitlyCopyable):
         """
         # TODO: decide if this method should be actually exposed as public,
         # and add tests if so.
-        ref cpython = Python().cpython()
-        var result = cpython.PyObject_IsTrue(obj._obj_ptr)
-        if result == -1:
-            raise cpython.get_error()
-
-        return result == 1
+        ref cpy = Self().cpython()
+        var res = cpy.PyObject_IsTrue(obj._obj_ptr)
+        if res == -1:
+            raise cpy.unsafe_get_error()
+        return res == 1

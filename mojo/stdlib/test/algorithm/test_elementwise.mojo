@@ -125,10 +125,4 @@ def test_indices_conversion():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_elementwise]()
-    suite.test[test_elementwise_implicit_runtime]()
-    suite.test[test_indices_conversion]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

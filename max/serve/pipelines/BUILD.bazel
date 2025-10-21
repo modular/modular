@@ -17,5 +17,6 @@ modular_py_library(
         requirement("uvloop"),
         requirement("psutil"),
         requirement("pyzmq"),
+        requirement("taskgroup"),  # only for python < 3.11
     ],
 )

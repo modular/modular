@@ -18,13 +18,17 @@ import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass
 
-from max.interfaces import RequestID, TextGenerationInputs
-from max.nn.kv_cache import PagedKVCacheManager
+from max.interfaces import (
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+)
+from max.nn.kv_cache import TPPagedKVCacheManager
 from max.pipelines.core.context import TextContext
 from max.pipelines.lib import (
     LoRAManager,
     PipelineConfig,
-    TextGenerationPipelineType,
 )
 from max.profiler import traced
 from max.serve.telemetry.metrics import METRICS
@@ -113,8 +117,10 @@ class TextBatchConstructor:
     def __init__(
         self,
         scheduler_config: TokenGenerationSchedulerConfig,
-        pipeline: TextGenerationPipelineType[TextContext],
-        paged_cache: PagedKVCacheManager | None = None,
+        pipeline: Pipeline[
+            TextGenerationInputs[TextContext], TextGenerationOutput
+        ],
+        paged_cache: TPPagedKVCacheManager | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline

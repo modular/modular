@@ -26,7 +26,7 @@ alias length = 8192
 
 
 def run_elementwise[
-    dtype: DType, math_fn: fn (x: SIMD) -> __type_of(x)
+    dtype: DType, math_fn: fn (x: SIMD) -> type_of(x)
 ](ctx: DeviceContext, in_device: DeviceBuffer[dtype],):
     alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
@@ -92,8 +92,4 @@ def test_math_accuracy():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_math_accuracy]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

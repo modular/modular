@@ -783,63 +783,86 @@ def test_mod():
         SIMD[DType.int32, 2](7, 7) % Int(4), SIMD[DType.int32, 2](3, 3)
     )
 
+    # fmt: off
     var a = SIMD[DType.float32, 16](
-        3.1,
-        3.1,
-        3.1,
-        3.1,
-        3.1,
-        3.1,
-        -3.1,
-        -3.1,
-        -3.1,
-        -3.1,
-        -3.1,
-        -3.1,
-        3.1,
-        3.1,
-        -3.1,
-        -3.1,
+         3.1,  3.1,  3.1,  3.1,
+         3.1,  3.1, -3.1, -3.1,
+        -3.1, -3.1, -3.1, -3.1,
+         3.1,  3.1, -3.1, -3.1,
     )
     var b = SIMD[DType.float32, 16](
-        3.2,
-        2.2,
-        1.2,
-        -3.2,
-        -2.2,
-        -1.2,
-        3.2,
-        2.2,
-        1.2,
-        -3.2,
-        -2.2,
-        -1.2,
-        3.1,
-        -3.1,
-        3.1,
-        -3.1,
+         3.2,  2.2,  1.2, -3.2,
+        -2.2, -1.2,  3.2,  2.2,
+         1.2, -3.2, -2.2, -1.2,
+         3.1, -3.1,  3.1, -3.1,
     )
-    assert_equal(
-        a % b,
-        SIMD[DType.float32, 16](
-            3.0999999046325684,
-            0.89999985694885254,
-            0.69999980926513672,
-            -0.10000014305114746,
-            -1.3000001907348633,
-            -0.5000002384185791,
-            0.10000014305114746,
-            1.3000001907348633,
-            0.5000002384185791,
-            -3.0999999046325684,
-            -0.89999985694885254,
-            -0.69999980926513672,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-        ),
+    assert_equal(a % b, SIMD[DType.float32, 16](
+         3.0999999046325684,  0.89999985694885254, 0.69999980926513672, -0.10000014305114746,
+        -1.3000001907348633, -0.5000002384185791,  0.10000014305114746,  1.3000001907348633,
+         0.5000002384185791, -3.0999999046325684, -0.89999985694885254, -0.69999980926513672,
+         0.0,                 0.0,                -0.0,                  0.0,
+    ))
+    # fmt: on
+
+
+def test_divmod():
+    # TODO(MSTDL-1946): test using tuple comparison.
+    var a, b = divmod(Int32(99), Int32(1))
+    assert_equal(a, Int32(99))
+    assert_equal(b, Int32(0))
+    a, b = divmod(Int32(99), Int32(3))
+    assert_equal(a, Int32(33))
+    assert_equal(b, Int32(0))
+    a, b = divmod(Int32(99), Int32(-2))
+    assert_equal(a, Int32(-50))
+    assert_equal(b, Int32(-1))
+    a, b = divmod(Int32(99), Int32(8))
+    assert_equal(a, Int32(12))
+    assert_equal(b, Int32(3))
+    a, b = divmod(Int32(99), Int32(-8))
+    assert_equal(a, Int32(-13))
+    assert_equal(b, Int32(-5))
+    a, b = divmod(Int32(2), Int32(-1))
+    assert_equal(a, Int32(-2))
+    assert_equal(b, Int32(0))
+    a, b = divmod(Int32(2), Int32(-2))
+    assert_equal(a, Int32(-1))
+    assert_equal(b, Int32(0))
+
+    var c, d = divmod(UInt32(99), UInt32(3))
+    assert_equal(c, UInt32(33))
+    assert_equal(d, UInt32(0))
+    c, d = divmod(UInt32(99), UInt32(4))
+    assert_equal(c, UInt32(24))
+    assert_equal(d, UInt32(3))
+
+    # fmt: off
+    var e = SIMD[DType.float32, 16](
+         3.1,  3.1,  3.1,  3.1,
+         3.1,  3.1, -3.1, -3.1,
+        -3.1, -3.1, -3.1, -3.1,
+         3.1,  3.1, -3.1, -3.1,
     )
+    var f = SIMD[DType.float32, 16](
+         3.2,  2.2,  1.2, -3.2,
+        -2.2, -1.2,  3.2,  2.2,
+         1.2, -3.2, -2.2, -1.2,
+         3.1, -3.1,  3.1, -3.1,
+    )
+    var g, h = divmod(e, f)
+    assert_equal(g, SIMD[DType.float32, 16](
+         0.0,  1.0,  2.0, -1.0,
+        -2.0, -3.0, -1.0, -2.0,
+        -3.0,  0.0,  1.0,  2.0,
+         1.0, -1.0, -1.0,  1.0,
+    ))
+    assert_equal(h, SIMD[DType.float32, 16](
+         3.1,         0.89999986,  0.6999998,  -0.10000014,
+        -1.3000002,  -0.50000024,  0.10000014,  1.3000002,
+         0.50000024, -3.1,        -0.89999986, -0.6999998,
+         0.0,         0.0,         0.0,         0.0,
+    ))
+    # fmt: on
 
 
 def test_rmod():
@@ -1213,12 +1236,12 @@ def test_deinterleave():
     assert_equal(tup2[1], Float32(2))
 
     var tup4 = SIMD[DType.int, 4](0, 1, -2, -3).deinterleave()
-    assert_equal(tup4[0], __type_of(tup4[0])(0, -2))
-    assert_equal(tup4[1], __type_of(tup4[0])(1, -3))
+    assert_equal(tup4[0], type_of(tup4[0])(0, -2))
+    assert_equal(tup4[1], type_of(tup4[0])(1, -3))
 
     var tup8 = SIMD[DType.uint, 8](0, 1, 2, 3, 4, 5, 6, 7).deinterleave()
-    assert_equal(tup8[0], __type_of(tup8[0])(0, 2, 4, 6))
-    assert_equal(tup8[1], __type_of(tup8[0])(1, 3, 5, 7))
+    assert_equal(tup8[0], type_of(tup8[0])(0, 2, 4, 6))
+    assert_equal(tup8[1], type_of(tup8[0])(1, 3, 5, 7))
 
 
 def test_extract():
@@ -1821,12 +1844,12 @@ def test_modf():
 
 def test_split():
     var tup4 = SIMD[DType.int, 4](1, 2, -3, -4).split()
-    assert_equal(tup4[0], __type_of(tup4[0])(1, 2))
-    assert_equal(tup4[1], __type_of(tup4[1])(-3, -4))
+    assert_equal(tup4[0], type_of(tup4[0])(1, 2))
+    assert_equal(tup4[1], type_of(tup4[1])(-3, -4))
 
     var tup8 = SIMD[DType.uint, 8](1, 2, 3, 4, 5, 6, 7, 8).split()
-    assert_equal(tup8[0], __type_of(tup8[0])(1, 2, 3, 4))
-    assert_equal(tup8[1], __type_of(tup8[1])(5, 6, 7, 8))
+    assert_equal(tup8[0], type_of(tup8[0])(1, 2, 3, 4))
+    assert_equal(tup8[1], type_of(tup8[1])(5, 6, 7, 8))
 
 
 def test_contains():
@@ -2514,80 +2537,5 @@ def test_bool_init():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_abs]()
-    suite.test[test_add]()
-    suite.test[test_cast]()
-    suite.test[test_cast_init]()
-    suite.test[test_list_literal_ctor]()
-    suite.test[test_from_bits]()
-    suite.test[test_to_bits]()
-    suite.test[test_from_to_bits_roundtrip]()
-    suite.test[test_ceil]()
-    suite.test[test_convert_simd_to_string]()
-    suite.test[test_simd_repr]()
-    suite.test[test_deinterleave]()
-    suite.test[test_div]()
-    suite.test[test_extract]()
-    suite.test[test_floor]()
-    suite.test[test_floordiv]()
-    suite.test[test_from_bytes_as_bytes]()
-    suite.test[test_vector_from_bytes_as_bytes]()
-    suite.test[test_iadd]()
-    suite.test[test_indexing]()
-    suite.test[test_init_from_index]()
-    suite.test[test_insert]()
-    suite.test[test_interleave]()
-    suite.test[test_issue_1625]()
-    suite.test[test_issue_20421]()
-    suite.test[test_issue_30237]()
-    suite.test[test_isub]()
-    suite.test[test_join]()
-    suite.test[test_len]()
-    suite.test[test_limits]()
-    suite.test[test_clamp]()
-    suite.test[test_mod]()
-    suite.test[test_pow]()
-    suite.test[test_powf]()
-    suite.test[test_rpow]()
-    suite.test[test_radd]()
-    suite.test[test_reduce]()
-    suite.test[test_reduce_bit_count]()
-    suite.test[test_rfloordiv]()
-    suite.test[test_rmod]()
-    suite.test[test_rotate]()
-    suite.test[test_round]()
-    suite.test[test_rsub]()
-    suite.test[test_shift]()
-    suite.test[test_shuffle]()
-    suite.test[test_shuffle_dynamic_size_4_uint8]()
-    suite.test[test_shuffle_dynamic_size_8_uint8]()
-    suite.test[test_shuffle_dynamic_size_16_uint8]()
-    suite.test[test_shuffle_dynamic_size_32_uint8]()
-    suite.test[test_shuffle_dynamic_size_64_uint8]()
-    suite.test[test_shuffle_dynamic_size_32_float]()
-    suite.test[test_simd_variadic]()
-    suite.test[test_sub]()
-    suite.test[test_trunc]()
-    suite.test[test_bool]()
-    suite.test[test_truthy]()
-    suite.test[test_modf]()
-    suite.test[test_split]()
-    suite.test[test_contains]()
-    suite.test[test_comparison]()
-    suite.test[test_float_conversion]()
-    suite.test[test_reversed]()
-    suite.test[test_large_int_types]()
-    suite.test[test_is_power_of_two]()
-    suite.test[test_comptime]()
-    suite.test[test_fma]()
-    suite.test[test_slice]()
-    suite.test[test_hash]()
-    suite.test[test_reduce_bitwise_ops]()
-    suite.test[test_float_literal_init]()
-    suite.test[test_int_literal_init]()
-    suite.test[test_bool_init]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()
     # TODO: add tests for __and__, __or__, and comparison operators

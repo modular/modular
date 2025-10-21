@@ -72,27 +72,27 @@ fn reduce_add_simd[
 
 
 @always_inline
-fn sub(x: SIMD, y: __type_of(x)) -> __type_of(x):
+fn sub(x: SIMD, y: type_of(x)) -> type_of(x):
     return x - y
 
 
 @always_inline
-fn mul(x: SIMD, y: __type_of(x)) -> __type_of(x):
+fn mul(x: SIMD, y: type_of(x)) -> type_of(x):
     return x * y
 
 
 @always_inline
-fn identity(x: SIMD) -> __type_of(x):
+fn identity(x: SIMD) -> type_of(x):
     return x
 
 
 @always_inline
-fn reciprocal(x: SIMD) -> __type_of(x):
+fn reciprocal(x: SIMD) -> type_of(x):
     return 1 / x
 
 
 @always_inline
-fn _exp_concrete(x: SIMD) -> __type_of(x):
+fn _exp_concrete(x: SIMD) -> type_of(x):
     """The concrete implementation of the exp function.
 
     This is a helper function that is used to provide a concrete implementation
@@ -103,7 +103,7 @@ fn _exp_concrete(x: SIMD) -> __type_of(x):
 
 
 @always_inline
-fn _exp2_concrete(x: SIMD) -> __type_of(x):
+fn _exp2_concrete(x: SIMD) -> type_of(x):
     """The concrete implementation of the exp2 function."""
     return exp2(x)
 
@@ -613,7 +613,7 @@ fn _softmax_cpu[
             softmax_3_pass[
                 simd_width,
                 dtype,
-                __origin_of(),
+                origin_of(),
                 input_fn_1d,
                 logsoftmax=logsoftmax,
             ](output_buffer_view)
@@ -866,7 +866,7 @@ fn softmax[
                 dtype,
                 simd_width,
                 rank,
-                __origin_of(),
+                origin_of(),
                 input_fn,
                 logsoftmax=logsoftmax,
             ](shape, output, axis)
@@ -1458,7 +1458,7 @@ fn _online_softmax_iter_for_mma_output[
             for row_tile in range(num_rowwise_tiles):
                 alias tile_id = col_tile + row_tile * num_colwise_tiles + k * num_colwise_tiles * num_rowwise_tiles
 
-                alias output_frag_type = __type_of(output_reg_tile).element_type
+                alias output_frag_type = type_of(output_reg_tile).element_type
 
                 @parameter
                 if frag_is_row_vector:
@@ -1523,6 +1523,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     use_exp2: Bool = False,
 ](
     output_reg_tile: LayoutTensor[
+        mut=True,
         dtype,
         output_layout,
         *_,
@@ -1532,7 +1533,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         dtype, *_, address_space = AddressSpace.SHARED, **_
     ],
     o_smem_ptr_base: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED, **_
+        Scalar[dtype], mut=True, address_space = AddressSpace.SHARED, **_
     ],
     rowmax: UnsafePointer[Scalar[dtype], **_],
     rowsum: UnsafePointer[Scalar[dtype], **_],
@@ -1780,7 +1781,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         @parameter
         for row_tile in range(num_n_mmas):
             alias tile_id = col_tile + row_tile * num_m_mmas
-            alias output_frag_type = __type_of(output_reg_tile).element_type
+            alias output_frag_type = type_of(output_reg_tile).element_type
 
             @parameter
             for row in range(frag_num_rows):
@@ -1927,7 +1928,7 @@ fn _rowmax_online_softmax[
             " where `frag_num_rows > 1`. This simplifies the implementation."
         ),
     ]()
-    score_frag_rowmax = __type_of(rowmax_tensor).stack_allocation()
+    score_frag_rowmax = type_of(rowmax_tensor).stack_allocation()
 
     alias num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
 
@@ -2015,7 +2016,7 @@ fn _rowsum[
     # The online softmax attributes for each thread's elements (fragments).
     alias num_rows_per_thread = num_colwise_tiles * frag_num_rows
 
-    score_frag_rowsum = __type_of(score_frag_rowsum).stack_allocation()
+    score_frag_rowsum = type_of(score_frag_rowsum).stack_allocation()
 
     # Initialize local max with the running max, and local sum with zero.
     @parameter

@@ -125,7 +125,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
-    def __getitem__(self, key: V) -> Int:
+    fn __getitem__(self, key: V) -> Int:
         """Get the count of a key.
 
         Args:
@@ -145,15 +145,13 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         self._data[value.copy()] = count
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the keyword dict's keys as immutable references.
 
         Returns:
             An iterator of immutable references to the Counter values.
         """
-        return rebind[Self.IteratorType[__origin_of(self)]](
-            self._data.__iter__()
-        )
+        return rebind[Self.IteratorType[origin_of(self)]](self._data.__iter__())
 
     fn __contains__(self, key: V) -> Bool:
         """Check if a given key is in the dictionary or not.
@@ -500,7 +498,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.pop(value, default)
 
-    fn keys(ref self) -> _DictKeyIter[V, Int, H, __origin_of(self._data)]:
+    fn keys(ref self) -> _DictKeyIter[V, Int, H, origin_of(self._data)]:
         """Iterate over the Counter's keys as immutable references.
 
         Returns:
@@ -508,7 +506,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.keys()
 
-    fn values(ref self) -> _DictValueIter[V, Int, H, __origin_of(self._data)]:
+    fn values(ref self) -> _DictValueIter[V, Int, H, origin_of(self._data)]:
         """Iterate over the Counter's values as references.
 
         Returns:
@@ -516,7 +514,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.values()
 
-    fn items(self) -> _DictEntryIter[V, Int, H, __origin_of(self._data)]:
+    fn items(self) -> _DictEntryIter[V, Int, H, origin_of(self._data)]:
         """Iterate over the dict's entries as immutable references.
 
         Returns:

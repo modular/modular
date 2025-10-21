@@ -76,10 +76,4 @@ def test_ldexp_extensive_float32():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_ldexp]()
-    suite.test[test_ldexp_vector]()
-    suite.test[test_ldexp_extensive_float32]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -214,11 +214,4 @@ def test_shuffle():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_random]()
-    suite.test[test_seed_normal]()
-    suite.test[test_seed]()
-    suite.test[test_shuffle]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

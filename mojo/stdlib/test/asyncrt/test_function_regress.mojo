@@ -32,7 +32,7 @@ trait MaybeZeroSized:
 @fieldwise_init
 @register_passable("trivial")
 struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -62,7 +62,7 @@ struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
 @fieldwise_init
 @register_passable("trivial")
 struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -276,6 +276,8 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
 
 
 def main():
+    # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
+    # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()
 
     suite.test[test_function_compilation]()

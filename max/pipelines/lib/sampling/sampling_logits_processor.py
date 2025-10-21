@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
     Any,
-    TypeVar,
 )
 
 import numpy as np
@@ -29,7 +28,7 @@ import numpy.typing as npt
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import Model
-from max.interfaces import BatchProcessorInputs, InputContext
+from max.interfaces import BatchProcessorInputs, TextGenerationContextType
 from max.profiler import Tracer, traced
 
 if TYPE_CHECKING:
@@ -102,12 +101,14 @@ class FusedSamplingProcessor:
         max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
         self.max_k = Tensor.from_numpy(max_k_np)
 
-        self.top_p = Tensor.from_numpy(
-            np.array(
-                [context.sampling_params.top_p for context in context_batch],
-                dtype=np.float32,
-            )
-        ).to(device)
+        top_p_np = np.array(
+            [context.sampling_params.top_p for context in context_batch],
+            dtype=np.float32,
+        )
+        self.top_p = Tensor.from_numpy(top_p_np).to(device)
+        min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
+        self.min_top_p = Tensor.from_numpy(min_top_p_np)
+
         self.seed = Tensor.from_numpy(
             np.array(
                 [
@@ -211,6 +212,7 @@ class FusedSamplingProcessor:
             self.max_k,
             self.temperature,
             self.top_p,
+            self.min_top_p,
             self.seed,
             logit_offsets=logit_offsets,
             bitmask=tensor_bitmask,
@@ -234,10 +236,7 @@ class FusedSamplingProcessor:
         self.step_counter += 1
 
 
-T = TypeVar("T", bound=InputContext)
-
-
-def _check_need_penalties(batch: list[T]) -> None:
+def _check_need_penalties(batch: list[TextGenerationContextType]) -> None:
     """Check if the batch has penalties, but do_penalties is False."""
     for context in batch:
         if (
@@ -253,7 +252,7 @@ def _check_need_penalties(batch: list[T]) -> None:
 
 @traced
 def _build_token_frequency_csr(
-    batch: list[T],
+    batch: list[TextGenerationContextType],
     padding_size: int,
     device: Device,
     include_prompt: bool = False,
@@ -321,7 +320,7 @@ def _build_token_frequency_csr(
 
 @traced
 def _build_min_tokens_masks(
-    batch: list[T],
+    batch: list[TextGenerationContextType],
     num_steps: int,
     device: Device,
     enable_min_tokens: bool,
@@ -361,6 +360,7 @@ def _sample_logits(
     max_k: Tensor,
     temperature: Tensor,
     top_p: Tensor,
+    min_top_p: Tensor,
     seed: Tensor,
     *,
     logit_offsets: Tensor | None = None,
@@ -380,6 +380,7 @@ def _sample_logits(
         max_k,
         temperature,
         top_p,
+        min_top_p,
         seed,
     ]
 

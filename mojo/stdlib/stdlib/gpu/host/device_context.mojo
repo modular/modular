@@ -760,7 +760,9 @@ struct HostBuffer[dtype: DType](
         # Safety: We are casting the pointer to the mutability and origin of
         # self and `_host_ptr` is already mutable.
         return {
-            ptr = self._host_ptr.origin_cast[mut, origin](),
+            ptr = self._host_ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[
+                origin
+            ](),
             length = UInt(len(self)),
         }
 
@@ -780,7 +782,7 @@ struct DeviceBuffer[dtype: DType](
     """
 
     # Implementation of `DevicePassable`
-    alias device_type: AnyTrivialRegType = UnsafePointer[Scalar[dtype]]
+    alias device_type: AnyType = UnsafePointer[Scalar[dtype]]
     """DeviceBuffer dtypes are remapped to UnsafePointer when passed to accelerator devices."""
 
     fn _to_device_type(self, target: OpaquePointer):
@@ -2039,7 +2041,7 @@ struct DeviceFunction[
         )
 
     @staticmethod
-    fn _dump_q[name: String, val: _DumpPath]() -> (Bool, _DumpPath):
+    fn _dump_q[name: String, val: _DumpPath]() -> Tuple[Bool, _DumpPath]:
         alias env_var = "DUMP_GPU_" + name.upper()
 
         @parameter
@@ -2246,14 +2248,14 @@ struct DeviceFunction[
     ) raises:
         alias num_args = len(VariadicList(Ts))
         var num_captures = self._func_impl.num_captures
-        alias populate = __type_of(self._func_impl).populate
+        alias populate = type_of(self._func_impl).populate
         alias num_captures_static = 16
 
         # NOTE: Manual short buffer optimization. We could use a
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
         var dense_args_addrs: UnsafePointer[OpaquePointer]
-        var dense_args_sizes = UnsafePointer[UInt]()
+        var dense_args_sizes = UnsafePointer[UInt64]()
         if num_captures > num_captures_static:
             dense_args_addrs = dense_args_addrs.alloc(num_captures + num_args)
             dense_args_sizes = dense_args_sizes.alloc(num_captures + num_args)
@@ -2264,7 +2266,7 @@ struct DeviceFunction[
                 num_captures_static + num_args, OpaquePointer
             ]()
             dense_args_sizes = stack_allocation[
-                num_captures_static + num_args, UInt
+                num_captures_static + num_args, UInt64
             ]()
             for i in range(num_captures_static + num_args):
                 dense_args_sizes[i] = 0
@@ -2275,7 +2277,7 @@ struct DeviceFunction[
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
-                .origin_cast[True]()
+                .unsafe_mut_cast[True]()
             )
 
         @parameter
@@ -2285,6 +2287,11 @@ struct DeviceFunction[
         @parameter
         for i in range(num_args):
             _populate_arg_sizes[i]()
+
+        for i in range(num_captures):
+            dense_args_sizes[num_args + i] = UInt64(
+                self._func_impl.capture_sizes[i]
+            )
 
         if cluster_dim:
             attributes.append(
@@ -2329,7 +2336,7 @@ struct DeviceFunction[
                     UnsafePointer[LaunchAttribute],
                     UInt32,
                     UnsafePointer[OpaquePointer],
-                    UnsafePointer[UInt],
+                    UnsafePointer[UInt64],
                 ](
                     ctx._handle,
                     self._handle,
@@ -2365,7 +2372,7 @@ struct DeviceFunction[
                     UnsafePointer[LaunchAttribute],
                     UInt32,
                     UnsafePointer[OpaquePointer],
-                    UnsafePointer[UInt],
+                    UnsafePointer[UInt64],
                 ](
                     ctx._handle,
                     self._handle,
@@ -2408,7 +2415,7 @@ struct DeviceFunction[
     ) raises:
         alias num_args = len(VariadicList(Ts))
         var num_captures = self._func_impl.num_captures
-        alias populate = __type_of(self._func_impl).populate
+        alias populate = type_of(self._func_impl).populate
         alias num_captures_static = 16
 
         # NOTE: Manual short buffer optimization. We could use a
@@ -2428,7 +2435,7 @@ struct DeviceFunction[
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
-                .origin_cast[True]()
+                .unsafe_mut_cast[True]()
             )
 
         if cluster_dim:
@@ -2598,7 +2605,7 @@ struct DeviceFunction[
                     translated_arg_offsets[i] = -1
 
         var num_captures = self._func_impl.num_captures
-        alias populate = __type_of(self._func_impl).populate
+        alias populate = type_of(self._func_impl).populate
         alias num_captures_static = 16
 
         # We need the total byte size of arguments as a compile time constant,
@@ -2606,7 +2613,7 @@ struct DeviceFunction[
         # time.
         @parameter
         fn calculate_args_size() -> Int:
-            var tmp_args_size = 0
+            var tmp_args_size = 8  # always reserve 8 extra bytes for aligment.
 
             @parameter
             for i in range(num_passed_args):
@@ -2621,12 +2628,14 @@ struct DeviceFunction[
         # Space to store the arguments to the kernel that have been converted
         # from host dtype to device dtype.
         var translated_args = InlineArray[Byte, args_size](uninitialized=True)
+        var start_addr = UInt(Int(translated_args.unsafe_ptr()))
+        var extra_align = align_up(start_addr, 8) - start_addr
 
         # NOTE: Manual short buffer optimization. We could use a
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
         var dense_args_addrs: UnsafePointer[OpaquePointer]
-        var dense_args_sizes = UnsafePointer[UInt]()
+        var dense_args_sizes = UnsafePointer[UInt64]()
         if num_captures > num_captures_static:
             dense_args_addrs = dense_args_addrs.alloc(
                 num_captures + num_passed_args
@@ -2641,7 +2650,7 @@ struct DeviceFunction[
                 num_captures_static + num_passed_args, OpaquePointer
             ]()
             dense_args_sizes = stack_allocation[
-                num_captures_static + num_passed_args, UInt
+                num_captures_static + num_passed_args, UInt64
             ]()
             for i in range(num_captures_static + num_passed_args):
                 dense_args_sizes[i] = 0
@@ -2657,14 +2666,21 @@ struct DeviceFunction[
             if translated_arg_offset >= 0:
                 alias actual_arg_type = Ts[i]
                 var first_word_addr = UnsafePointer(
-                    to=translated_args.unsafe_ptr()[translated_arg_offset]
+                    to=translated_args.unsafe_ptr()[
+                        translated_arg_offset + extra_align
+                    ]
                 ).bitcast[NoneType]()
                 args[i]._to_device_type(first_word_addr)
                 dense_args_addrs[translated_arg_idx] = first_word_addr
-                dense_args_sizes[i] = UInt(
+                dense_args_sizes[i] = UInt64(
                     size_of[actual_arg_type.device_type]()
                 )
                 translated_arg_idx += 1
+
+        for i in range(num_captures):
+            dense_args_sizes[num_passed_args + i] = UInt64(
+                self._func_impl.capture_sizes[i]
+            )
 
         if cluster_dim:
             attributes.append(
@@ -2711,7 +2727,7 @@ struct DeviceFunction[
                 UnsafePointer[LaunchAttribute],
                 UInt32,
                 UnsafePointer[OpaquePointer],
-                UnsafePointer[UInt],
+                UnsafePointer[UInt64],
             ](
                 ctx._handle,
                 self._handle,
@@ -2998,7 +3014,7 @@ struct DeviceExternalFunction:
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
-                .origin_cast[True]()
+                .unsafe_mut_cast[True]()
             )
 
         if cluster_dim:
@@ -3315,13 +3331,8 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         ```
         """
         # void AsyncRT_DeviceContext_deviceApi(llvm::StringRef *result, const DeviceContext *ctx)
-        var api_ptr = StaticString(ptr=UnsafePointer[Byte](), length=0)
-        external_call[
-            "AsyncRT_DeviceContext_deviceApi",
-            NoneType,
-            UnsafePointer[StaticString],
-            _DeviceContextPtr,
-        ](
+        var api_ptr = StaticString(ptr={}, length=0)
+        external_call["AsyncRT_DeviceContext_deviceApi", NoneType](
             UnsafePointer(to=api_ptr),
             self._handle,
         )
@@ -3532,7 +3543,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
-        alias result_type = __type_of(result)
+        alias result_type = type_of(result)
         result = result_type(
             self,
             func_attribute=func_attribute,
@@ -3609,7 +3620,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
-        alias result_type = __type_of(result)
+        alias result_type = type_of(result)
         result = result_type(
             self,
             func_attribute=func_attribute,
@@ -3680,7 +3691,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
-        alias result_type = __type_of(result)
+        alias result_type = type_of(result)
         result = result_type(
             self,
             func_attribute=func_attribute,
@@ -3757,7 +3768,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
-        alias result_type = __type_of(result)
+        alias result_type = type_of(result)
         result = result_type(
             self,
             func_attribute=func_attribute,
@@ -3828,7 +3839,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
-        alias result_type = __type_of(result)
+        alias result_type = type_of(result)
         result = result_type(
             self,
             func_attribute=func_attribute,
@@ -3897,7 +3908,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         )
         ```
         """
-        alias result_type = __type_of(result)
+        alias result_type = type_of(result)
         result = result_type(
             self,
             function_name=function_name,
@@ -4313,7 +4324,12 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[_SourceLocation] = None,
     ) raises:
-        """Enqueues a compiled function for execution on this device.
+        """Enqueues a pre-compiled checked function for execution on this device.
+
+        This overload requires a `DeviceFunction` that was compiled with
+        type checking enabled (via `compile_function_checked`). The function
+        will verify that the argument types match the declared types at
+        compile time.
 
         Parameters:
             Ts: Argument dtypes.
@@ -4331,31 +4347,14 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             constant_memory: Constant memory mapping.
             location: Source location for the function call.
 
-        You can pass the function directly to `enqueue_function` without
-        compiling it first:
-
         ```mojo
         from gpu.host import DeviceContext
 
-        fn kernel():
-            print("hello from the GPU")
+        fn kernel(x: Int):
+            print("Value:", x)
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        If you are reusing the same function and parameters multiple times, this
-        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile
-        the function first to remove the overhead:
-
-        ```mojo
-        from gpu.host import DeviceContext
-
-        with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_checked[kernel, kernel](compiled_func, 42, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -4405,16 +4404,21 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         func_attribute: OptionalReg[FuncAttribute] = None,
         location: OptionalReg[_SourceLocation] = None,
     ) raises:
-        """Compiles and enqueues a kernel for execution on this device.
+        """Compiles and enqueues a kernel for execution on this device with type checking.
+
+        This function performs compile-time type checking on the kernel arguments,
+        ensuring that the types passed match the declared signature. Both `func` and
+        `signature_func` should typically be the same kernel function (this redundancy
+        is required for type checking and will be removed in future versions).
 
         Parameters:
-            func_type: The dtype of the function to launch.
-            declared_arg_types: Types of the arguments to pass to the device function.
-            func: The function to compile and launch.
-            signature_func: The function to compile and launch, passed in
-                again. Used for checking argument dtypes later.
-                Note: This will disappear in future versions.
-            actual_arg_types: The dtypes of the arguments being passed to the function.
+            func_type: The type of the function to launch (usually inferred).
+            declared_arg_types: The declared argument types from the function
+                signature (usually inferred).
+            func: The kernel function to compile and launch.
+            signature_func: The kernel function, passed again for type checking.
+                Typically the same as `func`.
+            actual_arg_types: The types of the arguments being passed (usually inferred).
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -4427,7 +4431,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
                 PTX assembly (default `False`).
 
         Args:
-            args: Variadic arguments which are passed to the `func`.
+            args: Variadic arguments which are passed to the kernel function.
             grid_dim: The grid dimensions.
             block_dim: The block dimensions.
             cluster_dim: The cluster dimensions.
@@ -4437,29 +4441,29 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             func_attribute: `CUfunction_attribute` enum.
             location: Source location for the function call.
 
-        You can pass the function directly to `enqueue_function` without
-        compiling it first:
+        Most parameters are inferred automatically. In typical usage, you only
+        need to pass the kernel function twice (as both `func` and `signature_func`):
 
         ```mojo
         from gpu.host import DeviceContext
+        from layout import Layout, LayoutTensor
 
-        fn kernel():
-            print("hello from the GPU")
+        fn vector_add(
+            a: LayoutTensor[DType.float32, Layout.row_major(1000), MutableAnyOrigin],
+            b: LayoutTensor[DType.float32, Layout.row_major(1000), MutableAnyOrigin],
+            c: LayoutTensor[DType.float32, Layout.row_major(1000), MutableAnyOrigin],
+        ):
+            # ... kernel implementation ...
+            pass
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        If you are reusing the same function and parameters multiple times, this
-        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
-        first to remove the overhead:
-
-        ```mojo
-        with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            # Create tensors a, b, c...
+            # Most parameters are inferred automatically:
+            ctx.enqueue_function_checked[vector_add, vector_add](
+                a, b, c,
+                grid_dim=4,
+                block_dim=256
+            )
             ctx.synchronize()
         ```
         """
@@ -4618,17 +4622,21 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         func_attribute: OptionalReg[FuncAttribute] = None,
         location: OptionalReg[_SourceLocation] = None,
     ) raises:
-        """Compiles and enqueues a kernel for execution on this device. This
-        overload takes in a function that's `capturing`.
+        """Compiles and enqueues a capturing kernel for execution on this device with type checking.
+
+        This overload is for kernels that capture variables from their enclosing scope.
+        The `capturing` annotation on the signature function indicates that the kernel
+        can access variables from the surrounding context. Like the non-capturing overload,
+        both `func` and `signature_func` should typically be the same kernel function.
 
         Parameters:
-            func_type: The dtype of the function to launch.
-            declared_arg_types: Types of the arguments to pass to the device function.
-            func: The function to compile and launch.
-            signature_func: The function to compile and launch, passed in
-                again. Used for checking argument dtypes later.
-                Note: This will disappear in future versions.
-            actual_arg_types: The dtypes of the arguments being passed to the function.
+            func_type: The type of the function to launch (usually inferred).
+            declared_arg_types: The declared argument types from the function
+                signature (usually inferred).
+            func: The capturing kernel function to compile and launch.
+            signature_func: The kernel function, passed again for type checking.
+                Typically the same as `func`.
+            actual_arg_types: The types of the arguments being passed (usually inferred).
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -4641,7 +4649,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
                 PTX assembly (default `False`).
 
         Args:
-            args: Variadic arguments which are passed to the `func`.
+            args: Variadic arguments which are passed to the kernel function.
             grid_dim: The grid dimensions.
             block_dim: The block dimensions.
             cluster_dim: The cluster dimensions.
@@ -4651,30 +4659,30 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             func_attribute: `CUfunction_attribute` enum.
             location: Source location for the function call.
 
-        You can pass the function directly to `enqueue_function` without
-        compiling it first:
+        Most parameters are inferred automatically. This overload is selected when
+        your kernel captures variables from its surrounding scope:
 
         ```mojo
         from gpu.host import DeviceContext
+        from layout import Layout, LayoutTensor
 
-        fn kernel():
-            print("hello from the GPU")
+        fn main():
+            with DeviceContext() as ctx:
+                var scale_factor = 2.0
 
-        with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
+                # This kernel captures 'scale_factor' from the enclosing scope
+                fn scale_kernel(data: LayoutTensor[DType.float32, Layout.row_major(100), MutableAnyOrigin]):
+                    # Uses captured scale_factor variable
+                    pass
 
-        If you are reusing the same function and parameters multiple times, this
-        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
-        first to remove the overhead:
-
-        ```mojo
-        with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.synchronize()
+                # Create tensor 'data'...
+                # Most parameters are inferred:
+                ctx.enqueue_function_checked[scale_kernel, scale_kernel](
+                    data,
+                    grid_dim=1,
+                    block_dim=256
+                )
+                ctx.synchronize()
         ```
         """
         _check_dim["DeviceContext.enqueue_function_checked", "grid_dim"](
@@ -6132,17 +6140,15 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
         This is a private method intended for internal use only.
         """
-        var arch_name = StaticString(ptr=UnsafePointer[Byte](), length=0)
+        var arch_name = StaticString(ptr={}, length=0)
         external_call[
             "AsyncRT_DeviceContext_archName",
             NoneType,
-            UnsafePointer[StaticString],
-            _DeviceContextPtr,
         ](UnsafePointer(to=arch_name), self._handle)
         return String(arch_name)
 
     @always_inline
-    fn get_memory_info(self) raises -> (_SizeT, _SizeT):
+    fn get_memory_info(self) raises -> Tuple[_SizeT, _SizeT]:
         """Returns the free and total memory size for this device.
 
         This method queries the current state of device memory, providing information

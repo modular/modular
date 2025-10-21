@@ -98,8 +98,8 @@ fn matmul(
 
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
-        if row < UInt(m) and col + out_idx < n:
-            c[Index(row, col + out_idx)] = c_reg.load(out_idx)
+        if row < UInt(m) and col + UInt(out_idx) < UInt(n):
+            c[Index(row, col + UInt(out_idx))] = c_reg.load(out_idx)
 
 
 fn run_matmul(ctx: DeviceContext) raises:

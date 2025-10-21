@@ -26,8 +26,4 @@ def test_fail_list_index():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_fail_list_index]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

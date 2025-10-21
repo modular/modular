@@ -896,6 +896,17 @@ def test_list_init_span():
         assert_equal(val1, val2)
 
 
+def test_list_init_iter():
+    var l = [String("a"), "bb", "cc", "def"]
+    var it = iter(l)
+    var l2 = List[String](it)
+    assert_equal(len(l), len(l2))
+    assert_equal(l[0], l2[0])
+    assert_equal(l[1], l2[1])
+    assert_equal(l[2], l2[2])
+    assert_equal(l[3], l2[3])
+
+
 def test_indexing():
     var l = [1, 2, 3]
     assert_equal(l[Int(1)], 2)
@@ -912,7 +923,7 @@ def test_indexing():
 def test_list_dtor():
     var dtor_count = 0
 
-    var ptr = UnsafePointer(to=dtor_count).origin_cast[False]()
+    var ptr = UnsafePointer(to=dtor_count).as_immutable()
     var l = List[DelCounter[ptr.origin]]()
     assert_equal(dtor_count, 0)
 
@@ -926,7 +937,7 @@ def test_list_dtor():
 def test_destructor_trivial_elements():
     var dtor_count = 0
 
-    var ptr = UnsafePointer(to=dtor_count).origin_cast[False]()
+    var ptr = UnsafePointer(to=dtor_count).as_immutable()
     var l = List[DelCounter[ptr.origin, trivial_del=True]]()
     l.append(DelCounter[ptr.origin, trivial_del=True](ptr))
 
@@ -1036,52 +1047,4 @@ def test_list_repr_wrap():
 # main
 # ===-------------------------------------------------------------------===#
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_mojo_issue_698]()
-    suite.test[test_list]()
-    suite.test[test_list_literal]()
-    suite.test[test_list_unsafe_get]()
-    suite.test[test_list_unsafe_set]()
-    suite.test[test_list_clear]()
-    suite.test[test_list_to_bool_conversion]()
-    suite.test[test_list_pop]()
-    suite.test[test_list_variadic_constructor]()
-    suite.test[test_list_resize]()
-    suite.test[test_list_reverse]()
-    suite.test[test_list_reverse_move_count]()
-    suite.test[test_list_insert]()
-    suite.test[test_list_index]()
-    suite.test[test_list_append]()
-    suite.test[test_list_extend]()
-    suite.test[test_list_extend_non_trivial]()
-    suite.test[test_list_extend_trivial_copy_nontrivial_move]()
-    suite.test[test_2d_dynamic_list]()
-    suite.test[test_list_explicit_copy]()
-    suite.test[test_no_extra_copies_with_sugared_set_by_field]()
-    suite.test[test_list_copy_constructor]()
-    suite.test[test_list_iter]()
-    suite.test[test_list_iter_mutable]()
-    suite.test[test_list_iter_bounds]()
-    suite.test[test_list_span]()
-    suite.test[test_list_realloc_trivial_types]()
-    suite.test[test_list_realloc_trivial_copy_nontrivial_move]()
-    suite.test[test_list_boolable]()
-    suite.test[test_converting_list_to_string]()
-    suite.test[test_list_count]()
-    suite.test[test_list_add]()
-    suite.test[test_list_mult]()
-    suite.test[test_list_contains]()
-    suite.test[test_list_eq_ne]()
-    suite.test[test_list_init_span]()
-    suite.test[test_indexing]()
-    suite.test[test_list_dtor]()
-    suite.test[test_destructor_trivial_elements]()
-    suite.test[test_list_repr]()
-    suite.test[test_list_fill_constructor]()
-    suite.test[test_uninit_ctor]()
-    suite.test[test_copyinit_trivial_types_dtypes]()
-    suite.test[test_list_comprehension]()
-    suite.test[test_list_repr_wrap]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

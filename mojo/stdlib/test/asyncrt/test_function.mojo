@@ -32,7 +32,7 @@ struct TwoS:
 
 
 struct OneS(DevicePassable):
-    alias device_type: AnyTrivialRegType = TwoS
+    alias device_type: AnyType = TwoS
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = TwoS(self.s)
@@ -204,6 +204,8 @@ fn _run_test_function_experimental(ctx: DeviceContext) raises:
 
 
 def main():
+    # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
+    # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()
 
     suite.test[test_function_unchecked]()

@@ -232,19 +232,4 @@ def test_char_comptime():
 
 
 def main():
-    var suite = TestSuite()
-    suite.test[test_char_validity]()
-    suite.test[test_char_from_u8]()
-    suite.test[test_char_comparison]()
-    suite.test[test_char_formatting]()
-    suite.test[test_char_properties]()
-    suite.test[test_char_is_posix_space]()
-    suite.test[test_char_is_lower]()
-    suite.test[test_char_is_upper]()
-    suite.test[test_char_is_digit]()
-    suite.test[test_char_is_printable]()
-    suite.test[test_char_utf8_encoding]()
-    suite.test[test_char_utf8_byte_length]()
-    suite.test[test_char_comptime]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

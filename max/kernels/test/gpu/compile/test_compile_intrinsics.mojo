@@ -89,7 +89,7 @@ def test_compile_code():
             exp_op, target = A100.target(), emission_kind="llvm-opt"
         ]()
     )
-    # CHECK: fma.rn.f32
+    # CHECK: fma.rn{{(\.ftz)?}}.f32
     print(_compile_code[exp_op, target = A100.target(), emission_kind="asm"]())
 
 

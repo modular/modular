@@ -476,10 +476,10 @@ struct PythonModuleBuilder:
 
         Example signatures:
         ```mojo
-        fn func(arg1: PythonObject) -> PythonObject
-        fn func(arg1: PythonObject, arg2: PythonObject) raises
-        fn func(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject
-        fn func(arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]) raises
+        fn func(arg1: PythonObject) -> PythonObject: ...
+        fn func(arg1: PythonObject, arg2: PythonObject) raises: ...
+        fn func(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject: ...
+        fn func(arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]) raises: ...
         ```
 
         Parameters:
@@ -948,8 +948,8 @@ struct PythonTypeBuilder(Copyable, Movable):
 
         Example signatures:
         ```mojo
-        fn method(mut self: PythonObject) -> PythonObject
-        fn method(mut self: PythonObject, arg1: PythonObject) raises
+        fn method(mut self: PythonObject) -> PythonObject: ...
+        fn method(mut self: PythonObject, arg1: PythonObject) raises: ...
         ```
 
         Parameters:
@@ -986,8 +986,8 @@ struct PythonTypeBuilder(Copyable, Movable):
 
         Example signatures:
         ```mojo
-        fn static_method(arg1: PythonObject) -> PythonObject
-        fn static_method(arg1: PythonObject, arg2: PythonObject) raises
+        fn static_method(arg1: PythonObject) -> PythonObject: ...
+        fn static_method(arg1: PythonObject, arg2: PythonObject) raises: ...
         ```
 
         Parameters:

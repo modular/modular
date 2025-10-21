@@ -159,6 +159,7 @@ def execute_kv_cache_ragged_flash_attention[
         IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
     )
     var output_device = output_host.copy_to_device(ctx)
+    var output_device_tensor = output_device.to_layout_tensor()
 
     # initialize our KVCache
     kv_block_host = HostNDBuffer[dtype, 6](
@@ -210,7 +211,7 @@ def execute_kv_cache_ragged_flash_attention[
         q_device,
         k_cache_device,
         v_cache_device,
-        output_device,
+        output_device_tensor,
         dummy_mask,
         input_row_offsets_device,
     )
@@ -220,8 +221,9 @@ def execute_kv_cache_ragged_flash_attention[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             flash_attention[ragged=True](
-                output_device.tensor,
-                q_device.tensor,
+                # TODO: move to_layout_tensor here once unified closures are supported.
+                output_device_tensor.as_any_origin(),
+                q_device.to_layout_tensor(),
                 k_cache_device,
                 v_cache_device,
                 CausalMask(),

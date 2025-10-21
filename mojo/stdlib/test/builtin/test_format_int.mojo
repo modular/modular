@@ -164,17 +164,4 @@ def test_different_prefix():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_format_int]()
-    suite.test[test_hex]()
-    suite.test[test_bin_scalar]()
-    suite.test[test_bin_int]()
-    suite.test[test_bin_bool]()
-    suite.test[test_intable]()
-    suite.test[test_oct_scalar]()
-    suite.test[test_oct_bool]()
-    suite.test[test_oct_int]()
-    suite.test[test_different_prefix]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

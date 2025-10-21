@@ -348,12 +348,12 @@ def get_rope_index(
             position_ids = np.cumsum(attention_mask, axis=-1) - 1
             position_ids[attention_mask == 0] = 1
             position_ids = np.tile(position_ids[np.newaxis, ...], (3, 1, 1))  # type: ignore
-            max_position_ids = position_ids.max(axis=1, keepdims=True).max(
-                axis=-1, keepdims=True
-            )
+            # Max across rope dimensions (axis=0) and sequence (axis=-1) to get (batch_size,)
+            # This matches the logic in the image branch where we compute per-batch deltas
+            max_position_ids = position_ids.max(axis=(0, -1))
             mrope_position_deltas_array = (
                 max_position_ids + 1 - attention_mask.shape[-1]
-            )
+            ).reshape(-1, 1)
         else:
             position_ids = np.tile(
                 np.arange(input_ids.shape[1])[np.newaxis, np.newaxis, :],

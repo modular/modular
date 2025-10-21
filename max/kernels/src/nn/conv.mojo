@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import OptionalReg, Dict
 from math import align_down, ceildiv
 from os import abort
 from sys.ffi import _get_global_or_null, external_call
@@ -3209,9 +3209,21 @@ struct CuDNNConvMeta(ImplicitlyCopyable, Movable):
 
 
 fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
-    """Get the cuDNN metadata.
-    If the metadata is not found, create a new one and insert it into the global
-    cache.
+    """Get the cuDNN metadata with proper device context management.
+
+    If the metadata is not found for this device, create a new one and insert
+    it into the global cache keyed by device ID.
+
+    IMPORTANT: this function _must_ be called with `ctx`'s CUcontext active via:
+
+    ```mojo
+    from gpu.host import DeviceContext
+    var ctx = DeviceContext()
+    with ctx.push_context():
+        ptr_meta = _get_cudnn_meta(ctx)
+    ```
+
+    This is to satisfy the stateful `cudnn*` API calls.
 
     Args:
         ctx: The device context.
@@ -3219,8 +3231,11 @@ fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
     Returns:
         The cuDNN metadata.
     """
-    var name = "CUDA_CUDNN_META"
-    if ptr_meta := _get_global_or_null(name).bitcast[CuDNNConvMeta]():
+    # Key the cuDNN metadata cache on the device ID.
+    var cache_key = "CUDA_CUDNN_META_CACHE" + String(ctx.id())
+
+    # Get or create the per-device cache dictionary.
+    if ptr_meta := _get_global_or_null(cache_key).bitcast[CuDNNConvMeta]():
         check_cudnn_error(
             cudnnSetStream(ptr_meta[].ptr_handle, CUDA(ctx.stream()))
         )
@@ -3230,7 +3245,7 @@ fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
     ptr_meta.init_pointee_move(CuDNNConvMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(name),
+        StringSlice(cache_key),
         ptr_meta.bitcast[NoneType](),
     )
 
@@ -3254,7 +3269,7 @@ fn get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
         raise Error("unsupported dtype", dtype, "for cuDNN")
 
 
-fn conv_cudnn[
+fn _conv_cudnn[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -3375,6 +3390,27 @@ fn conv_cudnn[
         )
     )
     _ = workspace_buffer^
+
+
+fn conv_cudnn[
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+](
+    input: NDBuffer[input_type, 4, MutableAnyOrigin, *_, **_],
+    filter: NDBuffer[filter_type, 4, MutableAnyOrigin, *_, **_],
+    output: NDBuffer[output_type, 4, MutableAnyOrigin, *_, **_],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    padding: IndexList[2],
+    num_groups: Int,
+    ctx: DeviceContext,
+) raises:
+    # Set `ctx`'s CUcontext as current to satisfy cudnn's stateful API.
+    with ctx.push_context() as ctx:
+        _conv_cudnn(
+            input, filter, output, stride, dilation, padding, num_groups, ctx
+        )
 
 
 fn conv_gpu[

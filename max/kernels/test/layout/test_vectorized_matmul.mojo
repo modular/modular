@@ -62,7 +62,7 @@ fn test_tiled_and_vectorized_matmul():
 
     for bm in range(M // BK):
         for bn in range(N // BN):
-            var tile_c = tensor_c.get_immutable().tile[BM, BN](bm, bn)
+            var tile_c = tensor_c.tile[BM, BN](bm, bn)
             for bk in range(K // BK):
                 var tile_a = tensor_a.tile[BM, BK](bm, bk)
                 var tile_b = tensor_b.tile[BK, BN](bk, bn)

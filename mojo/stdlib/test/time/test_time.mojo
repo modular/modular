@@ -74,8 +74,4 @@ def test_time():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_time]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -24,7 +24,7 @@ from utils import Index, IndexList
 
 
 def run_elementwise[
-    dtype: DType, log_fn: fn (x: SIMD) -> __type_of(x)
+    dtype: DType, log_fn: fn (x: SIMD) -> type_of(x)
 ](ctx: DeviceContext):
     alias length = 8192
 
@@ -83,8 +83,4 @@ def test_log():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_log]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -121,7 +121,7 @@ struct HostNDBuffer[
     ):
         result = {
             self.tensor.data,
-            RuntimeLayout[__type_of(result).layout](
+            RuntimeLayout[type_of(result).layout](
                 self.tensor.get_shape(), self.tensor.get_strides()
             ),
         }
@@ -221,12 +221,12 @@ struct DeviceNDBuffer[
     fn to_layout_tensor(
         ref self,
         out result: LayoutTensor[
-            dtype, Layout.row_major(IntTuple(shape)), __origin_of(self.buffer)
+            dtype, Layout.row_major(IntTuple(shape)), origin_of(self.buffer)
         ],
     ):
         result = {
             self.buffer,
-            RuntimeLayout[__type_of(result).layout](
+            RuntimeLayout[type_of(result).layout](
                 self.tensor.get_shape(), self.tensor.get_strides()
             ),
         }
@@ -285,7 +285,7 @@ struct InitializationType(
     alias arange = InitializationType(3)
     alias fill = InitializationType(4)
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self

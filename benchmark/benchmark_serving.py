@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
-import itertools
 import json
 import logging
 import math
@@ -52,15 +51,15 @@ if TYPE_CHECKING:
     from max.diagnostics.gpu import GPUStats
 
 try:
-    from .benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from max.benchmark.benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ServingBenchmarkConfig,
         parse_benchmark_args,
     )
-    from .benchmark_shared.cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from max.benchmark.benchmark_shared.cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         CpuMetricsCollector,
         collect_pids_for_port,
     )
-    from .benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from max.benchmark.benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ArxivSummarizationBenchmarkDataset,
         AxolotlBenchmarkDataset,
         BatchJobBenchmarkDataset,
@@ -75,13 +74,13 @@ try:
         SonnetBenchmarkDataset,
         VisionArenaBenchmarkDataset,
     )
-    from .benchmark_shared.metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from max.benchmark.benchmark_shared.metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         BenchmarkMetrics,
         LoRAMetrics,
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
-    from .benchmark_shared.server_metrics import (  # type: ignore[import-not-found]
+    from max.benchmark.benchmark_shared.server_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         fetch_and_parse_metrics,
         print_server_metrics,
     )
@@ -115,7 +114,7 @@ except ImportError:
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
-    from benchmark_shared.server_metrics import (
+    from benchmark_shared.server_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         compute_metrics_delta,
         fetch_and_parse_metrics,
         print_server_metrics,
@@ -145,8 +144,8 @@ class RequestFuncInput:
     ignore_eos: bool
     model: str
     session_id: str | None = None
-    temperature: float = 0.0
-    top_p: float = 1.0
+    temperature: float | None = None
+    top_p: float | None = None
     top_k: int | None = None
 
 
@@ -217,11 +216,9 @@ async def async_request_trt_llm(
     assert api_url.endswith("generate_stream")
 
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        payload = {
+        payload: dict[str, bool | str | int | float | list[dict[str, Any]]] = {
             "accumulate_tokens": True,
             "text_input": request_func_input.prompt,
-            "temperature": request_func_input.temperature,
-            "top_p": request_func_input.top_p,
             "ignore_eos": request_func_input.ignore_eos,
             "stream": True,
         }
@@ -230,6 +227,10 @@ async def async_request_trt_llm(
             payload["max_tokens"] = request_func_input.max_tokens
         if request_func_input.top_k is not None:
             payload["top_k"] = request_func_input.top_k
+        if request_func_input.temperature is not None:
+            payload["temperature"] = request_func_input.temperature
+        if request_func_input.top_p is not None:
+            payload["top_p"] = request_func_input.top_p
 
         output = RequestFuncOutput()
         output.prompt_len = request_func_input.prompt_len
@@ -1833,6 +1834,14 @@ async def benchmark(  # noqa: ANN201
 
     # Add server-side metrics to result if available
     if server_metrics:
+        # Extract prefill/decode stats for easy access
+        prefill_hist = server_metrics.get_histogram(
+            "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
+        )
+        decode_hist = server_metrics.get_histogram(
+            "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
+        )
+
         result["server_metrics"] = {
             "counters": server_metrics.counters,
             "gauges": server_metrics.gauges,
@@ -1845,6 +1854,17 @@ async def benchmark(  # noqa: ANN201
                 }
                 for name, hist in server_metrics.histograms.items()
             },
+            # Add prefill/decode breakdown for easy access
+            "prefill_batch_execution_time_ms": (
+                prefill_hist.mean if prefill_hist else None
+            ),
+            "prefill_batch_count": (
+                int(prefill_hist.count) if prefill_hist else 0
+            ),
+            "decode_batch_execution_time_ms": (
+                decode_hist.mean if decode_hist else None
+            ),
+            "decode_batch_count": int(decode_hist.count) if decode_hist else 0,
         }
 
     return result
@@ -2151,7 +2171,7 @@ def main(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     # Save config and results to json
-    if args.save_result:
+    if args.result_filename:
         logger.info("saving results")
         result_json: dict[str, Any] = {}
 
@@ -2162,7 +2182,6 @@ def main(args: argparse.Namespace) -> None:
         result_json["model_id"] = model_id
         result_json["tokenizer_id"] = tokenizer_id
         result_json["num_prompts"] = benchmark_result["completed"]
-        result_json["server_args"] = args.server_args
         result_json["dataset_name"] = args.dataset_name
         result_json["client_args"] = dict(vars(args))
         # json doesn't allow infinity as numeric, so cast this to string
@@ -2203,32 +2222,7 @@ def main(args: argparse.Namespace) -> None:
             result_json["lora_metrics"] = benchmark_result["lora_metrics"]
 
         # Save to file
-        if args.result_filename:
-            file_name = os.path.join(
-                args.result_dir or "", args.result_filename
-            )
-        else:
-            base_model_id = model_id.split("/")[-1]
-            max_concurrency_str = (
-                f"-concurrency{args.max_concurrency}"
-                if args.max_concurrency is not None
-                else ""
-            )
-            # When auto-generating file names, add suffixes if we have to to
-            # ensure we're not overwriting an existing file (best effort,
-            # subject to TOCTTOU).
-            for uniq_count in itertools.count(1):
-                if uniq_count == 1:
-                    uniq_suffix = ""
-                else:
-                    uniq_suffix = f"-{uniq_count}"
-                file_name = (
-                    f"{backend}-{args.request_rate}qps{max_concurrency_str}-"
-                    f"{base_model_id}-{current_dt}{uniq_suffix}.json"
-                )
-                file_name = os.path.join(args.result_dir or "", file_name)
-                if not os.path.exists(file_name):
-                    break
+        file_name = args.result_filename
         logger.info(f"Writing file: {file_name}")
         if os.path.isfile(file_name):
             logger.warning(

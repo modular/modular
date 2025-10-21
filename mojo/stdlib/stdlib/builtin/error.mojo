@@ -39,14 +39,14 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
         we don't have good niche optimization and Optional[T] requires T: Copyable
     """
 
-    @always_inline("nodebug")
+    @no_inline
     fn __init__(out self):
         """Construct an empty stack trace."""
         self.value = ArcPointer(
             OwnedPointer[UInt8](unsafe_from_raw_pointer=UnsafePointer[UInt8]())
         )
 
-    @always_inline("nodebug")
+    @no_inline
     fn __init__(out self, *, depth: Int):
         """Construct a new stack trace.
 
@@ -76,14 +76,9 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
             )
             return
 
-        var ptr = UnsafePointer[UInt8]().alloc(num_bytes + 1)
-        ptr.store(num_bytes, 0)
         self.value = ArcPointer[OwnedPointer[UInt8]](
-            OwnedPointer(unsafe_from_raw_pointer=ptr)
+            OwnedPointer(unsafe_from_raw_pointer=buffer)
         )
-        memcpy(dest=self.value[].unsafe_ptr(), src=buffer, count=num_bytes)
-        # Explicitly free the buffer using free() instead of the Mojo allocator.
-        _libc.free(buffer.bitcast[NoneType]())
 
     fn __str__(self) -> String:
         """Converts the StackTrace to string representation.
@@ -210,7 +205,7 @@ struct Error(
         if self.loaded_length < 0:
             # Safety: if loaded_length < 0, we own the data allowing us to
             # safely free (and mutate) it.
-            self.data.origin_cast[True]().free()
+            self.data.unsafe_mut_cast[True]().free()
 
     fn __copyinit__(out self, existing: Self):
         """Creates a deep copy of an existing error.

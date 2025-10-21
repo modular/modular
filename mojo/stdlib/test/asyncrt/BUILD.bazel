@@ -15,10 +15,6 @@ _CPU_TESTS = [
 _EXTRA_CONSTRAINTS = {
     "test_hip.mojo": ["//:amd_gpu"],
     "test_cuda.mojo": ["//:nvidia_gpu"],
-    "test_capture.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2399
     "test_copies.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

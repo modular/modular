@@ -87,9 +87,9 @@ fn test_tma_3d_load_kernel[
             smem_tile,
             mbar[0],
             (
-                UInt(block_idx.x * cta_tile_dim2),
-                UInt(block_idx.y * cta_tile_dim1),
-                UInt(block_idx.z * cta_tile_dim0),
+                UInt(block_idx.x * UInt(cta_tile_dim2)),
+                UInt(block_idx.y * UInt(cta_tile_dim1)),
+                UInt(block_idx.z * UInt(cta_tile_dim0)),
             ),
         )
     # Ensure all threads sees initialized mbarrier
@@ -109,7 +109,7 @@ fn test_tma_3d_load_kernel[
         smem_tile_i = smem_tile.tile[1, cta_tile_dim1, cta_tile_dim2](i)
 
         dst_tile = dst.tile[cta_tile_dim1, cta_tile_dim2](
-            idx * cta_tile_dim0 + i, 0
+            idx * UInt(cta_tile_dim0) + UInt(i), 0
         )
         if thread_idx.x == 0:
             dst_tile.copy_from(smem_tile_i)
@@ -151,13 +151,13 @@ def test_tma_3d_load_row_major[
 
     print("src layout:", src_layout)
     print("cta tile layout:", cta_tile_layout)
-    print("desc layout:", __type_of(tma_tensor).desc_layout)
+    print("desc layout:", type_of(tma_tensor).desc_layout)
 
     alias kernel = test_tma_3d_load_kernel[
-        __type_of(tma_tensor).dtype,
+        type_of(tma_tensor).dtype,
         dst_layout,  # dst layout
-        __type_of(tma_tensor).layout,  # cta_tile
-        __type_of(tma_tensor).desc_layout,  # desc_tile
+        type_of(tma_tensor).layout,  # cta_tile
+        type_of(tma_tensor).desc_layout,  # desc_tile
         smem_tile_layout,  # smem layout
     ]
     ctx.enqueue_function[kernel](
@@ -178,9 +178,9 @@ def test_tma_3d_load_row_major[
 
     alias cta_tile_size = cta_tile_layout.size()
 
-    alias desc_tile_dim0 = __type_of(tma_tensor).desc_layout.shape[0].value()
-    alias desc_tile_dim1 = __type_of(tma_tensor).desc_layout.shape[1].value()
-    alias desc_tile_dim2 = __type_of(tma_tensor).desc_layout.shape[2].value()
+    alias desc_tile_dim0 = type_of(tma_tensor).desc_layout.shape[0].value()
+    alias desc_tile_dim1 = type_of(tma_tensor).desc_layout.shape[1].value()
+    alias desc_tile_dim2 = type_of(tma_tensor).desc_layout.shape[2].value()
 
     alias desc_tile_size = desc_tile_dim1 * desc_tile_dim2
 

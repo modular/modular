@@ -112,6 +112,9 @@ fn test_matmul_dynamic_scaled_fp8[
     matmul_dynamic_scaled_fp8[
         input_scale_granularity="colwise",
         weight_scale_granularity="rowwise",
+        m_scale_granularity=1,
+        n_scale_granularity=1,
+        k_scale_granularity=K,
         transpose_b=transpose_b,
         target="gpu",
     ](

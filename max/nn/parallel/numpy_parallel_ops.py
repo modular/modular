@@ -105,11 +105,14 @@ class ParallelArrayOps:
         arrays: Sequence[npt.NDArray[Any]],
         axis: int = 0,
         default_copy: bool = True,
+        min_chunk_size_mb: float = 50.0,
     ) -> npt.NDArray[Any]:
         """Concatenate arrays in parallel along the specified axis.
 
-        Equivalent to np.concatenate but parallelized using thread pool. Most effective
-        with large arrays (>1MB each) and multiple arrays (>= max_workers).
+        Equivalent to np.concatenate but parallelized using thread pool. Automatically
+        splits large arrays across multiple workers when there are fewer arrays than
+        workers, maximizing memory bandwidth utilization. Uses intelligent heuristics
+        to avoid splitting when overhead would exceed benefits.
 
         Note: By default, this matches np.concatenate's behavior of always returning a copy,
         even when arrays contains a single array. For performance optimization, you can set
@@ -125,6 +128,10 @@ class ParallelArrayOps:
                 array, matching np.concatenate's behavior. If False, return the array
                 directly without copying to avoid unnecessary memory allocation and
                 improve performance.
+            min_chunk_size_mb: Minimum chunk size in MB when splitting arrays. Default is
+                50 MB. Prevents creating too many small work items that would have excessive
+                overhead. Arrays are only split if the resulting chunks would be at least
+                this size.
 
         Returns:
             Concatenated array with the same dtype as the input arrays.
@@ -204,67 +211,119 @@ class ParallelArrayOps:
         out_shape[axis] = concat_dim_size
         out = np.empty(out_shape, dtype=first_dtype, order="C")
 
-        # Divide work among threads
-        workers = min(self._max_workers, n)
-        step = (n + workers - 1) // workers
+        # Pre-compute all slices for parallel copying
+        # Strategy: If we have fewer arrays than workers, split large arrays into chunks
+        # to better utilize available parallelism and memory bandwidth.
+        # Only split when the benefit outweighs the overhead.
+        #
+        # Heuristics:
+        # - 70 MB arrays with 5 arrays (4 workers/array): Don't split (chunk too small)
+        # - 140 MB arrays with 2 arrays (12 workers/array): Split into 2-3 chunks each
+        # - 280 MB arrays with 2 arrays (12 workers/array): Split into 5+ chunks each
+        # This ensures each chunk is >= min_chunk_size_mb to avoid excessive overhead.
+        ndim = len(out.shape)
+        min_chunk_bytes = min_chunk_size_mb * 1024 * 1024
 
-        work_items = [(i, min(i + step, n)) for i in range(0, n, step)]
+        # Build work items: (src_array, src_slice, dst_slice)
+        work_items = []
 
+        for i in range(n):
+            arr = arrays[i]
+            arr_size_along_axis = arr.shape[axis]
+            arr_bytes = arr.nbytes
+
+            # Calculate how many workers are available per array
+            potential_workers_per_array = max(1, self._max_workers // n)
+
+            # Only consider splitting if:
+            # 1. We have spare workers (potential_workers_per_array > 1)
+            # 2. The array is large enough to benefit from splitting
+            should_split = False
+            num_chunks = 1
+
+            if potential_workers_per_array > 1:
+                # Calculate maximum beneficial chunks while respecting min_chunk_size
+                # This ensures each chunk is at least min_chunk_size_mb
+                max_beneficial_chunks = max(1, int(arr_bytes / min_chunk_bytes))
+
+                # Use the smaller of: available workers or beneficial chunks
+                num_chunks = min(
+                    potential_workers_per_array, max_beneficial_chunks
+                )
+
+                # Only split if we can create at least 2 meaningful chunks
+                # and each chunk would be >= min_chunk_size
+                if num_chunks >= 2:
+                    chunk_bytes = arr_bytes / num_chunks
+                    should_split = chunk_bytes >= min_chunk_bytes
+
+            if should_split:
+                # Split array into chunks along concatenation axis
+                chunk_size = (
+                    arr_size_along_axis + num_chunks - 1
+                ) // num_chunks
+
+                # Create work items for each chunk
+                for chunk_idx in range(num_chunks):
+                    src_start = chunk_idx * chunk_size
+                    src_end = min(
+                        (chunk_idx + 1) * chunk_size, arr_size_along_axis
+                    )
+
+                    if src_start >= src_end:
+                        break
+
+                    # Source slice (from input array)
+                    src_slice_list = [slice(None)] * ndim
+                    src_slice_list[axis] = slice(src_start, src_end)
+                    src_slice = tuple(src_slice_list)
+
+                    # Destination slice (in output array)
+                    dst_start = offsets[i] + src_start
+                    dst_end = offsets[i] + src_end
+                    dst_slice_list = [slice(None)] * ndim
+                    dst_slice_list[axis] = slice(dst_start, dst_end)
+                    dst_slice = tuple(dst_slice_list)
+
+                    work_items.append((arr, src_slice, dst_slice))
+            else:
+                # Don't split - copy entire array in one operation
+                src_slice = tuple([slice(None)] * ndim)
+                dst_slice_list = [slice(None)] * ndim
+                dst_slice_list[axis] = slice(offsets[i], offsets[i + 1])
+                dst_slice = tuple(dst_slice_list)
+                work_items.append((arr, src_slice, dst_slice))
+
+        # Submit copy tasks
         futures = [
             self._pool.submit(
-                self._copy_block_concatenate,
-                out,
-                arrays,
-                offsets,
-                start_idx,
-                end_idx,
-                axis,
+                self._copy_array_slice, out, src_arr, src_slice, dst_slice
             )
-            for start_idx, end_idx in work_items
+            for src_arr, src_slice, dst_slice in work_items
         ]
 
-        # Wait for completion and on first failure cancel remaining tasks
+        # Wait for completion and propagate any exceptions
         for f in as_completed(futures):
-            try:
-                f.result()
-            except Exception as e:
-                raise
+            f.result()
 
         return out
 
     @staticmethod
-    def _copy_block_concatenate(
+    def _copy_array_slice(
         out: npt.NDArray[Any],
-        arrays: Sequence[npt.NDArray[Any]],
-        offsets: Sequence[int],
-        start_idx: int,
-        end_idx: int,
-        axis: int,
+        src: npt.NDArray[Any],
+        src_slice: tuple[slice, ...],
+        dst_slice: tuple[slice, ...],
     ) -> None:
-        """Worker function that copies a contiguous block of arrays into output.
+        """Worker function that copies a slice of source array into output.
 
         Runs in a worker thread. Uses np.copyto which releases the GIL, enabling
         true parallel execution across multiple CPU cores.
 
         Args:
             out: Pre-allocated output array.
-            arrays: List of source arrays.
-            offsets: Cumulative offsets along concatenation axis.
-            start_idx: Starting index in arrays list (inclusive).
-            end_idx: Ending index in arrays list (exclusive).
-            axis: Axis along which arrays are concatenated.
+            src: Source array to copy from.
+            src_slice: Tuple of slices defining what to copy from source.
+            dst_slice: Tuple of slices defining where to copy into output.
         """
-        # Pre-compute slice list to avoid allocating on every iteration
-        out_slice = [slice(None)] * len(out.shape)
-
-        for i in range(start_idx, end_idx):
-            # Only update the slice for the concatenation axis
-            out_slice[axis] = slice(offsets[i], offsets[i + 1])
-
-            # Bulk copy - this releases the GIL
-            if axis == 0:
-                np.copyto(out[offsets[i] : offsets[i + 1]], arrays[i])
-            elif axis == len(out.shape) - 1:
-                np.copyto(out[..., offsets[i] : offsets[i + 1]], arrays[i])
-            else:
-                np.copyto(out[tuple(out_slice)], arrays[i])
+        np.copyto(out[dst_slice], src[src_slice])

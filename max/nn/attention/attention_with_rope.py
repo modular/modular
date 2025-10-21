@@ -31,7 +31,10 @@ from max.graph import (
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weight import _compute_shard_range
 from max.nn.float8_config import Float8Config
-from max.nn.kernels import convert_weights_to_fp8_fnuz_if_needed
+from max.nn.kernels import (
+    convert_weights_to_fp8_fnuz_if_needed,
+    rms_norm_key_cache,
+)
 
 from ..clamp import clamp
 from ..comm import Allreduce
@@ -118,10 +121,7 @@ class AttentionWithRopeV1(AttentionImpl):
         # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
-        if xq.device is not None:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
@@ -173,6 +173,8 @@ class AttentionWithRope(Module, Shardable):
         has_bias: bool = False,
         float8_config: Float8Config | None = None,
         clip_qkv: float | None = None,
+        use_qk_norm: bool = False,
+        rms_norm_eps: float = 1e-6,
     ) -> None:
         """Initializes the attention layer.
 
@@ -192,6 +194,8 @@ class AttentionWithRope(Module, Shardable):
             has_bias: Whether Q/K/V have bias (stacked_qkv forbids bias).
             float8_config: Optional Float8 config (dynamic or static).
             clip_qkv: If provided, clamp Q/K/V weights to [-clip_qkv, clip_qkv].
+            use_qk_norm: Whether to use RMSNorm on Q/K.
+            rms_norm_eps: Value to use for numerical stability in RMSNorm.
         """
         super().__init__()
         self.rope = rope
@@ -209,7 +213,33 @@ class AttentionWithRope(Module, Shardable):
         self.devices = devices or [DeviceRef.CPU()]
         self.float8_config = float8_config
         self.stacked_qkv = stacked_qkv
+        self.use_qk_norm = use_qk_norm
+        self.rms_norm_eps = rms_norm_eps
         self._sharding_strategy: ShardingStrategy | None = None
+
+        if self.use_qk_norm:
+            # Q gamma follows compute dtype (same as other matmul weights).
+            self.q_norm_weight = Weight(
+                name="q_norm.weight",
+                dtype=dtype,
+                shape=[self.kv_params.head_dim],
+                device=self.devices[0],
+            )
+            # K gamma must match the KV cache dtype for the in-place kernel.
+            self.k_norm_weight = Weight(
+                name="k_norm.weight",
+                dtype=self.kv_params.dtype,
+                shape=[self.kv_params.head_dim],
+                device=self.devices[0],
+            )
+            # Replicate these small vectors across all devices by default.
+            num_devices = len(self.devices)
+            self.q_norm_weight.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+            self.k_norm_weight.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
 
         if stacked_qkv and clip_qkv:
             raise ValueError(
@@ -373,6 +403,21 @@ class AttentionWithRope(Module, Shardable):
                 v_proj_shards = self.v_proj.shard(devices)
             o_proj_shards = self.o_proj.shard(devices)
 
+            # Replicate Q/K RMSNorm gamma across devices (per-head gamma is shared).
+            if self.use_qk_norm:
+                # Ensure replication strategy is set before sharding.
+                self.q_norm_weight.sharding_strategy = (
+                    ShardingStrategy.replicate(len(devices))
+                )
+                self.k_norm_weight.sharding_strategy = (
+                    ShardingStrategy.replicate(len(devices))
+                )
+                q_norm_replicas = self.q_norm_weight.shard(devices)
+                k_norm_replicas = self.k_norm_weight.shard(devices)
+            else:
+                q_norm_replicas = None
+                k_norm_replicas = None
+
             default_dtype = o_proj_shards[0].weight.dtype
             linear_cls = self.o_proj.__class__
 
@@ -409,6 +454,16 @@ class AttentionWithRope(Module, Shardable):
                     layer.v_proj = v_proj_shards[n]
                 layer.o_proj = o_proj_shards[n]
 
+                if self.use_qk_norm:
+                    assert (
+                        q_norm_replicas is not None
+                        and k_norm_replicas is not None
+                    )
+                    layer.q_norm_weight = q_norm_replicas[n]
+                    layer.k_norm_weight = k_norm_replicas[n]
+                    layer.use_qk_norm = True
+                    layer.rms_norm_eps = self.rms_norm_eps
+
                 shards.append(layer)
             return shards
 
@@ -421,6 +476,14 @@ class AttentionWithRope(Module, Shardable):
                 k_proj_replicas = self.k_proj.shard(devices)
                 v_proj_replicas = self.v_proj.shard(devices)
             o_proj_replicas = self.o_proj.shard(devices)
+
+            # Replicate Q/K RMSNorm gamma as well if used.
+            if self.use_qk_norm:
+                q_norm_replicas = self.q_norm_weight.shard(devices)
+                k_norm_replicas = self.k_norm_weight.shard(devices)
+            else:
+                q_norm_replicas = None
+                k_norm_replicas = None
 
             default_dtype = o_proj_replicas[0].weight.dtype
             linear_cls = self.o_proj.__class__
@@ -449,6 +512,17 @@ class AttentionWithRope(Module, Shardable):
                     replica.k_proj = k_proj_replicas[i]
                     replica.v_proj = v_proj_replicas[i]
                 replica.o_proj = o_proj_replicas[i]
+
+                if self.use_qk_norm:
+                    assert (
+                        q_norm_replicas is not None
+                        and k_norm_replicas is not None
+                    )
+                    replica.q_norm_weight = q_norm_replicas[i]
+                    replica.k_norm_weight = k_norm_replicas[i]
+                    replica.use_qk_norm = True
+                    replica.rms_norm_eps = self.rms_norm_eps
+
                 replicas.append(replica)
             return replicas
 
@@ -641,10 +715,29 @@ class AttentionWithRope(Module, Shardable):
         # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
-        if xq.device is not None:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        if self.use_qk_norm:
+            # 1) Normalize new K entries in-place inside the KV cache.
+            #    Per-head RMSNorm across head_dim, gamma size = [head_dim].
+            rms_norm_key_cache(
+                kv_params=self.kv_params,
+                kv_collection=kv_collection,
+                gamma=self.k_norm_weight,
+                epsilon=self.rms_norm_eps,
+                layer_idx=layer_idx,
+                total_seq_len=total_seq_len,
+                input_row_offsets=input_row_offsets,
+                weight_offset=0.0,
+            )
+
+            # 2) Normalize Q per head across the last dim (head_dim).
+            q_gamma = self.q_norm_weight
+            q_gamma_tensor = q_gamma.to(xq.device)
+            q_gamma_tensor = ops.cast(q_gamma_tensor, xq.dtype)
+            eps_q = ops.constant(self.rms_norm_eps, xq.dtype, device=xq.device)
+            inv_rms = ops.rsqrt(ops.mean(xq * xq, axis=-1) + eps_q)
+            xq = (xq * inv_rms) * q_gamma_tensor
+
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
@@ -824,7 +917,9 @@ class GGUFQAttentionWithRope(AttentionWithRope):
 
         # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-        freqs_cis = ops.cast(freqs_cis, xq.dtype)
+
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
+
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
@@ -1005,10 +1100,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
         # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
-        if xq.device is not None:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
@@ -1061,6 +1153,8 @@ class TensorParallelAttentionWithRope(
         has_bias: bool = False,
         float8_config: Float8Config | None = None,
         clip_qkv: float | None = None,
+        use_qk_norm: bool = False,
+        rms_norm_eps: float = 1e-6,
     ) -> None:
         """Initializes the distributed (tensor parallel) attention layer.
 
@@ -1080,6 +1174,8 @@ class TensorParallelAttentionWithRope(
             float8_config: Float8 configuration for quantization.
             clip_qkv: If provided, the QKV weights are clamped between
                 `[-clip_qkv, clip_qkv]`.
+            use_qk_norm: Whether to use RMSNorm on Q/K.
+            rms_norm_eps: Value to use for numerical stability in RMSNorm.
         """
         super().__init__(
             rope=rope,
@@ -1095,6 +1191,8 @@ class TensorParallelAttentionWithRope(
             has_bias=has_bias,
             float8_config=float8_config,
             clip_qkv=clip_qkv,
+            use_qk_norm=use_qk_norm,
+            rms_norm_eps=rms_norm_eps,
         )
         if DeviceRef.CPU() in self.devices:
             raise ValueError(
@@ -1177,6 +1275,8 @@ class DataParallelAttentionWithRope(AttentionWithRope):
         has_bias: bool = False,
         float8_config: Float8Config | None = None,
         clip_qkv: float | None = None,
+        use_qk_norm: bool = False,
+        rms_norm_eps: float = 1e-6,
     ) -> None:
         super().__init__(
             rope=rope,
@@ -1193,6 +1293,8 @@ class DataParallelAttentionWithRope(AttentionWithRope):
             has_bias=has_bias,
             float8_config=float8_config,
             clip_qkv=clip_qkv,
+            use_qk_norm=use_qk_norm,
+            rms_norm_eps=rms_norm_eps,
         )
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
@@ -1220,7 +1322,22 @@ class DataParallelAttentionWithRope(AttentionWithRope):
             v_proj_replicas = self.v_proj.shard(self.devices)
 
         self.o_proj.sharding_strategy = ShardingStrategy.replicate(num_devices)
+        if self.use_qk_norm:
+            self.q_norm_weight.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+            self.k_norm_weight.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
         o_proj_replicas = self.o_proj.shard(self.devices)
+
+        # Replicate Q/K RMSNorm weights if enabled.
+        if self.use_qk_norm:
+            q_norm_replicas = self.q_norm_weight.shard(self.devices)
+            k_norm_replicas = self.k_norm_weight.shard(self.devices)
+        else:
+            q_norm_replicas = None
+            k_norm_replicas = None
 
         # Build one full copy per device (no head-splitting).
         self.replicated_attentions: list[AttentionWithRope] = []
@@ -1248,6 +1365,16 @@ class DataParallelAttentionWithRope(AttentionWithRope):
                 replica.k_proj = k_proj_replicas[i]
                 replica.v_proj = v_proj_replicas[i]
             replica.o_proj = o_proj_replicas[i]
+
+            if self.use_qk_norm:
+                assert (
+                    q_norm_replicas is not None and k_norm_replicas is not None
+                )
+                replica.q_norm_weight = q_norm_replicas[i]
+                replica.k_norm_weight = k_norm_replicas[i]
+                replica.use_qk_norm = True
+                replica.rms_norm_eps = self.rms_norm_eps
+
             self.replicated_attentions.append(replica)
 
     def __call__(  # type: ignore[override]
@@ -1324,7 +1451,7 @@ class AttentionWithRopeQKV(AttentionImplQKV):
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Cast freqs_cis to xq's dtype to match the fused_qk_ragged_rope kernel.
-        freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
@@ -1399,6 +1526,13 @@ class AttentionWithRopeNoOpaque(Module):
         self.rope = rope
         self.n_heads = num_attention_heads
         self.kv_params = kv_params
+
+        if num_key_value_heads != self.kv_params.n_kv_heads:
+            raise ValueError(
+                f"Inconsistent KV head counts: num_key_value_heads={num_key_value_heads}, "
+                f"kv_params.n_kv_heads={self.kv_params.n_kv_heads}"
+            )
+
         self.scale = (
             scale
             if scale is not None
@@ -1444,8 +1578,8 @@ class AttentionWithRopeNoOpaque(Module):
         k_end = q_end + self.kv_params.n_kv_heads * self.kv_params.head_dim
         v_end = k_end + self.kv_params.n_kv_heads * self.kv_params.head_dim
         x_q = x_qkv[:, :q_end]
-        x_k = x_qkv[:, k_end:v_end]
-        x_v = x_qkv[:, v_end:]
+        x_k = x_qkv[:, q_end:k_end]
+        x_v = x_qkv[:, k_end:v_end]
 
         freqs_cis = ops.cast(self.rope.freqs_cis, x_q.dtype)
 

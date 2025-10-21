@@ -78,9 +78,13 @@ from utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_SS
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
-from ....utils_gpu import MatmulConfig
+from .config import MatmulConfig
 from ..tile_scheduler import RasterOrder
 from .tile_scheduler import TileScheduler, WorkInfo
+from ..profiler import (
+    MatmulProfileWarp,
+    MatmulWarpSpecializationWorkSpaceManager,
+)
 from .pipeline import ProducerConsumerPipeline
 
 
@@ -206,10 +210,10 @@ fn load_AB[
     var a_smem_tile = a_smem.next(stage)[]
     var b_smem_tile = b_smem.next(stage)[]
 
-    var a_smem_slice = __type_of(a_smem_tile)(
+    var a_smem_slice = type_of(a_smem_tile)(
         a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
     )
-    var b_smem_slice = __type_of(b_smem_tile)(
+    var b_smem_slice = type_of(b_smem_tile)(
         b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
@@ -552,7 +556,7 @@ fn shared_memory_epilogue[
 
 @always_inline
 fn _compute_register_lambda_fn[
-    accum_type: DType,
+    epilogue_dtype: DType,
     frag_size: UInt,
     inc: UInt,
     offset: UInt,
@@ -561,7 +565,7 @@ fn _compute_register_lambda_fn[
 ](
     top_coord: StaticTuple[UInt32, 2],
     bottom_coord: StaticTuple[UInt32, 2],
-    mut frag: SIMD[accum_type, frag_size],
+    mut frag: SIMD[epilogue_dtype, frag_size],
     staged_c_row: UInt32,
     staged_c_col: UInt32,
 ):
@@ -635,13 +639,13 @@ fn register_epilogue[
     stageN: UInt,
     compute_lambda_fn: elementwise_compute_lambda_type,
     num_output_warps: UInt,
-    accum_type: DType,
+    epilogue_dtype: DType,
     frag_size: UInt,
     repeats: UInt,
     transpose_c: Bool,
 ](
-    mut upper_frag: SIMD[accum_type, frag_size],
-    mut lower_frag: SIMD[accum_type, frag_size],
+    mut upper_frag_casted: SIMD[epilogue_dtype, frag_size],
+    mut lower_frag_casted: SIMD[epilogue_dtype, frag_size],
     c_row: UInt32,
     c_col: UInt32,
     N: UInt32,
@@ -704,7 +708,7 @@ fn register_epilogue[
         alias offset = i * 4
 
         alias helper = _compute_register_lambda_fn[
-            accum_type=accum_type,
+            epilogue_dtype=epilogue_dtype,
             frag_size=frag_size,
             compute_lambda_fn=compute_lambda_fn,
             inc=inc,
@@ -715,7 +719,7 @@ fn register_epilogue[
         helper(
             top_frag_upper_coord_left,
             bottom_frag_upper_coord_left,
-            upper_frag,
+            upper_frag_casted,
             staged_c_row,
             staged_c_col,
         )
@@ -723,7 +727,7 @@ fn register_epilogue[
         helper(
             top_frag_lower_coord_left,
             bottom_frag_lower_coord_left,
-            lower_frag,
+            lower_frag_casted,
             staged_c_row,
             staged_c_col,
         )
@@ -738,6 +742,7 @@ fn multi_stage_store_C[
     num_accum_pipeline_stages: UInt,
     /,
     *,
+    input_type: DType,
     accum_type: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
@@ -781,6 +786,10 @@ fn multi_stage_store_C[
 
     # assume N dimension is static
     alias simd_size = simd_width_of[c_type]()
+
+    # TODO (GEX-2630): This is a temporary workaround to support float32 compute epilogue for FP8 models for which we use compute lambda for dequantization.
+    # We should remove this once GEX-2630 is fixed.
+    alias epilogue_dtype = c_type if input_type is DType.bfloat16 else DType.float32
 
     # we break down the output tile BM x MMA_N to BM x stageN tiles
     # and output one tile per stage.
@@ -849,6 +858,9 @@ fn multi_stage_store_C[
                 mma_output_pipeline.consumer_mbar(mma_output_output_stage)
             )
 
+        var upper_frag_casted = upper_frag.cast[epilogue_dtype]()
+        var lower_frag_casted = lower_frag.cast[epilogue_dtype]()
+
         @parameter
         if elementwise_compute_lambda_fn:
 
@@ -863,11 +875,11 @@ fn multi_stage_store_C[
                     UInt(stageN),
                     elementwise_compute_lambda_fn.value(),
                     num_output_warps,
-                    accum_type,
-                    UInt(upper_frag.size),
+                    epilogue_dtype,
+                    UInt(upper_frag_casted.size),
                     UInt(rep),
                     transpose_c,
-                ](upper_frag, lower_frag, c_row, c_col, N)
+                ](upper_frag_casted, lower_frag_casted, c_row, c_col, N)
 
         # Assume double-buffer for shared memory packing
         var c_smem_tile = c_iter.next(stage % 2)[]
@@ -887,10 +899,10 @@ fn multi_stage_store_C[
 
             # Pack the upper frag to shared memory
             stsm_helper[swizzle, transpose_c](
-                upper_frag, c_smem_warp_tile_upper
+                upper_frag_casted, c_smem_warp_tile_upper
             )
             stsm_helper[swizzle, transpose_c](
-                lower_frag, c_smem_warp_tile_lower
+                lower_frag_casted, c_smem_warp_tile_lower
             )
 
             # Guard the write to shared memory is done.
@@ -933,10 +945,10 @@ fn multi_stage_store_C[
                 data_paths, stageN
             ](1, 0)
             stsm_helper[swizzle, transpose_c](
-                upper_frag, c_smem_warp_tile_upper
+                upper_frag_casted, c_smem_warp_tile_upper
             )
             stsm_helper[swizzle, transpose_c](
-                lower_frag, c_smem_warp_tile_lower
+                lower_frag_casted, c_smem_warp_tile_lower
             )
 
             # Guard the write to shared memory is done.
@@ -1068,12 +1080,14 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     register_based_epilogue: Bool = True,
     transpose_c: Bool = False,
+    max_profiled_tiles_per_SM: UInt32 = 0,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     cluster_dim: StaticTuple[Int32, 3],
     mnk: StaticTuple[UInt32, 3],
+    workspace: Span[UInt64, MutableAnyOrigin],
 ):
     constrained[c_type is not DType.float32, "c_type cannot be float32"]()
 
@@ -1319,179 +1333,202 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     var num_iters: UInt32 = ceildiv(mnk[2], BK)
 
+    alias MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
+        warp_role, max_profiled_tiles_per_SM
+    ]
+
     if WarpRole.is_main_load():
-        var required_clc_query = True
+        with MatmulProfilerType[0](workspace, 0):
+            var required_clc_query = True
 
-        while work_info.is_valid():
-            # CLC throttle prevents each CTA from going a few waves ahead.
-            if is_first_cta_in_cluster and required_clc_query:
-                load_clc_pipeline.wait_consumer()
-                var load_clc_producer_state = load_clc_pipeline.producer_stage()
-                _ = load_clc_pipeline.producer_mbar(load_clc_producer_state)[
-                    0
-                ].arrive()
-                load_clc_pipeline.producer_step()
+            while work_info.is_valid():
+                # CLC throttle prevents each CTA from going a few waves ahead.
+                if is_first_cta_in_cluster and required_clc_query:
+                    load_clc_pipeline.wait_consumer()
+                    var load_clc_producer_state = (
+                        load_clc_pipeline.producer_stage()
+                    )
+                    _ = load_clc_pipeline.producer_mbar(
+                        load_clc_producer_state
+                    )[0].arrive()
+                    load_clc_pipeline.producer_step()
 
-            # DO TMA LOAD
-            for i in range(num_iters):
-                load_AB[
-                    block_tile_shape=block_tile_shape,
-                    mma_shape=mma_shape,
-                    cta_group=cta_group,
-                ](
-                    a_tma_op,
-                    b_tma_op,
-                    a_smem,
-                    b_smem,
-                    load_mma_pipeline,
-                    peer_cta_coord,
-                    (UInt(work_info.m), UInt(work_info.n)),
-                    a_multicast_mask,
-                    b_multicast_mask,
-                    i,
-                    elect_one_cta,
-                )
-                load_mma_pipeline.producer_step()
-
-            syncwarp()
-            var next_work_info = scheduler.fetch_next_work(
-                work_info, clc_pipe_consumer_state
-            )
-            work_info = next_work_info
-            clc_pipe_consumer_state.step()
-
-        # Prevent CTA to exit when a peer CTA is still working on mma.
-        @parameter
-        for i in range(num_pipeline_stages):
-            load_mma_pipeline.wait_consumer()
-            load_mma_pipeline.producer_step()
-
-    if WarpRole.is_scheduler() and is_first_cta_in_cluster:
-        var required_clc_query = True
-
-        while work_info.is_valid():
-            if required_clc_query:
-                load_clc_pipeline.wait_producer()
-                var load_clc_consumer_stage = load_clc_pipeline.consumer_stage()
-                _ = load_clc_pipeline.consumer_mbar(load_clc_consumer_stage)[
-                    0
-                ].arrive()
-                load_clc_pipeline.consumer_step()
-
-                # advance to next work
-                clc_pipe_producer_state = scheduler.advance_to_next_work(
-                    clc_pipe_producer_state
-                )
-
-            # scheduler fetch next work
-            next_work_info = scheduler.fetch_next_work(
-                work_info, clc_pipe_consumer_state
-            )
-
-            work_info = next_work_info
-            clc_pipe_consumer_state.step()
-
-        # make sure all pipes are empty before kernel exit
-        @parameter
-        for i in range(num_clc_pipeline_stages):
-            clc_empty_mbar[clc_pipe_producer_state.index()].wait(
-                clc_pipe_producer_state.phase()
-            )
-            clc_pipe_producer_state.step()
-
-    if WarpRole.is_mma():
-        tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
-        syncwarp()
-        # non blocking, arrives and proceeds
-        named_barrier_arrive[MMA_THREADS + EPILOGUE_THREADS](1)
-
-        tmem_addr = ptr_tmem_addr[0]
-
-        while work_info.is_valid():
-            # scheduler fetch next work
-            next_work_info = scheduler.fetch_next_work(
-                work_info, clc_pipe_consumer_state
-            )
-            clc_pipe_consumer_state.step()
-            # DO MMA
-            if elect_one_cta:
-                var mma_output_mma_stage = mma_output_pipeline.producer_stage()
-                mma_output_pipeline.wait_consumer()
-                var tmem_offset = tmem_addr + (
-                    mma_output_mma_stage * stage_stride_cols
-                )
-
+                # DO TMA LOAD
                 for i in range(num_iters):
-                    consumer_main_loop[
+                    load_AB[
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
                         cta_group=cta_group,
-                        cluster_shape = Index(
-                            cluster_shape[0], cluster_shape[1], cluster_shape[2]
-                        ),
                     ](
-                        tmem_offset,
+                        a_tma_op,
+                        b_tma_op,
                         a_smem,
                         b_smem,
                         load_mma_pipeline,
-                        mma_op,
-                        elect_one_warp,
+                        peer_cta_coord,
+                        (UInt(work_info.m), UInt(work_info.n)),
+                        a_multicast_mask,
+                        b_multicast_mask,
                         i,
+                        elect_one_cta,
                     )
-                    load_mma_pipeline.consumer_step()
+                    load_mma_pipeline.producer_step()
 
-                # mma arrive multicast will track completion of all mma prior to this barrier.
-                if elect_one_sync():
-                    mma_arrive_multicast[cta_group](
-                        mma_output_pipeline.producer_mbar(mma_output_mma_stage),
-                        mma_complete_mask,
+                syncwarp()
+                var next_work_info = scheduler.fetch_next_work(
+                    work_info, clc_pipe_consumer_state
+                )
+                work_info = next_work_info
+                clc_pipe_consumer_state.step()
+
+            # Prevent CTA to exit when a peer CTA is still working on mma.
+            @parameter
+            for i in range(num_pipeline_stages):
+                load_mma_pipeline.wait_consumer()
+                load_mma_pipeline.producer_step()
+
+    if WarpRole.is_scheduler() and is_first_cta_in_cluster:
+        with MatmulProfilerType[1](workspace, 0):
+            var required_clc_query = True
+
+            while work_info.is_valid():
+                if required_clc_query:
+                    load_clc_pipeline.wait_producer()
+                    var load_clc_consumer_stage = (
+                        load_clc_pipeline.consumer_stage()
                     )
-                mma_output_pipeline.producer_step()
-            work_info = next_work_info
+                    _ = load_clc_pipeline.consumer_mbar(
+                        load_clc_consumer_stage
+                    )[0].arrive()
+                    load_clc_pipeline.consumer_step()
 
-        tcgen05_release_allocation_lock[cta_group]()
+                    # advance to next work
+                    clc_pipe_producer_state = scheduler.advance_to_next_work(
+                        clc_pipe_producer_state
+                    )
 
-        # wait for epilogue to finish
-        tmem_dealloc_mbar[].wait()
+                # scheduler fetch next work
+                next_work_info = scheduler.fetch_next_work(
+                    work_info, clc_pipe_consumer_state
+                )
 
-        tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
+                work_info = next_work_info
+                clc_pipe_consumer_state.step()
+
+            # make sure all pipes are empty before kernel exit
+            @parameter
+            for i in range(num_clc_pipeline_stages):
+                clc_empty_mbar[clc_pipe_producer_state.index()].wait(
+                    clc_pipe_producer_state.phase()
+                )
+                clc_pipe_producer_state.step()
+
+    if WarpRole.is_mma():
+        with MatmulProfilerType[2](workspace, 0):
+            tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
+            syncwarp()
+            # non blocking, arrives and proceeds
+            named_barrier_arrive[MMA_THREADS + EPILOGUE_THREADS](1)
+
+            tmem_addr = ptr_tmem_addr[0]
+
+            while work_info.is_valid():
+                # scheduler fetch next work
+                next_work_info = scheduler.fetch_next_work(
+                    work_info, clc_pipe_consumer_state
+                )
+                clc_pipe_consumer_state.step()
+                # DO MMA
+                if elect_one_cta:
+                    var mma_output_mma_stage = (
+                        mma_output_pipeline.producer_stage()
+                    )
+                    mma_output_pipeline.wait_consumer()
+                    var tmem_offset = tmem_addr + (
+                        mma_output_mma_stage * stage_stride_cols
+                    )
+
+                    for i in range(num_iters):
+                        consumer_main_loop[
+                            block_tile_shape=block_tile_shape,
+                            mma_shape=mma_shape,
+                            cta_group=cta_group,
+                            cluster_shape = Index(
+                                cluster_shape[0],
+                                cluster_shape[1],
+                                cluster_shape[2],
+                            ),
+                        ](
+                            tmem_offset,
+                            a_smem,
+                            b_smem,
+                            load_mma_pipeline,
+                            mma_op,
+                            elect_one_warp,
+                            i,
+                        )
+                        load_mma_pipeline.consumer_step()
+
+                    # mma arrive multicast will track completion of all mma prior to this barrier.
+                    if elect_one_sync():
+                        mma_arrive_multicast[cta_group](
+                            mma_output_pipeline.producer_mbar(
+                                mma_output_mma_stage
+                            ),
+                            mma_complete_mask,
+                        )
+                    mma_output_pipeline.producer_step()
+                work_info = next_work_info
+
+            tcgen05_release_allocation_lock[cta_group]()
+
+            # wait for epilogue to finish
+            tmem_dealloc_mbar[].wait()
+
+            tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
 
     if WarpRole.is_epilogue():
         named_barrier[MMA_THREADS + EPILOGUE_THREADS](1)
         tmem_addr = ptr_tmem_addr[0]
 
-        while work_info.is_valid():
-            # WAIT FOR MMA TO FINISH AND STORE RESULT
-            # scheduler fetch next work
-            multi_stage_store_C[
-                accum_type=accum_type,
-                block_tile_shape=block_tile_shape,
-                mma_shape=mma_shape,
-                stage_stride_cols = UInt(stage_stride_cols),
-                c_swizzle=c_swizzle,
-                cta_group=cta_group,
-                num_output_warps=num_output_warps,
-                max_tmem_cols=max_tmem_cols,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                register_based_epilogue=register_based_epilogue,
-                transpose_c=transpose_c,
-            ](
-                c_smem_iter,
-                c_tma_op,
-                mma_output_pipeline,
-                tmem_addr,
-                work_tile_coord=(UInt(work_info.m), UInt(work_info.n)),
-                elect_one_warp=elect_one_warp,
-                M=mnk[0],
-                N=mnk[1],
-            )
-            mma_output_pipeline.consumer_step()
+        var tile_idx = 0
 
-            next_work_info = scheduler.fetch_next_work(
-                work_info, clc_pipe_consumer_state
-            )
-            work_info = next_work_info
-            clc_pipe_consumer_state.step()
+        while work_info.is_valid():
+            with MatmulProfilerType[3](workspace, tile_idx):
+                # WAIT FOR MMA TO FINISH AND STORE RESULT
+                # scheduler fetch next work
+                multi_stage_store_C[
+                    input_type=a_type,
+                    accum_type=accum_type,
+                    block_tile_shape=block_tile_shape,
+                    mma_shape=mma_shape,
+                    stage_stride_cols = UInt(stage_stride_cols),
+                    c_swizzle=c_swizzle,
+                    cta_group=cta_group,
+                    num_output_warps=num_output_warps,
+                    max_tmem_cols=max_tmem_cols,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    register_based_epilogue=register_based_epilogue,
+                    transpose_c=transpose_c,
+                ](
+                    c_smem_iter,
+                    c_tma_op,
+                    mma_output_pipeline,
+                    tmem_addr,
+                    work_tile_coord=(UInt(work_info.m), UInt(work_info.n)),
+                    elect_one_warp=elect_one_warp,
+                    M=mnk[0],
+                    N=mnk[1],
+                )
+                mma_output_pipeline.consumer_step()
+
+                next_work_info = scheduler.fetch_next_work(
+                    work_info, clc_pipe_consumer_state
+                )
+                work_info = next_work_info
+                clc_pipe_consumer_state.step()
+
+            tile_idx += 1
 
         _ = tmem_dealloc_mbar[].arrive_cluster(block_rank_in_cluster() ^ 1)
         _ = tmem_dealloc_mbar[].arrive()
@@ -1507,16 +1544,12 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    cta_group: Int = 1,
-    num_clc_pipeline_stages: UInt = 2,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
-    block_swizzle_size: Int = 0,
-    rasterize_order: RasterOrder = RasterOrder.AlongM,
-    num_pipeline_stages: Optional[UInt] = None,
     register_based_epilogue: Bool = True,
     swapAB: Bool = False,
+    max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, *_, **_],
     a_device: LayoutTensor[a_type, a_layout, *_, **_],
@@ -1542,13 +1575,9 @@ fn blackwell_matmul_tma_umma_warp_specialized[
             a_layout,
             transpose_b,
             config=new_config,
-            cta_group=cta_group,
-            num_clc_pipeline_stages=num_clc_pipeline_stages,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            block_swizzle_size=block_swizzle_size,
-            rasterize_order=rasterize_order,
             register_based_epilogue=register_based_epilogue,
-            transpose_c=True,
+            max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
         ](c_device, b_device, a_device, ctx)
     else:
         _blackwell_matmul_tma_umma_warp_specialized[
@@ -1560,13 +1589,9 @@ fn blackwell_matmul_tma_umma_warp_specialized[
             b_layout,
             transpose_b,
             config=config,
-            cta_group=cta_group,
-            num_clc_pipeline_stages=num_clc_pipeline_stages,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            block_swizzle_size=block_swizzle_size,
-            rasterize_order=rasterize_order,
             register_based_epilogue=register_based_epilogue,
-            transpose_c=False,
+            max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
         ](c_device, a_device, b_device, ctx)
 
 
@@ -1580,16 +1605,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    cta_group: Int = 1,
-    num_clc_pipeline_stages: UInt = 2,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
-    block_swizzle_size: Int = 0,
-    rasterize_order: RasterOrder = RasterOrder.AlongM,
-    num_pipeline_stages: Optional[UInt] = None,
     register_based_epilogue: Bool = True,
-    transpose_c: Bool = False,
+    max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, *_, **_],
     a_device: LayoutTensor[a_type, a_layout, *_, **_],
@@ -1605,8 +1625,8 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     alias MMA_N = config.mma_shape[1]
     alias MMA_K = config.mma_shape[2]
 
-    alias BM = MMA_M // cta_group
-    alias BN = MMA_N // cta_group
+    alias BM = MMA_M // config.cta_group
+    alias BN = MMA_N // config.cta_group
     alias BK = config.block_tile_shape[2]
 
     constrained[
@@ -1631,8 +1651,10 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
 
     b_tma_op = create_tma_tile[
         Index(
-            BN // (cluster_shape[0] // cta_group), BK
-        ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
+            BN // (cluster_shape[0] // config.cta_group), BK
+        ) if transpose_b else Index(
+            BK, BN // (cluster_shape[0] // config.cta_group)
+        ),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b_device)
@@ -1644,24 +1666,24 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     alias width = 32 if (MMA_M == 256 and MMA_N % 32 == 0) or (
         MMA_M == 128 and BN % 32 == 0
     ) else 16
-    alias output_tile_shape = Index(128, width) if not transpose_c else Index(
-        width, 128
-    )
-    alias split_tile_shape = Index(64, width) if not transpose_c else Index(
-        width, 64
-    )
+    alias output_tile_shape = Index(
+        128, width
+    ) if not config.AB_swapped else Index(width, 128)
+    alias split_tile_shape = Index(
+        64, width
+    ) if not config.AB_swapped else Index(width, 64)
     alias c_tma_tile_shape = output_tile_shape if MMA_M == 256 else split_tile_shape
-    alias c_swizzle = TensorMapSwizzle.SWIZZLE_32B if transpose_c else (
+    alias c_swizzle = TensorMapSwizzle.SWIZZLE_32B if config.AB_swapped else (
         TensorMapSwizzle.SWIZZLE_64B if width
         == 32 else TensorMapSwizzle.SWIZZLE_32B
     )
     # transpose_c => MMA_M == 256 is the same as (not transpose_c) or MMA_M == 256
     constrained[
-        (not transpose_c) or MMA_M == 256,
+        (not config.AB_swapped) or MMA_M == 256,
         "swapAB is only supported for MMA_M == 256",
     ]()
     var c_tma_op = create_tma_tile[
-        c_tma_tile_shape if not transpose_c else Index(
+        c_tma_tile_shape if not config.AB_swapped else Index(
             c_tma_tile_shape[0], c_tma_tile_shape[1] // 8
         ),
         swizzle_mode=c_swizzle,
@@ -1673,12 +1695,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     alias b_smem_bytes_per_stage = BN * BK * size_of[b_type]()
     # A and B per pipeline stage
     alias AB_smem_per_stage = a_smem_bytes_per_stage + b_smem_bytes_per_stage
-    # Support double-buffer for output stages.
-    alias num_output_stages = 2
 
+    # Support double-buffer for output stages.
     alias c_smem_bytes = output_tile_shape[0] * output_tile_shape[
         1
-    ] * num_output_stages * size_of[c_type]()
+    ] * config.num_output_stages * size_of[c_type]()
 
     alias MBAR_BYTES = size_of[Int64]()  # 8 bytes per barrier
     alias CLC_RESPONSE_BYTES = size_of[Int128]()  # 16 bytes per response
@@ -1693,11 +1714,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     alias accum_full_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
     alias accum_empty_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
 
-    alias clc_response_bytes = CLC_RESPONSE_BYTES * num_clc_pipeline_stages
-    alias clc_full_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
-    alias clc_empty_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
-    alias clc_throttle_full_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
-    alias clc_throttle_empty_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
+    alias clc_response_bytes = CLC_RESPONSE_BYTES * config.num_clc_pipeline_stages
+    alias clc_full_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
+    alias clc_empty_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
+    alias clc_throttle_full_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
+    alias clc_throttle_empty_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
 
     alias tmem_addr_bytes = TMEM_ADDR_BYTES
     alias tmem_dealloc_mbar_bytes = MBAR_BYTES
@@ -1722,7 +1743,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         AB_smem_per_stage + tma_mbar_bytes_per_stage + mma_mbar_bytes_per_stage
     )
 
-    alias max_pipeline_stages: UInt = UInt(
+    alias max_pipeline_stages = UInt(
         smem_leftover // producer_consumer_smem_per_stage
     )
 
@@ -1730,19 +1751,16 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         max_pipeline_stages >= 1, "Max pipeline stages must be at least 1"
     ]()
 
-    @parameter
-    if num_pipeline_stages:
-        constrained[
-            num_pipeline_stages.value() <= max_pipeline_stages,
-            "Pipeline stage must be less than or equal to max pipeline stages",
-        ]()
-
-    alias pipeline_stage = num_pipeline_stages.value() if num_pipeline_stages else max_pipeline_stages
+    # TODO: the config should have the correct number of stages.
+    alias pipeline_stage = min(config.num_pipeline_stages, max_pipeline_stages)
     alias producer_consumer_smem = producer_consumer_smem_per_stage * pipeline_stage
 
     alias smem_size = (
         clc_smem + accum_smem + producer_consumer_smem + tmem_writeout_smem
     )
+
+    alias max_profiled_tiles = 0 if max_profiled_tiles_per_SM is None else max_profiled_tiles_per_SM.value()
+    alias enable_profiling = max_profiled_tiles > 0
 
     alias kernel = blackwell_tma_umma_warp_specialized_kernel[
         a_type,
@@ -1763,17 +1781,18 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
-        cta_group=cta_group,
+        cta_group = config.cta_group,
         num_pipeline_stages = UInt(pipeline_stage),
-        num_clc_pipeline_stages=num_clc_pipeline_stages,
+        num_clc_pipeline_stages = config.num_clc_pipeline_stages,
         num_accum_pipeline_stages = UInt(max_accum_pipeline_stages),
-        num_output_stages = UInt(num_output_stages),
+        num_output_stages = UInt(config.num_output_stages),
         output_tile_shape=output_tile_shape,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        block_swizzle_size=block_swizzle_size,
-        rasterize_order=rasterize_order,
+        block_swizzle_size = config.block_swizzle_size,
+        rasterize_order = config.raster_order,
         register_based_epilogue=register_based_epilogue,
-        transpose_c=transpose_c,
+        transpose_c = config.AB_swapped,
+        max_profiled_tiles_per_SM=max_profiled_tiles,
     ]
 
     var grid_dim = (
@@ -1788,7 +1807,25 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         1,
     )
 
+    # TODO: integrate with existing enums
+    alias load_warps = 1
+    alias mma_warps = 1
+    alias scheduler_warps = 1
+    alias epilogue_warps = 4
+
     var mnk = StaticTuple[UInt32, 3](M, N, K)
+
+    var workspace: Span[UInt64, MutableAnyOrigin]
+
+    @parameter
+    if enable_profiling:
+        workspace = MatmulWarpSpecializationWorkSpaceManager[
+            max_profiled_tiles
+        ].get_workspace(ctx)
+    else:
+        workspace = Span[UInt64, MutableAnyOrigin](
+            ptr=UnsafePointer[UInt64, origin=MutableAnyOrigin](), length=0
+        )
 
     ctx.enqueue_function[kernel](
         a_tma_op,
@@ -1796,12 +1833,22 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         c_tma_op,
         cluster_dim,
         mnk,
+        workspace,
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
-        block_dim=(32 * 7),
+        block_dim=(
+            32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
+        ),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(b200_smem),
     )
+
+    @parameter
+    if enable_profiling:
+        ctx.synchronize()
+        MatmulWarpSpecializationWorkSpaceManager[
+            max_profiled_tiles
+        ].dump_workspace_as_csv(ctx, workspace, "profile")
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -2010,7 +2057,7 @@ fn matmul_sm100_fallback_kernel[
     ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
         block_idx.y, block_idx.x
     )
-    alias c_coord_type = __type_of(ctile_coords)
+    alias c_coord_type = type_of(ctile_coords)
 
     var M = c.dim[0]()
     alias N = c.layout.shape[1].value()
@@ -2049,7 +2096,7 @@ fn matmul_sm100_fallback_kernel[
                 @parameter
                 for m_vec in range(num_vecs_m):
                     alias i_vec = n_vec * num_vecs_m + m_vec
-                    alias dst_idx = __type_of(c_gmem_frag).layout(
+                    alias dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
                     )
                     alias dst_m_offset = dst_idx // N
@@ -2125,11 +2172,11 @@ fn matmul_sm100_fallback[
         a_type,
         b_type,
         c_type,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
-        __type_of(c).layout,
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
+        type_of(c).layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=True,

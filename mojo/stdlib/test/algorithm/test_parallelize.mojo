@@ -116,12 +116,4 @@ def test_parallelize_negative_work():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_sync_parallelize]()
-    suite.test[test_parallelize]()
-    suite.test[test_parallelize_no_workers]()
-    suite.test[test_parallelize_negative_workers]()
-    suite.test[test_parallelize_negative_work]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

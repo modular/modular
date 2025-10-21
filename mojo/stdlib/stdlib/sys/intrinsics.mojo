@@ -99,9 +99,9 @@ fn llvm_intrinsic[
 # is assumed not to alias any Mojo-derived pointer. DO NOT proliferate usage of
 # this function!
 fn _unsafe_aliasing_address_to_pointer[
-    dtype: DType
-](var addr: Scalar[DType.int]) -> UnsafePointer[Scalar[dtype]]:
-    return UnsafePointer(to=addr).bitcast[UnsafePointer[Scalar[dtype]]]()[]
+    T: AnyType
+](var addr: Int) -> UnsafePointer[T]:
+    return UnsafePointer(to=addr).bitcast[UnsafePointer[T]]()[]
 
 
 @always_inline("nodebug")
@@ -157,9 +157,9 @@ fn gather[
 
     @parameter
     if size == 1:
-        return _unsafe_aliasing_address_to_pointer[dtype](base[0]).load[
-            invariant=invariant
-        ]() if mask else passthrough[0]
+        return _unsafe_aliasing_address_to_pointer[Scalar[dtype]](
+            Int(base[0])
+        ).load[invariant=invariant]() if mask else passthrough[0]
 
     @parameter
     if is_gpu() and invariant:
@@ -167,8 +167,8 @@ fn gather[
 
         @parameter
         for i in range(size):
-            result[i] = _unsafe_aliasing_address_to_pointer[dtype](
-                base[i]
+            result[i] = _unsafe_aliasing_address_to_pointer[Scalar[dtype]](
+                Int(base[i])
             ).load[invariant=invariant]() if mask[i] else passthrough[i]
         return result
 
@@ -251,7 +251,9 @@ fn scatter[
     @parameter
     if size == 1:
         if mask:
-            var ptr = _unsafe_aliasing_address_to_pointer[dtype](base[0])
+            var ptr = _unsafe_aliasing_address_to_pointer[Scalar[dtype]](
+                Int(base[0])
+            )
             ptr.store(value[0])
         return
     llvm_intrinsic["llvm.masked.scatter", NoneType](
@@ -774,6 +776,30 @@ fn _type_is_eq[t1: AnyType, t2: AnyType]() -> Bool:
     ]
 
 
+@always_inline("builtin")
+fn _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
+    """Compares the two type for equality at parse-time.
+
+    Parameters:
+        t1: The LHS of the type comparison.
+        t2: The RHS of the type comparison.
+
+    Returns:
+        Returns True if t1 and t2 are the same type and False otherwise.
+    """
+    return __mlir_attr[
+        `#kgen.param.expr<eq,`,
+        `#kgen.type<`,
+        +t1,
+        `> : !kgen.type`,
+        `,`,
+        `#kgen.type<`,
+        +t2,
+        `> : !kgen.type`,
+        `> : i1`,
+    ]
+
+
 # ===----------------------------------------------------------------------=== #
 # Transitional type used for llvm_intrinsic
 # ===----------------------------------------------------------------------=== #
@@ -986,7 +1012,7 @@ fn readfirstlane(value: Int32) -> Int32:
 
 # TODO: this can be parameterized for AnyTrivialRegType but I am hitting compiler errors so skipping for now
 @always_inline
-fn readfirstlane(value: UnsafePointer) -> __type_of(value):
+fn readfirstlane(value: UnsafePointer) -> type_of(value):
     """
     Get the value in the lowest active lane of the input operand.
 
@@ -998,12 +1024,12 @@ fn readfirstlane(value: UnsafePointer) -> __type_of(value):
     """
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
     return llvm_intrinsic[
-        "llvm.amdgcn.readfirstlane", __type_of(value), __type_of(value)
+        "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
     ](value)
 
 
 @always_inline
-fn readfirstlane(value: Int) -> __type_of(value):
+fn readfirstlane(value: Int) -> type_of(value):
     """
     Get the value in the lowest active lane of the input operand.
 
@@ -1015,7 +1041,7 @@ fn readfirstlane(value: Int) -> __type_of(value):
     """
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
     return llvm_intrinsic[
-        "llvm.amdgcn.readfirstlane", __type_of(value), __type_of(value)
+        "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
     ](value)
 
 

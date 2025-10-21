@@ -12,25 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import TypeVar, cast
+from typing import cast
 
 from max.interfaces import (
-    EmbeddingsGenerationContextType,
-    InputContext,
+    EmbeddingsContext,
     MAXPullQueue,
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
-    RequestID,
     Scheduler,
+    TextGenerationInputs,
+    TextGenerationOutput,
 )
-from max.nn.kv_cache import PagedKVCacheManager
+from max.nn.kv_cache import TPPagedKVCacheManager
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     EmbeddingsPipelineType,
     PipelineConfig,
     PipelineRole,
-    TextGenerationPipelineType,
 )
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
@@ -59,8 +58,6 @@ __all__ = [
     "load_scheduler",
 ]
 
-T = TypeVar("T", bound=InputContext)
-
 
 def load_scheduler(
     pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
@@ -83,7 +80,7 @@ def load_scheduler(
             scheduler_config=embeddings_scheduler_config,
             pipeline=emb_pipeline,
             request_queue=cast(
-                MAXPullQueue[EmbeddingsGenerationContextType],
+                MAXPullQueue[EmbeddingsContext],
                 request_queue,
             ),
             response_queue=response_queue,
@@ -93,7 +90,7 @@ def load_scheduler(
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         assert hasattr(pipeline, "speech_lm_pipeline")
         paged_manager = pipeline.speech_lm_pipeline._pipeline_model.kv_manager
-        assert isinstance(paged_manager, PagedKVCacheManager)
+        assert isinstance(paged_manager, TPPagedKVCacheManager)
 
         assert pipeline_config.ce_delay_ms is not None
         assert pipeline_config.enable_prioritize_first_decode is not None
@@ -126,7 +123,10 @@ def load_scheduler(
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
         assert isinstance(pipeline, Pipeline)
-        text_pipeline = cast(TextGenerationPipelineType[TextContext], pipeline)
+        text_pipeline = cast(
+            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+            pipeline,
+        )
         return load_text_generation_scheduler(
             text_pipeline,
             pipeline_config,
@@ -136,7 +136,10 @@ def load_scheduler(
         )
     elif pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
         assert isinstance(pipeline, Pipeline)
-        text_pipeline = cast(TextGenerationPipelineType[TextContext], pipeline)
+        text_pipeline = cast(
+            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+            pipeline,
+        )
         return load_decode_scheduler(
             text_pipeline,
             pipeline_config,
@@ -147,7 +150,10 @@ def load_scheduler(
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
         assert isinstance(pipeline, Pipeline)
-        text_pipeline = cast(TextGenerationPipelineType[TextContext], pipeline)
+        text_pipeline = cast(
+            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+            pipeline,
+        )
         return load_prefill_scheduler(text_pipeline, pipeline_config, settings)
     else:
         raise ValueError(

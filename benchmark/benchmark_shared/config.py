@@ -419,35 +419,15 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """Enable server stats collection for serving benchmarks."""
 
     # Result saving (serving-specific extensions)
-    server_args: str = field(
-        default="",
-        metadata={
-            "group": "Result Saving",
-            "group_description": "Parameters controlling result saving and output",
-        },
-    )
-    """Server arguments string."""
-
-    # Result saving (serving-specific extensions)
-    save_result: bool = field(
-        default=False, metadata={"group": "Result Saving"}
-    )
-    """Specify to save benchmark results to a json file."""
-
     record_output_lengths: str | None = field(
         default=None, metadata={"group": "Result Saving"}
     )
     """Path to save output lengths in YAML format."""
 
-    result_dir: str | None = field(
-        default=None, metadata={"group": "Result Saving"}
-    )
-    """Directory to save results."""
-
     result_filename: str | None = field(
         default=None, metadata={"group": "Result Saving"}
     )
-    """Custom filename (auto-generated if null)."""
+    """JSON filename for results. If None, no results are saved. Can include directory path."""
 
     metadata: list[str] = field(
         default_factory=list, metadata={"group": "Result Saving"}
@@ -543,10 +523,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "skip_test_prompt": "Skip the test prompt. Useful when doing external profiling.",
             "collect_gpu_stats": "Enable GPU stats collection for serving benchmarks.",
             "collect_cpu_stats": "Enable CPU stats collection for serving benchmarks.",
-            "server_args": "Server arguments string.",
-            "save_result": "Specify to save benchmark results to a json file.",
-            "result_dir": "Directory to save results.",
-            "result_filename": "Custom filename (auto-generated if null).",
+            "result_filename": "JSON filename for results. If None, no results are saved. Can include directory path.",
             "record_output_lengths": "Path to save output lengths in YAML format.",
             "metadata": 'Key-value pairs for metadata (format: ["key=value", ...]).',
             "num_loras": "Number of LoRA adapters to test. If > 0, test LoRA adapters will be generated.",

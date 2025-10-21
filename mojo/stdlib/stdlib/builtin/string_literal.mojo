@@ -290,7 +290,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     # eventually merge into String through nonmaterialization.
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(StringLiteral[_]),
+        other_type: type_of(StringLiteral[_]),
     ](self) -> StaticString:
         """Returns a StaticString after merging with another string literal.
 
@@ -332,7 +332,11 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         # TODO(MSTDL-555):
         #   Remove bitcast after changing pop.string.address
         #   return type.
-        return ptr.bitcast[Byte]().origin_cast[False, StaticConstantOrigin]()
+        return (
+            ptr.bitcast[Byte]()
+            .as_immutable()
+            .unsafe_origin_cast[StaticConstantOrigin]()
+        )
 
     @always_inline
     fn unsafe_cstr_ptr(

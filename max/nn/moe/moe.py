@@ -23,8 +23,10 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from typing_extensions import Self
 
 from ..comm.ep import EPBatchManager
+from ..float8_config import Float8Config
 from ..kernels import grouped_matmul_ragged, moe_create_indices
 from ..layer import LayerList, Module, Shardable
 from ..linear import MLP, Linear
@@ -153,6 +155,7 @@ class MoE(Module, Shardable):
         dtype: DType = DType.bfloat16,
         apply_router_weight_first: bool = False,
         ep_batch_manager: EPBatchManager | None = None,
+        float8_config: Float8Config | None = None,
     ):
         """
         Args:
@@ -186,9 +189,10 @@ class MoE(Module, Shardable):
             hidden_dim=hidden_dim,
             num_experts=num_experts,
             num_experts_per_token=num_experts_per_token,
-            dtype=dtype,
+            dtype=DType.bfloat16,
         )
         self.num_local_experts = num_experts // ep_size
+        self.float8_config = float8_config
 
         if has_shared_experts:
             assert shared_experts_dim > 0, (
@@ -200,6 +204,7 @@ class MoE(Module, Shardable):
                 hidden_dim=self.hidden_dim,
                 feed_forward_length=self.shared_experts_dim,
                 devices=self.devices,
+                float8_config=self.float8_config,
             )
 
         if ep_batch_manager:
@@ -220,6 +225,7 @@ class MoE(Module, Shardable):
                     hidden_dim=self.hidden_dim,
                     feed_forward_length=self.moe_dim,
                     devices=self.devices,
+                    float8_config=self.float8_config,
                 )
                 for _ in range(self.num_experts)
             ]
@@ -268,7 +274,7 @@ class MoE(Module, Shardable):
                 "Only tensor parallel or expert parallel sharding strategies are supported for MoE"
             )
 
-    def shard(self, devices: Iterable[DeviceRef]) -> list[MoE]:
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Self]:
         """Create sharded views of this MoE module across multiple devices.
 
         Args:
@@ -303,7 +309,7 @@ class MoE(Module, Shardable):
             sharded_moe_dim = self.moe_dim
             sharded_shared_experts_dim = self.shared_experts_dim
         for shard_idx, device in enumerate(devices):
-            sharded = MoE(
+            sharded = self.__class__(
                 devices=[device],
                 hidden_dim=self.hidden_dim,
                 num_experts=self.num_experts,
@@ -315,6 +321,7 @@ class MoE(Module, Shardable):
                 ep_size=self.ep_size,
                 dtype=self.dtype,
                 apply_router_weight_first=self.apply_router_weight_first,
+                float8_config=self.float8_config,
             )
 
             # Replace layers and weights with sharded versions.

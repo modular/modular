@@ -363,13 +363,16 @@ struct SharedMemBarrier(ImplicitlyCopyable, Movable):
         )
 
     @always_inline
-    fn unsafe_ptr(
-        ref [AddressSpace.SHARED]self,
+    fn unsafe_ptr[
+        mut: Bool, //,
+        origin: Origin[mut],
+    ](
+        ref [origin, AddressSpace.SHARED]self,
     ) -> UnsafePointer[
         Int64,
         address_space = AddressSpace.SHARED,
-        mut = Origin(__origin_of(self)).mut,
-        origin = __origin_of(self),
+        mut=mut,
+        origin=origin,
     ]:
         """Get an unsafe pointer to the barrier's memory location.
 
@@ -377,11 +380,19 @@ struct SharedMemBarrier(ImplicitlyCopyable, Movable):
         This method is primarily used internally by other barrier operations that need
         direct access to the underlying memory.
 
+        Parameters:
+            mut: Mutability of self.
+            origin: Origin of self.
+
         Returns:
             An unsafe pointer to the barrier's memory location in shared memory,
             properly typed and aligned for barrier operations.
         """
-        return {UnsafePointer(to=self.mbar)}
+        return (
+            UnsafePointer(to=self.mbar)
+            .mut_cast[mut]()
+            .unsafe_origin_cast[origin]()
+        )
 
     @always_inline
     fn arrive_cluster(
@@ -538,6 +549,15 @@ struct PipelineState[num_stages: Int](Defaultable, ImplicitlyCopyable, Movable):
         self.step()
         return self
 
+    @always_inline
+    fn __enter__(var self) -> Self:
+        """Enter the context manager.
+
+        Returns:
+            The pipeline state instance for use in a `with` statement.
+        """
+        return self
+
 
 # TMATensorTile is created on the host with specific memory and tile sizes.
 # Each TMATensorTile provides an asynchronous load of a specific tile at specified tile coordinates.
@@ -652,12 +672,12 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(dst).alignment % 128 == 0,
+            type_of(dst).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
 
         constrained[
-            __type_of(dst).dtype == dtype,
+            type_of(dst).dtype == dtype,
             "Input tensor has a different type than the TMA op",
         ]()
 
@@ -696,7 +716,7 @@ struct TMATensorTile[
                     + String(desc_layout),
                 ]()
                 cp_async_bulk_tensor_shared_cluster_global[cta_group=cta_group](
-                    dst.ptr + copy_offset,
+                    dst.ptr.mut_cast[True]() + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
@@ -735,7 +755,7 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(dst).alignment % 128 == 0,
+            type_of(dst).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
 
@@ -768,7 +788,7 @@ struct TMATensorTile[
                     ) + (i * num_copies_dim2 + j) * copy_size
 
                     cp_async_bulk_tensor_shared_cluster_global(
-                        dst.ptr + copy_offset,
+                        dst.ptr.mut_cast[True]() + copy_offset,
                         UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
@@ -818,7 +838,7 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(dst).alignment % 128 == 0,
+            type_of(dst).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
 
@@ -838,7 +858,7 @@ struct TMATensorTile[
                 cp_async_bulk_tensor_shared_cluster_global_multicast[
                     cta_group=cta_group
                 ](
-                    dst.ptr + copy_offset,
+                    dst.ptr.mut_cast[True]() + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
@@ -901,7 +921,7 @@ struct TMATensorTile[
         self.async_multicast_load(
             dst_slice,
             mem_barrier,
-            (coords[0], coords[1] + rank * tma_rows),
+            (coords[0], coords[1] + rank * UInt(tma_rows)),
             multicast_mask,
         )
 
@@ -929,7 +949,7 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(src).alignment % 128 == 0,
+            type_of(src).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
 
@@ -988,7 +1008,7 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(src).alignment % 128 == 0,
+            type_of(src).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
         cp_async_bulk_tensor_reduce[reduction_kind=reduction_kind](
@@ -1460,7 +1480,9 @@ def create_tma_tile[
     return create_tma_descriptor[tensor.dtype, 2, swizzle_mode](
         DeviceBuffer(
             ctx,
-            tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+            tensor.ptr.mut_cast[True]().address_space_cast[
+                AddressSpace.GENERIC
+            ](),
             1,
             owning=False,
         ),
@@ -1573,7 +1595,9 @@ def create_tma_tile[
         return create_tma_descriptor[dtype, 2, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+                tensor.ptr.mut_cast[True]().address_space_cast[
+                    AddressSpace.GENERIC
+                ](),
                 1,
                 owning=False,
             ),
@@ -1599,7 +1623,9 @@ def create_tma_tile[
         return create_tma_descriptor[dtype, 3, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+                tensor.ptr.mut_cast[True]().address_space_cast[
+                    AddressSpace.GENERIC
+                ](),
                 1,
                 owning=False,
             ),
@@ -1670,8 +1696,11 @@ fn create_nested_tma_tile[
     Returns:
         The `TMATensorTile` configured with the specified tile dimensions and
         swizzle mode, ready for use in asynchronous data transfer operations.
+
+    Raises:
+        If there was an error creating the underlying TMADescriptor.
     """
-    alias ResultType = __type_of(res)
+    alias ResultType = type_of(res)
     alias desc_layout = ResultType.desc_layout
     alias desc_bytes_size = desc_layout.size() * size_of[dtype]()
     alias layout_size = ResultType.layout.size() * size_of[dtype]()
@@ -1707,7 +1736,9 @@ fn create_nested_tma_tile[
     res = create_tma_descriptor[dtype, 2, swizzle_mode](
         DeviceBuffer(
             ctx,
-            tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+            tensor.ptr.mut_cast[True]().address_space_cast[
+                AddressSpace.GENERIC
+            ](),
             1,
             owning=False,
         ),
@@ -1818,7 +1849,7 @@ struct TMATensorTileArray[
     fn __init__(
         out self,
         tensormaps_device: DeviceBuffer[DType.uint8],
-    ) raises:
+    ):
         """
         Initializes a new TMATensorTileArray.
 

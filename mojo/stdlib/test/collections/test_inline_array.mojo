@@ -221,7 +221,7 @@ def test_array_contains():
 def test_inline_array_runs_destructors():
     """Ensure we delete the right number of elements."""
     var destructor_recorder = List[Int]()
-    var ptr = UnsafePointer(to=destructor_recorder).origin_cast[False]()
+    var ptr = UnsafePointer(to=destructor_recorder).as_immutable()
     alias capacity = 32
     var inline_list = InlineArray[DelRecorder[ptr.origin], 4](
         DelRecorder(0, ptr),
@@ -300,7 +300,7 @@ def test_move():
     # === 3. Check that the destructor is not called when moving. ===
 
     var del_counter = List[Int]()
-    var del_counter_ptr = UnsafePointer(to=del_counter).origin_cast[False]()
+    var del_counter_ptr = UnsafePointer(to=del_counter).as_immutable()
     var del_recorder = DelRecorder(0, del_counter_ptr)
     var arr3 = InlineArray[DelRecorder[del_counter_ptr.origin], 1](del_recorder)
 
@@ -319,17 +319,4 @@ def test_move():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_array_unsafe_get]()
-    suite.test[test_array_int]()
-    suite.test[test_array_str]()
-    suite.test[test_array_int_pointer]()
-    suite.test[test_array_unsafe_assume_initialized_constructor_string]()
-    suite.test[test_array_contains]()
-    suite.test[test_inline_array_runs_destructors]()
-    suite.test[test_unsafe_ptr]()
-    suite.test[test_size_of_array[Int, capacity=32]]()
-    suite.test[test_move]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

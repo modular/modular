@@ -36,8 +36,4 @@ def test_size_of_dtypes():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_size_of_dtypes]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

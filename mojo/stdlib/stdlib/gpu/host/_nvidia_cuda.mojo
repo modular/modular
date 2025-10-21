@@ -259,7 +259,7 @@ struct TMADescriptor(ImplicitlyCopyable):
         self.data = other.data
 
 
-fn prefetch_tma_descriptor(desc_ptr: OpaquePointer):
+fn prefetch_tma_descriptor(desc_ptr: UnsafePointer[NoneType, mut=False]):
     __mlir_op.`nvvm.prefetch`[tensormap = __mlir_attr.unit](
         to_llvm_ptr(desc_ptr),
     )

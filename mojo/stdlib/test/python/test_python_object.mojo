@@ -776,36 +776,16 @@ def test_with_python_eval_and_evaluate():
     test_python_eval_and_evaluate(python)
 
 
+def test_python_object_string():
+    var s = String(PythonObject("hello"))
+    assert_equal(s, "hello")
+
+    var p = Python()
+    _ = p.eval("class A:\n  def __str__(self): pass")
+    var a = p.evaluate("A()")
+    with assert_raises(contains="__str__ returned non-string"):
+        _ = String(a)
+
+
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_with_python_dunder_methods]()
-    suite.test[test_with_python_inplace_dunder_methods]()
-    suite.test[test_num_conversion]()
-    suite.test[test_boolean_operations]()
-    suite.test[test_with_python_string_conversions]()
-    suite.test[test_len]()
-    suite.test[test_is]()
-    suite.test[test_iter]()
-    suite.test[test_setitem]()
-    suite.test[test_dict]()
-    suite.test[test_set]()
-    suite.test[test_none]()
-    suite.test[test_nested_object]()
-    suite.test[test_getitem_raises]()
-    suite.test[test_setitem_raises]()
-    suite.test[test_py_slice]()
-    suite.test[test_contains_dunder]()
-    suite.test[test_python_mojo_object_operations]()
-    suite.test[test_conversion_to_simd]()
-    suite.test[test_hash]()
-    suite.test[test_call_with_kwargs]()
-    suite.test[test_attribute_access]()
-    suite.test[test_copy]()
-    suite.test[test_with_python_eval_and_evaluate]()
-    suite.test[test_python_module_operations]()
-    suite.test[test_python_type_functions]()
-    suite.test[test_advanced_slicing]()
-    suite.test[test_error_handling]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

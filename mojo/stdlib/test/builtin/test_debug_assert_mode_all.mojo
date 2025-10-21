@@ -19,11 +19,7 @@ from testing import TestSuite
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_debug_assert_mode_all_true]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 # CHECK-LABEL: test_debug_assert_mode_all_true

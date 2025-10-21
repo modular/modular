@@ -300,15 +300,4 @@ def test_tile_middle_unswitch_boundaries_static():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_static_tile]()
-    suite.test[test_static_tile2d]()
-    suite.test[test_dynamic_tile]()
-    suite.test[test_unswitched_tile]()
-    suite.test[test_unswitched_2d_tile]()
-    suite.test[test_tile_and_unswitch]()
-    suite.test[test_tile_middle_unswitch_boundaries]()
-    suite.test[test_tile_middle_unswitch_boundaries_static]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

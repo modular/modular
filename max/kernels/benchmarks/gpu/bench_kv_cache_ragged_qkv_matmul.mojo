@@ -94,25 +94,28 @@ def execute_kv_cache_ragged_matmul[
         max_context_length = max(max_context_length, Int(length + cache_size))
         max_prompt_length = max(max_prompt_length, Int(length))
     prefix_sums_host.tensor[batch_size] = total_seq_len
-    var prefix_sums_device = prefix_sums_host.copy_to_device(ctx)
-
+    var prefix_sums_device_buffer = prefix_sums_host.copy_to_device(ctx)
+    var prefix_sums_device = prefix_sums_device_buffer.to_layout_tensor()
     var hidden_state_host = HostNDBuffer[dtype, 2, DimList(Dim(), hidden_size)](
         (Int(total_seq_len), hidden_size),
     )
     random(hidden_state_host.tensor)
-    var hidden_state_device = hidden_state_host.copy_to_device(ctx)
+    var hidden_state_device_buffer = hidden_state_host.copy_to_device(ctx)
+    var hidden_state_device = hidden_state_device_buffer.to_layout_tensor()
 
     var weight_host = HostNDBuffer[
         dtype, 2, DimList(hidden_size, combined_hidden_size)
     ]((hidden_size, combined_hidden_size))
     random(weight_host.tensor)
-    var weight_device = weight_host.copy_to_device(ctx)
+    var weight_device_buffer = weight_host.copy_to_device(ctx)
+    var weight_device = weight_device_buffer.to_layout_tensor()
 
     var output_host = HostNDBuffer[dtype, 2, DimList(Dim(), hidden_size)](
         (Int(total_seq_len), combined_hidden_size),
     )
     random(output_host.tensor)
-    var output_device = output_host.copy_to_device(ctx)
+    var output_devce_buffer = output_host.copy_to_device(ctx)
+    var output_device = output_devce_buffer.to_layout_tensor()
 
     var kv_block_host = HostNDBuffer[dtype, 6](
         IndexList[6](
@@ -177,12 +180,12 @@ def execute_kv_cache_ragged_matmul[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             _fused_qkv_matmul_kv_cache_ragged_impl[target="gpu"](
-                hidden_state_device.tensor,
-                prefix_sums_device.tensor,
-                weight_device.tensor,
+                hidden_state_device,
+                prefix_sums_device,
+                weight_device,
                 k_cache_device,
                 v_cache_device,
-                output_device.tensor,
+                output_device,
                 ctx,
             )
 

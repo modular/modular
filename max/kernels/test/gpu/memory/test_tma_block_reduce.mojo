@@ -62,7 +62,7 @@ fn block_reduce[
 
     var warp_m2 = warp.sum(val)
 
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
     var lane_idx = lane_id()
 
     if lane_idx == 0:
@@ -90,10 +90,10 @@ fn global_reduction_kernel[
 ](d_out: UnsafePointer[Scalar[accum_type]], num_cols: Int):
     var tid = thread_idx.x
     var row = block_idx.x
-    var idx = tid * simd_width
+    var idx = tid * UInt(simd_width)
     var vec_data = SIMD[accum_type, simd_width](0)
 
-    if idx < num_cols:
+    if idx < UInt(num_cols):
         vec_data = input_fn[simd_width, 2](IndexList[2](row, idx)).cast[
             accum_type
         ]()
@@ -150,8 +150,8 @@ fn tma_reduction_kernel[
 
     # Local thread reduction of loaded data.
     var vec_data = SIMD[accum_type, simd_width](0)
-    var idx = thread_idx.x * simd_width
-    if idx < cols:
+    var idx = thread_idx.x * UInt(simd_width)
+    if idx < UInt(cols):
         vec_data = shmem.load[width=simd_width](idx).cast[accum_type]()
     var local_sum = vec_data.reduce_add()
 

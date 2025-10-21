@@ -94,8 +94,4 @@ def test_mojobench():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_mojobench]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

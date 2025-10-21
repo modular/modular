@@ -266,7 +266,7 @@ Avoid using the `Some[]` utility if a named type parameter is reused in a
 function signature or body.
 
 ```mojo
-fn foo(arg0: Some[Stringable], arg1: __type_of(arg0)): ... # 🔴 Avoid
+fn foo(arg0: Some[Stringable], arg1: type_of(arg0)): ... # 🔴 Avoid
 fn foo[Str: Stringable, //](arg0: Str, arg1: Str): ...     # 🟢 Preferred
 ```
 

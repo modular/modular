@@ -158,7 +158,7 @@ fn multicast_tma_wgmma_kernel[
                     var a_gmem_slice_coord = (
                         block_idx.y * BM + Int(rank_n) * a_tma_rows
                     )
-                    var a_smem_slice = __type_of(a_smem_tile)(
+                    var a_smem_slice = type_of(a_smem_tile)(
                         a_smem_tile.ptr + rank_n * a_tma_load_size
                     )
 
@@ -196,7 +196,7 @@ fn multicast_tma_wgmma_kernel[
                     var b_gmem_slice_coord = (
                         block_idx.x * BN + Int(rank_m) * b_tma_rows
                     )
-                    var b_smem_slice = __type_of(b_smem_tile)(
+                    var b_smem_slice = type_of(b_smem_tile)(
                         b_smem_tile.ptr + rank_m * b_tma_load_size
                     )
 
@@ -399,11 +399,11 @@ def test_multicast_tma_wgmma[
         a_type,
         b_type,
         c_type,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
         Layout.row_major(M, N),
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
         block_tile_shape,
         wgmma_shape,
         a_smem_layout,

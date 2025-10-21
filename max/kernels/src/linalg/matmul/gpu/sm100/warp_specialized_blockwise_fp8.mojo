@@ -210,10 +210,10 @@ fn load_AB[
     var b_smem_tile = b_smem.next(stage)[]
     var a_scales_smem_tile = a_scales_smem.next(stage)[]
 
-    var a_smem_slice = __type_of(a_smem_tile)(
+    var a_smem_slice = type_of(a_smem_tile)(
         a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
     )
-    var b_smem_slice = __type_of(b_smem_tile)(
+    var b_smem_slice = type_of(b_smem_tile)(
         b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
@@ -225,21 +225,21 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[0],
-            (UInt(UInt(iter_idx) * BK), UInt(a_gmem_slice_coord)),
+            (UInt(UInt(iter_idx) * UInt(BK)), UInt(a_gmem_slice_coord)),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[0],
-            (UInt(UInt(iter_idx) * BK), UInt(b_gmem_slice_coord)),
+            (UInt(UInt(iter_idx) * UInt(BK)), UInt(b_gmem_slice_coord)),
             b_multicast_mask,
         )
 
         a_scales_tma_op.async_copy[cta_group](
             a_scales_smem_tile,
             tma_mbar[0],
-            (UInt(work_tile_coord[0] * BM), UInt(iter_idx)),
+            (UInt(work_tile_coord[0] * UInt(BM)), UInt(iter_idx)),
         )
 
 

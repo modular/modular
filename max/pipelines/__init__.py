@@ -30,6 +30,7 @@ from .lib.config_enums import (
 from .lib.embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
 from .lib.hf_utils import download_weight_files
 from .lib.kv_cache_config import KVCacheConfig
+from .lib.lora import ADAPTER_CONFIG_FILE
 from .lib.memory_estimation import MEMORY_ESTIMATOR
 from .lib.model_config import MAXModelConfig
 from .lib.pipeline import (
@@ -38,7 +39,6 @@ from .lib.pipeline import (
     ModelOutputs,
     PipelineModel,
     TextGenerationPipeline,
-    TextGenerationPipelineType,
     upper_bounded_default,
 )
 from .lib.profiling_config import ProfilingConfig
@@ -57,6 +57,7 @@ from .lib.tokenizer import (
 register_all_models()
 
 __all__ = [
+    "ADAPTER_CONFIG_FILE",
     "MEMORY_ESTIMATOR",
     "PIPELINE_REGISTRY",
     "AudioGenerationConfig",
@@ -87,7 +88,6 @@ __all__ = [
     "TextAndVisionTokenizer",
     "TextContext",
     "TextGenerationPipeline",
-    "TextGenerationPipelineType",
     "TextTokenizer",
     "download_weight_files",
     "upper_bounded_default",

@@ -22,8 +22,4 @@ def test_select_register_value():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_select_register_value]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

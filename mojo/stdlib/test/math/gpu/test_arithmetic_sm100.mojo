@@ -27,7 +27,7 @@ fn simd_add_kernel[
     c_span: UnsafePointer[Float32],
 ):
     # Calculate the index for this thread's data
-    var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
+    var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
 
     var vector_a = a_span.load[width=width](idx)
     var vector_b = b_span.load[width=width](idx)
@@ -43,7 +43,7 @@ fn simd_mult_kernel[
     c_span: UnsafePointer[Float32],
 ):
     # Calculate the index for this thread's data
-    var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
+    var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
 
     var vector_a = a_span.load[width=width](idx)
     var vector_b = b_span.load[width=width](idx)
@@ -59,7 +59,7 @@ fn simd_fma_kernel[
     c_span: UnsafePointer[Float32],
 ):
     # Calculate the index for this thread's data
-    var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
+    var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
 
     var vector_a = a_span.load[width=width](idx)
     var vector_b = b_span.load[width=width](idx)
@@ -138,7 +138,7 @@ def test_arithmetic[
     if mode == "add":
         alias kernel = simd_add_kernel[width]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             a_device_buffer,
             b_device_buffer,
             c_device_buffer,
@@ -150,7 +150,7 @@ def test_arithmetic[
     elif mode == "mult":
         alias kernel = simd_mult_kernel[width]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             a_device_buffer,
             b_device_buffer,
             c_device_buffer,
@@ -163,7 +163,7 @@ def test_arithmetic[
         alias kernel = simd_fma_kernel[width]
 
         # Execute kernel on GPU
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             a_device_buffer,
             b_device_buffer,
             c_device_buffer,
@@ -196,8 +196,4 @@ def test_arithmetic_sm100():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_arithmetic_sm100]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

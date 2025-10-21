@@ -89,7 +89,10 @@ fn test_tma_mcast_load_kernel[
             tma_tile.async_multicast_load(
                 tile,
                 mbar[0],
-                (UInt(block_idx.x * tileN), UInt(block_idx.y * tileM)),
+                (
+                    UInt(block_idx.x * UInt(tileN)),
+                    UInt(block_idx.y * UInt(tileM)),
+                ),
                 multicast_mask.cast[DType.uint16](),
             )
 
@@ -129,10 +132,10 @@ def test_tma_multicast_load_row_major[
 
     ctx.enqueue_function[
         test_tma_mcast_load_kernel[
-            __type_of(tma_tensor).dtype,
+            type_of(tma_tensor).dtype,
             dst_layout,  # dst layout
-            __type_of(tma_tensor).layout,  # smem layout
-            __type_of(tma_tensor).layout,  # thread layout
+            type_of(tma_tensor).layout,  # smem layout
+            type_of(tma_tensor).layout,  # thread layout
             CLUSTER_M,
             CLUSTER_N,
         ]
@@ -217,12 +220,12 @@ fn test_tma_sliced_multicast_load_kernel[
     if thread_idx.x == 0:
         mbar[0].expect_bytes(expected_bytes)
         var slice_cord = Int(
-            block_idx.y * tileM
+            block_idx.y * UInt(tileM)
             + Int(block_rank % CLUSTER_N) * tileM // CLUSTER_N
         )
         var multicast_mask = tma_multicast_mask << (rank_m * CLUSTER_N)
         tma_tile.async_multicast_load(
-            __type_of(tile)(
+            type_of(tile)(
                 tile.ptr + (block_rank % CLUSTER_N) * tileM * tileN // CLUSTER_N
             ),
             mbar[0],
@@ -267,13 +270,13 @@ def test_tma_sliced_multicast_load_row_major[
     ctx.synchronize()
 
     alias kernel = test_tma_sliced_multicast_load_kernel[
-        __type_of(tma_tensor).dtype,
+        type_of(tma_tensor).dtype,
         dst_layout,  # dst layout
         Layout.row_major(tileM, tileN),
         Layout.row_major(tileM, tileN),
         CLUSTER_M,
         CLUSTER_N,
-        __type_of(tma_tensor).layout,  # smem layout
+        type_of(tma_tensor).layout,  # smem layout
     ]
 
     ctx.enqueue_function[kernel](

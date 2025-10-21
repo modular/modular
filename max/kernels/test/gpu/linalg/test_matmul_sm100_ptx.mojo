@@ -34,7 +34,7 @@ from linalg.matmul.gpu.sm100.matmul import (
 )
 from layout.layout import Layout
 from layout.tma_async import _tma_desc_tile_layout
-from linalg.utils_gpu import MatmulConfig
+from linalg.matmul.gpu.sm100.config import MatmulConfig
 from linalg.matmul.gpu.sm100.tile_scheduler import RasterOrder
 from linalg.matmul.gpu.sm100.matmul import (
     blackwell_tma_umma_warp_specialized_kernel,
@@ -57,7 +57,7 @@ fn test_ptx[
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    cta_group: Int = 1,
+    cta_group: Int = 2,
     num_clc_pipeline_stages: UInt = 2,
     block_swizzle_size: Int = 0,
     rasterize_order: RasterOrder = RasterOrder.AlongM,
@@ -190,7 +190,9 @@ fn test_ptx[
         AB_smem_per_stage + tma_mbar_bytes_per_stage + mma_mbar_bytes_per_stage
     )
 
-    alias max_pipeline_stages: UInt = smem_leftover // producer_consumer_smem_per_stage
+    alias max_pipeline_stages = UInt(
+        smem_leftover // producer_consumer_smem_per_stage
+    )
 
     constrained[
         max_pipeline_stages >= 1, "Max pipeline stages must be at least 1"
@@ -270,9 +272,9 @@ def main():
     )
     alias cluster_shape = Index(2, 1, 1)
     alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=block_tile_shape,
-        mma_shape=mma_shape,
         cluster_shape=cluster_shape,
+        mma_shape=mma_shape,
+        cta_group=2,
     )
     test_ptx[
         c_type,
@@ -283,7 +285,6 @@ def main():
         b_layout,
         transpose_b=transpose_b,
         config=config,
-        cta_group=2,
         block_swizzle_size=0,
         rasterize_order = RasterOrder.AlongM,
     ]()

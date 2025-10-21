@@ -96,10 +96,10 @@ fn mma_kernel_fp32_fp16[
     var tile_loops = k // mma_k
 
     for l in range(tile_loops):
-        var a_tile_row = block_idx.x * mma_m
+        var a_tile_row = block_idx.x * UInt(mma_m)
         var a_tile_col = l * mma_k
         var b_tile_row = l * mma_k
-        var b_tile_col = block_idx.y * mma_n
+        var b_tile_col = block_idx.y * UInt(mma_n)
 
         var a_reg = load_matrix_a[mma_m, mma_n, mma_k, mma_n_blocks](
             a_ptr, a_tile_row, a_tile_col, k
@@ -109,8 +109,8 @@ fn mma_kernel_fp32_fp16[
         )
         mma[mma_n_blocks](d_reg, a_reg, b_reg, d_reg)
 
-    var c_tile_row = block_idx.x * mma_m
-    var c_tile_col = block_idx.y * mma_n
+    var c_tile_row = block_idx.x * UInt(mma_m)
+    var c_tile_col = block_idx.y * UInt(mma_n)
     store_matrix_d[mma_m, mma_n, mma_k, mma_n_blocks](
         c_ptr, d_reg, c_tile_row, c_tile_col, n
     )
@@ -134,10 +134,10 @@ fn mma_kernel_fp32_bf16[
     var tile_loops = k // mma_k
 
     for l in range(tile_loops):
-        var a_tile_row = block_idx.x * mma_m
+        var a_tile_row = block_idx.x * UInt(mma_m)
         var a_tile_col = l * mma_k
         var b_tile_row = l * mma_k
-        var b_tile_col = block_idx.y * mma_n
+        var b_tile_col = block_idx.y * UInt(mma_n)
 
         var a_reg = load_matrix_a[mma_m, mma_n, mma_k, mma_n_blocks](
             a_ptr, a_tile_row, a_tile_col, k
@@ -147,8 +147,8 @@ fn mma_kernel_fp32_bf16[
         )
         mma[mma_n_blocks](d_reg, a_reg, b_reg, d_reg)
 
-    var c_tile_row = block_idx.x * mma_m
-    var c_tile_col = block_idx.y * mma_n
+    var c_tile_row = block_idx.x * UInt(mma_m)
+    var c_tile_col = block_idx.y * UInt(mma_n)
     store_matrix_d[mma_m, mma_n, mma_k, mma_n_blocks](
         c_ptr, d_reg, c_tile_row, c_tile_col, n
     )

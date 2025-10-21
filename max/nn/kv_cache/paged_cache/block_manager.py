@@ -30,7 +30,11 @@ from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from max.interfaces import RequestID, TextGenerationContext
+from max.interfaces import (
+    RequestID,
+    TextGenerationContext,
+    VLMTextGenerationContext,
+)
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -189,8 +193,14 @@ class BlockManager:
         unhashed_tokens = ctx.tokens[
             len(hashes) * self.block_size : ctx.current_length
         ]
+
+        images = ctx.images if isinstance(ctx, VLMTextGenerationContext) else []
         new_hashes = hash_request_tokens(
-            unhashed_tokens, self.block_size, parent_hash_value
+            token_ids=unhashed_tokens,
+            block_size=self.block_size,
+            parent_hash=parent_hash_value,
+            prefix_length=len(hashes) * self.block_size,
+            images=images,
         )
         hashes.extend(new_hashes)
 
@@ -233,14 +243,13 @@ class BlockManager:
             new_committed_idx = (
                 prev_committed_idx + len(prefix_cache_blocks) * self.block_size
             )
-            # Update BlockManager's committed index and advance context start.
+            # Update BlockManager's committed index and advance ctx start_idx
             self.req_to_committed_idx[ctx.request_id] = new_committed_idx
             ctx.set_token_indices(start_idx=new_committed_idx)
             assert ctx.start_idx == new_committed_idx
 
             # Check that the cached_idx has increased.
             assert ctx.start_idx > orig_start_idx
-            orig_start_idx = ctx.start_idx
 
     def _get_full_blocks_from_device_prefix_cache(
         self,
@@ -356,7 +365,7 @@ class BlockManager:
         This increments the committed_idx.
 
         Args:
-            ctx: Request InputContext.
+            ctx: TextGenerationContext.
         """
 
         req_blocks = self.req_to_blocks[ctx.request_id]

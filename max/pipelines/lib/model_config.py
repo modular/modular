@@ -25,6 +25,7 @@ from huggingface_hub import constants as hf_hub_constants
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
+from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.nn.kv_cache import KVCacheStrategy
 from transformers import AutoConfig
 from transformers.generation import GenerationConfig
@@ -365,13 +366,39 @@ class MAXModelConfig(MAXModelConfigBase):
 
         Returns:
             The GenerationConfig for the model, containing generation parameters
-            like max_length, temperature, top_p, etc.
+            like max_length, temperature, top_p, etc. If loading fails, returns
+            a default GenerationConfig.
         """
-        return GenerationConfig.from_pretrained(
-            self.huggingface_model_repo.repo_id,
-            trust_remote_code=self.huggingface_model_repo.trust_remote_code,
-            revision=self.huggingface_model_repo.revision,
-        )
+        try:
+            return GenerationConfig.from_pretrained(
+                self.huggingface_model_repo.repo_id,
+                trust_remote_code=self.huggingface_model_repo.trust_remote_code,
+                revision=self.huggingface_model_repo.revision,
+            )
+        except Exception as e:
+            # This has no material unexpected impact on the user, so we log at debug.
+            logger.debug(
+                f"Failed to load generation_config from {self.model_name}: {e}. "
+                "Using default GenerationConfig."
+            )
+            return GenerationConfig()
+
+    @cached_property
+    def sampling_params_defaults(
+        self,
+    ) -> SamplingParamsGenerationConfigDefaults:
+        defaults = {}
+        for (
+            field_name,
+            field_value,
+        ) in self.generation_config.to_diff_dict().items():
+            if (
+                field_name
+                in SamplingParamsGenerationConfigDefaults.__dataclass_fields__
+            ):
+                defaults[field_name] = field_value
+
+        return SamplingParamsGenerationConfigDefaults(**defaults)
 
     def validate_multi_gpu_supported(self, multi_gpu_supported: bool) -> None:
         """Validates that the model architecture supports multi-GPU inference.
@@ -617,7 +644,10 @@ class MAXModelConfig(MAXModelConfigBase):
                 msg = f"huggingface repo only has '{supported_encodings[0]}' weights, using '{supported_encodings[0]}'"
                 logger.debug(msg)
                 self.quantization_encoding = supported_encodings[0]
-            elif self.default_device_spec.device_type != "cpu":
+            elif (
+                self.default_device_spec.device_type != "cpu"
+                and len(supported_encodings) > 1
+            ):
                 # TODO(AITLIB-137): replace this with more full featured logic.
                 # If we are running on an accelerator and the quantiziation encoding is not set, override to bfloat16.
                 if SupportedEncoding.float8_e4m3fn in supported_encodings:

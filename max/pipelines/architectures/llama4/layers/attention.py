@@ -233,10 +233,7 @@ class _Llama4TextAttention(Module):
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         if self.use_rope:
-            if xq.device is not None:
-                freqs_cis = self.rope.freqs_cis.to(xq.device)
-            else:
-                freqs_cis = self.rope.freqs_cis
+            freqs_cis = self.rope.freqs_cis.to(xq.device)
             xq = fused_qk_ragged_rope(
                 self.kv_params,
                 xq,

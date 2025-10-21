@@ -71,7 +71,7 @@ fn cubic_kernel(x: Float32) -> Float32:
 
 
 @always_inline
-fn cubic_kernel(x: SIMD) -> __type_of(x):
+fn cubic_kernel(x: SIMD) -> type_of(x):
     """Cubic interpolation kernel matching PyTorch/torchvision's BICUBIC
     filter.
 
@@ -87,7 +87,7 @@ fn cubic_kernel(x: SIMD) -> __type_of(x):
         Weight contribution based on the distance.
     """
     # Use a = -0.75 to match the PyTorch bicubic filter.
-    alias a = __type_of(x)(-0.75)
+    alias a = type_of(x)(-0.75)
     var abs_x = abs(x)
     var abs_x_squared = abs_x * abs_x
     var abs_x_cubed = abs_x_squared * abs_x
@@ -99,7 +99,7 @@ fn cubic_kernel(x: SIMD) -> __type_of(x):
 
     var case_1 = (a + 2) * abs_x_cubed - (a + 3) * abs_x_squared + 1
     var case_2 = a * abs_x_cubed - 5 * a * abs_x_squared + 8 * a * abs_x - 4 * a
-    var case_3 = __type_of(x)(0)
+    var case_3 = type_of(x)(0)
 
     return abs_x.le(1).select(case_1, abs_x.lt(2).select(case_2, case_3))
 

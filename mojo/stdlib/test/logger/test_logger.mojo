@@ -94,14 +94,4 @@ def test_log_with_sep_end():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_log_trace]()
-    suite.test[test_log_info]()
-    suite.test[test_log_noset]()
-    suite.test[test_log_with_prefix]()
-    suite.test[test_log_with_location]()
-    suite.test[test_log_with_custom_location]()
-    suite.test[test_log_with_sep_end]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

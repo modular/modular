@@ -40,7 +40,12 @@ Compile using `--config=production`:
 
 ```bash
 br //:install --config=production
-setup-gpu-benchmarking
+```
+
+Lock the clock frequencies for consistent benchmarking:
+
+```bash
+sudo utils/setup-gpu-clock.sh
 ```
 
 ### Setup kbench

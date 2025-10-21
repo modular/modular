@@ -22,6 +22,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import memcpy
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
@@ -194,17 +195,24 @@ def execute_ragged_flash_attention[
     sink_weights_device = sink_weights_host.copy_to_device(ctx)
 
     var sink_weights_device_tensor: OptionalReg[
-        NDBuffer[dtype, 1, MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
     ] = None
 
     @parameter
     if sink:
-        sink_weights_device_tensor = sink_weights_device.tensor
+        sink_weights_device_tensor = LayoutTensor[
+            dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ](
+            sink_weights_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                sink_weights_shape
+            ),
+        )
 
     # ragged execution with sink weights
     flash_attention[ragged=True, sink=sink](
-        test_output_device.tensor,
-        q_ragged_device.tensor,
+        test_output_device.to_layout_tensor(),
+        q_ragged_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
         CausalMask(),
@@ -221,8 +229,8 @@ def execute_ragged_flash_attention[
 
     # padded execution
     flash_attention[sink=sink, naive_kernel=True](
-        ref_output_device.tensor,
-        q_padded_device.tensor,
+        ref_output_device.to_layout_tensor(),
+        q_padded_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
         CausalMask(),

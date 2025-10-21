@@ -168,7 +168,7 @@ def test_call_num_inputs_mismatch() -> None:
         input_types=input_types,
     ) as main_graph:
         subgraph = create_multi_input_subgraph(main_graph, input_types)
-        with pytest.raises(ValueError, match="Expected 4 args.*, got 1"):
+        with pytest.raises(ValueError, match=r"Expected 4 args.*, got 1"):
             ops.call(subgraph, main_graph.inputs[0])
 
 

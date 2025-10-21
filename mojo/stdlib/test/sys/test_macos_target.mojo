@@ -42,9 +42,4 @@ def test_os_version():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_os_query]()
-    suite.test[test_os_version]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

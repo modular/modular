@@ -34,6 +34,8 @@ from max.graph.weights import (
 )
 from max.interfaces import (
     GenerationStatus,
+    Pipeline,
+    PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
     TextGenerationInputs,
@@ -44,7 +46,7 @@ from max.nn import ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
 )
 from max.pipelines.core import TextContext
 from max.profiler import traced
@@ -57,7 +59,6 @@ from .pipeline import (
     ModelInputs,
     ModelOutputs,
     PipelineModel,
-    TextGenerationPipelineType,
     upper_bounded_default,
 )
 from .ragged_token_merger import ragged_token_merger
@@ -146,7 +147,7 @@ class SpeculativeDecodingMetrics:
 
 @final
 class SpeculativeDecodingTextGenerationPipeline(
-    TextGenerationPipelineType[TextContext],
+    Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
     GenerateMixin[TextContext, TextGenerationRequest],
 ):
     """Generalized token generator pipeline with speculative decoding."""
@@ -415,7 +416,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     @property
     def kv_managers(
         self,
-    ) -> list[PagedKVCacheManager]:
+    ) -> list[TPPagedKVCacheManager]:
         return [self._draft_model.kv_manager, self._target_model.kv_manager]
 
     @traced
@@ -509,6 +510,7 @@ class SpeculativeDecodingTextGenerationPipeline(
         max_k: Tensor,
         temperature: Tensor,
         top_p: Tensor,
+        min_top_p: Tensor,
         seed: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
         graph_inputs = [
@@ -518,6 +520,7 @@ class SpeculativeDecodingTextGenerationPipeline(
             max_k,
             temperature,
             top_p,
+            min_top_p,
             seed,
             prev_logits,
         ]
@@ -553,6 +556,9 @@ class SpeculativeDecodingTextGenerationPipeline(
             dtype=np.float32,
         )
         top_p = Tensor.from_numpy(top_p_np).to(self.draft_devices[0])
+        # min_top_p must be provided as a scalar CPU tensor
+        min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
+        min_top_p = Tensor.from_numpy(min_top_p_np)
         seed_np = np.array(
             [context.sampling_params.seed for context in batch], dtype=np.uint64
         )
@@ -596,6 +602,7 @@ class SpeculativeDecodingTextGenerationPipeline(
                     max_k,
                     temperature,
                     top_p,
+                    min_top_p,
                     seed,
                 )
             )
@@ -647,7 +654,7 @@ class SpeculativeDecodingTextGenerationPipeline(
         all_draft_logits: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
         # Prepare next token inputs for target model
-        target_inputs, target_num_steps = self.prepare_batch(
+        target_inputs, _target_num_steps = self.prepare_batch(
             self._target_model,
             context_batch,
             # I believe, num steps in this scenario is 1, as we are only
@@ -690,7 +697,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     def execute(
         self,
         inputs: TextGenerationInputs[TextContext],
-    ) -> dict[RequestID, TextGenerationOutput]:
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
         """Provided a batch, execute both the draft model for num_steps and the target model for num_steps + 1 tokens, accepting final tokens via rejection sampling, returning the variable list of token integers."""
 
         # Flatten our batch for consistent indexing.

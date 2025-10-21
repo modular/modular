@@ -333,8 +333,4 @@ def test_elementwise_gpu():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_elementwise_gpu]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()
