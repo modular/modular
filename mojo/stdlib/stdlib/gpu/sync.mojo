@@ -355,7 +355,7 @@ fn syncwarp(mask: Int = -1):
         # In AMD GPU this is a nop (everything executed in lock-step).
         return
     elif is_apple_gpu():
-        # simdgroup.barrier(i32 mem_flags, i32 scope) with mem_flags = mem_none
+        # simdgroup_barrier(mem_flags::mem_none)
         llvm_intrinsic["llvm.air.simdgroup.barrier", NoneType](
             Int32(0), Int32(4)
         )
