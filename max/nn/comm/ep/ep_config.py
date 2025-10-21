@@ -16,6 +16,7 @@
 from dataclasses import dataclass
 
 from max.dtype import DType
+from max.nn.float8_config import Float8InputScaleSpec
 
 # We always use two groups of SHMEM shared memory buffers to avoid race
 # conditions between the dispatch and combine phases of Expert Parallelism
@@ -69,3 +70,18 @@ class EPConfig:
 
     n_nodes: int
     """Total number of nodes in the distributed setup."""
+
+    dispatch_fp8_config: Float8InputScaleSpec | None = None
+    """Configuration for float8 quantization of the dispatch tokens."""
+
+    def __post_init__(self):
+        if self.dispatch_dtype.is_float8():
+            if self.dispatch_fp8_config is None:
+                raise ValueError(
+                    "dispatch_fp8_config must be specified when dispatch_dtype is float8_e4m3fn or float8_e4m3fnuz"
+                )
+
+            if not self.dispatch_fp8_config.is_block:
+                raise NotImplementedError(
+                    "Only block-wise quantization is supported for float8_e4m3fn and float8_e4m3fnuz"
+                )

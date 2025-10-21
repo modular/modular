@@ -167,6 +167,7 @@ def execute_kv_cache_ragged_flash_attention[
         IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
     )
     var output_device = output_host.copy_to_device(ctx)
+    var output_device_tensor = output_device.to_layout_tensor()
     paged_lut_host = HostNDBuffer[DType.uint32, 2](
         IndexList[2](batch_size, ceildiv(max_context_length, page_size))
     )
@@ -212,7 +213,7 @@ def execute_kv_cache_ragged_flash_attention[
         q_device,
         k_cache_device,
         v_cache_device,
-        output_device,
+        output_device_tensor,
         dummy_mask,
         input_row_offsets_device,
     )
@@ -222,8 +223,8 @@ def execute_kv_cache_ragged_flash_attention[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             flash_attention[ragged=True](
-                # TODO: remove the origin cast once unified closures are supported.
-                output_device.to_layout_tensor().origin_cast[True](),
+                # TODO: move to_layout_tensor here once unified closures are supported.
+                output_device_tensor.as_any_origin(),
                 q_device.to_layout_tensor(),
                 k_cache_device,
                 v_cache_device,

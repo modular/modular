@@ -897,7 +897,7 @@ class PipelineConfig(MAXConfig):
         if len(self.model_config.weight_path) == 1:
             # Single weight path - format inline
             logger.info(
-                f"    weight_path             : {self.model_config.weight_path[0]}"
+                f"    weight_path            : {self.model_config.weight_path[0]}"
             )
         elif len(self.model_config.weight_path) > 5:
             # Many weight paths - replace middle with "..."

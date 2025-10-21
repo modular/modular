@@ -353,13 +353,11 @@ fn unsafe_ptr(
     ref self,
 ) -> UnsafePointer[
     T,
-    mut = Origin(__origin_of(self)).mut,
-    origin = __origin_of(self),
+    mut = Origin(origin_of(self)).mut,
+    origin = origin_of(self),
 ]:
 
-    return self.data.origin_cast[
-        mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
-    ]()
+    return self.data.unsafe_origin_cast[origin_of(self)]()
 ```
 
 This returns a copy of the original pointer, with the origin set to match the

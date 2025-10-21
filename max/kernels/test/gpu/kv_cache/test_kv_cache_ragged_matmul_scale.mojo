@@ -45,11 +45,11 @@ def _initialize_ragged_inputs[
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
-) -> (
+) -> Tuple[
     DeviceNDBuffer[DType.uint32, 1],
     DeviceNDBuffer[dtype, 2, DimList(Dim(), hidden_size)],
     DeviceNDBuffer[dtype, 2, DimList(Dim(), hidden_size)],
-):
+]:
     """Initializes input row offsets and hidden state ragged tensor inputs."""
     var total_length = 0
     var max_seq_length_batch = -1
@@ -265,11 +265,11 @@ def execute_matmul_k_cache_ragged_scale[
         target="gpu",
         scales_granularity_mnk = IndexList[3](1, block_scale, block_scale),
     ](
-        hidden_state_ragged_device.tensor,
-        input_row_offsets_device.tensor,
-        weight_device.tensor,
-        input_scale_device.tensor,
-        weight_scale_device.tensor,
+        hidden_state_ragged_device.to_layout_tensor(),
+        input_row_offsets_device.to_layout_tensor(),
+        weight_device.to_layout_tensor(),
+        input_scale_device.to_layout_tensor(),
+        weight_scale_device.to_layout_tensor(),
         k_cache_device,
         ctx,
     )

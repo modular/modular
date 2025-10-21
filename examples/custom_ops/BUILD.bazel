@@ -85,6 +85,7 @@ mojo_binary(
 mojo_library(
     name = "kernels",
     srcs = [":kernel_sources"],
+    validate_missing_docs = False,
     deps = [
         "@mojo//:compiler",
         "@mojo//:layout",

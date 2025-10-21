@@ -168,7 +168,7 @@ def test_optional_equality():
 def test_optional_copied():
     var data = "foo"
 
-    var opt_ref: Optional[Pointer[String, __origin_of(data)]] = Optional(
+    var opt_ref: Optional[Pointer[String, origin_of(data)]] = Optional(
         Pointer(to=data)
     )
 

@@ -20,5 +20,6 @@ mojo_kgen_lib(
 mojo_library(
     name = "MOGGPrimitives",
     srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
     deps = mogg_primitives_lib_deps,
 )

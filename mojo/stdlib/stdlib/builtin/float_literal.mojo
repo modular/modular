@@ -162,7 +162,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     # Unary Operators
     # ===------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __bool__(self) -> Bool:
         """A FloatLiteral value is true if it is non-zero.
 
@@ -171,7 +171,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         """
         return self != 0.0
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __as_bool__(self) -> Bool:
         """A FloatLiteral value is true if it is non-zero.
 
@@ -181,7 +181,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return self.__bool__()
 
     @always_inline("builtin")
-    fn __neg__(self) -> __type_of(self * -1):
+    fn __neg__(self) -> type_of(self * -1):
         """Return the negation of the FloatLiteral value.
 
         Returns:
@@ -308,7 +308,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     @always_inline("builtin")
     fn __mod__(
         self, rhs: FloatLiteral
-    ) -> __type_of(self - (self.__floordiv__(rhs) * rhs)):
+    ) -> type_of(self - (self.__floordiv__(rhs) * rhs)):
         """Return the remainder of self divided by rhs.
 
         Args:
@@ -322,7 +322,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     @always_inline("builtin")
     fn __ceildiv__(
         self, denominator: FloatLiteral
-    ) -> __type_of(-(self // -denominator)):
+    ) -> type_of(-(self // -denominator)):
         """Return the rounded-up result of dividing self by denominator.
 
         Args:
@@ -340,7 +340,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     # ===------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __radd__(self, rhs: FloatLiteral) -> __type_of(rhs + self):
+    fn __radd__(self, rhs: FloatLiteral) -> type_of(rhs + self):
         """Reversed addition operator.
 
         Args:
@@ -352,7 +352,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __rsub__(self, rhs: FloatLiteral) -> __type_of(rhs - self):
+    fn __rsub__(self, rhs: FloatLiteral) -> type_of(rhs - self):
         """Reversed subtraction operator.
 
         Args:
@@ -364,7 +364,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __rmul__(self, rhs: FloatLiteral) -> __type_of(rhs * self):
+    fn __rmul__(self, rhs: FloatLiteral) -> type_of(rhs * self):
         """Reversed multiplication operator.
 
         Args:
@@ -376,7 +376,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __rmod__(self, rhs: FloatLiteral) -> __type_of(rhs.__mod__(self)):
+    fn __rmod__(self, rhs: FloatLiteral) -> type_of(rhs.__mod__(self)):
         """Return the remainder of rhs divided by self.
 
         Args:
@@ -388,7 +388,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __rfloordiv__(self, rhs: FloatLiteral) -> __type_of(rhs // self):
+    fn __rfloordiv__(self, rhs: FloatLiteral) -> type_of(rhs // self):
         """Returns rhs divided by self, rounded down to the nearest integer.
 
         Args:
@@ -400,7 +400,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __rtruediv__(self, rhs: FloatLiteral) -> __type_of(rhs / self):
+    fn __rtruediv__(self, rhs: FloatLiteral) -> type_of(rhs / self):
         """Reversed division.
 
         Args:

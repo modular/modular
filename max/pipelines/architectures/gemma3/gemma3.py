@@ -19,7 +19,7 @@ import functools
 from collections.abc import Sequence
 
 from max.dtype import DType
-from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
+from max.graph import BufferValue, DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn import MLP, ColumnParallelLinear, LayerList, Module, ReturnLogits
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.rotary_embedding import (
@@ -57,7 +57,7 @@ class Gemma3TextModel(Module):
             n_heads=config.num_attention_heads,
             theta=config.rope_theta,
             max_seq_len=config.max_position_embeddings,
-            device=config.devices[0],
+            device=DeviceRef.CPU(),
             head_dim=config.head_dim,
             interleaved=False,
             scaling_params=scaling_params,
@@ -69,7 +69,7 @@ class Gemma3TextModel(Module):
             n_heads=config.num_attention_heads,
             theta=config.rope_local_base_freq,
             max_seq_len=config.max_position_embeddings,
-            device=config.devices[0],
+            device=DeviceRef.CPU(),
             head_dim=config.head_dim,
             interleaved=False,
             scaling_params=None,  # No scaling

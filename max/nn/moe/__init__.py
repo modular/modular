@@ -13,5 +13,6 @@
 """Mixture of Experts (MoE) module."""
 
 from .moe import MoE, MoEGate
+from .moe_fp8 import MoEFp8
 
-__all__ = ["MoE", "MoEGate"]
+__all__ = ["MoE", "MoEFp8", "MoEGate"]

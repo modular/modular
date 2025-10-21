@@ -15,22 +15,23 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import signal
-from collections.abc import AsyncGenerator, Callable, Coroutine
+import sys
+from collections.abc import AsyncGenerator, Coroutine
 from dataclasses import dataclass
-from functools import partial
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
     AudioGenerationOutput,
     AudioGenerationRequest,
+    BaseContext,
     EmbeddingsGenerationOutput,
     GenerationStatus,
     LogProbabilities,
+    PipelineOutput,
     PipelineTokenizer,
+    Request,
     TextGenerationOutput,
     TextGenerationRequest,
 )
@@ -42,8 +43,18 @@ from max.serve.queue.lora_queue import LoRAQueue
 from max.serve.scheduler.queues import EngineQueue, SchedulerZmqConfigs
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
+from typing_extensions import Self
+
+if sys.version_info < (3, 11):
+    from taskgroup import TaskGroup
+else:
+    from asyncio import TaskGroup
 
 logger = logging.getLogger("max.serve")
+
+ContextType = TypeVar("ContextType", bound=BaseContext)
+RequestType = TypeVar("RequestType", bound=Request)
+OutputType = TypeVar("OutputType", bound=PipelineOutput)
 
 
 @dataclass(frozen=True)
@@ -54,23 +65,22 @@ class TokenGeneratorOutput:
     top_log_probabilities: list[dict[str, float]] | None = None
     prompt_token_count: int | None = None
     stop_sequence: str | None = None
+    is_done: bool = False
 
 
-class TokenGeneratorPipeline:
-    """Base class for LLM text generation pipelines."""
-
+class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
     def __init__(
         self,
         model_name: str,
-        tokenizer: PipelineTokenizer[
-            TextAndVisionContext | TextContext, int, TextGenerationRequest
-        ],
+        tokenizer: PipelineTokenizer[ContextType, Any, RequestType],
         worker_monitor: ProcessMonitor,
         scheduler_zmq_configs: SchedulerZmqConfigs,
         lora_queue: LoRAQueue | None = None,
     ) -> None:
+        super().__init__()  # TaskGroup
+
         self.logger = logging.getLogger(
-            "max.serve.pipelines.TokenGeneratorPipeline"
+            self.__class__.__module__ + "." + self.__class__.__qualname__
         )
         # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
         self.debug_logging = self.logger.isEnabledFor(logging.DEBUG)
@@ -79,12 +89,78 @@ class TokenGeneratorPipeline:
         self.tokenizer = tokenizer
         self.lora_queue = lora_queue
 
-        self._background_tasks: set[asyncio.Task[object]] = set()
-
-        self.engine_queue = EngineQueue[Any, Any](
+        self.engine_queue = EngineQueue[ContextType, OutputType](
             worker_monitor=worker_monitor,
             scheduler_zmq_configs=scheduler_zmq_configs,
         )
+
+        self.tasks: set[asyncio.Task[Any]] = set()
+
+    async def __aenter__(self) -> Self:
+        await super().__aenter__()  # TaskGroup
+
+        self.logger.debug("%s: Starting workers:", self.model_name)
+
+        if not self.engine_queue.is_worker_healthy():
+            raise RuntimeError("Worker process not healthy not starting worker")
+
+        # Add global fanout worker.
+        self.create_background_task(self.engine_queue.response_worker())
+
+        if self.lora_queue:
+            self.create_background_task(self.lora_queue.response_worker())
+
+        if not self.engine_queue.is_worker_healthy():
+            raise RuntimeError(
+                "Worker process not healthy after running background task"
+            )
+
+        self.logger.debug(
+            "%s: Started workers",
+            self.model_name,
+        )
+        return self
+
+    async def __aexit__(
+        self, et: type[BaseException] | None, exc: BaseException | None, tb: Any
+    ) -> bool | None:
+        # If parent wants to exit this context for any reason
+        # we stop / cancel all our child tasks
+        for t in self.tasks:
+            if not t.done():
+                t.cancel()
+        self.tasks.clear()
+        return await super().__aexit__(et, exc, tb)
+
+    def create_background_task(
+        self, coro: Coroutine[Any, Any, None]
+    ) -> asyncio.Task[Any]:
+        task = super().create_task(coro, name=coro.__name__)
+        task.add_done_callback(self.log_task_done)
+        self.tasks.add(task)
+        self.logger.debug(
+            "%s: Task Added: %s",
+            self.model_name,
+            task.get_name(),
+        )
+        return task
+
+    def log_task_done(self, task: asyncio.Task[Any]) -> None:
+        self.logger.info(
+            "%s: Task completed: %s",
+            self.model_name,
+            task.get_name(),
+        )
+
+
+class TokenGeneratorPipeline(
+    BasePipeline[
+        TextAndVisionContext | TextContext,
+        TextGenerationRequest,
+        TokenGeneratorOutput,
+    ]
+):
+    """Base class for LLM text generation pipelines."""
 
     async def _collect_log_probs(
         self,
@@ -249,104 +325,11 @@ class TokenGeneratorPipeline:
                     total_sw.elapsed_ms,
                 )
 
-    async def __aenter__(self) -> TokenGeneratorPipeline:
-        self.logger.debug("%s: Starting workers:", self.model_name)
-        assert not self._background_tasks
-        if not self.engine_queue.is_worker_healthy():
-            raise RuntimeError("Worker process not healthy not starting worker")
 
-        # Add global fanout worker.
-        self.create_background_task(self.engine_queue.response_worker)
-
-        if self.lora_queue:
-            self.create_background_task(self.lora_queue.response_worker)
-
-        if not self.engine_queue.is_worker_healthy():
-            raise RuntimeError(
-                "Worker process not healthy after running background task"
-            )
-
-        self.logger.debug(
-            "%s: Started workers: %d tasks",
-            self.model_name,
-            len(self._background_tasks),
-        )
-        return self
-
-    async def __aexit__(
-        self, exc_type: Any, exc_value: Any, traceback: Any
-    ) -> None:
-        self.logger.info("%s: Stopping workers", self.model_name)
-        for task in self._background_tasks:
-            task.cancel()
-        # await asyncio.sleep(0.1)
-        # TODO: also cancel any `queue.get()` tasks
-
-    def create_background_task(
-        self, fn: Callable[[], Coroutine[Any, Any, None]]
-    ) -> None:
-        task_name = fn.__name__
-        task = asyncio.create_task(fn())
-        task.add_done_callback(partial(self.log_task_done, task_name=task_name))
-        self._background_tasks.add(task)
-        self.logger.debug(
-            "%s: Task Added: %s, %s, %d total",
-            self.model_name,
-            task_name,
-            type(fn),
-            len(self._background_tasks),
-        )
-
-    def log_task_done(self, task: asyncio.Task[object], task_name: str) -> None:
-        # TODO - should gracefully shut down here.
-        self._background_tasks.remove(task)
-        self.logger.info(
-            "%s: Task completed: %s, %d remaining",
-            self.model_name,
-            task_name,
-            len(self._background_tasks),
-        )
-        # Cancel remaining tasks.
-        for t in self._background_tasks:
-            if not t.done():
-                t.cancel("Terminating task")
-        if task.cancelled():
-            return
-        e = task.exception()
-        if e:
-            self.logger.error("Task completed with error. Stopping", exc_info=e)
-            # Shut server down.
-            # Sending SIGTERM is ugly, but simplifies the internal plumbing.
-            os.kill(os.getpid(), signal.SIGTERM)
-
-
-class AudioGeneratorPipeline:
+class AudioGeneratorPipeline(
+    BasePipeline[TTSContext, AudioGenerationRequest, AudioGenerationOutput]
+):
     """Base class for LLM audio generation pipelines."""
-
-    def __init__(
-        self,
-        model_name: str,
-        tokenizer: PipelineTokenizer[
-            TTSContext, object, AudioGenerationRequest
-        ],
-        worker_monitor: ProcessMonitor,
-        scheduler_zmq_configs: SchedulerZmqConfigs,
-        lora_queue: LoRAQueue | None = None,
-    ) -> None:
-        self.logger = logging.getLogger(
-            "max.serve.pipelines.AudioGeneratorPipeline"
-        )
-        self.debug_logging = self.logger.isEnabledFor(logging.DEBUG)
-
-        self.model_name = model_name
-        self.tokenizer = tokenizer
-        self.lora_queue = lora_queue
-
-        self._background_tasks: set[asyncio.Task[object]] = set()
-        self.engine_queue = EngineQueue[TTSContext, AudioGenerationOutput](
-            worker_monitor=worker_monitor,
-            scheduler_zmq_configs=scheduler_zmq_configs,
-        )
 
     async def next_chunk(
         self, request: AudioGenerationRequest
@@ -394,7 +377,10 @@ class AudioGeneratorPipeline:
 
         if len(audio_chunks) == 0:
             return AudioGenerationOutput(
-                final_status=GenerationStatus.END_OF_SEQUENCE
+                steps_executed=sum(
+                    chunk.steps_executed for chunk in audio_chunks
+                ),
+                final_status=GenerationStatus.END_OF_SEQUENCE,
             )
 
         # Combine audio chunks and metadata.
@@ -409,75 +395,6 @@ class AudioGeneratorPipeline:
         return AudioGenerationOutput(
             audio_data=combined_audio,
             metadata=last_chunk.metadata,
+            steps_executed=sum(chunk.steps_executed for chunk in audio_chunks),
             final_status=GenerationStatus.END_OF_SEQUENCE,
         )
-
-    async def __aenter__(self):
-        self.logger.debug("%s: Starting workers:", self.model_name)
-        assert not self._background_tasks
-        if not self.engine_queue.is_worker_healthy():
-            raise RuntimeError("Worker process not healthy not starting worker")
-
-        # Add global fanout worker.
-        self.create_background_task(self.engine_queue.response_worker)
-
-        if self.lora_queue:
-            self.create_background_task(self.lora_queue.response_worker)
-
-        if not self.engine_queue.is_worker_healthy():
-            raise RuntimeError(
-                "Worker process not healthy after running background task"
-            )
-
-        self.logger.debug(
-            "%s: Started workers: %d tasks",
-            self.model_name,
-            len(self._background_tasks),
-        )
-        return self
-
-    async def __aexit__(
-        self, exc_type: Any, exc_value: Any, traceback: Any
-    ) -> None:
-        self.logger.info("%s: Stopping workers", self.model_name)
-        for task in self._background_tasks:
-            task.cancel()
-        # await asyncio.sleep(0.1)
-        # TODO: also cancel any `queue.get()` tasks
-
-    def create_background_task(
-        self, fn: Callable[[], Coroutine[Any, Any, None]]
-    ) -> None:
-        task_name = fn.__name__
-        task = asyncio.create_task(fn())
-        task.add_done_callback(partial(self.log_task_done, task_name=task_name))
-        self._background_tasks.add(task)
-        self.logger.debug(
-            "%s: Task Added: %s, %s, %d total",
-            self.model_name,
-            task_name,
-            type(fn),
-            len(self._background_tasks),
-        )
-
-    def log_task_done(self, task: asyncio.Task[object], task_name: str) -> None:
-        # TODO - should gracefully shut down here.
-        self._background_tasks.remove(task)
-        self.logger.info(
-            "%s: Task completed: %s, %d remaining",
-            self.model_name,
-            task_name,
-            len(self._background_tasks),
-        )
-        # Cancel remaining tasks.
-        for t in self._background_tasks:
-            if not t.done():
-                t.cancel("Terminating task")
-        if task.cancelled():
-            return
-        e = task.exception()
-        if e:
-            self.logger.error("Task completed with error. Stopping", exc_info=e)
-            # Shut server down.
-            # Sending SIGTERM is ugly, but simplifies the internal plumbing.
-            os.kill(os.getpid(), signal.SIGTERM)

@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
 
@@ -37,7 +38,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -62,25 +63,20 @@ from .qwen2_5vl import Qwen2_5VL
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass(eq=False)
 class Qwen2_5VLInputs(ModelInputs):
     """A class representing inputs for the Qwen2.5VL model.
 
-    This class encapsulates the input tensors required for the Qwen2.5VL model execution:
-    - input_ids: A tensor containing the input token IDs
-    - input_row_offsets: Per-device tensors containing the offsets for each row in the ragged input sequence
-    - pixel_values: image pixel values for vision processing
-    - window_index: window indices for vision attention mechanism
-    - position_ids: 3D RoPE position IDs for vision inputs
-    - attention_mask_full:  full attention masks for vision inputs
-    - attention_mask_window:  window attention masks for vision inputs
-    - max_grid_size: Maximum grid size for vision inputs
-    """
+    This class encapsulates the input tensors required for the Qwen2.5VL model execution,
+    including both text and vision inputs. Vision inputs are optional and can be None
+    for text-only processing."""
 
     input_ids: Tensor
     """Tensor containing the input token IDs."""
 
     input_row_offsets: list[Tensor]
     """Per-device tensors containing the offsets for each row in the ragged input sequence."""
+
     signal_buffers: list[Tensor]
     """Device buffers used for synchronization in communication collectives."""
 
@@ -128,42 +124,6 @@ class Qwen2_5VLInputs(ModelInputs):
 
     max_window_seqlen: list[Tensor] | None = None
     """Maximum sequence length for window attention for vision inputs."""
-
-    def __init__(
-        self,
-        input_ids: Tensor,
-        input_row_offsets: list[Tensor],
-        signal_buffers: list[Tensor],
-        position_ids: Tensor,
-        return_n_logits: Tensor,
-        kv_cache_inputs: KVCacheInputs,
-        scatter_indices: list[Tensor] | None = None,
-        gather_indices: list[Tensor] | None = None,
-        pixel_values: list[Tensor] | None = None,
-        window_index: list[Tensor] | None = None,
-        vision_position_ids: list[Tensor] | None = None,
-        max_grid_size: list[Tensor] | None = None,
-        cu_seqlens: list[Tensor] | None = None,
-        cu_window_seqlens: list[Tensor] | None = None,
-        max_seqlen: list[Tensor] | None = None,
-        max_window_seqlen: list[Tensor] | None = None,
-    ) -> None:
-        self.signal_buffers = signal_buffers
-        self.input_ids = input_ids
-        self.input_row_offsets = input_row_offsets
-        self.position_ids = position_ids
-        self.return_n_logits = return_n_logits
-        self.kv_cache_inputs = kv_cache_inputs
-        self.scatter_indices = scatter_indices
-        self.gather_indices = gather_indices
-        self.pixel_values = pixel_values
-        self.window_index = window_index
-        self.vision_position_ids = vision_position_ids
-        self.max_grid_size = max_grid_size
-        self.cu_seqlens = cu_seqlens
-        self.cu_window_seqlens = cu_window_seqlens
-        self.max_seqlen = max_seqlen
-        self.max_window_seqlen = max_window_seqlen
 
     @property
     def has_vision_inputs(self) -> bool:
@@ -311,14 +271,9 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = [
-            Tensor.from_numpy(
-                np.arange(
-                    self.pipeline_config.max_batch_size + 1, dtype=np.uint32
-                )
-            ).to(dev)
-            for dev in self.devices
-        ]
+        self._input_row_offsets_prealloc = Tensor.from_numpy(
+            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+        ).to(self.devices)
 
         # Get LLM weights dictionary. Needed before model config generation
         # because we need to know if word embeddings are tied or not.
@@ -702,35 +657,26 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     @cached_property
     def _empty_image_embeddings(self) -> list[Tensor]:
         """Create empty image embeddings for text-only inputs on multi-device."""
-        return [
-            Tensor.zeros(
-                shape=[0, self.huggingface_config.text_config.hidden_size],
-                dtype=self.dtype,
-            ).to(device)
-            for device in self.devices
-        ]
+        return Tensor.zeros(
+            shape=[0, self.huggingface_config.text_config.hidden_size],
+            dtype=self.dtype,
+        ).to(self.devices)
 
     @cached_property
     def _empty_image_scatter_indices(self) -> list[Tensor]:
         """Create empty image scatter indices for text-only inputs on multi-device."""
-        return [
-            Tensor.zeros(
-                shape=[0],
-                dtype=DType.int32,
-            ).to(device)
-            for device in self.devices
-        ]
+        return Tensor.zeros(
+            shape=[0],
+            dtype=DType.int32,
+        ).to(self.devices)
 
     @cached_property
     def _empty_image_gather_indices(self) -> list[Tensor]:
         """Create empty image gather indices for text-only inputs on multi-device."""
-        return [
-            Tensor.zeros(
-                shape=[0],
-                dtype=DType.int64,
-            ).to(device)
-            for device in self.devices
-        ]
+        return Tensor.zeros(
+            shape=[0],
+            dtype=DType.int64,
+        ).to(self.devices)
 
     def _batch_image_token_indices(
         self, context_batch: Sequence[TextAndVisionContext]
@@ -827,13 +773,10 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             )
 
         # Create tensor and distribute to devices
-        return [
-            Tensor.from_numpy(np_scatter_indices).to(device)
-            for device in self.devices
-        ], [
-            Tensor.from_numpy(np_gather_indices).to(device)
-            for device in self.devices
-        ]
+        return (
+            Tensor.from_numpy(np_scatter_indices).to(self.devices),
+            Tensor.from_numpy(np_gather_indices).to(self.devices),
+        )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Qwen2.5VL model with the prepared inputs."""
@@ -954,10 +897,9 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 [0] + [ctx.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
-            input_row_offsets_tensors = [
-                Tensor.from_numpy(input_row_offsets).to(device)
-                for device in self.devices
-            ]
+            input_row_offsets_tensors = Tensor.from_numpy(input_row_offsets).to(
+                self.devices
+            )
 
         with Tracer("prepare_decoder_position_ids"):
             position_ids_list = []
@@ -1116,9 +1058,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     ]
                 )
             )
-            pixel_values = [
-                pixel_values_tensor.to(device) for device in self.devices
-            ]
+            pixel_values = pixel_values_tensor.to(self.devices)
 
         with Tracer("preparing_window_index"):
             # Concatenate per-context window_index with cross-context offsets so indices are unique
@@ -1133,9 +1073,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     index_offset += int(per_ctx_index.shape[0])
             window_index_np = np.concatenate(window_index_parts, axis=0)
             window_index_tensor = Tensor.from_numpy(window_index_np)
-            window_index = [
-                window_index_tensor.to(device) for device in self.devices
-            ]
+            window_index = window_index_tensor.to(self.devices)
 
         with Tracer("preparing_vision_position_ids"):
             vision_position_ids_tensor = Tensor.from_numpy(
@@ -1147,9 +1085,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     ]
                 ).astype(np.int64)
             )
-            vision_position_ids = [
-                vision_position_ids_tensor.to(device) for device in self.devices
-            ]
+            vision_position_ids = vision_position_ids_tensor.to(self.devices)
 
         with Tracer("preparing_max_grid_size"):
             max_grid_size_value = max(
@@ -1179,9 +1115,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     [np.array([0], dtype=np.uint32), *cu_seqlens_list]
                 ).astype(np.uint32)
             )
-            cu_seqlens = [
-                cu_seqlens_tensor.to(device) for device in self.devices
-            ]
+            cu_seqlens = cu_seqlens_tensor.to(self.devices)
 
         with Tracer("preparing_cu_window_seqlens"):
             # cu_window_seqlens_unique is already scaled by spatial_merge_unit per-context.
@@ -1204,10 +1138,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             cu_window_seqlens_unique_tensor = Tensor.from_numpy(
                 cu_window_seqlens_np
             )
-            cu_window_seqlens = [
-                cu_window_seqlens_unique_tensor.to(device)
-                for device in self.devices
-            ]
+            cu_window_seqlens = cu_window_seqlens_unique_tensor.to(self.devices)
 
         with Tracer("preparing_max_seqlen"):
             max_seqlen_value = max(
@@ -1304,8 +1235,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager:
-        """Loads and initializes the PagedKVCacheManager for the Qwen2.5VL model."""
+    ) -> TPPagedKVCacheManager:
+        """Loads and initializes the TPPagedKVCacheManager for the Qwen2.5VL model."""
         return load_kv_manager(
             params=Qwen2_5VLConfig.get_kv_params(
                 huggingface_config=self.huggingface_config,

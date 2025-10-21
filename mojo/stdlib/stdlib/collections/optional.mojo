@@ -236,7 +236,7 @@ struct Optional[T: Copyable & Movable](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the Optional's possibly contained value.
 
         Optionals act as a collection of size 0 or 1.
@@ -326,7 +326,7 @@ struct Optional[T: Copyable & Movable](
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(Bool),
+        other_type: type_of(Bool),
     ](self) -> Bool:
         """Merge with other bools in an expression.
 
@@ -494,7 +494,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
     alias _mlir_type = __mlir_type[`!kgen.variant<`, T, `, i1>`]
     var _value: Self._mlir_type
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -586,7 +586,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(Bool),
+        other_type: type_of(Bool),
     ](self) -> Bool:
         """Merge with other bools in an expression.
 

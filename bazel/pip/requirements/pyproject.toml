@@ -17,6 +17,7 @@ dependencies = [
   "docutils",
   "einops",
   "einx",
+  "expandvars",
   "fastapi>=0.115.3", # >=0.115.3 is required for resolving CVE-2024-47874
   "faster_whisper",
   "fire ", # For mistral-evals.
@@ -147,7 +148,7 @@ amd = [
   "pytorch-triton-rocm; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
-  "lm-eval[api,ifeval,math]>=0.4.7",
+  "lm-eval[api,ifeval,math]>=0.4.9.1",
   "mteb",
   "optimum",
   "peft", # For LoRA adapter support
@@ -163,7 +164,7 @@ cpu = [
   "torchvision==0.22.0",
 
   "accelerate",
-  "lm-eval[api,ifeval,math]>=0.4.7",
+  "lm-eval[api,ifeval,math]>=0.4.9.1",
   "mteb",
   "optimum",
   "peft", # For LoRA adapter support
@@ -181,7 +182,7 @@ nvidia = [
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
-  "lm-eval[api,ifeval,math]>=0.4.7",
+  "lm-eval[api,ifeval,math]>=0.4.9.1",
   "mteb",
   "optimum",
   "peft", # For LoRA adapter support

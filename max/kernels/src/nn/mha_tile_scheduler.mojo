@@ -22,6 +22,8 @@ from gpu.memory import AddressSpace
 from gpu.sync import barrier, named_barrier
 from nn.mha_fa3_utils import NullPointer, OptionalPointer
 
+from builtin.device_passable import DevicePassable
+
 
 @fieldwise_init
 @register_passable("trivial")
@@ -326,7 +328,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
 
 
 @register_passable("trivial")
-trait MHATileScheduler(Copyable):
+trait MHATileScheduler(Copyable, DevicePassable):
     alias may_advance: Bool
     alias mha_schedule: MHASchedule
 
@@ -415,6 +417,25 @@ struct TransientScheduler[
     alias may_advance: Bool = False
     alias mha_schedule: MHASchedule = MHASchedule.DEFAULT
 
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return (
+            "TransientScheduler[tile_shape = "
+            + String(tile_shape)
+            + ", num_heads = "
+            + String(num_heads)
+            + "]"
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
+
     @always_inline
     fn __init__(out self):
         pass
@@ -491,6 +512,29 @@ struct TileScheduler[
 ](Defaultable, ImplicitlyCopyable, MHATileScheduler, Movable):
     alias may_advance: Bool = True
     alias mha_schedule: MHASchedule = schedule
+
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return (
+            "TileScheduler[tile_shape = "
+            + String(tile_shape)
+            + ", num_heads = "
+            + String(num_heads)
+            + ", num_ctas = "
+            + String(num_ctas)
+            + ", schedule = "
+            + String(schedule._value)
+            + "]"
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn __init__(out self):
@@ -712,7 +756,7 @@ struct QueuedTileScheduler[
         )
 
     # `trait DevicePassable` implementation
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         """Convert the host type object to a device_type and store it at the

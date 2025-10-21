@@ -222,7 +222,7 @@ fn _extract_tensor_spec[
     dtype: DType,
     rank: Int, //,
     static_spec: StaticTensorSpec[dtype, rank],
-]() -> __type_of(static_spec):
+]() -> type_of(static_spec):
     return static_spec
 
 
@@ -303,7 +303,7 @@ fn _input_fusion_hook_impl[
     static_spec: StaticTensorSpec[dtype, rank],
 ](
     tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-) -> __type_of(static_spec):
+) -> type_of(static_spec):
     @always_inline
     @parameter
     fn _input_lambda[
@@ -337,7 +337,7 @@ fn _output_fusion_hook_impl[
     static_spec: StaticTensorSpec[dtype, rank],
 ](
     tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-) -> __type_of(static_spec):
+) -> type_of(static_spec):
     @always_inline
     @parameter
     fn _output_lambda[
@@ -564,7 +564,7 @@ struct ManagedTensorSlice[
     """
 
     # `trait DevicePassable` implementation
-    alias device_type: AnyTrivialRegType = LayoutTensor[
+    alias device_type: AnyType = LayoutTensor[
         dtype, static_spec.to_layout(), MutableAnyOrigin
     ]
 
@@ -700,7 +700,9 @@ struct ManagedTensorSlice[
 
         Note that forwarding of static shape, strides, and lambdas won't work.
         """
-        self = Self(ndbuffer.data, ndbuffer.get_shape())
+        self = Self(
+            ndbuffer.data.mut_cast[True]().as_any_origin(), ndbuffer.get_shape()
+        )
 
     @always_inline
     fn __getitem__(self, indices: IndexList[rank]) -> Scalar[dtype]:
@@ -1161,9 +1163,9 @@ struct ManagedTensorSlice[
         ],
     ):
         alias layout = static_spec.to_layout()
-        return __type_of(result)(
+        return type_of(result)(
             self.unsafe_ptr(),
-            __type_of(result.runtime_layout)(
+            type_of(result.runtime_layout)(
                 self.shape().cast[result.layout_int_type](),
                 self.strides().cast[result.linear_idx_type](),
             ),

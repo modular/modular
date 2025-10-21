@@ -144,7 +144,7 @@ fn matmul_b_transpose(
         MutableAnyOrigin,
     ],
 ):
-    res = __type_of(res).stack_allocation()
+    res = type_of(res).stack_allocation()
 
     @parameter
     for m in range(lhs.shape[0]()):
@@ -181,7 +181,12 @@ fn matmul_b_transpose(
 @always_inline
 fn fused_attention_cpu[
     BN: Int, BD: Int
-](Q: LayoutTensor, K: LayoutTensor, V: LayoutTensor, mut O: LayoutTensor):
+](
+    Q: LayoutTensor,
+    K: LayoutTensor,
+    V: LayoutTensor,
+    O: LayoutTensor[mut=True, *_, **_],
+):
     alias N = K.shape[0]()
     alias D = K.shape[1]()
 
@@ -217,7 +222,7 @@ fn fused_attention_cpu[
                 V_tile = V.tile[BN, BD](tile_n_idx, tile_d)
 
                 S = matmul_b_transpose(Q_tile, K_tile)
-                m_2 = max(m_1, rebind[__type_of(m_1)](max[axis=1](S)))
+                m_2 = max(m_1, rebind[type_of(m_1)](max[axis=1](S)))
                 l_2 = exp(m_1 - m_2) * l_1 + sum[axis=1](exp(S - m_2))
 
                 P = exp(S - m_2) / l_2
@@ -225,7 +230,7 @@ fn fused_attention_cpu[
                     P, V_tile
                 )
                 m_1 = m_2
-                l_1 = rebind[__type_of(l_1)](l_2)
+                l_1 = rebind[type_of(l_1)](l_2)
 
             O.tile[BN, BD](tile_n, tile_d).copy_from(O_i)
 
@@ -247,7 +252,7 @@ fn matmul[
         linear_idx_type = lhs.linear_idx_type,
     ],
 ):
-    res = __type_of(res).stack_allocation()
+    res = type_of(res).stack_allocation()
 
     @parameter
     if target == "cpu":
@@ -294,7 +299,7 @@ fn matmul[
 
             @parameter
             if transpose_b:
-                b_reg = rebind[__type_of(b_reg)](
+                b_reg = rebind[type_of(b_reg)](
                     mma_b_t.load_b(rhs.tile[N, BK](0, k_i))
                 )
 
@@ -350,12 +355,12 @@ fn fused_attention_kernel[
         K_tile = K.tile[BN_1, D](tile_n_idx, 0)
         V_tile = V.tile[BN_1, BD](tile_n_idx, block_idx.x)
         S = matmul["gpu", transpose_b=True](Q_tile, K_tile)
-        m_2 = max(m_1, rebind[__type_of(m_1)](max[axis=1](S)))
+        m_2 = max(m_1, rebind[type_of(m_1)](max[axis=1](S)))
         l_2 = exp(m_1 - m_2) * l_1 + sum[axis=1](exp(S - m_2))
         P = exp(S - m_2) / l_2
         O_j = O_i * (l_1 / l_2) * exp(m_1 - m_2) + matmul["gpu"](P, V_tile)
         m_1.copy_from(m_2)
-        l_1.copy_from(rebind[__type_of(l_1)](l_2))
+        l_1.copy_from(rebind[type_of(l_1)](l_2))
         O_i.copy_from(O_j)
     O.tile[BN, BD](block_idx.y, block_idx.x).copy_from(O_i)
 
@@ -368,7 +373,7 @@ def fused_attention_gpu[
     Q: LayoutTensor,
     K: LayoutTensor,
     V: LayoutTensor,
-    mut O: LayoutTensor,
+    O: LayoutTensor[mut=True, *_, **_],
 ):
     alias kernel_func = fused_attention_kernel[
         Q.dtype,

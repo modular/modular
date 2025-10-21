@@ -182,12 +182,13 @@ fn grouped_matmul_sm90[
     ].run_grouped[
         a_tma_op.layout,
         b_tma_op.layout,
+        c_tma_op.layout,
         a_tma_op.desc_layout,
         b_tma_op.desc_layout,
         c_tma_op.desc_layout,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

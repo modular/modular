@@ -62,9 +62,7 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
     )
 
 
-struct Codepoint(
-    EqualityComparable, ImplicitlyCopyable, Intable, Movable, Stringable
-):
+struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Stringable):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
 
@@ -198,7 +196,7 @@ struct Codepoint(
     @staticmethod
     fn unsafe_decode_utf8_codepoint(
         s: Span[mut=False, UInt8, *_],
-    ) -> (Codepoint, Int):
+    ) -> Tuple[Codepoint, Int]:
         """Decodes a single `Codepoint` and number of bytes read from a given
         UTF-8 string pointer.
 
@@ -292,6 +290,58 @@ struct Codepoint(
             False otherwise.
         """
         return self.to_u32() != other.to_u32()
+
+    fn __lt__(self, other: Self) -> Bool:
+        """Return True if this character is less than a different codepoint value from
+        `other`.
+
+        Args:
+            other: The codepoint value to compare against.
+
+        Returns:
+            True if this character's value is less than the other codepoint value;
+            False otherwise.
+        """
+        return self.to_u32() < other.to_u32()
+
+    fn __le__(self, other: Self) -> Bool:
+        """Return True if this character is less than or equal to a different codepoint value from
+        `other`.
+
+        Args:
+            other: The codepoint value to compare against.
+
+        Returns:
+            True if this character's value is less than or equal to the other codepoint value;
+            False otherwise.
+        """
+        return self.to_u32() <= other.to_u32()
+
+    fn __ge__(self, other: Self) -> Bool:
+        """Return True if this character is greater than or equal to a different codepoint value from
+        `other`.
+
+        Args:
+            other: The codepoint value to compare against.
+
+        Returns:
+            True if this character's value is greater than or equal to the other codepoint value;
+            False otherwise.
+        """
+        return self.to_u32() >= other.to_u32()
+
+    fn __gt__(self, other: Self) -> Bool:
+        """Return True if this character is greater than a different codepoint value from
+        `other`.
+
+        Args:
+            other: The codepoint value to compare against.
+
+        Returns:
+            True if this character's value is greater than the other codepoint value;
+            False otherwise.
+        """
+        return self.to_u32() > other.to_u32()
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations

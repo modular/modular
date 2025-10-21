@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 import requests
 from prometheus_client.parser import text_string_to_metric_families
 
-from benchmark_shared.config import Backend
+from .config import Backend
 
 if TYPE_CHECKING:
     from prometheus_client.metrics_core import Metric
@@ -55,6 +55,17 @@ class HistogramData:
     sum: float
     count: float
 
+    def __bool__(self) -> bool:
+        """Check if histogram has any observations.
+
+        Returns:
+            True if count > 0, False otherwise
+
+        Note:
+            A histogram object is considered falsy when it is empty or does not contain data.
+        """
+        return bool(self.count)
+
     @property
     def mean(self) -> float:
         """Calculate mean from sum and count.
@@ -74,12 +85,49 @@ class ParsedMetrics:
         gauges: Dictionary of gauge metrics (can increase or decrease)
         histograms: Dictionary of histogram metrics with bucket distributions
         raw_text: Raw Prometheus text format for debugging
+
+    Note:
+        Metrics with labels are stored with keys in the format:
+        "metric_name{label1="value1",label2="value2"}"
+
+        Use get_histogram() for convenient access to labeled histograms.
     """
 
     counters: dict[str, float]
     gauges: dict[str, float]
     histograms: dict[str, HistogramData]
     raw_text: str  # Keep raw Prometheus text for debugging
+
+    def get_histogram(
+        self, metric_name: str, labels: dict[str, str] | None = None
+    ) -> HistogramData | None:
+        """Get a histogram by name and optional labels.
+
+        Args:
+            metric_name: Base metric name (e.g., "maxserve_batch_execution_time_milliseconds")
+            labels: Optional dictionary of labels (e.g., {"batch_type": "CE"})
+
+        Returns:
+            HistogramData if found, None otherwise
+
+        Examples:
+            >>> # Get histogram without labels
+            >>> hist = metrics.get_histogram("maxserve_batch_size")
+            >>>
+            >>> # Get prefill batch execution time
+            >>> prefill = metrics.get_histogram(
+            ...     "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
+            ... )
+            >>> if prefill:
+            ...     print(f"Prefill avg: {prefill.mean:.2f} ms")
+            >>>
+            >>> # Get decode batch execution time
+            >>> decode = metrics.get_histogram(
+            ...     "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
+            ... )
+        """
+        key = _format_metric_key(metric_name, labels or {})
+        return self.histograms.get(key)
 
 
 def get_metrics_url(backend: Backend | str, base_url: str) -> str:
@@ -142,6 +190,24 @@ def fetch_metrics(url: str) -> str:
     return response.text
 
 
+def _format_metric_key(metric_name: str, labels: dict[str, str]) -> str:
+    """Format a metric key with labels in Prometheus style.
+
+    Args:
+        metric_name: Base metric name
+        labels: Dictionary of label key-value pairs
+
+    Returns:
+        Formatted metric key like "metric_name{label1=value1,label2=value2}"
+        or just "metric_name" if no labels
+    """
+    if not labels:
+        return metric_name
+
+    label_str = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()))
+    return f"{metric_name}{{{label_str}}}"
+
+
 def _extract_simple_metrics(
     family: Metric, metric_name: str
 ) -> dict[str, float]:
@@ -158,11 +224,8 @@ def _extract_simple_metrics(
     """
     result = {}
     for sample in family.samples:
-        if sample.labels:
-            key = f"{metric_name}_{sample.labels}"
-            result[key] = sample.value
-        else:
-            result[metric_name] = sample.value
+        key = _format_metric_key(metric_name, sample.labels)
+        result[key] = sample.value
     return result
 
 
@@ -197,26 +260,32 @@ def parse_metrics(raw_text: str) -> ParsedMetrics:
             gauges.update(_extract_simple_metrics(family, metric_name))
 
         elif family.type == "histogram":
-            histogram_buckets: list[tuple[str, float]] = []
-            histogram_sum = 0.0
-            histogram_count = 0.0
+            # Group histogram samples by their label set (excluding 'le')
+            histogram_groups: dict[str, HistogramData] = defaultdict(
+                lambda: HistogramData(buckets=[], sum=0.0, count=0.0)
+            )
 
             for sample in family.samples:
+                # Get labels excluding 'le' for grouping
+                grouping_labels = {
+                    k: v for k, v in sample.labels.items() if k != "le"
+                }
+                key = _format_metric_key(metric_name, grouping_labels)
+
                 if sample.name.endswith("_bucket"):
                     upper_bound = sample.labels.get(
                         "le", ""
                     )  # `le` = less than equal to (upper_bound)
-                    histogram_buckets.append((upper_bound, sample.value))
+                    histogram_groups[key].buckets.append(
+                        (upper_bound, sample.value)
+                    )
                 elif sample.name.endswith("_sum"):
-                    histogram_sum = sample.value
+                    histogram_groups[key].sum = sample.value
                 elif sample.name.endswith("_count"):
-                    histogram_count = sample.value
+                    histogram_groups[key].count = sample.value
 
-            histograms[metric_name] = HistogramData(
-                buckets=histogram_buckets,
-                sum=histogram_sum,
-                count=histogram_count,
-            )
+            # Store the histogram data
+            histograms.update(histogram_groups)
 
     return ParsedMetrics(
         counters=counters,
@@ -337,5 +406,26 @@ def print_server_metrics(metrics: ParsedMetrics) -> None:
                 print(f"    Count: {hist.count}")
                 print(f"    Sum: {hist.sum:.2f}")
                 print(f"    Mean: {hist.mean:.2f}")
+
+        # Special handling for batch_execution_time - show prefill/decode breakdown
+        prefill = metrics.get_histogram(
+            "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
+        )
+        decode = metrics.get_histogram(
+            "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
+        )
+
+        if prefill or decode:
+            print("\n  Batch Execution Time Breakdown:")
+            if prefill:
+                print(
+                    f"    Mean Prefill (CE) Time: {prefill.mean:.2f} ms "
+                    f"(count={int(prefill.count)}, sum={prefill.sum:.2f} ms)"
+                )
+            if decode:
+                print(
+                    f"    Mean Decode (TG) Time:  {decode.mean:.2f} ms "
+                    f"(count={int(decode.count)}, sum={decode.sum:.2f} ms)"
+                )
 
     print("=" * 50)

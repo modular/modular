@@ -10,7 +10,7 @@ what we publish.
 [//]: ### ✨ Highlights
 [//]: ### Language enhancements
 [//]: ### Language changes
-[//]: ### Standard library changes
+[//]: ### Library changes
 [//]: ### Tooling changes
 [//]: ### ❌ Removed
 [//]: ### 🛠️ Fixed
@@ -19,7 +19,19 @@ what we publish.
 
 ### ✨ Highlights
 
-### Language enhancements
+### Language enhancements {#25-7-language-enhancements}
+
+- [Issue #3925](https://github.com/modular/modular/issues/3925): Mojo now allows
+  methods to be overloaded based on "owned" vs "by-ref" argument conventions,
+  selecting the owned overload when given an owned value, and selecting the
+  by-ref version otherwise.  This allows somewhat more efficient algorithms,
+  e.g. consuming vs borrowing iterators:
+
+  ```mojo
+  struct MyCollection:
+    fn __iter__(var self) -> Self.ConsumingIterator: ...
+    fn __iter__(self) -> Self.BorrowingIterator: ...
+  ```
 
 - Literals now have a default type. For example, you can now bind `[1,2,3]` to
   `T` in a call to a function defined as `fn zip[T: Iterable](impl:T)` because
@@ -60,9 +72,41 @@ what we publish.
     _ = MyStuff(1)  # this is okay, because the conversion is already explicit.
   ```
 
-### Language changes
+- The `@deprecated` decorator can now take a target symbol with the `use` keyword
+  argument. This is mutually exclusive with the existing positional string
+  argument. A deprecation warning will be automatically generated.
 
-### Standard library changes
+  ```mojo
+  @deprecated(use=new)
+  fn old():
+    pass
+
+  fn new():
+    pass
+
+  fn main():
+    old() # 'old' is deprecated, use 'new' instead
+  ```
+
+### Language changes {#25-7-language-changes}
+
+- Expressions like `(Int, Float)` is no longer a syntax sugar for
+  `Tuple[Int, Float]`. It instead creates a tuple instance of two type values,
+  i.e., `(Int, Float) : Tuple[__typeof(Int), __typeof(Float)]`.
+
+- The `__type_of` magic function has been been renamed to `type_of`. Using the
+  old spelling will yield a deprecation warning. Similarly, `__origin_of` has
+  been deprecated in favor of the new `origin_of`.
+
+### Library changes {#25-7-library-changes}
+
+- Added `os.isatty()` function to check whether a file descriptor refers to a
+  terminal. This function accepts an `Int` file descriptor. If you have a
+  `FileDescriptor` object, use its `isatty()` method instead.
+
+- The `Hasher` trait's `_update_with_bytes` method now takes `Span[Byte]`
+  instead of `UnsafePointer[UInt8]` and a separate length parameter. This
+  change applies to all hasher implementations including `AHasher` and `Fnv1a`.
 
 - Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
 
@@ -74,6 +118,10 @@ what we publish.
 - Added `swap_pointees` function to `UnsafePointer` as an alternative to `swap`
   when the pointers may potentially alias each other.
 
+- `Span` and `StringSlice` constructors now accept `Int` for length parameters
+  instead of `UInt`. This change makes these types more ergonomic to use with
+  integer literals and other `Int`-based APIs.
+
 - `memcpy` and `parallel_memcpy` without keyword arguments are deprecated.
 
 - The `math` package now has a mojo native implementation of `acos`, `asin`,
@@ -83,24 +131,89 @@ what we publish.
 
 - Added support for NVIDIA Jetson Thor.
 
+- Added support for NVIDIA DGX Spark.
+
 - `Optional` now conforms to `Iterable` and `Iterator` acting as a collection of
   size 1 or 0.
 
 - `origin_cast` for `LayoutTensor`, `NDBuffer` and `UnsafePointer` has been
-  deprecated. `LayoutTensor` and `NDBuffer` now supports a safer
+  deprecated and removed. `LayoutTensor` and `NDBuffer` now supports a safer
   `as_any_origin()` origin casting. `UnsafePointer` has the same
   safe alternative and in addition, it has an additional safe `as_immutable`
   casting function and explicitly unsafe `unsafe_mut_cast` and
   `unsafe_origin_cast` casting function.
 
-### Tooling changes
+- The `@implicit` decorator on `UInt.__init__(Int)` has been deprecated.
+  Conversion from `Int` to `UInt` should now be done explicitly using
+  `UInt(int_value)`.
+
+- `assert_equal` now displays colored character-by-character diffs when string
+  comparisons fail, making it easier to spot differences. Differing characters
+  are highlighted in red for the left string and green for the right string.
+
+- Added `sys.compile.SanitizeAddress` providing a way for mojo code to detect
+  `--sanitize address` at compile time.
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`
   functions rather than inlining them into the error message.
 
+- `SIMD` now implements the `DivModable` trait.
+
+- Mojo now uses system allocators in programs built with `mojo build --sanitize address`.
+  This means asan can see mojo heap allocations and should now be able to
+  detect many more heap memory errors.
+
 ### ❌ Removed
 
-### 🛠️ Fixed
+- `TestSuite` now can generate test reports with `.generate_report()`. Also
+  a `TestReport` and `TestSuiteReport` structs were added.
+  
+- `Codepoint` now conforms to `Comparable` adding `__le__`, `__lt__`, `__ge__`,
+  and `__gt__` implementations.
+
+### Tooling changes {#25-7-tooling-changes}
+
+- `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)
+  and will be removed in a future release.
+
+### ❌ Removed {#25-7-removed}
+
+- `LayoutTensorBuild` type has been removed.  Use `LayoutTensor` with parameters
+  directly instead.
+
+### 🛠️ Fixed {#25-7-fixed}
 
 - The `math.cos` and `math.sin` function can now be evaluated at compile time
   (fixes #5111).
+
+- Fixed `IntTuple.value(i)` method returning incorrect values when elements are
+  stored as nested single-element tuples. Previously, calling
+  `Layout.row_major(M, N).stride.value(i)` would return negative offset values
+  (e.g., -65536, -65537) instead of the actual stride values. This affected any
+  code that accessed layout stride or shape values using the `value()` method.
+
+- Fixed `LayoutTensor.shape[idx]()` method returning incorrect values for nested
+  layouts. The bug occurred when accessing shape dimensions of tensors with
+  nested layouts like `((32, 2), (32, 4))`, where the method would return
+  garbage values instead of the correct product (e.g., 64).
+
+  - Fixed `LayoutTensor` element-wise arithmetic operations (`+`, `-`, `*`, `/`)
+  between tensors with different memory layouts. Previously, operations like
+  `a.transpose() - b` would produce incorrect results when the operands had
+  different layouts, because the same layout index was incorrectly used for both
+  operands. This now correctly computes separate indices for each tensor based
+  on its layout.
+
+- Fixed `LayoutTensor.shape[idx]()` method returning incorrect values for nested
+  layouts. The bug occurred when accessing shape dimensions of tensors with
+  nested layouts like `((32, 2), (32, 4))`, where the method would return
+  garbage values instead of the correct product (e.g., 64).
+
+- Fixed `arange()` function in `layout._fillers` to properly handle nested
+  layout structures. Previously, the function would fail when filling
+  tensors with nested layouts like
+  `Layout(IntTuple(IntTuple(16, 8), IntTuple(32, 2)), ...)` because it
+  attempted to extract shape values from nested tuples incorrectly.
+
+- Fixed [PR5479](https://github.com/modular/modular/issues/5479): mojo crashes
+  when compiling standalone `__del__` function without struct context.

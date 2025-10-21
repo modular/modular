@@ -12,24 +12,35 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
-from testing import assert_raises, TestSuite
+from testing import assert_raises, assert_equal, assert_false, TestSuite
 
 
 def test_nonconforming_signature(x: Int):
-    abort("should not be run")
+    raise Error("should not be run")
 
 
 def nonconforming_name():
-    abort("should not be run")
+    raise Error("should not be run")
 
 
 def test_failing():
     raise Error("should be raised")
 
 
+def test_passing():
+    pass
+
+
 def main():
-    # TODO(MSTDL-1916): Capture the output of TestSuite.run() and test that it
-    # contains the expected error message, and change the above functions to
-    # raise instead of aborting.
-    with assert_raises():
-        TestSuite.discover_tests[__functions_in_module()]().run()
+    var suite = TestSuite.discover_tests[__functions_in_module()]()
+    var report = suite.generate_report()
+    suite^.disable()
+
+    assert_equal(report.failures, 1)
+    assert_equal(len(report.reports), 2)
+
+    assert_equal(report.reports[0].name, "test_failing")
+    assert_equal(String(report.reports[0].error), "should be raised")
+
+    assert_equal(report.reports[1].name, "test_passing")
+    assert_false(report.reports[1].error)

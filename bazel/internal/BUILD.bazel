@@ -72,6 +72,7 @@ modular_cc_library(
     name = "debugging_test_lib",
     srcs = ["debugging_test_lib.cpp"],
     hdrs = ["debugging_test_lib.h"],
+    includes = ["."],
     tags = ["manual"],
 )
 

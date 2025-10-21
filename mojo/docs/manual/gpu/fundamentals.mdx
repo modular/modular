@@ -42,6 +42,9 @@ introspection functions for determining whether a system has a supported GPU:
   if the host system has an accelerator and `False` otherwise.
 - [`has_amd_gpu_accelerator()`](/mojo/stdlib/sys/info/has_amd_gpu_accelerator):
   Returns `True` if the host system has an AMD GPU and `False` otherwise.
+- [`has_apple_gpu_accelerator()`](/mojo/stdlib/sys/info/has_apple_gpu_accelerator):
+  Returns `True` if the host system has an Apple silicon GPU and `False`
+  otherwise.
 - [`has_nvidia_gpu_accelerator()`](/mojo/stdlib/sys/info/has_nvidia_gpu_accelerator):
   Returns `True` if the host system has an NVIDIA GPU and `False` otherwise.
 
@@ -106,12 +109,13 @@ detail about the specific APIs at this point other than the included comments,
 but all of the types, functions, and methods are discussed in more detail in
 later sections of this document.
 
-```mojo title="scalar_add.mojo"
-from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, thread_idx
+```mojo title="scalar_add_checked.mojo"
 from math import iota
 from sys import exit
 from sys.info import has_accelerator
+
+from gpu.host import DeviceContext
+from gpu.id import block_dim, block_idx, thread_idx
 
 alias num_elements = 20
 
@@ -145,6 +149,7 @@ fn scalar_add(vector: UnsafePointer[Float32], size: Int, scalar: Float32):
         # This operation happens in parallel across all GPU threads
         vector[idx] += scalar
 
+
 def main():
     @parameter
     if not has_accelerator():
@@ -173,7 +178,9 @@ def main():
         ctx.enqueue_copy(src_buf=host_buffer, dst_buf=device_buffer)
 
         # Compile the scalar_add kernel function for execution on the GPU.
-        scalar_add_kernel = ctx.compile_function[scalar_add]()
+        scalar_add_kernel = ctx.compile_function_checked[
+            scalar_add, scalar_add
+        ]()
 
         # Launch the GPU kernel with the following arguments:
         #
@@ -183,7 +190,7 @@ def main():
         # - grid_dim=1: use 1 thread block
         # - block_dim=num_elements: use 'num_elements' threads per block (one
         #   thread per vector element)
-        ctx.enqueue_function(
+        ctx.enqueue_function_checked(
             scalar_add_kernel,
             device_buffer,
             num_elements,
@@ -230,11 +237,11 @@ specified GPU. It accepts two optional arguments:
 
 - `device_id`: An integer index of a specific GPU on the system. The default
   value of 0 refers to the "default" GPU for the system.
-- `api`: A `String` specifying a particular vendor's API. "cuda" (NVIDIA) and
-  "hip" (AMD) are currently supported.
+- `api`: A `String` specifying a particular vendor's API. "cuda" (NVIDIA), "hip"
+  (AMD), and "metal" (Apple) are currently supported.
 
-If your system doesn't have a supported GPU — or doesn't have a GPU matching the
-`device_id` or `api`, if provided — then the constructor raises an error.
+If your system doesn't have a supported GPU—or doesn't have a GPU matching the
+`device_id` or `api`, if provided—then the constructor raises an error.
 
 ### Asynchronous operation and synchronizing the CPU and GPU
 
@@ -272,12 +279,12 @@ dimensions.
 You specify the grid and thread block dimensions with the `grid_dim` and
 `block_dim` keyword arguments when you enqueue a kernel function to execute
 using the
-[`enqueue_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_function)
+[`enqueue_function_checked()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_function_checked)
 method. For example:
 
 ```mojo
 # Enqueue the print_threads() kernel function
-ctx.enqueue_function[print_threads](
+ctx.enqueue_function_checked[print_threads, print_threads](
     grid_dim=(2, 2, 1),   # 2x2x1 blocks per grid
     block_dim=(4, 4, 2),  # 4x4x2 threads per block
 )
@@ -312,13 +319,22 @@ threads executing the kernel using the following structures:
 | [`thread_idx`](/mojo/stdlib/gpu/id/#thread_idx)  | Index of the thread within the block as `x`, `y`, and `z` values. |
 | [`global_idx`](/mojo/stdlib/gpu/id/#global_idx) | The global offset of the thread as `x`, `y`, and `z` values. That is, `global_idx.x = block_dim.x * block_idx.x + thread_idx.x`, `global_idx.y = block_dim.y * block_idx.y + thread_idx.y`, and `global_idx.z = block_dim.z * block_idx.z + thread_idx.z`. |
 
+
+:::note
+
+All of these dimensions and indices are
+[`UInt`](/mojo/stdlib/builtin/uint/UInt) values.
+
+:::
+
 Here is a complete example showing a kernel function that simply prints the
 thread block index, thread index, and global index for each thread executed.
 
 ```mojo title="print_threads.mojo"
+from sys import exit, has_accelerator, has_apple_gpu_accelerator
+
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, grid_dim, global_idx, thread_idx
-from sys import exit, has_accelerator
+from gpu.id import block_dim, block_idx, global_idx, grid_dim, thread_idx
 
 fn print_threads():
     """Print thread block and thread indices."""
@@ -345,14 +361,14 @@ fn print_threads():
 
 def main():
     @parameter
-    if not has_accelerator():
-        print("No GPU detected")
+    if not has_accelerator() or has_apple_gpu_accelerator():
+        print("No supported GPU detected")
         exit(0)
     else:
         # Initialize GPU context for device 0 (default GPU device).
         ctx = DeviceContext()
 
-        ctx.enqueue_function[print_threads](
+        ctx.enqueue_function_checked[print_threads, print_threads](
             grid_dim=(2, 2, 1),  # 2x2x1 blocks per grid
             block_dim=(4, 4, 2),  # 4x4x2 threads per block
         )
@@ -372,6 +388,13 @@ block_idx: [ 1 1 0 ]	thread_idx: [ 2 3 1 ]	global_idx: [ 6 7 1 ]	calculated glob
 block_idx: [ 1 1 0 ]	thread_idx: [ 3 3 1 ]	global_idx: [ 7 7 1 ]	calculated global_idx: [ 7 7 1 ]
 Done
 ```
+
+:::note
+
+Printing from within a kernel function is not currently supported on Apple
+silicon GPUs.
+
+:::
 
 ### Writing a kernel function
 
@@ -456,22 +479,15 @@ section, [`DeviceBuffer` and `HostBuffer` ](#devicebuffer-and-hostbuffer),
 describes in more detail how to allocate memory buffers on the host and device
 and to exchange blocks of data between host and device.
 
-The following table lists the most commonly used types in the Mojo Standard
-Library that conform to the `DevicePassable` trait.
+The following table lists the most commonly used types in the Mojo libraries
+that conform to the `DevicePassable` trait.
 
 | Host type | Device Type | Description |
 | --- | --- | --- |
 | [`Int`](/mojo/stdlib/builtin/int/Int) | `Int` | Signed integer |
 | [`SIMD[dtype, width]`](/mojo/stdlib/builtin/simd/SIMD) | `SIMD[dtype, width]` | Small vector backed by a hardware vector element |
 | [`DeviceBuffer[dtype]`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer)  | [`UnsafePointer[SIMD[dtype, 1]]`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values |
-
-Additionally, you can take advantage of Mojo's support for [implicit
-conversion](/mojo/manual/lifecycle/life#constructors-and-implicit-conversion) to
-use types that can convert to those listed above. A common example of this is
-[`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor/), which
-provides powerful abstractions for manipulating multi-dimensional data. For
-more information on `LayoutTensor`, see the
-[Using `LayoutTensor`](/mojo/manual/layout/tensors) section of the Mojo Manual.
+| [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor/) | `LayoutTensor` | A powerful abstraction for multi-dimensional data. See [Using `LayoutTensor`](/mojo/manual/layout/tensors) for more information. |
 
 ### `DeviceBuffer` and `HostBuffer`
 
@@ -639,20 +655,20 @@ explanation of object destruction.
 ### Compiling and enqueuing a kernel function for execution
 
 The
-[`compile_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#compile_function)
+[`compile_function_checked()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#compile_function_checked)
 method accepts a kernel function as a compile-time
 [parameter](/mojo/manual/parameters) and then compiles it for the associated
 `DeviceContext`. Then you can enqueue the compiled kernel for execution by
 passing it to the
-[`enqueue_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_function)
+[`enqueue_function_checked()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_function_checked)
 method. The example in the [GPU programming model](#gpu-programming-model)
 demonstrated this pattern:
 
-```mojo title="scalar_add.mojo"
+```mojo title="scalar_add_checked.mojo"
 ...
-scalar_add_kernel = ctx.compile_function[scalar_add]()
+scalar_add_kernel = ctx.compile_function_checked[scalar_add, scalar_add]()
 
-ctx.enqueue_function(
+ctx.enqueue_function_checked(
     scalar_add_kernel,
     device_buffer,
     num_elements,
@@ -663,7 +679,7 @@ ctx.enqueue_function(
 ```
 
 When using a compiled kernel function like this, you execute it by calling
-`enqueue_function()` with the following arguments in this order:
+`enqueue_function_checked()` with the following arguments in this order:
 
 - The kernel function to execute.
 - Any additional arguments specified by the kernel function definition in the
@@ -677,32 +693,18 @@ information on grid and thread block dimensions.
 
 :::note
 
-The current implementation of `enqueue_function()` doesn't typecheck the
-arguments to the compiled kernel function, which can lead to obscure run-time
-errors if the argument ordering, types, or count doesn't match the kernel
-function's definition.
-
-For compile-time typechecking, you can use the
-[`compile_function_checked()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#compile_function_checked)
+The current implementations of
+[`compile_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#compile_function)
 and
-[`enqueue_function_checked()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_function_checked)
-methods.
+[`enqueue_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_function)
+don't typecheck the arguments to the compiled kernel function, which can lead
+to obscure run-time errors if the argument ordering, types, or count doesn't
+match the kernel function's definition. Additionally, these methods currently
+have known issues with Apple silicon GPUs.
 
-Here's the typechecked equivalent of the `scalar_add()` kernel compilation and
-enqueuing shown above:
-
-```mojo
-scalar_add_kernel = ctx.compile_function_checked[scalar_add, scalar_add]()
-
-ctx.enqueue_function_checked(
-    scalar_add_kernel,
-    device_buffer,
-    num_elements,
-    Float32(20.0),
-    grid_dim=1,
-    block_dim=num_elements,
-)
-```
+For compile-time typechecking, we recommend that you use the
+`compile_function_checked()` and `enqueue_function_checked()` methods, which
+also work correctly on Apple silicon GPUs.
 
 Note that `compile_function_checked()` currently requires the kernel function to
 be provided *twice* as parameters. This requirement will be removed in a future
@@ -716,13 +718,14 @@ execute the same compiled kernel on the same device multiple times. This avoids
 the overhead of compiling the kernel each time it's executed.
 
 If your application needs to execute a kernel function only once, you can use an
-overloaded version of `enqueue_function()` that compiles the kernel and enqueues
-it in a single step. Therefore, the following is equivalent to the separate
-calls to `compile_function()` and `enqueue_function()` shown above (note that
-the kernel function is provided as a compile-time parameter in this case):
+overloaded version of `enqueue_function_checked()` that compiles the kernel and
+enqueues it in a single step. Therefore, the following is equivalent to the
+separate calls to `compile_function_checked()` and `enqueue_function_checked()`
+shown above (note that the kernel function is provided as a compile-time
+parameter in this case):
 
 ```mojo
-ctx.enqueue_function[scalar_add](
+ctx.enqueue_function_checked[scalar_add, scalar_add](
     device_buffer,
     num_elements,
     Float32(20.0),

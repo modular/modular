@@ -138,7 +138,7 @@ def test_arithmetic[
     if mode == "add":
         alias kernel = simd_add_kernel[width]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             a_device_buffer,
             b_device_buffer,
             c_device_buffer,
@@ -150,7 +150,7 @@ def test_arithmetic[
     elif mode == "mult":
         alias kernel = simd_mult_kernel[width]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             a_device_buffer,
             b_device_buffer,
             c_device_buffer,
@@ -163,7 +163,7 @@ def test_arithmetic[
         alias kernel = simd_fma_kernel[width]
 
         # Execute kernel on GPU
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             a_device_buffer,
             b_device_buffer,
             c_device_buffer,

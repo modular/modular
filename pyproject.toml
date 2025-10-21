@@ -3,6 +3,8 @@ name = "modular"
 version = "0"
 requires-python = ">= 3.10"
 
+
+# TODO: restrict utils/packaging/conda/test_inputs to only test_format.mojo
 [tool.black]
 include = '\.mojo$'
 line-length = 80
@@ -18,7 +20,9 @@ force-exclude = '''
     | utils/mblack
     | KGEN/test/mojo-parser
     | KGEN/test/mojo-isolated
+    | KGEN/test/mojo-tool/format
     | SDK/lib/API/python/max/serve/schemas
+    | utils/packaging/conda/test_inputs
   )/
 )
 '''
@@ -58,6 +62,7 @@ ignore = [
   "F405", # TODO: glob imports undefined
   "F821", # TODO: Undefined names, means script is invalid
   "F841", # TODO: unused variables
+  "FURB122", # Questionable readability improvement
   "RUF005", # Consider iterable unpacking instead of concatenation
   "RUF009", # Do not perform function call in dataclass defaults
   "RUF010", # Use explicit conversion flag

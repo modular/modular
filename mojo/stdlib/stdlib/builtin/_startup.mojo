@@ -14,6 +14,7 @@
 
 from sys import external_call
 from sys.ffi import _get_global
+from sys.compile import SanitizeAddress
 
 
 fn _init_global_runtime() -> OpaquePointer:
@@ -49,6 +50,10 @@ fn __wrap_and_execute_main[
     # Initialize the global runtime.
     _ensure_current_or_global_runtime_init()
 
+    @parameter
+    if SanitizeAddress:
+        external_call["KGEN_CompilerRT_SetAsanAllocators", NoneType]()
+
     # Initialize the mojo argv with those provided.
     external_call["KGEN_CompilerRT_SetArgV", NoneType](argc, argv)
 
@@ -79,6 +84,10 @@ fn __wrap_and_execute_raising_main[
 
     # Initialize the global runtime.
     _ensure_current_or_global_runtime_init()
+
+    @parameter
+    if SanitizeAddress:
+        external_call["KGEN_CompilerRT_SetAsanAllocators", NoneType]()
 
     # Initialize the mojo argv with those provided.
     external_call["KGEN_CompilerRT_SetArgV", NoneType](argc, argv)

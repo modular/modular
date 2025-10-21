@@ -69,10 +69,10 @@ fn _strides_from_shape[shape: DimList, *, skip: Int = 0]() -> DimList:
 @always_inline
 fn _compute_kv_cache_dynamic_shape_strides[
     dtype: DType, rank: Int, //, kv_cache_rank: Int, drop_list: Tuple
-](blocks: NDBuffer[dtype, rank, **_]) -> (
+](blocks: NDBuffer[dtype, rank, **_]) -> Tuple[
     IndexList[kv_cache_rank],
     IndexList[kv_cache_rank],
-):
+]:
     var kv_cache_shape = IndexList[kv_cache_rank]()
     var kv_cache_strides = IndexList[kv_cache_rank]()
     var out_index = kv_cache_rank - 1
@@ -279,7 +279,7 @@ struct ContinuousBatchingKVCache[
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -524,7 +524,7 @@ struct PagedKVCache[
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self

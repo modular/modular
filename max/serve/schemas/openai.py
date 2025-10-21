@@ -980,7 +980,7 @@ class CreateTranscriptionRequest(BaseModel):
         description='The format of the transcript output, in one of these options: `json`, `text`, `srt`, `verbose_json`, or `vtt`.\n',
     )
     temperature: Optional[float] = Field(
-        0,
+        None,
         description='The sampling temperature, between 0 and 1. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic. If set to 0, the model will use [log probability](https://en.wikipedia.org/wiki/Log_probability) to automatically increase the temperature until certain thresholds are hit.\n',
     )
     timestamp_granularities__: Optional[List[Literal['word', 'segment']]] = (
@@ -1066,7 +1066,7 @@ class CreateTranslationRequest(BaseModel):
         description='The format of the transcript output, in one of these options: `json`, `text`, `srt`, `verbose_json`, or `vtt`.\n',
     )
     temperature: Optional[float] = Field(
-        0,
+        None,
         description='The sampling temperature, between 0 and 1. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic. If set to 0, the model will use [log probability](https://en.wikipedia.org/wiki/Log_probability) to automatically increase the temperature until certain thresholds are hit.\n',
     )
 
@@ -3451,7 +3451,7 @@ class CreateCompletionRequest(BaseModel):
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n\nWe generally recommend altering this or `top_p` but not both.\n',
         examples=[1],
     )
-    top_k: Optional[Annotated[int, Field(ge=1, le=255)]] = Field(
+    top_k: Optional[Annotated[int, Field(ge=-1, le=255)]] = Field(
         None,
         description='Integer that controls the number of top tokens to consider.\n',
         examples=[1],
@@ -3783,12 +3783,12 @@ class AssistantObject(BaseModel):
         description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
     temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
-        1,
+        None,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n',
         examples=[1],
     )
     top_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
-        1,
+        None,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or temperature but not both.\n',
         examples=[1],
     )
@@ -3866,12 +3866,12 @@ class CreateAssistantRequest(BaseModel):
         description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
     temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
-        1,
+        None,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n',
         examples=[1],
     )
     top_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
-        1,
+        None,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or temperature but not both.\n',
         examples=[1],
     )
@@ -3920,12 +3920,12 @@ class ModifyAssistantRequest(BaseModel):
         description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
     temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
-        1,
+        None,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n',
         examples=[1],
     )
     top_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
-        1,
+        None,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or temperature but not both.\n',
         examples=[1],
     )
@@ -4478,12 +4478,12 @@ class CreateRunRequest(BaseModel):
         description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
     temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
-        1,
+        None,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n',
         examples=[1],
     )
     top_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
-        1,
+        None,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or temperature but not both.\n',
         examples=[1],
     )
@@ -4888,7 +4888,7 @@ class CreateChatCompletionRequest(BaseModel):
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n\nWe generally recommend altering this or `top_p` but not both.\n',
         examples=[1],
     )
-    top_k: Optional[Annotated[int, Field(ge=1, le=255)]] = Field(
+    top_k: Optional[Annotated[int, Field(ge=-1, le=255)]] = Field(
         None,
         description='Integer that controls the number of top tokens to consider.\n',
         examples=[1],
@@ -5002,12 +5002,12 @@ class CreateThreadAndRunRequest(BaseModel):
         description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
     temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
-        1,
+        None,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n',
         examples=[1],
     )
     top_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
-        1,
+        None,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or temperature but not both.\n',
         examples=[1],
     )

@@ -41,6 +41,8 @@ from shmem import SHMEM_SIGNAL_SET, SHMEMScope, shmem_put_nbi, shmem_signal_op
 
 from utils.index import IndexList, StaticTuple
 
+from builtin.device_passable import DevicePassable
+
 alias RtTuple_2 = RuntimeTuple[
     IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), element_type = DType.int32
 ]
@@ -57,7 +59,7 @@ alias EP_DATA_READY_FLAG = 1 << 10
 
 
 @register_passable("trivial")
-trait TokenFormat:
+trait TokenFormat(DevicePassable):
     alias hid_dim: Int
     alias top_k: Int
     alias alignment: Int
@@ -104,7 +106,7 @@ trait TokenFormat:
         src_type: DType
     ](
         buf_p: UnsafePointer[UInt8],
-        src_p: UnsafePointer[Scalar[src_type]],
+        src_p: UnsafePointer[Scalar[src_type], mut=False],
         block_size: UInt,
     ) -> None:
         "Copy the token to the send buffer. This function needs to be called by all threads in the block."
@@ -133,6 +135,35 @@ struct BF16TokenFormat[
     ]
     var output_tokens: Self.TensorType
 
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Convert the host type object to a device_type and store it at the
+        target address.
+
+        Args:
+            target: The target address to store the device type.
+        """
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return String(
+            "BF16TokenFormat[output_layout = ",
+            String(output_layout),
+            ", hid_dim = ",
+            String(Self.hid_dim),
+            ", top_k = ",
+            String(Self.top_k),
+            ", alignment = ",
+            String(Self.alignment),
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
+
     @always_inline
     fn __init__(out self, output_tokens: Self.TensorType):
         self.output_tokens = output_tokens
@@ -148,7 +179,7 @@ struct BF16TokenFormat[
         src_type: DType
     ](
         buf_p: UnsafePointer[UInt8],
-        src_p: UnsafePointer[Scalar[src_type]],
+        src_p: UnsafePointer[Scalar[src_type], mut=False],
         block_size: UInt,
     ) -> None:
         alias src_width = simd_width_of[src_type]()
@@ -210,6 +241,41 @@ struct BlockwiseFP8TokenFormat[
 
     alias group_size = 128
 
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Convert the host type object to a device_type and store it at the
+        target address.
+
+        Args:
+            target: The target address to store the device type.
+        """
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return String(
+            "BlockwiseFP8TokenFormat[fp8_dtype = ",
+            String(Self.fp8_dtype),
+            ", scales_dtype = ",
+            String(Self.scales_dtype),
+            ", output_layout = ",
+            String(Self.output_layout),
+            ", scales_layout = ",
+            String(Self.scales_layout),
+            ", hid_dim = ",
+            String(Self.hid_dim),
+            ", top_k = ",
+            String(Self.top_k),
+            ", alignment = ",
+            String(Self.alignment),
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
+
     @always_inline
     fn __init__(
         out self,
@@ -252,7 +318,7 @@ struct BlockwiseFP8TokenFormat[
         src_type: DType
     ](
         buf_p: UnsafePointer[UInt8],
-        src_p: UnsafePointer[Scalar[src_type]],
+        src_p: UnsafePointer[Scalar[src_type], mut=False],
         block_size: UInt,
     ) -> None:
         alias src_width = simd_width_of[src_type]()
@@ -292,7 +358,7 @@ struct BlockwiseFP8TokenFormat[
 
             # The first thread in each group stores the scale factor.
             alias scale_bytes = Self.scales_dtype.size_of()
-            if lane_id() % n_threads_per_group == 0:
+            if lane_id() % UInt(n_threads_per_group) == 0:
                 scale_idx = i * src_width // Self.group_size
                 buf_p.store[width=scale_bytes, alignment=scale_bytes](
                     Self.scales_offset() + scale_idx * scale_bytes,

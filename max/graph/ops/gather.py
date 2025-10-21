@@ -24,7 +24,7 @@ from .constant import constant
 
 
 def gather(
-    input: TensorValueLike, indices: TensorValueLike, axis: int = -1
+    input: TensorValueLike, indices: TensorValueLike, axis: int
 ) -> TensorValue:
     """
     Selects elements out of an input tensor by index.
@@ -42,6 +42,12 @@ def gather(
     """
     input, indices = TensorValue(input), TensorValue(indices)
     shape = input.shape
+
+    if not -input.rank <= axis < input.rank:
+        raise IndexError(f"{axis=} out of range for {input=}")
+    if axis < 0:
+        axis += input.rank
+
     output_shape = [*shape[:axis], *indices.shape, *shape[axis + 1 :]]
     return Graph.current._add_op(
         rmo.mo_gather,

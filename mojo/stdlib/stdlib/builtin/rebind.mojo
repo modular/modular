@@ -67,5 +67,37 @@ fn rebind[
         A reference to the value rebound as `dest_type`.
     """
     lit = __get_mvalue_as_litref(src)
-    rebound = rebind[Pointer[dest_type, __origin_of(src)]._mlir_type](lit)
+    rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_type](lit)
     return __get_litref_as_mvalue(rebound)
+
+
+@always_inline("nodebug")
+fn rebind_var[
+    src_type: Movable, //,
+    dest_type: Movable,
+](var src: src_type, out dest: dest_type):
+    """Statically assert that a parameter input type `src_type` resolves to the
+    same type as a parameter result type `dest_type` after function
+    instantiation and "rebind" the input to the result type, returning a
+    owned variable with an adjusted type.
+
+    Unlike `rebind`, this function takes an owned variable and returns an owned
+    variable via moving the value from the input to the output.
+
+    This function is meant to be used in uncommon cases where a parametric type
+    depends on the value of a constrained parameter in order to manually refine
+    the type with the constrained parameter value.
+
+    Parameters:
+        src_type: The original type.
+        dest_type: The type to rebind to.
+
+    Args:
+        src: The value to rebind.
+
+    Returns:
+        An owned value rebound as `dest_type`.
+    """
+    ref dest_ref = rebind[dest_type](src)
+    dest = UnsafePointer(to=dest_ref).take_pointee()
+    __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(src))

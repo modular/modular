@@ -474,7 +474,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     fn __merge_with__[
-        other_type: __type_of(
+        other_type: type_of(
             UnsafePointer[
                 type,
                 address_space=address_space,
@@ -485,7 +485,7 @@ struct UnsafePointer[
     ](self) -> UnsafePointer[
         type=type,
         mut = mut & other_type.origin.mut,
-        origin = __origin_of(origin, other_type.origin),
+        origin = origin_of(origin, other_type.origin),
         address_space=address_space,
     ]:
         """Returns a pointer merged with the specified `other_type`.
@@ -510,15 +510,6 @@ struct UnsafePointer[
             Whether the pointer is null.
         """
         return Int(self) != 0
-
-    @always_inline
-    fn __as_bool__(self) -> Bool:
-        """Return true if the pointer is non-null.
-
-        Returns:
-            Whether the pointer is null.
-        """
-        return self.__bool__()
 
     @always_inline
     fn __int__(self) -> Int:
@@ -1093,32 +1084,30 @@ struct UnsafePointer[
         origin=target_origin,
     ]
 
-    @deprecated(
-        "`origin_cast` is deprecated for `UnsafePointer`. Consider using the"
-        " safer `as_any_origin` or `as_immutable` instead. Or use"
-        " the explicit `unsafe_mut_cast` and `unsafe_origin_cast`."
-    )
-    @always_inline("builtin")
-    fn origin_cast[
-        target_mut: Bool,
-        target_origin: Origin[target_mut],
-    ](self) -> Self._OriginCastType[target_mut, target_origin]:
-        """Changes the origin or mutability of a pointer.
+    @always_inline("nodebug")
+    fn mut_cast[
+        target_mut: Bool
+    ](self) -> Self._OriginCastType[
+        target_mut, Origin[target_mut].cast_from[origin]
+    ]:
+        """Changes the mutability of a pointer.
+
+        This is a safe way to change the mutability of a pointer with an
+        unbounded mutability. This function will emit a compile time error if
+        you try to cast an immutable pointer to mutable.
 
         Parameters:
-            target_mut: Whether the origin is mutable.
-            target_origin: Origin of the destination pointer.
+            target_mut: Mutability of the destination pointer.
 
         Returns:
-            A new UnsafePointer object with the same type and the same address,
-            as the original UnsafePointer and the new specified mutability and origin.
+            A pointer with the same type, origin and address space as the
+            original pointer, but with the newly specified mutability.
         """
-        return __mlir_op.`pop.pointer.bitcast`[
-            _type = UnsafePointer[
-                type,
-                address_space=address_space,
-            ]._mlir_type,
-        ](self.address)
+        constrained[
+            target_mut == False or target_mut == mut,
+            "Cannot safely cast an immutable pointer to mutable",
+        ]()
+        return self.unsafe_mut_cast[target_mut]()
 
     @always_inline("builtin")
     fn unsafe_mut_cast[
@@ -1137,6 +1126,8 @@ struct UnsafePointer[
 
         If you are unconditionally casting the mutability to `False`, use
         `as_immutable` instead.
+        If you are casting to mutable or a parameterized mutability, prefer
+        using the safe `mut_cast` method instead.
 
         Safety:
             Casting the mutability of a pointer is inherently very unsafe.
@@ -1204,7 +1195,7 @@ struct UnsafePointer[
                 " the mutability explicitly before calling this function."
             ),
         ]()
-        result = abort[__type_of(result)]()
+        result = abort[type_of(result)]()
 
     @always_inline("builtin")
     fn as_any_origin(

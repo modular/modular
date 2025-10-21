@@ -87,8 +87,8 @@ fn repack_Q4_0_for_sm8x[
     var tid: UInt = thread_idx.x
     var warp_id: UInt = tid // WARP_SIZE
     alias num_warps_x = BN // repack_tile[0]
-    var warp_x: UInt = UInt(warp_id % UInt(num_warps_x))
-    var warp_y: UInt = UInt(warp_id // UInt(num_warps_x))
+    var warp_x = UInt(warp_id % UInt(num_warps_x))
+    var warp_y = UInt(warp_id // UInt(num_warps_x))
     var lane_id: Int = tid % WARP_SIZE
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
@@ -273,8 +273,8 @@ fn create_ref_b[
     var warp_id: UInt = tid // WARP_SIZE
     var lane_id: UInt = tid % WARP_SIZE
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
-    var warp_x: UInt = UInt(warp_id // UInt(num_k_warps))
-    var warp_y: UInt = UInt(warp_id % UInt(num_k_warps))
+    var warp_x = UInt(warp_id // UInt(num_k_warps))
+    var warp_y = UInt(warp_id % UInt(num_k_warps))
 
     alias group_bytes = group_size // 2 + 2
     alias N = Int(b_q_layout.shape[0])
@@ -354,7 +354,7 @@ fn create_ref_b[
         return v
 
     alias write_back_layout = Layout.row_major(1, 32)
-    alias write_back_type = __type_of(mma_tile_iter_1[].vectorize[1, 2]()[0, 0])
+    alias write_back_type = type_of(mma_tile_iter_1[].vectorize[1, 2]()[0, 0])
 
     @parameter
     for i in range(0, TILE_N // 8, 2):
@@ -716,13 +716,25 @@ fn test_quantized[
         fn run_func(ctx: DeviceContext) raises:
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config
-            ](c_device.tensor, a_device.tensor, b_device.tensor, config, ctx)
+            ](
+                c_device.to_layout_tensor(),
+                a_device.to_layout_tensor(),
+                b_device.to_layout_tensor(),
+                config,
+                ctx,
+            )
 
         # Warmup
         for _ in range(nwarmup):
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config
-            ](c_device.tensor, a_device.tensor, b_device.tensor, config, ctx)
+            ](
+                c_device.to_layout_tensor(),
+                a_device.to_layout_tensor(),
+                b_device.to_layout_tensor(),
+                config,
+                ctx,
+            )
 
         var nstime = ctx.execution_time[run_func](nrun) / nrun
         var sectime = nstime * 1e-9
@@ -739,7 +751,13 @@ fn test_quantized[
 
     multistage_gemm_q[
         group_size=group_size, pack_factor=pack_factor, config=config
-    ](c_device.tensor, a_device.tensor, b_device.tensor, config, ctx)
+    ](
+        c_device.to_layout_tensor(),
+        a_device.to_layout_tensor(),
+        b_device.to_layout_tensor(),
+        config,
+        ctx,
+    )
 
     alias dequan = create_ref_b[
         dtype,

@@ -140,9 +140,9 @@ fn test_kv_cache_radd[
 
     var layer_idx = 1
     generic_kv_cache_radd_dispatch[target="gpu"](
-        a_device.tensor,
+        a_device.to_layout_tensor(),
         kv_collection_device,
-        input_row_offsets_slice_device.tensor,
+        input_row_offsets_slice_device.to_layout_tensor(),
         num_active_loras_slice_start,
         layer_idx,
         ctx,

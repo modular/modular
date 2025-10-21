@@ -37,4 +37,4 @@ fn managed_tensor_slice_to_ndbuffer[
 ):
     constrained[not tensor.io_spec.input == IO.FusedInput]()
     var ptr = tensor._ptr.address_space_cast[spec.address_space]()
-    return __type_of(result)(ptr, tensor.shape(), tensor._runtime_strides)
+    return type_of(result)(ptr, tensor.shape(), tensor._runtime_strides)

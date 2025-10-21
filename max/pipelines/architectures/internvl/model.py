@@ -37,7 +37,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -945,7 +945,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager:
+    ) -> TPPagedKVCacheManager:
         """Loads and initializes the KVCacheManager for the InternVL model."""
         return load_kv_manager(
             params=InternVLConfig.get_kv_params(

@@ -543,11 +543,22 @@ class Graph:
             module=self._module,
             # **kwargs,
         )
-        subgraph._mlir_op.attributes["isSubgraph"] = mlir.UnitAttr.get()
-        subgraph._mlir_op.attributes["inputParameters"] = (
-            self._mlir_op.attributes["inputParameters"]
+
+        # Mark the new graph op as a subgraph and set its input parameters.
+        op = Operation._from_cmlir(subgraph._mlir_op)
+        assert isinstance(op, _mo.GraphOp)
+        op.is_subgraph = builtin.UnitAttr()
+
+        # Union callee's existing params  with the caller's params.
+        # This may over-declare but is deterministic and comprehensive.
+        union_names = list(dict.fromkeys([*subgraph._params, *self._params]))
+        si64 = builtin.IntegerType(
+            width=64, signedness=builtin.SignednessSemantics.signed
         )
-        subgraph._params = dict.fromkeys(self._params)
+        op.input_parameters = kgen.ParamDeclArrayAttr(
+            [kgen.ParamDeclAttr(name, si64) for name in union_names]
+        )
+        subgraph._params = dict.fromkeys(union_names)
         self._subgraphs[name] = subgraph
         return subgraph
 

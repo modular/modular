@@ -49,10 +49,10 @@ fn _to_SIMD[
 @always_inline
 fn calculate_symmetric_vector[
     input_dtype: DType, simd_width: Int, output_bits: Int
-](data: SIMD[input_dtype, simd_width]) -> (
+](data: SIMD[input_dtype, simd_width]) -> Tuple[
     SIMD[DType.uint8, simd_width],
     Scalar[input_dtype],
-):
+]:
     """
     Symmetrically quantizes the given SIMD vector `data` with input type
     `input_dtype` and `simd_width` elements, assuming we want
@@ -429,7 +429,7 @@ fn scale_min_k4(
         block_Q4_K, address_space = AddressSpace.GENERIC, **_
     ],
     g: Int,
-) -> (Float32, Float32):
+) -> Tuple[Float32, Float32]:
     if g < 4:
         var q_scale = src_ptr[].q_scales_and_mins[g] & 63
         var q_min = src_ptr[].q_scales_and_mins[g + 4] & 63

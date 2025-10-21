@@ -232,7 +232,7 @@ fn convert_f32_to_bf16[dtype: DType](x: SIMD, out res: SIMD[dtype, x.size]):
 
     @parameter
     if use_truncation:
-        res = __type_of(res)(from_bits=(x.to_bits() >> 16).cast[DType.uint16]())
+        res = type_of(res)(from_bits=(x.to_bits() >> 16).cast[DType.uint16]())
     else:
         res = x.cast[dtype]()
 
@@ -274,15 +274,15 @@ struct KVCacheIterator[
             Int(tile_size), Int(self.end - self.tile_start_row)
         )
         # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = __type_of(result.runtime_layout)(
-            __type_of(result.runtime_layout.shape)(
+        var kv_runtime_layout = type_of(result.runtime_layout)(
+            type_of(result.runtime_layout.shape)(
                 Int(kv_tile_num_rows), Int(Self.depth)
             ),
-            __type_of(result.runtime_layout.stride)(
+            type_of(result.runtime_layout.stride)(
                 Int(Self.kv_num_heads * Self.depth), 1
             ),
         )
-        var out = __type_of(result)(
+        var out = type_of(result)(
             self.cache.block_paged_ptr[tile_size](
                 self.batch_idx, self.tile_start_row, self.kv_head_idx, 0
             ),
@@ -375,7 +375,7 @@ fn load_b[
         address_space = AddressSpace.LOCAL,
     ],
 ):
-    var output = __type_of(res).stack_allocation()
+    var output = type_of(res).stack_allocation()
 
     alias M = src.shape[0]() // 32
     alias N = src.shape[1]() // 16
@@ -389,7 +389,7 @@ fn load_b[
         for j in range(N):
             var out_reg = load_b_[swizzle, j](src.tile[32, 32](i, 0))
             output_vectorized[i + j * M, 0] = rebind[
-                __type_of(output_vectorized[i + j * M, 0])
+                type_of(output_vectorized[i + j * M, 0])
             ](out_reg)
 
     return output
@@ -493,10 +493,10 @@ struct KBuffer[
             mma_shape[2] * k_group_size == 16,
             "mma_shape[2] * k_group_size must be 16",
         ]()
-        self.mma_tile = __type_of(self.mma_tile).stack_allocation()
-        self.smem_iter = __type_of(self.smem_iter)(shared_ptr, 0)
+        self.mma_tile = type_of(self.mma_tile).stack_allocation()
+        self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
 
-        self.kv_cache_iter = __type_of(self.kv_cache_iter)(
+        self.kv_cache_iter = type_of(self.kv_cache_iter)(
             k_cache, batch_idx, head_idx, end
         )
         self.buffer_idx = 0
@@ -709,9 +709,9 @@ struct VBuffer[
             "mma_shape[2] * k_group_size must be 16",
         ]()
 
-        self.mma_tile = __type_of(self.mma_tile).stack_allocation()
-        self.smem_iter = __type_of(self.smem_iter)(shared_ptr, 0)
-        self.kv_cache_iter = __type_of(self.kv_cache_iter)(
+        self.mma_tile = type_of(self.mma_tile).stack_allocation()
+        self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
+        self.kv_cache_iter = type_of(self.kv_cache_iter)(
             v_cache, batch_idx, head_idx, end
         )
         self.buffer_idx = 0
@@ -784,7 +784,7 @@ struct VBuffer[
                 .tile[16, depth](k, 0)
             )
             var frags = (
-                __type_of(self.mma_tile.split[Self.num_k_tiles]()[k])
+                type_of(self.mma_tile.split[Self.num_k_tiles]()[k])
                 .stack_allocation()
                 .vectorize[1, Self.simd_width]()
             )
@@ -881,7 +881,7 @@ struct QRegisterBuffer[
             "mma_shape[2] * k_group_size must be 16",
         ]()
         self.gmem_tensor = tensor
-        self.mma_tile = __type_of(self.mma_tile).stack_allocation()
+        self.mma_tile = type_of(self.mma_tile).stack_allocation()
 
     @always_inline
     fn load_from_dram(mut self):
@@ -1220,7 +1220,7 @@ struct SharedMemoryManager[
         ],
     ):
         constrained[token_gen, "this function is only used for token_gen"]()
-        return __type_of(result)(self.k_smem, BN * depth)
+        return type_of(result)(self.k_smem, BN * depth)
 
     @always_inline
     fn get_v_iter(
@@ -1234,7 +1234,7 @@ struct SharedMemoryManager[
         ],
     ):
         constrained[token_gen, "this function is only used for token_gen"]()
-        return __type_of(result)(self.v_smem, BN * depth)
+        return type_of(result)(self.v_smem, BN * depth)
 
     @always_inline
     fn get_p_iter(
@@ -1247,7 +1247,7 @@ struct SharedMemoryManager[
             circular=True,
         ],
     ):
-        return __type_of(result)(
+        return type_of(result)(
             self.p_smem,
             BM * BN,
         )
@@ -1269,7 +1269,7 @@ struct SharedMemoryManager[
             "warp_scratch_tile is too large",
         ]()
         var ptr = self.k_smem.bitcast[Scalar[Self.accum_type]]()
-        return __type_of(result)(ptr if token_gen else __type_of(ptr)())
+        return type_of(result)(ptr if token_gen else type_of(ptr)())
 
 
 struct GlobalMemoryManager[
@@ -1314,14 +1314,14 @@ struct GlobalMemoryManager[
             + num_heads * q_tile_idx * BM
         )
 
-        self.q_runtime_layout = __type_of(self.q_runtime_layout)(
+        self.q_runtime_layout = type_of(self.q_runtime_layout)(
             RuntimeTuple[
                 Self.q_gmem_layout.shape,
-                element_type = __type_of(self.q_runtime_layout).element_type,
+                element_type = type_of(self.q_runtime_layout).element_type,
             ](Int(q_tile_num_rows), Int(depth)),
             RuntimeTuple[
                 Self.q_gmem_layout.stride,
-                element_type = __type_of(self.q_runtime_layout).linear_idx_type,
+                element_type = type_of(self.q_runtime_layout).linear_idx_type,
             ](Int(num_heads * depth if not token_gen else depth), 1),
         )
 
@@ -1340,7 +1340,7 @@ struct GlobalMemoryManager[
             masked=True,
         ],
     ):
-        return __type_of(result)(
+        return type_of(result)(
             ptr + Int(self.q_offset),
             self.q_runtime_layout,
         )
@@ -1379,16 +1379,16 @@ struct GlobalMemoryManager[
         ],
     ):
         # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = __type_of(result.runtime_layout)(
-            __type_of(result.runtime_layout.shape)(
+        var kv_runtime_layout = type_of(result.runtime_layout)(
+            type_of(result.runtime_layout.shape)(
                 Int(kv_tile_num_rows), Int(depth)
             ),
-            __type_of(result.runtime_layout.stride)(
+            type_of(result.runtime_layout.stride)(
                 Int(Self.kv_num_heads * depth), 1
             ),
         )
 
-        return __type_of(result)(
+        return type_of(result)(
             ptr,
             kv_runtime_layout,
         )

@@ -236,7 +236,7 @@ def get_rope_index(
 
         for i, input_ids_row in enumerate(total_input_ids):
             # Extract valid input_ids using the attention_mask.
-            input_ids_row = input_ids_row[attention_mask[i] == 1]  # type: ignore
+            input_ids_row = input_ids_row[attention_mask[i] == 1]
             vision_start_indices = np.where(
                 input_ids_row == vision_start_token_id
             )[0]

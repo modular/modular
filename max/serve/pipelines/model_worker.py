@@ -224,7 +224,13 @@ class ModelWorker:
             metric_client_factory: Factory for creating metric client instances
         """
         try:
+            # kill when parent is killed
             _set_pdeathsig(signal.SIGTERM)
+
+            # ignore SIGINT (let parent orchestrate shutdown)
+            # otherwise we get zmq disconnect errors intermittently
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+
             uvloop.run(
                 ModelWorker.run(
                     pc,

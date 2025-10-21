@@ -85,7 +85,7 @@ struct _DictEntryIter[
         self.seen = seen
         self.src = Pointer(to=dict)
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     @always_inline
@@ -145,7 +145,7 @@ struct _TakeDictEntryIter[
         self.src = Pointer(to=dict)
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     @always_inline
@@ -200,7 +200,7 @@ struct _DictKeyIter[
     var iter: Self.dict_entry_iter
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     @always_inline
@@ -249,7 +249,7 @@ struct _DictValueIter[
     var iter: _DictEntryIter[K, V, H, origin, forward]
     alias Element = V
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     fn __reversed__(self) -> _DictValueIter[K, V, H, origin, False]:
@@ -817,7 +817,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         """
         return self._find_index(hash[HasherType=H](key), key)[0]
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the dict's keys as immutable references.
 
         Returns:
@@ -827,7 +827,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
 
     fn __reversed__(
         ref self,
-    ) -> _DictKeyIter[K, V, H, __origin_of(self), False]:
+    ) -> _DictKeyIter[K, V, H, origin_of(self), False]:
         """Iterate backwards over the dict keys, returning immutable references.
 
         Returns:
@@ -1063,7 +1063,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
 
         raise "KeyError: popitem(): dictionary is empty"
 
-    fn keys(ref self) -> _DictKeyIter[K, V, H, __origin_of(self)]:
+    fn keys(ref self) -> _DictKeyIter[K, V, H, origin_of(self)]:
         """Iterate over the dict's keys as immutable references.
 
         Returns:
@@ -1071,7 +1071,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         """
         return Self.__iter__(self)
 
-    fn values(ref self) -> _DictValueIter[K, V, H, __origin_of(self)]:
+    fn values(ref self) -> _DictValueIter[K, V, H, origin_of(self)]:
         """Iterate over the dict's values as references.
 
         Returns:
@@ -1079,7 +1079,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         """
         return _DictValueIter(_DictEntryIter(0, 0, self))
 
-    fn items(ref self) -> _DictEntryIter[K, V, H, __origin_of(self)]:
+    fn items(ref self) -> _DictEntryIter[K, V, H, origin_of(self)]:
         """Iterate over the dict's entries as immutable references.
 
         Returns:
@@ -1102,7 +1102,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         """
         return _DictEntryIter(0, 0, self)
 
-    fn take_items(mut self) -> _TakeDictEntryIter[K, V, H, __origin_of(self)]:
+    fn take_items(mut self) -> _TakeDictEntryIter[K, V, H, origin_of(self)]:
         """Iterate over the dict's entries and move them out of the dictionary
         effectively draining the dictionary.
 
@@ -1230,7 +1230,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
                 return slot
             self._next_index_slot(slot, perturb)
 
-    fn _find_index(self, hash: UInt64, key: K) -> (Bool, UInt64, Int):
+    fn _find_index(self, hash: UInt64, key: K) -> Tuple[Bool, UInt64, Int]:
         # Return (found, slot, index)
         var slot = hash & (self._reserved() - 1)
         var perturb = hash
@@ -1426,18 +1426,18 @@ struct OwnedKwargsDict[V: Copyable & Movable](
 
     fn __iter__(
         ref self,
-    ) -> Self.IteratorType[__origin_of(self)]:
+    ) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the keyword dict's keys as immutable references.
 
         Returns:
             An iterator of immutable references to the dictionary keys.
         """
-        return rebind[Self.IteratorType[__origin_of(self)]](self._dict.keys())
+        return rebind[Self.IteratorType[origin_of(self)]](self._dict.keys())
 
     fn keys(
         ref self,
     ) -> _DictKeyIter[
-        Self.key_type, V, default_comp_time_hasher, __origin_of(self._dict)
+        Self.key_type, V, default_comp_time_hasher, origin_of(self._dict)
     ]:
         """Iterate over the keyword dict's keys as immutable references.
 
@@ -1449,7 +1449,7 @@ struct OwnedKwargsDict[V: Copyable & Movable](
     fn values(
         ref self,
     ) -> _DictValueIter[
-        Self.key_type, V, default_comp_time_hasher, __origin_of(self._dict)
+        Self.key_type, V, default_comp_time_hasher, origin_of(self._dict)
     ]:
         """Iterate over the keyword dict's values as references.
 
@@ -1461,7 +1461,7 @@ struct OwnedKwargsDict[V: Copyable & Movable](
     fn items(
         ref self,
     ) -> _DictEntryIter[
-        Self.key_type, V, default_comp_time_hasher, __origin_of(self._dict)
+        Self.key_type, V, default_comp_time_hasher, origin_of(self._dict)
     ]:
         """Iterate over the keyword dictionary's entries as immutable
         references.

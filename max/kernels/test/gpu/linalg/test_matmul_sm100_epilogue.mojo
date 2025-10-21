@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
-from random import random_si64
+from random import random_si64, random_float64
 from sys import align_of, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -29,7 +29,7 @@ from linalg.matmul.gpu.sm100.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
 from linalg.utils import elementwise_compute_lambda_type
-from linalg.utils_gpu import MatmulConfig
+from linalg.matmul.gpu.sm100.config import MatmulConfig
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -134,8 +134,7 @@ def test_matmul_sm100_epilogue[
 
     for i in range(M):
         for j in range(N):
-            # bigger number for numerical stability
-            c_host.tensor[i, j] = Scalar[c_type](random_si64(0, 20))
+            c_host.tensor[i, j] = Scalar[c_type](random_float64(-1, 1))
             c_host_copy.tensor[i, j] = c_host.tensor[i, j]
 
     # Move operands to the Device
@@ -144,11 +143,11 @@ def test_matmul_sm100_epilogue[
     ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
 
     alias matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=block_tile_shape,
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
         mma_shape=mma_shape,
+        cta_group=2,
     )
 
     alias optional_lambda_fn = OptionalReg[elementwise_compute_lambda_type](
@@ -158,7 +157,6 @@ def test_matmul_sm100_epilogue[
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
-        cta_group=2,
         elementwise_compute_lambda_fn=optional_lambda_fn,
         register_based_epilogue=register_based_epilogue,
         swapAB=swapAB,

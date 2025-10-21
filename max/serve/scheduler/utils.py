@@ -34,7 +34,7 @@ from max.interfaces.pipeline import (
     PipelineOutputType,
 )
 from max.interfaces.queue import drain_queue
-from max.nn.kv_cache import PagedKVCacheManager
+from max.nn.kv_cache import TPPagedKVCacheManager
 from max.pipelines.core import TextContext, TTSContext
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
@@ -76,7 +76,7 @@ class SchedulerLogger:
         self,
         sch_config: TokenGenerationSchedulerConfig,
         inputs: TextGenerationInputs[TextContext],
-        paged_cache: PagedKVCacheManager | None,
+        paged_cache: TPPagedKVCacheManager | None,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
         num_pending_reqs: int,
@@ -88,7 +88,7 @@ class SchedulerLogger:
         Args:
             sch_config: The scheduler configuration.
             inputs: The pipeline input / batch.
-            paged_cache: The PagedKVCacheManager, if any.
+            paged_cache: The TPPagedKVCacheManager, if any.
             batch_creation_time_s: The time it took to create the batch.
             batch_execution_time_s: The time it took to execute the batch.
             num_pending_reqs: The number of pending requests.
@@ -141,6 +141,10 @@ class SchedulerLogger:
         )
 
         METRICS.batch_size(batch_size)
+        METRICS.batch_execution_time(
+            batch_execution_time_s * 1000,
+            batch_type=batch_type.value,  # "CE" (prefill) or "TG" (decode)
+        )  # Convert to ms
 
         if paged_cache is None:
             if log_batch_info:

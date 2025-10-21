@@ -138,7 +138,7 @@ fn warp_split_k_reduction[
             @parameter
             for i in range(num_mmas):
                 c_reg_tile_vectorized[0, i] += rebind[
-                    __type_of(c_reg_tile_vectorized[0, i])
+                    type_of(c_reg_tile_vectorized[0, i])
                 ](red_tb_thread_tile[0, i])
         i_red //= 2
 
@@ -208,10 +208,16 @@ fn multistage_mma[
     a_iter_arg: LayoutTensorIter[_, a_layout, **_],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, **_],
     a_smem_iter_arg: LayoutTensorIter[
-        a_type, a_smem_layout, address_space = AddressSpace.SHARED, **_
+        mut=True,
+        a_type,
+        a_smem_layout,
+        address_space = AddressSpace.SHARED, **_,
     ],
     mut b_smem_iter: LayoutTensorIter[
-        b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
+        mut=True,
+        b_type,
+        b_smem_layout,
+        address_space = AddressSpace.SHARED, **_,
     ],
     num_iters: Int,
     /,
@@ -277,7 +283,7 @@ fn multistage_mma[
     @always_inline
     @parameter
     fn _mask_tensor_row(
-        tensor: LayoutTensor, num_rows: Int, out result: __type_of(tensor)
+        tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
     ):
         return {
             tensor.ptr,
@@ -296,7 +302,7 @@ fn multistage_mma[
     @parameter
     fn _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
-    ](dst: LayoutTensor, src: LayoutTensor):
+    ](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
         @parameter
         if is_nvidia_gpu():
             copy_dram_to_sram_async[
@@ -360,7 +366,7 @@ fn multistage_mma[
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
-    alias num_k_mmas: UInt = UInt(BK // MMA_K)
+    alias num_k_mmas = UInt(BK // MMA_K)
     alias num_k_mma_iters: UInt = num_k_mmas // k_group_size
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
@@ -748,9 +754,9 @@ fn multistage_gemm_kernel[
     ]()
     alias simd_size = simd_width_of[c_type]()
 
-    var M: UInt = UInt(c.dim[0]())
-    var N: UInt = UInt(b.dim[0 if transpose_b else 1]())
-    var K: UInt = UInt(b.dim[1 if transpose_b else 0]())
+    var M = UInt(c.dim[0]())
+    var N = UInt(b.dim[0 if transpose_b else 1]())
+    var K = UInt(b.dim[1 if transpose_b else 0]())
 
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
@@ -932,9 +938,9 @@ fn multistage_gemm_kernel[
         var thread_offset = c_gmem_frag.distance(c.ptr)
 
         @parameter
-        for i in range(__type_of(c_gmem_frag).layout.size()):
+        for i in range(type_of(c_gmem_frag).layout.size()):
             alias src_idx = c_reg_frag.layout(i)
-            alias dst_static_idx: UInt = UInt(__type_of(c_gmem_frag).layout(i))
+            alias dst_static_idx = UInt(type_of(c_gmem_frag).layout(i))
             var dst_idx: Int
 
             @parameter
@@ -1006,7 +1012,7 @@ fn multistage_gemm_kernel[
                 1, simd_size
             ]().distribute[warp_layout](thread_idx.x)
             var thread_offset = c_gmem_frag.distance(c.ptr)
-            alias num_stores_per_thread = __type_of(c_gmem_frag).layout.size()
+            alias num_stores_per_thread = type_of(c_gmem_frag).layout.size()
 
             var c_smem_frag_offset = c_smem_frag.distance(
                 accum_smem_warp_tile.ptr
@@ -1014,14 +1020,14 @@ fn multistage_gemm_kernel[
 
             @parameter
             for i in range(num_stores_per_thread):
-                alias src_idx = __type_of(c_smem_frag).layout(i)
+                alias src_idx = type_of(c_smem_frag).layout(i)
                 alias src_idx_base = src_idx % swizzle.size()
                 alias src_idx_diff = src_idx - src_idx_base
                 var swizzled_idx = (
                     swizzle(c_smem_frag_offset + src_idx_base) + src_idx_diff
                 )
 
-                alias dst_static_idx = __type_of(c_gmem_frag).layout(i)
+                alias dst_static_idx = type_of(c_gmem_frag).layout(i)
                 var dst_idx: Int
 
                 @parameter

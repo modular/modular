@@ -23,5 +23,6 @@ mojo_kgen_lib(
 mojo_library(
     name = "MOGGKernelAPI",
     srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
     deps = mogg_lib_deps + ["@mojo//:MOGGPrimitives"],
 )

@@ -142,7 +142,7 @@ def test_op_with_string_parameter_passed_as_int(
     with graph:
         with pytest.raises(
             ValueError,
-            match="in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op.",
+            match=r"in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op.",
         ):
             graph.output(
                 ops.custom(
@@ -168,7 +168,7 @@ def test_op_with_string_parameter_passed_as_dtype(
     with graph:
         with pytest.raises(
             ValueError,
-            match="in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op.",
+            match=r"in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op.",
         ):
             graph.output(
                 ops.custom(
@@ -194,7 +194,7 @@ def test_op_with_string_parameter_passed_as_string_literal(
     with graph:
         with pytest.raises(
             ValueError,
-            match="in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op.",
+            match=r"in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op.",
         ):
             graph.output(
                 ops.custom(
@@ -220,7 +220,7 @@ def test_op_with_string_slice_parameter_passed_as_int(
     with graph:
         with pytest.raises(
             ValueError,
-            match="in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op.",
+            match=r"in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op.",
         ):
             graph.output(
                 ops.custom(
@@ -246,7 +246,7 @@ def test_op_with_string_slice_parameter_passed_as_dtype(
     with graph:
         with pytest.raises(
             ValueError,
-            match="in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op.",
+            match=r"in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op.",
         ):
             graph.output(
                 ops.custom(
@@ -272,7 +272,7 @@ def test_op_with_string_slice_parameter_passed_as_string_literal(
     with graph:
         with pytest.raises(
             ValueError,
-            match="in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op.",
+            match=r"in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op.",
         ):
             graph.output(
                 ops.custom(

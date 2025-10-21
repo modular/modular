@@ -72,11 +72,14 @@ from ..tile_scheduler_splitk import SplitKTileScheduler
 from ....structuring import NVIDIASharedMemoryManager as SharedMemoryManager
 from ....structuring import (
     SMemTileType,
-    SMemTileIterType,
     RegTileType,
 )
 from .ring_buffer import RingBuffer, RingBufferConsumer, RingBufferProducer
-from .scatter_gather import ScatterGather
+from .scatter_gather import (
+    ScatterGatherTMA,
+    ScatterGatherCPAsync,
+    ScatterGather,
+)
 
 
 # Shared memory structure for Hopper SM90 kernel
@@ -89,8 +92,6 @@ struct HopperMatmulSM90Kernel_SMem[
     c_type: DType,
     c_layout: Layout,
     num_pipeline_stages: Int,
-    num_consumers: Int,
-    cluster_size: Int,
 ]:
     """Shared memory layout for Hopper SM90 matrix multiplication kernel.
 
@@ -106,60 +107,56 @@ struct HopperMatmulSM90Kernel_SMem[
     alias SMM = SharedMemoryManager[]
 
     # Tile iterator types - manage cycling through pipeline stages
-    alias ATileIterType = Self.SMM.TileIter[
-        a_type, a_layout, num_pipeline_stages
-    ]
-    alias BTileIterType = Self.SMM.TileIter[
-        b_type, b_layout, num_pipeline_stages
-    ]
-    alias CTileType = Self.SMM.Tile[c_type, c_layout]
+    alias ATileArray = Self.SMM.TileArray[a_type, a_layout, num_pipeline_stages]
+    alias BTileArray = Self.SMM.TileArray[b_type, b_layout, num_pipeline_stages]
+    alias CTile = Self.SMM.Tile[c_type, c_layout]
 
     # Pipeline barrier types - for producer/consumer synchronization
-    alias PipelineBarrierType = Self.SMM.Array[
+    alias PipelineBarrier = Self.SMM.Array[
         SharedMemBarrier, num_pipeline_stages
     ]
 
     # Tile iterators - cycle through pipeline stages
-    var a_tiles: Self.ATileIterType.T
-    var b_tiles: Self.BTileIterType.T
-    var c_tile: Self.CTileType.T
+    var a_tiles: Self.ATileArray
+    var b_tiles: Self.BTileArray
+    var c_tile: Self.CTile
 
     # Pipeline barriers:
     # - full_mbar: Signals when tiles are loaded and ready for consumption
     # - empty_mbar: Signals when tiles have been consumed and can be reused
-    var full_mbar: Self.PipelineBarrierType.T
-    var empty_mbar: Self.PipelineBarrierType.T
+    var full_mbar: Self.PipelineBarrier
+    var empty_mbar: Self.PipelineBarrier
 
     fn __init__(out self):
         var smem_mgr = Self.SMM()
         # Initialize tile iterators
-        self.a_tiles = Self.ATileIterType.build(smem_mgr)
-        self.b_tiles = Self.BTileIterType.build(smem_mgr)
-        self.c_tile = Self.CTileType.build(smem_mgr)
+        self.a_tiles = smem_mgr.build[T = Self.ATileArray]()
+        self.b_tiles = smem_mgr.build[T = Self.BTileArray]()
+        self.c_tile = smem_mgr.build[T = Self.CTile]()
         # Initialize barriers
-        self.full_mbar = Self.PipelineBarrierType.build(smem_mgr)
-        self.empty_mbar = Self.PipelineBarrierType.build(smem_mgr)
+        self.full_mbar = smem_mgr.build[T = Self.PipelineBarrier]()
+        self.empty_mbar = smem_mgr.build[T = Self.PipelineBarrier]()
 
     @staticmethod
     @always_inline
     fn pipeline_storage_size() -> Int:
         """Calculate the memory size for all pipeline stages."""
-        var a_size = Self.ATileIterType.storage_size
-        var b_size = Self.BTileIterType.storage_size
+        var a_size = Self.ATileArray.storage_size
+        var b_size = Self.BTileArray.storage_size
 
         return (
             # A and B tile iterators with padding
             a_size
             + b_size
             # Pipeline barriers (full + empty)
-            + 2 * Self.PipelineBarrierType.storage_size
+            + 2 * Self.PipelineBarrier.storage_size
         )
 
     @staticmethod
     @always_inline
     fn output_storage_size() -> Int:
         """Calculate the memory size for output tile."""
-        return Self.CTileType.storage_size
+        return Self.CTile.storage_size
 
     @staticmethod
     @always_inline
@@ -218,7 +215,7 @@ struct HopperMatmulSM90Kernel[
         partitioned_multicast: Enable partitioned multicast for large tiles
         use_tma_store: Use TMA for storing output (vs regular stores)
         promotion_frequency: How often to promote FP8 accumulation to higher precision
-        pdl_level: Persistent Data Locality optimization level
+        pdl_level: Programmatic Dependency Launch (PDL) level
         elementwise_lambda_fn: Optional epilogue function
         elementwise_compute_lambda_fn: Optional compute function
         hilbert_swizzle: Use Hilbert curve for thread block scheduling
@@ -261,11 +258,9 @@ struct HopperMatmulSM90Kernel[
         c_type,
         c_smem_layout,
         num_pipeline_stages,
-        Self.num_consumer,
-        Self.cluster_size,
     ]
 
-    alias RingBuffer[async_copy: Bool = False] = RingBuffer[
+    alias RingBuffer[tma_transfer: Bool = True] = RingBuffer[
         a_type,
         b_type,
         Self.a_smem_layout,
@@ -273,30 +268,29 @@ struct HopperMatmulSM90Kernel[
         num_pipeline_stages,
         Self.num_consumer,
         Self.cluster_size,
-        async_copy,
+        tma_transfer,
     ]
 
     alias RingBufferConsumer[
-        origin: Origin[True], async_copy: Bool = False
-    ] = RingBufferConsumer[origin, Self.RingBuffer[async_copy]]
+        origin: Origin[True], tma_transfer: Bool
+    ] = RingBufferConsumer[origin, Self.RingBuffer[tma_transfer]]
 
-    alias RingBufferProducer[
-        origin: Origin[True], async_copy: Bool = False
-    ] = RingBufferProducer[origin, Self.RingBuffer[async_copy]]
-
-    @staticmethod
-    @always_inline
-    fn num_regs() -> Int:
-        if Self.num_consumer == 1:
-            return 256
-        if Self.num_consumer == 2:
-            return 240
-        return 160
+    alias WgmmaOp = TensorCoreAsync[
+        Self.accum_type,
+        a_type,
+        b_type,
+        wgmma_shape,
+        a_swizzle,
+        b_swizzle,
+        transpose_b,
+    ]
 
     @staticmethod
     @always_inline
     fn validate_constraints():
         """Validate common constraints for all kernel variants."""
+        constrained[a_type == b_type, "A and B must have the same type"]()
+
         constrained[transpose_b, "Only support transposed B in layout"]()
 
         constrained[
@@ -315,202 +309,6 @@ struct HopperMatmulSM90Kernel[
                 " == (b_swizzle.bytes // size_of[b_type])"
             ),
         ]()
-
-    @staticmethod
-    @always_inline
-    fn async_load_AB_tma[
-        ring_buffer_origin: Origin[True],
-        a_tile_layout: Layout,
-        b_tile_layout: Layout,
-        a_desc_layout: Layout,
-        b_desc_layout: Layout,
-        /,
-        *,
-        num_k_iters: Int,
-        tile_shape: IndexList[3],
-        cluster_dims: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
-        use_partitioned_multicast: Bool = False,
-    ](
-        a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
-        b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-        m_coord: UInt,
-        n_coord: UInt,
-        k_coord: UInt,
-        rank_n: UInt,
-        rank_m: UInt,
-        mut ring_buffer: Self.RingBufferProducer[ring_buffer_origin, _],
-    ):
-        """Load A and B tiles using TMA (Tensor Memory Accelerator).
-
-        This function implements the producer side of the pipeline, asynchronously
-        loading tiles from global memory into shared memory using TMA. It supports
-        multi-cluster configurations with multicast for efficient data distribution.
-
-        The function loads all K iterations, properly handling cases where the total
-        number of K iterations doesn't evenly divide by the number of pipeline stages.
-
-        Args:
-            a_tma_op: TMA descriptor for A matrix.
-            b_tma_op: TMA descriptor for B matrix.
-            m_coord: Starting M coordinate in matrix A.
-            n_coord: Starting N coordinate in matrix B.
-            k_coord: Starting K coordinate for both matrices.
-            rank_n: Column position of this block in the cluster.
-            rank_m: Row position of this block in the cluster.
-            ring_buffer: Producer handle for the ring buffer synchronization.
-        """
-        alias CLUSTER_N = UInt(cluster_dims[0])
-        alias CLUSTER_M = UInt(cluster_dims[1])
-
-        alias BM = tile_shape[0]
-        alias BN = tile_shape[1]
-        alias BK = tile_shape[2]
-
-        # Setup multicast masks for cluster-wide data distribution
-        var multicast_column_mask = 0
-
-        @parameter
-        for i in range(CLUSTER_M):
-            multicast_column_mask |= Int(1 << (i * CLUSTER_N))
-
-        var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (rank_m * CLUSTER_N)
-
-        # Calculate how many full pipeline iterations we need
-        alias num_full_k_iters = ceildiv(num_k_iters, num_pipeline_stages)
-        alias num_remaining_k_iters = num_k_iters % num_pipeline_stages
-
-        # Handle uneven division: the last iteration may have fewer stages
-        @always_inline
-        @parameter
-        fn producer_loop[
-            num_pipeline_stages_to_unroll: Int,
-        ](k_iter: Int):
-            @parameter
-            for j in range(num_pipeline_stages_to_unroll):
-                var k_offset = UInt(
-                    k_coord + UInt(k_iter * num_pipeline_stages) + UInt(j)
-                ) * UInt(BK)
-
-                # Get the next available tile slot from the ring buffer.
-                # For producers: This waits for an empty slot and returns a buffer to fill.
-                # The context manager ensures proper barrier synchronization.
-                with ring_buffer.get_tiles() as tiles:
-                    ScatterGather.load_tile[
-                        Int(CLUSTER_N), use_partitioned_multicast
-                    ](
-                        a_tma_op,
-                        tiles.a_tile,
-                        tiles.barrier[],
-                        rank_n,
-                        (k_offset, m_coord),
-                        multicast_row_mask,
-                    )
-
-                    ScatterGather.load_tile[
-                        Int(CLUSTER_M), use_partitioned_multicast
-                    ](
-                        b_tma_op,
-                        tiles.b_tile,
-                        tiles.barrier[],
-                        rank_m,
-                        (k_offset, n_coord),
-                        multicast_column_mask << rank_n,
-                    )
-
-        @parameter
-        if num_remaining_k_iters == 0:
-            for k_iter in range(num_full_k_iters):
-                producer_loop[num_pipeline_stages](k_iter)
-        else:
-            for k_iter in range(num_full_k_iters - 1):
-                producer_loop[num_pipeline_stages](k_iter)
-            producer_loop[num_remaining_k_iters](num_full_k_iters - 1)
-
-    @staticmethod
-    @always_inline
-    fn async_load_AB_cpasync[
-        ring_buffer_origin: Origin[True],
-        a_mem_layout: Layout,
-        b_mem_layout: Layout, //,
-        /,
-        *,
-        swizzle_mode: TensorMapSwizzle,
-        vector_size: Int,
-        num_k_iters: Int,
-        tile_shape: IndexList[3],
-    ](
-        a: LayoutTensor[
-            a_type,
-            a_mem_layout,
-            MutableAnyOrigin,
-        ],
-        b: LayoutTensor[
-            b_type,
-            b_mem_layout,
-            MutableAnyOrigin,
-        ],
-        block_idx_m: UInt,
-        block_idx_n: UInt,
-        mut ring_buffer: Self.RingBufferProducer[ring_buffer_origin, _],
-    ):
-        """Load A and B tiles using cp.async for unaligned memory access."""
-        alias BM = tile_shape[0]
-        alias BN = tile_shape[1]
-        alias BK = tile_shape[2]
-
-        alias num_full_k_iters = ceildiv(num_k_iters, num_pipeline_stages)
-        alias num_remaining_k_iters = num_k_iters % num_pipeline_stages
-
-        alias num_threads_per_row = BK // vector_size
-        alias thread_layout = Layout.row_major(
-            WARPGROUP_SIZE // num_threads_per_row, num_threads_per_row
-        )
-
-        @always_inline
-        @parameter
-        fn producer_loop[
-            num_pipeline_stages_to_unroll: Int,
-        ](k_iter: Int):
-            @parameter
-            for j in range(num_pipeline_stages_to_unroll):
-                # Get the next available tile slot from the ring buffer.
-                # For producers: This waits for an empty slot and returns a buffer to fill.
-                # The context manager ensures proper barrier synchronization.
-                with ring_buffer.get_tiles() as tiles:
-                    ScatterGather.load_tile[
-                        thread_layout,
-                        swizzle_mode,
-                        vector_size,
-                    ](
-                        a,
-                        tiles.a_tile,
-                        Int(block_idx_m),
-                        k_iter * num_pipeline_stages + j,
-                    )
-
-                    ScatterGather.load_tile[
-                        thread_layout,
-                        swizzle_mode,
-                        vector_size,
-                    ](
-                        b,
-                        tiles.b_tile,
-                        Int(block_idx_n),
-                        k_iter * num_pipeline_stages + j,
-                    )
-
-        @parameter
-        if num_remaining_k_iters == 0:
-
-            @parameter
-            for k_iter in range(num_full_k_iters):
-                producer_loop[num_pipeline_stages](k_iter)
-        else:
-
-            @parameter
-            for k_iter in range(num_full_k_iters - 1):
-                producer_loop[num_pipeline_stages](k_iter)
-            producer_loop[num_remaining_k_iters](num_full_k_iters - 1)
 
     @always_inline
     @staticmethod
@@ -548,6 +346,361 @@ struct HopperMatmulSM90Kernel[
             cluster_sync()
 
     @staticmethod
+    @always_inline
+    fn multicast_mask(rank_m: UInt, rank_n: UInt) -> Tuple[Int32, Int32]:
+        alias CLUSTER_N = cluster_shape[0]
+        alias CLUSTER_M = cluster_shape[1]
+
+        # Setup multicast masks for cluster-wide data distribution
+        var multicast_column_mask = 0
+
+        @parameter
+        for i in range(CLUSTER_M):
+            multicast_column_mask |= Int(1 << (i * CLUSTER_N))
+        multicast_column_mask <<= rank_n
+
+        var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (rank_m * CLUSTER_N)
+        return (multicast_row_mask, multicast_column_mask)
+
+    @staticmethod
+    @always_inline
+    fn common_kernel_init() -> (
+        Tuple[
+            UInt,
+            UInt,
+            UInt,
+            UInt,
+            UInt,
+            Bool,
+        ]
+    ):
+        """Common initialization for all kernel variants.
+
+        Returns:
+            Tuple of (warp_group_idx, warp_group_thread_idx,
+                     rank_m, rank_n, warp_id, lane_predicate).
+        """
+        Self.validate_constraints()
+
+        var warp_group_idx, warp_group_thread_idx = divmod(
+            thread_idx.x, UInt(WARPGROUP_SIZE)
+        )
+
+        var rank_m = block_id_in_cluster.y
+        var rank_n = block_id_in_cluster.x
+
+        # Check and wait for PDL grids if needed
+        @parameter
+        if (
+            pdl_level > PDLLevel.OFF
+            and pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+        ):
+            wait_on_dependent_grids()
+
+        var warp_id = get_warp_id()
+        var lane_predicate = elect_one_sync()
+
+        return (
+            warp_group_idx,
+            warp_group_thread_idx,
+            rank_m,
+            rank_n,
+            warp_id,
+            lane_predicate,
+        )
+
+    @staticmethod
+    @always_inline
+    fn build_ring_buffer[
+        tma_transfer: Bool = True
+    ](
+        smem: Self.SMem,
+        warp_group_thread_idx: UInt,
+    ) -> Self.RingBuffer[
+        tma_transfer
+    ]:
+        """Create ring buffer for producer-consumer synchronization."""
+        return Self.RingBuffer[tma_transfer](
+            smem.full_mbar.ptr,
+            smem.empty_mbar.ptr,
+            warp_group_thread_idx,
+            smem.a_tiles,
+            smem.b_tiles,
+        )
+
+    @staticmethod
+    @always_inline
+    fn setup_producer() -> Int:
+        """Setup producer warp group by deallocating registers.
+
+        Returns:
+            Number of registers deallocated.
+        """
+        alias num_regs = 24 if Self.num_consumer <= 2 else 32
+        warpgroup_reg_dealloc[num_regs]()
+        return num_regs
+
+    @staticmethod
+    @always_inline
+    fn setup_consumer(
+        warp_group_idx: UInt,
+    ) -> Tuple[UInt, Self.AccumRegTileType, Self.AccumRegTileType]:
+        """Setup consumer warp group.
+
+        Returns:
+            Tuple of (local_warp_group_idx, c_reg_tile, final_c_reg_tile).
+        """
+
+        @parameter
+        fn num_regs() -> Int:
+            if Self.num_consumer == 1:
+                return 256
+            if Self.num_consumer == 2:
+                return 240
+            return 160
+
+        warpgroup_reg_alloc[num_regs()]()
+
+        var local_warp_group_idx = warp_group_idx - 1
+        var c_reg_tile = Self.AccumRegTileType.stack_allocation()
+        var final_c_reg_tile = Self.AccumRegTileType.stack_allocation()
+
+        return (local_warp_group_idx, c_reg_tile, final_c_reg_tile)
+
+    @staticmethod
+    @always_inline
+    fn get_block_swizzle(
+        lut_ptr: UnsafePointer[UInt32] = UnsafePointer[UInt32](),
+    ) -> IndexList[2, element_type = DType.uint32]:
+        """Calculate block swizzle for better L2 cache locality.
+
+        Args:
+            lut_ptr: Lookup table for Hilbert curve block scheduling (optional).
+
+        Returns:
+            Swizzled block indices.
+        """
+        alias use_cluster = Self.cluster_size > 1
+
+        @parameter
+        if not use_cluster:
+
+            @parameter
+            if hilbert_swizzle:
+                # Hilbert curve ordering maximizes spatial locality
+                var linear = UInt32(block_idx.y * grid_dim.x + block_idx.x)
+                var packed = lut_ptr[linear]
+                var new_x = packed & 0xFFFF
+                var new_y = packed >> 16
+                return Index[dtype = DType.uint32](new_x, new_y)
+            else:
+                # Default swizzling pattern for L2 cache optimization
+                return block_swizzle(
+                    Index[dtype = DType.uint32](block_idx.x, block_idx.y),
+                    Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
+                )
+        else:
+            # Multi-cluster mode: no swizzling (handled by hardware)
+            return Index[dtype = DType.uint32](block_idx.x, block_idx.y)
+
+    @staticmethod
+    @always_inline
+    fn consumer_output[
+        custom_elementwise_lambda_fn: OptionalReg[
+            elementwise_epilogue_type
+        ] = elementwise_lambda_fn
+    ](
+        c_tma_op: TMATensorTile[c_type, _, _],
+        c: LayoutTensor[c_type, _, MutableAnyOrigin, *_, **_],
+        c_tile: Self.SMem.CTile,
+        output_reg_tile: Self.AccumRegTileType,
+        warp_group_thread_idx: UInt,
+        local_warp_group_idx: UInt,
+        local_thread_idx: UInt,
+        block_y: Int,
+        block_x: Int,
+    ):
+        """Handle consumer output using warp specialized GEMM output."""
+        warp_specialized_gemm_output[
+            c_tile_shape = Index(Self.BM, Self.BN),
+            c_swizzle=c_swizzle,
+            wgmma_shape=wgmma_shape,
+            num_consumer = Self.num_consumer,
+            use_tma_store=use_tma_store,
+            elementwise_lambda_fn=custom_elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        ](
+            c_tma_op,
+            c,
+            c_tile,
+            output_reg_tile,
+            warp_group_thread_idx,
+            local_warp_group_idx,
+            local_thread_idx,
+            block_y,
+            block_x,
+        )
+
+    @staticmethod
+    @always_inline
+    fn build_tma_loaders[
+        a_tile_layout: Layout,
+        b_tile_layout: Layout,
+        a_desc_layout: Layout,
+        b_desc_layout: Layout, //,
+    ](
+        a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
+        b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
+        rank_m: UInt,
+        rank_n: UInt,
+    ) -> Tuple[
+        ScatterGatherTMA[
+            origin_of(a_tma_op),
+            a_type,
+            a_tile_layout,
+            a_desc_layout,
+            BK = UInt(Self.BK),
+            cluster_size = cluster_shape[0],
+            use_partitioned_multicast=partitioned_multicast,
+        ],
+        ScatterGatherTMA[
+            origin_of(b_tma_op),
+            b_type,
+            b_tile_layout,
+            b_desc_layout,
+            BK = UInt(Self.BK),
+            cluster_size = cluster_shape[1],
+            use_partitioned_multicast=partitioned_multicast,
+        ],
+    ]:
+        # Prefetch TMA descriptors if on thread 0.
+        if thread_idx.x == 0:
+            a_tma_op.prefetch_descriptor()
+            b_tma_op.prefetch_descriptor()
+
+        var multicast_mask = Self.multicast_mask(rank_m, rank_n)
+        var a_loader = ScatterGatherTMA[
+            BK = UInt(Self.BK),
+            cluster_size = cluster_shape[0],
+            use_partitioned_multicast=partitioned_multicast,
+        ](Pointer(to=a_tma_op), rank_n, UInt16(multicast_mask[0]))
+        var b_loader = ScatterGatherTMA[
+            BK = UInt(Self.BK),
+            cluster_size = cluster_shape[1],
+            use_partitioned_multicast=partitioned_multicast,
+        ](Pointer(to=b_tma_op), rank_m, UInt16(multicast_mask[1]))
+        return (a_loader, b_loader)
+
+    @always_inline
+    @staticmethod
+    fn build_cpasync_loaders[
+        k_align: Int,
+        vector_size: Int = k_align // size_of[a_type](),
+        num_threads_per_row: Int = Self.BK // vector_size,
+        thread_layout: Layout = Layout.row_major(
+            WARPGROUP_SIZE // num_threads_per_row, num_threads_per_row
+        ),
+    ](
+        a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+        b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    ) -> Tuple[
+        ScatterGatherCPAsync[
+            a_type,
+            a_layout,
+            thread_layout,
+            a_swizzle,
+            vector_size,
+        ],
+        ScatterGatherCPAsync[
+            b_type,
+            b_layout,
+            thread_layout,
+            b_swizzle,
+            vector_size,
+        ],
+    ]:
+        var a_loader = ScatterGatherCPAsync[
+            a_type,
+            a_layout,
+            thread_layout,
+            a_swizzle,
+            vector_size,
+        ](a)
+        var b_loader = ScatterGatherCPAsync[
+            b_type,
+            b_layout,
+            thread_layout,
+            b_swizzle,
+            vector_size,
+        ](b)
+        return (a_loader, b_loader)
+
+    @staticmethod
+    @always_inline
+    fn producer_main_loop[
+        a_loader_type: ScatterGather,
+        b_loader_type: ScatterGather, //,
+        num_k_iters: Int,
+    ](
+        m_coord: UInt,
+        n_coord: UInt,
+        k_coord: UInt,
+        a_loader: a_loader_type,
+        b_loader: b_loader_type,
+        mut ring_buffer: RingBuffer[
+            a_loader_type._dtype,  # RingBuffer and ScatterGather must agree on dtypes
+            b_loader_type._dtype,
+            _,
+            _,
+            num_pipeline_stages,
+            _,
+            _,
+            _,
+        ],
+    ):
+        """Polymorphic A and B Tile Loader, works with both TMA and CPAsync."""
+
+        @always_inline
+        @parameter
+        fn producer_loop[
+            num_pipeline_stages_to_unroll: Int,
+        ](k_iter: Int):
+            @parameter
+            for j in range(num_pipeline_stages_to_unroll):
+                var k_offset = UInt(
+                    k_coord + UInt(k_iter * num_pipeline_stages + j)
+                )
+
+                # Get the next available tile slot from the ring buffer.
+                # The context manager ensures proper barrier synchronization.
+                with ring_buffer.producer() as producer:
+                    with producer.get_tiles() as tiles:
+                        a_loader.load_tile(
+                            tiles.a_tile,
+                            tiles.barrier,
+                            (m_coord, k_offset),
+                        )
+                        b_loader.load_tile(
+                            tiles.b_tile,
+                            tiles.barrier,
+                            (n_coord, k_offset),
+                        )
+
+        # Calculate how many full pipeline iterations we need
+        alias num_full_k_iters = ceildiv(num_k_iters, num_pipeline_stages)
+        # Handle uneven division: the last iteration may have fewer stages
+        alias num_remaining_k_iters = num_k_iters % num_pipeline_stages
+
+        @parameter
+        if num_remaining_k_iters == 0:
+            for k_iter in range(num_full_k_iters):
+                producer_loop[num_pipeline_stages](k_iter)
+        else:
+            for k_iter in range(num_full_k_iters - 1):
+                producer_loop[num_pipeline_stages](k_iter)
+            producer_loop[num_remaining_k_iters](num_full_k_iters - 1)
+
+    @staticmethod
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads),
         `nvvm.cluster_dim`=cluster_shape,
@@ -569,7 +722,7 @@ struct HopperMatmulSM90Kernel[
         a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
         b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
         c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-        lut_ptr: DeviceBuffer[DType.uint32],
+        lut_ptr: UnsafePointer[UInt32],
     ):
         """Main kernel entry point for matrix multiplication.
 
@@ -589,141 +742,66 @@ struct HopperMatmulSM90Kernel[
             c: Output matrix C.
             lut_ptr: Lookup table for Hilbert curve block scheduling (optional).
         """
-        Self.validate_constraints()
-
         alias K = b_layout.shape[1].value()
         alias num_k_iters = ceildiv(K, Self.BK)
 
-        # Calculate block swizzle for better L2 cache locality
-        # Block swizzling reorders thread blocks to improve cache hit rates
-        alias use_cluster = Self.cluster_size > 1
-        var block_idx_swizzle: IndexList[2, element_type = DType.uint32]
-
-        @parameter
-        if not use_cluster:
-            # Single-cluster mode supports advanced swizzling patterns
-            @parameter
-            if hilbert_swizzle:
-                # Hilbert curve ordering maximizes spatial locality
-                # The LUT contains pre-computed Hilbert coordinates:
-                # - Upper 16 bits = y coordinate
-                # - Lower 16 bits = x coordinate
-                var linear = UInt32(block_idx.y * grid_dim.x + block_idx.x)
-                var packed = lut_ptr.unsafe_ptr()[linear]
-                var new_x = packed & 0xFFFF
-                var new_y = packed >> 16
-                block_idx_swizzle = Index[dtype = DType.uint32](new_x, new_y)
-            else:
-                # Default swizzling pattern for L2 cache optimization
-                block_idx_swizzle = block_swizzle(
-                    Index[dtype = DType.uint32](block_idx.x, block_idx.y),
-                    Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
-                )
-        else:
-            # Multi-cluster mode: no swizzling (handled by hardware)
-            block_idx_swizzle = Index[dtype = DType.uint32](
-                block_idx.x, block_idx.y
-            )
-
-        # Initialize common pipeline components
-        var wgmma_op = TensorCoreAsync[
-            Self.accum_type,
-            a_type,
-            b_type,
-            wgmma_shape,
-            a_swizzle=a_swizzle,
-            b_swizzle=b_swizzle,
-            transpose_b=transpose_b,
-        ]()
-
-        # Initialize Shared Memory
+        # Initialize WgmmaOp and SMem first
+        var wgmma_op = Self.WgmmaOp()
         var smem = Self.SMem()
 
-        var warp_group_idx, warp_group_thread_idx = divmod(
-            thread_idx.x, UInt(WARPGROUP_SIZE)
-        )
-
-        var rank_m = block_id_in_cluster.y
-        var rank_n = block_id_in_cluster.x
-
-        @parameter
-        if (
-            pdl_level > PDLLevel.OFF
-            and pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
-        ):
-            wait_on_dependent_grids()
-
-        var lane_predicate = elect_one_sync()
-        if thread_idx.x == 0:
-            a_tma_op.prefetch_descriptor()
-            b_tma_op.prefetch_descriptor()
-
-        # Create RingBuffer for producer-consumer synchronization.
-        # The RingBuffer manages a circular queue of tile buffers in shared memory,
-        # allowing the producer warp group to load tiles ahead while consumer warp
-        # groups process previous tiles. This overlaps memory transfers with computation.
-        # It uses two sets of barriers (full_mbar, empty_mbar) to synchronize access
-        # between producers and consumers
-        var ring_buffer = Self.RingBuffer[](
-            smem.full_mbar,
-            smem.empty_mbar,
+        # Common initialization
+        var (
+            warp_group_idx,
             warp_group_thread_idx,
-            smem.a_tiles,
-            smem.b_tiles,
+            rank_m,
+            rank_n,
+            warp_id,
+            lane_predicate,
+        ) = Self.common_kernel_init()
+
+        # Create ring buffer
+        var ring_buffer = Self.build_ring_buffer(smem, warp_group_thread_idx)
+
+        # Create ScatterGatherTMA loaders
+        var a_loader, b_loader = Self.build_tma_loaders(
+            a_tma_op, b_tma_op, rank_m, rank_n
         )
 
         Self.pipeline_init()
 
+        # Calculate block swizzle
+        var block_idx_swizzle = Self.get_block_swizzle(lut_ptr)
+        var m_coord = block_idx_swizzle[1] * Self.BM
+        var n_coord = block_idx_swizzle[0] * Self.BN
+
         # Split thread blocks into producer and consumer warp groups
-        var warp_id = get_warp_id()
         if warp_group_idx == 0:
-            # Producer warp group: Responsible for loading tiles from global memory
-            # Only uses TMA units, frees up registers for better scheduling
-            alias num_regs = 24 if Self.num_consumer <= 2 else 32
-            warpgroup_reg_dealloc[num_regs]()
+            # Producer warp group
+            _ = Self.setup_producer()
 
-            # Only one thread per warp group initiates TMA transfers
             if warp_id == 0 and lane_predicate:
-                var m_coord = block_idx_swizzle[1] * Self.BM
-                var n_coord = block_idx_swizzle[0] * Self.BN
-                # Enter producer mode: This acquires the producer role and ensures
-                # exclusive access to load tiles into the ring buffer. The producer
-                # will wait for empty slots before loading new tiles.
-                with ring_buffer.producer() as producer:
-                    Self.async_load_AB_tma[
-                        tile_shape=block_tile_shape,
-                        cluster_dims=cluster_shape,
-                        use_partitioned_multicast=partitioned_multicast,
-                        num_k_iters=num_k_iters,
-                    ](
-                        a_tma_op,
-                        b_tma_op,
-                        UInt(m_coord),
-                        UInt(n_coord),
-                        0,
-                        rank_n,
-                        rank_m,
-                        producer,
-                    )
+                Self.producer_main_loop[num_k_iters=num_k_iters](
+                    UInt(m_coord),
+                    UInt(n_coord),
+                    0,  # k_start,
+                    a_loader,
+                    b_loader,
+                    ring_buffer,
+                )
         else:
-            # Consumer warp groups: Perform matrix multiplication using tensor cores
-            # Allocate maximum registers for WGMMA operations
-            warpgroup_reg_alloc[Self.num_regs()]()
+            # Consumer warp groups
+            var local_warp_group_idx, c_reg_tile, final_c_reg_tile = (
+                Self.setup_consumer(warp_group_idx)
+            )
 
-            var local_warp_group_idx = warp_group_idx - 1
-            var c_reg_tile = Self.AccumRegTileType.stack_allocation()
-            var final_c_reg_tile = Self.AccumRegTileType.stack_allocation()
-
-            # Enter consumer mode: This acquires the consumer role and ensures
-            # synchronized access to consume tiles from the ring buffer. The consumer
-            # will wait for full tiles before processing them.
+            # Enter consumer mode
             with ring_buffer.consumer() as consumer:
                 Self.consumer_main_loop[num_k_iters=num_k_iters](
+                    wgmma_op,
+                    local_warp_group_idx,
                     final_c_reg_tile,
                     c_reg_tile,
                     consumer,
-                    wgmma_op,
-                    local_warp_group_idx,
                 )
 
             var output_reg_tile = (
@@ -731,15 +809,7 @@ struct HopperMatmulSM90Kernel[
                 is DType.float8_e4m3fn else c_reg_tile
             )
 
-            warp_specialized_gemm_output[
-                c_tile_shape = Index(Self.BM, Self.BN),
-                c_swizzle=c_swizzle,
-                wgmma_shape=wgmma_shape,
-                num_consumer = Self.num_consumer,
-                use_tma_store=use_tma_store,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            ](
+            Self.consumer_output(
                 c_tma_op,
                 c,
                 smem.c_tile,
@@ -777,107 +847,64 @@ struct HopperMatmulSM90Kernel[
         c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
         problem_shape: IndexList[3],
     ):
-        Self.validate_constraints()
-
         alias K = b_layout.shape[1].value()
-        alias N = b_layout.shape[0].value()
-        alias M = a_layout.shape[0].value()
+        alias num_k_iters = ceildiv(K, Self.BK)
 
-        var scheduler = TileScheduler[
-            Index(M, N, K), block_tile_shape, grid_shape, schedule=schedule
-        ](problem_shape)
-
-        alias use_cluster = Self.cluster_size > 1
-
-        var wgmma_op = TensorCoreAsync[
-            Self.accum_type,
-            a_type,
-            b_type,
-            wgmma_shape,
-            a_swizzle=a_swizzle,
-            b_swizzle=b_swizzle,
-            transpose_b=transpose_b,
-        ]()
-
-        var work_info = scheduler.get_current_work_info()
-
-        # Initialize Shared Memory
+        # Initialize WgmmaOp and SMem first
+        var wgmma_op = Self.WgmmaOp()
         var smem = Self.SMem()
 
-        var warp_group_idx, warp_group_thread_idx = divmod(
-            thread_idx.x, UInt(WARPGROUP_SIZE)
-        )
-
-        var rank_m = block_id_in_cluster.y
-        var rank_n = block_id_in_cluster.x
-
-        @parameter
-        if (
-            pdl_level > PDLLevel.OFF
-            and pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
-        ):
-            wait_on_dependent_grids()
-
-        var lane_predicate = elect_one_sync()
-        if thread_idx.x == 0:
-            a_tma_op.prefetch_descriptor()
-            b_tma_op.prefetch_descriptor()
-
-        # Create RingBuffer for producer-consumer synchronization.
-        # The RingBuffer manages a circular queue of tile buffers in shared memory,
-        # allowing the producer warp group to load tiles ahead while consumer warp
-        # groups process previous tiles. This overlaps memory transfers with computation.
-        # It uses two sets of barriers (full_mbar, empty_mbar) to synchronize access
-        # between producers and consumers
-        var ring_buffer = Self.RingBuffer[](
-            smem.full_mbar,
-            smem.empty_mbar,
+        # Common initialization
+        var (
+            warp_group_idx,
             warp_group_thread_idx,
-            smem.a_tiles,
-            smem.b_tiles,
+            rank_m,
+            rank_n,
+            warp_id,
+            lane_predicate,
+        ) = Self.common_kernel_init()
+
+        # Create ring buffer
+        var ring_buffer = Self.build_ring_buffer(smem, warp_group_thread_idx)
+
+        # Create ScatterGatherTMA loaders
+        var a_loader, b_loader = Self.build_tma_loaders(
+            a_tma_op, b_tma_op, rank_m, rank_n
         )
 
         Self.pipeline_init()
 
-        alias num_k_iters = ceildiv(K, Self.BK)
+        alias N = b_layout.shape[0].value()
+        alias M = a_layout.shape[0].value()
+        var scheduler = TileScheduler[
+            Index(M, N, K), block_tile_shape, grid_shape, schedule=schedule
+        ](problem_shape)
+        var work_info = scheduler.get_current_work_info()
 
-        var warp_id = get_warp_id()
+        # Split thread blocks into producer and consumer warp groups
         if warp_group_idx == 0:
-            alias num_regs = 24 if Self.num_consumer <= 2 else 32
-            warpgroup_reg_dealloc[num_regs]()
+            # Producer warp group
+            _ = Self.setup_producer()
 
             if warp_id == 0 and lane_predicate:
-                # Enter producer mode: This acquires the producer role and ensures
-                # exclusive access to load tiles into the ring buffer. The producer
-                # will wait for empty slots before loading new tiles.
-                with ring_buffer.producer() as producer:
-                    while work_info.is_valid():
-                        var m_coord = work_info.m
-                        var n_coord = work_info.n
+                while work_info.is_valid():
+                    var m_coord = work_info.m
+                    var n_coord = work_info.n
 
-                        Self.async_load_AB_tma[
-                            tile_shape=block_tile_shape,
-                            cluster_dims=cluster_shape,
-                            use_partitioned_multicast=partitioned_multicast,
-                            num_k_iters=num_k_iters,
-                        ](
-                            a_tma_op,
-                            b_tma_op,
-                            UInt(m_coord),
-                            UInt(n_coord),
-                            0,
-                            rank_n,
-                            rank_m,
-                            producer,
-                        )
-                        work_info = scheduler.fetch_next_work()
+                    Self.producer_main_loop[num_k_iters=num_k_iters](
+                        UInt(m_coord),
+                        UInt(n_coord),
+                        0,
+                        a_loader,
+                        b_loader,
+                        ring_buffer,
+                    )
+                    work_info = scheduler.fetch_next_work()
         else:
-            warpgroup_reg_alloc[Self.num_regs()]()
-
-            var local_warp_group_idx = warp_group_idx - 1
-
-            var c_reg_tile = Self.AccumRegTileType.stack_allocation()
-            var final_c_reg_tile = Self.AccumRegTileType.stack_allocation()
+            # Consumer warp groups
+            var local_warp_group_idx, c_reg_tile, final_c_reg_tile = (
+                Self.setup_consumer(warp_group_idx)
+            )
 
             @parameter
             if a_type is DType.float8_e4m3fn:
@@ -885,17 +912,15 @@ struct HopperMatmulSM90Kernel[
             else:
                 _ = c_reg_tile.fill(0.0)
 
-            # Enter consumer mode: This acquires the consumer role and ensures
-            # synchronized access to consume tiles from the ring buffer. The consumer
-            # will wait for full tiles before processing them.
+            # Enter consumer mode
             with ring_buffer.consumer() as consumer:
                 while work_info.is_valid():
                     Self.consumer_main_loop[num_k_iters=num_k_iters](
+                        wgmma_op,
+                        local_warp_group_idx,
                         final_c_reg_tile,
                         c_reg_tile,
                         consumer,
-                        wgmma_op,
-                        UInt(local_warp_group_idx),
                     )
 
                     var block_y = UInt(ceildiv(work_info.m, Self.BM))
@@ -905,15 +930,7 @@ struct HopperMatmulSM90Kernel[
                         is DType.float8_e4m3fn else c_reg_tile
                     )
 
-                    warp_specialized_gemm_output[
-                        c_tile_shape = Index(Self.BM, Self.BN),
-                        c_swizzle=c_swizzle,
-                        wgmma_shape=wgmma_shape,
-                        num_consumer = Self.num_consumer,
-                        use_tma_store=use_tma_store,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    ](
+                    Self.consumer_output(
                         c_tma_op,
                         c,
                         smem.c_tile,
@@ -945,121 +962,69 @@ struct HopperMatmulSM90Kernel[
     ):
         """Kernel using cp.async for A/B loading when K alignment doesn't meet TMA requirements.
         """
-        Self.validate_constraints()
-
         alias K = b_layout.shape[1].value()
-
-        alias use_cluster = Self.cluster_size > 1
-        var block_idx_swizzle: IndexList[2, element_type = DType.uint32]
-
-        @parameter
-        if not use_cluster:
-            block_idx_swizzle = block_swizzle(
-                Index[dtype = DType.uint32](block_idx.x, block_idx.y),
-                Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
-            )
-        else:
-            block_idx_swizzle = Index[dtype = DType.uint32](
-                block_idx.x, block_idx.y
-            )
-
-        var wgmma_op = TensorCoreAsync[
-            Self.accum_type,
-            a_type,
-            b_type,
-            wgmma_shape,
-            a_swizzle=a_swizzle,
-            b_swizzle=b_swizzle,
-            transpose_b=transpose_b,
-        ]()
-
-        # Initialize Shared Memory
-        var smem = HopperMatmulSM90Kernel_SMem[
-            a_type,
-            Self.a_smem_layout,
-            b_type,
-            Self.b_smem_layout,
-            c_type,
-            c_smem_layout,
-            num_pipeline_stages,
-            Self.num_consumer,
-            Self.cluster_size,
-        ]()
-
-        alias k_align = find_K_alignment_upto_16B(K * size_of[a_type]())
-
-        var warp_group_idx, warp_group_thread_idx = divmod(
-            thread_idx.x, UInt(WARPGROUP_SIZE)
-        )
         alias num_k_iters = ceildiv(K, Self.BK)
 
-        var rank_m = block_id_in_cluster.y
-        var rank_n = block_id_in_cluster.x
+        # Initialize WgmmaOp and SMem first
+        var wgmma_op = Self.WgmmaOp()
+        var smem = Self.SMem()
 
-        @parameter
-        if (
-            pdl_level > PDLLevel.OFF
-            and pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
-        ):
-            wait_on_dependent_grids()
-
-        var lane_predicate = elect_one_sync()
-
-        # Create RingBuffer for cp.async operations.
-        # This variant is configured for use with cp.async instructions which provide
-        # unaligned memory access capabilities. The ring buffer still manages producer-
-        # consumer synchronization but uses different memory access patterns
-        var ring_buffer = Self.RingBuffer[True](
-            smem.full_mbar,
-            smem.empty_mbar,
+        # Common initialization
+        var (
+            warp_group_idx,
             warp_group_thread_idx,
-            smem.a_tiles,
-            smem.b_tiles,
+            rank_m,
+            rank_n,
+            warp_id,
+            lane_predicate,
+        ) = Self.common_kernel_init()
+
+        # Create RingBuffer for cp.async operations
+        var ring_buffer = Self.build_ring_buffer[tma_transfer=False](
+            smem, warp_group_thread_idx
         )
+
+        # Create ScatterGatherCPAsync loaders
+        alias k_align = find_K_alignment_upto_16B(K * size_of[a_type]())
+        var a_loader, b_loader = Self.build_cpasync_loaders[k_align](a, b)
 
         Self.pipeline_init()
 
+        # Calculate block swizzle
+        var block_idx_swizzle = Self.get_block_swizzle()
+
+        # Split thread blocks into producer and consumer warp groups
         if warp_group_idx == 0:
+            # Producer warp group
             warpgroup_reg_dealloc[32]()
 
-            # Enter producer mode: This acquires the producer role and ensures
-            # exclusive access to load tiles into the ring buffer. The producer
-            # will wait for empty slots before loading new tiles.
-            with ring_buffer.producer() as producer:
-                Self.async_load_AB_cpasync[
-                    swizzle_mode = Self.a_swizzle,
-                    vector_size = k_align // size_of[Self.a_type](),
-                    num_k_iters=num_k_iters,
-                    tile_shape = Index(Self.BM, Self.BN, Self.BK),
-                ](
-                    a,
-                    b,
-                    UInt(block_idx_swizzle[1]),
-                    UInt(block_idx_swizzle[0]),
-                    producer,
-                )
-
+            Self.producer_main_loop[num_k_iters=num_k_iters](
+                UInt(block_idx_swizzle[1]),
+                UInt(block_idx_swizzle[0]),
+                0,
+                a_loader,
+                b_loader,
+                ring_buffer,
+            )
         else:
+            # Consumer warp groups
             constrained[
                 Self.num_consumer <= 2, "Only support 1 or 2 consumer"
             ]()
             warpgroup_reg_alloc[232]()
 
             var local_warp_group_idx = warp_group_idx - 1
-
             var c_reg_tile = Self.AccumRegTileType.stack_allocation()
             var final_c_reg_tile = Self.AccumRegTileType.stack_allocation()
 
-            # Enter consumer mode: This acquires the consumer role and ensures
-            # synchronized access to consume tiles from the ring buffer. The consumer
-            # will wait for full tiles before processing them.
+            # Enter consumer mode
             with ring_buffer.consumer() as consumer:
                 Self.consumer_main_loop[num_k_iters=num_k_iters](
+                    wgmma_op,
+                    local_warp_group_idx,
                     final_c_reg_tile,
                     c_reg_tile,
                     consumer,
-                    wgmma_op,
-                    UInt(local_warp_group_idx),
                 )
 
             var output_reg_tile = (
@@ -1067,15 +1032,7 @@ struct HopperMatmulSM90Kernel[
                 is DType.float8_e4m3fn else c_reg_tile
             )
 
-            warp_specialized_gemm_output[
-                c_tile_shape = Index(Self.BM, Self.BN),
-                c_swizzle=c_swizzle,
-                wgmma_shape=wgmma_shape,
-                num_consumer = Self.num_consumer,
-                use_tma_store=use_tma_store,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            ](
+            Self.consumer_output(
                 c_tma_op,
                 c,
                 smem.c_tile,
@@ -1112,27 +1069,43 @@ struct HopperMatmulSM90Kernel[
         c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
         c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
         workspace_buffer: NDBuffer[Self.accum_type, 3, MutableAnyOrigin],
-        locks_ptr: UnsafePointer[NoneType],
+        locks_ptr: UnsafePointer[UInt8],
         problem_shape: IndexList[3],
     ):
         """Split-K variant of the kernel for better load balancing on small problems.
         """
-
-        alias CLUSTER_N = UInt(cluster_shape[0])
-        alias CLUSTER_M = UInt(cluster_shape[1])
-
         alias K = b_layout.shape[1].value()
+        alias num_k_iters = K // Self.BK
+
+        constrained[(K % Self.BK) == 0, "K must be divisible by BK"]()
+
+        # Initialize WgmmaOp and SMem first
+        var wgmma_op = Self.WgmmaOp()
+        var smem = Self.SMem()
+
+        # Common initialization
+        var (
+            warp_group_idx,
+            warp_group_thread_idx,
+            rank_m,
+            rank_n,
+            warp_id,
+            lane_predicate,
+        ) = Self.common_kernel_init()
+
+        # Create ring buffer
+        var ring_buffer = Self.build_ring_buffer(smem, warp_group_thread_idx)
+
+        # Create ScatterGatherTMA loaders
+        var a_loader, b_loader = Self.build_tma_loaders(
+            a_tma_op, b_tma_op, rank_m, rank_n
+        )
+
+        Self.pipeline_init()
+
         alias N = b_layout.shape[0].value()
         alias M = a_layout.shape[0].value()
         alias NUM_TILES = ceildiv(M, Self.BM) * ceildiv(N, Self.BN)
-
-        Self.validate_constraints()
-        constrained[a_type == b_type, "A and B must have the same type"]()
-
-        @parameter
-        if splits > 1:
-            # This static constraint only needs to apply if splitk is actually used
-            constrained[(K % Self.BK) == 0, "K must be divisible by BK"]()
 
         alias workspace_layout = Layout.row_major(NUM_TILES, Self.BM, Self.BN)
         var reduction_workspace = LayoutTensor(
@@ -1142,57 +1115,8 @@ struct HopperMatmulSM90Kernel[
             ),
         )
 
-        alias num_k_iters = K // Self.BK
-
-        alias use_cluster = Self.cluster_size > 1
-
-        var wgmma_op = TensorCoreAsync[
-            Self.accum_type,
-            a_type,
-            b_type,
-            wgmma_shape,
-            a_swizzle=a_swizzle,
-            b_swizzle=b_swizzle,
-            transpose_b=transpose_b,
-        ]()
-
-        # Initialize Shared Memory
-        var smem = Self.SMem()
-
-        var warp_group_idx, warp_group_thread_idx = divmod(
-            thread_idx.x, UInt(WARPGROUP_SIZE)
-        )
-
-        var rank_m = block_id_in_cluster.y
-        var rank_n = block_id_in_cluster.x
-
-        @parameter
-        if (
-            pdl_level > PDLLevel.OFF
-            and pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
-        ):
-            wait_on_dependent_grids()
-
-        var lane_predicate = elect_one_sync()
-        if thread_idx.x == 0:
-            a_tma_op.prefetch_descriptor()
-            b_tma_op.prefetch_descriptor()
-
-        # Create RingBuffer for producer-consumer synchronization.
-        # The RingBuffer manages a circular queue of tile buffers in shared memory,
-        # allowing the producer warp group to load tiles ahead while consumer warp
-        # groups process previous tiles. This overlaps memory transfers with computation.
-        # It uses two sets of barriers (full_mbar, empty_mbar) to synchronize access
-        # between producers and consumers
-        var ring_buffer = Self.RingBuffer[](
-            smem.full_mbar,
-            smem.empty_mbar,
-            warp_group_thread_idx,
-            smem.a_tiles,
-            smem.b_tiles,
-        )
-
-        Self.pipeline_init()
+        alias CLUSTER_N = UInt(cluster_shape[0])
+        alias CLUSTER_M = UInt(cluster_shape[1])
 
         var scheduler = SplitKTileScheduler[
             Index(N, K),
@@ -1208,52 +1132,38 @@ struct HopperMatmulSM90Kernel[
             locks_ptr,
         )
 
-        var warp_id = get_warp_id()
+        # Split thread blocks into producer and consumer warp groups
         if warp_group_idx == 0:
-            alias num_regs = 24 if Self.num_consumer <= 2 else 32
+            # Producer warp group
+            _ = Self.setup_producer()
             var work_tile_info = scheduler.initial_work_tile_info()
 
-            warpgroup_reg_dealloc[num_regs]()
             if warp_id == 0 and lane_predicate:
-                # Enter producer mode: This acquires the producer role and ensures
-                # exclusive access to load tiles into the ring buffer. The producer
-                # will wait for empty slots before loading new tiles.
-                with ring_buffer.producer() as producer:
-                    while work_tile_info.is_valid():
-                        var m_coord = work_tile_info.m * Self.BM
-                        var n_coord = work_tile_info.n * Self.BN
+                while work_tile_info.is_valid():
+                    var m_coord = work_tile_info.m * Self.BM
+                    var n_coord = work_tile_info.n * Self.BN
 
-                        alias work_k_tile_count = num_k_iters // splits
-                        var work_k_tile_start = work_tile_info.get_k_start()
+                    alias work_k_tile_count = num_k_iters // splits
+                    var work_k_tile_start = work_tile_info.get_k_start()
 
-                        Self.async_load_AB_tma[
-                            tile_shape=block_tile_shape,
-                            cluster_dims=cluster_shape,
-                            use_partitioned_multicast=partitioned_multicast,
-                            num_k_iters=work_k_tile_count,
-                        ](
-                            a_tma_op,
-                            b_tma_op,
-                            UInt(m_coord),
-                            UInt(n_coord),
-                            UInt(work_k_tile_start),
-                            rank_n,
-                            rank_m,
-                            producer,
-                        )
+                    Self.producer_main_loop[num_k_iters=work_k_tile_count](
+                        UInt(m_coord),
+                        UInt(n_coord),
+                        UInt(work_k_tile_start),
+                        a_loader,
+                        b_loader,
+                        ring_buffer,
+                    )
 
-                        # Get next work tile
-                        work_tile_info = scheduler.fetch_next_work(
-                            work_tile_info
-                        )
+                    # Get next work tile
+                    work_tile_info = scheduler.fetch_next_work(work_tile_info)
         else:
-            warpgroup_reg_alloc[Self.num_regs()]()
+            # Consumer warp groups
+            var local_warp_group_idx, c_reg_tile, final_c_reg_tile = (
+                Self.setup_consumer(warp_group_idx)
+            )
 
             var work_tile_info = scheduler.initial_work_tile_info()
-            var local_warp_group_idx = warp_group_idx - 1
-
-            var c_reg_tile = Self.AccumRegTileType.stack_allocation()
-            var final_c_reg_tile = Self.AccumRegTileType.stack_allocation()
 
             @parameter
             if a_type is DType.float8_e4m3fn:
@@ -1261,19 +1171,17 @@ struct HopperMatmulSM90Kernel[
             else:
                 _ = c_reg_tile.fill(0.0)
 
-            # Enter consumer mode: This acquires the consumer role and ensures
-            # synchronized access to consume tiles from the ring buffer. The consumer
-            # will wait for full tiles before processing them.
+            # Enter consumer mode
             with ring_buffer.consumer() as consumer:
                 while work_tile_info.is_valid():
                     alias work_k_tile_count = num_k_iters // splits
 
                     Self.consumer_main_loop[num_k_iters=work_k_tile_count](
+                        wgmma_op,
+                        local_warp_group_idx,
                         final_c_reg_tile,
                         c_reg_tile,
                         consumer,
-                        wgmma_op,
-                        UInt(local_warp_group_idx),
                     )
 
                     var output_reg_tile = (
@@ -1294,15 +1202,7 @@ struct HopperMatmulSM90Kernel[
                         var block_y = UInt(work_tile_info.m)
                         var block_x = UInt(work_tile_info.n)
 
-                        warp_specialized_gemm_output[
-                            c_tile_shape = Index(Self.BM, Self.BN),
-                            c_swizzle=c_swizzle,
-                            wgmma_shape=wgmma_shape,
-                            num_consumer = Self.num_consumer,
-                            use_tma_store=use_tma_store,
-                            elementwise_lambda_fn=elementwise_lambda_fn,
-                            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                        ](
+                        Self.consumer_output(
                             c_tma_op,
                             c,
                             smem.c_tile,
@@ -1330,13 +1230,14 @@ struct HopperMatmulSM90Kernel[
     fn run_grouped[
         a_tile_layout: Layout,
         b_tile_layout: Layout,
+        c_tile_layout: Layout,
         a_desc_layout: Layout,
         b_desc_layout: Layout,
         c_desc_layout: Layout,
     ](
         a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-        c_tma_op: TMATensorTile[c_type, c_smem_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[c_type, c_tile_layout, c_desc_layout],
         a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
         expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
         c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
@@ -1346,21 +1247,37 @@ struct HopperMatmulSM90Kernel[
         This variant handles multiple experts where each expert processes a subset of tokens.
         The a_offsets array indicates token boundaries for each expert.
         """
-        Self.validate_constraints()
-
-        alias CLUSTER_N = UInt(cluster_shape[0])
-        alias CLUSTER_M = UInt(cluster_shape[1])
-
         alias K = b_layout.shape[1].value()
-        alias N = c_layout.shape[1].value()
+        alias num_k_iters = K // Self.BK
 
-        alias use_cluster = Self.cluster_size > 1
-        var block_idx_swizzle = block_swizzle(
-            Index[dtype = DType.uint32](block_idx.x, block_idx.y),
-            Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
-        ) if not use_cluster else Index[dtype = DType.uint32](
-            block_idx.x, block_idx.y
+        constrained[(K % Self.BK) == 0, "K must be divisible by BK"]()
+
+        # Initialize WgmmaOp and SMem first
+        var wgmma_op = Self.WgmmaOp()
+        var smem = Self.SMem()
+
+        # Common initialization
+        var (
+            warp_group_idx,
+            warp_group_thread_idx,
+            rank_m,
+            rank_n,
+            warp_id,
+            lane_predicate,
+        ) = Self.common_kernel_init()
+
+        # Create ring buffer
+        var ring_buffer = Self.build_ring_buffer(smem, warp_group_thread_idx)
+
+        # Create ScatterGatherTMA loaders
+        var a_loader, b_loader = Self.build_tma_loaders(
+            a_tma_op, b_tma_op, rank_m, rank_n
         )
+
+        Self.pipeline_init()
+
+        # Calculate block swizzle
+        var block_idx_swizzle = Self.get_block_swizzle()
 
         # The block may be OOB because we create blocks based the maximum
         # number of tokens per expert.
@@ -1368,125 +1285,67 @@ struct HopperMatmulSM90Kernel[
         if UInt32(block_idx_swizzle[1] * Self.BM) >= M:
             return
 
-        a_start_row = a_offsets[Int(block_idx.z)]
+        var a_start_row = a_offsets[Int(block_idx.z)]
 
-        expert = expert_ids[Int(block_idx.z)]
+        var expert = expert_ids[Int(block_idx.z)]
         # We use -1 to indicate that the block is not active for LoRA use cases.
         # but we still need to zero out the output for this case.
-        skip_matmul = expert < 0
+        var skip_matmul = expert < 0
 
-        b_start_row = expert * N
+        alias N = c_layout.shape[1].value()
+        var b_start_row = expert * N
 
-        wgmma_op = TensorCoreAsync[
-            Self.accum_type,
-            a_type,
-            b_type,
-            wgmma_shape,
-            a_swizzle=a_swizzle,
-            b_swizzle=b_swizzle,
-            transpose_b=transpose_b,
-        ]()
+        alias CLUSTER_N = UInt(cluster_shape[0])
+        alias CLUSTER_M = UInt(cluster_shape[1])
 
-        # Initialize Shared Memory
-        var smem = Self.SMem()
-
-        var warp_group_idx, warp_group_thread_idx = divmod(
-            thread_idx.x, UInt(WARPGROUP_SIZE)
-        )
-
-        var rank_m = block_id_in_cluster.y
-        var rank_n = block_id_in_cluster.x
-
-        var lane_predicate = elect_one_sync()
-        if thread_idx.x == 0:
-            a_tma_op.prefetch_descriptor()
-            b_tma_op.prefetch_descriptor()
-
-        # Create RingBuffer for producer-consumer synchronization.
-        # The RingBuffer manages a circular queue of tile buffers in shared memory,
-        # allowing the producer warp group to load tiles ahead while consumer warp
-        # groups process previous tiles. This overlaps memory transfers with computation.
-        # It uses two sets of barriers (full_mbar, empty_mbar) to synchronize access
-        # between producers and consumers
-        var ring_buffer = Self.RingBuffer[](
-            smem.full_mbar,
-            smem.empty_mbar,
-            warp_group_thread_idx,
-            smem.a_tiles,
-            smem.b_tiles,
-        )
-
-        Self.pipeline_init()
-
-        alias num_k_iters = K // Self.BK
-
-        var warp_id = get_warp_id()
+        # Split thread blocks into producer and consumer warp groups
         if warp_group_idx == 0:
-            alias num_regs = 24 if Self.num_consumer <= 2 else 32
-            warpgroup_reg_dealloc[num_regs]()
+            # Producer warp group
+            _ = Self.setup_producer()
 
-            if (
-                warp_group_thread_idx == 0
-                and lane_predicate
-                and not skip_matmul
-            ):
-                # Enter producer mode: This acquires the producer role and ensures
-                # exclusive access to load tiles into the ring buffer. The producer
-                # will wait for empty slots before loading new tiles.
-                with ring_buffer.producer() as producer:
-                    var m_coord = block_idx.y * UInt(
-                        Self.BM
-                    ) if CLUSTER_N > 1 else UInt(Int(a_start_row)) + UInt(
-                        block_idx_swizzle[1]
-                    ) * UInt(
-                        Self.BM
+            if warp_id == 0 and lane_predicate and not skip_matmul:
+                var m_coord = block_idx.y * UInt(
+                    Self.BM
+                ) if CLUSTER_N > 1 else UInt(Int(a_start_row)) + UInt(
+                    block_idx_swizzle[1]
+                ) * UInt(
+                    Self.BM
+                )
+
+                var n_coord = block_idx.x * UInt(
+                    Self.BN
+                ) if CLUSTER_M > 1 else UInt(Int(b_start_row)) + UInt(
+                    block_idx_swizzle[0]
+                ) * UInt(
+                    Self.BN
+                )
+
+                if warp_id == 0 and lane_predicate:
+                    Self.producer_main_loop[num_k_iters=num_k_iters](
+                        m_coord,
+                        n_coord,
+                        0,  # k_start,
+                        a_loader,
+                        b_loader,
+                        ring_buffer,
                     )
-
-                    var n_coord = block_idx.x * UInt(
-                        Self.BN
-                    ) if CLUSTER_M > 1 else UInt(Int(b_start_row)) + UInt(
-                        block_idx_swizzle[0]
-                    ) * UInt(
-                        Self.BN
-                    )
-
-                    Self.async_load_AB_tma[
-                        tile_shape=block_tile_shape,
-                        cluster_dims=cluster_shape,
-                        use_partitioned_multicast=partitioned_multicast,
-                        num_k_iters=num_k_iters,
-                    ](
-                        a_tma_op,
-                        b_tma_op,
-                        UInt(m_coord),
-                        UInt(n_coord),
-                        0,
-                        rank_n,
-                        rank_m,
-                        producer,
-                    )
-
         else:
-            warpgroup_reg_alloc[Self.num_regs()]()
-
-            var local_warp_group_idx = warp_group_idx - 1
-
-            var c_reg_tile = Self.AccumRegTileType.stack_allocation()
-            var final_c_reg_tile = Self.AccumRegTileType.stack_allocation()
+            # Consumer warp groups
+            var local_warp_group_idx, c_reg_tile, final_c_reg_tile = (
+                Self.setup_consumer(warp_group_idx)
+            )
 
             _ = c_reg_tile.fill(0.0)
 
             if not skip_matmul:
-                # Enter consumer mode: This acquires the consumer role and ensures
-                # synchronized access to consume tiles from the ring buffer. The consumer
-                # will wait for full tiles before processing them.
+                # Enter consumer mode
                 with ring_buffer.consumer() as consumer:
                     Self.consumer_main_loop[num_k_iters=num_k_iters](
+                        wgmma_op,
+                        local_warp_group_idx,
                         final_c_reg_tile,
                         c_reg_tile,
                         consumer,
-                        wgmma_op,
-                        UInt(local_warp_group_idx),
                     )
 
             var output_reg_tile = (
@@ -1506,7 +1365,6 @@ struct HopperMatmulSM90Kernel[
                 address_space = AddressSpace.GENERIC,
             ]
 
-            # FIXME: A list literal initializer should be enough here, but somehow Mojo fails to infer that.
             var c_gmem_runtime_layout = RuntimeLayout[c_gmem_layout](
                 Index(M, N), Index(N, 1)
             )
@@ -1515,7 +1373,6 @@ struct HopperMatmulSM90Kernel[
                 c.ptr + a_start_row * N, c_gmem_runtime_layout
             )
 
-            @always_inline
             @parameter
             fn elementwise_epilogue_fn_wrapper[
                 dtype: DType, width: Int, *, alignment: Int = 1
@@ -1528,23 +1385,18 @@ struct HopperMatmulSM90Kernel[
                     )
                     elementwise_epilogue(batch_idx, val)
 
-            warp_specialized_gemm_output[
-                c_tile_shape = Index(Self.BM, Self.BN),
-                c_swizzle=c_swizzle,
-                wgmma_shape=wgmma_shape,
-                num_consumer = Self.num_consumer,
-                use_tma_store=use_tma_store,
-                elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+            Self.consumer_output[
+                OptionalReg[elementwise_epilogue_type](
                     elementwise_epilogue_fn_wrapper
-                ) if elementwise_lambda_fn else None,
+                ) if elementwise_lambda_fn else None
             ](
                 c_tma_op,
                 c_by_expert,
                 smem.c_tile,
                 output_reg_tile,
-                UInt(warp_group_thread_idx),
-                UInt(local_warp_group_idx),
-                thread_idx.x - UInt(WARPGROUP_SIZE),
+                warp_group_thread_idx,
+                local_warp_group_idx,
+                UInt(thread_idx.x - UInt(WARPGROUP_SIZE)),
                 block_idx_swizzle[1],
                 block_idx_swizzle[0],
             )
@@ -1554,26 +1406,14 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @always_inline
     fn consumer_main_loop[
-        ring_buffer_origin: Origin[True],
-        accum_type: DType,
-        c_reg_layout: Layout, //,
-        /,
-        *,
+        ring_buffer_origin: Origin[True], //,
         num_k_iters: Int,
     ](
-        final_c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
-        mut ring_buffer: Self.RingBufferConsumer[ring_buffer_origin, _],
-        wgmma_op: TensorCoreAsync[
-            accum_type,
-            a_type,
-            b_type,
-            wgmma_shape,
-            a_swizzle,
-            b_swizzle,
-            transpose_b,
-        ],
+        wgmma_op: Self.WgmmaOp,
         local_warp_group_idx: UInt,
+        final_c_reg_tile: Self.AccumRegTileType,
+        c_reg_tile: Self.AccumRegTileType,
+        mut ring_buffer: Self.RingBufferConsumer[ring_buffer_origin, _],
     ):
         """Main computation loop for consumer warp groups.
 
@@ -1585,11 +1425,11 @@ struct HopperMatmulSM90Kernel[
         precision to maintain accuracy.
 
         Args:
+            wgmma_op: Tensor core operator for matrix multiplication.
+            local_warp_group_idx: Index of this consumer warp group (0-based).
             final_c_reg_tile: Final accumulation register tile (for FP8 promotion).
             c_reg_tile: Working accumulation register tile.
             ring_buffer: Consumer handle for synchronized tile access.
-            wgmma_op: Tensor core operator for matrix multiplication.
-            local_warp_group_idx: Index of this consumer warp group (0-based).
         """
 
         @parameter
@@ -1613,21 +1453,15 @@ struct HopperMatmulSM90Kernel[
             @parameter
             for j in range(num_pipeline_stages_to_unroll):
                 # Get the next available tile slot from the ring buffer.
-                # For consumers: This waits for a full slot and returns a buffer to read.
                 # The context manager ensures proper barrier synchronization.
                 with ring_buffer.get_tiles() as tiles:
-                    warpgroup_fence(c_reg_tile)
-                    wgmma_op.arrive()
-                    alias scale_c = 0 if a_type is DType.float8_e4m3fn else 1
-                    wgmma_op.wgmma[Self.num_consumer, scale_c=scale_c](
+                    Self.wgmma(
+                        wgmma_op,
+                        local_warp_group_idx,
                         tiles.a_tile,
                         tiles.b_tile,
                         c_reg_tile,
-                        Int(local_warp_group_idx),
                     )
-                    wgmma_op.commit_group()
-                    warpgroup_fence(c_reg_tile)
-                    wgmma_op.wait_group()
 
                 @parameter
                 if a_type is DType.float8_e4m3fn:
@@ -1653,11 +1487,9 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @always_inline
-    fn promote_to_cuda_cores[
-        accum_type: DType, layout: Layout
-    ](
-        c_reg_tile: RegTileType[accum_type, layout, _],
-        final_c_reg_tile: RegTileType[accum_type, layout, _],
+    fn promote_to_cuda_cores(
+        c_reg_tile: Self.AccumRegTileType,
+        final_c_reg_tile: Self.AccumRegTileType,
     ):
         """Promote FP8 accumulation to higher precision using CUDA cores.
 
@@ -1673,11 +1505,12 @@ struct HopperMatmulSM90Kernel[
             final_c_reg_tile: Higher-precision accumulator (updated in place).
         """
         constrained[
-            accum_type in (DType.float32, DType.float16),
+            c_reg_tile.dtype in (DType.float32, DType.float16),
             "Only support fp32 and fp16 data type in CUDA Core promotion",
         ]()
         constrained[
-            len(layout) == 2, "Only support 2D layout in CUDA Core promotion"
+            len(c_reg_tile.layout) == 2,
+            "Only support 2D layout in CUDA Core promotion",
         ]()
 
         alias num_mma = c_reg_tile.layout.shape[0].value()
@@ -1689,9 +1522,31 @@ struct HopperMatmulSM90Kernel[
 
             @parameter
             for i in range(c_frag_size):
-                final_c_reg_tile[mma_id, i] = rebind[Scalar[accum_type]](
+                final_c_reg_tile[mma_id, i] = rebind[Scalar[Self.accum_type]](
                     final_c_reg_tile[mma_id, i]
-                ) + rebind[Scalar[accum_type]](c_reg_tile[mma_id, i])
+                ) + rebind[Scalar[Self.accum_type]](c_reg_tile[mma_id, i])
+
+    @always_inline
+    @staticmethod
+    fn wgmma(
+        wgmma_op: Self.WgmmaOp,
+        local_warp_group_idx: UInt,
+        a_tile: SMemTileType[a_type, _, _],
+        b_tile: SMemTileType[b_type, _, _],
+        c_reg_tile: Self.AccumRegTileType,
+    ):
+        warpgroup_fence(c_reg_tile)
+        wgmma_op.arrive()
+        alias scale_c = 0 if a_type is DType.float8_e4m3fn else 1
+        wgmma_op.wgmma[Self.num_consumer, scale_c=scale_c](
+            a_tile,
+            b_tile,
+            c_reg_tile,
+            local_warp_group_idx,
+        )
+        wgmma_op.commit_group()
+        warpgroup_fence(c_reg_tile)
+        wgmma_op.wait_group()
 
 
 @always_inline
@@ -1736,7 +1591,7 @@ fn _calculate_output_bounds[
     c: LayoutTensor[_, c_layout, MutableAnyOrigin, *_, **_],
     block_y: Int,
     block_x: Int,
-) -> (UInt32, UInt32):
+) -> Tuple[UInt32, UInt32]:
     """Calculate the output bounds for the current thread block."""
     alias N = c_layout.shape[1].value()
     var M = c.dim[0]()
@@ -1894,7 +1749,6 @@ fn _apply_epilogue_lambda[
 fn _perform_output_store[
     c_type: DType,
     c_tma_layout: Layout,
-    c_desc_layout: Layout,
     c_tile_layout: Layout, //,
     use_tma_store: Bool,
     use_x2_for_last_iter: Bool,
@@ -1907,7 +1761,7 @@ fn _perform_output_store[
     simd_size: Int,
     st_matrix_swizzle: Swizzle,
 ](
-    c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
+    c_tma_op: TMATensorTile[c_type, c_tma_layout, _],
     c_tile: SMemTileType[c_type, c_tile_layout, alignment=128],
     c_gmem_wg_tile: LayoutTensor[c_type, _, MutableAnyOrigin, *_, **_],
     local_thread_idx: UInt,
@@ -2091,7 +1945,6 @@ fn handle_stmatrix_output[
         if elementwise_compute_lambda_fn:
             alias lambda_fn = elementwise_compute_lambda_fn.value()
 
-            @always_inline
             @parameter
             fn _compute_lambda[
                 dtype: DType, width: Int, *, alignment: Int = 1
@@ -2123,7 +1976,6 @@ fn handle_stmatrix_output[
         if elementwise_lambda_fn:
             alias lambda_fn = elementwise_lambda_fn.value()
 
-            @always_inline
             @parameter
             fn _epilogue_lambda[
                 dtype: DType, width: Int, *, alignment: Int = 1
@@ -2296,7 +2148,7 @@ fn warp_specialized_gemm_output[
         ):
             # Output dimensions in global memory.
             alias N = c_layout.shape[1].value()
-            var M: UInt = UInt(c.dim[0]())
+            var M = UInt(c.dim[0]())
 
             var lane = lane_id()
 

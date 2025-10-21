@@ -1281,7 +1281,7 @@ struct CPython(Defaultable, Movable):
     """The handle to the CPython shared library."""
     var version: PythonVersion
     """The version of the Python runtime."""
-    var init_error: StringSlice[StaticConstantOrigin]
+    var init_error: StaticString
     """An error message if initialization failed."""
 
     # fields holding function pointers to CPython C API functions

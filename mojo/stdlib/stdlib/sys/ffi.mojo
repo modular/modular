@@ -448,9 +448,9 @@ struct DLHandle(Boolable, Copyable, Movable):
 
         debug_assert[_check_symbol]("symbol not found: ", name)
         var v = args.get_loaded_kgen_pack()
-        return self.get_function[fn (__type_of(v)) -> return_type](
-            String(name)
-        )(v)
+        return self.get_function[fn (type_of(v)) -> return_type](String(name))(
+            v
+        )
 
 
 @always_inline

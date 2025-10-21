@@ -19,6 +19,7 @@ from utils._ansi import Color, Text
 from builtin._location import __call_location, _SourceLocation
 from compile.reflection import get_linkage_name
 from sys.intrinsics import _type_is_eq
+from utils import Variant
 
 
 fn _get_test_func_name[
@@ -73,6 +74,225 @@ fn _format_nsec(nanoseconds: UInt) -> String:
     return result
 
 
+# TODO: (MOCO-2450) - Add defaulted `writeln` to `Writer` trait.
+fn _writeln[
+    *Ts: Writable
+](mut writer: Some[Writer], *args: *Ts, sep: StaticString = StaticString("")):
+    @parameter
+    for i in range(args.__len__()):
+        args[i].write_to(writer)
+        sep.write_to(writer)
+    writer.write("\n")
+
+
+@fieldwise_init
+struct TestResult(EqualityComparable, ImplicitlyCopyable, Movable, Writable):
+    """A test result code."""
+
+    var _value: Int
+
+    alias PASS = Self(0)
+    """The test passed."""
+
+    alias FAIL = Self(1)
+    """The test failed."""
+
+    alias SKIP = Self(2)
+    """The test was skipped."""
+
+    fn __eq__(self, rhs: Self) -> Bool:
+        return self._value == rhs._value
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write the result code to the writer."""
+        if self == Self.PASS:
+            writer.write(Text[Color.GREEN]("PASS"))
+        elif self == Self.FAIL:
+            writer.write(Text[Color.RED]("FAIL"))
+        elif self == Self.SKIP:
+            writer.write(Text[Color.YELLOW]("SKIP"))
+
+
+struct TestReport(Copyable, Movable, Writable):
+    """A report for a single unit test."""
+
+    alias _ErrorIndent = 3
+
+    var name: String
+    """The name of the test."""
+
+    var duration_ns: UInt
+    """The duration of the test in nanoseconds."""
+
+    var result: TestResult
+    """The result code of the test."""
+
+    var error: Error
+    """The error associated with a failing test."""
+
+    @staticmethod
+    fn passed(*, var name: String, duration_ns: UInt) -> Self:
+        """Create a passing test report.
+
+        Args:
+            name: The name of the test.
+            duration_ns: The duration of the test in nanoseconds.
+
+        Returns:
+            A new passing test report.
+        """
+        return {
+            name = name^,
+            duration_ns = duration_ns,
+            result = TestResult.PASS,
+        }
+
+    @staticmethod
+    fn failed(*, var name: String, duration_ns: UInt, var error: Error) -> Self:
+        """Create a failing test report.
+
+        Args:
+            name: The name of the test.
+            duration_ns: The duration of the test in nanoseconds.
+            error: The error raised by the failing test.
+
+        Returns:
+            A new failing test report.
+        """
+        return {
+            name = name^,
+            duration_ns = duration_ns,
+            result = TestResult.FAIL,
+            error = error^,
+        }
+
+    @staticmethod
+    fn skipped(*, var name: String) -> Self:
+        """Create a skipped test report.
+
+        Args:
+            name: The name of the test.
+
+        Returns:
+            A new skipped test report.
+        """
+        return {name = name^, duration_ns = 0, result = TestResult.SKIP}
+
+    @doc_private
+    fn __init__(
+        out self,
+        *,
+        var name: String,
+        duration_ns: UInt,
+        result: TestResult,
+        var error: Error = {},
+    ):
+        self.name = name^
+        self.duration_ns = duration_ns
+        self.result = result
+        self.error = error^
+
+    @doc_private
+    @staticmethod
+    fn _format_error(e: Error) -> String:
+        var replacement = String("\n", _Indent("", level=Self._ErrorIndent))
+        return e.__str__().replace("\n", replacement)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write the formatted test report to the writer."""
+        writer.write(_Indent(self.result, level=2))
+
+        writer.write(" [ ", _format_nsec(self.duration_ns), " ] ")
+        writer.write(Text[Color.CYAN](self.name))
+
+        if self.result == TestResult.FAIL:
+            writer.write(
+                "\n",
+                _Indent(
+                    Self._format_error(self.error),
+                    level=Self._ErrorIndent,
+                ),
+            )
+
+
+struct TestSuiteReport(Copyable, Movable, Writable):
+    """A report for an entire test suite."""
+
+    var reports: List[TestReport]
+    """The reports for each test in the suite."""
+
+    var total_duration_ns: UInt
+    """The total duration of the suite in nanoseconds."""
+
+    var failures: Int
+    """The number of tests that failed."""
+
+    var skipped: Int
+    """The number of tests skipped."""
+
+    var location: _SourceLocation
+    """The source location of the test suite."""
+
+    fn __init__(
+        out self, *, var reports: List[TestReport], location: _SourceLocation
+    ):
+        self.reports = reports^
+        self.total_duration_ns = 0
+        self.failures = 0
+        self.skipped = 0
+        self.location = location
+
+        for ref report in self.reports:
+            self.total_duration_ns += report.duration_ns
+            if report.result == TestResult.FAIL:
+                self.failures += 1
+            elif report.result == TestResult.SKIP:
+                self.skipped += 1
+
+    fn write_to(self, mut writer: Some[Writer]):
+        _writeln(writer)
+        _writeln(
+            writer,
+            Text[Color.GREEN]("Running"),
+            Text[Color.BOLD_WHITE](len(self.reports)),
+            "tests for",
+            Text[Color.CYAN](self.location.file_name),
+            sep=" ",
+        )
+        for ref report in self.reports:
+            _writeln(writer, report)
+        _writeln(writer, "--------")
+        _writeln(
+            writer,
+            Text[Color.MAGENTA]("Summary"),
+            "[",
+            _format_nsec(self.total_duration_ns),
+            "]",
+            Text[Color.BOLD_WHITE](len(self.reports)),
+            "tests run:",
+            Text[Color.BOLD_WHITE](
+                len(self.reports) - self.failures - self.skipped
+            ),
+            Text[Color.GREEN]("passed"),
+            ",",
+            Text[Color.BOLD_WHITE](self.failures),
+            Text[Color.RED]("failed"),
+            ",",
+            Text[Color.BOLD_WHITE](self.skipped),
+            Text[Color.YELLOW]("skipped"),
+            sep=" ",
+        )
+
+        if self.failures > 0:
+            _writeln(
+                writer,
+                "Test suite'",
+                Text[Color.CYAN](self.location.file_name),
+                "'failed!",
+                sep=" ",
+            )
+
+
 @fieldwise_init
 struct _Test(Copyable & Movable):
     """A single test to run."""
@@ -82,7 +302,7 @@ struct _Test(Copyable & Movable):
     var name: String
 
 
-@explicit_destroy("TestSuite must be ran via `TestSuite.run`")
+@explicit_destroy("TestSuite must be destroyed via `run()` or `disable()`")
 struct TestSuite(Movable):
     """A suite of tests to run.
 
@@ -120,8 +340,6 @@ struct TestSuite(Movable):
     ```
     """
 
-    alias _ErrorIndent = 3
-
     var tests: List[_Test]
     var location: _SourceLocation
 
@@ -136,7 +354,7 @@ struct TestSuite(Movable):
         self.tests = List[_Test]()
         self.location = location.or_else(__call_location())
 
-    def _register_tests[test_funcs: Tuple, /](mut self):
+    fn _register_tests[test_funcs: Tuple, /](mut self):
         """Internal function to prevent all registrations from being inlined."""
 
         @parameter
@@ -144,7 +362,7 @@ struct TestSuite(Movable):
             alias test_func = test_funcs[idx]
 
             @parameter
-            if _type_is_eq[__type_of(test_func), _Test.fn_type]():
+            if _type_is_eq[type_of(test_func), _Test.fn_type]():
 
                 @parameter
                 if _get_test_func_name[test_func]().startswith("test_"):
@@ -157,7 +375,7 @@ struct TestSuite(Movable):
 
     @always_inline
     @staticmethod
-    def discover_tests[
+    fn discover_tests[
         test_funcs: Tuple, /
     ](*, location: Optional[_SourceLocation] = None) -> Self:
         """Discover tests from the given list of functions, and register them.
@@ -186,77 +404,45 @@ struct TestSuite(Movable):
         """
         self.tests.append(_Test(f, _get_test_func_name[f]()))
 
-    @staticmethod
-    fn _format_error(e: Error) -> String:
-        var replacement = String("\n", _Indent("", level=Self._ErrorIndent))
-        return e.__str__().replace("\n", replacement)
+    fn generate_report(mut self) -> TestSuiteReport:
+        """Runs the test suite and generates a report."""
+        var reports = List[TestReport](capacity=len(self.tests))
 
-    def run(deinit self):
+        for test in self.tests:
+            var error: Optional[Error] = None
+            var start = perf_counter_ns()
+            try:
+                test.test_fn()
+            except e:
+                error = {e^}
+            var duration = perf_counter_ns() - start
+
+            var name = test.name.copy()
+            if error:
+                reports.append(
+                    TestReport.failed(
+                        name=name^, duration_ns=duration, error=error.take()
+                    )
+                )
+            else:
+                reports.append(
+                    TestReport.passed(name=name^, duration_ns=duration)
+                )
+
+            # TODO: Check for skipped tests `append(TestReport.skipped(...))`
+
+        return TestSuiteReport(reports=reports^, location=self.location)
+
+    fn run(deinit self) raises:
         """Runs the test suite and prints the results to the console.
 
         Raises:
             An error if a test in the test suite fails.
         """
-        var n_tests = len(self.tests)
-        var failures = 0
-        var runtime = 0
-        print(
-            Text[Color.GREEN]("Running"),
-            Text[Color.BOLD_WHITE](n_tests),
-            "tests for",
-            Text[Color.CYAN](self.location.file_name),
-        )
+        var report = self.generate_report()
+        if report.failures > 0:
+            raise Error(report)
 
-        var passed = Text[Color.GREEN]("PASS")
-        var failed = Text[Color.RED]("FAIL")
-
-        for test in self.tests:
-            var name = Text[Color.CYAN](test.name)
-            var start = perf_counter_ns()
-            try:
-                test.test_fn()
-                var duration = perf_counter_ns() - start
-                runtime += duration
-                print(
-                    _Indent(passed, level=2),
-                    "[",
-                    _format_nsec(duration),
-                    "]",
-                    name,
-                )
-            except e:
-                failures += 1
-                var duration = perf_counter_ns() - start
-                runtime += duration
-                print(
-                    _Indent(failed, level=2),
-                    "[",
-                    _format_nsec(duration),
-                    "]",
-                    name,
-                )
-                print(_Indent(Self._format_error(e), level=Self._ErrorIndent))
-
-        print("--------")
-        print(
-            " ",
-            Text[Color.MAGENTA]("Summary"),
-            " [ ",
-            _format_nsec(UInt(runtime)),
-            " ] ",
-            Text[Color.BOLD_WHITE](n_tests),
-            " tests run: ",
-            Text[Color.BOLD_WHITE](n_tests - failures),
-            Text[Color.GREEN](" passed"),
-            ", ",
-            Text[Color.BOLD_WHITE](failures),
-            Text[Color.RED](" failed"),
-            sep="",
-        )
-
-        if failures > 0:
-            raise Error(
-                "Test suite '",
-                Text[Color.CYAN](self.location.file_name),
-                "' failed!",
-            )
+    fn disable(deinit self):
+        """Disables the test suite, not running any of the tests."""
+        pass

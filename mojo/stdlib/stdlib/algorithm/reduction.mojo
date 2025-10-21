@@ -47,7 +47,7 @@ from ._gpu.reduction import reduce_launch
 
 @always_inline
 fn _get_nd_indices_from_flat_index(
-    flat_index: Int, shape: IndexList, skip_dim: Int, out res: __type_of(shape)
+    flat_index: Int, shape: IndexList, skip_dim: Int, out res: type_of(shape)
 ):
     """Converts a flat index into ND indices but skip over one of the dimensions.
 
@@ -607,7 +607,7 @@ fn _reduce_generator_cpu[
     shape: IndexList[_, element_type = DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
-) raises:
+):
     """Reduce the given tensor using the given reduction function on CPU. The
     num_reductions parameter enables callers to execute fused reductions. The
     reduce_0_fn and output_0_fn should be implemented in a way which routes
@@ -1742,7 +1742,7 @@ fn mean[
 ](
     input_shape: IndexList[_, element_type = DType.int64],
     reduce_dim: Int,
-    output_shape: __type_of(input_shape),
+    output_shape: type_of(input_shape),
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Computes the mean across the input and output shape.

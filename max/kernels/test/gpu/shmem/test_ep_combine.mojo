@@ -228,7 +228,7 @@ fn test_combine[
     )
 
     var format_handler = BF16TokenFormat[hidden_size, top_k, gpu_alignment](
-        output_tensor.origin_cast[True, MutableAnyOrigin]()
+        output_tensor.as_any_origin()
     )
 
     alias hw_info = ctx.default_device_info
@@ -259,7 +259,7 @@ fn test_combine[
         n_experts,
         n_ranks,
         n_tokens_per_rank,
-        __type_of(format_handler),
+        type_of(format_handler),
     ]
     var func_cb = ctx.compile_function[dispatch_cb]()
 

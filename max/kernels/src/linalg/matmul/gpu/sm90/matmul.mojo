@@ -119,6 +119,8 @@ fn warp_specialize_gemm_with_multicasting[
     ctx: DeviceContext,
 ) raises:
     """Unified dispatcher for all matmul kernel variants."""
+
+    @parameter
     if splits > 0:
         # Dispatch to split-k kernel
         warp_specialize_gemm_with_multicasting_splitk[
@@ -385,7 +387,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 schedule=schedule,
             ]
 
-            ctx.enqueue_function[kernel](
+            ctx.enqueue_function_checked[kernel, kernel](
                 a_tma_op,
                 b_tma_op,
                 c_tma_op,
@@ -409,7 +411,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 c_tma_op.desc_layout,
             ]
 
-            ctx.enqueue_function[kernel](
+            ctx.enqueue_function_checked[kernel, kernel](
                 a_tma_op,
                 b_tma_op,
                 c_tma_op,
@@ -433,7 +435,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
             c_tma_op.layout,
         ]
 
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             c_tma_op,
             a,
             b,
@@ -713,7 +715,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         raster_order=raster_order,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

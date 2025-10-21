@@ -80,7 +80,6 @@ struct RuntimeTuple[
     values and runtime-determined values.
 
     Parameters:
-        origin: The origin corresponding to the `IntTuple`.
         S: `IntTuple` with compile-time known values (or `UNKNOWN_VALUE` for runtime values).
         element_type: Integer type of the underlying elements.
     """
@@ -119,7 +118,7 @@ struct RuntimeTuple[
         Args:
             values: Variadic number of integer values to initialize the tuple with.
         """
-        self.value = __type_of(self.value)(values)
+        self.value = type_of(self.value)(values)
 
     @always_inline
     @implicit
@@ -142,8 +141,8 @@ struct RuntimeTuple[
                 l,
             ),
         ]()
-        self.value = rebind[__type_of(self.value)](
-            values.cast[__type_of(values).element_type]()
+        self.value = rebind[type_of(self.value)](
+            values.cast[type_of(values).element_type]()
         )
 
     @staticmethod

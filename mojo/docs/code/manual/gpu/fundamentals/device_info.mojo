@@ -27,7 +27,8 @@ def main():
 
         ctx = DeviceContext()  # Get context for the default device, 0
         print("Device ID:", ctx.id())
-        print("Device api:", ctx.name())
+        print("Device API:", ctx.api())
+        print("Device name:", ctx.name())
         print("Device API version:", ctx.get_api_version())
         mem_info = ctx.get_memory_info()
         print("Total memory:", mem_info[1])

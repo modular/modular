@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from .multi_cache_manager import MultiPagedKVCacheManager
-from .paged_cache import (
+from .dp_cache_manager import DPPagedKVCacheManager
+from .tp_cache_manager import (
     PagedCacheInputSymbols,
     PagedCacheValues,
-    PagedKVCacheManager,
     ResetPrefixCacheBackend,
     ResetPrefixCacheFrontend,
+    TPPagedKVCacheManager,
 )
 from .transfer_engine import (
     KVTransferEngine,
@@ -28,14 +28,14 @@ from .transfer_engine import (
 )
 
 __all__ = [
+    "DPPagedKVCacheManager",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
-    "MultiPagedKVCacheManager",
     "PagedCacheInputSymbols",
     "PagedCacheValues",
-    "PagedKVCacheManager",
     "ResetPrefixCacheBackend",
     "ResetPrefixCacheFrontend",
+    "TPPagedKVCacheManager",
     "TransferReqData",
     "available_port",
 ]

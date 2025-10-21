@@ -46,7 +46,7 @@ from max.nn import ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
 )
 from max.pipelines.core import TextContext
 from max.profiler import traced
@@ -416,7 +416,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     @property
     def kv_managers(
         self,
-    ) -> list[PagedKVCacheManager]:
+    ) -> list[TPPagedKVCacheManager]:
         return [self._draft_model.kv_manager, self._target_model.kv_manager]
 
     @traced
@@ -510,6 +510,7 @@ class SpeculativeDecodingTextGenerationPipeline(
         max_k: Tensor,
         temperature: Tensor,
         top_p: Tensor,
+        min_top_p: Tensor,
         seed: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
         graph_inputs = [
@@ -519,6 +520,7 @@ class SpeculativeDecodingTextGenerationPipeline(
             max_k,
             temperature,
             top_p,
+            min_top_p,
             seed,
             prev_logits,
         ]
@@ -554,6 +556,9 @@ class SpeculativeDecodingTextGenerationPipeline(
             dtype=np.float32,
         )
         top_p = Tensor.from_numpy(top_p_np).to(self.draft_devices[0])
+        # min_top_p must be provided as a scalar CPU tensor
+        min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
+        min_top_p = Tensor.from_numpy(min_top_p_np)
         seed_np = np.array(
             [context.sampling_params.seed for context in batch], dtype=np.uint64
         )
@@ -597,6 +602,7 @@ class SpeculativeDecodingTextGenerationPipeline(
                     max_k,
                     temperature,
                     top_p,
+                    min_top_p,
                     seed,
                 )
             )
@@ -648,7 +654,7 @@ class SpeculativeDecodingTextGenerationPipeline(
         all_draft_logits: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
         # Prepare next token inputs for target model
-        target_inputs, target_num_steps = self.prepare_batch(
+        target_inputs, _target_num_steps = self.prepare_batch(
             self._target_model,
             context_batch,
             # I believe, num steps in this scenario is 1, as we are only
@@ -797,7 +803,7 @@ class SpeculativeDecodingTextGenerationPipeline(
 
         for idx, rejected_token_idx in enumerate(first_rejected_tokens):
             context = context_batch[idx]
-            rejected_token_idx = rejected_token_idx.item()  # type: ignore
+            rejected_token_idx = rejected_token_idx.item()
 
             context.bump_token_indices(
                 active_idx=-num_draft_tokens_generated,
@@ -831,7 +837,7 @@ class SpeculativeDecodingTextGenerationPipeline(
             total_draft_generated,
             total_draft_accepted,
             total_bonus_used,
-            acceptance_lengths,  # type: ignore
+            acceptance_lengths,
         )
 
     def build_response(

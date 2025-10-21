@@ -131,7 +131,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
     @always_inline
     fn __divmod__(
         self, other: Scalar[Self.uint_type]
-    ) -> (Scalar[Self.uint_type], Scalar[Self.uint_type]):
+    ) -> Tuple[Scalar[Self.uint_type], Scalar[Self.uint_type]]:
         """Computes both quotient and remainder.
 
         Args:

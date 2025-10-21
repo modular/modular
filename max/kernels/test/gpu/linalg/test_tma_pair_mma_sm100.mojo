@@ -444,11 +444,11 @@ def test_tma_umma_pair_cta[
         a_type,
         b_type,
         c_type,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
         Layout.row_major(M, N),
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
         block_tile_shape,
         mma_shape,
         transpose_b=transpose_b,
@@ -458,11 +458,11 @@ def test_tma_umma_pair_cta[
         cta_group=cta_group,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),
-        K // BK,
+        UInt(K // BK),
         grid_dim=(
             align_up(M // BM, Int(cluster_shape[0])),
             align_up(N // BN // cta_group, Int(cluster_shape[1])),

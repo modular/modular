@@ -15,7 +15,17 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
-from sys import align_of, has_nvidia_gpu_accelerator, simd_width_of, size_of
+from sys import (
+    align_of,
+    has_nvidia_gpu_accelerator,
+    has_amd_gpu_accelerator,
+    simd_width_of,
+    size_of,
+    is_nvidia_gpu,
+    is_amd_gpu,
+    CompilationTarget,
+)
+
 
 import gpu.warp as warp
 from algorithm.functional import (
@@ -24,8 +34,6 @@ from algorithm.functional import (
     unswitch,
     vectorize,
 )
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -59,7 +67,6 @@ from layout.layout_tensor import (
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
-from layout.tensor_builder import static
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from memory import stack_allocation
@@ -87,6 +94,7 @@ from utils.static_tuple import StaticTuple
 
 from .mha_utils import get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
+from .mla_amd import mla_prefill_single_batch_amd, mla_decoding_single_batch_amd
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
@@ -101,25 +109,33 @@ fn flare_mla_decoding[
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     dtype: DType,
-    q_shape: DimList, //,
+    q_layout: Layout, //,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        dtype, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
+        dtype,
+        UInt(Int(q_layout.shape[rank - 2])),
+        UInt(Int(q_layout.shape[rank - 1])),
     ),
     ragged: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    output: NDBuffer[mut=True, _, rank, *_],
-    q: NDBuffer[dtype, rank, _, q_shape, *_],
+    output: LayoutTensor[
+        mut=True, _, address_space = AddressSpace.GENERIC, **_
+    ],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
     k: cache_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
-    valid_length: NDBuffer[DType.uint32, 1, *_],
+    valid_length: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
     kv_input_row_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ] = None,
     num_partitions: OptionalReg[Int] = None,
 ) raises:
@@ -153,8 +169,8 @@ fn flare_mla_decoding[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q),
-            trace_arg("output", output),
+            trace_arg("q", q.runtime_layout.shape.value),
+            trace_arg("output", output.runtime_layout.shape.value),
         )
 
     with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
@@ -198,22 +214,23 @@ fn flare_mla_decoding[
         )
 
 
-# entrypoint for NDBuffer as K input, used by tests.
+# entrypoint for LayoutTensor[mut=True, , Layout.row_major[3](), MutableAnyOrigin]as K input, used by tests.
 fn flare_mla_decoding[
-    rank: Int,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     dtype: DType,
-    q_shape: DimList, //,
+    q_layout: Layout, //,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        dtype, UInt(q_shape.get[2]()), UInt(q_shape.get[3]())
+        dtype, UInt(Int(q_layout.shape[2])), UInt(Int(q_layout.shape[3]))
     ),
     decoding_warp_split_k: Bool = False,
 ](
-    output: NDBuffer[mut=True, _, rank, *_],
-    q: NDBuffer[dtype, rank, _, q_shape, *_],
-    k: NDBuffer[_, rank, *_],
+    output: LayoutTensor[
+        mut=True, _, address_space = AddressSpace.GENERIC, **_
+    ],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
+    k: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     scale: Float32,
@@ -221,26 +238,27 @@ fn flare_mla_decoding[
     # if not set, we select num_partitions based on heuristics
     num_partitions: OptionalReg[Int] = None,
 ) raises:
-    constrained[rank == 4, "only support rank 4 inputs."]()
+    constrained[q.rank == 4, "only support rank 4 inputs."]()
 
-    alias kv_num_heads = k.shape.get[2]()
+    alias kv_num_heads = Int(k.layout.shape[2])
 
     # Runtime dimensions.
     var num_keys = k.dim[1]()
 
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[
-            k.type, Layout.row_major[k.rank](k.shape), MutableAnyOrigin
-        ](
-            k.data,
-            RuntimeLayout[Layout.row_major[k.rank](k.shape)].row_major(
-                k.get_shape().canonicalize()
+        LayoutTensor[k.dtype, k.layout, MutableAnyOrigin](
+            k.ptr,
+            RuntimeLayout[k.layout].row_major(
+                k.runtime_layout.shape.value.canonicalize()
             ),
         )
     )
 
-    var valid_length = NDBuffer[DType.uint32, 1](
-        UnsafePointer[UInt32](), Index(0)
+    var valid_length = LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        UnsafePointer[UInt32](),
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
     flare_mla_decoding_dispatch[
@@ -269,61 +287,66 @@ fn flare_mla_decoding[
 
 @always_inline
 fn flare_mla_decoding_dispatch[
-    rank: Int,
     k_t: MHAOperand,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     dtype: DType,
-    q_shape: DimList, //,
+    q_layout: Layout, //,
     kv_num_heads: Int,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        dtype, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
+        dtype,
+        UInt(Int(q_layout.shape[q_layout.rank() - 2])),
+        UInt(Int(q_layout.shape[q_layout.rank() - 1])),
     ),
     ragged: Bool = False,
-    # Work arounds to unify KVCache and NDBuffer inputs:
+    # Work arounds to unify KVCache and LayoutTensor[mut=True, , Layout.row_major[3](), MutableAnyOrigin]inputs:
     # Differentiate two cases, KV cache's length is before adding the latest
     # tokens e.g. zero for CE, and KV NDBuffer's length is the latest length
     # e.g. prompt length for CE.
     _is_cache_length_accurate: Bool = False,
-    # valid_length is needed for KV cache inputs and is empty for NDBuffer inputs
+    # valid_length is needed for KV cache inputs and is empty for LayoutTensor[mut=True, , Layout.row_major[3](), MutableAnyOrigin]inputs
     # to avoid overhead in benchmark.
     _use_valid_length: Bool = True,
     decoding_warp_split_k: Bool = False,
 ](
-    output: NDBuffer[_, rank, *_],
-    q: NDBuffer[dtype, rank, _, q_shape, *_],
+    output: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
     k: k_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
-    valid_length: NDBuffer[DType.uint32, 1, *_],
+    valid_length: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     max_prompt_len: Int,
     max_cache_valid_length: Int,
     scale: Float32,
     ctx: DeviceContext,
     kv_input_row_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ] = None,
     num_partitions: OptionalReg[Int] = None,
 ) raises:
     alias num_heads = config.num_heads
     alias depth = config.depth
     alias group = config.num_heads // UInt(kv_num_heads)
-    constrained[num_heads == UInt(q.shape.get[rank - 2]())]()
+    constrained[num_heads == UInt(Int(q.layout.shape[q.rank - 2]))]()
 
     # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
     alias has_enough_smem = ctx.default_device_info is A100 or ctx.default_device_info is H100
 
     constrained[
-        depth == UInt(q.shape.get[rank - 1]()) == 576,
+        depth == UInt(Int(q.layout.shape[q.rank - 1])) == 576,
         "flareMLA_decoding only supports head_dim == 576.",
     ]()
     constrained[
         kv_num_heads == 1, "flareMLA_decoding only supports kv_num_heads == 1."
     ]()
     constrained[
-        has_nvidia_gpu_accelerator(),
-        "flareMLA_decoding currently only supports Nvidia GPUs.",
+        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
+        "flareMLA_decoding currently only supports Nvidia and AMD GPUs.",
     ]()
 
     constrained[
@@ -334,7 +357,7 @@ fn flare_mla_decoding_dispatch[
     # Whether head and depth are static. With BSHD, B and S are dynamic.
     # H and D are always known for opaque KVCache types, we only check Q.
     constrained[
-        q.shape.all_known[rank - 2, rank](),
+        q.layout.shape.all_known[q.rank - 2, q.rank](),
         "Need num_heads and head_dim to be static for Q.",
     ]()
 
@@ -343,7 +366,7 @@ fn flare_mla_decoding_dispatch[
     @parameter
     if ragged:
         batch_size = valid_length.dim[0]() - 1
-    # This branch holds for both KVCache and NDBuffer inputs.
+    # This branch holds for both KVCache and LayoutTensor[mut=True, , Layout.row_major[3](), MutableAnyOrigin]inputs.
     # Q is BSHD, S is either homogeneous or padded to same length.
     else:
         batch_size = q.dim[0]()
@@ -351,11 +374,13 @@ fn flare_mla_decoding_dispatch[
     if batch_size == 0:
         return
 
-    alias BM = 16 if num_heads == 16 or not has_enough_smem else 32  # for deepseek-v2 lite
-    alias BN = 64
-    alias BK = 64  # need 8 mma_tile per row the resolve the bank conflict
+    alias BM = 16 if (
+        num_heads == 16 or not has_enough_smem or has_amd_gpu_accelerator()
+    ) else 32  # for deepseek-v2 lite
+    alias BN = 64 if has_nvidia_gpu_accelerator() else 128
+    alias BK = 64 if has_nvidia_gpu_accelerator() else 32  # need 8 mma_tile per row to resolve the bank conflict on nvidia
     alias WM = BM
-    alias WN = 16
+    alias WN = 16 if has_nvidia_gpu_accelerator() else 32
     # num warps in M and N, multiplied by warp size.
     alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
@@ -373,6 +398,9 @@ fn flare_mla_decoding_dispatch[
         BM * BN * size_of[k_t.dtype]()
         + 2 * num_warps * BM * size_of[accum_type]()
     )
+
+    shared_mem_bytes = shared_mem_bytes if has_nvidia_gpu_accelerator() else 0
+
     alias num_blocks_y = num_heads // UInt(BM)
 
     alias kernel = mla_decoding[
@@ -381,8 +409,7 @@ fn flare_mla_decoding_dispatch[
         output.dtype,
         mask_t,
         score_mod_t,
-        valid_length.shape,
-        valid_length.strides,
+        valid_length.layout,
         BM = UInt(BM),
         BN = UInt(BN),
         BK = UInt(BK),
@@ -403,9 +430,9 @@ fn flare_mla_decoding_dispatch[
     alias nullptr = UnsafePointer[Scalar[accum_type]]()
 
     var num_partitions_value: Int = 1
-    var q_device = DeviceBuffer[q.dtype](ctx, q.data, q.size(), owning=False)
+    var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
     var output_device = DeviceBuffer[output.dtype](
-        ctx, output.data, output.size(), owning=False
+        ctx, output.ptr, output.size(), owning=False
     )
     var nullptr_device = DeviceBuffer[accum_type](ctx, nullptr, 0, owning=False)
 
@@ -440,8 +467,7 @@ fn mla_decoding[
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    valid_length_shape: DimList,
-    valid_length_stride: DimList,
+    valid_layout: Layout,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
     BK: UInt,  # tile size in depth dimension
@@ -467,12 +493,10 @@ fn mla_decoding[
     batch_size: Int,
     num_partitions: Int,
     max_cache_valid_length: Int,  # longest KV cache entry
-    valid_length: NDBuffer[
+    valid_length: LayoutTensor[
         DType.uint32,
-        1,
+        valid_layout,
         MutableAnyOrigin,
-        valid_length_shape,
-        valid_length_stride,
     ],  # valid length per batch
     mask: mask_t,
     score_mod: score_mod_t,
@@ -493,11 +517,11 @@ fn mla_decoding[
     var exp_sum_offset = qk_max_offset
 
     # split-k intermediate buffers
-    var qk_max_batch_ptr: __type_of(qk_max_ptr) = {}
+    var qk_max_batch_ptr: type_of(qk_max_ptr) = {}
     if qk_max_ptr:
         qk_max_batch_ptr = qk_max_ptr.offset(qk_max_offset)
 
-    var exp_sum_batch_ptr: __type_of(exp_sum_ptr) = {}
+    var exp_sum_batch_ptr: type_of(exp_sum_ptr) = {}
     if exp_sum_ptr:
         exp_sum_batch_ptr = exp_sum_ptr.offset(exp_sum_offset)
 
@@ -525,34 +549,74 @@ fn mla_decoding[
     if not _is_cache_length_accurate:
         num_keys += seq_len
 
-    mla_decoding_single_batch[
-        BM=BM,
-        BN=BN,
-        BK=BK,
-        WM=WM,
-        WN=WN,
-        depth=depth,
-        depth_v=depth_v,
-        num_heads=num_heads,
-        num_threads=num_threads,
-        num_pipeline_stages=num_pipeline_stages,
-        group=group,
-        use_score_mod=use_score_mod,
-        decoding_warp_split_k=decoding_warp_split_k,
-    ](
-        q_ptr.offset(q_batch_offset),
-        k,
-        output_ptr.offset(output_batch_offset),
-        exp_sum_batch_ptr,
-        qk_max_batch_ptr,
-        scale,
-        UInt(num_keys),
-        UInt(num_partitions),
-        UInt(max_cache_valid_length),
-        mask,
-        score_mod,
-        batch_idx,
-    )
+    @parameter
+    if is_nvidia_gpu():
+        mla_decoding_single_batch[
+            BM=BM,
+            BN=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            depth=depth,
+            depth_v=depth_v,
+            num_heads=num_heads,
+            num_threads=num_threads,
+            num_pipeline_stages=num_pipeline_stages,
+            group=group,
+            use_score_mod=use_score_mod,
+            decoding_warp_split_k=decoding_warp_split_k,
+        ](
+            q_ptr.offset(q_batch_offset),
+            k,
+            output_ptr.offset(output_batch_offset),
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
+            scale,
+            UInt(num_keys),
+            UInt(num_partitions),
+            UInt(max_cache_valid_length),
+            mask,
+            score_mod,
+            batch_idx,
+        )
+    elif is_amd_gpu():
+        alias config = MHAConfig(
+            q_type,
+            num_heads,
+            depth,
+            num_queries_per_block=BM,
+            num_keys_per_block=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            num_pipeline_stages=num_pipeline_stages,
+            k_group_size=group,
+        )
+        mla_decoding_single_batch_amd[
+            depth_v=depth_v,
+            group=group,
+            config=config,
+            sink=False,
+        ](
+            output_ptr.offset(output_batch_offset),
+            q_ptr.offset(q_batch_offset),
+            k,
+            k,
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
+            seq_len,
+            num_keys,
+            num_partitions,
+            scale,
+            batch_idx,
+            Int(0),
+            mask,
+            None,
+        )
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="mla_decoding"
+        ]()
 
 
 @always_inline
@@ -635,7 +699,7 @@ fn mla_decoding_single_batch[
         alignment=alignment,
     ](
         rebind[
-            __type_of(
+            type_of(
                 LayoutTensorIter[
                     q_type,
                     Layout.row_major(BM, BK),
@@ -1149,34 +1213,44 @@ fn flare_mla_prefill[
     dtype: DType,
     output_type: DType,
     softmax_type: DType,
-    q_shape: DimList, //,
+    q_layout: Layout, //,
     use_score_mod: Bool = False,
     write_softmax_info: Bool = False,
     use_cascade_attention: Bool = False,
 ](
-    output: NDBuffer[mut=True, output_type, rank, *_],
-    q: NDBuffer[dtype, rank, _, q_shape, *_],
-    k: NDBuffer[_, 3, *_],
-    v: NDBuffer[_, 3, *_],
+    output: LayoutTensor[
+        mut=True, output_type, address_space = AddressSpace.GENERIC, **_
+    ],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
+    k: LayoutTensor[_, address_space = AddressSpace.GENERIC, **_],
+    v: LayoutTensor[_, address_space = AddressSpace.GENERIC, **_],
     k_rope: cache_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
-    valid_length: NDBuffer[DType.uint32, 1, *_],
-    cache_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    valid_length: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
+    cache_row_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
     softmax_info: OptionalReg[
-        NDBuffer[mut=True, softmax_type, 3, MutableAnyOrigin]
+        LayoutTensor[
+            mut=True, softmax_type, Layout.row_major[3](), MutableAnyOrigin
+        ]
     ] = None,
     cache_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ] = None,
     prev_output: OptionalReg[
-        NDBuffer[output_type, rank, MutableAnyOrigin]
+        LayoutTensor[output_type, Layout.row_major[rank](), MutableAnyOrigin]
     ] = None,
     prev_softmax_info: OptionalReg[
-        NDBuffer[softmax_type, 3, MutableAnyOrigin]
+        LayoutTensor[softmax_type, Layout.row_major[3](), MutableAnyOrigin]
     ] = None,
 ) raises:
     """MLA prefill kernel that would only be called in the optimized compute
@@ -1211,10 +1285,10 @@ fn flare_mla_prefill[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q),
-            trace_arg("k", k),
-            trace_arg("v", v),
-            trace_arg("output", output),
+            trace_arg("q", q.runtime_layout.shape.value),
+            trace_arg("k", k.runtime_layout.shape.value),
+            trace_arg("v", v.runtime_layout.shape.value),
+            trace_arg("output", output.runtime_layout.shape.value),
         )
 
     with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
@@ -1231,52 +1305,60 @@ fn flare_mla_prefill[
         else:
             max_prompt_len = Int(k_rope.max_prompt_length())
 
-        var cache_row_offsets_lt = LayoutTensor[
-            cache_row_offsets.type,
-            Layout.row_major[cache_row_offsets.rank](cache_row_offsets.shape),
-            MutableAnyOrigin,
-        ](
-            cache_row_offsets.data,
-            RuntimeLayout[
-                Layout.row_major[cache_row_offsets.rank](
-                    cache_row_offsets.shape
-                )
-            ].row_major(cache_row_offsets.get_shape().canonicalize()),
-        )
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[
-                k.type, Layout.row_major[k.rank](k.shape), MutableAnyOrigin
-            ](
-                k.data,
-                RuntimeLayout[Layout.row_major[k.rank](k.shape)].row_major(
-                    k.get_shape().canonicalize()
+            LayoutTensor[k.dtype, k.layout, MutableAnyOrigin](
+                k.ptr,
+                RuntimeLayout[k.layout].row_major(
+                    k.runtime_layout.shape.value.canonicalize()
                 ),
             ),
-            cache_row_offsets_lt,
+            LayoutTensor[
+                cache_row_offsets.dtype,
+                cache_row_offsets.layout,
+                MutableAnyOrigin,
+            ](
+                cache_row_offsets.ptr,
+                RuntimeLayout[cache_row_offsets.layout].row_major(
+                    cache_row_offsets.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[
-                v.type, Layout.row_major[v.rank](v.shape), MutableAnyOrigin
-            ](
-                v.data,
-                RuntimeLayout[Layout.row_major[v.rank](v.shape)].row_major(
-                    v.get_shape().canonicalize()
+            LayoutTensor[v.dtype, v.layout, MutableAnyOrigin](
+                v.ptr,
+                RuntimeLayout[v.layout].row_major(
+                    v.runtime_layout.shape.value.canonicalize()
                 ),
             ),
-            cache_row_offsets_lt,
+            LayoutTensor[
+                cache_row_offsets.dtype,
+                cache_row_offsets.layout,
+                MutableAnyOrigin,
+            ](
+                cache_row_offsets.ptr,
+                RuntimeLayout[cache_row_offsets.layout].row_major(
+                    cache_row_offsets.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
         )
         var k_rope_operand = KVCacheMHAOperand(k_rope)
 
         alias kv_num_heads = cache_t.kv_params.num_heads
         alias cache_depth = cache_t.kv_params.head_size
-        alias q_depth = q_shape.get[rank - 1]()
+        alias q_depth = Int(q_layout.shape[rank - 1])
+
+        alias num_keys_per_block = UInt(
+            64
+        ) if has_nvidia_gpu_accelerator() else UInt(
+            128
+        )  # BN = 64 for nvidia, 128 in the only supported BN for amd
 
         alias mha_config = MHAConfig(
             dtype,
-            UInt(q_shape.get[rank - 2]()),  # num_heads
-            UInt(k.shape.get[rank - 1]()),  # depth
-            num_keys_per_block=UInt(64),
-            WN=UInt(64),
+            UInt(Int(q_layout.shape[rank - 2])),  # num_heads
+            UInt(Int(k.layout.shape[rank - 1])),  # depth
+            num_keys_per_block=num_keys_per_block,
+            WN=num_keys_per_block,
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
         )
 
@@ -1306,7 +1388,7 @@ fn flare_mla_prefill[
         )
 
 
-# entrypoint for NDBuffer as K_rope input, used by tests.
+# entrypoint for LayoutTensor[mut=True, , Layout.row_major[3](), MutableAnyOrigin]as K_rope input, used by tests.
 @always_inline
 fn flare_mla_prefill[
     rank: Int,
@@ -1314,28 +1396,38 @@ fn flare_mla_prefill[
     score_mod_t: ScoreModTrait,
     dtype: DType,
     softmax_type: DType,
-    q_shape: DimList, //,
+    q_layout: Layout, //,
     use_score_mod: Bool = False,
     write_softmax_info: Bool = False,
     use_cascade_attention: Bool = False,
 ](
-    output: NDBuffer[mut=True, _, rank, *_],
-    q: NDBuffer[dtype, rank, _, q_shape, *_],
-    k: NDBuffer[_, 3, *_],
-    v: NDBuffer[_, 3, *_],
-    k_rope: NDBuffer[_, 4, *_],
+    output: LayoutTensor[
+        mut=True, _, address_space = AddressSpace.GENERIC, **_
+    ],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
+    k: LayoutTensor[_, address_space = AddressSpace.GENERIC, **_],
+    v: LayoutTensor[_, address_space = AddressSpace.GENERIC, **_],
+    k_rope: LayoutTensor[_, address_space = AddressSpace.GENERIC, **_],
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
-    valid_length: NDBuffer[DType.uint32, 1, *_],
-    cache_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    valid_length: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
+    cache_row_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
     softmax_info: OptionalReg[
-        NDBuffer[mut=True, softmax_type, 3, MutableAnyOrigin]
+        LayoutTensor[
+            mut=True, softmax_type, Layout.row_major[3](), MutableAnyOrigin
+        ]
     ] = None,
     cache_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ] = None,
 ) raises:
     constrained[rank == 3, "only support ragged inputs"]()
@@ -1352,10 +1444,10 @@ fn flare_mla_prefill[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q),
-            trace_arg("k", k),
-            trace_arg("v", v),
-            trace_arg("output", output),
+            trace_arg("q", q.runtime_layout.shape.value),
+            trace_arg("k", k.runtime_layout.shape.value),
+            trace_arg("v", v.runtime_layout.shape.value),
+            trace_arg("output", output.runtime_layout.shape.value),
         )
 
     with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
@@ -1370,63 +1462,57 @@ fn flare_mla_prefill[
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
         var cache_row_offsets_lt = LayoutTensor[
-            cache_row_offsets.type,
-            Layout.row_major[cache_row_offsets.rank](cache_row_offsets.shape),
+            cache_row_offsets.dtype,
+            cache_row_offsets.layout,
             MutableAnyOrigin,
         ](
-            cache_row_offsets.data,
-            RuntimeLayout[
-                Layout.row_major[cache_row_offsets.rank](
-                    cache_row_offsets.shape
-                )
-            ].row_major(cache_row_offsets.get_shape().canonicalize()),
+            cache_row_offsets.ptr,
+            RuntimeLayout[cache_row_offsets.layout].row_major(
+                cache_row_offsets.runtime_layout.shape.value.canonicalize()
+            ),
         )
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[
-                k.type, Layout.row_major[k.rank](k.shape), MutableAnyOrigin
-            ](
-                k.data,
-                RuntimeLayout[Layout.row_major[k.rank](k.shape)].row_major(
-                    k.get_shape().canonicalize()
+            LayoutTensor[k.dtype, k.layout, MutableAnyOrigin](
+                k.ptr,
+                RuntimeLayout[k.layout].row_major(
+                    k.runtime_layout.shape.value.canonicalize()
                 ),
             ),
             cache_row_offsets_lt,
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[
-                v.type, Layout.row_major[v.rank](v.shape), MutableAnyOrigin
-            ](
-                v.data,
-                RuntimeLayout[Layout.row_major[v.rank](v.shape)].row_major(
-                    v.get_shape().canonicalize()
+            LayoutTensor[v.dtype, v.layout, MutableAnyOrigin](
+                v.ptr,
+                RuntimeLayout[v.layout].row_major(
+                    v.runtime_layout.shape.value.canonicalize()
                 ),
             ),
             cache_row_offsets_lt,
         )
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[
-                k_rope.type,
-                Layout.row_major[k_rope.rank](k_rope.shape),
-                MutableAnyOrigin,
-            ](
-                k_rope.data,
-                RuntimeLayout[
-                    Layout.row_major[k_rope.rank](k_rope.shape)
-                ].row_major(k_rope.get_shape().canonicalize()),
+            LayoutTensor[k_rope.dtype, k_rope.layout, MutableAnyOrigin,](
+                k_rope.ptr,
+                RuntimeLayout[k_rope.layout].row_major(
+                    k_rope.runtime_layout.shape.value.canonicalize()
+                ),
             ),
         )
 
         alias output_type = output.dtype
-        alias kv_num_heads = k_rope.shape.get[2]()
-        alias cache_depth = k_rope.shape.get[3]()
-        alias q_depth = q_shape.get[rank - 1]()  # hard code for now
-
+        alias kv_num_heads = Int(k_rope.layout.shape[2])
+        alias cache_depth = Int(k_rope.layout.shape[3])
+        alias q_depth = Int(q.layout.shape[q.rank - 1])  # hard code for now
+        alias num_keys_per_block = UInt(
+            64
+        ) if has_nvidia_gpu_accelerator() else UInt(
+            128
+        )  # BN = 64 for nvidia, 128 in the only supported BN for amd
         alias mha_config = MHAConfig(
             dtype,
-            UInt(q_shape.get[rank - 2]()),
-            UInt(k.shape.get[rank - 1]()),
-            num_keys_per_block=UInt(64),
-            WN=UInt(64),
+            UInt(Int(q_layout.shape[rank - 2])),
+            UInt(Int(k.layout.shape[rank - 1])),
+            num_keys_per_block=num_keys_per_block,
+            WN=num_keys_per_block,
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
         )
 
@@ -1452,12 +1538,15 @@ fn flare_mla_prefill[
             ctx,
             softmax_info,
             cache_offsets,
-            OptionalReg[NDBuffer[output_type, rank, MutableAnyOrigin]](
-                output.get_immutable()
+            LayoutTensor[
+                output_type, Layout.row_major[rank](), MutableAnyOrigin
+            ](
+                output.get_immutable().ptr,
+                RuntimeLayout[Layout.row_major[rank]()].row_major(
+                    output.runtime_layout.shape.value.canonicalize()
+                ),
             ),
-            OptionalReg[NDBuffer[softmax_type, 3, MutableAnyOrigin]](
-                softmax_info.value().get_immutable()
-            ),
+            softmax_info,
         )
 
 
@@ -1472,7 +1561,7 @@ fn flare_mla_prefill_dispatch[
     dtype: DType,
     output_type: DType,
     softmax_type: DType,
-    q_shape: DimList, //,
+    q_layout: Layout, //,
     kv_num_heads: Int,
     use_score_mod: Bool = False,
     write_softmax_info: Bool = False,
@@ -1480,43 +1569,53 @@ fn flare_mla_prefill_dispatch[
     q_depth: Int = 192,
     cache_depth: Int = 576,
     config: MHAConfig = MHAConfig(
-        dtype, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
+        dtype,
+        UInt(Int(q_layout.shape[q_layout.rank() - 2])),
+        UInt(Int(q_layout.shape[q_layout.rank() - 1])),
     ),
     _ndbuffer_mha_operand: Bool = False,
 ](
-    output: NDBuffer[output_type, rank, *_],
-    q: NDBuffer[dtype, rank, _, q_shape, *_],
+    output: LayoutTensor[
+        output_type, address_space = AddressSpace.GENERIC, **_
+    ],
+    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, **_],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
-    valid_length: NDBuffer[DType.uint32, 1, *_],
+    valid_length: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     max_prompt_len: Int,
     scale: Float32,
     ctx: DeviceContext,
     softmax_info: OptionalReg[
-        NDBuffer[mut=True, softmax_type, 3, MutableAnyOrigin]
+        LayoutTensor[
+            mut=True, softmax_type, Layout.row_major[3](), MutableAnyOrigin
+        ]
     ] = None,
     cache_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ] = None,
     prev_output: OptionalReg[
-        NDBuffer[output_type, rank, MutableAnyOrigin]
+        LayoutTensor[output_type, Layout.row_major[rank](), MutableAnyOrigin]
     ] = None,
     prev_softmax_info: OptionalReg[
-        NDBuffer[softmax_type, 3, MutableAnyOrigin]
+        LayoutTensor[softmax_type, Layout.row_major[3](), MutableAnyOrigin]
     ] = None,
 ) raises:
     alias num_heads = config.num_heads
     alias depth = config.depth
     alias group = config.num_heads // UInt(kv_num_heads)
 
-    constrained[q_depth == q.shape.get[rank - 1]()]()
-    constrained[num_heads == UInt(q.shape.get[rank - 2]())]()
+    constrained[q_depth == Int(q.layout.shape[rank - 1])]()
+    constrained[num_heads == UInt(Int(q.layout.shape[rank - 2]))]()
     constrained[
-        has_nvidia_gpu_accelerator(),
-        "flareMLA_prefill currently only supports Nvidia GPUs.",
+        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
+        "flareMLA_prefill currently only supports Nvidia and AMD GPUs.",
     ]()
 
     var batch_size: Int = valid_length.dim[0]() - 1
@@ -1534,22 +1633,24 @@ fn flare_mla_prefill_dispatch[
     alias k_smem = BN * UInt(q_depth)
     alias v_smem = BN * depth
 
-    alias smem_use = (q_smem + k_smem + v_smem) * UInt(config.dtype.size_of())
+    alias smem_use = (q_smem + k_smem + v_smem) * UInt(
+        config.dtype.size_of()
+    ) if has_nvidia_gpu_accelerator() else 0
 
     var softmax_info_ptr = (
-        softmax_info.value().data if softmax_info else UnsafePointer[
+        softmax_info.value().ptr if softmax_info else UnsafePointer[
             Scalar[softmax_type]
         ]()
     )
     var softmax_info_size = softmax_info.value().size() if softmax_info else 0
     var prev_output_ptr = (
-        prev_output.value().data if prev_output else UnsafePointer[
+        prev_output.value().ptr if prev_output else UnsafePointer[
             Scalar[output_type]
         ]()
     )
     var prev_output_size = prev_output.value().size() if prev_output else 0
     var prev_softmax_info_ptr = (
-        prev_softmax_info.value().data if prev_softmax_info else UnsafePointer[
+        prev_softmax_info.value().ptr if prev_softmax_info else UnsafePointer[
             Scalar[softmax_type]
         ]()
     )
@@ -1557,9 +1658,9 @@ fn flare_mla_prefill_dispatch[
         prev_softmax_info.value().size() if prev_softmax_info else 0
     )
 
-    var q_device = DeviceBuffer[q.dtype](ctx, q.data, q.size(), owning=False)
+    var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
     var output_device = DeviceBuffer[output.dtype](
-        ctx, output.data, output.size(), owning=False
+        ctx, output.ptr, output.size(), owning=False
     )
     var softmax_info_device = DeviceBuffer[softmax_type](
         ctx, softmax_info_ptr, softmax_info_size, owning=False
@@ -1580,8 +1681,7 @@ fn flare_mla_prefill_dispatch[
         softmax_type,
         mask_t,
         score_mod_t,
-        valid_length.shape,
-        valid_length.strides,
+        valid_length.layout,
         config,
         group=group,
         use_score_mod=use_score_mod,
@@ -1630,8 +1730,7 @@ fn mla_prefill[
     softmax_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    valid_length_shape: DimList,
-    valid_length_stride: DimList,
+    valid_layout: Layout,
     config: MHAConfig,
     group: Int = 128,
     q_depth: Int = 192,
@@ -1652,14 +1751,16 @@ fn mla_prefill[
     scale: Float32,
     batch_size: Int,
     seq_len_arg: Int,
-    valid_length: NDBuffer[
+    valid_length: LayoutTensor[
         DType.uint32,
-        1,
+        valid_layout,
         MutableAnyOrigin,
-        valid_length_shape,
-        valid_length_stride,
     ],
-    cache_offsets: OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]],
+    cache_offsets: OptionalReg[
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
+    ],
     mask: mask_t,
     score_mod: score_mod_t,
 ):
@@ -1672,7 +1773,7 @@ fn mla_prefill[
     var num_keys: Int
     var start_pos: UInt32 = 0
     var cache_start_pos: UInt32 = 0
-    var total_seq_len: UInt32 = valid_length[batch_size]
+    var total_seq_len: UInt32 = valid_length[batch_size][0]
 
     constrained[
         softmax_type == get_accum_type[q_type](),
@@ -1703,39 +1804,65 @@ fn mla_prefill[
 
     if cache_offsets:
         var cache_offsets_nd = cache_offsets.value()
-        cache_start_pos = cache_offsets_nd[batch_idx]
+        cache_start_pos = cache_offsets_nd[batch_idx][0]
 
     q_batch_offset = start_of_seq * q_depth * config.num_heads
     o_batch_offset = start_of_seq * depth * config.num_heads
     softmax_info_offset = start_of_seq * 2 + total_seq_len * block_idx.y * 2
 
-    mla_prefill_single_batch[
-        config=config,
-        group=group,
-        q_depth=q_depth,
-        cache_depth=cache_depth,
-        use_score_mod=use_score_mod,
-        write_softmax_info=write_softmax_info,
-        use_cascade_attention=use_cascade_attention,
-    ](
-        q_ptr.offset(q_batch_offset),
-        k,
-        v,
-        k_rope,
-        output_ptr.offset(o_batch_offset),
-        softmax_info_accum_ptr.offset(softmax_info_offset),
-        prev_output_ptr.offset(o_batch_offset),
-        prev_softmax_info_accum_ptr.offset(softmax_info_offset),
-        scale,
-        seq_len,
-        max_seq_len,
-        start_pos,
-        cache_start_pos,
-        num_keys,
-        mask,
-        score_mod,
-        batch_idx,
-    )
+    @parameter
+    if is_nvidia_gpu():
+        mla_prefill_single_batch[
+            config=config,
+            group=group,
+            q_depth=q_depth,
+            cache_depth=cache_depth,
+            use_score_mod=use_score_mod,
+            write_softmax_info=write_softmax_info,
+            use_cascade_attention=use_cascade_attention,
+        ](
+            q_ptr.offset(q_batch_offset),
+            k,
+            v,
+            k_rope,
+            output_ptr.offset(o_batch_offset),
+            softmax_info_accum_ptr.offset(softmax_info_offset),
+            prev_output_ptr.offset(o_batch_offset),
+            prev_softmax_info_accum_ptr.offset(softmax_info_offset),
+            scale,
+            seq_len,
+            max_seq_len,
+            start_pos,
+            cache_start_pos,
+            num_keys,
+            mask,
+            score_mod,
+            batch_idx,
+        )
+    elif is_amd_gpu():
+        mla_prefill_single_batch_amd[
+            config=config,
+            group=group,
+            q_depth=q_depth,
+            cache_depth=cache_depth,
+        ](
+            output_ptr.offset(o_batch_offset),
+            q_ptr.offset(q_batch_offset),
+            k,
+            v,
+            k_rope,
+            seq_len,
+            max_seq_len,
+            scale,
+            batch_idx,
+            start_pos,
+            cache_start_pos,
+            mask,
+        )
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="mla_prefill_single_batch"
+        ]()
 
 
 @always_inline
@@ -1825,7 +1952,7 @@ fn mla_prefill_single_batch[
         alignment=alignment,
     ](
         rebind[
-            __type_of(
+            type_of(
                 LayoutTensorIter[
                     q_type,
                     Layout.row_major(BM, BK),
@@ -2105,7 +2232,7 @@ fn mla_prefill_single_batch[
         @always_inline
         @parameter
         fn _mask_tensor_row(
-            tensor: LayoutTensor, num_rows: Int, out result: __type_of(tensor)
+            tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
         ):
             return {
                 tensor.ptr,
@@ -2458,7 +2585,7 @@ fn mla_prefill_single_batch[
     @parameter
     if use_cascade_attention:
         # load previous iteration's softmax stats, and previous attn output.
-        var prev_output_gmem_tile: __type_of(output_gmem_tile) = {
+        var prev_output_gmem_tile: type_of(output_gmem_tile) = {
             prev_output_ptr + Int(output_offset),
             output_gemm_runtime_layout,
         }
@@ -2466,7 +2593,7 @@ fn mla_prefill_single_batch[
             Int(warp_y), Int(warp_x)
         )
 
-        prev_softmax_info_gmem_tile: __type_of(softmax_info_gmem_tile) = {
+        prev_softmax_info_gmem_tile: type_of(softmax_info_gmem_tile) = {
             prev_softmax_info_ptr + Int(softmax_info_offset),
         }
 
@@ -2651,13 +2778,13 @@ fn mla_prefill_single_batch[
 
 
 fn set_buffer_lengths_to_zero[
-    buffer_lengths_shape: DimList
+    buffer_lengths_layout: Layout
 ](
-    buffer_lengths: NDBuffer[
-        DType.int32, 1, MutableAnyOrigin, buffer_lengths_shape
+    buffer_lengths: LayoutTensor[
+        DType.int32, buffer_lengths_layout, MutableAnyOrigin
     ],
 ):
-    alias MAX_CHUNKS = buffer_lengths_shape.get[0]()
+    alias MAX_CHUNKS = Int(buffer_lengths_layout.shape[0])
 
     @parameter
     for chunk_idx in range(MAX_CHUNKS):
@@ -2668,10 +2795,18 @@ fn set_buffer_lengths_to_zero[
 fn mla_prefill_plan[
     cache_t: KVCacheT,
 ](
-    buffer_row_offsets: NDBuffer[mut=True, DType.uint32, 2, *_],
-    cache_offsets: NDBuffer[mut=True, DType.uint32, 2, *_],
-    buffer_lengths: NDBuffer[mut=True, DType.int32, 1, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    buffer_row_offsets: LayoutTensor[
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
+    cache_offsets: LayoutTensor[
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
+    buffer_lengths: LayoutTensor[
+        mut=True, DType.int32, address_space = AddressSpace.GENERIC, **_
+    ],
+    input_row_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     k_cache: cache_t,
     buffer_token_size: UInt32,
     ctx: DeviceContext,
@@ -2692,19 +2827,16 @@ fn mla_prefill_plan[
 
     if batch_size == 0:
         # Fill buffer lengths with 0
-        ctx.enqueue_function[set_buffer_lengths_to_zero[buffer_lengths.shape,]](
+        alias kernel = set_buffer_lengths_to_zero[buffer_lengths.layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             buffer_lengths, grid_dim=1, block_dim=1
         )
     else:
         alias kernel = mla_prefill_plan_kernel[
-            buffer_row_offsets.shape,
-            buffer_row_offsets.strides,
-            cache_offsets.shape,
-            cache_offsets.strides,
-            buffer_lengths.shape,
-            buffer_lengths.strides,
-            input_row_offsets.shape,
-            input_row_offsets.strides,
+            buffer_row_offsets.layout,
+            cache_offsets.layout,
+            buffer_lengths.layout,
+            input_row_offsets.layout,
             cache_t,
         ]
 
@@ -2722,43 +2854,31 @@ fn mla_prefill_plan[
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
 fn mla_prefill_plan_kernel[
-    buffer_row_offsets_shape: DimList,
-    buffer_row_offsets_stride: DimList,
-    cache_offsets_shape: DimList,
-    cache_offsets_stride: DimList,
-    buffer_lengths_shape: DimList,
-    buffer_lengths_stride: DimList,
-    input_row_offsets_shape: DimList,
-    input_row_offsets_stride: DimList,
+    buffer_row_offsets_layout: Layout,
+    cache_offsets_layout: Layout,
+    buffer_lengths_layout: Layout,
+    input_row_offsets_layout: Layout,
     cache_t: KVCacheT,
 ](
-    buffer_row_offsets: NDBuffer[
+    buffer_row_offsets: LayoutTensor[
         DType.uint32,
-        2,
+        buffer_row_offsets_layout,
         MutableAnyOrigin,
-        buffer_row_offsets_shape,
-        buffer_row_offsets_stride,
     ],
-    cache_offsets: NDBuffer[
+    cache_offsets: LayoutTensor[
         DType.uint32,
-        2,
+        cache_offsets_layout,
         MutableAnyOrigin,
-        cache_offsets_shape,
-        cache_offsets_stride,
     ],
-    buffer_lengths: NDBuffer[
+    buffer_lengths: LayoutTensor[
         DType.int32,
-        1,
+        buffer_lengths_layout,
         MutableAnyOrigin,
-        buffer_lengths_shape,
-        buffer_lengths_stride,
     ],
-    input_row_offsets: NDBuffer[
+    input_row_offsets: LayoutTensor[
         DType.uint32,
-        1,
+        input_row_offsets_layout,
         MutableAnyOrigin,
-        input_row_offsets_shape,
-        input_row_offsets_stride,
     ],
     k_cache: cache_t,
     buffer_token_size: UInt32,
@@ -2769,7 +2889,7 @@ fn mla_prefill_plan_kernel[
     var batch_size: Int = input_row_offsets.dim[0]() - 1
     var buffer_size: Int = Int(buffer_token_size)
 
-    alias MAX_CHUNKS = buffer_lengths.shape.get[0]()
+    alias MAX_CHUNKS = Int(buffer_lengths.layout.shape[0])
 
     if seq_idx >= UInt(batch_size):
         return
@@ -2838,11 +2958,17 @@ fn _k_cache_to_buffer[
     dtype: DType,
     cache_t: KVCacheT,
 ](
-    buffer_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    cache_offsets: NDBuffer[DType.uint32, 1, *_],
+    buffer_row_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
+    cache_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     k_cache: cache_t,
     length: Int32,
-    buffer: NDBuffer[mut=True, dtype, 2, *_],
+    buffer: LayoutTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+    ],
     context: DeviceContext,
 ) raises:
     alias num_heads = cache_t.kv_params.num_heads
@@ -2860,26 +2986,13 @@ fn _k_cache_to_buffer[
         var global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
-            LayoutTensor[
-                buffer_row_offsets.dtype,
-                Layout.row_major[buffer_row_offsets.rank](
-                    buffer_row_offsets.shape
-                ),
-            ](
-                buffer_row_offsets.data,
-                RuntimeLayout[
-                    Layout.row_major[buffer_row_offsets.rank](
-                        buffer_row_offsets.shape
-                    ),
-                ].row_major(buffer_row_offsets.get_shape().canonicalize()),
-            ),
-            global_token_idx,
+            buffer_row_offsets, global_token_idx
         )
 
         var token_idx = Int(
             global_token_idx
-            - buffer_row_offsets[batch_idx]
-            + cache_offsets[batch_idx]
+            - buffer_row_offsets[batch_idx][0]
+            + cache_offsets[batch_idx][0]
         )
 
         var head_dim_idx = idx[1]

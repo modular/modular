@@ -39,7 +39,7 @@ struct Dim(ImplicitlyCopyable, Movable, Stringable):
 trait TiledOp:
     @staticmethod
     fn op(
-        mut dst: LayoutTensor,
+        dst: LayoutTensor[mut=True, *_, **_],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
@@ -50,7 +50,7 @@ trait TiledOp:
 struct MMA(TiledOp):
     @staticmethod
     fn op(
-        mut dst: LayoutTensor,
+        dst: LayoutTensor[mut=True, *_, **_],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
@@ -72,7 +72,7 @@ struct MMA(TiledOp):
 struct MMA_Vec(TiledOp):
     @staticmethod
     fn op(
-        mut dst: LayoutTensor,
+        dst: LayoutTensor[mut=True, *_, **_],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
@@ -102,7 +102,9 @@ struct MMA_Vec(TiledOp):
 
 fn gemm_l2_cache[
     mma: TiledOp, L1: Dim, L2: Dim
-](dst: LayoutTensor, lhs: LayoutTensor, rhs: LayoutTensor) raises:
+](
+    dst: LayoutTensor[mut=True, *_, **_], lhs: LayoutTensor, rhs: LayoutTensor
+) raises:
     alias M = dst.shape[0]()
     alias N = dst.shape[1]()
     alias K = lhs.shape[1]()
@@ -155,7 +157,7 @@ fn gemm_l2_cache[
 
 fn gemm_l1_cache[
     mma: TiledOp, L1: Dim, L2: Dim
-](dst: LayoutTensor, lhs: LayoutTensor, rhs: LayoutTensor):
+](dst: LayoutTensor[mut=True, *_, **_], lhs: LayoutTensor, rhs: LayoutTensor):
     alias M = dst.shape[0]()
     alias N = dst.shape[1]()
     alias K = lhs.shape[1]()

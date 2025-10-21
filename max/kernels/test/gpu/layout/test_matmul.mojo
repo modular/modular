@@ -123,9 +123,9 @@ struct test_matmul[
             ptr: UnsafePointer[Scalar[dtype]],
             out result: LayoutTensor[dtype, layout, ptr.origin],
         ):
-            var dynamic_layout = __type_of(result.runtime_layout)(
-                __type_of(result.runtime_layout.shape)(m, n),
-                __type_of(result.runtime_layout.stride)(n, 1),
+            var dynamic_layout = type_of(result.runtime_layout)(
+                type_of(result.runtime_layout.shape)(m, n),
+                type_of(result.runtime_layout.stride)(n, 1),
             )
             return {ptr, dynamic_layout}
 

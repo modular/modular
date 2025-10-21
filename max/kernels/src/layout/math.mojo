@@ -25,7 +25,7 @@ from utils.index import IndexList
 
 @always_inline
 fn outer_product_acc(
-    res: LayoutTensor,
+    res: LayoutTensor[mut=True, *_, **_],
     lhs: LayoutTensor,
     rhs: LayoutTensor,
 ):
@@ -278,7 +278,7 @@ fn max[
         Currently only supports rank-2 inputs.
     """
 
-    var res_tensor = __type_of(res).stack_allocation()
+    var res_tensor = type_of(res).stack_allocation()
     max[axis](inp, res_tensor)
     return res_tensor
 
@@ -288,7 +288,7 @@ fn max[
     dtype: DType, layout: Layout
 ](
     x: LayoutTensor[dtype, layout, **_], y: LayoutTensor[dtype, layout, **_]
-) -> __type_of(x).MutableAnyType:
+) -> type_of(x).MutableAnyType:
     """Computes element-wise maximum of two tensors.
 
     Returns a new tensor containing the element-wise maximum between the
@@ -312,7 +312,7 @@ fn max[
     constrained[
         x.layout.all_dims_known(), "max expects tensor of statically know shape"
     ]()
-    var res_tensor = __type_of(x).stack_allocation()
+    var res_tensor = type_of(x).stack_allocation()
 
     @parameter
     for i in range(res_tensor.layout.size()):
@@ -357,7 +357,7 @@ fn sum[
         Currently only supports rank-2 inputs.
     """
 
-    var res_tensor = __type_of(res).stack_allocation()
+    var res_tensor = type_of(res).stack_allocation()
     sum[axis](inp, res_tensor)
     return res_tensor
 
@@ -370,6 +370,9 @@ fn mean(src: LayoutTensor[**_]) raises -> Scalar[src.dtype]:
 
     Returns:
         The mean value of the elements in the given buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
     """
     constrained[src.rank == 1, "src must be of rank 1"]()
 
@@ -399,6 +402,9 @@ fn mean[
     Args:
         src: The input buffer.
         dst: The output buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
     """
     alias simd_width = simd_width_of[dst.dtype]()
     sum[reduce_axis](src, dst)
@@ -462,6 +468,9 @@ fn variance(
 
     Returns:
         The variance value of the elements in a buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
     """
 
     @always_inline

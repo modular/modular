@@ -44,7 +44,7 @@ fn print_threads():
 def main():
     @parameter
     if not has_accelerator() or has_apple_gpu_accelerator():
-        print("No GPU detected")
+        print("No supported GPU detected")
         exit(0)
     else:
         # Initialize GPU context for device 0 (default GPU device).
