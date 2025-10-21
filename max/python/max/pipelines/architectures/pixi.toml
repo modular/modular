@@ -20,23 +20,24 @@ benchmark_text = { cmd = [
     "--sonnet-prefix-len", "2",
 ] }
 
-# quickly run a model with 1 text prompt and then shut it down
+# quickly run a model with 1 text and image prompt and then shut it down
+# <img> <start_of_image> <|image|> ???
 generate = { cmd = [
 	"max","generate",
 	"--model", "google/gemma-3-4B-it",
 	"--custom-architectures", "gemma3multimodal",
-	"--prompt", " what is in this image?",
+	"--prompt", "<img>what is in this image?",
     "--image_url", "https://gift-a-tree.com/wp-content/uploads/2021/10/Oak-tree-1.jpg"
 ] }
 
 # keep it clean
-linter = { cmd = ["../../../../bazelw", "run", "//:lint"] }
-formatter = { cmd = ["../../../../bazelw", "run", "//:format"] }
+linter = { cmd = ["../../../bazelw", "run", "//:lint"] }
+formatter = { cmd = ["../../../bazelw", "run", "//:format"] }
 lint = [{ task = "linter" }, { task = "formatter" }]
 
 # the py script uses OpenAI API to prompt the model with text and/or an image
 [tasks.test_serve]
-cmd = "./test_model.py --serve --model google/gemma-3-4B-it --architecture gemma3multimodal"
+cmd = "./test_model.py --serve --model google/gemma-3-4B-it --architecture gemma3multimodal --pretty-print-config"
 
 [tasks.test_generate]
 cmd = "./test_model.py --generate --model google/gemma-3-4B-it --architecture gemma3multimodal"
