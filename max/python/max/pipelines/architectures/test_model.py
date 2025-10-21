@@ -28,23 +28,21 @@ def test_vision(model_name: str, base_api_url: str, image_url: str = "https://gi
     completions = client.chat.completions.create(
         model=model_name,
         messages=[
+            { "role": "system", "content": "You are a helpful assistant that accurately describes images." },
             {
                 "role": "user",
                 "content": [
                     {
-                        "type": "text",
-                        "text": "What is in this image?"
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": image_url
+                        "type": "image", # "image_url"
+                        "image": { # "image_url": {
+                            "url": "https://gift-a-tree.com/wp-content/uploads/2021/10/Oak-tree-1.jpg"
                         }
                     },
+                    { "type": "text", "text": " What is in this image?" },
                 ]
             },
         ],
-        # reponse_format={"type": "json_object"}
+        # response_format={"type": "json_object"}
     )
     print(completions.choices[0].message.content)
 
