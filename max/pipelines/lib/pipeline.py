@@ -715,7 +715,7 @@ class TextGenerationPipeline(
                 else:
                     self._eos_token_id = set([eos_token_id])
             else:
-                msg = f"eos_token_id in huggingface_config, is neither int or list: {eos_tokens}"
+                msg = f"eos_token_id in huggingface_config is neither int or list: {eos_tokens}"
                 logger.warning(msg)
                 self._eos_token_id = set([eos_token_id])
 
