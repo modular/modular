@@ -337,6 +337,7 @@ def generate_llm_logits_with_optional_retry(
     output_path: Path,
     reference: list[ModelOutput] | None = None,
     retry_on_flake: bool = True,
+    timeout: int | None = None,
 ) -> None:
     """Generate logits with optional retry capability.
 
@@ -357,7 +358,7 @@ def generate_llm_logits_with_optional_retry(
                 print_output=False,
                 reference=reference,
             ),
-            timeout=600,
+            timeout=timeout if timeout is not None else 600,
         )
 
     try:
@@ -395,6 +396,7 @@ def run_llm_verification(
     relative_tolerance: float | None = None,
     cos_dist_threshold: float | None = None,
     kl_div_threshold: float | None = None,
+    timeout: int | None = None,
 ) -> VerificationVerdict:
     """Run a Llama3 verification with the given model and weights encoding.
 
@@ -420,6 +422,7 @@ def run_llm_verification(
             pipeline=pipeline,
             encoding=encoding,
             output_path=torch_golden_path,
+            timeout=timeout,
         )
 
     torch_results: list[ModelOutput] = NumpyDecoder().decode(
@@ -445,6 +448,7 @@ def run_llm_verification(
         encoding=encoding,
         output_path=max_golden_path,
         reference=torch_results,
+        timeout=timeout,
     )
 
     eval_metrics = []
@@ -531,6 +535,7 @@ def _make_pipeline_runner(
     relative_tolerance: float | None = None,
     cos_dist_threshold: float | None = None,
     kl_div_threshold: float | None = None,
+    timeout: int | None = None,
 ) -> Callable[[DeviceKind, str, bool, bool], VerificationVerdict]:
     """
     Build and return a small closure that executes `run_llm_verification`
@@ -548,6 +553,7 @@ def _make_pipeline_runner(
             (not element-wise).
         kl_div_threshold: Per-token KL-divergence threshold
             (not element-wise).
+        timeout: Timeout in seconds for the verification.
 
     Returns:
         A callable that runs the verification and yields a `VerificationVerdict`.
@@ -568,6 +574,7 @@ def _make_pipeline_runner(
             relative_tolerance=relative_tolerance,
             cos_dist_threshold=cos_dist_threshold,
             kl_div_threshold=kl_div_threshold,
+            timeout=timeout,
         )
     )
 
@@ -791,6 +798,7 @@ PIPELINES = {
             ),
             cos_dist_threshold=0.7,
             kl_div_threshold=8.0,
+            timeout=900,
         ),
     ),
     "mistralai/Mistral-Nemo-Instruct-2407-bfloat16": PipelineDef(
@@ -874,6 +882,7 @@ PIPELINES = {
             encoding="bfloat16",
             cos_dist_threshold=5.5e-03,
             kl_div_threshold=4.8e-02,
+            timeout=900,
         ),
     ),
     "OpenGVLab/InternVL3_5-8B-Instruct-bfloat16": PipelineDef(
@@ -939,6 +948,7 @@ PIPELINES = {
             encoding="bfloat16",
             cos_dist_threshold=7.0e-2,
             kl_div_threshold=2.6e-1,
+            timeout=900,
         ),
     ),
     "Qwen/Qwen3-8B-bfloat16": PipelineDef(
