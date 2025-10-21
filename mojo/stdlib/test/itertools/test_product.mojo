@@ -246,5 +246,13 @@ def test_product4_order():
     assert_equal(elem[3], 0)
 
 
+def test_product_bounds():
+    var it = product(range(3), range(2))
+    for i in range(6, -1, -1):
+        assert_equal(it.bounds()[0], i)
+        assert_equal(it.bounds()[1].value(), i)
+        var _ = next(it)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

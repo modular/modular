@@ -110,15 +110,22 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
         return self._inner_a_elem.unsafe_value().copy(), next(self._inner_b)
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
-        var a_bounds = self._inner_a.bounds()
-        var b_bounds = self._inner_b.bounds()
+        # compute a * initial_b + b for lower and upper
 
-        var lower_bound = a_bounds[0] * b_bounds[0]
-        var upper_bound = Optional[Int](None)
-        if a_bounds[1] and b_bounds[1]:
-            upper_bound = (
-                a_bounds[1].unsafe_value() * b_bounds[1].unsafe_value()
-            )
+        var a_bounds = self._inner_a.bounds()
+        var b_bounds = self._inner_b.bounds() if self._inner_a_elem else (
+            0,
+            Optional[Int](0),
+        )
+        var initial_b_bounds = self._initial_inner_b.bounds()
+
+        var lower_bound = a_bounds[0] * initial_b_bounds[0] + b_bounds[0]
+        if not a_bounds[1] or not initial_b_bounds[1]:
+            return (lower_bound, None)
+
+        var upper_bound = a_bounds[1].unsafe_value() * initial_b_bounds[
+            1
+        ].unsafe_value() + b_bounds[1].or_else(0)
         return (lower_bound, upper_bound)
 
 
