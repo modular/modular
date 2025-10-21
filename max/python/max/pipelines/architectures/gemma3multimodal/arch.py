@@ -20,6 +20,7 @@ from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
+    TextAndVisionTokenizer
 )
 
 from . import weight_adapters
@@ -46,7 +47,8 @@ gemma3_multimodal_arch = SupportedArchitecture(
     },
     pipeline_model=Gemma3_MultiModalModel,
     task=PipelineTask.TEXT_GENERATION,
-    tokenizer=TextTokenizer,
+    # TODO will we need our own? see notes on internvl specific tokenizer
+    tokenizer=TextAndVisionTokenizer,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     rope_type=RopeType.normal,
