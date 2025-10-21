@@ -19,7 +19,6 @@ from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
     SupportedEncoding,
-    TextTokenizer,
     TextAndVisionTokenizer
 )
 
