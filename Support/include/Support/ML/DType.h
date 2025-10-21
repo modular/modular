@@ -98,7 +98,6 @@ public:
 
     /// Bits 0 through 3 indicate the kind of FP value.
     f8e3m4 = 0 | mIsFloat,
-    f8e4m3 = 1 | mIsFloat,
     f8e4m3fn = 2 | mIsFloat,
     f8e4m3fnuz = 3 | mIsFloat,
     f8e5m2 = 4 | mIsFloat,
