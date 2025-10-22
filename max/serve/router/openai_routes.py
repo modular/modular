@@ -60,7 +60,7 @@ from max.interfaces import (
 )
 from max.pipelines.core.exceptions import InputError
 from max.pipelines.lib import PipelineConfig
-from max.profiler import Tracer, traced
+from max.profiler import traced
 from max.serve.config import Settings
 from max.serve.parser import LlamaToolParser, parse_json_from_text
 from max.serve.pipelines.llm import (
@@ -1026,11 +1026,8 @@ class OpenAICompletionResponseGenerator(
                     token.decoded_token,
                 )
 
-                tracer = Tracer("process_log_probabilities")
                 log_probs = _process_log_probabilities([token])
-                del tracer  # process_log_probabilities
 
-                tracer = Tracer("create_completion_stream_response")
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
                 # https://platform.openai.com/docs/api-reference/chat/object
@@ -1040,13 +1037,19 @@ class OpenAICompletionResponseGenerator(
                             index=0,
                             text=token.decoded_token,
                             logprobs=log_probs,
-                            finish_reason=None,
+                            finish_reason=get_finish_reason_from_status(
+                                token.status, allow_none=True
+                            ),
                         )
                     ]
                 else:
                     choices = [
                         CompletionResponseStreamChoice(
-                            index=0, text="", finish_reason=None
+                            index=0,
+                            text="",
+                            finish_reason=get_finish_reason_from_status(
+                                token.status, allow_none=False
+                            ),
                         )
                     ]
 
@@ -1060,11 +1063,8 @@ class OpenAICompletionResponseGenerator(
                     object="text_completion",
                 )
                 n_tokens += 1
-                del tracer  # create_completion_stream_response
 
-                tracer = Tracer("response.model_dump_json")
                 payload = response.model_dump_json()
-                del tracer  # response.model_dump_json
 
                 yield payload
 

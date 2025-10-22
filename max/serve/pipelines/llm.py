@@ -260,22 +260,27 @@ class TokenGeneratorPipeline(
                             )
                             del tracer  # collect_log_probs
 
+                        # Take the final status if last token.
+                        # For all intermediate tokens assume Active.
+                        if i == len(response.tokens) - 1:
+                            status = response.final_status
+                        else:
+                            status = GenerationStatus.ACTIVE
+
                         output = TokenGeneratorOutput(
                             decoded_token=decoded_token,
                             token_log_probabilities=token_log_probabilities,
                             top_log_probabilities=top_log_probabilities,
                             prompt_token_count=context.current_length,
                             stop_sequence=stop_sequence_match,
-                            status=response.final_status,
+                            status=status,
                         )
 
-                        tracer = Tracer("metrics_report_ttft_or_itl")
                         if i == 0:
                             METRICS.ttft(itl.elapsed_ms)
                         else:
                             METRICS.itl(itl.elapsed_ms)
                         itl.reset()
-                        del tracer  # metrics_report_ttft_or_itl
 
                         yield output
         finally:
