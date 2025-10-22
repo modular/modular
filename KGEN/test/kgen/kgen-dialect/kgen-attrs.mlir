@@ -159,7 +159,9 @@ kgen.generator export @bindIt(){
 }
 
 "some.op"() {
-  // CHECK: identityUpcast = #kgen.type<array<1, i1>> : !kgen.type
+  // CHECK: identityDowncast = #kgen.type<array<1, i1>> : !kgen.type
+  identityDowncast = #kgen.downcast<#kgen.type<array<1, i1>> : !kgen.type> : !kgen.type,
+  // CHECK-SAME: identityUpcast = #kgen.type<array<1, i1>> : !kgen.type
   identityUpcast = #kgen.upcast<#kgen.type<array<1, i1>> : !kgen.type> : !kgen.type
 } : () -> ()
 

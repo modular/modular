@@ -1043,13 +1043,15 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
     // TODO: Could turn this into a trait and push all this logic into the
     // attrs, which would also be nice for LIT attrs.
     if (opcode == (uint32_t)POCAliases::kInvalid) {
-      if (keyword == "upcast" && operandType) {
+      if ((keyword == "upcast" || keyword == "downcast") && operandType) {
         TypedAttr operand;
         if (parseParamValue(p, operand, operandType))
           return failure();
         if (p.parseRParen())
           return failure();
-        value = UpcastAttr::get(type, operand);
+
+        value = keyword == "upcast" ? UpcastAttr::get(type, operand)
+                                    : DowncastAttr::get(type, operand);
         return success();
       }
 
@@ -1415,12 +1417,21 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
   // Handle other expressions with the same syntax as ParamOperatorAttr
   // TODO: Could turn this into a trait like ParameterTypeInterface and push all
   // this logic into the attrs, which would also be nice for LIT attrs.
+  auto printCastAttr = [&](auto cast) {
+    printKGENType(p, cast.getInputTypeValue().getType());
+    p << ' ';
+    printParamValue(p, cast.getInputTypeValue());
+    p << ')';
+  };
+
   if (auto upcast = dyn_cast<UpcastAttr>(value)) {
     p << "upcast(:";
-    printKGENType(p, upcast.getInputTypeValue().getType());
-    p << ' ';
-    printParamValue(p, upcast.getInputTypeValue());
-    p << ')';
+    printCastAttr(upcast);
+    return;
+  }
+  if (auto downcast = dyn_cast<DowncastAttr>(value)) {
+    p << "downcast(:";
+    printCastAttr(downcast);
     return;
   }
 

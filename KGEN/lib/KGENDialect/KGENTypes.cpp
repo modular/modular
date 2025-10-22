@@ -98,12 +98,23 @@ Type ParamType::get(TypedAttr param) {
   // metatype calculation on ParamType is incorrect in ASTType.cpp?
 
   // If the parameter is already resolved to a constant, fold this to the
-  // indicated type.  ParamType does not propagate the typeValue.
+  // indicated type. ParamType does not propagate the typeValue.
+  //
+  // NOTE: Strictly speaking, the folding below is only lossless when types
+  // are consistent between the constant type value and the meta type, that is,
+  // `constant.getMlirType().getMetaType() == param.getType()`.
+  //
+  // FIXME: we should probably add some verification rules to verify the
+  // property above since we are implicitly relying on the assumption here.
   if (auto constant = sugarDynCast<TypeParamAttr>(param))
     return constant.getMlirType();
 
   // If this is an trait upcast, we can look through it because we don't
   // propagate the typeValue, only the mlirType.
+  //
+  // NOTE: we can not look through trait downcast because the sole purpose of
+  // downcast is to preserve both type value and the target type at the same
+  // time.
   if (auto upcast = sugarDynCast<UpcastAttr>(param))
     return get(upcast.getInputTypeValue());
 

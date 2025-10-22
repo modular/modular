@@ -410,7 +410,7 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
 
 
 //===----------------------------------------------------------------------===//
-// UpcastAttr
+// Upcast/DowncastAttr
 //===----------------------------------------------------------------------===//
 
 def KGEN_UpcastAttr : KGEN_ExprAttr<"Upcast", "upcast"> {
@@ -455,6 +455,55 @@ def KGEN_UpcastAttr : KGEN_ExprAttr<"Upcast", "upcast"> {
     static TypedAttr strip(TypedAttr value) {
       if (auto upcast = llvm::dyn_cast<UpcastAttr>(value))
         return upcast.getInputTypeValue();
+      return value;
+    }
+  }];
+}
+
+
+def KGEN_DowncastAttr : KGEN_ExprAttr<"Downcast", "downcast",
+  [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Rebind a type with metatype information to a new trait.";
+  let description = [{
+    The `#kgen.downcast` attribute is used to convert from a typeValue to a
+    typeValue of a more-derived trait. For example, this can represent a cast
+    from AnyType to Movable.
+
+    Note that parser does not (also can not) verify whether the downcast is
+    legal and a illegal downcast can lead to elaboration time error.
+
+
+    Example:
+
+    ```mlir
+    #kgen.downcast<:AnyType T> : !lit.trait<Movable>
+    ```
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "Type">:$type,
+    "TypedAttr":$inputTypeValue
+  );
+  let assemblyFormat = "`<` custom<TypeParamValue>($inputTypeValue) `>`";
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an DowncastAttr.
+    AttrBuilderWithInferredContext<(ins
+       "Type":$type, "TypedAttr":$inputTypeValue), "", "TypedAttr">,
+
+    // Verbose form with MLIRContext, needed for ODS constructors.
+    AttrBuilder<(ins "Type":$type, "TypedAttr":$inputTypeValue), [{
+      return get(type, inputTypeValue);
+    }], "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{
+    /// If the specified attribute is an downcast, remove it.
+    static TypedAttr strip(TypedAttr value) {
+      if (auto downcast = llvm::dyn_cast<DowncastAttr>(value))
+        return downcast.getInputTypeValue();
       return value;
     }
   }];
