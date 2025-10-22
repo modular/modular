@@ -8,8 +8,8 @@
 from math import iota
 from register import *
 import compiler_internal as compiler
-from tensor_internal import OutputTensor
-from tensor_internal.managed_tensor_slice import (
+from tensor import OutputTensor
+from tensor.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
 

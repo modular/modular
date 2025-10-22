@@ -7,9 +7,9 @@ mojo_library(
     validate_missing_docs = False,
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/lib/API/mojo/max/tensor",
         "@mojo//:compiler",
         "@mojo//:stdlib",
+        "@mojo//:tensor",
     ],
 )
 
@@ -20,10 +20,10 @@ mojo_library(
     validate_missing_docs = False,
     visibility = [":__subpackages__"],
     deps = [
-        "//SDK/lib/API/mojo/max/tensor",
         "@mojo//:compiler_internal",
         "@mojo//:register",
         "@mojo//:stdlib",
+        "@mojo//:tensor",
     ],
 )
 
@@ -35,10 +35,10 @@ mojo_library(
     visibility = [":__subpackages__"],
     deps = [
         "//SDK/lib/API/mojo/max/max",
-        "//SDK/lib/API/mojo/max/tensor",
         "@mojo//:compiler",
         "@mojo//:register",
         "@mojo//:stdlib",
+        "@mojo//:tensor",
     ],
 )
 
@@ -49,9 +49,9 @@ mojo_library(
     validate_missing_docs = False,
     visibility = [":__subpackages__"],
     deps = [
-        "//SDK/lib/API/mojo/max/tensor",
         "@mojo//:compiler_internal",
         "@mojo//:register",
         "@mojo//:stdlib",
+        "@mojo//:tensor",
     ],
 )

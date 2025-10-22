@@ -13,8 +13,8 @@ from tensor import (
     OutputTensor,
     InputVariadicTensors,
 )
-from tensor_internal import OutputVariadicTensors
-from tensor_internal.managed_tensor_slice import (
+from tensor import OutputVariadicTensors
+from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
 )
 from utils.index import IndexList

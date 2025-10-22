@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from tensor_internal.managed_tensor_slice import (
+from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
 )
 
