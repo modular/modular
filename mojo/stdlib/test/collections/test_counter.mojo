@@ -372,7 +372,7 @@ def test_sub():
 
     assert_equal(c3["a"], 3)
     assert_equal(c3["b"], 4)
-    # assert_equal(c3["c"], -3)  # TODO(MSTDL-1920): fix this
+    assert_equal(c3["c"], 0)
 
     # Check that the original counters are not modified
     assert_equal(c1["a"], 4)
@@ -381,8 +381,8 @@ def test_sub():
 
     c2 -= c1
 
-    # assert_equal(c2["a"], -3)  # TODO(MSTDL-1920): fix this
-    # assert_equal(c2["b"], -4)  # TODO(MSTDL-1920): fix this
+    assert_equal(c2["a"], 0)
+    assert_equal(c2["b"], 0)
     assert_equal(c2["c"], 3)
 
 
