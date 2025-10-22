@@ -31,7 +31,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -332,7 +332,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         self,
         session: InferenceSession,
         available_cache_memory: int | None,
-    ) -> TPPagedKVCacheManager:
+    ) -> PagedKVCacheManager:
         # For pipeline parallel, use layers per stage instead of total layers
         num_layers_for_cache = Llama3Config.get_num_layers(
             huggingface_config=self.huggingface_config

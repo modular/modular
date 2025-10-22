@@ -24,7 +24,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.nn.kv_cache import TPPagedKVCacheManager
+from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     EmbeddingsPipelineType,
@@ -90,7 +90,7 @@ def load_scheduler(
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         assert hasattr(pipeline, "speech_lm_pipeline")
         paged_manager = pipeline.speech_lm_pipeline._pipeline_model.kv_manager
-        assert isinstance(paged_manager, TPPagedKVCacheManager)
+        assert isinstance(paged_manager, PagedKVCacheManager)
 
         assert pipeline_config.ce_delay_ms is not None
         assert pipeline_config.enable_prioritize_first_decode is not None

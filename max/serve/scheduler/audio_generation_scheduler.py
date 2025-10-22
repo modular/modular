@@ -32,7 +32,7 @@ from max.interfaces import (
     SchedulerResult,
 )
 from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
-from max.nn.kv_cache import TPPagedKVCacheManager
+from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TTSContext
 from max.pipelines.lib import LoRAManager
 from max.pipelines.lib.audio_generator_pipeline import (
@@ -78,7 +78,7 @@ class SchedulerLogger:
     def log(
         self,
         batch: AudioGenerationSchedulerOutput,
-        paged_cache: TPPagedKVCacheManager,
+        paged_cache: PagedKVCacheManager,
         num_pending_reqs: int,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
@@ -248,7 +248,7 @@ class AudioGenerationScheduler(Scheduler):
             dict[RequestID, SchedulerResult[AudioGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        paged_manager: TPPagedKVCacheManager,
+        paged_manager: PagedKVCacheManager,
         offload_queue_draining: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config

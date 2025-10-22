@@ -72,7 +72,7 @@ class PagedCacheValues(NestedIterableDataclass):
     max_lengths: TensorValue
 
 
-class TPPagedKVCacheManager:
+class PagedKVCacheManager:
     page_size: int
     """Number of tokens stored per block."""
 
@@ -137,7 +137,7 @@ class TPPagedKVCacheManager:
 
         if params.data_parallel_degree > 1:
             raise ValueError(
-                "TPPagedKVCacheManager does not support data parallelism."
+                "PagedKVCacheManager does not support data parallelism."
             )
 
         # Attributes for managing available slots.
@@ -802,7 +802,7 @@ class TPPagedKVCacheManager:
         """Reserve a sequence ID for the given request ID."""
         if replica_idx != 0:
             raise ValueError(
-                "TPPagedKVCacheManager does not support multiple replicas"
+                "PagedKVCacheManager does not support multiple replicas"
             )
         if request_id in self._request_to_seq_id:
             raise ValueError(f"Request ID {request_id} is already claimed")

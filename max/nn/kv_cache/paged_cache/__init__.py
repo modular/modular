@@ -16,9 +16,9 @@ from .dp_cache_manager import DPPagedKVCacheManager
 from .tp_cache_manager import (
     PagedCacheInputSymbols,
     PagedCacheValues,
+    PagedKVCacheManager,
     ResetPrefixCacheBackend,
     ResetPrefixCacheFrontend,
-    TPPagedKVCacheManager,
 )
 from .transfer_engine import (
     KVTransferEngine,
@@ -33,9 +33,9 @@ __all__ = [
     "KVTransferEngineMetadata",
     "PagedCacheInputSymbols",
     "PagedCacheValues",
+    "PagedKVCacheManager",
     "ResetPrefixCacheBackend",
     "ResetPrefixCacheFrontend",
-    "TPPagedKVCacheManager",
     "TransferReqData",
     "available_port",
 ]

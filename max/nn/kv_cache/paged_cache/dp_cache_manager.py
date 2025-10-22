@@ -28,18 +28,15 @@ from ..cache_params import KVCacheParams
 from ..data_parallelism_utils import split_input_row_offsets, split_into_groups
 from ..manager import RaggedKVCacheInputs
 from ..metrics import KVCacheMetrics
-from .tp_cache_manager import (
-    PagedCacheInputSymbols,
-    TPPagedKVCacheManager,
-)
+from .tp_cache_manager import PagedCacheInputSymbols, PagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
 
 
-class DPPagedKVCacheManager(TPPagedKVCacheManager):
-    """Enhanced TPPagedKVCacheManager with support for data parallelism.
+class DPPagedKVCacheManager(PagedKVCacheManager):
+    """Enhanced PagedKVCacheManager with support for data parallelism.
 
-    This class extends the existing TPPagedKVCacheManager to use MultiBlockManager,
+    This class extends the existing PagedKVCacheManager to use MultiBlockManager,
     enabling efficient data parallelism across multiple kv cache replicas.
     """
 
@@ -106,11 +103,11 @@ class DPPagedKVCacheManager(TPPagedKVCacheManager):
         self.devices = devices
         self.devices_per_replica = split_into_groups(devices, num_replicas)
 
-        self._replica_managers: list[TPPagedKVCacheManager] = []
+        self._replica_managers: list[PagedKVCacheManager] = []
         dp_1_params = params.copy_as_dp_1()
         for devices in self.devices_per_replica:
             self._replica_managers.append(
-                TPPagedKVCacheManager(
+                PagedKVCacheManager(
                     params=dp_1_params,
                     max_batch_size=max_batch_size_per_replica,
                     max_seq_len=max_seq_len,

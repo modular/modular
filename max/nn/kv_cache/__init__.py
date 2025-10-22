@@ -12,11 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .cache_params import KVCacheParams, KVCacheStrategy
-from .manager import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-    RaggedKVCacheInputs,
-)
+from .manager import KVCacheInputs, KVCacheInputsSequence, RaggedKVCacheInputs
 from .metrics import KVCacheMetrics
 from .paged_cache import (
     DPPagedKVCacheManager,
@@ -24,7 +20,7 @@ from .paged_cache import (
     KVTransferEngineMetadata,
     PagedCacheInputSymbols,
     PagedCacheValues,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
     TransferReqData,
     available_port,
 )
@@ -46,8 +42,8 @@ __all__ = [
     "KVTransferEngineMetadata",
     "PagedCacheInputSymbols",
     "PagedCacheValues",
+    "PagedKVCacheManager",
     "RaggedKVCacheInputs",
-    "TPPagedKVCacheManager",
     "TransferReqData",
     "available_port",
     "build_max_lengths_tensor",

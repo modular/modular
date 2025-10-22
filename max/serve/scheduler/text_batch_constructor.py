@@ -24,12 +24,9 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.nn.kv_cache import TPPagedKVCacheManager
+from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core.context import TextContext
-from max.pipelines.lib import (
-    LoRAManager,
-    PipelineConfig,
-)
+from max.pipelines.lib import LoRAManager, PipelineConfig
 from max.profiler import traced
 from max.serve.telemetry.metrics import METRICS
 
@@ -120,7 +117,7 @@ class TextBatchConstructor:
         pipeline: Pipeline[
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
-        paged_cache: TPPagedKVCacheManager | None = None,
+        paged_cache: PagedKVCacheManager | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline

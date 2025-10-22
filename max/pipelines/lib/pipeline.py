@@ -24,13 +24,7 @@ from collections.abc import AsyncGenerator, Iterable, Sequence
 from dataclasses import dataclass
 from os import environ
 from pathlib import Path
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Generic,
-    Protocol,
-    runtime_checkable,
-)
+from typing import TYPE_CHECKING, Any, Generic, Protocol, runtime_checkable
 
 import llguidance.hf
 import llguidance.numpy
@@ -68,7 +62,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
     infer_optimal_batch_size,
 )
 from max.nn.transformer import ReturnLogits
@@ -438,7 +432,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 class KVCacheMixin(Protocol):
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> TPPagedKVCacheManager:
+    ) -> PagedKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:
@@ -489,13 +483,13 @@ class KVCacheMixin(Protocol):
 
 def get_paged_manager(
     pipeline: Pipeline[Any, Any],
-) -> TPPagedKVCacheManager | None:
+) -> PagedKVCacheManager | None:
     if hasattr(pipeline, "_pipeline_model") and hasattr(
         pipeline._pipeline_model, "kv_manager"
     ):
         kv_manager = pipeline._pipeline_model.kv_manager
-        # Accept standard TPPagedKVCacheManager
-        if isinstance(kv_manager, TPPagedKVCacheManager):
+        # Accept standard PagedKVCacheManager
+        if isinstance(kv_manager, PagedKVCacheManager):
             return kv_manager
         # Duck-type acceptance for multimodal managers exposing the same interface
         required_attrs = [
@@ -532,7 +526,7 @@ class _TextGenerationProtocol(
     Protocol, Generic[TextGenerationContextType, RequestType]
 ):
     @property
-    def kv_managers(self) -> list[TPPagedKVCacheManager]: ...
+    def kv_managers(self) -> list[PagedKVCacheManager]: ...
 
     @property
     def pipeline_config(self) -> PipelineConfig: ...
@@ -828,7 +822,7 @@ class TextGenerationPipeline(
     @property
     def kv_managers(
         self,
-    ) -> list[TPPagedKVCacheManager]:
+    ) -> list[PagedKVCacheManager]:
         return [self._pipeline_model.kv_manager]
 
     def calculate_num_steps(

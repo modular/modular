@@ -47,8 +47,8 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
     PagedCacheInputSymbols,
     PagedCacheValues,
+    PagedKVCacheManager,
     RaggedKVCacheInputs,
-    TPPagedKVCacheManager,
     build_max_lengths_tensor,
     estimate_kv_cache_size,
     infer_optimal_batch_size,
@@ -105,10 +105,10 @@ class MultimodalKVCacheManager:
       extensible KVCacheInput type.
     """
 
-    text_kv_manager: TPPagedKVCacheManager
+    text_kv_manager: PagedKVCacheManager
     """KV cache manager for text inputs."""
 
-    vision_kv_manager: TPPagedKVCacheManager
+    vision_kv_manager: PagedKVCacheManager
     """KV cache manager for image inputs."""
 
     def __init__(
@@ -151,7 +151,7 @@ class MultimodalKVCacheManager:
             page_size=page_size,
             session=session,
         )
-        assert isinstance(paged_text_kv_manager, TPPagedKVCacheManager)
+        assert isinstance(paged_text_kv_manager, PagedKVCacheManager)
         self.text_kv_manager = paged_text_kv_manager
 
         # Expose commonly used attributes from the text KV manager for downstream schedulers.
@@ -202,7 +202,7 @@ class MultimodalKVCacheManager:
         cache_memory = cache_memory_per_image * max_batch_size
 
         # Always use paged KV cache for the vision KV projections.
-        self.vision_kv_manager = TPPagedKVCacheManager(
+        self.vision_kv_manager = PagedKVCacheManager(
             params=self.vision_kv_params,
             max_batch_size=max_batch_size,
             max_seq_len=vision_max_seq_len,
@@ -264,7 +264,7 @@ class MultimodalKVCacheManager:
         assert "max_vision_seq_len" in kwargs, "max_vision_seq_len must be set"
         max_vision_seq_len = kwargs["max_vision_seq_len"]
 
-        vision_kv_cache_size = TPPagedKVCacheManager.estimated_memory_size(
+        vision_kv_cache_size = PagedKVCacheManager.estimated_memory_size(
             params,
             max_batch_size,
             max_vision_seq_len,
@@ -318,7 +318,7 @@ class MultimodalKVCacheManager:
         text_batch_size = infer_optimal_batch_size(
             params, max_seq_len, num_layers, text_cache_size, devices
         )
-        vision_batch_size = TPPagedKVCacheManager.infer_optimal_batch_size(
+        vision_batch_size = PagedKVCacheManager.infer_optimal_batch_size(
             params,
             max_vision_seq_len,
             num_vision_layers,
@@ -1278,7 +1278,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> TPPagedKVCacheManager:
+    ) -> PagedKVCacheManager:
         """Loads KV cache management objects for Llama vision.
 
         Args:

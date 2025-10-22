@@ -19,10 +19,10 @@ from max.driver import Device
 from max.engine import InferenceSession
 
 from .cache_params import KVCacheParams, KVCacheStrategy
-from .paged_cache import DPPagedKVCacheManager, TPPagedKVCacheManager
+from .paged_cache import DPPagedKVCacheManager, PagedKVCacheManager
 
-CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[TPPagedKVCacheManager]] = {
-    KVCacheStrategy.PAGED: TPPagedKVCacheManager,
+CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[PagedKVCacheManager]] = {
+    KVCacheStrategy.PAGED: PagedKVCacheManager,
 }
 
 
@@ -35,7 +35,7 @@ def load_kv_manager(
     session: InferenceSession,
     available_cache_memory: int | None = None,
     page_size: int | None = 512,
-) -> TPPagedKVCacheManager:
+) -> PagedKVCacheManager:
     assert max_batch_size is not None, "Expected max_batch_size to be set"
     assert max_batch_size > 0, "max_batch_size must be greater than 0"
     if params.cache_strategy == KVCacheStrategy.PAGED:
@@ -67,7 +67,7 @@ def load_kv_manager(
                 page_size=page_size,
             )
 
-        return TPPagedKVCacheManager(
+        return PagedKVCacheManager(
             params=params,
             max_batch_size=max_batch_size,
             max_seq_len=max_seq_len,

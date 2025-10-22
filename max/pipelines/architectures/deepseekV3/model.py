@@ -30,7 +30,7 @@ from max.nn.kv_cache import (
     DPPagedKVCacheManager,
     KVCacheInputs,
     KVCacheParams,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
     load_kv_manager,
 )
 from max.pipelines.core import TextContext
@@ -409,7 +409,7 @@ class DeepseekV3Model(DeepseekV2Model):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> TPPagedKVCacheManager:
+    ) -> PagedKVCacheManager:
         return load_kv_manager(
             params=DeepseekV3Config.get_kv_params(
                 huggingface_config=self.huggingface_config,
