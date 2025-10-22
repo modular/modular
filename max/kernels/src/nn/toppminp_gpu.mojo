@@ -836,6 +836,8 @@ fn _topp_minp_sampling_gpu[
         grid_dim=Dim(batch_size),
         block_dim=Dim(BLOCK_SIZE),
     )
+    _ = max_vals^
+    _ = skip_sort^
     _ = probs_buf^
     _ = ids_buf^
 

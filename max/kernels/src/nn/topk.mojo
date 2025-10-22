@@ -1809,6 +1809,8 @@ fn fused_token_sampling_gpu[
         seed=seed,
     )
 
+    _ = out_vals_buf^
+
 
 # ===-----------------------------------------------------------------------===#
 # Sampling Kernel with the Gumbel-max trick
@@ -2010,3 +2012,6 @@ fn gumbel_sampling_gpu[
         out_vals,
         out_idxs,
     )
+
+    _ = noised_input_buf^
+    _ = out_vals_buf^
