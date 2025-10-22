@@ -60,7 +60,6 @@ class DeepseekV2(Transformer):
             theta=config.rope_theta,
             max_seq_len=config.max_position_embeddings,
             scaling_params=scaling_params,
-            device=config.devices[0],
         )
 
         layers = [

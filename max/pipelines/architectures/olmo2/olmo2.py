@@ -49,7 +49,6 @@ class Olmo2(Transformer):
             head_dim=config.kv_params.head_dim,
             interleaved=config.interleaved_rope_weights,
             scaling_params=config.rope_scaling_params,
-            device=config.devices[0],
         )
 
         # Select norm layer class.

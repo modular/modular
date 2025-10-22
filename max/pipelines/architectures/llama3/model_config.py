@@ -78,7 +78,6 @@ def create_rope_embedding(
             max_seq_len=max_seq_len,
             interleaved=interleaved_rope_weights,
             scaling_params=longrope_scaling_params,
-            device=device,
         )
     else:
         return Llama3RotaryEmbedding(
@@ -88,7 +87,6 @@ def create_rope_embedding(
             max_seq_len=max_seq_len,
             interleaved=interleaved_rope_weights,
             scaling_params=rope_scaling_params,
-            device=device,
         )
 
 
