@@ -181,6 +181,11 @@ def get_lm_eval_cmd(model: str, task: str) -> list[str]:
         "qwen/qwen3-8b": ",max_gen_toks=4096",
     }.get(model, "")
 
+    gen_params = {
+        "qwen/qwen3-8b": ",temperature=0.6,top_p=0.95,top_k=20",
+        "opengvlab/internvl3_5-8b-instruct": ",temperature=0.6,top_p=0.95,top_k=20",
+    }.get(model, ",top_p=1,top_k=1,temperature=0")
+
     interpreter = (
         sys.executable if _inside_bazel() else ".venv-lm-eval/bin/python"
     )
@@ -206,7 +211,7 @@ def get_lm_eval_cmd(model: str, task: str) -> list[str]:
         "--seed",
         "42",
         "--gen_kwargs",
-        f"top_p=1,top_k=1,temperature=0,seed=42{max_gen_toks}",
+        f"seed=42{max_gen_toks}{gen_params}",
         "--log_samples",
     ]
 
