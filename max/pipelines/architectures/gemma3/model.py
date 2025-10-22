@@ -271,11 +271,6 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
     def load_model(self, session: InferenceSession) -> Model:
         """Loads the compiled Gemma 3 model into the MAX Engine session.
 
-        Note:
-            This method currently returns a dummy Model object and needs to be
-            implemented with the actual graph building and model loading logic
-            for Gemma 3.
-
         Args:
             session: The MAX Engine inference session.
 
@@ -443,10 +438,6 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Gemma 3 model with the prepared inputs.
 
-        Note:
-            This method currently returns dummy output and needs to be implemented
-            with the actual model execution logic for Gemma 3.
-
         Args:
             model_inputs: The prepared inputs for the model execution, typically including
                 token IDs, attention masks/offsets, and KV cache inputs.
@@ -506,11 +497,6 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the Gemma 3 model.
 
-        Note:
-            This method currently returns dummy inputs and needs to be implemented
-            with the actual input preparation logic for Gemma 3, considering
-            batching, ragged tensors, and KV cache integration.
-
         Args:
             context_batch: A sequence of :obj:`TextContext` objects representing
                 the input prompts.
@@ -522,7 +508,6 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         assert kv_cache_inputs is not None
         assert isinstance(kv_cache_inputs, KVCacheInputsSequence)
 
-        # This needs to be replaced with actual input preparation
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
@@ -552,11 +537,6 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         self, next_tokens: Tensor, prev_model_inputs: ModelInputs
     ) -> ModelInputs:
         """Prepares the inputs for subsequent execution steps in a multi-step generation.
-
-        Note:
-            This method currently returns dummy inputs and needs to be implemented
-            with the actual input preparation logic for subsequent steps in Gemma 3,
-            efficiently handling the next token and KV cache updates.
 
         Args:
             next_tokens: The tensor containing the token IDs generated in the previous step.
