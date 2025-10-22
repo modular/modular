@@ -303,6 +303,65 @@ def build_eval_summary(
     return summaries
 
 
+def _latest_samples_files(model: str, tasks: Sequence[str]) -> list[Path]:
+    """
+    Return the newest samples_*.jsonl file for each task we ran.
+    Assumes lm-eval was invoked with --log_samples.
+    """
+    out: list[Path] = []
+    results_dir = Path("./lm_eval_output") / safe_model_name(model)
+    if not results_dir.exists():
+        return out
+    for task in tasks:
+        candidates = sorted(
+            results_dir.glob(f"samples_{task}*.jsonl"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            out.append(candidates[0])
+    return out
+
+
+def _print_samples(files: Sequence[Path], print_cot: bool) -> None:
+    """
+    Print question/query and the model's first response from samples files.
+    Assumes 'resps' is [[str]] (one decode) and GSM8K uses 'question',
+    ChartQA uses 'query'.
+    """
+    if not files:
+        logger.info("No lm-eval sample files found to print.")
+        return
+
+    for fpath in files:
+        logger.info(f"\n--- Printing model responses from {fpath.name} ---\n")
+        with fpath.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                item = json.loads(line)
+                doc = item.get("doc", {})
+                question = doc.get("question") or doc.get("query") or ""
+                resps = item["resps"]
+                resp_text: str = resps[0][0]
+
+                target = str(item.get("target")) if "target" in item else None
+
+                filt = item["filtered_resps"]
+                extracted = (
+                    filt[0] if isinstance(filt, list) and filt else str(filt)
+                )
+
+                correct = target is not None and extracted == target
+                status = "✅" if correct else "❌"
+
+                prefix_q = "🧮" if "question" in doc else "📊"
+                logger.info(f"{prefix_q} {question}")
+                if print_cot:
+                    logger.info(f"🤖💭 {resp_text}")
+                logger.info(f"{status} {extracted}")
+
+
 @click.command()
 @click.argument(
     "hf_model_path",
@@ -322,8 +381,24 @@ def build_eval_summary(
     default=None,
     help="If provided, write the summary of the smoke test to this file",
 )
+@click.option(
+    "--print-responses",
+    is_flag=True,
+    default=False,
+    help="Print question/response pairs from lm-eval samples after the run finishes",
+)
+@click.option(
+    "--print-cot",
+    is_flag=True,
+    default=False,
+    help="Print the model's chain-of-thought reasoning for each sample. Must be used with --print-responses",
+)
 def smoke_test(
-    hf_model_path: str, framework: str, output_file: Path | None
+    hf_model_path: str,
+    framework: str,
+    output_file: Path | None,
+    print_responses: bool,
+    print_cot: bool,
 ) -> None:
     """
     Example usage: ./bazelw run smoke-test -- meta-llama/llama-3.2-1b-instruct
@@ -337,6 +412,9 @@ def smoke_test(
     A 1.0 value means 100% accuracy.
 
     """
+    if print_cot and not print_responses:
+        raise ValueError("--print-cot must be used with --print-responses")
+
     model = hf_model_path.lower().strip()
     cmd = get_server_cmd(framework, model)
 
@@ -397,6 +475,10 @@ def smoke_test(
     if output_file is not None:
         output_file.write_text(summary_json)
         logger.info(f"Wrote EvalSummary JSON to {output_file.resolve()}")
+
+    if print_responses:
+        files = _latest_samples_files(model, tasks)
+        _print_samples(files, print_cot)
 
     time.sleep(1)
     logger.info("Smoke test completed")
