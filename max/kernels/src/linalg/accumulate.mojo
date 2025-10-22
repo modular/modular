@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.optional import OptionalReg
+from layout import LayoutTensor, Layout
 from math import fma
 from sys import align_of, prefetch
 from sys.info import CompilationTarget
@@ -598,6 +599,85 @@ struct _Accumulator[
                 partial_load_b_size,
             )
 
+    @always_inline
+    fn accumulate[
+        a_type: DType,
+        b_type: DType, //,
+        # TODO: move the following params to accumulate function.
+        prefetch_offset: OptionalReg[Int] = None,
+        partial_load_b: Bool = False,
+    ](
+        mut self,
+        length: Int,
+        a: UnsafePointer[Scalar[a_type], **_],
+        a_base_offsets: LayoutTensor[DType.int32, Layout.row_major(num_rows)],
+        a_offset: Int,
+        b: UnsafePointer[Scalar[b_type], **_],
+        b_stride: Int,
+        partial_load_b_size: OptionalReg[Int] = None,
+    ):
+        """Compute c += a * b with register tiling on SIMD ISAs.
+
+        This version applies to the cases where the rows in A are not separated
+        evenly by a single stride. E.x. pointwise conv with stride > 1.
+
+        Parameters:
+            a_type: DType of the a.
+            b_type: DType of the b.
+            prefetch_offset: The distance to  prefetch ahead.
+            partial_load_b: Whether use partial load for B.
+
+        Args:
+            length: Number of elements in accumulation.
+            a: The input buffer A.
+            a_base_offsets: Base offsets of rows in A.
+            a_offset: Offset into A rows.
+            b: The input buffer B.
+            b_stride: B's stride between each `num_cols x simd_width` segment.
+            partial_load_b_size: The partial load B size.
+
+
+        The A offsets work as follow:
+
+            a_base_offsets[0]: ------------------------------
+            a_base_offsets[1]: ------------------------------
+            ...
+            a_base_offsets[2]: ------------------------------
+            ...
+            ...
+            a_base_offsets[3]: ------------------------------
+                                    ^                    ^
+                                a_offset        a_offset + length
+        """
+
+        @parameter
+        if CompilationTarget.has_neon():
+            self._accumulate_neon[
+                prefetch_offset=None,
+                partial_load_b=partial_load_b,
+            ](
+                length,
+                a,
+                a_base_offsets,
+                a_offset,
+                b,
+                b_stride,
+                partial_load_b_size,
+            )
+        else:
+            self._accumulate_x86_simd[
+                prefetch_offset=prefetch_offset,
+                partial_load_b=partial_load_b,
+            ](
+                length,
+                a,
+                a_base_offsets,
+                a_offset,
+                b,
+                b_stride,
+                partial_load_b_size,
+            )
+
     # ===-------------------------------------------------------------------===#
     # Accumulation optimized for AVX2 and AVX512
     # ===-------------------------------------------------------------------===#
@@ -759,6 +839,70 @@ struct _Accumulator[
 
             b_ptr = b_ptr + b_stride
 
+    @always_inline
+    fn _accumulate_x86_simd[
+        a_type: DType,
+        b_type: DType, //,
+        prefetch_offset: OptionalReg[Int] = None,
+        partial_load_b: Bool = False,
+    ](
+        mut self,
+        length: Int,
+        a: UnsafePointer[Scalar[a_type], **_],
+        a_base_offsets: LayoutTensor[DType.int32, Layout.row_major(num_rows)],
+        a_offset: Int,
+        b: UnsafePointer[Scalar[b_type], **_],
+        b_stride: Int,
+        partial_load_b_size: OptionalReg[Int] = None,
+    ):
+        """Accumulation optimized for AVX512 and AVX2."""
+
+        constrained[not CompilationTarget.has_neon()]()
+
+        alias kernel_width = num_cols * simd_width
+        var b_ptr = b
+
+        for l in range(length):
+            # prefetch
+            @parameter
+            if prefetch_offset:
+
+                @parameter
+                for j in range(num_cols):
+                    prefetch[
+                        PrefetchOptions()
+                        .for_read()
+                        .high_locality()
+                        .to_data_cache()
+                    ](
+                        b_ptr
+                        + prefetch_offset.value() * kernel_width
+                        + j * simd_width
+                    )
+
+            @parameter
+            for i in range(row_start, row_stop):
+                # Broadcast an scalar from A to a simd vector.
+                var a_idx = Int(a_base_offsets[i]) + a_offset + l
+                var a_splat_vec = SIMD[a_type, simd_width](a[a_idx])
+
+                @parameter
+                for j in range(num_cols):
+                    # Load a simd vector from B.
+                    var b_vec = _simd_load_maybe_partial[
+                        simd_width, partial_load_b
+                    ](b_ptr, j * simd_width, partial_load_b_size)
+
+                    # The following should be lifted to registers and show up as
+                    # FMA instructions.
+                    self[i, j] = fma(
+                        a_splat_vec.cast[dtype](),
+                        b_vec.cast[dtype](),
+                        self[i, j],
+                    )
+
+            b_ptr = b_ptr + b_stride
+
     # ===-------------------------------------------------------------------===#
     # Accumulation optimized for NEON
     # ===-------------------------------------------------------------------===#
@@ -866,6 +1010,65 @@ struct _Accumulator[
         length: Int,
         a: UnsafePointer[Scalar[a_type], **_],
         a_base_offsets: NDBuffer[DType.int32, 1, _, num_rows],
+        a_offset: Int,
+        b: UnsafePointer[Scalar[b_type], **_],
+        b_stride: Int,
+        partial_load_b_size: OptionalReg[Int] = None,
+    ):
+        """Accumulation optimized for NEON."""
+        constrained[CompilationTarget.has_neon()]()
+
+        @parameter
+        @always_inline
+        fn micro_kernel[num_lanes: Int](offset: Int):
+            var a_vecs = InlineArray[SIMD[a_type, num_lanes], num_rows](
+                uninitialized=True
+            )
+
+            # Load vectors of size num_lanes from input.
+            @parameter
+            for i in range(row_start, row_stop):
+                var a_idx = Int(a_base_offsets[i]) + a_offset + offset
+                a_vecs[i] = a.load[width=num_lanes](a_idx)
+
+            var b_ptr = b + offset * b_stride
+
+            @parameter
+            for lane in range(num_lanes):
+
+                @parameter
+                for j in range(num_cols):
+                    # Load a simd vector from B.
+                    var b_vec = _simd_load_maybe_partial[
+                        simd_width, partial_load_b
+                    ](b_ptr, j * simd_width, partial_load_b_size)
+
+                    @parameter
+                    for i in range(row_start, row_stop):
+                        # The following should be lifted to registers and show up as
+                        # FMA instructions.
+                        self[i, j] = fma[dtype=dtype, width=simd_width](
+                            a_vecs[i][lane].cast[dtype](),
+                            b_vec.cast[dtype](),
+                            self[i, j],
+                        )
+
+                b_ptr += b_stride
+
+        # Load vectors from A first. The remainder is handled one element at a time.
+        tile[micro_kernel, VariadicList[Int](simd_width, 1)](0, length)
+
+    @always_inline
+    fn _accumulate_neon[
+        a_type: DType,
+        b_type: DType, //,
+        prefetch_offset: OptionalReg[Int] = None,
+        partial_load_b: Bool = False,
+    ](
+        mut self,
+        length: Int,
+        a: UnsafePointer[Scalar[a_type], **_],
+        a_base_offsets: LayoutTensor[DType.int32, Layout.row_major(num_rows)],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], **_],
         b_stride: Int,

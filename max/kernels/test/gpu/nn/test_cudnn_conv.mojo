@@ -108,18 +108,16 @@ fn test_conv_cudnn[
     ctx.enqueue_copy(filter_nchw_dev.buffer, filter_nchw_host.tensor.data)
 
     conv_gpu[
-        4,
-        4,
-        input_dim,
-        filter_dim,
-        output_dim,
+        type_of(input_dev.to_layout_tensor()).layout,
+        type_of(filter_dev.to_layout_tensor()).layout,
+        type_of(output_ref_dev.to_layout_tensor()).layout,
         input_type,
         filter_type,
         output_type,
     ](
-        input_dev.tensor,
-        filter_dev.tensor,
-        output_ref_dev.tensor,
+        input_dev.to_layout_tensor().as_any_origin(),
+        filter_dev.to_layout_tensor().as_any_origin(),
+        output_ref_dev.to_layout_tensor().as_any_origin(),
         stride_dim,
         dilation_dim,
         pad_dim,
@@ -128,9 +126,9 @@ fn test_conv_cudnn[
     )
 
     conv_cudnn[input_type, filter_type, output_type](
-        input_dev.tensor,
-        filter_nchw_dev.tensor,
-        output_dev.tensor,
+        input_dev.to_layout_tensor(),
+        filter_nchw_dev.to_layout_tensor(),
+        output_dev.to_layout_tensor(),
         stride_dim,
         dilation_dim,
         pad_dim,
