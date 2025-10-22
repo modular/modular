@@ -13,7 +13,7 @@ modular_py_test(
         "@mojo//:MOGGPrimitives",
         "@mojo//:compiler_internal",
         "@mojo//:stdlib",
-        "@mojo//:tensor_internal",
+        "@mojo//:tensor",
     ],
     tags = ["gpu"],
     target_compatible_with = select({

@@ -11,6 +11,6 @@ mojo_library(
         "@mojo//:MOGGPrimitives",
         "@mojo//:compiler_internal",
         "@mojo//:stdlib",
-        "@mojo//:tensor_internal",
+        "@mojo//:tensor",
     ],
 )

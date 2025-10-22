@@ -18,7 +18,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from compiler_internal import register
-from tensor_internal import (
+from tensor import (
     InputTensor,
     OutputTensor,
     foreach,
