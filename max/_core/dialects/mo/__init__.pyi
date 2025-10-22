@@ -3573,28 +3573,6 @@ class IsNanOp(max._core.Operation):
     @property
     def input_x(self) -> max._core.Value[TensorType]: ...
 
-class IsqrtOp(max._core.Operation):
-    """
-    Returns `1/sqrt(x)`, where `x` is the input tensor.
-
-    Example:
-
-    ```mlir
-      %arg: !mo.tensor<[2, 3], f32>
-      %res = mo.isqrt(%arg) : !mo.tensor<[2, 3], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-
 class LayerNormOp(max._core.Operation):
     """
     Layer normalization operation which operates on the last dimension of
@@ -5596,6 +5574,28 @@ class RoundOp(max._core.Operation):
     ```mlir
       %arg: !mo.tensor<[2, 3], f32>
       %res = mo.round(%arg) : !mo.tensor<[2, 3], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+
+class RsqrtOp(max._core.Operation):
+    """
+    Returns `1/sqrt(x)`, where `x` is the input tensor.
+
+    Example:
+
+    ```mlir
+      %arg: !mo.tensor<[2, 3], f32>
+      %res = mo.rsqrt(%arg) : !mo.tensor<[2, 3], f32>
     ```
     """
 

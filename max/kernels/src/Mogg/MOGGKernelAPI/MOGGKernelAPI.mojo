@@ -760,8 +760,8 @@ struct Sqrt(ElementwiseUnaryOp):
         return sqrt(x)
 
 
-@compiler.register("mo.isqrt")
-struct Isqrt(ElementwiseUnaryOp):
+@compiler.register("mo.rsqrt")
+struct Rsqrt(ElementwiseUnaryOp):
     @staticmethod
     fn elementwise[
         dtype: DType,
