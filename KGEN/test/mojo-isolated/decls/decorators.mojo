@@ -479,3 +479,54 @@ struct RaisingFieldwiseInit(ImplicitlyCopyable, Movable):
     # CHECK-LABEL: lit.fn @"__init__{{.*}} throws
     fn __init__(out self, x: Int) raises:
         pass
+
+fn register_internal(x: StaticString):
+    pass
+
+# CHECK-LABEL: lit.struct.decl @DecoratorOrder1
+# CHECK-SAME: register_passable_trivial
+# CHECK-SAME: deprecationWarning = "DecoratorOrder1"
+# CHECK: decorators <{{.*}}:string "custom.op"
+# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder1
+@register_internal("custom.op")
+@deprecated("DecoratorOrder1")
+@fieldwise_init
+@register_passable("trivial")
+struct DecoratorOrder1:
+    var a: Int
+
+# CHECK-LABEL: lit.struct.decl @DecoratorOrder2
+# CHECK-SAME: register_passable_trivial
+# CHECK-SAME: deprecationWarning = "DecoratorOrder2"
+# CHECK: decorators <{{.*}}:string "custom.op"
+# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder2
+@deprecated("DecoratorOrder2")
+@register_internal("custom.op")
+@register_passable("trivial")
+@fieldwise_init
+struct DecoratorOrder2:
+    var a: Int
+
+# CHECK-LABEL: lit.struct.decl @DecoratorOrder3
+# CHECK-SAME: register_passable_trivial
+# CHECK-SAME: deprecationWarning = "DecoratorOrder3"
+# CHECK: decorators <{{.*}}:string "custom.op"
+# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder3
+@register_passable("trivial")
+@fieldwise_init
+@deprecated("DecoratorOrder3")
+@register_internal("custom.op")
+struct DecoratorOrder3:
+    var a: Int
+
+# CHECK-LABEL: lit.struct.decl @DecoratorOrder4
+# CHECK-SAME: register_passable_trivial
+# CHECK-SAME: deprecationWarning = "DecoratorOrder4"
+# CHECK: decorators <{{.*}}:string "custom.op"
+# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder4
+@fieldwise_init
+@register_passable("trivial")
+@register_internal("custom.op")
+@deprecated("DecoratorOrder4")
+struct DecoratorOrder4:
+    var a: Int
