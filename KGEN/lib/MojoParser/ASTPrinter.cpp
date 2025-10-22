@@ -1078,6 +1078,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
               {KGENDType::f8e5m2fnuz, "Float8_e5m2fnuz"},
               {KGENDType::f8e4m3fn, "Float8_e4m3fn"},
               {KGENDType::f8e4m3fnuz, "Float8_e4m3fnuz"},
+              {KGENDType::f8e3m4, "Float8_e3m4"},
               {KGENDType::bf16, "BFloat16"},
               {KGENDType::f16, "Float16"},
               {KGENDType::f32, "Float32"},

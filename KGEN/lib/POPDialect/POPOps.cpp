@@ -17,6 +17,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPEnums.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/POPDialect/POPUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/MDialect/MAttrs.h"
@@ -661,36 +662,6 @@ bool PointerToIndexOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
 //===----------------------------------------------------------------------===//
 // CastToBuiltinOp
 //===----------------------------------------------------------------------===//
-
-/// Verify the conversion between the higher-level type and lower-level type.
-static LogicalResult
-verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
-                     SIMDType simd, Type builtinType) {
-  // Verify the SIMD size matches the vector size and the dtypes match.
-  auto size = simd.getResolvedSize();
-  if (size && *size == 1) {
-    // Scalar case
-    auto dtype = dyn_cast<DTypeConstantAttr>(simd.getDType());
-    if (dtype && !dtype.isConvertibleTo(builtinType))
-      return emitError("cannot convert from scalar dtype ")
-             << dtype.getDType().getAsString() << " to " << builtinType;
-    return success();
-  }
-
-  auto vector = dyn_cast<VectorType>(builtinType);
-  if (!vector || vector.getRank() != 1 || vector.isScalable())
-    return emitError("expected a rank 1 non-scalable vector");
-
-  if (size && *size != vector.getShape().front())
-    return emitError("expected vector<") << *size << "xT>";
-
-  if (auto dtype = dyn_cast<DTypeConstantAttr>(simd.getDType());
-      dtype && !dtype.isConvertibleTo(vector.getElementType()))
-    return emitError("cannot convert from SIMD dtype ")
-           << dtype.getDType().getAsString() << " to vector element "
-           << vector.getElementType();
-  return success();
-}
 
 LogicalResult CastToBuiltinOp::verify() {
   return verifyConversionCast(

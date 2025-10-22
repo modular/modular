@@ -83,3 +83,24 @@ DType M::getEquivalentDType(IntegerType intType) {
     return {}; // invalid denotes failure
   return *optDType;
 }
+
+std::pair<DType, std::optional<int64_t>> M::getEquivalentDType(Type type) {
+  std::optional<int64_t> vecSize;
+
+  // Consume any vector size present
+  if (auto vecTy = dyn_cast<VectorType>(type)) {
+    // DTypes can only represent static shapes
+    if (!vecTy.hasStaticShape())
+      return {{}, vecSize};
+    vecSize = vecTy.getNumElements();
+    type = vecTy.getElementType();
+  }
+
+  DType dtype;
+  if (auto intty = dyn_cast<IntegerType>(type))
+    dtype = M::getEquivalentDType(intty);
+  else if (auto fpty = dyn_cast<FloatType>(type))
+    dtype = M::getEquivalentDType(fpty);
+
+  return {dtype, vecSize};
+}

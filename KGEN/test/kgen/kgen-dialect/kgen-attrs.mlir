@@ -217,6 +217,34 @@ kgen.generator @closureSymbol(){
   llvm_bitcode_libs_empty = #kgen<llvm.bitcode.libs[]>
 } : () -> ()
 
+"some.op"() {
+    // CHECK: a = 139 : ui8,
+    a = #pop.dtype_to_ui8<si32> : ui8,
+    // CHECK-SAME: b = #pop.dtype_to_ui8<foo> : ui8
+    b = #pop.dtype_to_ui8<foo>  : ui8
+} : () -> ()
+
+"some.op"() {
+  // CHECK: a = #pop.cast_from_builtin<#M.dense_array<2, 5> : vector<2xsi32> to <2, si32>> : !pop.simd<2, si32>
+  a = #pop.cast_from_builtin< #M.dense_array<2, 5> : vector<2xsi32> to !pop.simd<2, si32>>,
+  // CHECK: b = #pop.cast_from_builtin<0.000000e+00 : f8E5M2 to <1, f8e5m2>> : !pop.scalar<f8e5m2>
+  b = #pop.cast_from_builtin< 0.0 : f8E5M2 to !pop.scalar<f8e5m2>>,
+  // CHECK: c = #pop.cast_from_builtin<0.000000e+00 : f8E5M2FNUZ to <1, f8e5m2fnuz>> : !pop.scalar<f8e5m2fnuz>
+  c = #pop.cast_from_builtin< 0.0 : f8E5M2FNUZ to !pop.scalar<f8e5m2fnuz>>,
+  // CHECK: d = #pop.cast_from_builtin<0.000000e+00 : f8E4M3FN to <1, f8e4m3fn>> : !pop.scalar<f8e4m3fn>
+  d = #pop.cast_from_builtin< 0.0 : f8E4M3FN to !pop.scalar<f8e4m3fn>>,
+  // CHECK: e = #pop.cast_from_builtin<0.000000e+00 : f8E4M3FNUZ to <1, f8e4m3fnuz>> : !pop.scalar<f8e4m3fnuz>
+  e = #pop.cast_from_builtin< 0.0 : f8E4M3FNUZ to !pop.scalar<f8e4m3fnuz>>,
+  // CHECK: f = #pop.cast_from_builtin<0.000000e+00 : f8E3M4 to <1, f8e3m4>> : !pop.scalar<f8e3m4>
+  f = #pop.cast_from_builtin< 0.0 : f8E3M4 to !pop.scalar<f8e3m4>>,
+  // CHECK: g = #pop.cast_from_builtin<0.000000e+00 : bf16 to <1, bf16>> : !pop.scalar<bf16>
+  g = #pop.cast_from_builtin< 0.0 : bf16 to !pop.scalar<bf16>>,
+  // CHECK: h = #pop<simd -1> : !pop.scalar<si64>
+  h = #pop.cast_from_builtin< -1 : si64 to !pop.scalar<si64>>,
+  // CHECK: i = #pop<simd 18446744073709551615> : !pop.scalar<ui64>
+  i = #pop.cast_from_builtin< 0xffffffffffffffff : ui64 to !pop.scalar<ui64>>
+} : () -> ()
+
 {-#
   dialect_resources: {
     builtin: {
