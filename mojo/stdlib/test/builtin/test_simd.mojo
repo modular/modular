@@ -754,6 +754,17 @@ def test_floordiv():
     assert_equal(f.__floordiv__(3), F(1, -2, 0, 1))
     assert_equal(f.__floordiv__(Float32(3)), F(1, -2, 0, 1))
 
+    var res = F.__floordiv__(F(1, 0, 3, -1), F(0, 0, 1, 0))
+    alias B = SIMD[DType.bool, 4]
+    assert_equal(isfinite(res), B(False, False, True, False))
+    assert_equal(isinf(res), B(True, False, False, True))
+    assert_equal(isnan(res), B(False, True, False, False))
+
+    # test that if any element of the divisor is zero, the result is all zeros.
+    var a = SIMD[DType.int32, 4](99, 0, 8, 0)
+    var b = SIMD[DType.int32, 4](4, 3, -2, 0)
+    assert_equal(a.__floordiv__(b), SIMD[DType.int32, 4](0, 0, 0, 0))
+
 
 def test_rfloordiv():
     alias I = SIMD[DType.int32, 4]
@@ -803,6 +814,18 @@ def test_mod():
          0.0,                 0.0,                -0.0,                  0.0,
     ))
     # fmt: on
+
+    alias F = SIMD[DType.float32, 4]
+    var res = F.__mod__(F(1, 0, 3, -1), F(0, 0, 1, 0))
+    alias B = SIMD[DType.bool, 4]
+    assert_equal(isfinite(res), B(False, False, True, False))
+    assert_equal(isinf(res), B(False, False, False, False))
+    assert_equal(isnan(res), B(True, True, False, True))
+
+    # test that if any element of the divisor is zero, the result is all zeros.
+    var c = SIMD[DType.int32, 4](99, 0, 8, 0)
+    var d = SIMD[DType.int32, 4](4, 3, -2, 0)
+    assert_equal(c % d, SIMD[DType.int32, 4](0, 0, 0, 0))
 
 
 def test_divmod():
@@ -863,6 +886,13 @@ def test_divmod():
          0.0,         0.0,         0.0,         0.0,
     ))
     # fmt: on
+
+    # test that if any element of the divisor is zero, the result is all zeros.
+    var i = SIMD[DType.int32, 4](99, 0, 8, 0)
+    var j = SIMD[DType.int32, 4](4, 3, -2, 0)
+    var k, l = divmod(i, j)
+    assert_equal(k, SIMD[DType.int32, 4](0, 0, 0, 0))
+    assert_equal(l, SIMD[DType.int32, 4](0, 0, 0, 0))
 
 
 def test_rmod():

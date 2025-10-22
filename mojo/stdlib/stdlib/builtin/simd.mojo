@@ -964,9 +964,11 @@ struct SIMD[dtype: DType, size: Int](
         """
         constrained[dtype.is_numeric(), "the type must be numeric"]()
 
-        if not any(rhs):
-            # this should raise an exception.
-            return 0
+        @parameter
+        if dtype.is_integral():
+            if not all(rhs):
+                # this should raise an exception.
+                return Self()
 
         var div = self / rhs
 
@@ -988,16 +990,18 @@ struct SIMD[dtype: DType, size: Int](
         """Returns the remainder of self divided by rhs.
 
         Args:
-            rhs: The value to divide on.
+            rhs: The value to divide with.
 
         Returns:
             The remainder of dividing self by rhs.
         """
         constrained[dtype.is_numeric(), "the type must be numeric"]()
 
-        if not any(rhs):
-            # this should raise an exception.
-            return 0
+        @parameter
+        if dtype.is_integral():
+            if not all(rhs):
+                # this should raise an exception.
+                return Self()
 
         @parameter
         if dtype.is_unsigned():
