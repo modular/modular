@@ -113,7 +113,7 @@ fn get_producer_warp_thread_layout[
         "not enough threads per warp to cover block k dimension",
     ]()
     alias outer_block_size = num_repeats_col * inner_block_size
-    alias num_repeats_row = WARP_SIZE // UInt(outer_block_size)
+    alias num_repeats_row = WARP_SIZE // outer_block_size
 
     constrained[
         block_rows % (inner_block_rows * num_repeats_row) == 0,
@@ -280,7 +280,7 @@ fn warp_specialized_matmul[
             @parameter
             for tile_num in range(tile_count):
                 alias stage = tile_num % pipeline_stages
-                var a_tile = a.tile[BM, BK](block_idx.x, tile_num)
+                var a_tile = a.tile[BM, BK](Int(block_idx.x), tile_num)
 
                 # NOTE: producers and consumers can process more than one tile this loop
                 # makes sure this is possible
@@ -336,7 +336,7 @@ fn warp_specialized_matmul[
 
             @parameter
             for tile_num in range(tile_count):
-                var b_tile = b.tile[BN, BK](block_idx.y, tile_num)
+                var b_tile = b.tile[BN, BK](Int(block_idx.y), tile_num)
                 alias stage = tile_num % pipeline_stages
 
                 @parameter

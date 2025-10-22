@@ -165,7 +165,7 @@ fn load_AB[
     tma_mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
-    producer_phase: PipelineState[num_pipeline_stages],
+    producer_phase: PipelineState[Int(num_pipeline_stages)],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
     work_tile_coord: Tuple[UInt, UInt],
     a_multicast_mask: UInt16,
@@ -348,7 +348,9 @@ fn stsm_helper[
     ]
     var stsm_lane_offset: UInt32 = (lane & 15) * UInt(stride0) + (
         lane >> 4
-    ) * 8 if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(lane)
+    ) * 8 if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(
+        Int(lane)
+    )
 
     # Helper function to slice a range of SIMD vector.
     # LLVM extract intrinsic generates bad code on GPU.
@@ -404,7 +406,9 @@ fn multi_stage_store_C[
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     c: LayoutTensor[c_type, c_tensor_layout, MutableAnyOrigin],
-    accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
+    accum_pipeline_consumer_state: PipelineState[
+        Int(num_accum_pipeline_stages)
+    ],
     accum_full_mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
@@ -513,10 +517,10 @@ fn multi_stage_store_C[
             # contiguous row_major(stageN, 16) chunks.
             var c_smem_warp_tile_upper = c_smem_tile.tile[
                 stageN * 16 // stage_contiguous_size, stage_contiguous_size
-            ](2 * warp_id, 0).reshape[Layout.row_major(stageN, 16)]()
+            ](2 * Int(warp_id), 0).reshape[Layout.row_major(stageN, 16)]()
             var c_smem_warp_tile_lower = c_smem_tile.tile[
                 stageN * 16 // stage_contiguous_size, stage_contiguous_size
-            ](2 * warp_id + 1, 0).reshape[Layout.row_major(stageN, 16)]()
+            ](2 * Int(warp_id) + 1, 0).reshape[Layout.row_major(stageN, 16)]()
 
             # Pack the upper frag to shared memory
             stsm_helper[swizzle, transpose_c](
@@ -530,7 +534,7 @@ fn multi_stage_store_C[
             named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
         else:
-            var c_smem_warp_tile = c_smem_tile.tile[32, stageN](warp_id, 0)
+            var c_smem_warp_tile = c_smem_tile.tile[32, stageN](Int(warp_id), 0)
 
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                 data_paths, stageN
@@ -565,7 +569,7 @@ fn multi_stage_store_C[
         var coord_n_mma_m128 = (
             work_tile_coord[1]
             + UInt(stage * stageN)
-            + UInt(BN * (warp_id // 2))
+            + UInt(BN * Int(warp_id // 2))
         )
 
         var coord_n = (
@@ -602,7 +606,7 @@ fn multi_stage_store_C[
                 else:
                     var c_smem_coord_m = 0 if MMA_M == 256 else (warp_id // 2)
                     var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](
-                        c_smem_coord_m, 0
+                        Int(c_smem_coord_m), 0
                     )
                     c_tma_op.async_store(
                         c_smem_split,
@@ -642,17 +646,17 @@ fn multi_stage_store_C[
             )
             alias thread_num = num_output_warps * UInt(WARP_SIZE)
             constrained[
-                logical_c_layout.size() % thread_num == 0,
+                logical_c_layout.size() % Int(thread_num) == 0,
                 "logical_c_layout.size() must be a multiple of thread_num. Got "
                 + String(logical_c_layout.size())
                 + ".",
             ]()
-            alias value_shape = logical_c_layout.size() // thread_num
+            alias value_shape = logical_c_layout.size() // Int(thread_num)
             alias cM = c.shape[1]()
 
             @parameter
             for v in range(value_shape):
-                alias thread_offset = v * thread_num
+                alias thread_offset = v * Int(thread_num)
                 var thread_index = UInt32(thread_idx.x) + UInt32(thread_offset)
                 # idx2crd but RuntimeTuple.idx2crd is too hard to use
                 var vec_chunkM_idx = thread_index % vec_chunkM
@@ -794,7 +798,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     # For ld from TMEM, use same per-stage stride in column field.
     alias NUM_TMEM_COLS = 512
-    alias stage_stride_cols = NUM_TMEM_COLS // num_accum_pipeline_stages
+    alias stage_stride_cols = NUM_TMEM_COLS // Int(num_accum_pipeline_stages)
 
     alias clc_throttle_producer_arv_count = TMA_LOAD_THREADS
     alias clc_throttle_consumer_arv_count = SCHEDULER_THREADS
@@ -837,11 +841,11 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         alignment=128,
     ]()
 
-    alias a_smem_size = a_smem_layout.size() * num_pipeline_stages
-    alias b_smem_size = b_smem_layout.size() * num_pipeline_stages
-    alias c_smem_size = output_tile_shape[0] * output_tile_shape[
-        1
-    ] * num_output_stages
+    alias a_smem_size = a_smem_layout.size() * Int(num_pipeline_stages)
+    alias b_smem_size = b_smem_layout.size() * Int(num_pipeline_stages)
+    alias c_smem_size = output_tile_shape[0] * output_tile_shape[1] * Int(
+        num_output_stages
+    )
 
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
@@ -928,14 +932,14 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     fence_mbarrier_init()
     cluster_sync()
 
-    var consumer_phase = PipelineState[num_pipeline_stages]()
-    var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
+    var consumer_phase = PipelineState[Int(num_pipeline_stages)]()
+    var producer_phase = PipelineState[Int(num_pipeline_stages)](0, 1, 0)
 
     var accum_pipeline_producer_state = PipelineState[
-        num_accum_pipeline_stages
+        Int(num_accum_pipeline_stages)
     ](0, 1, 0)
     var accum_pipeline_consumer_state = PipelineState[
-        num_accum_pipeline_stages
+        Int(num_accum_pipeline_stages)
     ]()
 
     var mma_op = MmaOpSM100_SS[
@@ -1390,7 +1394,9 @@ fn _grouped_matmul_sm100_persistent[
         ]()
 
     alias pipeline_stage = num_pipeline_stages.value() if num_pipeline_stages else max_pipeline_stages
-    alias producer_consumer_smem = producer_consumer_smem_per_stage * pipeline_stage
+    alias producer_consumer_smem = producer_consumer_smem_per_stage * Int(
+        pipeline_stage
+    )
 
     alias smem_size = (
         # clc_smem + accum_smem + producer_consumer_smem + tmem_writeout_smem

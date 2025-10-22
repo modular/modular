@@ -254,7 +254,7 @@ fn multistage_dual_mma[
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // (2 * MMA_N)
     constrained[
-        num_k_mmas % UInt(2 * k_group_size) == 0,
+        num_k_mmas % UInt(2 * Int(k_group_size)) == 0,
         "num_k_mmas must be an integer multiple of 2*k_group_size",
     ]()
     constrained[num_n_mmas % 2 == 0]()
@@ -264,10 +264,10 @@ fn multistage_dual_mma[
     alias b_frag_size = frag_size[1]
     alias c_frag_size = frag_size[2]
 
-    alias num_reg_tiles = 2 * k_group_size
+    alias num_reg_tiles = 2 * Int(k_group_size)
     # Register tiles.
     alias a_reg_layout = Layout.row_major(
-        Int(2 * k_group_size * num_m_mmas), a_frag_size
+        Int(2 * Int(k_group_size) * num_m_mmas), a_frag_size
     )
     var a_reg_tiles = (
         LayoutTensor[
@@ -277,11 +277,11 @@ fn multistage_dual_mma[
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
-        .split[Int(2 * k_group_size)]()
+        .split[Int(2 * Int(k_group_size))]()
     )
 
     alias b_reg_layout = Layout.row_major(
-        Int(2 * k_group_size * num_n_mmas), b_frag_size
+        Int(2 * Int(k_group_size) * num_n_mmas), b_frag_size
     )
     var b0_reg_tiles = (
         LayoutTensor[
@@ -292,7 +292,7 @@ fn multistage_dual_mma[
         ]
         .stack_allocation()
         .vectorize[1, b_frag_size]()
-        .split[Int(2 * k_group_size)]()
+        .split[Int(2 * Int(k_group_size))]()
     )
     var b1_reg_tiles = (
         LayoutTensor[
@@ -303,7 +303,7 @@ fn multistage_dual_mma[
         ]
         .stack_allocation()
         .vectorize[1, b_frag_size]()
-        .split[Int(2 * k_group_size)]()
+        .split[Int(2 * Int(k_group_size))]()
     )
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
@@ -716,10 +716,10 @@ fn multistage_dual_gemm_kernel[
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-                var m = (Int(thread_offset) + dst_idx) // N
-                var n = (Int(thread_offset) + dst_idx) % N
+                var m = (Int(thread_offset) + dst_idx) // Int(N)
+                var n = (Int(thread_offset) + dst_idx) % Int(N)
                 alias alignment = align_of[SIMD[c_type, simd_size]]()
-                if m < M and n < N:
+                if m < Int(M) and n < Int(N):
                     epilogue[alignment=alignment](
                         (Int(m), Int(n)),
                         accum_smem_warp_tile.ptr.load[
@@ -762,9 +762,9 @@ fn multistage_dual_gemm_kernel[
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
                 alias alignment = align_of[SIMD[c_type, 2]]()
-                var m = (Int(thread_offset) + dst_idx) // N
-                var n = (Int(thread_offset) + dst_idx) % N
-                if m < M and n < N:
+                var m = (Int(thread_offset) + dst_idx) // Int(N)
+                var n = (Int(thread_offset) + dst_idx) % Int(N)
+                if m < Int(M) and n < Int(N):
                     var vec = c_reg_frag.ptr.offset(src_idx).load[
                         width=2, alignment = align_of[SIMD[c_type, 2]]()
                     ]()

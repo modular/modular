@@ -279,7 +279,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     ]()
 
     # final results accumulator regs for C
-    alias c_frag_size = MMA_M * MMA_N // num_threads
+    alias c_frag_size = MMA_M * MMA_N // Int(num_threads)
     var c_frag = SIMD[accum_type, c_frag_size]()
 
     # temporary accumulators for TMEM loads
@@ -360,7 +360,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             if BN != BK:
                 var global_n = block_idx.x * UInt(BN)
 
-                var begin_n = min(BN, BK - global_n % UInt(BK))
+                var begin_n = min(BN, BK - Int(global_n % UInt(BK)))
                 alias end_n = BN  # if N % BN !=0 then it should be  min(BN, N - block_idx.x * BN)
 
                 var idx0 = global_n // UInt(BK)
@@ -407,7 +407,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     warp_id = thread_idx.x // UInt(WARP_SIZE)
 
     ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
-        block_idx.y, block_idx.x
+        Int(block_idx.y), Int(block_idx.x)
     )
     alias c_coord_type = type_of(ctile_coords)
 
@@ -419,8 +419,8 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             alias mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
-                ctile.tile_with_offset[MMA_M // num_warps, MMA_N](
-                    4 * m_mma + warp_id, n_mma
+                ctile.tile_with_offset[MMA_M // Int(num_warps), MMA_N](
+                    4 * m_mma + Int(warp_id), n_mma
                 )
             )
             c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](

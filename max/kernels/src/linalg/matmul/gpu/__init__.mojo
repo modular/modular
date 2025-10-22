@@ -129,12 +129,13 @@ fn matmul_kernel[
 
         @parameter
         if not full_tile:
-            a_val = a[Int(row), Int(offset + localCol)] if (
-                row < UInt(m) and offset + localCol < k
+            a_val = a[Int(row), Int(offset + Int(localCol))] if (
+                row < UInt(m) and offset + Int(localCol) < k
             ) else 0.0
         else:
             a_val = (
-                a[Int(row), Int(offset + localCol)] if row < UInt(m) else 0.0
+                a[Int(row), Int(offset + Int(localCol))] if row
+                < UInt(m) else 0.0
             )
         a_shared[localRow * UInt(tile_size) + localCol] = a_val
 
@@ -143,12 +144,13 @@ fn matmul_kernel[
 
         @parameter
         if not full_tile:
-            b_val = b[Int(offset + localRow), Int(col)] if (
-                col < UInt(n) and offset + localRow < k
+            b_val = b[Int(offset + Int(localRow)), Int(col)] if (
+                col < UInt(n) and offset + Int(localRow) < k
             ) else 0.0
         else:
             b_val = (
-                b[Int(offset + localRow), Int(col)] if col < UInt(n) else 0.0
+                b[Int(offset + Int(localRow)), Int(col)] if col
+                < UInt(n) else 0.0
             )
         b_shared[localRow * UInt(tile_size) + localCol] = b_val
 
@@ -157,7 +159,7 @@ fn matmul_kernel[
         for kk in range(tile_size):
             result += (
                 a_shared[localRow * UInt(tile_size) + UInt(kk)].cast[s_type]()
-                * b_shared[kk * tile_size + localCol].cast[s_type]()
+                * b_shared[kk * tile_size + Int(localCol)].cast[s_type]()
             )
 
         barrier()

@@ -3499,7 +3499,9 @@ struct LayoutTensor[
                 thread_shape_i
             )
             var tile_shape_i = ceildiv(self.dim[i](), thread_shape_i)
-            var bound_i = Int((tile_shape_i - 1) * thread_shape_i + tile_idx)
+            var bound_i = Int(
+                (tile_shape_i - 1) * thread_shape_i + Int(tile_idx)
+            )
             tile_shape[i] = min(self.dim[i]() - bound_i, tile_shape_i)
 
         return tile_shape

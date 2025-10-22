@@ -91,7 +91,7 @@ struct Table[type: TuningConfig](Stringable):
 
         for i in range(self.num_configs):
             if flag[i]:
-                result_idx_list.append(i)
+                result_idx_list.append(Int(i))
         return result_idx_list^
 
     # Apply rule on all configs in the table and return list of all the unique results.

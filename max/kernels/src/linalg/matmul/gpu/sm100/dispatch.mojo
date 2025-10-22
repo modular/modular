@@ -570,7 +570,7 @@ fn matmul_dispatch_sm100_fp8[
         alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
-            block_swizzle_size=entry.block_swizzle_size,
+            block_swizzle_size=Int(entry.block_swizzle_size),
         )
 
         return _matmul_dispatch_sm100[

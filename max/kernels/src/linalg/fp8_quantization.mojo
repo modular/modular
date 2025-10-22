@@ -908,7 +908,9 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     for k in range(K):
         var a_val = rebind[Scalar[a_type]](a[x, k]).cast[accum_type]()
         var a_scale_factor = rebind[Scalar[a_scales_type]](
-            a_scales[k // MAT_A_ROWS_SCALE_SIZE, x // MAT_A_COLS_SCALE_SIZE]
+            a_scales[
+                k // Int(MAT_A_ROWS_SCALE_SIZE), x // MAT_A_COLS_SCALE_SIZE
+            ]
         ).cast[accum_type]()
 
         var b_val: Scalar[accum_type]
@@ -918,12 +920,16 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
         if transpose_b:
             b_val = rebind[Scalar[b_type]](b[y, k]).cast[accum_type]()
             b_scale_factor = rebind[Scalar[b_scales_type]](
-                b_scales[y // MAT_B_ROWS_SCALE_SIZE, k // MAT_B_COLS_SCALE_SIZE]
+                b_scales[
+                    y // MAT_B_ROWS_SCALE_SIZE, k // Int(MAT_B_COLS_SCALE_SIZE)
+                ]
             ).cast[accum_type]()
         else:
             b_val = rebind[Scalar[b_type]](b[k, y]).cast[accum_type]()
             b_scale_factor = rebind[Scalar[b_scales_type]](
-                b_scales[k // MAT_B_ROWS_SCALE_SIZE, y // MAT_B_COLS_SCALE_SIZE]
+                b_scales[
+                    k // Int(MAT_B_ROWS_SCALE_SIZE), y // MAT_B_COLS_SCALE_SIZE
+                ]
             ).cast[accum_type]()
 
         accum += a_val * b_val * a_scale_factor * b_scale_factor
@@ -1129,8 +1135,8 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
             var a_val = rebind[Scalar[a_type]](a_row_ptr[k]).cast[accum_type]()
             var a_scale = rebind[Scalar[accum_type]](
                 a_scales[
-                    k // MAT_A_ROWS_SCALE_SIZE,
-                    m_global // MAT_A_COLS_SCALE_SIZE,
+                    k // Int(MAT_A_ROWS_SCALE_SIZE),
+                    m_global // Int(MAT_A_COLS_SCALE_SIZE),
                 ]
             )
             var b_val = rebind[Scalar[b_type]](b_expert_ptr[n * K + k]).cast[
@@ -1139,8 +1145,8 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
             var b_scale = rebind[Scalar[accum_type]](
                 b_scales[
                     UInt(expert),
-                    n // MAT_B_ROWS_SCALE_SIZE,
-                    k // MAT_B_COLS_SCALE_SIZE,
+                    n // Int(MAT_B_ROWS_SCALE_SIZE),
+                    k // Int(MAT_B_COLS_SCALE_SIZE),
                 ]
             )
             accum += a_val * b_val * a_scale * b_scale

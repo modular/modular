@@ -44,11 +44,11 @@ alias FULL_MASK_AMD = 2**WARP_SIZE - 1
 
 
 fn kernel(x: UnsafePointer[Int]):
-    x[0] = thread_idx.x
+    x[0] = Int(thread_idx.x)
 
 
 fn kernel_laneid(x: UnsafePointer[Int]):
-    x[0] = lane_id()
+    x[0] = Int(lane_id())
 
 
 fn kernel_exp[dtype: DType](x: UnsafePointer[Scalar[dtype]]):

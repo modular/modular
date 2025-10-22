@@ -581,13 +581,13 @@ fn dispatch_kernel[
                 # The remote device will use the expert ID to determine a token's
                 # top-k id.
                 # Cast the expert ID to a 16-bit integer to save space.
-                var top_k_idx = topk_ids.load[width=1](token_idx, tid)
+                var top_k_idx = topk_ids.load[width=1](token_idx, Int(tid))
                 curr_send_buf_ptr.store[
                     width = size_of[UInt16](),
                     alignment = align_of[DType.uint16](),
                 ](
                     token_fmt_type.topk_info_offset()
-                    + tid * UInt(size_of[UInt16]()),
+                    + Int(tid * UInt(size_of[UInt16]())),
                     bitcast[DType.uint8, size_of[UInt16]()](UInt16(top_k_idx)),
                 )
 
@@ -910,7 +910,7 @@ fn dispatch_cb_kernel[
                 var src_topk_idx = bitcast[DType.uint16, 1](
                     recv_buf_ptr.load[width = size_of[UInt16]()](
                         token_fmt_type.topk_info_offset()
-                        + lane_id() * UInt(size_of[UInt16]()),
+                        + Int(lane_id() * UInt(size_of[UInt16]())),
                     )
                 )
                 var global_expert_idx = (
@@ -1050,7 +1050,7 @@ fn combine_kernel[
 
         # The tokens are sent back to the original rank using the same RC as the
         # one they come from.
-        var rc_map_offset = (sm_id * n_warps + warp_id()) % n_local_experts
+        var rc_map_offset = (sm_id * n_warps + Int(warp_id())) % n_local_experts
 
         # Info for where the tokens for the current expert and rank start and end
         # are stored in the atomic counter by the `dispatch_cb_kernel`.

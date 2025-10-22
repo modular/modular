@@ -449,9 +449,9 @@ struct ContinuousBatchingKVCache[
         var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
         alias cols = Self.kv_params.num_heads * Self.kv_params.head_size
 
-        alias layout = Layout.row_major(UNKNOWN_VALUE, cols)
+        alias layout = Layout.row_major(UNKNOWN_VALUE, Int(cols))
         rt_layout = RuntimeLayout[layout].row_major(
-            IndexList[2](Int(rows), cols)
+            IndexList[2](Int(rows), Int(cols))
         )
 
         # Create a LayoutTensor view with compile-time shape

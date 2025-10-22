@@ -312,7 +312,7 @@ fn shmem_malloc[dtype: DType](size: UInt) -> UnsafePointer[Scalar[dtype]]:
 
     @parameter
     if has_nvidia_gpu_accelerator():
-        return nvshmem_malloc[dtype](UInt(size_of[dtype]() * size))
+        return nvshmem_malloc[dtype](UInt(size_of[dtype]() * Int(size)))
     else:
         CompilationTarget.unsupported_target_error[operation="shmem_malloc"]()
         return UnsafePointer[Scalar[dtype]]()

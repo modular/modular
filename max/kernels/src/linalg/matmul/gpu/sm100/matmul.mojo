@@ -169,7 +169,7 @@ fn load_AB[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
-    load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
+    load_mma_pipeline: ProducerConsumerPipeline[Int(num_pipeline_stages)],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
     work_tile_coord: Tuple[UInt, UInt],
     a_multicast_mask: UInt16,
@@ -345,7 +345,9 @@ fn stsm_helper[
     ]
     var stsm_lane_offset: UInt32 = (lane & 15) * UInt(stride0) + (
         lane >> 4
-    ) * 8 if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(lane)
+    ) * 8 if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(
+        Int(lane)
+    )
 
     # Helper function to slice a range of SIMD vector.
     # LLVM extract intrinsic generates bad code on GPU.
@@ -421,7 +423,7 @@ fn shared_memory_epilogue[
 
     alias distribute_layout = Layout.row_major(distribute_rows, distribute_cols)
     var c_smem_upper_frag = c_smem_warp_tile_upper.vectorize[
-        1, simd_size
+        1, Int(simd_size)
     ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
 
     var c_smem_lower_frag = c_smem_warp_tile_lower.vectorize[
