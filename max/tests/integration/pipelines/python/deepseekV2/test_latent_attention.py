@@ -20,7 +20,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
 )
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -104,7 +104,7 @@ def generate_max_outputs(
     )
     latent_attention.load_state_dict(attention_weights)
 
-    kv_manager = TPPagedKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         devices=[Accelerator(0)],
         params=kv_params,
         available_cache_memory=100 * 1024 * 1024,
@@ -267,7 +267,7 @@ def generate_max_outputs_dp(
     )
     dp_attention.load_state_dict(attention_weights)
 
-    kv_manager = TPPagedKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         devices=[Accelerator(0)],
         params=kv_params,
         available_cache_memory=100 * 1024 * 1024,

@@ -27,7 +27,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
 )
 from max.pipelines import TextContext
 from modular_graph_test import modular_graph_test
@@ -41,7 +41,7 @@ class KeyOrValue(Enum):
 
 
 def _dump_k_cache_to_torch_tensor(
-    cache: TPPagedKVCacheManager, ctx: TextContext, device_id: int = 0
+    cache: PagedKVCacheManager, ctx: TextContext, device_id: int = 0
 ) -> torch.Tensor:
     """
     Returns a torch tensor of the shape [seq_len, num_layers, n_heads, head_dim]
@@ -54,7 +54,7 @@ def _dump_k_cache_to_torch_tensor(
 
 
 def _dump_v_cache_to_torch_tensor(
-    cache: TPPagedKVCacheManager, ctx: TextContext, device_id: int = 0
+    cache: PagedKVCacheManager, ctx: TextContext, device_id: int = 0
 ) -> torch.Tensor:
     """
     Returns a torch tensor of the shape [seq_len, num_layers, n_heads, head_dim]
@@ -67,7 +67,7 @@ def _dump_v_cache_to_torch_tensor(
 
 
 def _dump_k_or_v_cache_to_torch_tensor(
-    cache: TPPagedKVCacheManager,
+    cache: PagedKVCacheManager,
     ctx: TextContext,
     device_id: int = 0,
     key_or_value: KeyOrValue = KeyOrValue.KEY,
@@ -149,7 +149,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         device=DeviceRef.CPU(),
     )
 
-    kv_manager = TPPagedKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=2,
         max_seq_len=100,
@@ -341,7 +341,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         device=DeviceRef.CPU(),
     )
 
-    kv_manager = TPPagedKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=2,
         max_seq_len=100,
@@ -478,7 +478,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         device=DeviceRef.CPU(),
     )
     num_layers = 1
-    kv_manager = TPPagedKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         available_cache_memory=1024 * 1024 * 1024,
         page_size=page_size,
@@ -585,7 +585,7 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
         device=DeviceRef.CPU(),
     )
 
-    kv_manager = TPPagedKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=1,
         max_seq_len=1,

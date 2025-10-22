@@ -29,7 +29,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
 )
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.context_utils import create_text_context
@@ -402,7 +402,7 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
         device=DeviceRef.CPU(),
     )
 
-    kv_manager = TPPagedKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=2,
         max_seq_len=100,
@@ -470,7 +470,7 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
 
     for context in batch:
         kv_manager.external_claim(context.request_id)
-        assert isinstance(kv_manager, TPPagedKVCacheManager)
+        assert isinstance(kv_manager, PagedKVCacheManager)
         kv_manager.maybe_reserve(context, num_steps=1)
 
     input_row_offsets = Tensor(

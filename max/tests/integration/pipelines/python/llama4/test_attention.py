@@ -19,7 +19,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
     load_kv_manager,
 )
 from max.pipelines import KVCacheConfig
@@ -116,7 +116,7 @@ def generate_torch_outputs(
 
 
 def unflatten_kv_inputs(
-    kv_manager: TPPagedKVCacheManager,
+    kv_manager: PagedKVCacheManager,
     kv_params: KVCacheParams,
     kv_inputs_flat: Sequence[Value[Any]],
 ) -> list[PagedCacheValues]:

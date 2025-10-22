@@ -18,7 +18,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     KVCacheStrategy,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -181,7 +181,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         self,
         session: InferenceSession,
         available_cache_memory: int | None,
-    ) -> TPPagedKVCacheManager:
+    ) -> PagedKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, load the kv manager."""
         assert available_cache_memory is not None
         num_layers = self.get_num_layers(self.huggingface_config)

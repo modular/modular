@@ -6,11 +6,7 @@
 
 from max.driver import CPU
 from max.dtype import DType
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    TPPagedKVCacheManager,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 
 
 def test_paged_kv_cache_memory_estimates_truncated() -> None:
@@ -25,7 +21,7 @@ def test_paged_kv_cache_memory_estimates_truncated() -> None:
     max_seq_len = 1024
     max_batch_size = 1
 
-    estimated_cache_memory = TPPagedKVCacheManager.estimated_memory_size(
+    estimated_cache_memory = PagedKVCacheManager.estimated_memory_size(
         kv_params,
         max_batch_size,
         max_seq_len,
@@ -52,7 +48,7 @@ def test_paged_kv_cache_memory_estimates_not_truncated() -> None:
     max_seq_len = 1024
     max_batch_size = 1
 
-    estimated_cache_memory = TPPagedKVCacheManager.estimated_memory_size(
+    estimated_cache_memory = PagedKVCacheManager.estimated_memory_size(
         kv_params,
         max_batch_size,
         max_seq_len,

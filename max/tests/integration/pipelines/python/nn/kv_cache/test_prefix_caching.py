@@ -18,8 +18,8 @@ from max.interfaces import ImageMetadata, RequestID
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
+    PagedKVCacheManager,
     RaggedKVCacheInputs,
-    TPPagedKVCacheManager,
 )
 from max.nn.kv_cache.paged_cache.block_manager import InsufficientBlocksError
 from max.pipelines.core import TextAndVisionContext, TextContext
@@ -47,7 +47,7 @@ def get_cache_lengths_from_kv_tuple(kv_tuple: RaggedKVCacheInputs) -> list[int]:
 
 def create_paged_manager(
     num_blocks: int, page_size: int = 1
-) -> TPPagedKVCacheManager:
+) -> PagedKVCacheManager:
     # Setting kv_heads, head_dim, and num_layers to 1 so it is easy to compute
     # memory usage. Now we know each block is 1 byte.
     NUM_KV_HEADS = 1
@@ -74,7 +74,7 @@ def create_paged_manager(
         * num_blocks
         * kv_params.dtype.size_in_bytes
     )
-    kv_manager = TPPagedKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         params=kv_params,
         max_batch_size=512,
         max_seq_len=4096,
@@ -452,7 +452,7 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
 class FakeModel:
     """Create a fake model that can be used to test prefix caching."""
 
-    def __init__(self, kv_manager: TPPagedKVCacheManager) -> None:
+    def __init__(self, kv_manager: PagedKVCacheManager) -> None:
         self.page_size = kv_manager.page_size
         self.total_num_pages = kv_manager.total_num_pages
         # block_projections maps from bid -> offset -> prefix tokens
@@ -650,7 +650,7 @@ async def test_prefix_caching_grouped_prefixes(
 
 def run_forward(
     model: FakeModel,
-    kv_manager: TPPagedKVCacheManager,
+    kv_manager: PagedKVCacheManager,
     ctx: TextContext,
     prompt: np.ndarray,
     next_tok: int,
@@ -716,7 +716,7 @@ async def test_prefix_caching_chunked_prefill() -> None:
 
 
 def run_and_check_num_cached_tokens(
-    kv_manager: TPPagedKVCacheManager,
+    kv_manager: PagedKVCacheManager,
     ctx: TextAndVisionContext,
     do_step: bool = True,
 ) -> int:

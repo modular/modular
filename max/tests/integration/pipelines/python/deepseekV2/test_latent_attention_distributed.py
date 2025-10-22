@@ -24,8 +24,8 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
+    PagedKVCacheManager,
     RaggedKVCacheInputs,
-    TPPagedKVCacheManager,
     load_kv_manager,
 )
 from max.nn.rotary_embedding import (
@@ -98,7 +98,7 @@ def _single_gpu_baseline(
     )
     attn.load_state_dict(attention_weights)
 
-    kv_manager = TPPagedKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         devices=[Accelerator(0)],
         params=kv_params,
         available_cache_memory=100 * 1024 * 1024,
