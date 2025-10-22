@@ -205,7 +205,7 @@ def targets():
     )
 
     extra_build_args = {
-        "copts": ["-fvisibility=default"],
+        "copts": ["-fvisibility=default", "-w"],
         "linkopts": select({
             "@platforms//os:linux": ["-Wl,-z,undefs"],
             "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],

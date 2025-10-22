@@ -71,6 +71,9 @@ cc_args(
         # If this error hits it's a misconfiguration of clang
         "-Werror=debug-compression-unavailable",
 
+        # Bazel misconfiguration
+        "-Werror=unused-command-line-argument",
+
         # Forbid return C++ types from exposed C functions
         "-Werror=return-type-c-linkage",
 
