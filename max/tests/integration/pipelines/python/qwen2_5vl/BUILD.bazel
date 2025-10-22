@@ -102,3 +102,12 @@ modular_py_library(
         requirement("qwen-vl-utils"),  # Used by qwen2.5-vl.
     ],
 )
+
+modular_py_test(
+    name = "test_compute_scatter_gather_indices",
+    srcs = ["test_compute_scatter_gather_indices.py"],
+    deps = [
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        requirement("numpy"),
+    ],
+)
