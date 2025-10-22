@@ -87,6 +87,11 @@ single_version_override(
 archive_override(
     module_name = "rules_pycross",
     integrity = "sha256-80I/HQ37qIGF7o632GMRKV7PK4/wpEvBGQyXJsnKkPo=",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/jvolkman/rules_pycross/pull/199
+        "//bazel/public-patches:rules_pycross_patch.patch",
+    ],
     strip_prefix = "rules_pycross-1d8bdc0e0a48ce338c0de8122c952af841d40d2d",
     urls = [
         "https://github.com/jvolkman/rules_pycross/archive/1d8bdc0e0a48ce338c0de8122c952af841d40d2d.tar.gz",
