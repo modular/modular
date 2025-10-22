@@ -343,17 +343,6 @@ ErrorOr<TypedAttr> SIMDType::readFrom(int64_t addr,
   return SIMDAttr::get(values, *this);
 }
 
-std::optional<SIMDType> SIMDType::getFromMLIRType(Type ty) {
-  auto [dtype, vecSize] = M::getEquivalentDType(ty);
-
-  if (dtype.isInvalid())
-    return std::nullopt;
-
-  // In SIMD land, there's no distinction between a vector size of 1 and a
-  // scalar type.
-  return SIMDType::get(ty.getContext(), vecSize.value_or(1), dtype);
-}
-
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

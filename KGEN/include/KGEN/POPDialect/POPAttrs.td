@@ -583,7 +583,7 @@ def POP_DTypeToUI8Attr : POP_ExprAttr<"DTypeToUI8", "dtype_to_ui8"> {
     AttrBuilder<(ins "TypedAttr":$value), "", "TypedAttr">,
 
     AttrBuilderWithInferredContext<(ins "TypedAttr":$value), [{
-      return $_get(value.getContext(), value);
+      return get(value.getContext(), value);
     }], "TypedAttr">
   ];
 
@@ -602,23 +602,22 @@ def POP_CastFromBuiltinAttr : POP_ExprAttr<"CastFromBuiltin", "cast_from_builtin
     POP type.
   }];
 
-  let parameters = (ins "TypedAttr":$arg, "SIMDType":$out_type);
+  let parameters = (ins "TypedAttr":$arg,
+                        AttributeSelfTypeParameter<"", "SIMDType">:$type);
 
-  let assemblyFormat = " `<` $arg `to` $out_type `>` ";
+  let assemblyFormat = " `<` $arg `>` ";
 
   let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser because this
     // may not return an CastFromBuiltinAttr.
-    AttrBuilder<(ins "TypedAttr":$arg, "SIMDType":$out_type), "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$arg, "SIMDType":$type), "", "TypedAttr">,
 
-    AttrBuilderWithInferredContext<(ins "TypedAttr":$arg, "SIMDType":$out_type), [{
-      return $_get(arg.getContext(), arg, out_type);
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$arg, "SIMDType":$type), [{
+      return get(arg.getContext(), arg, type);
     }], "TypedAttr">
   ];
-
-  let extraClassDeclaration = [{ Type getType() const; }];
 }
 
 #endif // KGEN_POPDIALECT_POPATTRS_TD
