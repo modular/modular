@@ -34,7 +34,7 @@ from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.random import Random
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from tensor_internal import DynamicTensor
+from tensor import DynamicTensor
 from testing import assert_equal, assert_true
 
 from utils import IndexList

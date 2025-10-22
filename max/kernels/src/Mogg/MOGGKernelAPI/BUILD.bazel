@@ -8,7 +8,7 @@ mogg_lib_deps = [
     "@mojo//:linalg",
     "@mojo//:nn",
     "@mojo//:quantization",
-    "@mojo//:tensor_internal",
+    "@mojo//:tensor",
     "@mojo//:compiler_internal",
     "@mojo//:shmem",
     "@mojo//:stdlib",

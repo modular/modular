@@ -16,6 +16,6 @@ mojo_library(
         "@mojo//:quantization",
         "@mojo//:register",
         "@mojo//:stdlib",
-        "@mojo//:tensor_internal",
+        "@mojo//:tensor",
     ],
 )

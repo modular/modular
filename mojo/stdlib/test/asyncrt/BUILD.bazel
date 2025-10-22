@@ -54,7 +54,7 @@ _EXTRA_CONSTRAINTS = {
         deps = [
             "@mojo//:layout",
             "@mojo//:stdlib",
-            "@mojo//:tensor_internal",
+            "@mojo//:tensor",
         ],
     )
     for src in glob(
@@ -75,7 +75,7 @@ _EXTRA_CONSTRAINTS = {
         deps = [
             "@mojo//:layout",
             "@mojo//:stdlib",
-            "@mojo//:tensor_internal",
+            "@mojo//:tensor",
         ],
     )
     for src in _CPU_TESTS

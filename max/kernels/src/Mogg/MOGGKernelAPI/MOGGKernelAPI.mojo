@@ -239,7 +239,7 @@ from quantization.qmatmul_k import (
 )
 from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from tensor_internal import (
+from tensor import (
     DynamicTensor,
     ElementwiseBinaryComparisonOp,
     ElementwiseBinaryOp,
@@ -263,27 +263,27 @@ from tensor_internal import (
     simd_store_into_managed_tensor_slice,
     view_copy_impl,
 )
-from tensor_internal.io_spec import IO
-from tensor_internal.managed_tensor_slice import _FusedComputeOutputTensor
-from tensor_internal.managed_tensor_slice import (
+from tensor.io_spec import IO
+from tensor.managed_tensor_slice import _FusedComputeOutputTensor
+from tensor.managed_tensor_slice import (
     _FusedInputTensor as FusedInputTensor,
 )
-from tensor_internal.managed_tensor_slice import (
+from tensor.managed_tensor_slice import (
     _FusedInputVariadicTensors as FusedInputVariadicTensors,
 )
-from tensor_internal.managed_tensor_slice import (
+from tensor.managed_tensor_slice import (
     _FusedOutputTensor as FusedOutputTensor,
 )
-from tensor_internal.managed_tensor_slice import (
+from tensor.managed_tensor_slice import (
     _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
 )
-from tensor_internal.managed_tensor_slice import (
+from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
 )
-from tensor_internal.managed_tensor_slice import (
+from tensor.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
-from tensor_internal.transitional import managed_tensor_slice_to_ndbuffer
+from tensor.transitional import managed_tensor_slice_to_ndbuffer
 
 from utils import IndexList, StaticTuple
 from utils.index import Index

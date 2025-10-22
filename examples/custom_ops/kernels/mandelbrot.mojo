@@ -16,7 +16,7 @@ from math import iota
 import compiler
 from complex import ComplexSIMD
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import OutputTensor, foreach
+from tensor import OutputTensor, foreach
 
 from utils.index import IndexList
 

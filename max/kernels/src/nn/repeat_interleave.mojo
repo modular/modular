@@ -23,7 +23,7 @@ from layout import (
 )
 from layout.int_tuple import fill_like
 from layout.layout import is_row_major
-from tensor_internal._indexing import _row_major_strides
+from tensor._indexing import _row_major_strides
 
 from utils import IndexList
 

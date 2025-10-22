@@ -20,7 +20,7 @@ from gpu.host import DeviceBuffer
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
+from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
 from utils import StaticTuple
 

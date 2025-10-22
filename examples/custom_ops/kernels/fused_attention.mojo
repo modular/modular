@@ -63,7 +63,7 @@ from layout import Layout, LayoutTensor
 from layout.math import max, sum
 from layout.tensor_core import TensorCore
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import InputTensor, OutputTensor
+from tensor import InputTensor, OutputTensor
 
 from utils import Index
 

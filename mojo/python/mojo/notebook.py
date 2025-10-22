@@ -79,7 +79,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
             %%mojo package -o kernels.mojopkg
 
             from runtime.asyncrt import DeviceContextPtr
-            from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
+            from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
             @compiler.register("histogram")
             struct Histogram:

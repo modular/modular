@@ -63,7 +63,7 @@ from layout.swizzle import Swizzle
 from layout.tensor_core import TensorCore
 from memory import UnsafePointer
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
+from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
 from utils import StaticTuple
 from utils.index import Index, IndexList

@@ -92,7 +92,7 @@ from nn.softmax import (
     _rowmax_online_softmax,
     _rowsum,
 )
-from tensor_internal import ManagedTensorSlice
+from tensor import ManagedTensorSlice
 
 from utils.index import Index
 from utils.numerics import get_accum_type, min_or_neg_inf

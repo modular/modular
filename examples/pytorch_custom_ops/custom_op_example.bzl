@@ -19,7 +19,7 @@ def custom_op_example_py_binary(
             "@mojo//:compiler",
             "@mojo//:layout",
             "@mojo//:stdlib",
-            "@mojo//:tensor_internal",
+            "@mojo//:tensor",
         ],
         deps = [
             "//SDK/lib/API/python/max/driver",

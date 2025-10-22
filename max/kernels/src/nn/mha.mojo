@@ -98,8 +98,8 @@ from nn.mha_utils import (
 )
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor_internal import IOUnknown, ManagedTensorSlice
-from tensor_internal.managed_tensor_slice import StaticTensorSpec
+from tensor import IOUnknown, ManagedTensorSlice
+from tensor.managed_tensor_slice import StaticTensorSpec
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf

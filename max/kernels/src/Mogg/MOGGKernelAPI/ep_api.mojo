@@ -23,8 +23,8 @@ from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from sys.info import align_of, simd_width_of, size_of
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
-from tensor_internal import InputTensor, OutputTensor
-from tensor_internal.managed_tensor_slice import (
+from tensor import InputTensor, OutputTensor
+from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
 )
 

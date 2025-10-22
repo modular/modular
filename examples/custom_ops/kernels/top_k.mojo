@@ -21,7 +21,7 @@ from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx, warp
 from gpu.memory import AddressSpace, external_memory
 from memory import Span
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import InputTensor, OutputTensor
+from tensor import InputTensor, OutputTensor
 
 from utils.numerics import min_or_neg_inf
 

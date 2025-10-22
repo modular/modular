@@ -78,7 +78,7 @@ mojo_binary(
         "@mojo//:compiler",
         "@mojo//:layout",
         "@mojo//:stdlib",
-        "@mojo//:tensor_internal",
+        "@mojo//:tensor",
     ],
 )
 
@@ -90,6 +90,6 @@ mojo_library(
         "@mojo//:compiler",
         "@mojo//:layout",
         "@mojo//:stdlib",
-        "@mojo//:tensor_internal",
+        "@mojo//:tensor",
     ],
 )

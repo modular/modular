@@ -15,8 +15,8 @@
 
 from buffer import NDBuffer
 from compiler_internal.directives import StaticTensorSpec
-from tensor_internal.io_spec import IO
-from tensor_internal.managed_tensor_slice import ManagedTensorSlice
+from tensor.io_spec import IO
+from tensor.managed_tensor_slice import ManagedTensorSlice
 
 
 @always_inline

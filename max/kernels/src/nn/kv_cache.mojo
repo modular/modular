@@ -42,11 +42,11 @@ from nn.mha_utils import (
 from nn.normalization import _rms_norm_impl
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from tensor_internal import ManagedTensorSlice, trace_slice_arg
+from tensor import ManagedTensorSlice, trace_slice_arg
 
 from utils import Index, IndexList
-from tensor_internal import InputTensor
-from tensor_internal.managed_tensor_slice import (
+from tensor import InputTensor
+from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
 )
 

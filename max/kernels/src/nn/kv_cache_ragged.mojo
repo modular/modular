@@ -53,7 +53,7 @@ from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from quantization.qmatmul_k import matmul_Q4_K, matmul_Q6_K
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor_internal import ManagedTensorSlice, trace_slice_arg
+from tensor import ManagedTensorSlice, trace_slice_arg
 
 from utils.index import IndexList
 

@@ -24,14 +24,14 @@ from memory import memcpy
 from nn.concat import concat
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import (
+from tensor import (
     DynamicTensor,
     InputTensor,
     IOSpec,
     ManagedTensorSlice,
 )
-from tensor_internal.io_spec import IO
-from tensor_internal.managed_tensor_slice import get_kernel_simd_width
+from tensor.io_spec import IO
+from tensor.managed_tensor_slice import get_kernel_simd_width
 from weights_registry import WeightsRegistry
 
 from utils import Index, IndexList, StaticTuple

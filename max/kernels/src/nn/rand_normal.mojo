@@ -14,7 +14,7 @@
 from algorithm.functional import elementwise
 from gpu.random import NormalRandom
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal._indexing import _dot_prod, _row_major_strides
+from tensor._indexing import _dot_prod, _row_major_strides
 
 from utils import IndexList
 

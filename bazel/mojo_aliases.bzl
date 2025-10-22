@@ -13,7 +13,7 @@ _PACKAGES = {
     "register": "max/kernels/src/register",
     "MOGGPrimitives": "max/kernels/src/Mogg/MOGGPrimitives",
     "MOGGKernelAPI": "max/kernels/src/Mogg/MOGGKernelAPI",
-    "tensor_internal": "max/kernels/src/extensibility/tensor_internal",
+    "tensor": "max/kernels/src/extensibility/tensor",
     "compiler_internal": "max/kernels/src/extensibility/compiler_internal",
     "weights_registry": "max/kernels/src/weights_registry",
     "internal_utils": "max/kernels/src/internal_utils",

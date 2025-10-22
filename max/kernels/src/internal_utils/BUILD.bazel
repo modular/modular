@@ -8,6 +8,6 @@ mojo_library(
     validate_missing_docs = False,
     deps = [
         "@mojo//:stdlib",
-        "@mojo//:tensor_internal",
+        "@mojo//:tensor",
     ],
 )
