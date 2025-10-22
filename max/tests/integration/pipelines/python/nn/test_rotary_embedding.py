@@ -133,7 +133,6 @@ def test_freqs_cis(
             params.theta,
             MAX_SEQ_LEN,
             head_dim=params.head_dim,
-            device=DeviceRef.CPU(),
         )
         graph.output(rope.freqs_cis)
     result = load_and_execute_numpy(session, graph)
@@ -189,7 +188,6 @@ def test_llama3_freqs_cis(
             MAX_SEQ_LEN,
             scaling_params=scaling_params,
             head_dim=base_params.head_dim,
-            device=DeviceRef.CPU(),
         )
         graph.output(rope.freqs_cis)
     result = load_and_execute_numpy(session, graph)
@@ -241,7 +239,6 @@ def test_dynamic_rope_freqs_cis(
             theta=theta,
             max_seq_len=short_seq_len,
             head_dim=head_dim,
-            device=DeviceRef.CPU(),
         )
         graph.output(rope.freqs_cis)
 
@@ -269,7 +266,6 @@ def test_dynamic_rope_freqs_cis(
             theta=theta,
             max_seq_len=short_seq_len,
             head_dim=head_dim,
-            device=DeviceRef.CPU(),
         )
         # Simulate runtime position_ids that require growing buffer.
         dummy_position_ids = ops.range(
@@ -601,7 +597,6 @@ def test_longrope_scaling(
             params.theta,
             max_seq_len,
             head_dim=params.head_dim,
-            device=DeviceRef.CPU(),
             scaling_params=scaling_params,
         )
         graph.output(rope.freqs_cis)
@@ -652,7 +647,6 @@ def test_longrope_scaling(
             params.theta,
             short_max_seq_len,
             head_dim=params.head_dim,
-            device=DeviceRef.CPU(),
             scaling_params=scaling_params,
         )
         graph.output(rope_short.freqs_cis)
@@ -690,7 +684,6 @@ def test_longrope_scaling(
             params.theta,
             4096,  # smaller max_seq_len
             head_dim=params.head_dim,
-            device=DeviceRef.CPU(),
             scaling_params=None,  # No scaling
         )
         graph.output(rope_no_scale.freqs_cis)
@@ -709,7 +702,6 @@ def test_longrope_scaling(
             params.theta,
             4096,
             head_dim=params.head_dim,
-            device=DeviceRef.CPU(),
         )
         graph.output(rope_standard.freqs_cis)
 

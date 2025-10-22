@@ -69,7 +69,6 @@ def _single_gpu_baseline(
         theta=config.rope_theta,
         max_seq_len=config.max_position_embeddings,
         scaling_params=scaling_params,
-        device=DeviceRef.GPU(),
     )
 
     kv_params = KVCacheParams(
@@ -215,7 +214,6 @@ def _build_scaling_and_rope(
         theta=config.rope_theta,
         max_seq_len=config.max_position_embeddings,
         scaling_params=scaling,
-        device=DeviceRef.GPU(),  # cast per-device inside the layer
     )
 
 

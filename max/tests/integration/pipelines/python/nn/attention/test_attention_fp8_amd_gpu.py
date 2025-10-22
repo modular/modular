@@ -314,7 +314,6 @@ def test_attention_with_rope_fp8_amd_static(
         n_heads=num_heads,
         theta=10000.0,
         max_seq_len=seq_len * 2,
-        device=DeviceRef.GPU(),
     )
 
     kv_manager, kv_cache_params = _create_kv_manager(
@@ -407,7 +406,6 @@ def test_attention_with_rope_fp8_amd_dynamic(
         n_heads=num_heads,
         theta=10000.0,
         max_seq_len=seq_len * 2,
-        device=DeviceRef.GPU(),
     )
 
     kv_manager, kv_cache_params = _create_kv_manager(

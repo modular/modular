@@ -591,7 +591,6 @@ def attention_lora_max_output(
         n_heads=config.n_q_heads,
         theta=config.theta,
         max_seq_len=seq_len * 2,
-        device=device_ref,
     )
 
     kv_params = KVCacheParams(

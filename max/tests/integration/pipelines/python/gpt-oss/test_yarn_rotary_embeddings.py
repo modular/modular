@@ -43,7 +43,7 @@ def generate_max_yarn_rope_outputs(
     dtype: torch.dtype = torch.bfloat16,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Generate outputs using MAX YarnRotaryEmbedding."""
-    session = InferenceSession(devices=[Accelerator(0)])
+    session = InferenceSession(devices=[Accelerator()])
 
     # Create YARN RoPE with scaling parameters from config
     yarn_scaling_params = YarnScalingParams(
@@ -61,7 +61,6 @@ def generate_max_yarn_rope_outputs(
         n_heads=config.num_attention_heads,
         theta=config.rope_theta,
         max_seq_len=config.max_position_embeddings,
-        device=DeviceRef.GPU(),
         head_dim=config.head_dim,
         interleaved=False,
         scaling_params=yarn_scaling_params,
@@ -73,7 +72,9 @@ def generate_max_yarn_rope_outputs(
         input_types=(),
     ) as graph:
         frequencies = rope.freqs_cis_base()
-        graph.output(frequencies)
+        # RoPE is computed on CPU, transfer to GPU for execution
+        frequencies_gpu = frequencies.to(DeviceRef.GPU())
+        graph.output(frequencies_gpu)
 
     compiled = session.load(graph)
 

@@ -159,7 +159,6 @@ def generate_max_outputs(
         MAX_SEQ_LEN,
         interleaved=False,
         head_dim=text_config.head_dim,
-        device=device_ref,
     )
     attention = MaxQwen3Attention(
         rope=rope,

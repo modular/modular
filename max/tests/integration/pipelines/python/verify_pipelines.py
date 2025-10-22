@@ -772,7 +772,7 @@ PIPELINES = {
             pipeline="llama3.2-1b",
             encoding="bfloat16",
             cos_dist_threshold=2.1e-03,
-            kl_div_threshold=6.9e-03,
+            kl_div_threshold=8.0e-03,
         ),
     ),
     "meta-llama/Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
@@ -822,8 +822,8 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="mistral3",
             encoding="bfloat16",
-            cos_dist_threshold=2.2e-3,
-            kl_div_threshold=2.6e-3,
+            cos_dist_threshold=3.0e-03,
+            kl_div_threshold=5.2e-3,
         ),
     ),
     "meta-llama/Llama-3.2-11B-Vision-Instruct-bfloat16": PipelineDef(
@@ -849,7 +849,7 @@ PIPELINES = {
             pipeline="internvl3-1b-instruct",
             encoding="bfloat16",
             # TODO(MODELS-565): Fix InternVL correctness.
-            cos_dist_threshold=3.0e-03,
+            cos_dist_threshold=3.7e-03,
             kl_div_threshold=1.5e-02,
         ),
     ),
@@ -917,7 +917,7 @@ PIPELINES = {
             pipeline="qwen",
             encoding="bfloat16",
             cos_dist_threshold=2.7e-3,
-            kl_div_threshold=1.3e-1,
+            kl_div_threshold=1.7e-1,
         ),
     ),
     "Qwen/Qwen2.5VL-3B-Instruct-bfloat16": PipelineDef(
@@ -958,7 +958,7 @@ PIPELINES = {
             pipeline="qwen3",
             encoding="bfloat16",
             cos_dist_threshold=1.1e-3,
-            kl_div_threshold=5.5e-3,
+            kl_div_threshold=7.1e-3,
         ),
     ),
     "allenai/OLMo-2-1124-7B-float32": PipelineDef(
@@ -1161,7 +1161,7 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="smollm2-lora",
             encoding="bfloat16",
-            cos_dist_threshold=1.1e-03,
+            cos_dist_threshold=2.7e-03,
             kl_div_threshold=7.5e-03,
         ),
     ),

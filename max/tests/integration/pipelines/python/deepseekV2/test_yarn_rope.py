@@ -96,7 +96,6 @@ def generate_max_outputs(
             n_heads=config.num_attention_heads,
             max_seq_len=config.max_position_embeddings,
             scaling_params=scaling_params,
-            device=DeviceRef.CPU(),
         ),
         input_types=(
             TensorType(

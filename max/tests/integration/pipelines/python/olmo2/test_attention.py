@@ -161,7 +161,6 @@ def generate_max_outputs(
             max_seq_len=MAX_SEQ_LEN,
             interleaved=False,
             head_dim=text_config.head_dim,
-            device=device_ref,
         ),
         num_attention_heads=text_config.num_attention_heads,
         num_key_value_heads=text_config.num_key_value_heads,

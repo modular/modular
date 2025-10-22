@@ -131,10 +131,8 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         cache_strategy=KVCacheStrategy.PAGED,
     )
 
-    rope_ref = RotaryEmbedding(dim, n_heads, 10000.0, max_seq_len, device_ref)
-    rope_no_opaque = RotaryEmbedding(
-        dim, n_heads, 10000.0, max_seq_len, device_ref
-    )
+    rope_ref = RotaryEmbedding(dim, n_heads, 10000.0, max_seq_len)
+    rope_no_opaque = RotaryEmbedding(dim, n_heads, 10000.0, max_seq_len)
 
     no_opaque_attention = AttentionWithRopeNoOpaque(
         rope=rope_no_opaque,

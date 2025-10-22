@@ -75,7 +75,6 @@ def generate_max_outputs(
         theta=config.rope_theta,
         max_seq_len=config.max_position_embeddings,
         scaling_params=scaling_params,
-        device=DeviceRef.GPU(),
     )
 
     kv_params = KVCacheParams(
@@ -239,7 +238,6 @@ def generate_max_outputs_dp(
         theta=config.rope_theta,
         max_seq_len=config.max_position_embeddings,
         scaling_params=scaling_params,
-        device=DeviceRef.GPU(),
     )
 
     kv_params = KVCacheParams(
