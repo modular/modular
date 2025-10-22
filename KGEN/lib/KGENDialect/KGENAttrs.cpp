@@ -270,25 +270,46 @@ bool TypeParamAttr::hasIdenticalRepresentation() {
 }
 
 //===----------------------------------------------------------------------===//
-// UpcastAttr
+// Upcast/DowncastAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr UpcastAttr::get(Type type, TypedAttr inputTypeValue) {
+template <typename CastAttr>
+static TypedAttr getCastAttr(Type type, TypedAttr inputTypeValue) {
+
   // If this is a constant type coming in, we can fold this.  If not, stage it
-  // until elaboration or something else simplifies things.
+  // until elaboration.
+  //
+  // FIXME: We should only do it for upcast because downcast is unsafe and
+  // we should raise an more accurate error when the constant type can not be
+  // downcast. The folding below leads to an indirect error message.
+  // However, there is currently no good way to emit an error in evaluation
+  // context where the downcast error can be detected, and the current error
+  // message is better than an elaboration error (if we do not fold it).
   if (auto typeAttr = sugarDynCast<TypeParamAttr>(inputTypeValue)) {
     return TypeParamAttr::get(typeAttr.getTypeValue(), typeAttr.getMlirType(),
                               type);
   }
 
-  // upcast(upcast(x)) = upcast(x)
+  // cast(upcast(x)) = cast(x)
+  // cast(downcast(x)) = cast(x)
   if (auto upcast = sugarDynCast<UpcastAttr>(inputTypeValue))
-    return get(type, upcast.getInputTypeValue());
+    return CastAttr::get(type, upcast.getInputTypeValue());
+  if (auto downcast = sugarDynCast<DowncastAttr>(inputTypeValue))
+    return CastAttr::get(type, downcast.getInputTypeValue());
 
-  return Base::get(type.getContext(), type, inputTypeValue);
+  return CastAttr::Base::get(type.getContext(), type, inputTypeValue);
+}
+
+TypedAttr UpcastAttr::get(Type type, TypedAttr inputTypeValue) {
+  return getCastAttr<UpcastAttr>(type, inputTypeValue);
+}
+
+TypedAttr DowncastAttr::get(Type type, TypedAttr inputTypeValue) {
+  return getCastAttr<DowncastAttr>(type, inputTypeValue);
 }
 
 bool UpcastAttr::isConstant() const { return false; }
+bool DowncastAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
 // TypeConformsToAttr

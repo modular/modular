@@ -219,6 +219,17 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
         return TypeParamAttr::get(*typeValueOr, *mlirTypeOr, *typeOr);
       });
 
+  // NOTE: Downcast becomes an no-op after lower-lit. However, we should
+  // probably keep the attr till elaboration time after we preserve traits
+  // properly in KGEN for a better error message.
+  // We simply strip all downcast at the moment otherwise all downcasts will be
+  // in same (useless) form of `#downcast<T> : !kgen.type` anyway.
+  replacer.addInferredDomainNonRecursiveReplacement(
+      [&replacer](DowncastAttr typeValue) -> FailureOr<Attribute> {
+        TypedAttr originalTy = typeValue.getInputTypeValue();
+        return replacer.replaceParameter(originalTy);
+      });
+
   // ParamRefTypes should be TypeValueType if in the value domain.
   replacer.addNonRecursiveReplacement(
       [&replacer](ParamType paramRef) -> FailureOr<Type> {

@@ -192,6 +192,11 @@ ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
 static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
                                              SharedState &shared,
                                              TypeConvention genericDefault) {
+  // Downcast preserves register passability, strip it before querying the
+  // property.
+  if (auto paramRefTy = dyn_cast<ParamType>(type.mlirType))
+    type = DowncastAttr::strip(paramRefTy.getParam());
+
   ASTDecl *decl = type.getDecl(shared);
 
   if (!decl) {

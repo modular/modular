@@ -1074,3 +1074,50 @@ struct Optional[T: ImplicitlyCopyable & Movable]:
     fn value(ref self) -> ref [self] T:
         while True:
             pass
+
+
+# ===-----------------------------------------------------------------------===#
+# rebind
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn rebind[
+    src_type: AnyTrivialRegType, //,
+    dest_type: AnyTrivialRegType,
+](src: src_type) -> dest_type:
+    return __mlir_op.`kgen.rebind`[_type=dest_type](src)
+
+
+@always_inline("nodebug")
+fn rebind[
+    src_type: AnyType, //,
+    dest_type: AnyType,
+](ref src: src_type) -> ref [src] dest_type:
+    lit = __get_mvalue_as_litref(src)
+    rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_type](lit)
+    return __get_litref_as_mvalue(rebound)
+
+
+# ===-----------------------------------------------------------------------===#
+# trait downcast
+# ===-----------------------------------------------------------------------===#
+
+alias AnyTrait = type_of(AnyType)
+alias downcast[_Trait: AnyTrait, T: AnyType] = __mlir_attr[
+    `#kgen.downcast<`, T, `> : `, _Trait
+]
+
+
+@always_inline
+fn trait_downcast[
+    T: AnyTrivialRegType, //, Trait: AnyTrait
+](var x: T) -> downcast[Trait, T]:
+    return rebind[downcast[Trait, T]](x)
+
+
+@always_inline
+fn trait_downcast[
+    T: AnyType, //, Trait: AnyTrait
+](ref x: T) -> ref [x] downcast[Trait, T]:
+    return rebind[downcast[Trait, T]](x)
