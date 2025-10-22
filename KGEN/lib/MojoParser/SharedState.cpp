@@ -1701,7 +1701,13 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             .Case([&](ExtensionDeclOp extensionOp) -> LogicalResult {
               SymbolRefAttr targetStruct =
                   extensionOp.getTargetStruct().value();
-              refWalker.walk(targetStruct);
+              assert(targetStruct && "extension doesn't have target");
+              // TODO(MOCO-522): Look into storing the type in the extension
+              // rather than a SymbolRefAttr.
+              auto structType = LIT::StructType::get(
+                  targetStruct, {},
+                  TypeSignatureType::get(targetStruct.getContext()));
+              refWalker.walk(StructMetaType::get(structType));
               ASTDecl &structAstDecl =
                   declResolver->getDeclForTypeSymbol(targetStruct);
               auto structOp = dyn_cast_or_null<StructDeclOp>(
