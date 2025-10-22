@@ -6136,13 +6136,16 @@ fn cp_async_mn_major[
     alias src_shape0 = src_layout.shape[0].value()
     alias src_shape1 = src_layout.shape[1].value()
 
-    alias desc_layout = _tma_desc_tile_layout[
-        dtype,
-        2,
-        Index(src_shape0, src_shape1),
-        is_k_major=False,
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
-    ]()
+    # we can't use the tma desc layout, as if swizzle_granularity ==
+    # `src_shape1`, the tma will want to fuse the rows into a large
+    # description. We need to partition the copy among the 4 warps
+    # of the warp group. Thus, we use the minimal desc layout.
+    alias core_matrix_num_rows = 8
+    alias swizzle_bytes = 128  # assume 128B swizzle
+    alias swizzle_granularity = swizzle_bytes // dtype.size_of()
+    alias desc_layout = Layout.row_major(
+        core_matrix_num_rows, swizzle_granularity
+    )
     alias desc_shape0 = desc_layout.shape[0].value()
     alias desc_shape1 = desc_layout.shape[1].value()
     alias desc_size = desc_layout.size()

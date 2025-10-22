@@ -351,7 +351,7 @@ def test_tma_wgmma[
         b_tma_op,
         c.device_tensor(),
         UInt(K // BK),
-        grid_dim=(1, 1),
+        grid_dim=(N // BN, M // BM),
         block_dim=(128),
     )
 
@@ -439,30 +439,57 @@ def main():
             b_swizzle = TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
 
-        test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(64, 128, 16),
-            Index(64, 128, 16),
-            Index(64, 64, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            transpose_b=False,
-        ](ctx)
+        @parameter
+        for log2BN in range(6, 8):
+            alias BN = 1 << log2BN
+            test_tma_wgmma[
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(128, 256, 64),
+                Index(64, BN, 64),
+                Index(64, 64, 16),
+                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                transpose_b=True,
+            ](ctx)
 
-        test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(64, 128, 16),
-            Index(64, 128, 16),
-            Index(64, 64, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            a_smem=False,
-            transpose_b=False,
-        ](ctx)
+            test_tma_wgmma[
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(128, 256, 64),
+                Index(64, BN, 64),
+                Index(64, 64, 16),
+                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                transpose_b=False,
+            ](ctx)
+
+            test_tma_wgmma[
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(128, 256, 16),
+                Index(64, BN, 16),
+                Index(64, 64, 16),
+                a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
+                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                transpose_b=False,
+            ](ctx)
+
+            test_tma_wgmma[
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(128, 256, 16),
+                Index(64, BN, 16),
+                Index(64, 64, 16),
+                a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
+                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                a_smem=False,
+                transpose_b=False,
+            ](ctx)
 
         test_tma_wgmma[
             DType.bfloat16,
