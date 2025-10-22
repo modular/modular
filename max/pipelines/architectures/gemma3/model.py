@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -454,7 +454,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         Returns:
             An object containing the output logits from the model execution.
         """
-        model_inputs = cast(Gemma3Inputs, model_inputs)
+        assert isinstance(model_inputs, Gemma3Inputs)
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
 
         # Check if input_row_offsets is a list or a single tensor
@@ -520,7 +520,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
             The prepared :obj:`ModelInputs` object for the initial execution step.
         """
         assert kv_cache_inputs is not None
-        kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
+        assert isinstance(kv_cache_inputs, KVCacheInputsSequence)
 
         # This needs to be replaced with actual input preparation
         # Get input_row_offsets: start and end position of each batch in the
@@ -565,7 +565,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         Returns:
             The prepared :obj:`ModelInputs` object for the next execution step.
         """
-        prev_model_inputs = cast(Gemma3Inputs, prev_model_inputs)
+        assert isinstance(prev_model_inputs, Gemma3Inputs)
 
         row_offsets_size = prev_model_inputs.input_row_offsets[0].shape[0]
 
