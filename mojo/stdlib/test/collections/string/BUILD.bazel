@@ -1,0 +1,33 @@
+load("//bazel:api.bzl", "mojo_test")
+
+_NO_ASAN = [
+    "test_string.mojo",
+    "test_string_slice.mojo",  # TODO(MOCO-2316): Takes too long to compile
+    "test_utf8.mojo",  # TODO(MSTDL-1881): materialization leak
+]
+
+_PLATFORM_CONSTRAINTS = {
+    src: select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    })
+    for src in _NO_ASAN
+}
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        data = [src],  # NOTE: some tests attempt to read their source files
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(["**/*.mojo"])
+]
