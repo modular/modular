@@ -190,7 +190,7 @@ struct MmaOpSM100_SS[
     ):
         @parameter
         if product(cluster_shape) == 1:
-            mma_arrive(ptr_mbar)
+            mma_arrive[cta_group](ptr_mbar)
         else:
             mma_arrive_multicast[cta_group](ptr_mbar, self.mask)
 

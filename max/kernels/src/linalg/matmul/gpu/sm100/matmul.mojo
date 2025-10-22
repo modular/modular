@@ -43,6 +43,7 @@ from gpu.sync import (
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
+    mbarrier_arrive,
 )
 from gpu.tcgen05 import *
 from layout import (
@@ -643,6 +644,8 @@ fn register_epilogue[
     frag_size: UInt,
     repeats: UInt,
     transpose_c: Bool,
+    cta_group: Int,
+    is_lower_frag_required: Bool,
 ](
     mut upper_frag_casted: SIMD[epilogue_dtype, frag_size],
     mut lower_frag_casted: SIMD[epilogue_dtype, frag_size],
@@ -666,11 +669,14 @@ fn register_epilogue[
     var staged_c_row = c_row
 
     @parameter
-    if MMA_M == 256:
-        # based on https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-a
+    if MMA_M == 256 or (MMA_M == 128 and cta_group == 1):
+        # based on layout A/D (https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-a)
         staged_c_row += warp_id * 32
+    elif MMA_M == 64 and cta_group == 1:
+        # based on layout F (https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-f)
+        staged_c_row += warp_id * 16
     else:
-        # based on https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-b
+        # based on layout B (https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-b)
         staged_c_row += (warp_id % 2) * 32
         staged_c_col += (warp_id // 2) * num_stages * stageN
 
@@ -724,13 +730,15 @@ fn register_epilogue[
             staged_c_col,
         )
 
-        helper(
-            top_frag_lower_coord_left,
-            bottom_frag_lower_coord_left,
-            lower_frag_casted,
-            staged_c_row,
-            staged_c_col,
-        )
+        @parameter
+        if is_lower_frag_required:
+            helper(
+                top_frag_lower_coord_left,
+                bottom_frag_lower_coord_left,
+                lower_frag_casted,
+                staged_c_row,
+                staged_c_col,
+            )
 
 
 @always_inline
@@ -800,7 +808,10 @@ fn multi_stage_store_C[
     # so num stages is usually 256 by 32 is 8
     # MMA Size will be larger than output tile shape. E.G. MMA_MxMMA_N = (128, 256); OUT_MxOUT_N = (128, 32)
 
-    alias num_stages = MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
+    alias cg2_num_stages = MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
+    alias cg1_num_stages = MMA_N // stageN
+    alias num_stages = cg2_num_stages if cta_group == 2 else cg1_num_stages
+
     alias data_paths = 16  # same as lanes
     alias bits = 256
     # every element in tmem is 4 bytes, so bits being 256 means 8 elements stored across N
@@ -828,38 +839,59 @@ fn multi_stage_store_C[
     # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
     var tmem_offset = mma_output_output_stage * stage_stride_cols + tmem_addr
 
+    alias fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
+    alias rep_frag_size = rep * fragment_size
+    var upper_frag = SIMD[accum_type, rep_frag_size]()
+    var lower_frag = SIMD[accum_type, rep_frag_size]()
+    var upper_frag_casted = SIMD[epilogue_dtype, rep_frag_size]()
+    var lower_frag_casted = SIMD[epilogue_dtype, rep_frag_size]()
+
+    alias is_lower_frag_required = not (cta_group == 1 and BM == 64)
+
     @parameter
     for stage in range(num_stages):
         # column offset, moving right by 32 columns each time, since each num_stage stores two, 16 column submatrices
         # MMA has result in 32 rows per warp's data paths.
         # upper_frag is for rows 0-15, lower is for 16-31.
         var stage_tmem_addr = tmem_offset + (stage * stageN)
-        var upper_frag = tcgen05_ld[
+        upper_frag = tcgen05_ld[
             datapaths=data_paths,
             bits=bits,
             repeat=rep,
             dtype=accum_type,
             pack=False,
+            width=rep_frag_size,
         ](stage_tmem_addr)
 
-        var lower_frag = tcgen05_ld[
-            datapaths=data_paths,
-            bits=bits,
-            repeat=rep,
-            dtype=accum_type,
-            pack=False,
-        ](stage_tmem_addr + (16 << 16))
+        @parameter
+        if is_lower_frag_required:
+            lower_frag = tcgen05_ld[
+                datapaths=data_paths,
+                bits=bits,
+                repeat=rep,
+                dtype=accum_type,
+                pack=False,
+                width=rep_frag_size,
+            ](stage_tmem_addr + (16 << 16))
 
         tcgen05_load_wait()
 
         @parameter
         if stage == num_stages - 1:
-            umma_arrive_leader_cta(
-                mma_output_pipeline.consumer_mbar(mma_output_output_stage)
-            )
+            if cta_group == 1:
+                _ = mbarrier_arrive(
+                    mma_output_pipeline.consumer_mbar(mma_output_output_stage)
+                )
+            else:
+                umma_arrive_leader_cta(
+                    mma_output_pipeline.consumer_mbar(mma_output_output_stage)
+                )
 
-        var upper_frag_casted = upper_frag.cast[epilogue_dtype]()
-        var lower_frag_casted = lower_frag.cast[epilogue_dtype]()
+        upper_frag_casted = upper_frag.cast[epilogue_dtype]()
+
+        @parameter
+        if is_lower_frag_required:
+            lower_frag_casted = lower_frag.cast[epilogue_dtype]()
 
         @parameter
         if elementwise_compute_lambda_fn:
@@ -879,6 +911,8 @@ fn multi_stage_store_C[
                     UInt(upper_frag_casted.size),
                     UInt(rep),
                     transpose_c,
+                    cta_group=cta_group,
+                    is_lower_frag_required=is_lower_frag_required,
                 ](upper_frag_casted, lower_frag_casted, c_row, c_col, N)
 
         # Assume double-buffer for shared memory packing
@@ -893,17 +927,19 @@ fn multi_stage_store_C[
             var c_smem_warp_tile_upper = c_smem_tile.tile[
                 stageN * 16 // stage_contiguous_size, stage_contiguous_size
             ](2 * warp_id, 0).reshape[Layout.row_major(stageN, 16)]()
+            stsm_helper[swizzle, transpose_c](
+                upper_frag_casted, c_smem_warp_tile_upper
+            )
+
             var c_smem_warp_tile_lower = c_smem_tile.tile[
                 stageN * 16 // stage_contiguous_size, stage_contiguous_size
             ](2 * warp_id + 1, 0).reshape[Layout.row_major(stageN, 16)]()
 
-            # Pack the upper frag to shared memory
-            stsm_helper[swizzle, transpose_c](
-                upper_frag_casted, c_smem_warp_tile_upper
-            )
-            stsm_helper[swizzle, transpose_c](
-                lower_frag_casted, c_smem_warp_tile_lower
-            )
+            @parameter
+            if is_lower_frag_required:
+                stsm_helper[swizzle, transpose_c](
+                    lower_frag_casted, c_smem_warp_tile_lower
+                )
 
             # Guard the write to shared memory is done.
             named_barrier[num_output_warps * UInt(WARP_SIZE)]()
@@ -936,20 +972,27 @@ fn multi_stage_store_C[
                         c_smem_warp_tile_lower,
                     )
         else:
-            var c_smem_warp_tile = c_smem_tile.tile[32, stageN](warp_id, 0)
+            alias c_smem_tile_m = 32 if cta_group == 2 else BM // num_output_warps
+            var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, stageN](
+                warp_id, 0
+            )
 
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                 data_paths, stageN
             ](0, 0)
-            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
-                data_paths, stageN
-            ](1, 0)
             stsm_helper[swizzle, transpose_c](
                 upper_frag_casted, c_smem_warp_tile_upper
             )
-            stsm_helper[swizzle, transpose_c](
-                lower_frag_casted, c_smem_warp_tile_lower
-            )
+
+            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
+                data_paths, stageN
+            ](1, 0)
+
+            @parameter
+            if is_lower_frag_required:
+                stsm_helper[swizzle, transpose_c](
+                    lower_frag_casted, c_smem_warp_tile_lower
+                )
 
             # Guard the write to shared memory is done.
             named_barrier[num_output_warps * UInt(WARP_SIZE)]()
@@ -984,10 +1027,20 @@ fn multi_stage_store_C[
 
         var lane = lane_id()
 
-        alias TMA_BM = c_smem_tile.layout.shape[
+        alias CG2_TMA_BM = c_smem_tile.layout.shape[
             0
         ].value() if MMA_M == 256 else BM
-        var elect_one_warp = warp_id == 0 if MMA_M == 256 else warp_id % 2 == 0
+        alias CG1_TMA_BM = c_smem_tile.layout.shape[0].value()
+        alias TMA_BM = CG2_TMA_BM if cta_group == 2 else CG1_TMA_BM
+
+        var cg2_elect_one_warp = (
+            warp_id == 0 if MMA_M == 256 else warp_id % 2 == 0
+        )
+        var cg1_elect_one_warp = warp_id == 0
+        var elect_one_warp = (
+            cg2_elect_one_warp if cta_group == 2 else cg1_elect_one_warp
+        )
+
         var coord_n_mma_m256 = work_tile_coord[1] * UInt(MMA_N) + UInt(
             stage * stageN
         )
@@ -997,7 +1050,9 @@ fn multi_stage_store_C[
             + UInt(BN * (warp_id // 2))
         )
 
-        var coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
+        var cg2_coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
+        var cg1_coord_n = coord_n_mma_m256
+        var coord_n = cg2_coord_n if cta_group == 2 else cg1_coord_n
 
         if elect_one_warp and lane == 0:
             fence_async_view_proxy()
@@ -1019,7 +1074,11 @@ fn multi_stage_store_C[
                         ),
                     )
             else:
-                var c_smem_coord_m = 0 if MMA_M == 256 else (warp_id // 2)
+                var cg2_c_smem_coord_m = 0 if MMA_M == 256 else (warp_id // 2)
+                var cg1_c_smem_coord_m = UInt(0)
+                var c_smem_coord_m = (
+                    cg2_c_smem_coord_m if cta_group == 2 else cg1_c_smem_coord_m
+                )
                 var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](
                     c_smem_coord_m, 0
                 )
@@ -1229,7 +1288,9 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
     var elect_one_thread = elect_one_sync_with_mask()
-    var elect_one_cta = block_rank_in_cluster() % 2 == 0
+    var elect_one_cta = (
+        block_rank_in_cluster() % 2 == 0 if config.cta_group == 2 else True
+    )
     var is_first_cta_in_cluster = block_rank_in_cluster() == 0
     var warp_id = get_warp_id()
     alias max_tmem_cols = 512
@@ -1465,12 +1526,21 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
                     # mma arrive multicast will track completion of all mma prior to this barrier.
                     if elect_one_sync():
-                        mma_arrive_multicast[config.cta_group](
-                            mma_output_pipeline.producer_mbar(
-                                mma_output_mma_stage
-                            ),
-                            mma_complete_mask,
-                        )
+
+                        @parameter
+                        if config.cta_group == 1:
+                            mma_arrive[config.cta_group](
+                                mma_output_pipeline.producer_mbar(
+                                    mma_output_mma_stage
+                                )
+                            )
+                        else:
+                            mma_arrive_multicast[config.cta_group](
+                                mma_output_pipeline.producer_mbar(
+                                    mma_output_mma_stage
+                                ),
+                                mma_complete_mask,
+                            )
                     mma_output_pipeline.producer_step()
                 work_info = next_work_info
 
@@ -1524,7 +1594,9 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
             tile_idx += 1
 
-        _ = tmem_dealloc_mbar[].arrive_cluster(block_rank_in_cluster() ^ 1)
+        @parameter
+        if config.cta_group == 2:
+            _ = tmem_dealloc_mbar[].arrive_cluster(block_rank_in_cluster() ^ 1)
         _ = tmem_dealloc_mbar[].arrive()
 
 
@@ -1631,9 +1703,42 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     alias BK = config.block_tile_shape[2]
 
     constrained[
-        (MMA_M != 128) or (MMA_N % 32 == 0),
-        "if MMA_M is 128, then MMA_N must be a multiple of 32",
+        config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
     ]()
+
+    @parameter
+    if config.cta_group == 2:
+        constrained[
+            (MMA_M == 256 or MMA_M == 128),
+            "Only support cta_group == 2 with MMA_M == 128 or 256",
+        ]()
+        constrained[
+            (MMA_M != 128) or (MMA_N % 32 == 0),
+            "if MMA_M is 128, then MMA_N must be a multiple of 32",
+        ]()
+        # transpose_c => MMA_M == 256 is the same as (not transpose_c) or MMA_M == 256
+        constrained[
+            (not config.AB_swapped) or MMA_M == 256,
+            "swapAB is only supported for MMA_M == 256",
+        ]()
+
+    else:
+        constrained[
+            MMA_M == 128 or MMA_M == 64,
+            "Only support MMA_M == 128 or 64 when cta_group == 1",
+        ]()
+        constrained[
+            (MMA_N % 16 == 0),
+            "MMA_N must be a multiple of 16",
+        ]()
+        constrained[
+            not config.AB_swapped,
+            "swapAB is not supported for cta_group == 1",
+        ]()
+        constrained[
+            register_based_epilogue or elementwise_compute_lambda_fn is None,
+            "only register-based epilogue is supported for cta_group == 1",
+        ]()
 
     alias cluster_shape = config.cluster_shape
 
@@ -1657,17 +1762,14 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         swizzle_mode = config.b_swizzle,
     ](ctx, b_device)
 
-    constrained[
-        (not config.AB_swapped) or MMA_M == 256,
-        "swapAB is only supported for MMA_M == 256",
-    ]()
-
     # For MMA_M=128, otuput tile has 128 rows and each 64 rows belongs to one c tile.
     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-b
     alias c_tma_tile_shape_mma128 = Index(
         64, config.output_tile_shape[1]
     ) if not config.AB_swapped else Index(config.output_tile_shape[0], 64)
-    alias c_tma_tile_shape = config.output_tile_shape if MMA_M == 256 else c_tma_tile_shape_mma128
+    alias c_tma_tile_shape = config.output_tile_shape if (
+        MMA_M == 256 or config.cta_group == 1
+    ) else c_tma_tile_shape_mma128
 
     var c_tma_op = create_tma_tile[
         c_tma_tile_shape if not config.AB_swapped else Index(

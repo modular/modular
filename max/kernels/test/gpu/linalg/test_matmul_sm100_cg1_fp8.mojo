@@ -59,6 +59,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
+    cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -92,6 +93,15 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
                 mma_shape,
                 " block_tile_shape=",
                 block_tile_shape,
+                " cta_group=",
+                cta_group,
+                " cluster_shape=(",
+                cluster_shape[0],
+                ", ",
+                cluster_shape[1],
+                ", ",
+                cluster_shape[2],
+                ")",
                 " swapAB=",
                 swapAB,
             )
@@ -132,10 +142,10 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         var bt = b_host.tensor
         for m in range(M):
             for k in range(K):
-                at[m, k] = Float32(k).cast[a_type]()
+                at[m, k] = Float32(m + k).cast[a_type]()
         for n in range(N):
             for k in range(K):
-                bt[n, k] = Float32(1 if n == k else 0).cast[b_type]()
+                bt[n, k] = Float32(n + k).cast[b_type]()
     else:
         random(a_host.tensor)
         random(b_host.tensor)
@@ -150,7 +160,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
-        cta_group=2,
+        cta_group=cta_group,
     )
 
     blackwell_matmul_tma_umma_warp_specialized[
@@ -208,38 +218,33 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
 def main():
     with DeviceContext() as ctx:
-        alias dtype = DType.bfloat16
+        alias dtype = DType.float8_e4m3fn
 
         @parameter
         for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
             alias BK = (swizzle.bytes() // size_of[dtype]())
-            alias MMA_K = 16
+            alias MMA_K = 32
 
             @parameter
             for mma_m_scale in range(1, 3):
 
                 @parameter
-                for mma_n_scale in range(1, 17):
-                    # from 16*1 till 16*16 which is 256
-                    # basically, if MMA_M is 64, then BN must be multiple of 16 (mma_n_scale must be even)
-                    @parameter
-                    if mma_m_scale == 1 and mma_n_scale % 2 != 0:
-                        continue
-
+                for mma_n_scale in range(2, 33, 2):
                     alias block_tile_shape = Index(
                         64 * mma_m_scale, 8 * mma_n_scale, BK
                     )
                     alias umma_shape = Index(
-                        128 * mma_m_scale, 16 * mma_n_scale, MMA_K
+                        64 * mma_m_scale, 8 * mma_n_scale, MMA_K
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
-                        DType.bfloat16,
-                        DType.bfloat16,
+                        dtype,
+                        dtype,
                         DType.bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                        cta_group=1,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=8,
@@ -251,19 +256,22 @@ def main():
                     )
 
                     @parameter
-                    for swapAB in [False, True]:
+                    for swapAB in [
+                        False,
+                    ]:
 
                         @parameter
                         if swapAB and mma_m_scale != 2:
                             continue
 
                         test_blackwell_matmul_tma_umma_warp_specialized[
-                            DType.bfloat16,
-                            DType.bfloat16,
+                            dtype,
+                            dtype,
                             DType.bfloat16,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                            cta_group=1,
                             a_swizzle=swizzle,
                             b_swizzle=swizzle,
                             block_swizzle_size=4,
@@ -276,12 +284,13 @@ def main():
                         )
 
                         test_blackwell_matmul_tma_umma_warp_specialized[
-                            DType.bfloat16,
-                            DType.bfloat16,
+                            dtype,
+                            dtype,
                             DType.bfloat16,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                            cta_group=1,
                             a_swizzle=swizzle,
                             b_swizzle=swizzle,
                             block_swizzle_size=0,
@@ -294,12 +303,13 @@ def main():
                         )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
-                        DType.bfloat16,
-                        DType.bfloat16,
+                        dtype,
+                        dtype,
                         DType.bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape = StaticTuple[Int32, 3](8, 2, 1),
+                        cta_group=1,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=2,
@@ -311,12 +321,13 @@ def main():
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
-                        DType.bfloat16,
-                        DType.bfloat16,
+                        dtype,
+                        dtype,
                         DType.bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        cta_group=1,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=1,
