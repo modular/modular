@@ -336,6 +336,9 @@ struct List[T: Copyable & Movable](
     ]():
         """Constructs a list from an iterable of values.
 
+        Parameters:
+            IterableType: The type of the `iterable` argument.
+
         Args:
             iterable: The iterable of values to populate the list with.
         """

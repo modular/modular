@@ -73,6 +73,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     # ===-------------------------------------------------------------------===#
 
     fn __init__(out self):
+        """Construct a new `Python` instance."""
         try:
             self._impl = _get_python_interface()
         except e:
@@ -129,6 +130,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
         Returns:
             `PythonObject` containing the result of the evaluation.
+
+        Raises:
+            If the operation fails.
         """
         ref cpy = Self().cpython()
 
@@ -190,6 +194,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
         Args:
             dir_path: The path to a Python module you want to import.
+
+        Raises:
+            If the operation fails.
         """
         var sys = Python.import_module("sys")
         _ = sys.path.append(PythonObject(dir_path))
@@ -220,6 +227,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
         Returns:
             The Python module.
+
+        Raises:
+            If the operation fails.
         """
         # Initialize the global interpreter and check for errors.
         ref cpy = Self().cpython()
@@ -243,6 +253,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
         Returns:
             The Python module.
+
+        Raises:
+            If the operation fails.
         """
         # Initialize the global interpreter and check for errors.
         ref cpy = Self().cpython()
@@ -320,6 +333,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
             module: The Python module to modify.
             name: The name of the new object.
             value: The python object value.
+
+        Raises:
+            If the operation fails.
         """
         ref cpy = Self().cpython()
         var errno = cpy.PyModule_AddObjectRef(
@@ -429,6 +445,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
         Returns:
             A PythonObject representing the list.
+
+        Raises:
+            If the operation fails.
         """
         ref cpy = Self().cpython()
         var list_ptr = cpy.PyList_New(len(values))
@@ -478,6 +497,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
         Returns:
             The constructed Python list.
+
+        Raises:
+            If the operation fails.
         """
         return Self._list(values)
 
@@ -522,6 +544,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
         Returns:
             The constructed Python tuple.
+
+        Raises:
+            If the operation fails.
         """
         return Self._tuple(values)
 
@@ -589,11 +614,11 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Args:
             obj: The PythonObject to convert.
 
-        Raises:
-            If the conversion to `int` fails.
-
         Returns:
             A PythonObject representing the result of the conversion to `int`.
+
+        Raises:
+            If the conversion to `int` fails.
         """
         ref cpy = Self().cpython()
         var int_ptr = cpy.PyNumber_Long(obj._obj_ptr)
@@ -631,12 +656,12 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Args:
             obj: The Python `long` object.
 
+        Returns:
+            The value of the `long` object as a `Py_ssize_t`.
+
         Raises:
             If `obj` is not a Python `long` object, or if the `long` object
             value overflows `Py_ssize_t`.
-
-        Returns:
-            The value of the `long` object as a `Py_ssize_t`.
         """
         ref cpy = Self().cpython()
         var num = cpy.PyLong_AsSsize_t(obj._obj_ptr)

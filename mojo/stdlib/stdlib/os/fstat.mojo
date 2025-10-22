@@ -204,6 +204,9 @@ fn stat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
 
     Returns:
       Returns the stat_result on the path.
+
+    Raises:
+        If the operation fails.
     """
     var fspath = path.__fspath__()
 
@@ -231,6 +234,9 @@ fn lstat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
 
     Returns:
       Returns the stat_result on the path.
+
+    Raises:
+        If the operation fails.
     """
     var fspath = path.__fspath__()
 

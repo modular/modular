@@ -473,6 +473,9 @@ fn input(prompt: String = "") raises -> String:
     ```
 
     If the user enters "Mojo" it prints "Hello Mojo".
+
+    Raises:
+        If the operation fails.
     """
     if prompt != "":
         print(prompt, end="")

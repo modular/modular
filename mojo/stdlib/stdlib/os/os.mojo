@@ -203,6 +203,9 @@ fn listdir[PathLike: os.PathLike](path: PathLike) raises -> List[String]:
 
     Returns:
       Returns the list of entries in the path provided.
+
+    Raises:
+        If the operation fails.
     """
     var dir = _DirHandle(path.__fspath__())
     return dir.list()
@@ -270,6 +273,9 @@ fn remove[PathLike: os.PathLike](path: PathLike) raises:
     Args:
       path: The path to the file.
 
+
+    Raises:
+        If the operation fails.
     """
     var fspath = path.__fspath__()
     var error = external_call["unlink", Int32](fspath.unsafe_cstr_ptr())
@@ -294,6 +300,9 @@ fn unlink[PathLike: os.PathLike](path: PathLike) raises:
     Args:
       path: The path to the file.
 
+
+    Raises:
+        If the operation fails.
     """
     remove(path.__fspath__())
 
@@ -315,6 +324,9 @@ fn mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
     Args:
       path: The path to the directory.
       mode: The mode to create the directory with.
+
+    Raises:
+        If the operation fails.
     """
 
     var fspath = path.__fspath__()
@@ -336,6 +348,9 @@ fn makedirs[
       path: The path to the directory.
       mode: The mode to create the directory with.
       exist_ok: Ignore error if `True` and path exists (default `False`).
+
+    Raises:
+        If the operation fails.
     """
     var head, tail = split(path)
     if not tail:
@@ -372,6 +387,9 @@ fn rmdir[PathLike: os.PathLike](path: PathLike) raises:
 
     Args:
       path: The path to the directory.
+
+    Raises:
+        If the operation fails.
     """
     var fspath = path.__fspath__()
     var error = external_call["rmdir", Int32](fspath.unsafe_cstr_ptr())
@@ -391,6 +409,9 @@ fn removedirs[PathLike: os.PathLike](path: PathLike) raises -> None:
 
     Args:
       path: The path to the directory.
+
+    Raises:
+        If the operation fails.
     """
     rmdir(path)
     var head, tail = os.path.split(path)

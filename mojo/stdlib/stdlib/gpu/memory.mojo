@@ -139,10 +139,10 @@ struct CacheOperation(EqualityComparable, Identifiable):
     """
 
     fn __eq__(self, other: Self) -> Bool:
-        """Tests if two CacheOperation instances are equal.
+        """Tests if two `CacheOperation` instances are equal.
 
         Args:
-            other: The CacheOperation to compare against.
+            other: The `CacheOperation` to compare against.
 
         Returns:
             True if the operations are equal, False otherwise.
@@ -150,10 +150,10 @@ struct CacheOperation(EqualityComparable, Identifiable):
         return self._value == other._value
 
     fn __is__(self, other: Self) -> Bool:
-        """Tests if two CacheOperation instances are identical.
+        """Tests if two `CacheOperation` instances are identical.
 
         Args:
-            other: The CacheOperation to compare against.
+            other: The `CacheOperation` to compare against.
 
         Returns:
             True if the operations are identical, False otherwise.
@@ -161,7 +161,14 @@ struct CacheOperation(EqualityComparable, Identifiable):
         return self == other
 
     fn __or__(self, other: Self) -> Self:
-        """Returns the bitwise OR of two CacheOperation instances."""
+        """Returns the bitwise OR of two `CacheOperation` instances.
+
+        Args:
+            other: The other `CacheOperation` to OR with.
+
+        Returns:
+            A new `CacheOperation` representing the bitwise OR of the two values.
+        """
         return Self(self._value | other._value)
 
     @always_inline
@@ -1908,12 +1915,13 @@ fn multimem_ld_reduce[
     word packing for efficiency.
 
     Parameters:
-        dtype: Data dtype for the operation (must be a floating point type).
-        simd_width: Total number of elements to process.
+        dtype: Data type of the elements to load (must be a floating point type).
+        simd_width: Total number of elements to process (must be 1, 2, 4, or 8).
         reduction: Type of reduction operation to perform.
         scope: Memory scope for the operation.
         consistency: Memory consistency model to use.
-        accum_type: Data dtype used for accumulation.
+        accum_type: Data type used for accumulation.
+
     Args:
         addr: Pointer to global memory where data will be loaded from.
 

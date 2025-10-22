@@ -87,6 +87,9 @@ struct FileDescriptor(Writer):
 
         Notes:
             [Reference](https://pubs.opengroup.org/onlinepubs/9799919799/functions/read.html).
+
+        Raises:
+            If the operation fails.
         """
 
         constrained[

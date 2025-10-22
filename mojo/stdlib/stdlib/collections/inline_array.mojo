@@ -289,6 +289,9 @@ struct InlineArray[
     ):
         """Construct an array from a low-level internal representation.
 
+        Parameters:
+            origin: The origin of the storage being passed in.
+
         Args:
             storage: The variadic list storage to construct from. Must match
                 array size.
@@ -531,6 +534,10 @@ struct InlineArray[
         address_space=address_space,
     ]:
         """Gets an unsafe pointer to the underlying array storage.
+
+        Parameters:
+            origin: The origin of the reference to self.
+            address_space: The address space of the array.
 
         Returns:
             An `UnsafePointer` to the underlying array storage. The pointer's

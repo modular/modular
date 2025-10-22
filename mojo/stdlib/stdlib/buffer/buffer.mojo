@@ -1335,6 +1335,9 @@ struct NDBuffer[
 
         Args:
             path: Path to the output file.
+
+        Raises:
+            If the operation fails.
         """
         with open(path.__str__(), "w") as f:
             var ptr = self.data.bitcast[UInt8]()

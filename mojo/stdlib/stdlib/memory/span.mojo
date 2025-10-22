@@ -408,6 +408,9 @@ struct Span[
         Args:
             idx: The index of the element to get.
 
+        Returns:
+            A reference to the element at the specified index.
+
         Safety:
             - This function does not do bounds checking and assumes the provided
             index is in: [0, len(self)). Not upholding this contract will result
@@ -762,6 +765,9 @@ struct Span[
         Args:
             offset: The starting offset of the subspan (self._data + offset).
             length: The length of the new subspan.
+
+        Returns:
+            A new span representing the specified subspan.
 
         Safety:
             This function does not do bounds checking and assumes the current

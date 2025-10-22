@@ -125,6 +125,9 @@ fn ceildiv[T: CeilDivableRaising, //](numerator: T, denominator: T) raises -> T:
 
     Returns:
         The ceiling of dividing numerator by denominator.
+
+    Raises:
+        If the operation fails.
     """
     return numerator.__ceildiv__(denominator)
 
@@ -3503,6 +3506,9 @@ trait CeilDivableRaising:
 
         Returns:
             The ceiling of dividing numerator by denominator.
+
+        Raises:
+            If the operation fails.
         """
         ...
 

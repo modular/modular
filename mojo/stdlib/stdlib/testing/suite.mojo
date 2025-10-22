@@ -102,10 +102,22 @@ struct TestResult(EqualityComparable, ImplicitlyCopyable, Movable, Writable):
     """The test was skipped."""
 
     fn __eq__(self, rhs: Self) -> Bool:
+        """Compare two test result codes for equality.
+
+        Args:
+            rhs: The other test result code to compare against.
+
+        Returns:
+            True if the result codes are equal, False otherwise.
+        """
         return self._value == rhs._value
 
     fn write_to(self, mut writer: Some[Writer]):
-        """Write the result code to the writer."""
+        """Write the result code to the writer.
+
+        Args:
+            writer: The writer to output the result code to.
+        """
         if self == Self.PASS:
             writer.write(Text[Color.GREEN]("PASS"))
         elif self == Self.FAIL:
@@ -200,7 +212,11 @@ struct TestReport(Copyable, Movable, Writable):
         return e.__str__().replace("\n", replacement)
 
     fn write_to(self, mut writer: Some[Writer]):
-        """Write the formatted test report to the writer."""
+        """Write the formatted test report to the writer.
+
+        Args:
+            writer: The writer to output the formatted report to.
+        """
         writer.write(_Indent(self.result, level=2))
 
         writer.write(" [ ", _format_nsec(self.duration_ns), " ] ")
@@ -240,6 +256,12 @@ struct TestSuiteReport(Copyable, Movable, Writable):
     fn __init__(
         out self, *, var reports: List[TestReport], location: _SourceLocation
     ):
+        """Initialize a test suite report.
+
+        Args:
+            reports: The list of individual test reports.
+            location: The source location where the test suite is defined.
+        """
         self.reports = reports^
         self.total_duration_ns = 0
         self.failures = 0
@@ -256,6 +278,11 @@ struct TestSuiteReport(Copyable, Movable, Writable):
         self.passed = len(self.reports) - self.failures - self.skipped
 
     fn write_to(self, mut writer: Some[Writer]):
+        """Write the formatted test suite report to the writer.
+
+        Args:
+            writer: The writer to output the formatted suite report to.
+        """
         _writeln(writer)
         _writeln(
             writer,
@@ -347,14 +374,19 @@ struct TestSuite(Movable):
     """
 
     var tests: List[_Test]
+    """The list of tests registered in this suite."""
+
     var location: _SourceLocation
+    """The source location where the test suite was created."""
+
     var skip_list: Set[String]
+    """The list of tests to skip in this suite."""
 
     @always_inline
     fn __init__(out self, *, location: Optional[_SourceLocation] = None):
         """Create a new test suite.
 
-        Arguments:
+        Args:
             location: The location of the test suite (defaults to
                 `__call_location`).
         """
@@ -393,9 +425,12 @@ struct TestSuite(Movable):
             test_funcs: The pack of functions to discover tests from. In most
                 cases, callers should pass `__functions_in_module()`.
 
-        Arguments:
+        Args:
             location: The location of the test suite (defaults to
                 `__call_location`).
+
+        Returns:
+            A new TestSuite with all discovered tests registered.
         """
 
         var suite = Self(location=location.or_else(__call_location()))
@@ -403,6 +438,7 @@ struct TestSuite(Movable):
         return suite^
 
     fn __del__(deinit self):
+        """Destructor for the test suite."""
         pass
 
     fn test[f: _Test.fn_type](mut self):
@@ -421,6 +457,9 @@ struct TestSuite(Movable):
 
         Parameters:
             f: The function to skip.
+
+        Raises:
+            If the test is not found in the test suite.
         """
         # TODO: _Test doesn't conform to EqualityComparable, so we can't use
         # `in` here. Also, we might wanna do this in O(1) time.
@@ -434,7 +473,11 @@ struct TestSuite(Movable):
         return test.name in self.skip_list
 
     fn generate_report(mut self) -> TestSuiteReport:
-        """Runs the test suite and generates a report."""
+        """Runs the test suite and generates a report.
+
+        Returns:
+            A report containing the results of all tests.
+        """
         var reports = List[TestReport](capacity=len(self.tests))
 
         for test in self.tests:
@@ -467,7 +510,7 @@ struct TestSuite(Movable):
     fn run(deinit self, *, quiet: Bool = False) raises:
         """Runs the test suite and prints the results to the console.
 
-        Arguments:
+        Args:
             quiet: Suppresses printing the report when the suite does not fail
                 (defaults to `False`).
 
@@ -483,7 +526,7 @@ struct TestSuite(Movable):
     fn disable(deinit self, *, quiet: Bool = False):
         """Disables the test suite by skipping all tests.
 
-        Arguments:
+        Args:
             quiet: Suppresses printing the report (defaults to `False`).
         """
         for test in self.tests:

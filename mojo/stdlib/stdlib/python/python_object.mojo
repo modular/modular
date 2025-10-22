@@ -309,6 +309,9 @@ struct PythonObject(
 
         Args:
             value: The string literal value.
+
+        Raises:
+            If the string is not valid UTF-8.
         """
         self = Self(value.as_string_slice())
 
@@ -318,6 +321,9 @@ struct PythonObject(
 
         Args:
             value: The string value.
+
+        Raises:
+            If the string is not valid UTF-8.
         """
         self = Self(value.as_string_slice())
 
@@ -345,6 +351,9 @@ struct PythonObject(
 
         Returns:
             The constructed Python list.
+
+        Raises:
+            If the list construction fails.
         """
         self = Python._list(values)
 
@@ -363,6 +372,9 @@ struct PythonObject(
 
         Returns:
             The constructed Python set.
+
+        Raises:
+            If adding an element to the set fails.
         """
         ref cpy = Python().cpython()
         var set_ptr = cpy.PySet_New({})
@@ -387,6 +399,9 @@ struct PythonObject(
             keys: The keys of the dictionary.
             values: The values of the dictionary.
             __dict_literal__: Tell Mojo to use this method for dict literals.
+
+        Raises:
+            If setting a dictionary item fails.
         """
         ref cpy = Python().cpython()
         var dict_ptr = cpy.PyDict_New()
@@ -444,6 +459,9 @@ struct PythonObject(
 
         Returns:
             The value of the object attribute with the given name.
+
+        Raises:
+            If the attribute does not exist.
         """
         ref cpy = Python().cpython()
         var attr_ptr = cpy.PyObject_GetAttrString(self._obj_ptr, name^)
@@ -457,6 +475,9 @@ struct PythonObject(
         Args:
             name: The name of the object attribute to set.
             value: The new value to be set for that attribute.
+
+        Raises:
+            If setting the attribute fails.
         """
         ref cpy = Python().cpython()
         var errno = cpy.PyObject_SetAttrString(
@@ -498,6 +519,9 @@ struct PythonObject(
 
         Returns:
             The value corresponding to the given key for this object.
+
+        Raises:
+            If the index is out of bounds or the key does not exist.
         """
         ref cpy = Python().cpython()
         var size = len(args)
@@ -524,6 +548,9 @@ struct PythonObject(
 
         Returns:
             The sliced value corresponding to the given Slice(s) for this object.
+
+        Raises:
+            If the index is out of bounds or the key does not exist.
         """
         ref cpy = Python().cpython()
         var size = len(args)
@@ -547,6 +574,9 @@ struct PythonObject(
         Args:
             args: The key or keys to set on this object.
             value: The value to set.
+
+        Raises:
+            If setting the item fails.
         """
         ref cpy = Python().cpython()
         var size = len(args)
@@ -586,6 +616,9 @@ struct PythonObject(
 
         Returns:
             The product.
+
+        Raises:
+            If the operation is not supported.
         """
         return self.__getattr__("__mul__")(rhs)
 
@@ -599,6 +632,9 @@ struct PythonObject(
 
         Returns:
             The product of the multiplication.
+
+        Raises:
+            If the operation is not supported.
         """
         return self.__getattr__("__rmul__")(lhs)
 
@@ -609,6 +645,9 @@ struct PythonObject(
 
         Args:
             rhs: The right-hand-side value by which this object is multiplied.
+
+        Raises:
+            If the operation is not supported.
         """
         return self.__call_single_arg_inplace_method__("__mul__", rhs)
 
@@ -622,6 +661,9 @@ struct PythonObject(
 
         Returns:
             The sum or concatenated values.
+
+        Raises:
+            If the operation is not supported.
         """
         return self.__getattr__("__add__")(rhs)
 
@@ -636,6 +678,9 @@ struct PythonObject(
 
         Returns:
             The sum.
+
+        Raises:
+            If the operation is not supported.
         """
         return self.__getattr__("__radd__")(lhs)
 
@@ -644,6 +689,9 @@ struct PythonObject(
 
         Args:
             rhs: The right-hand-side value that is added to this object.
+
+        Raises:
+            If the operation is not supported.
         """
         return self.__call_single_arg_inplace_method__("__add__", rhs)
 
@@ -657,6 +705,9 @@ struct PythonObject(
 
         Returns:
             The difference.
+
+        Raises:
+            If the operation is not supported.
         """
         return self.__getattr__("__sub__")(rhs)
 
@@ -670,6 +721,9 @@ struct PythonObject(
 
         Returns:
             The result of subtracting this from the given value.
+
+        Raises:
+            If the operation is not supported.
         """
         return self.__getattr__("__rsub__")(lhs)
 
@@ -678,6 +732,9 @@ struct PythonObject(
 
         Args:
             rhs: The right-hand-side value that is subtracted from this object.
+
+        Raises:
+            If the operation is not supported.
         """
         return self.__call_single_arg_inplace_method__("__sub__", rhs)
 
@@ -693,6 +750,9 @@ struct PythonObject(
         Returns:
             The result of dividing this by the right-hand-side value, modulo any
             remainder.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__floordiv__")(rhs)
 
@@ -707,6 +767,9 @@ struct PythonObject(
         Returns:
             The result of dividing the given value by this, modulo any
             remainder.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__rfloordiv__")(lhs)
 
@@ -715,6 +778,9 @@ struct PythonObject(
 
         Args:
             rhs: The value by which this object is divided.
+
+        Raises:
+            If the operation fails.
         """
         return self.__call_single_arg_inplace_method__("__floordiv__", rhs)
 
@@ -728,6 +794,9 @@ struct PythonObject(
 
         Returns:
             The result of dividing the right-hand-side value by this.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__truediv__")(rhs)
 
@@ -741,6 +810,9 @@ struct PythonObject(
 
         Returns:
             The result of dividing the given value by this.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__rtruediv__")(lhs)
 
@@ -749,6 +821,9 @@ struct PythonObject(
 
         Args:
             rhs: The value by which this object is divided.
+
+        Raises:
+            If the operation fails.
         """
         return self.__call_single_arg_inplace_method__("__truediv__", rhs)
 
@@ -762,6 +837,9 @@ struct PythonObject(
 
         Returns:
             The remainder of dividing self by rhs.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__mod__")(rhs)
 
@@ -775,6 +853,9 @@ struct PythonObject(
 
         Returns:
             The remainder from dividing the given value by this.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__rmod__")(lhs)
 
@@ -783,6 +864,9 @@ struct PythonObject(
 
         Args:
             rhs: The right-hand-side value that is used to divide this object.
+
+        Raises:
+            If the operation fails.
         """
         return self.__call_single_arg_inplace_method__("__mod__", rhs)
 
@@ -795,6 +879,9 @@ struct PythonObject(
 
         Returns:
             The exclusive OR result of this and the given value.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__xor__")(rhs)
 
@@ -807,6 +894,9 @@ struct PythonObject(
 
         Returns:
             The exclusive OR result of the given value and this.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__rxor__")(lhs)
 
@@ -816,6 +906,9 @@ struct PythonObject(
         Args:
             rhs: The right-hand-side value with which this object is
                  exclusive OR'ed.
+
+        Raises:
+            If the operation fails.
         """
         return self.__call_single_arg_inplace_method__("__xor__", rhs)
 
@@ -828,6 +921,9 @@ struct PythonObject(
 
         Returns:
             The bitwise OR result of this and the given value.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__or__")(rhs)
 
@@ -840,6 +936,9 @@ struct PythonObject(
 
         Returns:
             The bitwise OR result of the given value and this.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__ror__")(lhs)
 
@@ -849,6 +948,9 @@ struct PythonObject(
         Args:
             rhs: The right-hand-side value with which this object is bitwise
                  OR'ed.
+
+        Raises:
+            If the operation fails.
         """
         return self.__call_single_arg_inplace_method__("__or__", rhs)
 
@@ -861,6 +963,9 @@ struct PythonObject(
 
         Returns:
             The bitwise AND result of this and the given value.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__and__")(rhs)
 
@@ -873,6 +978,9 @@ struct PythonObject(
 
         Returns:
             The bitwise AND result of the given value and this.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__rand__")(lhs)
 
@@ -882,6 +990,9 @@ struct PythonObject(
         Args:
             rhs: The right-hand-side value with which this object is bitwise
                  AND'ed.
+
+        Raises:
+            If the operation fails.
         """
         return self.__call_single_arg_inplace_method__("__and__", rhs)
 
@@ -894,6 +1005,9 @@ struct PythonObject(
 
         Returns:
             This value, shifted right by the given value.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__rshift__")(rhs)
 
@@ -906,6 +1020,9 @@ struct PythonObject(
 
         Returns:
             The given value, shifted right by this.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__rrshift__")(lhs)
 
@@ -915,6 +1032,9 @@ struct PythonObject(
         Args:
             rhs: The right-hand-side value by which this object is bitwise
                  shifted to the right.
+
+        Raises:
+            If the operation fails.
         """
         return self.__call_single_arg_inplace_method__("__rshift__", rhs)
 
@@ -927,6 +1047,9 @@ struct PythonObject(
 
         Returns:
             This value, shifted left by the given value.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__lshift__")(rhs)
 
@@ -939,6 +1062,9 @@ struct PythonObject(
 
         Returns:
             The given value, shifted left by this.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__rlshift__")(lhs)
 
@@ -948,6 +1074,9 @@ struct PythonObject(
         Args:
             rhs: The right-hand-side value by which this object is bitwise
                  shifted to the left.
+
+        Raises:
+            If the operation fails.
         """
         return self.__call_single_arg_inplace_method__("__lshift__", rhs)
 
@@ -959,6 +1088,9 @@ struct PythonObject(
 
         Returns:
             The result of raising this by the given exponent.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__pow__")(exp)
 
@@ -970,6 +1102,9 @@ struct PythonObject(
 
         Returns:
             The result of raising the given value by this exponent.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__rpow__")(lhs)
 
@@ -978,6 +1113,9 @@ struct PythonObject(
 
         Args:
             rhs: The exponent.
+
+        Raises:
+            If the operation fails.
         """
         return self.__call_single_arg_inplace_method__("__pow__", rhs)
 
@@ -1073,6 +1211,9 @@ struct PythonObject(
         Returns:
             The result of prefixing this object with a `+` operator. For most
             numerical objects, this does nothing.
+
+        Raises:
+            If the operation fails.
         """
         return self.__getattr__("__pos__")()
 
@@ -1084,6 +1225,9 @@ struct PythonObject(
         Returns:
             The result of prefixing this object with a `-` operator. For most
             numerical objects, this returns the negative.
+
+        Raises:
+            If the call fails.
         """
         return self.__getattr__("__neg__")()
 
@@ -1095,6 +1239,9 @@ struct PythonObject(
         Returns:
             The logical inverse of this object: a bitwise representation where
             all bits are flipped, from zero to one, and from one to zero.
+
+        Raises:
+            If the call fails.
         """
         return self.__getattr__("__invert__")()
 
@@ -1108,6 +1255,9 @@ struct PythonObject(
 
         Returns:
             True if rhs is in self.
+
+        Raises:
+            If the operation fails.
         """
         # TODO: replace/optimize with c-python function.
         # TODO: implement __getitem__ step for cpython membership test operator.
@@ -1160,6 +1310,9 @@ struct PythonObject(
 
         Returns:
             The length of the object.
+
+        Raises:
+            If the operation fails.
         """
         ref cpy = Python().cpython()
         var length = Int(cpy.PyObject_Length(self._obj_ptr))
@@ -1173,6 +1326,9 @@ struct PythonObject(
 
         Returns:
             The hash value of the object.
+
+        Raises:
+            If the operation fails.
         """
         ref cpy = Python().cpython()
         var res = Int(cpy.PyObject_Hash(self._obj_ptr))
@@ -1240,6 +1396,9 @@ struct PythonObject(
 
         Returns:
             A PythonObject representing the value.
+
+        Raises:
+            If the conversion to Python object fails.
         """
         return self^
 
@@ -1268,6 +1427,9 @@ struct PythonObject(
 
         Returns:
             An `UnsafePointer` for the underlying Python data.
+
+        Raises:
+            If the operation fails.
         """
         return _unsafe_aliasing_address_to_pointer[Scalar[dtype]](Int(self))
 
@@ -1448,13 +1610,12 @@ fn _unsafe_alloc_init[
     Returns:
         A new PythonObject containing the Mojo value.
 
-    Raises:
-        If the Python object allocation fails.
-
     # Safety
     `type_obj_ptr` must be a Python type object created by `PythonTypeBuilder`,
     whose underlying storage type is the `PyMojoObject` struct. Use of any other
     type object is invalid.
+    Raises:
+        If the Python object allocation fails.
     """
     var obj_ptr = _unsafe_alloc[T](type_obj_ptr)
     _unsafe_init(obj_ptr, mojo_value^)

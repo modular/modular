@@ -14,7 +14,7 @@ mojo_library(
     srcs = [
         ":stdlib_srcs",
     ],
-    validate_missing_docs = False,
+    validate_missing_docs = True,
 )
 
 pkg_files(

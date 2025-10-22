@@ -176,6 +176,13 @@ struct NormalRandom[rounds: Int = 6]:
         subsequence: UInt64 = 0,
         offset: UInt64 = 0,
     ):
+        """Initializes the normal distribution random number generator.
+
+        Args:
+            seed: Seed value for the RNG.
+            subsequence: Subsequence number for the RNG.
+            offset: Offset value for the RNG.
+        """
         self._rng = Random[rounds](
             seed=seed, subsequence=subsequence, offset=offset
         )
@@ -184,6 +191,10 @@ struct NormalRandom[rounds: Int = 6]:
         mut self, mean: Float32 = 0.0, stddev: Float32 = 1.0
     ) -> SIMD[DType.float32, 8]:
         """Generate 8 normally distributed random numbers using Box-Muller transform.
+
+        Args:
+            mean: Mean of the normal distribution.
+            stddev: Standard deviation of the normal distribution.
 
         Returns:
             SIMD vector containing 8 random float32 values from a normal distribution with mean `mean` and standard deviation `stddev`.

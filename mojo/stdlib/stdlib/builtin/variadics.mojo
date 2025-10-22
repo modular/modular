@@ -31,6 +31,9 @@ fn variadic_size[T: AnyType](seq: Variadic[T]) -> Int:
     Parameters:
         T: The type of values in the sequence.
 
+    Args:
+        seq: The variadic sequence to measure.
+
     Returns:
         The length of the variadic sequence.
     """
@@ -43,6 +46,9 @@ fn variadic_size[T: _AnyTypeMetaType](seq: VariadicOf[T]) -> Int:
 
     Parameters:
         T: The trait that types in the sequence must conform to.
+
+    Args:
+        seq: The variadic sequence of types to measure.
 
     Returns:
         The length of the variadic sequence.

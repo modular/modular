@@ -41,10 +41,20 @@ from utils.index import Index
 
 
 fn get_amd_fp8_dtype() -> DType:
+    """Gets the appropriate FP8 dtype for the current AMD GPU architecture.
+
+    Returns:
+        `DType.float8_e4m3fn` for CDNA4+ GPUs, `DType.float8_e4m3fnuz` for older AMD GPUs.
+    """
     return DType.float8_e4m3fn if _cdna_4_or_newer() else DType.float8_e4m3fnuz
 
 
 fn get_amd_bf8_dtype() -> DType:
+    """Gets the appropriate BF8 dtype for the current AMD GPU architecture.
+
+    Returns:
+        `DType.float8_e5m2` for CDNA4+ GPUs, `DType.float8_e5m2fnuz` for older AMD GPUs.
+    """
     return DType.float8_e5m2 if _cdna_4_or_newer() else DType.float8_e5m2fnuz
 
 

@@ -97,6 +97,9 @@ trait DivModable(ImplicitlyCopyable, Movable):
     fn __divmod__(self, denominator: Self) -> Tuple[Self, Self]:
         """Performs division and returns the quotient and the remainder.
 
+        Args:
+            denominator: The value to divide by.
+
         Returns:
             A `Tuple` containing the quotient and the remainder.
         """

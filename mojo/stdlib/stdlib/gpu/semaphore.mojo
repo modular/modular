@@ -135,6 +135,10 @@ struct NamedBarrierSemaphore[
     Cutlass reference implementation:
     https://github.com/NVIDIA/cutlass/blob/a1aaf2300a8fc3a8106a05436e1a2abad0930443/include/cutlass/arch/barrier.h.
 
+    Parameters:
+        thread_count: Number of threads participating in the barrier.
+        id_offset: Offset for the barrier ID.
+        max_num_barriers: Maximum number of named barriers to use.
     """
 
     var _lock: UnsafePointer[Int32]
@@ -175,6 +179,12 @@ struct NamedBarrierSemaphore[
 
     @always_inline
     fn wait_eq(mut self, id: Int32, status: Int32 = 0):
+        """Waits until the semaphore state equals the specified status.
+
+        Args:
+            id: Barrier ID to use for synchronization.
+            status: Expected status value to wait for.
+        """
         if self._wait_thread:
             while self._state != status:
                 self._state = load_acquire[scope = Scope.GPU](self._lock)
@@ -183,6 +193,12 @@ struct NamedBarrierSemaphore[
 
     @always_inline
     fn wait_lt(mut self, id: Int32, count: Int32 = 0):
+        """Waits until the semaphore state is less than the specified count.
+
+        Args:
+            id: Barrier ID to use for synchronization.
+            count: Count value to compare against.
+        """
         if self._wait_thread:
             while self._state < count:
                 self._state = load_acquire[scope = Scope.GPU](self._lock)
@@ -191,6 +207,12 @@ struct NamedBarrierSemaphore[
 
     @always_inline
     fn arrive_set(self, id: Int32, status: Int32 = 0):
+        """Arrives at the barrier and sets the semaphore status.
+
+        Args:
+            id: Barrier ID to use for synchronization.
+            status: Status value to set after arriving.
+        """
         named_barrier[thread_count,](id_offset + id)
 
         if self._wait_thread:

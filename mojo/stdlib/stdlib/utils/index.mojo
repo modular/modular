@@ -728,8 +728,10 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
+
         Parameters:
             H: The hasher type.
+
         Args:
             hasher: The hasher instance.
         """

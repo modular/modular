@@ -65,9 +65,9 @@ trait Hashable:
 
         Parameters:
             H: Any Hasher type.
+
         Args:
             hasher: The hasher instance to contribute to.
-
         """
         ...
 
@@ -101,6 +101,18 @@ fn hash[
     ],
     n: Int,
 ) -> UInt64:
+    """Hash a sequence of bytes using the specified hasher.
+
+    Parameters:
+        HasherType: Type of the hasher to use for hashing (default: `AHasher`).
+
+    Args:
+        bytes: Pointer to the byte sequence to hash.
+        n: The number of bytes to hash.
+
+    Returns:
+        A 64-bit integer hash value.
+    """
     var hasher = HasherType()
     hasher._update_with_bytes(Span(ptr=bytes, length=UInt(n)))
     var value = hasher^.finish()

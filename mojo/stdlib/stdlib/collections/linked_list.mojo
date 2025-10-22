@@ -297,6 +297,9 @@ struct LinkedList[
 
         Notes:
             Time Complexity: O(1).
+
+        Raises:
+            If the operation fails.
         """
         var elem = self._tail
         if not elem:
@@ -327,6 +330,9 @@ struct LinkedList[
 
         Notes:
             Time Complexity: O(n) in len(self).
+
+        Raises:
+            If the operation fails.
         """
         var idx = index(i)
         var current = self._get_node_ptr(idx)
@@ -428,12 +434,12 @@ struct LinkedList[
         Parameters:
             I: The type of index to use.
 
-        Raises:
-            When given an out of bounds index.
-
         Args:
             idx: The index to insert `elem` at `-len(self) <= idx <= len(self)`.
             elem: The item to insert into the list.
+
+        Raises:
+            When given an out of bounds index.
 
         Notes:
             Time Complexity: O(n) in len(self).

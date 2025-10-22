@@ -211,6 +211,9 @@ struct DLHandle(Boolable, Copyable, Movable):
         Notes:
             On POSIX-compatible operating systems, this performs
             `dlopen(nullptr, flags)`.
+
+        Raises:
+            If the operation fails.
         """
         self = Self._dlopen(UnsafePointer[c_char](), flags)
 
@@ -226,6 +229,9 @@ struct DLHandle(Boolable, Copyable, Movable):
         Args:
             path: The path to the dynamic library file.
             flags: The flags to load the dynamic library.
+
+        Raises:
+            If the operation fails.
         """
 
         var fspath = path.__fspath__()
@@ -493,7 +499,7 @@ fn _try_find_dylib[
         A handle to the loaded dynamic library.
 
     Raises:
-        Error: If the library could not be loaded from any of the provided paths.
+        If the library could not be loaded from any of the provided paths.
     """
     alias dylib_name = name if name != "" else "dynamic library"
     for path in paths:

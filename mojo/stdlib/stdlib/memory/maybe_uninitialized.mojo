@@ -216,6 +216,10 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         Note that this method does not assumes that the memory is initialized
         or not. It can always be called.
 
+        Parameters:
+            mut: Whether the pointer should be mutable.
+            origin: The origin of the reference.
+
         Returns:
             A pointer to the underlying element.
         """

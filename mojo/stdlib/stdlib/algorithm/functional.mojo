@@ -718,6 +718,9 @@ fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool) raises:
     Args:
         dynamic_switch: The dynamic condition that enables the unswitched code
           path.
+
+    Raises:
+        If the operation fails.
     """
     if dynamic_switch:
         switched_func[True]()
@@ -1199,6 +1202,9 @@ fn elementwise[
 
     Args:
         shape: The shape of the buffer.
+
+    Raises:
+        If the operation fails.
     """
 
     elementwise[
@@ -1236,6 +1242,9 @@ fn elementwise[
 
     Args:
         shape: The shape of the buffer.
+
+    Raises:
+        If the operation fails.
     """
 
     constrained[
@@ -1276,6 +1285,9 @@ fn elementwise[
     Args:
         shape: The shape of the buffer.
         context: The device context to use.
+
+    Raises:
+        If the operation fails.
     """
 
     elementwise[
@@ -1313,6 +1325,9 @@ fn elementwise[
     Args:
         shape: The shape of the buffer.
         context: The device context to use.
+
+    Raises:
+        If the operation fails.
     """
 
     _elementwise_impl[
@@ -1347,6 +1362,9 @@ fn elementwise[
     Args:
         shape: The shape of the buffer.
         context: The device context to use.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline

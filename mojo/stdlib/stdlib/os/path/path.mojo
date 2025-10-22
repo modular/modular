@@ -110,6 +110,9 @@ fn expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
 
     Returns:
         The expanded path.
+
+    Raises:
+        If the operation fails.
     """
     var fspath = path.__fspath__()
     if not fspath.startswith("~"):
@@ -346,6 +349,9 @@ fn getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
 
     Returns:
         The size of the path in bytes.
+
+    Raises:
+        If the operation fails.
     """
     return stat(path.__fspath__()).st_size
 
@@ -540,6 +546,9 @@ fn split_extension[
 
     Returns:
         A tuple containing two strings: (root, extension).
+
+    Raises:
+        If the operation fails.
     """
     return _split_extension(path.__fspath__(), sep, "", ".")
 

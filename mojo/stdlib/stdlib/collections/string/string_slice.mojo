@@ -118,6 +118,11 @@ struct CodepointSliceIter[
     # ===-------------------------------------------------------------------===#
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        """Iterate over the `StringSlice` yielding individual characters.
+
+        Returns:
+            An iterator over the characters in the string slice.
+        """
         return self.copy()
 
     @always_inline
@@ -830,10 +835,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         Returns:
             A new StringSlice containing the substring at the specified positions.
-
-        Raises: This function will raise if the specified slice start or end
-            position are outside the bounds of the string, or if they do not
-            both fall on codepoint boundaries.
         """
         # TODO: Introduce a new slice type that just has a start+end but no
         # step.  Mojo supports slice type inference that can express this in the
@@ -846,6 +847,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         Returns:
             A PythonObject representing the value.
+
+        Raises:
+            If the operation fails.
         """
         return PythonObject(self)
 
@@ -1101,6 +1105,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         Returns:
             An integer value that represents the string, or otherwise raises.
+
+        Raises:
+            If the operation fails.
         """
         return atol(self)
 
@@ -1111,6 +1118,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         Returns:
             A float value that represents the string, or otherwise raises.
+
+        Raises:
+            If the operation fails.
         """
         return atof(self)
 
@@ -1794,6 +1804,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # Automatic indexing:
         print(StringSlice("{} {}").format(True, "hello world")) # True hello world
         ```
+
+        Raises:
+            If the operation fails.
         """
         return _FormatCurlyEntry.format(self, args)
 

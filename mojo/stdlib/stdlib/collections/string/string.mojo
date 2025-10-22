@@ -497,8 +497,11 @@ struct String(
     fn write[T: Writable](mut self, value: T):
         """Write a single Writable argument to the provided Writer.
 
+        Parameters:
+            T: The type of the value to write, which must implement `Writable`.
+
         Args:
-            value: The Writable argument to write.
+            value: The `Writable` argument to write.
         """
         value.write_to(self)
 
@@ -506,8 +509,14 @@ struct String(
     fn write[T: Writable](value: T) -> Self:
         """Write a single Writable argument to the provided Writer.
 
+        Parameters:
+            T: The type of the value to write, which must implement `Writable`.
+
         Args:
-            value: The Writable argument to write.
+            value: The `Writable` argument to write.
+
+        Returns:
+            A new `String` containing the written value.
         """
         var result = String()
         value.write_to(result)
@@ -594,6 +603,11 @@ struct String(
 
     @always_inline("nodebug")
     fn capacity(self) -> Int:
+        """Get the current capacity of the `String`'s internal buffer.
+
+        Returns:
+            The number of bytes that can be stored before reallocation is needed.
+        """
         # Max inline capacity before reallocation.
         if self._is_inline():
             return Self.INLINE_CAPACITY
@@ -1013,6 +1027,9 @@ struct String(
 
         Returns:
             A PythonObject representing the value.
+
+        Raises:
+            If the operation fails.
         """
         return PythonObject(self)
 
@@ -1281,6 +1298,13 @@ struct String(
             return self._len_or_data
 
     fn set_byte_length(mut self, new_len: Int):
+        """Set the byte length of the `String`.
+
+        This is an internal helper method that updates the length field.
+
+        Args:
+            new_len: The new byte length to set.
+        """
         if self._is_inline():
             self._capacity_or_data = (
                 self._capacity_or_data & ~Self.INLINE_LENGTH_MASK
@@ -1660,6 +1684,9 @@ struct String(
 
         Returns:
             An integer value that represents the string, or otherwise raises.
+
+        Raises:
+            If the operation fails.
         """
         return atol(self)
 
@@ -1669,6 +1696,9 @@ struct String(
 
         Returns:
             A float value that represents the string, or otherwise raises.
+
+        Raises:
+            If the operation fails.
         """
         return atof(self)
 
@@ -1712,6 +1742,9 @@ struct String(
         # Automatic indexing:
         print("{} {}".format(True, "hello world")) # True hello world
         ```
+
+        Raises:
+            If the operation fails.
         """
         return _FormatCurlyEntry.format(self, args)
 
@@ -2270,15 +2303,15 @@ fn atof(str_slice: StringSlice) raises -> Float64:
 
     This function is in the prelude, so you don't need to import it.
 
-    Raises:
-        If the given string cannot be parsed as an floating point value, for
-        example in `atof("hi")`.
-
     Args:
         str_slice: A string to be parsed as a floating point.
 
     Returns:
-        An floating point value that represents the string, or otherwise raises.
+        A floating-point value that represents the string.
+
+    Raises:
+        If the given string cannot be parsed as an floating-point value, for
+        example in `atof("hi")`.
     """
     return _atof(str_slice)
 

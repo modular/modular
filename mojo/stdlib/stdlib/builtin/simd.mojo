@@ -241,6 +241,32 @@ fn _has_native_f8_support() -> Bool:
 @fieldwise_init
 @register_passable
 struct FastMathFlag(ImplicitlyCopyable):
+    """Flags for controlling fast-math optimizations in floating-point operations.
+
+    FastMathFlag provides compile-time controls for various floating-point math
+    optimization modes that trade strict IEEE 754 compliance for performance.
+
+    Available flags:
+    - `NONE`: No fast-math optimizations.
+    - `NNAN`: Assume operands and results are not NaN.
+    - `NINF`: Assume operands and results are not +/- infinity.
+    - `NSZ`: Treat the sign of a zero as insignificant.
+    - `ARCP`: Allow reciprocal of values.
+    - `CONTRACT`: Allow floating-point contraction (e.g., fused multiply-add).
+    - `AFN`: Allow algebraic function approximations.
+    - `REASSOC`: Allow reassociation of floating-point operations.
+    - `FAST`: Enable all fast-math optimizations.
+
+    Examples:
+        ```mojo
+        # Use contract flag for fused multiply-add
+        var result = value.fma[FastMathFlag.CONTRACT](multiplier, accumulator)
+
+        # Use fast flag for maximum optimization
+        var fast_result = value.fma[FastMathFlag.FAST](multiplier, accumulator)
+        ```
+    """
+
     var _value: UInt8
 
     alias NONE = Self(0)
@@ -254,6 +280,14 @@ struct FastMathFlag(ImplicitlyCopyable):
     alias FAST = Self(8)
 
     fn __is__(self, other: Self) -> Bool:
+        """Compares two FastMathFlag values for identity.
+
+        Args:
+            other: The FastMathFlag to compare against.
+
+        Returns:
+            True if both flags have the same value, False otherwise.
+        """
         return self._value == other._value
 
     fn _mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
@@ -2352,6 +2386,9 @@ struct SIMD[dtype: DType, size: Int](
     ](self, multiplier: Self, accumulator: Self) -> Self:
         """Performs a fused multiply-add operation, i.e.
         `self*multiplier + accumulator`.
+
+        Parameters:
+            flag: Fast-math optimization flags to apply (default: CONTRACT).
 
         Args:
             multiplier: The value to multiply.

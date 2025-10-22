@@ -754,6 +754,16 @@ fn store_relaxed[
     """Performs an atomic store with relaxed memory ordering semantics.
 
     On NVIDIA, maps to PTX st.relaxed; on AMD, maps to POP atomic store with MONOTONIC ordering.
+
+    Parameters:
+        dtype: Data type of the value to store.
+        scope: Memory scope for the atomic operation.
+        memory: Whether to add memory clobber constraint.
+        alignment: Alignment requirement for the pointer.
+
+    Args:
+        ptr: Pointer to the memory location.
+        value: Value to store.
     """
     constrained[is_gpu(), "atomic store only supported on GPU"]()
 
@@ -857,6 +867,18 @@ fn load_relaxed[
     """Performs an atomic load with relaxed memory ordering semantics.
 
     On NVIDIA, maps to PTX ld.relaxed; on AMD, maps to POP atomic load with MONOTONIC ordering.
+
+    Parameters:
+        dtype: Data type of the value to load.
+        scope: Memory scope for the atomic operation.
+        memory: Whether to add memory clobber constraint.
+        alignment: Alignment requirement for the pointer.
+
+    Args:
+        ptr: Pointer to the memory location.
+
+    Returns:
+        The loaded value.
     """
     constrained[is_gpu(), "atomic load only supported on GPU"]()
 
@@ -968,9 +990,13 @@ fn load_volatile[
 
 @register_passable("trivial")
 struct AMDBufferResource:
+    """128-bit descriptor for a buffer resource on AMD GPUs.
+
+    Used for buffer_load/buffer_store instructions.
+    """
+
     var desc: SIMD[DType.uint32, 4]
-    """128-bit descriptor for a buffer resource on AMD GPUs. Used for
-    buffer_load/buffer_store instructions."""
+    """The 128-bit buffer descriptor encoded as four 32-bit values."""
 
     @always_inline("nodebug")
     fn __init__[
@@ -980,6 +1006,15 @@ struct AMDBufferResource:
         gds_ptr: UnsafePointer[Scalar[dtype], **_],
         num_records: Int = Int(UInt32.MAX),
     ):
+        """Constructs an AMD buffer resource descriptor.
+
+        Parameters:
+            dtype: Data type of the buffer elements.
+
+        Args:
+            gds_ptr: Pointer to the buffer in global memory.
+            num_records: Number of records in the buffer.
+        """
         constrained[
             is_amd_gpu(),
             (
@@ -999,6 +1034,7 @@ struct AMDBufferResource:
 
     @always_inline("nodebug")
     fn __init__(out self):
+        """Constructs a zeroed AMD buffer resource descriptor."""
         constrained[
             is_amd_gpu(),
             (
@@ -1010,6 +1046,11 @@ struct AMDBufferResource:
 
     @always_inline("nodebug")
     fn get_base_ptr(self) -> Int:
+        """Gets the base pointer address from the buffer resource descriptor.
+
+        Returns:
+            The base pointer address as an integer.
+        """
         return Int(
             bitcast[DType.int64, 1](
                 SIMD[DType.uint32, 2](self.desc[0], self.desc[1])
@@ -1030,6 +1071,20 @@ struct AMDBufferResource:
     ) -> SIMD[
         dtype, width
     ]:
+        """Loads data from the buffer using AMD buffer load intrinsic.
+
+        Parameters:
+            dtype: Data type to load.
+            width: Number of elements to load.
+            cache_policy: Cache operation policy.
+
+        Args:
+            vector_offset: Offset in elements from the base pointer.
+            scalar_offset: Additional scalar offset in elements.
+
+        Returns:
+            SIMD vector containing the loaded data.
+        """
         constrained[
             is_amd_gpu(),
             "The buffer_load function is only applicable on AMDGPU hardware.",
@@ -1236,6 +1291,9 @@ fn ds_read_tr16_b64[
 ) -> SIMD[dtype, 4]:
     """Reads a 64-bit LDS transpose block using TR16 layout and returns SIMD[dtype, 4] of 16-bit types.
 
+    Parameters:
+        dtype: Data type of the elements (must be 16-bit type).
+
     Args:
         shared_ptr: Pointer to the LDS transpose block.
 
@@ -1276,6 +1334,19 @@ fn ds_read_tr16_b64[
 fn permlane_swap[
     dtype: DType, //, stride: Int
 ](val1: Scalar[dtype], val2: Scalar[dtype]) -> SIMD[dtype, 2]:
+    """Swaps values between lanes using AMD permlane swap instruction.
+
+    Parameters:
+        dtype: Data type of the values (must be 32-bit type).
+        stride: Swap stride (must be 16 or 32).
+
+    Args:
+        val1: First value to swap.
+        val2: Second value to swap.
+
+    Returns:
+        SIMD vector containing the swapped values.
+    """
     constrained[
         is_amd_gpu(),
         (
@@ -1308,6 +1379,19 @@ fn permlane_swap[
 fn permlane_shuffle[
     dtype: DType, simd_width: Int, //, stride: Int
 ](val: SIMD[dtype, simd_width], out res: type_of(val)):
+    """Shuffles SIMD values across lanes using AMD permlane operations.
+
+    Parameters:
+        dtype: Data type of the values.
+        simd_width: Width of the SIMD vector.
+        stride: Shuffle stride.
+
+    Args:
+        val: Input SIMD vector to shuffle.
+
+    Returns:
+        Shuffled SIMD vector in the `res` output parameter.
+    """
     var lane_group = lane_id() // UInt(stride)
 
     var out = type_of(res)()

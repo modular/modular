@@ -135,7 +135,7 @@ max total time of 4 s:
 r = benchmark.run[sleeper](1, 2, 3, 4)
 ```
 
-Note that benchmarking continues until 'min_runtime_secs' has 
+Note that benchmarking continues until `min_runtime_secs` has
 elapsed and either `max_runtime_secs` OR `max_iters` is achieved.
 """
 
@@ -407,6 +407,9 @@ fn run[
 
     Returns:
         Average execution time of func in ns.
+
+    Raises:
+        If the operation fails.
     """
 
     @parameter
@@ -459,6 +462,9 @@ fn run[
 
     Returns:
         Average execution time of func in ns.
+
+    Raises:
+        If the operation fails.
     """
 
     @parameter
@@ -502,6 +508,9 @@ fn run[
 
     Returns:
         Average execution time of func in ns.
+
+    Raises:
+        If the operation fails.
     """
 
     @parameter
@@ -554,6 +563,9 @@ fn run[
 
     Returns:
         Average execution time of func in ns.
+
+    Raises:
+        If the operation fails.
     """
 
     @parameter

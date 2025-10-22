@@ -319,6 +319,9 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
     Args:
         result: A pointer to `UInt128` that make up the cancellation request result to decode.
 
+    Returns:
+        A tuple of three `UInt32` values representing the first CTA ID coordinates (x, y, z).
+
     Only supported on NVIDIA SM100+ GPUs."""
     constrained[
         _is_sm_100x_or_newer(),
@@ -356,6 +359,9 @@ fn clusterlaunchcontrol_try_cancel[
     mbar: UnsafePointer[Int64, address_space = AddressSpace.SHARED],
 ):
     """Requests to atomically cancel the cluster launch if it has not started running yet.
+
+    Parameters:
+        multicast: Whether to use multicast mode.
 
     Args:
         result: A pointer to `UInt128` (16B aligned) that will store the result of the cancellation request.

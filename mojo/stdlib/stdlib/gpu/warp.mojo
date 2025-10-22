@@ -1251,6 +1251,9 @@ fn vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
 
     Nvidia only supports 32 bit masks, while AMD supports 32 and 64 bit masks.
 
+    Parameters:
+        ret_type: Return type for the mask (must be `DType.uint32` or `DType.uint64`).
+
     Args:
         val: The boolean vote.
 

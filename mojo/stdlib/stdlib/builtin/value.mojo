@@ -187,7 +187,15 @@ alias ExplicitlyCopyable = Copyable
 
 
 fn materialize[T: AnyType, //, value: T](out result: T):
-    """Explicitly materialize a compile time parameter into a runtime value."""
+    """Explicitly materialize a compile-time parameter into a run-time value.
+
+    Parameters:
+        T: The type of the value to materialize.
+        value: The compile-time parameter value to materialize.
+
+    Returns:
+        The materialized run-time value.
+    """
     __mlir_op.`lit.materialize_into`[value=value](
         __get_mvalue_as_litref(result)
     )

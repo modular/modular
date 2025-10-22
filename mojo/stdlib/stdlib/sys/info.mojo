@@ -111,6 +111,11 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
     @always_inline("nodebug")
     @staticmethod
     fn __arch() -> __mlir_type.`!kgen.string`:
+        """Get the target architecture string from the compilation target.
+
+        Returns:
+            The architecture string (e.g., "x86_64", "aarch64").
+        """
         return __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
             Self.value,
@@ -374,17 +379,20 @@ fn platform_map[
     on the current compilation target, raising a compilation
     error if trying to access the value on an unsupported target.
 
+    Parameters:
+        T: The type of the platform-specific value.
+        operation: Optional operation name for error messages.
+        linux: The value to use on Linux platforms.
+        macos: The value to use on macOS platforms.
+
+    Returns:
+        The platform-specific value for the current target.
+
     Example:
 
     ```mojo
     alias EDEADLK = platform_alias["EDEADLK", linux=35, macos=11]()
     ```
-
-    Parameters:
-        T: The type of the value.
-        operation: The operation to show in the compilation error.
-        linux: Optional support for linux targets.
-        macos: Optional support for macos targets.
     """
 
     @parameter
@@ -516,6 +524,7 @@ fn _is_sm_120x_or_newer() -> Bool:
 @always_inline("nodebug")
 fn is_apple_gpu() -> Bool:
     """Returns True if the target triple is for Apple GPU (Metal) and False otherwise.
+
     Returns:
         True if the triple target is Apple GPU and False otherwise.
     """
@@ -645,6 +654,9 @@ fn is_amd_gpu() -> Bool:
 fn is_amd_gpu[subarch: StaticString]() -> Bool:
     """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
     and we are compiling for the specified sub-architecture, False otherwise.
+
+    Parameters:
+        subarch: The AMD GPU sub-architecture to check for (e.g., "gfx90a").
 
     Returns:
         True if the triple target is amdgpu and False otherwise.
@@ -1074,6 +1086,7 @@ fn has_nvidia_gpu_accelerator() -> Bool:
 @always_inline("nodebug")
 fn has_apple_gpu_accelerator() -> Bool:
     """Returns True if the host system has a Metal GPU and False otherwise.
+
     Returns:
         True if the host system has a Metal GPU.
     """

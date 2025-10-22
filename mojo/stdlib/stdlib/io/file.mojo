@@ -113,7 +113,11 @@ struct FileHandle(Defaultable, Movable, Writer):
             pass
 
     fn close(mut self) raises:
-        """Closes the file handle."""
+        """Closes the file handle.
+
+        Raises:
+            If the operation fails.
+        """
         if not self.handle:
             return
 

@@ -248,7 +248,20 @@ fn assert_equal[
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
-    """Asserts that a `StringSlice` is equal to a `String`."""
+    """Asserts that a `StringSlice` is equal to a `String`.
+
+    Parameters:
+        O: The origin of the `StringSlice`.
+
+    Args:
+        lhs: The left-hand side value.
+        rhs: The right-hand side value.
+        msg: An optional custom error message.
+        location: The source location of the assertion (defaults to caller location).
+
+    Raises:
+        If the values are not equal.
+    """
     if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
             lhs.__str__(),
@@ -268,7 +281,20 @@ fn assert_equal[
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
-    """Asserts that a `String` is equal to a `StringSlice`."""
+    """Asserts that a `String` is equal to a `StringSlice`.
+
+    Parameters:
+        O: The origin of the `StringSlice`.
+
+    Args:
+        lhs: The left-hand side value.
+        rhs: The right-hand side value.
+        msg: An optional custom error message.
+        location: The source location of the assertion (defaults to caller location).
+
+    Raises:
+        If the values are not equal.
+    """
     if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
             lhs,

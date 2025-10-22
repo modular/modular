@@ -15,6 +15,19 @@
 
 @register_passable("trivial")
 trait MMAOperandDescriptor(ImplicitlyCopyable, Movable):
+    """Trait for abstracting MMA (Matrix Multiply-Accumulate) operand descriptors.
+
+    This trait defines the interface for WGMMA operand descriptors used in GPU matrix operations.
+    """
+
     @always_inline
     fn __add__(self, offset: Int) -> Self:
+        """Adds an offset to the operand descriptor.
+
+        Args:
+            offset: The offset to add to the descriptor.
+
+        Returns:
+            A new descriptor with the offset applied.
+        """
         ...

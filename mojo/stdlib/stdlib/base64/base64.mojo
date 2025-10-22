@@ -141,6 +141,9 @@ fn b64decode[
 
     Returns:
         The decoded string.
+
+    Raises:
+        If the operation fails.
     """
     alias `=` = Byte(ord("="))
     var data = str.as_bytes()

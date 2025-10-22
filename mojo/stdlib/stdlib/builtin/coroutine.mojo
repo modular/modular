@@ -230,7 +230,10 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
         """Suspends the current coroutine until the coroutine is complete.
 
         Returns:
-            The coroutine promise.
+            The result value from the completed coroutine.
+
+        Raises:
+            If the coroutine execution encounters an error.
         """
 
         # Black magic! Internal implementation detail!

@@ -511,6 +511,7 @@ struct IntervalTree[
         self._len = 0
 
     fn __del__(deinit self):
+        """Destructor that frees the interval tree's memory."""
         Self._del_helper(self._root)
 
     @staticmethod
@@ -998,6 +999,9 @@ struct IntervalTree[
 
         Returns:
             A list of data associated with overlapping intervals.
+
+        Raises:
+            If the operation fails.
         """
         return self.search(Interval(interval[0], interval[1]))
 
@@ -1009,6 +1013,9 @@ struct IntervalTree[
 
         Returns:
             A list of data associated with overlapping intervals.
+
+        Raises:
+            If the operation fails.
         """
         return self._search_helper(self._root, interval)
 
