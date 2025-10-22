@@ -116,9 +116,10 @@ def test_where_error_message_with_mismatched_devices() -> None:
         cond, x, y = graph.inputs
         with pytest.raises(
             ValueError,
-            match=re.escape(
-                "All tensors must be on the same device, but got devices: cpu:0, cpu:0, gpu:0"
-            ),
+            match=re.escape("""Input values must be on the same device
+    condition: TensorType(dtype=bool, shape=[Dim(3)], device=cpu:0)
+    x: TensorType(dtype=int32, shape=[Dim(3)], device=cpu:0)
+    y: TensorType(dtype=int32, shape=[Dim(3)], device=gpu:0)"""),
         ):
             ops.where(cond.tensor, x.tensor, y.tensor)
 

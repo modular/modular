@@ -123,3 +123,19 @@ def test_logical_and__python_bool(
         (x,) = graph.inputs
         assert logical_op(x, b).type == tensor_type
         assert logical_op(b, x).type == tensor_type
+
+
+@pytest.mark.parametrize("logical_op", LOGICAL_BINARY_OPS)
+@given(tensor_type=tensor_types(dtypes=st.just(DType.bool)))
+def test_div__mismatched_devices(
+    logical_op: Callable[[Value | Numeric, Value | Numeric], TensorValue],
+    graph_builder: GraphBuilder,
+    tensor_type: TensorType,
+) -> None:
+    device = DeviceRef.GPU(1)
+    assume(tensor_type.device != device)
+    other_type = TensorType(tensor_type.dtype, tensor_type.shape, device)
+    with graph_builder(input_types=[tensor_type, other_type]) as graph:
+        tensor, other = graph.inputs
+        with pytest.raises(ValueError, match="same device"):
+            logical_op(tensor.tensor, other.tensor)

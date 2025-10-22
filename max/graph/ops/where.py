@@ -18,6 +18,7 @@ from max.mlir.dialects import rmo
 from .. import dtype_promotion
 from ..graph import Graph
 from ..value import TensorValue, TensorValueLike
+from .validation import assert_same_device
 
 
 def where(
@@ -45,13 +46,6 @@ def where(
             f"Expected condition to be a boolean tensor, but got a tensor with dtype {condition.dtype}"
         )
 
-    # If the inputs are tensors, check that all tensors are on the same device
-    if isinstance(x, TensorValue) and isinstance(y, TensorValue):
-        devices = [t.type.device for t in [condition, x, y]]
-        if not all(d == devices[0] for d in devices):
-            raise ValueError(
-                f"All tensors must be on the same device, but got devices: {', '.join(str(d) for d in devices)}"
-            )
-
     x, y = dtype_promotion._promote_weak_dtypes(x, y)
+    assert_same_device(condition=condition, x=x, y=y)
     return Graph.current._add_op(rmo.select, condition, x, y)[0].tensor

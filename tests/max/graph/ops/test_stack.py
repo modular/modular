@@ -93,7 +93,7 @@ def test_stack_error_with_different_devices() -> None:
         ],
     ) as graph:
         with pytest.raises(
-            ValueError, match="All inputs to stack must have the same device"
+            ValueError, match="Input values must be on the same device"
         ):
             ops.stack(v.tensor for v in graph.inputs)
 

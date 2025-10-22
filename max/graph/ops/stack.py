@@ -18,6 +18,7 @@ from ..value import TensorValue, TensorValueLike
 from .concat import concat
 from .unsqueeze import unsqueeze
 from .utils import check_axis_in_bounds
+from .validation import assert_same_device
 
 
 def _axis_bounds(rank: int) -> tuple[int, int]:
@@ -75,8 +76,7 @@ def stack(values: Iterable[TensorValueLike], axis: int = 0) -> TensorValue:
     if any(v.dtype != values_coerced[0].dtype for v in values_coerced):
         raise ValueError("All inputs to stack must have the same dtype")
 
-    if any(v.device != values_coerced[0].device for v in values_coerced):
-        raise ValueError("All inputs to stack must have the same device")
+    assert_same_device(*values_coerced)
 
     # Check if axis is within bounds
     check_axis_in_bounds(axis, rank, _axis_bounds)

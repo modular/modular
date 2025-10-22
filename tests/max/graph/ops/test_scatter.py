@@ -303,9 +303,10 @@ def test_scatter_nd_device_mismatch() -> None:
     ) as graph:
         with pytest.raises(
             ValueError,
-            match=re.escape(
-                "All tensors must be on the same device. Got input.device=cpu:0, updates.device=gpu:0, indices.device=cpu:0"
-            ),
+            match=re.escape("""Input values must be on the same device
+    input: TensorType(dtype=float32, shape=[Dim(5), Dim(3)], device=cpu:0)
+    updates: TensorType(dtype=float32, shape=[Dim(2), Dim(3)], device=gpu:0)
+    indices: TensorType(dtype=int64, shape=[Dim(2), Dim(1)], device=cpu:0)"""),
         ):
             input_tensor, updates, indices = (
                 inp.tensor for inp in graph.inputs

@@ -19,6 +19,7 @@ from max.mlir.dialects import rmo
 
 from ..graph import Graph
 from ..value import TensorValue, TensorValueLike
+from .validation import assert_same_device
 
 
 def concat(
@@ -56,8 +57,8 @@ def concat(
             raise ValueError(
                 f"Concat inputs differ on non-concat axis {i}: {vals=}"
             )
-    if any(v.type.device != vals[0].type.device for v in vals):
-        raise ValueError(f"Cannot concat inputs on different devices {vals}")
+    assert_same_device(*vals)
+
     axis_attr = mlir.IntegerAttr.get(mlir.IndexType.get(), axis)
 
     result = Graph.current._add_op(rmo.concat, vals, axis=axis_attr)[0].tensor

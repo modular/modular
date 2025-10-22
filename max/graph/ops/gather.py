@@ -21,6 +21,7 @@ from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
+from .validation import assert_same_device
 
 
 def gather(
@@ -49,14 +50,10 @@ def gather(
         axis += input.rank
 
     output_shape = [*shape[:axis], *indices.shape, *shape[axis + 1 :]]
+    assert_same_device(input=input, indices=indices)
     return Graph.current._add_op(
         rmo.mo_gather,
-        TensorType(
-            input.dtype,
-            output_shape,
-            # Prefer indices device if input device unset since they're equal.
-            input.device if input.device else indices.device,
-        ).to_mlir(),
+        TensorType(input.dtype, output_shape, input.device),
         input,
         indices,
         constant(axis, DType.int64, DeviceRef.CPU()),
@@ -123,6 +120,8 @@ def gather_nd(
           taken entirely as though slicing.
     """
     input, indices = TensorValue(input), TensorValue(indices)
+    assert_same_device(input=input, indices=indices)
+
     if not isinstance(indices.shape[-1], StaticDim):
         raise ValueError(f"index last dimension must be static: {indices=}")
     index_size = int(indices.shape[-1])

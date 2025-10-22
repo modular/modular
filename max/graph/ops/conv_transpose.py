@@ -19,6 +19,7 @@ from ..graph import Graph
 from ..type import ConvInputLayout, FilterLayout, Shape
 from ..value import TensorValue, TensorValueLike
 from .permute import permute
+from .validation import assert_same_device
 
 
 def conv2d_transpose(
@@ -120,6 +121,8 @@ def conv2d_transpose(
     # original_device = x.type.device
     # x = x.to(DeviceRef.CPU())
     # filter = filter.to(DeviceRef.CPU())
+
+    assert_same_device(x=x, filter=filter)
 
     out = Graph.current._add_op(
         rmo.conv_transpose,

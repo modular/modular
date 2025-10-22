@@ -249,3 +249,33 @@ def test_gather_nd__non_int_indices(
     with Graph("gather_nd", input_types=[input, indices]) as graph:
         with pytest.raises(ValueError):
             ops.gather_nd(*graph.inputs, batch_dims=batch_dims)  # type: ignore
+
+
+@given(
+    input_type=st.shared(input_types, key="input"),
+    indices_type=tensor_types(dtypes=st.just(DType.int64)),
+    axis=axes(st.shared(input_types, key="input")),
+)
+def test_gather__mismatched_devices(
+    input_type: TensorType, indices_type: TensorType, axis: int
+) -> None:
+    assume(indices_type.rank > 0)
+    device = DeviceRef.GPU(1)
+    assume(input_type.device != device)
+    indices_type = TensorType(indices_type.dtype, indices_type.shape, device)
+    with Graph("gather_nd", input_types=[input_type, indices_type]) as graph:
+        input, indices = graph.inputs
+        with pytest.raises(ValueError, match="same device"):
+            ops.gather(input.tensor, indices.tensor, axis)
+
+
+@given(input=..., indices=tensor_types(dtypes=st.just(DType.uint64)))
+def test_gather_nd__mismatched_devices(
+    input: TensorType, indices: TensorType
+) -> None:
+    device = DeviceRef.GPU(1)
+    assume(input.device != device)
+    indices = TensorType(indices.dtype, indices.shape, device)
+    with Graph("gather_nd", input_types=[input, indices]) as graph:
+        with pytest.raises(ValueError, match="same device"):
+            ops.gather_nd(*graph.inputs)  # type: ignore

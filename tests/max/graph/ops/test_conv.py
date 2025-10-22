@@ -198,3 +198,16 @@ def test_conv_symbolic_shapes(graph_builder: GraphBuilder) -> None:
         )
 
         graph.output(out)
+
+
+@given(input_type=static_tensor_type)
+def test_conv_mismatched_devices(
+    graph_builder: GraphBuilder, input_type: TensorType
+) -> None:
+    filter_device = DeviceRef.GPU(1)
+    assume(input_type.device != filter_device)
+    filter_type = TensorType(input_type.dtype, input_type.shape, filter_device)
+    with graph_builder(input_types=[input_type, filter_type]) as graph:
+        tensor, filter = graph.inputs
+        with pytest.raises(ValueError, match="same device"):
+            ops.conv2d(tensor.tensor, filter.tensor)

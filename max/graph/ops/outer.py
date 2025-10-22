@@ -15,6 +15,7 @@
 from .. import dtype_promotion
 from ..value import TensorValue, TensorValueLike
 from .reshape import reshape
+from .validation import assert_same_device
 
 
 def outer(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
@@ -36,4 +37,5 @@ def outer(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
     if lhs.rank != 1 or rhs.rank != 1:
         raise ValueError("outer expected 1d-tensors as inputs")
+    assert_same_device(lhs=lhs, rhs=rhs)
     return reshape(lhs, [-1, 1]) * reshape(rhs, [1, -1])

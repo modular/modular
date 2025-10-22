@@ -18,11 +18,10 @@ from ..graph import Graph
 from ..type import BufferType, TensorType
 from ..value import BufferValue, BufferValueLike, TensorValue, TensorValueLike
 from .slice_tensor import SliceIndices, _slice_and_output_tensors
+from .validation import assert_same_device
 
 
-def buffer_load(
-    x: BufferValue,
-) -> TensorValue:
+def buffer_load(x: BufferValue) -> TensorValue:
     """Loads the input buffer into a tensor.
 
     It loads the in-place mutable tensor to an immutable tensor graph value.
@@ -104,6 +103,7 @@ def buffer_store_slice(
     destination = BufferValue(destination)
     source = TensorValue(source)
 
+    assert_same_device(destination=destination, source=source)
     in_chain = Graph.current.device_chains[destination.device]
 
     starts, stops, steps, unsqueezed_shape, squeezed_shape = (

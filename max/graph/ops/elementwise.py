@@ -22,6 +22,7 @@ from ..graph import Graph
 from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
 from .cast import cast
+from .validation import assert_same_device
 
 # ===----------------------------------------------------------------------=== #
 # Utilities
@@ -56,6 +57,7 @@ def _elementwise_binary(op):  # noqa: ANN001, ANN202
         lhs: TensorValueLike, rhs: TensorValueLike
     ) -> TensorValue:
         lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
+        assert_same_device(lhs=lhs, rhs=rhs)
         return Graph.current._add_op(op, lhs, rhs)[0].tensor
 
     elementwise_op.__name__ = op.__name__
@@ -140,6 +142,7 @@ def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
         lhs = cast(lhs, float_dtype)
         rhs = cast(rhs, float_dtype)
 
+    assert_same_device(lhs, rhs)
     return Graph.current._add_op(rmo.div, lhs, rhs)[0].tensor
 
 

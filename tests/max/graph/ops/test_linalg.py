@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for max.graph linear algebra operations."""
 
+import operator
+
 import numpy as np
 import pytest
 from max.dtype import DType
@@ -317,3 +319,16 @@ def test_band_part() -> None:
     )
 
     assert "rmo.mo.linalg.band_part" in str(graph._mlir_op)
+
+
+def test_matmul_mismatched_devices() -> None:
+    """Tests for dtype promotion in matmul."""
+    with pytest.raises(ValueError, match="same device"):
+        Graph(
+            "matmul_dtype_promotion",
+            operator.matmul,
+            (
+                TensorType(DType.float32, (4, 2, 3), device=DeviceRef.CPU(0)),
+                TensorType(DType.float64, (3, 2), device=DeviceRef.CPU(1)),
+            ),
+        )
