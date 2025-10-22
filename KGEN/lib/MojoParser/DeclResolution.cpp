@@ -126,7 +126,8 @@ public:
 
   /// Process signature decorators on the declaration using the provided
   /// functor. The functor should return success if the decorator was processed
-  /// as a signature decorator.
+  /// as a signature decorator. Any leftover decorators are emitted and deferred
+  /// as body decorators.
   void applySignatureDecorators(
       ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
       function_ref<LogicalResult(ExprNode *)> process = [](ExprNode *) {
@@ -135,8 +136,8 @@ public:
 
   /// Process body decorators on the declaration using the provided functor.
   /// The functor should return success if the decorator was processed as a
-  /// signature decorator. Any leftover decorators are emitted and deferred to
-  /// the operation.
+  /// body decorator. Any leftover decorators are emitted and set on the
+  /// operation.
   void applyBodyDecorators(function_ref<LogicalResult(ExprNode *)> process);
 
 private:
@@ -241,39 +242,14 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
 void Decorators::applySignatureDecorators(
     ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
     function_ref<LogicalResult(ExprNode *)> process) {
-  // Process decorators in the order they are seen. Stop at the first decorator
-  // that needs to be deferred.
-  while (true) {
-    // Return if we are out of decorators.
-    if (decoratorExprs.empty())
-      return;
-    ExprNode *decorator = decoratorExprs.front().first;
-    if (succeeded(handleDeprecated(decorator, decl)) ||
-        succeeded(process(decorator))) {
-      decoratorExprs = decoratorExprs.drop_front();
-      continue;
-    }
-    break;
-  }
-  // Ensure that there are no other signature decorators afterwards. This is
-  // an error.
+  // Process decorators in the order they are seen. Collect body decorators to
+  // be deferred.
   SmallVector<ExprNode *> bodyDecorators;
-  bodyDecorators.push_back(decoratorExprs.front().first);
-  for (auto [i, decorator] :
-       llvm::enumerate(llvm::make_first_range(decoratorExprs.drop_front()))) {
-    if (failed(process(decorator))) {
-      bodyDecorators.push_back(decorator);
+  for (auto &[decorator, _] : decoratorExprs) {
+    if (succeeded(handleDeprecated(decorator, decl)) ||
+        succeeded(process(decorator)))
       continue;
-    }
-    // If the decorator applies, we have an error.
-    InflightDiag diag =
-        emitError(decorator->getLoc(),
-                  "signature decorator cannot come after body decorator")
-        << decorator->getRange();
-    ExprNode *bodyDecorator = decoratorExprs[i].first;
-    diag.attachNote(bodyDecorator->getLoc())
-        << "previous body decorator applied here" << bodyDecorator->getRange();
-    break;
+    bodyDecorators.push_back(decorator);
   }
 
   if (!bodyDecorators.empty() && signatureOnly) {
@@ -345,44 +321,24 @@ void Decorators::applyBodyDecorators(
   if (decl.isErroneous())
     return;
 
-  ArrayRef<ExprNode *> decoratorExprs = decl.getBodyDecorators();
-  while (true) {
-    // If there are no decorators left, just exit.
-    if (decoratorExprs.empty())
-      return;
-    if (failed(process(decoratorExprs.front())))
-      break;
-    decoratorExprs = decoratorExprs.drop_front();
-  }
+  SmallVector<ExprNode *> exprDecorators;
+  for (auto decorator : decl.getBodyDecorators())
+    if (failed(process(decorator)))
+      exprDecorators.push_back(decorator);
 
-  // Emit the expressions and persist the resulting PValue into the IR. For now,
-  // assume that all decorators are "compiler" decorators.
+  // Emit the expressions and persist the resulting PValue into the IR.
   // TODO: Emit an attempt to call the decorator value.
   SmallVector<TypedAttr> decoPValues;
-  decoPValues.reserve(decoratorExprs.size());
+  decoPValues.reserve(exprDecorators.size());
   IREmitter emitter(decl, EC_Decorator);
-  for (auto [i, decorator] : llvm::enumerate(decoratorExprs)) {
-    // Make sure we don't have another body decorator.
-    if (failed(process(decorator))) {
-      if (PValue decoVal = emitter.emitExprPValue(decorator, EC_Decorator)) {
-        if (failed(validateCompilerDecorator(decoVal))) {
-          emitError(decorator->getLoc(), "unsupported compiler decorator")
-              << decorator->getRange();
-        }
-        decoPValues.push_back(decoVal);
+  for (auto *decorator : exprDecorators) {
+    if (PValue decoVal = emitter.emitExprPValue(decorator, EC_Decorator)) {
+      if (failed(validateCompilerDecorator(decoVal))) {
+        emitError(decorator->getLoc(), "unsupported compiler decorator")
+            << decorator->getRange();
       }
-      continue;
+      decoPValues.push_back(decoVal);
     }
-    // If the decorator applies, we have an error.
-    InflightDiag diag =
-        emitError(decorator->getLoc(),
-                  "body decorator cannot come after compiler decorator")
-        << decorator->getRange();
-    ExprNode *bodyDecorator = decoratorExprs[i - 1];
-    diag.attachNote(bodyDecorator->getLoc())
-        << "previous compiler decorator applied here"
-        << bodyDecorator->getRange();
-    break;
   }
 
   cast<ASTDeclInterface>(decl.getIfOperation())
