@@ -982,13 +982,12 @@ fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
         Vector containing result of performing log base 2 on x.
     """
 
-    @parameter
-    if size_of[dtype]() < size_of[DType.float32]() and not (
-        is_amd_gpu() and dtype is DType.float16
-    ):
-        return log2(x.cast[DType.float32]()).cast[dtype]()
-
     if is_compile_time():
+
+        @parameter
+        if size_of[dtype]() < size_of[DType.float32]():
+            return log2(x.cast[DType.float32]()).cast[dtype]()
+
         return _log_base[2](x)
 
     @parameter
@@ -1000,6 +999,8 @@ fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
         return _call_amdgcn_intrinsic[
             String("llvm.amdgcn.log.", _get_amdgcn_type_suffix[dtype]())
         ](x)
+    elif size_of[dtype]() < size_of[DType.float32]():
+        return log2(x.cast[DType.float32]()).cast[dtype]()
 
     return _log_base[2](x)
 
