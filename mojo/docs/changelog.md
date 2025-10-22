@@ -166,6 +166,9 @@ what we publish.
 - `TestSuite` now can generate test reports with `.generate_report()`. Also
   a `TestReport` and `TestSuiteReport` structs were added.
 
+- `TestSuite` now allows explicitly skipping registered tests using the
+  `TestSuite.skip` API.
+
 - `Codepoint` now conforms to `Comparable` adding `__le__`, `__lt__`, `__ge__`,
   and `__gt__` implementations.
 

@@ -15,6 +15,7 @@ from math import ceil, floor
 from os import sep
 from time import perf_counter_ns
 from utils._ansi import Color, Text
+from collections import Set
 
 from builtin._location import __call_location, _SourceLocation
 from compile.reflection import get_linkage_name
@@ -230,6 +231,9 @@ struct TestSuiteReport(Copyable, Movable, Writable):
     var skipped: Int
     """The number of tests skipped."""
 
+    var passed: Int
+    """The number of tests that passed."""
+
     var location: _SourceLocation
     """The source location of the test suite."""
 
@@ -240,6 +244,7 @@ struct TestSuiteReport(Copyable, Movable, Writable):
         self.total_duration_ns = 0
         self.failures = 0
         self.skipped = 0
+        self.passed = 0
         self.location = location
 
         for ref report in self.reports:
@@ -248,6 +253,7 @@ struct TestSuiteReport(Copyable, Movable, Writable):
                 self.failures += 1
             elif report.result == TestResult.SKIP:
                 self.skipped += 1
+        self.passed = len(self.reports) - self.failures - self.skipped
 
     fn write_to(self, mut writer: Some[Writer]):
         _writeln(writer)
@@ -342,6 +348,7 @@ struct TestSuite(Movable):
 
     var tests: List[_Test]
     var location: _SourceLocation
+    var skip_list: Set[String]
 
     @always_inline
     fn __init__(out self, *, location: Optional[_SourceLocation] = None):
@@ -353,6 +360,8 @@ struct TestSuite(Movable):
         """
         self.tests = List[_Test]()
         self.location = location.or_else(__call_location())
+        # TODO: would be better if these were StaticString
+        self.skip_list = Set[String]()
 
     fn _register_tests[test_funcs: Tuple, /](mut self):
         """Internal function to prevent all registrations from being inlined."""
@@ -404,11 +413,35 @@ struct TestSuite(Movable):
         """
         self.tests.append(_Test(f, _get_test_func_name[f]()))
 
+    fn skip[f: _Test.fn_type](mut self) raises:
+        """Registers a test to be skipped.
+
+        If attempting to skip a test that is not registered in the suite (either
+        explicitly or via automatic discovery), an error will be raised.
+
+        Parameters:
+            f: The function to skip.
+        """
+        # TODO: _Test doesn't conform to EqualityComparable, so we can't use
+        # `in` here. Also, we might wanna do this in O(1) time.
+        for test in self.tests:
+            if test.name == _get_test_func_name[f]():
+                self.skip_list.add(test.name)
+                return
+        raise Error("test not found in suite: ", _get_test_func_name[f]())
+
+    fn _should_skip(self, test: _Test) -> Bool:
+        return test.name in self.skip_list
+
     fn generate_report(mut self) -> TestSuiteReport:
         """Runs the test suite and generates a report."""
         var reports = List[TestReport](capacity=len(self.tests))
 
         for test in self.tests:
+            if self._should_skip(test):
+                reports.append(TestReport.skipped(name=test.name))
+                continue
+
             var error: Optional[Error] = None
             var start = perf_counter_ns()
             try:
@@ -429,12 +462,14 @@ struct TestSuite(Movable):
                     TestReport.passed(name=name^, duration_ns=duration)
                 )
 
-            # TODO: Check for skipped tests `append(TestReport.skipped(...))`
-
         return TestSuiteReport(reports=reports^, location=self.location)
 
-    fn run(deinit self) raises:
+    fn run(deinit self, *, quiet: Bool = False) raises:
         """Runs the test suite and prints the results to the console.
+
+        Arguments:
+            quiet: Suppresses printing the report when the suite does not fail
+                (defaults to `False`).
 
         Raises:
             An error if a test in the test suite fails.
@@ -442,7 +477,17 @@ struct TestSuite(Movable):
         var report = self.generate_report()
         if report.failures > 0:
             raise Error(report)
+        if not quiet:
+            print(report)
 
-    fn disable(deinit self):
-        """Disables the test suite, not running any of the tests."""
-        pass
+    fn disable(deinit self, *, quiet: Bool = False):
+        """Disables the test suite by skipping all tests.
+
+        Arguments:
+            quiet: Suppresses printing the report (defaults to `False`).
+        """
+        for test in self.tests:
+            self.skip_list.add(test.name)
+        var report = self.generate_report()
+        if not quiet:
+            print(report)
