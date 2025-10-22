@@ -182,5 +182,33 @@ fn launch_ship(mut ship: Spaceship):
     # CHECK-SAME: <:!Flying !Spaceship>
     launch_flying(ship)
 
+# // -----
+
+
+alias int = __mlir_type.index
+alias `42` = __mlir_attr.`42 : index`
+
+# Define a capturing lambda type (like elementwise_epilogue_type)
+alias capturing_lambda_type = fn(int) capturing -> int
+
+struct StructWithCapturingLambda[T: int, my_lambda: capturing_lambda_type]:
+    var value: int
+
+    # This part of the test is here to establish the fact that struct
+    # methods get 'capturing' when the struct has a capturing fn parameter.
+    # Further below, we'll CHECK that the same thing happens for extensions.
+    # CHECK-LABEL: lit.fn @"helper_with_capturing_lambda
+    # CHECK-SAME: capturing -> index
+    fn helper_with_capturing_lambda(self) -> int:
+        return T
+
+__extension StructWithCapturingLambda:
+    # CHECK-LABEL: lit.fn @"user_from_extension
+    # This is the important check, that extension methods also get 'capturing'
+    # if the struct has any capturing fn parameters.
+    # CHECK-SAME: ) capturing -> index attributes
+    fn user_from_extension(self) -> int:
+        return Self.helper_with_capturing_lambda(self)
+
 
 # TODO(MOCO-522): Add tests for aliases in extensions
