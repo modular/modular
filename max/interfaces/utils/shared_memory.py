@@ -104,7 +104,7 @@ def ndarray_to_shared_memory(arr: npt.NDArray[Any]) -> SharedMemoryArray | None:
         )
 
     except (OSError, FileExistsError) as e:
-        logger.warning(f"Shared memory creation failed: {e}")
+        logger.warning(f"Failed to create shared memory array: {e}")
         return None
 
 
@@ -116,8 +116,17 @@ def open_shm_array(meta: dict[str, Any]) -> npt.NDArray[Any]:
 
     Returns:
         NumPy array either as a view of the shared memory
+
+    Raises:
+        RuntimeError: If the shared memory segment cannot be opened or mapped
+            (e.g., insufficient permissions or ENOMEM under memory pressure).
     """
-    shm = shared_memory.SharedMemory(name=meta["name"])
+    try:
+        shm = shared_memory.SharedMemory(name=meta["name"])
+    except (OSError, FileNotFoundError) as e:
+        raise RuntimeError(
+            f"Failed to open shared memory array in consumer: {e}"
+        ) from e
 
     # Create numpy array view into shared memory
     arr: npt.NDArray[Any] = np.ndarray(
