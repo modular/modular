@@ -1454,9 +1454,11 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
                    [](ParsedArgument &arg) { return arg.isErroneous; }))
     decl.setErroneous();
 
-  auto structDecl =
-      dyn_cast_or_null<StructDeclOp>(decl.getParentDecl()->getIfOperation());
-  if (isCapturingByDefault(funcOp, structDecl, paramList.paramDeclAttrs))
+  ASTDecl *structDecl = getStructOrTargetStruct(*decl.getParentDecl(), *this);
+  StructDeclOp structOp = nullptr;
+  if (structDecl)
+    structOp = dyn_cast_or_null<StructDeclOp>(structDecl->getIfOperation());
+  if (isCapturingByDefault(funcOp, structOp, paramList.paramDeclAttrs))
     fnSignature.effects.setCapturing();
 
   // Now that we have figured out the lexical structure, allow decorators to
