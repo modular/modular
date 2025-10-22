@@ -444,6 +444,40 @@ class DeferredAttr(max._core.Attribute):
     @property
     def attr(self) -> max._core.Attribute | None: ...
 
+class DowncastAttr(max._core.Attribute):
+    """
+    The `#kgen.downcast` attribute is used to convert from a typeValue to a
+    typeValue of a more-derived trait. For example, this can represent a cast
+    from AnyType to Movable.
+
+    Note that parser does not (also can not) verify whether the downcast is
+    legal and a illegal downcast can lead to elaboration time error.
+
+
+    Example:
+
+    ```mlir
+    #kgen.downcast<:AnyType T> : !lit.trait<Movable>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        type: max._core.Type,
+        input_type_value: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: max._core.Type,
+        input_type_value: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+    @property
+    def input_type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class EnvAttr(max._core.Attribute):
     """
     The `#kgen.env` attribute defines a generic dictionary of environment
