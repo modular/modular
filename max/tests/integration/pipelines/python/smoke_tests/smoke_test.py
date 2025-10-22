@@ -304,17 +304,17 @@ def build_eval_summary(
 
 
 @click.command()
+@click.argument(
+    "hf_model_path",
+    type=str,
+    required=True,
+)
 @click.option(
     "--framework",
     type=click.Choice(["sglang", "vllm", "max", "max-ci"]),
     default="max-ci",
     required=False,
-)
-@click.option(
-    "--model",
-    type=str,
-    required=True,
-    help="huggingface model path, for example: unsloth/gpt-oss-20b-bf16",
+    help="Framework to use for the smoke test. Only max-ci is supported when running in bazel.",
 )
 @click.option(
     "--output-file",
@@ -322,8 +322,22 @@ def build_eval_summary(
     default=None,
     help="If provided, write the summary of the smoke test to this file",
 )
-def smoke_test(framework: str, model: str, output_file: Path | None) -> None:
-    model = model.lower().strip()
+def smoke_test(
+    hf_model_path: str, framework: str, output_file: Path | None
+) -> None:
+    """
+    Example usage: ./bazelw run smoke-test -- meta-llama/llama-3.2-1b-instruct
+
+    This command asks 320 questions against the model behind the given hf_model_path.
+    It runs the provided framework (defaulting to MAX serve) in the background,
+    and fires off HTTP requests to chat/completions API.
+    Note: Only models with a chat template (typically -instruct, -it, -chat, etc.) are supported.
+
+    Accuracy is reported at the end, with higher values being better.
+    A 1.0 value means 100% accuracy.
+
+    """
+    model = hf_model_path.lower().strip()
     cmd = get_server_cmd(framework, model)
 
     # TODO Refactor this to a model list/matrix specifying type of model
