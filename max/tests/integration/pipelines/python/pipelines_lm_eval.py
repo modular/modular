@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import subprocess
 import sys
@@ -15,8 +16,15 @@ from pathlib import Path
 from typing import Any, Literal
 
 import click
-import python.runfiles
 import requests
+
+# Make python.runfiles optional for Docker environments
+try:
+    import python.runfiles
+
+    HAVE_RUNFILES = True
+except ImportError:
+    HAVE_RUNFILES = False
 
 logger = logging.getLogger("pipelines_lm_eval")
 
@@ -143,6 +151,16 @@ class PipelineSitter:
         exists=True, executable=True, dir_okay=False, path_type=Path
     ),
 )
+@click.option(
+    "--skip-pipelines",
+    is_flag=True,
+    help=(
+        "Skip starting pipelines server and connect to an external server instead. "
+        "Requires an already-running pipelines server accessible via the evaluator's "
+        "configured endpoint (typically http://HOST:PORT/v1/completions for lm-eval). "
+        "The external server must be ready to accept requests before this script runs."
+    ),
+)
 @click.option("--pipelines-probe-port", type=int)
 @click.option("--pipelines-probe-timeout", type=float)
 @click.option("--pipelines-arg", "pipelines_args", multiple=True)
@@ -163,8 +181,9 @@ class PipelineSitter:
 @click.option("--mistral-evals-arg", "mistral_evals_args", multiple=True)
 def main(
     override_pipelines: Path | None,
+    skip_pipelines: bool,
     pipelines_probe_port: int | None,
-    pipelines_probe_timeout: int | None,
+    pipelines_probe_timeout: float | None,
     pipelines_args: Sequence[str],
     evaluator: str,
     override_lm_eval: Path | None,
@@ -178,21 +197,40 @@ def main(
         format="%(asctime)s %(levelname)s: %(name)s: %(message)s",
     )
 
-    runfiles = python.runfiles.Create()
-    if runfiles is None:
-        raise FileNotFoundError("Unable to find runfiles tree")
+    # Try to create runfiles (Bazel mode), fall back to None (Docker mode)
+    runfiles = None
+    if HAVE_RUNFILES:
+        runfiles = python.runfiles.Create()
+        if runfiles is None:
+            logger.warning(
+                "python.runfiles module is available but Create() returned None. "
+                "This may indicate a Bazel configuration issue. "
+                "Falling back to Docker mode paths."
+            )
+
+    # Determine program paths - use runfiles if available, fallback to Docker paths
     if override_pipelines is not None:
         pipelines_program = [str(override_pipelines)]
-    else:
+    elif runfiles is not None:
+        # Bazel mode - use runfiles
         pipelines_program = [
             _must_rlocation_str(
                 runfiles,
                 "_main/SDK/lib/API/python/max/entrypoints/pipelines",
             )
         ]
+    else:
+        # Docker mode - use installed package
+        pipelines_program = [
+            "/opt/venv/bin/python",
+            "-m",
+            "max.entrypoints.pipelines",
+        ]
+
     if override_lm_eval is not None:
         lm_eval_program = [str(override_lm_eval)]
-    else:
+    elif runfiles is not None:
+        # Bazel mode - use runfiles
         lm_eval_program = [
             sys.executable,
             _must_rlocation_str(
@@ -200,9 +238,14 @@ def main(
                 "_main/SDK/integration-test/pipelines/python/run_lm_eval.py",
             ),
         ]
+    else:
+        # Docker mode - use installed lm-eval
+        lm_eval_program = ["/opt/venv/bin/lm_eval"]
+
     if override_mistral_evals is not None:
         mistral_evals_program = [str(override_mistral_evals)]
-    else:
+    elif runfiles is not None:
+        # Bazel mode - use runfiles
         mistral_evals_program = [
             sys.executable,
             _must_rlocation_str(
@@ -210,6 +253,9 @@ def main(
                 "_main/SDK/integration-test/pipelines/python/run_mistral_eval.py",
             ),
         ]
+    else:
+        # Docker mode - use installed mistral-evals
+        mistral_evals_program = ["/opt/venv/bin/mistral-evals"]
     logger.debug("Pipelines binary at: %r", pipelines_program)
     evaluator_args: list[str] = []
     if evaluator == "lm-eval":
@@ -223,30 +269,60 @@ def main(
         sys.exit(1)
     logger.debug("Evaluator binary at: %r", evaluator_program)
 
+    # Add eval_tasks directory to include_path for lm-eval
     if evaluator == "lm-eval" and not any(
         arg.startswith("--include_path") for arg in evaluator_args
     ):
-        include_path = _must_rlocation(
-            runfiles,
-            "_main/SDK/integration-test/pipelines/python/eval_tasks/BUILD.bazel",
-        ).parent
+        include_path: Path
+        if runfiles is not None:
+            # Bazel mode - use runfiles
+            include_path = _must_rlocation(
+                runfiles,
+                "_main/SDK/integration-test/pipelines/python/eval_tasks/BUILD.bazel",
+            ).parent
+        else:
+            # Docker mode - use absolute path
+            include_path = Path(
+                "/app/SDK/integration-test/pipelines/python/eval_tasks"
+            )
+            if not include_path.exists():
+                logger.error(
+                    "Required eval_tasks directory not found at %s. "
+                    "Docker image may be misconfigured.",
+                    include_path,
+                )
+                sys.exit(1)
+
         evaluator_args.append(f"--include_path={include_path}")
         logger.debug("Including path: %s", include_path)
 
-    with PipelineSitter(
-        pipelines_program + list(pipelines_args)
-    ) as pipeline_sitter:
-        if pipelines_probe_port is not None:
-            pipeline_sitter.wait_for_alive(
-                probe_port=pipelines_probe_port, timeout=pipelines_probe_timeout
+    # Run evaluator with or without managing pipelines server
+    with contextlib.ExitStack() as stack:
+        if skip_pipelines:
+            # Skip pipelines server management - assume external server is running
+            # The evaluator will connect to the external server using the endpoint
+            # configured in its arguments (e.g., via --lm-eval-arg with base_url).
+            # Typically used in dataset-eval jobs where a separate Kubernetes pod
+            # runs the pipelines server (see dataset_eval_entrypoint.sh).
+            logger.info(
+                "Skipping pipelines server startup, assuming external server is running"
             )
+        else:
+            # Manage pipelines server lifecycle
+            pipeline_sitter = stack.enter_context(
+                PipelineSitter(pipelines_program + list(pipelines_args))
+            )
+            if pipelines_probe_port is not None:
+                pipeline_sitter.wait_for_alive(
+                    probe_port=pipelines_probe_port,
+                    timeout=pipelines_probe_timeout,
+                )
 
         logger.info(
             "Running evaluator %r with provided args: %r",
             evaluator_program,
             evaluator_args,
         )
-
         evaluator_proc = subprocess.run(evaluator_program + evaluator_args)
         logger.info(
             "Evaluator exited with status code %s",
