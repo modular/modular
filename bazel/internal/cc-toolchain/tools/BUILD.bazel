@@ -25,5 +25,6 @@ declare_tools()
         "llvm-install-name-tool",
         "llvm-objcopy",
         "llvm-otool",
+        "resource_directory",
     ]
 ]

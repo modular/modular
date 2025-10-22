@@ -36,14 +36,12 @@ def _declare_tools(platform):
     cc_tool(
         name = "{}-clang".format(platform),
         src = "@clang-{}//:bin/clang".format(platform),
-        data = [":{}-builtin_headers".format(platform)],
         tags = ["manual"],
     )
 
     cc_tool(
         name = "{}-clang++".format(platform),
         src = "@clang-{}//:bin/clang++".format(platform),
-        data = [":{}-builtin_headers".format(platform)],
         tags = ["manual"],
     )
 
@@ -91,7 +89,6 @@ def _declare_tools(platform):
     cc_tool(
         name = "{}-clang-tidy".format(platform),
         src = "@clang-{}//:bin/clang-tidy".format(platform),
-        data = [":{}-builtin_headers".format(platform)],
         tags = [
             "manual",
             TOP_LEVEL_TAG,  # Used in .bazelrc
@@ -101,6 +98,13 @@ def _declare_tools(platform):
     native.alias(
         name = "{}-builtin_headers".format(platform),
         actual = "@clang-{}//:include".format(platform),
+        tags = ["manual"],
+        visibility = ["//visibility:private"],
+    )
+
+    native.alias(
+        name = "{}-resource_directory".format(platform),
+        actual = "@clang-{}//:resource_directory".format(platform),
         tags = ["manual"],
         visibility = ["//visibility:private"],
     )

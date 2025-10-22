@@ -393,18 +393,21 @@ archive_override(
 
 http_archive(
     name = "clang-linux-x86_64",
+    build_file = "//bazel/public-patches:clang.BUILD",  # TODO: Delete next bump
     sha256 = "4ec4349717c3e6c7ffa0777b6f7e8987af039e05f0a32af5316c3dd730496651",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-x86_64/20.1.8/4ec4349717c3e6c7ffa0777b6f7e8987af039e05f0a32af5316c3dd730496651/llvm-linux-x86_64.tar.xz",
 )
 
 http_archive(
     name = "clang-linux-aarch64",
+    build_file = "//bazel/public-patches:clang.BUILD",  # TODO: Delete next bump
     sha256 = "5bda1756f6cfb7a3472b5a885acb8d747040662305922eb809154481f1222189",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-aarch64/20.1.8/5bda1756f6cfb7a3472b5a885acb8d747040662305922eb809154481f1222189/llvm-linux-aarch64.tar.xz",
 )
 
 http_archive(
     name = "clang-macos",
+    build_file = "//bazel/public-patches:clang.BUILD",  # TODO: Delete next bump
     sha256 = "a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/20.1.8/a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8/llvm-macos.tar.xz",
 )

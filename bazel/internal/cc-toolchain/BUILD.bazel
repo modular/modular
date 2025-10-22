@@ -46,6 +46,7 @@ cc_sysroot(
             "//:linux_aarch64": [":linux_sysroot_aarch64"],
             "@platforms//os:macos": [":macos_sysroot"],
         }) + [
+            "//bazel/internal/cc-toolchain/args:resource_dir_args",
             "//bazel/internal/cc-toolchain/args:compile_and_link_args",
             "//bazel/internal/cc-toolchain/args:compile_args",
             "//bazel/internal/cc-toolchain/args:cpp_compile_args",
