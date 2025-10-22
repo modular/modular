@@ -43,6 +43,12 @@ DType getEquivalentDType(FloatType fpType);
 /// Returns the invalid DType if the MLIR type is not representable.
 DType getEquivalentDType(IntegerType intType);
 
+/// Given an MLIR type, return the equivalent dtype and vector size. The vector
+/// size is std::nullopt if the type a scalar, and is set to the vector size
+/// (i.e., including 1) if present. Returns the invalid DType if the MLIR type
+/// is not representable.
+std::pair<DType, std::optional<int64_t>> getEquivalentDType(Type type);
+
 } // namespace M
 
 #endif // SUPPORT_COMPILER_MLIRDTYPE_H

@@ -9,6 +9,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/POPDialect/POPUtils.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/STLExtras.h"
@@ -1652,6 +1653,100 @@ TypedAttr StringConcatAttr::get(MLIRContext *ctx, TypedAttr lhs,
 bool StringConcatAttr::isConstant() const { return false; }
 
 Type StringConcatAttr::getType() const { return StringType::get(getContext()); }
+
+//===----------------------------------------------------------------------===//
+// DTypeToUI8Attr
+//===----------------------------------------------------------------------===//
+
+TypedAttr DTypeToUI8Attr::get(MLIRContext *ctx, TypedAttr value) {
+  // Fold into an IntegerAttr if the DType value is known
+  if (auto constDTy = dyn_cast<DTypeConstantAttr>(value))
+    return IntegerAttr::get(IntegerType::get(ctx, 8, IntegerType::Unsigned),
+                            constDTy.getDType().getValue());
+  return Base::get(ctx, value);
+}
+
+TypedAttr
+DTypeToUI8Attr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                           MLIRContext *context, TypedAttr value) {
+  if (failed(verify(emitError, value)))
+    return {};
+  return DTypeToUI8Attr::get(context, value);
+}
+
+bool DTypeToUI8Attr::isConstant() const { return false; }
+
+Type DTypeToUI8Attr::getType() const {
+  return IntegerType::get(getContext(), 8, IntegerType::Unsigned);
+}
+
+LogicalResult
+DTypeToUI8Attr::verify(function_ref<InFlightDiagnostic()> emitError,
+                       TypedAttr value) {
+  if (!isa<DTypeType>(value.getType()))
+    return emitError() << "DType type " << value.getType() << " is invalid";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// CastFromBuiltinAttr
+//===----------------------------------------------------------------------===//
+
+static ErrorOr<SIMDAttr>
+foldCastFromBuiltinAttr(MLIRContext *ctx, TypedAttr input, SIMDType out_type) {
+  auto literal = dyn_cast<IntegerAttr>(input);
+  if (!literal)
+    return Error("input must be IntegerAttr");
+
+  APInt literalVal = literal.getValue();
+  if (literalVal.getBitWidth() > 64)
+    return Error("input too large for SIMDAttr");
+
+  auto dtype = DType::getInt(literalVal.getBitWidth(),
+                             literal.getType().isSignedInteger());
+  if (failed(dtype))
+    return Error("input could not be represented as DType");
+
+  auto simdTy = SIMDType::get(ctx, /*size=*/1, *dtype);
+  return SIMDAttr::get(literal.getType().isSignedInteger()
+                           ? literalVal.getSExtValue()
+                           : literalVal.getZExtValue(),
+                       simdTy);
+}
+
+TypedAttr CastFromBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
+                                   SIMDType out_type) {
+  // If this is a known constant, fold this directly to a constant SIMDAttr
+  auto result = foldCastFromBuiltinAttr(ctx, arg, out_type);
+  if (!result.isError())
+    return result.get();
+  return Base::get(ctx, arg, out_type);
+}
+
+TypedAttr
+CastFromBuiltinAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                MLIRContext *context, TypedAttr value,
+                                SIMDType out_type) {
+  if (failed(verify(emitError, value, out_type)))
+    return {};
+  return CastFromBuiltinAttr::get(context, value, out_type);
+}
+
+bool CastFromBuiltinAttr::isConstant() const { return false; }
+
+Type CastFromBuiltinAttr::getType() const {
+  auto simdtype = SIMDType::getFromMLIRType(getArg().getType());
+  // Return an invalid type if this is an illegal cast
+  return simdtype.value_or(SIMDType::get(getContext(), 1, DType::invalid));
+}
+
+LogicalResult
+CastFromBuiltinAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                            TypedAttr value, SIMDType out_type) {
+  return verifyConversionCast(
+      [emitError](StringRef msg) { return emitError() << msg; }, out_type,
+      value.getType());
+}
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations

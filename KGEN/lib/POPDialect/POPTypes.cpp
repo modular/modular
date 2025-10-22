@@ -12,6 +12,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "Support/Compiler/MLIRDType.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/STLExtras.h"
@@ -340,6 +341,17 @@ ErrorOr<TypedAttr> SIMDType::readFrom(int64_t addr,
     }
   }
   return SIMDAttr::get(values, *this);
+}
+
+std::optional<SIMDType> SIMDType::getFromMLIRType(Type ty) {
+  auto [dtype, vecSize] = M::getEquivalentDType(ty);
+
+  if (dtype.isInvalid())
+    return std::nullopt;
+
+  // In SIMD land, there's no distinction between a vector size of 1 and a
+  // scalar type.
+  return SIMDType::get(ty.getContext(), vecSize.value_or(1), dtype);
 }
 
 //===----------------------------------------------------------------------===//

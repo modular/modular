@@ -561,4 +561,64 @@ def POP_StringConcatAttr : POP_ExprAttr<"StringConcat", "string_concat"> {
   let extraClassDeclaration = [{ Type getType() const; }];
 }
 
+//===----------------------------------------------------------------------===//
+// DTypeToUI8Attr
+//===----------------------------------------------------------------------===//
+
+def POP_DTypeToUI8Attr : POP_ExprAttr<"DTypeToUI8", "dtype_to_ui8"> {
+  let summary = "Convert a DType to UInt8.";
+  let description = [{
+    The `#pop.dtype_to_ui8` attribute converts a !kgen.dtype to a ui8 type.
+  }];
+
+  let parameters = (ins "TypedAttr":$value);
+
+  let assemblyFormat = "`<` custom<DTypeParamValue>($value) `>`";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an DTypeToUI8Attr.
+    AttrBuilder<(ins "TypedAttr":$value), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$value), [{
+      return $_get(value.getContext(), value);
+    }], "TypedAttr">
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+
+//===----------------------------------------------------------------------===//
+// CastFromBuiltin
+//===----------------------------------------------------------------------===//
+
+def POP_CastFromBuiltinAttr : POP_ExprAttr<"CastFromBuiltin", "cast_from_builtin"> {
+  let summary = "Convert a builtin MLIR type to a POP type.";
+  let description = [{
+    The `#pop.cast_from_builtin` attribute converts a builtin MLIR type to a
+    POP type.
+  }];
+
+  let parameters = (ins "TypedAttr":$arg, "SIMDType":$out_type);
+
+  let assemblyFormat = " `<` $arg `to` $out_type `>` ";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an CastFromBuiltinAttr.
+    AttrBuilder<(ins "TypedAttr":$arg, "SIMDType":$out_type), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$arg, "SIMDType":$out_type), [{
+      return $_get(arg.getContext(), arg, out_type);
+    }], "TypedAttr">
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
 #endif // KGEN_POPDIALECT_POPATTRS_TD

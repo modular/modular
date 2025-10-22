@@ -746,3 +746,26 @@ kgen.generator export @concretize_variadic_splaut(
    !kgen.struct<(!kgen.variadic_splat<f32, -3>)>,
    !llvm.struct<(!kgen.variadic_splat<f32, 0>)>
 }
+
+// -----
+
+// FIXME: the 'to' and 'from' types are reversed in the errors here
+// expected-error @+2 {{cannot convert from scalar dtype si32 to 'vector<2xsi32>'}}
+"some.op"() {
+  a = #pop.cast_from_builtin< #M.dense_array<2, 5> : vector<2xsi32> to !pop.scalar<si32>>
+} : () -> ()
+
+// -----
+
+// expected-error @+2 {{cannot convert from scalar dtype f32 to 'bf16'}}
+"some.op"() {
+  a = #pop.cast_from_builtin< 0.0 : bf16 to !pop.scalar<f32>>
+} : () -> ()
+
+// -----
+
+// expected-error @+3 {{expected non-function type}}
+// expected-error @+2 {{failed to parse POP_CastFromBuiltinAttr parameter 'arg' which is to be a `TypedAttr`}}
+"some.op"() {
+  a = #pop.cast_from_builtin< 0.0 : woof to !pop.scalar<si32>>
+} : () -> ()
