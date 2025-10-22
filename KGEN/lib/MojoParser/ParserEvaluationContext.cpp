@@ -43,6 +43,18 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateExpression(
     }
   }
 
+  if (auto downcast = dyn_cast<DowncastAttr>(attr)) {
+    if (getDeclForTypeValue(shared, downcast.getInputTypeValue())) {
+      // FIXME: We should raise an error when the resolved struct type does not
+      // conforms to the downcast traits. The folding below leads to an indirect
+      // error message. However, there is currently no good way to emit an error
+      // in evaluation context where the downcast error can be detected, and the
+      // current error message is better than an elaboration error (if we do not
+      // fold it).
+      return downcast.getInputTypeValue();
+    }
+  }
+
   // Otherwise, this is not something we can evaluate, which is ok, because
   // the parser won't be able to evaluate everything. The user is expected to
   // use rebind in these cases.

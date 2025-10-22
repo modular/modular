@@ -84,6 +84,7 @@ public:
 
 private:
   FailureOr<TypedAttr> evaluateGetWitness(GetWitnessAttr getWitness);
+  Operation *getStructInstIfResolved(TypedAttr typeVal);
 };
 
 //===----------------------------------------------------------------------===//

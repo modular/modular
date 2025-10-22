@@ -64,6 +64,29 @@ void KGENDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
+// File-local utils
+//===----------------------------------------------------------------------===//
+
+static TypedAttr getTypeRefForTypeValueIfResolved(TypedAttr typeRef) {
+  if (sugarIsa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
+    return SugarAttr::strip(typeRef);
+
+  auto typeParam = sugarDynCast<TypeParamAttr>(typeRef);
+  if (!typeParam)
+    return {};
+
+  auto typeValueType = sugarDynCast<TypeValueType>(typeParam.getTypeValue());
+  if (!typeValueType)
+    return {};
+
+  typeRef = typeValueType.getTypeValue();
+  if (!sugarIsa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
+    return {};
+
+  return typeRef;
+}
+
+//===----------------------------------------------------------------------===//
 // EmitAsAttr
 //===----------------------------------------------------------------------===//
 
@@ -278,16 +301,11 @@ static TypedAttr getCastAttr(Type type, TypedAttr inputTypeValue) {
 
   // If this is a constant type coming in, we can fold this.  If not, stage it
   // until elaboration.
-  //
-  // FIXME: We should only do it for upcast because downcast is unsafe and
-  // we should raise an more accurate error when the constant type can not be
-  // downcast. The folding below leads to an indirect error message.
-  // However, there is currently no good way to emit an error in evaluation
-  // context where the downcast error can be detected, and the current error
-  // message is better than an elaboration error (if we do not fold it).
-  if (auto typeAttr = sugarDynCast<TypeParamAttr>(inputTypeValue)) {
-    return TypeParamAttr::get(typeAttr.getTypeValue(), typeAttr.getMlirType(),
-                              type);
+  if constexpr (std::is_same_v<CastAttr, UpcastAttr>) {
+    if (auto typeAttr = sugarDynCast<TypeParamAttr>(inputTypeValue)) {
+      return TypeParamAttr::get(typeAttr.getTypeValue(), typeAttr.getMlirType(),
+                                type);
+    }
   }
 
   // cast(upcast(x)) = cast(x)
@@ -311,28 +329,13 @@ TypedAttr DowncastAttr::get(Type type, TypedAttr inputTypeValue) {
 bool UpcastAttr::isConstant() const { return false; }
 bool DowncastAttr::isConstant() const { return false; }
 
+TypedAttr DowncastAttr::getTypeRefIfResolved() {
+  return getTypeRefForTypeValueIfResolved(getInputTypeValue());
+}
+
 //===----------------------------------------------------------------------===//
 // TypeConformsToAttr
 //===----------------------------------------------------------------------===//
-
-static TypedAttr getTypeRefForTypeValueIfResolved(TypedAttr typeRef) {
-  if (sugarIsa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
-    return SugarAttr::strip(typeRef);
-
-  auto typeParam = sugarDynCast<TypeParamAttr>(typeRef);
-  if (!typeParam)
-    return {};
-
-  auto typeValueType = sugarDynCast<TypeValueType>(typeParam.getTypeValue());
-  if (!typeValueType)
-    return {};
-
-  typeRef = typeValueType.getTypeValue();
-  if (!sugarIsa<TypeGeneratorRefAttr, TypeInstanceRefAttr>(typeRef))
-    return {};
-
-  return typeRef;
-}
 
 Type TypeConformsToTraitAttr::getType() const {
   return IntegerType::get(getContext(), 1);

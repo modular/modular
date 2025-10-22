@@ -506,6 +506,11 @@ def KGEN_DowncastAttr : KGEN_ExprAttr<"Downcast", "downcast",
         return downcast.getInputTypeValue();
       return value;
     }
+
+    /// Extract the type reference if the type value field is already resolved.
+    /// This will return either a TypeGeneratorRefAttr / TypeInstanceRefAttr,
+    /// or a null attribute if the type value is not resolved.
+    TypedAttr getTypeRefIfResolved();
   }];
 }
 
