@@ -40,6 +40,9 @@ do
   elif [[ "$arg" = --gdb ]]; then
     export MODULAR_GDB="1"
     shift
+  elif [[ "$arg" = --rocgdb ]]; then
+    export MODULAR_ROCGDB="1"
+    shift
   elif [[ "$arg" = --system-lldb ]]; then
     export MODULAR_SYSTEM_LLDB="1"
     shift
