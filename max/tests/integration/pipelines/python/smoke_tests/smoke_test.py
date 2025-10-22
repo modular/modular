@@ -179,6 +179,7 @@ def get_lm_eval_cmd(model: str, task: str) -> list[str]:
     max_gen_toks = {
         "unsloth/gpt-oss-20b-bf16": ",max_gen_toks=50000",
         "qwen/qwen3-8b": ",max_gen_toks=4096",
+        "opengvlab/internvl3_5-8b-instruct": ",max_gen_toks=4096",
     }.get(model, "")
 
     gen_params = {
