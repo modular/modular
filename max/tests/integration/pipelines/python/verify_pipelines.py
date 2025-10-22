@@ -1059,9 +1059,10 @@ PIPELINES = {
             kl_div_threshold=2.6e-01,
         ),
     ),
+    # TODO(MODELS-812): Investigate deepseek timeout
     "kathywu95/deepseek-v3-small-random-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-only", "no-h100"],  # B200 only
+        tags=["nvidia-only", "no-b200"],  # Times out on B200
         run=_make_pipeline_runner(
             pipeline="deepseek-v3-small-random",
             encoding="bfloat16",
