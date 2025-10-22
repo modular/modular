@@ -232,7 +232,7 @@ inline bool isExtensibilityFunc(Operation *gen) {
 
 // The stored mojo type symbol name of Tensor type in extensibility kernels.
 constexpr StringLiteral MOJO_DPS_TENSOR_TYPE_NAME =
-    "tensor_internal::ManagedTensorSlice";
+    "tensor::ManagedTensorSlice";
 
 constexpr StringLiteral MOJO_INTERNAL_DPS_SIMD_TYPE_NAME = "stdlib::SIMD";
 
@@ -246,8 +246,7 @@ constexpr StringLiteral MOJO_INTERNAL_DPS_INDEX_LIST_TYPE_NAME =
     "stdlib::IndexList";
 
 // We support tuples of DPS tensors for operations with variadic input/outputs
-constexpr StringLiteral MOJO_VARIADIC_TENSORS_NAME =
-    "tensor_internal::VariadicTensors";
+constexpr StringLiteral MOJO_VARIADIC_TENSORS_NAME = "tensor::VariadicTensors";
 
 // We support lists of DPS tensors for a few operations
 constexpr StringLiteral MOJO_TENSOR_LIST_NAME = "stdlib::List";

@@ -28,13 +28,13 @@ static constexpr llvm::StringLiteral kShapeFuncName = "shape";
 static constexpr llvm::StringLiteral kUpdateViewFuncName = "update_input_view";
 static constexpr llvm::StringLiteral kElementwiseFuncName = "elementwise";
 
-static constexpr std::array<StringLiteral, 3> kIOSpec = {"tensor_internal",
-                                                         "io_spec", "IOSpec"};
+static constexpr std::array<StringLiteral, 3> kIOSpec = {"tensor", "io_spec",
+                                                         "IOSpec"};
 
 static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
-    "tensor_internal", "managed_tensor_slice", "ManagedTensorSlice"};
+    "tensor", "managed_tensor_slice", "ManagedTensorSlice"};
 static constexpr std::array<StringLiteral, 3> kMaxVariadicTensors = {
-    "tensor_internal", "managed_tensor_slice", "VariadicTensors"};
+    "tensor", "managed_tensor_slice", "VariadicTensors"};
 static constexpr std::array<StringLiteral, 4> kMaxList = {
     "stdlib", "collections", "list", "List"};
 
