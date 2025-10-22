@@ -100,6 +100,8 @@ what we publish.
 
 ### Library changes {#25-7-library-changes}
 
+#### Libraries
+
 - Added `os.isatty()` function to check whether a file descriptor refers to a
   terminal. This function accepts an `Int` file descriptor. If you have a
   `FileDescriptor` object, use its `isatty()` method instead.
@@ -196,6 +198,12 @@ what we publish.
   for val in repeat(42, times=3):
       print(val)  # Prints: 42, 42, 42
   ```
+
+- `gpu.sync.syncwarp()` now supports Apple GPUs via `SIMDGROUP` barrier
+  implementation. On Apple GPUs, this provides execution synchronization for
+  all active lanes using a `SIMDGROUP` barrier with no memory fence. For
+  threadgroup memory ordering, use `barrier()` instead. Note that lane masks
+  are not supported on Apple GPUs, so the mask argument is ignored.
 
 ### Tooling changes {#25-7-tooling-changes}
 
