@@ -30,7 +30,6 @@ def test_attention_with_rope_stacked_qkv_bias_validation() -> None:
         n_heads=32,
         theta=10000.0,
         max_seq_len=2048,
-        device=DeviceRef.CPU(),
     )
 
     kv_params = KVCacheParams(
@@ -63,7 +62,6 @@ def test_attention_with_rope_clip_qkv_validation() -> None:
         n_heads=32,
         theta=10000.0,
         max_seq_len=2048,
-        device=DeviceRef.CPU(),
     )
 
     kv_params = KVCacheParams(
@@ -96,7 +94,6 @@ def test_distributed_attention_with_rope_device_validation() -> None:
         n_heads=32,
         theta=10000.0,
         max_seq_len=2048,
-        device=DeviceRef.CPU(),
     )
 
     kv_params = KVCacheParams(
@@ -131,7 +128,6 @@ def test_distributed_attention_with_rope_call_validation(
         n_heads=32,
         theta=10000.0,
         max_seq_len=2048,
-        device=DeviceRef.CPU(),
     )
 
     kv_params = KVCacheParams(
@@ -203,7 +199,6 @@ def test_distributed_attention_with_rope_non_divisible_heads(
         n_heads=30,  # Not divisible by 4
         theta=10000.0,
         max_seq_len=2048,
-        device=DeviceRef.CPU(),
     )
 
     kv_params = KVCacheParams(
@@ -245,7 +240,6 @@ def test_distributed_attention_with_rope_stacked_qkv(
         n_heads=32,
         theta=10000.0,
         max_seq_len=2048,
-        device=DeviceRef.CPU(),
     )
 
     kv_params = KVCacheParams(
@@ -286,7 +280,6 @@ def test_distributed_attention_with_rope_stacked_qkv_non_divisible(
         n_heads=30,  # Not divisible by 4
         theta=10000.0,
         max_seq_len=2048,
-        device=DeviceRef.CPU(),
     )
 
     kv_params = KVCacheParams(
@@ -331,7 +324,6 @@ def test_distributed_attention_with_rope_separate_projections(
         n_heads=30,  # Not divisible by 4
         theta=10000.0,
         max_seq_len=2048,
-        device=DeviceRef.CPU(),
     )
 
     kv_params = KVCacheParams(
