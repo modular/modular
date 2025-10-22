@@ -1734,12 +1734,6 @@ CastFromBuiltinAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
 
 bool CastFromBuiltinAttr::isConstant() const { return false; }
 
-Type CastFromBuiltinAttr::getType() const {
-  auto simdtype = SIMDType::getFromMLIRType(getArg().getType());
-  // Return an invalid type if this is an illegal cast
-  return simdtype.value_or(SIMDType::get(getContext(), 1, DType::invalid));
-}
-
 LogicalResult
 CastFromBuiltinAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                             TypedAttr value, SIMDType out_type) {
