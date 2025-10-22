@@ -24,11 +24,7 @@ from max.interfaces import (
     RequestID,
     SchedulerResult,
 )
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    TPPagedKVCacheManager,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import TTSContext
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
@@ -71,7 +67,7 @@ def create_paged_manager(
     page_size: int,
     enable_prefix_caching: bool = False,
     enable_kvcache_swapping_to_host: bool = False,
-) -> TPPagedKVCacheManager:
+) -> PagedKVCacheManager:
     # Setting kv_heads, head_dim, and num_layers to 1 so it is easy to compute
     # memory usage. Now we know each block is 1 byte.
     NUM_KV_HEADS = 1
@@ -107,7 +103,7 @@ def create_paged_manager(
 
     session = InferenceSession(devices=[CPU()])
 
-    kv_manager = TPPagedKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         params=kv_params,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
@@ -184,7 +180,7 @@ def create_paged_scheduler(
 
 class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
     def __init__(
-        self, paged_manager: TPPagedKVCacheManager, max_num_steps: int
+        self, paged_manager: PagedKVCacheManager, max_num_steps: int
     ) -> None:
         self.paged_manager = paged_manager
         self.max_num_steps = max_num_steps

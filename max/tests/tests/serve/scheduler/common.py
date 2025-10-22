@@ -23,11 +23,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    TPPagedKVCacheManager,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import TextContext
 from max.serve.scheduler.text_batch_constructor import (
     TokenGenerationSchedulerConfig,
@@ -68,7 +64,7 @@ def create_paged_manager(
     enable_prefix_caching: bool = False,
     enable_kvcache_swapping_to_host: bool = False,
     device: Device = CPU(),
-) -> TPPagedKVCacheManager:
+) -> PagedKVCacheManager:
     # Setting kv_heads, head_dim, and num_layers to 1 so it is easy to compute
     # memory usage. Now we know each block is 1 byte.
     NUM_KV_HEADS = 1
@@ -104,7 +100,7 @@ def create_paged_manager(
 
     session = InferenceSession(devices=[device])
 
-    kv_manager = TPPagedKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         params=kv_params,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
@@ -179,7 +175,7 @@ class FakeTokenGeneratorPipeline(
     Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput]
 ):
     def __init__(
-        self, kv_manager: TPPagedKVCacheManager, start_token_id: int = 42
+        self, kv_manager: PagedKVCacheManager, start_token_id: int = 42
     ) -> None:
         self.kv_manager = kv_manager
         self.token_id = start_token_id

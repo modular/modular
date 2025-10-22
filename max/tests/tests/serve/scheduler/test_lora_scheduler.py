@@ -17,7 +17,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.nn.kv_cache import TPPagedKVCacheManager
+from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
 from max.serve.scheduler.text_batch_constructor import (
     TextBatchConstructor,
@@ -55,7 +55,7 @@ def create_mock_lora_manager(max_num_loras: int = 2) -> Mock:
 
 def create_mock_paged_cache() -> Mock:
     """Create a mock paged KV cache manager."""
-    cache = Mock(spec=TPPagedKVCacheManager)
+    cache = Mock(spec=PagedKVCacheManager)
     cache.max_seq_len = 2048
     cache.page_size = 16
     cache.total_num_pages = 128

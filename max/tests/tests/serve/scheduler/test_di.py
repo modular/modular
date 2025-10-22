@@ -17,10 +17,7 @@ from max.nn.kv_cache.paged_cache.transfer_engine import KVTransferEngineMetadata
 from max.pipelines.core import TextContext
 from max.serve.config import generate_zmq_ipc_path
 from max.serve.queue.zmq_queue import ClientIdentity
-from max.serve.scheduler.base import (
-    PrefillRequest,
-    PrefillResponse,
-)
+from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 from max.serve.scheduler.decode_scheduler import (
     DecodeScheduler,
     TokenGenerationSchedulerConfig,
@@ -34,7 +31,7 @@ from max.serve.scheduler.di_dispatchers import (
 from max.serve.scheduler.prefill_scheduler import PrefillScheduler
 from tests.serve.scheduler.common import (
     FakeTokenGeneratorPipeline,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
     create_paged_manager,
     create_text_context,
 )
@@ -87,7 +84,7 @@ def create_di_scheduler(
     enable_kvcache_swapping_to_host: bool = False,
     device: Device = CPU(),
 ) -> tuple[DecodeScheduler, PrefillScheduler]:
-    def _create_paged_manager() -> TPPagedKVCacheManager:
+    def _create_paged_manager() -> PagedKVCacheManager:
         return create_paged_manager(
             num_blocks=num_blocks,
             max_batch_size=max_batch_size,
