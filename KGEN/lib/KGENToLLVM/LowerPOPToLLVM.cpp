@@ -23,6 +23,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/NVVMDialect.h"
 #include "mlir/IR/Dominance.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/IR/Attributes.h"
 #include <type_traits>
@@ -2228,6 +2229,11 @@ struct ConvertSymbolOpToAIR : public ConvertSymbolOpToLLVM<OpT> {
   using BaseT = ConvertSymbolOpToLLVM<OpT>;
   using BaseT::BaseT;
   using BaseT::symtab;
+  const llvm::StringSet<> unmangledSymbols = {
+      "air.wg.barrier",
+      "air.simdgroup.barrier",
+  };
+
   // Helper function to mangle type according to LLVM's mangling of args of
   // intrinsics.
   // See LLVM's getMangledTypeStr
@@ -2253,7 +2259,7 @@ struct ConvertSymbolOpToAIR : public ConvertSymbolOpToLLVM<OpT> {
   // Return true if AIR intrinsic has no type overloading, i.e. no need to add
   // types to its name.
   bool requiresMangling(StringRef airFunctionName) const {
-    return airFunctionName != "air.wg.barrier";
+    return !unmangledSymbols.contains(airFunctionName);
   }
 
   LLVM::LLVMFuncOp createAIRFunction(ConversionPatternRewriter &rewriter,
