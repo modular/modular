@@ -311,6 +311,7 @@ def main():
                     cta_group=1,
                     test_lambda_fn=True,
                     register_based_epilogue=True,
+                    swapAB=True,
                 ](
                     ctx,
                     dynamic(1000),
@@ -328,6 +329,7 @@ def main():
                     cta_group=1,
                     test_lambda_fn=True,
                     register_based_epilogue=True,
+                    swapAB=True,
                 ](
                     ctx,
                     dynamic(512),

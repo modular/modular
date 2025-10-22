@@ -255,52 +255,43 @@ def main():
                         static[1024 + 16](),
                     )
 
-                    @parameter
-                    for swapAB in [
-                        False,
-                    ]:
+                    test_blackwell_matmul_tma_umma_warp_specialized[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        cta_group=1,
+                        a_swizzle=swizzle,
+                        b_swizzle=swizzle,
+                        block_swizzle_size=4,
+                        swapAB=True,
+                    ](
+                        ctx,
+                        dynamic(512),
+                        static[4096](),
+                        static[1024 + 16](),
+                    )
 
-                        @parameter
-                        if swapAB and mma_m_scale != 2:
-                            continue
-
-                        test_blackwell_matmul_tma_umma_warp_specialized[
-                            dtype,
-                            dtype,
-                            DType.bfloat16,
-                            block_tile_shape,
-                            umma_shape,
-                            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                            cta_group=1,
-                            a_swizzle=swizzle,
-                            b_swizzle=swizzle,
-                            block_swizzle_size=4,
-                            swapAB=swapAB,
-                        ](
-                            ctx,
-                            dynamic(512),
-                            static[4096](),
-                            static[1024 + 16](),
-                        )
-
-                        test_blackwell_matmul_tma_umma_warp_specialized[
-                            dtype,
-                            dtype,
-                            DType.bfloat16,
-                            block_tile_shape,
-                            umma_shape,
-                            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                            cta_group=1,
-                            a_swizzle=swizzle,
-                            b_swizzle=swizzle,
-                            block_swizzle_size=0,
-                            swapAB=swapAB,
-                        ](
-                            ctx,
-                            dynamic(500),
-                            static[2048](),
-                            static[4096](),
-                        )
+                    test_blackwell_matmul_tma_umma_warp_specialized[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](4, 2, 1),
+                        cta_group=1,
+                        a_swizzle=swizzle,
+                        b_swizzle=swizzle,
+                        block_swizzle_size=0,
+                        swapAB=True,
+                    ](
+                        ctx,
+                        dynamic(500),
+                        static[2048](),
+                        static[4096](),
+                    )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
