@@ -92,7 +92,7 @@ from linalg.utils import (
 )
 from nn import arg_nonzero
 from nn._ragged_utils import merge_ragged_tensors
-from nn.activations import gelu, relu
+from nn.activations import relu
 from nn.arange import arange_shape
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
@@ -648,16 +648,6 @@ struct ReLU(ElementwiseUnaryOp):
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return relu(x)
-
-
-@compiler.register("mo.gelu")
-struct GeLU(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return gelu(x)
 
 
 @compiler.register("mo.ceil")

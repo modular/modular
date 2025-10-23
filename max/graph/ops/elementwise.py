@@ -670,26 +670,30 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-_gelu_exact = _elementwise_unary(rmo.mo_gelu)
-"""
-Computes the elementwise gelu function of a symbolic tensor.
 
-Creates a new op node to compute the elementwise gelu function of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+def _gelu_exact(x: TensorValue):  # noqa: ANN202
+    """
+    Computes the elementwise gelu function of a symbolic tensor.
 
-``gelu`` is defined as ``$$gelu(x) = x \\Phi(x)$$`` where ``$$\\Phi$$`` is the
-cumulative distribution function of the Gaussian distribution.
+    Creates a new op node to compute the elementwise gelu function of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
 
-Args:
-    value: The symbolic tensor to use as the input to the gelu function
-        computation.
+    ``gelu`` is defined as ``$$gelu(x) = x \\Phi(x)$$`` where ``$$\\Phi$$`` is the
+    cumulative distribution function of the Gaussian distribution.
 
-Returns:
-    A new symbolic tensor value representing the output of the gelu computation.
+    Args:
+        value: The symbolic tensor to use as the input to the gelu function
+            computation.
 
-Raises:
-    Error: If the symbol doesn't represent a tensor value.
-"""
+    Returns:
+        A new symbolic tensor value representing the output of the gelu computation.
+
+    Raises:
+        Error: If the symbol doesn't represent a tensor value.
+    """
+    sqrt2 = 1.4142135623730951
+    x_cast = x.cast(_accum_type(x))
+    return (0.5 * x_cast * (1 + erf(x_cast / sqrt2))).cast(x.dtype)
 
 
 def _gelu_quick(x: TensorValue):  # noqa: ANN202

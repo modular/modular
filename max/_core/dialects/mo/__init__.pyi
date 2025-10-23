@@ -3239,29 +3239,6 @@ class GatherSumOp(max._core.Operation):
     @property
     def indices(self) -> max._core.Value[TensorType]: ...
 
-class GeluOp(max._core.Operation):
-    """
-    Returns `(x / 2) * (1 + erf(x/sqrt(2)))`, where `erf` denotes the
-    (Gaussian) error function.
-
-    Example:
-
-    ```mlir
-      %arg: !mo.tensor<[2, 3], f32>
-      %res = mo.gelu(%arg) : !mo.tensor<[2, 3], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-
 class GraphOp(max._core.Operation):
     """
     This op represents a computation graph that consists of:
