@@ -64,7 +64,6 @@ ignore = [
   "F841", # TODO: unused variables
   "FURB122", # Questionable readability improvement
   "RUF005", # Consider iterable unpacking instead of concatenation
-  "RUF009", # Do not perform function call in dataclass defaults
   "RUF010", # Use explicit conversion flag
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "RUF015", # Prefer `next(iter(iterable))` over single element slice
