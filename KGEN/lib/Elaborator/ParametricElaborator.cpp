@@ -19,11 +19,13 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/Support/Error.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
 #include "Support/Compiler/DiagnosticHandler.h"
+#include "Support/Compiler/ErrorTree.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -81,8 +83,14 @@ void PImplNode::setToError(ErrorTree &&err) {
     else
       llvm::errs() << "[ROOT NODE]";
     llvm::errs() << "\n";
-    std::move(*error).emit([](Location loc) { return mlir::emitError(loc); },
-                           "HERE");
+    ErrorLimit errorLimit{this->getEvaluator().getErrorLimit(), 0};
+
+    emitLimitedError(
+        [&] {
+          return std::move(*error).emit(
+              [](Location loc) { return mlir::emitError(loc); }, "HERE");
+        },
+        errorLimit);
 #endif // MODULAR_PRODUCTION
     llvm_unreachable("impl node already has an error");
   }
@@ -132,7 +140,7 @@ void ParametricExpansionGraph::didAddTask() { ++numOutstandingResources; }
 ErrorTreeOr<PImplNode *> PParamNode::getFirstConcreteNode() {
   if (!impl.error)
     return &impl;
-  return ErrorTree(gen.getLoc(), "function instantiation failed",
+  return ErrorTree(gen.getLoc(), "function instantiation failed 2",
                    impl.error->copy());
 }
 
@@ -148,7 +156,7 @@ ErrorTreeOr<FuncOp> PParamNode::getFirstConcreteFunc() {
 ErrorTreeOrSuccess PParamNode::collectErrorsOrSuccess() {
   if (!impl.error)
     return success();
-  return ErrorTree(gen.getLoc(), "function instantiation failed",
+  return ErrorTree(gen.getLoc(), "function instantiation failed 1",
                    impl.error->copy());
 }
 
@@ -2435,7 +2443,7 @@ static WalkResult rewriteCompileOffloadOp(
     DenseMap<TargetInfoAttr,
              DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>
         &compiledOffload,
-    bool &failed) {
+    bool &failed, ErrorLimit &errorLimit) {
   // Plug offload compilation results as strings back to the elaborated IR.
   auto kernelId = cast<IntegerAttr>(op.getKernelIDAttr()).getInt();
   EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
@@ -2447,9 +2455,14 @@ static WalkResult rewriteCompileOffloadOp(
   auto targetIter = compiledOffload.find(target);
   if (targetIter == compiledOffload.end()) {
     ErrorTree compileOffloadError(loc, "compile offload result missing target");
-    std::move(compileOffloadError)
-        .emit([](Location loc) { return mlir::emitError(loc); },
-              "Compile offload failed.");
+
+    emitLimitedError(
+        [&] {
+          return std::move(compileOffloadError)
+              .emit([](Location loc) { return mlir::emitError(loc); },
+                    "Compile offload failed.");
+        },
+        errorLimit);
     failed = true;
     return WalkResult::interrupt();
   }
@@ -2459,9 +2472,13 @@ static WalkResult rewriteCompileOffloadOp(
     ErrorTree compileOffloadError(
         loc, "compile offload result missing emissionOptions \"" +
                  emissionOptionsStr + "\"");
-    std::move(compileOffloadError)
-        .emit([](Location loc) { return mlir::emitError(loc); },
-              "Compile offload failed.");
+    emitLimitedError(
+        [&] {
+          return std::move(compileOffloadError)
+              .emit([](Location loc) { return mlir::emitError(loc); },
+                    "Compile offload failed.");
+        },
+        errorLimit);
     failed = true;
     return WalkResult::interrupt();
   }
@@ -2471,9 +2488,13 @@ static WalkResult rewriteCompileOffloadOp(
     ErrorTree compileOffloadError(loc,
                                   "compile offload result missing kernelId " +
                                       std::to_string(kernelId));
-    std::move(compileOffloadError)
-        .emit([](Location loc) { return mlir::emitError(loc); },
-              "Compile offload failed.");
+    emitLimitedError(
+        [&] {
+          return std::move(compileOffloadError)
+              .emit([](Location loc) { return mlir::emitError(loc); },
+                    "Compile offload failed.");
+        },
+        errorLimit);
     failed = true;
     return WalkResult::interrupt();
   }
@@ -2596,12 +2617,19 @@ LogicalResult ParametricElaborator::run(
 
   // Check for any errors and emit them. Emit as many errors as possible.
   bool failed = false;
+  ErrorLimit errorLimit{.errorLimit = options.elabErrorLimit, .errorCount = 0};
+
   for (PParamNode *genNode : primaryNodes) {
     ErrorTreeOrSuccess err = genNode->collectErrorsOrSuccess();
     if (err.isError()) {
       failed = true;
-      err.takeError().emit([](Location loc) { return mlir::emitError(loc); },
-                           "call expansion failed 1");
+      emitLimitedError(
+          [&] {
+            return err.takeError().emit(
+                [](Location loc) { return mlir::emitError(loc); },
+                "call expansion failed 1");
+          },
+          errorLimit);
     }
   }
 
@@ -2611,8 +2639,13 @@ LogicalResult ParametricElaborator::run(
     ErrorTreeOrSuccess err = node->parent->collectErrorsOrSuccess();
     if (err.isError()) {
       failed = true;
-      err.takeError().emit([](Location loc) { return mlir::emitError(loc); },
-                           "call expansion failed 2");
+      emitLimitedError(
+          [&]() {
+            return err.takeError().emit(
+                [](Location loc) { return mlir::emitError(loc); },
+                "call expansion failed 2");
+          },
+          errorLimit);
     }
   }
 
@@ -2627,8 +2660,15 @@ LogicalResult ParametricElaborator::run(
   ErrorTreeOrSuccess bundleOr = bundleOffloadModules(theModule, symToRename);
 
   if (bundleOr.isError()) {
-    bundleOr.takeError().emit([](Location loc) { return mlir::emitError(loc); },
-                              "Bundle CompileOffload failed.");
+
+    emitLimitedError(
+        [&]() {
+          return bundleOr.takeError().emit(
+              [](Location loc) { return mlir::emitError(loc); },
+              "Bundle CompileOffload failed.");
+        },
+        errorLimit);
+
     for (PImplNode *node : llvm::make_second_range(concreteNodes.get()))
       node->inst.erase();
     return failure();
@@ -2644,9 +2684,13 @@ LogicalResult ParametricElaborator::run(
   if (compiledOffloadOr.isError()) {
     ErrorTree compileOffloadError(theModule->getLoc(),
                                   compiledOffloadOr.takeError());
-    std::move(compileOffloadError)
-        .emit([](Location loc) { return mlir::emitError(loc); },
-              "Compile offload failed.");
+    emitLimitedError(
+        [&] {
+          return std::move(compileOffloadError)
+              .emit([](Location loc) { return mlir::emitError(loc); },
+                    "Compile offload failed.");
+        },
+        errorLimit);
     for (PImplNode *node : llvm::make_second_range(concreteNodes.get()))
       node->inst.erase();
 
@@ -2737,7 +2781,7 @@ LogicalResult ParametricElaborator::run(
     if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {
       // Plug offload compilation results as strings back to the elaborated IR.
       rewriteCompileOffloadOp(offloadOp, theModule.getLoc(), compiledOffload,
-                              failed);
+                              failed, errorLimit);
     } else if (auto isCompileTime = dyn_cast<IsCompileTimeOp>(op)) {
       // Rewrite IsCompileTimeOp to runtime value as always false.
       OpBuilder b(op);

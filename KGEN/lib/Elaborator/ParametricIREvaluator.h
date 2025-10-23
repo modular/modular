@@ -176,6 +176,9 @@ public:
 
   SmallVector<FrameParamInfo> frameParamInfos;
 
+  /// Get compilation error limit from the elaborator.
+  int getErrorLimit();
+
 private:
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
