@@ -4,8 +4,6 @@
 #
 ##===----------------------------------------------------------------------===##
 
-# TODO(MODELS-815): Run all tasks after Gemma3 supports logprobs.
-tasks=leaderboard_ifeval
 batch_size=512
 max_length=8192
 extra_pipelines_args=(--enable-echo)
