@@ -70,8 +70,8 @@ from linalg.bmm import batched_matmul
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.transpose import transpose
 from memory import stack_allocation
-from nn.mha_gfx942 import Attention, MHAAttentionConfig
-from nn.mha_gfx950 import mha_single_batch_gfx950
+from .attention.gpu.amd.mha_gfx942 import Attention, MHAAttentionConfig
+from .attention.gpu.amd.mha_gfx950 import mha_single_batch_gfx950
 from nn.mha_mask import MaterializedMask, MHAMask, TileMaskStatus
 from nn.mha_operand import (
     KVCacheMHAOperand,

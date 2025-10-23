@@ -94,7 +94,7 @@ from utils.static_tuple import StaticTuple
 
 from .mha_utils import get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
-from .mla_amd import Attention, MLAAttentionConfig
+from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
