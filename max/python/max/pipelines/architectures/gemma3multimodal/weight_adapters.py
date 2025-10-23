@@ -17,34 +17,34 @@ from max.graph.weights import WeightData, Weights
 from transformers import AutoConfig
 
 # Maps from Safetensor to MAX weight names.
-GEMMA3_SAFETENSOR_MAP: dict[str, str] = {
-    "model.embed_tokens.": "language_model.embed_tokens.",
-    "model.norm.": "language_model.norm.",
-    "lm_head.": "language_model.lm_head.",
-    "model.layers.": "language_model.layers.",
-    "vision_model.model.": "vision_model.",
-    # hftransforms/siglip/convert_siglip_to_hf.py???
+# For the language model, we keep the original structure without the language_model prefix
+# because the Gemma3TextModel expects weights like "embed_tokens.weight", not "language_model.embed_tokens.weight"
+GEMMA3_LANGUAGE_SAFETENSOR_MAP: dict[str, str] = {
+    "language_model.model.": "",
 }
 
-
-def _apply_name_mappings(name: str) -> str:
-    """Apply all name mappings to a given name."""
-    for before, after in GEMMA3_SAFETENSOR_MAP.items():
-        name = name.replace(before, after)
-    return name
-
+# For the vision model
+GEMMA3_VISION_SAFETENSOR_MAP: dict[str, str] = {
+    "vision_model.model.": "",
+}
 
 def convert_safetensor_state_dict(
     state_dict: dict[str, Weights], **unused_kwargs
 ) -> dict[str, WeightData]:
+    """Convert safetensor state dict to MAX format for the language model."""
     new_state_dict: dict[str, WeightData] = {}
 
-    # Remap HuggingFace -> MAX-style names
+    # Remap HuggingFace -> MAX-style names for language model
     for weight_name, value in state_dict.items():
+        # Only process language model weights (skip vision_model weights)
+        if weight_name.startswith("vision_model."):
+            continue
         max_name = weight_name
-        for before, after in GEMMA3_SAFETENSOR_MAP.items():
+        for before, after in GEMMA3_LANGUAGE_SAFETENSOR_MAP.items():
             max_name = max_name.replace(before, after)
         new_state_dict[max_name] = value.data()
+        if "embed_tokens" in weight_name:
+            print(f"old: {weight_name}, new: {max_name}")
 
     return new_state_dict
 

@@ -26,6 +26,9 @@ from max.pipelines.architectures.gemma3.layers.transformer_block import Gemma3Tr
 # class Gemma3VisionEmbeddings:
 #     pass
 
+# class InternVLVisionModel(Module)
+#     pass
+
 class Gemma3TextModel(Module):
     """The Gemma3 Multi-Modal model's text component"""
 
@@ -79,6 +82,8 @@ class Gemma3TextModel(Module):
             config.devices,
             embed_scale=text_config.hidden_size**0.5,
         )
+
+        print(f"embed_tokens max: {self.embed_tokens.weight.max}")
 
         self.norm = Gemma3RMSNorm(
             text_config.hidden_size,

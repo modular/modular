@@ -30,6 +30,14 @@ generate = { cmd = [
     "--image_url", "https://gift-a-tree.com/wp-content/uploads/2021/10/Oak-tree-1.jpg"
 ] }
 
+generate_text = { cmd = [
+    "max", "generate",
+    "--model", "google/gemma-3-4B-it",
+    "--custom-architectures",
+    "gemma3multimodal",
+    "--prompt", "what day is it?"
+] }
+
 # keep it clean
 linter = { cmd = ["../../../bazelw", "run", "//:lint"] }
 formatter = { cmd = ["../../../bazelw", "run", "//:format"] }
