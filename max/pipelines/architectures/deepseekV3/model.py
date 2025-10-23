@@ -27,7 +27,6 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn import ReturnLogits, Signals
 from max.nn.float8_config import parse_float8_config
 from max.nn.kv_cache import (
-    DPPagedKVCacheManager,
     KVCacheInputs,
     KVCacheParams,
     PagedKVCacheManager,
@@ -363,17 +362,9 @@ class DeepseekV3Model(DeepseekV2Model):
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
-
-        data_parallel_splits: Tensor
-        if self.pipeline_config.model_config.data_parallel_degree > 1:
-            assert isinstance(self.kv_manager, DPPagedKVCacheManager)
-            data_parallel_splits = self.kv_manager.get_data_parallel_splits(
-                context_batch
-            )
-        else:
-            data_parallel_splits = Tensor.from_numpy(
-                np.array([0, len(context_batch)], dtype=np.int64)
-            )
+        data_parallel_splits = self.kv_manager.get_data_parallel_splits(
+            context_batch
+        )
 
         return DeepseekV3Inputs(
             tokens=Tensor.from_numpy(tokens).to(self.devices[0]),

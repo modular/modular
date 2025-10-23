@@ -141,6 +141,10 @@ class MultimodalKVCacheManager:
         self.params = params
 
         assert max_batch_size, "Expected max_batch_size to be set"
+        if params.data_parallel_degree > 1:
+            raise ValueError(
+                "MultimodalKVCacheManager does not support data parallelism"
+            )
         paged_text_kv_manager = load_kv_manager(
             params=params,
             max_batch_size=max_batch_size,
@@ -151,7 +155,6 @@ class MultimodalKVCacheManager:
             page_size=page_size,
             session=session,
         )
-        assert isinstance(paged_text_kv_manager, PagedKVCacheManager)
         self.text_kv_manager = paged_text_kv_manager
 
         # Expose commonly used attributes from the text KV manager for downstream schedulers.
@@ -163,12 +166,15 @@ class MultimodalKVCacheManager:
         self.page_size = self.text_kv_manager.page_size
         self.total_num_pages = self.text_kv_manager.total_num_pages
         self.total_num_host_pages = self.text_kv_manager.total_num_host_pages
-        self.device_tensors = self.text_kv_manager.device_tensors
-        self.host_tensors = self.text_kv_manager.host_tensors
-        self.block_manager = self.text_kv_manager.block_manager
-        self.enable_prefix_caching = self.text_kv_manager.enable_prefix_caching
+        text_kv_manager_replica = self.text_kv_manager._replica_managers[0]
+        self.device_tensors = text_kv_manager_replica.device_tensors
+        self.host_tensors = text_kv_manager_replica.host_tensors
+        self.block_manager = text_kv_manager_replica.block_manager
+        self.enable_prefix_caching = (
+            text_kv_manager_replica.enable_prefix_caching
+        )
         self.enable_kvcache_swapping_to_host = (
-            self.text_kv_manager.enable_kvcache_swapping_to_host
+            text_kv_manager_replica.enable_kvcache_swapping_to_host
         )
 
         # Assume the number of vision tokens is fixed per batch.
@@ -212,6 +218,8 @@ class MultimodalKVCacheManager:
             available_cache_memory=cache_memory,
             page_size=page_size,
         )
+        vision_kv_manager_replica = self.vision_kv_manager._replica_managers[0]
+        self.vision_device_tensors = vision_kv_manager_replica.device_tensors
 
         # Store language kvcache attributes.
         self.text_kv_params = params
@@ -373,11 +381,12 @@ class MultimodalKVCacheManager:
         # Note that each page is enough to fit up to vision_max_seq_len so there
         # is at most one page per sequence.
 
+        vision_kv_manager_replica = self.vision_kv_manager._replica_managers[0]
         lookup_table_tensor_vision = Tensor.from_numpy(
             np.array(
                 [
                     [
-                        self.vision_kv_manager._request_to_seq_id[
+                        vision_kv_manager_replica._request_to_seq_id[
                             ctx.request_id
                         ],
                         1,
@@ -391,7 +400,7 @@ class MultimodalKVCacheManager:
         vision_fetch_results = RaggedKVCacheInputs(
             # Block 0 for the first device (since MultimodalKVCacheManager
             # assumes only 1 device).
-            blocks=self.vision_kv_manager.device_tensors[0],
+            blocks=self.vision_device_tensors[0],
             cache_lengths=Tensor.from_numpy(cache_lengths_np).to(device),
             lookup_table=lookup_table_tensor_vision.to(device),
             max_lengths=max_lengths_host,
@@ -471,14 +480,18 @@ class MultimodalKVCacheManager:
         return 0
 
     def external_claim(
-        self, request_id: RequestID, replica_idx: int = 0
+        self, request_id: RequestID, replica_idx: int | None = None
     ) -> None:
         """Reserves sequence IDs for the given request ID in both modalities' KV caches.
 
         Args:
             request_id: Unique identifier for the request.
-            replica_idx: Index of the replica to use (default: 0).
+            replica_idx: Index of the replica to use.
         """
+        if replica_idx is not None and replica_idx != 0:
+            raise ValueError(
+                "replica_idx must be 0 for MultimodalKVCacheManager"
+            )
         self.text_kv_manager.external_claim(request_id, replica_idx)
         self.vision_kv_manager.external_claim(request_id, replica_idx)
 
@@ -529,9 +542,9 @@ class MultimodalKVCacheManager:
 
     def increment_cache_lengths(
         self,
-        kv_cache_inputs: list[RaggedKVCacheInputs],
+        kv_cache_inputs: Sequence[RaggedKVCacheInputs],
         prev_model_inputs: Iterable[Any],
-    ) -> list[RaggedKVCacheInputs]:
+    ) -> Sequence[RaggedKVCacheInputs]:
         """Updates the cache lengths for multistep execution.
 
         This increments the text and vision KV cache lengths separately using

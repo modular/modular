@@ -76,9 +76,13 @@ class PrefillScheduler(Scheduler):
         ] = {}
 
         # Create Transfer Engine
+        if paged_cache.num_replicas > 1:
+            raise ValueError(
+                "PrefillScheduler does not support data parallelism"
+            )
         self.transfer_engine = KVTransferEngine(
             name=f"prefill_agent_{uuid.uuid4()}",
-            tensors=paged_cache.device_tensors,
+            tensors=paged_cache._replica_managers[0].device_tensors,
             total_num_pages=paged_cache.total_num_pages,
         )
 
@@ -184,9 +188,8 @@ class PrefillScheduler(Scheduler):
             ]
 
             # Retrieve source block ids.
-            src_idxs = self.paged_cache.block_manager.get_req_blocks(
-                context.request_id,
-            )
+            req_id = context.request_id
+            src_idxs = self.paged_cache.get_req_blocks(req_id)
             assert len(src_idxs) == len(dst_idxs)
 
             # Transfer only the blocks that are not already on decode node.

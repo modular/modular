@@ -58,7 +58,6 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.nn.kv_cache import (
-    DPPagedKVCacheManager,
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
@@ -603,12 +602,6 @@ class GenerateMixin(
                 "Having multiple KV managers (e.g. when using"
                 " speculative decoding) is not supported when data "
                 "parallelism is enabled."
-            )
-        if data_parallel_degree > 1 and not isinstance(
-            kv_managers[0], DPPagedKVCacheManager
-        ):
-            raise ValueError(
-                "DPPagedKVCacheManager is required when data parallelism is enabled."
             )
         batches = [{} for _ in range(data_parallel_degree)]
         for context in context_batch:

@@ -27,7 +27,6 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
-    DPPagedKVCacheManager,
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
@@ -264,7 +263,6 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
         data_parallel_splits: Tensor | None = None
         if self.pipeline_config.model_config.data_parallel_degree > 1:
-            assert isinstance(self.kv_manager, DPPagedKVCacheManager)
             data_parallel_splits = self.kv_manager.get_data_parallel_splits(
                 context_batch
             )

@@ -15,7 +15,6 @@ from .cache_params import KVCacheParams, KVCacheStrategy
 from .manager import KVCacheInputs, KVCacheInputsSequence, RaggedKVCacheInputs
 from .metrics import KVCacheMetrics
 from .paged_cache import (
-    DPPagedKVCacheManager,
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedCacheInputSymbols,
@@ -32,7 +31,6 @@ from .registry import (
 from .utils import build_max_lengths_tensor
 
 __all__ = [
-    "DPPagedKVCacheManager",
     "KVCacheInputs",
     "KVCacheInputsSequence",
     "KVCacheMetrics",
