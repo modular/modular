@@ -455,7 +455,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         next_tokens: Tensor,
         batch_top_n: list[int],
         batch_echo: list[bool],
-    ) -> list[LogProbabilities | None] | None:
+    ) -> list[LogProbabilities | None]:
         logits = model_outputs.logits
         assert model_outputs.next_token_logits is not None
         next_token_logits = model_outputs.next_token_logits

@@ -441,7 +441,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
     def jump_ahead(self, new_token: int) -> None:
         """Updates the token array, while ensuring the new token is returned to the user."""
-        is_eos = new_token in self.eos_token_ids
         self._upsize()
 
         # Update tokens
@@ -451,7 +450,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         self._active_idx += 1
         self._end_idx += 1
 
-        if is_eos:
+        if self._is_eos(new_token):
             self.status = GenerationStatus.END_OF_SEQUENCE
 
         if self.status == GenerationStatus.ACTIVE:

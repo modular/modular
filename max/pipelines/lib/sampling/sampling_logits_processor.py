@@ -188,8 +188,13 @@ class FusedSamplingProcessor:
         logits = inputs.logits
         logit_offsets = inputs.logit_offsets
         tensor_bitmask = None
-        if self.bitmask is not None and self.step_counter > 0:
-            raise ValueError("A new bitmask must be provided for each step.")
+        if self.bitmask is not None:
+            if self.step_counter > 0:
+                raise ValueError(
+                    "A new bitmask must be provided for each step."
+                )
+
+            tensor_bitmask = Tensor.from_numpy(self.bitmask).to(self.device)
 
         new_tokens, new_generated_tokens, new_seed = _sample_logits(
             self.sampler,

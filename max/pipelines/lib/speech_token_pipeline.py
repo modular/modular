@@ -69,15 +69,12 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
             return {}
         tracer: Tracer = Tracer("compute_parameters")
 
-        batch = self._maybe_sort_loras(batch)
-
         # Flatten our batch for consistent indexing.
-        context_batch = list(batch.values())
         eos_token_list = list(self._eos_token_id)
 
         # Prepare the batch.
-        model_inputs, num_steps, bitmask = self.prepare_batch(
-            [context_batch], num_steps
+        model_inputs, num_steps, bitmask, context_batch = self.prepare_batch(
+            [batch], num_steps
         )
 
         # Multistep execution loop.
