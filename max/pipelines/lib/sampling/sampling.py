@@ -86,8 +86,10 @@ def _sampling_input_types(
 
     # If we have structured_outputs enabled
     if sampling_config.enable_structured_output:
+        # Use separate symbolic dimension to avoid conflicts with logits' vocab_size
+        # since llguidance creates 32-bit aligned bitmasks.
         bitmask_type = TensorType(
-            DType.bool, ["batch", "vocab_size"], device=device
+            DType.bool, ["batch", "vocab_size_structured"], device=device
         )
         inputs["bitmask"] = bitmask_type
 
@@ -214,6 +216,9 @@ def token_sampler(
 
         if "bitmask" in _input_dict:
             bitmask = graph.inputs[list(_input_dict).index("bitmask")].tensor
+            # removes llguidance alignment padding
+            if logits.shape[1] != bitmask.shape[1]:
+                bitmask = bitmask[:, :logits.shape[1]]
             logits = ops.where(
                 bitmask,
                 logits,
