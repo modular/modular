@@ -3453,24 +3453,31 @@ ConstraintAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// LLVMBitcodeLibAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult LLVMBitcodeLibAttr::verify(
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitError, BoolAttr used,
+    Attribute library) {
+  // Verify that the library attribute is either StringAttr (for file paths)
+  // or DenseResourceElementsAttr (for package bitcode).
+  if (!isa<StringAttr>(library) && !isa<DenseResourceElementsAttr>(library)) {
+    return emitError() << "library attribute must be either StringAttr "
+                          "(for file paths) or DenseResourceElementsAttr "
+                          "(for package bitcode)";
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // LLVMBitcodeLibArrayAttr
 //===----------------------------------------------------------------------===//
 
-LogicalResult LLVMBitcodeLibArrayAttr::verify(
-    llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
-    ::llvm::ArrayRef<Attribute> value) {
-  // Verify that each element is either StringAttr (file path) or
-  // PackagedLLVMBitcodeLibAttr (packaged bitcode).
-  for (auto [idx, attr] : llvm::enumerate(value)) {
-    if (!isa<StringAttr>(attr) && !isa<PackagedLLVMBitcodeLibAttr>(attr)) {
-      return emitError() << "element #" << idx
-                         << " must be either StringAttr (for file paths) or "
-                            "PackagedLLVMBitcodeLibAttr (for packaged "
-                            "bitcode), but got: "
-                         << attr;
-    }
-  }
-  return success();
+void LLVMBitcodeLibArrayAttr::externalize(
+    llvm::SmallVector<std::pair<bool, mlir::Attribute>> &result) const {
+  result.clear();
+  for (auto libAttr : getValue())
+    result.emplace_back(libAttr.getUsed().getValue(), libAttr.getLibrary());
 }
 
 //===----------------------------------------------------------------------===//

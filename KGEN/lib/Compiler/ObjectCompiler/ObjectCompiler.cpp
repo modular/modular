@@ -795,7 +795,7 @@ loadBitcodeFromResource(llvm::LLVMContext &context,
 static ErrorOrSuccess
 linkBitcodeLibraries(Location loc, llvm::Module &llvmModule,
                      const CompilationOptions &options,
-                     LLVMBitcodeLibArrayAttr bitcodeLibs) {
+                     SmallVector<std::pair<bool, Attribute>> &bitcodeLibs) {
   // AMD GPU needs special linking procedure for AMD-specific libraries.
   // We handle AMD libraries first, then fall through to standard logic for
   // custom bitcode.
@@ -832,7 +832,7 @@ linkBitcodeLibraries(Location loc, llvm::Module &llvmModule,
   }
 
   // Use standard linking procedure for custom bitcode libraries.
-  if (!bitcodeLibs || bitcodeLibs.getValue().empty())
+  if (bitcodeLibs.empty())
     return success();
 
   // Check if there are any extern functions in the module.
@@ -869,8 +869,8 @@ linkBitcodeLibraries(Location loc, llvm::Module &llvmModule,
     return success();
   };
 
-  // Link bitcode libraries.
-  for (Attribute library : bitcodeLibs.getValue()) {
+  // Link bitcode libraries and track usage.
+  for (auto &[used, library] : bitcodeLibs) {
     if (auto stringAttr = dyn_cast<StringAttr>(library)) {
       // Handle file path libraries.
       ErrorOr<std::unique_ptr<llvm::Module>> loadResult =
@@ -881,18 +881,19 @@ linkBitcodeLibraries(Location loc, llvm::Module &llvmModule,
       ErrorOrSuccess linkResult = linkModule(std::move(*loadResult));
       if (failed(linkResult))
         return linkResult.takeError();
-    } else if (auto packagedAttr =
-                   dyn_cast<PackagedLLVMBitcodeLibAttr>(library)) {
-      // Handle packaged bitcode libraries.
+      used |= true;
+    } else if (auto resourceAttr =
+                   dyn_cast<DenseResourceElementsAttr>(library)) {
+      // Handle package bitcode libraries.
       ErrorOr<std::unique_ptr<llvm::Module>> loadResult =
-          loadBitcodeFromResource(llvmModule.getContext(),
-                                  packagedAttr.getResource());
+          loadBitcodeFromResource(llvmModule.getContext(), resourceAttr);
       if (failed(loadResult))
         return loadResult.takeError();
 
       ErrorOrSuccess linkResult = linkModule(std::move(*loadResult));
       if (failed(linkResult))
         return linkResult.takeError();
+      used |= true;
     }
   }
   return success();
@@ -1181,9 +1182,6 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
       }
 
       // Link bitcode libraries.
-      LLVMBitcodeLibArrayAttr bitcodeLibs =
-          cast<ModuleOp>(op)->getAttrOfType<LLVMBitcodeLibArrayAttr>(
-              LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName());
       if (failed(linkBitcodeLibraries(moduleLoc, *llvmModule, options,
                                       bitcodeLibs)))
         return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
@@ -1398,9 +1396,6 @@ ErrorOrSuccess ObjectCompiler::emitLLVMIR(ModuleOp module,
     return err.takeError();
 
   // Link bitcode libraries.
-  LLVMBitcodeLibArrayAttr bitcodeLibs =
-      module->getAttrOfType<LLVMBitcodeLibArrayAttr>(
-          LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName());
   if (failed(linkBitcodeLibraries(module->getLoc(), *llvmModule, options,
                                   bitcodeLibs)))
     return Error("failed to link bitcode libraries");
@@ -2049,7 +2044,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     std::optional<size_t> moduleIdx, AsyncRT::Runtime &runtime,
     CompilationOptions options, bool isJIT,
     DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> &kernelEmissionKinds,
-    std::string &linker, LLVMBitcodeLibArrayAttr bitcodeLibs) {
+    std::string &linker, SmallVector<std::pair<bool, Attribute>> &bitcodeLibs) {
   auto resultBufs =
       AsyncRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(runtime);
   auto resultKernelId = AsyncRT::AsyncValueRef<uint64_t>::allocate(runtime);
@@ -2060,7 +2055,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
                                    loc, isJIT, options, &runtime,
                                    transformCache = transformCache.copy(),
                                    &kernelEmissionKinds, &linker,
-                                   bitcodeLibs]() mutable {
+                                   &bitcodeLibs]() mutable {
     CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectGPU");
 
     // Materialize the module.
@@ -2185,11 +2180,6 @@ ObjectCompiler::emitGPUKernels(
   LLVMModuleAndContext llvmModule;
   Location moduleLoc = module->getLoc();
 
-  // Get bitcode libraries from the module before lowering to LLVM.
-  LLVMBitcodeLibArrayAttr bitcodeLibsAttr =
-      (*module)->getAttrOfType<LLVMBitcodeLibArrayAttr>(
-          LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName());
-
   // Save elaborated MLIR module to saveTempsPrefix.
   if (!options.saveTempsPrefix.empty()) {
     std::string str;
@@ -2215,7 +2205,7 @@ ObjectCompiler::emitGPUKernels(
           std::optional<int64_t> idx, unsigned numFunctionsBase) {
         auto result = lowerLLVMModuleToObject(
             std::move(produceModule), moduleLoc, transformCache, idx, runtime,
-            options, isJIT, kernelEmissionKinds, linker, bitcodeLibsAttr);
+            options, isJIT, kernelEmissionKinds, linker, bitcodeLibs);
         cachedResults.push_back(std::move(result.first));
         cachedResults.push_back(std::move(result.second));
       };
