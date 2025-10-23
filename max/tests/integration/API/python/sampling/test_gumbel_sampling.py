@@ -14,7 +14,12 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 @pytest.mark.parametrize(
-    ("vocab_size", "check_frequency"), ((64, True), (152064, False))
+    ("vocab_size", "check_frequency"),
+    (
+        (64, True),
+        (152064, True),
+        (262208, True),
+    ),
 )
 def test_gumbel_sampling(
     session: InferenceSession, vocab_size: int, check_frequency: bool
@@ -25,23 +30,22 @@ def test_gumbel_sampling(
 
     # Test parameters
     temp = 1.0
-    batch_size = 128
-    num_trials = 100
+    batch_size = 512
+    num_trials = 1000
 
-    # TODO(E2EOPT-315) -- Currently, for a request requires top_k = -1, MAX automatically rewrites top_k to 255.
-    # Hence, any request requires top_k >= 255 would be routed to gumbel sampling.
-    top_k = 255
+    # Requests that require top_k = -1 would be routed to gumbel sampling.
+    top_k = -1
 
     # set numpy seed
     np.random.seed(0)
 
-    logits_np = np.random.randn(vocab_size).astype(np.float32)
+    logits_np = 3 * np.random.randn(vocab_size).astype(np.float32)
     # broadcast logits to batch size
     logits_np = np.tile(logits_np, (batch_size, 1))
 
     # Create graph with logits and seed as inputs
     logits_type = TensorType(
-        DType.float32, ["batch_size", vocab_size], device=device_ref
+        DType.float32, ["batch_size", "vocab_size"], device=device_ref
     )
     seed_type = TensorType(DType.uint64, ["batch_size"], device=device_ref)
     top_p_type = TensorType(DType.float32, ["batch_size"], device=device_ref)
@@ -136,17 +140,19 @@ def test_gumbel_sampling(
     if check_frequency:
         # calculate softmax of logits
         single_token_np = logits_np[0, :]
+        max_logit = np.max(single_token_np)
+        single_token_np = single_token_np - max_logit
         softmax_np = np.exp(single_token_np) / np.sum(np.exp(single_token_np))
 
         # count frequency of each token in sampled tokens
         all_tokens = np.concatenate(sampled_tokens)
         unique_tokens, counts = np.unique(all_tokens, return_counts=True)
 
-        # check up to 10 most frequent tokens
-        most_frequent_idx = np.argsort(counts)[-10:]
+        # check up to 15 most frequent tokens
+        most_frequent_idx = np.argsort(counts)[-15:]
 
         token = unique_tokens[most_frequent_idx]
         sample_freq = counts[most_frequent_idx] / (batch_size * num_trials)
         ref_freq = softmax_np[token]
 
-        np.testing.assert_allclose(sample_freq, ref_freq, atol=0.01, rtol=0.05)
+        np.testing.assert_allclose(sample_freq, ref_freq, atol=1e-3, rtol=2e-2)
