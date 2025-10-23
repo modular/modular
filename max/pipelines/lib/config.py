@@ -25,7 +25,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, get_type_hints
 
-from max.driver import DeviceSpec, accelerator_count, load_devices
+from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
@@ -742,6 +742,8 @@ class PipelineConfig(MAXConfig):
         if not self.force:
             self._validate_required_arguments_against_architecture(arch)
 
+        devices = load_devices(model_config.device_specs)
+
         # Validate LoRA support - currently only Llama3 models support LoRA
         if self._lora_config and self._lora_config.enable_lora:
             # Check if the architecture is Llama3 (LlamaForCausalLM)
@@ -752,7 +754,7 @@ class PipelineConfig(MAXConfig):
                     f"Model '{model_config.model_path}' uses the '{arch.name}' architecture."
                 )
             # Currently, LoRA supported on only 1 device.
-            if accelerator_count() > 1:
+            if len(devices) > 1:
                 raise ValueError(
                     "LoRA is currently not supported with the number of devices > 1."
                 )
@@ -791,7 +793,6 @@ class PipelineConfig(MAXConfig):
             default_weights_format=arch.default_weights_format,
         )
 
-        devices = load_devices(model_config.device_specs)
         MEMORY_ESTIMATOR.estimate_memory_footprint(
             self, arch.pipeline_model, model_config, devices
         )
