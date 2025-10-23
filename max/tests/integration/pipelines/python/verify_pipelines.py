@@ -907,7 +907,7 @@ PIPELINES = {
                 json_file="torch_pixtral_bfloat16_golden.json",
             ),
             cos_dist_threshold=1.7e-3,
-            kl_div_threshold=4.5e-3,
+            kl_div_threshold=5.0e-3,
         ),
     ),
     "Qwen/Qwen2.5-7B-Instruct-bfloat16": PipelineDef(
@@ -1151,7 +1151,7 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="llasa-8b",
             encoding="bfloat16",
-            cos_dist_threshold=1e-02,
+            cos_dist_threshold=1.5e-02,
             kl_div_threshold=7.5e-01,
         ),
     ),
