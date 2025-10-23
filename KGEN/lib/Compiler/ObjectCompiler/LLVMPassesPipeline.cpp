@@ -212,8 +212,7 @@ buildFunctionSimplificationPipeline(PassBuilder passBuilder,
   lpm2.addPass(LoopDeletionPass());
 
   fpm.addPass(createFunctionToLoopPassAdaptor(std::move(lpm1),
-                                              /*UseMemorySSA=*/true,
-                                              /*UseBlockFrequencyInfo=*/true));
+                                              /*UseMemorySSA=*/true));
 
   fpm.addPass(SimplifyCFGPass(simplifyCFGOptions));
   fpm.addPass(InstCombinePass());
@@ -221,8 +220,7 @@ buildFunctionSimplificationPipeline(PassBuilder passBuilder,
   // LoopDeletionPass and LoopFullUnrollPass) do not preserve MemorySSA.
   // *All* loop passes must preserve it, in order to be able to use it.
   fpm.addPass(createFunctionToLoopPassAdaptor(std::move(lpm2),
-                                              /*UseMemorySSA=*/false,
-                                              /*UseBlockFrequencyInfo=*/false));
+                                              /*UseMemorySSA=*/false));
 
   // Delete small array after loop unroll.
   fpm.addPass(SROAPass(SROAOptions::ModifyCFG));
@@ -265,7 +263,7 @@ buildFunctionSimplificationPipeline(PassBuilder passBuilder,
   fpm.addPass(createFunctionToLoopPassAdaptor(
       LICMPass(/*LicmMssaOptCap*/ 100, /*LicmMssaNoAccForPromotionCap*/ 250,
                /*AllowSpeculation=*/true),
-      /*UseMemorySSA=*/true, /*UseBlockFrequencyInfo=*/true));
+      /*UseMemorySSA=*/true));
 
   fpm.addPass(SimplifyCFGPass(
       adjustSimplifyCFGOptions(SimplifyCFGOptions()
@@ -369,7 +367,7 @@ static void addVectorPasses(FunctionPassManager &FPM,
   FPM.addPass(createFunctionToLoopPassAdaptor(
       LICMPass(/*LicmMssaOptCap*/ 100, /*LicmMssaNoAccForPromotionCap*/ 250,
                /*AllowSpeculation=*/true),
-      /*UseMemorySSA=*/true, /*UseBlockFrequencyInfo=*/true));
+      /*UseMemorySSA=*/true));
 
   // Now that we've vectorized and unrolled loops, we may have more refined
   // alignment information, try to re-derive it here.
@@ -479,8 +477,8 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
   //        this may need to be revisited once we run GVN before loop deletion
   //        in the simplification pipeline.
   lpm.addPass(LoopDeletionPass());
-  optimizePm.addPass(createFunctionToLoopPassAdaptor(
-      std::move(lpm), /*UseMemorySSA=*/false, /*UseBlockFrequencyInfo=*/false));
+  optimizePm.addPass(
+      createFunctionToLoopPassAdaptor(std::move(lpm), /*UseMemorySSA=*/false));
 
   // Distribute loops to allow partial vectorization.  I.e. isolate dependencies
   // into separate loop that would otherwise inhibit vectorization.  This is
