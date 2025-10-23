@@ -332,7 +332,6 @@ class KVTransferEngine:
                         "",
                     )
                 ],
-                sorted=True,
             )
 
             status = agent.register_memory(reg_dlist, [ucx_backend])
