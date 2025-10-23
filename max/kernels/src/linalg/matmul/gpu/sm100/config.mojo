@@ -204,6 +204,7 @@ struct MatmulConfig[
             and self.a_swizzle == other.a_swizzle
             and self.b_swizzle == other.b_swizzle
             and self.c_swizzle == other.c_swizzle
+            and self.block_swizzle_size == other.block_swizzle_size
             and self.raster_order == other.raster_order
         )
 
@@ -302,6 +303,11 @@ fn choose_config[
     # timed by max number of ctas per SM i.e. number of waves.
     for bm in [64, 128]:
         for mma_n in range(16, min(257, N), 16):
+            # We only support MMA_N % 32 == 0 for MMA_M=128 cta_group = 2
+            # TODO: lift the restriction, multiple of 16 is supported by instruction.
+            if bm == 64 and mma_n % 32 != 0:
+                continue
+
             num_ctas = ceildiv(M, bm) * ceildiv(N, mma_n)
             num_waves = ceildiv(num_ctas, num_SMs)
             if num_waves < min_num_waves or (
@@ -322,7 +328,8 @@ fn choose_config[
         #    BM * num_ctas_per_wave_m + MMA_N * num_ctas_per_wave_N
         # Use MMA_N because cta_group = 2, 2 ctas cover entire MMA_N. cta_group = 1
         # has BN = MMA_N.
-        # Traverse the tile sizes to find min load volume.
+        # Traverse the tile sizes to find min load volume per wave.
+        # TODO: consider the L2 resue across waves.
         var BM = mma_mn[0] // cta_group
         for tile_size in List[Int](1, 2, 4, 8):
             var num_ctas_m = ceildiv(M, BM)
@@ -334,11 +341,11 @@ fn choose_config[
                 num_ctas_per_wave_m, num_ctas_m
             )
             num_ctas_per_wave_m = min(num_ctas_per_wave_m, num_ctas_m)
-            var load_volume = (
+            var load_volume_per_wave = (
                 num_ctas_per_wave_m * BM + num_ctas_per_wave_n * mma_mn[1]
             )
-            if load_volume < min_load_volume:
-                min_load_volume = load_volume
+            if load_volume_per_wave < min_load_volume:
+                min_load_volume = load_volume_per_wave
                 optimal_block_swizzle_size = tile_size
 
     return MatmulConfig[a_type, b_type, c_type, transpose_b](

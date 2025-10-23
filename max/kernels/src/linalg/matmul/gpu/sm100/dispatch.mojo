@@ -31,7 +31,7 @@ from ....utils import (
     elementwise_epilogue_type,
 )
 from ....utils_gpu import MatmulKernels
-from .config import MatmulConfig
+from .config import MatmulConfig, build_configs, choose_config
 from ...gpu import matmul_kernel_naive, gemv_gpu, multistage_gemm
 from ...vendor.matmul import matmul as matmul_vendor
 from ..tile_scheduler import RasterOrder
@@ -40,7 +40,11 @@ from .matmul import (
     matmul_sm100_fallback,
 )
 from internal_utils import Table
-from .tuning_configs import _get_tuning_list_sm100_fp8, TuningConfigSM100
+from .tuning_configs import (
+    _get_tuning_list_sm100_fp8,
+    TuningConfigSM100,
+    _get_tuning_list_sm100_bf16,
+)
 
 alias DISPATCH_MISS = 0
 alias DISPATCH_HIT = 1
@@ -1663,9 +1667,7 @@ fn matmul_dispatch_sm100_fp8[
     return DISPATCH_MISS
 
 
-# NOTE:
-# 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
-fn matmul_dispatch_sm100_bf16[
+fn _bf16_experimental[
     c_type: DType,
     a_type: DType,
     b_type: DType, //,
@@ -1713,14 +1715,9 @@ fn matmul_dispatch_sm100_bf16[
         ](c, a, b, ctx)
         return DISPATCH_HIT
 
-    alias use_experimental_kernel = env_get_bool[
-        "USE_EXPERIMENTAL_KERNELS", False
-    ]()
-
     @parameter
     if (
-        use_experimental_kernel
-        and c_type == DType.bfloat16
+        c_type == DType.bfloat16
         # these are the profitable shapes that gemma-3-27b models might execute
         and static_N in (4096, 8192, 43008, 5376)
         and static_K in (4096, 5376, 21504)
@@ -1734,6 +1731,115 @@ fn matmul_dispatch_sm100_bf16[
                 return matmul_swapab[64]()
             else:
                 return matmul_swapab[128]()
+
+    alias outliers = Table(
+        _get_tuning_list_sm100_bf16(), "bf16_heuristic_outliers"
+    )
+
+    @parameter
+    @always_inline
+    fn rule(x: TuningConfigSM100) -> Bool:
+        return x.K == static_K and x.N == static_N
+
+    alias outlier_configs = outliers.find[rule]()
+
+    @parameter
+    for tuning_config in outlier_configs:
+        if m >= tuning_config.M and m < tuning_config.M_end:
+            alias matmul_config = MatmulConfig[
+                a_type, b_type, c_type, transpose_b
+            ](
+                mma_shape=tuning_config.mma_shape,
+                cta_group=tuning_config.cta_group,
+                cluster_shape=tuning_config.cluster_shape,
+                block_swizzle_size=tuning_config.block_swizzle_size,
+                raster_order=tuning_config.rasterize_order,
+                num_pipeline_stages=tuning_config.num_pipeline_stages,
+            )
+            _matmul_dispatch_sm100[
+                transpose_b=transpose_b,
+                config=matmul_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+
+            return DISPATCH_HIT
+
+    alias configs = build_configs[
+        a_type, b_type, c_type, static_N, static_K, transpose_b
+    ]()
+    var config_runtime = choose_config[a_type, b_type, c_type, transpose_b](
+        m, static_N, static_K
+    )
+
+    @parameter
+    for config in configs:
+        if config_runtime == config:
+            _matmul_dispatch_sm100[
+                transpose_b=transpose_b,
+                config=config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+
+    # Use the largest mma instruction as a fallback when heuristic
+    # can't cover the shape.
+    alias fallback_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        mma_shape=Index(256, 256, BK),
+        cluster_shape=Index(2, 1, 1),
+    )
+
+    _matmul_dispatch_sm100[
+        transpose_b=transpose_b,
+        config=fallback_config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        pdl_level=pdl_level,
+    ](c, a, b, ctx)
+
+    return DISPATCH_HIT
+
+
+# NOTE:
+# 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
+fn matmul_dispatch_sm100_bf16[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType, //,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: NDBuffer[mut=True, c_type, 2, _, _],
+    a: NDBuffer[a_type, 2, _, _],
+    b: NDBuffer[b_type, 2, _, _],
+    ctx: DeviceContext,
+) raises -> Int:
+    var m = c.dim[0]()
+    alias static_N = c.shape.get[1]()
+    alias static_K = a.shape.get[1]()
+
+    alias MMA_K = 16
+    alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+
+    alias use_experimental_kernel = env_get_bool[
+        "USE_EXPERIMENTAL_KERNELS", False
+    ]()
+
+    @parameter
+    if use_experimental_kernel:
+        return _bf16_experimental[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
 
     # gemma-3-27b-it-prefill (TP1)
     @parameter
@@ -1813,7 +1919,8 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    elif static_N == 5376 and static_K == 4096:
+    @parameter
+    if static_N == 5376 and static_K == 4096:
         if m == 2000:
             alias block_tile_shape = Index(128, 104, BK)
             alias umma_shape = Index(
@@ -1910,7 +2017,8 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    elif static_N == 43008 and static_K == 5376:
+    @parameter
+    if static_N == 43008 and static_K == 5376:
         if m == 2000:
             alias block_tile_shape = Index(128, 112, BK)
             alias umma_shape = Index(
@@ -1976,7 +2084,8 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    elif static_N == 5376 and static_K == 21504:
+    @parameter
+    if static_N == 5376 and static_K == 21504:
         if m == 2000:
             alias block_tile_shape = Index(128, 104, BK)
             alias umma_shape = Index(
@@ -2073,7 +2182,8 @@ fn matmul_dispatch_sm100_bf16[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    elif static_N == 262208 and static_K == 5376:
+    @parameter
+    if static_N == 262208 and static_K == 5376:
         if m == 1:
             alias block_tile_shape = Index(64, 128, BK)
             alias umma_shape = Index(
@@ -2174,7 +2284,9 @@ fn matmul_dispatch_sm100_bf16[
                 pdl_level=pdl_level,
             ](c, a, b, ctx)
             return DISPATCH_HIT
-    elif static_N == 4096 and static_K == 2048:
+
+    @parameter
+    if static_N == 4096 and static_K == 2048:
         if m == 512:
             alias block_tile_shape = Index(128, 56, BK)
             alias umma_shape = Index(

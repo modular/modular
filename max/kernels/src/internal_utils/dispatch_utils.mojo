@@ -123,3 +123,14 @@ struct Table[type: TuningConfig](Stringable):
 
         _quicksort[_cmp](result)
         return result^
+
+    fn find[
+        rule: fn (type) capturing -> Bool,
+    ](self) -> List[type]:
+        var result = List[type]()
+
+        for config in self.configs:
+            if rule(config):
+                result.append(config)
+
+        return result^

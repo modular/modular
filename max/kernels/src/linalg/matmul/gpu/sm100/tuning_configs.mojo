@@ -17,15 +17,20 @@ from internal_utils import Table, TuningConfig
 
 @register_passable("trivial")
 struct TuningConfigSM100(TuningConfig):
+    # The kernel parameters are optimal for shape in [M:M_end]xNxK.
     var M: Int
+    var M_end: Int
     var N: Int
     var K: Int
+
+    # Kernel parameters
     var mma_shape: IndexList[3]
     var block_tile_shape: IndexList[3]
     var cluster_shape: IndexList[3]
     var block_swizzle_size: UInt
     var rasterize_order: RasterOrder
     var num_pipeline_stages: UInt
+    var cta_group: Int
 
     fn __init__(
         out self,
@@ -40,6 +45,7 @@ struct TuningConfigSM100(TuningConfig):
         num_pipeline_stages: UInt = 1,
     ):
         self.M = M
+        self.M_end = M + 1
         self.N = N
         self.K = K
         self.mma_shape = mma_shape
@@ -48,9 +54,39 @@ struct TuningConfigSM100(TuningConfig):
         self.block_swizzle_size = block_swizzle_size
         self.rasterize_order = rasterize_order
         self.num_pipeline_stages = num_pipeline_stages
+        self.cta_group = 2
 
     fn __str__(self) -> String:
         return String("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
+
+    fn __init__(
+        out self,
+        M: Int,
+        M_end: Int,
+        N: Int,
+        K: Int,
+        mma_shape: IndexList[3],
+        cta_group: Int,
+        cluster_shape: IndexList[3],
+        block_swizzle_size: UInt,
+        rasterize_order: RasterOrder,
+        num_pipeline_stages: UInt = 1,
+    ):
+        self.M = M
+        self.M_end = M_end
+        self.N = N
+        self.K = K
+        self.mma_shape = mma_shape
+        self.cta_group = cta_group
+        self.block_tile_shape = Index(
+            mma_shape[0] // cta_group,
+            mma_shape[1] // cta_group,
+            mma_shape[2] * 4,
+        )
+        self.cluster_shape = cluster_shape
+        self.block_swizzle_size = block_swizzle_size
+        self.rasterize_order = rasterize_order
+        self.num_pipeline_stages = num_pipeline_stages
 
 
 # codegen template
@@ -64,6 +100,44 @@ struct TuningConfigSM100(TuningConfig):
 #     block_swizzle_size=[@TUNE_BLOCK_SWIZZLE_SIZE],
 #     rasterize_order=RasterOrder([@TUNE_RASTER_ORDER]),
 # )
+
+# ===----------------------------------------------------------------------=== #
+# BF16 outliers
+# ===----------------------------------------------------------------------=== #
+
+
+fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
+    return List(
+        TuningConfigSM100(
+            M=3456,
+            M_end=3456 + 64,
+            N=43008,
+            K=5376,
+            mma_shape=Index(256, 256, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+            num_pipeline_stages=6,
+        ),
+        TuningConfigSM100(
+            M=48000,
+            M_end=48000 + 64,
+            N=5376,
+            K=21504,
+            mma_shape=Index(256, 256, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=4,
+            rasterize_order=RasterOrder(1),
+            num_pipeline_stages=6,
+        ),
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# FP8 Shapes
+# ===----------------------------------------------------------------------=== #
 
 
 fn _get_tuning_list_sm100_fp8[mma_k: Int, bk: Int]() -> List[TuningConfigSM100]:
