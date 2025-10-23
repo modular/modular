@@ -19,12 +19,12 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
-import numpy.typing as npt
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import Weights, WeightsAdapter
+from max.interfaces import LogProbabilities
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -45,6 +45,10 @@ from max.pipelines.lib import (
     PipelineModel,
     SupportedEncoding,
 )
+from max.pipelines.lib.log_probabilities import (
+    compute_log_probabilities_ragged,
+    log_probabilities_ragged_graph,
+)
 from transformers import AutoConfig
 
 from .gemma3 import Gemma3
@@ -60,21 +64,20 @@ class Gemma3Inputs(ModelInputs):
     execution.
     """
 
-    tokens: npt.NDArray[np.integer[Any]] | Tensor
+    tokens: Tensor
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor | list[Tensor]
-    """Tensor containing the offsets for each row in the ragged input sequence,
-    or the attention mask for the padded input sequence. For distributed execution,
-    this can be a list of tensors, one per device."""
+    input_row_offsets: list[Tensor]
+    """List of tensors containing the offsets for each row in the ragged input
+    sequence, one per device."""
 
     signal_buffers: list[Tensor]
     """Device buffers used for synchronization in communication collectives."""
 
     def __init__(
         self,
-        tokens: npt.NDArray[np.integer[Any]] | Tensor,
-        input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor | list[Tensor],
+        tokens: Tensor,
+        input_row_offsets: list[Tensor],
         return_n_logits: Tensor,
         signal_buffers: list[Tensor],
         kv_cache_inputs: KVCacheInputs | None = None,
@@ -156,6 +159,8 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         ]
 
         self.model = self.load_model(session)
+        self.logprobs_device = devices[0]
+        self.logprobs_model = self.load_logprobs_model(session)
 
     @staticmethod
     def calculate_max_seq_len(
@@ -305,6 +310,13 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
 
         return model
 
+    def load_logprobs_model(self, session: InferenceSession) -> Model:
+        # TODO: Perhaps 'levels' ought to be configurable.
+        graph = log_probabilities_ragged_graph(
+            DeviceRef.from_device(self.logprobs_device), levels=3
+        )
+        return session.load(graph)
+
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
@@ -334,7 +346,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
     # overridden for Gemma3 multi-modal.
     _strict_state_dict_loading = True
 
-    def _build_graph(self):  # noqa: ANN202
+    def _build_graph(self) -> Graph:
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
@@ -435,6 +447,39 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
             graph.output(*outputs)
         return graph
 
+    def compute_log_probabilities(
+        self,
+        session: InferenceSession,
+        model_inputs: ModelInputs,
+        model_outputs: ModelOutputs,
+        next_tokens: Tensor,
+        batch_top_n: list[int],
+        batch_echo: list[bool],
+    ) -> list[LogProbabilities | None] | None:
+        logits = model_outputs.logits
+        assert model_outputs.next_token_logits is not None
+        next_token_logits = model_outputs.next_token_logits
+
+        assert isinstance(model_inputs, Gemma3Inputs)
+        gemma3_inputs: Gemma3Inputs = model_inputs
+
+        sampled_tokens = next_tokens.to_numpy()
+        tokens = gemma3_inputs.tokens.to_numpy()
+        assert gemma3_inputs.input_row_offsets[0].device == self.logprobs_device
+        input_row_offsets = gemma3_inputs.input_row_offsets[0].to_numpy()
+
+        return compute_log_probabilities_ragged(
+            self.logprobs_device,
+            self.logprobs_model,
+            input_row_offsets=input_row_offsets,
+            logits=logits,
+            next_token_logits=next_token_logits,
+            tokens=tokens,
+            sampled_tokens=sampled_tokens,
+            batch_top_n=batch_top_n,
+            batch_echo=batch_echo,
+        )
+
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Gemma 3 model with the prepared inputs.
 
@@ -448,28 +493,10 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         assert isinstance(model_inputs, Gemma3Inputs)
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
 
-        # Check if input_row_offsets is a list or a single tensor
-        if isinstance(model_inputs.input_row_offsets, list):
-            input_row_offsets_list = model_inputs.input_row_offsets
-        else:
-            # For backward compatibility, distribute the single tensor to all devices
-            if isinstance(model_inputs.input_row_offsets, np.ndarray):
-                # Convert numpy array to tensor first
-                tensor = Tensor.from_numpy(model_inputs.input_row_offsets)
-                input_row_offsets_list = [
-                    tensor.to(device) for device in self.devices
-                ]
-            else:
-                # Already a tensor
-                input_row_offsets_list = [
-                    model_inputs.input_row_offsets.to(device)
-                    for device in self.devices
-                ]
-
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.return_n_logits,
-            *input_row_offsets_list,
+            *model_inputs.input_row_offsets,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
         )
