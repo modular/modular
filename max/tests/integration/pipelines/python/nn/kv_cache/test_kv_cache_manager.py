@@ -10,12 +10,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import RequestID
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedKVCacheManager,
-    load_kv_manager,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, load_kv_manager
 from test_common.context_utils import create_text_context
 
 
@@ -48,7 +43,6 @@ async def test_step() -> None:
     for i in range(3):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
-        assert isinstance(kv_manager, PagedKVCacheManager)
         kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 
@@ -87,7 +81,7 @@ async def test_claim_and_release() -> None:
         page_size=128,
     )
 
-    kv_manager = load_kv_manager(
+    dp_kv_manager = load_kv_manager(
         params=params,
         max_batch_size=16,
         max_seq_len=100,
@@ -96,6 +90,7 @@ async def test_claim_and_release() -> None:
         session=InferenceSession(devices=[device]),
         available_cache_memory=500 * 2**20,
     )
+    kv_manager = dp_kv_manager._replica_managers[0]
 
     contexts = []
     prompt_lens = [2, 3, 4, 5, 6]
@@ -158,7 +153,6 @@ async def test_fetch_paged() -> None:
         context = create_text_context(np.empty(1))
         kv_manager.external_claim(context.request_id)
         contexts.append(context)
-        assert isinstance(kv_manager, PagedKVCacheManager)
         kv_manager.maybe_reserve(context, num_steps=1)
 
     # Fetch 3 of the 5 ids

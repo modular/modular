@@ -219,7 +219,6 @@ def generate_max_outputs(
         page_size=kv_cache_config.kv_cache_page_size,
         session=session,
     )
-    assert isinstance(kv_manager, PagedKVCacheManager)
 
     # Construct input types.
     input_type = TensorType(

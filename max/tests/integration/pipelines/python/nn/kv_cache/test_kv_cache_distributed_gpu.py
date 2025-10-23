@@ -123,7 +123,7 @@ async def test_swapping_to_host_multi_gpu(
     np.random.seed(42)
 
     # Enough blocks to hold 500 tokens
-    kv_manager = create_paged_manager(
+    dp_kv_manager = create_paged_manager(
         num_blocks=100,
         max_batch_size=100,
         max_seq_len=512,
@@ -131,6 +131,7 @@ async def test_swapping_to_host_multi_gpu(
         enable_prefix_caching=True,
         enable_kvcache_swapping_to_host=enable_swapping_to_host,
     )
+    kv_manager = dp_kv_manager._replica_managers[0]
 
     if enable_swapping_to_host:
         # Host tensor should be pinned

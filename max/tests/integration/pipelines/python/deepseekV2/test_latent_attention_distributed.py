@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import cast
+from collections.abc import Sequence
 
 import numpy as np
 import pytest
@@ -20,7 +20,6 @@ from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
 )
 from max.nn.kv_cache import (
-    DPPagedKVCacheManager,
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
@@ -262,7 +261,7 @@ def _build_graph_and_compile(
     session: InferenceSession,
     attn: DataParallelLatentAttentionWithRope,
     rope: DeepseekYarnRotaryEmbedding,
-    kv_manager: DPPagedKVCacheManager,
+    kv_manager: PagedKVCacheManager,
     devices: list[Accelerator],
 ) -> tuple:
     """Builds a per-device inputs graph and compiles it."""
@@ -327,7 +326,7 @@ def _build_graph_and_compile(
     return compiled, g
 
 
-def _flatten_kv_fetch_args(fetch_list: list[RaggedKVCacheInputs]) -> list:
+def _flatten_kv_fetch_args(fetch_list: Sequence[RaggedKVCacheInputs]) -> list:
     flat: list = []
     for f in fetch_list:
         flat.extend([f.blocks, f.cache_lengths, f.lookup_table, f.max_lengths])
@@ -366,11 +365,6 @@ def _run_distributed_dp(
         available_cache_memory=100 * 1024 * 1024,
         page_size=128,
     )
-    # This test is **always** distributed: assert we got MultiPaged
-    assert isinstance(kv_manager, DPPagedKVCacheManager), (
-        "Distributed test requires DPPagedKVCacheManager"
-    )
-    kv_manager = cast(DPPagedKVCacheManager, kv_manager)
 
     compiled, _ = _build_graph_and_compile(
         config=config,
