@@ -33,6 +33,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from subprocess import Popen
+from tempfile import TemporaryDirectory
 
 import click
 import requests
@@ -175,7 +176,7 @@ def safe_model_name(model: str) -> str:
     return model.replace("/", "__")
 
 
-def get_lm_eval_cmd(model: str, task: str) -> list[str]:
+def get_lm_eval_cmd(model: str, task: str, output_path: Path) -> list[str]:
     max_gen_toks = {
         "unsloth/gpt-oss-20b-bf16": ",max_gen_toks=50000",
         "qwen/qwen3-8b": ",max_gen_toks=4096",
@@ -206,7 +207,7 @@ def get_lm_eval_cmd(model: str, task: str) -> list[str]:
         "--fewshot_as_multiturn",
         "--apply_chat_template",
         "--output_path",
-        "./lm_eval_output",
+        f"{output_path}/lm_eval_output",
         "--limit",
         "320",
         "--seed",
@@ -234,12 +235,14 @@ def gracefully_stop_process(process: Popen) -> None:
         process.wait(5)
 
 
-def parse_results(model: str, tasks: list[str]) -> list[dict]:
+def parse_results(
+    model: str, tasks: list[str], output_path: Path
+) -> list[dict]:
     """
     Returns a list of the lm-eval results for the given model and tasks.
     """
     sanitized_name = safe_model_name(model)
-    results_dir = Path("./lm_eval_output") / Path(sanitized_name)
+    results_dir = output_path / "lm_eval_output" / sanitized_name
     candidates = sorted(
         results_dir.glob("results_*.json"),
         key=lambda p: p.stat().st_mtime,
@@ -309,13 +312,15 @@ def build_eval_summary(
     return summaries
 
 
-def _latest_samples_files(model: str, tasks: Sequence[str]) -> list[Path]:
+def _latest_samples_files(
+    model: str, tasks: Sequence[str], output_path: Path
+) -> list[Path]:
     """
     Return the newest samples_*.jsonl file for each task we ran.
     Assumes lm-eval was invoked with --log_samples.
     """
     out: list[Path] = []
-    results_dir = Path("./lm_eval_output") / safe_model_name(model)
+    results_dir = output_path / "lm_eval_output" / safe_model_name(model)
     if not results_dir.exists():
         return out
     for task in tasks:
@@ -368,59 +373,14 @@ def _print_samples(files: Sequence[Path], print_cot: bool) -> None:
                 logger.info(f"{status} {extracted}")
 
 
-@click.command()
-@click.argument(
-    "hf_model_path",
-    type=str,
-    required=True,
-)
-@click.option(
-    "--framework",
-    type=click.Choice(["sglang", "vllm", "max", "max-ci"]),
-    default="max-ci",
-    required=False,
-    help="Framework to use for the smoke test. Only max-ci is supported when running in bazel.",
-)
-@click.option(
-    "--output-file",
-    type=click.Path(dir_okay=False, writable=True, path_type=Path),
-    default=None,
-    help="If provided, write the summary of the smoke test to this file",
-)
-@click.option(
-    "--print-responses",
-    is_flag=True,
-    default=False,
-    help="Print question/response pairs from lm-eval samples after the run finishes",
-)
-@click.option(
-    "--print-cot",
-    is_flag=True,
-    default=False,
-    help="Print the model's chain-of-thought reasoning for each sample. Must be used with --print-responses",
-)
 def smoke_test(
     hf_model_path: str,
     framework: str,
-    output_file: Path | None,
+    output_path: Path,
+    write_summary: bool,
     print_responses: bool,
     print_cot: bool,
 ) -> None:
-    """
-    Example usage: ./bazelw run smoke-test -- meta-llama/llama-3.2-1b-instruct
-
-    This command asks 320 questions against the model behind the given hf_model_path.
-    It runs the provided framework (defaulting to MAX serve) in the background,
-    and fires off HTTP requests to chat/completions API.
-    Note: Only models with a chat template (typically -instruct, -it, -chat, etc.) are supported.
-
-    Accuracy is reported at the end, with higher values being better.
-    A 1.0 value means 100% accuracy.
-
-    """
-    if print_cot and not print_responses:
-        raise ValueError("--print-cot must be used with --print-responses")
-
     model = hf_model_path.lower().strip()
     cmd = get_server_cmd(framework, model)
 
@@ -456,7 +416,7 @@ def smoke_test(
             for task in tasks:
                 test_single_request(model, task)
 
-                lm_eval_cmd = get_lm_eval_cmd(model, task)
+                lm_eval_cmd = get_lm_eval_cmd(model, task, output_path)
                 logger.info(f"Starting lm-eval with command:\n {lm_eval_cmd}")
                 with Popen(
                     lm_eval_cmd, start_new_session=True
@@ -474,16 +434,18 @@ def smoke_test(
         finally:
             gracefully_stop_process(server_process)
 
-    results = parse_results(model, tasks)
+    results = parse_results(model, tasks, output_path)
     summary = build_eval_summary(results, startup_time_seconds=startup_time)
 
     summary_json = json.dumps([asdict(s) for s in summary], indent=2)
-    if output_file is not None:
+    if write_summary:
+        file_name = safe_model_name(hf_model_path) + "_eval_metrics.json"
+        output_file = output_path / file_name
         output_file.write_text(summary_json)
         logger.info(f"Wrote EvalSummary JSON to {output_file.resolve()}")
 
     if print_responses:
-        files = _latest_samples_files(model, tasks)
+        files = _latest_samples_files(model, tasks, output_path)
         _print_samples(files, print_cot)
 
     time.sleep(1)
@@ -491,5 +453,80 @@ def smoke_test(
     logger.info(f"EvalSummary: {summary_json}")
 
 
+@click.command()
+@click.argument(
+    "hf_model_path",
+    type=str,
+    required=True,
+)
+@click.option(
+    "--framework",
+    type=click.Choice(["sglang", "vllm", "max", "max-ci"]),
+    default="max-ci",
+    required=False,
+    help="Framework to use for the smoke test. Only max-ci is supported when running in bazel.",
+)
+@click.option(
+    "--output-path",
+    type=click.Path(file_okay=False, writable=True, path_type=Path),
+    default=None,
+    help="If provided, a summary json file and the lm-eval result are written here",
+)
+@click.option(
+    "--print-responses",
+    is_flag=True,
+    default=False,
+    help="Print question/response pairs from lm-eval samples after the run finishes",
+)
+@click.option(
+    "--print-cot",
+    is_flag=True,
+    default=False,
+    help="Print the model's chain-of-thought reasoning for each sample. Must be used with --print-responses",
+)
+def smoke_test_cli(
+    hf_model_path: str,
+    framework: str,
+    output_path: Path | None,
+    print_responses: bool,
+    print_cot: bool,
+) -> None:
+    """
+    Example usage: ./bazelw run smoke-test -- meta-llama/llama-3.2-1b-instruct
+
+    This command asks 320 questions against the model behind the given hf_model_path.
+    It runs the provided framework (defaulting to MAX serve) in the background,
+    and fires off HTTP requests to chat/completions API.
+    Note: Only models with a chat template (typically -instruct, -it, -chat, etc.) are supported.
+
+    Accuracy is reported at the end, with higher values being better.
+    A 1.0 value means 100% accuracy.
+
+    """
+    if print_cot and not print_responses:
+        raise ValueError("--print-cot must be used with --print-responses")
+
+    if output_path is None:
+        with TemporaryDirectory() as tempdir:
+            output_path = Path(tempdir)
+            smoke_test(
+                hf_model_path,
+                framework,
+                output_path,
+                False,
+                print_responses,
+                print_cot,
+            )
+    else:
+        smoke_test(
+            hf_model_path,
+            framework,
+            output_path,
+            True,
+            print_responses,
+            print_cot,
+        )
+
+
 if __name__ == "__main__":
-    smoke_test()
+    smoke_test_cli()
