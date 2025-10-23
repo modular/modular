@@ -31,7 +31,9 @@ from .validation import assert_same_device
 
 # This implementation needs to be in sync with the mojo implementation found in
 # stdlib/utils/numerics.mojo
-def _accum_type(x: TensorValue, preferred_type: DType = DType.float32) -> DType:
+def _accum_type(
+    x: TensorValue | TensorType, preferred_type: DType = DType.float32
+) -> DType:
     dtype = x.dtype
     if dtype.is_float8():
         return (

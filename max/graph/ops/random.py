@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import weakref
 from collections.abc import MutableMapping
+from dataclasses import replace
 
 import numpy as np
 from max._core.dialects import kgen, rmo
@@ -25,6 +26,7 @@ from .. import dtype_promotion
 from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
+from .elementwise import _accum_type
 
 SEEDS: MutableMapping[Graph, TensorValue] = weakref.WeakKeyDictionary()
 SeedType = TensorType(DType.int64, [], device=DeviceRef.CPU())
@@ -88,20 +90,23 @@ def gaussian(
     assert_scalar(std)
     # Check whether we have a seed before we add other constants to the graph.
     seed = _next_seed()
-    scalar_dtype = DType.float32 if like.device.is_cpu() else DType.bfloat16
-    return Graph.current._add_op_generated(
+    accum_type = _accum_type(like) if like.dtype.is_float() else DType.float32
+    random_accum = Graph.current._add_op_generated(
         rmo.MoRandomNormalOp,
-        result=like,
+        result=replace(like, dtype=accum_type),
         shape=TensorValue(like.shape),
         mean=dtype_promotion._promote_to_strong(
-            mean, scalar_dtype, DeviceRef.CPU()
+            mean, DType.float32, DeviceRef.CPU()
         ),
         variance=dtype_promotion._promote_to_strong(
-            std, scalar_dtype, DeviceRef.CPU()
+            std, DType.float32, DeviceRef.CPU()
         ),
         seed=seed,
         output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
+    if not like.dtype.is_float():
+        random_accum = round(random_accum)
+    return random_accum.cast(like.dtype)
 
 
 # Alias normal <-> gaussian

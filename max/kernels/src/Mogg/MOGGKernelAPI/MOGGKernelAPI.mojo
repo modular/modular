@@ -4108,8 +4108,8 @@ struct RandomNormal:
     ](
         output: FusedOutputTensor[dtype=dtype],
         shape: InputTensor[rank=1],
-        mean: Scalar[dtype],
-        variance: Scalar[dtype],
+        mean: Float32,
+        variance: Float32,
         seed_value: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
