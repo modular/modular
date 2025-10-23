@@ -7,7 +7,6 @@
 import pickle
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 from max.driver import DeviceSpec, accelerator_count
@@ -805,54 +804,63 @@ def test_config__validates_lora_incompatible_with_prefix_caching(
 
 @prepare_registry
 @mock_estimate_memory_footprint
+@pytest.mark.skipif(
+    accelerator_count() > 1, reason="Test requires single GPU or CPU"
+)
 def test_config__validates_lora_single_device_only(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
-    """Test that LoRA is only supported on single device."""
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
-    with patch("max.pipelines.lib.config.accelerator_count", return_value=1):
-        config = PipelineConfig(
+    config = PipelineConfig(
+        model_path=llama_3_1_8b_instruct_local_path,
+        enable_lora=True,
+        lora_paths=["/some/lora/path"],
+        enable_prefix_caching=False,  # LoRA is not compatible with prefix caching
+        device_specs=[DeviceSpec.accelerator()],
+        max_length=1,
+        quantization_encoding=SupportedEncoding.bfloat16,
+        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+    )
+    assert config.lora_config is not None
+    assert config.lora_config.enable_lora is True
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
+@pytest.mark.skipif(
+    accelerator_count() < 2, reason="Test requires multiple GPUs"
+)
+def test_config__validates_lora_fails_with_multiple_devices(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
+    with pytest.raises(
+        ValueError,
+        match=r"LoRA is currently not supported with the number of devices > 1\.",
+    ):
+        _ = PipelineConfig(
             model_path=llama_3_1_8b_instruct_local_path,
             enable_lora=True,
             lora_paths=["/some/lora/path"],
             enable_prefix_caching=False,  # LoRA is not compatible with prefix caching
-            device_specs=[DeviceSpec.accelerator()],
+            device_specs=[
+                DeviceSpec.accelerator(),
+                DeviceSpec.accelerator(),
+            ],
             max_length=1,
             quantization_encoding=SupportedEncoding.bfloat16,
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         )
-        assert config.lora_config is not None
-        assert config.lora_config.enable_lora is True
 
-    with patch("max.pipelines.lib.config.accelerator_count", return_value=2):
-        with pytest.raises(
-            ValueError,
-            match=r"LoRA is currently not supported with the number of devices > 1\.",
-        ):
-            _ = PipelineConfig(
-                model_path=llama_3_1_8b_instruct_local_path,
-                enable_lora=True,
-                lora_paths=["/some/lora/path"],
-                enable_prefix_caching=False,  # LoRA is not compatible with prefix caching
-                device_specs=[
-                    DeviceSpec.accelerator(),
-                    DeviceSpec.accelerator(),
-                ],
-                max_length=1,
-                quantization_encoding=SupportedEncoding.bfloat16,
-                allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
-            )
-
-    with patch("max.pipelines.lib.config.accelerator_count", return_value=2):
-        config = PipelineConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            device_specs=[DeviceSpec.accelerator(), DeviceSpec.accelerator()],
-            max_length=1,
-            quantization_encoding=SupportedEncoding.bfloat16,
-            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
-        )
-        assert config.lora_config is None
+    config = PipelineConfig(
+        model_path=llama_3_1_8b_instruct_local_path,
+        device_specs=[DeviceSpec.accelerator(), DeviceSpec.accelerator()],
+        max_length=1,
+        quantization_encoding=SupportedEncoding.bfloat16,
+        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+    )
+    assert config.lora_config is None
 
 
 @mock_pipeline_config_hf_dependencies
