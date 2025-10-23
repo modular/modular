@@ -351,6 +351,7 @@ def main():
             5,
             0,
             IndexList[1](10),
+            temperature=0,
         )
 
     # CHECK-LABEL: test_1d_sorted_sampling
@@ -363,6 +364,7 @@ def main():
             5,
             1,
             IndexList[2](5, 10),
+            temperature=0,
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling
@@ -375,6 +377,7 @@ def main():
             5,
             2,
             IndexList[3](3, 5, 10),
+            temperature=0,
         )
 
     # CHECK-LABEL: test_3d_sorted_sampling
@@ -396,7 +399,7 @@ def main():
         )
 
     # CHECK-LABEL: test_1d_sorted_sampling_temp
-    # CHECK: 6,
+    # CHECK: 1,
     test_1d_sorted_sampling_temp()
 
     fn test_2d_sorted_sampling_temp() raises:
@@ -409,7 +412,7 @@ def main():
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling_temp
-    # CHECK: 6,6,0,0,5,2,6,4,3,1,0,4,8,0,0,0,5,7,7,4,6,3,4,2,5,3,6,7,8,6,6,5,9,7,8,3,7,4,8,6,2,8,6,4,5,7,8,3,5,0,
+    # CHECK: 3,7,9,2,8,6,4,8,7,5,7,1,1,2,9,4,5,9,6,6,0,6,0,4,8,6,9,1,5,3,1,8,6,2,0,0,3,0,6,4,4,7,1,5,4,2,2,7,0,8,
     test_2d_sorted_sampling_temp()
 
     fn test_2d_sorted_sampling_temp_zero() raises:
