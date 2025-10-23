@@ -82,8 +82,6 @@ def test_memory_registration(device: Device) -> None:
 
     # if the descriptors are sorted for descs and device ID.
     # sort criteria has the comparison order of dev_id, then addr, then len.
-    sorted = True
-
     memory_type = MemoryType.DRAM if device.is_host else MemoryType.VRAM
 
     registration_descriptor = RegistrationDescriptorList(
@@ -91,7 +89,6 @@ def test_memory_registration(device: Device) -> None:
         # This cast should not be necessary.
         # descs should accept any object that implements __dlpack__ instead.
         descs=[cast(ArrayLike, buffer)],
-        sorted=sorted,
     )
 
     # Test append()
@@ -130,12 +127,12 @@ def test_memory_transfer(device: Device) -> None:
 
     # Register Memory
     reg_dlist_1 = RegistrationDescriptorList(
-        type=memory_type, descs=[cast(ArrayLike, buffer_1)], sorted=True
+        type=memory_type, descs=[cast(ArrayLike, buffer_1)]
     )
     agent_1.register_memory(descs=reg_dlist_1, backends=[ucx_backend_1])
 
     reg_dlist_2 = RegistrationDescriptorList(
-        type=memory_type, descs=[cast(ArrayLike, buffer_2)], sorted=True
+        type=memory_type, descs=[cast(ArrayLike, buffer_2)]
     )
     agent_2.register_memory(descs=reg_dlist_2, backends=[ucx_backend_2])
 
