@@ -108,9 +108,9 @@ struct Random[rounds: Int = 10]:
         Returns:
             SIMD vector containing 4 random float32 values in range [0,1).
         """
-        # The inverse of 2^32
-        alias INV_2_32 = 2.3283064e-10
-        return self.step().cast[DType.float32]() * INV_2_32
+        # maximum value such that `MAX_INT * scale < 1.0` (with float rounding)
+        alias SCALE = 4.6566127342e-10
+        return (self.step() & 0x7FFFFFFF).cast[DType.float32]() * SCALE
 
     @always_inline
     fn _incrn(mut self, n: Int64):
@@ -204,13 +204,11 @@ struct NormalRandom[rounds: Int = 10]:
         Returns:
             SIMD vector containing 8 random float32 values from a normal distribution with mean `mean` and standard deviation `stddev`.
         """
-        var u1 = self._rng.step_uniform()
-        var u2 = self._rng.step_uniform()
+        # Convert from range of [0,1) to (0,1]. This avoids having 0 and passing to to log.
+        var u1 = 1.0 - self._rng.step_uniform()
+        var u2 = 1.0 - self._rng.step_uniform()
 
-        var epsilon = SIMD[DType.float32, 4](1e-7)
-        var safe_u1 = max(u1, epsilon)
-
-        var r = sqrt(-2.0 * log(safe_u1))
+        var r = sqrt(-2.0 * log(u1))
         var theta = 2.0 * math.pi * u2
         var z0 = r * cos(theta)
         var z1 = r * sin(theta)

@@ -399,7 +399,7 @@ def main():
         )
 
     # CHECK-LABEL: test_1d_sorted_sampling_temp
-    # CHECK: 1,
+    # CHECK: 3,
     test_1d_sorted_sampling_temp()
 
     fn test_2d_sorted_sampling_temp() raises:
@@ -412,7 +412,7 @@ def main():
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling_temp
-    # CHECK: 3,7,9,2,8,6,4,8,7,5,7,1,1,2,9,4,5,9,6,6,0,6,0,4,8,6,9,1,5,3,1,8,6,2,0,0,3,0,6,4,4,7,1,5,4,2,2,7,0,8,
+    # CHECK: 1,4,8,5,6,0,3,3,9,9,3,2,6,3,8,9,3,5,3,8,5,9,7,7,9,0,4,8,0,5,2,9,8,6,4,4,0,6,5,2,6,9,5,3,8,6,1,1,3,6,
     test_2d_sorted_sampling_temp()
 
     fn test_2d_sorted_sampling_temp_zero() raises:
@@ -437,5 +437,5 @@ def main():
         )
 
     # CHECK-LABEL: test_deterministic_sampling
-    # CHECK: 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    # CHECK: 3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
     test_deterministic_sampling()
