@@ -72,3 +72,10 @@ fn toy(rogue: String):
     # CHECK: error: Could not infer capture convention of the captured value rogue
     fn myclosure() unified {} -> String:
         return rogue
+
+# // -----
+
+fn wrongConvention(thing: String):
+    # CHECK: error: Unrecognized capture convention
+    fn incorrectCaptureConvention() unified {ref thing}:
+        _ = thing

@@ -1104,8 +1104,12 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
     StringAttr nameValue;
     std::optional<StringAttr *> nameRef = &nameValue;
     CaptureConvention convention = parseConvention(nameRef);
-    if (convention == CaptureConvention::kConventionUnspecified)
+    if (convention == CaptureConvention::kConventionUnspecified) {
+      p.emitError(p.getLexer().getToken().getLoc(),
+                  "Unrecognized capture convention");
       return failure();
+    }
+
     if (!nameValue)
       if (p.parseIdentifier(nameValue,
                             "Expected captures to be identified by name"))
