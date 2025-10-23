@@ -35,6 +35,7 @@ from ....utils_gpu import MatmulConfig, get_hilbert_lut_with_cache
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
 from .matmul_kernels import HopperMatmulSM90Kernel, find_K_alignment_upto_16B
+from .matmul_kernel_persistent import HopperMatmulSM90Kernel
 
 
 fn _is_valid_cluster_shape[
