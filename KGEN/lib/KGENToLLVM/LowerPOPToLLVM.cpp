@@ -2210,10 +2210,171 @@ struct ConvertPOPCallLLVMIntrinsic
     if (failed(getTypeConverter()->convertTypes(op.getResultTypes(), types)))
       return failure();
 
-    [[maybe_unused]] StringRef intrinsicName = cast<StringAttr>(op.getIntrin());
+    StringRef intrinsicName = cast<StringAttr>(op.getIntrin());
     assert(
         !intrinsicName.starts_with("llvm.air.") &&
         "AIR LLVM intrinsic must be processed by ConvertPOPCallToAIRIntrinsic");
+
+    // Special handling for masked.load: convert alignment operand to attribute
+    if (intrinsicName == "llvm.masked.load") {
+      auto operands =
+          expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
+      if (operands.size() != 4) {
+        return op.emitError("llvm.masked.load expects 4 operands "
+                            "(ptr, alignment, mask, passthrough), got ")
+               << operands.size();
+      }
+
+      Value ptr = operands[0];
+      Value alignmentOp = operands[1];
+      Value mask = operands[2];
+      Value passthrough = operands[3];
+
+      // Extract alignment constant from the operand
+      auto alignConstOp = alignmentOp.getDefiningOp<LLVM::ConstantOp>();
+      if (!alignConstOp) {
+        return op.emitError(
+            "llvm.masked.load alignment must be a constant, got runtime value");
+      }
+
+      auto alignAttr = dyn_cast<IntegerAttr>(alignConstOp.getValue());
+      if (!alignAttr) {
+        return op.emitError("llvm.masked.load alignment must be an integer");
+      }
+
+      // Create MaskedLoadOp with alignment as attribute
+      rewriter.replaceOpWithNewOp<LLVM::MaskedLoadOp>(op, types[0], ptr, mask,
+                                                      passthrough, alignAttr,
+                                                      /*nontemporal=*/nullptr);
+      return success();
+    }
+
+    // Special handling for masked.store: convert alignment operand to attribute
+    if (intrinsicName == "llvm.masked.store") {
+      auto operands =
+          expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
+      if (operands.size() != 4) {
+        return op.emitError("llvm.masked.store expects 4 operands "
+                            "(value, ptr, alignment, mask), got ")
+               << operands.size();
+      }
+
+      Value value = operands[0];
+      Value ptr = operands[1];
+      Value alignmentOp = operands[2];
+      Value mask = operands[3];
+
+      // Extract alignment constant from the operand
+      auto alignConstOp = alignmentOp.getDefiningOp<LLVM::ConstantOp>();
+      if (!alignConstOp) {
+        return op.emitError("llvm.masked.store alignment must be a constant, "
+                            "got runtime value");
+      }
+
+      auto alignAttr = dyn_cast<IntegerAttr>(alignConstOp.getValue());
+      if (!alignAttr) {
+        return op.emitError("llvm.masked.store alignment must be an integer");
+      }
+
+      // Create MaskedStoreOp with alignment as attribute
+      rewriter.replaceOpWithNewOp<LLVM::MaskedStoreOp>(op, value, ptr, mask,
+                                                       alignAttr);
+      return success();
+    }
+
+    // Special handling for masked.gather: convert alignment operand to
+    // attribute
+    if (intrinsicName == "llvm.masked.gather") {
+      auto operands =
+          expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
+      if (operands.size() != 4) {
+        return op.emitError("llvm.masked.gather expects 4 operands "
+                            "(ptr_vec, alignment, mask, passthrough), got ")
+               << operands.size();
+      }
+
+      Value ptrs = operands[0];
+      Value alignmentOp = operands[1];
+      Value mask = operands[2];
+      Value passthrough = operands[3];
+
+      // Extract alignment constant from the operand
+      auto alignConstOp = alignmentOp.getDefiningOp<LLVM::ConstantOp>();
+      if (!alignConstOp) {
+        return op.emitError("llvm.masked.gather alignment must be a constant, "
+                            "got runtime value");
+      }
+
+      auto alignAttr = dyn_cast<IntegerAttr>(alignConstOp.getValue());
+      if (!alignAttr) {
+        return op.emitError("llvm.masked.gather alignment must be an integer");
+      }
+
+      // Create arg_attrs with alignment on the first argument (ptrs)
+      auto alignNamedAttr = rewriter.getNamedAttr("align", alignAttr);
+      auto ptrAttrs = rewriter.getDictionaryAttr({alignNamedAttr});
+      auto emptyAttrs = rewriter.getDictionaryAttr({});
+      auto argAttrs = rewriter.getArrayAttr({ptrAttrs, emptyAttrs, emptyAttrs});
+
+      // Create CallIntrinsicOp with alignment as arg attribute on ptrs
+      auto callOp = rewriter.create<LLVM::CallIntrinsicOp>(
+          op.getLoc(), types, cast<StringAttr>(op.getIntrin()),
+          SmallVector<Value>{ptrs, mask, passthrough},
+          convertFastmathFlags(op.getFastmathFlags(), rewriter),
+          /*op_bundle_operands=*/ArrayRef<ValueRange>{},
+          /*op_bundle_tags=*/mlir::ArrayAttr{},
+          /*arg_attrs=*/argAttrs,
+          /*res_attrs=*/mlir::ArrayAttr{});
+      rewriter.replaceOp(op, callOp);
+      return success();
+    }
+
+    // Special handling for masked.scatter: convert alignment operand to
+    // attribute
+    if (intrinsicName == "llvm.masked.scatter") {
+      auto operands =
+          expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
+      if (operands.size() != 4) {
+        return op.emitError("llvm.masked.scatter expects 4 operands "
+                            "(value, ptr_vec, alignment, mask), got ")
+               << operands.size();
+      }
+
+      Value value = operands[0];
+      Value ptrs = operands[1];
+      Value alignmentOp = operands[2];
+      Value mask = operands[3];
+
+      // Extract alignment constant from the operand
+      auto alignConstOp = alignmentOp.getDefiningOp<LLVM::ConstantOp>();
+      if (!alignConstOp) {
+        return op.emitError("llvm.masked.scatter alignment must be a constant, "
+                            "got runtime value");
+      }
+
+      auto alignAttr = dyn_cast<IntegerAttr>(alignConstOp.getValue());
+      if (!alignAttr) {
+        return op.emitError("llvm.masked.scatter alignment must be an integer");
+      }
+
+      // Create arg_attrs with alignment on the second argument (ptrs)
+      auto emptyAttrs = rewriter.getDictionaryAttr({});
+      auto alignNamedAttr = rewriter.getNamedAttr("align", alignAttr);
+      auto ptrAttrs = rewriter.getDictionaryAttr({alignNamedAttr});
+      auto argAttrs = rewriter.getArrayAttr({emptyAttrs, ptrAttrs, emptyAttrs});
+
+      // Create CallIntrinsicOp with alignment as arg attribute on ptrs
+      auto callOp = rewriter.create<LLVM::CallIntrinsicOp>(
+          op.getLoc(), types, cast<StringAttr>(op.getIntrin()),
+          SmallVector<Value>{value, ptrs, mask},
+          convertFastmathFlags(op.getFastmathFlags(), rewriter),
+          /*op_bundle_operands=*/ArrayRef<ValueRange>{},
+          /*op_bundle_tags=*/mlir::ArrayAttr{},
+          /*arg_attrs=*/argAttrs,
+          /*res_attrs=*/mlir::ArrayAttr{});
+      rewriter.replaceOp(op, callOp);
+      return success();
+    }
 
     // just emit regular LLVM intrinsic call.
     rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
