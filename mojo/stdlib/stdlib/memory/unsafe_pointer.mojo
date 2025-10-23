@@ -989,7 +989,7 @@ struct UnsafePointer[
         ]()
 
         var base = offset.cast[DType.int]().fma(size_of[dtype](), Int(self))
-        return gather(base, mask, default, alignment)
+        return gather[alignment=alignment](base, mask, default)
 
     @always_inline("nodebug")
     fn scatter[
@@ -1043,7 +1043,7 @@ struct UnsafePointer[
         ]()
 
         var base = offset.cast[DType.int]().fma(size_of[dtype](), Int(self))
-        scatter(val, base, mask, alignment)
+        scatter[alignment=alignment](val, base, mask)
 
     @always_inline
     fn free(self: UnsafePointer[_, address_space = AddressSpace.GENERIC, **_]):
