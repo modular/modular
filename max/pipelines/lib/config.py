@@ -25,7 +25,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, get_type_hints
 
-from max.driver import DeviceSpec, load_devices
+from max.driver import DeviceSpec, accelerator_count, load_devices
 from max.graph.quantization import QuantizationEncoding
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
@@ -750,6 +750,11 @@ class PipelineConfig(MAXConfig):
                     f"LoRA is not currently supported for architecture '{arch.name}'. "
                     f"LoRA support is currently only available for Llama-3.x models (LlamaForCausalLM architecture). "
                     f"Model '{model_config.model_path}' uses the '{arch.name}' architecture."
+                )
+            # Currently, LoRA supported on only 1 device.
+            if accelerator_count() > 1:
+                raise ValueError(
+                    "LoRA is currently not supported with the number of devices > 1."
                 )
 
         # TODO(E2EOPT-28): remove this constraint.
