@@ -440,6 +440,10 @@ ErrorTreeOr<TypedAttr> ParametricIREvaluator::evaluateFunctionWithResultSlot(
   return result.takeValue();
 }
 
+int ParametricIREvaluator::getErrorLimit() {
+  return elaborator->options.elabErrorLimit;
+}
+
 //===----------------------------------------------------------------------===//
 // Expression Evaluation
 //===----------------------------------------------------------------------===//
