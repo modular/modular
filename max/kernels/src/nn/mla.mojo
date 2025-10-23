@@ -94,7 +94,7 @@ from utils.static_tuple import StaticTuple
 
 from .mha_utils import get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
-from .mla_amd import mla_prefill_single_batch_amd, mla_decoding_single_batch_amd
+from .mla_amd import Attention, MLAAttentionConfig
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
@@ -592,26 +592,34 @@ fn mla_decoding[
             num_pipeline_stages=num_pipeline_stages,
             k_group_size=group,
         )
-        mla_decoding_single_batch_amd[
-            depth_v = Int(depth_v),
-            group = Int(group),
-            config=config,
-            sink=False,
+
+        alias attention_config = MLAAttentionConfig[True, config]()
+
+        var attention = Attention[
+            config,
+            Int(group),
+            True,
+            False,
+            q_depth = Int(depth),
+            output_depth = Int(depth_v),
         ](
+            attention_config,
             output_ptr.offset(output_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,
             k,
-            exp_sum_batch_ptr,
-            qk_max_batch_ptr,
-            seq_len,
-            num_keys,
-            num_partitions,
-            scale,
-            Int(batch_idx),
-            Int(0),
             mask,
             None,
+            Int(batch_idx),
+            scale,
+            seq_len,
+            num_keys,
+            0,
+        )
+        attention.decoding(
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
+            num_partitions,
         )
     else:
         return CompilationTarget.unsupported_target_error[
@@ -1854,24 +1862,24 @@ fn mla_prefill[
             Int(batch_idx),
         )
     elif is_amd_gpu():
-        mla_prefill_single_batch_amd[
-            config=config,
-            group=group,
-            q_depth=q_depth,
-            cache_depth=cache_depth,
-        ](
+        alias attention_config = MLAAttentionConfig[False, config]()
+        var attention = Attention[config, 1, False, False, q_depth=q_depth](
+            attention_config,
             output_ptr.offset(o_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,
             v,
-            k_rope,
-            seq_len,
-            max_seq_len,
-            scale,
-            Int(batch_idx),
-            start_pos,
-            cache_start_pos,
             mask,
+            None,
+            Int(batch_idx),
+            scale,
+            seq_len,
+            num_keys,
+            Int(start_pos),
+            Int(cache_start_pos),
+        )
+        attention.mla_prefill(
+            k_rope,
         )
     else:
         return CompilationTarget.unsupported_target_error[

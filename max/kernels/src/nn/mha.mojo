@@ -70,10 +70,7 @@ from linalg.bmm import batched_matmul
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.transpose import transpose
 from memory import stack_allocation
-from nn.mha_gfx942 import (
-    mha_decoding_single_batch_gfx942,
-    mha_single_batch_gfx942,
-)
+from nn.mha_gfx942 import Attention, MHAAttentionConfig
 from nn.mha_gfx950 import mha_single_batch_gfx950
 from nn.mha_mask import MaterializedMask, MHAMask, TileMaskStatus
 from nn.mha_operand import (
@@ -1482,19 +1479,22 @@ fn mha[
                 sink_weights,
             )
         else:
-            mha_single_batch_gfx942[group=group, config=config, sink=sink](
+            alias attention_config = MHAAttentionConfig[False, config, group]()
+            var attention = Attention[config, group, False, sink](
+                attention_config,
                 output_ptr.offset(q_batch_offset),
                 q_ptr.offset(q_batch_offset),
                 k,
                 v,
-                seq_len,
-                num_keys,
-                scale,
-                Int(batch_idx),
-                Int(start_pos),
                 mask,
                 sink_weights,
+                batch_idx,
+                scale,
+                seq_len,
+                num_keys,
+                Int(start_pos),
             )
+            attention.prefill()
     else:
         return CompilationTarget.unsupported_target_error[operation="mha"]()
 
@@ -3131,25 +3131,26 @@ fn mha_decoding[
                     IndexList[1](sink_weights.value().size())
                 ),
             )
-        mha_decoding_single_batch_gfx942[
-            group = Int(group),
-            config=config,
-            sink=sink,
-        ](
+
+        alias attention_config = MHAAttentionConfig[True, config, group]()
+        var attention = Attention[config, Int(group), True, sink](
+            attention_config,
             output_ptr.offset(output_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,
             v,
-            exp_sum_batch_ptr,
-            qk_max_batch_ptr,
-            1,
-            num_keys,
-            num_partitions,
-            scale,
-            Int(batch_idx),
-            Int(0),
             mask,
             sink_weights_lt,
+            batch_idx,
+            scale,
+            1,
+            num_keys,
+            0,
+        )
+        attention.decoding(
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
+            num_partitions,
         )
     else:
         return CompilationTarget.unsupported_target_error[
