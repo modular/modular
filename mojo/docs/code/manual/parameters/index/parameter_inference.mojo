@@ -14,7 +14,7 @@
 from math import sqrt
 
 
-fn rsqrt[dt: DType, width: Int](x: SIMD[dt, width]) -> SIMD[dt, width]:
+fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)
 
 
@@ -58,7 +58,7 @@ def use_two():
 
 
 def main():
-    var v = SIMD[DType.float16, 4](33)
+    var v = Scalar[DType.float16](33)
     print(rsqrt(v))
 
     # second example

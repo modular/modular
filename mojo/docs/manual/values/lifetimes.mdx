@@ -54,11 +54,8 @@ origins.
 
 ## Working with origins
 
-Mojo's origin values are unlike most other values in the language, because
-they're primitive values, not Mojo structs.
-
-Likewise, because these values are mostly created by the
-compiler, you can't just create your own origin value—you usually need to
+Mojo's origin values are mostly created by the
+compiler, so you can't just create your own origin value—you usually need to
 derive an origin from an existing value.
 
 Among other things, Mojo uses origins to extend the lifetimes of referenced
@@ -192,32 +189,14 @@ of two or more origins:
 
 #### Inferred origins
 
-The other common way to access an origin value is to *infer* it from the
-the arguments passed to a function or method. For example, the `Span` type
-has an associated `origin`:
+Since origins are parameters, the compiler can *infer* an origin value from an
+the argument passed to a function or method, as described in
+[Parameter inference](/mojo/manual/parameters/#parameter-inference). This allows
+a function to return a value that has the same origin as the argument passed to
+it.
 
-```mojo
-struct Span[
-    is_mutable: Bool, //,
-    T: Copyable & Movable,
-    origin: Origin[is_mutable],
-](CollectionElementNew):
-    """A non owning view of contiguous data.
-```
-
-One of its constructors creates a `Span` from an existing `List`, and infers
-its `origin` value from the list:
-
-```mojo
-    fn __init__(out self, ref [origin]list: List[T, *_]):
-        """Construct a Span from a List.
-
-        Args:
-            list: The list to which the span refers.
-        """
-        self._data = list.data
-        self._len = len(list)
-```
+See the section on [`ref` arguments](#ref-arguments) for an example using an
+inferred origin.
 
 #### Origin unions
 
@@ -292,32 +271,40 @@ specifier can be either:
     return a+b
   ```
 
-You can also name the origin explicitly. This is useful if you want to specify
-an `ImmutableOrigin` or `MutableOrigin`, or if you want to bind to
-the `is_mutable` parameter.
+You can also name the origin explicitly. This is useful if you want to
+restrict the argument to either a `ImmutableOrigin` or `MutableOrigin`, or if
+you want to bind a function's return value to the origin of an argument.
+
+For example, the `Span` type is a non-owning view of contiguous data (like a
+substring of a string, or a subset of a list). Because it points to data that it
+doesn't own, it is parameterized on an origin value that represents the lifetime
+and ownership of the data it points to.
+
+In the following example, the `to_byte_span()` function takes a `List[Byte]` and
+returns a `Span[Byte]` with the same origin as the list:
 
 ```mojo
-def take_str_ref[
-      is_mutable: Bool, //,
-      origin: Origin[is_mutable]
-    ](ref [origin] s: String):
-    @parameter
-    if is_mutable:
-        print("Mutable: " + s)
-    else:
-        print("Immutable: " + s)
+from collections import List
+from memory import Span
 
-def pass_refs(s1: String, var s2: String):
-    take_str_ref(s1)
-    take_str_ref(s2)
+def to_byte_span[
+    is_mutable: Bool,
+    //,
+    origin: Origin[is_mutable],
+](ref [origin]list: List[Byte]) -> Span[Byte, origin]:
+    return Span(list)
 
-pass_refs("Hello", "Goodbye")
+def main():
+    list = List[Byte](77, 111, 106, 111)
+    span = to_byte_span(list)
 ```
 
-```output
-Immutable: Hello
-Mutable: Goodbye
-```
+In this example, the `origin` parameter is inferred from the `list` argument,
+and then used as the origin for the returned `Span`.
+
+Since the `Span` takes on the origin of the `list` argument, the Mojo compiler
+can identify the span's data as owned by the list. The span will have the same
+lifetime as the list, and the span will be mutable if the list is mutable.
 
 ### `ref` return values
 
