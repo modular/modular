@@ -256,8 +256,10 @@ struct Vendor(Identifiable, Writable):
             return
         if self is Vendor.APPLE_GPU:
             writer.write("apple_gpu")
+            return
         if self is Vendor.NVIDIA_GPU:
             writer.write("nvidia_gpu")
+            return
 
         abort("unable to format unrecognized `Vendor` value")
 
