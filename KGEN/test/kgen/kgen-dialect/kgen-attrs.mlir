@@ -208,14 +208,16 @@ kgen.generator @closureSymbol(){
   constraint3 = #kgen.constraint<conforms_to(:type array<1, i1>, ["trait_1", "trait_2"]), loc("test.mojo":20:15)>
 } : () -> ()
 
-// CHECK: llvm_bitcode_lib_packaged = #kgen.llvm.bitcode.packaged<"mypackage", dense_resource<bitcode_1> : tensor<100xui8>>
-// CHECK-SAME: llvm_bitcode_libs = #kgen<llvm.bitcode.libs["/path/to/lib1.bc", #kgen.llvm.bitcode.packaged<"pkg", dense_resource<bitcode_1> : tensor<200xui8>>]>
+// CHECK: llvm_bitcode_lib_unused = #kgen.llvm.bitcode.lib<used = false, library = "/path/to/lib.bc">
+// CHECK-SAME: llvm_bitcode_lib_used = #kgen.llvm.bitcode.lib<used = true, library = "/opt/libs/math.bc">
+// CHECK-SAME: llvm_bitcode_libs = #kgen<llvm.bitcode.libs[<used = false, library = "/path/to/lib1.bc">, <used = true, library = "/path/to/lib2.bc">]>
 // CHECK-SAME: llvm_bitcode_libs_empty = #kgen<llvm.bitcode.libs[]>
 "some.op"() {
-  llvm_bitcode_lib_packaged = #kgen.llvm.bitcode.packaged<"mypackage", dense_resource<bitcode_1> : tensor<100xui8>>,
+  llvm_bitcode_lib_unused = #kgen<llvm.bitcode.lib<used = false, library = "/path/to/lib.bc">>,
+  llvm_bitcode_lib_used = #kgen<llvm.bitcode.lib<used = true, library = "/opt/libs/math.bc">>,
   llvm_bitcode_libs = #kgen<llvm.bitcode.libs[
-    "/path/to/lib1.bc",
-    #kgen.llvm.bitcode.packaged<"pkg", dense_resource<bitcode_1> : tensor<200xui8>>
+    #kgen<llvm.bitcode.lib<used = false, library = "/path/to/lib1.bc">>,
+    #kgen<llvm.bitcode.lib<used = true, library = "/path/to/lib2.bc">>
   ]>,
   llvm_bitcode_libs_empty = #kgen<llvm.bitcode.libs[]>
 } : () -> ()
@@ -247,11 +249,3 @@ kgen.generator @closureSymbol(){
   // CHECK: i = #pop<simd 18446744073709551615> : !pop.scalar<ui64>
   i = #pop.cast_from_builtin< 0xffffffffffffffff : ui64> : !pop.scalar<ui64>
 } : () -> ()
-
-{-#
-  dialect_resources: {
-    builtin: {
-      bitcode_1: "0x0100000000000000"
-    }
-  }
-#-}

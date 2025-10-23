@@ -285,6 +285,12 @@ static int executeModule(const State &state, AsyncRT::Runtime &runtime,
     return state.reportError(objCompilerOr.getError());
   ObjectCompiler &objCompiler = **objCompilerOr;
 
+  // Extract and set bitcode libraries from the module before compilation.
+  if (auto arrayAttr =
+          module->getOperation()->getAttrOfType<LLVMBitcodeLibArrayAttr>(
+              LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName()))
+    arrayAttr.externalize(objCompiler.getBitcodeLibs());
+
   ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(std::move(module));
   if (failed(archiveOr))
     return state.reportError(archiveOr.getError());

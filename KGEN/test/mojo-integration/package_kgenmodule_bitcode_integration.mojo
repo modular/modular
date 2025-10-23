@@ -21,6 +21,6 @@
 # Step 3: Verify the package was created and contains bitcode modules
 # RUN: kgen-opt %S/bitcode_package.mlirbc | FileCheck %s --check-prefix=CHECK-MODULE
 # CHECK-MODULE: module attributes
-# CHECK-MODULE-SAME: kgen.llvm.bitcode.libs = #kgen<llvm.bitcode.libs[#kgen.llvm.bitcode.packaged<"bitcode_package", dense_resource<[[LLVM_BITCODE_NAME:llvm_bitcode_[[:alnum:]]+]]>
+# CHECK-MODULE-SAME: kgen.llvm.bitcode.libs = #kgen<llvm.bitcode.libs[<used = true, library = dense_resource<[[LLVM_BITCODE_NAME:llvm_bitcode_[[:alnum:]]+]]>
 # CHECK-MODULE: dialect_resources:
 # CHECK-MODULE: [[LLVM_BITCODE_NAME]]
