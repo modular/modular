@@ -1405,7 +1405,7 @@ def test_uninit_ctor():
     var hello_len = len("hello")
     var s = String(unsafe_uninit_length=UInt(hello_len))
     memcpy(
-        dest=s.unsafe_ptr(),
+        dest=s.unsafe_ptr_mut(),
         src=StaticString("hello").unsafe_ptr(),
         count=hello_len,
     )

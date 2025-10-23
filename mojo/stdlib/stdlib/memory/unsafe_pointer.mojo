@@ -1046,7 +1046,11 @@ struct UnsafePointer[
         scatter[alignment=alignment](val, base, mask)
 
     @always_inline
-    fn free(self: UnsafePointer[_, address_space = AddressSpace.GENERIC, **_]):
+    fn free(
+        self: UnsafePointer[
+            _, mut=True, address_space = AddressSpace.GENERIC, **_
+        ]
+    ):
         """Free the memory referenced by the pointer."""
         _free(self)
 

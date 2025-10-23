@@ -146,14 +146,14 @@ def test_eq():
     # FIXME(#5133): should just be UnsafePointer[mut=False](to=local)
     var p1 = UnsafePointer(to=local).as_immutable()
     var p2 = p1
-    assert_equal(p1, p2)
+    assert_equal(Int(p1), Int(p2))
 
     var other_local = 2
     var p3 = UnsafePointer(to=other_local).as_immutable()
-    assert_not_equal(p1, p3)
+    assert_not_equal(Int(p1), Int(p3))
 
     var p4 = UnsafePointer(to=local).as_immutable()
-    assert_equal(p1, p4)
+    assert_equal(Int(p1), Int(p4))
     _ = local
     _ = other_local
 

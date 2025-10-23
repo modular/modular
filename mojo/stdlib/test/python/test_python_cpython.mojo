@@ -291,7 +291,7 @@ def test_capsule_api(cpy: CPython):
         capsule_impl.bitcast[NoneType](), "some_name", empty_dtor
     )
     var capsule_pointer = cpy.PyCapsule_GetPointer(capsule, "some_name")
-    assert_equal(capsule_impl.bitcast[NoneType](), capsule_pointer)
+    assert_equal(Int(capsule_impl.bitcast[NoneType]()), Int(capsule_pointer))
 
     with assert_raises(contains="called with incorrect name"):
         _ = cpy.PyCapsule_GetPointer(capsule, "some_other_name")

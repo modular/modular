@@ -504,7 +504,7 @@ fn _malloc[
 
 
 @always_inline
-fn _free(ptr: UnsafePointer[_, mut=True, **_]):
+fn _free(ptr: UnsafePointer[mut=True, **_]):
     @parameter
     if is_gpu():
         libc.free(ptr.bitcast[NoneType]())

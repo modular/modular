@@ -605,7 +605,7 @@ def test_dtypepointer_string():
 def test_pointer_explicit_copy():
     var ptr = UnsafePointer[Int].alloc(1)
     ptr[] = 42
-    var copy = UnsafePointer(other=ptr)
+    var copy = ptr.copy()
     assert_equal(copy[], 42)
     ptr.free()
 
