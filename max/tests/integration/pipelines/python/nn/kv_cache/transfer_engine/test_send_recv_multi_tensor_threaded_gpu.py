@@ -24,6 +24,8 @@ def transfer_routine_sender(
     receiver_md_queue: Queue[KVTransferEngineMetadata],
     transfer_queue_0: Queue[TransferReqData],
     transfer_queue_1: Queue[TransferReqData],
+    sender_done_queue: Queue[None],
+    receiver_done_queue: Queue[None],
 ) -> None:
     device_0 = Accelerator(0)
     device_1 = Accelerator(1)
@@ -69,6 +71,9 @@ def transfer_routine_sender(
         tensors_1[1].to_numpy(), np.arange(100, dtype=np.float32) + 1000
     )
 
+    sender_done_queue.put(None)
+    receiver_done_queue.get()
+
     engine_1.cleanup()
 
 
@@ -77,6 +82,8 @@ def transfer_routine_receiver(
     receiver_md_queue: Queue[KVTransferEngineMetadata],
     transfer_queue_0: Queue[TransferReqData],
     transfer_queue_1: Queue[TransferReqData],
+    sender_done_queue: Queue[None],
+    receiver_done_queue: Queue[None],
 ) -> None:
     device_2 = Accelerator(2)
     device_3 = Accelerator(3)
@@ -131,6 +138,9 @@ def transfer_routine_receiver(
         f"Expected {expected_1} for tensor 1 pages 3-4, got {result_1}"
     )
 
+    receiver_done_queue.put(None)
+    sender_done_queue.get()
+
     engine_2.cleanup()
 
 
@@ -140,6 +150,8 @@ def test_multi_tensor_transfer_threaded() -> None:
     receiver_md_queue: Queue[KVTransferEngineMetadata] = Queue()
     transfer_queue_0: Queue[TransferReqData] = Queue()
     transfer_queue_1: Queue[TransferReqData] = Queue()
+    sender_done_queue: Queue[None] = Queue()
+    receiver_done_queue: Queue[None] = Queue()
 
     sender_thread = Thread(
         target=transfer_routine_sender,
@@ -148,6 +160,8 @@ def test_multi_tensor_transfer_threaded() -> None:
             receiver_md_queue,
             transfer_queue_0,
             transfer_queue_1,
+            sender_done_queue,
+            receiver_done_queue,
         ),
     )
     receiver_thread = Thread(
@@ -157,6 +171,8 @@ def test_multi_tensor_transfer_threaded() -> None:
             receiver_md_queue,
             transfer_queue_0,
             transfer_queue_1,
+            sender_done_queue,
+            receiver_done_queue,
         ),
     )
 

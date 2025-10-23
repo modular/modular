@@ -21,6 +21,8 @@ def transfer_routine_sender(
     sender_md_queue: mp.Queue,
     receiver_md_queue: mp.Queue,
     transfer_queue: mp.Queue,
+    sender_done_queue: mp.Queue,
+    receiver_done_queue: mp.Queue,
     total_num_pages: int,
     src_idxs: list[int],
     dst_idxs: list[int],
@@ -71,8 +73,8 @@ def transfer_routine_sender(
     # Verify results
     assert (blocks.to_numpy() == 42).all()
 
-    # Release resources is skipped since it causes `get_transfer_status` to raise NIXL_ERR_BACKEND :(
-    # TODO(E2EOPT-299) Reenable cleanup
+    sender_done_queue.put(None)
+    receiver_done_queue.get()
     engine.cleanup()
 
 
@@ -80,6 +82,8 @@ def transfer_routine_receiver(
     sender_md_queue: mp.Queue,
     receiver_md_queue: mp.Queue,
     transfer_queue: mp.Queue,
+    sender_done_queue: mp.Queue,
+    receiver_done_queue: mp.Queue,
     total_num_pages: int,
     total_bytes: int,
 ) -> None:
@@ -107,8 +111,8 @@ def transfer_routine_receiver(
     # Verify results
     assert (blocks.to_numpy() == 42).all()
 
-    # Release resources is skipped since it causes `get_transfer_status` to raise NIXL_ERR_BACKEND
-    # TODO(E2EOPT-299) Reenable cleanup
+    receiver_done_queue.put(None)
+    sender_done_queue.get()
     engine.cleanup()
 
 
@@ -118,6 +122,8 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
     sender_md_queue: mp.Queue = ctx.Queue()
     receiver_md_queue: mp.Queue = ctx.Queue()
     transfer_queue: mp.Queue = ctx.Queue()
+    sender_done_queue: mp.Queue = ctx.Queue()
+    receiver_done_queue: mp.Queue = ctx.Queue()
 
     # Transfer parameters
     GB = 1024 * 1024 * 1024
@@ -132,6 +138,8 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
             sender_md_queue,
             receiver_md_queue,
             transfer_queue,
+            sender_done_queue,
+            receiver_done_queue,
             total_num_pages,
             src_idxs,
             dst_idxs,
@@ -145,6 +153,8 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
             sender_md_queue,
             receiver_md_queue,
             transfer_queue,
+            sender_done_queue,
+            receiver_done_queue,
             total_num_pages,
             total_bytes,
         ),

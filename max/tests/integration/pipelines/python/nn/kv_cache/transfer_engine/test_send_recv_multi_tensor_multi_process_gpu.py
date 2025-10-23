@@ -11,15 +11,15 @@ import numpy as np
 import pytest
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
-from max.nn.kv_cache import (
-    KVTransferEngine,
-)
+from max.nn.kv_cache import KVTransferEngine
 
 
 def transfer_routine_sender(
     sender_md_queue: mp.Queue,
     receiver_md_queue: mp.Queue,
     transfer_queue: mp.Queue,
+    sender_done_queue: mp.Queue,
+    receiver_done_queue: mp.Queue,
     total_num_pages: int,
     total_bytes: int,
     src_idxs: list[int],
@@ -74,6 +74,8 @@ def transfer_routine_sender(
     assert np.array_equal(tensors_1[0].to_numpy(), tensor_0_data)
     assert np.array_equal(tensors_1[1].to_numpy(), tensor_1_data)
 
+    sender_done_queue.put(None)
+    receiver_done_queue.get()
     engine_1.cleanup()
 
 
@@ -81,6 +83,8 @@ def transfer_routine_receiver(
     sender_md_queue: mp.Queue,
     receiver_md_queue: mp.Queue,
     transfer_queue: mp.Queue,
+    sender_done_queue: mp.Queue,
+    receiver_done_queue: mp.Queue,
     total_num_pages: int,
     total_bytes: int,
 ) -> None:
@@ -118,6 +122,8 @@ def transfer_routine_receiver(
         f"Expected tensor 1 to have value 84, got {tensors_2[1].to_numpy()[:10]}"
     )
 
+    receiver_done_queue.put(None)
+    sender_done_queue.get()
     engine_2.cleanup()
 
 
@@ -130,6 +136,8 @@ def test_multi_tensor_transfer_multiprocessing(
     sender_md_queue: mp.Queue = ctx.Queue()
     receiver_md_queue: mp.Queue = ctx.Queue()
     transfer_queue: mp.Queue = ctx.Queue()
+    sender_done_queue: mp.Queue = ctx.Queue()
+    receiver_done_queue: mp.Queue = ctx.Queue()
 
     GB = 1024 * 1024 * 1024
     total_bytes = int(12 * GB)
@@ -143,6 +151,8 @@ def test_multi_tensor_transfer_multiprocessing(
             sender_md_queue,
             receiver_md_queue,
             transfer_queue,
+            sender_done_queue,
+            receiver_done_queue,
             total_num_pages,
             total_bytes,
             src_idxs,
@@ -156,6 +166,8 @@ def test_multi_tensor_transfer_multiprocessing(
             sender_md_queue,
             receiver_md_queue,
             transfer_queue,
+            sender_done_queue,
+            receiver_done_queue,
             total_num_pages,
             total_bytes,
         ),

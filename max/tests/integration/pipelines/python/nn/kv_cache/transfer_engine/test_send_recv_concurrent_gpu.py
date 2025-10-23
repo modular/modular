@@ -22,6 +22,8 @@ def transfer_routine_sender(
     sender_md_queue: mp.Queue,
     receiver_md_queue: mp.Queue,
     transfer_queue: mp.Queue,
+    sender_done_queue: mp.Queue,
+    receiver_done_queue: mp.Queue,
     total_num_pages: int,
     total_bytes: int,
     GB: float,
@@ -64,6 +66,8 @@ def transfer_routine_sender(
     # Verify results
     assert (blocks.to_numpy() == 42).all()
 
+    sender_done_queue.put(None)
+    receiver_done_queue.get()
     engine.cleanup()
 
 
@@ -71,6 +75,8 @@ def transfer_routine_receiver(
     sender_md_queue: mp.Queue,
     receiver_md_queue: mp.Queue,
     transfer_queue: mp.Queue,
+    sender_done_queue: mp.Queue,
+    receiver_done_queue: mp.Queue,
     total_num_pages: int,
     total_bytes: int,
 ) -> None:
@@ -97,6 +103,8 @@ def transfer_routine_receiver(
     # TODO: Verify results
     # assert (blocks.to_numpy() == 42).all()
 
+    receiver_done_queue.put(None)
+    sender_done_queue.get()
     engine.cleanup()
 
 
@@ -106,6 +114,8 @@ def test_send_recv_basic() -> None:
     sender_md_queue: mp.Queue = ctx.Queue()
     receiver_md_queue: mp.Queue = ctx.Queue()
     transfer_queue: mp.Queue = ctx.Queue()
+    sender_done_queue: mp.Queue = ctx.Queue()
+    receiver_done_queue: mp.Queue = ctx.Queue()
 
     # Transfer parameters
     GB = 1024 * 1024 * 1024
@@ -118,6 +128,8 @@ def test_send_recv_basic() -> None:
             sender_md_queue,
             receiver_md_queue,
             transfer_queue,
+            sender_done_queue,
+            receiver_done_queue,
             total_num_pages,
             total_bytes,
             GB,
@@ -129,6 +141,8 @@ def test_send_recv_basic() -> None:
             sender_md_queue,
             receiver_md_queue,
             transfer_queue,
+            sender_done_queue,
+            receiver_done_queue,
             total_num_pages,
             total_bytes,
         ),
