@@ -2030,7 +2030,8 @@ ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
                                               InlineLevel inlineLevel) {
   auto ptr = impl->closureTraits.find(sig);
   if (ptr == impl->closureTraits.end()) {
-    std::string name = ASTType(sig).getAsString(/*diags=*/this);
+    std::string name = ASTType(sig).getAsString(/*diags=*/this) +
+                       (sig.isRegisterPassable() ? " register_passable" : "");
     auto result = closureEmitter->createClosureTrait(
         moduleDecl, StringAttr::get(getContext(), name), sig, loc, inlineLevel);
     impl->closureTraits.insert({sig, result});

@@ -639,8 +639,12 @@ ASTDecl *ClosureEmitter::createStructWrapper(
   // Create a struct with a single field of type "impl".
   std::pair<ASTDecl &, StructDeclOp> pair = createStruct(
       shared, moduleDecl,
-      StringAttr::get(b.getContext(),
-                      baseName + "_wrapper" + (isCopyable ? "_copyable" : "")),
+      StringAttr::get(
+          b.getContext(),
+          baseName + "_wrapper" + (isCopyable ? "_copyable" : "") +
+              (typeConvention == TypeConvention::RegisterPassableTrivial
+                   ? "_devicePassable"
+                   : "")),
       implParameters, smLocation);
   ASTDecl &structDecl = pair.first;
   StructDeclOp declOp = pair.second;
