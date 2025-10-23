@@ -35,10 +35,35 @@ logger = logging.getLogger("max.pipelines")
 
 
 class PagedKVCacheManager:
-    """Enhanced PagedKVCacheManager with support for data parallelism.
+    """Paged KVCache manager with data and tensor parallelism support. This is
+    essentially N _TPPagedKVCacheManagers in a trench coat.
 
-    This class extends the existing PagedKVCacheManager to use MultiBlockManager,
-    enabling efficient data parallelism across multiple kv cache replicas.
+    Basic usage:
+
+    ```python
+    # Allocate metadata for requests in batch
+    kv_manager.external_claim(ctx1.request_id, replica_idx=0)
+    kv_manager.external_claim(ctx2.request_id, replica_idx=1)
+
+    # Allocate blocks for these requests
+    kv_manager.prefetch(ctx1, num_steps=10)
+    kv_manager.prefetch(ctx2, num_steps=10)
+
+    # Get KVCache inputs to feed to graph
+    kv_cache_inputs = kv_manager.fetch([ctx1, ctx2], num_steps=10)
+
+    # Run model...
+    # Update requests with newly generated tokens
+    ctx1.update(42)
+    ctx2.update(42)
+
+    # Commit newly written blocks to prefix cache
+    kv_manager.step([ctx1, ctx2])
+
+    # Release metadata and KV blocks for these requests
+    kv_manager.release(ctx1.request_id)
+    kv_manager.release(ctx2.request_id)
+    ```
     """
 
     def __init__(

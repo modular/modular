@@ -73,6 +73,14 @@ class PagedCacheValues(NestedIterableDataclass):
 
 
 class _TPPagedKVCacheManager:
+    """Internal class used for managing KVCache blocks that supports tensor parallelism.
+
+    This class should not be used directly by scheduler/pipelines. Instead, we
+    should use the PagedKVCacheManager class instead.
+
+    This class does NOT support data parallelism.
+    """
+
     page_size: int
     """Number of tokens stored per block."""
 
