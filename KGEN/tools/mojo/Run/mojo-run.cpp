@@ -192,6 +192,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
           options::OPT_sanitize, options::OPT_shared_libasan,
           options::OPT_external_libasan, options::OPT_bitcode_libs,
           options::OPT_debug_info_language, options::OPT_num_threads,
+          options::OPT_mojo_search_paths,
           options::OPT_loop_unrolling_warn_threshold,
           options::OPT_elaboration_error_limit))
     return state.reportError(err.getError());
