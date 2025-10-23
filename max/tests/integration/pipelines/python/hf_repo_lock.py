@@ -60,6 +60,15 @@ def revision_for_hf_repo(hf_repo_id: str) -> str | None:
         The locked revision hash if found in hf-repo-lock.tsv, or None if not found.
         If None is returned, a warning will be logged with a suggested revision if available.
     """
+    if hf_repo_id.startswith("/"):
+        # This is a local path; there won't be a revision.
+        return None
+    if hf_repo_id.count("/") != 1:
+        raise ValueError(
+            f"Invalid Hugging Face repository ID: {hf_repo_id!r}.  "
+            "It must be in the format 'org/model'."
+        )
+
     db = load_db()
     if hf_repo_id in db:
         return db[hf_repo_id]

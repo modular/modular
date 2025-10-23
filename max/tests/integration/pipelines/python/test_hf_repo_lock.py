@@ -5,17 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 
 import logging
+import re
 
 import hf_repo_lock
 import pytest
+from pytest_mock import MockerFixture
 from test_common.mocks import DummyPipelineConfig
 from test_common.pipeline_model_dummy import DUMMY_LLAMA_ARCH
 
 logger = logging.getLogger("max.pipelines")
 
-EXAMPLE_KEY = "000EXAMPLE-for-unit-test"
+EXAMPLE_KEY = "000EXAMPLE-for-unit-test/repo"
 EXAMPLE_VALUE = "0123456789abcdef0123456789abcdef01234567"
-EXAMPLE_NONEXISTENT_KEY = "000EXAMPLE-for-unit-test-nonexistent"
+EXAMPLE_NONEXISTENT_KEY = "000EXAMPLE-for-unit-test/nonexistent"
 
 
 def test_load_db() -> None:
@@ -43,6 +45,42 @@ def test_revision_for_hf_repo(caplog: pytest.LogCaptureFixture) -> None:
         "Add a row to hf-repo-lock.tsv to resolve this error"
         in warning_record.message
     )
+
+
+def test_revision_for_hf_repo_local_path() -> None:
+    assert hf_repo_lock.revision_for_hf_repo("/path/to/model") is None
+
+
+def test_revision_for_hf_repo_invalid_format() -> None:
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "Invalid Hugging Face repository ID: '000EXAMPLE-for-unit-test/repo/subrepo'.  "
+            "It must be in the format 'org/model'."
+        ),
+    ):
+        hf_repo_lock.revision_for_hf_repo(
+            "000EXAMPLE-for-unit-test/repo/subrepo"
+        )
+
+
+def test_revision_for_hf_repo_no_local_leakage(mocker: MockerFixture) -> None:
+    list_mock = mocker.patch("huggingface_hub.list_repo_refs")
+    # A variety of paths that "could" be local (and there's no way they're
+    # Hugging Face repos).
+    for local_path in [
+        "pathtomodel",
+        "/pathtomodel",
+        "/path/to/model",
+        "path/to/model",
+    ]:
+        # Don't care what this raises or returns, we just want to make sure it doesn't
+        # call list_repo_refs.
+        try:
+            _ = hf_repo_lock.revision_for_hf_repo(local_path)
+        except ValueError:
+            pass
+    list_mock.assert_not_called()
 
 
 def test_apply_to_config() -> None:

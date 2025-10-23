@@ -15,13 +15,10 @@ modular_py_test(
     name = "test_hf_repo_lock",
     size = "small",
     srcs = ["test_hf_repo_lock.py"],
-    target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2411
     deps = [
         ":hf_repo_lock",
         "//SDK/integration-test/pipelines/python/test_common",
+        requirement("pytest-mock"),
     ],
 )
 
