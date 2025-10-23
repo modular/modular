@@ -1780,22 +1780,6 @@ static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
                                             llvm::Module &inputModule,
                                             StringRef ptx,
                                             CompilationOptions options) {
-  // If the environment variable MODULAR_USE_DRIVER_CUBIN_COMPILER is set, we
-  // use the driver cubin compiler. This allows for temporary experimentation.
-  // If this pathway is always beneficial, then we will stop checking the env
-  // var.
-  if (llvm::sys::Process::GetEnv("MODULAR_USE_DRIVER_CUBIN_COMPILER")) {
-    LLVM_DEBUG(
-        llvm::dbgs()
-        << "Falling back to using the driver to compile PTX to CUBIN.\n");
-    KGEN_DEBUG(0, {
-      llvm::dbgs()
-          << "Falling back to using the driver to compile PTX to CUBIN.\n";
-    });
-    return ctx->compileFunction_v2(ptx, options.getDebugLevelString(),
-                                   options.optimizationLevel);
-  }
-
   LLVM_DEBUG(
       llvm::dbgs() << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n");
   KGEN_DEBUG(0, {
