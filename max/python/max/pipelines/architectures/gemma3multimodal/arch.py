@@ -50,7 +50,7 @@ gemma3_multimodal_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     rope_type=RopeType.normal,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-    },
+    # weight_adapters={
+    #     WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+    # },
 )
