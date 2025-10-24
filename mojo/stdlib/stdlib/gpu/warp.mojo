@@ -920,17 +920,19 @@ fn prefix_sum[
     """
     var res = x.cast[intermediate_type]().reduce_add()
 
+    var lane = lane_id()
+
     @parameter
     for i in range(log2_floor(WARP_SIZE)):
         alias offset = 1 << i
         var n = shuffle_up(res, offset)
-        if lane_id() >= UInt(offset):
+        if lane >= UInt(offset):
             res += n
 
     @parameter
     if exclusive:
         res = shuffle_up(res, 1)
-        if lane_id() == 0:
+        if lane == 0:
             res = 0
 
     return res.cast[output_type]()
