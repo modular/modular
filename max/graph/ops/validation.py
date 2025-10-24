@@ -42,3 +42,26 @@ def assert_same_device(
                 )
             )
         )
+
+
+def assert_on_host(
+    *values: TensorValue | BufferValue,
+    **named_values: TensorValue | BufferValue,
+) -> None:
+    named_values = {
+        **{str(i): value for i, value in enumerate(values)},
+        **named_values,
+    }
+    not_on_host = {
+        k: v for k, v in named_values.items() if not v.device.is_cpu()
+    }
+    if not_on_host:
+        raise ValueError(
+            "Input value must be on the host device\n"
+            + "\n".join(
+                indent(
+                    f"{name}: {value.type}"
+                    for name, value in not_on_host.items()
+                )
+            )
+        )

@@ -19,7 +19,6 @@ from collections.abc import Iterable, Sequence
 from typing import TypeGuard, Union
 
 import numpy as np
-from max import mlir
 from max.dtype import DType
 from max.mlir.dialects import rmo
 
@@ -28,7 +27,9 @@ from ..graph import Graph
 from ..shape import Shape
 from ..type import DeviceRef, TensorType
 from ..value import BufferValue, HasTensorValue, TensorValue
+from .concat import concat
 from .constant import constant
+from .validation import assert_on_host
 from .where import where
 
 # Currently slicing does not have any shape inference in RMO. Instead, it is
@@ -179,10 +180,7 @@ def _has_no_ellipsis(indices: SliceIndices) -> TypeGuard[list[SliceIndex]]:
 
 
 def _stack_scalars(vals: Iterable[TensorValue]) -> TensorValue:
-    axis = mlir.IntegerAttr.get(mlir.IndexType.get(), 0)
-
-    vals = [v.reshape([1]) if v.shape != [1] else v for v in vals]
-    return Graph.current._add_op(rmo.concat, vals, axis=axis)[0].tensor
+    return concat([v.reshape([1]) if v.shape != [1] else v for v in vals])
 
 
 def _slice_and_output_tensors(  # noqa: ANN202
@@ -428,6 +426,7 @@ def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
     starts, stops, steps, unsqueezed_shape, squeezed_shape = (
         _slice_and_output_tensors(x, indices)
     )
+    assert_on_host(starts=starts, stops=stops, steps=steps)
 
     unsqueezed_type = TensorType(x.dtype, unsqueezed_shape, x.device)
     return Graph.current._add_op(
