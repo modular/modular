@@ -51,7 +51,6 @@ from gpu.intrinsics import permlane_shuffle
 from gpu.globals import WARP_SIZE
 from memory import bitcast
 
-from .tensor_ops import tc_reduce
 
 # TODO (#24457): support shuffles with width != 32
 alias _WIDTH_MASK = WARP_SIZE - 1
@@ -827,7 +826,6 @@ struct ReductionMethod(EqualityComparable, Identifiable):
 fn sum[
     intermediate_type: DType,
     *,
-    reduction_method: warp.ReductionMethod,
     output_type: DType,
 ](x: SIMD) -> Scalar[output_type]:
     """Performs a warp-level reduction to compute the sum of values across threads.
@@ -842,7 +840,6 @@ fn sum[
 
     Parameters:
         intermediate_type: The data type to cast to when using tensor core reduction.
-        reduction_method: `WARP` for warp shuffle or `TENSOR_CORE` for tensor core reduction.
         output_type: The desired output data type for the reduced value.
 
     Args:
@@ -857,19 +854,7 @@ fn sum[
         - For tensor core reduction, input will be cast to intermediate_type.
     """
 
-    @parameter
-    if reduction_method is ReductionMethod.WARP:
-        constrained[
-            output_type == x.dtype,
-            (
-                "the output dtype must match the input value for warp-level"
-                " reduction"
-            ),
-        ]()
-
-        return sum(x.reduce_add())._refine[output_type]()
-    else:
-        return tc_reduce[output_type](x.cast[intermediate_type]())
+    return sum(x.reduce_add())._refine[output_type]()
 
 
 # ===-----------------------------------------------------------------------===#
