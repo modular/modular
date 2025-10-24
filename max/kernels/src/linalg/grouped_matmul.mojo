@@ -466,7 +466,7 @@ fn grouped_matmul_kernel_sm100[
     )
 
     ctile, ctile_coords, _ = c_by_expert.tile_with_offset[BM, BN](
-        block_idx.y, block_idx.x
+        Int(block_idx.y), Int(block_idx.x)
     )
     alias c_coord_type = type_of(ctile_coords)
 
@@ -479,7 +479,7 @@ fn grouped_matmul_kernel_sm100[
 
             c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
                 ctile.tile_with_offset[MMA_M // num_warps, MMA_N](
-                    4 * m_mma + warp_id, n_mma
+                    4 * m_mma + Int(warp_id), n_mma
                 )
             )
             c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](

@@ -225,10 +225,10 @@ struct KVBufferImpl[
     alias thread_layout = Layout.row_major(
         min(
             num_threads,
-            (config.btile_dim0 * config.btile_dim1) // UInt(Self.simd_width),
+            (config.btile_dim0 * config.btile_dim1) // Self.simd_width,
         )
-        * UInt(Self.simd_width)
-        // UInt(Self.smem_layout.stride[0].value()),
+        * Self.simd_width
+        // Self.smem_layout.stride[0].value(),
         Self.smem_layout.stride[0].value() // Self.simd_width,
     ) if token_gen else Layout.row_major(num_threads // 4, 4)
 
@@ -636,11 +636,11 @@ struct VBufferTransposeLoads[
             for i in range(Self.loads_per_thread_per_depth_tile):
                 var warp_tile = (
                     global_tile.tile[16, depth](
-                        warp_id // 2,
+                        Int(warp_id) // 2,
                         0,
                     )
                     .tile[8, depth](i, 0)
-                    .tile[4, Self.depth_tile_size](warp_id % 2, depth_idx)
+                    .tile[4, Self.depth_tile_size](Int(warp_id) % 2, depth_idx)
                 )
                 copy_dram_to_local[
                     src_thread_layout = Layout.row_major(4, 16),
@@ -676,7 +676,7 @@ struct VBufferTransposeLoads[
         # and each warp writes to a different tile in smem
 
         var warp_id = get_warp_id()
-        var lane_coords = idx2crd[Layout.col_major(16, 4)](lane_id())
+        var lane_coords = idx2crd[Layout.col_major(16, 4)](Int(lane_id()))
         var lane_row = lane_coords[0]
         var lane_col = lane_coords[1]
 
@@ -688,7 +688,7 @@ struct VBufferTransposeLoads[
             var smem_warp_tile = smem_iter_tensor.tile[
                 Self.pad[depth](),
                 Self.simd_width,
-            ](0, warp_id).tile[
+            ](0, Int(warp_id)).tile[
                 Self.pad[Self.depth_tile_size](),
                 Self.simd_width,
             ](
@@ -728,15 +728,15 @@ struct VBufferTransposeLoads[
             # TODO: document and parameterize this magic
             var smem_fragment = (
                 smem_iter_tensor.tile[Self.pad[depth](), 8](
-                    0, col_idx + UInt(k_mma * 2)
+                    0, Int(col_idx + UInt(k_mma * 2))
                 )
                 .vectorize[1, Self.simd_width]()
                 .tile[Self.pad[Self.MMA_M](), 1](depth_idx, 0)
                 .tile[Self.pad[Self.simd_width](), 1](
-                    lane // UInt(Self.simd_width), 0
+                    Int(lane // UInt(Self.simd_width)), 0
                 )
                 .slice[: Self.simd_width, :]()
-                .tile[1, 1](lane % UInt(Self.simd_width), 0)
+                .tile[1, 1](Int(lane % UInt(Self.simd_width)), 0)
             )
             self.mma_tile.vectorize[1, Self.simd_width]().tile[1, 1](
                 depth_idx, 0
@@ -1052,7 +1052,7 @@ struct PRegisterBuffer[
         @parameter
         for i in range(Self.WN // Self.BK):
             var p_smem_tile = self.get_shared_memory_tile(
-                i + warp_col * UInt(Self.WN // Self.BK)
+                i + warp_col * (Self.WN // Self.BK)
             )
             var p_smem_warp_tile = p_smem_tile.tile[Self.WM, Self.BK](
                 warp_row, i

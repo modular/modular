@@ -145,7 +145,7 @@ fn _mask_apply[
         and not mask_t.apply_log2e_after_mask else Scalar[accum_type](1)
     )
 
-    var coords = idx2crd[warp_layout](lane)
+    var coords = idx2crd[warp_layout](Int(lane))
     var lane_row = coords[0] * rowwise_stride
     var lane_col = coords[1] * colwise_stride
 
@@ -242,9 +242,9 @@ struct Attention[
     group: Int,
     token_gen: Bool,
     sink: Bool,
-    q_depth: Int = config.depth,
-    cache_depth: Int = config.depth,
-    output_depth: Int = config.depth,
+    q_depth: Int = Int(config.depth),
+    cache_depth: Int = Int(config.depth),
+    output_depth: Int = Int(config.depth),
 ]:
     alias BM = config.block_m()
     alias BN = config.block_n()
@@ -267,7 +267,7 @@ struct Attention[
     alias num_m_mmas = ceildiv(Self.WM, UInt(Self.mma_shape[0]))
     alias num_n_mmas = ceildiv(Self.WN, UInt(Self.mma_shape[1]))
     alias num_n_mmas_output = ceildiv(
-        Self.output_depth // Self.num_warps_n, UInt(Self.mma_shape[1])
+        Self.output_depth // Int(Self.num_warps_n), Self.mma_shape[1]
     )
 
     alias swap_a_b = True
@@ -283,7 +283,7 @@ struct Attention[
 
     alias OutputRegisterBufferType = OutputRegisterBuffer[
         Self.accum_type,
-        Self.num_m_mmas,
+        Int(Self.num_m_mmas),
         Self.num_n_mmas_output,
         Self.output_frag_size,
     ]
@@ -291,13 +291,13 @@ struct Attention[
     alias PRegisterBufferType = PRegisterBuffer[
         Self.accum_type,
         q_type,
-        Self.BM,
-        Self.BN,
-        Self.BK,
-        Self.WM,
-        Self.WN,
-        Self.num_m_mmas,
-        Self.num_n_mmas,
+        Int(Self.BM),
+        Int(Self.BN),
+        Int(Self.BK),
+        Int(Self.WM),
+        Int(Self.WN),
+        Int(Self.num_m_mmas),
+        Int(Self.num_n_mmas),
         Self.output_frag_size,
         Self.token_gen,
         Self.mma_shape,
@@ -305,7 +305,7 @@ struct Attention[
     ]
 
     alias row_layout = Layout.row_major(
-        Self.num_m_mmas, Self.fragment_layout.shape[0].value()
+        Int(Self.num_m_mmas), Self.fragment_layout.shape[0].value()
     )
 
     alias RowMaxTensorType = LocalLayoutTensor[
@@ -330,11 +330,11 @@ struct Attention[
 
     alias SharedMemoryManagerType = SharedMemoryManager[
         q_type,
-        Self.BM,
-        Self.BN,
-        Self.BK,
-        Self.depth,
-        Self.num_warps_n,
+        Int(Self.BM),
+        Int(Self.BN),
+        Int(Self.BK),
+        Int(Self.depth),
+        Int(Self.num_warps_n),
         Self.token_gen,
         Self.output_depth,
     ]
@@ -343,10 +343,10 @@ struct Attention[
         dtype = Self.q_type,
         mma_shape = Self.mma_shape,
         k_group_size = Self.k_group_size,
-        WM = Self.WM,
-        WN = Self.WN,
-        BN = Self.BN,
-        BK = Self.BK,
+        WM = Int(Self.WM),
+        WN = Int(Self.WN),
+        BN = Int(Self.BN),
+        BK = Int(Self.BK),
         depth = Self.q_depth,
         thread_layout = Self.warp_layout,
     ]
@@ -382,7 +382,7 @@ struct Attention[
 
     var warp_scratch_tensor: SharedLayoutTensor[
         Self.accum_type,
-        Layout.row_major(2 * Self.num_warps_n, Self.BM),
+        Layout.row_major(2 * Int(Self.num_warps_n), Int(Self.BM)),
     ]
 
     @staticmethod
@@ -444,7 +444,7 @@ struct Attention[
     ](mut self, mut k_buffer: k_buffer_type):
         mma[
             tensor_core_mma = Self.get_tensor_core_mma_qk(),
-            BK = Self.BK,
+            BK = Int(Self.BK),
             prefetch_function=prefetch_function,
             swap_a_b = Self.swap_a_b,
             beg_iter=beg_iter,
@@ -464,7 +464,7 @@ struct Attention[
     ](mut self, mut v_buffer: v_buffer_type):
         mma[
             tensor_core_mma = Self.get_tensor_core_mma_pv(),
-            BK = Self.BK,
+            BK = Int(Self.BK),
             prefetch_function=prefetch_function,
             swap_a_b = Self.swap_a_b,
             num_iters = Int(Self.BN // Self.BK),
@@ -540,8 +540,8 @@ struct Attention[
                 accum_type = Self.accum_type,
                 token_gen = Self.token_gen,
                 mma_shape = Self.mma_shape,
-                num_m_mmas = Self.num_m_mmas,
-                num_n_mmas = Self.num_n_mmas,
+                num_m_mmas = Int(Self.num_m_mmas),
+                num_n_mmas = Int(Self.num_n_mmas),
                 mask_t = Self.mask_t,
                 group = Self.group,
                 fragment_layout = Self.fragment_layout_nested,
@@ -628,10 +628,10 @@ struct Attention[
         self.mask = mask
 
         self.mask_block_row = self.q_tile_idx() * Self.BM
-        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
-        var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
-        self.mask_warp_row = warp_row * Self.WM
-        self.mask_warp_col = warp_col * Self.WN
+        var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
+        var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
+        self.mask_warp_row = warp_row * Int(Self.WM)
+        self.mask_warp_col = warp_col * Int(Self.WN)
 
         self.batch_idx = batch_idx
         self.scale = scale
@@ -662,33 +662,35 @@ struct Attention[
     @always_inline
     fn online_softmax(self):
         var warp_scratch = self.warp_scratch_tensor
-        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
+        var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
 
         _online_softmax_iter_for_mma_output[
             Self.accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(Self.num_m_mmas, Self.num_n_mmas),
+            Layout.row_major(Int(Self.num_m_mmas), Int(Self.num_n_mmas)),
             # threads layout by warp
-            Layout.row_major(Self.num_warps_m, Self.num_warps_n),
+            Layout.row_major(Int(Self.num_warps_m), Int(Self.num_warps_n)),
             Self.warp_layout,
             use_exp2 = Self.use_exp2,
             fragment_layout = Self.fragment_layout,
         ](
             self.out_reg_buffer.vectorize(),
             self.p_reg_buffer.vectorize(),
-            warp_scratch.tile[2 * Self.num_warps_n, Self.WM](0, Int(warp_row)),
+            warp_scratch.tile[2 * Int(Self.num_warps_n), Int(Self.WM)](
+                0, Int(warp_row)
+            ),
             self.rowmax.ptr.address_space_cast[AddressSpace.GENERIC](),
             self.rowsum.ptr.address_space_cast[AddressSpace.GENERIC](),
         )
 
     @always_inline
     fn store_output(self):
-        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
-        var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
+        var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
+        var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
         var output_tile = self.gmem_manager.get_output_tensor(self.output_ptr)
         var output_warp_tile = output_tile.tile[
-            Self.WM, Self.output_depth // Self.num_warps_n
+            Int(Self.WM), Self.output_depth // Int(Self.num_warps_n)
         ](warp_row, warp_col)
 
         @parameter
@@ -764,7 +766,7 @@ struct Attention[
             var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
             var k_tile = self.gmem_manager.get_kv_tensor(
-                self.k.block_paged_ptr[Self.BN](
+                self.k.block_paged_ptr[Int(Self.BN)](
                     self.get_batch_idx(),
                     kv_tile_start_row,
                     Self.kv_head_idx(),
@@ -774,7 +776,7 @@ struct Attention[
             )
 
             var v_tile = self.gmem_manager.get_kv_tensor(
-                self.v.block_paged_ptr[Self.BN](
+                self.v.block_paged_ptr[Int(Self.BN)](
                     self.get_batch_idx(),
                     kv_tile_start_row,
                     Self.kv_head_idx(),
@@ -790,11 +792,11 @@ struct Attention[
             var k_buffer = KBuffer[
                 tensor_core_mma = Self.get_tensor_core_mma_qk(),
                 swizzle=None,
-                BN = Self.BN,
-                WN = Self.WN,
-                BK = Self.BK,
-                depth = Self.depth,
-                num_threads = Self.num_threads,
+                BN = Int(Self.BN),
+                WN = Int(Self.WN),
+                BK = Int(Self.BK),
+                depth = Int(Self.depth),
+                num_threads = Int(Self.num_threads),
                 num_stages = Self.num_stages,
             ](
                 k_tile,
@@ -804,10 +806,10 @@ struct Attention[
 
             var v_buffer = VBufferTransposeLoads[
                 tensor_core_mma = Self.get_tensor_core_mma_pv(),
-                BN = Self.BN,
-                BK = Self.BK,
-                depth = Self.depth,
-                num_threads = Self.num_threads,
+                BN = Int(Self.BN),
+                BK = Int(Self.BK),
+                depth = Int(Self.depth),
+                num_threads = Int(Self.num_threads),
                 num_stages = Self.num_stages,
             ](v_tile, self.smem_manager.get_v_ptr[v_tile.dtype]())
 
@@ -832,7 +834,7 @@ struct Attention[
 
         for i in range(UInt32(0), UInt32(self.num_keys), UInt32(Self.BN)):
             var end = min(i + Self.BN, self.num_keys)
-            loop_over_kvcache[Self.BN](i, end, end != self.num_keys)
+            loop_over_kvcache[Int(Self.BN)](i, end, end != self.num_keys)
 
         self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
 
@@ -860,7 +862,7 @@ struct Attention[
             var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
             var k_tile = self.gmem_manager.get_kv_tensor(
-                self.k.block_paged_ptr[Self.BN](
+                self.k.block_paged_ptr[Int(Self.BN)](
                     self.get_batch_idx(),
                     kv_tile_start_row,
                     self.kv_head_idx(),
@@ -870,7 +872,7 @@ struct Attention[
             )
 
             var v_tile = self.gmem_manager.get_kv_tensor(
-                self.v.block_paged_ptr[Self.BN](
+                self.v.block_paged_ptr[Int(Self.BN)](
                     self.get_batch_idx(),
                     kv_tile_start_row,
                     self.kv_head_idx(),
@@ -890,11 +892,11 @@ struct Attention[
             var k_buffer = KBuffer[
                 tensor_core_mma = Self.get_tensor_core_mma_qk(),
                 swizzle=swizzle,
-                BN = Self.BN,
-                WN = Self.WN,
-                BK = Self.BK,
-                depth = Self.depth,
-                num_threads = Self.num_threads,
+                BN = Int(Self.BN),
+                WN = Int(Self.WN),
+                BK = Int(Self.BK),
+                depth = Int(Self.depth),
+                num_threads = Int(Self.num_threads),
                 num_stages = Self.num_stages,
                 token_gen = Self.token_gen,
             ](
@@ -906,11 +908,11 @@ struct Attention[
             var v_buffer = VBuffer[
                 tensor_core_mma = Self.get_tensor_core_mma_pv(),
                 swizzle=None,
-                BN = Self.BN,
-                WN = Self.WN,
-                BK = Self.BK,
+                BN = Int(Self.BN),
+                WN = Int(Self.WN),
+                BK = Int(Self.BK),
                 depth = Self.output_depth,
-                num_threads = Self.num_threads,
+                num_threads = Int(Self.num_threads),
                 num_stages = Self.num_stages,
                 token_gen = Self.token_gen,
             ](
@@ -948,13 +950,13 @@ struct Attention[
             # ensure that smem for v is not required anymore
             barrier()
 
-        start, end = get_start_and_end_for_partitions[Self.BN](
-            self.num_keys, num_partitions, block_idx.x
+        start, end = get_start_and_end_for_partitions[Int(Self.BN)](
+            self.num_keys, num_partitions, Int(block_idx.x)
         )
 
         for i in range(start, end, Self.BN):
-            var end_ = min(i + Self.BN, end)
-            loop_over_kvcache[Self.BN](i, end_, end_ != end)
+            var end_ = min(i + Int(Self.BN), end)
+            loop_over_kvcache[Int(Self.BN)](i, end_, end_ != end)
 
         # Apply softmax denominator.
         self.out_reg_buffer.apply_softmax_denominator(self.rowsum)

@@ -39,7 +39,7 @@ fn mma[
 ):
     constrained[b_buffer_type._num_stages == 2, "b_tile.num_stages must be 2"]()
     alias num_k_mmas2 = ceildiv(
-        BK, UInt(tensor_core_mma.shape[2] * tensor_core_mma.group_size)
+        BK, tensor_core_mma.shape[2] * tensor_core_mma.group_size
     )
 
     @parameter
