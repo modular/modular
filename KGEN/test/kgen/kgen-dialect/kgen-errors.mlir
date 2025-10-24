@@ -749,15 +749,14 @@ kgen.generator export @concretize_variadic_splaut(
 
 // -----
 
-// FIXME: the 'to' and 'from' types are reversed in the errors here
-// expected-error @+2 {{cannot convert from scalar dtype si32 to 'vector<2xsi32>'}}
+// expected-error @+2 {{cannot convert to scalar dtype si32 from 'vector<2xsi32>'}}
 "some.op"() {
   a = #pop.cast_from_builtin< #M.dense_array<2, 5> : vector<2xsi32>> : !pop.scalar<si32>
 } : () -> ()
 
 // -----
 
-// expected-error @+2 {{cannot convert from scalar dtype f32 to 'bf16'}}
+// expected-error @+2 {{cannot convert to scalar dtype f32 from 'bf16'}}
 "some.op"() {
   a = #pop.cast_from_builtin< 0.0 : bf16> : !pop.scalar<f32>
 } : () -> ()

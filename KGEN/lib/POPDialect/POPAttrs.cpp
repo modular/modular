@@ -1739,7 +1739,7 @@ CastFromBuiltinAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                             TypedAttr value, SIMDType out_type) {
   return verifyConversionCast(
       [emitError](StringRef msg) { return emitError() << msg; }, out_type,
-      value.getType());
+      value.getType(), /*fromSimd=*/false);
 }
 
 //===----------------------------------------------------------------------===//

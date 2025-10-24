@@ -666,7 +666,7 @@ bool PointerToIndexOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
 LogicalResult CastToBuiltinOp::verify() {
   return verifyConversionCast(
       [this](StringRef msg) { return emitOpError(msg); }, getInput().getType(),
-      getType());
+      getType(), /*fromSimd=*/true);
 }
 
 //===----------------------------------------------------------------------===//
@@ -676,7 +676,7 @@ LogicalResult CastToBuiltinOp::verify() {
 LogicalResult CastFromBuiltinOp::verify() {
   return verifyConversionCast(
       [this](StringRef msg) { return emitOpError(msg); }, getType(),
-      getInput().getType());
+      getInput().getType(), /*fromSimd=*/false);
 }
 
 //===----------------------------------------------------------------------===//
