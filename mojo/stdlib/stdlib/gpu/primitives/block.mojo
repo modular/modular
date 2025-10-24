@@ -32,11 +32,7 @@ from math import align_up
 from memory import stack_allocation
 
 from gpu import WARP_SIZE, lane_id, thread_idx, warp_id, AddressSpace, barrier
-from .warp import broadcast as warp_broadcast
-from .warp import max as warp_max
-from .warp import min as warp_min
-from .warp import prefix_sum as warp_prefix_sum
-from .warp import sum as warp_sum
+import .warp
 
 # ===-----------------------------------------------------------------------===#
 # Block Reduction Core
@@ -48,9 +44,9 @@ fn _block_reduce[
     dtype: DType,
     width: Int, //,
     block_size: Int,
-    warp_reduce_fn: fn[dtype: DType, width: Int] (
-        SIMD[dtype, width]
-    ) capturing -> SIMD[dtype, width],
+    warp_reduce_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+        dtype, width
+    ],
     broadcast: Bool = False,
 ](val: SIMD[dtype, width], *, initial_val: SIMD[dtype, width]) -> SIMD[
     dtype, width
@@ -92,14 +88,14 @@ fn _block_reduce[
 
     @parameter
     if n_warps == 1:
-        # There is a single warp, so we do not need to use shared memory
-        # and warp shuffle operations are sufficient.
+        # Single warp optimization: no shared memory or barriers needed
+        # Warp shuffle operations are sufficient and much faster
         var warp_result = warp_reduce_fn(val)
 
         @parameter
         if broadcast:
-            # Broadcast the result to all threads in the warp
-            warp_result = warp_broadcast(warp_result)
+            # Use efficient warp broadcast (shuffle to lane 0)
+            warp_result = warp.broadcast(warp_result)
 
         return warp_result
 
@@ -131,10 +127,18 @@ fn _block_reduce[
         # Reduce across the first warp
         warp_result = warp_reduce_fn(block_val)
 
+        @parameter
+        if broadcast:
+            # Store the final result back to shared memory for broadcast
+            if lid == 0:
+                shared_mem.store(warp_result)
+
     @parameter
     if broadcast:
-        # Broadcast the result to all threads in the block
-        warp_result = block.broadcast[block_size=block_size](warp_result, 0)
+        # Synchronize and broadcast the result to all threads
+        barrier()
+        # All threads read the final result from shared memory
+        warp_result = shared_mem.load[width=width](0)
 
     return warp_result
 
@@ -169,13 +173,7 @@ fn sum[
         sum. Otherwise, only the first thread will have the complete sum.
     """
 
-    @parameter
-    fn _warp_sum[
-        dtype: DType, width: Int
-    ](x: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
-        return warp_sum(x)
-
-    return _block_reduce[block_size, _warp_sum, broadcast=broadcast](
+    return _block_reduce[block_size, warp.sum, broadcast=broadcast](
         val, initial_val=0
     )
 
@@ -212,13 +210,7 @@ fn max[
         have the complete result.
     """
 
-    @parameter
-    fn _warp_max[
-        dtype: DType, width: Int
-    ](x: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
-        return warp_max(x)
-
-    return _block_reduce[block_size, _warp_max, broadcast=broadcast](
+    return _block_reduce[block_size, warp.max, broadcast=broadcast](
         val, initial_val=Scalar[dtype].MIN_FINITE
     )
 
@@ -254,13 +246,7 @@ fn min[
         have the complete result.
     """
 
-    @parameter
-    fn _warp_min[
-        dtype: DType, width: Int
-    ](x: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
-        return warp_min(x)
-
-    return _block_reduce[block_size, _warp_min, broadcast=broadcast](
+    return _block_reduce[block_size, warp.min, broadcast=broadcast](
         val, initial_val=Scalar[dtype].MAX_FINITE
     )
 
@@ -305,7 +291,7 @@ fn broadcast[
     @parameter
     if block_size == WARP_SIZE:
         # Single warp - use warp shuffle for better performance
-        return warp_broadcast(val)
+        return warp.broadcast(val)
 
     # Multi-warp block - use shared memory
     var shared_mem = stack_allocation[
@@ -364,7 +350,7 @@ fn prefix_sum[
         align_up(n_warps, WARP_SIZE), dtype, address_space = AddressSpace.SHARED
     ]()
 
-    var thread_result = warp_prefix_sum[exclusive=exclusive](val)
+    var thread_result = warp.prefix_sum[exclusive=exclusive](val)
 
     # Step 2: Store last value from each warp to shared memory
     var wid = warp_id()
@@ -385,7 +371,7 @@ fn prefix_sum[
     # Step 3: Have the first warp perform a scan on the warp results
     var lid = lane_id()
     if wid == 0:
-        var previous_warps_prefix = warp_prefix_sum[exclusive=False](
+        var previous_warps_prefix = warp.prefix_sum[exclusive=False](
             warp_mem[lid]
         )
         if lid < UInt(n_warps):
