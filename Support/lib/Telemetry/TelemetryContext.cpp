@@ -277,11 +277,12 @@ TelemetryContext::TelemetryContext(Config &settings) {
           auto buffer = mbuf->getBuffer();
           size_t newlineLoc = buffer.find_first_of("\n\r\f\v");
           webId = buffer.take_front(newlineLoc);
+          if (!webId.empty())
+            attrs.SetAttribute("web.user.id", webId);
         }
       }
     }
-  }
-  if (!webId.empty()) {
+  } else {
     attrs.SetAttribute("web.user.id", webId);
   }
 
