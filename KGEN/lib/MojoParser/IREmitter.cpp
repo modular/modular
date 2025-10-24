@@ -814,15 +814,15 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
           "TODO: capturing closures cannot be materialized as runtime values");
       return {};
     }
-    return SRValue(builder->create<CreateClosureOp>(location, signature, attr,
-                                                    ValueRange()));
+    return SRValue(CreateClosureOp::create(*builder, location, signature, attr,
+                                           ValueRange()));
   }
 
   ASTType valueType = value.ir.getRValueType();
 
   // If the type is trivial, materialize using param.constant.
   if (valueType.isTrivial(value.expr->getLoc(), shared))
-    return SRValue(builder->create<ParamConstantOp>(location, value.ir));
+    return SRValue(ParamConstantOp::create(*builder, location, value.ir));
 
   // If the type is implicitly copyable, it should be cheap to be implicitly
   // materialized as well.
@@ -837,7 +837,7 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
   bool isDefaultArg = (context == EC_CallArgDefaultValue);
   if (isDefaultArg ||
       valueType.isImplicitlyCopyable(value.expr->getLoc(), shared))
-    return SRValue(builder->create<ParamMaterializeOp>(location, value.ir));
+    return SRValue(ParamMaterializeOp::create(*builder, location, value.ir));
 
   auto diag =
       emitError(expr->getLoc(),
@@ -881,7 +881,7 @@ SRValue IREmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
       return {};
     }
     Value result =
-        builder->create<LoadConsumeOp>(expr->getLocation(*this), mrValue);
+        LoadConsumeOp::create(*builder, expr->getLocation(*this), mrValue);
     return SRValue(result);
   }
 
@@ -1041,7 +1041,7 @@ Value IREmitter::emitRebindOpIfNeeded(Value value, Type destType, SMLoc loc) {
                  getCanonicalAttr(dstRefType.getAddressSpace()) &&
              "rebind cannot change address space");
     }
-  return builder->create<RebindOp>(translateLocation(loc), destType, value);
+  return RebindOp::create(*builder, translateLocation(loc), destType, value);
 }
 
 /// If needed, convert the specified value to the target destination type,
@@ -1297,7 +1297,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
       }
       Value address = value.ir.getMValueReference();
       Value result =
-          builder->create<RefLoadOp>(value.expr->getLocation(*this), address);
+          RefLoadOp::create(*builder, value.expr->getLocation(*this), address);
       value.ir = SRValue(result);
     }
 
@@ -1336,8 +1336,8 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     regValue = emitRebindOpIfNeeded(
         regValue, ASTType(destBuffer.getType()).getReferenceElementType(),
         exprLoc);
-    builder->create<RefStoreOp>(translateLocation(exprLoc), regValue,
-                                destBuffer);
+    RefStoreOp::create(*builder, translateLocation(exprLoc), regValue,
+                       destBuffer);
     CValue result = MRValue(destBuffer);
     return emitCResult(result, value.expr, dest);
   }
@@ -1458,8 +1458,8 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       Value refValue = value.ir.getMValueReference();
 
       if (!cast<RefType>(refValue.getType()).isMutableKnown(false)) {
-        refValue = builder->create<RefImmutOp>(value.expr->getLocation(*this),
-                                               refValue);
+        refValue = RefImmutOp::create(*builder, value.expr->getLocation(*this),
+                                      refValue);
       }
       value.ir = MBValue(refValue);
     }
@@ -1474,8 +1474,8 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     // Now that we have the origin of the input, we can replace the placeholder
     // with the actual type so that uses of it will have the correct origin.
     refOp.getResult().setType(refOp.getType().getWithElement(mValue.getType()));
-    builder->create<RefStoreOp>(translateLocation(value.expr->getLoc()), mValue,
-                                refOp);
+    RefStoreOp::create(*builder, translateLocation(value.expr->getLoc()),
+                       mValue, refOp);
     return CValue::getMValueForRef(mValue); // Return the input reference.
   }
 
@@ -1523,7 +1523,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     // ownership of the input SRValue.
     val = emitRebindOpIfNeeded(
         val, ASTType(destRef.getType()).getReferenceElementType(), exprLoc);
-    builder->create<RefStoreOp>(translateLocation(exprLoc), val, destRef);
+    RefStoreOp::create(*builder, translateLocation(exprLoc), val, destRef);
     // Must return a borrow of the result, use SBValue if we can to avoid a load
     // but otherwise we need a MBValue for non-trivial types.
     if (valueType.isTrivial(exprLoc, shared))
@@ -1595,7 +1595,7 @@ void IREmitter::emitExpressionWithOutEvaluatingIt(
     return;
   VarDeclOp errDecl = tmpEmitter.emitVarDecl(
       "__try_error__", errorType, location, VarDeclKind::Synthesized);
-  auto tryOp = tmpEmitter.builder->create<TryOp>(location, errDecl);
+  auto tryOp = TryOp::create(*tmpEmitter.builder, location, errDecl);
 
   // Parse the expression into the try block.
   tmpEmitter.builder->createBlock(&tryOp.getTryRegion());
@@ -1931,7 +1931,7 @@ VarDeclOp IREmitter::emitVarDecl(const Twine &name, Type type, Location loc,
     return {};
   }
   StringAttr originAttr = declScope.mangleParamName(name);
-  return builder->create<VarDeclOp>(loc, type, name.str(), originAttr, kind);
+  return VarDeclOp::create(*builder, loc, type, name.str(), originAttr, kind);
 }
 
 VarDeclOp IREmitter::emitVarDecl(StringAttr name, Type type, Location loc,

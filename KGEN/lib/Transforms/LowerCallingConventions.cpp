@@ -208,7 +208,8 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     state.attributes = op->getAttrDictionary();
     for (Region &region : op->getRegions())
       state.addRegion()->takeBody(region);
-    Operation *newOp = OpBuilder(op).create(state);
+    auto builder = OpBuilder(op);
+    Operation *newOp = builder.create(state);
 
     // Lazily construct a none constant only when needed.
     Value noneImpl;
@@ -219,7 +220,7 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
           attr = NoneAttr::get(op->getContext());
         else // empty register-passable struct.
           attr = StructAttr::get({}, cast<StructType>(type));
-        noneImpl = OpBuilder(op).create<ParamConstantOp>(op->getLoc(), attr);
+        noneImpl = ParamConstantOp::create(builder, op->getLoc(), attr);
       }
       return noneImpl;
     };

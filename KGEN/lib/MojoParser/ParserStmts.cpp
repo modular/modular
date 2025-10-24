@@ -2660,8 +2660,8 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   // Add an EndFnOp to the end of the body. This makes the function able to
   // verify clean, even if we don't body or signature resolve it.  We may end up
   // removing this when resolving the body.
-  OpBuilder::atBlockEnd(fnOp.getBody())
-      .create<EndFnOp>(fnOp.getLoc(), /*unresolved=*/true);
+  auto builder = OpBuilder::atBlockEnd(fnOp.getBody());
+  EndFnOp::create(builder, fnOp.getLoc(), /*unresolved=*/true);
 
   // If this is a nested function, parse its body right now so captures can be
   // resolved correctly.
@@ -3139,7 +3139,7 @@ static LogicalResult emitIfClause(StmtParser &stmtEmitter,
 
   // Create a new elifOp state and initialize it with 2 blocks.
   HLCF::ElifOp elifOp =
-      emitter.builder->create<HLCF::ElifOp>(location, TypeRange(), 2);
+      HLCF::ElifOp::create(*emitter.builder, location, TypeRange(), 2);
   auto &condBlock = elifOp.getElifRegions()[0].emplaceBlock();
   emitter.builder->setInsertionPointToStart(&condBlock);
 
@@ -3151,8 +3151,8 @@ static LogicalResult emitIfClause(StmtParser &stmtEmitter,
       emitter.emitSRValue({condI1RVal, clause.expr}, EC_BoolCondition);
   if (!condRVal)
     return failure();
-  emitter.builder->create<HLCF::ElifYieldOp>(location, condRVal,
-                                             /*no extra values*/ ValueRange());
+  HLCF::ElifYieldOp::create(*emitter.builder, location, condRVal,
+                            /*no extra values*/ ValueRange());
 
   // Emit the body of the 'then' clause.
   auto &thenBlock = elifOp.getElifRegions()[1].emplaceBlock();
@@ -3164,12 +3164,12 @@ static LogicalResult emitIfClause(StmtParser &stmtEmitter,
     if (failed(callback()))
       return failure();
   }
-  emitter.builder->create<HLCF::YieldOp>(location);
+  HLCF::YieldOp::create(*emitter.builder, location);
 
   // Leave the else block empty.
   auto &elseBlock = elifOp.getElseRegion().emplaceBlock();
   emitter.builder->setInsertionPointToStart(&elseBlock);
-  emitter.builder->create<HLCF::YieldOp>(location);
+  HLCF::YieldOp::create(*emitter.builder, location);
   return success();
 }
 
@@ -3239,8 +3239,8 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
   // We're going to emit a bunch of stuff below but need a cursor to know where
   // to put the temporary for the collection and the constructor call.  Emit a
   // temporary operation so we can find it later.
-  auto cursor = stmtEmitter.getBuilder().create<LIT::ReturnOp>(
-      location, ArrayRef<Value>());
+  auto cursor = LIT::ReturnOp::create(stmtEmitter.getBuilder(), location,
+                                      ArrayRef<Value>());
   IREmitter cursorEmitter(emitter.declScope, OpBuilder(cursor),
                           emitter.varDeclCursor);
   DebugInfo::DIBuilder cursorDIBuilder(emitter.getContext());

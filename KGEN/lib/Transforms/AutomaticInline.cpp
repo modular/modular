@@ -410,8 +410,10 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
         continue;
 
       // Mark callsite location explicitly.
-      if (debugCallsite && callee->func.getLocScope())
-        OpBuilder(call).create<DebugInfo::LineTableLocOp>(call->getLoc());
+      if (debugCallsite && callee->func.getLocScope()) {
+        auto builder = OpBuilder(call);
+        DebugInfo::LineTableLocOp::create(builder, call->getLoc());
+      }
       // Inline the callee.
       IRMapping map;
       auto [scope, singleExit] =

@@ -90,8 +90,9 @@ struct PromotedStackAlloc {
     if (LLVM_LIKELY(currValue))
       return currValue;
     // If the value is undefined, materialize an undef operation.
-    ParamConstantOp undefConst = OpBuilder(user).create<ParamConstantOp>(
-        user->getLoc(), UninitMemAttr::get(getAllocType(alloc)));
+    OpBuilder builder(user);
+    ParamConstantOp undefConst = ParamConstantOp::create(
+        builder, user->getLoc(), UninitMemAttr::get(getAllocType(alloc)));
     // Create a DebugInfo ValueOp right after this undef.
     updateValue(undefConst, undefConst);
     return undefConst;
