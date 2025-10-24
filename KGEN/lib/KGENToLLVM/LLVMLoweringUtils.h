@@ -13,6 +13,7 @@
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Value.h"
 
@@ -110,7 +111,7 @@ static constexpr mlir::LLVM::FastmathFlags LLVM_FASTMATH_FLAGS =
 /// Create an `LLVM::CallOp` with the default fastmath flags.
 template <typename... Args>
 auto createLLVMCall(OpBuilder &b, Location loc, Args &&...args) {
-  auto call = b.create<mlir::LLVM::CallOp>(loc, std::forward<Args>(args)...);
+  auto call = mlir::LLVM::CallOp::create(b, loc, std::forward<Args>(args)...);
   // Attach the default fastmath flags.
   call.setFastmathFlags(LLVM_FASTMATH_FLAGS);
   return call;
@@ -127,7 +128,7 @@ template <typename... Args>
 auto createLLVMFunc(OpBuilder &b, TargetInfoAttr target, Location loc,
                     Args &&...args) {
   auto func =
-      b.create<mlir::LLVM::LLVMFuncOp>(loc, std::forward<Args>(args)...);
+      mlir::LLVM::LLVMFuncOp::create(b, loc, std::forward<Args>(args)...);
   func.setPassthroughAttr(
       attachTargetPassthroughAttrs(b, target, func.getPassthroughAttr()));
   return func;

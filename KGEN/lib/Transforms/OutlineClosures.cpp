@@ -181,8 +181,8 @@ void OutlineClosuresPass::runOnOperation() {
       b.setInsertionPoint(generator);
       auto uniqueName = b.getStringAttr(getUniqueSymbolName(
           (generator.getName() + "_" + regionName).str(), symtab, counter));
-      auto liftedWrapper = b.create<GeneratorOp>(
-          uniqueName, wrapperSignature, regionDecl.getFunctionType(),
+      auto liftedWrapper = GeneratorOp::create(
+          b, uniqueName, wrapperSignature, regionDecl.getFunctionType(),
           inputParamDecls, regionDecl.getInlineLevel(),
           regionDecl.getLLVMMetadataArray(),
           regionDecl.getLLVMArgMetadataArray());
@@ -206,8 +206,8 @@ void OutlineClosuresPass::runOnOperation() {
           return;
         }
 
-        auto load = b.create<POP::CompilerGlobalLoadOp>(
-            capture.getType(),
+        auto load = POP::CompilerGlobalLoadOp::create(
+            b, capture.getType(),
             b.getStringAttr(generator.getName() + "_context_var_" +
                             Twine(varCounter + idx)));
         // HACK: Because we don't track lifetimes of captured variables in
@@ -263,7 +263,8 @@ void OutlineClosuresPass::runOnOperation() {
       // Create a container for the struct with all the various captures.
       for (auto [idx, capture] : llvm::enumerate(captures)) {
 
-        b.create<POP::CompilerGlobalStoreOp>(
+        POP::CompilerGlobalStoreOp::create(
+            b,
             b.getStringAttr(generator.getName() + "_context_var_" +
                             Twine(varCounter + idx)),
             capture);
@@ -271,8 +272,8 @@ void OutlineClosuresPass::runOnOperation() {
 
       // Create the decl that replaces the regionDecl with its parameter being
       // this new partial binding.
-      b.create<ParamDeclareOp>(regionDecl.getParamDecl(),
-                               cast<TypedAttr>(signature));
+      ParamDeclareOp::create(b, regionDecl.getParamDecl(),
+                             cast<TypedAttr>(signature));
 
       // And we can drop the regionDecl now, we're done with it.
       toErase.push_back(regionDecl);

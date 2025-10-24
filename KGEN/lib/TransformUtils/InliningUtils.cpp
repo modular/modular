@@ -51,8 +51,8 @@ std::pair<Operation *, bool> KGEN::inlineRegion(mlir::RewriterBase &b,
   } else {
     // Otherwise, assume this is inlining a direct call.
     StringAttr label = b.getStringAttr("inlined_cf_scope");
-    scope = b.create<HLCF::LoopOp>(call->getLoc(), call->getResultTypes(),
-                                   ValueRange(), label);
+    scope = HLCF::LoopOp::create(b, call->getLoc(), call->getResultTypes(),
+                                 ValueRange(), label);
     handleReturn = [label, &b](Operation *op) {
       b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
     };

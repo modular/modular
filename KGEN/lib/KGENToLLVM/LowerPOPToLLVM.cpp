@@ -130,10 +130,10 @@ struct ConvertPOPNeg : public ConvertPOPToLLVMPattern<NegOp> {
       if (!intType)
         return op.emitError("could not handle integer type");
       auto apZero = APInt::getZero(intType.getWidth());
-      zero = rewriter.create<LLVM::ConstantOp>(
-          op.getLoc(), DenseIntElementsAttr::get(vec, apZero));
+      zero = LLVM::ConstantOp::create(rewriter, op.getLoc(),
+                                      DenseIntElementsAttr::get(vec, apZero));
     } else {
-      zero = rewriter.create<LLVM::ConstantOp>(op.getLoc(), type, 0);
+      zero = LLVM::ConstantOp::create(rewriter, op.getLoc(), type, 0);
     }
 
     rewriter.replaceOpWithNewOp<LLVM::SubOp>(op, zero, adaptor.getOperand());
@@ -178,8 +178,8 @@ struct ConvertPOPFMA : public ConvertPOPToLLVMPattern<FMAOp> {
                   ConversionPatternRewriter &rewriter) const override {
     KGENDType dtype = *op.getType().getResolvedDType();
     if (dtype.isInt() || dtype.isIndex() || dtype.isUIndex()) {
-      auto lhs = rewriter.create<LLVM::MulOp>(op.getLoc(), adaptor.getA(),
-                                              adaptor.getB());
+      auto lhs = LLVM::MulOp::create(rewriter, op.getLoc(), adaptor.getA(),
+                                     adaptor.getB());
       rewriter.replaceOpWithNewOp<LLVM::AddOp>(op, lhs, adaptor.getC());
     } else {
       rewriter.replaceOpWithNewOp<LLVM::FMAOp>(
@@ -357,8 +357,8 @@ private:
                                     SmallVector<Value> operands) const {
     const auto asmDialectAttr = LLVM::AsmDialectAttr::get(
         rewriter.getContext(), LLVM::AsmDialect::AD_ATT);
-    return rewriter.create<LLVM::InlineAsmOp>(
-        loc, resultType,
+    return LLVM::InlineAsmOp::create(
+        rewriter, loc, resultType,
         /*operands=*/operands,
         /*asm_string=*/asmStr,
         /*constraints=*/asmConstraints, /*has_side_effects=*/false,
@@ -371,13 +371,14 @@ private:
   template <typename intType>
   Value createConstant(ConversionPatternRewriter &rewriter, Location loc,
                        uint64_t value) const {
-    return rewriter.create<LLVM::ConstantOp>(
-        loc, rewriter.getIntegerType(sizeof(intType) * 8), value);
+    return LLVM::ConstantOp::create(
+        rewriter, loc, rewriter.getIntegerType(sizeof(intType) * 8), value);
   }
 
   Value createConstant(ConversionPatternRewriter &rewriter, Location loc,
                        APFloat value) const {
-    return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF32Type(), value);
+    return LLVM::ConstantOp::create(rewriter, loc, rewriter.getF32Type(),
+                                    value);
   }
 
   Type getConvertedScalarType(SIMDType simd) const {
@@ -391,8 +392,9 @@ private:
 
   Value extractElement(ConversionPatternRewriter &rewriter, Location loc,
                        Type resType, Value value, unsigned index) const {
-    return rewriter.create<LLVM::ExtractElementOp>(
-        loc, resType, value, createConstant<uint32_t>(rewriter, loc, index));
+    return LLVM::ExtractElementOp::create(
+        rewriter, loc, resType, value,
+        createConstant<uint32_t>(rewriter, loc, index));
   }
 
   /// Fast conversion of f32 to bf16 on AMDGPU that is not supported by LLVM and
@@ -459,23 +461,24 @@ private:
               APFloat::semanticsPrecision(
                   APFloat::EnumToSemantics(toFloatSemantics)));
       Value shifted =
-          rewriter.create<LLVM::LShrOp>(loc, floatBits, mantissaDiff);
+          LLVM::LShrOp::create(rewriter, loc, floatBits, mantissaDiff);
 
-      shifted = rewriter.create<LLVM::TruncOp>(loc, rewriter.getIntegerType(16),
-                                               shifted);
+      shifted = LLVM::TruncOp::create(rewriter, loc,
+                                      rewriter.getIntegerType(16), shifted);
 
-      return rewriter.create<LLVM::BitcastOp>(loc, bf16Type, shifted);
+      return LLVM::BitcastOp::create(rewriter, loc, bf16Type, shifted);
     };
 
     Value res;
     if (size > 1) {
-      res = rewriter.create<LLVM::UndefOp>(op.getLoc(),
-                                           VectorType::get(size, bf16Type));
+      res = LLVM::UndefOp::create(rewriter, op.getLoc(),
+                                  VectorType::get(size, bf16Type));
       for (uint32_t i = 0; i < size; ++i) {
         Value element = extractElement(rewriter, loc, f32Type, value, i);
         Value converted = convertSingleValue(element);
-        res = rewriter.create<LLVM::InsertElementOp>(
-            loc, res, converted, createConstant<uint32_t>(rewriter, loc, i));
+        res = LLVM::InsertElementOp::create(
+            rewriter, loc, res, converted,
+            createConstant<uint32_t>(rewriter, loc, i));
       }
     } else {
       res = convertSingleValue(value);
@@ -509,8 +512,9 @@ private:
 
     assert(llvm::isPowerOf2_64(size) && "SIMD size must be a power of 2");
     if (size > 1) {
-      Value res = rewriter.create<LLVM::UndefOp>(
-          op.getLoc(), VectorType::get(size / 2, rewriter.getIntegerType(16)));
+      Value res = LLVM::UndefOp::create(
+          rewriter, op.getLoc(),
+          VectorType::get(size / 2, rewriter.getIntegerType(16)));
       for (uint64_t i = 0; i < size; i += 2) {
         Value firstFp = extractElement(rewriter, loc, f32Type, value, i + 1);
         Value secondFp = extractElement(rewriter, loc, f32Type, value, i);
@@ -519,8 +523,8 @@ private:
                             "=h,f,f", rewriter.getIntegerType(16),
                             {firstFp, secondFp})
                 .getResult(0);
-        res = rewriter.create<LLVM::InsertElementOp>(
-            loc, res, converted,
+        res = LLVM::InsertElementOp::create(
+            rewriter, loc, res, converted,
             createConstant<uint32_t>(rewriter, loc, i / 2));
       }
 
@@ -561,35 +565,38 @@ private:
     if (size > 1) {
       // Bitcast the value to a vector of i16 as NVPTX instruction expects
       // packed f8 as i16.
-      value = rewriter.create<LLVM::BitcastOp>(
-          loc, VectorType::get(size / 2, ui16Type), value);
+      value = LLVM::BitcastOp::create(
+          rewriter, loc, VectorType::get(size / 2, ui16Type), value);
       // Create a vector of I32 to hold the result of the conversion. At the end
       // it will be bitcasted to f16
-      Value res = rewriter.create<LLVM::UndefOp>(
-          op.getLoc(), VectorType::get(size / 2, rewriter.getIntegerType(32)));
+      Value res = LLVM::UndefOp::create(
+          rewriter, op.getLoc(),
+          VectorType::get(size / 2, rewriter.getIntegerType(32)));
       for (uint64_t i = 0, e = size / 2; i < e; ++i) {
         Value converted =
             createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1;", "=r,h",
                             rewriter.getIntegerType(32),
                             {extractElement(rewriter, loc, ui16Type, value, i)})
                 .getResult(0);
-        res = rewriter.create<LLVM::InsertElementOp>(
-            loc, res, converted, createConstant<uint32_t>(rewriter, loc, i));
+        res = LLVM::InsertElementOp::create(
+            rewriter, loc, res, converted,
+            createConstant<uint32_t>(rewriter, loc, i));
       }
-      return rewriter.create<LLVM::BitcastOp>(
-          loc, VectorType::get(size, f16Type), res);
+      return LLVM::BitcastOp::create(rewriter, loc,
+                                     VectorType::get(size, f16Type), res);
     } else {
       Type ui8Type = rewriter.getIntegerType(8);
-      Value ui16 = rewriter.create<LLVM::ZExtOp>(
-          loc, ui16Type, rewriter.create<LLVM::BitcastOp>(loc, ui8Type, value));
+      Value ui16 = LLVM::ZExtOp::create(
+          rewriter, loc, ui16Type,
+          LLVM::BitcastOp::create(rewriter, loc, ui8Type, value));
       Value converted =
           createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1;", "=r,h",
                           rewriter.getIntegerType(32), {ui16})
               .getResult(0);
       // At this point result contains two elements, while we're only interested
       // in lower one.
-      converted = rewriter.create<LLVM::TruncOp>(loc, ui16Type, converted);
-      return rewriter.create<LLVM::BitcastOp>(loc, f16Type, converted);
+      converted = LLVM::TruncOp::create(rewriter, loc, ui16Type, converted);
+      return LLVM::BitcastOp::create(rewriter, loc, f16Type, converted);
     }
   }
 
@@ -635,8 +642,8 @@ private:
     auto simdF32 =
         SIMDType::get(rewriter.getContext(),
                       /*size=*/*op.getType().getResolvedSize(), KGENDType::f32);
-    Value f32Result = rewriter.create<LLVM::FPExtOp>(
-        op.getLoc(), convertType(simdF32), f16Result);
+    Value f32Result = LLVM::FPExtOp::create(rewriter, op.getLoc(),
+                                            convertType(simdF32), f16Result);
 
     rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(op, convertType(op.getType()),
                                                  f32Result);
@@ -653,8 +660,8 @@ private:
     auto simdF32 =
         SIMDType::get(rewriter.getContext(),
                       /*size=*/*op.getType().getResolvedSize(), KGENDType::f32);
-    Value f32Result = rewriter.create<LLVM::FPExtOp>(
-        op.getLoc(), convertType(simdF32), value);
+    Value f32Result = LLVM::FPExtOp::create(rewriter, op.getLoc(),
+                                            convertType(simdF32), value);
 
     return convertF32ToF8OnNVPTX(rewriter, op, f32Result, fromFloatSemantics,
                                  toFloatSemantics);
@@ -666,10 +673,10 @@ private:
     APFloat m = APFloat::getLargest(APFloat::EnumToSemantics(floatSemantics));
     Value max, min;
     if (size == 1) {
-      max = rewriter.create<LLVM::ConstantOp>(
-          loc, rewriter.getF32FloatAttr(m.convertToFloat()));
-      min = rewriter.create<LLVM::ConstantOp>(
-          loc, rewriter.getF32FloatAttr(-m.convertToFloat()));
+      max = LLVM::ConstantOp::create(
+          rewriter, loc, rewriter.getF32FloatAttr(m.convertToFloat()));
+      min = LLVM::ConstantOp::create(
+          rewriter, loc, rewriter.getF32FloatAttr(-m.convertToFloat()));
 
     } else {
       VectorType vecType = VectorType::get(size, rewriter.getF32Type());
@@ -679,14 +686,14 @@ private:
           cast<TypedAttr>(FloatArrayElementsAttr::get(vecType, maxValues));
       auto minAttrs =
           cast<TypedAttr>(FloatArrayElementsAttr::get(vecType, minValues));
-      max = rewriter.create<LLVM::ConstantOp>(loc, maxAttrs);
-      min = rewriter.create<LLVM::ConstantOp>(loc, minAttrs);
+      max = LLVM::ConstantOp::create(rewriter, loc, maxAttrs);
+      min = LLVM::ConstantOp::create(rewriter, loc, minAttrs);
     }
 
     Value clamped =
-        rewriter.create<LLVM::MaxNumOp>(loc, value, min, LLVM_FASTMATH_FLAGS);
-    clamped =
-        rewriter.create<LLVM::MinNumOp>(loc, clamped, max, LLVM_FASTMATH_FLAGS);
+        LLVM::MaxNumOp::create(rewriter, loc, value, min, LLVM_FASTMATH_FLAGS);
+    clamped = LLVM::MinNumOp::create(rewriter, loc, clamped, max,
+                                     LLVM_FASTMATH_FLAGS);
     return clamped;
   }
 
@@ -697,8 +704,8 @@ private:
     // https://llvm.org/doxygen/classllvm_1_1CmpInst.html#a2be3583dac92a031fa1458d4d992c78b
     Type type = convertType(SIMDType::get(rewriter.getContext(), size,
                                           KGENDType(DType(DType::ui1))));
-    Value result = rewriter.create<LLVM::FCmpOp>(
-        loc, type, mlir::LLVM::FCmpPredicate::uno, value, value);
+    Value result = LLVM::FCmpOp::create(
+        rewriter, loc, type, mlir::LLVM::FCmpPredicate::uno, value, value);
     return result;
   }
 
@@ -725,8 +732,8 @@ private:
     Value clamped = getClampedFloatValue(rewriter, loc, value, toFloatSemantics,
                                          size, f8Type);
     Value isNaN = getIsNaN(rewriter, loc, value, fromFloatSemantics, size);
-    Value sel = rewriter.create<LLVM::SelectOp>(loc, isNaN, value, clamped,
-                                                LLVM_FASTMATH_FLAGS);
+    Value sel = LLVM::SelectOp::create(rewriter, loc, isNaN, value, clamped,
+                                       LLVM_FASTMATH_FLAGS);
 
     StringRef intrinsicStr = [&]() -> StringRef {
       if (toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FNUZ ||
@@ -747,71 +754,68 @@ private:
     if (size == 1) {
       SmallVector<Value> operands{
           sel, sel,
-          rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(),
-                                            rewriter.getI32IntegerAttr(0)),
-          rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI1Type(),
-                                            rewriter.getBoolAttr(false))};
+          LLVM::ConstantOp::create(rewriter, loc, rewriter.getI32Type(),
+                                   rewriter.getI32IntegerAttr(0)),
+          LLVM::ConstantOp::create(rewriter, loc, rewriter.getI1Type(),
+                                   rewriter.getBoolAttr(false))};
 
-      result =
-          rewriter
-              .create<LLVM::CallIntrinsicOp>(
-                  loc, i32Type, rewriter.getStringAttr(intrinsicStr), operands)
-              .getResult(0);
-      result = rewriter.create<LLVM::TruncOp>(loc, ui8Type, result);
+      result = LLVM::CallIntrinsicOp::create(
+                   rewriter, loc, i32Type, rewriter.getStringAttr(intrinsicStr),
+                   operands)
+                   .getResult(0);
+      result = LLVM::TruncOp::create(rewriter, loc, ui8Type, result);
     } else if (size == 2) {
       SmallVector<Value> operands{
           extractElement(rewriter, loc, f32Type, sel, 0),
           extractElement(rewriter, loc, f32Type, sel, 1),
-          rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(),
-                                            rewriter.getI32IntegerAttr(0)),
-          rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI1Type(),
-                                            rewriter.getBoolAttr(false))};
+          LLVM::ConstantOp::create(rewriter, loc, rewriter.getI32Type(),
+                                   rewriter.getI32IntegerAttr(0)),
+          LLVM::ConstantOp::create(rewriter, loc, rewriter.getI1Type(),
+                                   rewriter.getBoolAttr(false))};
 
-      result =
-          rewriter
-              .create<LLVM::CallIntrinsicOp>(
-                  loc, i32Type, rewriter.getStringAttr(intrinsicStr), operands)
-              .getResult(0);
+      result = LLVM::CallIntrinsicOp::create(
+                   rewriter, loc, i32Type, rewriter.getStringAttr(intrinsicStr),
+                   operands)
+                   .getResult(0);
 
-      result = rewriter.create<LLVM::TruncOp>(loc, ui16Type, result);
-      result = rewriter.create<LLVM::BitcastOp>(loc, f8Type, result);
+      result = LLVM::TruncOp::create(rewriter, loc, ui16Type, result);
+      result = LLVM::BitcastOp::create(rewriter, loc, f8Type, result);
     } else {
-      result = rewriter.create<LLVM::UndefOp>(
-          op.getLoc(), VectorType::get(size / 4, rewriter.getIntegerType(32)));
+      result = LLVM::UndefOp::create(
+          rewriter, op.getLoc(),
+          VectorType::get(size / 4, rewriter.getIntegerType(32)));
 
       for (uint64_t i = 0; i < size; i += 4) {
         SmallVector<Value> operands{
             extractElement(rewriter, loc, f32Type, sel, i),
             extractElement(rewriter, loc, f32Type, sel, i + 1),
-            rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(),
-                                              rewriter.getI32IntegerAttr(0)),
-            rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI1Type(),
-                                              rewriter.getBoolAttr(false))};
+            LLVM::ConstantOp::create(rewriter, loc, rewriter.getI32Type(),
+                                     rewriter.getI32IntegerAttr(0)),
+            LLVM::ConstantOp::create(rewriter, loc, rewriter.getI1Type(),
+                                     rewriter.getBoolAttr(false))};
 
-        Value loWord = rewriter
-                           .create<LLVM::CallIntrinsicOp>(
-                               loc, i32Type,
-                               rewriter.getStringAttr(intrinsicStr), operands)
+        Value loWord = LLVM::CallIntrinsicOp::create(
+                           rewriter, loc, i32Type,
+                           rewriter.getStringAttr(intrinsicStr), operands)
                            .getResult(0);
 
         operands[0] = extractElement(rewriter, loc, f32Type, sel, i + 2);
         operands[1] = extractElement(rewriter, loc, f32Type, sel, i + 3);
         operands[2] = loWord;
-        operands[3] = rewriter.create<LLVM::ConstantOp>(
-            loc, rewriter.getI1Type(), rewriter.getBoolAttr(true));
+        operands[3] = LLVM::ConstantOp::create(
+            rewriter, loc, rewriter.getI1Type(), rewriter.getBoolAttr(true));
 
-        Value hiLoWord = rewriter
-                             .create<LLVM::CallIntrinsicOp>(
-                                 loc, i32Type,
-                                 rewriter.getStringAttr(intrinsicStr), operands)
+        Value hiLoWord = LLVM::CallIntrinsicOp::create(
+                             rewriter, loc, i32Type,
+                             rewriter.getStringAttr(intrinsicStr), operands)
                              .getResult(0);
 
-        result = rewriter.create<LLVM::InsertElementOp>(
-            loc, result, hiLoWord,
+        result = LLVM::InsertElementOp::create(
+            rewriter, loc, result, hiLoWord,
             createConstant<uint32_t>(rewriter, loc, i / 4));
       }
 
-      result = rewriter.create<LLVM::BitcastOp>(loc, f8Type, result);
+      result = LLVM::BitcastOp::create(rewriter, loc, f8Type, result);
     }
     return result;
   }
@@ -870,73 +874,75 @@ private:
 
     assert(llvm::isPowerOf2_64(size) && "SIMD size must be a power of 2");
     VectorType v2f32Type = VectorType::get(2, rewriter.getF32Type());
-    Value input = rewriter.create<LLVM::UndefOp>(op.getLoc(),
-                                                 VectorType::get(4, ui8Type));
+    Value input = LLVM::UndefOp::create(rewriter, op.getLoc(),
+                                        VectorType::get(4, ui8Type));
 
     if (size == 1) {
-      Value src = rewriter.create<LLVM::InsertElementOp>(
-          loc, input, value, createConstant<uint32_t>(rewriter, loc, 0));
-      src = rewriter.create<LLVM::BitcastOp>(loc, i32Type, src);
+      Value src = LLVM::InsertElementOp::create(
+          rewriter, loc, input, value,
+          createConstant<uint32_t>(rewriter, loc, 0));
+      src = LLVM::BitcastOp::create(rewriter, loc, i32Type, src);
       SmallVector<Value> operands{src,
                                   createConstant<uint32_t>(rewriter, loc, 0)};
 
-      return rewriter
-          .create<LLVM::CallIntrinsicOp>(
-              loc, f32Type, rewriter.getStringAttr(intrinsicStr), operands)
+      return LLVM::CallIntrinsicOp::create(rewriter, loc, f32Type,
+                                           rewriter.getStringAttr(intrinsicStr),
+                                           operands)
           .getResult(0);
     }
 
     if (size == 2) {
-      Value src = rewriter.create<LLVM::InsertElementOp>(
-          loc, input, extractElement(rewriter, loc, ui8Type, value, 0),
+      Value src = LLVM::InsertElementOp::create(
+          rewriter, loc, input,
+          extractElement(rewriter, loc, ui8Type, value, 0),
           createConstant<uint32_t>(rewriter, loc, 0));
 
-      src = rewriter.create<LLVM::InsertElementOp>(
-          loc, src, extractElement(rewriter, loc, ui8Type, value, 1),
+      src = LLVM::InsertElementOp::create(
+          rewriter, loc, src, extractElement(rewriter, loc, ui8Type, value, 1),
           createConstant<uint32_t>(rewriter, loc, 1));
 
-      src = rewriter.create<LLVM::BitcastOp>(loc, i32Type, src);
+      src = LLVM::BitcastOp::create(rewriter, loc, i32Type, src);
       SmallVector<Value> operands{
-          src, rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI1Type(),
-                                                 rewriter.getBoolAttr(false))};
-      return rewriter
-          .create<LLVM::CallIntrinsicOp>(
-              loc, v2f32Type, rewriter.getStringAttr(intrinsicStr), operands)
+          src, LLVM::ConstantOp::create(rewriter, loc, rewriter.getI1Type(),
+                                        rewriter.getBoolAttr(false))};
+      return LLVM::CallIntrinsicOp::create(rewriter, loc, v2f32Type,
+                                           rewriter.getStringAttr(intrinsicStr),
+                                           operands)
           .getResult(0);
     }
 
     // SIMD size >= 4
-    Value result = rewriter.create<LLVM::UndefOp>(op.getLoc(), outType);
+    Value result = LLVM::UndefOp::create(rewriter, op.getLoc(), outType);
     for (uint64_t i = 0; i < size; i += 4) {
       Value src = input;
       for (uint64_t j = 0; j < 4; j++) {
-        src = rewriter.create<LLVM::InsertElementOp>(
-            loc, src, extractElement(rewriter, loc, ui8Type, value, i + j),
+        src = LLVM::InsertElementOp::create(
+            rewriter, loc, src,
+            extractElement(rewriter, loc, ui8Type, value, i + j),
             createConstant<uint32_t>(rewriter, loc, j));
       }
-      src = rewriter.create<LLVM::BitcastOp>(loc, i32Type, src);
+      src = LLVM::BitcastOp::create(rewriter, loc, i32Type, src);
 
       SmallVector<Value> operands{
-          src, rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI1Type(),
-                                                 rewriter.getBoolAttr(false))};
-      Value res0 = rewriter
-                       .create<LLVM::CallIntrinsicOp>(
-                           loc, v2f32Type, rewriter.getStringAttr(intrinsicStr),
-                           operands)
+          src, LLVM::ConstantOp::create(rewriter, loc, rewriter.getI1Type(),
+                                        rewriter.getBoolAttr(false))};
+      Value res0 = LLVM::CallIntrinsicOp::create(
+                       rewriter, loc, v2f32Type,
+                       rewriter.getStringAttr(intrinsicStr), operands)
                        .getResult(0);
 
-      operands[1] = rewriter.create<LLVM::ConstantOp>(
-          loc, rewriter.getI1Type(), rewriter.getBoolAttr(true));
-      Value res1 = rewriter
-                       .create<LLVM::CallIntrinsicOp>(
-                           loc, v2f32Type, rewriter.getStringAttr(intrinsicStr),
-                           operands)
+      operands[1] = LLVM::ConstantOp::create(
+          rewriter, loc, rewriter.getI1Type(), rewriter.getBoolAttr(true));
+      Value res1 = LLVM::CallIntrinsicOp::create(
+                       rewriter, loc, v2f32Type,
+                       rewriter.getStringAttr(intrinsicStr), operands)
                        .getResult(0);
 
       for (uint64_t j = 0; j < 4; j++) {
         Value res = j < 2 ? res0 : res1;
-        result = rewriter.create<LLVM::InsertElementOp>(
-            loc, result, extractElement(rewriter, loc, f32Type, res, j % 2),
+        result = LLVM::InsertElementOp::create(
+            rewriter, loc, result,
+            extractElement(rewriter, loc, f32Type, res, j % 2),
             createConstant<uint32_t>(rewriter, loc, i + j));
       }
     }
@@ -1147,11 +1153,11 @@ struct ConvertPOPSIMDSplat : public ConvertPOPToLLVMPattern<SIMDSplatOp> {
     SIMDType simdType = op.getType();
     int64_t size = *simdType.getResolvedSize();
     Value undef =
-        rewriter.create<LLVM::UndefOp>(op.getLoc(), convertType(simdType));
-    Value zero = rewriter.create<LLVM::ConstantOp>(
-        op.getLoc(), rewriter.getI32IntegerAttr(0));
-    Value vector = rewriter.create<LLVM::InsertElementOp>(
-        op.getLoc(), undef, adaptor.getScalar(), zero);
+        LLVM::UndefOp::create(rewriter, op.getLoc(), convertType(simdType));
+    Value zero = LLVM::ConstantOp::create(rewriter, op.getLoc(),
+                                          rewriter.getI32IntegerAttr(0));
+    Value vector = LLVM::InsertElementOp::create(rewriter, op.getLoc(), undef,
+                                                 adaptor.getScalar(), zero);
     rewriter.replaceOpWithNewOp<LLVM::ShuffleVectorOp>(
         op, vector, undef, /*mask=*/SmallVector<int32_t>(size, 0));
 
@@ -1217,13 +1223,13 @@ struct ConvertPOPSIMDShuffle : public ConvertPOPToLLVMPattern<SIMDShuffleOp> {
         mask.getValues().size(),
         *getMLIRTypeForDType(op.getType().getContext(), dtype,
                              getTypeConverter()->getIndexTypeBitwidth()));
-    Value result = rewriter.create<LLVM::UndefOp>(op.getLoc(), llvmVecType);
+    Value result = LLVM::UndefOp::create(rewriter, op.getLoc(), llvmVecType);
     int idx = 0;
     for (int32_t maskElement : maskValues) {
-      Value pos = rewriter.create<LLVM::ConstantOp>(
-          op.getLoc(), rewriter.getI32IntegerAttr(idx));
-      result = rewriter.create<LLVM ::InsertElementOp>(
-          op.getLoc(), result, maskElement == 0 ? lhs : rhs, pos);
+      Value pos = LLVM::ConstantOp::create(rewriter, op.getLoc(),
+                                           rewriter.getI32IntegerAttr(idx));
+      result = LLVM ::InsertElementOp::create(
+          rewriter, op.getLoc(), result, maskElement == 0 ? lhs : rhs, pos);
       idx++;
     }
     rewriter.replaceOp(op, result);
@@ -1368,26 +1374,26 @@ static Value materializeLLVMAlloca(OpBuilder &b, TargetInfoAttr target,
   }
 
   Value countVal =
-      b.create<LLVM::ConstantOp>(op->getLoc(), b.getI64IntegerAttr(count));
-  Value ptr = b.create<LLVM::AllocaOp>(
-      op->getLoc(), LLVM::LLVMPointerType::get(b.getContext(), addressSpace),
+      LLVM::ConstantOp::create(b, op->getLoc(), b.getI64IntegerAttr(count));
+  Value ptr = LLVM::AllocaOp::create(
+      b, op->getLoc(), LLVM::LLVMPointerType::get(b.getContext(), addressSpace),
       elementType, countVal, align);
 
   if (alloca && alloca.getMarkedLifetimes()) {
     // If this alloca has marked lifetimes, it always begins as dead.
-    b.create<LLVM::LifetimeEndOp>(op->getLoc(), ptr);
+    LLVM::LifetimeEndOp::create(b, op->getLoc(), ptr);
   } else {
     // Insert lifetime markers starting from the op to the end of its block.
     b.setInsertionPoint(op);
-    auto start = b.create<LLVM::LifetimeStartOp>(op->getLoc(), ptr);
+    auto start = LLVM::LifetimeStartOp::create(b, op->getLoc(), ptr);
     b.setInsertionPoint(op->getBlock(), --op->getBlock()->end());
-    b.create<LLVM::LifetimeEndOp>(op->getLoc(), ptr);
+    LLVM::LifetimeEndOp::create(b, op->getLoc(), ptr);
     b.setInsertionPointAfter(start);
   }
 
   if (needAddrSpaceCast) {
-    ptr = b.create<LLVM::AddrSpaceCastOp>(
-        op->getLoc(),
+    ptr = LLVM::AddrSpaceCastOp::create(
+        b, op->getLoc(),
         LLVM::LLVMPointerType::get(b.getContext(), /*addressSpace=*/0), ptr);
   }
 
@@ -1485,7 +1491,7 @@ static LogicalResult lowerLifetimeMarker(Operation *op, ValueRange values,
     if (!isa<LLVM::AllocaOp>(value.getDefiningOp()))
       return op->emitError("lifetime marker is only allowed for alloca");
 
-    b.create<OpT>(op->getLoc(), value);
+    OpT::create(b, op->getLoc(), value);
   }
   b.eraseOp(op);
   return success();
@@ -1545,10 +1551,10 @@ struct ConvertPOPArrayCreate : public ConvertPOPToLLVMPattern<ArrayCreateOp> {
     if (!type)
       return op.emitError("failed to convert array type");
 
-    Value array = rewriter.create<LLVM::UndefOp>(op.getLoc(), type);
+    Value array = LLVM::UndefOp::create(rewriter, op.getLoc(), type);
     for (auto [idx, val] : llvm::enumerate(adaptor.getOperands()))
       array =
-          rewriter.create<LLVM::InsertValueOp>(op.getLoc(), array, val, idx);
+          LLVM::InsertValueOp::create(rewriter, op.getLoc(), array, val, idx);
     rewriter.replaceOp(op, array);
     return success();
   }
@@ -1568,7 +1574,7 @@ struct ConvertPOPArrayRepeat : public ConvertPOPToLLVMPattern<ArrayRepeatOp> {
     if (!type)
       return op.emitError("failed to convert array type");
 
-    Value array = rewriter.create<LLVM::UndefOp>(op.getLoc(), type);
+    Value array = LLVM::UndefOp::create(rewriter, op.getLoc(), type);
     // Fill the consecutive elements of the array by cycling through the
     // operands until the array is filled.
     for (unsigned i = 0, size = *op.getType().getResolvedSize(); i < size;) {
@@ -1576,7 +1582,7 @@ struct ConvertPOPArrayRepeat : public ConvertPOPToLLVMPattern<ArrayRepeatOp> {
                 e = adaptor.getOperands().end();
            it != e && i < size; ++it, ++i) {
         array =
-            rewriter.create<LLVM::InsertValueOp>(op.getLoc(), array, *it, i);
+            LLVM::InsertValueOp::create(rewriter, op.getLoc(), array, *it, i);
       }
     }
     rewriter.replaceOp(op, array);
@@ -1770,14 +1776,14 @@ static LogicalResult convertVariadicCreate(VariadicType resultType,
   Type indexType = typeConverter->convertType(rewriter.getIndexType());
   auto opaquePtr = mlir::LLVM::LLVMPointerType::get(rewriter.getContext());
   for (auto [index, operand] : llvm::enumerate(operands)) {
-    Value indexConstant = rewriter.create<LLVM::ConstantOp>(
-        op->getLoc(), rewriter.getIntegerAttr(indexType, index));
-    auto destination = rewriter.create<LLVM::GEPOp>(
-        op->getLoc(), /*resultType=*/opaquePtr,
-        /*basePtrType=*/elementType, /*basePtr=*/ptr,
-        ArrayRef<LLVM::GEPArg>{indexConstant},
-        /*noWrapFlags=*/LLVM::GEPNoWrapFlags::inbounds);
-    rewriter.create<LLVM::StoreOp>(op->getLoc(), operand, destination);
+    Value indexConstant = LLVM::ConstantOp::create(
+        rewriter, op->getLoc(), rewriter.getIntegerAttr(indexType, index));
+    auto destination =
+        LLVM::GEPOp::create(rewriter, op->getLoc(), /*resultType=*/opaquePtr,
+                            /*basePtrType=*/elementType, /*basePtr=*/ptr,
+                            ArrayRef<LLVM::GEPArg>{indexConstant},
+                            /*noWrapFlags=*/LLVM::GEPNoWrapFlags::inbounds);
+    LLVM::StoreOp::create(rewriter, op->getLoc(), operand, destination);
   }
 
   // 3. Replace the `pop.variadic.create` op with a struct containing the
@@ -1789,9 +1795,9 @@ static LogicalResult convertVariadicCreate(VariadicType resultType,
 
   Value container = materializeLLVMStruct(
       b, structType,
-      ValueRange{ptr,
-                 rewriter.create<LLVM::ConstantOp>(
-                     op->getLoc(), rewriter.getIntegerAttr(indexType, count))
+      ValueRange{ptr, LLVM::ConstantOp::create(
+                          rewriter, op->getLoc(),
+                          rewriter.getIntegerAttr(indexType, count))
 
       });
   rewriter.replaceOp(op, container);
@@ -1864,11 +1870,12 @@ struct ConvertPOPVariadicGet : public ConvertPOPToLLVMPattern<VariadicGetOp> {
                   ConversionPatternRewriter &rewriter) const override {
     Type ptrElement =
         typeConverter->convertType(op.getVariadic().getType().getElementType());
-    Value ptr = rewriter.create<LLVM::ExtractValueOp>(op.getLoc(),
-                                                      adaptor.getVariadic(), 0);
-    auto gep = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(), ptr.getType(), ptrElement, ptr, adaptor.getIndex(),
-        /*noWrapFlags=*/LLVM::GEPNoWrapFlags::inbounds);
+    Value ptr = LLVM::ExtractValueOp::create(rewriter, op.getLoc(),
+                                             adaptor.getVariadic(), 0);
+    auto gep =
+        LLVM::GEPOp::create(rewriter, op.getLoc(), ptr.getType(), ptrElement,
+                            ptr, adaptor.getIndex(),
+                            /*noWrapFlags=*/LLVM::GEPNoWrapFlags::inbounds);
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, ptrElement, gep);
     return success();
   }
@@ -1983,8 +1990,8 @@ struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
         return failure();
     }
 
-    auto asmOp = rewriter.create<LLVM::InlineAsmOp>(
-        op.getLoc(), types.empty() ? Type() : types.front(),
+    auto asmOp = LLVM::InlineAsmOp::create(
+        rewriter, op.getLoc(), types.empty() ? Type() : types.front(),
         expandOperands(rewriter, op.getLoc(), adaptor.getOperands()),
         cast<StringAttr>(adaptor.getAssembly()),
         cast<StringAttr>(adaptor.getConstraints()),
@@ -2001,8 +2008,8 @@ struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
     // Unpack the results.
     SmallVector<Value> results;
     for (unsigned i = 0, e = op.getNumResults(); i != e; ++i) {
-      results.push_back(rewriter.create<LLVM::ExtractValueOp>(
-          op.getLoc(), asmOp.getResult(0), i));
+      results.push_back(LLVM::ExtractValueOp::create(rewriter, op.getLoc(),
+                                                     asmOp.getResult(0), i));
     }
     rewriter.replaceOp(op, results);
     return success();
@@ -2137,7 +2144,7 @@ struct ConvertPOPStringAddress
     // !llvm.struct<(ptr<i8>, index)>, grab the first field: the address
     // of the string.
     Value extractedAddr =
-        b.create<LLVM::ExtractValueOp>(adaptor.getOperands().front(), 0);
+        LLVM::ExtractValueOp::create(b, adaptor.getOperands().front(), 0);
     rewriter.replaceOp(op, extractedAddr);
     return success();
   }
@@ -2158,7 +2165,7 @@ struct ConvertPOPStringSize : public ConvertPOPToLLVMPattern<StringSizeOp> {
     // !llvm.struct<(ptr<i8>, index)>, grab the second field: the size
     // of the string.
     Value extractedAddr =
-        b.create<LLVM::ExtractValueOp>(adaptor.getOperands().front(), 1);
+        LLVM::ExtractValueOp::create(b, adaptor.getOperands().front(), 1);
     rewriter.replaceOp(op, extractedAddr);
     return success();
   }
@@ -2317,8 +2324,8 @@ struct ConvertPOPCallLLVMIntrinsic
       auto argAttrs = rewriter.getArrayAttr({ptrAttrs, emptyAttrs, emptyAttrs});
 
       // Create CallIntrinsicOp with alignment as arg attribute on ptrs
-      auto callOp = rewriter.create<LLVM::CallIntrinsicOp>(
-          op.getLoc(), types, cast<StringAttr>(op.getIntrin()),
+      auto callOp = LLVM::CallIntrinsicOp::create(
+          rewriter, op.getLoc(), types, cast<StringAttr>(op.getIntrin()),
           SmallVector<Value>{ptrs, mask, passthrough},
           convertFastmathFlags(op.getFastmathFlags(), rewriter),
           /*op_bundle_operands=*/ArrayRef<ValueRange>{},
@@ -2364,8 +2371,8 @@ struct ConvertPOPCallLLVMIntrinsic
       auto argAttrs = rewriter.getArrayAttr({emptyAttrs, ptrAttrs, emptyAttrs});
 
       // Create CallIntrinsicOp with alignment as arg attribute on ptrs
-      auto callOp = rewriter.create<LLVM::CallIntrinsicOp>(
-          op.getLoc(), types, cast<StringAttr>(op.getIntrin()),
+      auto callOp = LLVM::CallIntrinsicOp::create(
+          rewriter, op.getLoc(), types, cast<StringAttr>(op.getIntrin()),
           SmallVector<Value>{value, ptrs, mask},
           convertFastmathFlags(op.getFastmathFlags(), rewriter),
           /*op_bundle_operands=*/ArrayRef<ValueRange>{},
@@ -2456,8 +2463,8 @@ struct ConvertSymbolOpToAIR : public ConvertSymbolOpToLLVM<OpT> {
       // Get or create the AIR function declaration
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPointToStart(module.getBody());
-      func = rewriter.create<LLVM::LLVMFuncOp>(loc, unmangledFuncName,
-                                               llvmFuncType);
+      func = LLVM::LLVMFuncOp::create(rewriter, loc, unmangledFuncName,
+                                      llvmFuncType);
       symtab.insert(func);
     }
     return func;
@@ -2676,7 +2683,7 @@ struct ConvertPOPUnionWrap : public ConvertPOPToLLVMPattern<UnionWrapOp> {
     if (failed(ptrOr))
       return failure();
 
-    b.create<LLVM::StoreOp>(op->getLoc(), adaptor.getValue(), *ptrOr);
+    LLVM::StoreOp::create(b, op->getLoc(), adaptor.getValue(), *ptrOr);
     b.replaceOpWithNewOp<LLVM::LoadOp>(op, variantType, *ptrOr);
     return success();
   }
@@ -2711,7 +2718,7 @@ struct ConvertPOPUnionUnwrap : public ConvertPOPToLLVMPattern<UnionUnwrapOp> {
     if (failed(ptrOr))
       return failure();
 
-    b.create<LLVM::StoreOp>(op->getLoc(), adaptor.getValue(), *ptrOr);
+    LLVM::StoreOp::create(b, op->getLoc(), adaptor.getValue(), *ptrOr);
     b.replaceOpWithNewOp<LLVM::LoadOp>(op, valueType, *ptrOr);
     return success();
   }
@@ -2984,8 +2991,9 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
     if (!func) {
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.clearInsertionPoint();
-      func = rewriter.create<LLVM::LLVMFuncOp>(
-          mlir::UnknownLoc::get(getContext()), op.getCallee(), signature);
+      func = LLVM::LLVMFuncOp::create(rewriter,
+                                      mlir::UnknownLoc::get(getContext()),
+                                      op.getCallee(), signature);
       func.setPassthroughAttr(passthrough);
       if (argAttrs)
         func.setArgAttrsAttr(argAttrs);
@@ -3038,8 +3046,8 @@ struct ConvertPOPAlignedAlloc : public ConvertSymbolOpToLLVM<AlignedAllocOp> {
                                       {tc.getIndexType(), tc.getIndexType()});
 
       SmallVector<Attribute> passthrough;
-      func = b.create<LLVM::LLVMFuncOp>(mlir::UnknownLoc::get(getContext()),
-                                        kAllocFnName, allocFnSig);
+      func = LLVM::LLVMFuncOp::create(b, mlir::UnknownLoc::get(getContext()),
+                                      kAllocFnName, allocFnSig);
 
       // `noalias` result.
       func.setResultAttr(0, LLVM::LLVMDialect::getNoAliasAttrName(),
@@ -3109,8 +3117,8 @@ struct ConvertPOPAlignedFree : public ConvertSymbolOpToLLVM<AlignedFreeOp> {
                                       LLVM::LLVMPointerType::get(getContext()));
 
       SmallVector<Attribute> passthrough;
-      func = b.create<LLVM::LLVMFuncOp>(mlir::UnknownLoc::get(getContext()),
-                                        kFreeFnName, freeFnSig);
+      func = LLVM::LLVMFuncOp::create(b, mlir::UnknownLoc::get(getContext()),
+                                      kFreeFnName, freeFnSig);
 
       // `allocptr` on first argument.
       func.setArgAttr(0, LLVM::LLVMDialect::getAllocatedPointerAttrName(),
@@ -3133,8 +3141,8 @@ struct ConvertPOPAlignedFree : public ConvertSymbolOpToLLVM<AlignedFreeOp> {
       symtab.insert(func);
     }
 
-    Value ptr = b.create<LLVM::BitcastOp>(
-        op.getLoc(), LLVM::LLVMPointerType::get(getContext()),
+    Value ptr = LLVM::BitcastOp::create(
+        b, op.getLoc(), LLVM::LLVMPointerType::get(getContext()),
         adaptor.getPtr());
     LLVM::CallOp call = createLLVMCall(b, op.getLoc(), func, ptr);
     b.replaceOp(op, call);
@@ -3174,8 +3182,8 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
 
     // Create the global.
     b.clearInsertionPoint();
-    auto global = b.create<LLVM::GlobalOp>(
-        op.getLoc(),
+    auto global = LLVM::GlobalOp::create(
+        b, op.getLoc(),
         LLVM::LLVMArrayType::get(elementType,
                                  cast<IntegerAttr>(op.getCount()).getInt()),
         /*isConstant=*/false, LLVM::Linkage::Internal, name,
@@ -3185,7 +3193,7 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
     // Replace the alloc op with an `addressof`.
     b.setInsertionPoint(op);
     auto opaquePtrType = LLVM::LLVMPointerType::get(getContext(), addrSpace);
-    auto ptr = b.create<LLVM::AddressOfOp>(op.getLoc(), global);
+    auto ptr = LLVM::AddressOfOp::create(b, op.getLoc(), global);
     b.replaceOpWithNewOp<LLVM::BitcastOp>(
         op,
         LLVM::LLVMPointerType::get(opaquePtrType.getContext(),
@@ -3212,8 +3220,8 @@ static LLVM::LLVMFuncOp getOrCreateNoAliasCastIntrinsic(SymbolTable &symtab,
   OpBuilder::InsertionGuard guard(b);
   b.clearInsertionPoint();
   auto ptrType = LLVM::LLVMPointerType::get(b.getContext());
-  auto func = b.create<LLVM::LLVMFuncOp>(
-      UnknownLoc::get(b.getContext()), name,
+  auto func = LLVM::LLVMFuncOp::create(
+      b, UnknownLoc::get(b.getContext()), name,
       LLVM::LLVMFunctionType::get(ptrType, ptrType), LLVM::Linkage::Internal);
   symtab.insert(func);
 
@@ -3235,8 +3243,8 @@ static LLVM::LLVMFuncOp getOrCreateNoAliasCastIntrinsic(SymbolTable &symtab,
 
   // Populate the body.
   Block *body = b.createBlock(&func.getBody());
-  b.create<LLVM::ReturnOp>(func.getLoc(),
-                           body->addArgument(ptrType, func.getLoc()));
+  LLVM::ReturnOp::create(b, func.getLoc(),
+                         body->addArgument(ptrType, func.getLoc()));
 
   return func;
 }
@@ -3288,8 +3296,8 @@ public:
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.clearInsertionPoint();
 
-      LLVM::GlobalOp global = rewriter.create<LLVM::GlobalOp>(
-          op.getLoc(), elementType, true, LLVM::Linkage::Internal,
+      LLVM::GlobalOp global = LLVM::GlobalOp::create(
+          rewriter, op.getLoc(), elementType, true, LLVM::Linkage::Internal,
           "global_constant", Attribute(),
           getAlignment(getTypeConverter(), kgenPtrType,
                        adaptor.getAlignmentAttr()));
@@ -3304,7 +3312,7 @@ public:
         b.emitError(value.getError());
         return failure();
       }
-      b.create<LLVM::ReturnOp>(value.get());
+      LLVM::ReturnOp::create(b, value.get());
 
       // Insert the global into the module.
       symtab.insert(it->second = global);
@@ -3343,8 +3351,8 @@ struct ConvertExternPointerSymbol
         getTypeConverter(), op.getResSymbol().getType(), op.getAlignmentAttr());
 
     b.clearInsertionPoint();
-    auto global = b.create<LLVM::GlobalOp>(
-        op.getLoc(), resType, /*constant=*/false, LLVM::Linkage::External,
+    auto global = LLVM::GlobalOp::create(
+        b, op.getLoc(), resType, /*constant=*/false, LLVM::Linkage::External,
         cast<StringAttr>(op.getName()), /*value=*/nullptr, align, addressSpace,
         /*dso_local=*/true);
     symtab.insert(global);

@@ -177,10 +177,11 @@ struct HoistUnconditionalReturn : public OpRewritePattern<IfOp> {
     // Create a new IfOp and put a return right after it. We have to create new
     // op because the number of results might be different compared to the
     // original IfOp.
-    auto newIfOp = rewriter.create<IfOp>(
-        op.getLoc(), op.getThenTerminator()->getOperandTypes(), op.getCond());
-    rewriter.create<TerminatorOpT>(op.getLoc(), TypeRange(),
-                                   newIfOp->getResults(), attrs.getValue());
+    auto newIfOp =
+        IfOp::create(rewriter, op.getLoc(),
+                     op.getThenTerminator()->getOperandTypes(), op.getCond());
+    TerminatorOpT::create(rewriter, op.getLoc(), TypeRange(),
+                          newIfOp->getResults(), attrs.getValue());
 
     // Move the 'then' block from the original IfOp to the new one and replace
     // the return terminator with yield.
@@ -294,8 +295,9 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
     // Now we know that we can transform this. Create a new IfOp (we can't use
     // the original IfOp because we might need a different number of result
     // values).
-    auto newIfOp = rewriter.create<IfOp>(
-        op.getLoc(), parentBlockTerm->getOperandTypes(), op.getCond());
+    auto newIfOp =
+        IfOp::create(rewriter, op.getLoc(), parentBlockTerm->getOperandTypes(),
+                     op.getCond());
 
     // Move the original 'then' and 'else' basic blocks into the new IfOp.
     rewriter.inlineRegionBefore(op.getThenRegion(), newIfOp.getThenRegion(),
@@ -323,10 +325,10 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
     // ending with returns. We need to replace them with yields and insert a
     // return after the new if op.
     if (auto br = dyn_cast<BreakOp>(returnTerm)) {
-      rewriter.create<BreakOp>(op.getLoc(), newIfOp->getResults(),
-                               br.getLabelAttr());
+      BreakOp::create(rewriter, op.getLoc(), newIfOp->getResults(),
+                      br.getLabelAttr());
     } else {
-      rewriter.create<KGEN::ReturnOp>(op.getLoc(), newIfOp->getResults());
+      KGEN::ReturnOp::create(rewriter, op.getLoc(), newIfOp->getResults());
     }
 
     rewriter.setInsertionPoint(parentBlockTerm);
@@ -366,8 +368,8 @@ struct IfRemoveUnusedResults : public OpRewritePattern<IfOp> {
     if (elseYield)
       b.modifyOpInPlace(elseYield, [&] { elseYield->eraseOperands(unused); });
 
-    auto newIf = b.create<IfOp>(op.getLoc(), TypeRange(ValueRange(toReplace)),
-                                op.getCond());
+    auto newIf = IfOp::create(b, op.getLoc(), TypeRange(ValueRange(toReplace)),
+                              op.getCond());
     b.replaceAllUsesWith(toReplace, newIf.getResults());
     b.inlineRegionBefore(op.getThenRegion(), newIf.getThenRegion(),
                          newIf.getThenRegion().begin());
@@ -464,8 +466,8 @@ struct RemoveUnusedLoopResults : OpRewritePattern<LoopOp> {
     });
 
     auto newLoop =
-        b.create<LoopOp>(loop.getLoc(), TypeRange(ValueRange(toReplace)),
-                         loop.getOperands(), label, loop.getUnrollLevelAttr());
+        LoopOp::create(b, loop.getLoc(), TypeRange(ValueRange(toReplace)),
+                       loop.getOperands(), label, loop.getUnrollLevelAttr());
     b.replaceAllUsesWith(toReplace, newLoop.getResults());
     b.inlineRegionBefore(loop.getBody(), newLoop.getBody(),
                          newLoop.getBody().begin());

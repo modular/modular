@@ -657,8 +657,8 @@ static Value lowerOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
     return adaptor.getValue();
 
   int index = b.getField(op.getFieldAttr(), ref);
-  return b.create<StructReplaceOp>(op.getLoc(), adaptor.getValue(),
-                                   adaptor.getContainer(), index);
+  return StructReplaceOp::create(b, op.getLoc(), adaptor.getValue(),
+                                 adaptor.getContainer(), index);
 }
 
 static Value lowerOp(LIT::StructExtractOp op,
@@ -668,8 +668,8 @@ static Value lowerOp(LIT::StructExtractOp op,
     return adaptor.getContainer();
 
   int index = b.getField(op.getFieldAttr(), ref);
-  return b.create<KGEN::StructExtractOp>(op.getLoc(), adaptor.getContainer(),
-                                         index);
+  return KGEN::StructExtractOp::create(b, op.getLoc(), adaptor.getContainer(),
+                                       index);
 }
 
 static Value lowerOp(RefImmutOp op, RefImmutOpAdaptor adaptor,
@@ -694,12 +694,13 @@ static Value lowerOp(RefFromPointerREPLOp op,
 
 static Value lowerOp(RefLoadOp op, RefLoadOpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  return b.create<POP::LoadOp>(op.getLoc(), adaptor.getRef());
+  return POP::LoadOp::create(b, op.getLoc(), adaptor.getRef());
 }
 
 static Value lowerOp(MaterializeIntoOp op, MaterializeIntoOpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  Value dynVal = b.create<ParamMaterializeOp>(op->getLoc(), adaptor.getValue());
+  Value dynVal =
+      ParamMaterializeOp::create(b, op->getLoc(), adaptor.getValue());
   b.replaceOpWithNewOp<POP::StoreOp>(op, dynVal, adaptor.getDest());
   return {};
 }
@@ -718,7 +719,7 @@ static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
     return adaptor.getContainer();
 
   int index = b.getField(op.getFieldAttr(), ref);
-  return b.create<StructGEPOp>(op.getLoc(), adaptor.getContainer(), index);
+  return StructGEPOp::create(b, op.getLoc(), adaptor.getContainer(), index);
 }
 
 /// Squash noop rebinds exposed by ref -> ptr lowering.
@@ -738,20 +739,20 @@ static Value lowerOp(RefPackCreateOp op, RefPackCreateOpAdaptor adaptor,
   auto typeOr = b.replace(op.getType(), TypeDomain::AsType);
   if (failed(typeOr))
     return nullptr;
-  return b.create<PackCreateOp>(op.getLoc(), *typeOr, adaptor.getOperands());
+  return PackCreateOp::create(b, op.getLoc(), *typeOr, adaptor.getOperands());
 }
 
 // lit.ref.pack.extract => kgen.pack.extract
 static Value lowerOp(RefPackExtractOp op, RefPackExtractOpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  Value value = b.create<PackExtractOp>(op.getLoc(), adaptor.getOperands()[0],
-                                        op.getIndex());
+  Value value = PackExtractOp::create(b, op.getLoc(), adaptor.getOperands()[0],
+                                      op.getIndex());
   // If the result didn't fold to a pointer type, we need to emit a rebind.
   FailureOr<Type> expectedOr = b.replace(op.getType(), TypeDomain::AsType);
   if (failed(expectedOr))
     return nullptr;
   if (value.getType() != *expectedOr)
-    value = b.create<RebindOp>(op.getLoc(), *expectedOr, value);
+    value = RebindOp::create(b, op.getLoc(), *expectedOr, value);
   return value;
 }
 
@@ -765,7 +766,7 @@ Value LITTypeLowerer::getCastedToType(Location loc, Value value, Type type) {
     return getCastedToType(loc, castOp.getOperand(0), type);
 
   // Otherwise create a new cast.
-  auto cast = create<mlir::UnrealizedConversionCastOp>(loc, type, value);
+  auto cast = mlir::UnrealizedConversionCastOp::create(*this, loc, type, value);
   unrealizedCasts.push_back(cast);
   return cast.getResult(0);
 }

@@ -266,14 +266,14 @@ void Graph::doRewrite(const Node *node) {
 
     // First, rewrite the argument as a local variable.
     auto type = cast<PointerType>(arg.getType());
-    auto alloc = b.create<StackAllocationOp>(type);
+    auto alloc = StackAllocationOp::create(b, type);
     arg.replaceAllUsesWith(alloc);
 
     // For 'in' arguments, take in the argument by value.
     if (in) {
       BlockArgument byval =
           body->addArgument(type.getElementType(), arg.getLoc());
-      b.create<StoreOp>(byval, alloc);
+      StoreOp::create(b, byval, alloc);
       convs.push_back(getByValueConvention(conv));
     }
 
@@ -299,7 +299,7 @@ void Graph::doRewrite(const Node *node) {
 
       ImplicitLocOpBuilder b{op->getLoc(), OpBuilder(op)};
       for (Value arg : outArgs)
-        newOperands.push_back(b.create<LoadOp>(arg));
+        newOperands.push_back(LoadOp::create(b, arg));
       op->insertOperands(op->getNumOperands(), newOperands);
       return WalkResult::advance();
     });
@@ -342,7 +342,7 @@ void Graph::doRewrite(const Node *node) {
 
       // For 'in' arguments, we load the current value and pass it in by value.
       if (in) {
-        newOperands.push_back(b.create<LoadOp>(arg));
+        newOperands.push_back(LoadOp::create(b, arg));
         convs.push_back(getByValueConvention(conv));
       }
 
@@ -378,7 +378,7 @@ void Graph::doRewrite(const Node *node) {
       b.setInsertionPointAfter(call);
       for (auto [arg, result] :
            llvm::zip(outArgs, llvm::make_range(e, newCall->result_end())))
-        b.create<StoreOp>(result, arg);
+        StoreOp::create(b, result, arg);
     }
 
     // Finally, update the callee signature.

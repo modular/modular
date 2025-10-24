@@ -189,13 +189,13 @@ private:
 
     for (size_t i = 0; i < op.getCaptures().size(); i++) {
       Type capturedArgType = types.boundArgTypes[i];
-      LLVM::GEPOp boundArgPtr = rewriter.create<LLVM::GEPOp>(
-          wrapperFn.getLoc(), types.opaquePtrType, types.opaquePtrType,
-          wrapperFnBody.getArgument(0),
+      LLVM::GEPOp boundArgPtr = LLVM::GEPOp::create(
+          rewriter, wrapperFn.getLoc(), types.opaquePtrType,
+          types.opaquePtrType, wrapperFnBody.getArgument(0),
           ArrayRef<LLVM::GEPArg>({0, static_cast<int32_t>(i)}));
       boundArgPtr.setElemType(types.liftedFunctionCaptureType);
-      Value boundArg = rewriter.create<LLVM::LoadOp>(
-          wrapperFn.getLoc(), capturedArgType, boundArgPtr);
+      Value boundArg = LLVM::LoadOp::create(rewriter, wrapperFn.getLoc(),
+                                            capturedArgType, boundArgPtr);
       liftedNestedFunctionCallArgs[i] = boundArg;
     }
     size_t numCaptures = op.getCaptures().size();
@@ -208,8 +208,8 @@ private:
     ValueRange valueRange(liftedNestedFunctionCallArgs);
     LLVM::CallOp callLiftedFunction =
         createLLVMCall(rewriter, wrapperFn.getLoc(), func, valueRange);
-    rewriter.create<LLVM::ReturnOp>(wrapperFn.getLoc(),
-                                    callLiftedFunction.getResults());
+    LLVM::ReturnOp::create(rewriter, wrapperFn.getLoc(),
+                           callLiftedFunction.getResults());
     return success();
   }
 
@@ -220,40 +220,41 @@ private:
                                       LLVM::LLVMFuncOp wrapperFn,
                                       CreateClosureTypes const &types) const {
     MLIRContext *context = getContext();
-    Value closureStruct = rewriter.create<LLVM::UndefOp>(
-        op.getLoc(), types.unpackingFunctionAndCapturesType);
+    Value closureStruct = LLVM::UndefOp::create(
+        rewriter, op.getLoc(), types.unpackingFunctionAndCapturesType);
     Value addressOfWrapperFunction =
-        rewriter.create<LLVM::AddressOfOp>(op.getLoc(), wrapperFn);
-    closureStruct = rewriter.create<LLVM::InsertValueOp>(
-        op.getLoc(), closureStruct, addressOfWrapperFunction, 0);
-    Value one = rewriter.create<LLVM::ConstantOp>(
-        op.getLoc(), IntegerType::get(context, 8), 1);
+        LLVM::AddressOfOp::create(rewriter, op.getLoc(), wrapperFn);
+    closureStruct = LLVM::InsertValueOp::create(
+        rewriter, op.getLoc(), closureStruct, addressOfWrapperFunction,
+        static_cast<int64_t>(0));
+    Value one = LLVM::ConstantOp::create(rewriter, op.getLoc(),
+                                         IntegerType::get(context, 8), 1);
     LLVM::AllocaOp envStruct =
-        rewriter.create<LLVM::AllocaOp>(op.getLoc(), types.opaquePtrType, one);
+        LLVM::AllocaOp::create(rewriter, op.getLoc(), types.opaquePtrType, one);
     envStruct.setElemType(types.liftedFunctionCaptureType);
     // TODO: When data layouts are propagated properly, extract the data
     //  layout from TargetInfoAttr
-    rewriter.create<LLVM::LifetimeStartOp>(op.getLoc(), envStruct);
+    LLVM::LifetimeStartOp::create(rewriter, op.getLoc(), envStruct);
     for (auto [argIdx, boundArgValue] :
          llvm::enumerate(adaptor.getCaptures())) {
-      LLVM::GEPOp getBoundArgPtr = rewriter.create<LLVM::GEPOp>(
-          op.getLoc(), /*resultType=*/types.opaquePtrType,
+      LLVM::GEPOp getBoundArgPtr = LLVM::GEPOp::create(
+          rewriter, op.getLoc(), /*resultType=*/types.opaquePtrType,
           /*basePtrType=*/types.opaquePtrType, /*basePtr=*/envStruct,
           ArrayRef<LLVM::GEPArg>({0, static_cast<int32_t>(argIdx)}));
       getBoundArgPtr.setElemType(types.liftedFunctionCaptureType);
-      rewriter.create<LLVM::StoreOp>(op.getLoc(), boundArgValue,
-                                     getBoundArgPtr.getResult());
+      LLVM::StoreOp::create(rewriter, op.getLoc(), boundArgValue,
+                            getBoundArgPtr.getResult());
     }
 
     // Add the environment struct to the closure struct
-    closureStruct = rewriter.create<LLVM::InsertValueOp>(
-        op.getLoc(), closureStruct, envStruct, 1);
+    closureStruct = LLVM::InsertValueOp::create(rewriter, op.getLoc(),
+                                                closureStruct, envStruct, 1);
 
     // Insert lifetime marker at the end of the struct
     auto oldInsertionBlock = rewriter.getInsertionBlock();
     auto oldInsertionPoint = rewriter.getInsertionPoint();
     rewriter.setInsertionPoint(op->getBlock(), --op->getBlock()->end());
-    rewriter.create<LLVM::LifetimeEndOp>(op.getLoc(), envStruct);
+    LLVM::LifetimeEndOp::create(rewriter, op.getLoc(), envStruct);
     rewriter.setInsertionPoint(oldInsertionBlock, oldInsertionPoint);
     rewriter.replaceOp(op, closureStruct);
 
@@ -325,10 +326,10 @@ struct CallIndirectOpConversion
     if (isClosureType(callee.getType())) {
       // Unpack the struct representation of the closure.
       auto pointerType = LLVM::LLVMPointerType::get(getContext());
-      Value wrapperFnPtr = rewriter.create<LLVM::ExtractValueOp>(
-          op.getLoc(), adaptor.getCallee(), 0);
-      Value envStruct = rewriter.create<LLVM::ExtractValueOp>(
-          op.getLoc(), adaptor.getCallee(), 1);
+      Value wrapperFnPtr = LLVM::ExtractValueOp::create(rewriter, op.getLoc(),
+                                                        adaptor.getCallee(), 0);
+      Value envStruct = LLVM::ExtractValueOp::create(rewriter, op.getLoc(),
+                                                     adaptor.getCallee(), 1);
 
       // Compute the type of the wrapper function -- wrapper function type is
       // (!llvm.ptr, unboundArgTy0, ... unboundArgTyn) -> resultTypes
@@ -386,8 +387,8 @@ struct CallIndirectOpConversion
     SmallVector<Value> results;
     results.reserve(op.getNumResults());
     for (unsigned i = 0, e = op.getNumResults(); i < e; ++i)
-      results.push_back(rewriter.create<LLVM::ExtractValueOp>(
-          op.getLoc(), llvmCall.getResult(), i));
+      results.push_back(LLVM::ExtractValueOp::create(rewriter, op.getLoc(),
+                                                     llvmCall.getResult(), i));
 
     // Replace the call operation.
     rewriter.replaceOp(op, results);

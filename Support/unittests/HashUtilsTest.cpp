@@ -61,7 +61,7 @@ TEST(HashUtils, GetBytecodeHashDifferentOps) {
 
   // Add something to moduleOp2 to make it different
   builder.setInsertionPointToStart(moduleOp2->getBody());
-  builder.create<ModuleOp>(loc);
+  ModuleOp::create(builder, loc);
 
   FailureOr<std::string> hash1 = getBytecodeHash(*moduleOp1);
   FailureOr<std::string> hash2 = getBytecodeHash(*moduleOp2);

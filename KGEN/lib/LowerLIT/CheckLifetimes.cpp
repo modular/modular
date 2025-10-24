@@ -175,7 +175,7 @@ insertDebugVariableForArg(OpBuilder &builder, FunctionLikeOp func,
   auto scopedLoc =
       FusedLoc::get(varAttr.getContext(), {loc}, varAttr.getScope());
 
-  builder.create<DebugInfo::ValueOp>(scopedLoc, arg, varAttr, diExpr);
+  DebugInfo::ValueOp::create(builder, scopedLoc, arg, varAttr, diExpr);
   return varAttr;
 }
 
@@ -1911,7 +1911,7 @@ static void emitLifetimeEnd(Value value, ImplicitLocOpBuilder &builder) {
     value = rebind.getOperand();
 
   if (value.getDefiningOp<VarDeclOp>())
-    builder.create<VarLifetimeEndOp>(value);
+    VarLifetimeEndOp::create(builder, value);
 }
 
 static void emitLifetimeEndAfter(Value value, Operation *after) {
@@ -2100,7 +2100,7 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
       if (info.debugVariable &&
           (consumedValues.empty() ||
            valueRef.getNumBits() == consumedValues.size())) {
-        builder.create<DebugInfo::KillOp>(info.debugVariable);
+        DebugInfo::KillOp::create(builder, info.debugVariable);
       }
     }
 
@@ -2126,7 +2126,7 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
 
   unsigned nextBit = 0;
   for (StructFieldOp field : structDecl.getFieldDecls()) {
-    auto fieldVal = builder.create<RefStructGEROp>(value, field);
+    auto fieldVal = RefStructGEROp::create(builder, value, field);
     unsigned numBits = valueSet.typeDeclInfo.getNumFieldsInType(
         evaluator.getReboundType(field.getType()));
     destroyValueIfNeeded(fieldVal, valueRef.getSubfield(nextBit, numBits),
@@ -2156,7 +2156,7 @@ static Value getMutableRefForPossiblyImmutValue(Value value,
   if (value.getType() == destType)
     return value;
 
-  return builder.create<RebindOp>(destType, value);
+  return RebindOp::create(builder, destType, value);
 }
 
 /// Emit one destructor call for one entire value or field.
@@ -2211,12 +2211,12 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
     size_t originNum = valueSet.typeDeclInfo.nextAnonOriginNumber++;
     StringAttr originAttr =
         builder.getStringAttr("__dtor_tmp__`" + Twine(originNum));
-    auto tmpVar = builder.create<VarDeclOp>(
-        value.getType(),
+    auto tmpVar = VarDeclOp::create(
+        builder, value.getType(),
         builder.getStringAttr("__dtor_tmp__" + Twine(originNum)), originAttr,
         VarDeclKind::Implicit);
-    builder.create<VarLifetimeStartOp>(tmpVar);
-    builder.create<RefStoreOp>(value, tmpVar);
+    VarLifetimeStartOp::create(builder, tmpVar);
+    RefStoreOp::create(builder, value, tmpVar);
     value = tmpVar;
   }
 
@@ -2247,8 +2247,8 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
   }
 
   // Emit the call to the destructor.
-  builder.create<LIT::CallOp>(signature.getResults()[0], dtor, implicitOrigins,
-                              value);
+  LIT::CallOp::create(builder, signature.getResults()[0], dtor, implicitOrigins,
+                      value);
   emitLifetimeEnd(value, builder);
 }
 
@@ -2556,7 +2556,7 @@ void DestructorInserter::elideCopyInitReg(LIT::CallOp copyInitCall,
                                &*std::next(Block::iterator(copyInitCall)));
   // TODO: we could get more aggressive and reuse the memory temp when the
   // result is insta-stored if there is some reason to do so.
-  auto newResult = builder.create<LoadConsumeOp>(copySrcMem);
+  auto newResult = LoadConsumeOp::create(builder, copySrcMem);
   emitLifetimeEndAfter(copySrcMem, newResult);
 
   copyDst.replaceAllUsesWith(newResult);
@@ -2605,9 +2605,10 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
 
       // The old reference type used a novel origin.  We need to declare it,
       // and coerce back to it with a rebind.
-      builder.create<ParamDeclareOp>(ParamDeclAttr::get(param),
-                                     AnyOriginAttr::get(param.getType()));
-      auto refCasted = builder.create<RebindOp>(tmpDecl.getType(), copyInitSrc);
+      ParamDeclareOp::create(builder, ParamDeclAttr::get(param),
+                             AnyOriginAttr::get(param.getType()));
+      auto refCasted =
+          RebindOp::create(builder, tmpDecl.getType(), copyInitSrc);
 
       // Erase the origin start marker for the temporary. However, keep the
       // origin end markers if the aliased value is a var decl, as they will
@@ -3447,7 +3448,7 @@ void DestructorInsertion::checkConsume(Value value, Operation &op, bool isDeref,
     const ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
     if (info.debugVariable && valueRef.startBit == info.startValueBit &&
         valueRef.endBit == info.endValueBit) {
-      builder.create<DebugInfo::KillOp>(info.debugVariable);
+      DebugInfo::KillOp::create(builder, info.debugVariable);
     }
 
     emitLifetimeEndAfter(value, &op);
@@ -3497,7 +3498,7 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
       // Emit this above the operation.
       ImplicitLocOpBuilder builder(op.getLoc(), &op);
       emitDebugInit(value, direct, builder);
-      builder.create<VarLifetimeStartOp>(value);
+      VarLifetimeStartOp::create(builder, value);
     }
 
     // If the destroyed value is a user-defined value that was just defined,
@@ -3726,7 +3727,7 @@ bool DestructorInsertion::scheduleNeededDtors(ValueRef use,
 
     // Drill into the right field.
     for (StructFieldOp subfield : accessPath)
-      value = dtorInserter.builder.create<RefStructGEROp>(value, subfield);
+      value = RefStructGEROp::create(dtorInserter.builder, value, subfield);
   }
 
   // If this is a store to a subfield of a non-trivial value being destroyed,
@@ -3781,7 +3782,7 @@ void DestructorInsertion::emitDebugInit(Value value, ValueRef valueRef,
         newIrValue,
         cast<DebugInfo::DIUnresolvedMLIRType>(info.debugVariable.getType())
             .getType());
-    builder.create<DebugInfo::ValueOp>(value, info.debugVariable, conversion);
+    DebugInfo::ValueOp::create(builder, value, info.debugVariable, conversion);
   }
 }
 

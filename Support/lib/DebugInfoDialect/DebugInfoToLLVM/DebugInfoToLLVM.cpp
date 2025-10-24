@@ -398,10 +398,11 @@ struct ConvertKillOp : public OpRewritePattern<KillOp> {
 
   LogicalResult matchAndRewrite(KillOp op,
                                 PatternRewriter &rewriter) const override {
-    auto undef = rewriter.create<LLVM::UndefOp>(
-        op.getLoc(), LLVM::LLVMStructType::getLiteral(getContext(), {}));
-    rewriter.create<LLVM::DbgValueOp>(
-        replacer.replace<LocationAttr>(op.getLoc()), undef,
+    auto undef = LLVM::UndefOp::create(
+        rewriter, op.getLoc(),
+        LLVM::LLVMStructType::getLiteral(getContext(), {}));
+    LLVM::DbgValueOp::create(
+        rewriter, replacer.replace<LocationAttr>(op.getLoc()), undef,
         replacer.replace<LLVM::DILocalVariableAttr>(op.getValueInfo()));
     rewriter.eraseOp(op);
     return success();
@@ -423,8 +424,8 @@ struct ConvertValueOp : public OpRewritePattern<ValueOp> {
 
   LogicalResult matchAndRewrite(ValueOp op,
                                 PatternRewriter &rewriter) const override {
-    rewriter.create<LLVM::DbgValueOp>(
-        replacer.replace<LocationAttr>(op.getLoc()), op.getValue(),
+    LLVM::DbgValueOp::create(
+        rewriter, replacer.replace<LocationAttr>(op.getLoc()), op.getValue(),
         replacer.replace<LLVM::DILocalVariableAttr>(op.getValueInfo()),
         replacer.replace<LLVM::DIExpressionAttr>(op.getConversionExpr()));
     rewriter.eraseOp(op);

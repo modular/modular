@@ -104,9 +104,9 @@ mergeOrInlineUnrollBlock(Block *dest, Block *original, int64_t urollFactorN,
             llvm::append_range(newOperands, yield.getOtherIterValues());
             rewriter.setInsertionPointAfter(prevOp);
 
-            newForYield = rewriter.create<ForYieldOp>(
-                op.getLoc(), yield.getInductionVar(), newOperands,
-                ValueRange{});
+            newForYield = ForYieldOp::create(rewriter, op.getLoc(),
+                                             yield.getInductionVar(),
+                                             newOperands, ValueRange{});
           } else {
             // Don't move last ForYieldOp.
             newForYield = yield;
@@ -132,9 +132,9 @@ mergeOrInlineUnrollBlock(Block *dest, Block *original, int64_t urollFactorN,
           if (isUnrollByFactor) {
             SmallVector<Value> newOperands = yield.getReturnValues();
             llvm::append_range(newOperands, yield.getOtherIterValues());
-            newForYield = rewriter.create<ForYieldOp>(
-                op.getLoc(), yield.getInductionVar(), newOperands,
-                SmallVector<Value>{});
+            newForYield = ForYieldOp::create(rewriter, op.getLoc(),
+                                             yield.getInductionVar(),
+                                             newOperands, SmallVector<Value>{});
 
             rewriter.eraseOp(newOp);
           } else {
@@ -258,17 +258,17 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     rewriter.setInsertionPoint(loop);
     // Create the new ForOp with reordered operands.
     // create new step
-    auto newStepOp = rewriter.create<mlir::index::ConstantOp>(
-        loop.getStep().getLoc(), newStep);
+    auto newStepOp = mlir::index::ConstantOp::create(
+        rewriter, loop.getStep().getLoc(), newStep);
 
-    auto newUnrollNUpperBoundOp = rewriter.create<mlir::index::ConstantOp>(
-        loop.getUpperBound().getLoc(), newUnrollNUpperBound);
+    auto newUnrollNUpperBoundOp = mlir::index::ConstantOp::create(
+        rewriter, loop.getUpperBound().getLoc(), newUnrollNUpperBound);
 
     // New forOp returns all iterArgs except the induction variable (retVals and
     // otherArgs). This helps to pass all the iteration variables if there is a
     // tail part of the unrolling after this ForOp.
-    auto forOp = rewriter.create<HLCF::ForOp>(
-        loop->getLoc(),
+    auto forOp = HLCF::ForOp::create(
+        rewriter, loop->getLoc(),
         SmallVector<Type>{llvm::drop_begin(loop.getIterArgs().getTypes())},
         loop.getLowerBound(), newUnrollNUpperBoundOp, newStepOp,
         loop.getIterArgs(), UnrollLevel::none(), loop.getCmpPredicateType(),
@@ -291,8 +291,8 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     if (hasTailFor) {
       // Add tail iterations.
       rewriter.setInsertionPoint(loop);
-      auto newLowerBoundV = rewriter.create<mlir::index::ConstantOp>(
-          loop->getLoc(), newTailLowerBound);
+      auto newLowerBoundV = mlir::index::ConstantOp::create(
+          rewriter, loop->getLoc(), newTailLowerBound);
       SmallVector<Value> newOperands = {newLowerBoundV, loop.getUpperBound(),
                                         loop.getStep(), newLowerBoundV};
       llvm::append_range(newOperands, forOp.getResults());

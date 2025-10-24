@@ -122,7 +122,7 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
   // The created closure is a synthesized operation. No debug scopes should be
   // carried into it from the originating op.
   LocationAttr loc = DebugInfo::stripDebugScopesRecursively(op->getLoc());
-  auto closureWrapper = b.create<StageClosureOp>(loc, resSigGen);
+  auto closureWrapper = StageClosureOp::create(b, loc, resSigGen);
   closureWrapper.setCallLocAttr(op->getLoc());
   Block *body = b.createBlock(&closureWrapper.getBodyRegion());
 
@@ -139,7 +139,7 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
     Type argTy = op.getOriginalArgType(i);
     // Bitcast to the original type if needed.
     if (rawArgTy != argTy)
-      arg = b.create<POP::PointerBitcastOp>(loc, argTy, arg);
+      arg = POP::PointerBitcastOp::create(b, loc, argTy, arg);
 
     if (promotedOutputs && conv == ArgConvention::ByRefResult) {
       // Output was a memory argument but got promoted to a register output.
@@ -152,21 +152,21 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
     } else {
       // Input was a memory argument but got lowered to a register argument.
       // Load it before passing it to the function.
-      Value loadArg = b.create<POP::LoadOp>(loc, arg);
+      Value loadArg = POP::LoadOp::create(b, loc, arg);
       insValues.push_back(loadArg);
     }
   }
 
   // Insert the call.
-  CallOp callOp = b.create<CallOp>(loc, callee, insValues);
+  CallOp callOp = CallOp::create(b, loc, callee, insValues);
 
   // Add stores for the call outputs.
   for (auto [resultVal, resultPtr] :
        llvm::zip(callOp->getResults(), outsPointers))
-    b.create<POP::StoreOp>(loc, resultVal, resultPtr);
+    POP::StoreOp::create(b, loc, resultVal, resultPtr);
 
   // Add the terminator (KGEN::ReturnOp).
-  b.create<ReturnOp>(loc);
+  ReturnOp::create(b, loc);
 
   b.replaceOp(op, closureWrapper);
 }
@@ -269,8 +269,8 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     elements.reserve(types.size());
     for (auto [i, _] : llvm::enumerate(types)) {
       auto ptr =
-          b.create<StructExtractOp>(op->getLoc(), load->getOperand(0), i);
-      elements.push_back(b.create<POP::LoadOp>(op->getLoc(), ptr));
+          StructExtractOp::create(b, op->getLoc(), load->getOperand(0), i);
+      elements.push_back(POP::LoadOp::create(b, op->getLoc(), ptr));
     }
     b.replaceOpWithNewOp<StructCreateOp>(load, load->getResultTypes(),
                                          elements);
@@ -282,10 +282,10 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     auto structType = cast<StructType>(create->getResultTypes().front());
     auto unionType = cast<POP::UnionType>(structType.getElementTypes().front());
     auto discrType = cast<POP::SIMDType>(structType.getElementTypes().back());
-    Value unionVal = b.create<POP::UnionWrapOp>(op->getLoc(), unionType,
-                                                create.getOperand());
-    Value discrVal = b.create<ParamConstantOp>(
-        op->getLoc(), POP::SIMDAttr::get(create.getIndex(), discrType));
+    Value unionVal = POP::UnionWrapOp::create(b, op->getLoc(), unionType,
+                                              create.getOperand());
+    Value discrVal = ParamConstantOp::create(
+        b, op->getLoc(), POP::SIMDAttr::get(create.getIndex(), discrType));
     b.replaceOpWithNewOp<StructCreateOp>(op, structType,
                                          ValueRange{unionVal, discrVal});
     return;
@@ -295,25 +295,25 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     auto structType = cast<StructType>(variantVal.getType());
     auto discrType = cast<POP::SIMDType>(structType.getElementTypes().back());
     Value discrVal =
-        b.create<StructExtractOp>(op->getLoc(), variantVal, /*index=*/1);
-    Value discrCst = b.create<ParamConstantOp>(
-        op->getLoc(), POP::SIMDAttr::get(is.getIndex(), discrType));
-    Value isEq = b.create<POP::CmpOp>(op->getLoc(), POP::CmpPredicate::EQ,
-                                      discrVal, discrCst);
+        StructExtractOp::create(b, op->getLoc(), variantVal, /*index=*/1);
+    Value discrCst = ParamConstantOp::create(
+        b, op->getLoc(), POP::SIMDAttr::get(is.getIndex(), discrType));
+    Value isEq = POP::CmpOp::create(b, op->getLoc(), POP::CmpPredicate::EQ,
+                                    discrVal, discrCst);
     b.replaceOpWithNewOp<POP::CastToBuiltinOp>(op, b.getI1Type(), isEq);
     return;
   }
   if (auto get = dyn_cast<VariantGetOp>(op)) {
     Value variantVal = get->getOperand(0);
     Value unionVal =
-        b.create<StructExtractOp>(op->getLoc(), variantVal, /*index=*/0);
+        StructExtractOp::create(b, op->getLoc(), variantVal, /*index=*/0);
     b.replaceOpWithNewOp<POP::UnionUnwrapOp>(op, get.getType(), unionVal);
     return;
   }
   if (auto bitcast = dyn_cast<POP::VariantBitcastOp>(op)) {
     Value variantPtr = bitcast->getOperand(0);
     Value unionPtr =
-        b.create<StructGEPOp>(op->getLoc(), variantPtr, /*index=*/0);
+        StructGEPOp::create(b, op->getLoc(), variantPtr, /*index=*/0);
     b.replaceOpWithNewOp<POP::UnionBitcastOp>(op, bitcast.getType(), unionPtr);
     return;
   }

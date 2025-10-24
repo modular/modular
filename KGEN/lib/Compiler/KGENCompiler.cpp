@@ -104,7 +104,7 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
     sliced.setSymNameAttr(stubName);
   }
 
-  auto wrapper = b.create<GeneratorOp>(name, sigGen);
+  auto wrapper = GeneratorOp::create(b, name, sigGen);
   wrapper.setExported();
 
   SmallVector<Attribute> metadataArray =
@@ -125,12 +125,12 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   // Re-declare the captured parameter values.
   for (auto [decl, value] :
        llvm::zip(sliced.getInputParams(), symbol.getParamValues()))
-    b.create<ParamDeclareOp>(decl, value);
+    ParamDeclareOp::create(b, decl, value);
 
-  auto call = b.create<CallOp>(
-      SymbolConstantAttr::get(stubName, sigGen, symbol.getParamValues()),
+  auto call = CallOp::create(
+      b, SymbolConstantAttr::get(stubName, sigGen, symbol.getParamValues()),
       entry->getArguments());
-  b.create<ReturnOp>(call.getResults());
+  ReturnOp::create(b, call.getResults());
 }
 
 /// Return size of the \p type in bits.
@@ -207,8 +207,8 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
   auto sig = FuncType::get(b.getFunctionType(nonePtr, noneType),
                            ArgConvention::ReadReg, FnEffects().setCapturing());
   OwningOpRef<FuncOp> func =
-      b.create<FuncOp>(b.getStringAttr(name.getValue() + "_populate_captures"),
-                       sig, InlineLevel::Always);
+      FuncOp::create(b, b.getStringAttr(name.getValue() + "_populate_captures"),
+                     sig, InlineLevel::Always);
 
   // Populate the body. Generate a local variable for each capture argument
   // and store the addresses to the pointer.
@@ -229,21 +229,22 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
     // pop.store %opaque, %gep
     // ```
     Type type = capture.getType();
-    Value value = b.create<POP::CompilerGlobalLoadOp>(
+    Value value = POP::CompilerGlobalLoadOp::create(
+        b,
         // Make sure to strip off the type of the StringAttr.
         type, b.getStringAttr(capture.getValue()));
-    Value ptr = b.create<POP::StackAllocationOp>(PointerType::get(type));
-    b.create<POP::StoreOp>(value, ptr);
+    Value ptr = POP::StackAllocationOp::create(b, PointerType::get(type));
+    POP::StoreOp::create(b, value, ptr);
     Value argPtrPtrs =
-        b.create<POP::PointerBitcastOp>(PointerType::get(nonePtr), argPtrs);
-    Value gep = b.create<POP::OffsetOp>(
-        argPtrPtrs, b.create<ParamConstantOp>(b.getIndexAttr(i)));
-    Value opaque = b.create<POP::PointerBitcastOp>(nonePtr, ptr);
+        POP::PointerBitcastOp::create(b, PointerType::get(nonePtr), argPtrs);
+    Value gep = POP::OffsetOp::create(
+        b, argPtrPtrs, ParamConstantOp::create(b, b.getIndexAttr(i)));
+    Value opaque = POP::PointerBitcastOp::create(b, nonePtr, ptr);
     typeSizes.push_back(KGEN::getTypeSizeInBits(target, type));
-    b.create<POP::StoreOp>(opaque, gep);
+    POP::StoreOp::create(b, opaque, gep);
   }
-  b.create<ReturnOp>(
-      b.create<ParamConstantOp>(b.getAttr<NoneAttr>()).getResult());
+  ReturnOp::create(
+      b, ParamConstantOp::create(b, b.getAttr<NoneAttr>()).getResult());
 
   return {std::move(func), captures.size(), b.getDenseI64ArrayAttr(typeSizes)};
 }

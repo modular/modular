@@ -150,7 +150,7 @@ static StructFieldOp addFieldOpAndDecl(StringAttr name, Type type,
                                        StructDeclOp structOp,
                                        ASTDecl &structDecl, OpBuilder &b,
                                        DeclResolver &declResolver) {
-  auto field = b.create<StructFieldOp>(structOp.getLoc(), name, type);
+  auto field = StructFieldOp::create(b, structOp.getLoc(), name, type);
   declResolver.addFullyResolvedDecl(&*field, field.getNameAttr(),
                                     structDecl.getLoc(), &structDecl);
   return field;
@@ -169,18 +169,18 @@ static void addFieldsToStruct(StructDeclOp structOp, ASTDecl &structDecl,
 
 static Value loadField(ImplicitLocOpBuilder &b, Value self,
                        StructFieldOp field) {
-  return b.create<RefLoadOp>(b.create<RefStructGEROp>(self, field));
+  return RefLoadOp::create(b, RefStructGEROp::create(b, self, field));
 }
 static void storeField(ImplicitLocOpBuilder &b, Value self, Value value,
                        StructFieldOp field) {
-  b.create<RefStoreOp>(value, b.create<RefStructGEROp>(self, field));
+  RefStoreOp::create(b, value, RefStructGEROp::create(b, self, field));
 }
 static void storeField(ImplicitLocOpBuilder &b, Value self, Value value,
                        StringAttr name) {
   auto resultTy = RefStructGEROp::getReboundFieldType(
       cast<RefType>(self.getType()), name, value.getType());
-  auto fieldRef = b.create<RefStructGEROp>(resultTy, name, self);
-  b.create<RefStoreOp>(value, fieldRef);
+  auto fieldRef = RefStructGEROp::create(b, resultTy, name, self);
+  RefStoreOp::create(b, value, fieldRef);
 }
 
 static std::pair<ASTDecl &, StructDeclOp>
@@ -199,7 +199,7 @@ createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
       PogListAttr::get(b.getContext(), paramNames, passingKinds);
 
   StructDeclOp declOp =
-      b.create<StructDeclOp>(shared.diags.translateLocation(loc), name);
+      StructDeclOp::create(b, shared.diags.translateLocation(loc), name);
   declOp.setSynthetic(true);
 
   // Set attributes in bulk.
@@ -298,7 +298,7 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
 
   // Store the function pointer into the pointer field.
   Value opaqueFnPtr =
-      b.create<POP::PointerBitcastOp>(opaquePtrType, func.getArgument(0));
+      POP::PointerBitcastOp::create(b, opaquePtrType, func.getArgument(0));
   storeField(b, self, opaqueFnPtr, b.getStringAttr("field0"));
 
   // Use the no-op destructor and copy constructor.
@@ -309,12 +309,12 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   if (dtor.empty() || copy.empty())
     return;
 
-  Value dtorRef = b.create<CreateClosureOp>(
-      cast<FnOp>(dtor.front()->getIfOperation())
-          .getBoundReference(shared.getEvaluationContext()));
-  Value copyRef = b.create<CreateClosureOp>(
-      cast<FnOp>(copy.front()->getIfOperation())
-          .getBoundReference(shared.getEvaluationContext()));
+  Value dtorRef = CreateClosureOp::create(
+      b, cast<FnOp>(dtor.front()->getIfOperation())
+             .getBoundReference(shared.getEvaluationContext()));
+  Value copyRef = CreateClosureOp::create(
+      b, cast<FnOp>(copy.front()->getIfOperation())
+             .getBoundReference(shared.getEvaluationContext()));
   storeField(b, self, dtorRef, b.getStringAttr("dtor"));
   storeField(b, self, copyRef, b.getStringAttr("_copy"));
 
@@ -333,22 +333,22 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
 
   // Store it into the call field.
   storeField(b, self,
-             b.create<CreateClosureOp>(ParamDeclRefAttr::get(paramDecl)),
+             CreateClosureOp::create(b, ParamDeclRefAttr::get(paramDecl)),
              b.getStringAttr("call"));
   IREmitter::emitNormalReturn(b);
 
   // Populate the lambda.
   b = ImplicitLocOpBuilder::atBlockBegin(callImpl.getLoc(), callImpl.getBody());
   Value fnPtr =
-      b.create<POP::PointerBitcastOp>(fnPtrType, callImpl.getArgument(0));
+      POP::PointerBitcastOp::create(b, fnPtrType, callImpl.getArgument(0));
   SmallVector<TypedAttr> origins;
   for (ParamDeclAttr originDecl : callImpl.getParams())
     origins.push_back(ParamDeclRefAttr::get(originDecl));
   SmallVector<Value> callArgs;
   llvm::append_range(callArgs, callImpl.getArguments());
   auto callIndirect =
-      b.create<CallIndirectOp>(fnPtrType.getResultType(), fnPtr, origins,
-                               ArrayRef(callArgs).drop_front());
+      CallIndirectOp::create(b, fnPtrType.getResultType(), fnPtr, origins,
+                             ArrayRef(callArgs).drop_front());
   IREmitter::emitNormalReturn(b, callIndirect.getResult(0));
 }
 
@@ -420,7 +420,7 @@ std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
       shared.diags.translateLocation(nestedFunctionOrTypeLocation);
   StringRef originalName = name.getValue();
   auto closureTrait =
-      b.create<TraitDeclOp>(location, StringAttr::get(ctx, originalName));
+      TraitDeclOp::create(b, location, StringAttr::get(ctx, originalName));
   ASTDecl &traitDecl = shared.declResolver->addFullyResolvedDecl(
       &*closureTrait, name, moduleDecl.getLoc(), &shared.getTopLevelDecl());
 
@@ -496,7 +496,7 @@ getUnwrappedOperands(ImplicitLocOpBuilder &b, FnOp op, Type wrapperType,
       assert(originReference && "There should not be parameter expressions "
                                 "in the signature of wrapper functions");
       operands.push_back(
-          b.create<RefStructGEROp>(arg, wrappedField)->getResults().front());
+          RefStructGEROp::create(b, arg, wrappedField)->getResults().front());
       originToField[originReference.getName().getValue()] =
           wrappedField.getNameAttr();
     } else {
@@ -690,8 +690,8 @@ ASTDecl *ClosureEmitter::createStructWrapper(
         llvm::map_range(parameters, [](ParamDeclAttr p) -> TypedAttr {
           return ParamDeclRefAttr::get(p);
         }));
-    auto callOp = b.create<LIT::CallOp>(
-        result,
+    auto callOp = LIT::CallOp::create(
+        b, result,
         BindParamsAttr::get(symbol, paramArgs, &shared.getEvaluationContext()),
         origins, operands);
     IREmitter::emitNormalReturn(b, callOp.getResult(0));
@@ -745,7 +745,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(
       moveParentStrAttr = parentName;
 
     ConformanceOp witnessTable =
-        b.create<ConformanceOp>(parentName, parentSymbol, immediateParents);
+        ConformanceOp::create(b, parentName, parentSymbol, immediateParents);
     Block &block = witnessTable.getBody().emplaceBlock();
     b.setInsertionPointToStart(&block);
     assert(nameToImpl.contains(name) &&
@@ -753,7 +753,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(
     FnOp impl = nameToImpl[name];
     SymbolConstantAttr symbolConstant =
         buildSymbol(impl, implType, originSetParam);
-    b.create<WitnessOp>(fnOp.getSymNameAttr(), symbolConstant);
+    WitnessOp::create(b, fnOp.getSymNameAttr(), symbolConstant);
 
     return witnessTable;
   };
@@ -812,8 +812,8 @@ ASTDecl *ClosureEmitter::createStructWrapper(
   llvm::SmallDenseSet<StringRef> explicitParameters;
   getUnwrappedOperands(b, initFnOp, refSelfType.getElementType(), wrappedField,
                        explicitParameters, operands, origins);
-  b.create<LIT::CallOp>(moveSignature.getResultType(), moveSymbol, origins,
-                        operands);
+  LIT::CallOp::create(b, moveSignature.getResultType(), moveSymbol, origins,
+                      operands);
   IREmitter::emitNormalReturn(b);
   declOp.setCanonicalTrait(traitType);
 
@@ -829,8 +829,8 @@ ASTDecl *ClosureEmitter::createStructWrapper(
     TypedAttr valueAttr = BoolAttr::get(ctx, value);
     ParamDeclAttr paramAttr = ParamDeclAttr::get(
         ctx, StringAttr::get(ctx, name), valueAttr.getType());
-    AliasDeclOp aliasOp = b.create<LIT::AliasDeclOp>(
-        declOp.getBodyRegion().getLoc(), paramAttr, valueAttr);
+    AliasDeclOp aliasOp = LIT::AliasDeclOp::create(
+        b, declOp.getBodyRegion().getLoc(), paramAttr, valueAttr);
     aliasOp.setInheritedFromAttr(parent.getSymbolRef(moduleDecl));
     shared.declResolver->addFullyResolvedDecl(
         aliasOp, StringAttr::get(ctx, name), structDecl.getLoc(), &structDecl);
@@ -841,7 +841,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(
            "parent witness table should already exist");
     auto conformanceOp = parentWitnesses[parent.getDefiningOpName()];
     b.setInsertionPointToEnd(&conformanceOp.getBody().front());
-    b.create<WitnessOp>(StringAttr::get(ctx, name), valueAttr);
+    WitnessOp::create(b, StringAttr::get(ctx, name), valueAttr);
   };
 
   generateIsTrivialSpecialAlias("__del__is_trivial", anyParent);
@@ -900,7 +900,7 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
         sig.getFnEffects().setUnified(false).setRegisterPassable(false), "",
         true, inlineLevel);
     builder.setInsertionPointToEnd(&fnOp.getBodyRegion().front());
-    builder.create<UnreachableOp>();
+    UnreachableOp::create(builder);
     functions.insert({callName, fnOp.getSymNameAttr()});
   };
   auto createTraitFn = [&]() -> ASTDecl * {
@@ -1009,9 +1009,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     Value dtorSelf = destructor.getBody()->getArgument(0);
     Value dtorImpl = loadField(b, dtorSelf, impl);
     Value callee = loadField(b, dtorSelf, dtor);
-    b.create<CallIndirectOp>(noneType, callee,
-                             /*implicitOrigins=*/ArrayRef<TypedAttr>(),
-                             dtorImpl);
+    CallIndirectOp::create(b, noneType, callee,
+                           /*implicitOrigins=*/ArrayRef<TypedAttr>(), dtorImpl);
   }
 
   // Populate the copy constructor.
@@ -1025,8 +1024,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     Value copyExisting = copyCtr.getBody()->getArgument(0);
     Value existingImpl = loadField(b, copyExisting, impl);
     Value funcPtr = loadField(b, copySelf, copy);
-    auto call = b.create<CallIndirectOp>(
-        opaquePtrType, funcPtr, /*implicitOrigins=*/ArrayRef<TypedAttr>(),
+    auto call = CallIndirectOp::create(
+        b, opaquePtrType, funcPtr, /*implicitOrigins=*/ArrayRef<TypedAttr>(),
         existingImpl);
     storeField(b, copySelf, call.getResult(0), impl);
   }
@@ -1075,8 +1074,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       if (hasImplicitOrigin(conv))
         implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
 
-    auto callResult = builder.create<CallIndirectOp>(
-        resultType, callMemberPtr, implicitOrigins, arguments);
+    auto callResult = CallIndirectOp::create(builder, resultType, callMemberPtr,
+                                             implicitOrigins, arguments);
     IREmitter::emitNormalReturn(builder, callResult.getResult(0));
   }
 
@@ -1256,7 +1255,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     // Emit IR to generate the capture list and store it into self. Bind the
     // call function reference to itself.
     auto selfArg = initFunc.getArgument(initFunc.getNumArguments() - 1);
-    Value target = builder.create<RefStructGEROp>(selfArg, paramField);
+    Value target = RefStructGEROp::create(builder, selfArg, paramField);
     ValueDest dest(MLValue(target), EC_Assignment);
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
     if (shared.diBuilder)
@@ -1284,7 +1283,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   if (paramField) {
     // Emit the `kgen.capture_list.expand` into the call if required.
-    Value target = builder.create<RefStructGEROp>(selfArg, paramField);
+    Value target = RefStructGEROp::create(builder, selfArg, paramField);
     emitter.builder = builder;
     ValueDest dest(EC_Assignment);
     emitter.emitNamedMethodCall("expand", {{{MBValue(target), loc}}}, dest,
@@ -1293,10 +1292,10 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   for (auto [capture, fieldOp] :
        llvm::zip(captures, llvm::drop_begin(declOp.getFieldDecls(),
                                             hasParamClosureCaptures))) {
-    Value target = builder.create<RefStructGEROp>(selfArg, fieldOp);
+    Value target = RefStructGEROp::create(builder, selfArg, fieldOp);
     // If the capture is an SValue then it lives in register.
     if (capture.getValue().isSValue())
-      target = builder.create<RefLoadOp>(target);
+      target = RefLoadOp::create(builder, target);
 
     // If the reference types disagree, the cast to fix the origin.
     // FIXME: This isn't great.  We should really /replace/ the original
@@ -1315,7 +1314,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     // FIXME: This should use emitRebindOpIfNeeded, but it is introducing
     // mutability with the rebind!
     if (captureValue.getType() != target.getType())
-      target = builder.create<RebindOp>(captureValue.getType(), target);
+      target = RebindOp::create(builder, captureValue.getType(), target);
 
     assert(captureValue.getType() == target.getType() &&
            "Capture body rewrite problem");
@@ -1353,11 +1352,11 @@ static Value allocateHeapMemory(PointerType ptrType, ImplicitLocOpBuilder &b) {
       ptrType.getElementType(), TypeType::get(ptrType.getContext()));
   TypedAttr target =
       ParamOperatorAttr::get(POC::CurrentTarget, {}, b.getType<TargetType>());
-  Value sizeOf = b.create<ParamConstantOp>(
-      ParamOperatorAttr::get(POC::GetSizeOf, {elementType, target}));
-  Value alignOf = b.create<ParamConstantOp>(
-      ParamOperatorAttr::get(POC::GetAlignOf, {elementType, target}));
-  return b.create<POP::AlignedAllocOp>(ptrType, ValueRange{alignOf, sizeOf});
+  Value sizeOf = ParamConstantOp::create(
+      b, ParamOperatorAttr::get(POC::GetSizeOf, {elementType, target}));
+  Value alignOf = ParamConstantOp::create(
+      b, ParamOperatorAttr::get(POC::GetAlignOf, {elementType, target}));
+  return POP::AlignedAllocOp::create(b, ptrType, ValueRange{alignOf, sizeOf});
 }
 
 TopLevelTypes
@@ -1486,9 +1485,9 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
 
   // TODO(references): Move closures off pointers to correct origins.
   auto immortal = builder.getAttr<AnyOriginAttr>(/*isMut=*/true);
-  Value targetRef = builder.create<RefFromPointerOp>(target, immortal,
-                                                     /*startUninit=*/true,
-                                                     /*endUninit=*/false);
+  Value targetRef = RefFromPointerOp::create(builder, target, immortal,
+                                             /*startUninit=*/true,
+                                             /*endUninit=*/false);
 
   // Move the contents of the injected impl into the heap memory.
   IREmitter emitter(moduleDecl, builder);
@@ -1499,7 +1498,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
   StructFieldOp implField = *closureWrapper.getFieldDecls().begin();
   Value self = init.getBody()->getArgument(1);
   Value erasedType =
-      builder.create<POP::PointerBitcastOp>(opaquePtrType, target);
+      POP::PointerBitcastOp::create(builder, opaquePtrType, target);
   storeField(builder, self, erasedType, implField);
   auto generateName = [&](StringRef prefix) {
     return (closureWrapper.getSymName() + prefix + closureImpl.getSymName())
@@ -1515,7 +1514,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
     if (funcSymbol.getType() != fieldType)
       funcSymbol = ParamOperatorAttr::getRebind(funcSymbol, fieldType);
     auto createClosure =
-        builder.create<CreateClosureOp>(funcSymbol, ValueRange());
+        CreateClosureOp::create(builder, funcSymbol, ValueRange());
     storeField(builder, init.getArgument(1), createClosure, fieldName);
   };
 
@@ -1563,17 +1562,17 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
 
     // Allocate memory on heap and call copy constructor
     Value target = allocateHeapMemory(closureImplTopLevelPtrType, builder);
-    Value existingPtr = builder.create<POP::PointerBitcastOp>(
-        closureImplTopLevelPtrType, body->getArgument(0));
+    Value existingPtr = POP::PointerBitcastOp::create(
+        builder, closureImplTopLevelPtrType, body->getArgument(0));
 
     // TODO(references): move closures to references and correct origins.
     auto immortal = builder.getAttr<AnyOriginAttr>(/*isMut=*/true);
-    Value targetRef = builder.create<RefFromPointerOp>(target, immortal,
-                                                       /*startUninit=*/true,
-                                                       /*endUninit=*/false);
-    Value existingRef = builder.create<RefFromPointerOp>(existingPtr, immortal,
-                                                         /*startUninit=*/false,
-                                                         /*endUninit=*/false);
+    Value targetRef = RefFromPointerOp::create(builder, target, immortal,
+                                               /*startUninit=*/true,
+                                               /*endUninit=*/false);
+    Value existingRef = RefFromPointerOp::create(builder, existingPtr, immortal,
+                                                 /*startUninit=*/false,
+                                                 /*endUninit=*/false);
 
     // Copy the existing value into the target.
     // TODO: Use nicer expr emitter for the result expr.
@@ -1609,20 +1608,20 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
           shared.diBuilder->pushScopeGuard(topLevelDtor.getLocScope());
 
     // Cast the opaque pointer back to the closure impl type.
-    Value implPtr = builder.create<POP::PointerBitcastOp>(
-        closureImplTopLevelPtrType, body->getArgument(0));
+    Value implPtr = POP::PointerBitcastOp::create(
+        builder, closureImplTopLevelPtrType, body->getArgument(0));
 
     // TODO(references): Move closures off pointers.
     // This takes ownership of the pointer, telling checklifetimes that the
     // value should be destroyed by the exit of the function.  ASAP destruction
     // will make sure it is immediately destroyed because there are no uses.
     auto immortal = builder.getAttr<AnyOriginAttr>(/*isMut=*/true);
-    (void)builder.create<RefFromPointerOp>(implPtr, immortal,
-                                           /*startUninit=*/false,
-                                           /*endUninit=*/true);
+    (void)RefFromPointerOp::create(builder, implPtr, immortal,
+                                   /*startUninit=*/false,
+                                   /*endUninit=*/true);
 
     // Free the memory we allocated on the heap to store the closure.
-    builder.create<POP::AlignedFreeOp>(implPtr);
+    POP::AlignedFreeOp::create(builder, implPtr);
     builder = ImplicitLocOpBuilder::atBlockEnd(topLevelDtor.getLoc(), body);
     IREmitter::emitNormalReturn(builder);
   }
@@ -1665,16 +1664,16 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
 
     // Cast the opaque pointer back to the closure impl type.
     Value closureArg = body->getArgument(0);
-    Value implPtr = builder.create<POP::PointerBitcastOp>(
-        closureImplTopLevelPtrType, closureArg);
+    Value implPtr = POP::PointerBitcastOp::create(
+        builder, closureImplTopLevelPtrType, closureArg);
 
     // FIXME: Thread a origin through correctly.
 
     // TODO(references): Move closures off pointers.
     auto immortal = builder.getAttr<AnyOriginAttr>(/*isMut=*/false);
-    Value implRef = builder.create<RefFromPointerOp>(implPtr, immortal,
-                                                     /*startUninit=*/false,
-                                                     /*endUninit=*/false);
+    Value implRef = RefFromPointerOp::create(builder, implPtr, immortal,
+                                             /*startUninit=*/false,
+                                             /*endUninit=*/false);
 
     // Call the __call__ on the closure impl.
     assert(closureImpl->hasAttr(callMethodAttr) &&
@@ -1697,7 +1696,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
         implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
 
     Value result =
-        builder.create<CallOp>(resultType, typedSymbol, implicitOrigins, args)
+        CallOp::create(builder, resultType, typedSymbol, implicitOrigins, args)
             .getResult(0);
     IREmitter::emitNormalReturn(builder, result);
   }
@@ -1741,7 +1740,8 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
   builder.setInsertionPointToStart(
       &cast<FileModuleOp>(moduleDecl.getIfOperation()).getBodyRegion().front());
   TraitType traitType = getTraitType(closureParents, moduleDecl);
-  auto structGen = builder.create<StructGeneratorOp>(
+  auto structGen = StructGeneratorOp::create(
+      builder,
       StringAttr::get(
           ctx,
           Twine(getFlattenedSymbolName(getFullyResolvedSymbolRefUpToFileModule(
@@ -1760,8 +1760,8 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
     SymbolRefArrayAttr immediateParents = traitParent.getImmediateParentsAttr();
     SymbolRefAttr parentSymbol = closureParent.getSymbolRef(moduleDecl);
     StringAttr parentName = closureParent.getFullSymbolName(moduleDecl);
-    ConformanceOp witnessTable = builder.create<ConformanceOp>(
-        parentName, parentSymbol, immediateParents);
+    ConformanceOp witnessTable = ConformanceOp::create(
+        builder, parentName, parentSymbol, immediateParents);
     Block &block = witnessTable.getBody().emplaceBlock();
     builder.setInsertionPointToStart(&block);
 
@@ -1783,7 +1783,7 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
     TypedAttr symbol = ClosureSymbolAttr::get(
         ctx, parentSymbolRef, closureType.getName(),
         ClosureMethodAttr::get(ctx, method), paramValues, sig);
-    builder.create<WitnessOp>(fnOp.getSymNameAttr(), symbol);
+    WitnessOp::create(builder, fnOp.getSymNameAttr(), symbol);
   };
 
   for (ClosureParent &closureParent : closureParents) {
@@ -1977,8 +1977,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       original.getArgConventions(),
       original.getFnEffects().setUnified(false).setRegisterPassable(false),
       original.getFnMetadata(), original.getMetadata());
-  auto closure = builder.create<LIT::ClosureInitOp>(
-      opLoc, refType, withoutUnified, nestedFn.getFunctionType(),
+  auto closure = LIT::ClosureInitOp::create(
+      builder, opLoc, refType, withoutUnified, nestedFn.getFunctionType(),
       ValueRange(captureValues), ArrayAttr::get(ctx, captureInfo),
       OriginSetAttr::get(ctx, origins), nestedFn.getInputParams(),
       nestedFn.getInlineLevel(), origin, witnessTable,
@@ -1990,14 +1990,14 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   // value.
 
   // The wrapper takes ownership of the closure.
-  builder.create<OwnershipUseOp>(location, closure);
+  OwnershipUseOp::create(builder, location, closure);
 
   // Create the wrapper instance by emitting a call to the Wrapper
   // constructor.
   LIT::StructType closureWrapperType =
       wrapper.bindReference({witnessTable, closure.getCaptureOrigins()});
-  VarDeclOp var = builder.create<VarDeclOp>(
-      location, closureWrapperType, fnName.getValue(),
+  VarDeclOp var = VarDeclOp::create(
+      builder, location, closureWrapperType, fnName.getValue(),
       nestedFnDecl.getParentDecl()->mangleParamName(fnName.getValue()),
       VarDeclKind::Var);
   SmallVector<Value> operands({closure->getResult(0), var});
@@ -2022,8 +2022,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   auto boundSig = fullSig.getSpecializedGenerator(
       paramArgs, /*evaluationContext=*/nullptr, location);
   TypedAttr symbol = SymbolConstantAttr::get(symbolRef, boundSig, paramArgs);
-  builder.create<LIT::CallOp>(location, boundSig.getBody().getResults(), symbol,
-                              implicitOrigins, operands);
+  LIT::CallOp::create(builder, location, boundSig.getBody().getResults(),
+                      symbol, implicitOrigins, operands);
   return MLValue(var);
 }
 
@@ -2035,7 +2035,7 @@ static CValue ASTDeclToCValue(ASTDecl *decl, OpBuilder &builder, Location loc) {
   } else if (auto var = dyn_cast_or_null<VarDeclOp>(decl->getIfOperation())) {
     if (var.getKind() != VarDeclKind::Ref)
       return MLValue(var);
-    auto ref = builder.create<RefLoadOp>(loc, var);
+    auto ref = RefLoadOp::create(builder, loc, var);
     return CValue::getMValueForRef(ref);
   }
   return {};
@@ -2209,11 +2209,11 @@ static void addConformanceTable(
       cast<mlir::SymbolOpInterface>(traitDeclOp.getOperation()));
   StringAttr parentName = b.getStringAttr(getFlattenedSymbolName(parentSymbol));
   ConformanceOp witnessTable =
-      b.create<ConformanceOp>(parentName, parentSymbol, immediateParents);
+      ConformanceOp::create(b, parentName, parentSymbol, immediateParents);
   Block &block = witnessTable.getBody().emplaceBlock();
   b.setInsertionPointToStart(&block);
   for (auto [name, newWitness] : witnesses)
-    b.create<WitnessOp>(StringAttr::get(ctx, name), newWitness);
+    WitnessOp::create(b, StringAttr::get(ctx, name), newWitness);
   // Update the types of the struct wrapper.
   SymbolRefAttr symbol = closureParent.getSymbolRef(fileModule);
   TraitType oldTraitType = structDeclOp.getCanonicalTrait();
@@ -2340,24 +2340,24 @@ void ClosureEmitter::addConformanceToDevicePassable(
                "expected a the pointer type's first parameter to "
                "indicate its element type");
         Value addressRef =
-            b.create<StructExtractOp>(
-                 KGEN::PointerType::get(pointerElementType.getTypeValue()),
-                 targetArgument, StringAttr::get(ctx, "address"))
+            StructExtractOp::create(
+                b, KGEN::PointerType::get(pointerElementType.getTypeValue()),
+                targetArgument, StringAttr::get(ctx, "address"))
                 ->getResults()
                 .front();
-        Value address = b.create<POP::PointerBitcastOp>(
-            PointerType::get(paramType), addressRef);
+        Value address = POP::PointerBitcastOp::create(
+            b, PointerType::get(paramType), addressRef);
 
         // Build a byref destination from the target address pointer
         auto immortal = b.getAttr<AnyOriginAttr>(/*isMut=*/true);
-        Value targetRef = b.create<RefFromPointerOp>(address, immortal,
-                                                     /*startUninit=*/true,
-                                                     /*endUninit=*/false);
+        Value targetRef = RefFromPointerOp::create(b, address, immortal,
+                                                   /*startUninit=*/true,
+                                                   /*endUninit=*/false);
 
         // get closure value
         Value selfArgument = toDevice.getBodyRegion().front().getArgument(0);
         Value closureMemberRef =
-            b.create<RefStructGEROp>(selfArgument, devicePassedField)
+            RefStructGEROp::create(b, selfArgument, devicePassedField)
                 ->getResults()
                 .front();
 
@@ -2376,10 +2376,10 @@ void ClosureEmitter::addConformanceToDevicePassable(
         origins.push_back(
             cast<RefType>(closureMemberRef.getType()).getOrigin());
         origins.push_back(cast<RefType>(targetRef.getType()).getOrigin());
-        b.create<LIT::CallOp>(copySignature.getResultType(), copySymbol,
-                              origins, operands);
-        auto noneAttr = b.create<KGEN::ParamConstantOp>(
-            KGEN::NoneAttr::get(b.getContext()));
+        LIT::CallOp::create(b, copySignature.getResultType(), copySymbol,
+                            origins, operands);
+        auto noneAttr = KGEN::ParamConstantOp::create(
+            b, KGEN::NoneAttr::get(b.getContext()));
         IREmitter::emitNormalReturn(b, noneAttr);
 
         devicePassableWitnesses.push_back(
@@ -2421,8 +2421,8 @@ void ClosureEmitter::addConformanceToDevicePassable(
         ctorOperands.add(ASTExprAnd<CValue>{literalValue, &loc});
         emitter.emitConstructorCall(stringType, std::move(ctorOperands), &loc,
                                     CallSyntax::kTypeCall, resultDest);
-        auto noneAttr = b.create<KGEN::ParamConstantOp>(
-            KGEN::NoneAttr::get(b.getContext()));
+        auto noneAttr = KGEN::ParamConstantOp::create(
+            b, KGEN::NoneAttr::get(b.getContext()));
         IREmitter::emitNormalReturn(b, noneAttr);
         devicePassableWitnesses.push_back(
             {*function.getSymName(),

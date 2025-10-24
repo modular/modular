@@ -497,7 +497,7 @@ LogicalResult LIT::verifyAndBuildConformance(ASTDecl &structDecl,
     if (!result)
       return failure();
 
-    b.create<WitnessOp>(traitFn.getSymNameAttr(), result.get());
+    WitnessOp::create(b, traitFn.getSymNameAttr(), result.get());
     return success();
   };
 
@@ -632,7 +632,7 @@ LogicalResult LIT::verifyAndBuildConformance(ASTDecl &structDecl,
       // Since we cloned the defaulted op from the trait, there is no need for
       // us to convert the type as they are guaranteed to be matched.
     }
-    b.create<WitnessOp>(name, aliasValue.get());
+    WitnessOp::create(b, name, aliasValue.get());
     traitAliasReplacer.setDeclBinding(traitAlias.getParamDecl(), aliasValue);
 
     return success();

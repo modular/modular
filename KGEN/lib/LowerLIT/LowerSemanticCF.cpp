@@ -260,7 +260,7 @@ void LowerSemanticCF::lowerElif(HLCF::ElifOp elifOp, bool &doesRaise,
     auto b = handleSemanticTerminatorOp(
         *elifOp.getOperation(),
         "if statement with then/else that do not fall through");
-    b.create<UnreachableOp>(elifOp.getLoc());
+    UnreachableOp::create(b, elifOp.getLoc());
   }
 }
 
@@ -295,9 +295,9 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
   // Create loop condition check: it continues when the condition is true and
   // does the the exit logic when false.
   builder.setInsertionPointToEnd(newBody);
-  auto condOp = builder.create<HLCF::IfOp>(loopCondition);
+  auto condOp = HLCF::IfOp::create(builder, loopCondition);
   builder.createBlock(&condOp.getThenRegion());
-  builder.create<HLCF::YieldOp>();
+  HLCF::YieldOp::create(builder);
 
   // Move the loop's body to the HLCF::LoopOp's body.
   newBody->getOperations().splice(newBody->end(), bodyBlock.getOperations());
@@ -326,7 +326,7 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
     assert(isa<LIT::LoopYieldOp>(elseBlock.getTerminator()));
     elseBlock.getTerminator()->erase();
     builder.setInsertionPointToEnd(newExitBlock);
-    builder.create<HLCF::BreakOp>(ValueRange{}, newLoop.getLabelAttr());
+    HLCF::BreakOp::create(builder, ValueRange{}, newLoop.getLabelAttr());
   } else {
     // Move the other general terminator over so things are structured right.
     elseBlock.getTerminator()->moveBefore(newExitBlock, newExitBlock->end());
@@ -348,7 +348,7 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
   // If the loop body never breaks, then the code after it is unreachable.
   if (!blockBreaks) {
     auto b = handleSemanticTerminatorOp(*newLoop, "infinite loop");
-    b.create<UnreachableOp>(loopOp.getLoc());
+    UnreachableOp::create(b, loopOp.getLoc());
   }
 
   // Erase the lit.loop, and return true if it was an infinite loop.
@@ -413,7 +413,8 @@ void LowerSemanticCF::lowerParamFor(ParamForOp paramFor,
         // If the else block ended in a yield, then it should become a 'break',
         // otherwise it is a return or something else that we leave alone.
         if (auto elseTerm = dyn_cast<ParamYieldOp>(elseBlock.getTerminator())) {
-          OpBuilder(elseTerm).create<ParamForBreakOp>(elseTerm.getLoc());
+          auto builder = OpBuilder(elseTerm);
+          ParamForBreakOp::create(builder, elseTerm.getLoc());
           elseTerm.erase();
         }
 
@@ -424,7 +425,7 @@ void LowerSemanticCF::lowerParamFor(ParamForOp paramFor,
 
         // Fill the else block with an unreachable and remove this op.
         auto builder = OpBuilder::atBlockBegin(&elseBlock);
-        builder.create<UnreachableOp>(op->getLoc());
+        UnreachableOp::create(builder, op->getLoc());
         op->erase();
         return WalkResult::skip();
       });
@@ -435,10 +436,10 @@ static void emitRaise(ImplicitLocOpBuilder &b) {
   Operation *opForRaise = LIT::findOpProcessingRaise(b.getInsertionBlock());
   assert(opForRaise && "IR invalid, RaiseOp must only be in valid context");
   if (isa<LIT::FnOp>(opForRaise)) {
-    b.create<LIT::ErrorReturnOp>(
-        b.create<ParamConstantOp>(b.getBoolAttr(true)));
+    LIT::ErrorReturnOp::create(b,
+                               ParamConstantOp::create(b, b.getBoolAttr(true)));
   } else {
-    b.create<LIT::TryRaiseOp>(cast<LIT::TryOp>(opForRaise).getLabelAttr());
+    LIT::TryRaiseOp::create(b, cast<LIT::TryOp>(opForRaise).getLabelAttr());
   }
 }
 
@@ -450,19 +451,19 @@ static void addErrorRegions(Operation &op, LIT::FnType sig,
   // Clone the op and add the error regions.
   ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(&op));
   b.setInsertionPointAfter(&op);
-  auto ifOp = b.create<HLCF::IfOp>(op.getResult(0));
+  auto ifOp = HLCF::IfOp::create(b, op.getResult(0));
 
   // In the error region, mark the result has known consumed, then raise.
   b.createBlock(&ifOp.getThenRegion());
-  b.create<LIT::OwnershipMarkConsumedOp>(
-      sig.hasMemoryOnlyResult() ? operands.back() : operands.front());
+  LIT::OwnershipMarkConsumedOp::create(
+      b, sig.hasMemoryOnlyResult() ? operands.back() : operands.front());
   emitRaise(b);
 
   // In the result region, mark the error as known consumed.
   b.createBlock(&ifOp.getElseRegion());
-  b.create<LIT::OwnershipMarkConsumedOp>(
-      *std::prev(operands.end(), sig.getErrorSlotOffset()));
-  b.create<HLCF::YieldOp>();
+  LIT::OwnershipMarkConsumedOp::create(
+      b, *std::prev(operands.end(), sig.getErrorSlotOffset()));
+  HLCF::YieldOp::create(b);
 }
 
 /// This recursive function transforms the specified block:
@@ -478,7 +479,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
     // Look for semantic terminators and turn them into real terminators.
     if (auto returnOp = dyn_cast<LIT::ReturnOp>(op)) {
       auto b = handleSemanticTerminatorOp(op, "return statement");
-      b.create<KGEN::ReturnOp>(returnOp.getOperands());
+      KGEN::ReturnOp::create(b, returnOp.getOperands());
       op.erase();
       doesFallThrough = false;
       return;
@@ -504,9 +505,9 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       doesBreak = true;
       auto b = handleSemanticTerminatorOp(op, "break statement");
       if (auto hlcfLoop = dyn_cast<HLCF::LoopOp>(currentLoop))
-        b.create<HLCF::BreakOp>(ValueRange{}, hlcfLoop.getLabelAttr());
+        HLCF::BreakOp::create(b, ValueRange{}, hlcfLoop.getLabelAttr());
       else
-        b.create<ParamForBreakOp>();
+        ParamForBreakOp::create(b);
       op.erase();
       return;
     }
@@ -521,16 +522,16 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
       auto b = handleSemanticTerminatorOp(op, "continue statement");
       if (auto hlcfLoop = dyn_cast<HLCF::LoopOp>(currentLoop))
-        b.create<HLCF::ContinueOp>(ValueRange{}, hlcfLoop.getLabelAttr());
+        HLCF::ContinueOp::create(b, ValueRange{}, hlcfLoop.getLabelAttr());
       else
-        b.create<ParamForContinueOp>();
+        ParamForContinueOp::create(b);
       op.erase();
       return;
     }
 
     if (isa<LIT::LoopContinueOp>(op)) {
       OpBuilder b(&op);
-      b.create<HLCF::ContinueOp>(op.getLoc());
+      HLCF::ContinueOp::create(b, op.getLoc());
       op.erase();
       return;
     }
@@ -615,7 +616,8 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
         }
 
         Operation *firstExceptOp = &tryOp.getExceptRegion().front().front();
-        OpBuilder(firstExceptOp).create<UnreachableOp>(firstExceptOp->getLoc());
+        auto builder = OpBuilder(firstExceptOp);
+        UnreachableOp::create(builder, firstExceptOp->getLoc());
         eraseOpToEndOfBlock(firstExceptOp);
       } else {
         // The except and else blocks execute without protection from the try.
@@ -630,7 +632,8 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       // it, otherwise process it.
       if (!tryBodyFallsThrough) {
         Operation *firstElseOp = &tryOp.getElseRegion().front().front();
-        OpBuilder(firstElseOp).create<UnreachableOp>(firstElseOp->getLoc());
+        auto builder = OpBuilder(firstElseOp);
+        UnreachableOp::create(builder, firstElseOp->getLoc());
         if (!isa<LIT::TryYieldOp>(firstElseOp))
           emitWarning(firstElseOp->getLoc(),
                       "'else' logic in 'try' is unreachable");
@@ -665,7 +668,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       if (!tryFallsThrough) {
         auto b = handleSemanticTerminatorOp(
             *tryOp, "try statement that doesn't fall through");
-        b.create<UnreachableOp>(tryOp.getLoc());
+        UnreachableOp::create(b, tryOp.getLoc());
         return;
       }
       continue;
@@ -740,7 +743,8 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
         emitWarning(firstDeadOp->getLoc(), "unreachable code after 'if ")
             << (constantCondValue ? "True'" : "False'");
       eraseOpToEndOfBlock(&deadBlock.front());
-      OpBuilder::atBlockBegin(&deadBlock).create<UnreachableOp>(op.getLoc());
+      auto builder = OpBuilder::atBlockBegin(&deadBlock);
+      UnreachableOp::create(builder, op.getLoc());
     }
 
     bool ifOpFallsThrough = false;
@@ -758,7 +762,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
     if (!ifOpFallsThrough) {
       auto b = handleSemanticTerminatorOp(
           op, "if statement with then/else that do not fall through");
-      b.create<UnreachableOp>(op.getLoc());
+      UnreachableOp::create(b, op.getLoc());
       return;
     }
   }

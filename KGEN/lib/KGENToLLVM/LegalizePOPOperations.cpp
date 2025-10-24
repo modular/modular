@@ -222,7 +222,7 @@ LogicalResult LegalizePOPOperations::legalizeOperation(Operation *op,
              << idx << " to LLVM's supported type on that target";
     }
 
-    newOperands.push_back(b.create<CastOp>(newType, operand));
+    newOperands.push_back(CastOp::create(b, newType, operand));
   }
 
   SmallVector<Type> newResultTypes;
@@ -244,7 +244,7 @@ LogicalResult LegalizePOPOperations::legalizeOperation(Operation *op,
        llvm::zip(newOp->getResults(), op->getResults())) {
     Value resultToUse = newResult;
     if (newResult.getType() != oldResult.getType())
-      resultToUse = b.create<CastOp>(oldResult.getType(), newResult);
+      resultToUse = CastOp::create(b, oldResult.getType(), newResult);
 
     oldResult.replaceAllUsesWith(resultToUse);
   }

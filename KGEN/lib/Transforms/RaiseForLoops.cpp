@@ -516,8 +516,8 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
                     loopInfo->inductionVarArgNumber);
 
   // Create the new ForOp with reordered operands.
-  auto forOp = rewriter.create<HLCF::ForOp>(
-      loop->getLoc(), loop->getResultTypes(), loopInfo->lowerBound,
+  auto forOp = HLCF::ForOp::create(
+      rewriter, loop->getLoc(), loop->getResultTypes(), loopInfo->lowerBound,
       loopInfo->upperBound, loopInfo->step, forOperands,
       loop.getUnrollLevelValue(), loopInfo->cmpPredicate,
       loopInfo->indVarCompute);
@@ -557,9 +557,9 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
             reorderValueIntoGroups(c.getOperands(), returnValueArgNumbers,
                                    loopInfo->inductionVarArgNumber);
         // Create `hlcf.for.yield` with the reordered operands.
-        rewriter.create<HLCF::ForYieldOp>(
-            op.getLoc(), reorderedOperands[0].front(), reorderedOperands[1],
-            reorderedOperands[2]);
+        HLCF::ForYieldOp::create(rewriter, op.getLoc(),
+                                 reorderedOperands[0].front(),
+                                 reorderedOperands[1], reorderedOperands[2]);
         c->dropAllReferences();
         rewriter.eraseOp(c);
       }

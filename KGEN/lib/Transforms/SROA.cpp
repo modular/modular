@@ -97,7 +97,7 @@ struct Replacer {
         Value extract = derived->createExtract(store.getLoc(), operand, index);
 
         // Store that into the subelement instead.
-        builder.create<StoreOp>(store.getLoc(), extract, newAlloc);
+        StoreOp::create(builder, store.getLoc(), extract, newAlloc);
         ++index;
 
         // Stack of >1 stores are implicitly only a reference to the first
@@ -219,9 +219,9 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
     newAllocas.reserve(containerTy.getNumElements());
     for (Type elem : containerTy.getElementTypes()) {
       auto asPtr = PointerType::get(elem);
-      Value v = builder.create<StackAllocationOp>(
-          alloc.getLoc(), asPtr, /*count=*/1, alloc.getAlignmentAttr(),
-          alloc.getMarkedLifetimes());
+      Value v = StackAllocationOp::create(builder, alloc.getLoc(), asPtr,
+                                          /*count=*/1, alloc.getAlignmentAttr(),
+                                          alloc.getMarkedLifetimes());
       newAllocas.push_back(v);
     }
   }
@@ -242,7 +242,7 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
         Value newVal = loadedVals[index];
         if (!newVal) {
           newVal =
-              builder.create<POP::LoadOp>(load.getLoc(), newAllocas[index]);
+              POP::LoadOp::create(builder, load.getLoc(), newAllocas[index]);
           loadedVals[index] = newVal;
         }
         return newVal;
@@ -254,8 +254,8 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
         if (!loadedAgg) {
           for (unsigned i = 0, e = newAllocas.size(); i != e; ++i)
             (void)getOrCreateLoad(i);
-          loadedAgg = builder.create<StructCreateOp>(
-              load.getLoc(), load.getType(), loadedVals);
+          loadedAgg = StructCreateOp::create(builder, load.getLoc(),
+                                             load.getType(), loadedVals);
         }
         return loadedAgg;
       };
@@ -278,8 +278,8 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
             ErrorOr<DebugInfo::DIExprAttr> newConversionExpr =
                 leafReplacer.direct.apply(conversionExpr, i);
             if (succeeded(newConversionExpr)) {
-              b.create<DebugInfo::ValueOp>(value.getLoc(), load, valueInfo,
-                                           newConversionExpr.get());
+              DebugInfo::ValueOp::create(b, value.getLoc(), load, valueInfo,
+                                         newConversionExpr.get());
             }
           }
           toDelete.push_back(value);
@@ -300,16 +300,16 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
           // transformation. Cannot debug this local variable anymore.
           continue;
         }
-        b.create<DebugInfo::ValueOp>(value.getLoc(), alloc, valueInfo,
-                                     newConversionExpr.get());
+        DebugInfo::ValueOp::create(b, value.getLoc(), alloc, valueInfo,
+                                   newConversionExpr.get());
       }
     }
   }
 
   /// The extractor op for structures.
   Value createExtract(Location loc, Value operand, int64_t index) {
-    return builder.create<StructExtractOp>(loc, operand,
-                                           builder.getIndexAttr(index));
+    return StructExtractOp::create(builder, loc, operand,
+                                   builder.getIndexAttr(index));
   }
 };
 
@@ -369,17 +369,17 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
     Type elem = containerTy.getElementType();
     auto asPtr = PointerType::get(elem);
     for (int64_t i = 0; i < numElems; ++i) {
-      Value v = builder.create<StackAllocationOp>(
-          alloc.getLoc(), asPtr, /*count=*/1, alloc.getAlignmentAttr(),
-          alloc.getMarkedLifetimes());
+      Value v = StackAllocationOp::create(builder, alloc.getLoc(), asPtr,
+                                          /*count=*/1, alloc.getAlignmentAttr(),
+                                          alloc.getMarkedLifetimes());
       newAllocas.push_back(v);
     }
   }
 
   /// Create the array specific element extractor op.
   Value createExtract(mlir::Location loc, Value operand, int64_t index) {
-    return builder.create<POP::ArrayGetOp>(loc, operand,
-                                           builder.getIndexAttr(index));
+    return POP::ArrayGetOp::create(builder, loc, operand,
+                                   builder.getIndexAttr(index));
   }
 
   /// Handle the array specific ops.
@@ -400,7 +400,7 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
         Value newVal = loadedVals[index];
         if (!newVal) {
           newVal =
-              builder.create<POP::LoadOp>(load.getLoc(), newAllocas[index]);
+              POP::LoadOp::create(builder, load.getLoc(), newAllocas[index]);
           loadedVals[index] = newVal;
         }
         return newVal;
@@ -447,8 +447,8 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
         for (size_t i = 0; i < newAllocas.size(); ++i)
           allScalars.push_back(getOrCreateLoad(i));
 
-        auto newArr = builder.create<POP::ArrayCreateOp>(
-            load.getLoc(), load.getType(), allScalars);
+        auto newArr = POP::ArrayCreateOp::create(builder, load.getLoc(),
+                                                 load.getType(), allScalars);
         load.replaceAllUsesWith(newArr.getResult());
       }
     }
@@ -516,9 +516,9 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
 
     auto ptr = cast<PointerType>(alloc.getResult().getType());
     for (int64_t i = 0; i < numElems; ++i) {
-      Value v = builder.create<StackAllocationOp>(
-          alloc.getLoc(), ptr, /*count=*/1, alloc.getAlignmentAttr(),
-          alloc.getMarkedLifetimes());
+      Value v = StackAllocationOp::create(builder, alloc.getLoc(), ptr,
+                                          /*count=*/1, alloc.getAlignmentAttr(),
+                                          alloc.getMarkedLifetimes());
       newAllocas.push_back(v);
     }
   }
@@ -541,18 +541,18 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
       // illegal in the new one then it was illegal on the old gep. The index
       // refers to the element in the array, the gep is always on the first
       // element of the stack.
-      auto newGep = builder.create<ArrayGEPOp>(gep.getLoc(), newAllocas[0],
-                                               gep.getIndex());
+      auto newGep = ArrayGEPOp::create(builder, gep.getLoc(), newAllocas[0],
+                                       gep.getIndex());
       gep.replaceAllUsesWith(newGep.getResult());
     } else if (auto gep = dyn_cast<StructGEPOp>(user)) {
       // Ditto with struct geps, index is always legal.
-      auto newGep = builder.create<StructGEPOp>(gep.getLoc(), newAllocas[0],
-                                                gep.getIndex());
+      auto newGep = StructGEPOp::create(builder, gep.getLoc(), newAllocas[0],
+                                        gep.getIndex());
       gep.replaceAllUsesWith(newGep.getResult());
     } else if (auto load = dyn_cast<LoadOp>(user)) {
       // A load from a stack allocation is implicitly the first element in the
       // stack.
-      Value v = builder.create<POP::LoadOp>(load.getLoc(), newAllocas[0]);
+      Value v = POP::LoadOp::create(builder, load.getLoc(), newAllocas[0]);
       load.replaceAllUsesWith(v);
     }
   }

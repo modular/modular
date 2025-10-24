@@ -128,9 +128,9 @@ struct PromotedStackAlloc {
       if (!isUndef) {
         OpBuilder b(alloc->getContext());
         b.setInsertionPointAfter(value);
-        b.create<DebugInfo::ValueOp>(value->getLoc(), currValue,
-                                     value.getValueInfo(),
-                                     newConversionExpr.get());
+        DebugInfo::ValueOp::create(b, value->getLoc(), currValue,
+                                   value.getValueInfo(),
+                                   newConversionExpr.get());
       }
     }
     return success();
@@ -183,9 +183,9 @@ struct PromotedStackAlloc {
             if (auto it = debugValues.find(mutatorSubprogram);
                 it != debugValues.end()) {
               DebugValue &dbgValue = it->second;
-              b.create<DebugInfo::ValueOp>(cumulativeLoc, newValue,
-                                           dbgValue.varInfo,
-                                           dbgValue.conversionExpr);
+              DebugInfo::ValueOp::create(b, cumulativeLoc, newValue,
+                                         dbgValue.varInfo,
+                                         dbgValue.conversionExpr);
             }
             return WalkResult::skip();
           }

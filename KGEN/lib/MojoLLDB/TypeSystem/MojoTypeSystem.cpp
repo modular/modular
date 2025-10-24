@@ -987,8 +987,9 @@ MojoTypeSystem::getOrCreatePackageDecl(StringRef name,
 
   auto moduleBuilder = parentDecl.getDeclEndBuilder();
   auto packageName = StringAttr::get(sharedState.getContext(), name);
-  auto packageOp = moduleBuilder.create<LIT::PackageOp>(
-      sharedState.translateLocation(parentDecl.getLoc()), packageName);
+  auto packageOp = LIT::PackageOp::create(
+      moduleBuilder, sharedState.translateLocation(parentDecl.getLoc()),
+      packageName);
 
   return &sharedState.declResolver->addDecl(
       packageOp, SMLoc(), packageName, &parentDecl, parentDecl.getCursor(),
@@ -1108,8 +1109,10 @@ MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
   LIT::Lexer lexer(impl->parserContext->getSharedState().diags, sourceBuf);
 
   auto name = StringAttr::get(sharedState.getContext(), moduleName);
-  Operation *fileOp = parentDecl.getDeclEndBuilder().create<LIT::FileModuleOp>(
-      sharedState.translateLocation(parentDecl.getLoc()), name);
+
+  OpBuilder builder = parentDecl.getDeclEndBuilder();
+  Operation *fileOp = LIT::FileModuleOp::create(
+      builder, sharedState.translateLocation(parentDecl.getLoc()), name);
   return &sharedState.declResolver->addFullyResolvedDecl(
       fileOp, name, lexer.getToken().getLoc(), &parentDecl);
 }
@@ -1140,9 +1143,9 @@ MojoTypeSystem::getOrCreateFunctionDecl(StringRef functionName,
 
   StringAttr nameAttr =
       LIT::DeclResolver::getMangledName(name, *parentDecl, signature);
-  auto newFunction = builder.create<LIT::FnOp>(
-      sharedState.translateLocation(parentDecl->getLoc()), nameAttr, name,
-      signature);
+  auto newFunction = LIT::FnOp::create(
+      builder, sharedState.translateLocation(parentDecl->getLoc()), nameAttr,
+      name, signature);
   return MojoASTDeclRef(&sharedState.declResolver->addDecl(
       newFunction, parentDecl->getLoc(), name, &*parentDecl, {}, {}, -1));
 }
@@ -1160,8 +1163,9 @@ MojoTypeSystem::getOrCreateStructDecl(StringRef structName,
   if (auto decl = lookupSingleMember(*parentDecl, name))
     return decl;
 
-  auto newStruct = parentDecl->getDeclEndBuilder().create<LIT::StructDeclOp>(
-      getSharedState().translateLocation(parentDecl->getLoc()), name);
+  OpBuilder builder = parentDecl->getDeclEndBuilder();
+  auto newStruct = LIT::StructDeclOp::create(
+      builder, getSharedState().translateLocation(parentDecl->getLoc()), name);
   return MojoASTDeclRef(&getSharedState().declResolver->addDecl(
       newStruct, parentDecl->getLoc(), name, &*parentDecl, {}, {}, -1));
 }
@@ -1170,8 +1174,9 @@ MojoASTDeclRef
 MojoTypeSystem::addFieldToStruct(MojoASTDeclRef structDecl, StringRef fieldName,
                                  lldb::opaque_compiler_type_t type) {
   StringAttr name = StringAttr::get(getMLIRContext(), fieldName);
-  auto newField = structDecl->getDeclEndBuilder().create<LIT::StructFieldOp>(
-      getSharedState().translateLocation(structDecl->getLoc()), name,
+  OpBuilder builder = structDecl->getDeclEndBuilder();
+  auto newField = LIT::StructFieldOp::create(
+      builder, getSharedState().translateLocation(structDecl->getLoc()), name,
       mlir::Type::getFromOpaquePointer(type), LIT::DocStringAttr());
   auto fieldDecl = MojoASTDeclRef(&getSharedState().declResolver->addDecl(
       newField, structDecl->getLoc(), name, &*structDecl, {}, {}, -1));

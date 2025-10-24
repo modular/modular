@@ -128,7 +128,7 @@ LogicalResult InvokeOp::verify() {
 
 FailureOr<InlineResult> InvokeOp::prepInline(mlir::RewriterBase &b) {
   auto op =
-      b.create<ExecuteOp>(getLoc(), getCalleeType().getBody().getResults());
+      ExecuteOp::create(b, getLoc(), getCalleeType().getBody().getResults());
   return {{op, [](Operation *) {}}};
 }
 
@@ -177,7 +177,7 @@ LogicalResult HotInvokeOp::verify() {
 FailureOr<InlineResult> HotInvokeOp::prepInline(mlir::RewriterBase &b) {
   StringAttr label = b.getStringAttr("inlined_cf_scope");
   auto op =
-      b.create<HLCF::LoopOp>(getLoc(), getResultTypes(), ValueRange(), label);
+      HLCF::LoopOp::create(b, getLoc(), getResultTypes(), ValueRange(), label);
   return {{op, [label, &b](Operation *op) {
              b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
            }}};

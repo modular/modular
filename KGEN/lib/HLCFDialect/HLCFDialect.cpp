@@ -26,7 +26,7 @@ void M::HLCF::HLCFDialect::initialize() {
 
 Operation *HLCFDialect::materializeConstant(OpBuilder &b, Attribute value,
                                             Type type, Location loc) {
-  return b.create<KGEN::ParamConstantOp>(loc, cast<TypedAttr>(value));
+  return KGEN::ParamConstantOp::create(b, loc, cast<TypedAttr>(value));
 }
 
 //===----------------------------------------------------------------------===//

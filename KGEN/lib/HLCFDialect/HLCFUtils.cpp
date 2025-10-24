@@ -56,8 +56,8 @@ HLCF::IfOp HLCF::replaceElifWithIfOps(ElifOp elifOp) {
   currentRegion->front().getOperations().splice(builder.getInsertionPoint(),
                                                 firstBlock.getOperations());
   // Replace ElifYield with IfOp.
-  HLCF::IfOp outerMostIfOp = builder.create<HLCF::IfOp>(
-      elifOp.getResultTypes(), firstElifYieldOp->getOperand(0));
+  HLCF::IfOp outerMostIfOp = HLCF::IfOp::create(
+      builder, elifOp.getResultTypes(), firstElifYieldOp->getOperand(0));
   currentRegion = &outerMostIfOp.getThenRegion();
   firstElifYieldOp->erase();
 
@@ -69,11 +69,11 @@ HLCF::IfOp HLCF::replaceElifWithIfOps(ElifOp elifOp) {
     // and update current region to If's Then region.
     Operation *terminator = currentRegion->front().getTerminator();
     if (auto elifYieldOp = dyn_cast<HLCF::ElifYieldOp>(terminator)) {
-      auto newIfOp = builder.create<HLCF::IfOp>(elifOp.getResultTypes(),
-                                                elifYieldOp->getOperand(0));
+      auto newIfOp = HLCF::IfOp::create(builder, elifOp.getResultTypes(),
+                                        elifYieldOp->getOperand(0));
       IRRewriter rewriter{builder};
       rewriter.replaceOp(elifYieldOp,
-                         builder.create<HLCF::YieldOp>(newIfOp.getResults()));
+                         HLCF::YieldOp::create(builder, newIfOp.getResults()));
       currentRegion = &newIfOp.getThenRegion();
       continue;
     }

@@ -802,7 +802,7 @@ linkBitcodeLibraries(Location loc, llvm::Module &llvmModule,
   if (isAMDGPUBackend(options)) {
     mlir::MLIRContext *ctx = loc.getContext();
     mlir::OpBuilder b(ctx);
-    OwningOpRef<ModuleOp> mlirModule(b.create<ModuleOp>(loc, "dummy"));
+    OwningOpRef<ModuleOp> mlirModule(ModuleOp::create(b, loc, "dummy"));
     mlir::ROCDL::ROCDLTargetAttr target = mlir::ROCDL::ROCDLTargetAttr::get(
         ctx, options.optimizationLevel, options.targetTriple, options.targetCpu,
         options.targetFeatures);
