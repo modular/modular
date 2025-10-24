@@ -46,27 +46,6 @@ from .nn.data_processing import get_rope_index, mrope_pos_ids_3d
 logger = logging.getLogger("max.pipelines")
 
 
-def _convert_image_mode(image: Image.Image, to_mode: str) -> Image.Image:
-    """Convert image to the specified mode."""
-    if image.mode == to_mode:
-        return image
-    elif image.mode == "RGBA" and to_mode == "RGB":
-        return _rgba_to_rgb(image)
-    else:
-        return image.convert(to_mode)
-
-
-def _rgba_to_rgb(
-    image: Image.Image,
-    background_color: tuple[int, int, int] = (255, 255, 255),
-) -> Image.Image:
-    """Convert an RGBA image to RGB with filled background color."""
-    assert image.mode == "RGBA"
-    converted = Image.new("RGB", image.size, background_color)
-    converted.paste(image, mask=image.split()[3])  # 3 is the alpha channel
-    return converted
-
-
 def qwen2_5vl_image_preprocessing(
     image: Image.Image,
     *,
