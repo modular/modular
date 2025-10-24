@@ -242,6 +242,15 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         self.vision_model, self.language_model = self.load_model(session)
 
+        # Initialize signal buffers for distributed communication.
+        # InternVL is natively distributed, so we always need these.
+        self.signal_buffers = [
+            Tensor.zeros(
+                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
+            )
+            for dev in self.devices
+        ]
+
         # Initialize vision stacker for optimized parallel stacking.
         self._stacker = _VisionStacker()
 

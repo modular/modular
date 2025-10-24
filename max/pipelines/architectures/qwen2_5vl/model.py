@@ -173,6 +173,14 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         self.model_config = None
 
+        # Initialize signal buffers for distributed execution
+        self.signal_buffers = [
+            Tensor.zeros(
+                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
+            )
+            for dev in self.devices
+        ]
+
         self.vision_model, self.language_model = self.load_model(session)
 
         self._parallel_ops = ParallelArrayOps(max_workers=24)
