@@ -21,7 +21,7 @@ from max.graph import (
 from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
 from max.nn.moe import MoE, MoEGate
 from max.nn.transformer.distributed_transformer import forward_sharded_layers
-from test_common.graph_utils import is_b100_b200, is_h100_h200
+from test_common.graph_utils import is_b100_b200
 
 MOE_DIM = 2048
 HIDDEN_DIM = 7168
@@ -71,7 +71,7 @@ def torch_moe(
 
 
 @pytest.mark.skipif(
-    not (is_h100_h200() or is_b100_b200()),
+    not is_b100_b200(),
     reason="NVSHMEM library requires H100 or H200 or B200",
 )
 @pytest.mark.parametrize("n_devices", [4])
