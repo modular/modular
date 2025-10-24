@@ -2691,15 +2691,15 @@ wheels = [
 
 [[package]]
 name = "kepler"
-version = "0.2.2"
+version = "0.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "rich", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3d/69/30fb170ea8ba9d4a13ef2ee2ad035f6ad7d8deea5c50cb06e28b39a360b3/kepler-0.2.2.tar.gz", hash = "sha256:615ca97bdc7e7a7b208abb3368f1151ba060d603d010337e9272251282b8c10d", size = 160001, upload-time = "2025-06-30T01:40:07.9Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/98/3be37170a29e3fede59766059cc439cb0b8619235921c3a74ca6c6e7fdbd/kepler-0.2.3.tar.gz", hash = "sha256:7957c66cd69492370e15ab3643920c562433f806f6ead8bcae98bd65eae7f39e", size = 39377, upload-time = "2025-10-23T23:55:22.504Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/46/65/1ec7aad6b5e76f2d4cbbc11cccb4b5fda6f72449e5b6b303aee4d2801d47/kepler-0.2.2-py3-none-any.whl", hash = "sha256:3f89fd14bed9dcbd7415718f277ca594876b68880a689e1903243162ee4dbb1f", size = 11629, upload-time = "2025-06-30T01:40:06.512Z" },
+    { url = "https://files.pythonhosted.org/packages/60/34/0b4b98a3af43a8fac2d8732ae2bf784616980429ed8556de281cf61ed9b5/kepler-0.2.3-py3-none-any.whl", hash = "sha256:3ee2bce977982c9e5ca490640ff8eee6086e38dbee2ea8adf9d37cf0c8b1950c", size = 11871, upload-time = "2025-10-23T23:55:21.145Z" },
 ]
 
 [[package]]
