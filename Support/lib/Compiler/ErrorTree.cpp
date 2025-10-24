@@ -6,6 +6,7 @@
 
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/Compiler/Diags.h"
+#include "Support/Compiler/Error.h"
 #include "mlir/IR/Diagnostics.h"
 
 using namespace M;
@@ -137,6 +138,7 @@ static void emitErrorTreeDiag(const ErrorTree &err,
                               function_ref<void(Location, StringRef)> emit,
                               StringRef callSiteMsg) {
   Location loc = err.getLoc();
+
   SmallVector<Location> locationStack{loc};
   for (std::optional<mlir::CallSiteLoc> callLoc;
        (callLoc = getCallSiteLoc(loc)); loc = callLoc->getCallee())
@@ -152,6 +154,7 @@ static void emitErrorTreeDiag(const ErrorTree &err,
 
 InFlightDiagnostic ErrorTree::emit(
     function_ref<InFlightDiagnostic(Location)> emitError, StringRef callSiteMsg,
+    bool emitPrelude,
     std::optional<mlir::DiagnosticEngine::HandlerID> diagHandlerID) && {
   // Try to compress recursive errors. To provide a root, start iterating from
   // the first child.
@@ -164,6 +167,8 @@ InFlightDiagnostic ErrorTree::emit(
   // Emit the main error.
   std::optional<InFlightDiagnostic> diag;
   auto emitMsg = [&](Location loc, StringRef msg) {
+    if (!emitPrelude && isLocationInPrelude(loc))
+      return;
     if (diag)
       diag->attachNote(loc) << msg;
     else
@@ -181,19 +186,34 @@ InFlightDiagnostic ErrorTree::emit(
   }
 
   // Emit the causes.
-  emit(*diag, causes, callSiteMsg);
+  emit(diag, causes, callSiteMsg, emitPrelude);
+  if (!diag.has_value()) {
+    diag.emplace(emitError(mlir::UnknownLoc()))
+        << "error happened but nothing is emitted with the diagnostics, please "
+           "use -elaboration-error-include-prelude to include prelude errors";
+  }
+
   return std::move(*diag);
 }
 
-void ErrorTree::emit(InFlightDiagnostic &diag, ArrayRef<ErrorTree> errors,
-                     StringRef callSiteMsg) {
+void ErrorTree::emit(std::optional<InFlightDiagnostic> &diag,
+                     ArrayRef<ErrorTree> errors, StringRef callSiteMsg,
+                     bool emitPrelude) {
   if (errors.empty())
     return;
 
   for (const ErrorTree &err : errors) {
     emitErrorTreeDiag(
-        err, [&](Location loc, StringRef msg) { diag.attachNote(loc) << msg; },
+        err,
+        [&](Location loc, StringRef msg) {
+          if (!emitPrelude && isLocationInPrelude(loc))
+            return;
+          if (diag)
+            diag->attachNote(loc) << msg;
+          else
+            diag.emplace(emitError(loc)) << msg;
+        },
         callSiteMsg);
-    emit(diag, err.causes, callSiteMsg);
+    emit(diag, err.causes, callSiteMsg, emitPrelude);
   }
 }

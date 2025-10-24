@@ -86,13 +86,14 @@ public:
   /// diagnostic error. Any causes are emitted as notes.
   InFlightDiagnostic
   emit(function_ref<InFlightDiagnostic(Location)> emitError,
-       StringRef callSiteMsg,
+       StringRef callSiteMsg, bool emitPrelude,
        std::optional<mlir::DiagnosticEngine::HandlerID> diagHandlerID = {}) &&;
 
 private:
   /// Emit nested errors to an MLIR diagnostic as notes.
-  static void emit(InFlightDiagnostic &diag, ArrayRef<ErrorTree> errors,
-                   StringRef callSiteMsg);
+  static void emit(std::optional<InFlightDiagnostic> &diag,
+                   ArrayRef<ErrorTree> errors, StringRef callSiteMsg,
+                   bool emitPrelude);
 
   /// The location of the main error.
   Location loc;

@@ -129,6 +129,8 @@ public:
 
   int elabErrorLimit{20};
 
+  bool elabErrorIncludePrelude{false};
+
   /// Get the include directories that exist on the file system.
   std::vector<std::string> getIncludePaths() const {
     std::vector<std::string> result;
@@ -154,9 +156,10 @@ public:
     std::optional<CompilationOptions::DebugAtLevel> debugAt;
     if (debugAtLevel != CompilationOptions::kDebugUnset)
       debugAt = debugAtLevel;
-    return CompilationOptions(
-        optLevel, debugInfoLevel, debugAt, sanitizerOptions, targetTriple,
-        targetCpu, targetFeatures, targetAccelerator, elabErrorLimit);
+    return CompilationOptions(optLevel, debugInfoLevel, debugAt,
+                              sanitizerOptions, targetTriple, targetCpu,
+                              targetFeatures, targetAccelerator, elabErrorLimit,
+                              elabErrorIncludePrelude);
   }
 
   bool optLevel0{false};
@@ -370,20 +373,20 @@ private:
       llvm::cl::cat(KGENOptionsCategory)};
 
   M::cl::MOpt<std::string, true> march{
-      "march", cl::desc("Architecture to generate code for (see --version)"),
+      "march", cl::desc("Architecture to generate code for (see --version)."),
       llvm::cl::location(options.march), llvm::cl::cat(KGENOptionsCategory)};
 
   M::cl::MOpt<std::string, true> mcpu{
-      "mcpu", cl::desc("CPU to generate code for"),
+      "mcpu", cl::desc("CPU to generate code for."),
       llvm::cl::location(options.mcpu), llvm::cl::cat(KGENOptionsCategory)};
 
   M::cl::MOpt<std::string, true> mtune{
-      "mtune", cl::desc("CPU to tune code for"),
+      "mtune", cl::desc("CPU to tune code for."),
       llvm::cl::location(options.mtune), llvm::cl::cat(KGENOptionsCategory)};
 
   M::cl::MOpt<std::string, true> acceleratorTarget{
       "target-accelerator",
-      cl::desc("The target architecture for the accelerator"),
+      cl::desc("The target architecture for the accelerator."),
       llvm::cl::location(options.targetAccelerator),
       llvm::cl::cat(KGENOptionsCategory), llvm::cl::Hidden};
 
@@ -407,7 +410,8 @@ private:
       llvm::cl::location(options.loopUnrollingWarnThreshold),
       llvm::cl::cat(KGENOptionsCategory), llvm::cl::Hidden};
 
-  M::cl::MOpt<bool, true> optLevel0{"O0", cl::desc("Disable all optimizations"),
+  M::cl::MOpt<bool, true> optLevel0{"O0",
+                                    cl::desc("Disable all optimizations."),
                                     llvm::cl::location(options.optLevel0),
                                     llvm::cl::cat(KGENOptionsCategory)};
   M::cl::MOpt<bool, true> optLevel1{
@@ -418,13 +422,13 @@ private:
                                     llvm::cl::location(options.optLevel2),
                                     llvm::cl::cat(KGENOptionsCategory)};
   M::cl::MOpt<bool, true> optLevel3{
-      "O3", cl::desc("Aggressively enable all optimizations"),
+      "O3", cl::desc("Aggressively enable all optimizations."),
       llvm::cl::location(options.optLevel3),
       llvm::cl::cat(KGENOptionsCategory)};
 
   using SanitizerKind = Sanitizers::SanitizerKind;
   M::cl::MBitsOpt<SanitizerKind, unsigned> sanitizerOptions{
-      "sanitize", cl::desc("Enable the given sanitizer"),
+      "sanitize", cl::desc("Enable the given sanitizer."),
       cl::values(clEnumValN(SanitizerKind::kAddress, "address",
                             "Enable address sanitizer"),
                  clEnumValN(SanitizerKind::kThread, "thread",
@@ -438,6 +442,13 @@ private:
                "number of errors have been produced. The default is 20, and "
                "the limit can be disabled with -elaboration-error-limit=0."),
       llvm::cl::location(options.elabErrorLimit),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<bool, true> elabErrorIncludePrelude{
+      "elaboration-error-include-prelude",
+      cl::desc("Show elaboration error with locations in mojo startup modules "
+               "(prelude)."),
+      llvm::cl::location(options.elabErrorIncludePrelude),
       llvm::cl::cat(KGENOptionsCategory)};
 };
 

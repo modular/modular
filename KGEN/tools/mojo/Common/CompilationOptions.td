@@ -90,6 +90,13 @@ defm elaboration_error_limit: CommandOptionHidden<["--", "-"],
     "before stop emitting diagnostics. The default is 20, and "
     "the limit can be disabled with -elaboration-error-limit=0.">>;
 
+def elaboration_error_include_prelude: Flag<["--", "-"], 
+  "elaboration-error-include-prelude">,
+  Group<CompilationOptionGroup>, Index<14>, 
+  HelpText<
+    "Show elaboration error with locations in mojo startup modules "
+    "(prelude).">;
+
 //===----------------------------------------------------------------------===//
 // Experimental Compilation Options
 //===----------------------------------------------------------------------===//

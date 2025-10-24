@@ -19,12 +19,12 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
-#include "KGEN/Support/Error.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
 #include "Support/Compiler/DiagnosticHandler.h"
+#include "Support/Compiler/Error.h"
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/AsmParser/AsmParser.h"
@@ -88,7 +88,8 @@ void PImplNode::setToError(ErrorTree &&err) {
     emitLimitedError(
         [&] {
           return std::move(*error).emit(
-              [](Location loc) { return mlir::emitError(loc); }, "HERE");
+              [](Location loc) { return mlir::emitError(loc); }, "HERE",
+              this->getEvaluator().getElabErrorIncludePrelude());
         },
         errorLimit);
 #endif // MODULAR_PRODUCTION
@@ -2443,7 +2444,7 @@ static WalkResult rewriteCompileOffloadOp(
     DenseMap<TargetInfoAttr,
              DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>
         &compiledOffload,
-    bool &failed, ErrorLimit &errorLimit) {
+    bool &failed, ErrorLimit &errorLimit, bool erroIncludePrelude) {
   // Plug offload compilation results as strings back to the elaborated IR.
   auto kernelId = cast<IntegerAttr>(op.getKernelIDAttr()).getInt();
   EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
@@ -2460,7 +2461,7 @@ static WalkResult rewriteCompileOffloadOp(
         [&] {
           return std::move(compileOffloadError)
               .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.");
+                    "Compile offload failed.", erroIncludePrelude);
         },
         errorLimit);
     failed = true;
@@ -2476,7 +2477,7 @@ static WalkResult rewriteCompileOffloadOp(
         [&] {
           return std::move(compileOffloadError)
               .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.");
+                    "Compile offload failed.", erroIncludePrelude);
         },
         errorLimit);
     failed = true;
@@ -2492,7 +2493,7 @@ static WalkResult rewriteCompileOffloadOp(
         [&] {
           return std::move(compileOffloadError)
               .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.");
+                    "Compile offload failed.", erroIncludePrelude);
         },
         errorLimit);
     failed = true;
@@ -2627,7 +2628,7 @@ LogicalResult ParametricElaborator::run(
           [&] {
             return err.takeError().emit(
                 [](Location loc) { return mlir::emitError(loc); },
-                "call expansion failed 1");
+                "call expansion failed 1", options.elabErrorIncludePrelude);
           },
           errorLimit);
     }
@@ -2643,7 +2644,7 @@ LogicalResult ParametricElaborator::run(
           [&]() {
             return err.takeError().emit(
                 [](Location loc) { return mlir::emitError(loc); },
-                "call expansion failed 2");
+                "call expansion failed 2", options.elabErrorIncludePrelude);
           },
           errorLimit);
     }
@@ -2665,7 +2666,7 @@ LogicalResult ParametricElaborator::run(
         [&]() {
           return bundleOr.takeError().emit(
               [](Location loc) { return mlir::emitError(loc); },
-              "Bundle CompileOffload failed.");
+              "Bundle CompileOffload failed.", options.elabErrorIncludePrelude);
         },
         errorLimit);
 
@@ -2688,7 +2689,7 @@ LogicalResult ParametricElaborator::run(
         [&] {
           return std::move(compileOffloadError)
               .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.");
+                    "Compile offload failed.", options.elabErrorIncludePrelude);
         },
         errorLimit);
     for (PImplNode *node : llvm::make_second_range(concreteNodes.get()))
@@ -2781,7 +2782,8 @@ LogicalResult ParametricElaborator::run(
     if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {
       // Plug offload compilation results as strings back to the elaborated IR.
       rewriteCompileOffloadOp(offloadOp, theModule.getLoc(), compiledOffload,
-                              failed, errorLimit);
+                              failed, errorLimit,
+                              options.elabErrorIncludePrelude);
     } else if (auto isCompileTime = dyn_cast<IsCompileTimeOp>(op)) {
       // Rewrite IsCompileTimeOp to runtime value as always false.
       OpBuilder b(op);

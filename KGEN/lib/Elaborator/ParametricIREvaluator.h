@@ -179,6 +179,9 @@ public:
   /// Get compilation error limit from the elaborator.
   int getErrorLimit();
 
+  /// Get error with prelude setting from the elaborator.
+  bool getElabErrorIncludePrelude();
+
 private:
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,

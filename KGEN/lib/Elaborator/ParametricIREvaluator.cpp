@@ -444,6 +444,10 @@ int ParametricIREvaluator::getErrorLimit() {
   return elaborator->options.elabErrorLimit;
 }
 
+bool ParametricIREvaluator::getElabErrorIncludePrelude() {
+  return elaborator->options.elabErrorIncludePrelude;
+}
+
 //===----------------------------------------------------------------------===//
 // Expression Evaluation
 //===----------------------------------------------------------------------===//
@@ -622,7 +626,8 @@ ParametricIREvaluator::evaluateApplyLike(ParamOperatorAttr op,
   }
 
   result.takeError().emit([](Location loc) { return mlir::emitError(loc); },
-                          "interpreter failed.");
+                          "interpreter failed.",
+                          elaborator->options.elabErrorIncludePrelude);
 
   return TypedAttr();
 }
