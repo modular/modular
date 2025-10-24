@@ -28,40 +28,7 @@ from compile.reflection import get_type_name
 from ._cpython import CPython, GILAcquired, PyObject, PyObjectPtr, PyTypeObject
 from .bindings import PyMojoObject, _get_type_name, lookup_py_type_object
 from .python import Python
-
-
-trait ConvertibleToPython:
-    """A trait that indicates a type can be converted to a PythonObject, and
-    that specifies the behavior with a `to_python_object` method."""
-
-    fn to_python_object(var self) raises -> PythonObject:
-        """Convert a value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-
-        Raises:
-            If the conversion to a PythonObject failed.
-        """
-        ...
-
-
-trait ConvertibleFromPython(Copyable, Movable):
-    """Denotes a type that can attempt construction from a read-only Python
-    object.
-    """
-
-    fn __init__(out self, obj: PythonObject) raises:
-        """Attempt to construct an instance of this object from a read-only
-        Python value.
-
-        Args:
-            obj: The Python object to convert from.
-
-        Raises:
-            If conversion was not successful.
-        """
-        ...
+from .conversions import ConvertibleToPython
 
 
 struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
