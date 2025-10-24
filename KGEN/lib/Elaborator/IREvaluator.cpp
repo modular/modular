@@ -93,6 +93,10 @@ IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
 
 int IREvaluator::getErrorLimit() { return elaborator->options.elabErrorLimit; }
 
+bool IREvaluator::getElabErrorIncludePrelude() {
+  return elaborator->options.elabErrorIncludePrelude;
+}
+
 //===----------------------------------------------------------------------===//
 // Expression Evaluation
 //===----------------------------------------------------------------------===//

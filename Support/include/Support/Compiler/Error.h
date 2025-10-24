@@ -8,15 +8,21 @@
 #define KGEN_SUPPORT_ERROR_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
-namespace M::KGEN {
+
+namespace M {
 struct ErrorLimit {
   int errorLimit = 0;
   int errorCount = 0;
 };
 
+/// Emit error with a limit check.
 void emitLimitedError(function_ref<InFlightDiagnostic()> emitError,
                       ErrorLimit &limit);
 
-} // namespace M::KGEN
+/// Helper function to check if a location is from teh mojo startup module or
+/// not.
+bool isLocationInPrelude(const Location &loc);
+
+} // namespace M
 
 #endif // KGEN_SUPPORT_ERROR_H

@@ -37,7 +37,9 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier debugInfoLanguageId,
     llvm::opt::OptSpecifier numThreadsId, llvm::opt::OptSpecifier stdLibPath,
     llvm::opt::OptSpecifier loopUnrollingWarnThresholdId,
-    llvm::opt::OptSpecifier elabErrorLimitId) {
+    llvm::opt::OptSpecifier elabErrorLimitId,
+    llvm::opt::OptSpecifier elabErrorIncludePreludeId) {
+
   // Process the sanitizers.
   if (sanitizeId.isValid()) {
     StringRef sanitizer = args.getLastArgValue(sanitizeId);
@@ -182,6 +184,15 @@ ErrorOrSuccess M::parseCompilationOptions(
                      "', expected an integer number");
       }
     }
+  }
+
+  if (elabErrorIncludePreludeId.isValid()) {
+    if (args.hasMultipleArgs(elabErrorIncludePreludeId)) {
+      return Error("too many specified elaboration-error-include-prelude , "
+                   "expected exactly one");
+    }
+    compilationOptions.elabErrorIncludePrelude =
+        args.hasArg(elabErrorIncludePreludeId);
   }
 
   // Unike other command line options, disableWarnings is parsed

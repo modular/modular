@@ -10,8 +10,8 @@
 
 using namespace M;
 
-void emitLimitedError(function_ref<InFlightDiagnostic()> emitError,
-                      ErrorLimit &limit) {
+void M::emitLimitedError(function_ref<InFlightDiagnostic()> emitError,
+                         ErrorLimit &limit) {
   ++limit.errorCount;
   if (limit.errorLimit > 0 && limit.errorCount > limit.errorLimit) {
     return;
@@ -24,10 +24,9 @@ void emitLimitedError(function_ref<InFlightDiagnostic()> emitError,
     diag.attachNote() << "too many errors emitted, stopping now";
 }
 
-bool isLocationInPrelude(const Location &loc) {
+bool M::isLocationInPrelude(const Location &loc) {
   std::string str;
   llvm::raw_string_ostream os(str);
   os << loc;
-  StringRef strref(str);
-  return str.find("stdlib/builtin/_startup.mojo") != std::string::npos;
+  return str.find("_startup.mojo") != std::string::npos;
 }

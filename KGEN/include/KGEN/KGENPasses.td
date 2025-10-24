@@ -432,7 +432,11 @@ def ElaborateGenerators : Pass<"elaborate-generators", "ModuleOp"> {
            "Whether to optimize interpreter functions.">,
     Option<"useParametricInterpreter", "use-parametric-interpret",
            "bool", "false",
-           "If true, use interpreter that interprets parametric functions.">
+           "If true, use interpreter that interprets parametric functions.">,
+    Option<"errorIncludePrelude", "error-include-prelude",
+           "bool", "false",
+           "If true, elaboration error will include prelude locations "
+           "from mojo _startup modules.">
   ];
 }
 

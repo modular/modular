@@ -20,12 +20,12 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
-#include "KGEN/Support/Error.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
 #include "Support/Compiler/DiagnosticHandler.h"
+#include "Support/Compiler/Error.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -132,10 +132,12 @@ void ImplNode::setToError(ErrorTree &&err) {
     llvm::errs() << "\n";
 
     ErrorLimit errorLimit{this->getEvaluator().getErrorLimit(), 0};
+
     emitLimitedError(
         [&] {
           return std::move(*error).emit(
-              [](Location loc) { return mlir::emitError(loc); }, "HERE");
+              [](Location loc) { return mlir::emitError(loc); }, "HERE",
+              this->getEvaluator().getElabErrorIncludePrelude());
         },
         errorLimit);
 
@@ -2408,7 +2410,7 @@ static WalkResult rewriteCompileOffloadOp(
     DenseMap<TargetInfoAttr,
              DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>
         &compiledOffload,
-    bool &failed, ErrorLimit &errorLimit) {
+    bool &failed, ErrorLimit &errorLimit, bool errorIncludePrelude) {
   // Plug offload compilation results as strings back to the elaborated IR.
   auto kernelId = cast<IntegerAttr>(op.getKernelIDAttr()).getInt();
   EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
@@ -2424,7 +2426,7 @@ static WalkResult rewriteCompileOffloadOp(
         [&] {
           return std::move(compileOffloadError)
               .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.");
+                    "Compile offload failed.", errorIncludePrelude);
         },
         errorLimit);
     failed = true;
@@ -2441,7 +2443,7 @@ static WalkResult rewriteCompileOffloadOp(
         [&] {
           return std::move(compileOffloadError)
               .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.");
+                    "Compile offload failed.", errorIncludePrelude);
         },
         errorLimit);
 
@@ -2458,7 +2460,7 @@ static WalkResult rewriteCompileOffloadOp(
         [&] {
           return std::move(compileOffloadError)
               .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.");
+                    "Compile offload failed.", errorIncludePrelude);
         },
         errorLimit);
     failed = true;
@@ -2581,7 +2583,7 @@ Elaborator::run(ModuleOp theModule,
           [&]() {
             return err.takeError().emit(
                 [](Location loc) { return mlir::emitError(loc); },
-                "call expansion failed");
+                "call expansion failed", options.elabErrorIncludePrelude);
           },
           errorLimit);
     }
@@ -2602,7 +2604,7 @@ Elaborator::run(ModuleOp theModule,
         [&]() {
           return bundleOr.takeError().emit(
               [](Location loc) { return mlir::emitError(loc); },
-              "Bundle CompileOffload failed.");
+              "Bundle CompileOffload failed.", options.elabErrorIncludePrelude);
         },
         errorLimit);
 
@@ -2625,7 +2627,7 @@ Elaborator::run(ModuleOp theModule,
         [&]() {
           return std::move(compileOffloadError)
               .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.");
+                    "Compile offload failed.", options.elabErrorIncludePrelude);
         },
         errorLimit);
 
@@ -2719,7 +2721,8 @@ Elaborator::run(ModuleOp theModule,
     if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {
       // Plug offload compilation results as strings back to the elaborated IR.
       rewriteCompileOffloadOp(offloadOp, theModule.getLoc(), compiledOffload,
-                              failed, errorLimit);
+                              failed, errorLimit,
+                              options.elabErrorIncludePrelude);
     } else if (auto isCompileTime = dyn_cast<IsCompileTimeOp>(op)) {
       // Rewrite IsCompileTimeOp to runtime value as always false.
       OpBuilder b(op);
@@ -2819,6 +2822,7 @@ public:
                                       optimizeInterpreter};
 
     VerboseCompilerTimeTraceScope traceScope("elaborate-generators");
+    options.elabErrorIncludePrelude = errorIncludePrelude;
 
     // Now, construct and run the elaborator.
     if (useParametricInterpreter) {
