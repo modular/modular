@@ -115,10 +115,18 @@ from gpu.grid_controls import (
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from gpu.intrinsics import load_acquire, store_release, load_relaxed, Scope
+
+from gpu.intrinsics import (
+    load_acquire,
+    store_release,
+    load_relaxed,
+    Scope,
+    AMDBufferResource,
+)
 from gpu.memory import AddressSpace
 from gpu.memory import AddressSpace as GPUAddressSpace
 from gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
+from gpu.memory import CacheOperation
 from memory import stack_allocation
 
 from utils import IndexList, StaticTuple
@@ -689,7 +697,7 @@ fn _allreduce_2stage_kernel[
     # Grid-strided loop with vectorized reduction:
     # - Each thread processes partition elements using 128-bit accesses.
     # - Accumulates in higher precision (float32) for numerical stability.
-    for idx in range(start + Int(global_tid), end, stride):
+    for idx in range(start + global_tid, end, stride):
         # float32 accumulator for numerical stability.
         var elem_idx = idx * simd_width
 
@@ -1251,17 +1259,15 @@ fn allreduce_2stage_quickreduce_tile[
     BLOCK_SIZE: Int,
     output_lambda: elementwise_epilogue_type,
     atom_size: Int,
+    use_bufferio: Bool,
 ](
     result_data: UnsafePointer[
         Scalar[dtype], address_space=_target_address_space
     ],
-    buffer_list: InlineArray[
-        UnsafePointer[Scalar[DType.uint8], address_space=_target_address_space],
-        ngpus,
-    ],
-    src_buffer: UnsafePointer[
+    local_src: UnsafePointer[
         Scalar[dtype], address_space=_target_address_space
     ],
+    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
     tile: Int,
@@ -1295,19 +1301,27 @@ fn allreduce_2stage_quickreduce_tile[
     var tA = InlineArray[SIMD[dtype, simd_width], atom_size](uninitialized=True)
     var tR = InlineArray[SIMD[dtype, simd_width], atom_size](uninitialized=True)
     var tR_acc = InlineArray[SIMD[accum_type, simd_width], atom_size](fill=0)
-    var data_buf = InlineArray[
-        UnsafePointer[Scalar[dtype], address_space=_target_address_space],
-        ngpus,
-    ](uninitialized=True)
+
+    # Build typed views from rank_sigs once
     var flag_buf = InlineArray[
         UnsafePointer[Scalar[_flag_t], address_space=_target_address_space],
         ngpus,
     ](uninitialized=True)
 
+    var data_buf = InlineArray[
+        UnsafePointer[Scalar[dtype], address_space=_target_address_space],
+        ngpus,
+    ](uninitialized=True)
+
     @parameter
-    for r in range(ngpus):
-        data_buf[r] = buffer_list[r].bitcast[Scalar[dtype]]()
-        flag_buf[r] = buffer_list[r].bitcast[Scalar[_flag_t]]()
+    for rr in range(ngpus):
+        var payload_generic = (
+            (rank_sigs[rr].address_space_cast[GPUAddressSpace.GENERIC]() + 1)
+            .bitcast[Scalar[DType.uint8]]()
+            .address_space_cast[_target_address_space]()
+        )
+        flag_buf[rr] = payload_generic.bitcast[Scalar[_flag_t]]()
+        data_buf[rr] = payload_generic.bitcast[Scalar[dtype]]()
 
     @parameter
     fn wait_for_flag(
@@ -1326,9 +1340,8 @@ fn allreduce_2stage_quickreduce_tile[
     @parameter
     @always_inline
     fn send(
-        send_buffer: UnsafePointer[
-            Scalar[dtype], address_space=_target_address_space
-        ],
+        r: Int,
+        base_index: Int,
         tA: InlineArray[SIMD[dtype, simd_width], atom_size],
         tile_offset: Int,
     ):
@@ -1336,22 +1349,43 @@ fn allreduce_2stage_quickreduce_tile[
         for i in range(rank_atoms):
             var atom_idx = Int(thread_idx.x) * simd_width + atom_stride * i
             var atom_data = tA[tile_offset + i]
-            send_buffer.store[alignment=alignment](atom_idx, atom_data)
+
+            @parameter
+            if use_bufferio:
+                AMDBufferResource(data_buf[r]).store[
+                    dtype,
+                    width=simd_width,
+                    cache_policy = CacheOperation.STREAMING,
+                ](Int32(base_index + atom_idx), atom_data)
+            else:
+                data_buf[r].store[alignment=alignment](
+                    base_index + atom_idx, atom_data
+                )
 
     @parameter
     @always_inline
     fn recv(
-        recv_buffer: UnsafePointer[
+        recv_ptr: UnsafePointer[
             Scalar[dtype], address_space=_target_address_space
         ],
+        base_index: Int,
         tile_offset: Int,
     ):
         @parameter
         for i in range(rank_atoms):
             var atom_idx = Int(thread_idx.x) * simd_width + atom_stride * i
-            tA[tile_offset + i] = recv_buffer.load[
-                width=simd_width, alignment=alignment, invariant=True
-            ](atom_idx)
+
+            @parameter
+            if use_bufferio:
+                tA[tile_offset + i] = AMDBufferResource(recv_ptr).load[
+                    dtype,
+                    width=simd_width,
+                    cache_policy = CacheOperation.STREAMING,
+                ](Int32(base_index + atom_idx))
+            else:
+                tA[tile_offset + i] = recv_ptr.load[
+                    width=simd_width, alignment=alignment, invariant=True
+                ](base_index + atom_idx)
 
     @parameter
     @always_inline
@@ -1360,15 +1394,26 @@ fn allreduce_2stage_quickreduce_tile[
         var src_offset = tile * tile_elems + Int(thread_idx.x) * simd_width
 
         @parameter
-        for i in range(atom_size):
-            tA[i] = src_buffer.load[
-                width=simd_width, alignment=alignment, invariant=True
-            ](src_offset + i * atom_stride)
+        if use_bufferio:
+
+            @parameter
+            for i in range(atom_size):
+                tA[i] = AMDBufferResource(local_src).load[
+                    dtype, width=simd_width
+                ](Int32(src_offset + i * atom_stride))
+        else:
+
+            @parameter
+            for i in range(atom_size):
+                tA[i] = local_src.load[
+                    width=simd_width, alignment=alignment, invariant=True
+                ](src_offset + i * atom_stride)
 
         @parameter
         for r in range(ngpus):
             send(
-                data_buf[r] + comm_data0_offset + my_rank * rank_tile_elems,
+                r,
+                comm_data0_offset + my_rank * rank_tile_elems,
                 tA,
                 r * rank_atoms,
             )
@@ -1396,7 +1441,11 @@ fn allreduce_2stage_quickreduce_tile[
 
         @parameter
         for r in range(ngpus):
-            recv(data_buf[my_rank] + comm_data0_offset + r * rank_tile_elems, 0)
+            recv(
+                data_buf[my_rank],
+                comm_data0_offset + r * rank_tile_elems,
+                0,
+            )
 
             @parameter
             for i_red in range(rank_atoms):
@@ -1414,7 +1463,8 @@ fn allreduce_2stage_quickreduce_tile[
         @parameter
         for r in range(ngpus):
             send(
-                data_buf[r] + comm_data1_offset + my_rank * rank_tile_elems,
+                r,
+                comm_data1_offset + my_rank * rank_tile_elems,
                 tR,
                 0,
             )
@@ -1438,7 +1488,8 @@ fn allreduce_2stage_quickreduce_tile[
         @parameter
         for r in range(ngpus):
             recv(
-                data_buf[my_rank] + comm_data1_offset + r * rank_tile_elems,
+                data_buf[my_rank],
+                comm_data1_offset + r * rank_tile_elems,
                 r * rank_atoms,
             )
 
@@ -1494,37 +1545,47 @@ fn allreduce_2stage_quickreduce[
     alias simd_width = simd_width_of[dtype]()
     alias alignment = align_of[SIMD[dtype, simd_width]]()
 
-    # Build payload planes from rank_sigs once and pass to the tile kernel
-    var buffer_list = InlineArray[
-        UnsafePointer[Scalar[DType.uint8], address_space=_target_address_space],
-        ngpus,
-    ](uninitialized=True)
+    alias bytes_per_elem = size_of[Scalar[dtype]]()
+    alias flag_t_bytes = size_of[Scalar[_flag_t]]()
+    alias tile_elems = 256 * atom_size * simd_width
+    alias INT32_MAX = 2147483647
+
+    var data_offset_elems = (
+        2 * num_tiles_total * ngpus * flag_t_bytes
+    ) // bytes_per_elem
+    var max_index_elems = (
+        data_offset_elems + 2 * num_tiles_total * tile_elems - 1
+    )
+    var amd_index_fits = max_index_elems <= (INT32_MAX // bytes_per_elem)
 
     @parameter
-    for rr in range(ngpus):
-        # The '+ 1' skips the signal header (1 byte) to access the payload buffer.
-        var payload_generic = (
-            (rank_sigs[rr].address_space_cast[GPUAddressSpace.GENERIC]() + 1)
-            .bitcast[Scalar[DType.uint8]]()
-            .address_space_cast[_target_address_space]()
-        )
-        buffer_list[rr] = payload_generic
+    @always_inline
+    fn dispatch_on_bufferio[use_bufferio: Bool]():
+        for tile in range(block_idx.x, num_tiles_total, grid_dim.x):
+            allreduce_2stage_quickreduce_tile[
+                dtype,
+                rank,
+                ngpus,
+                BLOCK_SIZE=BLOCK_SIZE,
+                output_lambda=output_lambda,
+                atom_size=atom_size,
+                use_bufferio=use_bufferio,
+            ](
+                result.data.address_space_cast[_target_address_space](),
+                local_src.address_space_cast[_target_address_space](),
+                rank_sigs,
+                num_elements,
+                my_rank,
+                tile,
+                num_tiles_total,
+                iteration,
+            )
 
-    for tile in range(block_idx.x, num_tiles_total, grid_dim.x):
-        allreduce_2stage_quickreduce_tile[
-            dtype,
-            rank,
-            ngpus,
-            BLOCK_SIZE=BLOCK_SIZE,
-            output_lambda=output_lambda,
-            atom_size=atom_size,
-        ](
-            result.data.address_space_cast[_target_address_space](),
-            buffer_list,
-            local_src.address_space_cast[_target_address_space](),
-            num_elements,
-            my_rank,
-            tile,
-            num_tiles_total,
-            iteration,
-        )
+    @parameter
+    if is_amd_gpu():
+        if amd_index_fits:
+            dispatch_on_bufferio[True]()
+        else:
+            dispatch_on_bufferio[False]()
+    else:
+        dispatch_on_bufferio[False]()
