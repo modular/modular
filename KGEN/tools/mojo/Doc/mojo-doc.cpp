@@ -64,6 +64,10 @@ static int doc(const State &subcommandState) {
     return state.printHelp(
 #include "Doc/DocOptionsHelpText.inc"
     );
+  } else if (args.hasArg(options::OPT_help_hidden)) {
+    return state.printHelp(
+#include "Doc/DocOptionsHelpHiddenText.inc"
+    );
   }
 
   if (int result = state.parseDiagnosticFormatArguments(

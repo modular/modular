@@ -423,6 +423,10 @@ static int package(const State &subcommandState) {
     return state.printHelp(
 #include "Package/PackageOptionsHelpText.inc"
     );
+  } else if (args.hasArg(options::OPT_help_hidden)) {
+    return state.printHelp(
+#include "Package/PackageOptionsHelpHiddenText.inc"
+    );
   }
 
   if (int result = state.parseDiagnosticFormatArguments(

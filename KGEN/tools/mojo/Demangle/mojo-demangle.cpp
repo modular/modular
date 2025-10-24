@@ -52,6 +52,10 @@ static int demangle(const State &state) {
     return state.printHelp(
 #include "Demangle/DemangleOptionsHelpText.inc"
     );
+  } else if (args.hasArg(options::OPT_help_hidden)) {
+    return state.printHelp(
+#include "Demangle/DemangleOptionsHelpHiddenText.inc"
+    );
   }
 
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
