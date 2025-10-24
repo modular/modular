@@ -350,9 +350,11 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         """
         return self.tokens[self._prompt_len : self._end_idx]
 
-    @property
-    def last_generated_token(self) -> int:
+    def get_last_generated_token(self) -> int:
         """Returns the most recently generated token. If no tokens have been generated, raises an error.
+
+        This is not a @property method since it can raise.
+
         Returns:
             int: The most recently generated token.
         """

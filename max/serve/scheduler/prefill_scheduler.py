@@ -216,7 +216,7 @@ class PrefillScheduler(Scheduler):
             self.dispatcher.send_reply_nowait(
                 PrefillResponse(
                     id=req_id,
-                    generated_token_id=context.last_generated_token,
+                    generated_token_id=context.get_last_generated_token(),
                     transfer_metadata=transfer_data,
                 ),
                 identity,
