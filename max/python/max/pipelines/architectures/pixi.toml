@@ -26,7 +26,7 @@ generate = { cmd = [
 	"max","generate",
 	"--model", "google/gemma-3-4B-it",
 	"--custom-architectures", "gemma3multimodal",
-	"--prompt", "<image_soft_token>what is in this image?",
+	"--prompt", "<start_of_image><end_of_image>what is in this image?",
     "--image_url", "https://gift-a-tree.com/wp-content/uploads/2021/10/Oak-tree-1.jpg"
 ] }
 
