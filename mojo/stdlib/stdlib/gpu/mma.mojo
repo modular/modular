@@ -23,6 +23,8 @@ from sys.info import (
     _is_amd_rdna,
     is_amd_gpu,
 )
+from io.write import _WriteBufferStack, _TotalWritableBytes
+
 
 from gpu._utils import (
     array_to_llvm_struct,
@@ -1511,10 +1513,14 @@ fn wgmma_async[
             )
         )
 
-        alias input_reg_spec = _str_iota[n // 2, prefix="$"]()
+        alias input_reg_spec = _str_iota[UInt(n // 2), prefix="$"]()
         alias input_constraints_prefix = "=f," * (n // 2)
-        alias input_constraints_suffix = _str_iota[n // 2, sep=","]()
-        alias constraints = input_constraints_prefix + "r,r,r,r,l,n,n,n,n," + input_constraints_suffix
+        alias input_constraints_suffix = _str_iota[UInt(n // 2), sep=","]()
+        alias constraints = String(
+            input_constraints_prefix,
+            "r,r,r,r,l,n,n,n,n,",
+            input_constraints_suffix,
+        )
 
         # fmt: off
         @parameter
@@ -1789,18 +1795,32 @@ fn wgmma_async[
 
 @always_inline("nodebug")
 fn _str_iota[
-    count: Int, *, prefix: String = String(), sep: String = ", "
+    count: UInt,
+    *,
+    O1: ImmutableOrigin = StaticConstantOrigin,
+    O2: ImmutableOrigin = StaticConstantOrigin,
+    prefix: StringSlice[O1] = rebind[StringSlice[O1]](StaticString()),
+    sep: StringSlice[O2] = rebind[StringSlice[O2]](StaticString(", ")),
 ]() -> String:
-    return _str_iota_impl[count, prefix=prefix, sep=sep]()
+    @parameter
+    if count == 0:
+        return String()
 
+    @parameter
+    fn _write[W: Writer](mut writer: W):
+        writer.write(prefix, "1")
+        for i in range(1, count):
+            writer.write(sep, prefix, i)
 
-@always_inline("nodebug")
-fn _str_iota_impl[
-    count: Int, *, prefix: String = String(), sep: String = ", "
-]() -> String:
-    var s = String()
-    for i in range(count):
-        s += prefix + String(i)
-        if i < count - 1:
-            s += StringSlice(sep)
-    return s
+    var total_bytes = _TotalWritableBytes()
+    _write(total_bytes)
+    var result = String(capacity=total_bytes.size)
+
+    if total_bytes.size <= String.INLINE_CAPACITY:
+        _write(result)
+        return result^
+    else:
+        var buffer = _WriteBufferStack(result)
+        _write(buffer)
+        buffer.flush()
+        return result^
