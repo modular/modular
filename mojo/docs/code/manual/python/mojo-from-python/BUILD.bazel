@@ -18,5 +18,4 @@ modular_py_binary(
 modular_run_binary_test(
     name = "factorial_test",
     binary = "factorial",
-    external_noop = True,
 )

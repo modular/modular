@@ -17,5 +17,4 @@ modular_py_binary(
 modular_run_binary_test(
     name = "main_test",
     binary = "main",
-    external_noop = True,
 )
