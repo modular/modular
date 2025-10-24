@@ -163,7 +163,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
   if (shared.lookupSymbolIn(&parent, mangledName))
     return nullptr;
 
-  FnOp fnOp = builder.create<FnOp>(mangledName, sourceName, sigGen);
+  FnOp fnOp = FnOp::create(builder, mangledName, sourceName, sigGen);
 
   // Set the attributes on the FnOp in bulk.
   NamedAttrList attrs = fnOp->getAttrDictionary();
@@ -459,8 +459,8 @@ LogicalResult StructEmitter::populateDefaultedTraitFunction(ASTDecl &fnDecl) {
       implicitOrigins.push_back(cast<LIT::RefType>(val.getType()).getOrigin());
 
   ArrayRef<Type> resultTypes = specializedGenerator.getBody().getResults();
-  auto callOp = builder.create<LIT::CallOp>(
-      fn.getLoc(), resultTypes, typedSymbol, implicitOrigins, operands);
+  auto callOp = LIT::CallOp::create(builder, fn.getLoc(), resultTypes,
+                                    typedSymbol, implicitOrigins, operands);
 
   emitter.emitNormalReturn(fn.getLoc(), callOp->getResult(0));
 
@@ -646,7 +646,7 @@ FnOp StructEmitter::synthesizeFieldwiseInit(
     }
 
     // Project self to the right field and store the RValue.
-    auto fieldRef = builder.create<RefStructGEROp>(selfValue, fieldOp);
+    auto fieldRef = RefStructGEROp::create(builder, selfValue, fieldOp);
     emitter.emitStoreToLValue({argVal, SyntheticNode(structDecl.getLoc())},
                               MLValue(fieldRef), EC_AttributeRefBase);
   }
@@ -786,8 +786,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   // underlying copy/move operations are trivial.
   // TODO: Use memcpy for memory trivial types when we have them.
   if (structDeclOp.isRegisterPassableTrivial()) {
-    Value value = b.create<LIT::RefLoadOp>(existingArg);
-    b.create<RefStoreOp>(value, selfArg);
+    Value value = LIT::RefLoadOp::create(b, existingArg);
+    RefStoreOp::create(b, value, selfArg);
     return success();
   }
 
@@ -806,8 +806,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
                                                   fieldASTDecl.getLoc())))
       return failure();
 
-    auto targetFieldOp = b.create<RefStructGEROp>(selfArg, fieldOp);
-    Value srcFieldOp = b.create<RefStructGEROp>(existingArg, fieldOp);
+    auto targetFieldOp = RefStructGEROp::create(b, selfArg, fieldOp);
+    Value srcFieldOp = RefStructGEROp::create(b, existingArg, fieldOp);
     CValue src =
         isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
 
@@ -1048,7 +1048,7 @@ ASTDecl *StructEmitter::synthesizeUnresolvedAlias(StringRef name) {
 
   auto builder = ImplicitLocOpBuilder::atBlockEnd(
       structDeclOp.getLoc(), &structDeclOp.getFields().front());
-  auto declOp = builder.create<AliasDeclOp>(paramDecl);
+  auto declOp = AliasDeclOp::create(builder, paramDecl);
 
   // Create an ASTDecl so it can be resolved with name lookup.
   ASTDecl &aliasDecl = getDeclResolver().addDecl(

@@ -1065,7 +1065,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
         return {};
       }
       auto ref =
-          emitter.builder->create<RefLoadOp>(expr->getLocation(emitter), var);
+          RefLoadOp::create(*emitter.builder, expr->getLocation(emitter), var);
       value = CValue::getMValueForRef(ref);
     }
   } else if (auto cv = decl->getIfIRValue()) {
@@ -1147,8 +1147,8 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
   // If we got a trivial SSA value, extract the field and return as SBValue.
   if (base.ir.isSValue() &&
       base.ir.getRValueType().isTrivial(expr->getLoc(), emitter.shared)) {
-    auto extractVal = emitter.builder->create<StructExtractOp>(
-        mlirLoc, base.ir.getSValueRegister(), fieldOp);
+    auto extractVal = StructExtractOp::create(
+        *emitter.builder, mlirLoc, base.ir.getSValueRegister(), fieldOp);
     return emitter.emitCResult(SBValue(extractVal), expr, dest);
   }
 
@@ -1158,7 +1158,7 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
     return {};
 
   auto fieldRef =
-      emitter.builder->create<RefStructGEROp>(mlirLoc, baseBVal, fieldOp);
+      RefStructGEROp::create(*emitter.builder, mlirLoc, baseBVal, fieldOp);
   // Result kind depends on the input kind.
   CValue result;
   if (base.ir.getIfMLValue())
@@ -3086,8 +3086,8 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, IREmitter &emitter) const {
   if (!lhsI1SRValue)
     return {};
 
-  auto ifOp = emitter.builder->create<HLCF::IfOp>(
-      ifLoc, TypeRange{lhsV.getType()}, lhsI1SRValue);
+  auto ifOp = HLCF::IfOp::create(*emitter.builder, ifLoc,
+                                 TypeRange{lhsV.getType()}, lhsI1SRValue);
   emitter.builder->createBlock(&ifOp.getThenRegion());
   emitter.builder->createBlock(&ifOp.getElseRegion());
 
@@ -3173,13 +3173,13 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, IREmitter &emitter) const {
     auto rhsSR = emitter.emitSRValue({rhsV, rhs}, EC_OperatorOperandValue);
     if (!rhsSR)
       return {};
-    emitter.builder->create<HLCF::YieldOp>(ifLoc, rhsSR);
+    HLCF::YieldOp::create(*emitter.builder, ifLoc, rhsSR);
     // Emit the false side.
     emitter.builder = falseBuilder;
     auto lhsSR = emitter.emitSRValue({lhsV, rhs}, EC_OperatorOperandValue);
     if (!lhsSR)
       return {};
-    emitter.builder->create<HLCF::YieldOp>(ifLoc, lhsSR);
+    HLCF::YieldOp::create(*emitter.builder, ifLoc, lhsSR);
     ifOp->getResult(0).setType(lhsSR.getType());
     emitter.builder->setInsertionPointAfter(ifOp);
     deadCodeCheck();
@@ -3197,18 +3197,18 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, IREmitter &emitter) const {
   emitter.builder = falseBuilder;
   ValueDest falseDest(destBuffer, EC_CondExpr);
   (void)emitter.emitResult(lhsV, lhs, falseDest);
-  emitter.builder->create<HLCF::YieldOp>(ifLoc);
+  HLCF::YieldOp::create(*emitter.builder, ifLoc);
 
   emitter.builder = trueBuilder;
   ValueDest trueDest(destBuffer, EC_CondExpr);
   (void)emitter.emitResult(rhsV, rhs, trueDest);
-  emitter.builder->create<HLCF::YieldOp>(ifLoc);
+  HLCF::YieldOp::create(*emitter.builder, ifLoc);
 
   // MemoryOnly results don't need the 'if' result.  There is no way to remove
   // results after creating it, so we create a new IfOp and move IR over.
   emitter.builder->setInsertionPointAfter(ifOp);
   auto newIfOp =
-      emitter.builder->create<HLCF::IfOp>(ifLoc, TypeRange{}, lhsI1SRValue);
+      HLCF::IfOp::create(*emitter.builder, ifLoc, TypeRange{}, lhsI1SRValue);
   deadCodeCheck();
   newIfOp.getThenRegion().takeBody(ifOp.getThenRegion());
   newIfOp.getElseRegion().takeBody(ifOp.getElseRegion());
@@ -3293,7 +3293,7 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   // Make sure the origin of the value is extended to at least here.  This
   // is a use, and the `_ = x^` pattern to extend the origin of something is
   // very common.
-  emitter.builder->create<OwnershipUseOp>(getLocation(emitter), value);
+  OwnershipUseOp::create(*emitter.builder, getLocation(emitter), value);
 
   // For memory values, we can just treat the value as an MRValue, and whoever
   // consumes this can consume it directly.
@@ -3454,8 +3454,8 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   Location ifLoc = getLocation(emitter);
   // At this point since we don't know the type of trueExpr / falseExpr, use a
   // dummy type for the 'if' result.  We'll fix it later.
-  auto ifOp = emitter.builder->create<HLCF::IfOp>(
-      ifLoc, TypeRange{condValue.getType()}, condValue);
+  auto ifOp = HLCF::IfOp::create(*emitter.builder, ifLoc,
+                                 TypeRange{condValue.getType()}, condValue);
 
   // Emit the trueVal and falseVal's, coercing any UValue to the other operand
   // type if present, but otherwise not diagnosing conflicts or merging types
@@ -3558,7 +3558,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
       assert(conv && "getCommonRefType failed");
       auto convVal = conv.getIfSRValue();
       assert(convVal && "zero cost convert changed value type");
-      emitter.builder->create<HLCF::YieldOp>(ifLoc, convVal);
+      HLCF::YieldOp::create(*emitter.builder, ifLoc, convVal);
     };
     handleBlock(ifOp.getThenBlock(), trueExpr, trueMVal);
     handleBlock(ifOp.getElseBlock(), falseExpr, falseMVal);
@@ -3610,13 +3610,13 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     auto falseSR = emitter.emitSRValue({falseVal, falseExpr}, EC_CondExpr);
     if (!falseSR)
       return {};
-    emitter.builder->create<HLCF::YieldOp>(ifLoc, falseSR);
+    HLCF::YieldOp::create(*emitter.builder, ifLoc, falseSR);
     // Finish true.
     emitter.builder->setInsertionPointToEnd(&ifOp.getThenBlock());
     auto trueSR = emitter.emitSRValue({trueVal, trueExpr}, EC_CondExpr);
     if (!trueSR)
       return {};
-    emitter.builder->create<HLCF::YieldOp>(ifLoc, trueSR);
+    HLCF::YieldOp::create(*emitter.builder, ifLoc, trueSR);
     emitter.builder->setInsertionPointAfter(ifOp);
     // Ensure the correct type is used.
     ifOp->getResult(0).setType(trueSR.getType());
@@ -3635,18 +3635,18 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   emitter.builder->setInsertionPointToEnd(&ifOp.getElseBlock());
   ValueDest falseDest(destBuffer, EC_CondExpr);
   (void)emitter.emitResult(falseVal, falseExpr, falseDest);
-  emitter.builder->create<HLCF::YieldOp>(ifLoc);
+  HLCF::YieldOp::create(*emitter.builder, ifLoc);
 
   emitter.builder->setInsertionPointToEnd(&ifOp.getThenBlock());
   ValueDest trueDest(destBuffer, EC_CondExpr);
   (void)emitter.emitResult(trueVal, falseExpr, trueDest);
-  emitter.builder->create<HLCF::YieldOp>(ifLoc);
+  HLCF::YieldOp::create(*emitter.builder, ifLoc);
 
   // MemoryOnly results don't need the 'if' result.  There is no way to remove
   // results after creating it, so we create a new IfOp and move IR over.
   emitter.builder->setInsertionPointAfter(ifOp);
   auto newIfOp =
-      emitter.builder->create<HLCF::IfOp>(ifLoc, TypeRange{}, condValue);
+      HLCF::IfOp::create(*emitter.builder, ifLoc, TypeRange{}, condValue);
   deadCodeCheck();
   newIfOp.getThenRegion().takeBody(ifOp.getThenRegion());
   newIfOp.getElseRegion().takeBody(ifOp.getElseRegion());
@@ -3690,8 +3690,8 @@ RValue ChainedCmpOpNode::emitNextCmp(IREmitter &emitter, size_t opIdx,
     // In the dynamic case we need to build the RHS evaluation in the Then
     // region of an IfOp.  But if we end up having all parameters, it will not
     // have been necessary.
-    ifOp = emitter.builder->create<HLCF::IfOp>(
-        ifLocation, prevCmpVal.getType().mlirType, prevCmpI1SRValue);
+    ifOp = HLCF::IfOp::create(*emitter.builder, ifLocation,
+                              prevCmpVal.getType().mlirType, prevCmpI1SRValue);
     emitter.builder->createBlock(&ifOp.getThenRegion());
   }
   RValue newRHS =
@@ -3728,8 +3728,8 @@ RValue ChainedCmpOpNode::emitNextCmp(IREmitter &emitter, size_t opIdx,
                            : emitNextCmp(emitter, opIdx + 1, chainedBool,
                                          newRHS, false, dest);
     if (hasPrevIfOp) {
-      emitter.builder->create<HLCF::YieldOp>(
-          ifLocation, emitter.emitSRValue({ret, exprs[opIdx]}, context));
+      HLCF::YieldOp::create(*emitter.builder, ifLocation,
+                            emitter.emitSRValue({ret, exprs[opIdx]}, context));
     }
     return ret;
   }
@@ -3755,7 +3755,7 @@ RValue ChainedCmpOpNode::emitNextCmp(IREmitter &emitter, size_t opIdx,
     auto newCmpSRV = emitter.emitSRValue({newCmpCRV, exprs[opIdx]}, context);
     if (!newCmpSRV)
       return {};
-    emitter.builder->create<HLCF::YieldOp>(ifLocation, newCmpSRV);
+    HLCF::YieldOp::create(*emitter.builder, ifLocation, newCmpSRV);
   } else {
     newOrNextResult =
         emitNextCmp(emitter, opIdx + 1, newCmpCRV, newRHS, true, dest);
@@ -3773,12 +3773,12 @@ RValue ChainedCmpOpNode::emitNextCmp(IREmitter &emitter, size_t opIdx,
   auto newCmpSRV = emitter.emitSRValue({prevCmpVal, exprs[opIdx - 1]}, context);
   if (!newCmpSRV)
     return {};
-  emitter.builder->create<HLCF::YieldOp>(ifLocation, newCmpSRV);
+  HLCF::YieldOp::create(*emitter.builder, ifLocation, newCmpSRV);
   if (lastBuilder)
     emitter.builder = lastBuilder;
   auto r0 = ifOp->getResult(0);
   if (hasPrevIfOp)
-    emitter.builder->create<HLCF::YieldOp>(ifLocation, r0);
+    HLCF::YieldOp::create(*emitter.builder, ifLocation, r0);
 
   return SRValue(r0);
 }
@@ -4002,8 +4002,9 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   auto immortal = emitter.builder->getAttr<AnyOriginAttr>(/*isMut=*/true);
   bool startsUninit = kind == ExprNode::kGetAddressAsUninitLValue;
   bool endsUninit = kind == ExprNode::kGetAddressAsOwned;
-  exprVal = emitter.builder->create<RefFromPointerOp>(
-      getLocation(emitter), exprVal, immortal, startsUninit, endsUninit);
+  exprVal =
+      RefFromPointerOp::create(*emitter.builder, getLocation(emitter), exprVal,
+                               immortal, startsUninit, endsUninit);
 
   /// __get_address_as_owned_value(ptr) # returns RValue
   if (kind == ExprNode::kGetAddressAsOwned)

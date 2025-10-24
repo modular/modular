@@ -122,6 +122,9 @@ private:
       } else if (!debugValues.empty()) {
         // If the only users are debug values, replace them with a kill.
         auto firstValue = cast<DebugInfo::ValueOp>(*debugValues.begin());
+        auto builder = OpBuilder::atBlockBegin(oldFunction.getBody());
+        DebugInfo::KillOp::create(builder, firstValue.getLoc(),
+                                  firstValue.getValueInfo());
         OpBuilder::atBlockBegin(oldFunction.getBody())
             .create<DebugInfo::KillOp>(firstValue.getLoc(),
                                        firstValue.getValueInfo());
@@ -237,7 +240,7 @@ private:
         newParams);
 
     auto newCall =
-        builder.create<CallOp>(oldCall.getLoc(), symbol, newOperands);
+        CallOp::create(builder, oldCall.getLoc(), symbol, newOperands);
 
     oldCall.replaceAllUsesWith(newCall);
     oldCall.erase();

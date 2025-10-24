@@ -1831,7 +1831,8 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
     // arguments or any other setup logic.
     if (p.consumeIf(Token::dot_dot_dot) || p.consumeIf(Token::kw_pass)) {
       body.front().erase(); // Remove the lit.endfn op to replace it.
-      OpBuilder::atBlockEnd(&body).create<UnreachableOp>(funcOp.getLoc());
+      auto builder = OpBuilder::atBlockEnd(&body);
+      UnreachableOp::create(builder, funcOp.getLoc());
       return success();
     }
 
@@ -2065,8 +2066,8 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
   for (StringRef name : nestedModules) {
     StringAttr importName = builder.getStringAttr("." + name);
     StringAttr boundName = builder.getStringAttr(name);
-    auto importDecl = builder.create<LIT::UnresolvedImportOp>(
-        op->getLoc(), importName, boundName, /*declName=*/StringAttr(),
+    auto importDecl = LIT::UnresolvedImportOp::create(
+        builder, op->getLoc(), importName, boundName, /*declName=*/StringAttr(),
         /*importNameLoc=*/LocationAttr(),
         /*destNameLoc=*/LocationAttr());
     getDeclResolver().addDecl(importDecl, decl.loc, boundName, &decl,
@@ -2075,8 +2076,8 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
     // Create an alias for the unmangled module name to allow for simplified
     // indexing into this module.
     boundName = builder.getStringAttr(name);
-    importDecl = builder.create<LIT::UnresolvedImportOp>(
-        op->getLoc(), importName, boundName, /*declName=*/StringAttr(),
+    importDecl = LIT::UnresolvedImportOp::create(
+        builder, op->getLoc(), importName, boundName, /*declName=*/StringAttr(),
         /*importNameLoc=*/LocationAttr(),
         /*declNameLoc=*/LocationAttr());
     getDeclResolver().addDecl(importDecl, decl.loc, boundName, &decl,
@@ -2086,8 +2087,8 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
   // Create a full wildcard import from the __init__, as the symbols defined
   // there are visible from the package.
   StringAttr importModule = builder.getStringAttr(".__init__");
-  builder.create<UnresolvedWildcardImportOp>(op->getLoc(), importModule,
-                                             /*fullImport=*/true);
+  UnresolvedWildcardImportOp::create(builder, op->getLoc(), importModule,
+                                     /*fullImport=*/true);
   decl.addUnresolvedWildCardImport(importModule, /*isFullImport=*/true,
                                    decl.loc);
 
@@ -2985,7 +2986,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
         cast_or_null<TraitDeclOp>(parentDecl.getIfOperation())
             .getImmediateParentsAttr();
     ConformanceOp witnessTable =
-        b.create<ConformanceOp>(name, parent, immediateParents);
+        ConformanceOp::create(b, name, parent, immediateParents);
     witnessTable.getBody().push_back(new Block());
     ASTDecl &decl = addDecl(witnessTable, structDecl.getLoc(), name,
                             &structDecl, {}, {}, -1);
@@ -3650,8 +3651,12 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
   // still be able to appropriately pick up the parent trait method with the
   // actual defaulted implementation.
   auto clonedFunc = inheritedFnOp.cloneWithoutRegions();
-  Block *entryBlock = clonedFunc.addEntryBlock();
-  OpBuilder::atBlockEnd(entryBlock).create<UnreachableOp>(clonedFunc.getLoc());
+
+  {
+    Block *entryBlock = clonedFunc.addEntryBlock();
+    auto builder = OpBuilder::atBlockEnd(entryBlock);
+    UnreachableOp::create(builder, clonedFunc.getLoc());
+  }
 
   // In this case the child trait has an override for a method defined in the
   // parent trait. In these sorts of cases we need to 'deactivate' the decl we
@@ -3684,8 +3689,11 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
   // Clear the function body and replace with just kgen.unreachable
   // since we don't need to preserve the actual implementation
   clonedFunc.getBody()->clear();
-  OpBuilder::atBlockEnd(clonedFunc.getBody())
-      .create<UnreachableOp>(clonedFunc.getLoc());
+
+  {
+    auto builder = OpBuilder::atBlockEnd(clonedFunc.getBody());
+    UnreachableOp::create(builder, clonedFunc.getLoc());
+  }
 
   return success();
 }
@@ -4018,7 +4026,7 @@ ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
           cast_or_null<TraitDeclOp>(parentDecl.getIfOperation())
               .getImmediateParentsAttr();
       ConformanceOp witnessTable =
-          b.create<ConformanceOp>(name, parent, immediateParents);
+          ConformanceOp::create(b, name, parent, immediateParents);
       witnessTable.getBody().push_back(new Block());
       ASTDecl &decl = addDecl(witnessTable, extensionDecl.getLoc(), name,
                               &extensionDecl, {}, {}, -1);

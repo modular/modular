@@ -370,8 +370,8 @@ enum class VisitedState { SUS, NOSUS, SUS_AND_NOSUS };
 static Operation *insertCoroutineEnd(ImplicitLocOpBuilder &builder,
                                      Value callback, Value closure) {
   auto signatureType = cast<FuncTypeGeneratorType>(callback.getType());
-  auto callIndirect = builder.create<CallIndirectOp>(
-      signatureType.getBody().getResults(), callback, closure);
+  auto callIndirect = CallIndirectOp::create(
+      builder, signatureType.getBody().getResults(), callback, closure);
   callIndirect.setTailKind(TailKind::MustTail);
   return callIndirect;
 }
@@ -455,7 +455,7 @@ void LowerAsyncBuildContext::takeSlicedFirstStateFrom(FuncOp hotRamp,
           // keep suspension points around for now.
           for (auto &op : suspendOp.getBody().front().getOperations())
             reachable.insert(&op);
-          end = builder.create<KGEN::ReturnOp>();
+          end = KGEN::ReturnOp::create(builder);
           reachable.insert(end);
           if (end->getNextNode())
             paths.push_back({end->getNextNode(), true});
@@ -640,7 +640,7 @@ FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
 
       /// Traverse.
       if (auto suspendOp = dyn_cast<SuspendOp>(operation)) {
-        builder.create<KGEN::ReturnOp>();
+        KGEN::ReturnOp::create(builder);
         Block &block = clone->getRegion(0).emplaceBlock();
         for (Value arg : suspendOp.getBody().front().getArguments())
           mapping.map(arg, block.addArgument(arg.getType(), arg.getLoc()));
@@ -687,8 +687,8 @@ FuncOp LowerAsyncBuildContext::createColdResume(StringRef prefix, FuncOp funcOp,
   auto resumeSignature =
       FuncType::get(builder.getContext(),
                     PointerType::get(coTypes.getContinuationType()), {});
-  FuncOp resumeFunction = builder.create<FuncOp>(
-      funcOp->getParentOp()->getLoc(), resumeName, resumeSignature);
+  FuncOp resumeFunction = FuncOp::create(
+      builder, funcOp->getParentOp()->getLoc(), resumeName, resumeSignature);
   resumeFunction.setCoroutineTypeAttr(
       TypeAttr::get(coTypes.getContinuationType()));
   resumeName = sharedTable.modify(
@@ -707,9 +707,9 @@ FuncOp LowerAsyncBuildContext::createColdResume(StringRef prefix, FuncOp funcOp,
   resumeFunction.walk([&](SuspendOp suspendOp) {
     builder.setInsertionPoint(suspendOp);
     Value newState =
-        builder.create<ParamConstantOp>(builder.getI32IntegerAttr(++susId));
-    Value stateSlot = builder.create<StructGEPOp>(continuation, State);
-    builder.create<StoreOp>(newState, stateSlot);
+        ParamConstantOp::create(builder, builder.getI32IntegerAttr(++susId));
+    Value stateSlot = StructGEPOp::create(builder, continuation, State);
+    StoreOp::create(builder, newState, stateSlot);
   });
   return resumeFunction;
 }
@@ -752,8 +752,8 @@ void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
         if (isa<HLCF::ControlFlowTerminator>(op)) {
           builder.setInsertionPoint(op);
           for (auto [index, type] : llvm::enumerate(op->getOperandTypes()))
-            op->setOperand(index, builder.create<ParamConstantOp>(
-                                      UninitMemAttr::get(type)));
+            op->setOperand(index, ParamConstantOp::create(
+                                      builder, UninitMemAttr::get(type)));
         } else if (!isa<SuspendOp, SuspendEndOp>(op)) {
           opsToRemove.push_back(op);
         }
@@ -778,8 +778,9 @@ void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
 
       builder.setInsertionPoint(parent);
       for (auto [index, operand] : llvm::enumerate(parent->getOperands()))
-        parent->setOperand(index, builder.create<ParamConstantOp>(
-                                      UninitMemAttr::get(operand.getType())));
+        parent->setOperand(index,
+                           ParamConstantOp::create(
+                               builder, UninitMemAttr::get(operand.getType())));
     }
   }
 
@@ -827,8 +828,8 @@ FuncOp LowerAsyncBuildContext::createSharedResume(StringRef prefix,
           cast<PointerType>(hotStartContinuation.getType()).getElementType())
           .getElementTypes()
           .size();
-  auto pointerBitcast = builder.create<PointerBitcastOp>(
-      PointerType::get(coldContType), hotStartContinuation);
+  auto pointerBitcast = PointerBitcastOp::create(
+      builder, PointerType::get(coldContType), hotStartContinuation);
   Value coldStartContinuation = pointerBitcast.getResult();
   for (VirtualBlock virtualBlock :
        coldcoTypes.getFrameData()->virtualBlocksFirstState) {
@@ -861,9 +862,8 @@ FuncOp LowerAsyncBuildContext::createHotRamp(StringRef prefix, FuncOp original,
                                              bool takeOriginal) {
   StringAttr hotRampName = builder.getStringAttr(prefix + "_hot_ramp");
   builder.setInsertionPoint(resumeFunction);
-  FuncOp hotRamp =
-      builder.create<FuncOp>(original->getLoc(), hotRampName,
-                             FuncType::get(builder.getContext(), {}, {}));
+  FuncOp hotRamp = FuncOp::create(builder, original->getLoc(), hotRampName,
+                                  FuncType::get(builder.getContext(), {}, {}));
   hotRampName = sharedTable.modify(
       [hotRamp, it = resumeFunction->getIterator()](SymbolTable &symtab) {
         return symtab.insert(hotRamp, it);
@@ -892,7 +892,7 @@ FuncOp LowerAsyncBuildContext::createHotRamp(StringRef prefix, FuncOp original,
   // deleted).
   if (!hotRamp.getBodyRegion().front().mightHaveTerminator()) {
     builder.setInsertionPointToEnd(&hotRamp.getBodyRegion().front());
-    builder.create<UnreachableOp>();
+    UnreachableOp::create(builder);
   }
 
   constexpr unsigned indexOfCoroutine = 0;
@@ -916,24 +916,24 @@ FuncOp LowerAsyncBuildContext::createHotRamp(StringRef prefix, FuncOp original,
                     PointerType::get(coTypes.getHeaderType()))));
 
   // Store continuation and closure.
-  Value closureSlot = builder.create<StructGEPOp>(continuation, ClosureState);
-  builder.create<StoreOp>(closureState, closureSlot);
-  Value callbackSlot = builder.create<StructGEPOp>(continuation, CallbackFn);
-  builder.create<StoreOp>(callback, callbackSlot);
+  Value closureSlot = StructGEPOp::create(builder, continuation, ClosureState);
+  StoreOp::create(builder, closureState, closureSlot);
+  Value callbackSlot = StructGEPOp::create(builder, continuation, CallbackFn);
+  StoreOp::create(builder, callback, callbackSlot);
 
   // Store arguments in frame if used across suspension points.
   for (auto [index, frameSlot] : coTypes.getFrameData()->argsInFrame) {
-    Value slot = builder.create<StructGEPOp>(continuation, Frame + frameSlot);
+    Value slot = StructGEPOp::create(builder, continuation, Frame + frameSlot);
     Value image = hotRamp.getArgument(index + 2);
-    builder.create<StoreOp>(image, slot);
+    StoreOp::create(builder, image, slot);
   }
 
   // Store results/error
   auto setByRefArgument = [&](Value argument, unsigned index) {
-    Value slot = builder.create<StructGEPOp>(continuation, index);
-    Value typedSlot = builder.create<PointerBitcastOp>(
-        KGEN::PointerType::get(argument.getType()), slot);
-    builder.create<StoreOp>(argument, typedSlot);
+    Value slot = StructGEPOp::create(builder, continuation, index);
+    Value typedSlot = PointerBitcastOp::create(
+        builder, KGEN::PointerType::get(argument.getType()), slot);
+    StoreOp::create(builder, argument, typedSlot);
   };
   if (errorValue)
     setByRefArgument(errorValue, AsyncContinuationField::ErrorSlot);
@@ -941,8 +941,8 @@ FuncOp LowerAsyncBuildContext::createHotRamp(StringRef prefix, FuncOp original,
     setByRefArgument(memoryResultValue, AsyncContinuationField::ResultSlot);
 
   // Return the continuation.
-  Value bitcast = builder.create<PointerBitcastOp>(
-      PointerType::get(coTypes.getHeaderType()), continuation);
+  Value bitcast = PointerBitcastOp::create(
+      builder, PointerType::get(coTypes.getHeaderType()), continuation);
   int susId = 0;
   hotRamp.walk([&](Operation *op) {
     if (auto returnOp = dyn_cast<ReturnOp>(op)) {
@@ -951,9 +951,9 @@ FuncOp LowerAsyncBuildContext::createHotRamp(StringRef prefix, FuncOp original,
       // Insert state change
       builder.setInsertionPoint(suspend);
       Value newState =
-          builder.create<ParamConstantOp>(builder.getI32IntegerAttr(++susId));
-      Value stateSlot = builder.create<StructGEPOp>(continuation, State);
-      builder.create<StoreOp>(newState, stateSlot);
+          ParamConstantOp::create(builder, builder.getI32IntegerAttr(++susId));
+      Value stateSlot = StructGEPOp::create(builder, continuation, State);
+      StoreOp::create(builder, newState, stateSlot);
 
       Operation *current = &suspend.getBody().front().getOperations().front();
       while (current) {
@@ -987,7 +987,7 @@ FuncOp LowerAsyncBuildContext::createColdRamp(StringRef prefix,
       builder.getFunctionType(args, PointerType::get(coTypes.getHeaderType()));
   auto rampSignature = FuncType::get(rampFunctionType);
   builder.setInsertionPoint(resumeFunction);
-  FuncOp rampFunction = builder.create<FuncOp>(rampName, rampSignature);
+  FuncOp rampFunction = FuncOp::create(builder, rampName, rampSignature);
   rampName = sharedTable.modify(
       [rampFunction, it = resumeFunction->getIterator()](SymbolTable &symtab) {
         return symtab.insert(rampFunction, it);
@@ -1003,12 +1003,12 @@ FuncOp LowerAsyncBuildContext::createColdRamp(StringRef prefix,
   // Store arguments in frame.
   for (auto [index, argSlot] : coTypes.getFrameData()->argsInFrame) {
     Value arg = rampFunction.getArgument(index);
-    Value slot = builder.create<StructGEPOp>(continuation, Frame + argSlot);
-    builder.create<StoreOp>(arg, slot);
+    Value slot = StructGEPOp::create(builder, continuation, Frame + argSlot);
+    StoreOp::create(builder, arg, slot);
   }
-  Value headerTypedContinuation = builder.create<PointerBitcastOp>(
-      PointerType::get(coTypes.getHeaderType()), continuation);
-  builder.create<ReturnOp>(headerTypedContinuation);
+  Value headerTypedContinuation = PointerBitcastOp::create(
+      builder, PointerType::get(coTypes.getHeaderType()), continuation);
+  ReturnOp::create(builder, headerTypedContinuation);
   return rampFunction;
 }
 
@@ -1053,8 +1053,8 @@ Coroutine LowerAsyncBuildContext::createCoroutine(FuncOp originalAsyncFunc,
         FuncType::get(builder.getContext(),
                       PointerType::get(hotCoTypes.getContinuationType()), {});
     FuncOp resumeFunction =
-        builder.create<FuncOp>(originalAsyncFunc->getParentOp()->getLoc(),
-                               resumeName, resumeSignature);
+        FuncOp::create(builder, originalAsyncFunc->getParentOp()->getLoc(),
+                       resumeName, resumeSignature);
     resumeFunction.setCoroutineTypeAttr(
         TypeAttr::get(hotCoTypes.getContinuationType()));
     resumeName = sharedTable.modify(
@@ -1189,12 +1189,12 @@ void LowerAsyncBuildContext::insertFrameLoadsStores(
       // functions.
       builder.setInsertionPoint(hotInvoke);
       SmallVector<Value> operands;
-      Value resumeFunction = builder.create<LoadOp>(
-          builder.create<StructGEPOp>(continuation, ResumeFunction));
-      Value operand0 = builder.create<PointerBitcastOp>(
-          coTypes.getResumeSignatureType(), resumeFunction);
-      Value operand1 = builder.create<PointerBitcastOp>(
-          coTypes.typeForField(ClosureState), continuation);
+      Value resumeFunction = LoadOp::create(
+          builder, StructGEPOp::create(builder, continuation, ResumeFunction));
+      Value operand0 = PointerBitcastOp::create(
+          builder, coTypes.getResumeSignatureType(), resumeFunction);
+      Value operand1 = PointerBitcastOp::create(
+          builder, coTypes.typeForField(ClosureState), continuation);
       hotInvoke->insertOperands(0, operand0);
       hotInvoke->insertOperands(1, operand1);
     }
@@ -1213,25 +1213,25 @@ Value LowerAsyncBuildContext::initializeContinuation(FuncOp rampFunction,
       DataLayoutInterface::getTypeStoreSize(targetInfoAttr, continuationType);
   std::optional<int64_t> align =
       DataLayoutInterface::getTypeABIAlign(targetInfoAttr, continuationType);
-  Value sizeOf = builder.create<mlir::index::ConstantOp>(size.value());
-  Value alignOf = builder.create<mlir::index::ConstantOp>(align.value());
+  Value sizeOf = mlir::index::ConstantOp::create(builder, size.value());
+  Value alignOf = mlir::index::ConstantOp::create(builder, align.value());
 
-  Value continuation = builder.create<AlignedAllocOp>(
-      PointerType::get(continuationType), ValueRange{alignOf, sizeOf});
+  Value continuation = AlignedAllocOp::create(
+      builder, PointerType::get(continuationType), ValueRange{alignOf, sizeOf});
 
   // Initialize state to 0.
-  Value zero = builder.create<ParamConstantOp>(builder.getI32IntegerAttr(0));
-  Value stateSlot = builder.create<StructGEPOp>(continuation, State);
-  builder.create<StoreOp>(zero, stateSlot);
+  Value zero = ParamConstantOp::create(builder, builder.getI32IntegerAttr(0));
+  Value stateSlot = StructGEPOp::create(builder, continuation, State);
+  StoreOp::create(builder, zero, stateSlot);
 
   // Store resume function.
   Value resumeFunctionSlot =
-      builder.create<StructGEPOp>(continuation, ResumeFunction);
+      StructGEPOp::create(builder, continuation, ResumeFunction);
   Value functionPointer =
-      builder.create<CreateClosureOp>(SymbolConstantAttr::get(resumeFunction));
-  functionPointer = builder.create<PointerBitcastOp>(
-      coTypes.typeForField(ResumeFunction), functionPointer);
-  builder.create<StoreOp>(functionPointer, resumeFunctionSlot);
+      CreateClosureOp::create(builder, SymbolConstantAttr::get(resumeFunction));
+  functionPointer = PointerBitcastOp::create(
+      builder, coTypes.typeForField(ResumeFunction), functionPointer);
+  StoreOp::create(builder, functionPointer, resumeFunctionSlot);
   return continuation;
 }
 
@@ -1240,12 +1240,12 @@ ReturnOp LowerAsyncBuildContext::lowerReturn(ReturnOp returnOp,
   builder.setInsertionPoint(returnOp);
   if (returnOp->getNumOperands()) {
     // Replace ReturnOps with set result.
-    Value promiseSlot = builder.create<StructGEPOp>(continuation, Promise);
+    Value promiseSlot = StructGEPOp::create(builder, continuation, Promise);
     for (auto [idx, value] : llvm::enumerate(returnOp.getOperands())) {
-      builder.create<StoreOp>(value,
-                              builder.create<StructGEPOp>(promiseSlot, idx));
+      StoreOp::create(builder, value,
+                      StructGEPOp::create(builder, promiseSlot, idx));
     }
-    auto result = builder.create<ReturnOp>();
+    auto result = ReturnOp::create(builder);
     returnOp->erase();
     return result;
   }
@@ -1261,8 +1261,8 @@ void LowerAsyncBuildContext::lowerSuspensionPoint(CO::SuspendOp suspend,
     return;
   if (!body.getArgument(0).use_empty()) {
     builder.setInsertionPointToStart(&suspend.getBody().front());
-    Value header = builder.create<PointerBitcastOp>(
-        PointerType::get(coTypes.getHeaderType()), continuation);
+    Value header = PointerBitcastOp::create(
+        builder, PointerType::get(coTypes.getHeaderType()), continuation);
     body.getArgument(0).replaceAllUsesWith(header);
   }
   body.eraseArgument(0);
@@ -1281,8 +1281,8 @@ void LowerAsyncBuildContext::storeBlockArgumentsInFrame(
     if (entry == frameData->valueToIndexInFrame.end())
       continue;
     Value dataSlot =
-        builder.create<StructGEPOp>(continuation, Frame + entry->getSecond());
-    builder.create<StoreOp>(argument, dataSlot);
+        StructGEPOp::create(builder, continuation, Frame + entry->getSecond());
+    StoreOp::create(builder, argument, dataSlot);
     frameVariables.overwriteValue(frameValueState, argument);
   }
 }
@@ -1317,8 +1317,8 @@ void LowerAsyncBuildContext::storeOpInFrameIfNeeded(
            "The frame type slot does not match the value");
     assert(op->getNumResults() == 1 && "TODO: support multiple results");
     Value dataSlot =
-        builder.create<StructGEPOp>(continuation, Frame + entry->getSecond());
-    builder.create<StoreOp>(op->getResult(0), dataSlot);
+        StructGEPOp::create(builder, continuation, Frame + entry->getSecond());
+    StoreOp::create(builder, op->getResult(0), dataSlot);
   }
 }
 
@@ -1386,17 +1386,17 @@ Value FrameVariables::getFrameValueForOperand(Value continuation, Value operand,
   } else {
     builder.setInsertionPoint(opWithUse);
     if (operand == errorValue) {
-      Value dataSlot = builder.create<StructGEPOp>(continuation, ErrorSlot);
-      Value ptr = builder.create<LoadOp>(dataSlot);
-      image = builder.create<PointerBitcastOp>(errorValue.getType(), ptr);
+      Value dataSlot = StructGEPOp::create(builder, continuation, ErrorSlot);
+      Value ptr = LoadOp::create(builder, dataSlot);
+      image = PointerBitcastOp::create(builder, errorValue.getType(), ptr);
     } else if (operand == resultValue) {
-      Value dataSlot = builder.create<StructGEPOp>(continuation, ResultSlot);
-      Value ptr = builder.create<LoadOp>(dataSlot);
-      image = builder.create<PointerBitcastOp>(resultValue.getType(), ptr);
+      Value dataSlot = StructGEPOp::create(builder, continuation, ResultSlot);
+      Value ptr = LoadOp::create(builder, dataSlot);
+      image = PointerBitcastOp::create(builder, resultValue.getType(), ptr);
     } else {
       unsigned frameIndex = entry->getSecond();
       Value dataSlot =
-          builder.create<StructGEPOp>(continuation, Frame + frameIndex);
+          StructGEPOp::create(builder, continuation, Frame + frameIndex);
       if (operand.getDefiningOp() &&
           isa<StackAllocationOp>(operand.getDefiningOp())) {
         auto stackAlloc = dyn_cast<StackAllocationOp>(operand.getDefiningOp());
@@ -1404,10 +1404,10 @@ Value FrameVariables::getFrameValueForOperand(Value continuation, Value operand,
           image = dataSlot;
         } else {
           image =
-              builder.create<PointerBitcastOp>(stackAlloc.getType(), dataSlot);
+              PointerBitcastOp::create(builder, stackAlloc.getType(), dataSlot);
         }
       } else {
-        image = builder.create<LoadOp>(dataSlot);
+        image = LoadOp::create(builder, dataSlot);
       }
     }
     if (wasExtractedInThisState)
@@ -1894,19 +1894,20 @@ void LowerAsyncBuildContext::preprocessAsyncFunction(
       allocs.push_back(alloc);
     else if (auto hotInvoke = dyn_cast<HotInvokeOp>(op)) {
       builder.setInsertionPoint(op);
-      auto suspendOp = builder.create<SuspendOp>();
+      auto suspendOp = SuspendOp::create(builder);
       Block &block = suspendOp->getRegion(0).emplaceBlock();
       builder.setInsertionPointToStart(&block);
       // Partially lower the hot invoke by setting the result type to a
       // Coroutine. This allows us to access the coroutine after the suspension
       // point so we can replace the results properly.
-      auto partiallyLoweredHotInvoke = builder.create<HotInvokeOp>(
-          CO::CoroutineType::get(builder.getContext()), hotInvoke.getCallee(),
-          hotInvoke.getCalleeOperands());
-      builder.create<SuspendEndOp>();
+      auto partiallyLoweredHotInvoke = HotInvokeOp::create(
+          builder, CO::CoroutineType::get(builder.getContext()),
+          hotInvoke.getCallee(), hotInvoke.getCalleeOperands());
+      SuspendEndOp::create(builder);
       builder.setInsertionPointAfter(suspendOp);
-      auto results = builder.create<GetResultsOp>(
-          hotInvoke.getResultTypes(), partiallyLoweredHotInvoke->getResult(0));
+      auto results =
+          GetResultsOp::create(builder, hotInvoke.getResultTypes(),
+                               partiallyLoweredHotInvoke->getResult(0));
       for (auto [result, image] :
            llvm::zip(hotInvoke.getResults(), results.getResults()))
         result.replaceAllUsesWith(image);
@@ -2053,8 +2054,8 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       if (newSymbolPtr != asyncFuncToColdRampFunctions.end()) {
         auto [newSymbol, continuationType] = newSymbolPtr->getSecond();
         rewriter.setInsertionPoint(op);
-        auto callOp = rewriter.create<CallOp>(invokeOp->getLoc(), newSymbol,
-                                              invokeOp.getOperands());
+        auto callOp = CallOp::create(rewriter, invokeOp->getLoc(), newSymbol,
+                                     invokeOp.getOperands());
         rewriter.replaceOp(invokeOp, callOp);
       } else {
         llvm_unreachable(
@@ -2066,8 +2067,8 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       if (newSymbolPtr != asyncFuncToHotRampFunctions.end()) {
         auto [newSymbol, continuationType] = newSymbolPtr->getSecond();
         rewriter.setInsertionPoint(op);
-        auto callOp = rewriter.create<CallOp>(hotInvokeOp->getLoc(), newSymbol,
-                                              hotInvokeOp.getOperands());
+        auto callOp = CallOp::create(rewriter, hotInvokeOp->getLoc(), newSymbol,
+                                     hotInvokeOp.getOperands());
         rewriter.replaceOp(hotInvokeOp, callOp);
       }
     } else if (auto setErrorResultOp = dyn_cast<SetByRefErrorAndResultOp>(op)) {
@@ -2075,10 +2076,11 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       Value continuation = setErrorResultOp.getOperand(0);
       auto setByRefArgument = [&](Value argument, unsigned index) {
         Value slot =
-            rewriter.create<StructGEPOp>(op->getLoc(), continuation, index);
-        Value typedSlot = rewriter.create<PointerBitcastOp>(
-            op->getLoc(), KGEN::PointerType::get(argument.getType()), slot);
-        rewriter.create<StoreOp>(op->getLoc(), argument, typedSlot);
+            StructGEPOp::create(rewriter, op->getLoc(), continuation, index);
+        Value typedSlot = PointerBitcastOp::create(
+            rewriter, op->getLoc(), KGEN::PointerType::get(argument.getType()),
+            slot);
+        StoreOp::create(rewriter, op->getLoc(), argument, typedSlot);
       };
       if (Value error = setErrorResultOp.getError())
         setByRefArgument(error, AsyncContinuationField::ErrorSlot);
@@ -2091,26 +2093,26 @@ void LowerAsyncFunctionsPass::runOnOperation() {
     } else if (auto resumeOp = dyn_cast<ResumeOp>(op)) {
       rewriter.setInsertionPoint(op);
       Value continuation = resumeOp.getOperand();
-      Value slot = rewriter.create<StructGEPOp>(op->getLoc(), continuation,
-                                                ResumeFunction);
-      Value typed = rewriter.create<PointerBitcastOp>(
-          op->getLoc(), PointerType::get(resumeOp.getType()), slot);
-      Value load = rewriter.create<LoadOp>(op->getLoc(), typed);
+      Value slot = StructGEPOp::create(rewriter, op->getLoc(), continuation,
+                                       ResumeFunction);
+      Value typed = PointerBitcastOp::create(
+          rewriter, op->getLoc(), PointerType::get(resumeOp.getType()), slot);
+      Value load = LoadOp::create(rewriter, op->getLoc(), typed);
       resumeOp.replaceAllUsesWith(load);
       resumeOp->erase();
     } else if (auto callbackOp = dyn_cast<GetCallbackPtrOp>(op)) {
       rewriter.setInsertionPoint(op);
       Value continuation = callbackOp.getOperand();
       Value slot =
-          rewriter.create<StructGEPOp>(op->getLoc(), continuation, CallbackFn);
-      Value slotCast = rewriter.create<PointerBitcastOp>(
-          op->getLoc(), callbackOp.getType(), slot);
+          StructGEPOp::create(rewriter, op->getLoc(), continuation, CallbackFn);
+      Value slotCast = PointerBitcastOp::create(rewriter, op->getLoc(),
+                                                callbackOp.getType(), slot);
       callbackOp.replaceAllUsesWith(slotCast);
       callbackOp->erase();
     } else if (auto destroyOp = dyn_cast<DestroyOp>(op)) {
       rewriter.setInsertionPoint(op);
       Value continuation = destroyOp.getOperand();
-      rewriter.create<AlignedFreeOp>(destroyOp->getLoc(), continuation);
+      AlignedFreeOp::create(rewriter, destroyOp->getLoc(), continuation);
       destroyOp->erase();
     } else if (auto getResults = dyn_cast<GetResultsOp>(op)) {
       rewriter.setInsertionPoint(op);
@@ -2119,17 +2121,17 @@ void LowerAsyncFunctionsPass::runOnOperation() {
       SmallVector<Type> headerPlusPromiseTypes(headerType.getElementTypes());
       headerPlusPromiseTypes.push_back(StructType::get(
           op->getContext(), llvm::to_vector(getResults.getResultTypes())));
-      Value promiseContinuation = rewriter.create<PointerBitcastOp>(
-          op->getLoc(),
+      Value promiseContinuation = PointerBitcastOp::create(
+          rewriter, op->getLoc(),
           PointerType::get(StructType::get(headerPlusPromiseTypes)),
           continuation);
-      Value promiseSlot = rewriter.create<StructGEPOp>(
-          op->getLoc(), promiseContinuation, Promise);
+      Value promiseSlot = StructGEPOp::create(rewriter, op->getLoc(),
+                                              promiseContinuation, Promise);
       for (auto [idx, result] : llvm::enumerate(getResults.getResults())) {
         rewriter.replaceAllUsesWith(
-            result, rewriter.create<LoadOp>(
-                        op->getLoc(), rewriter.create<StructGEPOp>(
-                                          op->getLoc(), promiseSlot, idx)));
+            result, LoadOp::create(rewriter, op->getLoc(),
+                                   StructGEPOp::create(rewriter, op->getLoc(),
+                                                       promiseSlot, idx)));
       }
       getResults->erase();
     }

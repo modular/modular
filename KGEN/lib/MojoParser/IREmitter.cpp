@@ -1856,16 +1856,18 @@ void IREmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
              "by-ref result should be the last argument");
 
       // This value will also get returned unless the function throws.
-      value = builder.create<ParamConstantOp>(NoneAttr::get(func.getContext()));
-      builder.create<RefStoreOp>(value, func.getArguments().back());
+      value =
+          ParamConstantOp::create(builder, NoneAttr::get(func.getContext()));
+      RefStoreOp::create(builder, value, func.getArguments().back());
     }
 
     // Otherwise, the resulting actual function result must be a none-type or a
     // bool for a throwing result.
     if (signature.isThrows())
-      value = builder.create<ParamConstantOp>(builder.getBoolAttr(false));
+      value = ParamConstantOp::create(builder, builder.getBoolAttr(false));
     else if (!value)
-      value = builder.create<ParamConstantOp>(NoneAttr::get(func.getContext()));
+      value =
+          ParamConstantOp::create(builder, NoneAttr::get(func.getContext()));
   }
 
   // Handle a `deinit` argument by marking it destroyed.
@@ -1873,16 +1875,16 @@ void IREmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
     assert(!signature.getArgConventions().empty() &&
            signature.getArgConventions().front() == ArgConvention::OwnedMem);
     Value argToDestroy = func.getBody()->getArguments().front();
-    builder.create<LIT::OwnershipMarkDestroyedOp>(argToDestroy);
+    LIT::OwnershipMarkDestroyedOp::create(builder, argToDestroy);
   }
 
   // Finally we emit a normal return with lit.return.
   assert(value && "Didn't specify a return value for the function");
-  builder.create<LIT::ReturnOp>(value);
+  LIT::ReturnOp::create(builder, value);
 
   // If requested, emit the end func.
   if (emitEndFunc)
-    builder.create<EndFnOp>();
+    EndFnOp::create(builder);
 }
 
 /// Emit a normal return (not a 'raise' return) out of the function, along

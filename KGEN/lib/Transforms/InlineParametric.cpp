@@ -153,15 +153,15 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
 
   b.setInsertionPointAfter(call);
   if (debugCallsite && callee.getLocScope())
-    b.create<DebugInfo::LineTableLocOp>(call->getLoc());
+    DebugInfo::LineTableLocOp::create(b, call->getLoc());
 
   SmallVector<Value> argVals =
       rebindValues(b, call.getLoc(), call->getOperands(), argTypes);
 
   // Use a LoopOp to be able to break to a label - any returns inlined from
   // callee must only exit the inlined block.
-  auto scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
-                                      ValueRange(), label);
+  auto scope = HLCF::LoopOp::create(b, call.getLoc(), call->getResultTypes(),
+                                    ValueRange(), label);
   b.createBlock(&scope.getBody());
 
   // Map the callee inputs.
@@ -275,8 +275,8 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
   for (auto [origDecl, value] :
        llvm::zip(callee.getInputParams(), call.getParamValues())) {
     ParamDeclAttr decl = mangler.mangleDecl(origDecl, needsMangling);
-    auto declOp = b.create<ParamDeclareOp>(
-        call.getLoc(), decl,
+    auto declOp = ParamDeclareOp::create(
+        b, call.getLoc(), decl,
         ParamOperatorAttr::getRebind(value, decl.getType()));
     // Register the new declaration.
     propagateNewDecls(decl, topLevelGraph, *callScope, declOp, scopeRegion);
@@ -315,8 +315,8 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
     Operation *cloned = map.lookup(op);
     b.setInsertionPoint(cloned);
     ++numReturns;
-    b.create<HLCF::BreakOp>(cloned->getLoc(),
-                            rebindReturnOperands(b, cloned, call), label);
+    HLCF::BreakOp::create(b, cloned->getLoc(),
+                          rebindReturnOperands(b, cloned, call), label);
     cloned->erase();
     return WalkResult::advance();
   });

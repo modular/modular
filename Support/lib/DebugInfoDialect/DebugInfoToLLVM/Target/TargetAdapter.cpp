@@ -49,10 +49,10 @@ struct ConvertLineTableLocOp : public OpRewritePattern<LineTableLocOp> {
 
   LogicalResult matchAndRewrite(LineTableLocOp op,
                                 PatternRewriter &rewriter) const override {
-    rewriter.create<LLVM::InlineAsmOp>(
-        replacer.replace<LocationAttr>(op.getLoc()), TypeRange{}, ValueRange{},
-        "nop", "", /*has_side_effects=*/true, /*is_align_stack=*/false,
-        LLVM::TailCallKind::None,
+    LLVM::InlineAsmOp::create(
+        rewriter, replacer.replace<LocationAttr>(op.getLoc()), TypeRange{},
+        ValueRange{}, "nop", "", /*has_side_effects=*/true,
+        /*is_align_stack=*/false, LLVM::TailCallKind::None,
         LLVM::AsmDialectAttr::get(op.getContext(), LLVM::AsmDialect::AD_ATT),
         ArrayAttr());
     rewriter.eraseOp(op);
@@ -453,16 +453,16 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
           allocElems = (sizeInBits / 8) + (sizeInBits % 8 ? 1 : 0);
           allocType = allocBuilder.getI8Type();
         }
-        auto allocSize = allocBuilder.create<LLVM::ConstantOp>(
-            erasedLoc, allocBuilder.getI32Type(), allocElems);
+        auto allocSize = LLVM::ConstantOp::create(
+            allocBuilder, erasedLoc, allocBuilder.getI32Type(), allocElems);
 
         // TODO - this just uses the default (0) address space, even if the
         // variables we are debugging actually live in a different address
         // space.
         Type pointerType = LLVM::LLVMPointerType::get(varInfo.getContext());
 
-        LLVM::AllocaOp newAlloc = allocBuilder.create<LLVM::AllocaOp>(
-            erasedLoc, pointerType, allocType, allocSize,
+        LLVM::AllocaOp newAlloc = LLVM::AllocaOp::create(
+            allocBuilder, erasedLoc, pointerType, allocType, allocSize,
             /*alignment=*/alignment);
         if (!useDbgValueMode) {
           allocaOp = newAlloc;
@@ -516,11 +516,10 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
             // simply the whole variable.
             locationOps = emptyVector;
           }
-          OpBuilder(valueOp->getNextNode())
-              .create<LLVM::DbgDeclareOp>(
-                  valueOp.getLoc(), declareOpArg, valueOp.getVarInfo(),
-                  LLVM::DIExpressionAttr::get(valueOp->getContext(),
-                                              locationOps));
+          auto builder = OpBuilder(valueOp->getNextNode());
+          LLVM::DbgDeclareOp::create(
+              builder, valueOp.getLoc(), declareOpArg, valueOp.getVarInfo(),
+              LLVM::DIExpressionAttr::get(valueOp->getContext(), locationOps));
           eraseValueOps = true;
         }
       }
@@ -557,15 +556,16 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
           if (offsetInBits != 0) {
             uint64_t offsetInBytes = offsetInBits / 8;
             assert(offsetInBits % 8 == 0 && "offset makes sense");
-            LLVM::GEPOp uglyGep = storeBuilder.create<LLVM::GEPOp>(
-                erasedLoc, /*resultType=*/pointerType,
+            LLVM::GEPOp uglyGep = LLVM::GEPOp::create(
+                storeBuilder, erasedLoc, /*resultType=*/pointerType,
                 /*elementType=*/storeBuilder.getI8Type(),
                 /*basePtr=*/storeToPointer, LLVM::GEPArg(offsetInBytes));
             storeToPointer = uglyGep;
           }
-          storeBuilder.create<LLVM::StoreOp>(storeLoc, oldValue, storeToPointer,
-                                             /*alignment=*/alignment,
-                                             /*isVolatile=*/true);
+          LLVM::StoreOp::create(storeBuilder, storeLoc, oldValue,
+                                storeToPointer,
+                                /*alignment=*/alignment,
+                                /*isVolatile=*/true);
         };
 
         // Store into the alloca at the place where the value was tracked.

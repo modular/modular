@@ -66,9 +66,9 @@ struct EmptyIfToSelect : public OpRewritePattern<HLCF::IfOp> {
     // Replace each result with a 'select' of the yield operands.
     SmallVector<Value> replacements;
     for (auto [i, result] : llvm::enumerate(op.getResults())) {
-      replacements.push_back(b.create<POP::SelectOp>(op.getLoc(), op.getCond(),
-                                                     thenYield.getOperand(i),
-                                                     elseYield.getOperand(i)));
+      replacements.push_back(POP::SelectOp::create(b, op.getLoc(), op.getCond(),
+                                                   thenYield.getOperand(i),
+                                                   elseYield.getOperand(i)));
     }
 
     b.replaceOp(op, replacements);
@@ -187,8 +187,8 @@ struct IfYieldSelect : public OpRewritePattern<HLCF::IfOp> {
          llvm::zip(op.getResults(), thenYield.getOperands(),
                    elseYield.getOperands())) {
       if (dominatesIf(trueVal) && dominatesIf(falseVal)) {
-        Value select = b.create<POP::SelectOp>(op.getLoc(), op.getCond(),
-                                               trueVal, falseVal);
+        Value select = POP::SelectOp::create(b, op.getLoc(), op.getCond(),
+                                             trueVal, falseVal);
         b.replaceAllUsesWith(result, select);
         anyChanged = true;
       }
@@ -227,8 +227,8 @@ public:
     if (!mlir::matchPattern(cmp.getRhs(), mlir::m_Constant(&rhs)))
       return b.notifyMatchFailure(op.getLoc(), "RHS isn't constant");
 
-    auto cst = b.create<mlir::index::ConstantOp>(
-        op.getLoc(), rhs.getValues().front().getIndexVal());
+    auto cst = mlir::index::ConstantOp::create(
+        b, op.getLoc(), rhs.getValues().front().getIndexVal());
     b.replaceOpWithNewOp<mlir::index::CmpOp>(
         op, getIndexCmpPredicate(cmp.getPred(), /*isSigned=*/dtype->isIndex()),
         cast.getInput(), cst);
@@ -427,12 +427,12 @@ struct ConditionPropagation : OpRewritePattern<HLCF::IfOp> {
     for (OpOperand &use : op.getCond().getUses()) {
       if (op.getThenRegion().isAncestor(use.getOwner()->getParentRegion())) {
         if (!trueCst)
-          trueCst = b.create<mlir::index::BoolConstantOp>(op.getLoc(), true);
+          trueCst = mlir::index::BoolConstantOp::create(b, op.getLoc(), true);
         use.set(trueCst);
       } else if (op.getElseRegion().isAncestor(
                      use.getOwner()->getParentRegion())) {
         if (!falseCst)
-          falseCst = b.create<mlir::index::BoolConstantOp>(op.getLoc(), false);
+          falseCst = mlir::index::BoolConstantOp::create(b, op.getLoc(), false);
         use.set(falseCst);
       }
     }

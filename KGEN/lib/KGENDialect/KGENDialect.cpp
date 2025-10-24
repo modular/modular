@@ -211,7 +211,7 @@ std::optional<StringRef> KGENDialect::getTypeName(mlir::TypeID id) {
 
 Operation *KGENDialect::materializeConstant(OpBuilder &b, Attribute value,
                                             Type type, Location loc) {
-  return b.create<ParamConstantOp>(loc, type, cast<TypedAttr>(value));
+  return ParamConstantOp::create(b, loc, type, cast<TypedAttr>(value));
 }
 
 //===----------------------------------------------------------------------===//

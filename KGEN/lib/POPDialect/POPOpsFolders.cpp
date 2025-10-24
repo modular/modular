@@ -30,7 +30,7 @@ using namespace POP;
 
 Operation *POPDialect::materializeConstant(OpBuilder &b, Attribute value,
                                            Type type, Location loc) {
-  return b.create<ParamConstantOp>(loc, type, cast<TypedAttr>(value));
+  return ParamConstantOp::create(b, loc, type, cast<TypedAttr>(value));
 }
 
 //===----------------------------------------------------------------------===//
@@ -426,8 +426,8 @@ LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
 
   b.replaceOpWithNewOp<ShrOp>(
       op, op.getType(), op.getLhs(),
-      b.create<ParamConstantOp>(op.getLoc(),
-                                SIMDAttr::get(values, op.getType())));
+      ParamConstantOp::create(b, op.getLoc(),
+                              SIMDAttr::get(values, op.getType())));
 
   return success();
 }
@@ -678,7 +678,7 @@ LogicalResult LoadOp::canonicalize(LoadOp op, PatternRewriter &b) {
 
   // Rewrite the load in-place.
   b.setInsertionPointAfter(op);
-  auto newBitcast = b.create<PointerBitcastOp>(op.getLoc(), op.getType(), op);
+  auto newBitcast = PointerBitcastOp::create(b, op.getLoc(), op.getType(), op);
   b.modifyOpInPlace(op, [&] {
     op.setOperand(ptr);
     Value(op).setType(ptrType.getElementType());
@@ -1992,8 +1992,8 @@ LogicalResult StoreOp::canonicalize(StoreOp op, PatternRewriter &b) {
     return b.notifyMatchFailure(op.getLoc(), "bitcast input is not a pointer");
 
   // Rewrite the store in-place.
-  auto newBitcast = b.create<PointerBitcastOp>(
-      op.getLoc(), ptrType.getElementType(), op.getArg());
+  auto newBitcast = PointerBitcastOp::create(
+      b, op.getLoc(), ptrType.getElementType(), op.getArg());
   b.modifyOpInPlace(op, [&] {
     op.getPtrMutable().set(bitcast.getInput());
     op.getArgMutable().set(newBitcast);
@@ -2105,8 +2105,8 @@ LogicalResult OffsetOp::canonicalize(OffsetOp op, PatternRewriter &b) {
 
   b.replaceOpWithNewOp<OffsetOp>(
       op, parent.getPtr(),
-      b.create<ParamConstantOp>(op.getLoc(),
-                                b.getIndexAttr(newOffset.getSExtValue())));
+      ParamConstantOp::create(b, op.getLoc(),
+                              b.getIndexAttr(newOffset.getSExtValue())));
   return success();
 }
 
@@ -2647,8 +2647,8 @@ LogicalResult ArrayReplaceOp::canonicalize(ArrayReplaceOp op,
       if (i == index)
         newOperands.push_back(op.getValue());
       else
-        newOperands.push_back(rewriter.create<KGEN::ParamConstantOp>(
-            paramConstantOp.getLoc(), constArr.getValues()[i]));
+        newOperands.push_back(KGEN::ParamConstantOp::create(
+            rewriter, paramConstantOp.getLoc(), constArr.getValues()[i]));
     }
     rewriter.replaceOpWithNewOp<ArrayCreateOp>(op, newOperands);
     return success();
@@ -2750,7 +2750,7 @@ LogicalResult ArrayGEPOp::canonicalize(ArrayGEPOp op,
   // with the constant `0`. This frees the use to be DCE'd and unblocks other
   // optimizations.
   auto zero =
-      rewriter.create<ParamConstantOp>(op.getLoc(), rewriter.getIndexAttr(0));
+      ParamConstantOp::create(rewriter, op.getLoc(), rewriter.getIndexAttr(0));
   rewriter.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), op.getArray(),
                                           zero);
   return success();

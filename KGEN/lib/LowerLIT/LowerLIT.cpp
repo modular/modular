@@ -363,8 +363,8 @@ void LITLowerer::lowerLITOps(FnOp func) {
                                          call.getOperands());
     } else if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
       // Lower a lit.varlet.decl to pop.stack_allocation.
-      auto allocOp = b.create<POP::StackAllocationOp>(
-          varDecl.getLoc(), /*markedLifetimes=*/true,
+      auto allocOp = POP::StackAllocationOp::create(
+          b, varDecl.getLoc(), /*markedLifetimes=*/true,
           varDecl.getType().getAsPointerType());
 
       // Replace !lit.ref result type with a cast from the pointer.  This will
@@ -386,8 +386,8 @@ void LITLowerer::lowerLITOps(FnOp func) {
                                   return attr;
                                 return UnitAttr::get(attr.getContext());
                               });
-      KGEN::ClosureInitOp closureInitKgen = b.create<KGEN::ClosureInitOp>(
-          closureInit.getLoc(), closureInit->getResults().front().getType(),
+      KGEN::ClosureInitOp closureInitKgen = KGEN::ClosureInitOp::create(
+          b, closureInit.getLoc(), closureInit->getResults().front().getType(),
           closureInit.getFuncTypeGenerator(), closureInit.getFunctionType(),
           closureInit.getCaptures(),
           ArrayAttr::get(b.getContext(), captureConventions),
@@ -521,8 +521,8 @@ void LITLowerer::lowerNestedFunction(FnOp func) {
   llvm::append_range(inputParams, extractImplicitOriginParams(func));
   removeSingletonParamDecls(singletonTypeHelper, inputParams);
 
-  auto region = b.create<ParamDeclareRegionOp>(
-      decl, func.getFuncTypeGenerator(), func.getFunctionType(), inputParams,
+  auto region = ParamDeclareRegionOp::create(
+      b, decl, func.getFuncTypeGenerator(), func.getFunctionType(), inputParams,
       func.getInlineLevel(), func.getLLVMMetadataArray(),
       func.getLLVMArgMetadataArray());
   region.getBodyRegion().takeBody(func.getBodyRegion());
@@ -568,8 +568,8 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
                               !info.isRegisterPassable);
 
   OpBuilder b(structDecl->getContext());
-  auto structGen = b.create<StructGeneratorOp>(info.loc, structName, info.decls,
-                                               structInstType, typeType);
+  auto structGen = StructGeneratorOp::create(
+      b, info.loc, structName, info.decls, structInstType, typeType);
   Block *structGenBody = b.createBlock(&structGen.getRegion());
 
   for (Operation &member : llvm::make_early_inc_range(
@@ -739,8 +739,8 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
   // We have at least some pre-compiled bytecode available, so insert a link
   // directive.
   OpBuilder b(package.getContext());
-  auto linkOp = b.create<PackageLinkOp>(
-      package.getLoc(), package.getSymNameAttr(),
+  auto linkOp = PackageLinkOp::create(
+      b, package.getLoc(), package.getSymNameAttr(),
       package.getPostParseModuleAttr(), package.getDependenciesAttr());
 
   // Insert the link op into the symbol table right where the package was. Don't

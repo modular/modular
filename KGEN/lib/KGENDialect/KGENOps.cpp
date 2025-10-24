@@ -724,7 +724,7 @@ void CallOp::setCalleeAttr(TypedAttr callee) {
 FailureOr<InlineResult> CallOp::prepInline(mlir::RewriterBase &b) {
   StringAttr label = b.getStringAttr("inlined_cf_scope");
   auto op =
-      b.create<HLCF::LoopOp>(getLoc(), getResultTypes(), ValueRange(), label);
+      HLCF::LoopOp::create(b, getLoc(), getResultTypes(), ValueRange(), label);
   return {{op, [label, &b](Operation *op) {
              b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
            }}};
@@ -1099,7 +1099,7 @@ LogicalResult CreateClosureOp::verify() {
 }
 
 FailureOr<InlineResult> CreateClosureOp::prepInline(mlir::RewriterBase &b) {
-  auto op = b.create<StageClosureOp>(getLoc(), getType());
+  auto op = StageClosureOp::create(b, getLoc(), getType());
   return {{op, [](Operation *) {}}};
 }
 

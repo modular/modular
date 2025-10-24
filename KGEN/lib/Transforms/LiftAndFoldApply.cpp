@@ -134,7 +134,7 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
           b.getStringAttr("(lifted)apply_" + Twine(counter++)), type);
 
       // Create the operation and set the value of the lifted operator.
-      b.create<ParamApplyOp>(decl, callee, operands);
+      ParamApplyOp::create(b, decl, callee, operands);
       existing = ParamDeclRefAttr::get(decl);
     } else {
       // Deduplicated an 'apply' with the existing parameter.

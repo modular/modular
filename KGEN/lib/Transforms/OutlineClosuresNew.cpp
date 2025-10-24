@@ -57,12 +57,12 @@ static Value allocateHeapMemory(PointerType ptrType, OpBuilder &b,
       ptrType.getElementType(), TypeType::get(ptrType.getContext()));
   TypedAttr target =
       ParamOperatorAttr::get(POC::CurrentTarget, {}, b.getType<TargetType>());
-  Value sizeOf = b.create<ParamConstantOp>(
-      loc, ParamOperatorAttr::get(POC::GetSizeOf, {elementType, target}));
-  Value alignOf = b.create<ParamConstantOp>(
-      loc, ParamOperatorAttr::get(POC::GetAlignOf, {elementType, target}));
-  return b.create<POP::AlignedAllocOp>(loc, ptrType,
-                                       ValueRange{alignOf, sizeOf});
+  Value sizeOf = ParamConstantOp::create(
+      b, loc, ParamOperatorAttr::get(POC::GetSizeOf, {elementType, target}));
+  Value alignOf = ParamConstantOp::create(
+      b, loc, ParamOperatorAttr::get(POC::GetAlignOf, {elementType, target}));
+  return POP::AlignedAllocOp::create(b, loc, ptrType,
+                                     ValueRange{alignOf, sizeOf});
 }
 
 namespace {
@@ -360,8 +360,8 @@ unpackCapturesInto(OpBuilder &b, Region &region,
        llvm::enumerate(closureInitData.getCapturedParamDecls())) {
     TypedAttr extractedMember = StructExtractAttr::get(
         b.getContext(), selfParamRef, index, paramCapture.getType());
-    b.create<ParamDeclareOp>(
-        closureInitData.getLiftedLocation(),
+    ParamDeclareOp::create(
+        b, closureInitData.getLiftedLocation(),
         ParamDeclAttr::get(paramCapture.getName(), paramCapture.getType()),
         extractedMember);
     fromRefToExtract[paramCapture.getName()] = extractedMember;
@@ -395,7 +395,7 @@ remapFuncType(OpBuilder &b, Region &region, FunctionType oldFuncType,
     Type newType = replacer.replace(arg.getType());
     if (newType != oldType) {
       arg.setType(newType);
-      Value newValue = b.create<KGEN::RebindOp>(loc, oldType, arg);
+      Value newValue = KGEN::RebindOp::create(b, loc, oldType, arg);
       arg.replaceAllUsesExcept(newValue, newValue.getDefiningOp());
     }
   }
@@ -411,7 +411,7 @@ remapFuncType(OpBuilder &b, Region &region, FunctionType oldFuncType,
       Type oldType = operand.getType();
       Type newType = resultTypes[index];
       if (newType != oldType) {
-        Value newValue = b.create<KGEN::RebindOp>(loc, newType, operand);
+        Value newValue = KGEN::RebindOp::create(b, loc, newType, operand);
         operand.replaceAllUsesExcept(newValue, newValue.getDefiningOp());
       }
     }
@@ -479,8 +479,8 @@ void ClosureLifter::createClosureGenerator(
       (generator.getName() + baseName + closureInitData.regionName()).str(),
       symtab, counter));
   b.setInsertionPoint(generator);
-  auto closureGenerator = b.create<GeneratorOp>(
-      closureInitData.getLiftedLocation(), uniqueName, funcGenType, funcType,
+  auto closureGenerator = GeneratorOp::create(
+      b, closureInitData.getLiftedLocation(), uniqueName, funcGenType, funcType,
       closureInitData.getSelfParam());
   symtab.insert(closureGenerator);
 
@@ -527,14 +527,14 @@ void ClosureLifter::liftDelFunction(OpBuilder &b,
     Value source = delBlock.getArgument(0);
     for (auto [index, capture] : llvm::enumerate(captureMechanisms)) {
       if (capture.delSym.has_value()) {
-        Value field = b.create<KGEN::StructGEPOp>(loc, source, index);
+        Value field = KGEN::StructGEPOp::create(b, loc, source, index);
         SymbolConstantAttr delSymbol = *capture.delSym;
-        b.create<KGEN::CallOp>(loc, delSymbol, field);
+        KGEN::CallOp::create(b, loc, delSymbol, field);
       }
     }
-    auto noneAttr = b.create<KGEN::ParamConstantOp>(
-        loc, KGEN::NoneAttr::get(b.getContext()));
-    b.create<KGEN::ReturnOp>(loc, noneAttr->getResults().front());
+    auto noneAttr = KGEN::ParamConstantOp::create(
+        b, loc, KGEN::NoneAttr::get(b.getContext()));
+    KGEN::ReturnOp::create(b, loc, noneAttr->getResults().front());
   };
   createClosureGenerator(b, closureInitData, ClosureMethod::DEL, funcType,
                          capturedInstance, populateBody,
@@ -546,8 +546,8 @@ static void emitCopyMoveCall(mlir::OpBuilder &b, Location location,
                              SymbolConstantAttr symbol) {
   if (function.getNumArguments() == 2) {
     SmallVector<Value> values = {original, slot};
-    b.create<KGEN::CallOp>(location, function.getFunctionType().getResults(),
-                           symbol, ValueRange(values));
+    KGEN::CallOp::create(b, location, function.getFunctionType().getResults(),
+                         symbol, ValueRange(values));
   } else {
     // copy init returns copy in register
     auto baseSig = function.getFuncTypeGenerator();
@@ -557,9 +557,9 @@ static void emitCopyMoveCall(mlir::OpBuilder &b, Location location,
     auto symbolConstant = SymbolConstantAttr::get(symbol.getSymbol(), boundSig,
                                                   symbol.getParamValues());
     auto callOp =
-        b.create<KGEN::CallOp>(location, boundSig.getBody().getResults(),
-                               symbolConstant, ValueRange(original));
-    b.create<POP::StoreOp>(location, callOp->getResults().front(), slot);
+        KGEN::CallOp::create(b, location, boundSig.getBody().getResults(),
+                             symbolConstant, ValueRange(original));
+    POP::StoreOp::create(b, location, callOp->getResults().front(), slot);
   }
 }
 
@@ -583,11 +583,11 @@ void ClosureLifter::liftMoveOrCopyFunction(OpBuilder &b,
     Value target = moveBlock.getArgument(1);
     unsigned symIndex = 0;
     for (auto [index, capture] : llvm::enumerate(captureMechanisms)) {
-      Value targetField = b.create<KGEN::StructGEPOp>(loc, target, index);
-      Value sourceField = b.create<KGEN::StructGEPOp>(loc, source, index);
+      Value targetField = KGEN::StructGEPOp::create(b, loc, target, index);
+      Value sourceField = KGEN::StructGEPOp::create(b, loc, source, index);
       if (!capture.moveOrCopySym.has_value()) {
-        b.create<POP::StoreOp>(loc, b.create<POP::LoadOp>(loc, sourceField),
-                               targetField);
+        POP::StoreOp::create(b, loc, POP::LoadOp::create(b, loc, sourceField),
+                             targetField);
       } else {
         SymbolConstantAttr symbol;
         if (isMove)
@@ -600,9 +600,9 @@ void ClosureLifter::liftMoveOrCopyFunction(OpBuilder &b,
             sourceField, targetField, symbol);
       }
     }
-    auto noneAttr = b.create<KGEN::ParamConstantOp>(
-        loc, KGEN::NoneAttr::get(b.getContext()));
-    b.create<KGEN::ReturnOp>(loc, noneAttr->getResults().front());
+    auto noneAttr = KGEN::ParamConstantOp::create(
+        b, loc, KGEN::NoneAttr::get(b.getContext()));
+    KGEN::ReturnOp::create(b, loc, noneAttr->getResults().front());
   };
   createClosureGenerator(
       b, closureInitData, isMove ? ClosureMethod::MOVE : ClosureMethod::COPY,
@@ -723,7 +723,7 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
       (generator.getName() + "_" + closureInitData.regionName()).str(), symtab,
       counter));
   auto liftedWrapper =
-      b.create<GeneratorOp>(loc, uniqueName, funcGenType, funcType, allParams);
+      GeneratorOp::create(b, loc, uniqueName, funcGenType, funcType, allParams);
   liftedWrapper.setInlineLevel(
       closureInitData.getClosureInit().getInlineLevel());
   symtab.insert(liftedWrapper);
@@ -812,7 +812,7 @@ void ClosureLifter::storeCaptures(OpBuilder &b, Value captureStruct,
   b.setInsertionPoint(data.getClosureInit());
   Location location = data.getClosureInit()->getLoc();
   for (auto [index, captureMechanism] : llvm::enumerate(captureMechanisms)) {
-    auto slot = b.create<StructGEPOp>(location, captureStruct, index);
+    auto slot = StructGEPOp::create(b, location, captureStruct, index);
     if (captureMechanism.moveOrCopySym.has_value()) {
       SymbolConstantAttr symbol = *captureMechanism.moveOrCopySym;
       StringRef name = symbol.getSymbol().getRootReference();
@@ -821,7 +821,7 @@ void ClosureLifter::storeCaptures(OpBuilder &b, Value captureStruct,
       emitCopyMoveCall(b, location, function, captureMechanism.origin, slot,
                        symbol);
     } else {
-      b.create<POP::StoreOp>(location, captureMechanism.origin, slot);
+      POP::StoreOp::create(b, location, captureMechanism.origin, slot);
     }
   }
 }
@@ -851,9 +851,9 @@ Value ClosureLifter::liftClosure(
   Value captureStruct =
       closureInitData.isEscaping()
           ? allocateHeapMemory(cast<PointerType>(selfType), b, loc)
-          : b.create<POP::StackAllocationOp>(
-                 loc,
-                 /*markedLifetimes=*/true, PointerType::get(loweredClosureType))
+          : POP::StackAllocationOp::create(b, loc,
+                                           /*markedLifetimes=*/true,
+                                           PointerType::get(loweredClosureType))
                 .getResult();
   storeCaptures(b, captureStruct, closureInitData, captureMechanisms);
   closureTypeToStructTypes[closureInitData.getClosureType()] =
@@ -868,7 +868,7 @@ Value ClosureLifter::liftRegPassableClosure(OpBuilder &b,
                                             Type loweredClosureType) {
   Location loc = closureInitData.getLiftedLocation();
   auto replacementFn = [&](Capture capture, int index, Value captureStructArg) {
-    return b.create<KGEN::StructExtractOp>(loc, captureStructArg, index)
+    return KGEN::StructExtractOp::create(b, loc, captureStructArg, index)
         ->getResults()
         .front();
   };
@@ -877,8 +877,8 @@ Value ClosureLifter::liftRegPassableClosure(OpBuilder &b,
                   loweredClosureType, replacementFn);
   if (!captureStruct)
     return {};
-  return b.create<POP::LoadOp>(closureInitData.getClosureInit()->getLoc(),
-                               captureStruct);
+  return POP::LoadOp::create(b, closureInitData.getClosureInit()->getLoc(),
+                             captureStruct);
 }
 
 Value ClosureLifter::liftNonRegPassableClosure(
@@ -887,9 +887,9 @@ Value ClosureLifter::liftNonRegPassableClosure(
   Location loc = closureInitData.getLiftedLocation();
   auto replacementFn = [&](Capture capture, int index, Value captureStructArg) {
     Value replacement =
-        b.create<KGEN::StructGEPOp>(loc, captureStructArg, index);
+        KGEN::StructGEPOp::create(b, loc, captureStructArg, index);
     if (!capture.moveOrCopySym.has_value())
-      replacement = b.create<POP::LoadOp>(loc, replacement);
+      replacement = POP::LoadOp::create(b, loc, replacement);
     return replacement;
   };
   Value captureStruct =
@@ -937,10 +937,10 @@ Value ClosureLifter::liftThinClosure(OpBuilder &b,
   b.setInsertionPoint(closureInitData.getClosureInit());
   Location loc = closureInitData.getClosureInit()->getLoc();
   return isRegisterPassable
-             ? b.create<ParamConstantOp>(loc, NoneAttr::get(b.getContext()))
+             ? ParamConstantOp::create(b, loc, NoneAttr::get(b.getContext()))
                    .getResult()
-             : b.create<POP::StackAllocationOp>(
-                   loc,
+             : POP::StackAllocationOp::create(
+                   b, loc,
                    /*markedLifetimes=*/true,
                    PointerType::get(loweredClosureType));
 }
@@ -1010,7 +1010,7 @@ createCaptureAttribute(OpBuilder &b,
         cast<StructType>(closureInitData.getSelfParam().getType()));
     ParamDeclAttr paramDeclAttr = ParamDeclAttr::get(
         b.getStringAttr("CAPTURES"), closureInitData.getSelfParam().getType());
-    b.create<ParamDeclareOp>(loc, paramDeclAttr, captureInstance);
+    ParamDeclareOp::create(b, loc, paramDeclAttr, captureInstance);
     capturedInstance = ParamDeclRefAttr::get(paramDeclAttr);
     break;
   }

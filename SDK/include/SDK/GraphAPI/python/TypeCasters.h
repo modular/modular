@@ -44,8 +44,8 @@ const std::type_info *lookupTypeID(mlir::TypeID);
 /// - Internally, these constructors use `create_op` to delegate to the builder
 template <typename Op, typename... Args>
 auto create_op(nanobind::handle_t<mlir::OpBuilder> builder, Args... args) {
-  return nanobind::cast<mlir::OpBuilder *>(builder)->create<Op>(
-      std::forward<Args>(args)...);
+  return Op::create(*nanobind::cast<mlir::OpBuilder *>(builder),
+                    std::forward<Args>(args)...);
 }
 
 /// Nanobind doesn't support multiple inheritance, but we want to correctly

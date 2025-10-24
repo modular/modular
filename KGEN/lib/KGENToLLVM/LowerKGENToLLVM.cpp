@@ -471,7 +471,7 @@ static void dropEmptyStructArguments(LLVM::LLVMFuncOp &func,
       sigConverter.addInputs(idx, type);
 
     for (auto [idx, type] : zip(emptyArgIdx, emptyArgType)) {
-      Value emptyStruct = rewriter.create<LLVM::UndefOp>(func->getLoc(), type);
+      Value emptyStruct = LLVM::UndefOp::create(rewriter, func->getLoc(), type);
       sigConverter.remapInput(idx, emptyStruct);
     }
     rewriter.applySignatureConversion(&func.getBody().front(), sigConverter);
@@ -639,10 +639,10 @@ struct ConvertKGENReturn : public ConvertPOPToLLVMPattern<ReturnOp> {
     Type type = getTypeConverter()->packFunctionResults(op->getOperandTypes());
     if (!type)
       return emitError(op->getLoc(), "failed to convert return types");
-    Value result = rewriter.create<LLVM::UndefOp>(op->getLoc(), type);
+    Value result = LLVM::UndefOp::create(rewriter, op->getLoc(), type);
     for (auto [index, operand] : llvm::enumerate(operands)) {
-      result = rewriter.create<LLVM::InsertValueOp>(op->getLoc(), result,
-                                                    operand, index);
+      result = LLVM::InsertValueOp::create(rewriter, op->getLoc(), result,
+                                           operand, index);
     }
 
     // Create the LLVM return.
@@ -664,8 +664,9 @@ struct ConvertKGENUnreachable : public ConvertPOPToLLVMPattern<UnreachableOp> {
                   ConversionPatternRewriter &rewriter) const override {
     // Create the llvm.trap + llvm.unreachable ops.
     auto voidTy = LLVM::LLVMVoidType::get(rewriter.getContext());
-    rewriter.create<LLVM::CallIntrinsicOp>(
-        op.getLoc(), TypeRange{voidTy}, rewriter.getStringAttr("llvm.trap"),
+    LLVM::CallIntrinsicOp::create(
+        rewriter, op.getLoc(), TypeRange{voidTy},
+        rewriter.getStringAttr("llvm.trap"),
         /*args=*/ValueRange(),
         rewriter.getAttr<LLVM::FastmathFlagsAttr>(LLVM_FASTMATH_FLAGS));
     rewriter.replaceOpWithNewOp<LLVM::UnreachableOp>(op);
@@ -715,7 +716,7 @@ static LogicalResult handleConstantLoweringError(
   if (!type)
     return failure();
 
-  value = rewriter.create<LLVM::UndefOp>(loc, type);
+  value = LLVM::UndefOp::create(rewriter, loc, type);
   return success();
 }
 
@@ -947,10 +948,10 @@ static Value convertArgCallingConvention(ImplicitLocOpBuilder &b, Type type,
   // Recursively flatten a struct type into the function argument list. Pack
   // the struct from the flat arguments and return it.
   auto flattenArgumentStruct = [&](LLVM::LLVMStructType structTy) {
-    Value result = b.create<LLVM::UndefOp>(structTy);
+    Value result = LLVM::UndefOp::create(b, structTy);
     for (auto [index, type] : llvm::enumerate(structTy.getBody())) {
       Value value = convertArgCallingConvention(b, type, body);
-      result = b.create<LLVM::InsertValueOp>(result, value, index);
+      result = LLVM::InsertValueOp::create(b, result, value, index);
     }
     return result;
   };
@@ -961,7 +962,7 @@ static Value convertArgCallingConvention(ImplicitLocOpBuilder &b, Type type,
     // Change the array to be pass-by-reference.
     Value arrPtr = body->addArgument(LLVM::LLVMPointerType::get(b.getContext()),
                                      b.getLoc());
-    return b.create<LLVM::LoadOp>(arrayTy, arrPtr);
+    return LLVM::LoadOp::create(b, arrayTy, arrPtr);
   }
   return body->addArgument(type, b.getLoc());
 }
@@ -988,11 +989,11 @@ static void flattenResultStruct(ImplicitLocOpBuilder &b,
                                 ArrayRef<BlockArgument> results,
                                 unsigned &idx) {
   for (auto [index, type] : llvm::enumerate(structTy.getBody())) {
-    Value value = b.create<LLVM::ExtractValueOp>(result, index);
+    Value value = LLVM::ExtractValueOp::create(b, result, index);
     if (auto nestedStruct = dyn_cast<LLVM::LLVMStructType>(type))
       flattenResultStruct(b, nestedStruct, value, results, idx);
     else
-      b.create<LLVM::StoreOp>(value, results[idx++]);
+      LLVM::StoreOp::create(b, value, results[idx++]);
   }
 }
 
@@ -1069,9 +1070,9 @@ static void emitCWrapper(LLVM::LLVMFuncOp func,
     resultType = LLVM::LLVMVoidType::get(func.getContext());
     unsigned idx = 0;
     flattenResultStruct(b, structTy, call.getResult(), results, idx);
-    b.create<LLVM::ReturnOp>(ValueRange());
+    LLVM::ReturnOp::create(b, ValueRange());
   } else {
-    b.create<LLVM::ReturnOp>(call.getResults());
+    LLVM::ReturnOp::create(b, call.getResults());
   }
 
   b.setInsertionPointAfter(func);

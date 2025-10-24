@@ -125,15 +125,15 @@ static void resolveCaptureListCreate(CaptureListCreateOp op,
 
   ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
   // Allocate the memory for the actual capture state.
-  Value alloc = b.create<POP::AlignedAllocOp>(
-      PointerType::get(clType),
-      b.create<mlir::index::ConstantOp>(*clType.getTypeAlign(target)),
-      b.create<mlir::index::ConstantOp>(*clType.getTypeSize(target)));
+  Value alloc = POP::AlignedAllocOp::create(
+      b, PointerType::get(clType),
+      mlir::index::ConstantOp::create(b, *clType.getTypeAlign(target)),
+      mlir::index::ConstantOp::create(b, *clType.getTypeSize(target)));
   for (auto [i, capture] : llvm::enumerate(captures))
-    b.create<POP::StoreOp>(capture, b.create<StructGEPOp>(alloc, i));
+    POP::StoreOp::create(b, capture, StructGEPOp::create(b, alloc, i));
 
-  Value opaque = b.create<POP::PointerBitcastOp>(
-      PointerType::get(KGEN::NoneType::get(op.getContext())), alloc);
+  Value opaque = POP::PointerBitcastOp::create(
+      b, PointerType::get(KGEN::NoneType::get(op.getContext())), alloc);
   op->replaceAllUsesWith(ValueRange(opaque));
   op.erase();
 }
@@ -150,18 +150,18 @@ static void resolveCaptureListCopy(CaptureListCopyOp op,
 
   ImplicitLocOpBuilder b(op->getLoc(), OpBuilder(op));
   // Allocate the memory for the copy.
-  Value alloc = b.create<POP::AlignedAllocOp>(
-      PointerType::get(clType),
-      b.create<mlir::index::ConstantOp>(*clType.getTypeAlign(target)),
-      b.create<mlir::index::ConstantOp>(*clType.getTypeSize(target)));
+  Value alloc = POP::AlignedAllocOp::create(
+      b, PointerType::get(clType),
+      mlir::index::ConstantOp::create(b, *clType.getTypeAlign(target)),
+      mlir::index::ConstantOp::create(b, *clType.getTypeSize(target)));
 
   // Emit the memcpy.
   Value orig =
-      b.create<POP::PointerBitcastOp>(PointerType::get(clType), op.getOrig());
-  b.create<POP::StoreOp>(b.create<POP::LoadOp>(orig), alloc);
+      POP::PointerBitcastOp::create(b, PointerType::get(clType), op.getOrig());
+  POP::StoreOp::create(b, POP::LoadOp::create(b, orig), alloc);
 
-  Value opaque = b.create<POP::PointerBitcastOp>(
-      PointerType::get(KGEN::NoneType::get(op.getContext())), alloc);
+  Value opaque = POP::PointerBitcastOp::create(
+      b, PointerType::get(KGEN::NoneType::get(op.getContext())), alloc);
   op->replaceAllUsesWith(ValueRange(opaque));
   op.erase();
 }
@@ -176,13 +176,14 @@ static void resolveCaptureListExpand(CaptureListExpandOp op) {
   // Compute the capture list type based on the set of required promises.
   auto clType =
       StructType::get(op.getContext(), llvm::to_vector(op->getResultTypes()));
-  Value captures = b.create<POP::PointerBitcastOp>(PointerType::get(clType),
-                                                   op.getCaptureList());
+  Value captures = POP::PointerBitcastOp::create(b, PointerType::get(clType),
+                                                 op.getCaptureList());
 
   for (auto [idx, value] : llvm::enumerate(op->getResults())) {
     // Extract each captured value out of the capture state and use it as
     // input to the call of the closure.
-    Value promise = b.create<POP::LoadOp>(b.create<StructGEPOp>(captures, idx));
+    Value promise =
+        POP::LoadOp::create(b, StructGEPOp::create(b, captures, idx));
     value.replaceAllUsesWith(promise);
   }
 
@@ -235,7 +236,7 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
     SmallVector<Value> captures;
     for (auto [name, type] :
          llvm::drop_begin(calleeNode->requiredPromises, fulfilled)) {
-      auto load = b.create<POP::CompilerGlobalLoadOp>(type.first, name);
+      auto load = POP::CompilerGlobalLoadOp::create(b, type.first, name);
       requiredPromises[name].push_back(load);
       captures.push_back(load);
     }

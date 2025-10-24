@@ -511,14 +511,14 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // The variable was persisted, insert a new field into the state struct.
     std::string newFieldName =
         ("__new_repl_var_" + varOp.getNameAttr().strref()).str();
-    auto newField = structBuilder.create<LIT::StructFieldOp>(
-        varOp->getLoc(), newFieldName, PointerType::get(type));
+    auto newField = LIT::StructFieldOp::create(
+        structBuilder, varOp->getLoc(), newFieldName, PointerType::get(type));
 
     // Materialize a reference to the variable within the function.
     ImplicitLocOpBuilder builder(varOp->getLoc(), varOp);
-    Value fieldGep = builder.create<LIT::RefStructGEROp>(varOp->getLoc(),
-                                                         structValue, newField);
-    Value fieldLoad = builder.create<RefLoadOp>(varOp->getLoc(), fieldGep);
+    Value fieldGep = LIT::RefStructGEROp::create(builder, varOp->getLoc(),
+                                                 structValue, newField);
+    Value fieldLoad = RefLoadOp::create(builder, varOp->getLoc(), fieldGep);
 
     // TODO: Whenever we have globals, we should be able to use a global
     // variable for the address and ensure it gets preserved. For now, we just
@@ -527,15 +527,15 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
         TypeParamAttr::get(elementType, anyRegTypeType),
         cast<TypedAttr>(targetAttr)};
     // Compute the size of the type.
-    Value sizeOf = builder.create<ParamConstantOp>(
-        ParamOperatorAttr::get(POC::GetSizeOf, operands));
+    Value sizeOf = ParamConstantOp::create(
+        builder, ParamOperatorAttr::get(POC::GetSizeOf, operands));
     // Compute the alignment of the type.
-    Value alignOf = builder.create<ParamConstantOp>(
-        ParamOperatorAttr::get(POC::GetAlignOf, operands));
+    Value alignOf = ParamConstantOp::create(
+        builder, ParamOperatorAttr::get(POC::GetAlignOf, operands));
     // Allocate an aligned blob for the variable.
-    Value mallocCast = builder.create<POP::AlignedAllocOp>(
-        type, ArrayRef<Value>{alignOf, sizeOf});
-    builder.create<POP::StoreOp>(mallocCast, fieldLoad);
+    Value mallocCast = POP::AlignedAllocOp::create(
+        builder, type, ArrayRef<Value>{alignOf, sizeOf});
+    POP::StoreOp::create(builder, mallocCast, fieldLoad);
 
     // Return a pointer to the new address of the variable.
 
@@ -545,8 +545,8 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // Declare the origin as a placeholder, we're going to replace this,
     // so we need to define the origin.
     TypedAttr origin = varOp.getType().getOrigin();
-    builder.create<ParamDeclareOp>(varOp.getParamDecl(),
-                                   AnyOriginAttr::get(origin.getType()));
+    ParamDeclareOp::create(builder, varOp.getParamDecl(),
+                           AnyOriginAttr::get(origin.getType()));
 
     // Create an untracked reference from this.
     // FIXME: this should really use RefFromPointerOp to make sure that
@@ -556,8 +556,8 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     //
     // Workaround this for now by using hacky RefFromPointerREPLOp.
     // NOTE: DO NOT ADOPT THIS ANYWHERE ELSE!
-    mallocCast = builder.create<LIT::RefFromPointerREPLOp>(
-        varOp.getType(), mallocCast, varOp.getNameAttr());
+    mallocCast = LIT::RefFromPointerREPLOp::create(
+        builder, varOp.getType(), mallocCast, varOp.getNameAttr());
     return MRValue(mallocCast);
   };
 
@@ -720,8 +720,8 @@ static ASTDecl &buildAndResolveREPLModule(
     PValue typeValue(type);
 
     OpBuilder builder = moduleDecl.getDeclEndBuilder();
-    AliasDeclOp typeDecl = builder.create<AliasDeclOp>(
-        builder.getUnknownLoc(),
+    AliasDeclOp typeDecl = AliasDeclOp::create(
+        builder, builder.getUnknownLoc(),
         ParamDeclAttr::get(typeName, typeValue.getType()), typeValue.get());
     sharedState.declResolver->addFullyResolvedDecl(&*typeDecl, typeName,
                                                    SMLoc(), &moduleDecl);

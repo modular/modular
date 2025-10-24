@@ -58,11 +58,12 @@ struct BuildContext {
       assert(false && "LowerSuspension points need not handle continuation "
                       "fields frame, promise, or resume");
     }
-    GEPOp slot = builder.create<GEPOp>(
-        /*resultType=*/LLVMPointerType::get(builder.getContext()),
-        /*elementType=*/continuationType,
-        /*basePtr=*/operand, ArrayRef<GEPArg>({0, fieldIndex}));
-    return builder.create<LoadOp>(type, slot);
+    GEPOp slot =
+        GEPOp::create(builder,
+                      /*resultType=*/LLVMPointerType::get(builder.getContext()),
+                      /*elementType=*/continuationType,
+                      /*basePtr=*/operand, ArrayRef<GEPArg>({0, fieldIndex}));
+    return LoadOp::create(builder, type, slot);
   }
 
   LLVMBuilder &builder;
@@ -90,7 +91,7 @@ static void addSuspensionPoint(SuspendOp suspend, Block *currentBlock,
       if (isa<SuspendEndOp>(currentOp)) {
         auto savePoint = buildContext.builder.saveInsertionPoint();
         buildContext.builder.setInsertionPoint(currentOp);
-        buildContext.builder.create<ReturnOp>(ValueRange({}));
+        ReturnOp::create(buildContext.builder, ValueRange({}));
         currentOp->erase();
         buildContext.builder.restoreInsertionPoint(savePoint);
         break;
@@ -175,8 +176,8 @@ static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
     buildContext.blockList.push_back(&initialBlock);
     buildContext.resumeValues.push_back(0);
     SmallVector<ValueRange> operands(buildContext.blockList.size());
-    b.create<SwitchOp>(
-        state,
+    SwitchOp::create(
+        b, state,
         /*defaultDestination=*/&initialBlock,
         /*defaultOperands=*/ValueRange(),
         /*caseValues=*/
@@ -200,8 +201,8 @@ static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
         continuation, AsyncContinuationField::ClosureState);
     SmallVector<Type> params;
     params.push_back(ptrType);
-    CallOp callOp = b.create<CallOp>(
-        LLVMFunctionType::get(LLVMVoidType::get(b.getContext()), params),
+    CallOp callOp = CallOp::create(
+        b, LLVMFunctionType::get(LLVMVoidType::get(b.getContext()), params),
         ValueRange{callbackFnPtr, parent});
     callOp.setTailCallKind(TailCallKind::MustTail);
   }

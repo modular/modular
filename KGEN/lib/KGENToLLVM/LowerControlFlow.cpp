@@ -86,8 +86,8 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
           return mlir::emitError(arg.getLoc(),
                                  "failed to convert argument type");
         // Materialize the source conversion.
-        auto source = b.create<mlir::UnrealizedConversionCastOp>(
-            arg.getLoc(), arg.getType(), arg);
+        auto source = mlir::UnrealizedConversionCastOp::create(
+            b, arg.getLoc(), arg.getType(), arg);
         arg.replaceAllUsesExcept(source.getResult(0), source);
         arg.setType(argType);
       }
@@ -114,28 +114,28 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
       return mlir::emitError(result.getLoc(), "failed to convert result #")
              << result.getResultNumber() << " type: " << result.getType();
     BlockArgument arg = after->addArgument(argType, result.getLoc());
-    auto source = b.create<mlir::UnrealizedConversionCastOp>(
-        arg.getLoc(), result.getType(), arg);
+    auto source = mlir::UnrealizedConversionCastOp::create(
+        b, arg.getLoc(), result.getType(), arg);
     result.replaceAllUsesWith(source.getResult(0));
   }
 
   b.setInsertionPointToEnd(before);
   // Replace the operation.
   if (auto cond = dyn_cast<IfOp>(node.getOperation())) {
-    b.create<LLVM::CondBrOp>(node->getLoc(), cond.getCond(), entries.front(),
-                             ValueRange(), entries.back(), ValueRange());
+    LLVM::CondBrOp::create(b, node->getLoc(), cond.getCond(), entries.front(),
+                           ValueRange(), entries.back(), ValueRange());
     b.eraseOp(node);
   } else if (auto sw = dyn_cast<SwitchOp>(node.getOperation())) {
-    auto arg = b.create<mlir::UnrealizedConversionCastOp>(
-        node->getLoc(), typeConverter.getIndexType(), sw.getArg());
+    auto arg = mlir::UnrealizedConversionCastOp::create(
+        b, node->getLoc(), typeConverter.getIndexType(), sw.getArg());
     SmallVector<APInt> caseValues;
     for (const auto &it : llvm::enumerate(sw.getCaseValues()))
       caseValues.emplace_back(32, it.value(), /*isSigned=*/true);
 
-    b.create<LLVM::SwitchOp>(node->getLoc(), arg.getResult(0), entries.front(),
-                             ValueRange(), caseValues,
-                             ArrayRef(entries).drop_front(),
-                             SmallVector<ValueRange>(entries.size() - 1));
+    LLVM::SwitchOp::create(b, node->getLoc(), arg.getResult(0), entries.front(),
+                           ValueRange(), caseValues,
+                           ArrayRef(entries).drop_front(),
+                           SmallVector<ValueRange>(entries.size() - 1));
     b.eraseOp(node);
   } else {
     SmallVector<ControlFlowTarget, 1> targets;
@@ -151,12 +151,12 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
       Type type = typeConverter.convertType(input.getType());
       if (!type)
         return mlir::emitError(input.getLoc(), "failed to convert input type");
-      auto dest = b.create<mlir::UnrealizedConversionCastOp>(node->getLoc(),
-                                                             type, input);
+      auto dest = mlir::UnrealizedConversionCastOp::create(b, node->getLoc(),
+                                                           type, input);
       inputs.push_back(dest.getResult(0));
     }
-    b.create<LLVM::BrOp>(node->getLoc(), inputs,
-                         getTargetBlock(entries, after, targets.front().index));
+    LLVM::BrOp::create(b, node->getLoc(), inputs,
+                       getTargetBlock(entries, after, targets.front().index));
     b.eraseOp(node);
   }
 
@@ -179,10 +179,10 @@ LogicalResult ControlFlowConverter::lowerReturn(KGEN::ReturnOp op,
   Type type = typeConverter.packFunctionResults(op->getOperandTypes());
   if (!type)
     return emitError(op->getLoc(), "failed to convert return types");
-  Value result = b.create<LLVM::UndefOp>(op->getLoc(), type);
+  Value result = LLVM::UndefOp::create(b, op->getLoc(), type);
   for (auto [index, operand] : llvm::enumerate(operands)) {
     result =
-        b.create<LLVM::InsertValueOp>(op->getLoc(), result, operand, index);
+        LLVM::InsertValueOp::create(b, op->getLoc(), result, operand, index);
   }
 
   // Create the LLVM return.
@@ -207,8 +207,8 @@ LogicalResult ControlFlowConverter::lowerTerminator(ControlFlowTerminator term,
     if (!type)
       return mlir::emitError(operand.get().getLoc(),
                              "failed to convert operand type");
-    auto dest = b.create<mlir::UnrealizedConversionCastOp>(term->getLoc(), type,
-                                                           operand.get());
+    auto dest = mlir::UnrealizedConversionCastOp::create(b, term->getLoc(),
+                                                         type, operand.get());
     results.push_back(dest.getResult(0));
   }
 

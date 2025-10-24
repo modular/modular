@@ -979,8 +979,8 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateCompileOffloadClosureAttr(
   auto sig = FuncType::get(bb.getFunctionType(nonePtr, noneType),
                            ArgConvention::ReadReg, FnEffects().setCapturing());
 
-  OwningOpRef<FuncOp> populateFunc = bb.create<FuncOp>(
-      bb.getStringAttr(name.getValue() + "_populate_captures"), sig,
+  OwningOpRef<FuncOp> populateFunc = FuncOp::create(
+      bb, bb.getStringAttr(name.getValue() + "_populate_captures"), sig,
       InlineLevel::Always);
 
   auto populate = cast<FuncOp>(populateFunc.get());

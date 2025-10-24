@@ -273,8 +273,8 @@ void FuncTransform::performResultTransform(TransformResult const &result,
                                            unsigned operandIndex,
                                            Type loweredType) {
   Value argVal = block.getArgument(operandIndex);
-  auto alloc = b.create<POP::StackAllocationOp>(addDI(argVal.getLoc()),
-                                                argVal.getType());
+  auto alloc = POP::StackAllocationOp::create(b, addDI(argVal.getLoc()),
+                                              argVal.getType());
   argVal.replaceAllUsesWith(alloc);
   block.eraseArgument(operandIndex);
   if (result.abiLowering == ErrorOnly)
@@ -301,9 +301,9 @@ void FuncTransform::applyOneToOneTransform(
 
 void FuncTransform::applyPointerTransform(unsigned operandIndex, Type elType) {
   auto application = [&](Location location, Value newArg) -> Value {
-    auto ptr = b.create<POP::StackAllocationOp>(
-        location, PointerType::get(newArg.getType()));
-    b.create<POP::StoreOp>(location, newArg, ptr);
+    auto ptr = POP::StackAllocationOp::create(
+        b, location, PointerType::get(newArg.getType()));
+    POP::StoreOp::create(b, location, newArg, ptr);
     return ptr;
   };
   applyOneToOneTransform(operandIndex, elType, application);
@@ -311,7 +311,7 @@ void FuncTransform::applyPointerTransform(unsigned operandIndex, Type elType) {
 
 void FuncTransform::applyValueTransform(unsigned operandIndex, Type ptrType) {
   auto application = [&](Location location, Value newArg) -> Value {
-    return b.create<POP::LoadOp>(location, newArg).getResult();
+    return POP::LoadOp::create(b, location, newArg).getResult();
   };
   applyOneToOneTransform(operandIndex, ptrType, application);
 }
@@ -328,7 +328,7 @@ void FuncTransform::applyPackTransform(unsigned operandIndex,
   for (auto member : types)
     newArgs.push_back(block.insertArgument(++curr, member, originalLocation));
   auto pack =
-      b.create<KGEN::PackCreateOp>(addDI(originalLocation), type, newArgs);
+      KGEN::PackCreateOp::create(b, addDI(originalLocation), type, newArgs);
   block.getArgument(operandIndex).replaceAllUsesWith(pack);
   if (newArgs.empty())
     block.insertArgument(++curr, KGEN::NoneType::get(type.getContext()),
@@ -373,7 +373,7 @@ void CallsiteTransform::applyPointerTransform(unsigned operandIndex,
                                               Type elType) {
   b.setInsertionPoint(callOp);
   Value arg = callOp->getOperands()[operandIndex];
-  Value newArg = b.create<POP::LoadOp>(arg);
+  Value newArg = POP::LoadOp::create(b, arg);
   callOp->setOperand(operandIndex, newArg);
 }
 
@@ -381,8 +381,8 @@ void CallsiteTransform::applyValueTransform(unsigned operandIndex,
                                             Type ptrType) {
   b.setInsertionPoint(callOp);
   Value arg = callOp->getOperands()[operandIndex];
-  Value newArg = b.create<POP::StackAllocationOp>(ptrType);
-  b.create<POP::StoreOp>(arg, newArg);
+  Value newArg = POP::StackAllocationOp::create(b, ptrType);
+  POP::StoreOp::create(b, arg, newArg);
   callOp->setOperand(operandIndex, newArg);
 }
 
@@ -394,15 +394,15 @@ void CallsiteTransform::applyPackTransform(unsigned operandIndex,
   SmallVector<Value> newArgs;
   unsigned curr = 0;
   for (auto member : types) {
-    newArgs.push_back(b.create<KGEN::PackExtractOp>(
-        member, operand, IntegerAttr::get(b.getIndexType(), curr++)));
+    newArgs.push_back(KGEN::PackExtractOp::create(
+        b, member, operand, IntegerAttr::get(b.getIndexType(), curr++)));
   }
   SmallVector<Value> newOperands;
   for (unsigned i = 0; i < operandIndex; i++)
     newOperands.push_back(callOp->getOperand(i));
 
   if (types.empty())
-    newOperands.push_back(b.create<ParamConstantOp>(b.getAttr<NoneAttr>()));
+    newOperands.push_back(ParamConstantOp::create(b, b.getAttr<NoneAttr>()));
   else
     llvm::append_range(newOperands, newArgs);
 
@@ -534,19 +534,19 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
       if (abiLowering == ABI::Both) {
         // Replace the i1 with a variant check.
         res.setType(result.newResultTypes[0]);
-        auto isError = b.create<VariantIsOp>(res, 0);
+        auto isError = VariantIsOp::create(b, res, 0);
         res.replaceAllUsesExcept(isError, isError);
 
-        auto ifOp = b.create<HLCF::IfOp>(isError);
+        auto ifOp = HLCF::IfOp::create(b, isError);
         b.createBlock(&ifOp.getThenRegion());
-        b.create<POP::StoreOp>(b.create<VariantGetOp>(res, 0),
-                               transform.errorOperand);
-        b.create<HLCF::YieldOp>();
+        POP::StoreOp::create(b, VariantGetOp::create(b, res, 0),
+                             transform.errorOperand);
+        HLCF::YieldOp::create(b);
 
         b.createBlock(&ifOp.getElseRegion());
-        b.create<POP::StoreOp>(b.create<VariantGetOp>(res, 1),
-                               transform.resultOperand);
-        b.create<HLCF::YieldOp>();
+        POP::StoreOp::create(b, VariantGetOp::create(b, res, 1),
+                             transform.resultOperand);
+        HLCF::YieldOp::create(b);
       } else {
         // In this case, we need to reallocate the operation with a different
         OperationState state(op->getLoc(), op->getName(), op->getOperands(),
@@ -557,29 +557,29 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
 
         // Store the relevant result in the branch in which it is known to have
         // a valid value.
-        auto ifOp = b.create<HLCF::IfOp>(newOp->getResult(0));
+        auto ifOp = HLCF::IfOp::create(b, newOp->getResult(0));
         Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
-        b.create<HLCF::YieldOp>();
+        HLCF::YieldOp::create(b);
         Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
-        b.create<HLCF::YieldOp>();
+        HLCF::YieldOp::create(b);
         bool errorOnly = abiLowering == ErrorOnly;
         b.setInsertionPointToStart(errorOnly ? thenBlock : elseBlock);
-        b.create<POP::StoreOp>(newOp->getResult(1),
-                               errorOnly ? transform.errorOperand
-                                         : transform.resultOperand);
+        POP::StoreOp::create(b, newOp->getResult(1),
+                             errorOnly ? transform.errorOperand
+                                       : transform.resultOperand);
         op->erase();
         op = newOp;
       }
     } else {
       // If the callee doesn't throw, we simply make every use take a new none.
       if (!res.use_empty()) {
-        auto none = b.create<ParamConstantOp>(b.getAttr<NoneAttr>());
+        auto none = ParamConstantOp::create(b, b.getAttr<NoneAttr>());
         res.replaceAllUsesWith(none);
       }
 
       // Then just store the new callee result into the old memory result.
       res.setType(result.newResultTypes[0]);
-      b.create<POP::StoreOp>(res, transform.resultOperand);
+      POP::StoreOp::create(b, res, transform.resultOperand);
     }
   } else {
     result.newResultTypes.clear();
@@ -612,33 +612,33 @@ static Value repackFuncVariantResult(ReturnOp returnOp,
   if (mlir::matchPattern(oldRetVal, mlir::m_Constant(&isError))) {
     if (!isError.getValue()) {
       // This is guaranteed to be a normal return.
-      return b.create<VariantCreateOp>(newVariantTy,
-                                       b.create<POP::LoadOp>(newResPtr), 1);
+      return VariantCreateOp::create(b, newVariantTy,
+                                     POP::LoadOp::create(b, newResPtr), 1);
     }
     // This is guaranteed to be an error return.
-    return b.create<VariantCreateOp>(newVariantTy,
-                                     b.create<POP::LoadOp>(newErrPtr), 0);
+    return VariantCreateOp::create(b, newVariantTy,
+                                   POP::LoadOp::create(b, newErrPtr), 0);
   }
 
   // We can't guarantee what the result is, so we emit conditional variant
   // repacking. We create an HCLF::IfOp, with a condition checking if there is
   // no error (i.e. the then branch will handle normal return). The result of
   // this IfOp is what we will return.
-  auto ifOp = b.create<HLCF::IfOp>(newVariantTy, oldRetVal);
+  auto ifOp = HLCF::IfOp::create(b, newVariantTy, oldRetVal);
 
   // Populate the then branch (normal return).
   Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
   b.setInsertionPointToStart(thenBlock);
-  Value thenRes = b.create<VariantCreateOp>(
-      newVariantTy, b.create<POP::LoadOp>(newErrPtr), 0);
-  b.create<HLCF::YieldOp>(thenRes);
+  Value thenRes = VariantCreateOp::create(b, newVariantTy,
+                                          POP::LoadOp::create(b, newErrPtr), 0);
+  HLCF::YieldOp::create(b, thenRes);
 
   // Populate the else branch (error return).
   Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
   b.setInsertionPointToStart(elseBlock);
-  Value elseRes = b.create<VariantCreateOp>(
-      newVariantTy, b.create<POP::LoadOp>(newResPtr), 1);
-  b.create<HLCF::YieldOp>(elseRes);
+  Value elseRes = VariantCreateOp::create(b, newVariantTy,
+                                          POP::LoadOp::create(b, newResPtr), 1);
+  HLCF::YieldOp::create(b, elseRes);
 
   return ifOp.getResult(0);
 }
@@ -670,7 +670,7 @@ static LogicalResult lowerFuncOp(FuncOp funcOp) {
       // result.
       if (!newSig.isThrows()) {
         auto newRes =
-            b.create<POP::LoadOp>(returnOp.getLoc(), transform.newResPtr);
+            POP::LoadOp::create(b, returnOp.getLoc(), transform.newResPtr);
         returnOp.setOperand(0, newRes);
         return;
       }
@@ -691,7 +691,7 @@ static LogicalResult lowerFuncOp(FuncOp funcOp) {
       Value toLoad =
           transform.newErrPtr ? transform.newErrPtr : transform.newResPtr;
       assert(toLoad && "should have been rewritten");
-      Value newRes = b.create<POP::LoadOp>(returnOp.getLoc(), toLoad);
+      Value newRes = POP::LoadOp::create(b, returnOp.getLoc(), toLoad);
       returnOp->insertOperands(1, newRes);
     });
   }

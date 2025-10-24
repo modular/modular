@@ -145,7 +145,7 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
   auto sig = FuncType::get(
       b.getFunctionType(body.getArgumentTypes(), op.getTypes()), conventions,
       FnEffects().setAsync().setThrows(numByRefResults == 2));
-  auto lifted = b.create<FuncOp>(name, sig);
+  auto lifted = FuncOp::create(b, name, sig);
   lifted.getBodyRegion().takeBody(body);
 
   // Insert the function into the symbol table. Lock the symbol table, which
@@ -159,9 +159,9 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
   b.setInsertionPoint(op);
   if (callLoc)
     b.setLoc(callLoc);
-  Value call = b.create<CO::InvokeOp>(
-      op.getType(), SymbolConstantAttr::get(name, GeneratorType::get({}, sig)),
-      captures);
+  Value call = CO::InvokeOp::create(
+      b, op.getType(),
+      SymbolConstantAttr::get(name, GeneratorType::get({}, sig)), captures);
   op.replaceAllUsesWith(call);
   op.erase();
 
@@ -182,8 +182,8 @@ static void lowerAwait(CO::AwaitOp op) {
   MLIRContext *ctx = op.getContext();
   ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(op));
   if (op.getNumOperands() > 1)
-    b.create<CO::SetByRefErrorAndResultOp>(TypeRange(), op->getOperands());
-  auto suspend = b.create<CO::SuspendOp>();
+    CO::SetByRefErrorAndResultOp::create(b, TypeRange(), op->getOperands());
+  auto suspend = CO::SuspendOp::create(b);
   Block *body = b.createBlock(&suspend.getBody());
   Value parent = body->addArgument(op.getCoroutine().getType(), op.getLoc());
 
@@ -193,23 +193,23 @@ static void lowerAwait(CO::AwaitOp op) {
   auto callbackType =
       PointerType::get(StructType::get({signatureType, coroutineType}));
   Value callback =
-      b.create<CO::GetCallbackPtrOp>(callbackType, op.getCoroutine());
-  Value resumeFnPtr = b.create<StructGEPOp>(callback, 0);
-  Value parentPtr = b.create<StructGEPOp>(callback, 1);
-  Value resumeFn = b.create<CO::ResumeOp>(signatureType, parent);
-  b.create<POP::StoreOp>(resumeFn, resumeFnPtr);
-  b.create<POP::StoreOp>(parent, parentPtr);
-  Value curResume = b.create<CO::ResumeOp>(signatureType, op.getCoroutine());
-  b.create<CallIndirectOp>(TypeRange(), curResume, op.getCoroutine());
-  b.create<CO::SuspendEndOp>();
+      CO::GetCallbackPtrOp::create(b, callbackType, op.getCoroutine());
+  Value resumeFnPtr = StructGEPOp::create(b, callback, 0);
+  Value parentPtr = StructGEPOp::create(b, callback, 1);
+  Value resumeFn = CO::ResumeOp::create(b, signatureType, parent);
+  POP::StoreOp::create(b, resumeFn, resumeFnPtr);
+  POP::StoreOp::create(b, parent, parentPtr);
+  Value curResume = CO::ResumeOp::create(b, signatureType, op.getCoroutine());
+  CallIndirectOp::create(b, TypeRange(), curResume, op.getCoroutine());
+  CO::SuspendEndOp::create(b);
 
   b.setInsertionPointAfter(suspend);
   if (op.getNumResults()) {
     auto results =
-        b.create<CO::GetResultsOp>(op.getResultTypes(), op.getCoroutine());
+        CO::GetResultsOp::create(b, op.getResultTypes(), op.getCoroutine());
     op.replaceAllUsesWith(results);
   }
-  b.create<CO::DestroyOp>(op.getCoroutine());
+  CO::DestroyOp::create(b, op.getCoroutine());
   op.erase();
 }
 
@@ -266,7 +266,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   else
     name = b.getStringAttr(parent.getSymName() + "_closure_" +
                            Twine(nameCounter++));
-  auto lifted = b.create<FuncOp>(op.getLoc(), name, sig);
+  auto lifted = FuncOp::create(b, op.getLoc(), name, sig);
   lifted.getBodyRegion().takeBody(body);
 
   // Insert the function into the symbol table. Lock the symbol table, which
@@ -279,9 +279,9 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   b.setInsertionPoint(op);
   if (callLoc)
     b.setLoc(callLoc);
-  auto create = b.create<CreateClosureOp>(
-      op.getType(), SymbolConstantAttr::get(name, GeneratorType::get({}, sig)),
-      captures);
+  auto create = CreateClosureOp::create(
+      b, op.getType(),
+      SymbolConstantAttr::get(name, GeneratorType::get({}, sig)), captures);
   op.replaceAllUsesWith(create.getResult());
   op.erase();
 

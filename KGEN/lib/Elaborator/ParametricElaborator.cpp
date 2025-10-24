@@ -1299,7 +1299,8 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
   // break to the outer loop to model exiting the whole loop.
   IRRewriter b{OpBuilder(op)};
   StringAttr outerLabel = b.getStringAttr("param_for_outer");
-  auto outerLoop = b.create<HLCF::LoopOp>(op.getLoc(), resultTypes, outerLabel);
+  auto outerLoop =
+      HLCF::LoopOp::create(b, op.getLoc(), resultTypes, outerLabel);
   b.createBlock(&outerLoop.getBody());
 
   // Now generate the loop bodies and set up their elaboration at the same time.
@@ -1393,7 +1394,7 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
   ValueRange nextOperands = op.getOperands();
   for (TypedAttr value : values) {
     // Create the loop op for this iteration and clone the body into it.
-    auto loop = b.create<HLCF::LoopOp>(op.getLoc(), resultTypes);
+    auto loop = HLCF::LoopOp::create(b, op.getLoc(), resultTypes);
     mapping.clear();
     op.getBody().cloneInto(&loop.getBody(), mapping);
     replaceArgs(loop.getBody(), nextOperands);
@@ -1423,7 +1424,7 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
     parent->stack.push_back(std::move(nextItem));
   }
 
-  b.create<HLCF::BreakOp>(op.getLoc(), nextOperands, outerLabel);
+  HLCF::BreakOp::create(b, op.getLoc(), nextOperands, outerLabel);
   op.replaceAllUsesWith(outerLoop.getResults());
   return ElaborationState::skipFrame();
 }
@@ -1723,8 +1724,8 @@ ElaborationState ParametricElaborator::specializeGenerator(PImplNode *inode,
   bool instantiateBody;
   InstantiatedOpInterface instance;
   if (auto generatorOp = dyn_cast<GeneratorOp>(*gen)) {
-    instance = cast<InstantiatedOpInterface>(*b.create<FuncOp>(
-        gen.getLoc(), mangledName,
+    instance = cast<InstantiatedOpInterface>(*FuncOp::create(
+        b, gen.getLoc(), mangledName,
         FuncType::get(
             generatorOp.getFunctionType(),
             generatorOp.getFuncTypeGenerator().getBody().getArgConventions(),
@@ -1746,8 +1747,8 @@ ElaborationState ParametricElaborator::specializeGenerator(PImplNode *inode,
     instantiateBody = true;
   } else {
     auto structGenOp = dyn_cast<StructGeneratorOp>(*gen);
-    instance = cast<InstantiatedOpInterface>(*b.create<StructInstanceOp>(
-        gen.getLoc(), mangledName, structGenOp.getValueDomainType(),
+    instance = cast<InstantiatedOpInterface>(*StructInstanceOp::create(
+        b, gen.getLoc(), mangledName, structGenOp.getValueDomainType(),
         structGenOp.getMetaType()));
     instantiateBody = false;
   }
@@ -2514,21 +2515,21 @@ static WalkResult rewriteCompileOffloadOp(
                                                       });
 
   SmallVector<Value> values;
-  auto constantV = b.create<ParamConstantOp>(content);
-  auto moduleNameV = b.create<ParamConstantOp>(moduleName);
-  auto numCapturesV = b.create<ParamConstantOp>(numCaptures);
+  auto constantV = ParamConstantOp::create(b, content);
+  auto moduleNameV = ParamConstantOp::create(b, moduleName);
+  auto numCapturesV = ParamConstantOp::create(b, numCaptures);
   // Allocate an array numCaptures elements of int64 integers to store capture
   // sizes
-  auto captureSizesV = b.create<POP::StackAllocationOp>(
-      PointerType::get(captureSizes.getElementType()), numCaptures.getInt());
+  auto captureSizesV = POP::StackAllocationOp::create(
+      b, PointerType::get(captureSizes.getElementType()), numCaptures.getInt());
   for (auto [i, typeSize] : llvm::enumerate(captureSizes.asArrayRef())) {
-    Value gep = b.create<POP::OffsetOp>(
-        captureSizesV, b.create<ParamConstantOp>(b.getIndexAttr(i)));
-    b.create<POP::StoreOp>(
-        b.create<ParamConstantOp>(b.getI64IntegerAttr(typeSize)), gep);
+    Value gep = POP::OffsetOp::create(
+        b, captureSizesV, ParamConstantOp::create(b, b.getIndexAttr(i)));
+    POP::StoreOp::create(
+        b, ParamConstantOp::create(b, b.getI64IntegerAttr(typeSize)), gep);
   }
   auto opaqueCaptureSizesV =
-      b.create<POP::PointerBitcastOp>(nonePtr, captureSizesV);
+      POP::PointerBitcastOp::create(b, nonePtr, captureSizesV);
 
   assert(numCaptures.getInt() == captureSizes.size() &&
          "Num captures and number of their sizes mismatch");
@@ -2537,7 +2538,7 @@ static WalkResult rewriteCompileOffloadOp(
   values.push_back(moduleNameV);
   values.push_back(numCapturesV);
   values.push_back(opaqueCaptureSizesV);
-  auto newOp = b.create<StructCreateOp>(op->getLoc(), structType, values);
+  auto newOp = StructCreateOp::create(b, op->getLoc(), structType, values);
 
   op->replaceUsesOfWith(op.getResult(), newOp);
   op.replaceAllUsesWith(newOp.getResult());
@@ -2787,8 +2788,8 @@ LogicalResult ParametricElaborator::run(
     } else if (auto isCompileTime = dyn_cast<IsCompileTimeOp>(op)) {
       // Rewrite IsCompileTimeOp to runtime value as always false.
       OpBuilder b(op);
-      isCompileTime->replaceAllUsesWith(b.create<ParamConstantOp>(
-          op->getLoc(), b.getIntegerAttr(b.getI1Type(), 0)));
+      isCompileTime->replaceAllUsesWith(ParamConstantOp::create(
+          b, op->getLoc(), b.getIntegerAttr(b.getI1Type(), 0)));
       op->erase();
     }
   });

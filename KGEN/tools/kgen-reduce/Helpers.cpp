@@ -84,5 +84,5 @@ void M::stubRegion(Region &region, Region &owner) {
 
   // Stub the function with an unreachable.
   OpBuilder b(&region.front(), region.front().begin());
-  b.create<KGEN::UnreachableOp>(region.getLoc());
+  KGEN::UnreachableOp::create(b, region.getLoc());
 }

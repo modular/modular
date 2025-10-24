@@ -76,8 +76,8 @@ void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
     op.erase();
   }
 
-  OpBuilder::atBlockEnd(&deadRegion->front())
-      .create<UnreachableOp>(unreachableLoc);
+  auto builder = OpBuilder::atBlockEnd(&deadRegion->front());
+  UnreachableOp::create(builder, unreachableLoc);
 }
 
 //===----------------------------------------------------------------------===//

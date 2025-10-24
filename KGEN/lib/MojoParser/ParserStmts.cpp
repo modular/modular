@@ -1044,7 +1044,7 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
       return failure();
   }
 
-  builder.create<LIT::RaiseOp>(translateLocation(loc.Start));
+  LIT::RaiseOp::create(builder, translateLocation(loc.Start));
   return success();
 }
 
@@ -1082,7 +1082,7 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
   llvm::SaveAndRestore builderSaver(builder);
 
   // Create the LoopOp
-  auto loopOp = builder.create<LIT::LoopOp>(whileLoc);
+  auto loopOp = LIT::LoopOp::create(builder, whileLoc);
   Block *condBlock = builder.createBlock(&loopOp.getCondRegion());
   Block *bodyBlock = builder.createBlock(&loopOp.getBodyRegion());
   Block *elseBlock = builder.createBlock(&loopOp.getElseRegion());
@@ -1098,14 +1098,14 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
     return failure();
   if (!condVal)
     return success(); // IRGen error already emitted; parse succeeded!
-  builder.create<LIT::LoopConditionOp>(whileLoc, condVal);
+  LIT::LoopConditionOp::create(builder, whileLoc, condVal);
 
   // Create the body region.
   builder.setInsertionPointToStart(bodyBlock);
 
   if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
-  builder.create<LIT::LoopContinueOp>(whileLoc);
+  LIT::LoopContinueOp::create(builder, whileLoc);
 
   // Create the else region.
   builder.setInsertionPointToStart(elseBlock);
@@ -1116,7 +1116,7 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
         parseLocalScopeSuite(curIndent))
       return failure();
   }
-  builder.create<LIT::LoopYieldOp>(whileLoc);
+  LIT::LoopYieldOp::create(builder, whileLoc);
 
   return success();
 }
@@ -1249,7 +1249,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
 
   // Create the LoopOp
-  auto loopOp = builder.create<LIT::LoopOp>(forLocation);
+  auto loopOp = LIT::LoopOp::create(builder, forLocation);
   Block *condBlock = builder.createBlock(&loopOp.getCondRegion());
   Block *bodyBlock = builder.createBlock(&loopOp.getBodyRegion());
   Block *elseBlock = builder.createBlock(&loopOp.getElseRegion());
@@ -1270,7 +1270,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
       getEmitter().emitSRValue({hasNext, seqExpr}, EC_ForIterator);
   if (!shouldContinue)
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
-  builder.create<LIT::LoopConditionOp>(forLocation, shouldContinue);
+  LIT::LoopConditionOp::create(builder, forLocation, shouldContinue);
 
   // Create the body. Add Target element to the continue block by calling next
   // method. Emit the result into an implicitly declared variable at the current
@@ -1312,11 +1312,11 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // Parse the body of the for loop, using the callback.
   if (failed(bodyFn()))
     return LoopResult(LoopResult::ErrorKind::inLoopBody);
-  builder.create<LIT::LoopContinueOp>(forLocation);
+  LIT::LoopContinueOp::create(builder, forLocation);
 
   // Create the else region.
   builder.setInsertionPointToStart(elseBlock);
-  builder.create<LIT::LoopYieldOp>(forLocation);
+  LIT::LoopYieldOp::create(builder, forLocation);
   return LoopResult(loopOp);
 }
 
@@ -1436,8 +1436,8 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
     return failure();
 
   // Create the loop and parse the body into it.
-  auto paramFor = builder.create<ParamForOp>(forLocation, initialIterVal,
-                                             hasNext, getNextIter, iterDecl);
+  auto paramFor = ParamForOp::create(builder, forLocation, initialIterVal,
+                                     hasNext, getNextIter, iterDecl);
 
   builder.createBlock(&paramFor.getBody());
 
@@ -1453,18 +1453,18 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
     return failure();
   assert(hasNextI1.getIfPValue() && "expected PValue in param context");
   auto paramIf =
-      builder.create<ParamIfOp>(forLocation, hasNextI1.getIfPValue());
+      ParamIfOp::create(builder, forLocation, hasNextI1.getIfPValue());
 
   // Keep going if we have more elements.
   builder.createBlock(&paramIf.getThenRegion());
 
   // If not, go to the else block.
   builder.createBlock(&paramIf.getElseRegion());
-  builder.create<ParamForGotoElseOp>(forLocation);
+  ParamForGotoElseOp::create(builder, forLocation);
   // Keep inserting after this operation.
   builder.setInsertionPointAfter(paramIf);
   // We always continue or goto-else from the arms of the param.if.
-  builder.create<UnreachableOp>(forLocation);
+  UnreachableOp::create(builder, forLocation);
 
   // After the check for too-few elements, we extract the next element and bind
   // to the target by calling the paramfor_next_iter "next_value" function.
@@ -1497,7 +1497,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
     // Parse the body.
     if (parseSuite(curIndent))
       return failure();
-    builder.create<ParamForContinueOp>(forLocation);
+    ParamForContinueOp::create(builder, forLocation);
   }
 
   // Parse the else region if present.
@@ -1509,7 +1509,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
         parseLocalScopeSuite(curIndent))
       return failure();
   }
-  builder.create<ParamYieldOp>(forLocation);
+  ParamYieldOp::create(builder, forLocation);
 
   // Advance the insertion point.
   builder.setInsertionPointAfter(paramFor);
@@ -1565,27 +1565,27 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
 
   VarDeclOp errDecl = getEmitter().emitVarDecl(
       "__finally_error__", errorType, tryOp.getLoc(), VarDeclKind::Synthesized);
-  auto nestedTry =
-      builder.create<TryOp>(tryOp.getLoc(), errDecl, /*suppressWarnings=*/true);
+  auto nestedTry = TryOp::create(builder, tryOp.getLoc(), errDecl,
+                                 /*suppressWarnings=*/true);
 
   // Stub out the else and finally regions of this try.
   builder.createBlock(&nestedTry.getElseRegion());
-  builder.create<TryYieldOp>(tryOp.getLoc());
+  TryYieldOp::create(builder, tryOp.getLoc());
   builder.createBlock(&nestedTry.getFinallyRegion());
-  builder.create<TryYieldOp>(tryOp.getLoc());
+  TryYieldOp::create(builder, tryOp.getLoc());
 
   // Move the error into the overall error slot.
   builder.createBlock(&nestedTry.getExceptRegion());
   ValueDest moveDest(errSlot, EC_RaiseValue);
   getEmitter().emitResult(MRValue(errDecl), SyntheticNode(loc), moveDest);
-  builder.create<RaiseOp>(tryOp.getLoc());
-  builder.create<TryYieldOp>(tryOp.getLoc());
+  RaiseOp::create(builder, tryOp.getLoc());
+  TryYieldOp::create(builder, tryOp.getLoc());
 
   Block *tryBlock = builder.createBlock(&nestedTry.getTryRegion());
   if (populateFinallyBody())
     return failure();
   builder.setInsertionPointToEnd(tryBlock);
-  builder.create<TryYieldOp>(tryOp.getLoc());
+  TryYieldOp::create(builder, tryOp.getLoc());
   builder.setInsertionPointAfter(nestedTry);
   return success();
 }
@@ -1617,17 +1617,17 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
     return failure();
   VarDeclOp errDecl = getEmitter().emitVarDecl("__try_error__", errorType, loc,
                                                VarDeclKind::Synthesized);
-  auto tryOp = builder.create<TryOp>(loc, errDecl);
+  auto tryOp = TryOp::create(builder, loc, errDecl);
   if (!inExceptRegion) {
     builder.createBlock(&tryOp.getExceptRegion());
-    builder.create<UnreachableOp>(loc);
+    UnreachableOp::create(builder, loc);
   }
 
   // Parse the try suite.
   builder.createBlock(&tryOp.getTryRegion());
   if (parseLocalScopeSuite(curIndent))
     return failure();
-  builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
+  TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
 
   bool hasFinally = false;
   if (consumeIf(Token::kw_except)) {
@@ -1677,7 +1677,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
       if (parseSuite(curIndent))
         return failure();
     }
-    builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
+    TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
 
     // Parse the else suite if present. Otherwise, leave it as empty.
     builder.createBlock(&tryOp.getElseRegion());
@@ -1687,7 +1687,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
           parseLocalScopeSuite(curIndent))
         return failure();
     }
-    builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
+    TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
 
     hasFinally = consumeIf(Token::kw_finally);
   } else {
@@ -1700,13 +1700,13 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
       MLValue errSlot = getEmitter().findNearestErrorSlot();
       ValueDest dest(errSlot, EC_RaiseValue);
       getEmitter().emitResult(MRValue(errDecl), SyntheticNode(smLoc), dest);
-      builder.create<LIT::RaiseOp>(loc);
-      builder.create<TryYieldOp>(loc);
+      LIT::RaiseOp::create(builder, loc);
+      TryYieldOp::create(builder, loc);
     }
 
     // Stub the 'else' region.
     builder.createBlock(&tryOp.getElseRegion());
-    builder.create<TryYieldOp>(loc);
+    TryYieldOp::create(builder, loc);
   }
   builder.createBlock(&tryOp.getFinallyRegion());
   if (hasFinally) {
@@ -1718,7 +1718,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
         }))
       return failure();
   }
-  builder.create<TryYieldOp>(loc);
+  TryYieldOp::create(builder, loc);
 
   return success();
 }
@@ -1893,7 +1893,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
-  auto tryOp = builder.create<TryOp>(loc, errDecl, /*suppressWarnings=*/true);
+  auto tryOp = TryOp::create(builder, loc, errDecl, /*suppressWarnings=*/true);
   // Stub the 'except' and 'else' regions.
   builder.createBlock(&tryOp.getExceptRegion());
 
@@ -1902,14 +1902,14 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   if (inExceptRegion) {
     ValueDest dest(errSlot, EC_RaiseValue);
     getEmitter().emitResult(MRValue(errDecl), contextExp, dest);
-    builder.create<LIT::RaiseOp>(loc);
-    builder.create<TryYieldOp>(loc);
+    LIT::RaiseOp::create(builder, loc);
+    TryYieldOp::create(builder, loc);
   } else {
     // Otherwise it will be unreachable.
-    builder.create<UnreachableOp>(loc);
+    UnreachableOp::create(builder, loc);
   }
   builder.createBlock(&tryOp.getElseRegion());
-  builder.create<TryYieldOp>(loc);
+  TryYieldOp::create(builder, loc);
   builder.createBlock(&tryOp.getTryRegion());
 
   // Check if the context manager provides an `__exit__` overload that accepts
@@ -1949,20 +1949,21 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     builder.setInsertionPoint(tryOp);
     excVar = getEmitter().emitVarDecl("__with_exc__", builder.getI1Type(), loc,
                                       VarDeclKind::Synthesized);
-    builder.create<RefStoreOp>(
-        loc, builder.create<mlir::index::BoolConstantOp>(loc, true), excVar);
+    RefStoreOp::create(builder, loc,
+                       mlir::index::BoolConstantOp::create(builder, loc, true),
+                       excVar);
     builder.restoreInsertionPoint(ip);
 
     // Generate the nested try. Stub the 'else' and 'finally' regions.
     nestedErrDecl = getEmitter().emitVarDecl("__inner_error__", errorType, loc,
                                              VarDeclKind::Synthesized);
     nestedTryOp =
-        builder.create<TryOp>(loc, nestedErrDecl, /*suppressWarnings=*/true);
-    builder.create<TryYieldOp>(loc);
+        TryOp::create(builder, loc, nestedErrDecl, /*suppressWarnings=*/true);
+    TryYieldOp::create(builder, loc);
     builder.createBlock(&nestedTryOp.getElseRegion());
-    builder.create<TryYieldOp>(loc);
+    TryYieldOp::create(builder, loc);
     builder.createBlock(&nestedTryOp.getFinallyRegion());
-    builder.create<TryYieldOp>(loc);
+    TryYieldOp::create(builder, loc);
 
     // Parse the body into the try region.
     builder.createBlock(&nestedTryOp.getTryRegion());
@@ -1980,11 +1981,11 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     // suite for us, so our current call doesn't have to worry about that.
     if (parseSingleWithStmt(curIndent, smLoc, loc))
       return success();
-    builder.create<TryYieldOp>(loc);
+    TryYieldOp::create(builder, loc);
   } else if (consumeIf(Token::colon)) {
     if (parseLocalScopeSuite(curIndent))
       return failure();
-    builder.create<TryYieldOp>(loc);
+    TryYieldOp::create(builder, loc);
   } else {
     auto message = "expected ':' or ',' after 'with' expression";
     auto diagLoc = getTokenLocOrEndOfPreviousLineIfOnNewLine();
@@ -2015,7 +2016,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       // destroyed early.
       // We don't care about extending PValues if one ever happened.
       if (Value ptrOrScalar = enterResult.getMlirValue())
-        builder.create<OwnershipUseOp>(loc, ptrOrScalar);
+        OwnershipUseOp::create(builder, loc, ptrOrScalar);
     }
   };
 
@@ -2030,7 +2031,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   if (!inExceptRegion || !hasExitMethod) {
     builder.createBlock(&tryOp.getFinallyRegion());
     emitNormalExitLogic();
-    builder.create<TryYieldOp>(loc);
+    TryYieldOp::create(builder, loc);
     return success();
   }
 
@@ -2042,8 +2043,9 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     builder.createBlock(&nestedTryOp.getExceptRegion());
 
     // Set the flag to 'False'.
-    builder.create<RefStoreOp>(
-        loc, builder.create<mlir::index::BoolConstantOp>(loc, false), excVar);
+    RefStoreOp::create(builder, loc,
+                       mlir::index::BoolConstantOp::create(builder, loc, false),
+                       excVar);
 
     // Pass the error value to the __exit__ method.
     // TODO: this isn't using the same convention that Python does.  We support
@@ -2063,19 +2065,19 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       // Fail, but non-fatal so return success to keep parsing.
       return success();
     // If __exit__ returns false, then re-raise the error.
-    auto ifOp = builder.create<HLCF::IfOp>(loc, exitI1Val);
-    builder.create<TryYieldOp>(loc);
+    auto ifOp = HLCF::IfOp::create(builder, loc, exitI1Val);
+    TryYieldOp::create(builder, loc);
 
     builder.createBlock(&ifOp.getThenRegion());
     // On true, nothing is to be done.
-    builder.create<HLCF::YieldOp>(loc);
+    HLCF::YieldOp::create(builder, loc);
 
     // On false, we re-raise the error.
     builder.createBlock(&ifOp.getElseRegion());
     ValueDest dest(MLValue(tryOp.getErr()), EC_RaiseValue);
     getEmitter().emitResult(MRValue(nestedErrDecl), contextExp, dest);
-    builder.create<LIT::RaiseOp>(loc);
-    builder.create<HLCF::YieldOp>(loc);
+    LIT::RaiseOp::create(builder, loc);
+    HLCF::YieldOp::create(builder, loc);
   }
 
   // Emit the conditional call to __exit__.
@@ -2083,21 +2085,21 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   (void)handleRaisingFinallyRegion(tryOp, errorType, smLoc, [&] {
     HLCF::IfOp excIf;
     if (conditionalExit) {
-      excIf = builder.create<HLCF::IfOp>(
-          loc, builder.create<RefLoadOp>(loc, excVar));
+      excIf = HLCF::IfOp::create(builder, loc,
+                                 RefLoadOp::create(builder, loc, excVar));
       builder.createBlock(&excIf.getThenRegion());
     }
     emitNormalExitLogic();
     if (conditionalExit) {
-      builder.create<HLCF::YieldOp>(loc);
+      HLCF::YieldOp::create(builder, loc);
       // Stub the 'else' region.
       builder.createBlock(&excIf.getElseRegion());
-      builder.create<HLCF::YieldOp>(loc);
+      HLCF::YieldOp::create(builder, loc);
     }
     return success();
   });
 
-  builder.create<TryYieldOp>(loc);
+  TryYieldOp::create(builder, loc);
   return success();
 }
 
@@ -2126,7 +2128,7 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
                                           "parameter expression as a condition")
              << condExp->getRange();
 
-    paramIfOp = builder.create<ParamIfOp>(loc, condPVal.get());
+    paramIfOp = ParamIfOp::create(builder, loc, condPVal.get());
     return success();
   };
 
@@ -2148,7 +2150,7 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
   builder.createBlock(&paramIfOp.getThenRegion());
   if (failed(parseParamIfRegion(ifLoc)))
     return failure();
-  builder.create<ParamYieldOp>(ifLoc);
+  ParamYieldOp::create(builder, ifLoc);
 
   while (getToken().is(Token::kw_elif) &&
          isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true)) {
@@ -2163,11 +2165,11 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
         parseToken(Token::colon, "expected ':' after 'elif' expression"))
       return failure();
 
-    builder.create<ParamYieldOp>(elifLoc);
+    ParamYieldOp::create(builder, elifLoc);
     builder.createBlock(&paramIfOp.getThenRegion());
     if (failed(parseParamIfRegion(elifLoc)))
       return failure();
-    builder.create<ParamYieldOp>(elifLoc);
+    ParamYieldOp::create(builder, elifLoc);
   }
 
   builder.createBlock(&cast<ParamIfOp>(paramIfOp).getElseRegion());
@@ -2178,7 +2180,7 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
     if (failed(parseParamIfRegion(ifLoc)))
       return failure();
   }
-  builder.create<ParamYieldOp>(ifLoc);
+  ParamYieldOp::create(builder, ifLoc);
   return success();
 }
 
@@ -2201,7 +2203,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
   llvm::SaveAndRestore builderSaver(builder);
 
   // Create a new elifOp state and initialize it with 2 blocks.
-  HLCF::ElifOp elifOp = builder.create<HLCF::ElifOp>(ifLoc, TypeRange(), 2);
+  HLCF::ElifOp elifOp = HLCF::ElifOp::create(builder, ifLoc, TypeRange(), 2);
   elifOp.getElifRegions()[0].emplaceBlock();
   elifOp.getElifRegions()[1].emplaceBlock();
 
@@ -2232,8 +2234,8 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
       return {failure(), {}};
 
     // Terminate the condition region of the current ElifOp.
-    builder.create<HLCF::ElifYieldOp>(loc, condRVal,
-                                      /*no extra values*/ ValueRange());
+    HLCF::ElifYieldOp::create(builder, loc, condRVal,
+                              /*no extra values*/ ValueRange());
 
     std::optional<DeadCodeInfo> deadCodeInfo = {};
     if (knownConditionForWarning.has_value()) {
@@ -2248,8 +2250,8 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
     builder.setInsertionPoint(elifOp);
     IRRewriter rewriter{builder};
     HLCF::ElifOp replacement =
-        builder.create<HLCF::ElifOp>(elifOp.getLoc(), elifOp->getResultTypes(),
-                                     elifOp.getElifRegions().size() + 2);
+        HLCF::ElifOp::create(builder, elifOp.getLoc(), elifOp->getResultTypes(),
+                             elifOp.getElifRegions().size() + 2);
 
     // Take previously parsed regions from old op.
     for (auto [index, source] : llvm::enumerate(elifOp.getElifRegions()))
@@ -2280,7 +2282,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
   builder.setInsertionPointToStart(&elifOp.getElifRegions().back().front());
   if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
-  builder.create<HLCF::YieldOp>(ifLoc);
+  HLCF::YieldOp::create(builder, ifLoc);
 
   // Parse Elif chain if it exists.
   while (getToken().is(Token::kw_elif) &&
@@ -2300,7 +2302,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
     builder.setInsertionPointToStart(&elifOp.getElifRegions().back().front());
     if (failed(parseLocalScopeSuite(curIndent)))
       return failure();
-    builder.create<HLCF::YieldOp>(elifLoc);
+    HLCF::YieldOp::create(builder, elifLoc);
   }
 
   builder.setInsertionPointToStart(&elifOp.getElseRegion().emplaceBlock());
@@ -2311,7 +2313,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
     if (failed(parseLocalScopeSuite(curIndent)))
       return failure();
   }
-  builder.create<HLCF::YieldOp>(ifLoc);
+  HLCF::YieldOp::create(builder, ifLoc);
 
   // Process dead code.  Go backward to avoid needing to erase an already erased
   // IfOp.
@@ -2388,8 +2390,9 @@ ParseResult StmtParser::parseFromImportStmt() {
 
   // Check for a wildcard import.
   if (consumeIf(Token::star)) {
-    builder.create<LIT::UnresolvedWildcardImportOp>(
-        translateLocation(importLoc), moduleAttr, /*isFullImport=*/false);
+    LIT::UnresolvedWildcardImportOp::create(builder,
+                                            translateLocation(importLoc),
+                                            moduleAttr, /*isFullImport=*/false);
     getParentDecl().addUnresolvedWildCardImport(
         moduleAttr, /*isFullImport=*/false, importLoc);
     return success();
@@ -2448,8 +2451,8 @@ ParseResult StmtParser::parseFromImportStmt() {
 
     // Create an unresolved decl for this import.
     StringAttr importDestNameAttr = builder.getStringAttr(importDestName);
-    auto importDecl = builder.create<LIT::UnresolvedImportOp>(
-        translateLocation(importLoc), moduleAttr, importDestNameAttr,
+    auto importDecl = LIT::UnresolvedImportOp::create(
+        builder, translateLocation(importLoc), moduleAttr, importDestNameAttr,
         builder.getStringAttr(importSourceName),
         translateLocation(importDestLoc),
         translateLocation(importSourceNameLoc));
@@ -2498,8 +2501,8 @@ ParseResult StmtParser::parseImportStmt() {
 
     // Create an unresolved decl for the import.
     StringAttr importDestNameAttr = builder.getStringAttr(boundModuleName);
-    auto importDecl = builder.create<LIT::UnresolvedImportOp>(
-        translateLocation(importLoc), moduleAttr, importDestNameAttr,
+    auto importDecl = LIT::UnresolvedImportOp::create(
+        builder, translateLocation(importLoc), moduleAttr, importDestNameAttr,
         /*declName=*/StringAttr(), boundModuleLocAttr,
         /*declNameLoc=*/LocationAttr());
     getDeclResolver().addDecl(importDecl, importLoc, importDestNameAttr,
@@ -2620,8 +2623,8 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
 
   // Chain to the 'build' method below.
   auto emptyStr = StringAttr::get(ctx, "");
-  auto fnOp = builder.create<FnOp>(translateLocation(loc), emptyStr, emptyStr,
-                                   signatureType);
+  auto fnOp = FnOp::create(builder, translateLocation(loc), emptyStr, emptyStr,
+                           signatureType);
 
   // NOTE: We set an attribute named 'sym_namex' here instead of setting
   // 'sym_name' because we don't /know/ the symbol name on construction and need
@@ -2772,7 +2775,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
   Operation *declOp;
   if (isa_and_nonnull<StructDeclOp>(getParentDecl().getIfOperation())) {
     rejectDecorator();
-    declOp = builder.create<StructFieldOp>(loc, name, unresolvedType);
+    declOp = StructFieldOp::create(builder, loc, name, unresolvedType);
 
     // Skip the body of this definition: go to a token the starts a line at the
     // same indent level (or less) as the current definition.
@@ -2891,7 +2894,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
   // probably fix this when parameters stop being non-lexical.
   StringAttr mangledName = parentDecl.mangleParamName(name.strref());
   auto decl = ParamDeclAttr::get(mangledName, type);
-  auto declOp = builder.create<AliasDeclOp>(loc, decl);
+  auto declOp = AliasDeclOp::create(builder, loc, decl);
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -2942,7 +2945,7 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
     return failure();
   auto loc = translateLocation(smLoc);
 
-  auto newStruct = builder.create<StructDeclOp>(loc, nameAttr);
+  auto newStruct = StructDeclOp::create(builder, loc, nameAttr);
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -2974,7 +2977,7 @@ ParseResult StmtParser::parseTraitStmt(LexerCursor startCursor,
     return failure();
   auto loc = translateLocation(smLoc);
 
-  auto newTrait = builder.create<TraitDeclOp>(loc, nameAttr);
+  auto newTrait = TraitDeclOp::create(builder, loc, nameAttr);
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -3022,7 +3025,7 @@ ParseResult StmtParser::parseExtensionStmt(LexerCursor startCursor,
   // their true name.
   // TODO(MOCO-522): This is arcana, reference some central docs here and
   // everywhere else this comes into play
-  auto extensionDeclOp = builder.create<ExtensionDeclOp>(loc, uniqueNameAttr);
+  auto extensionDeclOp = ExtensionDeclOp::create(builder, loc, uniqueNameAttr);
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -3074,7 +3077,7 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
     return failure();
 
   // Create the decl corresponding to the region declaration.
-  auto op = builder.create<UnboundRegionOp>(translateLocation(loc));
+  auto op = UnboundRegionOp::create(builder, translateLocation(loc));
   ASTDecl &decl =
       getDeclResolver().addDecl(op, loc, identifier, curDeclScope, startCursor,
                                 getLexer().getCursor(), curIndent);

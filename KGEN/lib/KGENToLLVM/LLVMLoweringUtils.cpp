@@ -367,11 +367,11 @@ void VariantHelper::walkAndCreateVariant(
     if (isa<IntegerType>(value.getType()))
       normalizedValue = value;
     else if (auto fpType = dyn_cast<FloatType>(value.getType()))
-      normalizedValue =
-          b.create<LLVM::BitcastOp>(b.getIntegerType(fpType.getWidth()), value);
+      normalizedValue = LLVM::BitcastOp::create(
+          b, b.getIntegerType(fpType.getWidth()), value);
     else
-      normalizedValue = b.create<LLVM::PtrToIntOp>(
-          b.getIntegerType(dl.getTypeSizeInBits(value.getType())), value);
+      normalizedValue = LLVM::PtrToIntOp::create(
+          b, b.getIntegerType(dl.getTypeSizeInBits(value.getType())), value);
 
     unsigned curValueSize =
         cast<IntegerType>(normalizedValue.getType()).getWidth();
@@ -382,20 +382,21 @@ void VariantHelper::walkAndCreateVariant(
       auto curStorageType = cast<IntegerType>(valueIt->getType());
 
       // Ignore the bits of the value that has already been stored.
-      Value valueToStore = b.create<LLVM::LShrOp>(
-          normalizedValue, b.create<LLVM::ConstantOp>(normalizedValue.getType(),
-                                                      curValueOffset));
+      Value valueToStore = LLVM::LShrOp::create(
+          b, normalizedValue,
+          LLVM::ConstantOp::create(b, normalizedValue.getType(),
+                                   curValueOffset));
       // Match the type with the storage type.
       if (curValueSize < curStorageType.getWidth())
-        valueToStore = b.create<LLVM::ZExtOp>(curStorageType, valueToStore);
+        valueToStore = LLVM::ZExtOp::create(b, curStorageType, valueToStore);
       else
-        valueToStore = b.create<LLVM::TruncOp>(curStorageType, valueToStore);
+        valueToStore = LLVM::TruncOp::create(b, curStorageType, valueToStore);
       // Shift the current value to store to the current storage offset.
-      valueToStore = b.create<LLVM::ShlOp>(
-          valueToStore,
-          b.create<LLVM::ConstantOp>(curStorageType, storageOffset));
+      valueToStore = LLVM::ShlOp::create(
+          b, valueToStore,
+          LLVM::ConstantOp::create(b, curStorageType, storageOffset));
       // Set the bits of the current value to store.
-      *valueIt = b.create<LLVM::OrOp>(*valueIt, valueToStore);
+      *valueIt = LLVM::OrOp::create(b, *valueIt, valueToStore);
 
       curValueOffset += advanceStoragePtr(valueIt, storageOffset,
                                           curValueSize - curValueOffset);
@@ -408,30 +409,30 @@ void VariantHelper::walkAndCreateVariant(
   // This is an aggregate type. Extract the next elements and recurse.
   if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(value.getType())) {
     for (unsigned i = 0, e = arrayType.getNumElements(); i < e; ++i) {
-      Value nestedValue = b.create<LLVM::ExtractValueOp>(value, i);
+      Value nestedValue = LLVM::ExtractValueOp::create(b, value, i);
       walkAndCreateVariant(valueIt, storageOffset, offset, nestedValue);
     }
     return;
   }
   if (auto structType = dyn_cast<LLVM::LLVMStructType>(value.getType())) {
     for (unsigned i = 0, e = structType.getBody().size(); i < e; ++i) {
-      Value nestedValue = b.create<LLVM::ExtractValueOp>(value, i);
+      Value nestedValue = LLVM::ExtractValueOp::create(b, value, i);
       walkAndCreateVariant(valueIt, storageOffset, offset, nestedValue);
     }
     return;
   }
   if (auto vecType = dyn_cast<VectorType>(value.getType())) {
     for (unsigned i = 0, e = vecType.getNumElements(); i < e; ++i) {
-      Value nestedValue = b.create<LLVM::ExtractElementOp>(
-          value, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
+      Value nestedValue = LLVM::ExtractElementOp::create(
+          b, value, LLVM::ConstantOp::create(b, b.getI32Type(), i));
       walkAndCreateVariant(valueIt, storageOffset, offset, nestedValue);
     }
     return;
   }
   auto vectorType = cast<VectorType>(value.getType());
   for (unsigned i = 0, e = vectorType.getNumElements(); i < e; ++i) {
-    Value nestedValue = b.create<LLVM::ExtractElementOp>(
-        value, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
+    Value nestedValue = LLVM::ExtractElementOp::create(
+        b, value, LLVM::ConstantOp::create(b, b.getI32Type(), i));
     walkAndCreateVariant(valueIt, storageOffset, offset, nestedValue);
   }
 }
@@ -439,7 +440,7 @@ void VariantHelper::walkAndCreateVariant(
 Value VariantHelper::materializeLLVMUnion(
     mlir::LLVM::LLVMStructType unionStructTp, Value value) {
   if (unionStructTp.getBody().empty())
-    return b.create<LLVM::UndefOp>(unionStructTp);
+    return LLVM::UndefOp::create(b, unionStructTp);
 
   SmallVector<Value> storageValues;
   auto maxAlignTp = unionStructTp.getBody().front();
@@ -448,13 +449,13 @@ Value VariantHelper::materializeLLVMUnion(
   if (auto t = dyn_cast<VectorType>(maxAlignTp)) {
     // Flatten the vector.
     for (int i = 0, e = t.getNumElements(); i < e; i++) {
-      storageValues.push_back(b.create<LLVM::ConstantOp>(
-          b.getIntegerType(dl.getTypeSizeInBits(t.getElementType())), 0));
+      storageValues.push_back(LLVM::ConstantOp::create(
+          b, b.getIntegerType(dl.getTypeSizeInBits(t.getElementType())), 0));
     }
   } else if (maxAlignTp.isIntOrFloat() ||
              isa<LLVM::LLVMPointerType>(maxAlignTp)) {
-    storageValues.push_back(b.create<LLVM::ConstantOp>(
-        b.getIntegerType(dl.getTypeSizeInBits(maxAlignTp)), 0));
+    storageValues.push_back(LLVM::ConstantOp::create(
+        b, b.getIntegerType(dl.getTypeSizeInBits(maxAlignTp)), 0));
   } else {
     llvm_unreachable(
         "The first type in lowered union type must be non-aggregated.");
@@ -465,7 +466,7 @@ Value VariantHelper::materializeLLVMUnion(
     tailingMem = cast<LLVM::LLVMArrayType>(unionStructTp.getBody().back());
     for (unsigned i = 0, e = tailingMem.getNumElements(); i < e; ++i)
       storageValues.push_back(
-          b.create<LLVM::ConstantOp>(tailingMem.getElementType(), 0));
+          LLVM::ConstantOp::create(b, tailingMem.getElementType(), 0));
   }
 
   MutableArrayRef<Value>::iterator valueIt = storageValues.begin();
@@ -474,37 +475,39 @@ Value VariantHelper::materializeLLVMUnion(
   walkAndCreateVariant(valueIt, storageOffset, offset, value);
 
   ArrayRef<Value> toPack = storageValues;
-  Value content = b.create<LLVM::UndefOp>(unionStructTp);
+  Value content = LLVM::UndefOp::create(b, unionStructTp);
 
   Value maxAlignV;
   if (auto vecTp = dyn_cast<VectorType>(maxAlignTp)) {
     // Aggregate the vector.
-    maxAlignV = b.create<LLVM::UndefOp>(vecTp);
+    maxAlignV = LLVM::UndefOp::create(b, vecTp);
     for (int i = 0, e = vecTp.getNumElements(); i < e; i++) {
       auto element = toPack.front();
-      maxAlignV = b.create<LLVM::InsertElementOp>(
-          maxAlignV, b.create<LLVM::BitcastOp>(vecTp.getElementType(), element),
-          b.create<LLVM::ConstantOp>(b.getI32Type(), i));
+      maxAlignV = LLVM::InsertElementOp::create(
+          b, maxAlignV,
+          LLVM::BitcastOp::create(b, vecTp.getElementType(), element),
+          LLVM::ConstantOp::create(b, b.getI32Type(), i));
 
       toPack = toPack.drop_front();
     }
   } else if (isa<LLVM::LLVMPointerType>(maxAlignTp)) {
-    maxAlignV = b.create<LLVM::IntToPtrOp>(maxAlignTp, toPack.front());
+    maxAlignV = LLVM::IntToPtrOp::create(b, maxAlignTp, toPack.front());
     toPack = toPack.drop_front();
   } else if (maxAlignTp.isIntOrFloat()) {
-    maxAlignV = b.create<LLVM::BitcastOp>(maxAlignTp, toPack.front());
+    maxAlignV = LLVM::BitcastOp::create(b, maxAlignTp, toPack.front());
     toPack = toPack.drop_front();
   } else {
     llvm_unreachable(
         "The first type in lowered union type must be non-aggregated.");
   }
-  content = b.create<LLVM::InsertValueOp>(content, maxAlignV, 0);
+  content = LLVM::InsertValueOp::create(b, content, maxAlignV,
+                                        static_cast<int64_t>(0));
 
   if (tailingMem) {
-    Value arrayV = b.create<LLVM::UndefOp>(tailingMem);
+    Value arrayV = LLVM::UndefOp::create(b, tailingMem);
     for (auto [idx, value] : llvm::enumerate(toPack))
-      arrayV = b.create<LLVM::InsertValueOp>(arrayV, value, idx);
-    content = b.create<LLVM::InsertValueOp>(content, arrayV, 1);
+      arrayV = LLVM::InsertValueOp::create(b, arrayV, value, idx);
+    content = LLVM::InsertValueOp::create(b, content, arrayV, 1);
   }
 
   return content;
@@ -524,7 +527,7 @@ ErrorOr<Value> InterpreterMemoryConverter::MaterializationScope::convertMemRef(
 
   Value ptr = getBlobPointer(b, imc.tc.convertType(ref.getType()),
                              *materialized, ref.getIndex(), ref.getOffset());
-  return b.create<LLVM::BitcastOp>(imc.tc.convertType(ref.getType()), ptr);
+  return LLVM::BitcastOp::create(b, imc.tc.convertType(ref.getType()), ptr);
 }
 
 Value InterpreterMemoryConverter::MaterializationScope::getBlobPointer(
@@ -532,13 +535,14 @@ Value InterpreterMemoryConverter::MaterializationScope::getBlobPointer(
     int64_t index, int64_t offset) {
   Value ptr = dyn_cast<Value>(value);
   if (!ptr) {
-    ptr = b.create<LLVM::BitcastOp>(
-        ptrType, b.create<LLVM::AddressOfOp>(
-                     cast<LLVM::GlobalOp>(cast<Operation *>(value))));
+    ptr = LLVM::BitcastOp::create(
+        b, ptrType,
+        LLVM::AddressOfOp::create(
+            b, cast<LLVM::GlobalOp>(cast<Operation *>(value))));
   }
-  return b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr,
-                               LLVM::GEPArg(offset),
-                               LLVM::GEPNoWrapFlags::inbounds);
+  return LLVM::GEPOp::create(b, ptrType, b.getI8Type(), ptr,
+                             LLVM::GEPArg(offset),
+                             LLVM::GEPNoWrapFlags::inbounds);
 }
 
 Operation *InterpreterMemoryConverter::getOrCreateGlobal(Location loc,
@@ -567,8 +571,8 @@ Operation *InterpreterMemoryConverter::getOrCreateGlobal(Location loc,
   std::string key =
       (hdl.isString() ? "static_string_" : "memory_blob_") + hashKey;
 
-  auto global = b.create<LLVM::GlobalOp>(
-      loc, LLVM::LLVMArrayType::get(b.getI8Type(), hdl.getSize()),
+  auto global = LLVM::GlobalOp::create(
+      b, loc, LLVM::LLVMArrayType::get(b.getI8Type(), hdl.getSize()),
       blob.getKind() == MemoryKind::ConstGlobal, LLVM::Linkage::Internal, key,
       value, hdl.getAlign(), blob.getAddressSpace());
   symtab.insert(global);
@@ -589,12 +593,12 @@ static void materializeVectorStores(int64_t idx, int64_t size, Value ptr,
 
   // GEP to the current offset.
   Value gep =
-      b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr, LLVM::GEPArg(idx),
-                            LLVM::GEPNoWrapFlags::inbounds);
+      LLVM::GEPOp::create(b, ptrType, b.getI8Type(), ptr, LLVM::GEPArg(idx),
+                          LLVM::GEPNoWrapFlags::inbounds);
   // Emit a scalar store.
   if (size == 1) {
-    b.create<LLVM::StoreOp>(
-        b.create<LLVM::ConstantOp>(b.getI8Type(), data[idx]), gep, align);
+    LLVM::StoreOp::create(
+        b, LLVM::ConstantOp::create(b, b.getI8Type(), data[idx]), gep, align);
     return;
   }
 
@@ -605,7 +609,7 @@ static void materializeVectorStores(int64_t idx, int64_t size, Value ptr,
   ArrayRef<uint8_t> slice((const uint8_t *)data + idx, curSize);
   auto value =
       ArrayElementsAttr::get(slice, VectorType::get(curSize, b.getI8Type()));
-  b.create<LLVM::StoreOp>(b.create<LLVM::ConstantOp>(value), gep, align);
+  LLVM::StoreOp::create(b, LLVM::ConstantOp::create(b, value), gep, align);
   materializeVectorStores(idx + curSize, remaining, ptr, data, b, ptrType,
                           align);
 }
@@ -641,25 +645,25 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
         // FIXME(#32052): Persistent memory requires planning, but downcast to a
         // stack allocation for now.
         blob.getKind() == MemoryKind::Persistent) {
-      popAlloc = b.create<POP::StackAllocationOp>(
-          PointerType::get(b.getI8Type()), hdl.getSize(),
+      popAlloc = POP::StackAllocationOp::create(
+          b, PointerType::get(b.getI8Type()), hdl.getSize(),
           b.getIndexAttr(hdl.getAlign()));
 
-      Value ptr = b.create<mlir::UnrealizedConversionCastOp>(ptrType, popAlloc)
+      Value ptr = mlir::UnrealizedConversionCastOp::create(b, ptrType, popAlloc)
                       .getResult(0);
       materialized.insert(
-          {idx, Value(b.create<LLVM::BitcastOp>(ptrType, ptr))});
+          {idx, Value(LLVM::BitcastOp::create(b, ptrType, ptr))});
 
     } else {
-      popAlloc = b.create<POP::AlignedAllocOp>(
-          PointerType::get(b.getI8Type()),
-          b.create<mlir::index::ConstantOp>(hdl.getAlign()),
-          b.create<mlir::index::ConstantOp>(hdl.getSize()));
+      popAlloc = POP::AlignedAllocOp::create(
+          b, PointerType::get(b.getI8Type()),
+          mlir::index::ConstantOp::create(b, hdl.getAlign()),
+          mlir::index::ConstantOp::create(b, hdl.getSize()));
 
-      Value ptr = b.create<mlir::UnrealizedConversionCastOp>(ptrType, popAlloc)
+      Value ptr = mlir::UnrealizedConversionCastOp::create(b, ptrType, popAlloc)
                       .getResult(0);
       materialized.insert(
-          {idx, Value(b.create<LLVM::BitcastOp>(ptrType, ptr))});
+          {idx, Value(LLVM::BitcastOp::create(b, ptrType, ptr))});
     }
   };
 
@@ -740,12 +744,12 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
         return;
       }
       // Emit a memset.
-      Value gep = b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr,
-                                        LLVM::GEPArg(startIdx),
-                                        LLVM::GEPNoWrapFlags::inbounds);
-      b.create<LLVM::MemsetOp>(
-          gep, b.create<LLVM::ConstantOp>(b.getI8Type(), value),
-          b.create<LLVM::ConstantOp>(b.getI64Type(), numReps),
+      Value gep = LLVM::GEPOp::create(b, ptrType, b.getI8Type(), ptr,
+                                      LLVM::GEPArg(startIdx),
+                                      LLVM::GEPNoWrapFlags::inbounds);
+      LLVM::MemsetOp::create(
+          b, gep, LLVM::ConstantOp::create(b, b.getI8Type(), value),
+          LLVM::ConstantOp::create(b, b.getI64Type(), numReps),
           /*isVolatile=*/false);
     };
 
@@ -785,12 +789,12 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
         // Store the pointer value to the current offset.
         commitCompressedStores();
         Value gep =
-            b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr, LLVM::GEPArg(i),
-                                  LLVM::GEPNoWrapFlags::inbounds);
+            LLVM::GEPOp::create(b, ptrType, b.getI8Type(), ptr, LLVM::GEPArg(i),
+                                LLVM::GEPNoWrapFlags::inbounds);
         auto [_, index, offset] = *ptrIt++;
-        b.create<LLVM::StoreOp>(
-            getBlobPointer(b, ptrType, materialized[index], index, offset), gep,
-            hdl.getAlign());
+        LLVM::StoreOp::create(
+            b, getBlobPointer(b, ptrType, materialized[index], index, offset),
+            gep, hdl.getAlign());
         i += pointerSize;
         continue;
       }
@@ -820,7 +824,7 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
                              POP::SIMDAttr simd) {
   KGENDType dtype = *simd.getType().getResolvedDType();
   auto asConst = [&](TypedAttr value) {
-    return b.create<LLVM::ConstantOp>(value);
+    return LLVM::ConstantOp::create(b, value);
   };
 
   // Handle scalar constants.
@@ -836,14 +840,14 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
           asConst(b.getIntegerAttr(tc.getIndexType(), value.getIndexVal()));
       if (dtype.isIndex() || dtype.isUIndex())
         return addr;
-      return b.create<LLVM::IntToPtrOp>(
-          LLVM::LLVMPointerType::get(b.getContext()), addr);
+      return LLVM::IntToPtrOp::create(
+          b, LLVM::LLVMPointerType::get(b.getContext()), addr);
     }
 
     FloatType fpType = getEquivalentFloatType(b.getContext(), dtype);
     FloatAttr attrVal = b.getFloatAttr(fpType, value.getFloatVal());
     if (isFP8(fpType))
-      return b.create<LLVM::ConstantOp>(b.getI8Type(), attrVal);
+      return LLVM::ConstantOp::create(b, b.getI8Type(), attrVal);
 
     return asConst(attrVal);
   }
@@ -874,7 +878,8 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
         VectorType::get(values.size(), indexType), values)));
     if (dtype.isIndex() || dtype.isUIndex())
       return addr;
-    return b.create<LLVM::IntToPtrOp>(
+    return LLVM::IntToPtrOp::create(
+        b,
         VectorType::get(values.size(),
                         LLVM::LLVMPointerType::get(b.getContext())),
         addr);
@@ -888,8 +893,8 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
       VectorType::get(values.size(), fpType), values));
 
   if (isFP8(fpType)) {
-    return b.create<LLVM::ConstantOp>(
-        VectorType::get(values.size(), b.getI8Type()), attrVal);
+    return LLVM::ConstantOp::create(
+        b, VectorType::get(values.size(), b.getI8Type()), attrVal);
   }
 
   return asConst(attrVal);
@@ -916,23 +921,23 @@ static Value lowerStringToGlobalConstant(StringAttr strAttr,
                                       /*addressSpace=*/0)));
   // The actual string size does not include \0.
   auto sizeType = cast<IntegerType>(tc.getIndexType());
-  Value sizeVal = b.create<LLVM::ConstantOp>(
-      b.getLoc(), IntegerAttr::get(sizeType, strAttr.size()));
-  Value undefOp = b.create<LLVM::UndefOp>(
-      b.getLoc(), getLLVMTypeForKGENStringType(b.getContext(), sizeType));
+  Value sizeVal = LLVM::ConstantOp::create(
+      b, b.getLoc(), IntegerAttr::get(sizeType, strAttr.size()));
+  Value undefOp = LLVM::UndefOp::create(
+      b, b.getLoc(), getLLVMTypeForKGENStringType(b.getContext(), sizeType));
   Value llvmString =
-      b.create<LLVM::BitcastOp>(LLVM::LLVMPointerType::get(b.getContext()),
-                                b.create<LLVM::AddressOfOp>(global));
-  Value structVal0 =
-      b.create<LLVM::InsertValueOp>(b.getLoc(), undefOp, llvmString, 0);
-  return b.create<LLVM::InsertValueOp>(b.getLoc(), structVal0, sizeVal, 1);
+      LLVM::BitcastOp::create(b, LLVM::LLVMPointerType::get(b.getContext()),
+                              LLVM::AddressOfOp::create(b, global));
+  Value structVal0 = LLVM::InsertValueOp::create(
+      b, b.getLoc(), undefOp, llvmString, static_cast<int64_t>(0));
+  return LLVM::InsertValueOp::create(b, b.getLoc(), structVal0, sizeVal, 1);
 }
 
 Value KGEN::materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
                                   ValueRange elements) {
-  Value container = b.create<LLVM::UndefOp>(structType);
+  Value container = LLVM::UndefOp::create(b, structType);
   for (auto [index, element] : llvm::enumerate(elements))
-    container = b.create<LLVM::InsertValueOp>(container, element, index);
+    container = LLVM::InsertValueOp::create(b, container, element, index);
   return container;
 }
 
@@ -947,7 +952,7 @@ void KGEN::replaceCallWithLLVMCall(mlir::RewriterBase &b, Operation *op,
     results.reserve(op->getNumResults());
     for (unsigned i = 0, e = op->getNumResults(); i < e; ++i) {
       results.push_back(
-          b.create<LLVM::ExtractValueOp>(op->getLoc(), call.getResult(), i));
+          LLVM::ExtractValueOp::create(b, op->getLoc(), call.getResult(), i));
     }
   }
 
@@ -968,50 +973,51 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
     Type type = tc.convertType(attr.getType());
     if (!type)
       return Error("unknown type lowering uninitialized memory");
-    return b.create<LLVM::UndefOp>(type);
+    return LLVM::UndefOp::create(b, type);
   }
 
   if (auto intCst = dyn_cast<IntegerAttr>(attr)) {
     // Check for index types a truncate index constants if required.
     if (isa<IndexType>(attr.getType())) {
-      return b.create<LLVM::ConstantOp>(
+      return LLVM::ConstantOp::create(
+          b,
           b.getIntegerAttr(cast<IntegerType>(tc.getIndexType()),
                            intCst.getValue().trunc(tc.getIndexTypeBitwidth())));
     }
 
     // Drop the sign on integer attributes; LLVM is signless.
-    return b.create<LLVM::ConstantOp>(
-        b.getIntegerAttr(cast<IntegerType>(tc.convertType(intCst.getType())),
-                         intCst.getValue()));
+    return LLVM::ConstantOp::create(
+        b, b.getIntegerAttr(cast<IntegerType>(tc.convertType(intCst.getType())),
+                            intCst.getValue()));
   }
 
   if (auto fltCst = dyn_cast<FloatAttr>(attr)) {
     Type type = fltCst.getType();
     if (isFP8(type)) {
-      return b.create<LLVM::ConstantOp>(tc.convertType(type),
-                                        fltCst.getValue().bitcastToAPInt());
+      return LLVM::ConstantOp::create(b, tc.convertType(type),
+                                      fltCst.getValue().bitcastToAPInt());
     }
 
     // Float attributes are fine as-is.
-    return b.create<LLVM::ConstantOp>(fltCst);
+    return LLVM::ConstantOp::create(b, fltCst);
   }
 
   // Convert DType constants to `i8` constants of the DType's enum value.
   if (auto dtypeCst = dyn_cast<DTypeConstantAttr>(attr))
-    return b.create<LLVM::ConstantOp>(
-        b.getI8IntegerAttr(dtypeCst.getDType().getValue()));
+    return LLVM::ConstantOp::create(
+        b, b.getI8IntegerAttr(dtypeCst.getDType().getValue()));
 
   // Convert `#kgen.none` to an empty struct.
   if (isa<NoneAttr>(attr))
-    return b.create<LLVM::UndefOp>(
-        LLVM::LLVMStructType::getLiteral(b.getContext(), {}));
+    return LLVM::UndefOp::create(
+        b, LLVM::LLVMStructType::getLiteral(b.getContext(), {}));
 
   // Convert pointer attributes (usually null pointers).
   if (auto ptr = dyn_cast<PointerAttr>(attr)) {
-    return b.create<LLVM::IntToPtrOp>(
-        tc.convertType(ptr.getType()),
-        b.create<LLVM::ConstantOp>(
-            b.getIntegerAttr(tc.getIndexType(), ptr.getAddr())),
+    return LLVM::IntToPtrOp::create(
+        b, tc.convertType(ptr.getType()),
+        LLVM::ConstantOp::create(
+            b, b.getIntegerAttr(tc.getIndexType(), ptr.getAddr())),
         LLVM::DereferenceableAttr{});
   }
 
@@ -1024,10 +1030,10 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
       return loweredValue;
     auto value = loweredValue.get();
     unsigned align = tc.getTypeABIAlign(value.getType());
-    Value ptr = b.create<LLVM::AllocaOp>(
-        tc.convertType(attr.getType()), value.getType(),
-        b.create<LLVM::ConstantOp>(b.getI64IntegerAttr(1)), align);
-    b.create<LLVM::StoreOp>(value, ptr, align);
+    Value ptr = LLVM::AllocaOp::create(
+        b, tc.convertType(attr.getType()), value.getType(),
+        LLVM::ConstantOp::create(b, b.getI64IntegerAttr(1)), align);
+    LLVM::StoreOp::create(b, value, ptr, align);
     return ptr;
   }
 
@@ -1048,9 +1054,8 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
     if (cst.getType().getBody().isCapturing())
       return Error("TODO: capturing closures cannot be materialized as runtime "
                    "values");
-    return b.create<LLVM::AddressOfOp>(
-        tc.convertType(cst.getType()),
-        cast<FlatSymbolRefAttr>(cst.getSymbol()));
+    return LLVM::AddressOfOp::create(b, tc.convertType(cst.getType()),
+                                     cast<FlatSymbolRefAttr>(cst.getSymbol()));
   }
 
   //===--------------------------------------------------------------------===//
@@ -1065,7 +1070,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
     Type type = tc.convertType(attr.getType());
     if (!type)
       return Error("cannot lower array or struct constant with unknown type");
-    Value aggregate = b.create<LLVM::UndefOp>(type);
+    Value aggregate = LLVM::UndefOp::create(b, type);
     ArrayRef<TypedAttr> values =
         TypeSwitch<Attribute, ArrayRef<TypedAttr>>(attr)
             .Case<POP::ArrayAttr, StructAttr>(
@@ -1077,7 +1082,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
       if (loweredValue.isError())
         return loweredValue;
       aggregate =
-          b.create<LLVM::InsertValueOp>(aggregate, loweredValue.get(), idx);
+          LLVM::InsertValueOp::create(b, aggregate, loweredValue.get(), idx);
     }
     return aggregate;
   }
@@ -1105,10 +1110,10 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
     if (!elementType)
       return Error("cannot lower variadic sequence constant with unknown type");
 
-    Value size = b.create<LLVM::ConstantOp>(
-        b.getI64IntegerAttr(variadic.getValues().size()));
-    Value ptr = b.create<LLVM::AllocaOp>(
-        LLVM::LLVMPointerType::get(b.getContext()), elementType, size);
+    Value size = LLVM::ConstantOp::create(
+        b, b.getI64IntegerAttr(variadic.getValues().size()));
+    Value ptr = LLVM::AllocaOp::create(
+        b, LLVM::LLVMPointerType::get(b.getContext()), elementType, size);
 
     // 2. Store elements of the sequence into the allocated space.
     for (auto [idx, value] : llvm::enumerate(variadic.getValues())) {
@@ -1116,10 +1121,10 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
       if (element.isError())
         return element;
 
-      auto destination = b.create<LLVM::GEPOp>(
-          LLVM::LLVMPointerType::get(b.getContext()), elementType, ptr,
+      auto destination = LLVM::GEPOp::create(
+          b, LLVM::LLVMPointerType::get(b.getContext()), elementType, ptr,
           ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(idx)});
-      b.create<LLVM::StoreOp>(element.get(), destination);
+      LLVM::StoreOp::create(b, element.get(), destination);
     }
 
     // 3. Create a struct with a pointer to the allocation & the sequence size.

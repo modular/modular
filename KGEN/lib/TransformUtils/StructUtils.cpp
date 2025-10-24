@@ -26,7 +26,7 @@ void KGEN::flattenAndUnpackIfStruct(mlir::RewriterBase &b, Location loc,
                                     SmallVectorImpl<Value> &values) {
   if (auto structType = dyn_cast<StructType>(value.getType())) {
     for (auto [i, type] : llvm::enumerate(structType.getElementTypes())) {
-      Value element = b.create<StructExtractOp>(loc, type, value, i);
+      Value element = StructExtractOp::create(b, loc, type, value, i);
       flattenAndUnpackIfStruct(b, loc, element, values);
     }
     return;
@@ -40,7 +40,7 @@ Value KGEN::flattenAndPackIfStruct(mlir::RewriterBase &b, Location loc,
     SmallVector<Value> values;
     for (Type type : structType.getElementTypes())
       values.push_back(flattenAndPackIfStruct(b, loc, type, it));
-    return b.create<StructCreateOp>(loc, structType, values);
+    return StructCreateOp::create(b, loc, structType, values);
   }
   return *it++;
 }

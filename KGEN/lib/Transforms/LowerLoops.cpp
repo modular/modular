@@ -49,8 +49,8 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
   IRRewriter rewriter{OpBuilder(forLoop)};
 
   // Create HLCF::LoopOp.
-  auto loop = rewriter.create<LoopOp>(
-      forLoop->getLoc(), forLoop->getResultTypes(), forLoop.getIterArgs());
+  auto loop = LoopOp::create(rewriter, forLoop->getLoc(),
+                             forLoop->getResultTypes(), forLoop.getIterArgs());
 
   // Create the block for the new LoopOp.
   Block *loopBlock = rewriter.createBlock(&loop.getBody());
@@ -71,37 +71,37 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
   mlir::index::CmpOp cmpOp;
   switch (cmpPredicate) {
   case HLCF::ForLoopBoundCmpPredicate::SGT:
-    cmpOp = rewriter.create<mlir::index::CmpOp>(
-        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SGT, inductionVar,
-        forLoop.getUpperBound());
+    cmpOp = mlir::index::CmpOp::create(rewriter, forLoop->getLoc(),
+                                       mlir::index::IndexCmpPredicate::SGT,
+                                       inductionVar, forLoop.getUpperBound());
     break;
 
   case HLCF::ForLoopBoundCmpPredicate::SLT:
-    cmpOp = rewriter.create<mlir::index::CmpOp>(
-        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SLT, inductionVar,
-        forLoop.getUpperBound());
+    cmpOp = mlir::index::CmpOp::create(rewriter, forLoop->getLoc(),
+                                       mlir::index::IndexCmpPredicate::SLT,
+                                       inductionVar, forLoop.getUpperBound());
     break;
   case HLCF::ForLoopBoundCmpPredicate::SGE:
-    cmpOp = rewriter.create<mlir::index::CmpOp>(
-        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SGE, inductionVar,
-        forLoop.getUpperBound());
+    cmpOp = mlir::index::CmpOp::create(rewriter, forLoop->getLoc(),
+                                       mlir::index::IndexCmpPredicate::SGE,
+                                       inductionVar, forLoop.getUpperBound());
     break;
 
   case HLCF::ForLoopBoundCmpPredicate::SLE:
-    cmpOp = rewriter.create<mlir::index::CmpOp>(
-        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SLE, inductionVar,
-        forLoop.getUpperBound());
+    cmpOp = mlir::index::CmpOp::create(rewriter, forLoop->getLoc(),
+                                       mlir::index::IndexCmpPredicate::SLE,
+                                       inductionVar, forLoop.getUpperBound());
     break;
   }
 
   // Create IfOp with ThenBlock yields and ElseBlock breaks.
-  auto ifOp = rewriter.create<IfOp>(forLoop->getLoc(), ValueRange{}, cmpOp);
+  auto ifOp = IfOp::create(rewriter, forLoop->getLoc(), ValueRange{}, cmpOp);
 
   rewriter.createBlock(&ifOp.getThenRegion());
-  rewriter.create<YieldOp>(forLoop->getLoc());
+  YieldOp::create(rewriter, forLoop->getLoc());
   rewriter.createBlock(&ifOp.getElseRegion());
-  rewriter.create<BreakOp>(
-      forLoop->getLoc(),
+  BreakOp::create(
+      rewriter, forLoop->getLoc(),
       body.getArguments().drop_front().take_front(forLoop.getNumResults()),
       loop.getLabelAttr());
 
@@ -111,8 +111,8 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
   rewriter.setInsertionPointAfter(y.getOperation());
 
   // Create `hlcf.continue` with the reordered operands.
-  auto cont = rewriter.create<HLCF::ContinueOp>(y.getLoc(), y->getResultTypes(),
-                                                y.getOperands());
+  auto cont = HLCF::ContinueOp::create(rewriter, y.getLoc(),
+                                       y->getResultTypes(), y.getOperands());
 
   // Replace `hlcf.for.yield with `hlcf.continue`.
   rewriter.replaceOp(y, cont);

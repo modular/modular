@@ -536,7 +536,7 @@ LogicalResult ParamIfOp::canonicalize(ParamIfOp op, PatternRewriter &b) {
   for (Operation &subOp : llvm::make_early_inc_range(llvm::reverse(deadBlock)))
     b.eraseOp(&subOp);
   b.setInsertionPointToStart(&deadBlock);
-  b.create<UnreachableOp>(op.getLoc());
+  UnreachableOp::create(b, op.getLoc());
   return success();
 }
 
