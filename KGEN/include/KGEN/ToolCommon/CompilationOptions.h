@@ -61,7 +61,7 @@ public:
       std::string targetCpu = llvm::sys::getHostCPUName().str(),
       std::string targetFeatures = getHostCPUFeatures(),
       std::string targetAccelerator = "", int elabErrorLimit = 20,
-      bool elabErrorIncludePrelude = false,
+      bool elabErrorIncludePrelude = false, bool elabErrorVerbose = false,
       DebugInfoLanguage debugInfoLanguage = kLangMojo,
       std::string searchPaths = "",
       SmallVector<std::string> extraSearchPaths = {});
@@ -125,6 +125,8 @@ public:
   int elabErrorLimit = 20;
 
   bool elabErrorIncludePrelude = false;
+
+  bool elabErrorVerbose = false;
 
   // HACK: to disable llvm splitting for some cases.
   // - mojo REPL (#35345)

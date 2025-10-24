@@ -740,18 +740,14 @@ Elaborator::collectConcreteImplementations(Location loc, ImplNode *parent,
   // Get all valid implementations of the callee node.
   ErrorTreeOr<ImplNode *> concrete = calleeNode->getFirstConcreteNode();
   if (concrete.isError()) {
-    SmallVector<std::string> result = printSimpleParamAttrValues(
-        calleeNode->gen.getInputParams(), calleeNode->inputParams);
+    std::string str = printSimpleParamAttrValues(
+        calleeNode->gen.getInputParams(), calleeNode->inputParams,
+        options.elabErrorVerbose);
 
-    if (result.empty()) {
+    if (str.empty()) {
       parent->setToError(
           ErrorTree(loc, "call expansion failed", concrete.takeError()));
     } else {
-      std::string str;
-      llvm::raw_string_ostream os(str);
-      os << "(";
-      llvm::interleaveComma(result, os);
-      os << ")";
       parent->setToError(ErrorTree(
           loc, Twine("call expansion failed with parameter value(s): " + str),
           concrete.takeError()));
@@ -2824,6 +2820,7 @@ public:
 
     VerboseCompilerTimeTraceScope traceScope("elaborate-generators");
     options.elabErrorIncludePrelude = errorIncludePrelude;
+    options.elabErrorVerbose = errorVerbose;
 
     // Now, construct and run the elaborator.
     if (useParametricInterpreter) {

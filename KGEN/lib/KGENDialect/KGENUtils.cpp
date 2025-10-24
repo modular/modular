@@ -2300,9 +2300,9 @@ void KGEN::printMemSymbolTripleAttrWithoutType(
     printSymbol(del);
 }
 
-SmallVector<std::string>
-KGEN::printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
-                                 ArrayRef<TypedAttr> values) {
+std::string KGEN::printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
+                                             ArrayRef<TypedAttr> values,
+                                             bool printAll) {
   SmallVector<std::string> result;
   for (auto [param, value] : llvm::zip(params, values)) {
     llvm::TypeSwitch<TypedAttr>(value)
@@ -2330,7 +2330,25 @@ KGEN::printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
           os << param.getName() << ": " << attr.getValue();
           result.push_back(str);
         })
-        .Default([&](auto &attr) { result.push_back("..."); });
+        .Default([&](auto &attr) {
+          if (printAll) {
+            std::string str;
+            llvm::raw_string_ostream os(str);
+            os << param.getName() << ": " << attr;
+            result.push_back(str);
+          } else {
+            result.push_back("...");
+          }
+        });
   }
-  return result;
+
+  std::string str;
+  if (!result.empty()) {
+    llvm::raw_string_ostream os(str);
+    os << "(";
+    llvm::interleaveComma(result, os);
+    os << ")";
+  }
+
+  return str;
 }

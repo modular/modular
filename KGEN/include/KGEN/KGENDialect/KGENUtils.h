@@ -488,9 +488,9 @@ void printMemSymbolTripleAttrWithoutType(
                                           ArrayRef<TypedAttr> params)>>
         parameterPrinter = {});
 
-SmallVector<std::string>
-printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
-                           ArrayRef<TypedAttr> values);
+std::string printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
+                                       ArrayRef<TypedAttr> values,
+                                       bool printAll);
 
 } // namespace M::KGEN
 

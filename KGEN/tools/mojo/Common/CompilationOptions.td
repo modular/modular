@@ -92,17 +92,25 @@ defm elaboration_error_limit: CommandOptionHidden<["--", "-"],
 
 def elaboration_error_include_prelude: Flag<["--", "-"], 
   "elaboration-error-include-prelude">,
-  Group<CompilationOptionGroup>, Index<14>, 
+  Group<CompilationOptionGroup>, Index<14>,
   HelpText<
     "Show elaboration error with locations in mojo startup modules "
     "(prelude).">;
+
+def elaboration_error_verbose: Flag<["--", "-"],
+  "elaboration-error-verbose">,
+  Group<CompilationOptionGroup>, Index<15>,
+  HelpText<
+    "Show verbose elaboration error with all concrete parameter "
+    "values where call expansion is failed. Default print only "
+    "shows simple values (string, integer, float, boolean).">;
 
 //===----------------------------------------------------------------------===//
 // Experimental Compilation Options
 //===----------------------------------------------------------------------===//
 
 def ExperimentalCompilationOptionGroup :
-  OptionGroup<"Experimental compilation options">, Index<15>;
+  OptionGroup<"Experimental compilation options">, Index<16>;
 
 defm sanitize : CommandOption<["--", "-"], "sanitize",
   ExperimentalCompilationOptionGroup, Index<1>, MetaVarName<"CHECK">,

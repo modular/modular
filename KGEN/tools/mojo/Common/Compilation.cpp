@@ -38,7 +38,8 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier numThreadsId, llvm::opt::OptSpecifier stdLibPath,
     llvm::opt::OptSpecifier loopUnrollingWarnThresholdId,
     llvm::opt::OptSpecifier elabErrorLimitId,
-    llvm::opt::OptSpecifier elabErrorIncludePreludeId) {
+    llvm::opt::OptSpecifier elabErrorIncludePreludeId,
+    llvm::opt::OptSpecifier elabErrorVerboseId) {
 
   // Process the sanitizers.
   if (sanitizeId.isValid()) {
@@ -193,6 +194,14 @@ ErrorOrSuccess M::parseCompilationOptions(
     }
     compilationOptions.elabErrorIncludePrelude =
         args.hasArg(elabErrorIncludePreludeId);
+  }
+
+  if (elabErrorVerboseId.isValid()) {
+    if (args.hasMultipleArgs(elabErrorVerboseId)) {
+      return Error("too many specified elaboration-error-verbose, "
+                   "expected exactly one");
+    }
+    compilationOptions.elabErrorVerbose = args.hasArg(elabErrorVerboseId);
   }
 
   // Unike other command line options, disableWarnings is parsed

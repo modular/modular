@@ -688,8 +688,18 @@ FailureOr<PImplNode *> ParametricElaborator::collectConcreteImplementations(
   // Get all valid implementations of the callee node.
   ErrorTreeOr<PImplNode *> concrete = calleeNode->getFirstConcreteNode();
   if (concrete.isError()) {
-    parent->setToError(
-        ErrorTree(loc, "call expansion failed 3", concrete.takeError()));
+    std::string str = printSimpleParamAttrValues(
+        calleeNode->gen.getInputParams(), calleeNode->inputParams,
+        options.elabErrorVerbose);
+
+    if (str.empty()) {
+      parent->setToError(
+          ErrorTree(loc, "call expansion failed 3", concrete.takeError()));
+    } else {
+      parent->setToError(ErrorTree(
+          loc, Twine("call expansion failed with parameter value(s): " + str),
+          concrete.takeError()));
+    }
     return failure();
   }
 
