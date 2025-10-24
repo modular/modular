@@ -1181,21 +1181,24 @@ static LogicalResult liftClosuresFromRegion(ModuleOp theModule,
   GeneratorOp parent = isa<GeneratorOp>(enclosingOp)
                            ? cast<GeneratorOp>(enclosingOp)
                            : enclosingOp->getParentOfType<GeneratorOp>();
-  for (ClosureInitOp closureInit : llvm::make_early_inc_range(
-           enclosingOp->getRegions().front().getOps<ClosureInitOp>())) {
-    ClosureType closureType = getClosureType(closureInit);
-    StringAttr symbol = getFullName(closureType);
-    if (StructGeneratorOp structGeneratorOp =
-            lifter.symtab.lookup<StructGeneratorOp>(symbol)) {
-      hasFailure = hasFailure | failed(lifter.liftClosureInit(
-                                    closureInit, parent, structGeneratorOp));
-    } else {
-      mlir::emitError(theModule.getLoc())
-          << "missing struct generator op for closure "
-          << getClosureType(closureInit).getName();
-      hasFailure = true;
+  for (Region &region : enclosingOp->getRegions()) {
+    for (ClosureInitOp closureInit :
+         llvm::make_early_inc_range(region.getOps<ClosureInitOp>())) {
+      ClosureType closureType = getClosureType(closureInit);
+      StringAttr symbol = getFullName(closureType);
+      if (StructGeneratorOp structGeneratorOp =
+              lifter.symtab.lookup<StructGeneratorOp>(symbol)) {
+        hasFailure = hasFailure | failed(lifter.liftClosureInit(
+                                      closureInit, parent, structGeneratorOp));
+      } else {
+        mlir::emitError(theModule.getLoc())
+            << "missing struct generator op for closure "
+            << getClosureType(closureInit).getName();
+        hasFailure = true;
+      }
     }
   }
+
   if (hasFailure)
     return failure();
   if (lifter.closureTypeToStructTypes.empty())
@@ -1271,9 +1274,12 @@ void OutlineClosuresNewPass::runOnOperation() {
       if (StructGeneratorOp structGeneratorOp =
               dyn_cast<StructGeneratorOp>(operation)) {
         if (ClosureType closureType =
-                dyn_cast<ClosureType>(structGeneratorOp.getValueDomainType()))
+                dyn_cast<ClosureType>(structGeneratorOp.getValueDomainType())) {
+          assert(lifter.packedClosureType.contains(closureType) &&
+                 "found a struct generator with an unlifted closure");
           structGeneratorOp.setValueDomainType(
               lifter.packedClosureType[closureType]);
+        }
       }
       closureTypeReplacer.recursivelyReplaceElementsIn(operation, true, true,
                                                        true);

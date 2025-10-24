@@ -654,3 +654,50 @@ kgen.generator @del(%arg0: !kgen.pointer<struct<(!kgen.closure<@foo, "fn1" nones
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
 }
+
+// -----
+
+module {
+
+    // CHECK-NOT: !kgen.closure
+
+  kgen.struct.generator @"thin::fn1"<CAPTURES: !kgen.param_closure<@thin "fn1">> = !kgen.closure<@thin, "fn1" trivial>{
+    kgen.conformance @closure_trait {
+      kgen.witness "__call__" : (!kgen.closure<@thin, "fn1" trivial>, index) -> index = #kgen.closure.symbol<@thin, "fn1", #kgen.closure_method<call>, <:!kgen.param_closure<@thin "fn1"> CAPTURES>>
+    }
+  }
+  kgen.struct.generator @"thin::fn2"<CAPTURES: !kgen.param_closure<@thin "fn2">> = !kgen.closure<@thin, "fn2" trivial>{
+    kgen.conformance @closure_trait {
+      kgen.witness "__call__" : (!kgen.closure<@thin, "fn2" trivial>, index) -> index = #kgen.closure.symbol<@thin, "fn2", #kgen.closure_method<call>, <:!kgen.param_closure<@thin "fn2"> CAPTURES>>
+    }
+  }
+  kgen.struct.generator @"thin::fn3"<CAPTURES: !kgen.param_closure<@thin "fn3">> = !kgen.closure<@thin, "fn3" trivial>{
+    kgen.conformance @closure_trait {
+      kgen.witness "__call__" : (!kgen.closure<@thin, "fn3" trivial>, index) -> index = #kgen.closure.symbol<@thin, "fn3", #kgen.closure_method<call>, <:!kgen.param_closure<@thin "fn3"> CAPTURES>>
+    }
+  }
+  kgen.generator @thin(%arg0: i1) {
+    hlcf.if %arg0 {
+      %0 = kgen.closure.init()(%arg1: index) -> index {
+        lit.try "try0" {
+          lit.try.raise "try0"
+        } except {
+          %1 = kgen.closure.init()(%arg2: index) -> index {
+            kgen.return %arg2 : index
+          } : (), !kgen.closure<@thin, "fn3" trivial>
+          kgen.return %arg1 : index
+        } else {
+          kgen.unreachable
+        }
+        kgen.return %arg1 : index
+      } : (), !kgen.closure<@thin, "fn1" trivial>
+      kgen.return
+    } else {
+      %0 = kgen.closure.init()(%arg1: index) -> index {
+        kgen.return %arg1 : index
+      } : (), !kgen.closure<@thin, "fn2" trivial>
+      kgen.return
+    }
+    kgen.return
+  }
+}
