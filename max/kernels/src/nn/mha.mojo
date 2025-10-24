@@ -1494,7 +1494,7 @@ fn mha[
                 num_keys,
                 Int(start_pos),
             )
-            attention.prefill()
+            attention.mha_prefill()
     else:
         return CompilationTarget.unsupported_target_error[operation="mha"]()
 
@@ -3147,7 +3147,7 @@ fn mha_decoding[
             num_keys,
             0,
         )
-        attention.decoding(
+        attention.mha_decoding(
             exp_sum_batch_ptr,
             qk_max_batch_ptr,
             num_partitions,

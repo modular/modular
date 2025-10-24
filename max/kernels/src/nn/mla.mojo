@@ -616,7 +616,7 @@ fn mla_decoding[
             num_keys,
             0,
         )
-        attention.decoding(
+        attention.mla_decoding(
             exp_sum_batch_ptr,
             qk_max_batch_ptr,
             num_partitions,

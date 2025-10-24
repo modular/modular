@@ -12,70 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, recip
-from math.constants import log2e
 from sys import simd_width_of
-from sys.info import _cdna_4_or_newer
-from sys.intrinsics import readfirstlane
 
-from algorithm.functional import unswitch
-from gpu import (
-    WARP_SIZE,
-    barrier,
-    block_idx,
-    lane_id,
-    thread_idx,
-)
-from gpu import warp_id as get_warp_id
-from gpu.memory import AddressSpace
-from gpu.sync import (
-    AMDScheduleBarrierMask,
-    schedule_barrier,
-)
-from memory import AddressSpace as BaseAddressSpace
+from gpu import barrier, block_idx, lane_id
 from layout import IntTuple, Layout, LayoutTensor
-from layout.layout import blocked_product
-from layout._utils import idx2crd
-
-from layout.element import Element
-from layout.layout_tensor import (
-    LayoutTensorIter,
-    ThreadScope,
-    copy_local_to_shared,
-    copy_dram_to_local,
-    copy_local_to_dram,
-)
 from layout.runtime_layout import RuntimeLayout
-from layout.runtime_tuple import RuntimeTuple
-from layout.swizzle import Swizzle
-from layout.tensor_core import (
-    TensorCore,
-    get_mma_shape,
-    num_matrix_reg,
-    TiledTensorCore,
-)
-from layout.int_tuple import UNKNOWN_VALUE
-from memory import bitcast, stack_allocation
-from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
-from nn.mha_utils import (
-    MHAConfig,
-    _kernel_mask,
-    get_start_and_end_for_partitions,
-)
-from nn.softmax import (
-    _online_softmax_iter_for_mma_output,
-    softmax,
-)
-from utils import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf
-from .mha_gfx942 import (
-    Attention,
-    AttentionConfig,
-    MHAAttentionConfig,
-    KBuffer,
-    VBufferTransposeLoads,
-)
+from nn.mha_utils import MHAConfig, get_start_and_end_for_partitions
+
+from utils import IndexList
+from utils.numerics import get_accum_type
+
+from .attention import AttentionConfig
+from .buffers import KBuffer, VBufferTransposeLoads
+from .mha_gfx942 import Attention, MHAAttentionConfig
 
 
 @fieldwise_init
@@ -292,3 +242,12 @@ __extension Attention:
         self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
 
         self.store_output()
+
+    @always_inline
+    fn mla_decoding(
+        mut self,
+        exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
+        qk_max_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
+        num_partitions: Int,
+    ):
+        self.mha_decoding(exp_sum_ptr, qk_max_ptr, num_partitions)
