@@ -20,7 +20,7 @@ from collections import Set
 from builtin._location import __call_location, _SourceLocation
 from compile.reflection import get_linkage_name
 from sys.intrinsics import _type_is_eq
-from utils import Variant
+from sys import argv
 
 
 fn _get_test_func_name[
@@ -335,7 +335,7 @@ struct _Test(Copyable & Movable):
     var name: String
 
 
-@explicit_destroy("TestSuite must be destroyed via `run()` or `disable()`")
+@explicit_destroy("TestSuite must be destroyed via `run()`")
 struct TestSuite(Movable):
     """A suite of tests to run.
 
@@ -382,18 +382,33 @@ struct TestSuite(Movable):
     var skip_list: Set[String]
     """The list of tests to skip in this suite."""
 
+    var allow_list: Optional[Set[String]]
+    """The list of tests to allow in this suite."""
+
+    var cli_args: List[StaticString]
+    """The raw command line arguments passed to the test suite."""
+
     @always_inline
-    fn __init__(out self, *, location: Optional[_SourceLocation] = None):
+    fn __init__(
+        out self,
+        *,
+        location: Optional[_SourceLocation] = None,
+        var cli_args: Optional[List[StaticString]] = None,
+    ):
         """Create a new test suite.
 
         Args:
             location: The location of the test suite (defaults to
                 `__call_location`).
+            cli_args: The command line arguments to pass to the test suite
+                (defaults to `sys.argv()`).
         """
         self.tests = List[_Test]()
         self.location = location.or_else(__call_location())
         # TODO: would be better if these were StaticString
         self.skip_list = Set[String]()
+        self.allow_list = None  # None means no allow list specified.
+        self.cli_args = cli_args.or_else(List[StaticString](argv()))
 
     fn _register_tests[test_funcs: Tuple, /](mut self):
         """Internal function to prevent all registrations from being inlined."""
@@ -418,7 +433,11 @@ struct TestSuite(Movable):
     @staticmethod
     fn discover_tests[
         test_funcs: Tuple, /
-    ](*, location: Optional[_SourceLocation] = None) -> Self:
+    ](
+        *,
+        location: Optional[_SourceLocation] = None,
+        var cli_args: Optional[List[StaticString]] = None,
+    ) -> Self:
         """Discover tests from the given list of functions, and register them.
 
         Parameters:
@@ -428,12 +447,16 @@ struct TestSuite(Movable):
         Args:
             location: The location of the test suite (defaults to
                 `__call_location`).
+            cli_args: The command line arguments to pass to the test suite
+                (defaults to `sys.argv()`).
 
         Returns:
             A new TestSuite with all discovered tests registered.
         """
 
-        var suite = Self(location=location.or_else(__call_location()))
+        var suite = Self(
+            location=location.or_else(__call_location()), cli_args=cli_args^
+        )
         suite._register_tests[test_funcs]()
         return suite^
 
@@ -469,17 +492,82 @@ struct TestSuite(Movable):
                 return
         raise Error("test not found in suite: ", _get_test_func_name[f]())
 
-    fn _should_skip(self, test: _Test) -> Bool:
-        return test.name in self.skip_list
+    fn _parse_filter_lists(mut self) raises:
+        # TODO: We need a proper argument parsing library to do this right.
+        ref args = self.cli_args
+        var num_args = len(args)
+        if num_args <= 1:
+            return
 
-    fn generate_report(mut self) -> TestSuiteReport:
+        if args[1] == "--only":
+            self.allow_list = Set[String]()
+        elif args[1] == "--skip-all":
+            if num_args > 2:
+                raise Error("'--skip-all' does not take any arguments")
+            # --skip-all implies an empty allow list.
+            self.allow_list = Set[String]()
+            return
+        elif args[1] != "--skip":
+            raise Error(
+                "invalid argument: ",
+                args[1],
+                " (expected '--only' or '--skip')",
+            )
+
+        if num_args == 2:
+            raise Error("expected test name(s) after '--only' or '--skip'")
+
+        # TODO: would be better if this was StaticString
+        var discovered_tests = Set[String]()
+        for test in self.tests:
+            discovered_tests.add(test.name)
+
+        for idx in range(2, num_args):
+            var arg = args[idx]
+            if arg not in discovered_tests:
+                raise Error(
+                    "explicitly ",
+                    "allowed" if self.allow_list else "skipped",
+                    " test not found in suite: ",
+                    arg,
+                )
+            if self.allow_list:
+                self.allow_list[].add(arg)
+            else:
+                self.skip_list.add(arg)
+
+    fn _should_skip(self, test: _Test) -> Bool:
+        if test.name in self.skip_list:
+            return True
+        if not self.allow_list:
+            return False
+        # SAFETY: We know that `self.allow_list` is not `None` here.
+        return test.name not in self.allow_list.unsafe_value()
+
+    fn generate_report(
+        mut self, skip_all: Bool = False
+    ) raises -> TestSuiteReport:
         """Runs the test suite and generates a report.
+
+        Args:
+            skip_all: Only collect tests, but don't execute them (defaults to
+                `False`).
+
+        Raises:
+            If an error occurs during test collection.
 
         Returns:
             A report containing the results of all tests.
         """
-        var reports = List[TestReport](capacity=len(self.tests))
 
+        # We call `_parse_filter_lists` even if `skip_all` is true to make sure
+        # CLI arguments are parsed and checked. We should probably refactor this
+        # when we have a proper argument parsing library.
+        self._parse_filter_lists()
+        if skip_all:
+            self.allow_list = Set[String]()
+
+        var reports = List[TestReport](capacity=len(self.tests))
         for test in self.tests:
             if self._should_skip(test):
                 reports.append(TestReport.skipped(name=test.name))
@@ -507,30 +595,21 @@ struct TestSuite(Movable):
 
         return TestSuiteReport(reports=reports^, location=self.location)
 
-    fn run(deinit self, *, quiet: Bool = False) raises:
+    fn run(deinit self, *, quiet: Bool = False, skip_all: Bool = False) raises:
         """Runs the test suite and prints the results to the console.
 
         Args:
             quiet: Suppresses printing the report when the suite does not fail
                 (defaults to `False`).
+            skip_all: Only collect tests, but don't execute them (defaults to
+                `False`).
 
         Raises:
-            An error if a test in the test suite fails.
+            If a test in the test suite fails or if an error occurs during test
+            collection.
         """
-        var report = self.generate_report()
+        var report = self.generate_report(skip_all=skip_all)
         if report.failures > 0:
             raise Error(report)
-        if not quiet:
-            print(report)
-
-    fn disable(deinit self, *, quiet: Bool = False):
-        """Disables the test suite by skipping all tests.
-
-        Args:
-            quiet: Suppresses printing the report (defaults to `False`).
-        """
-        for test in self.tests:
-            self.skip_list.add(test.name)
-        var report = self.generate_report()
         if not quiet:
             print(report)

@@ -171,6 +171,24 @@ what we publish.
 - `TestSuite` now allows explicitly skipping registered tests using the
   `TestSuite.skip` API.
 
+- `TestSuite` now allows basic control from CLI arguments. Tests can be skipped
+  from the CLI by passing test function names after a `--skip` flag, e.g.
+
+  ```console
+  mojo run test_my_stuff.mojo --skip test_currently_failing test_also_failing
+  ```
+
+  Similarly, the `--only` flag enables the specification of an allowlist, e.g.
+  the following will skip any other registered test cases:
+
+  ```console
+  mojo run test_my_stuff.mojo --only test_only_this test_this_as_well
+  ```
+
+  The `--skip-all` flag will skip all registered test cases in the suite. Note
+  that `--only` respects skipped tests, i.e. it does not run tests that are
+  skipped using `TestSuite.skip`.
+
 - `Codepoint` now conforms to `Comparable` adding `__le__`, `__lt__`, `__ge__`,
   and `__gt__` implementations.
 

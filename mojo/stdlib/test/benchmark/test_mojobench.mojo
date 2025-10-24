@@ -94,4 +94,8 @@ def test_mojobench():
 
 
 def main():
-    TestSuite.discover_tests[__functions_in_module()]().run()
+    # NOTE: we pass an empty list since the benchmark infra also tries to parse
+    # the arguments for its own purposes.
+    TestSuite.discover_tests[__functions_in_module()](
+        cli_args=List[StaticString]()
+    ).run()
