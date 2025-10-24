@@ -15,7 +15,8 @@ kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !
   }
 }
 
-// CHECK: kgen.generator @foo_fn<C>(%arg0: !kgen.pointer<none> loc({{.*}}) read_mem) {
+// CHECK: kgen.generator @foo_fn<CAPTURES>(%arg0: !kgen.pointer<none> loc({{.*}}) read_mem) {
+// CHECK-NEXT:  kgen.param.declare C = <CAPTURES>
 // CHECK-NEXT:   kgen.return loc(#loc
 // CHECK-NEXT: } loc(#loc
 kgen.generator @foo<C>() {
