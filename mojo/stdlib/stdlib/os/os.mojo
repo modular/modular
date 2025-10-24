@@ -137,7 +137,9 @@ struct _DirHandle:
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
                 ptr=name_ptr,
-                length=_unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE),
+                length=Int(
+                    _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
+                ),
             )
             if name_str == "." or name_str == "..":
                 continue
@@ -163,7 +165,9 @@ struct _DirHandle:
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
                 ptr=name_ptr,
-                length=_unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE),
+                length=Int(
+                    _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)
+                ),
             )
             if name_str == "." or name_str == "..":
                 continue

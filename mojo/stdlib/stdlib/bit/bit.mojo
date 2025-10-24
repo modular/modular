@@ -377,7 +377,7 @@ fn log2_floor(val: UInt) -> UInt:
         The floor of the base-2 logarithm of the input value, which is equal to
         the position of the highest set bit. Returns UInt.MAX if val is 0.
     """
-    return UInt(bit_width_of[UInt]() - count_leading_zeros(val) - 1)
+    return UInt(bit_width_of[UInt]() - count_leading_zeros(Int(val)) - 1)
 
 
 @always_inline

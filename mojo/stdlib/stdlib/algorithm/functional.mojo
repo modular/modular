@@ -1685,7 +1685,7 @@ fn _elementwise_impl_gpu[
 
             @parameter
             if handle_uneven_simd:
-                if start_indices[rank - 1] + simd_width >= shape[rank - 1]:
+                if start_indices[rank - 1] + Int(simd_width) >= shape[rank - 1]:
 
                     @parameter
                     for off in range(Int(simd_width)):
@@ -1715,7 +1715,7 @@ fn _elementwise_impl_gpu[
         if PDLLevel() == PDLLevel.OVERLAP_AT_END:
             launch_dependent_grids()
 
-    if shape[rank - 1] % simd_width == 0:
+    if shape[rank - 1] % Int(simd_width) == 0:
         alias kernel = _elementwise_gpu_kernel[
             block_size = UInt(block_size), handle_uneven_simd=False
         ]

@@ -302,7 +302,7 @@ struct Error(
             resulting StringSlice is given an ImmutableAnyOrigin.
         """
         return StringSlice[ImmutableAnyOrigin](
-            ptr=self.data, length=UInt(self.byte_length())
+            ptr=self.data, length=self.byte_length()
         )
 
     fn get_stack_trace(self) -> StackTrace:

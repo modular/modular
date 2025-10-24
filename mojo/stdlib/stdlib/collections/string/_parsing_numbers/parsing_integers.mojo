@@ -69,7 +69,7 @@ fn to_integer(
     for i in range(CONTAINER_SIZE):
         if not (Byte(ord("0")) <= std_x_ptr[i] <= Byte(ord("9"))):
             var num_str = StringSlice(
-                ptr=std_x_ptr, length=UInt(len(standardized_x))
+                ptr=std_x_ptr, length=len(standardized_x)
             ).lstrip("0")
 
             raise Error(
@@ -93,7 +93,7 @@ fn to_integer(
     )
     if too_large:
         var num_str = StringSlice(
-            ptr=std_x_ptr, length=UInt(len(standardized_x))
+            ptr=std_x_ptr, length=len(standardized_x)
         ).lstrip("0")
         raise Error(
             "The string is too large to be converted to an integer: '",

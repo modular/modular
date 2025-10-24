@@ -206,7 +206,7 @@ struct _WriteBufferHeap(Writable, Writer):
             args[i].write_to(self)
 
     fn write_to(self, mut writer: Some[Writer]):
-        writer.write_bytes(Span(ptr=self.data, length=UInt(self.pos)))
+        writer.write_bytes(Span(ptr=self.data, length=self.pos))
 
     fn nul_terminate(mut self):
         if self.pos + 1 > HEAP_BUFFER_BYTES:
@@ -248,7 +248,7 @@ struct _WriteBufferStack[
 
     fn flush(mut self):
         self.writer[].write_bytes(
-            Span(ptr=self.data.unsafe_ptr(), length=UInt(self.pos))
+            Span(ptr=self.data.unsafe_ptr(), length=self.pos)
         )
         self.pos = 0
 

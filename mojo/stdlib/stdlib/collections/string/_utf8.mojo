@@ -252,7 +252,7 @@ fn _is_utf8_continuation_byte[
 
 @always_inline
 fn _count_utf8_continuation_bytes(span: Span[Byte]) -> Int:
-    return span.count[func=_is_utf8_continuation_byte]()
+    return Int(span.count[func=_is_utf8_continuation_byte]())
 
 
 @always_inline

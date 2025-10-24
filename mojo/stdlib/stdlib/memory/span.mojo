@@ -224,7 +224,7 @@ struct Span[
         debug_assert(step == 1, "Slice step must be 1")
 
         return Self(
-            ptr=(self._data + start), length=UInt(len(range(start, end, step)))
+            ptr=(self._data + start), length=len(range(start, end, step))
         )
 
     @always_inline
@@ -576,7 +576,7 @@ struct Span[
             If a or b are larger than the length of the span.
         """
         var length = UInt(len(self))
-        if a > length or b > length:
+        if a > Int(length) or b > Int(length):
             raise Error(
                 "index out of bounds (length: ",
                 length,
@@ -613,7 +613,7 @@ struct Span[
             ptr = self._data.unsafe_mut_cast[result.mut]().unsafe_origin_cast[
                 result.origin
             ](),
-            length = UInt(self._len),
+            length = self._len,
         }
 
     fn reverse[
@@ -782,4 +782,4 @@ struct Span[
             0 <= offset + length <= len(self),
             "subspan out of bounds.",
         )
-        return Self(ptr=self._data + offset, length=UInt(length))
+        return Self(ptr=self._data + offset, length=length)

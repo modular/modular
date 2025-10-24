@@ -213,7 +213,7 @@ struct CodepointSliceIter[
             # SAFETY: Will not read out of bounds because `_slice` is guaranteed
             #   to contain valid UTF-8.
             var curr_ptr = self._slice.unsafe_ptr()
-            var byte_len = _utf8_first_byte_sequence_length(curr_ptr[])
+            var byte_len = Int(_utf8_first_byte_sequence_length(curr_ptr[]))
             return StringSlice[origin](ptr=curr_ptr, length=byte_len)
         else:
             return None
@@ -534,7 +534,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var ptr = UnsafePointer[mut=False, origin=StaticConstantOrigin](
             __mlir_op.`pop.string.address`(_kgen)
         ).bitcast[Byte]()
-        self._slice = {ptr = ptr, length = UInt(length)}
+        self._slice = {ptr = ptr, length = length}
 
     @always_inline
     @implicit
@@ -575,7 +575,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             ptr=unsafe_from_utf8.unsafe_ptr().address_space_cast[
                 Span[Byte, origin].address_space
             ](),
-            length=UInt(unsafe_from_utf8.__len__()),
+            length=unsafe_from_utf8.__len__(),
         )
 
     fn __init__(
@@ -599,7 +599,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         var byte_slice = Span(
             ptr=unsafe_from_utf8_ptr,
-            length=_unsafe_strlen(unsafe_from_utf8_ptr),
+            length=Int(_unsafe_strlen(unsafe_from_utf8_ptr)),
         )
         self = Self(unsafe_from_utf8=byte_slice)
 
@@ -706,7 +706,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         var len = self.byte_length()
         var result = String(
-            unsafe_uninit_length=UInt(len)
+            unsafe_uninit_length=len
         )  # TODO: make `unsafe_uninit_length` an `Int`
         memcpy(dest=result.unsafe_ptr_mut(), src=self.unsafe_ptr(), count=len)
         return result^
@@ -814,9 +814,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Args:
             hasher: The hasher instance.
         """
-        hasher._update_with_bytes(
-            Span(ptr=self.unsafe_ptr(), length=UInt(len(self)))
-        )
+        hasher._update_with_bytes(Span(ptr=self.unsafe_ptr(), length=len(self)))
 
     fn __fspath__(self) -> String:
         """Return the file system path representation of this string.
@@ -1185,7 +1183,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             ptr = self.unsafe_ptr()
             .unsafe_mut_cast[result.mut]()
             .unsafe_origin_cast[result.origin](),
-            length = UInt(len(self)),
+            length = len(self),
         }
 
     # ===------------------------------------------------------------------===#
@@ -2157,7 +2155,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                     if is_r_n:  # the line was already appended
                         line_start = line_end
                         continue
-                var s = Self.Immutable(ptr=ptr + line_start, length=str_len)
+                var s = Self.Immutable(
+                    ptr=ptr + line_start, length=Int(str_len)
+                )
                 output.append(s)
                 line_start = line_end
 
@@ -2796,7 +2796,7 @@ fn _split[
         # until the start of the whitespace which was already appended
         if lhs == str_byte_len:
             break
-        rhs = lhs + _utf8_first_byte_sequence_length(ptr[lhs])
+        rhs = lhs + Int(_utf8_first_byte_sequence_length(ptr[lhs]))
         for s in _build_slice(ptr, rhs, str_byte_len).codepoint_slices():
             if s.isspace[single_character=True]():
                 break

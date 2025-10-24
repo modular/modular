@@ -1398,5 +1398,7 @@ fn permlane_shuffle[
 
     @parameter
     for i in range(simd_width):
-        out[i] = permlane_swap[stride](val[i], val[i])[(lane_group + 1) % 2]
+        out[i] = permlane_swap[stride](val[i], val[i])[
+            Int((lane_group + 1) % 2)
+        ]
     return out

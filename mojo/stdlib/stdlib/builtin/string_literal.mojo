@@ -371,7 +371,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         #   guaranteed to be valid.
         return StaticString(
             ptr=self.unsafe_ptr(),
-            length=UInt(self.byte_length()),
+            length=self.byte_length(),
         )
 
     @always_inline("nodebug")
@@ -384,7 +384,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
 
         return Span[Byte, StaticConstantOrigin](
-            ptr=self.unsafe_ptr(), length=UInt(self.byte_length())
+            ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
     fn write_to(self, mut writer: Some[Writer]):

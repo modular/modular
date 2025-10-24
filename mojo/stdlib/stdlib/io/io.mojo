@@ -153,7 +153,7 @@ struct _fdopen[mode: StaticString = "a"]:
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice[buffer.origin](ptr=buffer, length=UInt(bytes_read - 1))
+            StringSlice[buffer.origin](ptr=buffer, length=bytes_read - 1)
         )
         # Explicitly free the buffer using free() instead of the Mojo allocator.
         libc.free(buffer.bitcast[NoneType]())

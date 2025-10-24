@@ -279,7 +279,7 @@ fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
 
     # We wrote the data directly into the String buffer
     # now we need to figure out the length
-    string.set_byte_length(_unsafe_strlen(string._ptr_or_data))
+    string.set_byte_length(Int(_unsafe_strlen(string._ptr_or_data)))
     string._set_nul_terminated()
 
     return string^
@@ -707,7 +707,7 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     while j < len(bytes):
         if bytes[j] == ord("$") and j + 1 < len(bytes):
             if not buf:
-                buf.reserve(new_capacity=UInt(2 * len(bytes)))
+                buf.reserve(new_capacity=2 * len(bytes))
             buf.write_bytes(bytes[i:j])
 
             var name, length = _parse_variable_name(bytes[j + 1 :])

@@ -815,7 +815,7 @@ struct HostBuffer[dtype: DType](
             ptr = self._host_ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[
                 origin
             ](),
-            length = UInt(len(self)),
+            length = len(self),
         }
 
 
@@ -2755,7 +2755,7 @@ struct DeviceFunction[
                 alias actual_arg_type = Ts[i]
                 var first_word_addr = UnsafePointer(
                     to=translated_args.unsafe_ptr()[
-                        translated_arg_offset + extra_align
+                        translated_arg_offset + Int(extra_align)
                     ]
                 ).bitcast[NoneType]()
                 args[i]._to_device_type(first_word_addr)

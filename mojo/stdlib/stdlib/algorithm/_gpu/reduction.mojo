@@ -140,7 +140,7 @@ fn block_reduce[
         @parameter
         for i in range(num_reductions):
             last_accum[i] = shared.load[width=simd_width](
-                (num_reductions * lane_id() + i) * simd_width
+                (num_reductions * Int(lane_id()) + i) * simd_width
             )
     else:
 

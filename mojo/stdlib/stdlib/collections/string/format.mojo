@@ -200,7 +200,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
         )
         var fmt_len = fmt_src.byte_length()
 
-        var res = String(capacity=UInt(fmt_len + size_estimation))
+        var res = String(capacity=fmt_len + size_estimation)
         var offset = 0
         var ptr = fmt_src.unsafe_ptr()
 

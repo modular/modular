@@ -73,10 +73,10 @@ fn load_matrix_a[
     var a23_col = group_lane_id + 4
 
     return SIMD[DType.float32, 4](
-        a_ptr[(tile_row + a02_row) * ldm + (tile_col + a01_col)],
-        a_ptr[(tile_row + a13_row) * ldm + (tile_col + a01_col)],
-        a_ptr[(tile_row + a02_row) * ldm + (tile_col + a23_col)],
-        a_ptr[(tile_row + a13_row) * ldm + (tile_col + a23_col)],
+        a_ptr[(tile_row + Int(a02_row)) * ldm + (tile_col + Int(a01_col))],
+        a_ptr[(tile_row + Int(a13_row)) * ldm + (tile_col + Int(a01_col))],
+        a_ptr[(tile_row + Int(a02_row)) * ldm + (tile_col + Int(a23_col))],
+        a_ptr[(tile_row + Int(a13_row)) * ldm + (tile_col + Int(a23_col))],
     )
 
 
@@ -121,10 +121,10 @@ fn load_matrix_a[
     var a3_col = (group_lane_id * 2) + (3 & 0x1)
 
     return SIMD[DType.float16, 4](
-        a_ptr[(tile_row + a01_row) * ldm + (tile_col + a0_col)],
-        a_ptr[(tile_row + a01_row) * ldm + (tile_col + a1_col)],
-        a_ptr[(tile_row + a23_row) * ldm + (tile_col + a2_col)],
-        a_ptr[(tile_row + a23_row) * ldm + (tile_col + a3_col)],
+        a_ptr[(tile_row + Int(a01_row)) * ldm + (tile_col + Int(a0_col))],
+        a_ptr[(tile_row + Int(a01_row)) * ldm + (tile_col + Int(a1_col))],
+        a_ptr[(tile_row + Int(a23_row)) * ldm + (tile_col + Int(a2_col))],
+        a_ptr[(tile_row + Int(a23_row)) * ldm + (tile_col + Int(a3_col))],
     )
 
 
@@ -162,12 +162,12 @@ fn load_matrix_a[
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
-        var a01_row = group_id
-        var a0_col = (group_lane_id * 2) + (0 & 0x1)
-        var a1_col = (group_lane_id * 2) + (1 & 0x1)
-        var a23_row = group_id + 8
-        var a2_col = (group_lane_id * 2) + (2 & 0x1)
-        var a3_col = (group_lane_id * 2) + (3 & 0x1)
+        var a01_row = Int(group_id)
+        var a0_col = Int((group_lane_id * 2) + (0 & 0x1))
+        var a1_col = Int((group_lane_id * 2) + (1 & 0x1))
+        var a23_row = Int(group_id + 8)
+        var a2_col = Int((group_lane_id * 2) + (2 & 0x1))
+        var a3_col = Int((group_lane_id * 2) + (3 & 0x1))
 
         return SIMD[DType.bfloat16, k // 2](
             a_ptr[(tile_row + a01_row) * ldm + (tile_col + a0_col)],
@@ -180,17 +180,17 @@ fn load_matrix_a[
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
-        var a_row_0 = group_id
-        var a_row_1 = group_id + 8
+        var a_row_0 = Int(group_id)
+        var a_row_1 = Int(group_id + 8)
 
-        var a_col_0 = (group_lane_id * 2) + (0 & 0x1)
-        var a_col_1 = (group_lane_id * 2) + (1 & 0x1)
-        var a_col_2 = (group_lane_id * 2) + (2 & 0x1)
-        var a_col_3 = (group_lane_id * 2) + (3 & 0x1)
-        var a_col_4 = (group_lane_id * 2) + (4 & 0x1) + 8
-        var a_col_5 = (group_lane_id * 2) + (5 & 0x1) + 8
-        var a_col_6 = (group_lane_id * 2) + (6 & 0x1) + 8
-        var a_col_7 = (group_lane_id * 2) + (7 & 0x1) + 8
+        var a_col_0 = Int((group_lane_id * 2) + (0 & 0x1))
+        var a_col_1 = Int((group_lane_id * 2) + (1 & 0x1))
+        var a_col_2 = Int((group_lane_id * 2) + (2 & 0x1))
+        var a_col_3 = Int((group_lane_id * 2) + (3 & 0x1))
+        var a_col_4 = Int((group_lane_id * 2) + (4 & 0x1) + 8)
+        var a_col_5 = Int((group_lane_id * 2) + (5 & 0x1) + 8)
+        var a_col_6 = Int((group_lane_id * 2) + (6 & 0x1) + 8)
+        var a_col_7 = Int((group_lane_id * 2) + (7 & 0x1) + 8)
 
         var a = SIMD[DType.bfloat16, k // 2]()
         a[0] = a_ptr[(tile_row + a_row_0) * ldm + (tile_col + a_col_0)]
@@ -238,7 +238,7 @@ fn load_matrix_a_amd[
     var lane = lane_id()
     var thread_x = lane & 15
     var thread_y = lane >> 4
-    return a_ptr[ldm * (tile_row + thread_x) + tile_col + thread_y]
+    return a_ptr[ldm * (tile_row + Int(thread_x)) + tile_col + Int(thread_y)]
 
 
 @always_inline
@@ -282,7 +282,10 @@ fn load_matrix_a_amd[
         @parameter
         for i in range(4):
             var a_idx = (
-                ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
+                ldm * (tile_row + Int(thread_x))
+                + tile_col
+                + i
+                + 4 * Int(thread_y)
             )
             a[i] = a_ptr[a_idx]
 
@@ -302,9 +305,9 @@ fn load_matrix_a_amd[
             # consecutive registers take consecutive columns
             # groups of 16 lanes cover each matrix in batch
             var a_idx = (
-                ldm * (tile_row + thread_x)
+                ldm * (tile_row + Int(thread_x))
                 + (tile_col + i)
-                + thread_y * batchStrideA
+                + Int(thread_y * batchStrideA)
             )
             a[i] = a_ptr[a_idx]
 
@@ -351,7 +354,10 @@ fn load_matrix_a_amd[
         @parameter
         for i in range(4):
             var a_idx = (
-                ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
+                ldm * (tile_row + Int(thread_x))
+                + tile_col
+                + i
+                + 4 * Int(thread_y)
             )
             a[i] = a_ptr[a_idx]
 
@@ -371,9 +377,9 @@ fn load_matrix_a_amd[
             # consecutive registers take consecutive columns
             # groups of 16 lanes cover each matrix in batch
             var a_idx = (
-                ldm * (tile_row + thread_x)
+                ldm * (tile_row + Int(thread_x))
                 + (tile_col + i)
-                + thread_y * batchStrideA
+                + Int(thread_y * batchStrideA)
             )
             a[i] = a_ptr[a_idx]
 
@@ -413,9 +419,9 @@ fn load_matrix_b[
     var group_id = lane_id() >> 2
     var group_lane_id = lane_id() % 4
 
-    var b0_row = group_lane_id
-    var b01_col = group_id
-    var b1_row = group_lane_id + 4
+    var b0_row = Int(group_lane_id)
+    var b01_col = Int(group_id)
+    var b1_row = Int(group_lane_id + 4)
 
     return SIMD[DType.float32, 2](
         b_ptr[(tile_row + b0_row) * ldm + (tile_col + b01_col)],
@@ -456,9 +462,9 @@ fn load_matrix_b[
     var group_id = lane_id() >> 2
     var group_lane_id = lane_id() % 4
 
-    var b0_row = (group_lane_id * 2) + (0 & 0x1)
-    var b01_col = group_id
-    var b1_row = (group_lane_id * 2) + (1 & 0x1)
+    var b0_row = Int((group_lane_id * 2) + (0 & 0x1))
+    var b01_col = Int(group_id)
+    var b1_row = Int((group_lane_id * 2) + (1 & 0x1))
 
     return SIMD[DType.float16, 2](
         b_ptr[(tile_row + b0_row) * ldm + (tile_col + b01_col)],
@@ -500,9 +506,9 @@ fn load_matrix_b[
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
-        var b0_row = (group_lane_id * 2) + (0 & 0x1)
-        var b01_col = group_id
-        var b1_row = (group_lane_id * 2) + (1 & 0x1)
+        var b0_row = Int((group_lane_id * 2) + (0 & 0x1))
+        var b01_col = Int(group_id)
+        var b1_row = Int((group_lane_id * 2) + (1 & 0x1))
 
         return SIMD[DType.bfloat16, k // 4](
             b_ptr[(tile_row + b0_row) * ldm + (tile_col + b01_col)],
@@ -513,11 +519,11 @@ fn load_matrix_b[
         var group_id = lane_id() >> 2
         var group_lane_id = lane_id() % 4
 
-        var b_row_0 = (group_lane_id * 2) + (0 & 0x1)
-        var b_row_1 = (group_lane_id * 2) + (1 & 0x1)
-        var b_row_2 = (group_lane_id * 2) + (2 & 0x1) + 8
-        var b_row_3 = (group_lane_id * 2) + (3 & 0x1) + 8
-        var b_col = group_id
+        var b_row_0 = Int((group_lane_id * 2) + (0 & 0x1))
+        var b_row_1 = Int((group_lane_id * 2) + (1 & 0x1))
+        var b_row_2 = Int((group_lane_id * 2) + (2 & 0x1) + 8)
+        var b_row_3 = Int((group_lane_id * 2) + (3 & 0x1) + 8)
+        var b_col = Int(group_id)
 
         return SIMD[DType.bfloat16, k // 4](
             b_ptr[(tile_row + b_row_0) * ldm + (tile_col + b_col)],
@@ -556,7 +562,7 @@ fn load_matrix_b_amd[
     var lane = lane_id()
     var thread_x = lane & 15
     var thread_y = lane >> 4
-    return b_ptr[ldm * (tile_row + thread_y) + tile_col + thread_x]
+    return b_ptr[ldm * (tile_row + Int(thread_y)) + tile_col + Int(thread_x)]
 
 
 @always_inline
@@ -601,8 +607,8 @@ fn load_matrix_b_amd[
     @parameter
     if m == 16 and n == 16 and k == 16 and n_blocks == 1:
         var lane = lane_id()
-        var thread_x = lane & 15
-        var thread_y = lane >> 4
+        var thread_x = Int(lane & 15)
+        var thread_y = Int(lane >> 4)
 
         var b = SIMD[DType.float16, 4]()
 
@@ -618,7 +624,7 @@ fn load_matrix_b_amd[
         constrained[m == 4 and n == 4 and k == 4 and n_blocks == 16]()
         var lane = lane_id()
         # Implies 4, 16 block.
-        var thread_x = lane & 3
+        var thread_x = Int(lane & 3)
         var thread_y = lane >> 2
         var batchStrideB = tile_loops * k * ldm
         var b = SIMD[DType.float16, 4]()
@@ -629,7 +635,7 @@ fn load_matrix_b_amd[
                 tile_col
                 + thread_x
                 + (tile_row + i) * ldm
-                + thread_y * UInt(batchStrideB)
+                + Int(thread_y * UInt(batchStrideB))
             )
             b[i] = b_ptr[b_idx]
 
@@ -678,8 +684,8 @@ fn load_matrix_b_amd[
     @parameter
     if m == 16 and n == 16 and k == 16 and n_blocks == 1:
         var lane = lane_id()
-        var thread_x = lane & 15
-        var thread_y = lane >> 4
+        var thread_x = Int(lane & 15)
+        var thread_y = Int(lane >> 4)
 
         var b = SIMD[DType.bfloat16, 4]()
 
@@ -695,7 +701,7 @@ fn load_matrix_b_amd[
         constrained[m == 4 and n == 4 and k == 4 and n_blocks == 16]()
         var lane = lane_id()
         # Implies 4, 16 block.
-        var thread_x = lane & 3
+        var thread_x = Int(lane & 3)
         var thread_y = lane >> 2
         var batchStrideB = tile_loops * k * ldm
         var b = SIMD[DType.bfloat16, 4]()
@@ -706,7 +712,7 @@ fn load_matrix_b_amd[
                 tile_col
                 + thread_x
                 + (tile_row + i) * ldm
-                + thread_y * UInt(batchStrideB)
+                + Int(thread_y * UInt(batchStrideB))
             )
             b[i] = b_ptr[b_idx]
 
@@ -751,12 +757,12 @@ fn _store_matrix_d_nvidia[
     var group_id = lane_id() >> 2
     var group_lane_id = lane_id() % 4
 
-    var d01_row = group_id
-    var d0_col = (group_lane_id * 2) + (0 & 0x1)
-    var d1_col = (group_lane_id * 2) + (1 & 0x1)
-    var d23_row = group_id + 8
-    var d2_col = (group_lane_id * 2) + (2 & 0x1)
-    var d3_col = (group_lane_id * 2) + (3 & 0x1)
+    var d01_row = Int(group_id)
+    var d0_col = Int((group_lane_id * 2) + (0 & 0x1))
+    var d1_col = Int((group_lane_id * 2) + (1 & 0x1))
+    var d23_row = Int(group_id + 8)
+    var d2_col = Int((group_lane_id * 2) + (2 & 0x1))
+    var d3_col = Int((group_lane_id * 2) + (3 & 0x1))
 
     d_ptr[(tile_row + d01_row) * ldm + (tile_col + d0_col)] = d[0]
     d_ptr[(tile_row + d01_row) * ldm + (tile_col + d1_col)] = d[1]
@@ -803,7 +809,7 @@ fn _store_matrix_d_amd[
     if m == 4 and n == 4 and k == 4 and n_blocks == 16:
         var lane = lane_id()
         # Implies 4, 16 block.
-        var thread_x = lane & 3
+        var thread_x = Int(lane & 3)
         var thread_y = lane >> 2
         var batchStrideD = grid_dim.x * UInt(m) * UInt(ldm)
 
@@ -816,15 +822,15 @@ fn _store_matrix_d_amd[
                 tile_col
                 + thread_x
                 + (tile_row + i) * ldm
-                + thread_y * batchStrideD
+                + Int(thread_y * batchStrideD)
             )
             d_ptr[d_idx] = d[i]
 
     else:
         # TODO: Do we need to add constraints here?
         var lane = lane_id()
-        var thread_x = lane & 15
-        var thread_y = lane >> 4
+        var thread_x = Int(lane & 15)
+        var thread_y = Int(lane >> 4)
 
         @parameter
         for i in range(4):
