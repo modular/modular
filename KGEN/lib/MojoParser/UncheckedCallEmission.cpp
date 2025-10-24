@@ -280,8 +280,8 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     // This also lazy materializes cast to immutable that MBValue avoided.
     if (!refValueType.isMutableKnown(false) &&
         expectedRefType.isMutableKnown(false)) {
-      refValue = emitter.builder->create<RefImmutOp>(
-          operand.expr->getLocation(emitter), refValue);
+      refValue = RefImmutOp::create(
+          *emitter.builder, operand.expr->getLocation(emitter), refValue);
       refValueType = sugarCast<RefType>(refValue.getType());
     }
 
@@ -451,11 +451,11 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     // Check for a splat.
     if (!args.empty() &&
         llvm::all_of(args, [&](Value operand) { return operand == args[0]; })) {
-      argVal = SRValue(emitter.builder->create<POP::VariadicSplatOp>(
-          loc, expectedType, args[0], args.size()));
+      argVal = SRValue(POP::VariadicSplatOp::create(
+          *emitter.builder, loc, expectedType, args[0], args.size()));
     } else {
-      argVal = SRValue(emitter.builder->create<POP::VariadicCreateOp>(
-          loc, expectedType, args));
+      argVal = SRValue(POP::VariadicCreateOp::create(*emitter.builder, loc,
+                                                     expectedType, args));
     }
   } else {
     // Bundle them up into a VariadicPack instance.
@@ -464,8 +464,8 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     argVal = emitVariadicPackConstructor(
         variadicPackType, getCommonOrigin(), callExpr, emitter,
         [&](RefPackType adjustedPackType) -> CValue {
-          return SRValue(emitter.builder->create<RefPackCreateOp>(
-              loc, adjustedPackType, args));
+          return SRValue(RefPackCreateOp::create(*emitter.builder, loc,
+                                                 adjustedPackType, args));
         });
     if (!argVal)
       return failure();
@@ -858,8 +858,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // loaded.
     if (argValAndExpr.ir.isMValue()) {
       auto refVal = argValAndExpr.ir.getMValueReference();
-      return emitter.builder->create<RefLoadOp>(
-          argValAndExpr.expr->getLocation(emitter), refVal);
+      return RefLoadOp::create(
+          *emitter.builder, argValAndExpr.expr->getLocation(emitter), refVal);
     }
     assert(argValAndExpr.ir.isSValue() && "unknown irvalue");
     return argValAndExpr.ir.getSValueRegister();
@@ -871,8 +871,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
     // Drop mutability for a MBValue.
     if (result && !sugarCast<RefType>(result.getType()).isMutableKnown(false))
-      result = emitter.builder->create<RefImmutOp>(
-          argValAndExpr.expr->getLocation(emitter), result);
+      result = RefImmutOp::create(
+          *emitter.builder, argValAndExpr.expr->getLocation(emitter), result);
     return result;
   }
   case ArgConvention::Ref:
@@ -1754,8 +1754,8 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     if (calleeSig.isAsync()) {
       // If the callee is an async function, emit an async call. Then wrap the
       // `!co.routine<T>` result in a `Coroutine[T]` object.
-      auto call = builder->create<AsyncCallOp>(loc, target.get(),
-                                               implicitOrigins, callArgs);
+      auto call = AsyncCallOp::create(*builder, loc, target.get(),
+                                      implicitOrigins, callArgs);
       ASTType coroType = getBoundCoroutineType(
           getDeclScope(), callExpr, calleeSig,
           computeArgumentsOrigin(call, shared.cachedOriginFinder));
@@ -1774,8 +1774,8 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
         return {};
       }
     } else {
-      auto call = builder->create<CallOp>(loc, resultType, target.get(),
-                                          implicitOrigins, callArgs);
+      auto call = CallOp::create(*builder, loc, resultType, target.get(),
+                                 implicitOrigins, callArgs);
       callResult = SRValue(call.getResult(0));
 
       // If there are any callee-specific warnings to emit, do so after
@@ -1793,8 +1793,8 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     // If the callee isn't a PValue, it must be a dynamic callee.
     Value calleeVal = emitSRValue({callee, callExpr}, EC_CallCalleeValue);
     assert(calleeVal && "don't have a callee of expected type");
-    auto call = builder->create<CallIndirectOp>(loc, resultType, calleeVal,
-                                                implicitOrigins, callArgs);
+    auto call = CallIndirectOp::create(*builder, loc, resultType, calleeVal,
+                                       implicitOrigins, callArgs);
     callResult = SRValue(call.getResult(0));
   }
 

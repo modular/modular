@@ -367,8 +367,8 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
   // When we're in the LSP we may not fully body resolve the wrapper
   // functions. Add a EndFnOp with unresolved=True so we can still verify
   // cleanly in passes run by the check LIT pipeline.
-  OpBuilder::atBlockEnd(funcOp.getBody())
-      .create<EndFnOp>(funcOp.getLoc(), /*unresolved=*/true);
+  auto atBlockEndBuilder = OpBuilder::atBlockEnd(funcOp.getBody());
+  EndFnOp::create(atBlockEndBuilder, funcOp.getLoc(), /*unresolved=*/true);
 
   if (structDefinesMethod)
     funcOp.setDisabled(true);
@@ -733,8 +733,9 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(bool isMove) {
   // Add a unresolved EndFnOp to the end of the function. This makes the
   // function able to verify clean, even if we don't body or signature resolve
   // it.
-  OpBuilder::atBlockEnd(resultFn.getBody())
-      .create<EndFnOp>(resultFn.getLoc(), /*unresolved=*/true);
+  auto resultAtBlockEndBuilder = OpBuilder::atBlockEnd(resultFn.getBody());
+  EndFnOp::create(resultAtBlockEndBuilder, resultFn.getLoc(),
+                  /*unresolved=*/true);
   if (isMove) // Move constructors consume their 'self' arg.
     resultFn.setSelfDeinit(true);
 

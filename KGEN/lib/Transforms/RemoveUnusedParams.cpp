@@ -125,9 +125,6 @@ private:
         auto builder = OpBuilder::atBlockBegin(oldFunction.getBody());
         DebugInfo::KillOp::create(builder, firstValue.getLoc(),
                                   firstValue.getValueInfo());
-        OpBuilder::atBlockBegin(oldFunction.getBody())
-            .create<DebugInfo::KillOp>(firstValue.getLoc(),
-                                       firstValue.getValueInfo());
         for (Operation *value : debugValues)
           value->erase();
       }

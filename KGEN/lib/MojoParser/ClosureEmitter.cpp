@@ -1582,8 +1582,8 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
 
     // Return the allocated and populated impl.
     auto loc = topLevelCopyInit.getLoc();
-    Value erasedType = emitter.builder->create<POP::PointerBitcastOp>(
-        loc, opaquePtrType, target);
+    Value erasedType = POP::PointerBitcastOp::create(*emitter.builder, loc,
+                                                     opaquePtrType, target);
     emitter.emitNormalReturn(loc, erasedType);
     setMember(topLevelCopyInit, copyFieldAttr, topLevelTypes.copyFuncFieldType);
   }
@@ -2131,8 +2131,8 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
       if (auto refType = dyn_cast<RefType>(valueInParent.getType().mlirType)) {
         OriginType originType = refType.getOriginType();
         if (originType.isMutableKnown(false)) {
-          auto refImmutOp = emitter.builder->create<LIT::RefImmutOp>(
-              funcOp.getLoc(), valueInParent.getMlirValue());
+          auto refImmutOp = LIT::RefImmutOp::create(
+              *emitter.builder, funcOp.getLoc(), valueInParent.getMlirValue());
           captureValue = MBValue(refImmutOp->getResult(0));
         }
       }
@@ -2171,8 +2171,8 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
     if (auto refType = dyn_cast<RefType>(valueInParent.getType().mlirType)) {
       OriginType originType = refType.getOriginType();
       if (originType.isMutableKnown(true)) {
-        auto refImmutOp = emitter.builder->create<LIT::RefImmutOp>(
-            funcOp.getLoc(), valueInParent.getMlirValue());
+        auto refImmutOp = LIT::RefImmutOp::create(
+            *emitter.builder, funcOp.getLoc(), valueInParent.getMlirValue());
         captureValue = MBValue(refImmutOp->getResult(0));
       } else {
         captureValue = valueInParent;

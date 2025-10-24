@@ -58,8 +58,8 @@ CValue DiscardDLValue::emitStore(ASTExprAnd<CValue> value,
   // an ownership use to extend the origin of the value to here and disable
   // "unused value" warnings.
   if (auto mlirValue = value.ir.getMlirValue()) {
-    emitter.builder->create<OwnershipUseOp>(value.expr->getLocation(emitter),
-                                            mlirValue);
+    OwnershipUseOp::create(*emitter.builder, value.expr->getLocation(emitter),
+                           mlirValue);
     return value.ir;
   }
 
@@ -121,7 +121,7 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   // can use that directly.
   if (auto baseRef = loadVal.getIfMLValue()) {
     auto fieldPtr =
-        emitter.builder->create<RefStructGEROp>(loc, baseRef, getField());
+        RefStructGEROp::create(*emitter.builder, loc, baseRef, getField());
     emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
     // Done: no tmp, no __setitem__, in-place mutation via the ref.
     return MBValue(baseRef);
@@ -143,7 +143,7 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 
   // Store into the field.
   auto fieldPtr =
-      emitter.builder->create<RefStructGEROp>(loc, loadMR, getField());
+      RefStructGEROp::create(*emitter.builder, loc, loadMR, getField());
   emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
 
   // Store the whole result back, transferring ownership as an MRValue.
