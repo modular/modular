@@ -249,7 +249,7 @@ fn load_matrix_a_amd[
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.float16, 4]:
+) -> SIMD[DType.float16, 16 if m == 16 else 4]:
     """Loads a tile of matrix A from memory to registers for AMD FP16 tensor core operations.
 
     Parameters:
@@ -265,7 +265,7 @@ fn load_matrix_a_amd[
         ldm: Leading dimension of matrix A (stride between rows).
 
     Returns:
-        SIMD vector containing 4 FP16 values loaded from matrix A.
+        SIMD vector containing 16 FP16 values (for m=16) or 4 FP16 values (for m=4) loaded from matrix A.
 
     Constraints:
         The tile dimensions must be m=16, n=16, k=16 and n_blocks=1 or m=4, n=4, k=4 and n_blocks=16.
@@ -277,16 +277,15 @@ fn load_matrix_a_amd[
         var lane = lane_id()
         var thread_x = lane & 15
         var thread_y = lane >> 4
-        var a = SIMD[DType.float16, 4]()
+        # RDNA WMMA intrinsic requires 16 fp16 elements per lane (8 VGPRs)
+        var a = SIMD[DType.float16, 16]()
 
         @parameter
-        for i in range(4):
-            var a_idx = (
-                ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
-            )
+        for i in range(16):
+            var a_idx = ldm * (tile_row + thread_x) + tile_col + i
             a[i] = a_ptr[a_idx]
 
-        return a
+        return rebind[SIMD[DType.float16, 16 if m == 16 else 4]](a)
     else:
         constrained[m == 4 and n == 4 and k == 4 and n_blocks == 16]()
         var lane = lane_id()
@@ -308,7 +307,7 @@ fn load_matrix_a_amd[
             )
             a[i] = a_ptr[a_idx]
 
-        return a
+        return rebind[SIMD[DType.float16, 16 if m == 16 else 4]](a)
 
 
 @always_inline
@@ -319,7 +318,7 @@ fn load_matrix_a_amd[
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.bfloat16, 4]:
+) -> SIMD[DType.bfloat16, 16 if m == 16 else 4]:
     """Loads a tile of matrix A from memory to registers for AMD BF16 tensor core operations.
 
     Parameters:
@@ -335,7 +334,7 @@ fn load_matrix_a_amd[
         ldm: Leading dimension of matrix A (stride between rows).
 
     Returns:
-        SIMD vector containing 4 BF16 values loaded from matrix A.
+        SIMD vector containing 16 BF16 values (for m=16) or 4 BF16 values (for m=4) loaded from matrix A.
 
     Constraints:
         The tile dimensions must be m=16, n=16, k=16 and n_blocks=1 or m=4, n=4, k=4 and n_blocks=16.
@@ -346,16 +345,15 @@ fn load_matrix_a_amd[
         var lane = lane_id()
         var thread_x = lane & 15
         var thread_y = lane >> 4
-        var a = SIMD[DType.bfloat16, 4]()
+        # RDNA WMMA intrinsic requires 16 bf16 elements per lane (8 VGPRs)
+        var a = SIMD[DType.bfloat16, 16]()
 
         @parameter
-        for i in range(4):
-            var a_idx = (
-                ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
-            )
+        for i in range(16):
+            var a_idx = ldm * (tile_row + thread_x) + tile_col + i
             a[i] = a_ptr[a_idx]
 
-        return a
+        return rebind[SIMD[DType.bfloat16, 16 if m == 16 else 4]](a)
     else:
         constrained[m == 4 and n == 4 and k == 4 and n_blocks == 16]()
         var lane = lane_id()
@@ -377,7 +375,7 @@ fn load_matrix_a_amd[
             )
             a[i] = a_ptr[a_idx]
 
-        return a
+        return rebind[SIMD[DType.bfloat16, 16 if m == 16 else 4]](a)
 
 
 @always_inline
@@ -568,10 +566,10 @@ fn load_matrix_b_amd[
     tile_col: Int,
     ldm: Int,
     tile_loops: Int = 1,
-) -> SIMD[DType.float16, 4]:
+) -> SIMD[DType.float16, 16 if m == 16 else 4]:
     """Loads a tile of matrix B from memory to registers for AMD FP16 tensor core operations.
 
-    This function loads 4 consecutive FP16 values per thread from matrix B in a pattern
+    This function loads consecutive FP16 values per thread from matrix B in a pattern
     optimized for AMD GPU tensor core operations. Each thread loads values based on its
     position within the warp.
 
@@ -589,7 +587,7 @@ fn load_matrix_b_amd[
         tile_loops: Number of tile loops across matrix B's row dimension.
 
     Returns:
-        SIMD vector containing 4 FP16 values loaded from matrix B.
+        SIMD vector containing 16 FP16 values (for m=16) or 4 FP16 values (for m=4) loaded from matrix B.
 
     Performance:
 
@@ -604,16 +602,15 @@ fn load_matrix_b_amd[
         var thread_x = lane & 15
         var thread_y = lane >> 4
 
-        var b = SIMD[DType.float16, 4]()
+        # RDNA WMMA intrinsic requires 16 fp16 elements per lane (8 VGPRs)
+        var b = SIMD[DType.float16, 16]()
 
         @parameter
-        for i in range(4):
-            var b_idx = (
-                ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
-            )
+        for i in range(16):
+            var b_idx = ldm * (tile_row + i) + tile_col + thread_x
             b[i] = b_ptr[b_idx]
 
-        return b
+        return rebind[SIMD[DType.float16, 16 if m == 16 else 4]](b)
     else:
         constrained[m == 4 and n == 4 and k == 4 and n_blocks == 16]()
         var lane = lane_id()
@@ -633,7 +630,7 @@ fn load_matrix_b_amd[
             )
             b[i] = b_ptr[b_idx]
 
-        return b
+        return rebind[SIMD[DType.float16, 16 if m == 16 else 4]](b)
 
 
 @always_inline
@@ -645,10 +642,10 @@ fn load_matrix_b_amd[
     tile_col: Int,
     ldm: Int,
     tile_loops: Int = 1,
-) -> SIMD[DType.bfloat16, 4]:
+) -> SIMD[DType.bfloat16, 16 if m == 16 else 4]:
     """Loads a tile of matrix B from memory to registers for AMD BF16 tensor core operations.
 
-    This function loads 4 consecutive BF16 values per thread from matrix B in a pattern
+    This function loads consecutive BF16 values per thread from matrix B in a pattern
     optimized for AMD GPU tensor core operations. Each thread loads values based on its
     position within the warp.
 
@@ -666,7 +663,7 @@ fn load_matrix_b_amd[
         tile_loops: Number of tile loops across matrix B's row dimension.
 
     Returns:
-        SIMD vector containing 4 BF16 values loaded from matrix B.
+        SIMD vector containing 16 BF16 values (for m=16) or 4 BF16 values (for m=4) loaded from matrix B.
 
     Performance:
 
@@ -681,16 +678,15 @@ fn load_matrix_b_amd[
         var thread_x = lane & 15
         var thread_y = lane >> 4
 
-        var b = SIMD[DType.bfloat16, 4]()
+        # RDNA WMMA intrinsic requires 16 bf16 elements per lane (8 VGPRs)
+        var b = SIMD[DType.bfloat16, 16]()
 
         @parameter
-        for i in range(4):
-            var b_idx = (
-                ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
-            )
+        for i in range(16):
+            var b_idx = ldm * (tile_row + i) + tile_col + thread_x
             b[i] = b_ptr[b_idx]
 
-        return b
+        return rebind[SIMD[DType.bfloat16, 16 if m == 16 else 4]](b)
     else:
         constrained[m == 4 and n == 4 and k == 4 and n_blocks == 16]()
         var lane = lane_id()
@@ -710,7 +706,7 @@ fn load_matrix_b_amd[
             )
             b[i] = b_ptr[b_idx]
 
-        return b
+        return rebind[SIMD[DType.bfloat16, 16 if m == 16 else 4]](b)
 
 
 @always_inline
