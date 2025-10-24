@@ -15,7 +15,7 @@ from io.io import _printf
 
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
-from gpu.id import block_idx
+from gpu import block_idx
 from gpu.memory import (
     _GPUAddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,

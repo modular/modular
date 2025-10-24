@@ -13,7 +13,7 @@
 
 from gpu import NamedBarrierSemaphore
 from gpu.host import DeviceContext
-from gpu.id import block_idx, grid_dim, thread_idx
+from gpu import block_idx, grid_dim, thread_idx
 from testing import assert_equal
 
 alias NUM_BLOCKS = 32

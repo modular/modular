@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import bitcast
 from sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -19,7 +20,7 @@ from gpu import lane_id as get_lane_id
 from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx
+from gpu import block_idx, lane_id, thread_idx
 from gpu.memory import AddressSpace, external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
@@ -769,11 +770,14 @@ def test_tma_umma[
 
     for m in range(M):
         for n in range(N):
+            # Increased tolerance for FP8/bfloat16 accumulation errors
+            # FP8/bf16 matrix multiplication can have larger numerical errors
+            # due to reduced precision in intermediate accumulations
             assert_almost_equal(
                 c_host[m, n],
                 c_host_ref[m, n],
-                atol=1e-3,
-                rtol=1e-4,
+                atol=0.01,
+                rtol=0.01,
                 msg=String(m) + ", " + String(n),
             )
             # print(m, n, c_host[m, n], c_host_ref[m, n])

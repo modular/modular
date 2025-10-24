@@ -17,7 +17,7 @@ from os.atomic import Atomic
 import gpu.warp as warp
 from builtin.device_passable import DevicePassable
 from gpu.host.info import H100
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 from gpu.memory import AddressSpace
 from gpu.sync import barrier, named_barrier
 from nn.mha_fa3_utils import NullPointer, OptionalPointer

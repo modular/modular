@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, grid_dim, thread_idx
+from gpu import block_dim, block_idx, grid_dim, thread_idx
 
 
 # CHECK-LABEL: test_amd_dims

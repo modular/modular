@@ -10,241 +10,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Grid Dependent Control primitives for NVIDIA Hopper (SM90+) GPUs.
+"""GPU grid dependency control (deprecated - use `gpu.primitives.grid_controls` or `gpu`).
 
-This module provides low-level primitives for managing grid dependencies on NVIDIA
-Hopper architecture and newer GPUs. It enables efficient orchestration of multi-grid
-workloads by allowing grids to launch dependent grids and synchronize with them.
+This module is deprecated. For new code, import grid control operations from
+the `gpu` package or `gpu.primitives.grid_controls` module:
 
-The module includes functions that map directly to CUDA grid dependency control
-instructions, providing fine-grained control over grid execution order:
+```mojo
+# Deprecated:
+from gpu.grid_controls import PDL, PDLLevel, launch_dependent_grids
 
-- `launch_dependent_grids()`: Triggers execution of grids that depend on the
-  current grid
-- `wait_on_dependent_grids()`: Blocks until all dependent grids complete execution
+# Recommended (import from top-level gpu package):
+from gpu import PDL, PDLLevel, launch_dependent_grids
 
-These primitives are essential for implementing complex GPU execution pipelines where
-multiple kernels need to execute in a specific order with minimal overhead. They
-eliminate the need for host-side synchronization when orchestrating dependent GPU work.
+# Or import the module:
+from gpu.primitives import grid_controls
+```
+
+This module provides Hopper PDL (Programmable Distributed Launch) operations
+for controlling grid dependencies on NVIDIA GPUs.
 """
-from sys import env_get_int, has_nvidia_gpu_accelerator
 
-from .host.info import H100, GPUInfo, _accelerator_arch
-from .host.launch_attribute import (
-    LaunchAttribute,
-    LaunchAttributeID,
-    LaunchAttributeValue,
+# Re-export all symbols from primitives.grid_controls for backward compatibility
+from .primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
 )
-
-alias _SUPPORT_PDL_LAUNCH = _support_pdl_launch()
-
-
-@doc_private
-@always_inline("nodebug")
-fn _support_pdl_launch() -> Bool:
-    """Determines if programmatic dependency launch (PDL) is supported.
-
-    Checks if the current GPU supports PDL (Hopper SM90+ architecture).
-    Returns False for unsupported GPUs
-
-    Returns:
-        True if PDL is supported and enabled, False otherwise.
-    """
-
-    if not has_nvidia_gpu_accelerator():
-        return False
-
-    if GPUInfo.from_name[_accelerator_arch()]() < materialize[H100]():
-        return False
-
-    return True
-
-
-@doc_private
-@always_inline("nodebug")
-fn pdl_launch_attributes(
-    pdl_level: PDLLevel = PDLLevel(),
-) -> List[LaunchAttribute]:
-    """Returns launch attributes for programmatic dependency launch (PDL).
-
-    This function configures launch attributes to enable programmatic stream
-    serialization on supported GPUs. When PDL is enabled, it returns a list
-    containing a single launch attribute that enables grid dependency control.
-
-    Returns:
-        A list of launch attributes. Contains the PDL attribute if enabled,
-        otherwise returns an empty list.
-
-    Note:
-        - Only supported on NVIDIA SM90+ (Hopper architecture and newer) GPUs.
-        - When disabled, returns an empty list for compatibility with older GPUs.
-    """
-
-    if _SUPPORT_PDL_LAUNCH and pdl_level != PDLLevel.OFF:
-        return List[LaunchAttribute](
-            LaunchAttribute(
-                LaunchAttributeID.PROGRAMMATIC_STREAM_SERIALIZATION,
-                LaunchAttributeValue(True),
-            )
-        )
-    else:
-        return List[LaunchAttribute]()
-
-
-@always_inline("nodebug")
-fn launch_dependent_grids():
-    """Launches dependent grids that were previously configured to depend on the
-    current grid.
-
-    This function triggers the execution of dependent grids that have been configured
-    with a dependency on the current grid. It maps directly to the CUDA grid
-    dependency control instruction for launching dependent grids.
-
-    Note:
-        - Only supported on NVIDIA SM90+ (Hopper architecture and newer) GPUs.
-        - Must be called by all threads in a thread block to avoid undefined behavior.
-        - Typically used in multi-grid pipeline scenarios where one grid's completion
-          should trigger the execution of other grids.
-    """
-
-    @parameter
-    if _SUPPORT_PDL_LAUNCH:
-        alias kind_attr = __mlir_attr.`#nvvm.grid_dep_action launch_dependents`
-        __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
-
-
-@always_inline("nodebug")
-fn wait_on_dependent_grids():
-    """Waits for all dependent grids launched by this grid to complete execution.
-
-    This function blocks the calling grid until all dependent grids that were launched
-    by this grid have completed their execution. It provides a synchronization point
-    between parent and child grids in a multi-grid dependency chain.
-
-    Note:
-        - Only supported on NVIDIA SM90+ (Hopper architecture and newer) GPUs.
-        - Must be called by all threads in a thread block to avoid undefined behavior.
-        - Can be used to ensure dependent grid work is complete before proceeding
-          with subsequent operations in the parent grid.
-    """
-
-    @parameter
-    if _SUPPORT_PDL_LAUNCH:
-        alias kind_attr = __mlir_attr.`#nvvm.grid_dep_action wait`
-        __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
-
-
-@register_passable("trivial")
-struct PDLLevel(Defaultable):
-    """Programmatic Dependency Launch (PDL) level."""
-
-    var _level: Int
-
-    alias OFF = PDLLevel(0)
-    alias OVERLAP_AT_END = PDLLevel(1)
-    alias OVERLAP_AT_BEGINNING = PDLLevel(2)
-    alias NO_WAIT_OVERLAP_AT_END = PDLLevel(3)
-
-    @always_inline
-    fn __init__(out self):
-        """Initialize the PDL level to OFF."""
-        self = PDLLevel(env_get_int["PDL_LEVEL", 0]())
-
-    @always_inline
-    fn __init__(out self, level: Int):
-        """Initialize the PDL level.
-
-        Args:
-            level: The PDL level to initialize.
-        """
-        self._level = level
-
-    @always_inline
-    fn __eq__(self, other: PDLLevel) -> Bool:
-        """Check if the PDL level is equal to another PDL level.
-
-        Args:
-            other: The other PDL level to compare against.
-
-        Returns:
-            True if the PDL level is equal to the other PDL level, False otherwise.
-        """
-        return self._level == other._level
-
-    @always_inline
-    fn __eq__(self, other: Int) -> Bool:
-        """Check if the PDL level is equal to another PDL level.
-
-        Args:
-            other: The other PDL level to compare against.
-
-        Returns:
-            True if the PDL level is equal to the other PDL level, False otherwise.
-        """
-        return self._level == other
-
-    @always_inline
-    fn __ne__(self, other: PDLLevel) -> Bool:
-        """Check if the PDL level is not equal to another PDL level.
-
-        Args:
-            other: The other PDL level to compare against.
-
-        Returns:
-            True if the PDL level is not equal to the other PDL level, False otherwise.
-        """
-        return self._level != other._level
-
-    @always_inline
-    fn __gt__(self, other: PDLLevel) -> Bool:
-        """Check if the PDL level is greater than another PDL level.
-
-        Args:
-            other: The other PDL level to compare against.
-
-        Returns:
-            True if the PDL level is greater than the other PDL level, False otherwise.
-        """
-        return self._level > other._level
-
-    @always_inline
-    fn __ge__(self, other: PDLLevel) -> Bool:
-        """Check if the PDL level is greater than or equal to another PDL level.
-
-        Args:
-            other: The other PDL level to compare against.
-
-        Returns:
-            True if the PDL level is greater or equal to the other PDL level,
-            False otherwise.
-        """
-        return self._level >= other._level
-
-
-struct PDL(Defaultable):
-    """Programmatic Dependency Launch (PDL) control structure.
-
-    This struct provides a way to manage programmatic stream serialization on
-    NVIDIA GPUs. It includes functions for launching dependent grids and waiting
-    for them to complete.
-
-    Note:
-        - Only supported on NVIDIA SM90+ (Hopper architecture and newer) GPUs.
-    """
-
-    @always_inline
-    fn __init__(out self):
-        """Initialize the PDL control structure."""
-        pass
-
-    @always_inline
-    fn __enter__(self):
-        """Launch dependent grids that were previously configured to depend on the
-        current grid."""
-        wait_on_dependent_grids()
-
-    @always_inline
-    fn __exit__(self):
-        """Wait for all dependent grids launched by this grid to complete execution.
-        """
-        launch_dependent_grids()

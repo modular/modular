@@ -14,6 +14,7 @@
 from gpu.host.compile import _compile_code
 from gpu.host.info import H100
 from gpu.memory import *
+from gpu.intrinsics import Scope
 from testing import *
 
 

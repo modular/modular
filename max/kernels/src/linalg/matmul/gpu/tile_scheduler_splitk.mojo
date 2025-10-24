@@ -18,7 +18,7 @@ from sys import size_of
 from gpu import NamedBarrierSemaphore
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host.info import H100
-from gpu.id import block_idx, grid_dim, thread_idx
+from gpu import block_idx, grid_dim, thread_idx
 from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout

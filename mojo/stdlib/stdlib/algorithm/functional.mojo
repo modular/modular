@@ -32,13 +32,11 @@ from gpu import (
     block_idx,
     grid_dim,
     thread_idx,
-)
-from gpu.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
-    pdl_launch_attributes,
     wait_on_dependent_grids,
 )
+from gpu.primitives.grid_controls import pdl_launch_attributes  # @doc_private
 from gpu.host import DeviceContext
 from gpu.host.info import B200, is_cpu, is_gpu
 from runtime import tracing

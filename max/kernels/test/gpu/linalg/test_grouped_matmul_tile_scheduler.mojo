@@ -13,7 +13,7 @@
 
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.id import block_idx
+from gpu import block_idx
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from buffer import NDBuffer

@@ -15,7 +15,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from buffer import DimList, NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.id import thread_idx
+from gpu import thread_idx
 from gpu.memory import AddressSpace
 from gpu.mma import (
     wgmma_async,

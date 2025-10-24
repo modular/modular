@@ -33,8 +33,8 @@ from sys.param_env import env_get_bool
 from gpu.intrinsics import Scope
 from memory.pointer import AddressSpace
 
-from ._utils import to_i32, to_llvm_shared_mem_ptr
-from .memory import AddressSpace as GPUAddressSpace
+from .._utils import to_i32, to_llvm_shared_mem_ptr
+from ..memory.memory import AddressSpace as GPUAddressSpace
 
 # ===-----------------------------------------------------------------------===#
 # barrier
@@ -747,7 +747,7 @@ fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
 
     Example:
         ```mojo
-        from gpu.sync import cp_async_bulk_wait_group
+        from gpu.sync.sync import cp_async_bulk_wait_group
 
         # Wait until at most 2 async groups are pending
         cp_async_bulk_wait_group[2]()

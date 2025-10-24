@@ -13,6 +13,7 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv
+from memory import bitcast
 from sys import align_of, simd_width_of, size_of
 
 from bit import next_power_of_two, prev_power_of_two
@@ -28,8 +29,8 @@ from gpu.cluster import (
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import B200
-from gpu.id import block_id_in_cluster, block_idx, lane_id, thread_idx, grid_dim
-from gpu.id import warp_id as get_warp_id
+from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx, grid_dim
+from gpu import warp_id as get_warp_id
 from gpu.memory import (
     AddressSpace,
     external_memory,

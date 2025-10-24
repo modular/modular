@@ -17,7 +17,7 @@ from sys import argv
 import linalg.matmul.vendor.blas as vendor_blas
 from gpu import block_dim
 from gpu.host import DeviceContext
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor

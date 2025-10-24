@@ -51,14 +51,14 @@ from memory.unsafe import bitcast
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
-from ._utils import (
+from .._utils import (
     to_i16,
     to_i32,
     to_llvm_ptr,
     to_llvm_shared_mem_ptr,
     to_llvm_shared_cluster_mem_ptr,
 )
-from .intrinsics import Scope
+from ..intrinsics import Scope
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
@@ -2054,7 +2054,7 @@ fn multimem_st[
     Example:
 
     ```mojo
-    from gpu.memory import *
+    from gpu.memory.memory import *
 
     # Store 2 float32 values to multimem address.
     multimem_st[DType.float32, count=2, scope=Scope.CTA, consistency=Consistency.RELAXED](

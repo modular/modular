@@ -13,7 +13,7 @@
 
 from math import ceildiv
 
-from gpu.id import block_idx, grid_dim, thread_idx
+from gpu import block_idx, grid_dim, thread_idx
 
 from utils.fast_div import FastDiv
 from utils.index import Index, IndexList

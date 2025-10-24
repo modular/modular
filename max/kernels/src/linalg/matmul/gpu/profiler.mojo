@@ -15,7 +15,7 @@
 from time.time import global_perf_counter_ns
 from gpu import block_idx, thread_idx, WARP_SIZE
 from gpu.host import DeviceContext
-from gpu.id import sm_id
+from gpu import sm_id
 
 
 alias MatmulWarpSpecializationWorkSpaceManager[

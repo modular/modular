@@ -15,7 +15,7 @@ from math import ceildiv
 from sys import has_accelerator
 
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, thread_idx
+from gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor
 
 # Vector data type and size

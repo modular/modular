@@ -20,7 +20,7 @@ from gpu import barrier
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
 from layout._fillers import arange

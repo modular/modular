@@ -14,7 +14,7 @@
 
 from gpu.host import ConstantMemoryMapping, DeviceContext
 from gpu.host.compile import _compile_code
-from gpu.id import thread_idx
+from gpu import thread_idx
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace

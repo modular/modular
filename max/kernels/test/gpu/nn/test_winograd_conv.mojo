@@ -26,7 +26,7 @@ from math import ceildiv
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, thread_idx
+from gpu import block_dim, block_idx, thread_idx
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major

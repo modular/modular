@@ -25,13 +25,13 @@ from gpu.grid_controls import (
 )
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.device_context import DeviceBuffer
-from gpu.id import (
+from gpu import (
     block_id_in_cluster,
     block_idx,
     grid_dim,
     thread_idx,
 )
-from gpu.id import warp_id as get_warp_id
+from gpu import warp_id as get_warp_id
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import (
     AddressSpace,

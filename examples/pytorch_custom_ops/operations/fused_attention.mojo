@@ -56,7 +56,7 @@ from math import exp
 
 from compiler import register
 from gpu.host import DeviceContext
-from gpu.id import block_idx
+from gpu import block_idx
 from gpu.memory import AddressSpace
 from gpu.sync import barrier
 from layout import Layout, LayoutTensor

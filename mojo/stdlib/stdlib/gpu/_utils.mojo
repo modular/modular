@@ -14,7 +14,7 @@
 
 from utils import StaticTuple
 
-from .memory import AddressSpace as GPUAddressSpace
+from .memory.memory import AddressSpace as GPUAddressSpace
 
 # ===-----------------------------------------------------------------------===#
 # MLIR type conversion utils

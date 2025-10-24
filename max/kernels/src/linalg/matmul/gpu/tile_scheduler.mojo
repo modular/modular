@@ -13,7 +13,7 @@
 
 from math import ceildiv
 
-from gpu.id import block_idx, grid_dim
+from gpu import block_idx, grid_dim
 from hashlib.hasher import Hasher
 
 from utils.fast_div import FastDiv

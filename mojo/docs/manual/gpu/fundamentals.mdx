@@ -115,7 +115,7 @@ from sys import exit
 from sys.info import has_accelerator
 
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, thread_idx
+from gpu import block_dim, block_idx, thread_idx
 
 alias num_elements = 20
 
@@ -313,11 +313,11 @@ threads executing the kernel using the following structures:
 
 | Struct alias | Description |
 | --- | --- |
-| [`grid_dim`](/mojo/stdlib/gpu/id/#grid_dim)  | Dimensions of the grid as `x`, `y`, and `z` values (for example, `grid_dim.y`). |
-| [`block_dim`](/mojo/stdlib/gpu/id/#block_dim)  | Dimensions of the thread block as `x`, `y`, and `z` values. |
-| [`block_idx`](/mojo/stdlib/gpu/id/#block_idx)  | Index of the block within the grid as `x`, `y`, and `z` values. |
-| [`thread_idx`](/mojo/stdlib/gpu/id/#thread_idx)  | Index of the thread within the block as `x`, `y`, and `z` values. |
-| [`global_idx`](/mojo/stdlib/gpu/id/#global_idx) | The global offset of the thread as `x`, `y`, and `z` values. That is, `global_idx.x = block_dim.x * block_idx.x + thread_idx.x`, `global_idx.y = block_dim.y * block_idx.y + thread_idx.y`, and `global_idx.z = block_dim.z * block_idx.z + thread_idx.z`. |
+| [`grid_dim`](/mojo/stdlib/gpu/#grid_dim)  | Dimensions of the grid as `x`, `y`, and `z` values (for example, `grid_dim.y`). |
+| [`block_dim`](/mojo/stdlib/gpu/#block_dim)  | Dimensions of the thread block as `x`, `y`, and `z` values. |
+| [`block_idx`](/mojo/stdlib/gpu/#block_idx)  | Index of the block within the grid as `x`, `y`, and `z` values. |
+| [`thread_idx`](/mojo/stdlib/gpu/#thread_idx)  | Index of the thread within the block as `x`, `y`, and `z` values. |
+| [`global_idx`](/mojo/stdlib/gpu/#global_idx) | The global offset of the thread as `x`, `y`, and `z` values. That is, `global_idx.x = block_dim.x * block_idx.x + thread_idx.x`, `global_idx.y = block_dim.y * block_idx.y + thread_idx.y`, and `global_idx.z = block_dim.z * block_idx.z + thread_idx.z`. |
 
 
 :::note
@@ -334,7 +334,7 @@ thread block index, thread index, and global index for each thread executed.
 from sys import exit, has_accelerator, has_apple_gpu_accelerator
 
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, global_idx, grid_dim, thread_idx
+from gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
 
 fn print_threads():
     """Print thread block and thread indices."""
@@ -452,7 +452,7 @@ could perform a boundary check like this to ensure that it doesn't attempt to
 process out-of-bounds elements:
 
 ```mojo
-from gpu.id import global_idx
+from gpu import global_idx
 
 fn process_vector(vector: UnsafePointer[Float32], size: Int):
     if global_idx.x < size:

@@ -19,7 +19,7 @@ from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 from gpu.memory import fence_async_view_proxy
 from internal_utils import HostNDBuffer, random
 from kv_cache.types import (

@@ -115,10 +115,10 @@ from gpu.grid_controls import (
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from gpu.intrinsics import load_acquire, store_release, load_relaxed
+from gpu.intrinsics import load_acquire, store_release, load_relaxed, Scope
 from gpu.memory import AddressSpace
 from gpu.memory import AddressSpace as GPUAddressSpace
-from gpu.memory import Consistency, ReduceOp, Scope, multimem_ld_reduce
+from gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
 from memory import stack_allocation
 
 from utils import IndexList, StaticTuple

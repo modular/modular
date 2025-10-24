@@ -14,7 +14,7 @@
 from sys import has_accelerator, has_apple_gpu_accelerator
 
 from gpu.host import DeviceContext
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 
 
 fn print_threads():

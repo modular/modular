@@ -64,7 +64,7 @@ from buffer.buffer import (
 from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
-from gpu.id import block_dim, block_idx, thread_idx
+from gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work

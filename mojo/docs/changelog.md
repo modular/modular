@@ -205,6 +205,39 @@ what we publish.
   threadgroup memory ordering, use `barrier()` instead. Note that lane masks
   are not supported on Apple GPUs, so the mask argument is ignored.
 
+- The `gpu` package has been reorganized into logical subdirectories for better
+  code organization:
+  - `gpu/primitives/` - Low-level GPU execution primitives (warp, block,
+    cluster, id, grid_controls)
+  - `gpu/memory/` - Memory operations (async_copy, TMA, address spaces)
+  - `gpu/sync/` - Synchronization primitives (barriers, semaphores)
+  - `gpu/compute/` - Compute operations (mma, tensor cores, tcgen05)
+
+  **Backward compatibility**: All existing imports continue to work unchanged.
+  Deprecated import paths (`gpu.id`, `gpu.mma`, `gpu.cluster`,
+  `gpu.grid_controls`, `gpu.warp`, `gpu.semaphore`, `gpu.mma_sm100`,
+  `gpu.tcgen05`, `gpu.mma_util`, `gpu.mma_operand_descriptor`,
+  `gpu.tensor_ops`) are preserved as re-export wrappers with deprecation
+  notices. Users can migrate to the new recommended import patterns at their
+  own pace:
+
+  ```mojo
+  # Old (deprecated but still works):
+  from gpu.id import block_idx, thread_idx
+  from gpu.mma import mma
+  from gpu.mma_sm100 import UMMAKind
+  from gpu.tcgen05 import tcgen05_alloc
+  from gpu.semaphore import Semaphore
+  from gpu.cluster import cluster_sync
+
+  # New (recommended):
+  from gpu import block_idx, thread_idx, cluster_sync
+  from gpu.compute.mma import mma
+  from gpu.compute.mma_sm100 import UMMAKind
+  from gpu.compute.tcgen05 import tcgen05_alloc
+  from gpu.sync.semaphore import Semaphore
+  ```
+
 ### Tooling changes {#25-7-tooling-changes}
 
 - `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)

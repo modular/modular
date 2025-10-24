@@ -34,7 +34,12 @@ from gpu.intrinsics import (
     permlane_swap,
 )
 from gpu.memory import AddressSpace
-from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
+from gpu.primitives.warp import (
+    shuffle_down,
+    shuffle_idx,
+    shuffle_up,
+    shuffle_xor,
+)
 from benchmark import keep
 
 alias MI300X_TARGET = get_gpu_target["mi300x"]()

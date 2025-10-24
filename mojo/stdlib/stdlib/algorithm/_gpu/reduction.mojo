@@ -13,7 +13,6 @@
 
 from math import align_up
 
-import gpu.warp as warp
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -25,15 +24,14 @@ from gpu import (
     lane_id,
     thread_idx,
     warp_id,
-)
-from gpu.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
-    pdl_launch_attributes,
     wait_on_dependent_grids,
+    AddressSpace,
 )
 from gpu.host import DeviceContext
-from gpu.memory import AddressSpace
+from gpu.primitives import warp
+from gpu.primitives.grid_controls import pdl_launch_attributes  # @doc_private
 from memory import stack_allocation
 
 from utils import IndexList

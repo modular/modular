@@ -36,7 +36,7 @@ from ....structuring import (
     RegTileType,
 )
 from layout.swizzle import Swizzle
-from gpu.id import thread_idx, lane_id
+from gpu import thread_idx, lane_id
 from sys import simd_width_of
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from layout.layout import coalesce

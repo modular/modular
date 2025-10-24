@@ -18,7 +18,7 @@ from sys.intrinsics import readfirstlane
 from buffer import NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from gpu.intrinsics import AMDBufferResource
-from gpu.mma import mma
+from gpu.compute.mma import mma
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from memory.unsafe import bitcast

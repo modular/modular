@@ -13,6 +13,7 @@
 
 from hashlib import default_comp_time_hasher
 from math import align_up, ceildiv
+from memory import bitcast
 from sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -29,8 +30,8 @@ from gpu.cluster import (
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import B200
-from gpu.id import block_id_in_cluster, lane_id, thread_idx
-from gpu.id import warp_id as get_warp_id
+from gpu import block_id_in_cluster, lane_id, thread_idx
+from gpu import warp_id as get_warp_id
 from gpu.memory import (
     AddressSpace,
     external_memory,

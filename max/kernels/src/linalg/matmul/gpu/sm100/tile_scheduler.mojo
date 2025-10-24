@@ -22,7 +22,7 @@ from gpu.cluster import (
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )
-from gpu.id import block_id_in_cluster, block_idx, lane_id, warp_id
+from gpu import block_id_in_cluster, block_idx, lane_id, warp_id
 from gpu.memory import AddressSpace, fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 

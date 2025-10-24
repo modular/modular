@@ -24,7 +24,7 @@ from math import ceildiv, exp
 
 from compiler import register
 from gpu.host import DeviceContext
-from gpu.id import block_idx
+from gpu import block_idx
 from layout import Layout, LayoutTensor
 from layout.math import max
 from runtime.asyncrt import DeviceContextPtr

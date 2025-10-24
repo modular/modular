@@ -32,7 +32,7 @@ from builtin.device_passable import DevicePassable
 from builtin.dtype import _unsigned_integral_type_of
 from gpu.host import DeviceBuffer, HostBuffer, DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_dim, block_idx, lane_id, thread_idx
+from gpu import block_dim, block_idx, lane_id, thread_idx
 from gpu.intrinsics import AMDBufferResource
 from gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
 from layout._fillers import BATCH_SIZE

@@ -23,7 +23,7 @@ from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import B200, H100
-from gpu.id import (
+from gpu import (
     block_dim,
     block_id_in_cluster,
     block_idx,
