@@ -436,7 +436,12 @@ def ElaborateGenerators : Pass<"elaborate-generators", "ModuleOp"> {
     Option<"errorIncludePrelude", "error-include-prelude",
            "bool", "false",
            "If true, elaboration error will include prelude locations "
-           "from mojo _startup modules.">
+           "from mojo _startup modules.">,
+    Option<"errorVerbose", "error-verbose",
+           "bool", "false",
+           "If true, elaboration error will include all concretized "
+           "parameter values as mlir attributes at call expansion site "
+           "instead of just values with simple types.">
   ];
 }
 

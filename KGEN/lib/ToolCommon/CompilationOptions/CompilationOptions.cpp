@@ -20,8 +20,9 @@ CompilationOptions::CompilationOptions(
     std::optional<DebugAtLevel> debugAtLevel, Sanitizers sanitizers,
     std::string targetTriple, std::string targetCpu, std::string targetFeatures,
     std::string targetAccelerator, int elabErrorLimit,
-    bool elabErrorIncludePrelude, DebugInfoLanguage debugInfoLanguage,
-    std::string searchPaths, SmallVector<std::string> extraSearchPaths)
+    bool elabErrorIncludePrelude, bool elabErrorVerbose,
+    DebugInfoLanguage debugInfoLanguage, std::string searchPaths,
+    SmallVector<std::string> extraSearchPaths)
     : optimizationLevel(optimizationLevel), debugLevel(debugLevel),
       debugAtLevel(debugAtLevel), sanitizers(sanitizers),
       targetTriple(std::move(targetTriple)), targetCpu(std::move(targetCpu)),
@@ -29,7 +30,8 @@ CompilationOptions::CompilationOptions(
       targetAccelerator(std::move(targetAccelerator)),
       debugInfoLanguage(debugInfoLanguage), searchPaths(searchPaths),
       extraSearchPaths(extraSearchPaths), elabErrorLimit(elabErrorLimit),
-      elabErrorIncludePrelude(elabErrorIncludePrelude) {}
+      elabErrorIncludePrelude(elabErrorIncludePrelude),
+      elabErrorVerbose(elabErrorVerbose) {}
 
 llvm::CodeGenOptLevel CompilationOptions::getCodeGenOptLevel() const {
   if (auto level = llvm::CodeGenOpt::getLevel(optimizationLevel))

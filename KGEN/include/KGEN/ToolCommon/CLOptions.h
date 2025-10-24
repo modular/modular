@@ -131,6 +131,8 @@ public:
 
   bool elabErrorIncludePrelude{false};
 
+  bool elabErrorVerbose{false};
+
   /// Get the include directories that exist on the file system.
   std::vector<std::string> getIncludePaths() const {
     std::vector<std::string> result;
@@ -159,7 +161,7 @@ public:
     return CompilationOptions(optLevel, debugInfoLevel, debugAt,
                               sanitizerOptions, targetTriple, targetCpu,
                               targetFeatures, targetAccelerator, elabErrorLimit,
-                              elabErrorIncludePrelude);
+                              elabErrorIncludePrelude, elabErrorVerbose);
   }
 
   bool optLevel0{false};
@@ -450,12 +452,18 @@ private:
                "(prelude)."),
       llvm::cl::location(options.elabErrorIncludePrelude),
       llvm::cl::cat(KGENOptionsCategory)};
-};
 
+  M::cl::MOpt<bool, true> elabErrorVerbose{
+      "elaboration-error-verbose",
+      cl::desc("Show verbose elaboration error with all concrete parameter "
+               "values where call expansion is failed. Default print only "
+               "shows simple values (string, integer, float, boolean)."),
+      llvm::cl::location(options.elabErrorVerbose),
+      llvm::cl::cat(KGENOptionsCategory)};
+};
 class KGENOptions : public KGENCommonOptions, public CommonOptions {
 public:
   Command cmd{/*required*/};
-
   llvm::SmallVector<CommandLineFunc> funcs{};
   std::optional<CommandLineFunc> shouldExecuteFunc(StringRef func) const {
     auto found = llvm::find_if(

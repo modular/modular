@@ -203,7 +203,8 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
           options::OPT_mojo_search_paths,
           options::OPT_loop_unrolling_warn_threshold,
           options::OPT_elaboration_error_limit,
-          options::OPT_elaboration_error_include_prelude))
+          options::OPT_elaboration_error_include_prelude,
+          options::OPT_elaboration_error_verbose))
     return state.reportError(err.getError());
   if (ErrorOrSuccess err = parseTargetOptions(
           state, args, compilationOptions, sourceManager, ctx, target,

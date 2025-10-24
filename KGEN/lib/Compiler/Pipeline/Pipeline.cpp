@@ -152,6 +152,7 @@ void KGEN::buildElaborateModulePipeline(
   elaboratorOptions.optimizeInterpreter = options.optimizationLevel == 0;
   elaboratorOptions.useParametricInterpreter = options.useParametricInterpreter;
   elaboratorOptions.errorIncludePrelude = options.elabErrorIncludePrelude;
+  elaboratorOptions.errorVerbose = options.elabErrorVerbose;
   pm.addPass(createElaborateGenerators(target, elaboratorOptions, options,
                                        compileAsmFn, compileOffloadFn));
 }

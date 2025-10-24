@@ -56,7 +56,8 @@ ErrorOrSuccess parseCompilationOptions(
     llvm::opt::OptSpecifier stdLibPath = {},
     llvm::opt::OptSpecifier loopUnrollingWarnThresholdId = {},
     llvm::opt::OptSpecifier elabErrorLimitId = {},
-    llvm::opt::OptSpecifier elabErrorIncludePreludeId = {});
+    llvm::opt::OptSpecifier elabErrorIncludePreludeId = {},
+    llvm::opt::OptSpecifier elabErrorVerbose = {});
 
 /// Warn users when doing debug builds with a compiler in debug mode.
 void warnBuildingForDebugWithDebugBuiltCompiler(
