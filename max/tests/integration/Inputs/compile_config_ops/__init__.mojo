@@ -8,7 +8,7 @@ from sys import env_get_int
 
 import compiler
 from logger import Logger
-from max.tensor import ManagedTensorSlice, foreach, OutputTensor, InputTensor
+from tensor import foreach, OutputTensor, InputTensor
 from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList

@@ -34,7 +34,6 @@ mojo_library(
     validate_missing_docs = False,
     visibility = [":__subpackages__"],
     deps = [
-        "//SDK/lib/API/mojo/max/max",
         "@mojo//:compiler",
         "@mojo//:register",
         "@mojo//:stdlib",
