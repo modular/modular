@@ -16,6 +16,8 @@
 #  overrides `__init__` to create a custom processor
 #  we will make use of `new_context` etc from the parent class
 
+# InternVL does stuff like selecting what the EOS, EOI, BOI tokens look like
+
 from max.pipelines.lib import TextAndVisionTokenizer
 
 # https://docs.modular.com/max/api/python/pipelines/tokenizer/#max.pipelines.lib.tokenizer.TextAndVisionTokenizer

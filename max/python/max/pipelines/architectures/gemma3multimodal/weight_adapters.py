@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 from max.graph.weights import WeightData, Weights
-from transformers import AutoConfig
 
 # Maps from Safetensor to MAX weight names.
 # For the language model, we keep the original structure without the language_model prefix
@@ -28,37 +27,36 @@ GEMMA3_VISION_SAFETENSOR_MAP: dict[str, str] = {
     "vision_model.model.": "",
 }
 
-def convert_safetensor_state_dict(
-    state_dict: dict[str, Weights], **unused_kwargs
+def convert_safetensor_language_state_dict(
+    state_dict: dict[str, Weights],
+    **unused_kwargs
 ) -> dict[str, WeightData]:
     """Convert safetensor state dict to MAX format for the language model."""
     new_state_dict: dict[str, WeightData] = {}
 
     # Remap HuggingFace -> MAX-style names for language model
     for weight_name, value in state_dict.items():
-        # Only process language model weights (skip vision_model weights)
-        if weight_name.startswith("vision_model."):
-            continue
-        max_name = weight_name
-        for before, after in GEMMA3_LANGUAGE_SAFETENSOR_MAP.items():
-            max_name = max_name.replace(before, after)
-        new_state_dict[max_name] = value.data()
-        if "embed_tokens" in weight_name:
-            print(f"old: {weight_name}, new: {max_name}")
+        if weight_name.startswith("language_model."):
+            max_name = weight_name
+            for before, after in GEMMA3_LANGUAGE_SAFETENSOR_MAP.items():
+                max_name = max_name.replace(before, after)
+            new_state_dict[max_name] = value.data()
 
     return new_state_dict
 
-# def convert_vision_model_state_dict(
-#     state_dict: dict[str, Weights],
-#     **unused_kwargs,
-# ) -> dict[str, WeightData]:
-#     new_state_dict: dict[str, WeightData] = {}
+def convert_safetensor_vision_state_dict(
+    state_dict: dict[str, Weights],
+    **unused_kwargs,
+) -> dict[str, WeightData]:
+    """Convert safetensor state dict to MAX format for the lvisionanguage model."""
+    new_state_dict: dict[str, WeightData] = {}
 
-#     # Remap HuggingFace -> MAX-style names
-#     for weight_name, value in state_dict.items():
-#         max_name = weight_name
-#         for before, after in GEMMA3_SAFETENSOR_MAP.items():
-#             max_name = max_name.replace(before, after)
-#         new_state_dict[max_name] = value.data()
+    # Remap HuggingFace -> MAX-style names
+    for weight_name, value in state_dict.items():
+        if weight_name.startswith("vision_model."):
+            max_name = weight_name
+            for before, after in GEMMA3_VISION_SAFETENSOR_MAP.items():
+                max_name = max_name.replace(before, after)
+            new_state_dict[max_name] = value.data()
 
-#     return new_state_dict
+    return new_state_dict
