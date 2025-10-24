@@ -52,6 +52,7 @@ When you modify a .cpp file in the _core/src directory, you can run
 modular_py_library(
     name = "max",
     srcs = [],
+    imports = [".."],
     deps = [
         ":_core",
         "//SDK/lib/API/python/max/_core_mojo",

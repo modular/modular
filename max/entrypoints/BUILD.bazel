@@ -12,6 +12,7 @@ modular_py_library(
             "replay_recording.py",
         ],
     ),
+    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         "//SDK/lib/API/python/max/diagnostics",
@@ -42,6 +43,7 @@ modular_py_library(
     srcs = [
         "pipelines.py",
     ],
+    imports = ["../.."],
     deps = [
         "//SDK/lib/API/python/max/entrypoints",
         "//SDK/lib/API/python/max/interfaces",
@@ -91,6 +93,7 @@ modular_py_binary(
 modular_py_library(
     name = "gpu-query",
     srcs = ["gpu_query.py"],
+    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = ["//open-source/max/mojo/python/mojo"],
 )
