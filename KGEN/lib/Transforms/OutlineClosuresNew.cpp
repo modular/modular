@@ -357,8 +357,8 @@ unpackCapturesInto(OpBuilder &b, Region &region,
   if (closureInitData.getCapturedParamDecls().size() == 1) {
     ParamDeclAttr paramCapture =
         closureInitData.getCapturedParamDecls().front();
-    b.create<ParamDeclareOp>(
-        closureInitData.getLiftedLocation(),
+    ParamDeclareOp::create(
+        b, closureInitData.getLiftedLocation(),
         ParamDeclAttr::get(paramCapture.getName(), paramCapture.getType()),
         selfParamRef);
     fromRefToExtract[paramCapture.getName()] = selfParamRef;
