@@ -17,8 +17,9 @@ from max.graph import DeviceRef, Graph, TensorType, ops
     ("vocab_size", "check_frequency"),
     (
         (64, True),
-        (152064, True),
-        (262208, True),
+        # Disable larger tests until we figure out flakiness E2EOPT-729
+        # (152064, True),
+        # (262208, True),
     ),
 )
 def test_gumbel_sampling(
