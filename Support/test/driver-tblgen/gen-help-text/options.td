@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 // RUN: %driver-tblgen -gen-help-text %s | FileCheck %s
+// RUN: %driver-tblgen -gen-help-hidden-text %s | FileCheck %s --check-prefix=CHECK-HIDDEN
 
 // RUN: %driver-tblgen -gen-help-text %s 2>&1 >/dev/null | \
 // RUN:   FileCheck %s --allow-empty --check-prefix CHECK-DIAG
@@ -56,13 +57,16 @@ defm bar : CommandOptionWithValues<["--", "-"], "bar", FirstOptionGroup,
   HelpText<"Takes a bar and does something with it.">, Values<"a,b,c">>;
 
 // Hidden options don't appear in help text.
-// CHECK-NOT: Don't show this option in help text
+// CHECK-NOT: Don't show me this option in help text
+// CHECK-HIDDEN: Don't show me this option in help text
 def baz : Flag<["--"], "baz">, Group<FirstOptionGroup>, Index<2>,
   Flags<[HelpHidden]>, HelpText<"Don't show me this option in help text.">;
 
 // Hidden option groups don't appear in help text.
 // CHECK-NOT: Second Options
 // CHECK-NOT: blong
+// CHECK-HIDDEN: Second Options
+// CHECK-HIDDEN: blong
 def SecondOptionGroup : OptionGroup<"Second Options">, Index<1>,
   Flags<[HelpHidden]>;
 def : Flag<["--"], "blong">, Group<SecondOptionGroup>, Index<0>,

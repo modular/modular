@@ -94,6 +94,10 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
     return state.printHelp(
 #include "Build/BuildOptionsHelpText.inc"
     );
+  } else if (args.hasArg(options::OPT_help_hidden)) {
+    return state.printHelp(
+#include "Build/BuildOptionsHelpHiddenText.inc"
+    );
   }
 
   if (int result = state.parseDiagnosticFormatArguments(

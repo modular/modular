@@ -173,7 +173,8 @@ static void genOptionName(raw_ostream &os, const llvm::Record *option,
 /// If there are 1 or more option groups present, outputs an "OPTIONS" section,
 /// with a separate sub-section for each option group.
 static void genOptionsSection(raw_ostream &os,
-                              ArrayRef<CommandOptionGroup> groups) {
+                              ArrayRef<CommandOptionGroup> groups,
+                              bool includeHiddenOptions) {
   if (groups.empty())
     return;
 
@@ -181,7 +182,7 @@ static void genOptionsSection(raw_ostream &os,
 
   for (const CommandOptionGroup &group : groups) {
     // Skip any hidden option groups.
-    if (group.isHidden())
+    if (group.isHidden() && !includeHiddenOptions)
       continue;
 
     // Print each option group, and its help text if available.
@@ -193,7 +194,7 @@ static void genOptionsSection(raw_ostream &os,
     // Print all the options that belong to this group.
     for (const CommandOption &option : group.getOptions()) {
       // Skip any hidden options.
-      if (CommandOption::isHidden(option.getOption()))
+      if (CommandOption::isHidden(option.getOption()) && !includeHiddenOptions)
         continue;
 
       // Print the option's name, and then the names of its aliases.
@@ -201,7 +202,8 @@ static void genOptionsSection(raw_ostream &os,
       genOptionName(os, option.getOption(), metaVarName, /*indent=*/8);
       for (const CommandAlias &option : option.getAliases()) {
         // Skip any hidden aliases.
-        if (CommandOption::isHidden(option.getRecord()))
+        if (CommandOption::isHidden(option.getRecord()) &&
+            !includeHiddenOptions)
           continue;
 
         os << ", ";
@@ -226,7 +228,8 @@ static void genOptionsSection(raw_ostream &os,
   }
 }
 
-static bool genHelpText(raw_ostream &os, const llvm::RecordKeeper &records) {
+static bool genHelpText(raw_ostream &os, const llvm::RecordKeeper &records,
+                        bool includeHiddenOptions) {
   ErrorOr<CommandDescription> cmdOrErr = CommandDescription::get(records);
   if (failed(cmdOrErr)) {
     llvm::PrintError(cmdOrErr.getError());
@@ -247,7 +250,7 @@ static bool genHelpText(raw_ostream &os, const llvm::RecordKeeper &records) {
   genSynopsisSection(os, cmd);
   genDescriptionSection(os, cmd);
   genSubcommandsSection(os, cmd);
-  genOptionsSection(os, groups);
+  genOptionsSection(os, groups, includeHiddenOptions);
   os << ")\"";
   return false;
 }
@@ -256,6 +259,12 @@ void M::registerGenHelpTextBackend(BackendRegistry &registry) {
   registry.addBackend("gen-help-text",
                       "Generate help text as a C++ constant string",
                       [](raw_ostream &os, const llvm::RecordKeeper &records) {
-                        return genHelpText(os, records);
+                        return genHelpText(os, records, false);
                       });
+  registry.addBackend(
+      "gen-help-hidden-text",
+      "Generate help text with hidden options as a C++ constant string",
+      [](raw_ostream &os, const llvm::RecordKeeper &records) {
+        return genHelpText(os, records, true);
+      });
 }

@@ -61,6 +61,10 @@ static std::optional<int> parseArgs(State &state,
     return state.printHelp(
 #include "Test/TestOptionsHelpText.inc"
     );
+  } else if (args.hasArg(options::OPT_help_hidden)) {
+    return state.printHelp(
+#include "Test/TestOptionsHelpHiddenText.inc"
+    );
   }
 
   if (int result = state.parseDiagnosticFormatArguments(

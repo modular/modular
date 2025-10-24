@@ -49,6 +49,10 @@ static int repl(const State &state) {
     return state.printHelp(
 #include "REPL/REPLOptionsHelpText.inc"
     );
+  } else if (args.hasArg(options::OPT_help_hidden)) {
+    return state.printHelp(
+#include "REPL/REPLOptionsHelpHiddenText.inc"
+    );
   }
 
   SmallVector<std::string> lldbArgs = {"--one-line-before-file",

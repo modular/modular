@@ -148,6 +148,10 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       return state.printHelp(
 #include "Run/RunOptionsHelpText.inc"
       );
+    } else if (allArgs.hasArg(options::OPT_help_hidden)) {
+      return state.printHelp(
+#include "Run/RunOptionsHelpHiddenText.inc"
+      );
     }
     return state.reportError("no input file provided");
   }
@@ -163,6 +167,10 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
   if (args.hasArg(options::OPT_help)) {
     return state.printHelp(
 #include "Run/RunOptionsHelpText.inc"
+    );
+  } else if (allArgs.hasArg(options::OPT_help_hidden)) {
+    return state.printHelp(
+#include "Run/RunOptionsHelpHiddenText.inc"
     );
   }
 

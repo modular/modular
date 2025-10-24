@@ -106,6 +106,13 @@ int main(int argc, char **argv) {
         .printHelp(
 #include "DriverOptionsHelpText.inc"
         );
+  case options::OPT_help_hidden:
+    // Print the top level driver help hidden text and exit.
+    return State(programName, ArrayRef(arguments).slice(1))
+        .printHelp(
+#include "DriverOptionsHelpHiddenText.inc"
+        );
+
   case options::OPT_INPUT: {
     // This could be a subcommand, or it could be an input file for the `run`
     // subcommand.

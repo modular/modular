@@ -127,6 +127,10 @@ static int debug(const State &state) {
     return state.printHelp(
 #include "Debug/DebugOptionsHelpText.inc"
     );
+  } else if (parsedArgs.hasArg(options::OPT_help_hidden)) {
+    return state.printHelp(
+#include "Debug/DebugOptionsHelpHiddenText.inc"
+    );
   }
 
   bool useRpc = parsedArgs.hasArg(options::OPT_rpc) ||

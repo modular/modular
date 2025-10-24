@@ -45,6 +45,10 @@ static int format(const State &state) {
     return state.printHelp(
 #include "Format/FormatOptionsHelpText.inc"
     );
+  } else if (args.hasArg(options::OPT_help_hidden)) {
+    return state.printHelp(
+#include "Format/FormatOptionsHelpHiddenText.inc"
+    );
   }
 
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
