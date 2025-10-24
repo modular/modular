@@ -1265,7 +1265,14 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     else
       ASTType(resultType).print(os, diagShared);
   } else if (auto paramRef = dyn_cast<ParamType>(type)) {
-    printParam(os, paramRef.getParam(), diagShared);
+    if (auto downcast = dyn_cast<DowncastAttr>(paramRef.getParam())) {
+      ASTType(downcast.getInputTypeValue()).print(os, diagShared);
+      os << "(";
+      ASTType(downcast.getType()).print(os, diagShared);
+      os << ")";
+    } else {
+      printParam(os, paramRef.getParam(), diagShared);
+    }
   } else if (isa<TypeType>(type)) {
     os << "AnyTrivialRegType";
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
