@@ -150,14 +150,6 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
             return_logits,
         )
 
-        # Initialize signal buffers for distributed execution
-        self.signal_buffers = [
-            Tensor.zeros(
-                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
-            )
-            for dev in self.devices
-        ]
-
         self.model = self.load_model(session)
         self.logprobs_device = devices[0]
         self.logprobs_model = self.load_logprobs_model(session)

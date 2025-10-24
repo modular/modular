@@ -22,6 +22,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Iterable, Sequence
 from dataclasses import dataclass
+from functools import cached_property
 from os import environ
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Protocol, runtime_checkable
@@ -219,6 +220,37 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     @property
     def lora_manager(self) -> LoRAManager | None:
         return self._lora_manager
+
+    @cached_property
+    def signal_buffers(self) -> list[Tensor]:
+        """Lazily initialize signal buffers for multi-GPU communication collectives.
+
+        Signal buffers are only needed during model execution, not during compilation.
+        By deferring their allocation, we avoid memory allocation in compile-only mode.
+
+        Returns:
+            List of signal buffer tensors, one per device for multi-device setups,
+            or an empty list for single-device setups.
+        """
+        # Import here to avoid circular dependency
+        from max.nn import Signals
+
+        # Initialize state needed for communication collectives.
+        # Contents of signal buffer should be filled with zeros.
+        return (
+            [
+                Tensor.zeros(
+                    shape=(Signals.NUM_BYTES,),
+                    dtype=DType.uint8,
+                    device=dev,
+                )
+                for dev in self.devices
+            ]
+            if len(self.devices) > 1
+            # Skip creating buffers for single-device, where communication
+            # collectives shouldn't be called.
+            else []
+        )
 
     @property
     def dtype(self) -> DType:

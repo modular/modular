@@ -25,7 +25,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn import ReturnLogits, Signals
+from max.nn import ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
@@ -117,9 +117,6 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
     model: Model
     """Compiled and initialized model ready for inference."""
 
-    signal_buffers: list[Tensor]
-    """Device buffers used for synchronization in communication collectives."""
-
     norm_method: Literal["rms_norm"] | Literal["layer_norm"]
     """Normalization layer."""
 
@@ -160,21 +157,6 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         self.model = self.load_model(session)
         self.logprobs_device = devices[0]
         self.logprobs_model = self.load_logprobs_model(session)
-
-        # Initialize state needed for communication collectives.
-        # Contents of signal buffer should be filled with zeros.
-        self.signal_buffers = (
-            [
-                Tensor.zeros(
-                    shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
-                )
-                for dev in self.devices
-            ]
-            if len(self.devices) > 1
-            # Skip creating buffers for single-device, where communication
-            # collectives shouldn't be called.
-            else []
-        )
 
     # TODO(zheng): Remove these wrappers once get_kv_params doesn't have to be
     # called from PipelineModel's infer_optimal_batch_size method.
