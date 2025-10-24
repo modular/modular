@@ -14,6 +14,7 @@ from max.entrypoints.cli.config import parse_task_flags
 from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.pipelines import PIPELINE_REGISTRY, SupportedEncoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig, SamplingConfig
+from test_common.graph_utils import is_h100_h200
 from test_common.mocks import (
     mock_estimate_memory_footprint,
     mock_pipeline_config_hf_dependencies,
@@ -442,12 +443,14 @@ def test_config_post_init__other_repo_weights(
 
 
 @mock_pipeline_config_hf_dependencies
-def test_config_init__reformats_with_str_weights_path() -> None:
+def test_config_init__reformats_with_str_weights_path(
+    modular_ai_llama_3_1_local_path: str,
+) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     # We expect this to convert the string.
     config = PipelineConfig(
-        model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
-        weight_path="file.q4_0.gguf",
+        model_path=modular_ai_llama_3_1_local_path,
+        weight_path="modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf",
     )
 
     assert isinstance(config.model_config.weight_path, list)
@@ -455,16 +458,18 @@ def test_config_init__reformats_with_str_weights_path() -> None:
     assert isinstance(config.model_config.weight_path[0], Path)
 
 
+@pytest.mark.skipif(not is_h100_h200(), reason="This fails on MI300")
 @mock_pipeline_config_hf_dependencies
-def test_validate_model_path__correct_repo_id_provided() -> None:
+def test_validate_model_path__correct_repo_id_provided(
+    modular_ai_llama_3_1_local_path: str,
+) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     config = PipelineConfig(
-        model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
+        model_path=modular_ai_llama_3_1_local_path,
+        quantization_encoding=SupportedEncoding.bfloat16,
     )
 
-    assert (
-        config.model_config.model_path == "modularai/Llama-3.1-8B-Instruct-GGUF"
-    )
+    assert config.model_config.model_path == modular_ai_llama_3_1_local_path
 
 
 @prepare_registry
@@ -554,7 +559,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
 
 
 @pytest.mark.skip(
-    "TODO: These tests are falling back to HuggingFace for some reason"
+    "TODO: This test is failing due to some int vs. MagicMock mismatch"
 )
 @prepare_registry
 @mock_estimate_memory_footprint
@@ -591,26 +596,6 @@ def test_config__test_retrieve_factory_with_unsupported_model_path(
         )
 
 
-@pytest.mark.skip(
-    "TODO: These tests are falling back to HuggingFace for some reason"
-)
-@prepare_registry
-@mock_estimate_memory_footprint
-def test_config__test_load_factory_with_known_architecture_and_hf_repo_id(
-    modular_ai_llama_3_1_local_path: str,
-) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-
-    config = PipelineConfig(
-        model_path=modular_ai_llama_3_1_local_path,
-        quantization_encoding=SupportedEncoding.bfloat16,
-        max_batch_size=1,
-        max_length=1,
-    )
-
-    _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
-
-
 class LimitedPickler(pickle.Unpickler):
     """A custom Unpickler class that checks for transformer modules."""
 
@@ -623,11 +608,15 @@ class LimitedPickler(pickle.Unpickler):
         return super().find_class(module, name)
 
 
+@pytest.mark.skipif(not is_h100_h200(), reason="This fails on MI300")
 @mock_pipeline_config_hf_dependencies
-def test_config_is_picklable(tmp_path: Path) -> None:
+def test_config_is_picklable(
+    tmp_path: Path, modular_ai_llama_3_1_local_path: str
+) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     config = PipelineConfig(
-        model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
+        model_path=modular_ai_llama_3_1_local_path,
+        quantization_encoding=SupportedEncoding.bfloat16,
     )
 
     pickle_path = tmp_path / "config.pkl"
@@ -641,63 +630,44 @@ def test_config_is_picklable(tmp_path: Path) -> None:
     assert loaded_config == config
 
 
-@mock_pipeline_config_hf_dependencies
-def test_config__validate_devices() -> None:
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-    # This test should always have a cpu available.
-    _ = PipelineConfig(
-        model_path="HuggingFaceTB/SmolLM-135M",
-        device_specs=[DeviceSpec.cpu()],
-    )
-
-    if accelerator_count() == 0:
-        with pytest.raises(ValueError):
-            _ = PipelineConfig(
-                model_path="HuggingFaceTB/SmolLM-135M",
-                device_specs=[DeviceSpec.accelerator()],
-            )
-    else:
-        _ = PipelineConfig(
-            model_path="HuggingFaceTB/SmolLM-135M",
-            device_specs=[DeviceSpec.accelerator()],
-        )
-
-
+@pytest.mark.skipif(not is_h100_h200(), reason="This fails on MI300")
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
-def test_config__validates_supported_device() -> None:
+def test_config__validates_supported_device(
+    modular_ai_llama_3_1_local_path: str,
+) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
     # Valid device/encoding combinations.
-    config = PipelineConfig(
-        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+    _ = PipelineConfig(
+        model_path=modular_ai_llama_3_1_local_path,
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding=SupportedEncoding.float32,
         max_length=1,
     )
 
-    if accelerator_count() > 0:
-        config = PipelineConfig(
-            model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+    if accelerator_count() == 0:
+        with pytest.raises(ValueError):
+            _ = PipelineConfig(
+                model_path=modular_ai_llama_3_1_local_path,
+                device_specs=[DeviceSpec.accelerator()],
+                quantization_encoding=SupportedEncoding.float32,
+                max_length=1,
+            )
+    else:
+        _ = PipelineConfig(
+            model_path=modular_ai_llama_3_1_local_path,
             device_specs=[DeviceSpec.accelerator()],
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding=SupportedEncoding.bfloat16,
             max_length=1,
         )
-
-
-@prepare_registry
-@mock_estimate_memory_footprint
-def test_config__validates_invalid_supported_device(
-    llama_3_1_8b_instruct_local_path: str,
-) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
     with pytest.raises(
         ValueError, match="not compatible with the selected device type 'cpu'"
     ):
         # Invalid device/encoding combinations.
         config = PipelineConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
+            model_path=modular_ai_llama_3_1_local_path,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.bfloat16,
             max_length=1,

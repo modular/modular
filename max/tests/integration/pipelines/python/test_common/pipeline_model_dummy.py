@@ -276,17 +276,21 @@ DUMMY_LLAMA_ARCH = SupportedArchitecture(
     name="LlamaForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
-        "meta-llama/Llama-3.1-8B-Instruct",
+        "HuggingFaceTB/SmolLM-135M",
         "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
-        "meta-llama/Llama-Guard-3-8B",
+        "deepseek-ai/deepseek-coder-6.7b-instruct",
+        "meta-llama/Llama-3.1-8B-Instruct",
         "meta-llama/Llama-3.2-1B-Instruct",
         "meta-llama/Llama-3.2-3B-Instruct",
-        "deepseek-ai/deepseek-coder-6.7b-instruct",
+        "meta-llama/Llama-Guard-3-8B",
         "modularai/Llama-3.1-8B-Instruct-GGUF",
+        "trl-internal-testing/tiny-random-LlamaForCausalLM",
     ],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
         SupportedEncoding.gptq: [KVCacheStrategy.PAGED],
+        # q4_k intentionally left out to test a valid SupportedEncoding but not
+        # supported by the model (supported_encoding).
         SupportedEncoding.q4_0: [KVCacheStrategy.PAGED],
         SupportedEncoding.q6_k: [KVCacheStrategy.PAGED],
         SupportedEncoding.float32: [KVCacheStrategy.PAGED],
