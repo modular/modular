@@ -892,24 +892,27 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-sigmoid = _elementwise_unary(rmo.sigmoid)
-"""
-Computes the elementwise sigmoid of a symbolic tensor.
 
-Creates a new op node to compute the elementwise sigmoid of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+def sigmoid(x: TensorValue) -> TensorValue:
+    """
+    Computes the elementwise sigmoid of a symbolic tensor.
 
-Args:
-    value: The symbolic tensor to use as the input to the sigmoid
-        computation.
+    Creates a new op node to compute the elementwise sigmoid of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
 
-Returns:
-    A new symbolic tensor value representing the output of the sigmoid
-        value computation.
+    Args:
+        value: The symbolic tensor to use as the input to the sigmoid
+            computation.
 
-Raises:
-    Error: If the symbol doesn't represent a tensor value.
-"""
+    Returns:
+        A new symbolic tensor value representing the output of the sigmoid
+            value computation.
+
+    Raises:
+        Error: If the symbol doesn't represent a tensor value.
+    """
+    x_cast = x.cast(_accum_type(x))
+    return (1 / (1 + exp(-x_cast))).cast(x.dtype)
 
 
 def silu(x: TensorValue):  # noqa: ANN201
