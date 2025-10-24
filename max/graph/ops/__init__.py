@@ -33,6 +33,7 @@ from __future__ import annotations
 # Import types for type annotations
 from ..value import TensorValue, TensorValueLike
 from . import allreduce, random
+from .acos import acos
 from .allgather import allgather
 from .argsort import argsort
 from .band_part import band_part
