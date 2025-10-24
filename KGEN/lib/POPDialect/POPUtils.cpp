@@ -16,18 +16,22 @@ using namespace M;
 using namespace KGEN;
 using namespace POP;
 
-/// Verify the conversion between the higher-level type and lower-level type.
+/// Verify a conversion between a SIMD type and an MLIR builtin type.
+/// Conversions are assumed to be bi-directional. In error messages, the
+/// direction of the conversion is controlled by the `fromSimd` parameter.
 LogicalResult
 POP::verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
-                          SIMDType simd, Type builtinType) {
+                          SIMDType simd, Type builtinType, bool fromSimd) {
   // Verify the SIMD size matches the vector size and the dtypes match.
   auto size = simd.getResolvedSize();
   if (size && *size == 1) {
     // Scalar case
     auto dtype = dyn_cast<DTypeConstantAttr>(simd.getDType());
     if (dtype && !dtype.isConvertibleTo(builtinType))
-      return emitError("cannot convert from scalar dtype ")
-             << dtype.getDType().getAsString() << " to " << builtinType;
+      return emitError("cannot convert ")
+             << (fromSimd ? "from" : "to") << " scalar dtype "
+             << dtype.getDType().getAsString() << (fromSimd ? " to " : " from ")
+             << builtinType;
     return success();
   }
 
@@ -40,8 +44,9 @@ POP::verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
 
   if (auto dtype = dyn_cast<DTypeConstantAttr>(simd.getDType());
       dtype && !dtype.isConvertibleTo(vector.getElementType()))
-    return emitError("cannot convert from SIMD dtype ")
-           << dtype.getDType().getAsString() << " to vector element "
-           << vector.getElementType();
+    return emitError("cannot convert ")
+           << (fromSimd ? "from" : "to") << " SIMD dtype "
+           << dtype.getDType().getAsString() << (fromSimd ? " to" : " from")
+           << " vector element " << vector.getElementType();
   return success();
 }

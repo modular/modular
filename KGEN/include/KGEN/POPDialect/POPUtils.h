@@ -17,10 +17,12 @@
 
 namespace M::KGEN::POP {
 
-/// Verify the conversion between the higher-level type and lower-level type.
+/// Verify a conversion between a SIMD type and an MLIR builtin type.
+/// Conversions are assumed to be bi-directional. In error messages, the
+/// direction of the conversion is controlled by the `fromSimd` parameter.
 LogicalResult
 verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
-                     SIMDType simd, Type builtinType);
+                     SIMDType simd, Type builtinType, bool fromSimd);
 } // namespace M::KGEN::POP
 
 #endif // KGEN_POPDIALECT_POPUTILS_H

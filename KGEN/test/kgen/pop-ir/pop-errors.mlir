@@ -91,8 +91,16 @@ kgen.generator @simd_shuffle<size>(%a: !pop.simd<2, f32>) {
 // -----
 
 kgen.func @cast_from_builtin_type(%arg0: si32) {
-  // expected-error @below {{cannot convert from scalar dtype ui32 to 'si32'}}
+  // expected-error @below {{cannot convert to scalar dtype ui32 from 'si32'}}
   %0 = pop.cast_from_builtin %arg0 : si32 to !pop.scalar<ui32>
+  kgen.return
+}
+
+// -----
+
+kgen.func @cast_from_simd_to_vector(%arg0: vector<4xsi32>) {
+  // expected-error @below {{'pop.cast_from_builtin' op cannot convert to SIMD dtype f32 from vector element 'si32'}}
+  %0 = pop.cast_from_builtin %arg0 : vector<4xsi32> to !pop.simd<4, f32>
   kgen.return
 }
 
@@ -101,6 +109,14 @@ kgen.func @cast_from_builtin_type(%arg0: si32) {
 kgen.func @cast_simd_to_vector(%arg0: !pop.simd<4, f32>) {
   // expected-error @below {{expected a rank 1 non-scalable vector}}
   %0 = pop.cast_to_builtin %arg0 : !pop.simd<4, f32> to f32
+  kgen.return
+}
+
+// -----
+
+kgen.func @cast_simd_to_vector_elt_type(%arg0: !pop.simd<4, f32>) {
+  // expected-error @below {{'pop.cast_to_builtin' op cannot convert from SIMD dtype f32 to vector element 'si32'}}
+  %0 = pop.cast_to_builtin %arg0 : !pop.simd<4, f32> to vector<4xsi32>
   kgen.return
 }
 
