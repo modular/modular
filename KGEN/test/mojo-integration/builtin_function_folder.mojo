@@ -50,3 +50,27 @@ fn fold_index_ceildiv() -> UIntT[2]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@UIntT<:!UInt {2}>, mut *"a`3">
     var a = UIntT[A.__ceildiv__(B)]()
     return a
+
+
+##===----------------------------------------------------------------------===##
+# Fold DType ops
+##===----------------------------------------------------------------------===##
+
+
+struct UInt8T[x: UInt8._mlir_type](ImplicitlyCopyable):
+    fn __init__(out self):
+        pass
+
+    fn __copyinit__(out self, existing: Self):
+        pass
+
+
+alias UI8_139 = __mlir_attr.`#pop.simd<139> : !pop.scalar<ui8>`
+
+
+# CHECK-LABEL: lit.fn @"fold_dtype_as_ui8
+fn fold_dtype_as_ui8() -> UInt8T[UI8_139]:
+    alias A: DType = DType.int32
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@UInt8T<{{.*}}, 139>>
+    var a = UInt8T[A._as_ui8()]()
+    return a
