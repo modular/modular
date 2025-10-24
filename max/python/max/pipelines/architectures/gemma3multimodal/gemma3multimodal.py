@@ -1,16 +1,18 @@
 from __future__ import annotations
-from typing import Literal
+from typing import Iterable, Literal
 from collections.abc import Sequence
 import functools
 
-from max.dtype import DType
-from max.nn import MLP, LayerList
-from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
-from max.pipelines.architectures.gemma3.layers.transformer_block import Gemma3TransformerBlock
 from .model_config import Gemma3ForConditionalGenerationConfig
+
+from max.dtype import DType
+
+from max.graph import BufferValue, ShardingStrategy, TensorValue, ops, DeviceRef, Weight, Dim, StaticDim
+from max.graph.ops.resize import InterpolationMode
+
+from max.nn import MLP, LayerList
 from max.nn.kv_cache import PagedCacheValues
-from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
-from max.nn import ColumnParallelLinear, MLP, LayerList, Module, ReturnLogits
+from max.nn import ColumnParallelLinear, MLP, LayerList, Module, ReturnLogits, Linear
 from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
@@ -23,10 +25,216 @@ from max.pipelines.architectures.gemma3.layers.transformer_block import Gemma3Tr
 # class Gemma3MLP1:
 #     pass
 
-# class Gemma3VisionEmbeddings:
-#     pass
+class Gemma3VisionEmbeddings:
+    """implements patch embeddings"""
+    def __init__(self, config: Gemma3ForConditionalGenerationConfig, device: DeviceRef | None = None) -> None:
+        """initializes the vision embeddings module"""
+        self.config = config
+        self.dvices = config.devices
+        self.embed_dim = config.vision_config.hidden_size
+        self.image_size = config.vision_config.image_size
+        self.patch_size = config.vision_config.patch_size
+        self.dtype = config.dtype
 
-# class InternVLVisionModel(Module)
+        # Calculate patch dimensions
+        # Note: in_dim matches Conv2d flattening order (C*H*W)
+        self.patch_embedding = Linear(
+            in_dim=3 * self.patch_size * self.patch_size,
+            out_dim=self.embed_dim,
+            dtype=self.dtype,
+            device=device if device else DeviceRef.CPU(),
+            has_bias=True,
+        )
+
+        self.num_patches = (self.image_size // self.patch_size) ** 2
+        self.num_positions = self.num_patches + 1
+
+        self.class_embedding = Weight(
+            "class_embedding",
+            dtype=self.dtype,
+            shape=(1, 1, self.embed_dim),
+            device=device if device else DeviceRef.CPU(),
+        )
+
+        self.position_embedding = Weight(
+            "position_embedding",
+            dtype=self.dtype,
+            shape=(1, self.num_positions, self.embed_dim),
+            device=device if device else DeviceRef.CPU(),
+        )
+        
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the embedding sharding strategy."""
+        return self.patch_embedding.sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Set the sharding strategy for the patch, class, and position
+        embeddings.
+
+        Args:
+            strategy: The strategy describing the embeddings' sharding.
+        """
+        if not strategy.is_replicate:
+            raise ValueError(
+                "only replicate is supported for Gemma3VisionEmbeddings, "
+                "currently"
+            )
+
+        self.patch_embedding.sharding_strategy = strategy
+        self.class_embedding.sharding_strategy = strategy
+        self.position_embedding.sharding_strategy = strategy
+
+    def shard(
+        self, devices: Iterable[DeviceRef]
+    ) -> list[Gemma3VisionEmbeddings]:
+        """Creates sharded views of this vision embeddings across multiple devices.
+
+        Args:
+            devices: Iterable of devices to place the shards on.
+
+        Returns:
+            List of sharded Gemma3VisionEmbeddings instances, one for each device.
+        """
+        # This should be set unconditionally in the constructor.
+        assert self.sharding_strategy
+
+        # Get sharded weights
+        patch_embedding_shards = self.patch_embedding.shard(devices)
+        class_embedding_shards = self.class_embedding.shard(devices)
+        position_embedding_shards = self.position_embedding.shard(devices)
+
+        shards = []
+        for device, patch_shard, class_shard, pos_shard in zip(
+            devices,
+            patch_embedding_shards,
+            class_embedding_shards,
+            position_embedding_shards,
+            strict=True,
+        ):
+            # Create the new sharded embedding.
+            sharded = Gemma3VisionEmbeddings(self.config, device)
+
+            # Assign the sharded weights.
+            sharded.patch_embedding = patch_shard
+            sharded.class_embedding = class_shard
+            sharded.position_embedding = pos_shard
+
+            shards.append(sharded)
+
+        return shards
+
+    def _get_position_embedding(self, H: Dim, W: Dim) -> TensorValue:
+        """Gets position embeddings, interpolating if needed for different resolutions.
+
+        Args:
+            H: Height in patches (can be int or symbolic Dim).
+            W: Width in patches (can be int or symbolic Dim).
+
+        Returns:
+            Position embeddings tensor of shape [1, H*W+1, embed_dim].
+        """
+        # For static dimensions, check if we need interpolation.
+        if isinstance(H, StaticDim) and isinstance(W, StaticDim):
+            h_int = int(H)
+            w_int = int(W)
+            if self.num_patches == h_int * w_int:
+                return self.position_embedding
+
+        # Otherwise, interpolate position embeddings.
+        # Split class token and patch position embeddings.
+        class_pos_embed = self.position_embedding[:, :1, :]
+        patch_pos_embed = self.position_embedding[:, 1:, :]
+
+        # Reshape patch position embeddings to spatial layout.
+        orig_size = int(self.num_patches**0.5)
+        patch_pos_embed = ops.reshape(
+            patch_pos_embed, [1, orig_size, orig_size, self.embed_dim]
+        )
+
+        # Permute to NCHW format for interpolation.
+        patch_pos_embed = ops.permute(patch_pos_embed, [0, 3, 1, 2])
+
+        # Interpolate using bicubic.
+        # resize expects full shape (N, C, H, W).
+        patch_pos_embed = ops.resize(
+            patch_pos_embed,
+            shape=[1, self.embed_dim, H, W],
+            interpolation=InterpolationMode.BICUBIC,
+        )
+
+        # Permute back to NHWC and reshape.
+        patch_pos_embed = ops.permute(patch_pos_embed, [0, 2, 3, 1])
+        patch_pos_embed = ops.reshape(
+            patch_pos_embed, [1, H * W, self.embed_dim]
+        )
+
+        # Concatenate class token and interpolated patch embeddings
+        return ops.concat([class_pos_embed, patch_pos_embed], axis=1)
+
+    def __call__(self, pixel_values: TensorValue) -> TensorValue:
+        """Computes embeddings for input pixel values.
+
+        Args:
+            pixel_values: Input tensor of pre-extracted patches of shape
+                         (batch_size, num_patches_h, num_patches_w, channels, patch_size, patch_size).
+
+        Returns:
+            Embeddings tensor of shape (batch_size, num_positions, embed_dim).
+        """
+        # Extract dimensions from input shape.
+        (
+            batch_size,
+            num_patches_h,
+            num_patches_w,
+            channels,
+            patch_size_h,
+            patch_size_w,
+        ) = pixel_values.shape
+        assert channels == 3
+        assert patch_size_h == self.patch_size
+        assert patch_size_w == self.patch_size
+
+        # Check that we have static dimensions for height and width.
+        if not isinstance(num_patches_h, StaticDim) or not isinstance(
+            num_patches_w, StaticDim
+        ):
+            raise ValueError(
+                f"Gemma3VisionEmbeddings requires static image dimensions, "
+                f"got {num_patches_h=}, {num_patches_w=}"
+            )
+
+        # Reshape pre-extracted patches to (batch_size, num_patches, channels * patch_size * patch_size).
+        # The patches are already extracted by the tokenizer, so we just need to reshape them.
+        pixel_values = ops.reshape(
+            pixel_values,
+            [
+                batch_size,
+                num_patches_h * num_patches_w,
+                channels * self.patch_size * self.patch_size,
+            ],
+        )
+
+        # Apply linear transformation directly
+        pixel_values = pixel_values.cast(self.patch_embedding.weight.dtype)
+        patch_embeds = self.patch_embedding(pixel_values)
+
+        # 3. Add class token
+        class_embeds = self.class_embedding.broadcast_to(
+            (batch_size, 1, self.embed_dim)
+        )
+        embeddings = ops.concat([class_embeds, patch_embeds], axis=1)
+
+        # 4. Add position embeddings.
+        position_embedding = self._get_position_embedding(
+            num_patches_h, num_patches_w
+        )
+        embeddings = embeddings + position_embedding
+
+        return embeddings
+
+# class Gemma3VisionEncoderLayer(Module)
 #     pass
 
 class Gemma3TextModel(Module):
@@ -82,8 +290,6 @@ class Gemma3TextModel(Module):
             config.devices,
             embed_scale=text_config.hidden_size**0.5,
         )
-
-        print(f"embed_tokens max: {self.embed_tokens.weight.max}")
 
         self.norm = Gemma3RMSNorm(
             text_config.hidden_size,
@@ -263,73 +469,14 @@ class Gemma3VisionModel(Module):
         self.config = config
         self.devices = config.devices
 
-        # default_device = (
-        #     config.llm_config.devices[0]
-        #     if config.llm_config.devices
-        #     else DeviceRef.CPU()
-        # )
+        ## TODO internvl does these:
+        # - create embeddings with InternVisionEmbeddings, with sharding strategy
+        # - get downsampling ratio from config (our config doesn't have it)
+        # - ps version??
+        # - create a LayerList of InternVLVisionEncoderLayer
+        # - set self.mlp1 to an instance of InterVLMLP1
+        # - create an `AllReduce()` whatever that is
 
-        # self.embeddings = Gemma3VisionEmbeddings(config)
-        # self.embeddings.sharding_strategy = ShardingStrategy.replicate(
-        #     len(config.devices)
-        # )
-        # self.embeddings_list = self.embeddings.shard(config.devices)
-
-        # # Store downsample_ratio and ps_version for pixel_shuffle
-        # self.downsample_ratio = config.downsample_ratio
-        # self.ps_version: str = getattr(config, "ps_version", "v2")
-
-        # if config.downsample_ratio != 0.5:
-        #     raise ValueError(
-        #         "Gemma3VisionModel only supports downsample ratio of 0.5"
-        #     )
-
-        # if self.ps_version != "v2":
-        #     raise ValueError("Gemma3VisionModel only supports ps_version v2")
-
-        # # Create encoder layers
-        # layers = LayerList(
-        #     Gemma3TransformerBlock(
-        #         attention=Gemma3Attention(
-        #             rope_global=rope_global,
-        #             rope_local=rope_local,
-        #             num_attention_heads=config.num_attention_heads,
-        #             num_key_value_heads=config.num_key_value_heads,
-        #             hidden_size=config.hidden_size,
-        #             kv_params=config.kv_params,
-        #             layer_idx=i,
-        #             dtype=config.dtype,
-        #             devices=config.devices,
-        #             qk_norm_eps=config.rms_norm_eps,
-        #             local_window_size=config.sliding_window,
-        #             float8_config=config.float8_config,
-        #         ),
-        #         mlp=MLP(
-        #             dtype=config.dtype,
-        #             quantization_encoding=None,
-        #             hidden_dim=config.hidden_size,
-        #             feed_forward_length=config.intermediate_size,
-        #             devices=config.devices,
-        #             activation_function=config.hidden_activation,
-        #             float8_config=config.float8_config,
-        #         ),
-        #         input_layernorm=create_norm(),
-        #         post_attention_layernorm=create_norm(),
-        #         pre_feedforward_layernorm=create_norm(),
-        #         post_feedforward_layernorm=create_norm(),
-        #         devices=config.devices,
-        #     )
-        #     for i in range(config.num_hidden_layers)
-        # )
-
-        # self.dim = config.hidden_size
-        # self.n_heads = config.num_attention_heads
-        # self.layers = LayerList(layers)
-        # self.norm = self.norm
-        # self.lm_head = self.lm_head
-        # self.embed_tokens = self.embed_tokens
-        # self.kv_params = config.kv_params
-        # self.return_logits = config.return_logits
 
     # from huggingface/gemma3/modeling_gemma3.py
     def prepare_inputs_for_generation(
@@ -353,5 +500,6 @@ class Gemma3VisionModel(Module):
         self,
         pixel_values: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
-    ) -> None:#Sequence[TensorValue]:
-        pass
+    ) -> Sequence[TensorValue]:
+        """Process pixel values to image embeddings"""
+        return pixel_values
