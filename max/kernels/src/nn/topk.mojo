@@ -1357,6 +1357,10 @@ fn _topk_gpu[
         # TODO: Need to pad in this case
         raise Error("block_size must be a multiple of WARP_SIZE")
 
+    # Do not launch gpu kernels with grid_dim = 0
+    if batch_size == 0:
+        return
+
     var shared_mem_bytes_1 = _get_shmem_size_stg_1[dtype](block_size)
 
     # Define grid and block dimensions for stage 1

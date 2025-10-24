@@ -19,6 +19,7 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.comm.ep import EPConfig
 from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, MAXModelConfigBase
@@ -70,6 +71,7 @@ class DeepseekV3ConfigBase(MAXModelConfigBase):
     attention_dropout: float = 0.0
 
     float8_config: Float8Config | None = None
+    ep_config: EPConfig | None = None
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
 
     def __post_init__(self):

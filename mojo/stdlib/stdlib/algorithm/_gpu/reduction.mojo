@@ -368,6 +368,10 @@ fn reduce_launch[
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
+    # Do not launch gpu kernels with grid_dim = 0
+    if num_blocks == 0:
+        return
+
     alias kernel = reduce_kernel[
         rank,
         num_reductions,

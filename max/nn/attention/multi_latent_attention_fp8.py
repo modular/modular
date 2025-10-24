@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import functools
 import math
 from collections.abc import Callable, Iterable, Sequence
 
@@ -663,7 +662,9 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             #     _mla_decode,
             # )[0].tensor
 
-        result = ops.reshape(result, shape=[result.shape[0], -1])
+        result = ops.reshape(
+            result, shape=[result.shape[0], self.n_heads * self.v_head_dim]
+        )
 
         return result
 
@@ -770,10 +771,6 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         return self.o_proj(attn_out)
 
 
-def _create_zero_attn_out(xs: TensorValue) -> TensorValue:
-    return ops.constant(0, xs.dtype, device=xs.device).broadcast_to(xs.shape)
-
-
 class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
     """Data-parallel implementation of Latent Attention with RoPE.
 
@@ -829,19 +826,13 @@ class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 outs.append(xs[i])
                 continue
 
-            out = ops.cond(
-                ops.shape_to_tensor(xs[i].shape)[0] > 0,
-                [xs[i].type],
-                functools.partial(
-                    self.list_of_attentions[i],
+            outs.append(
+                self.list_of_attentions[i](
                     layer_idx,
                     xs[i],
                     kv_collections[i],
                     freqs_cis=freqs_cis[i],
                     input_row_offsets=input_row_offsets[i],
-                ),
-                functools.partial(_create_zero_attn_out, xs[i]),
-            )[0]
-            outs.append(out)
-
+                )
+            )
         return outs

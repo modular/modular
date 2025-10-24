@@ -132,13 +132,17 @@ class DeepseekV3TopKRouter(MoEGate):
         # select top-k experts
         if self.topk_method == "noaux_tc":
             scores_for_choice = scores.reshape(
-                (bsz_seq_len, -1)
+                (bsz_seq_len, self.num_experts)
             ) + ops.unsqueeze(self.e_score_correction_bias, 0)
             group_scores = ops.squeeze(
                 ops.sum(
                     ops.top_k(
                         scores_for_choice.reshape(
-                            (bsz_seq_len, self.n_group, -1)
+                            (
+                                bsz_seq_len,
+                                self.n_group,
+                                self.num_experts // self.n_group,
+                            )
                         ),
                         2,
                         axis=-1,
@@ -168,7 +172,7 @@ class DeepseekV3TopKRouter(MoEGate):
                     self.n_group,
                     self.num_experts // self.n_group,
                 ),
-            ).reshape((bsz_seq_len, -1))  # [n, e]
+            ).reshape((bsz_seq_len, self.num_experts))  # [n, e]
             tmp_scores = ops.where(
                 score_mask.cast(DType.bool),
                 scores_for_choice,

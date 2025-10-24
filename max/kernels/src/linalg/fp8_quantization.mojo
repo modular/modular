@@ -420,6 +420,9 @@ fn matmul_dynamic_scaled_fp8[
     var M = a.dim[0]()
     # var K = a.dim[1]()
 
+    if M == 0:
+        return
+
     alias _trace_string = get_static_string[
         trace_arg(
             "A_scales",
@@ -751,6 +754,9 @@ fn naive_blockwise_scaled_fp8_matmul[
     var M = c_device.dim(0)
     var N = c_device.dim(1)
     var K = a_device.dim(1)
+
+    if M == 0:
+        return
 
     var a_scales_dim0 = a_scales.dim(0)
     var b_scales_dim0 = b_scales.dim(0)

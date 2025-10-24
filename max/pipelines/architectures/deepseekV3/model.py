@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -25,6 +26,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn import ReturnLogits, Signals
+from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.float8_config import parse_float8_config
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -168,6 +170,32 @@ class DeepseekV3Model(DeepseekV2Model):
         else:
             float8_config = None
 
+        if self.pipeline_config.ep_size == 1:
+            ep_config = None
+        else:
+            if self.pipeline_config.ep_size % len(self.devices) != 0:
+                raise ValueError(
+                    "If you are running with expert parallelism, ep_size must"
+                    " be set to the total number of GPUs across nodes."
+                )
+            n_nodes = self.pipeline_config.ep_size // len(self.devices)
+            ep_kwargs: dict[str, Any] = dict(
+                dispatch_dtype=dtype,
+                combine_dtype=DType.bfloat16,
+                hidden_size=config.hidden_size,
+                top_k=config.num_experts_per_tok,
+                n_experts=config.n_routed_experts,
+                max_tokens_per_rank=self.pipeline_config.prefill_chunk_size,
+                n_gpus_per_node=len(self.devices),
+                n_nodes=n_nodes,
+                dispatch_fp8_config=None,
+            )
+
+            if float8_config is not None:
+                ep_kwargs["dispatch_fp8_config"] = float8_config.input_scale
+
+            ep_config = EPConfig(**ep_kwargs)
+
         norm_dtype = state_dict[
             "layers.0.self_attn.kv_a_layernorm.weight"
         ].dtype
@@ -222,6 +250,7 @@ class DeepseekV3Model(DeepseekV2Model):
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
             float8_config=float8_config,
+            ep_config=ep_config,
             graph_mode=graph_mode,
             data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
             use_subgraphs=self.pipeline_config.model_config.use_subgraphs,
@@ -263,6 +292,12 @@ class DeepseekV3Model(DeepseekV2Model):
             }
         # Create the model
         config = self._create_model_config(state_dict)
+
+        self.ep_comm_initializer: EPCommInitializer | None = None
+        if config.ep_config is not None:
+            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
+            self.ep_comm_initializer.ep_init(session)
+
         nn_model = DeepseekV3(config)
         nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
 
@@ -278,15 +313,23 @@ class DeepseekV3Model(DeepseekV2Model):
                 data_parallel_splits,
                 *variadic_args,
             ) = graph.inputs
+
+            variadic_args_iter = iter(variadic_args)
             # Multi-GPU passes a signal buffer per device: unmarshal these.
             signal_buffers = [
-                v.buffer for v in variadic_args[: len(self.devices)]
+                next(variadic_args_iter).buffer
+                for _ in range(len(self.devices))
             ]
 
-            # Unmarshal the remaining arguments, which are for KV cache.
+            # Unmarshal the KV cache arguments.
+            fetch_types = self.kv_manager.input_symbols()[0]
+            len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
             kv_caches_per_dev = self._unflatten_kv_inputs(
-                variadic_args[len(self.devices) :]
+                [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
             )
+
+            # all remaining arguments are for EP inputs
+            ep_model_inputs = list(variadic_args_iter)
 
             outputs = nn_model(
                 tokens.tensor,
@@ -295,6 +338,7 @@ class DeepseekV3Model(DeepseekV2Model):
                 return_n_logits.tensor,
                 input_row_offsets.tensor,
                 data_parallel_splits.tensor,
+                ep_model_inputs,
             )
 
             graph.output(*outputs)
@@ -323,6 +367,11 @@ class DeepseekV3Model(DeepseekV2Model):
     ) -> ModelOutputs:
         assert isinstance(model_inputs, DeepseekV3Inputs)
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+        ep_inputs = (
+            ()
+            if self.ep_comm_initializer is None
+            else self.ep_comm_initializer.model_inputs()
+        )
 
         model_outputs = self.model.execute(
             model_inputs.tokens,
@@ -331,6 +380,7 @@ class DeepseekV3Model(DeepseekV2Model):
             model_inputs.data_parallel_splits,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
+            *ep_inputs,
         )
         if len(model_outputs) == 3:
             assert isinstance(model_outputs[0], Tensor)

@@ -802,6 +802,8 @@ fn dispatch_cb_kernel[
                     )
 
                 prefix_sum_arr[round_i] = UInt32(token_count)
+            else:
+                prefix_sum_arr[round_i] = UInt32(0)
             syncwarp()
             prefix_sum_arr[round_i] = warp.prefix_sum(prefix_sum_arr[round_i])
             syncwarp()

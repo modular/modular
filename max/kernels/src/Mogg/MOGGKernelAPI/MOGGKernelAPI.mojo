@@ -7158,6 +7158,9 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
                 " FP8 support"
             ),
         ]()
+
+        if a.dim_size(1) == 0:
+            return
         cuda_ctx = context.get_device_context()
         batched_matmul_dynamic_scaled_fp8[
             input_scale_granularity,

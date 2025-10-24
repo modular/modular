@@ -22,6 +22,7 @@ from layout import Layout
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from sys.info import align_of, simd_width_of, size_of
+from sys.ffi import external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 from tensor import InputTensor, OutputTensor
 from tensor.managed_tensor_slice import (
@@ -37,6 +38,23 @@ from shmem.ep_comm import (
     combine_kernel,
     combine_cb_kernel,
 )
+
+
+# This should eventually be moved to ffi.mojo with a more general global cache method
+# cache key is a string and cache value is a pointer.
+@always_inline
+fn global_cache_lookup(key: String) -> OpaquePointer:
+    return external_call["KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer](
+        key.unsafe_ptr(), key.byte_length()
+    )
+
+
+@always_inline
+fn global_cache_insert(key: String, value: OpaquePointer):
+    external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
+        StringSlice(key),
+        value,
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -307,7 +325,15 @@ struct Struct_ep_dispatch:
             task_id=get_safe_task_id(context),
         ):
             var func = gpu_ctx.compile_function[dispatch]()
-            shmem_module_init(func)
+            var cached_module_key = String("EP_DISPATCH_INITED_DEV_", gpu_id)
+
+            # Don't initialize the module repeatedly
+            if not Int(global_cache_lookup(cached_module_key)):
+                shmem_module_init(func)
+                global_cache_insert(
+                    cached_module_key,
+                    _unsafe_aliasing_address_to_pointer[NoneType](1),
+                )
 
             var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
                 Int(send_ptrs[gpu_id])
@@ -624,7 +650,15 @@ struct Struct_ep_dispatch_fp8:
             task_id=get_safe_task_id(context),
         ):
             var func = gpu_ctx.compile_function[dispatch]()
-            shmem_module_init(func)
+            var cached_module_key = String("EP_DISPATCH_INITED_DEV_", gpu_id)
+
+            # Don't initialize the module repeatedly
+            if not Int(global_cache_lookup(cached_module_key)):
+                shmem_module_init(func)
+                global_cache_insert(
+                    cached_module_key,
+                    _unsafe_aliasing_address_to_pointer[NoneType](1),
+                )
 
             var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
                 Int(send_ptrs[gpu_id])
@@ -928,7 +962,15 @@ struct Struct_ep_combine:
             task_id=get_safe_task_id(context),
         ):
             var func = gpu_ctx.compile_function[combine]()
-            shmem_module_init(func)
+            var cached_module_key = String("EP_COMBINE_INITED_DEV_", gpu_id)
+
+            # Don't initialize the module repeatedly
+            if not Int(global_cache_lookup(cached_module_key)):
+                shmem_module_init(func)
+                global_cache_insert(
+                    cached_module_key,
+                    _unsafe_aliasing_address_to_pointer[NoneType](1),
+                )
 
             var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
                 Int(send_ptrs[gpu_id])

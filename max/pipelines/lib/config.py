@@ -91,6 +91,10 @@ class PipelineConfig(MAXConfig):
     you know what you are doing.
     """
 
+    ep_size: int = 1
+    """The expert parallelism size. Needs to be 1 (no expert parallelism) or the
+    total number of GPUs across nodes."""
+
     ce_delay_ms: float = 0.0
     """Duration of scheduler sleep prior to starting a prefill batch.
 
