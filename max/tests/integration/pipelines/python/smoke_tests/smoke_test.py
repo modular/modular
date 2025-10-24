@@ -25,14 +25,14 @@ then the virtualenvs are not needed.
 import json
 import logging
 import os
+import shutil
 import signal
-import subprocess
 import sys
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from subprocess import Popen
+from subprocess import Popen, TimeoutExpired, check_call, check_output
 from tempfile import TemporaryDirectory
 
 import click
@@ -42,7 +42,15 @@ DUMMY_2X2_IMAGE = (
     "data:image/png;base64,"
     "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP8zwACTGCSAQANHQEDgslx/wAAAABJRU5ErkJggg=="
 )
-URL = "http://localhost:8000/v1/chat/completions"
+IMAGE_PROMPT = {
+    "role": "user",
+    "content": [
+        {"type": "text", "text": "Say 'hello image'"},
+        {"type": "image_url", "image_url": {"url": DUMMY_2X2_IMAGE}},
+    ],
+}
+TEXT_PROMPT = {"role": "user", "content": "Say: 'hello world'"}
+URL = "http://127.0.0.1:8000/v1/chat/completions"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -54,31 +62,12 @@ def _inside_bazel() -> bool:
 
 def test_single_request(model: str, task: str) -> None:
     is_vision = task == "chartqa"
-    if is_vision:
-        m = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Say 'hello image'",
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": DUMMY_2X2_IMAGE},
-                    },
-                ],
-            }
-        ]
-    else:
-        m = [{"role": "user", "content": "Say: 'hello world'"}]
+    m = [IMAGE_PROMPT if is_vision else TEXT_PROMPT]
 
-    connection_timeout = 10
-    read_timeout = 60
     r = requests.post(
         URL,
-        json={"model": model, "messages": m, "max_tokens": 8, "temperature": 0},
-        timeout=(connection_timeout, read_timeout),
+        json={"model": model, "messages": m, "max_tokens": 8},
+        timeout=(10, 60),
     )
     r.raise_for_status()
     resp = r.json()["choices"][0]["message"]["content"]
@@ -86,36 +75,18 @@ def test_single_request(model: str, task: str) -> None:
 
 
 def get_gpu_model() -> str:
+    amd = ["rocm-smi", "--showid", "--json"]
+    nv = ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader", "-i", "0"]
     try:
-        # Try AMD first
-        result = subprocess.check_output(
-            ["rocm-smi", "--showid", "--json"],
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-        data = json.loads(result)
+        result = check_output(amd, text=True)
+        data = json.loads(result.strip())
         return next(iter(data.values()))["Device Name"]
-    except (
-        FileNotFoundError,
-        subprocess.CalledProcessError,
-        StopIteration,
-        KeyError,
-    ):
-        # Fallback to NVIDIA
-        return subprocess.check_output(
-            [
-                "nvidia-smi",
-                "--query-gpu=name",
-                "--format=csv,noheader",
-                "-i",
-                "0",
-            ],
-            text=True,
-        ).strip()
+    except:
+        return check_output(nv, text=True).strip()
 
 
 def server_is_ready() -> bool:
-    health_url = "http://localhost:8000/health"
+    health_url = "http://127.0.0.1:8000/health"
     try:
         return requests.get(health_url, timeout=1).status_code == 200
     except requests.exceptions.RequestException:
@@ -123,60 +94,33 @@ def server_is_ready() -> bool:
 
 
 def get_server_cmd(framework: str, model: str) -> list[str]:
+    sglang_backend = "triton" if "b200" in get_gpu_model().lower() else "fa3"
+    SGLANG = f"sglang.launch_server --attention-backend {sglang_backend} --mem-fraction-static 0.8"
+    # limit-mm-per-prompt.video is for InternVL3 on B200
+    VLLM = "vllm.entrypoints.openai.api_server --max-model-len 16384 --limit-mm-per-prompt.video 0"
+    MAX = "max.entrypoints.pipelines serve"
+    MAX_CI = "./bazelw run --config=ci --config=disable-mypy max -- serve"
+
     if _inside_bazel():
-        assert framework == "max-ci", (
-            "Only max-ci supported when running in bazel"
-        )
+        assert framework == "max-ci", "bazel invocation only supports max-ci"
         cmd = [sys.executable, "-m", "max.entrypoints.pipelines", "serve"]
     else:
         interpreter = [".venv-serve/bin/python", "-m"]
         commands = {
-            "sglang": [
-                *interpreter,
-                "sglang.launch_server",
-                "--host",
-                "0.0.0.0",
-                "--attention-backend",
-                "triton" if "b200" in get_gpu_model().lower() else "fa3",
-                "--mem-fraction-static",
-                "0.8",
-            ],
-            "vllm": [
-                *interpreter,
-                "vllm.entrypoints.openai.api_server",
-                "--host",
-                "0.0.0.0",
-                "--max-model-len",
-                "16384",
-                "--limit-mm-per-prompt.video",  # Needed for InternVL 3 on B200
-                "0",
-            ],
-            "max": [*interpreter, "max.entrypoints.pipelines", "serve"],
-            "max-ci": [
-                "./bazelw",
-                "run",
-                "--config=ci",
-                "--config=disable-mypy",
-                "max",
-                "--",
-                "serve",
-            ],
+            "sglang": [*interpreter, *SGLANG.split()],
+            "vllm": [*interpreter, *VLLM.split()],
+            "max": [*interpreter, *MAX.split()],
+            "max-ci": MAX_CI.split(),
         }
         cmd = commands[framework]
-    return cmd + [
-        "--port",
-        "8000",
-        "--trust-remote-code",
-        "--model",
-        model,
-    ]
+    return cmd + ["--port", "8000", "--trust-remote-code", "--model", model]
 
 
 def safe_model_name(model: str) -> str:
     return model.replace("/", "__")
 
 
-def get_lm_eval_cmd(model: str, task: str, output_path: Path) -> list[str]:
+def call_lm_eval(model: str, task: str, output_path: Path) -> None:
     max_gen_toks = {
         "unsloth/gpt-oss-20b-bf16": ",max_gen_toks=50000",
         "qwen/qwen3-8b": ",max_gen_toks=4096",
@@ -192,30 +136,18 @@ def get_lm_eval_cmd(model: str, task: str, output_path: Path) -> list[str]:
         sys.executable if _inside_bazel() else ".venv-lm-eval/bin/python"
     )
 
-    return [
-        interpreter,
-        "-m",
-        "lm_eval",
-        "--model",
-        "local-chat-completions",
-        "--model_args",
-        f"model={model},base_url={URL},num_concurrent=64",
-        "--include_path",
-        str(Path(__file__).parent.resolve() / "chartqa_modular"),
-        "--tasks",
-        task,
-        "--fewshot_as_multiturn",
-        "--apply_chat_template",
-        "--output_path",
-        f"{output_path}/lm_eval_output",
-        "--limit",
-        "320",
-        "--seed",
-        "42",
-        "--gen_kwargs",
-        f"seed=42{max_gen_toks}{gen_params}",
-        "--log_samples",
-    ]
+    include_path = str(Path(__file__).parent.resolve() / "chartqa_modular")
+    lm_eval_cmd = (
+        f"lm_eval --tasks {task} --model local-chat-completions --log_samples "
+        f"--model_args model={model},base_url={URL},num_concurrent=64 "
+        f"--apply_chat_template --output_path {output_path}/lm_eval_output "
+        f"--limit 320 --seed 42 --gen_kwargs seed=42{max_gen_toks}{gen_params} "
+        f"--include_path {include_path} --fewshot_as_multiturn"
+    )
+
+    args = [interpreter, "-m", *lm_eval_cmd.split()]
+    logger.info(f"Running lm-eval with:\n {' '.join(args)}")
+    check_call(args, timeout=600)
 
 
 def write_github_output(key: str, value: str) -> None:
@@ -229,7 +161,7 @@ def gracefully_stop_process(process: Popen) -> None:
     try:
         os.killpg(os.getpgid(process.pid), signal.SIGTERM)
         process.wait(5)
-    except subprocess.TimeoutExpired:
+    except TimeoutExpired:
         logger.warning("Process did not terminate gracefully, forcing kill")
         os.killpg(os.getpgid(process.pid), signal.SIGKILL)
         process.wait(5)
@@ -373,11 +305,34 @@ def _print_samples(files: Sequence[Path], print_cot: bool) -> None:
                 logger.info(f"{status} {extracted}")
 
 
+def start_server(cmd: list[str]) -> tuple[Popen, float]:
+    # SGLang depends on ninja which is in the serve environment
+    env = os.environ.copy()
+    venv_bin = os.path.abspath(".venv-serve/bin")
+    env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
+
+    start = time.monotonic()
+    proc = Popen(cmd, start_new_session=True, env=env)
+    try:
+        deadline = start + 600
+        while time.monotonic() < deadline:
+            if server_is_ready():
+                break
+            if proc.poll() is not None:
+                raise RuntimeError("Server process terminated unexpectedly")
+            time.sleep(0.5)
+        else:
+            raise TimeoutError(f"Server did not start in {600} seconds")
+        return proc, time.monotonic() - start
+    except:
+        gracefully_stop_process(proc)
+        raise
+
+
 def smoke_test(
     hf_model_path: str,
     framework: str,
     output_path: Path,
-    write_summary: bool,
     print_responses: bool,
     print_cot: bool,
 ) -> None:
@@ -393,63 +348,34 @@ def smoke_test(
     if is_vision_model:
         tasks.append("chartqa")
 
-    # SGLang depends on ninja which is in the serve environment
-    env = os.environ.copy()
-    venv_bin = os.path.abspath(".venv-serve/bin")
-    env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
+    logger.info(f"Starting server with command:\n {' '.join(cmd)}")
+    try:
+        server_process, startup_time = start_server(cmd)
 
-    logger.info(f"Starting server with command:\n {cmd}")
-    with Popen(cmd, start_new_session=True, env=env) as server_process:
-        script_start_time = time.perf_counter()
-        while not server_is_ready():
-            if server_process.poll() is not None:
-                raise Exception("Server process terminated unexpectedly")
-            elif time.perf_counter() - script_start_time > 600:
-                raise Exception("Server did not start in 600 seconds")
-            time.sleep(0.5)
-
-        startup_time = time.perf_counter() - script_start_time
         logger.info(f"Server started in {startup_time:.2f} seconds")
         write_github_output("startup_time", f"{startup_time:.2f}")
 
-        try:
-            for task in tasks:
-                test_single_request(model, task)
+        for task in tasks:
+            test_single_request(model, task)
+            call_lm_eval(model, task, output_path)
 
-                lm_eval_cmd = get_lm_eval_cmd(model, task, output_path)
-                logger.info(f"Starting lm-eval with command:\n {lm_eval_cmd}")
-                with Popen(
-                    lm_eval_cmd, start_new_session=True
-                ) as lm_eval_process:
-                    try:
-                        rc = lm_eval_process.wait(600)
-                    except subprocess.TimeoutExpired:
-                        logger.warning("lm-eval timed out, killing process")
-                        gracefully_stop_process(lm_eval_process)
-                        raise
-                    if rc != 0:
-                        raise Exception(
-                            f"lm-eval exited with non-zero status {rc}"
-                        )
-        finally:
-            gracefully_stop_process(server_process)
+    finally:
+        gracefully_stop_process(server_process)
 
     results = parse_results(model, tasks, output_path)
     summary = build_eval_summary(results, startup_time_seconds=startup_time)
 
     summary_json = json.dumps([asdict(s) for s in summary], indent=2)
-    if write_summary:
-        file_name = safe_model_name(hf_model_path) + "_eval_metrics.json"
-        output_file = output_path / file_name
-        output_file.write_text(summary_json)
-        logger.info(f"Wrote EvalSummary JSON to {output_file.resolve()}")
+
+    file_name = safe_model_name(hf_model_path) + "_eval_metrics.json"
+    output_file = output_path / file_name
+    output_file.write_text(summary_json)
 
     if print_responses:
         files = _latest_samples_files(model, tasks, output_path)
         _print_samples(files, print_cot)
 
     time.sleep(1)
-    logger.info("Smoke test completed")
     logger.info(f"EvalSummary: {summary_json}")
 
 
@@ -506,26 +432,20 @@ def smoke_test_cli(
     if print_cot and not print_responses:
         raise ValueError("--print-cot must be used with --print-responses")
 
-    if output_path is None:
-        with TemporaryDirectory() as tempdir:
-            output_path = Path(tempdir)
-            smoke_test(
-                hf_model_path,
-                framework,
-                output_path,
-                False,
-                print_responses,
-                print_cot,
-            )
-    else:
+    if output_path and _inside_bazel() and not output_path.is_absolute():
+        output_path = Path(os.getenv("BUILD_WORKSPACE_DIRECTORY")) / output_path  # type: ignore
+
+    with TemporaryDirectory() as tempdir:
         smoke_test(
             hf_model_path,
             framework,
-            output_path,
-            True,
+            Path(tempdir),
             print_responses,
             print_cot,
         )
+        if output_path:
+            shutil.copytree(tempdir, output_path, dirs_exist_ok=True)
+            logger.info(f"Results available in {output_path}")
 
 
 if __name__ == "__main__":
