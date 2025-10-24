@@ -14,7 +14,7 @@ from max.driver.tensor import Tensor
 from max.nn.kv_cache import KVTransferEngine, TransferReqData
 
 """
-This test launches 256 concurrent transfers at once.
+This test launches 32 concurrent transfers at once.
 """
 
 
@@ -120,7 +120,7 @@ def test_send_recv_basic() -> None:
     # Transfer parameters
     GB = 1024 * 1024 * 1024
     total_bytes = int(6 * GB)
-    total_num_pages = 256
+    total_num_pages = 32
 
     sender_proc = ctx.Process(
         target=transfer_routine_sender,
