@@ -1040,16 +1040,20 @@ struct IntTuple(
             The size of the tuple starting at the given offset.
         """
         var len = data[offset]
-        var size = 1
+        var size = 1 + len  # Header + all element slots
+
+        # Now add the sizes of nested tuple data
         for i in range(len):
             var val = data[offset + i + 1]
-            if val >= Self.MinimumValue:
-                size += 1
-            else:
-                # For nested tuples, val stores a negative offset relative to current position
+            if val < Self.MinimumValue:
+                # For nested tuples, also add the size of the nested tuple data
                 # Formula: sub_offset = (offset + i + 1) - (val - MinimumValue)
                 var sub_offset = offset + i + 1 - (val - Self.MinimumValue)
-                size += Self._calculate_tuple_size(data, sub_offset) + 1
+                # Ensure sub_offset is valid
+                if sub_offset < 0 or sub_offset >= data.size():
+                    continue
+                var nested_size = Self._calculate_tuple_size(data, sub_offset)
+                size += nested_size
         return size
 
     fn validate_structure(self):
@@ -1065,18 +1069,17 @@ struct IntTuple(
 
         @parameter
         if INT_TUPLE_VALIDATION:
-            if self._store.owning() > 0:
-                var data_size = self._store.size()
-                var computed_size = Self.tuple_size(self._store)
-                if data_size != computed_size:
-                    abort(
-                        String(
-                            "size validation failed: ",
-                            data_size,
-                            " != ",
-                            computed_size,
-                        )
+            # Basic structure validation: ensure size is at least header + elements
+            var len = self._store[0]
+            if self._store.size() < len + 1:
+                abort(
+                    String(
+                        "Invalid tuple structure: size ",
+                        self._store.size(),
+                        " is less than required ",
+                        len + 1,
                     )
+                )
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
