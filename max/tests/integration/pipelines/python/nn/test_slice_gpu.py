@@ -7,7 +7,6 @@
 import pytest
 from max.driver import Accelerator
 from max.dtype import DType
-from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
@@ -19,17 +18,13 @@ def test_slice_gpu_ideal_case() -> None:
     )
     x_slice_input = TensorType(shape=(1,), dtype=DType.int64, device=device_ref)
 
-    # TODO(MAXPLAT-363):
-    with pytest.raises(TypeError):
-        with Graph(
-            "slice_gpu", input_types=[x_input, x_slice_input], device=device_ref
-        ) as graph:
-            x_tensor, x_slice_val = graph.inputs
+    with Graph("slice_gpu", input_types=[x_input, x_slice_input]) as graph:
+        x_tensor, x_slice_val = graph.inputs
 
-            # mypy incorrectly flags this as an error, but it should be valid
-            out = x_tensor.tensor[x_slice_val.tensor :, :]  # type: ignore
-
-            graph.output(out)
+        # TODO(MAXPLAT-363): Better error message
+        with pytest.raises(TypeError):
+            # mypy restricts what types may be passed to slice literals
+            _ = x_tensor.tensor[x_slice_val.tensor :, :]  # type: ignore
 
 
 def test_slice_gpu_explicit_devices() -> None:
@@ -40,39 +35,31 @@ def test_slice_gpu_explicit_devices() -> None:
     )
     x_slice_input = TensorType(shape=(1,), dtype=DType.int64, device=device_ref)
 
-    with Graph(
-        "slice_gpu", input_types=[x_input, x_slice_input], device=device_ref
-    ) as graph:
+    with Graph("slice_gpu", input_types=[x_input, x_slice_input]) as graph:
         x_tensor, x_slice_val = graph.inputs
-        out = ops.slice_tensor(
-            x_tensor.tensor,
-            [
-                (
-                    slice(
-                        x_slice_val.tensor,
-                        ops.constant(-1, DType.int64, device=device_ref),
-                        ops.constant(1, DType.int64, device=device_ref),
+        # TODO(MAXPLAT-363): Support slice indices on GPU
+        with pytest.raises(ValueError, match="must be on the host device"):
+            ops.slice_tensor(
+                x_tensor.tensor,
+                [
+                    (
+                        slice(
+                            x_slice_val.tensor,
+                            ops.constant(-1, DType.int64, device=device_ref),
+                            ops.constant(1, DType.int64, device=device_ref),
+                        ),
+                        "dynamic_slice_dim",
                     ),
-                    "dynamic_slice_dim",
-                ),
-                (
-                    slice(
-                        ops.constant(0, DType.int64, device=device_ref),
-                        ops.constant(10, DType.int64, device=device_ref),
-                        ops.constant(1, DType.int64, device=device_ref),
+                    (
+                        slice(
+                            ops.constant(0, DType.int64, device=device_ref),
+                            ops.constant(10, DType.int64, device=device_ref),
+                            ops.constant(1, DType.int64, device=device_ref),
+                        ),
+                        10,
                     ),
-                    10,
-                ),
-            ],
-        )
-        graph.output(out)
-
-    device = Accelerator()
-    session = InferenceSession(devices=[device])
-
-    # TODO(MAXPLAT-363):
-    with pytest.raises(ValueError):
-        model = session.load(graph)
+                ],
+            )
 
 
 def test_slice_gpu_scalar_slice_ideal() -> None:
@@ -83,14 +70,11 @@ def test_slice_gpu_scalar_slice_ideal() -> None:
     )
     x_slice_input = TensorType(shape=(1,), dtype=DType.int64, device=device_ref)
 
-    # TODO(MAXPLAT-363):
-    with pytest.raises(ValueError):
-        with Graph(
-            "slice_gpu", input_types=[x_input, x_slice_input], device=device_ref
-        ) as graph:
-            x_tensor, x_slice_val = graph.inputs
-            out = x_tensor.tensor[x_slice_val.tensor]
-            graph.output(out)
+    with Graph("slice_gpu", input_types=[x_input, x_slice_input]) as graph:
+        x_tensor, x_slice_val = graph.inputs
+        # TODO(MAXPLAT-363):
+        with pytest.raises(ValueError, match="must be on the same device"):
+            _ = x_tensor.tensor[x_slice_val.tensor]
 
 
 def test_slice_gpu_scalar_slice() -> None:
@@ -101,13 +85,11 @@ def test_slice_gpu_scalar_slice() -> None:
     )
     x_slice_input = TensorType(shape=(1,), dtype=DType.int64, device=device_ref)
 
-    # TODO(MAXPLAT-363):
-    with pytest.raises(ValueError):
-        with Graph(
-            "slice_gpu", input_types=[x_input, x_slice_input], device=device_ref
-        ) as graph:
-            x_tensor, x_slice_val = graph.inputs
-            out = ops.slice_tensor(
+    with Graph("slice_gpu", input_types=[x_input, x_slice_input]) as graph:
+        x_tensor, x_slice_val = graph.inputs
+        # TODO(MAXPLAT-363):
+        with pytest.raises(ValueError, match="must be on the same device"):
+            ops.slice_tensor(
                 x_tensor.tensor,
                 [
                     (
@@ -120,4 +102,3 @@ def test_slice_gpu_scalar_slice() -> None:
                     )
                 ],
             )
-            graph.output(out)
