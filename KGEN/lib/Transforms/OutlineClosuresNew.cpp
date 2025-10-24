@@ -288,18 +288,15 @@ ClosureLifter::ClosureInitData::ClosureInitData(
   for (ParamDeclAttr paramCaptures : getCapturedParamDecls())
     paramTypes.push_back(paramCaptures.getType());
   Type closureParamCapture;
-  StringAttr captureName;
+  StringAttr captureName = StringAttr::get(cxt, "CAPTURES");
   switch (paramTypes.size()) {
   case 0:
     closureParamCapture = KGEN::NoneType::get(cxt);
-    captureName = StringAttr::get(cxt, "CAPTURES");
     break;
   case 1:
     closureParamCapture = paramTypes.front();
-    captureName = getCapturedParamDecls().front().getName();
     break;
   default:
-    captureName = StringAttr::get(cxt, "CAPTURES");
     closureParamCapture = StructType::get(paramTypes);
   }
 
@@ -350,12 +347,24 @@ static DenseMap<StringAttr, TypedAttr>
 unpackCapturesInto(OpBuilder &b, Region &region,
                    ClosureLifter::ClosureInitData &closureInitData) {
   DenseMap<StringAttr, TypedAttr> fromRefToExtract;
-  // Only structs need unpacking.
-  if (closureInitData.getCapturedParamDecls().size() <= 1)
+  // Only structs need unpacking
+  if (closureInitData.getCapturedParamDecls().empty())
     return fromRefToExtract;
   ParamDeclRefAttr selfParamRef =
       ParamDeclRefAttr::get(closureInitData.getSelfParam());
   b.setInsertionPointToStart(&region.front());
+  // If size 1, we have renamed the parameter. add adaptor.
+  if (closureInitData.getCapturedParamDecls().size() == 1) {
+    ParamDeclAttr paramCapture =
+        closureInitData.getCapturedParamDecls().front();
+    b.create<ParamDeclareOp>(
+        closureInitData.getLiftedLocation(),
+        ParamDeclAttr::get(paramCapture.getName(), paramCapture.getType()),
+        selfParamRef);
+    fromRefToExtract[paramCapture.getName()] = selfParamRef;
+    return fromRefToExtract;
+  }
+
   for (auto [index, paramCapture] :
        llvm::enumerate(closureInitData.getCapturedParamDecls())) {
     TypedAttr extractedMember = StructExtractAttr::get(
@@ -466,11 +475,6 @@ void ClosureLifter::createClosureGenerator(
   if (!closureAttr)
     return;
   GeneratorOp generator = closureInitData.getGenerator();
-  FuncTypeGeneratorType funcGenType =
-      FuncTypeGeneratorType::remapToFuncTypeGenerator(
-          closureInitData.getSelfParam(), funcType, /*argConv=*/argConventions,
-          /*effects=*/{},
-          /*fnMetadata=*/{}, /*genMetadata=*/{});
 
   SmallVector<Type> resultTypes;
   resultTypes.push_back(funcType.getResult(0));
@@ -479,19 +483,24 @@ void ClosureLifter::createClosureGenerator(
       (generator.getName() + baseName + closureInitData.regionName()).str(),
       symtab, counter));
   b.setInsertionPoint(generator);
-  auto closureGenerator = GeneratorOp::create(
-      b, closureInitData.getLiftedLocation(), uniqueName, funcGenType, funcType,
-      closureInitData.getSelfParam());
-  symtab.insert(closureGenerator);
-
+  auto closureGenerator =
+      GeneratorOp::create(b, closureInitData.getLiftedLocation(), uniqueName,
+                          FuncTypeGeneratorType::get(
+                              {}, FunctionType::get(b.getContext(), {}, {})));
   populateBody(closureGenerator);
-
   auto fromParamToExtractExpr =
       unpackCapturesInto(b, closureGenerator.getBodyRegion(), closureInitData);
   auto newFuncType = remapFuncType(b, closureGenerator.getBodyRegion(),
                                    funcType, fromParamToExtractExpr,
                                    closureInitData.getLiftedLocation());
+  closureGenerator.setFuncTypeGenerator(
+      FuncTypeGeneratorType::remapToFuncTypeGenerator(
+          closureInitData.getSelfParam(), newFuncType,
+          /*argConv=*/argConventions,
+          /*effects=*/{},
+          /*fnMetadata=*/{}, /*genMetadata=*/{}));
   closureGenerator.setFunctionType(newFuncType);
+  closureGenerator.setInputParams({closureInitData.getSelfParam()});
 
   // Map from synthesized function to abstracted symbols.
   SmallVector<TypedAttr> boundParams;
@@ -506,6 +515,7 @@ void ClosureLifter::createClosureGenerator(
   liftedClosureSymbols[{closureAttr.getParentSymbol(),
                         closureAttr.getNestedFuncName(),
                         closureAttr.getMethod()}] = sym;
+  symtab.insert(closureGenerator);
 }
 
 void ClosureLifter::liftDelFunction(OpBuilder &b,
@@ -715,18 +725,15 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
                           .getFuncTypeGenerator()
                           .getBody()
                           .getFnEffects();
-  FuncTypeGeneratorType funcGenType =
-      FuncTypeGeneratorType::remapToFuncTypeGenerator(
-          allParams, funcType, /*argConv=*/conventions, /*effects=*/effects,
-          /*fnMetadata=*/{}, /*genMetadata=*/{});
   auto uniqueName = b.getStringAttr(getUniqueSymbolName(
       (generator.getName() + "_" + closureInitData.regionName()).str(), symtab,
       counter));
-  auto liftedWrapper =
-      GeneratorOp::create(b, loc, uniqueName, funcGenType, funcType, allParams);
+  auto liftedWrapper = GeneratorOp::create(
+      b, loc, uniqueName,
+      FuncTypeGeneratorType::get({}, FunctionType::get(b.getContext(), {}, {})),
+      funcType, allParams);
   liftedWrapper.setInlineLevel(
       closureInitData.getClosureInit().getInlineLevel());
-  symtab.insert(liftedWrapper);
 
   // Remap the symbol to not include the self param by only using input params
   // and binding the final parameter.
@@ -777,6 +784,11 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
       remapFuncType(b, body, funcType, fromParamToExtractExpr,
                     closureInitData.getLiftedLocation());
   liftedWrapper.setFunctionType(remappedFuncType);
+  liftedWrapper.setFuncTypeGenerator(
+      FuncTypeGeneratorType::remapToFuncTypeGenerator(
+          allParams, remappedFuncType, /*argConv=*/conventions,
+          /*effects=*/effects,
+          /*fnMetadata=*/{}, /*genMetadata=*/{}));
 
   // The closure symbol does not have the implicit argument; remove it
   argTypes.erase(argTypes.begin());
@@ -803,6 +815,7 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
   liftedClosureSymbols[{closureAttr.getParentSymbol(),
                         closureAttr.getNestedFuncName(),
                         closureAttr.getMethod()}] = sym;
+  symtab.insert(liftedWrapper);
   return success();
 }
 
