@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -101,9 +101,8 @@ def test_ep_moe(
 
     # Initialize devices
     devices = [Accelerator(id) for id in range(n_devices)]
-    devices_with_host = [CPU(0), *devices]
     devices_ref = [DeviceRef(d.label, d.id) for d in devices]
-    session = InferenceSession(devices=devices_with_host)
+    session = InferenceSession(devices=devices)
 
     # Create EP configuration
     ep_config = EPConfig(
@@ -175,7 +174,7 @@ def test_ep_moe(
         "EPMoE",
         input_types=[
             *per_device_input_types,
-            *ep_comm_init.input_types(),
+            *ep_batch_manager.input_types(),
         ],
     ) as graph:
         inputs_tensors = [x.tensor for x in graph.inputs[:n_devices]]

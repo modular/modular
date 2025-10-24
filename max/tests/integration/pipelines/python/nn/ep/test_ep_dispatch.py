@@ -112,8 +112,8 @@ def test_ep_dispatch(n_devices: int) -> None:
     # Initialize the device-contexts
     host = CPU(0)
     devices = [Accelerator(id) for id in range(n_devices)]
-    devices_with_host = [host, *devices]
-    session = InferenceSession(devices=devices_with_host)
+    devices_wit_host = [host, *devices]
+    session = InferenceSession(devices=devices_wit_host)
 
     config = EPConfig(
         dispatch_dtype=DType.bfloat16,
@@ -174,15 +174,15 @@ def test_ep_dispatch(n_devices: int) -> None:
         all_topk_ids_torch.append(topk_ids)
         all_topk_ids.append(Tensor.from_dlpack(topk_ids).to(devices[i]))
 
+    ep_manager = EPBatchManager(config)
+
     def build_ep_dispatch_graph() -> Graph:
         with Graph(
             "ep_dispatch",
             input_types=per_device_input_types
             + per_device_topk_ids_types
-            + ep_initializer.input_types(),
+            + ep_manager.input_types(),
         ) as graph:
-            ep_manager = EPBatchManager(config)
-
             xs = [val.tensor for val in graph.inputs[:n_devices]]
             topk_ids = [
                 val.tensor for val in graph.inputs[n_devices : n_devices * 2]

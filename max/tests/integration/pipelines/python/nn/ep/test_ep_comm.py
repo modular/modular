@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from max.driver import CPU, Accelerator, Tensor, accelerator_count
+from max.driver import Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -34,11 +34,8 @@ def test_ep_comm(n_devices: int) -> None:
     )
 
     # Initialize the device-contexts
-    host = CPU(0)
     devices = [Accelerator(id) for id in range(n_devices)]
-    print(n_devices)
-    devices_with_host = [host, *devices]
-    session = InferenceSession(devices=devices_with_host)
+    session = InferenceSession(devices=devices)
 
     config = EPConfig(
         dispatch_dtype=DType.bfloat16,
@@ -129,16 +126,16 @@ def test_ep_comm(n_devices: int) -> None:
         for i in range(n_devices)
     ]
 
+    ep_manager = EPBatchManager(config)
+
     def build_ep_dispatch_graph() -> Graph:
         with Graph(
             "ep_comm",
             input_types=weights_types
             + per_device_input_types
             + per_device_topk_ids_types
-            + ep_initializer.input_types(),
+            + ep_manager.input_types(),
         ) as graph:
-            ep_manager = EPBatchManager(config)
-
             expert_weights = [val.tensor for val in graph.inputs[:n_devices]]
             xs = [val.tensor for val in graph.inputs[n_devices : n_devices * 2]]
             topk_ids = [
