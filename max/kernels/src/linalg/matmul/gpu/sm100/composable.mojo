@@ -406,7 +406,7 @@ struct R2GOutputOp[
         # Extract last 2 bits so that warp_id is 0-3.
         var warp_id = (thread_idx.x // UInt(WARP_SIZE)) & 3
 
-        var ctile = self.c.tile[BM, BN](block_idx.y, block_idx.x)
+        var ctile = self.c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
         @parameter
         for m_mma in range(num_m_mmas):
@@ -416,7 +416,7 @@ struct R2GOutputOp[
                 alias mma_id = n_mma * num_m_mmas + m_mma
 
                 c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
-                    4 * m_mma + warp_id, n_mma
+                    4 * m_mma + Int(warp_id), n_mma
                 )
 
                 c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[

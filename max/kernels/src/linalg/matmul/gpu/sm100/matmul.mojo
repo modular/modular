@@ -419,15 +419,17 @@ fn shared_memory_epilogue[
     # there will be 2 chunks created when using 8x4.
 
     alias distribute_cols = stageN // simd_size
-    alias distribute_rows = WARP_SIZE // distribute_cols
+    alias distribute_rows = WARP_SIZE // Int(distribute_cols)
 
-    alias distribute_layout = Layout.row_major(distribute_rows, distribute_cols)
+    alias distribute_layout = Layout.row_major(
+        distribute_rows, Int(distribute_cols)
+    )
     var c_smem_upper_frag = c_smem_warp_tile_upper.vectorize[
         1, Int(simd_size)
     ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
 
     var c_smem_lower_frag = c_smem_warp_tile_lower.vectorize[
-        1, simd_size
+        1, Int(simd_size)
     ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
 
     alias fragment_size = c_smem_upper_frag.layout.size()
@@ -440,7 +442,7 @@ fn shared_memory_epilogue[
 
     @parameter
     for i in range(fragment_size):
-        alias alignment = align_of[SIMD[c_type, simd_size]]()
+        alias alignment = align_of[SIMD[c_type, Int(simd_size)]]()
 
         # these offsets are swizzled so to retrieve the corresponding gmem offset we need to remove the swizzle
         # luckily removing the swizzle is as simple as swizzling a second time
@@ -451,8 +453,8 @@ fn shared_memory_epilogue[
             shared_memory_row_lower_half * shared_n + shared_memory_col
         )
 
-        var offset_upper = swizzle(swz_offset_upper)
-        var offset_lower = swizzle(swz_offset_lower)
+        var offset_upper = swizzle(Int(swz_offset_upper))
+        var offset_lower = swizzle(Int(swz_offset_lower))
 
         var shared_upper_row: Int64
         var shared_upper_col: Int64
@@ -466,7 +468,7 @@ fn shared_memory_epilogue[
         @parameter
         if MMA_M != 256:
             alias blocked_m_128_layout = blocked_product(
-                Layout.row_major(data_paths * 2, stageN),
+                Layout.row_major(Int(data_paths * 2), Int(stageN)),
                 Layout.col_major(2, 2),
                 coalesce_output=True,
             )
@@ -514,19 +516,19 @@ fn shared_memory_epilogue[
         else:
             # can't cast to uint64 as it's not supported yet
             # this will cost us slightly in performance
-            alias fast_div = FastDiv[DType.uint32](shared_n)
+            alias fast_div = FastDiv[DType.uint32](Int(shared_n))
 
             shared_upper_row = (
                 Scalar[DType.int](offset_upper).cast[fast_div.uint_type]()
                 / fast_div
             ).cast[DType.int64]()
-            shared_upper_col = offset_upper % shared_n
+            shared_upper_col = offset_upper % Int(shared_n)
 
             shared_lower_row = (
                 Scalar[DType.int](offset_lower).cast[fast_div.uint_type]()
                 / fast_div
             ).cast[DType.int64]()
-            shared_lower_col = offset_lower % shared_n
+            shared_lower_col = offset_lower % Int(shared_n)
 
         # now we need to add the global tile offset
         var global_upper_row = shared_upper_row + c_row
@@ -568,7 +570,7 @@ fn _compute_register_lambda_fn[
 ](
     top_coord: StaticTuple[UInt32, 2],
     bottom_coord: StaticTuple[UInt32, 2],
-    mut frag: SIMD[epilogue_dtype, frag_size],
+    mut frag: SIMD[epilogue_dtype, Int(frag_size)],
     staged_c_row: UInt32,
     staged_c_col: UInt32,
 ):
@@ -582,8 +584,8 @@ fn _compute_register_lambda_fn[
     )
 
     # slice the fragment to get the current repeat top and bottom fragments
-    var simd_top = frag.slice[2, offset=offset]()
-    var simd_bottom = frag.slice[2, offset = offset + 2]()
+    var simd_top = frag.slice[2, offset = Int(offset)]()
+    var simd_bottom = frag.slice[2, offset = Int(offset + 2)]()
 
     # In normal case, simd_top and simd_bottom are elements on the M dimension
     # when transpose_c is true, they are on the N dimension. We change the index order
@@ -626,10 +628,10 @@ fn _compute_register_lambda_fn[
             )
 
     # store the results back into the fragment
-    frag[offset] = simd_top[0]
-    frag[offset + 1] = simd_top[1]
-    frag[offset + 2] = simd_bottom[0]
-    frag[offset + 3] = simd_bottom[1]
+    frag[Int(offset)] = simd_top[0]
+    frag[Int(offset + 1)] = simd_top[1]
+    frag[Int(offset + 2)] = simd_bottom[0]
+    frag[Int(offset + 3)] = simd_bottom[1]
 
 
 @always_inline
@@ -649,8 +651,8 @@ fn register_epilogue[
     cta_group: Int,
     is_lower_frag_required: Bool,
 ](
-    mut upper_frag_casted: SIMD[epilogue_dtype, frag_size],
-    mut lower_frag_casted: SIMD[epilogue_dtype, frag_size],
+    mut upper_frag_casted: SIMD[epilogue_dtype, Int(frag_size)],
+    mut lower_frag_casted: SIMD[epilogue_dtype, Int(frag_size)],
     c_row: UInt32,
     c_col: UInt32,
     N: UInt32,
@@ -775,7 +777,9 @@ fn multi_stage_store_C[
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    mma_output_pipeline: ProducerConsumerPipeline[num_accum_pipeline_stages],
+    mma_output_pipeline: ProducerConsumerPipeline[
+        Int(num_accum_pipeline_stages)
+    ],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt, UInt],
     elect_one_warp: Bool,
@@ -927,7 +931,7 @@ fn multi_stage_store_C[
             # swizzle. However, for easier programming, we reshape the tile
             # contiguous row_major(stageN, 16) chunks.
             var tile_idx = Int(warp_id) if not is_lower_frag_required else Int(
-                2 * warp_id
+                2 * Int(warp_id)
             )
             var c_smem_warp_tile_upper = c_smem_tile.tile[
                 stageN * 16 // stage_contiguous_size, stage_contiguous_size
@@ -977,9 +981,11 @@ fn multi_stage_store_C[
                         c_smem_warp_tile_lower,
                     )
         else:
-            alias c_smem_tile_m = 32 if cta_group == 2 else BM // num_output_warps
+            alias c_smem_tile_m = 32 if cta_group == 2 else BM // Int(
+                num_output_warps
+            )
             var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, stageN](
-                warp_id, 0
+                Int(warp_id), 0
             )
 
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
@@ -1052,7 +1058,7 @@ fn multi_stage_store_C[
         var coord_n_mma_m128 = (
             work_tile_coord[1] * UInt(MMA_N)
             + UInt(stage * stageN)
-            + UInt(BN * (warp_id // 2))
+            + UInt(BN * Int(warp_id // 2))
         )
 
         var cg2_coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
@@ -1086,7 +1092,7 @@ fn multi_stage_store_C[
                     cg2_c_smem_coord_m if cta_group == 2 else cg1_c_smem_coord_m
                 )
                 var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](
-                    c_smem_coord_m, 0
+                    Int(c_smem_coord_m), 0
                 )
                 c_tma_op.async_store(
                     c_smem_split,
@@ -1159,7 +1165,9 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     # For ld from TMEM, use same per-stage stride in column field.
     alias NUM_TMEM_COLS = 512
-    alias stage_stride_cols = NUM_TMEM_COLS // config.num_accum_pipeline_stages
+    alias stage_stride_cols = NUM_TMEM_COLS // Int(
+        config.num_accum_pipeline_stages
+    )
 
     alias clc_throttle_producer_arv_count = TMA_LOAD_THREADS
     alias clc_throttle_consumer_arv_count = SCHEDULER_THREADS
@@ -1202,11 +1210,11 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         alignment=128,
     ]()
 
-    alias a_smem_size = a_smem_layout.size() * config.num_pipeline_stages
-    alias b_smem_size = b_smem_layout.size() * config.num_pipeline_stages
+    alias a_smem_size = a_smem_layout.size() * Int(config.num_pipeline_stages)
+    alias b_smem_size = b_smem_layout.size() * Int(config.num_pipeline_stages)
     alias c_smem_size = config.output_tile_shape[0] * config.output_tile_shape[
         1
-    ] * config.num_output_stages
+    ] * Int(config.num_output_stages)
 
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
@@ -1252,18 +1260,20 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         SharedMemBarrier
     ]()
     var load_mma_pipeline = ProducerConsumerPipeline[
-        config.num_pipeline_stages
+        Int(config.num_pipeline_stages)
     ](load_mma_mbar_ptr)
 
     # MMA warp as producer and Output warp as consumer.
     # Dependence on MMA output in TMEM.
-    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * config.num_pipeline_stages
+    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * Int(
+        config.num_pipeline_stages
+    )
     var mma_output_pipeline = ProducerConsumerPipeline[
-        config.num_accum_pipeline_stages
+        Int(config.num_accum_pipeline_stages)
     ](mma_output_mbar_ptr)
 
-    var clc_full_mbar_ptr = (
-        mma_output_mbar_ptr + 2 * config.num_accum_pipeline_stages
+    var clc_full_mbar_ptr = mma_output_mbar_ptr + 2 * Int(
+        config.num_accum_pipeline_stages
     )
     var clc_empty_mbar_ptr = clc_full_mbar_ptr + config.num_clc_pipeline_stages
 
@@ -1272,11 +1282,11 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     # In the extreme case, all ctas keep querying next work simultaneously,
     # there will be no guarantee they get balanced number of tiles.
     var load_clc_pipeline = ProducerConsumerPipeline[
-        config.num_clc_pipeline_stages
+        Int(config.num_clc_pipeline_stages)
     ](clc_empty_mbar_ptr + config.num_clc_pipeline_stages)
 
     var clc_response_ptr = (
-        clc_empty_mbar_ptr + 3 * config.num_clc_pipeline_stages
+        clc_empty_mbar_ptr + 3 * Int(config.num_clc_pipeline_stages)
     ).bitcast[Int128]()
 
     var tmem_dealloc_mbar_ptr = (
@@ -1331,11 +1341,11 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     fence_mbarrier_init()
     cluster_sync()
 
-    var clc_pipe_producer_state = PipelineState[config.num_clc_pipeline_stages](
-        0, 1, 0
-    )
+    var clc_pipe_producer_state = PipelineState[
+        Int(config.num_clc_pipeline_stages)
+    ](0, 1, 0)
     var clc_pipe_consumer_state = PipelineState[
-        config.num_clc_pipeline_stages
+        Int(config.num_clc_pipeline_stages)
     ]()
 
     var mma_op = MmaOpSM100_SS[
@@ -1353,7 +1363,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     ]()
 
     var scheduler = TileScheduler[
-        num_stages = config.num_clc_pipeline_stages,
+        num_stages = Int(config.num_clc_pipeline_stages),
         cluster_shape = Index[dtype = DType.uint32](
             config.cluster_shape[0],
             config.cluster_shape[1],
@@ -1795,7 +1805,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     # Support double-buffer for output stages.
     alias c_smem_bytes = config.output_tile_shape[0] * config.output_tile_shape[
         1
-    ] * config.num_output_stages * size_of[c_type]()
+    ] * Int(config.num_output_stages) * size_of[c_type]()
 
     alias MBAR_BYTES = size_of[Int64]()  # 8 bytes per barrier
     alias CLC_RESPONSE_BYTES = size_of[Int128]()  # 16 bytes per response
@@ -1810,11 +1820,19 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     alias accum_full_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
     alias accum_empty_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
 
-    alias clc_response_bytes = CLC_RESPONSE_BYTES * config.num_clc_pipeline_stages
-    alias clc_full_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
-    alias clc_empty_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
-    alias clc_throttle_full_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
-    alias clc_throttle_empty_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
+    alias clc_response_bytes = CLC_RESPONSE_BYTES * Int(
+        config.num_clc_pipeline_stages
+    )
+    alias clc_full_mbar_bytes = MBAR_BYTES * Int(config.num_clc_pipeline_stages)
+    alias clc_empty_mbar_bytes = MBAR_BYTES * Int(
+        config.num_clc_pipeline_stages
+    )
+    alias clc_throttle_full_mbar_bytes = MBAR_BYTES * Int(
+        config.num_clc_pipeline_stages
+    )
+    alias clc_throttle_empty_mbar_bytes = MBAR_BYTES * Int(
+        config.num_clc_pipeline_stages
+    )
 
     alias tmem_addr_bytes = TMEM_ADDR_BYTES
     alias tmem_dealloc_mbar_bytes = MBAR_BYTES
@@ -1850,7 +1868,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     # TODO: the config should have the correct number of stages.
     # alias pipeline_stage = min(config.num_pipeline_stages, max_pipeline_stages)
     # alias pipeline_stage = min(config.num_pipeline_stages, max_pipeline_stages)
-    alias producer_consumer_smem = producer_consumer_smem_per_stage * config.num_pipeline_stages
+    alias producer_consumer_smem = producer_consumer_smem_per_stage * Int(
+        config.num_pipeline_stages
+    )
 
     alias smem_size = (
         clc_smem + accum_smem + producer_consumer_smem + tmem_writeout_smem
@@ -2032,7 +2052,9 @@ fn matmul_sm100_fallback_kernel[
 
     alias accum_type = get_accum_type[a_type]()
 
-    alias c_frag_size = MMA_M * MMA_N // num_threads  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
+    alias c_frag_size = MMA_M * MMA_N // Int(
+        num_threads
+    )  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
     var c_frag = SIMD[
         accum_type, c_frag_size
     ]()  # array of accumulator elements
@@ -2141,7 +2163,7 @@ fn matmul_sm100_fallback_kernel[
     warp_id = thread_idx.x // UInt(WARP_SIZE)
 
     ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
-        block_idx.y, block_idx.x
+        Int(block_idx.y), Int(block_idx.x)
     )
     alias c_coord_type = type_of(ctile_coords)
 
@@ -2156,8 +2178,8 @@ fn matmul_sm100_fallback_kernel[
             alias mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
-                ctile.tile_with_offset[MMA_M // num_warps, MMA_N](
-                    4 * m_mma + warp_id, n_mma
+                ctile.tile_with_offset[MMA_M // Int(num_warps), MMA_N](
+                    4 * m_mma + Int(warp_id), n_mma
                 )
             )
             c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](

@@ -348,7 +348,9 @@ struct TileScheduler[
         """
 
         self.current_iter += 1
-        var next_block_idx = self.current_iter * grid_dim.x + block_idx.x
+        var next_block_idx = self.current_iter * Int(grid_dim.x) + Int(
+            block_idx.x
+        )
 
         # Check if the calculated index exceeds the total number of blocks
         if next_block_idx >= Int(self.num_blocks):

@@ -1335,27 +1335,27 @@ fn mha_sm100_dispatch[
         QTMATile[
             KVType.dtype,
             swizzle_mode,
-            BM = new_config.block_m(),
-            depth = new_config.padded_depth,
+            BM = Int(new_config.block_m()),
+            depth = Int(new_config.padded_depth),
             group=group,
             decoding = _is_decoding[MaxPromptLenType](),
         ]
     ](
         q_out_tma[
             swizzle_mode,
-            BM=BM,
-            depth = new_config.depth,
-            padded_depth = new_config.padded_depth,
-            q_num_heads = new_config.num_heads,
+            BM = Int(BM),
+            depth = Int(new_config.depth),
+            padded_depth = Int(new_config.padded_depth),
+            q_num_heads = Int(new_config.num_heads),
             group=group,
             decoding=decoding,
         ](ctx, q, num_rows_q)
     )
     k_tma_op = k.create_tma_tile[
-        BN, new_config.padded_depth, swizzle_mode, is_k_major=True
+        Int(BN), Int(new_config.padded_depth), swizzle_mode, is_k_major=True
     ](ctx)
     v_tma_op = v.create_tma_tile[
-        BN, new_config.padded_depth, swizzle_mode, is_k_major=False
+        Int(BN), Int(new_config.padded_depth), swizzle_mode, is_k_major=False
     ](ctx)
 
     alias SchedulerType = TransientScheduler[
@@ -1465,22 +1465,22 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = config.block_m(),
-        depth = config.padded_depth,
+        BM = Int(config.block_m()),
+        depth = Int(config.padded_depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=False,
     ],
@@ -1604,22 +1604,22 @@ fn _mha_sm100_valid_length_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = config.block_m(),
-        depth = config.padded_depth,
+        BM = Int(config.block_m()),
+        depth = Int(config.padded_depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=False,
     ],
@@ -1738,22 +1738,22 @@ fn _mha_sm100_enqueue[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = config.block_m(),
-        depth = config.padded_depth,
+        BM = Int(config.block_m()),
+        depth = Int(config.padded_depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=False,
     ],
@@ -1817,7 +1817,9 @@ fn _mha_sm100_enqueue[
 
     alias max_tmem_cols = 512
     alias BN = config.block_n()
-    alias num_s = (max_tmem_cols - (BN // 2) - config.padded_depth) // BN
+    alias num_s = (
+        max_tmem_cols - (Int(BN) // 2) - Int(config.padded_depth)
+    ) // Int(BN)
     # we add smem use for SharedMemBarrier synchronization
     # 2*8 for mma mbars
     alias extra_B200_smem = (2 * num_s + 3) * 8
@@ -1870,22 +1872,22 @@ fn _mha_sm100[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = config.block_m(),
-        depth = config.padded_depth,
+        BM = Int(config.block_m()),
+        depth = Int(config.padded_depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=False,
     ],
@@ -1922,13 +1924,13 @@ fn _mha_sm100[
 
     alias simd_size: Int = simd_width_of[kv_type]()
 
-    alias num_softmax_threads: Int = config.num_consumer_threads()
+    alias num_softmax_threads: Int = Int(config.num_consumer_threads())
     alias num_softmax_warps = num_softmax_threads // 32
 
     alias cta_group = 1
-    alias BM: Int = config.block_m()
-    alias BN: Int = config.block_n()
-    alias BK: Int = config.padded_depth
+    alias BM: Int = Int(config.block_m())
+    alias BN: Int = Int(config.block_n())
+    alias BK: Int = Int(config.padded_depth)
     alias depth = config.depth
     # alias mma_shape = Index(64, depth, 16)
     # alias mma_shape = Index(128 if (BM % 128) == 0 else 64, depth, 16)
@@ -1993,7 +1995,7 @@ fn _mha_sm100[
     # warp_group_tid = tid % 128
     alias accum_type = get_accum_type[kv_type]()
     alias max_tmem_cols = 512
-    alias num_s = (max_tmem_cols - (MMA_N0 // 2) - MMA_N1) // MMA_N0
+    alias num_s = (max_tmem_cols - (MMA_N0 // 2) - Int(MMA_N1)) // MMA_N0
     alias UMMA0Type = SM100TensorAccumulatorSS[
         kv_type,
         accum_type,
@@ -2002,7 +2004,7 @@ fn _mha_sm100[
         BM=BM,  # 128
         BN=BN,  # BN
         BK=BK,  # depth
-        compute_BK = config.depth,
+        compute_BK = Int(config.depth),
         num_softmax_threads=num_softmax_threads,
         swizzle_a=swizzle_mode,
         swizzle_b=swizzle_mode,
@@ -2015,9 +2017,9 @@ fn _mha_sm100[
         kv_type,
         accum_type,
         MMA_M=MMA_M,
-        MMA_N=MMA_N1,  # depth
+        MMA_N = Int(MMA_N1),  # depth
         BM=BM,
-        BN=MMA_N1,  # depth
+        BN = Int(MMA_N1),  # depth
         BK=BN,  # BN
         num_softmax_threads=num_softmax_threads,
         swizzle_b=swizzle_mode,
@@ -2036,7 +2038,7 @@ fn _mha_sm100[
 
     # first umma is BM x BK @ BK x BN
     # The entire query block (BM x depth) is tiled in shared memory.
-    alias q_smem_size = BM * config.padded_depth
+    alias q_smem_size = BM * Int(config.padded_depth)
     q_smem = external_memory[
         Scalar[kv_type],
         address_space = AddressSpace.SHARED,
@@ -2060,11 +2062,11 @@ fn _mha_sm100[
     alias p_frag_size = BM * MMA_N0 // (
         num_softmax_threads * num_m_blocks_per_warp
     )
-    alias o_frag_size = BM * MMA_N1 // (
+    alias o_frag_size = BM * Int(MMA_N1) // (
         num_softmax_threads * num_m_blocks_per_warp
     )
     constrained[p_frag_size == 2 * (WM // 8) * (MMA_N0 // 8)]()
-    constrained[o_frag_size == 2 * (WM // 8) * (MMA_N1 // 8)]()
+    constrained[o_frag_size == 2 * (WM // 8) * (Int(MMA_N1) // 8)]()
     alias frag_simdwidth = 2
     constrained[
         BN * num_k_mmas * BM * MMA_K
@@ -2217,7 +2219,13 @@ fn _mha_sm100[
         umma_1.init()
 
     alias PositionType = MHAPosition[
-        BM, BN, depth, config.padded_depth, num_heads, group, decoding
+        BM,
+        BN,
+        Int(depth),
+        Int(config.padded_depth),
+        Int(num_heads),
+        group,
+        decoding,
     ]
 
     @parameter
@@ -2226,9 +2234,9 @@ fn _mha_sm100[
         return _get_position[
             BM,
             BN,
-            depth,
-            config.padded_depth,
-            num_heads,
+            Int(depth),
+            Int(config.padded_depth),
+            Int(num_heads),
             group,
             ragged,
             _is_cache_length_accurate,
@@ -2293,7 +2301,7 @@ fn _mha_sm100[
                 if kv_tile_start_row >= end:
                     return
 
-            alias tmem_cols = num_s * MMA_N0 + (MMA_N0 // 2) + MMA_N1
+            alias tmem_cols = num_s * MMA_N0 + (MMA_N0 // 2) + Int(MMA_N1)
             constrained[tmem_cols <= max_tmem_cols]()
             tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
 
@@ -2315,7 +2323,10 @@ fn _mha_sm100[
             fn q_mul_k(read_idx: UInt32, read_phase: UInt32):
                 q = q_desc
                 k = k_desc + Int(
-                    BN * config.padded_depth * size_of[kv_type]() * read_idx
+                    BN
+                    * Int(config.padded_depth)
+                    * size_of[kv_type]()
+                    * read_idx
                 )
                 umma_0.wait_for_tmem()
                 produced_mbar_kv[read_idx].wait(read_phase)
@@ -2389,7 +2400,10 @@ fn _mha_sm100[
                     read_idx: UInt32, read_phase: UInt32, scale_c: UInt32
                 ):
                     v = v_desc + Int(
-                        BN * config.padded_depth * size_of[kv_type]() * read_idx
+                        BN
+                        * Int(config.padded_depth)
+                        * size_of[kv_type]()
+                        * read_idx
                     )
                     produced_mbar_kv[read_idx].wait(read_phase)
                     umma_1.wait_for_tmem()
@@ -2615,7 +2629,7 @@ fn _mha_sm100[
             alias q_tile_size: UInt32 = q_smem_size // 2
             accum_smem_tile = LayoutTensor[
                 output_type,
-                Layout.row_major(BM, config.padded_depth),
+                Layout.row_major(BM, Int(config.padded_depth)),
                 address_space = AddressSpace.SHARED,
             ]((q_smem).bitcast[Scalar[output_type]]())
             accum_smem_warp_tile = accum_smem_tile.tile[WM, BN](
@@ -2639,8 +2653,8 @@ fn _mha_sm100[
             # vector and stored using 16B store instruction.
             copy_sram_to_dram[
                 thread_layout = Layout.row_major(
-                    num_softmax_threads * simd_size // depth,
-                    depth // UInt(simd_size),
+                    num_softmax_threads * simd_size // Int(depth),
+                    Int(depth // UInt(simd_size)),
                 ),
                 swizzle=swizzle,
             ](

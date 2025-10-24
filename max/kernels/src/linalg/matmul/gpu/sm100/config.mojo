@@ -124,14 +124,14 @@ struct MatmulConfig[
         var c_smem_bytes = (
             self.output_tile_shape[0]
             * self.output_tile_shape[1]
-            * self.num_output_stages
+            * Int(self.num_output_stages)
             * size_of[c_type]()
         )
         # Add tmem addr (4) and tmem dealloc mbar(8)
         var output_smem_bytes = c_smem_bytes + 12
 
         # response 128B, clc mbar 16B, clc-load pipeline mbar 16B
-        var clc_smem_bytes = 160 * self.num_clc_pipeline_stages
+        var clc_smem_bytes = 160 * Int(self.num_clc_pipeline_stages)
 
         # Usage by mma-output-pipeline
         var mma_output_smem_bytes = self.num_accum_pipeline_stages * 16
@@ -157,7 +157,7 @@ struct MatmulConfig[
                 b200_smem
                 - output_smem_bytes
                 - clc_smem_bytes
-                - mma_output_smem_bytes
+                - Int(mma_output_smem_bytes)
             )
             // AB_smem_per_stage
         )

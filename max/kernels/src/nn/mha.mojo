@@ -629,7 +629,9 @@ fn flash_attention_dispatch[
             # separate KV smem if we have enough smem
             @parameter
             if not is_shared_kv:
-                shared_mem_bytes += 2 * Int(BN) * depth * size_of[k_t.dtype]()
+                shared_mem_bytes += (
+                    2 * Int(BN) * Int(depth) * size_of[k_t.dtype]()
+                )
             else:
                 shared_mem_bytes += (
                     num_pipeline_stages * Int(BN) * BK * size_of[k_t.dtype]()
@@ -1488,7 +1490,7 @@ fn mha[
                 v,
                 mask,
                 sink_weights,
-                batch_idx,
+                Int(batch_idx),
                 scale,
                 seq_len,
                 num_keys,
@@ -2062,7 +2064,7 @@ fn mha_single_batch[
             copy_dram_to_sram_async[
                 thread_layout=async_copy_v_layout,
                 swizzle = v_smem_tile.dtype.is_half_float(),
-                num_threads=num_threads,
+                num_threads = Int(num_threads),
             ](
                 v_smem_tile.vectorize[1, simd_size](),
                 v_tensor.vectorize[1, simd_size](),
@@ -2836,8 +2838,8 @@ fn mha_single_batch_pipelined[
 
     @parameter
     for m_mma in range(num_m_mmas):
-        var rowsum_inv0 = recip(rowsum[2 * (m_mma)])
-        var rowsum_inv1 = recip(rowsum[2 * (m_mma) + 1])
+        var rowsum_inv0 = recip(rowsum[2 * Int(m_mma)])
+        var rowsum_inv1 = recip(rowsum[2 * Int(m_mma) + 1])
 
         @parameter
         for n_mma in range(num_n_mmas):
@@ -3132,7 +3134,7 @@ fn mha_decoding[
                 ),
             )
 
-        alias attention_config = MHAAttentionConfig[True, config, group]()
+        alias attention_config = MHAAttentionConfig[True, config, Int(group)]()
         var attention = Attention[config, Int(group), True, sink](
             attention_config,
             output_ptr.offset(output_batch_offset),
@@ -3141,7 +3143,7 @@ fn mha_decoding[
             v,
             mask,
             sink_weights_lt,
-            batch_idx,
+            Int(batch_idx),
             scale,
             1,
             num_keys,
@@ -4397,7 +4399,7 @@ fn mha_decoding_single_batch_pipelined[
     ](q_smem.bitcast[Scalar[output_type]]() + warp_id * WM * WN)
 
     alias swizzle = make_swizzle[
-        num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
+        num_rows = MMA_M // 2, row_size = Int(WN), access_size=MMA_N
     ]()
     copy_local_to_shared[
         thread_layout = Layout.row_major(8, 4), swizzle=swizzle

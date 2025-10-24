@@ -348,7 +348,7 @@ struct HopperMatmulSM90Kernel[
         @parameter
         for i in range(CLUSTER_M):
             multicast_column_mask |= Int(1 << (i * CLUSTER_N))
-        multicast_column_mask <<= rank_n
+        multicast_column_mask <<= Int(rank_n)
 
         var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (rank_m * CLUSTER_N)
         return (multicast_row_mask, multicast_column_mask)
@@ -1314,7 +1314,7 @@ struct HopperMatmulSM90Kernel[
             a_tile,
             b_tile,
             c_reg_tile,
-            local_warp_group_idx,
+            Int(local_warp_group_idx),
         )
         wgmma_op.commit_group()
         warpgroup_fence(c_reg_tile)

@@ -83,7 +83,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
 
     # Construct backing buffer and the KV cache itself.
     kv_cache_block_buffer = List[Scalar[dtype]](
-        length=UInt(block_shape.flattened_length()), fill=0
+        length=block_shape.flattened_length(), fill=0
     )
     kv_cache_block = NDBuffer(kv_cache_block_buffer.unsafe_ptr(), block_shape)
 
@@ -192,7 +192,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
 
     print("Created freqs_cis_table_buffer", flush=True)
     # Create output buffer.
-    q_out_buffer = List[Scalar[dtype]](length=UInt(len(q_buffer)), fill=0)
+    q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
     q_out = LayoutTensor[dtype, Layout.row_major[3]()](
         q_out_buffer.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[3]()].row_major(

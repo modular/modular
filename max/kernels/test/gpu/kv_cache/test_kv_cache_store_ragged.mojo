@@ -235,7 +235,7 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                         batch_idx,
                         head_idx,
                         cache_token_idx,
-                        head_dim_idx,
+                        Int(head_dim_idx),
                     )
 
                     # Verify the values match

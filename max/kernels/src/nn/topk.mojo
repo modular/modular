@@ -326,7 +326,7 @@ fn _top_k_cpu[
                         var ptr = idxs.unsafe_ptr() + i
                         sort(
                             Span[idxs.T, origin_of(idxs)](
-                                ptr=ptr, length=UInt(num_equal)
+                                ptr=ptr, length=num_equal
                             )
                         )
                     i += num_equal
@@ -887,7 +887,9 @@ fn _topk_stage1_old[
 
                 # Remove the found maximum from consideration in the next iteration
                 if total.p >= 0:
-                    var orig_tid = (vector_idx - block_offset) % stride
+                    var orig_tid = (vector_idx - Int(block_offset)) % Int(
+                        stride
+                    )
                     topk_sram[orig_tid].u = _topk_dead_val[T, largest]()
 
             barrier()

@@ -229,7 +229,9 @@ fn store_output_tile_via_tma[
     ](Pointer(to=c_tma_op))
 
     if local_thread_idx < UInt(WG_BN // TMA_BN):
-        var smem_offset = c_tile.ptr.offset(WG_BM * TMA_BN * local_thread_idx)
+        var smem_offset = c_tile.ptr.offset(
+            WG_BM * TMA_BN * Int(local_thread_idx)
+        )
         var c_tma_tile = SMemTileType[
             c_type,
             c_tma_layout,
@@ -241,7 +243,7 @@ fn store_output_tile_via_tma[
             UInt(
                 block_x * BN
                 + sub_wg_bn_id * WG_BN
-                + local_thread_idx * UInt(TMA_BN)
+                + Int(local_thread_idx * UInt(TMA_BN))
             ),
             UInt(block_y * BM),
         )

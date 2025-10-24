@@ -150,7 +150,9 @@ fn grouped_matmul_sm90[
         ctx, c_tensor
     )
 
-    alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
+    alias num_threads = WARPGROUP_SIZE * Int(
+        config.num_consumer
+    ) + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
         BM * BK * size_of[a_type]()
         + BN * BK * size_of[b_type]()

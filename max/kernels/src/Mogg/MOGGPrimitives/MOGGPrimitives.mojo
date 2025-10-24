@@ -82,12 +82,10 @@ struct StateContext:
         ](index, self.ctx_ptr)
 
 
-fn pack_string_res(
-    str_ptr: UnsafePointer[Byte], str_len: UInt
-) raises -> String:
+fn pack_string_res(str_ptr: UnsafePointer[Byte], str_len: Int) raises -> String:
     var span = Span[Byte, ImmutableAnyOrigin](
         ptr=str_ptr,
-        length=str_len,
+        length=Int(str_len),
     )
     # We can not free the resource ptr embedded in MEF, create a copy
     return String(StringSlice(from_utf8=span))
@@ -557,7 +555,7 @@ fn mgp_buffer_constant_external(
             "received null weights registry in mgp.buffer.constant.external"
         )
 
-    var weight_ptr = weights[][pack_string_res(name_ptr, name_len)]
+    var weight_ptr = weights[][pack_string_res(name_ptr, Int(name_len))]
     if (Int(weight_ptr) % align) != 0:
         raise Error(
             "invalid alignment for address ",
@@ -1631,7 +1629,7 @@ fn mgp_assert(cond: Bool, msg_ptr: UnsafePointer[Byte], msg_len: Int) raises:
     Raises an error when the input condition is not true.
     """
     if not cond:
-        raise Error(pack_string_res(msg_ptr, UInt(msg_len)))
+        raise Error(pack_string_res(msg_ptr, msg_len))
 
 
 # ===----------------------------------------------------------------------===#

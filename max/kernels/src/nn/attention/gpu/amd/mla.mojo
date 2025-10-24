@@ -110,7 +110,7 @@ __extension Attention:
             var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
             var k_tile = self.gmem_manager.get_kv_tensor(
-                self.k.block_paged_ptr[Self.BN](
+                self.k.block_paged_ptr[Int(Self.BN)](
                     self.get_batch_idx(),
                     kv_tile_start_row,
                     Self.kv_head_idx(),
@@ -120,7 +120,7 @@ __extension Attention:
             )
 
             var v_tile = self.gmem_manager.get_kv_tensor(
-                self.v.block_paged_ptr[Self.BN](
+                self.v.block_paged_ptr[Int(Self.BN)](
                     self.get_batch_idx(),
                     kv_tile_start_row,
                     Self.kv_head_idx(),
@@ -136,11 +136,11 @@ __extension Attention:
             var k_buffer = KBuffer[
                 tensor_core_mma = Self.get_tensor_core_mma_qk(),
                 swizzle=None,
-                BN = Self.BN,
-                WN = Self.WN,
-                BK = Self.BK,
-                depth = Self.depth,
-                num_threads = Self.num_threads,
+                BN = Int(Self.BN),
+                WN = Int(Self.WN),
+                BK = Int(Self.BK),
+                depth = Int(Self.depth),
+                num_threads = Int(Self.num_threads),
                 num_stages = Self.num_stages,
             ](
                 k_tile,
@@ -150,10 +150,10 @@ __extension Attention:
 
             var v_buffer = VBufferTransposeLoads[
                 tensor_core_mma = Self.get_tensor_core_mma_pv(),
-                BN = Self.BN,
-                BK = Self.BK,
-                depth = Self.depth,
-                num_threads = Self.num_threads,
+                BN = Int(Self.BN),
+                BK = Int(Self.BK),
+                depth = Int(Self.depth),
+                num_threads = Int(Self.num_threads),
                 num_stages = Self.num_stages,
             ](v_tile, self.smem_manager.get_v_ptr[v_tile.dtype]())
 
@@ -168,7 +168,7 @@ __extension Attention:
             )
 
             alias cache_group = self.num_heads // UInt(cache_num_heads)
-            alias rope_depth = q_depth - Self.depth
+            alias rope_depth = q_depth - Int(Self.depth)
 
             var k_rope_tile = LayoutTensor[
                 k_rope_t.dtype,
@@ -176,7 +176,7 @@ __extension Attention:
                 MutableAnyOrigin,
                 masked=True,
             ](
-                k_rope.block_paged_ptr[Self.BN](
+                k_rope.block_paged_ptr[Int(Self.BN)](
                     self.get_batch_idx(),
                     kv_tile_start_row + self.cache_start_pos,
                     Int(Self.kv_head_idx() // UInt(cache_group)),
@@ -188,11 +188,11 @@ __extension Attention:
             var k_rope_buffer = KBuffer[
                 tensor_core_mma = Self.get_tensor_core_mma_qk(),
                 swizzle=None,
-                BN = Self.BN,
-                WN = Self.WN,
-                BK = Self.BK,
-                depth = Self.depth,
-                num_threads = Self.num_threads,
+                BN = Int(Self.BN),
+                WN = Int(Self.WN),
+                BK = Int(Self.BK),
+                depth = Int(Self.depth),
+                num_threads = Int(Self.num_threads),
                 num_stages=2,
             ](
                 k_rope_tile,
@@ -208,7 +208,7 @@ __extension Attention:
             self.mma_qk[
                 prefetch_function=prefetch_function1,
                 beg_iter=0,
-                num_iters = Self.depth // Self.BK,
+                num_iters = Int(Self.depth // Self.BK),
             ](k_buffer)
 
             @parameter
@@ -218,8 +218,8 @@ __extension Attention:
 
             self.mma_qk[
                 prefetch_function=prefetch_function2,
-                beg_iter = Self.depth // Self.BK,
-                num_iters = rope_depth // Self.BK,
+                beg_iter = Int(Self.depth // Self.BK),
+                num_iters = rope_depth // Int(Self.BK),
                 prefetched_b_tile=True,
             ](k_rope_buffer)
 
@@ -237,7 +237,7 @@ __extension Attention:
 
         for i in range(UInt32(0), UInt32(self.num_keys), UInt32(Self.BN)):
             var end = min(i + Self.BN, self.num_keys)
-            loop_over_kvcache[Self.BN](i, end, end != self.num_keys)
+            loop_over_kvcache[Int(Self.BN)](i, end, end != self.num_keys)
 
         self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
 

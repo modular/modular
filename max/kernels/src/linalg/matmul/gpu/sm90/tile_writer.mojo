@@ -686,15 +686,15 @@ struct RegisterToGMemWriter[
             # With compute lambda: transform and store (returns new value)
             self._write_tile_with_epilogue(
                 c_reg_tile,
-                coords[0],
-                coords[1],
+                Int(coords[0]),
+                Int(coords[1]),
             )
         else:
             # Without epilogue or compute lambda: direct copy
             self._write_tile_direct(
                 c_reg_tile,
-                coords[0],
-                coords[1],
+                Int(coords[0]),
+                Int(coords[1]),
             )
 
     @always_inline
@@ -721,7 +721,7 @@ struct RegisterToGMemWriter[
 
             # Get the warp's portion of the tile
             var warp_tile = self.dst.tile[wgmma_shape[0] // 4, wgmma_shape[1]](
-                Int(m_mma * 4 + self.thread_info.warp_id), n_mma
+                Int(m_mma * 4 + Int(self.thread_info.warp_id)), n_mma
             )
 
             # Get the corresponding register fragment
@@ -756,7 +756,7 @@ struct RegisterToGMemWriter[
         # Get warp tile and coordinates
         var warp_tile, warp_tile_coords, warp_tile_offset = (
             self.dst.tile_with_offset[wgmma_shape[0] // 4, wgmma_shape[1]](
-                Int(m_mma * 4 + self.thread_info.warp_id), n_mma
+                Int(m_mma * 4 + Int(self.thread_info.warp_id)), n_mma
             )
         )
 
@@ -845,7 +845,7 @@ struct RegisterToGMemWriter[
         # Get warp tile with bounds checking
         var warp_tile, warp_tile_coords_raw, _ = self.dst.tile_with_offset[
             wgmma_shape[0] // 4, wgmma_shape[1]
-        ](Int(m_mma * 4 + self.thread_info.warp_id), n_mma, 0, 0)
+        ](Int(m_mma * 4 + Int(self.thread_info.warp_id)), n_mma, 0, 0)
 
         # Convert coordinates
         var warp_tile_coords = rebind[IndexList[2]](warp_tile_coords_raw)

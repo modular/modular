@@ -316,17 +316,17 @@ fn copy_dram_to_sram_lds[
         for i in range(32 // 16):
             var dst_partitions = dst.tile[32, 32](tile, 0).tile[16, 32](i, 0)
             var src_partitions = src.tile[32, 32](tile, 0).tile[16, 32](i, 0)
-            var worker_idx_with_offset = worker_idx + UInt(i * UInt(WARP_SIZE))
+            var worker_idx_with_offset = worker_idx + UInt(i * WARP_SIZE)
             var src_dist = src_partitions.vectorize[1, load_width]().distribute[
                 thread_layout
             ](
                 UInt(
                     (
                         swizzle.value()(
-                            worker_idx_with_offset
+                            Int(worker_idx_with_offset)
                         ) if swizzle else Int(worker_idx_with_offset)
                     )
-                    % UInt(WARP_SIZE)
+                    % WARP_SIZE
                 )
             )
             alias dtype = src.dtype
@@ -410,7 +410,7 @@ struct KBuffer[
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
     alias num_mmas = ceildiv(WN, Self.MMA_N)
-    alias num_k_mmas2 = ceildiv(BK, UInt(Self.MMA_K * k_group_size))
+    alias num_k_mmas2 = ceildiv(BK, Self.MMA_K * k_group_size)
     alias simd_width = simd_width_of[k_t.dtype]()
 
     # Shared memory layout
@@ -497,7 +497,7 @@ struct KBuffer[
         self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
 
         self.kv_cache_iter = type_of(self.kv_cache_iter)(
-            k_cache, batch_idx, head_idx, end
+            k_cache, Int(batch_idx), Int(head_idx), Int(end)
         )
         self.buffer_idx = 0
 
@@ -514,10 +514,10 @@ struct KBuffer[
         @parameter
         if depth == 64:
             var smem_warp_tile = smem_tile.tile[32, BK](
-                get_warp_id() // 2, get_warp_id() % 2
+                Int(get_warp_id()) // 2, Int(get_warp_id()) % 2
             )
             var gmem_warp_tile = global_tile.tile[32, BK](
-                get_warp_id() // 2, get_warp_id() % 2
+                Int(get_warp_id()) // 2, Int(get_warp_id()) % 2
             )
             # load from dram to sram directly
             num_loads = copy_dram_to_sram_lds[swizzle=swizzle,](
@@ -530,10 +530,10 @@ struct KBuffer[
             @parameter
             for depth_tile in range(depth // 128):
                 var smem_warp_tile = smem_tile.tile[BN, BK](
-                    0, get_warp_id() + UInt(num_warps * depth_tile)
+                    0, Int(get_warp_id() + UInt(num_warps * depth_tile))
                 )
                 var gmem_warp_tile = global_tile.tile[BN, BK](
-                    0, get_warp_id() + UInt(num_warps * depth_tile)
+                    0, Int(get_warp_id() + UInt(num_warps * depth_tile))
                 )
                 # load from dram to sram directly
                 num_loads += copy_dram_to_sram_lds[swizzle=swizzle,](
@@ -564,7 +564,7 @@ struct KBuffer[
         alias num_warps_n = BN // WN
         var warp_col = get_warp_id() % UInt(num_warps_n)
         var smem_tile = self.smem_iter.next_unsafe(buffer)[].tile[BN, BK](
-            0, bk_tile
+            0, Int(bk_tile)
         )
 
         var wtile_coord0 = Int(warp_col)
@@ -712,7 +712,7 @@ struct VBuffer[
         self.mma_tile = type_of(self.mma_tile).stack_allocation()
         self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
         self.kv_cache_iter = type_of(self.kv_cache_iter)(
-            v_cache, batch_idx, head_idx, end
+            v_cache, Int(batch_idx), Int(head_idx), Int(end)
         )
         self.buffer_idx = 0
 
@@ -728,10 +728,10 @@ struct VBuffer[
         @parameter
         if depth == 64:
             var smem_warp_tile = smem_tile.tile[32, BK](
-                get_warp_id() // 2, get_warp_id() % 2
+                Int(get_warp_id()) // 2, Int(get_warp_id()) % 2
             )
             var gmem_warp_tile = global_tile.tile[32, BK](
-                get_warp_id() // 2, get_warp_id() % 2
+                Int(get_warp_id()) // 2, Int(get_warp_id()) % 2
             )
             # load from dram to sram directly
 
@@ -745,10 +745,10 @@ struct VBuffer[
             @parameter
             for depth_tile in range(depth // 128):
                 var smem_warp_tile = smem_tile.tile[BN, BK](
-                    0, get_warp_id() + UInt(num_warps * depth_tile)
+                    0, Int(get_warp_id() + UInt(num_warps * depth_tile))
                 )
                 var gmem_warp_tile = global_tile.tile[BN, BK](
-                    0, get_warp_id() + UInt(num_warps * depth_tile)
+                    0, Int(get_warp_id() + UInt(num_warps * depth_tile))
                 )
                 # load from dram to sram directly
 
@@ -780,7 +780,7 @@ struct VBuffer[
         for k in range(BK // 16):
             var smem_tile = (
                 self.smem_iter.next_unsafe(buffer)[]
-                .tile[BK, depth](bk_tile, 0)
+                .tile[BK, depth](Int(bk_tile), 0)
                 .tile[16, depth](k, 0)
             )
             var frags = (
@@ -792,7 +792,7 @@ struct VBuffer[
             @parameter
             for i in range(depth // 32):
                 frags[i, 0] = rebind[frags.element_type](
-                    load_16x32(smem_tile.tile[16, 32](0, i), lane_id())
+                    load_16x32(smem_tile.tile[16, 32](0, i), Int(lane_id()))
                 )
 
             self.mma_tile.split[Self.num_k_tiles]()[k].vectorize[
@@ -888,12 +888,14 @@ struct QRegisterBuffer[
         alias num_warps_n = BN // WN
         var warp_row = get_warp_id() // UInt(num_warps_n)
         var bounds = max(
-            min(Int32(WM), Int32(self.gmem_tensor.dim[0]() - WM * warp_row))
+            min(
+                Int32(WM), Int32(self.gmem_tensor.dim[0]() - WM * Int(warp_row))
+            )
             * self.gmem_tensor.stride[0](),
             0,
         )
         var gmem_warp_iter = self.gmem_tensor.tiled_iterator[WM, BK, axis=1](
-            warp_row, 0
+            Int(warp_row), 0
         )
         var mma_tiles = self.mma_tile.split[Self.num_tiles]()
 
@@ -1001,7 +1003,7 @@ fn _apply_mask[
         and not mask_t.apply_log2e_after_mask else Scalar[accum_type](1)
     )
 
-    var coords = idx2crd[warp_layout](lane)
+    var coords = idx2crd[warp_layout](Int(lane))
     var lane_row = coords[0] * rowwise_stride
     var lane_col = coords[1] * colwise_stride
 
@@ -1454,7 +1456,9 @@ fn mha_single_batch_gfx950[
     var out_reg_tile = (
         LayoutTensor[
             accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas_depth, output_frag_size),
+            Layout.row_major(
+                Int(num_m_mmas * num_n_mmas_depth), output_frag_size
+            ),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
@@ -1483,14 +1487,14 @@ fn mha_single_batch_gfx950[
 
     var rowmax = LayoutTensor[
         accum_type,
-        Layout.row_major(num_m_mmas, fragment_layout.shape[0].value()),
+        Layout.row_major(Int(num_m_mmas), fragment_layout.shape[0].value()),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
     var rowsum = LayoutTensor[
         accum_type,
-        Layout.row_major(num_m_mmas, fragment_layout.shape[0].value()),
+        Layout.row_major(Int(num_m_mmas), fragment_layout.shape[0].value()),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
@@ -1511,7 +1515,13 @@ fn mha_single_batch_gfx950[
         rowsum = rowsum.fill(0)
 
     var smem_manager = SharedMemoryManager[
-        q_type, BM, BN, BK, depth, num_warps_n, token_gen
+        q_type,
+        Int(BM),
+        Int(BN),
+        Int(BK),
+        Int(depth),
+        Int(num_warps_n),
+        token_gen,
     ]()
 
     var warp_scratch = smem_manager.get_warp_scratch_tensor()
@@ -1525,11 +1535,11 @@ fn mha_single_batch_gfx950[
     var q_buffer = QRegisterBuffer[
         mma_shape=mma_shape,
         k_group_size=k_group_size,
-        WM=WM,
-        WN=WN,
-        BN=BN,
-        BK=BK,
-        depth=depth,
+        WM = Int(WM),
+        WN = Int(WN),
+        BN = Int(BN),
+        BK = Int(BK),
+        depth = Int(depth),
         thread_layout=warp_layout,
     ](q_tile)
 
@@ -1540,12 +1550,12 @@ fn mha_single_batch_gfx950[
         mma_shape=mma_shape,
         k_group_size=k_group_size,
         swizzle = Swizzle(4, 0, 4),
-        BN=BN,
-        WN=WN,
-        BK=BK,
-        num_threads=num_threads,
-        depth=depth,
-        kv_num_heads = num_heads // UInt(group),
+        BN = Int(BN),
+        WN = Int(WN),
+        BK = Int(BK),
+        num_threads = Int(num_threads),
+        depth = Int(depth),
+        kv_num_heads = Int(num_heads // UInt(group)),
     ](
         k,
         UInt(batch_idx),
@@ -1557,11 +1567,11 @@ fn mha_single_batch_gfx950[
     var v_buffer = VBuffer[
         mma_shape=mma_shape,
         k_group_size=k_group_size,
-        BN=BN,
-        BK=BK,
-        depth=depth,
-        num_threads=num_threads,
-        kv_num_heads = num_heads // UInt(group),
+        BN = Int(BN),
+        BK = Int(BK),
+        depth = Int(depth),
+        num_threads = Int(num_threads),
+        kv_num_heads = Int(num_heads // UInt(group)),
     ](
         v,
         UInt(batch_idx),
@@ -1616,8 +1626,8 @@ fn mha_single_batch_gfx950[
         var p_buffer = PRegisterBuffer[
             accum_type,
             q_type,
-            num_m_mmas,
-            num_n_mmas,
+            Int(num_m_mmas),
+            Int(num_n_mmas),
             output_frag_size,
         ]()
 
@@ -1647,9 +1657,9 @@ fn mha_single_batch_gfx950[
 
             @parameter
             for k_mma in range(num_k_mmas2):
-                var q_mma_tile = q_buffer.get_mma_tile[i, k_mma]()
+                var q_mma_tile = q_buffer.get_mma_tile[Int(i), Int(k_mma)]()
 
-                var k_mma_tile = k_buffer.get_mma_tile[k_mma]()
+                var k_mma_tile = k_buffer.get_mma_tile[Int(k_mma)]()
                 tensor_core_mma.mma[swap_a_b=swap_a_b](
                     q_mma_tile, k_mma_tile, p_buffer.reg_tile
                 )
@@ -1682,8 +1692,8 @@ fn mha_single_batch_gfx950[
                 token_gen=token_gen,
                 MMA_M = mma_shape[0],
                 MMA_N = mma_shape[1],
-                num_m_mmas=num_m_mmas,
-                num_n_mmas=num_n_mmas,
+                num_m_mmas = Int(num_m_mmas),
+                num_n_mmas = Int(num_n_mmas),
                 mask_t=mask_t,
                 group=group,
                 fragment_layout=fragment_layout_nested,
@@ -1708,20 +1718,20 @@ fn mha_single_batch_gfx950[
 
         mask_warp_col += BN
         alias reg_layout_by_mma_unit = Layout.row_major(
-            num_m_mmas * num_n_mmas, output_frag_size
+            Int(num_m_mmas * num_n_mmas), output_frag_size
         )
 
         alias reg_layout_by_mma_unit_depth = Layout.row_major(
-            num_m_mmas * num_n_mmas_depth, output_frag_size
+            Int(num_m_mmas * num_n_mmas_depth), output_frag_size
         )
         # don't know why we need this barrier but i get random failures without it
         _online_softmax_iter_for_mma_output[
             accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(num_m_mmas, num_n_mmas),
+            Layout.row_major(Int(num_m_mmas), Int(num_n_mmas)),
             # threads layout by warp
-            Layout.row_major(num_warps_m, num_warps_n),
+            Layout.row_major(Int(num_warps_m), Int(num_warps_n)),
             warp_layout,
             use_exp2=use_exp2,
             fragment_layout=fragment_layout,
@@ -1732,7 +1742,7 @@ fn mha_single_batch_gfx950[
             p_buffer.reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
                 1, output_frag_size
             ](),
-            warp_scratch.tile[2 * num_warps_n, WM](0, Int(warp_row)),
+            warp_scratch.tile[2 * Int(num_warps_n), Int(WM)](0, Int(warp_row)),
             rowmax.ptr.address_space_cast[AddressSpace.GENERIC](),
             rowsum.ptr.address_space_cast[AddressSpace.GENERIC](),
         )
@@ -1749,14 +1759,14 @@ fn mha_single_batch_gfx950[
             if i != 0:
                 v_buffer.load_from_shared(UInt(loop_counter % 2), i)
 
-            var p_mma_tile_interleaved = p_buffer.interleave[i]()
+            var p_mma_tile_interleaved = p_buffer.interleave[Int(i)]()
 
             @parameter
             for k_mma_idx in range(v_buffer.num_k_tiles):
                 tensor_core_mma.mma[swap_a_b=swap_a_b](
                     p_mma_tile_interleaved.tile[1, simd_width](0, k_mma_idx),
                     v_buffer.mma_tile.tile[
-                        depth // UInt(mma_shape[0]), simd_width
+                        Int(depth // UInt(mma_shape[0])), simd_width
                     ](k_mma_idx, 0),
                     out_reg_tile,
                 )
@@ -1779,16 +1789,18 @@ fn mha_single_batch_gfx950[
 
     for i in range(UInt32(0), UInt32(num_keys), UInt32(BN)):
         var end = min(i + BN, num_keys)
-        loop_over_kvcache[BN](i, end, end != num_keys)
+        loop_over_kvcache[Int(BN)](i, end, end != num_keys)
 
     # Apply softmax denominator.
     apply_softmax_denominator[
-        num_m_mmas=num_m_mmas,
-        num_n_mmas=num_n_mmas_depth,
+        num_m_mmas = Int(num_m_mmas),
+        num_n_mmas = Int(num_n_mmas_depth),
         fragment_layout=fragment_layout,
     ](out_reg_tile, rowsum)
 
-    var output_warp_tile = output_tile.tile[WM, WN](warp_row, warp_col)
+    var output_warp_tile = output_tile.tile[Int(WM), Int(WN)](
+        Int(warp_row), Int(warp_col)
+    )
 
     copy_local_to_dram2[
         dst_thread_layout=warp_layout,

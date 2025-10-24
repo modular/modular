@@ -410,7 +410,7 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32](length=UInt(num_clocks), fill=0)
+        var clocks = List[UInt32](length=Int(UInt(num_clocks)), fill=0)
 
         _check_error(
             _get_dylib_function[
@@ -451,7 +451,7 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32](length=UInt(num_clocks), fill=0)
+        var clocks = List[UInt32](length=Int(UInt(num_clocks)), fill=0)
 
         _check_error(
             _get_dylib_function[

@@ -180,7 +180,7 @@ struct LogProbabilitiesRagged:
                 var output_token_index = global_idx.x
                 if output_token_index < UInt(num_output_tokens):
                     compute_log_probabilities_1tok[target, levels](
-                        output_token_index=output_token_index,
+                        output_token_index=Int(output_token_index),
                         lp_logits=lp_logits,
                         lp_tokens=lp_tokens,
                         logits=logits,

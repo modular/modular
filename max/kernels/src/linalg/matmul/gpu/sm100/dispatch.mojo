@@ -1752,7 +1752,7 @@ fn _bf16_experimental[
                 mma_shape=tuning_config.mma_shape,
                 cta_group=tuning_config.cta_group,
                 cluster_shape=tuning_config.cluster_shape,
-                block_swizzle_size=tuning_config.block_swizzle_size,
+                block_swizzle_size=Int(tuning_config.block_swizzle_size),
                 raster_order=tuning_config.rasterize_order,
                 num_pipeline_stages=tuning_config.num_pipeline_stages,
             )
