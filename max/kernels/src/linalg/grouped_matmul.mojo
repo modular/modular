@@ -35,6 +35,8 @@ from gpu.id import (
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from gpu.grid_controls import PDLLevel
+
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import IntTuple, Layout, LayoutTensor
@@ -61,8 +63,11 @@ from .matmul.gpu.sm90.grouped_matmul import grouped_matmul_sm90
 from .matmul.vendor.blas import matmul as vendor_matmul
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, block_swizzle
-from .grouped_matmul_sm100 import grouped_matmul_sm100_persistent
 
+from .matmul.gpu import (
+    _amdgpu_matmul_build_block_shape_list,
+    _amdgpu_matmul_config_from_block_shape,
+)
 from .matmul.gpu.amd import gemm_kernel_amd
 from algorithm import vectorize
 
@@ -140,7 +145,9 @@ fn naive_grouped_matmul_kernel[
     expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
 ):
     # There has to be a better way :(
-    var M = UInt(a_offsets[Int(block_idx.z) + 1] - a_offsets[Int(block_idx.z)])
+    var M: UInt = UInt(
+        a_offsets[Int(block_idx.z) + 1] - a_offsets[Int(block_idx.z)]
+    )
     N = b.dim[1]()
     K = b.dim[2]()
 
@@ -180,54 +187,6 @@ fn naive_grouped_matmul_kernel[
     else:
         c_by_expert = c.data + a_start_row * N
         c_by_expert[m * UInt(N) + n] = accum.cast[c_type]()
-
-
-fn naive_epilogue[
-    c_type: DType,
-    c_shape: DimList,
-    *,
-    elementwise_lambda_fn: elementwise_epilogue_type,
-](
-    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    ctx: DeviceContext,
-) raises:
-    alias kernel = naive_epilogue_kernel[
-        c_type,
-        c_shape,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ]
-    var M = c.dim[0]()
-    var N = c.dim[1]()
-    alias simd_size = simd_width_of[c_type]()
-    var block_dim = (128 // simd_size, simd_size, 1)
-    ctx.enqueue_function_checked[kernel, kernel](
-        c,
-        grid_dim=(ceildiv(N, block_dim[0]), ceildiv(M, block_dim[1]), 1),
-        block_dim=block_dim,
-    )
-
-
-fn naive_epilogue_kernel[
-    c_type: DType,
-    c_shape: DimList,
-    *,
-    elementwise_lambda_fn: elementwise_epilogue_type,
-](c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],):
-    alias simd_size = simd_width_of[c_type]()
-    alias alignment = align_of[SIMD[c_type, simd_size]]()
-    var n = global_idx.x * UInt(simd_size)
-    var m = global_idx.y
-    alias N = c_shape.get[1]()
-    var M = c.dim[0]()
-
-    # note that the most naive implementation of simd_size=1 won't work because
-    # different threads will be loading and storing in the same 32-bit region
-    # leading to synchronization/data race issues.
-    if m < UInt(M) and n < UInt(N):
-        var val = c.load[width=simd_size, alignment=alignment](Index(m, n))
-        elementwise_lambda_fn[c_type, simd_size, alignment=alignment](
-            Index(m, n), val
-        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -507,7 +466,7 @@ fn grouped_matmul_kernel_sm100[
     )
 
     ctile, ctile_coords, _ = c_by_expert.tile_with_offset[BM, BN](
-        Int(block_idx.y), Int(block_idx.x)
+        block_idx.y, block_idx.x
     )
     alias c_coord_type = type_of(ctile_coords)
 
@@ -520,7 +479,7 @@ fn grouped_matmul_kernel_sm100[
 
             c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
                 ctile.tile_with_offset[MMA_M // num_warps, MMA_N](
-                    4 * m_mma + Int(warp_id), n_mma
+                    4 * m_mma + warp_id, n_mma
                 )
             )
             c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](
@@ -650,7 +609,7 @@ fn grouped_matmul_sm100[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         a_offsets,
@@ -823,6 +782,75 @@ fn grouped_matmul_amd_kernel_launcher[
             vectorize[process_elements, vec_width](elements_to_process)
 
 
+@always_inline
+fn dispatch_amd_matmul_by_block_shape[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    transpose_b: Bool,
+    N: Int,
+    K: Int,
+    launcher_fn: fn[
+        config: MatmulConfig[a_type, b_type, c_type, transpose_b]
+    ] () raises capturing -> None,
+    default_block_tile_shape: IndexList[3],
+](M: Int, ctx: DeviceContext) raises:
+    """Dispatches to the best kernel configuration based on runtime M dimension.
+    """
+    alias block_shape_list = _amdgpu_matmul_build_block_shape_list[N]()
+
+    # Auto-tune block shape selection: Find the configuration that minimizes
+    # SM idle time by scoring how evenly work distributes across all SMs.
+    # Lower score = better load balance (fewer idle SMs in the last wave).
+    var best_idx = -1
+    var best_score = Int.MAX
+    var sm_count = ctx.default_device_info.sm_count
+
+    @parameter
+    for i in range(len(block_shape_list)):
+        alias block_shape = block_shape_list[i]
+        alias block_m = block_shape[0]
+        alias block_n = block_shape[1]
+        alias n_blocks = ceildiv(N, block_n)
+
+        var m_blocks = ceildiv(M, block_m)
+        var total_blocks = m_blocks * n_blocks
+        var batch, extra = divmod(total_blocks - 1, sm_count)
+        var score = batch * sm_count + (sm_count - extra - 1)
+
+        if score < best_score:
+            best_idx = i
+            best_score = score
+
+    # Dispatch to the best configuration if found
+    @parameter
+    for i in range(len(block_shape_list)):
+        if best_idx == i:
+            alias config = _amdgpu_matmul_config_from_block_shape[
+                c_type,
+                a_type,
+                b_type,
+                transpose_b,
+                K,
+                pdl_level = PDLLevel(),
+            ](block_shape_list[i])
+            launcher_fn[config]()
+            return
+
+    # Fallback to default config
+    alias default_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=default_block_tile_shape,
+        warp_tile_shape=Index(
+            default_block_tile_shape[0] // 2,
+            default_block_tile_shape[1] // 2,
+            default_block_tile_shape[2],
+        ),
+        num_pipeline_stages=1,
+        num_k_partitions=1,
+    )
+    launcher_fn[default_config]()
+
+
 fn grouped_matmul_amd[
     c_type: DType,
     c_shape: DimList,
@@ -863,39 +891,59 @@ fn grouped_matmul_amd[
     var c_tensor = from_ndbuffer_row_major(c)
 
     alias block_dim = 256
-    alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(BM, BN, BK),
-        warp_tile_shape=Index(BM // 2, BN // 2, BK),
-        num_pipeline_stages=1,
-        num_k_partitions=1,
-    )
 
-    alias kernel = grouped_matmul_amd_kernel_launcher[
-        c_type,
-        a_type,
-        b_type,
-        type_of(c_tensor).layout,
-        type_of(a_tensor).layout,
-        type_of(b_tensor).layout,
-        transpose_b,
-        config,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ]
-
-    ctx.enqueue_function_checked[kernel, kernel](
+    @always_inline
+    @parameter
+    @__copy_capture(
         c_tensor,
         a_tensor,
         b_tensor,
         a_offsets,
         expert_ids,
         num_active_experts,
-        grid_dim=(
-            ceildiv(N, BN),
-            ceildiv(max_num_tokens_per_expert, BM),
-            num_active_experts,
-        ),
-        block_dim=(block_dim),
+        max_num_tokens_per_expert,
     )
+    fn launch_kernel[
+        config: MatmulConfig[a_type, b_type, c_type, transpose_b]
+    ]() raises:
+        alias kernel = grouped_matmul_amd_kernel_launcher[
+            c_type,
+            a_type,
+            b_type,
+            type_of(c_tensor).layout,
+            type_of(a_tensor).layout,
+            type_of(b_tensor).layout,
+            transpose_b,
+            config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ]
+        print(config.block_tile_shape)
+        ctx.enqueue_function[kernel](
+            c_tensor,
+            a_tensor,
+            b_tensor,
+            a_offsets,
+            expert_ids,
+            num_active_experts,
+            grid_dim=(
+                ceildiv(N, config.block_tile_shape[1]),
+                ceildiv(max_num_tokens_per_expert, config.block_tile_shape[0]),
+                num_active_experts,
+            ),
+            block_dim=(block_dim),
+        )
+
+    # Dispatch to the best configuration based on runtime dimensions
+    dispatch_amd_matmul_by_block_shape[
+        c_type,
+        a_type,
+        b_type,
+        transpose_b,
+        N,
+        K,
+        launch_kernel,
+        block_tile_shape,
+    ](max_num_tokens_per_expert, ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -947,53 +995,7 @@ fn grouped_matmul[
             ctx,
         )
     elif is_sm100_kernel_applicable:
-        alias N = b.shape.get[1]()
-        alias K = b.shape.get[2]()
-        alias contiguous_bytes = K * size_of[a_type]()
-
-        fn get_swizzle_mode(contiguous_bytes: Int) -> TensorMapSwizzle:
-            if contiguous_bytes >= TensorMapSwizzle.SWIZZLE_128B.bytes():
-                return TensorMapSwizzle.SWIZZLE_128B
-            elif contiguous_bytes >= TensorMapSwizzle.SWIZZLE_64B.bytes():
-                return TensorMapSwizzle.SWIZZLE_64B
-            elif contiguous_bytes >= TensorMapSwizzle.SWIZZLE_32B.bytes():
-                return TensorMapSwizzle.SWIZZLE_32B
-            else:
-                return TensorMapSwizzle.SWIZZLE_NONE
-
-        alias a_swizzle = get_swizzle_mode(contiguous_bytes)
-        alias b_swizzle = a_swizzle
-        alias BK = (a_swizzle.bytes() // size_of[a_type]())
-        alias _MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-        alias MMA_K = min(_MMA_K, K)
-        # For cta_group = 2, N must be divisible by 256 to ensure correct tiling and memory alignment for the kernel.
-        alias cta_group = 2 if N % 256 == 0 else 1
-        alias block_tile_shape = Index(128, 32 // cta_group, BK)
-        alias umma_shape = Index(
-            block_tile_shape[0] * cta_group,
-            block_tile_shape[1] * cta_group,
-            MMA_K,
-        )
-        alias cluster_shape = Index(cta_group, 1, 1)
-        alias transpose_b = True
-        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            block_tile_shape=block_tile_shape,
-            mma_shape=umma_shape,
-            cluster_shape=cluster_shape,
-        )
-        constrained[
-            K % BK == 0,
-            "b_shape[2] must be a multiple of BK. Got " + String(K),
-        ]()
-
-        grouped_matmul_sm100_persistent[
-            transpose_b=transpose_b,
-            config=config,
-            cta_group=cta_group,
-            a_swizzle=a_swizzle,
-            b_swizzle=b_swizzle,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](
+        grouped_matmul_sm100[elementwise_lambda_fn=elementwise_lambda_fn](
             c,
             a,
             a_offsets,
