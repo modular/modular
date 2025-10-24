@@ -16,6 +16,8 @@ from max.interfaces import (
     SamplingParams,
     SamplingParamsGenerationConfigDefaults,
     SamplingParamsInput,
+    TextGenerationContext,
+    VLMTextGenerationContext,
     msgpack_eq,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
@@ -1062,3 +1064,31 @@ def test_text_and_vision_context_sad_case() -> None:
             ],
             vision_token_ids=[123],
         )
+
+
+def does_not_raise_due_to_check_in_property_method() -> None:
+    """This test ensures that `isinstance`, `hasattr`, and other class introspection
+    methods do not execute the body of `get_last_generated_token()` and throw an
+    exception. If `get_last_generated_token()` was instead a @property method
+    called via `ctx.last_generated_token`, this test would fail.
+    """
+
+    ctx = TTSContext(
+        max_length=10,
+        tokens=np.array([0, 1, 2, 3]),
+    )
+
+    # Verify that calling get_last_generated_token() raises an exception
+    with pytest.raises(ValueError, match="No tokens have been generated"):
+        _ = ctx.get_last_generated_token()
+
+    # Try very hard to execute body of last_generated_token to throw exception
+    _ = hasattr(ctx, "get_last_generated_token")
+    _ = getattr(ctx, "get_last_generated_token", None)
+    # Protocol structural checks should NOT trigger the method body!
+    # (TextGenerationContext and VLMTextGenerationContext are Protocols)
+    _ = isinstance(ctx, TextGenerationContext)
+    # The original bug report indicated that MAX threw a ValueError in call to
+    # isinstance(ctx, VLMTextGenerationContext) so we are validating this case here.
+    # See GENAI-318 for details.
+    _ = isinstance(ctx, VLMTextGenerationContext)
