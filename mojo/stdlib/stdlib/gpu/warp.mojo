@@ -34,6 +34,7 @@ reductions, broadcasts, and synchronization.
 # Re-export all public symbols from primitives.warp for backward compatibility
 from .primitives.warp import (
     ReductionMethod,
+    WARP_SIZE,
     broadcast,
     lane_group_max,
     lane_group_max_and_broadcast,
