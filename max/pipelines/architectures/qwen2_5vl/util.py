@@ -17,11 +17,12 @@ from collections.abc import Sequence
 
 import numpy as np
 import numpy.typing as npt
-from max.pipelines.core import TextAndVisionContext
+
+from .context import Qwen2_5VLTextAndVisionContext
 
 
 def compute_scatter_gather_indices(
-    batch: Sequence[TextAndVisionContext],
+    batch: Sequence[Qwen2_5VLTextAndVisionContext],
 ) -> tuple[npt.NDArray[np.int32], npt.NDArray[np.int64]]:
     """Compute scatter and gather indices for a batch of VLM contexts.
 
@@ -57,7 +58,7 @@ def compute_scatter_gather_indices(
             # tokens are in the prompt. This is populated by tokenizer.
             # eg: prompt = [0, 1, 2, 3, IMG, IMG, IMG, IMG, 8, 9]
             #    indices = [4, 5, 6, 7]
-            indices = ctx.extra_model_args["image_token_indices"]
+            indices = ctx.image_token_indices
 
             # Subtract all of the indices by the start_idx to get offsets
             # relative to the ragged next_tokens input sequence.

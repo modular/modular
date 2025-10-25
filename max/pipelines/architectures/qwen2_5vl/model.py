@@ -56,6 +56,7 @@ from max.pipelines.lib import (
 from max.profiler import Tracer, traced
 from transformers import AutoConfig
 
+from .context import Qwen2_5VLTextAndVisionContext
 from .model_config import Qwen2_5VLConfig
 from .nn.data_processing import get_rope_index
 from .qwen2_5vl import Qwen2_5VL
@@ -680,7 +681,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         ).to(self.devices)
 
     def _batch_image_token_indices(
-        self, context_batch: Sequence[TextAndVisionContext]
+        self, context_batch: Sequence[Qwen2_5VLTextAndVisionContext]
     ) -> tuple[list[Tensor], list[Tensor]]:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
@@ -807,7 +808,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     @traced
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextAndVisionContext],
+        context_batch: Sequence[Qwen2_5VLTextAndVisionContext],  # type: ignore[override]
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> Qwen2_5VLInputs:
@@ -815,6 +816,12 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         if kv_cache_inputs is None:
             raise ValueError("KV Cache Inputs must be provided")
+
+        # Validate all contexts are the correct type
+        for ctx in context_batch:
+            assert isinstance(ctx, Qwen2_5VLTextAndVisionContext), (
+                f"Expected Qwen2_5VLTextAndVisionContext, got {type(ctx).__name__}"
+            )
 
         # Prepare Inputs Needed Regardless of Images
         with Tracer("prepare_input_ids"):
@@ -835,9 +842,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             position_ids_list = []
 
             for ctx in context_batch:
-                ctx_decoder_position_ids = ctx.extra_model_args[
-                    "decoder_position_ids"
-                ]
+                ctx_decoder_position_ids = ctx.decoder_position_ids
 
                 # - For each text token, the position id increases by one each time.
                 # - Each image token of same image has the same position id as they
@@ -862,34 +867,17 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     # Recompute decoder_position_ids using get_rope_index
                     # This handles the case after preemption where we need to recompute the prompt
 
-                    # Extract required parameters from ctx.extra_model_args
-                    # These are stored as numpy arrays, convert to Python ints
-                    spatial_merge_size = int(
-                        ctx.extra_model_args.get(
-                            "spatial_merge_size", np.array(2, dtype=np.int32)
-                        )
+                    # Extract required parameters from context
+                    spatial_merge_size = ctx.spatial_merge_size
+                    image_token_id = ctx.image_token_id
+                    video_token_id = ctx.video_token_id
+                    vision_start_token_id = ctx.vision_start_token_id
+                    tokens_per_second = ctx.tokens_per_second
+                    image_grid_thw = (
+                        ctx.vision_data.image_grid_thw
+                        if ctx.vision_data is not None
+                        else None
                     )
-                    image_token_id = int(
-                        ctx.extra_model_args.get(
-                            "image_token_id", np.array(0, dtype=np.int32)
-                        )
-                    )
-                    video_token_id = int(
-                        ctx.extra_model_args.get(
-                            "video_token_id", np.array(0, dtype=np.int32)
-                        )
-                    )
-                    vision_start_token_id = int(
-                        ctx.extra_model_args.get(
-                            "vision_start_token_id", np.array(0, dtype=np.int32)
-                        )
-                    )
-                    tokens_per_second = int(
-                        ctx.extra_model_args.get(
-                            "tokens_per_second", np.array(2, dtype=np.int32)
-                        )
-                    )
-                    image_grid_thw = ctx.extra_model_args.get("image_grid_thw")
 
                     # Always create a fresh attention mask based on current context length
                     # The stored attention_mask in extra_model_args may be outdated if tokens
@@ -899,7 +887,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     )
 
                     # Recompute position_ids using get_rope_index (same logic as tokenizer)
-                    temp_position_ids, rope_delta = get_rope_index(
+                    temp_position_ids, rope_delta_array = get_rope_index(
                         spatial_merge_size=spatial_merge_size,
                         image_token_id=image_token_id,
                         video_token_id=video_token_id,
@@ -915,8 +903,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     )
                     temp_position_ids = temp_position_ids.squeeze(1)
 
-                    # Update rope_delta in extra_model_args if needed
-                    ctx.extra_model_args["rope_delta"] = rope_delta
+                    # Update rope_delta in context if needed
+                    ctx.rope_delta = int(rope_delta_array.item())
 
                     # Slice to get only the active portion
                     position_ids_list.append(
@@ -932,11 +920,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     temp_position_ids = np.arange(context_seq_length)
                     temp_position_ids = temp_position_ids.reshape(1, 1, -1)
                     temp_position_ids = np.tile(temp_position_ids, (3, 1, 1))
-                    delta = (
-                        # Offset by the number of previous tokens (start_idx).
-                        ctx.start_idx
-                        + ctx.extra_model_args["rope_delta"].item()
-                    )
+                    # Offset by the number of previous tokens (start_idx).
+                    delta = ctx.start_idx + ctx.rope_delta
                     temp_position_ids = temp_position_ids + delta
                     temp_position_ids = temp_position_ids.squeeze(1)
                     position_ids_list.append(temp_position_ids)
@@ -974,19 +959,18 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 max_window_seqlen=None,
             )
 
-        # From here on, assume that all inputs are available in extra_model_args
+        # From here on, assume that all inputs are available in vision_data
         # due to context validators
         with Tracer("preparing_pixel_values"):
             # pixel_values is a tuple of tensors, that is always length 1 with
             # Qwen, so we can just take the first element.
+            pixel_values_list = [
+                ctx.vision_data.concatenated_pixel_values
+                for ctx in context_batch
+                if ctx.vision_data is not None
+            ]
             pixel_values_tensor = Tensor.from_numpy(
-                self._parallel_ops.concatenate(
-                    [
-                        ctx.extra_model_args["concatenated_pixel_values"]
-                        for ctx in context_batch
-                        if ctx.needs_vision_encoding
-                    ]
-                )
+                self._parallel_ops.concatenate(pixel_values_list)
             )
             pixel_values = pixel_values_tensor.to(self.devices)
 
@@ -996,7 +980,10 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             index_offset = 0
             for ctx in context_batch:
                 if ctx.needs_vision_encoding:
-                    per_ctx_index = ctx.extra_model_args["window_index"].astype(
+                    assert ctx.vision_data is not None, (
+                        "vision_data must be present when needs_vision_encoding is True"
+                    )
+                    per_ctx_index = ctx.vision_data.window_index.astype(
                         np.int64
                     )
                     window_index_parts.append(per_ctx_index + index_offset)
@@ -1006,22 +993,23 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             window_index = window_index_tensor.to(self.devices)
 
         with Tracer("preparing_vision_position_ids"):
+            vision_position_ids_list = [
+                ctx.vision_data.vision_position_ids
+                for ctx in context_batch
+                if ctx.vision_data is not None
+            ]
             vision_position_ids_tensor = Tensor.from_numpy(
-                self._parallel_ops.concatenate(
-                    [
-                        ctx.extra_model_args["vision_position_ids"]
-                        for ctx in context_batch
-                        if ctx.needs_vision_encoding
-                    ]
-                ).astype(np.int64)
+                self._parallel_ops.concatenate(vision_position_ids_list).astype(
+                    np.int64
+                )
             )
             vision_position_ids = vision_position_ids_tensor.to(self.devices)
 
         with Tracer("preparing_max_grid_size"):
             max_grid_size_value = max(
-                ctx.extra_model_args["max_grid_size"].item()
+                ctx.vision_data.max_grid_size.item()
                 for ctx in context_batch
-                if ctx.needs_vision_encoding
+                if ctx.vision_data is not None
             )
             max_grid_size_tensor = Tensor.from_numpy(
                 np.array(max_grid_size_value, dtype=np.int32)
@@ -1034,7 +1022,10 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             offset = 0
             for ctx in context_batch:
                 if ctx.needs_vision_encoding:
-                    seqlens = ctx.extra_model_args["cu_seqlens"]
+                    assert ctx.vision_data is not None, (
+                        "vision_data must be present when needs_vision_encoding is True"
+                    )
+                    seqlens = ctx.vision_data.cu_seqlens
                     adjusted = seqlens.copy()
                     adjusted[1:] += offset
                     cu_seqlens_list.append(adjusted[1:])
@@ -1054,9 +1045,14 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             offset = 0
             for ctx in context_batch:
                 if ctx.needs_vision_encoding:
-                    seqlens_unique = ctx.extra_model_args[
-                        "cu_window_seqlens_unique"
-                    ].astype(np.uint32)
+                    assert ctx.vision_data is not None, (
+                        "vision_data must be present when needs_vision_encoding is True"
+                    )
+                    seqlens_unique = (
+                        ctx.vision_data.cu_window_seqlens_unique.astype(
+                            np.uint32
+                        )
+                    )
                     cu_window_seqlens_parts.append(
                         (seqlens_unique[1:] + offset).astype(np.uint32)
                     )
@@ -1072,9 +1068,9 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         with Tracer("preparing_max_seqlen"):
             max_seqlen_value = max(
-                ctx.extra_model_args["max_seqlen"].item()
+                ctx.vision_data.max_seqlen.item()
                 for ctx in context_batch
-                if ctx.needs_vision_encoding
+                if ctx.vision_data is not None
             )
             max_seqlen_tensor = Tensor.from_numpy(
                 np.array([max_seqlen_value], dtype=np.uint32)
@@ -1083,9 +1079,9 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         with Tracer("preparing_max_window_seqlen"):
             window_max_seqlen_value = max(
-                ctx.extra_model_args["window_max_seqlen"].item()
+                ctx.vision_data.window_max_seqlen.item()
                 for ctx in context_batch
-                if ctx.needs_vision_encoding
+                if ctx.vision_data is not None
             )
             window_max_seqlen_tensor = Tensor.from_numpy(
                 np.array([window_max_seqlen_value], dtype=np.uint32)
