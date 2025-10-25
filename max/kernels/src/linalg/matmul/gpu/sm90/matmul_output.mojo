@@ -36,18 +36,15 @@ from ....structuring import (
     RegTileType,
 )
 from .tile_writer import (
-    TileWriter,
     TileWriterTMA,
     TileWriterRegular,
     FragmentToSMemWriter,
     RegisterToGMemWriter,
     TileCoordinates,
-    ThreadInfo,
-    MMATileCoords,
+    RegTileWriter,
 )
 
-# Helper structures and functions for GEMM output processing
-# These break down the complex output logic into simpler, reusable components.
+# Helper functions for GEMM output processing
 
 
 @always_inline
@@ -67,69 +64,12 @@ fn calculate_output_tile_bounds[
     var M = c.dim[0]()  # Output matrix row dimension (can be dynamic)
 
     # Calculate bounds for this tile, clamping to matrix dimensions
-    var M_bound = min(UInt32((block_y + 1) * BM), UInt32(M))
-    var N_bound = min(UInt32((block_x + 1) * BN), UInt32(N))
-    return M_bound, N_bound
+    var max_row = min(UInt32((block_y + 1) * BM), UInt32(M))
+    var max_col = min(UInt32((block_x + 1) * BN), UInt32(N))
+    return max_row, max_col
 
 
-@always_inline
-fn store_accumulator_fragments_to_shared_memory[
-    c_type: DType,
-    c_tile_layout: Layout,
-    accum_type: DType,
-    c_reg_layout: Layout, //,
-    wgmma_shape: IndexList[3],
-    BN: Int,
-    WG_BM: Int,
-    WG_BN: Int,
-    TMA_BN: Int,
-    num_m_mmas: Int,
-    sub_wg_bn_id: Int,
-    use_x2_for_last_iter: Bool,
-    num_consumer: Int,
-](
-    c_tile: SMemTileType[c_type, c_tile_layout, alignment=128],
-    c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
-    warp_group_thread_idx: UInt,
-    local_warp_group_idx: UInt,
-    st_matrix_swizzle: Swizzle,
-    st_matrix_rt_layout: RuntimeLayout[
-        st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, num_consumer](),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ],
-):
-    """Store accumulator fragments from registers to shared memory using st.matrix instructions.
-
-    This function uses NVIDIA's st.matrix instruction for efficient bf16 storage,
-    handling the register-to-shared-memory transfer with proper swizzling for
-    bank conflict avoidance.
-    """
-    # Create the fragment writer with the configuration and all state
-    var fragment_writer = FragmentToSMemWriter[
-        tile_n_size=TMA_BN,
-        num_m_mmas=num_m_mmas,
-        num_consumer=num_consumer,
-        use_x2_for_last_iter=use_x2_for_last_iter,
-        WG_BM=WG_BM,
-        WG_BN=WG_BN,
-        sub_wg_bn_id=sub_wg_bn_id,
-    ](
-        c_tile,
-        warp_group_thread_idx,
-        local_warp_group_idx,
-        st_matrix_swizzle,
-        st_matrix_rt_layout,
-    )
-
-    # Iterate over TMA-sized chunks in the N dimension
-    @parameter
-    for tma_n in range(WG_BN // TMA_BN):
-        # Use the fragment writer with tile coordinates
-        fragment_writer.write_tile(c_reg_tile, (UInt(0), UInt(tma_n)))
-
-
-# Mutable fragment lambda applicator used for both compute and non-compute cases
+# Lambda type for in-place element modifications during output
 
 alias elementwise_lambda_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
@@ -151,8 +91,8 @@ fn apply_epilogue_to_output_tile[
     c_gmem_wg_coord_m: Int,
     c_gmem_wg_coord_n: Int,
     local_thread_idx: UInt,
-    M_bound: UInt32,
-    N_bound: UInt32,
+    max_row: UInt32,
+    max_col: UInt32,
 ):
     """Apply the epilogue lambda function to the output data.
 
@@ -189,98 +129,11 @@ fn apply_epilogue_to_output_tile[
         var n = UInt32(coord_n + dst_n_offset)
         alias alignment = align_of[SIMD[c_type, simd_size]]()
 
-        if m < M_bound and n < N_bound:
+        if m < max_row and n < max_col:
             epilogue(
                 (Int(m), Int(n)),
                 c_smem_frag[i, 0],
             )
-
-
-@always_inline
-fn store_output_tile_via_tma[
-    c_type: DType,
-    c_tma_layout: Layout,
-    c_tile_layout: Layout, //,
-    BM: Int,
-    BN: Int,
-    WG_BM: Int,
-    WG_BN: Int,
-    TMA_BN: Int,
-](
-    c_tma_op: TMATensorTile[c_type, c_tma_layout, _],
-    c_tile: SMemTileType[c_type, c_tile_layout, alignment=128],
-    local_thread_idx: UInt,
-    block_x: Int,
-    block_y: Int,
-    sub_wg_bn_id: Int,
-):
-    """Store output tile to global memory using Tensor Memory Accelerator (TMA).
-
-    Uses NVIDIA's TMA hardware for efficient async memory transfers from
-    shared memory to global memory with automatic address generation.
-    """
-
-    # Create TMA writer instance
-    var tma_writer = TileWriterTMA[
-        origin_of(c_tma_op),
-        c_type,
-        c_tma_layout,
-        _,  # desc_layout - inferred from c_tma_op
-    ](Pointer(to=c_tma_op))
-
-    if local_thread_idx < UInt(WG_BN // TMA_BN):
-        var smem_offset = c_tile.ptr.offset(
-            WG_BM * TMA_BN * Int(local_thread_idx)
-        )
-        var c_tma_tile = SMemTileType[
-            c_type,
-            c_tma_layout,
-            alignment=128,
-        ](smem_offset)
-
-        # Calculate coordinates for TMA (in element space)
-        var coords = (
-            UInt(
-                block_x * BN
-                + sub_wg_bn_id * WG_BN
-                + Int(local_thread_idx * UInt(TMA_BN))
-            ),
-            UInt(block_y * BM),
-        )
-
-        # TileWriterTMA handles fence_async_view_proxy internally
-        tma_writer.write_tile(c_tma_tile, coords)
-
-
-@always_inline
-fn store_output_tile_direct[
-    c_type: DType,
-    c_tile_layout: Layout, //,
-    use_x2_for_last_iter: Bool,
-    WG_BN: Int,
-    num_consumer_threads: Int,
-    simd_size: Int,
-    st_matrix_swizzle: Swizzle,
-](
-    c_tile: SMemTileType[c_type, c_tile_layout, alignment=128],
-    c_gmem_wg_tile: LayoutTensor[c_type, _, MutableAnyOrigin, *_, **_],
-    local_thread_idx: UInt,
-):
-    alias thread_layout = Layout.row_major(
-        num_consumer_threads // (WG_BN // simd_size),
-        WG_BN // simd_size,
-    )
-
-    # Create regular writer that handles both normal and masked x2 cases
-    var regular_writer = TileWriterRegular[
-        thread_layout=thread_layout,
-        swizzle=st_matrix_swizzle,
-        simd_size=simd_size,
-        use_x2_for_last_iter=use_x2_for_last_iter,
-    ](c_gmem_wg_tile, local_thread_idx)
-
-    # TileWriterRegular handles slicing internally for the x2 case
-    regular_writer.write_tile(c_tile, (UInt(0), UInt(0)))
 
 
 @always_inline
@@ -317,7 +170,7 @@ fn handle_optimized_bfloat16_output[
 ):
     """Handle output using st.matrix instructions for optimized bf16 output."""
     # Calculate output bounds
-    var M_bound, N_bound = calculate_output_tile_bounds[BM, BN](
+    var max_row, max_col = calculate_output_tile_bounds[BM, BN](
         c, block_y, block_x
     )
 
@@ -352,25 +205,27 @@ fn handle_optimized_bfloat16_output[
     for sub_wg_bn_id in range(num_sub_wg_bn_iters):
         alias use_x2_for_last_iter = needs_x2 and sub_wg_bn_id == last_iter
 
-        # Store fragments to shared memory
-        store_accumulator_fragments_to_shared_memory[
-            wgmma_shape,
-            BN,
-            WG_BM,
-            WG_BN,
-            TMA_BN,
-            num_m_mmas,
-            sub_wg_bn_id,
-            use_x2_for_last_iter,
-            num_consumer,
+        # Store fragments to shared memory using FragmentToSMemWriter
+        var fragment_writer = FragmentToSMemWriter[
+            tile_n_size=TMA_BN,
+            num_m_mmas=num_m_mmas,
+            num_consumer=num_consumer,
+            use_x2_for_last_iter=use_x2_for_last_iter,
+            WG_BM=WG_BM,
+            WG_BN=WG_BN,
+            sub_wg_bn_id=sub_wg_bn_id,
         ](
             c_tile,
-            c_reg_tile,
             warp_group_thread_idx,
             local_warp_group_idx,
             st_matrix_swizzle,
             st_matrix_rt_layout,
         )
+
+        # Iterate over TMA-sized chunks in the N dimension
+        @parameter
+        for tma_n in range(WG_BN // TMA_BN):
+            fragment_writer.write_tile(c_reg_tile, (UInt(0), UInt(tma_n)))
 
         named_barrier[num_consumer_threads](10)
 
@@ -401,8 +256,8 @@ fn handle_optimized_bfloat16_output[
                 c_gmem_wg_coords[0],
                 c_gmem_wg_coords[1],
                 local_thread_idx,
-                M_bound,
-                N_bound,
+                max_row,
+                max_col,
             )
 
         # Handle compute and lambda
@@ -441,26 +296,50 @@ fn handle_optimized_bfloat16_output[
             # Regular store path
             @parameter
             if use_tma_store and not use_x2_for_last_iter:
-                store_output_tile_via_tma[BM, BN, WG_BM, WG_BN, TMA_BN,](
-                    c_tma_op,
-                    c_tile,
-                    local_thread_idx,
-                    block_x,
-                    block_y,
-                    sub_wg_bn_id,
-                )
+                # Store using TMA hardware acceleration
+                var tma_writer = TileWriterTMA[
+                    origin_of(c_tma_op),
+                    c_type,
+                    c_tma_layout,
+                    _,  # desc_layout - inferred from c_tma_op
+                ](Pointer(to=c_tma_op))
+
+                if local_thread_idx < UInt(WG_BN // TMA_BN):
+                    var smem_offset = c_tile.ptr.offset(
+                        WG_BM * TMA_BN * local_thread_idx
+                    )
+                    var c_tma_tile = SMemTileType[
+                        c_type,
+                        c_tma_layout,
+                        alignment=128,
+                    ](smem_offset)
+
+                    # Calculate coordinates for TMA (in element space)
+                    var coords = (
+                        UInt(
+                            block_x * BN
+                            + sub_wg_bn_id * WG_BN
+                            + local_thread_idx * UInt(TMA_BN)
+                        ),
+                        UInt(block_y * BM),
+                    )
+
+                    tma_writer.write_tile(c_tma_tile, coords)
             else:
-                store_output_tile_direct[
-                    use_x2_for_last_iter,
-                    WG_BN,
-                    num_consumer_threads,
-                    simd_size,
-                    st_matrix_swizzle,
-                ](
-                    c_tile,
-                    c_gmem_wg_tile,
-                    local_thread_idx,
+                # Store using regular thread-distributed writes
+                alias thread_layout = Layout.row_major(
+                    num_consumer_threads // (WG_BN // simd_size),
+                    WG_BN // simd_size,
                 )
+
+                var regular_writer = TileWriterRegular[
+                    thread_layout=thread_layout,
+                    swizzle=st_matrix_swizzle,
+                    simd_size=simd_size,
+                    use_x2_for_last_iter=use_x2_for_last_iter,
+                ](c_gmem_wg_tile, local_thread_idx)
+
+                regular_writer.write_tile(c_tile, (UInt(0), UInt(0)))
 
         named_barrier[num_consumer_threads](10)
 
@@ -524,7 +403,6 @@ fn write_gemm_output_to_global_memory[
     alias BM = c_tile_shape[0]
     alias BN = c_tile_shape[1]
 
-    # Use helper to compute tile coordinates
     var c_gmem_tile, c_gmem_corner_coords, c_gmem_offset = c.tile_with_offset[
         BM, BN
     ](block_y, block_x)
@@ -541,13 +419,7 @@ fn write_gemm_output_to_global_memory[
     alias WG_BM = c_tile.layout.shape[0].value()
     alias WG_BN = c_tile.layout.shape[1].value()
     alias TMA_BN = c_tma_op.layout.shape[1].value() if use_tma_store else WG_BN
-    # Determine which output path to use based on data types and alignment.
-    # The st.matrix path provides significant performance benefits for bf16 output
-    # by using specialized hardware instructions, but requires:
-    # - FP32 accumulator and BF16 output types
-    # - Register count divisible by 4
-    # - Proper alignment of M dimension, shared memory, and output row size
-    # - Limited consumer threads and specific tile size constraints
+    # Select st.matrix path when all constraints are met for optimal bf16 output
     # fmt: off
     alias use_stmatrix = (accum_type is DType.float32
             and c_type is DType.bfloat16                # BF16 output
@@ -562,9 +434,7 @@ fn write_gemm_output_to_global_memory[
 
     @parameter
     if use_stmatrix:
-        # Path 1: Optimized bf16 output using st.matrix instructions
-        # This path converts fp32 accumulator to bf16 and uses specialized
-        # hardware for efficient register-to-memory transfers
+        # Path 1: bf16 output using st.matrix hardware instructions
         handle_optimized_bfloat16_output[
             wgmma_shape,
             num_consumer,
@@ -590,8 +460,7 @@ fn write_gemm_output_to_global_memory[
             block_x,
         )
 
-    # Path 2: Aligned output when N is divisible by tile size
-    # This avoids bounds checking on columns for better performance
+    # Path 2: N divisible by tile size, no column bounds checking needed
     elif N % BN == 0:
         write_gemm_output_aligned[
             c_tile_shape=c_tile_shape,
@@ -608,8 +477,7 @@ fn write_gemm_output_to_global_memory[
             block_x,
         )
 
-    # Path 3: General case with full bounds checking
-    # Handles arbitrary matrix dimensions safely but with some performance cost
+    # Path 3: Arbitrary matrix dimensions with full bounds checking
     else:
         write_gemm_output_with_bounds_check[
             c_tile_shape=c_tile_shape,
@@ -626,7 +494,21 @@ fn write_gemm_output_to_global_memory[
         )
 
 
-# Simplified aligned output function
+@always_inline
+fn write_tiles[
+    Writer: RegTileWriter, //, num_m_mmas: Int, num_n_mmas: Int
+](reg_writer: Writer, c_reg_tile: RegTileType[_, _, _]) capturing -> None:
+    @parameter
+    for m_mma in range(num_m_mmas):
+
+        @parameter
+        for n_mma in range(num_n_mmas):
+            reg_writer.write_tile(
+                c_reg_tile,
+                (UInt(m_mma), UInt(n_mma)),
+            )
+
+
 @always_inline
 fn write_gemm_output_aligned[
     c_type: DType,
@@ -650,8 +532,7 @@ fn write_gemm_output_aligned[
     block_y: Int,
     block_x: Int,
 ):
-    """Simplified aligned output - N divisible by BN, no column bounds check needed.
-    """
+    """Write output when N divisible by BN (no column bounds check needed)."""
     alias BM = c_tile_shape[0]
     alias BN = c_tile_shape[1]
     alias N = c_layout.shape[1].value()
@@ -659,21 +540,17 @@ fn write_gemm_output_aligned[
     alias num_m_mmas = BM // wgmma_shape[0] // num_consumer
     alias num_n_mmas = BN // wgmma_shape[1]
 
-    # Get tile coordinates
     var c_gmem_tile, c_gmem_corner_coords, c_gmem_offset = c.tile_with_offset[
         BM, BN
     ](block_y, block_x)
-
-    # Split tile for consumer groups
     var c_gmem_split, split_coords, split_offset = c_gmem_tile.tile_with_offset[
         BM // num_consumer, BN
     ](Int(local_warp_group_idx), 0)
 
-    var M_bound = UInt(c.dim[0]())
+    var max_row = UInt32(c.dim[0]())
 
     @parameter
     if elementwise_lambda_fn:
-        # With epilogue: create writer with epilogue function and all necessary state
         var reg_writer = RegisterToGMemWriter[
             wgmma_shape=wgmma_shape,
             num_consumer=num_consumer,
@@ -687,22 +564,12 @@ fn write_gemm_output_aligned[
                 IndexList[2](c_gmem_corner_coords[0], c_gmem_corner_coords[1]),
                 IndexList[2](split_coords[0], split_coords[1]),
             ),
-            M_bound,
+            max_row,
         )
 
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for n_mma in range(num_n_mmas):
-                # Simple write_tile interface - just tile and coordinates
-                reg_writer.write_tile(
-                    c_reg_tile,
-                    (UInt(m_mma), UInt(n_mma)),
-                )
+        write_tiles[num_m_mmas, num_n_mmas](reg_writer, c_reg_tile)
 
     elif elementwise_compute_lambda_fn:
-        # With compute lambda: use unified writer
         var compute_writer = RegisterToGMemWriter[
             wgmma_shape=wgmma_shape,
             num_consumer=num_consumer,
@@ -716,21 +583,11 @@ fn write_gemm_output_aligned[
                 IndexList[2](c_gmem_corner_coords[0], c_gmem_corner_coords[1]),
                 IndexList[2](split_coords[0], split_coords[1]),
             ),
-            M_bound,
+            max_row,
         )
 
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for n_mma in range(num_n_mmas):
-                # Simple write_tile interface - writer handles all complexity
-                compute_writer.write_tile(
-                    c_reg_tile,
-                    (UInt(m_mma), UInt(n_mma)),
-                )
+        write_tiles[num_m_mmas, num_n_mmas](compute_writer, c_reg_tile)
     else:
-        # Without epilogue: direct copy using the writer
         var reg_writer = RegisterToGMemWriter[
             wgmma_shape=wgmma_shape,
             num_consumer=num_consumer,
@@ -740,22 +597,11 @@ fn write_gemm_output_aligned[
             c_gmem_split,
             warp_group_thread_idx,
             num_m_mmas,
-            # Optional parameters not needed for non-epilogue case
         )
 
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for n_mma in range(num_n_mmas):
-                # Simple write_tile interface - just tile and coordinates
-                reg_writer.write_tile(
-                    c_reg_tile,
-                    (UInt(m_mma), UInt(n_mma)),
-                )
+        write_tiles[num_m_mmas, num_n_mmas](reg_writer, c_reg_tile)
 
 
-# Simplified bounds-checked output function
 @always_inline
 fn write_gemm_output_with_bounds_check[
     c_type: DType,
@@ -776,9 +622,7 @@ fn write_gemm_output_with_bounds_check[
     block_y: Int,
     block_x: Int,
 ):
-    """Simplified bounds-checked output - handles arbitrary matrix dimensions.
-
-    Now uses RegisterToGMemWriter with bounds checking enabled for cleaner code.
+    """Write output with full bounds checking for arbitrary matrix dimensions.
     """
     alias BM = c_tile_shape[0]
     alias BN = c_tile_shape[1]
@@ -786,7 +630,6 @@ fn write_gemm_output_with_bounds_check[
     alias num_m_mmas = BM // wgmma_shape[0] // num_consumer
     alias num_n_mmas = BN // wgmma_shape[1]
 
-    # Get tile coordinates
     var c_gmem_tile, c_gmem_corner_coords, _ = c.tile_with_offset[BM, BN](
         block_y, block_x
     )
@@ -794,17 +637,14 @@ fn write_gemm_output_with_bounds_check[
         BM // num_consumer, BN
     ](Int(local_warp_group_idx), 0)
 
-    # Calculate bounds
-    var M_bound = UInt(c.dim[0]())
-    var N_bound = UInt32(c.dim[1]())
+    var max_row = UInt32(c.dim[0]())
 
-    # Create writer with bounds checking enabled
     var reg_writer = RegisterToGMemWriter[
         wgmma_shape=wgmma_shape,
         num_consumer=num_consumer,
         N=N,
         epilogue_fn=elementwise_lambda_fn,
-        check_n_bounds=True,  # Enable N-dimension bounds checking
+        check_runtime_bounds=True,
     ](
         c_gmem_split,
         warp_group_thread_idx,
@@ -813,17 +653,7 @@ fn write_gemm_output_with_bounds_check[
             IndexList[2](c_gmem_corner_coords[0], c_gmem_corner_coords[1]),
             IndexList[2](split_coords[0], split_coords[1]),
         ),
-        M_bound,
-        N_bound,
+        max_row,
     )
 
-    # Simple loop structure using writer - all complexity is handled internally
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
-            reg_writer.write_tile(
-                c_reg_tile,
-                (UInt(m_mma), UInt(n_mma)),
-            )
+    write_tiles[num_m_mmas, num_n_mmas](reg_writer, c_reg_tile)

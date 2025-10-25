@@ -350,8 +350,11 @@ fn async_copy_with_bound_check[
     # Calculate base coordinates for this thread's destination fragment
     var dst_frag_offset = dst_frag.distance(dst.ptr)
     alias dst_stride0 = dst.layout.stride[0].value()
-    var dst_frag_base_coord0 = Int32(dst_frag_offset // dst_stride0)
-    var dst_frag_base_coord1 = Int32(dst_frag_offset % dst_stride0)
+    # var dst_frag_base_coord0 = Int32(dst_frag_offset // dst_stride0)
+    # var dst_frag_base_coord1 = Int32(dst_frag_offset % dst_stride0)
+    var dst_frag_base_coord0, dst_frag_base_coord1 = divmod(
+        Int32(dst_frag_offset), Int32(dst_stride0)
+    )
 
     # Create swizzle pattern to avoid shared memory bank conflicts
     alias swizzle = make_swizzle[

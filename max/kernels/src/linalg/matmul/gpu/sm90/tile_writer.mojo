@@ -91,8 +91,7 @@ struct ThreadInfo:
         """
         var warp_id = warp_group_thread_idx // UInt(WARP_SIZE)
         var lid = UInt(lane_id())
-        var lane_row = UInt32(lid // 4)
-        var lane_col = UInt32(lid % 4)
+        var lane_row, lane_col = divmod(UInt32(lid), 4)
         return ThreadInfo(warp_id, lid, lane_row, lane_col)
 
 
@@ -132,43 +131,6 @@ struct TileCoordinates:
             base_coords[0] + self.corner[0] + self.split[0],
             base_coords[1] + self.corner[1] + self.split[1],
         )
-
-
-@register_passable("trivial")
-struct MMATileCoords:
-    """Coordinates for an MMA tile in the output."""
-
-    var m_mma: Int
-    var n_mma: Int
-    var mma_id: Int
-
-    @always_inline
-    fn __init__(out self, m_mma: Int, n_mma: Int, mma_id: Int):
-        """Initialize MMA tile coordinates.
-
-        Args:
-            m_mma: MMA tile index in M dimension.
-            n_mma: MMA tile index in N dimension.
-            mma_id: Linearized MMA tile ID.
-        """
-        self.m_mma = m_mma
-        self.n_mma = n_mma
-        self.mma_id = mma_id
-
-    @always_inline
-    @staticmethod
-    fn compute(m_mma: Int, n_mma: Int, num_m_mmas: Int) -> MMATileCoords:
-        """Compute MMA tile coordinates from indices.
-
-        Args:
-            m_mma: MMA tile index in M dimension.
-            n_mma: MMA tile index in N dimension.
-            num_m_mmas: Total number of MMA tiles in M dimension.
-
-        Returns:
-            MMATileCoords with computed mma_id.
-        """
-        return MMATileCoords(m_mma, n_mma, n_mma * num_m_mmas + m_mma)
 
 
 @register_passable("trivial")
@@ -380,6 +342,29 @@ struct TileWriterRegular[
 
 
 @register_passable("trivial")
+trait RegTileWriter:
+    """Base trait for tile writing mechanisms in matrix multiplication.
+
+    This trait defines the interface for writing tiles from shared memory to global memory,
+    abstracting over different hardware mechanisms.
+    """
+
+    @always_inline
+    fn write_tile(
+        self,
+        src: RegTileType[_, _, _],
+        coords: Tuple[UInt, UInt],
+    ) capturing -> None:
+        """Write a tile from shared memory to global memory.
+
+        Args:
+            src: Source tile in shared memory (must be 128-byte aligned).
+            coords: Tile coordinates (row, column) in the destination matrix.
+        """
+        ...
+
+
+@register_passable("trivial")
 struct FragmentToSMemWriter[
     c_type: DType,
     c_tile_layout: Layout, //,
@@ -390,7 +375,7 @@ struct FragmentToSMemWriter[
     WG_BM: Int,  # Warp group M dimension
     WG_BN: Int,  # Warp group N dimension
     sub_wg_bn_id: Int,  # Sub warp group ID in N dimension
-]:  # (TileWriter):
+](RegTileWriter):
     """Writer for storing accumulator fragments from registers to shared memory.
 
     Uses st.matrix instructions for efficient bf16 storage with proper swizzling
@@ -407,8 +392,6 @@ struct FragmentToSMemWriter[
         WG_BN: Warp group N dimension.
         sub_wg_bn_id: Sub warp group ID in N dimension.
     """
-
-    alias _dtype = Self.c_type
 
     var c_tile: SMemTileType[c_type, c_tile_layout, alignment=128]
     var warp_group_thread_idx: UInt
@@ -469,8 +452,8 @@ struct FragmentToSMemWriter[
     fn write_tile(
         self,
         c_reg_tile: RegTileType[_, _, _],
-        coords: Tuple[UInt, UInt],  # (row_tile_idx, col_tile_idx) in the output
-    ):
+        coords: Tuple[UInt, UInt],
+    ) capturing -> None:
         """Write accumulator fragments to shared memory at specified tile coordinates.
 
         Args:
@@ -533,11 +516,7 @@ struct FragmentToSMemWriter[
                     var d_reg_f32_packed = bitcast[DType.float32, 2 * xf](d_reg)
                     st_matrix[simd_width = 2 * xf](offset, d_reg_f32_packed)
 
-                @parameter
-                if use_x2_for_last_iter:
-                    st_matrix_frag()
-                else:
-                    st_matrix_frag[True]()
+                st_matrix_frag[not use_x2_for_last_iter]()
 
 
 from collections import OptionalReg
@@ -558,8 +537,8 @@ struct RegisterToGMemWriter[
     N: Int,  # Matrix N dimension
     epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
     compute_lambda_fn: OptionalReg[elementwise_compute_lambda_type] = None,
-    check_n_bounds: Bool = False,  # New parameter for N-dimension bounds checking
-]:  # (TileWriter):
+    check_runtime_bounds: Bool = False,  # New parameter for N-dimension bounds checking
+](RegTileWriter):
     """Writer for transferring accumulator registers directly to global memory.
 
     This writer handles the direct copy from register tiles to global memory
@@ -580,13 +559,11 @@ struct RegisterToGMemWriter[
         N: Matrix N dimension.
         epilogue_fn: Optional epilogue function (mutates value in place).
         compute_lambda_fn: Optional compute lambda function (returns new value).
-        check_n_bounds: Whether to perform bounds checking on N dimension.
+        check_runtime_bounds: Whether to perform bounds checking on N dimension.
 
     Note:
         At most one of epilogue_fn or compute_lambda_fn should be set.
     """
-
-    alias _dtype = Self.c_type
 
     alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // WARPGROUP_SIZE
     alias num_n_frag_mat = wgmma_shape[1] // 8
@@ -607,8 +584,7 @@ struct RegisterToGMemWriter[
     ]
     var num_m_mmas: Int
     var tile_coords: OptionalReg[TileCoordinates]
-    var M_bound: OptionalReg[UInt]
-    var N_bound: OptionalReg[UInt32]  # New field for N-dimension bounds
+    var max_row: OptionalReg[UInt32]
 
     @always_inline
     fn __init__(
@@ -627,8 +603,7 @@ struct RegisterToGMemWriter[
         warp_group_thread_idx: UInt,
         num_m_mmas: Int,
         tile_coords: OptionalReg[TileCoordinates] = None,
-        M_bound: OptionalReg[UInt] = None,
-        N_bound: OptionalReg[UInt32] = None,
+        max_row: OptionalReg[UInt32] = None,
     ):
         """Initialize the register-to-global-memory writer.
 
@@ -637,8 +612,7 @@ struct RegisterToGMemWriter[
             warp_group_thread_idx: Thread index within the warp group.
             num_m_mmas: Number of MMA tiles in M dimension.
             tile_coords: Optional tile coordinates for epilogue processing.
-            M_bound: Optional maximum valid M coordinate (for epilogue).
-            N_bound: Optional maximum valid N coordinate (for bounds checking).
+            max_row: Optional maximum valid M coordinate (for epilogue).
         """
         constrained[
             (epilogue_fn is None) or (compute_lambda_fn is None),
@@ -649,8 +623,7 @@ struct RegisterToGMemWriter[
         self.dst = dst
         self.num_m_mmas = num_m_mmas
         self.tile_coords = tile_coords
-        self.M_bound = M_bound
-        self.N_bound = N_bound
+        self.max_row = max_row
 
         # Extract thread information
         self.thread_info = ThreadInfo.from_warp_group_idx(warp_group_thread_idx)
@@ -673,7 +646,7 @@ struct RegisterToGMemWriter[
         self,
         c_reg_tile: RegTileType[_, _, _],
         coords: Tuple[UInt, UInt],
-    ):
+    ) capturing -> None:
         """Write a single MMA tile from registers to global memory.
 
         Args:
@@ -707,11 +680,8 @@ struct RegisterToGMemWriter[
         """Internal method for direct tile write without epilogue."""
 
         @parameter
-        if check_n_bounds:
-            # With bounds checking
-            self._write_tile_with_runtime_bounds[with_epilogue=False](
-                c_reg_tile, m_mma, n_mma
-            )
+        if check_runtime_bounds:
+            self._write_tile_with_runtime_bounds(c_reg_tile, m_mma, n_mma)
         else:
             # Fast path without bounds checking
             from layout.layout_tensor import copy_local_to_dram
@@ -744,10 +714,8 @@ struct RegisterToGMemWriter[
 
         # If we need bounds checking, use the runtime bounds version
         @parameter
-        if check_n_bounds:
-            self._write_tile_with_runtime_bounds[with_epilogue=True](
-                c_reg_tile, m_mma, n_mma
-            )
+        if check_runtime_bounds:
+            self._write_tile_with_runtime_bounds(c_reg_tile, m_mma, n_mma)
             return
 
         # Calculate MMA tile ID
@@ -781,6 +749,8 @@ struct RegisterToGMemWriter[
 
         alias num_vecs = gmem_frag.layout.size()
 
+        var max_row = self.max_row.value()
+
         @parameter
         for i in range(num_vecs):
             alias dst_idx = gmem_frag.layout(i)
@@ -792,47 +762,33 @@ struct RegisterToGMemWriter[
             alias alignment = align_of[SIMD[c_type, 2]]()
 
             @parameter
-            if epilogue_fn is not None:
+            if epilogue_fn:
                 alias epilogue = epilogue_fn.value()
 
-                @parameter
-                if check_n_bounds:
-                    # Full bounds checking including N dimension
-                    if m < Int(self.M_bound.value()) and n < Int(
-                        self.N_bound.value()
-                    ):
-                        epilogue[alignment=alignment](
-                            (m, n),
-                            c_frag_vec2[mma_id, i].cast[c_type](),
-                        )
-                else:
-                    # Only M bounds checking (N is known to be aligned)
-                    if m < Int(self.M_bound.value()) and n < N:
-                        epilogue[alignment=alignment](
-                            (m, n),
-                            c_frag_vec2[mma_id, i].cast[c_type](),
-                        )
+                if m < Int(max_row) and n < N:
+                    epilogue[alignment=alignment](
+                        (m, n),
+                        c_frag_vec2[mma_id, i].cast[c_type](),
+                    )
             else:
                 alias compute_lambda = compute_lambda_fn.value()
 
-                if m < Int(self.M_bound.value()) and n < N:
+                if m < Int(max_row) and n < N:
                     var reg_val = compute_lambda[alignment=alignment](
                         (m, n),
                         c_frag_vec2[mma_id, i].cast[c_type](),
                     )
-                    # Use warp_tile pointer directly - offsets are relative to dst
-                    warp_tile.ptr.store[alignment=alignment](
-                        warp_tile_offset + gmem_offset + dst_idx, reg_val
-                    )
+                    # FIXME: there is too much magik in here
+                    gmem_frag[i, 0] = rebind[gmem_frag.element_type](reg_val)
 
     @always_inline
-    fn _write_tile_with_runtime_bounds[
-        with_epilogue: Bool
-    ](self, c_reg_tile: RegTileType[_, _, _], m_mma: Int, n_mma: Int,):
+    fn _write_tile_with_runtime_bounds(
+        self,
+        c_reg_tile: RegTileType[_, _, _],
+        m_mma: Int,
+        n_mma: Int,
+    ):
         """Unified method for tile write with runtime bounds checking.
-
-        Parameters:
-            with_epilogue: Whether to apply epilogue function.
 
         Args:
             c_reg_tile: Register tile containing accumulator values.
@@ -864,10 +820,10 @@ struct RegisterToGMemWriter[
                 var frag_mat_gmem = warp_tile.tile[8, 8](m_frag, n_frag)
 
                 # Get runtime bounds for this fragment
-                var bound0 = UInt32(
+                var max_row = UInt32(
                     frag_mat_gmem.runtime_layout.shape[0].value[0]
                 )
-                var bound1 = UInt32(
+                var max_col = UInt32(
                     frag_mat_gmem.runtime_layout.shape[1].value[0]
                 )
 
@@ -875,12 +831,12 @@ struct RegisterToGMemWriter[
                 @parameter
                 for i in range(2):
                     if (
-                        self.thread_info.lane_row < bound0
-                        and self.thread_info.lane_col * 2 + i < bound1
+                        self.thread_info.lane_row < max_row
+                        and self.thread_info.lane_col * 2 + i < max_col
                     ):
                         # FIXME: should this support compute_lambda as well?
                         @parameter
-                        if with_epilogue:
+                        if epilogue_fn:
                             alias epilogue = epilogue_fn.value()
                             var frag_m = Int(warp_tile_coords[0]) + Int(
                                 m_frag * 8 + self.thread_info.lane_row
