@@ -1,8 +1,11 @@
 """Aliases for mojo packages."""
 
-_PACKAGES = {
+_STDLIB_PACKAGES = {
     "stdlib": "mojo/stdlib/stdlib",
     "test_utils": "mojo/stdlib/test/test_utils",
+}
+
+_PACKAGES = {
     "kv_cache": "max/kernels/src/kv_cache",
     "layout": "max/kernels/src/layout",
     "linalg": "max/kernels/src/linalg",
@@ -29,12 +32,19 @@ _PACKAGES = {
 
 def _mojo_aliases_impl(rctx):
     alias_rules = []
-    for name, target in _PACKAGES.items():
+    for name, target in _STDLIB_PACKAGES.items():
         alias_rules.append("""
 alias(
     name = "{name}",
     actual = "@//{prefix}{target}",
 )""".format(name = name, target = target, prefix = "{prefix}"))
+
+    for name, target in _PACKAGES.items():
+        alias_rules.append("""
+alias(
+    name = "{name}",
+    actual = "@//{target}",
+)""".format(name = name, target = target))
 
     build_content = """package(default_visibility = ["//visibility:public"])
 {aliases}

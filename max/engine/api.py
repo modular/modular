@@ -550,7 +550,7 @@ class InferenceSession:
         """Enables the old top-k kernel.
 
         Default is to use the new top-k kernel to keep it consistent with
-        open-source/max/max/kernels/src/nn/topk.mojo
+        max/kernels/src/nn/topk.mojo
 
         Args:
             mode: String to enable/disable. Accepts "false", "off", "no", "0"

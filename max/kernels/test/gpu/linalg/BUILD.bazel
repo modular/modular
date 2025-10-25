@@ -155,7 +155,7 @@ _GPU_MEMORY = {
         name = src + ".test",
         size = "large",
         srcs = [src],
-        data = ["//open-source/max/max/kernels/test/testdata:ptx_files"],
+        data = ["//max/kernels/test/testdata:ptx_files"],
         enable_assertions = False,  # PTX comparison assertions disabled
         deps = [
             "@mojo//:linalg",

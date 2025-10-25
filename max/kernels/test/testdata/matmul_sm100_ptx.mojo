@@ -15,15 +15,8 @@
 fn reference_ptx[M: Int, N: Int, K: Int]() raises -> String:
     # When running with Bazel, the PTX files are in the runfiles directory
     # The path is relative to the test binary's location
-    var pwd = "open-source/max/max/kernels/test/testdata/"
-    # FIXME Handle differences in internal vs external location
-    var oss_pwd = "max/kernels/test/testdata/"
+    var pwd = "max/kernels/test/testdata/"
+    var fname = String(pwd, "matmul_sm100_", M, "x", N, "x", K, ".ptx")
 
-    try:
-        var fname = String(pwd, "matmul_sm100_", M, "x", N, "x", K, ".ptx")
-        with open(fname, "r") as f:
-            return f.read()
-    except:
-        var fname = String(oss_pwd, "matmul_sm100_", M, "x", N, "x", K, ".ptx")
-        with open(fname, "r") as f:
-            return f.read()
+    with open(fname, "r") as f:
+        return f.read()
