@@ -24,7 +24,6 @@ import shutil
 import string
 import subprocess
 import sys
-import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -255,6 +254,9 @@ class SpecInstance:
     file: Path
     executor: str | None = None
     params: list[Param] = field(default_factory=list)
+
+    def __bool__(self) -> bool:
+        return bool(self.params)
 
     @functools.cached_property
     def mojo_binary(self) -> str:
@@ -745,13 +747,7 @@ class Spec:
         return "\n".join(rs)
 
 
-def _get_tmp_path(file_path):  # noqa: ANN001, ANN202
-    base = os.path.basename(file_path).split(".")[0]
-    tf = tempfile.NamedTemporaryFile(prefix=str(base) + "_").name + "/"
-    return Path(tf)
-
-
-def _get_core_count():  # noqa: ANN202
+def _get_core_count() -> int:
     try:
         # The 'os.sched_getaffinity' method is only available on some Unix platforms
         return len(os.sched_getaffinity(0))  # type: ignore[attr-defined, unused-ignore]
@@ -837,13 +833,12 @@ class Scheduler:
         progress: Progress = Progress(),
     ) -> None:
         self.num_cpu = num_cpu
+        self.num_gpu = num_gpu
         if not (0 < num_gpu <= num_cpu):
             raise ValueError(
                 "num_gpu must be greater than 0 and less than or equal to num_cpu."
             )
 
-        self.build_pool = Pool(num_cpu)
-        self.execution_pool = Pool(num_gpu)
         self.obj_cache = obj_cache
         self.num_specs = len(spec_list)
         output_dir_list = [
@@ -863,6 +858,7 @@ class Scheduler:
             for i in range(self.num_specs)
         ]
 
+        self.setup_build_pool()
         self.mk_output_dirs()
         self.progress = progress
 
@@ -873,7 +869,7 @@ class Scheduler:
         """
         if os.path.exists(output_dir) and os.path.isdir(output_dir):
             logging.warning(
-                f"output dir [{str(output_dir)}] already exists and will be overwritten!"
+                f"Following output dir already exists and will be overwritten!\n[{str(output_dir)}]\n"
             )
         os.makedirs(output_dir, exist_ok=True)
         return output_dir
@@ -903,7 +899,7 @@ class Scheduler:
             i = b.idx
             s = b.spec_instance
             bin_name = s.hash(with_variables=False)
-            logging.info(f"schedule [{i}][{bin_name}]")
+            logging.debug(f"schedule [{i}][{bin_name}]")
             debug_msg = [
                 f"defines: {s._get_defines}",
                 f"vars   : {s._get_vars}",
@@ -941,7 +937,7 @@ class Scheduler:
         bi.build_elapsed_time = build_elapsed_time
         return bi
 
-    def build_all(self):  # noqa: ANN201
+    def build_all(self) -> None:
         """
         Build all unique items scheduled by the scheduler.
         """
@@ -983,11 +979,6 @@ class Scheduler:
 
                 bin_name = b.spec_instance.hash(with_variables=False)
 
-                self.progress.update(
-                    build_progress,
-                    description=f"build [ {b.idx} ][ {bin_name} ] finished",
-                )
-
                 num_unique_build_items = len(unique_build_items)
                 logging.info(
                     f"build [{b.idx}][{bin_name}] ({_percentage(cnt + 1, num_unique_build_items)}%)"
@@ -1004,12 +995,13 @@ class Scheduler:
                     binary_path = build_output.path
                     obj_cache.store(bin_name, binary_path)
                     unique_build_paths[bin_name] = binary_path
-
                 self.progress.update(build_progress, advance=1)
             logging.info(
                 f"finished building {len(unique_build_paths)} unique items"
                 + LINE
             )
+
+        self.close_build_pool()
 
         # update all build items with their binary path
         for b in self.build_items:
@@ -1076,6 +1068,12 @@ class Scheduler:
         ],
     ) -> BuildItem:
         return Scheduler.execute_item(*args)
+
+    def setup_build_pool(self) -> None:
+        self.build_pool = Pool(self.num_cpu)
+
+    def setup_execution_pool(self) -> None:
+        self.execution_pool = Pool(self.num_gpu)
 
     def close_build_pool(self) -> None:
         self.build_pool.close()
@@ -1302,7 +1300,7 @@ def run(
     exec_suffix: list[str] = [],  # noqa: B006
     dryrun: bool = False,
     verbose: bool = False,
-    output_dir=None,  # noqa: ANN001
+    output_dir: Path | None = None,
     num_cpu: int = 1,
     num_gpu: int = 1,
     target_accelerator: str | None = None,
@@ -1316,8 +1314,23 @@ def run(
         # Just load an empty Spec with identical name and file as shape
         spec = Spec(shape.name, shape.file)
 
+    # Set output_dir='./kbench-output' if it is not specified.
+    if not output_dir:
+        output_dir = Path("./kbench-output")
+
+    # Set output_path (for storing results) relative to output_dir
+    output_path = output_dir / output_path
+    os.makedirs(output_path.parent, exist_ok=True)
+    # strip output_path suffix
+    if output_path.suffix in [".csv", ".pkl", ".txt"]:
+        output_path = output_path.with_suffix("")
+
     if shape:
         spec.extend_shape_params(shape.params)
+        # Each shape should have its own temporary directory.
+        output_dir = output_dir / Path(shape.hash(with_variables=True))
+
+    logging.info(f"output-dir: [{output_dir}]")
 
     # Expand with CLI params
     if param_list:
@@ -1331,20 +1344,6 @@ def run(
         for i, s in enumerate(spec):
             logging.debug(f"[{i}]{s}")
         logging.debug(LINE)
-
-    # Generate a tmp path for intermediate results.
-    if not output_dir:
-        output_dir = _get_tmp_path(spec.file)
-    else:
-        output_path = output_dir / output_path
-    os.makedirs(output_path.parent, exist_ok=True)
-
-    # strip output_path suffix
-    if output_path.suffix in [".csv", ".pkl", ".txt"]:
-        output_path = output_path.with_suffix("")
-
-    output_dir = Path(output_dir)
-    logging.info(f"output-dir: [{output_dir}]")
 
     # Run the code over the mesh of param/values
     t_start_total = time()
@@ -1389,13 +1388,13 @@ def run(
             # - could not find executable in the cache or cache is not active,
             # - could not find executable in the unique list of scheduled build items
             scheduler.build_all()
-            scheduler.close_build_pool()
             obj_cache.dump()
 
             t_build_total = time() - t_start_total
 
             t_benchmark_start = time()
             if mode in [KBENCH_MODE.RUN, KBENCH_MODE.TUNE]:
+                scheduler.setup_execution_pool()
                 num_build_items = len(scheduler.build_items)
                 exec_progress = scheduler.progress.add_task(
                     "run",
@@ -1634,8 +1633,8 @@ help_str = "Benchmarking toolkit for Mojo kernels"
     "filter",
     help=(
         "Define a single filter (should match a valid parameter, can have"
-        " multiple ones). The filters should of the format `--filter"
-        " PARAM=VALUE`, that is, the subset of parameters that satisfy this"
+        " multiple ones). The filters should of the format '--filter"
+        " PARAM=VALUE', that is, the subset of parameters that satisfy this"
         " condition will be included."
     ),
     multiple=True,
@@ -1650,8 +1649,8 @@ help_str = "Benchmarking toolkit for Mojo kernels"
 @click.option(
     "--output-dir",
     "output_dir",
-    default=None,
-    help="Path to output directory for all results (default='/tmp')",
+    default="kbench-output",
+    help="Path to output directory for all results (default='./kbench-output')",
 )
 @click.option(
     "--tune",
@@ -1669,7 +1668,10 @@ help_str = "Benchmarking toolkit for Mojo kernels"
     help="Just build the binary and report the build time.",
 )
 @click.option(
-    "--param", default=(), help="Set extra params from CLI.", multiple=True
+    "--param",
+    default=(),
+    help="Set extra params in the format of 'PARAM:VALUE'. Example: '--param use_vendor_blas:True'",
+    multiple=True,
 )
 @click.option(
     "--debug-level", default=None, help="The debug level used during the build."
