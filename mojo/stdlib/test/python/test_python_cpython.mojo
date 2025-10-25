@@ -177,10 +177,15 @@ def test_boolean_object_api(cpy: CPython):
     var t = cpy.PyBool_FromLong(1)
     assert_true(t)
     assert_equal(cpy.PyObject_IsTrue(t), 1)
+    assert_true(cpy.PyBool_Check(t))
 
     var f = cpy.PyBool_FromLong(0)
     assert_true(f)
     assert_equal(cpy.PyObject_IsTrue(f), 0)
+    assert_true(cpy.PyBool_Check(t))
+
+    var none = cpy.Py_None()
+    assert_false(cpy.PyBool_Check(none))
 
 
 def test_floating_point_object_api(cpy: CPython):
