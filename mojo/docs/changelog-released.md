@@ -5623,9 +5623,10 @@ Big themes for this release:
   - `math.limit.min_finite()`: use `utils.numerics.min_finite()`
 
 - The `tensor.random` module has been removed. The same functionality is now
-  accessible via the [`Tensor.rand()`](/max/api/mojo/tensor/tensor/Tensor/#rand)
-  and [`Tensor.randn()`](/max/api/mojo/tensor/tensor/Tensor/#randn) static
-  methods.
+accessible via the
+[`Tensor.rand()`](/mojo/kernels/extensibility/tensor/tensor/Tensor/#rand) and
+[`Tensor.randn()`](/mojo/kernels/extensibility/tensor/tensor/Tensor/#randn)
+static methods.
 
 - The builtin `SIMD` struct no longer conforms to `Indexer`; users must
   explicitly cast `Scalar` values using `int`.
@@ -6013,10 +6014,10 @@ Special thanks to our community contributors:
   exit(0)
   ```
 
-- The constructors for [`Tensor`](/max/api/mojo/tensor/tensor/Tensor) have been
-  changed to be more consistent. As a result, constructors take the shape as the
-  first argument (instead of the second) when constructing a tensor with pointer
-  data.
+- The constructors for
+[`Tensor`](/mojo/kernels/extensibility/tensor/tensor/Tensor) have been changed
+to be more consistent. As a result, constructors take the shape as the first
+argument (instead of the second) when constructing a tensor with pointer data.
 
   If you pass a single scalar value to the `Tensor` constructor, it now
   broadcasts the value to all elements in the tensor. For example,
@@ -6542,8 +6543,9 @@ This release doesn't include any changes to Mojo.
     from buffer import parallel_memcpy
     ```
 
-  - The [`rand()`](/max/api/mojo/tensor/tensor/Tensor/#rand) and
-    [`randn()`](/max/api/mojo/tensor/tensor/Tensor/#randn) functions from the
+  - The [`rand()`](/mojo/kernels/extensibility/tensor/tensor/Tensor/#rand) and
+    [`randn()`](/mojo/kernels/extensibility/tensor/tensor/Tensor/#randn)
+    functions from the
     `random` package that return a `Tensor` have moved to the `tensor` package.
     Note that the overloads that write to a `DTypePointer` remain in the
     `random` package.
@@ -7622,9 +7624,9 @@ experience without dedicated sugar.
   trait.  These types include [`Bool`](/mojo/stdlib/builtin/bool/Bool),
   [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral),
   [`DynamicVector`](/mojo/stdlib/collections/list/List),
-  [`Tensor`](/max/api/mojo/tensor/tensor/Tensor),
-  [`TensorShape`](/max/api/mojo/tensor/tensor_shape/TensorShape),
-  and [`TensorSpec`](/max/api/mojo/tensor/tensor_spec/TensorSpec).
+  [`Tensor`](/mojo/kernels/extensibility/tensor/tensor/Tensor),
+  [`TensorShape`](/mojo/kernels/extensibility/tensor/tensor_shape/TensorShape),
+  and [`TensorSpec`](/mojo/kernels/extensibility/tensor/tensor_spec/TensorSpec).
 
 ### 🦋 Changed
 
@@ -8244,13 +8246,13 @@ the previous "read to EOF" behavior when size is negative.
   from a file.
 
 - The built-in `print()` function now works on the
-  [`Tensor`](/max/api/mojo/tensor/tensor/Tensor) type.
+  [`Tensor`](/mojo/kernels/extensibility/tensor/tensor/Tensor) type.
 
-- [`TensorShape`](/max/api/mojo/tensor/tensor_shape/TensorShape) and
-  [`TensorSpec`](/max/api/mojo/tensor/tensor_spec/TensorSpec) now have
-  constructors that take
-  [`DynamicVector[Int]`](/mojo/stdlib/collections/list/List) and
-  [`IndexList`](/mojo/stdlib/utils/index_/IndexList) to initialize shapes.
+- [`TensorShape`](/mojo/kernels/extensibility/tensor/tensor_shape/TensorShape)
+and [`TensorSpec`](/mojo/kernels/extensibility/tensor/tensor_spec/TensorSpec)
+now have constructors that take
+[`DynamicVector[Int]`](/mojo/stdlib/collections/list/List) and
+[`IndexList`](/mojo/stdlib/utils/index_/IndexList) to initialize shapes.
 
 - The [`String`](/mojo/stdlib/collections/string/string/String) type now has the
  `count()` and `find()` methods to enable counting the number of occurrences or
@@ -8888,11 +8890,11 @@ All earlier releases were considered version 0.1.
 
 #### ⭐️ New
 
-- A new [`Tensor`](/max/api/mojo/tensor/tensor/Tensor) type has been introduced.
-  This tensor type manages its own data (unlike `NDBuffer` and `Buffer` which
-  are just views). Therefore, the tensor type performs its own allocation and
-  free. Here is a simple example of using the tensor type to represent an RGB
-  image and convert it to grayscale:
+- A new [`Tensor`](/mojo/kernels/extensibility/tensor/tensor/Tensor) type has
+been introduced. This tensor type manages its own data (unlike `NDBuffer` and
+`Buffer` which are just views). Therefore, the tensor type performs its own
+allocation and free. Here is a simple example of using the tensor type to
+represent an RGB image and convert it to grayscale:
 
   ```mojo
   from tensor import Tensor, TensorShape
