@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 from unittest.mock import MagicMock, Mock
 
 import numpy as np
@@ -34,6 +35,9 @@ from max.interfaces import (
 )
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.parallel import ParallelArrayOps
+from max.pipelines.architectures.qwen2_5vl.context import (
+    Qwen2_5VLTextAndVisionContext,
+)
 from max.pipelines.architectures.qwen2_5vl.model import Qwen2_5VLModel
 from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
 from max.pipelines.core import TextAndVisionContext
@@ -75,13 +79,20 @@ def create_mock_qwen_model(mocker: MockerFixture) -> Qwen2_5VLModel:
         Returns:
             Mock object simulating a Tensor with .to() and .to_numpy() methods
         """
-        mock_tensor = Mock()
-        mock_tensor.to = Mock(return_value=mock_tensor)
-        mock_tensor.to_numpy = Mock(
-            return_value=arr
-        )  # Allow extracting numpy data
-        mock_tensor.shape = arr.shape
-        mock_tensor._numpy_data = arr  # Store for later comparison
+
+        def create_device_tensor(data: np.ndarray) -> Mock:
+            tensor = Mock()
+            tensor.to_numpy = Mock(return_value=data)
+            return tensor
+
+        mock_tensor = create_device_tensor(arr)
+
+        def mock_to(devices: Any) -> Mock | list[Mock]:
+            if isinstance(devices, list):
+                return [create_device_tensor(arr) for _ in devices]
+            return mock_tensor
+
+        mock_tensor.to = mock_to
         return mock_tensor
 
     mocker.patch(
@@ -395,11 +406,9 @@ async def test_qwen_input_preparation__position_ids_after_reset(
 
     # Verify context was created correctly with required metadata
     assert context is not None
-    assert isinstance(context, TextAndVisionContext)
-    assert "decoder_position_ids" in context.extra_model_args
-    assert "rope_delta" in context.extra_model_args
-    assert "spatial_merge_size" in context.extra_model_args
-    assert "image_token_id" in context.extra_model_args
+    assert isinstance(context, Qwen2_5VLTextAndVisionContext), (
+        f"Expected Qwen2_5VLTextAndVisionContext, got {type(context)}"
+    )
 
     initial_current_length = context.current_length
 
@@ -592,11 +601,10 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
 
     # Verify context was created with image metadata
     assert context is not None
-    assert isinstance(context, TextAndVisionContext)
+    assert isinstance(context, Qwen2_5VLTextAndVisionContext), (
+        f"Expected Qwen2_5VLTextAndVisionContext, got {type(context)}"
+    )
     assert len(context.images) > 0, "Context should contain image metadata"
-    assert "decoder_position_ids" in context.extra_model_args
-    assert "rope_delta" in context.extra_model_args
-    assert "image_grid_thw" in context.extra_model_args
 
     initial_current_length = context.current_length
     initial_images = context.images
@@ -739,11 +747,15 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
 
     # Create initial decoder position IDs for prefill (3D RoPE: temporal, height, width).
     # For text-only inputs, all 3 dimensions have identical position IDs.
-    initial_position_ids = np.arange(L, dtype=np.int32)
+    initial_position_ids = np.arange(L, dtype=np.int64)
     decoder_position_ids_3d = np.tile(initial_position_ids, (3, 1))
 
-    # Create a minimal TextAndVisionContext for text-only input.
-    ctx = TextAndVisionContext(
+    # Create a minimal Qwen2_5VLTextAndVisionContext for text-only input.
+    rope_delta = 0
+    decoder_position_ids = decoder_position_ids_3d
+    spatial_merge_size = 2
+    image_token_id = 151652
+    ctx = Qwen2_5VLTextAndVisionContext(
         request_id=RequestID("test-posid-increment"),
         tokens=tokens,
         max_length=L + 8,
@@ -751,15 +763,16 @@ def test_qwen_text_only_decoder_posids_increment_on_first_decode(
         sampling_params=SamplingParams(max_new_tokens=2),
         images=[],  # text-only
         vision_token_ids=[],  # text-only
-        extra_model_args={
-            # Use arbitrary rope_delta; test must not depend on its value.
-            "rope_delta": np.array(0, dtype=np.int32),
-            # Initial decoder position IDs for the prefill phase.
-            "decoder_position_ids": decoder_position_ids_3d,
-            # Other required fields for Qwen2.5VL.
-            "spatial_merge_size": np.array(2, dtype=np.int32),
-            "image_token_id": np.array(151652, dtype=np.int32),
-        },
+        # Qwen2.5VL-specific fields
+        rope_delta=rope_delta,
+        decoder_position_ids=decoder_position_ids,
+        spatial_merge_size=spatial_merge_size,
+        image_token_id=image_token_id,
+        video_token_id=Mock(),
+        vision_start_token_id=Mock(),
+        tokens_per_second=Mock(),
+        image_token_indices=Mock(),
+        vision_data=Mock(),
     )
 
     # Verify initial state: prefill phase (start_idx=0, active range covers all tokens).

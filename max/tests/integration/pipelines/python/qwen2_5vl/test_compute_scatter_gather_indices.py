@@ -8,13 +8,16 @@
 """Test compute_scatter_gather_indices function."""
 
 import copy
+from unittest.mock import Mock
 
 import numpy as np
 from max.interfaces import ImageMetadata
+from max.pipelines.architectures.qwen2_5vl.context import (
+    Qwen2_5VLTextAndVisionContext,
+)
 from max.pipelines.architectures.qwen2_5vl.util import (
     compute_scatter_gather_indices,
 )
-from max.pipelines.core import TextAndVisionContext
 
 
 def test_compute_scatter_gather_indices() -> None:
@@ -22,7 +25,7 @@ def test_compute_scatter_gather_indices() -> None:
     # These pixel values are arbitrary
     img0 = np.array([[-1, -2], [-3, -4]])
     img1 = np.array([[-5, -6], [-7, -8]])
-    ctx = TextAndVisionContext(
+    ctx = Qwen2_5VLTextAndVisionContext(
         max_length=50,
         tokens=np.array(
             [0, 1, 2, 3, IMG, IMG, IMG, IMG, 8, 9, IMG, IMG, IMG, IMG, IMG, 15]
@@ -40,17 +43,24 @@ def test_compute_scatter_gather_indices() -> None:
             ),
         ],
         vision_token_ids=[IMG],
-        extra_model_args={
-            "image_token_indices": np.array(
-                [4, 5, 6, 7, 10, 11, 12, 13, 14], dtype=np.int32
-            ),
-        },
+        # Qwen2.5VL-specific required fields
+        image_token_indices=np.array(
+            [4, 5, 6, 7, 10, 11, 12, 13, 14], dtype=np.int32
+        ),
+        spatial_merge_size=Mock(),
+        rope_delta=Mock(),
+        image_token_id=Mock(),
+        video_token_id=Mock(),
+        vision_start_token_id=Mock(),
+        tokens_per_second=Mock(),
+        decoder_position_ids=Mock(),
+        vision_data=None,
     )
 
     # fmt: off
 
     # Check that the image token indices are correct
-    precomputed = ctx.extra_model_args["image_token_indices"]
+    precomputed = ctx.image_token_indices
     assert (precomputed == np.where(ctx.all_tokens == IMG)[0]).all()
 
     # Test normal case: start_idx = 0
