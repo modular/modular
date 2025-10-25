@@ -4,4 +4,4 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .simple import MyStruct
+from .my_trait import MyTrait

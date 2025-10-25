@@ -753,9 +753,12 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
       structParent->findExtensionsInScopeForStruct(this->getSymbolRef(),
                                                    uniqueExtensions);
     }
-    // Search for extensions in the trait's parent scope.
+    // Search for extensions in the trait's parent scope(s).
     // TODO(MOCO-522): Arcana docs on our orphan rule.
-    if (ASTDecl *traitDecl = shared.declResolver->getTraitDecl(trait)) {
+    for (SymbolRefAttr traitSymbol : trait.getSymbols()) {
+      ASTDecl *traitDecl =
+          shared.declResolver->getTraitDecl(TraitType::get(traitSymbol));
+      assert(traitDecl && "couldn't find trait decl for trait symbol");
       if (ASTDecl *traitParent = traitDecl->getParentDecl()) {
         traitParent->findExtensionsInScopeForStruct(this->getSymbolRef(),
                                                     uniqueExtensions);
