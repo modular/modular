@@ -1365,6 +1365,7 @@ struct CPython(Defaultable, Movable):
     var _PyLong_Type: PyTypeObjectPtr
     # Boolean Objects
     var _PyBool_FromLong: PyBool_FromLong.type
+    var _PyBool_Type: PyTypeObjectPtr
     # Floating-Point Objects
     var _PyFloat_FromDouble: PyFloat_FromDouble.type
     var _PyFloat_AsDouble: PyFloat_AsDouble.type
@@ -1547,6 +1548,10 @@ struct CPython(Defaultable, Movable):
         )
         # Boolean Objects
         self._PyBool_FromLong = PyBool_FromLong.load(self.lib)
+        self._PyBool_Type = PyTypeObjectPtr(
+            # PyTypeObject PyBool_Type
+            self.lib.get_symbol[PyTypeObject]("PyBool_Type")
+        )
         # Floating-Point Objects
         self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib)
         self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib)
@@ -2364,6 +2369,16 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/bool.html#c.PyBool_FromLong
         """
         return self._PyBool_FromLong(value)
+
+    fn PyBool_Check(self, obj: PyObjectPtr) -> Bool:
+        """Return True if the `obj` is a boolean.
+
+        References:
+        - https://docs.python.org/3.13/c-api/bool.html#c.PyBool_Check
+        - https://github.com/python/cpython/blob/main/Include/boolobject.h
+        """
+        # Note: this a C macro in the Python C API.
+        return self.Py_TYPE(obj) == self._PyBool_Type
 
     # ===-------------------------------------------------------------------===#
     # Floating-Point Objects
