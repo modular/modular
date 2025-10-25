@@ -56,7 +56,7 @@ from max.pipelines.lib import (
 from max.profiler import Tracer, traced
 from transformers import AutoConfig
 
-from .context import Qwen2_5VLTextAndVisionContext
+from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
 from .model_config import Qwen2_5VLConfig
 from .nn.data_processing import get_rope_index
 from .qwen2_5vl import Qwen2_5VL
@@ -817,11 +817,19 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         if kv_cache_inputs is None:
             raise ValueError("KV Cache Inputs must be provided")
 
-        # Validate all contexts are the correct type
+        # Gather all vision data from contexts that need vision encoding
+        vision_datas: list[VisionEncodingData] = []
         for ctx in context_batch:
+            # Validate all contexts are the correct type
             assert isinstance(ctx, Qwen2_5VLTextAndVisionContext), (
                 f"Expected Qwen2_5VLTextAndVisionContext, got {type(ctx).__name__}"
             )
+            if ctx.needs_vision_encoding:
+                assert ctx.vision_data is not None, (
+                    "vision_data must be present when needs_vision_encoding is True"
+                )
+                vision_datas.append(ctx.vision_data)
+        any_needs_vision_encoding = len(vision_datas) > 0
 
         # Prepare Inputs Needed Regardless of Images
         with Tracer("prepare_input_ids"):
@@ -937,7 +945,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 context_batch
             )
 
-        if not any(ctx.needs_vision_encoding for ctx in context_batch):
+        if not any_needs_vision_encoding:
             return Qwen2_5VLInputs(
                 input_ids=input_ids,
                 input_row_offsets=input_row_offsets_tensors,
@@ -965,9 +973,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             # pixel_values is a tuple of tensors, that is always length 1 with
             # Qwen, so we can just take the first element.
             pixel_values_list = [
-                ctx.vision_data.concatenated_pixel_values
-                for ctx in context_batch
-                if ctx.vision_data is not None
+                vision_data.concatenated_pixel_values
+                for vision_data in vision_datas
             ]
             pixel_values_tensor = Tensor.from_numpy(
                 self._parallel_ops.concatenate(pixel_values_list)
@@ -994,9 +1001,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         with Tracer("preparing_vision_position_ids"):
             vision_position_ids_list = [
-                ctx.vision_data.vision_position_ids
-                for ctx in context_batch
-                if ctx.vision_data is not None
+                vision_data.vision_position_ids for vision_data in vision_datas
             ]
             vision_position_ids_tensor = Tensor.from_numpy(
                 self._parallel_ops.concatenate(vision_position_ids_list).astype(
@@ -1007,9 +1012,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         with Tracer("preparing_max_grid_size"):
             max_grid_size_value = max(
-                ctx.vision_data.max_grid_size.item()
-                for ctx in context_batch
-                if ctx.vision_data is not None
+                vision_data.max_grid_size.item() for vision_data in vision_datas
             )
             max_grid_size_tensor = Tensor.from_numpy(
                 np.array(max_grid_size_value, dtype=np.int32)
@@ -1020,16 +1023,12 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             # Handle cumulative offsets properly when batching
             cu_seqlens_list = []
             offset = 0
-            for ctx in context_batch:
-                if ctx.needs_vision_encoding:
-                    assert ctx.vision_data is not None, (
-                        "vision_data must be present when needs_vision_encoding is True"
-                    )
-                    seqlens = ctx.vision_data.cu_seqlens
-                    adjusted = seqlens.copy()
-                    adjusted[1:] += offset
-                    cu_seqlens_list.append(adjusted[1:])
-                    offset = adjusted[-1]
+            for vision_data in vision_datas:
+                seqlens = vision_data.cu_seqlens
+                adjusted = seqlens.copy()
+                adjusted[1:] += offset
+                cu_seqlens_list.append(adjusted[1:])
+                offset = adjusted[-1]
 
             cu_seqlens_tensor = Tensor.from_numpy(
                 np.concatenate(
@@ -1043,20 +1042,14 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             # We only need to add cross-context offsets and concatenate.
             cu_window_seqlens_parts: list[npt.NDArray[np.uint32]] = []
             offset = 0
-            for ctx in context_batch:
-                if ctx.needs_vision_encoding:
-                    assert ctx.vision_data is not None, (
-                        "vision_data must be present when needs_vision_encoding is True"
-                    )
-                    seqlens_unique = (
-                        ctx.vision_data.cu_window_seqlens_unique.astype(
-                            np.uint32
-                        )
-                    )
-                    cu_window_seqlens_parts.append(
-                        (seqlens_unique[1:] + offset).astype(np.uint32)
-                    )
-                    offset = offset + seqlens_unique[-1]
+            for vision_data in vision_datas:
+                seqlens_unique = vision_data.cu_window_seqlens_unique.astype(
+                    np.uint32
+                )
+                cu_window_seqlens_parts.append(
+                    (seqlens_unique[1:] + offset).astype(np.uint32)
+                )
+                offset = offset + seqlens_unique[-1]
 
             cu_window_seqlens_np = np.concatenate(
                 [np.array([0], dtype=np.uint32), *cu_window_seqlens_parts]
@@ -1068,9 +1061,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         with Tracer("preparing_max_seqlen"):
             max_seqlen_value = max(
-                ctx.vision_data.max_seqlen.item()
-                for ctx in context_batch
-                if ctx.vision_data is not None
+                vision_data.max_seqlen.item() for vision_data in vision_datas
             )
             max_seqlen_tensor = Tensor.from_numpy(
                 np.array([max_seqlen_value], dtype=np.uint32)
@@ -1079,9 +1070,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         with Tracer("preparing_max_window_seqlen"):
             window_max_seqlen_value = max(
-                ctx.vision_data.window_max_seqlen.item()
-                for ctx in context_batch
-                if ctx.vision_data is not None
+                vision_data.window_max_seqlen.item()
+                for vision_data in vision_datas
             )
             window_max_seqlen_tensor = Tensor.from_numpy(
                 np.array([window_max_seqlen_value], dtype=np.uint32)
