@@ -4,15 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Minimal struct for testing extensions
-
 
 @fieldwise_init
 struct PlainStruct:
     pass
 
 
-# Generic struct for testing extensions on parametric types
+# TODO(MOCO-522): Simplify generic_struct_package, struct_only_package,
+# and simple_struct_package into this one package
 struct GenericBox[T: ImplicitlyCopyable]:
     var value: T
 
@@ -21,3 +20,13 @@ struct GenericBox[T: ImplicitlyCopyable]:
 
     fn get(self) -> T:
         return self.value
+
+
+struct MyStruct(Copyable):
+    var value: Int
+
+    fn __init__(out self, value: Int):
+        self.value = value
+
+    fn __copyinit__(out self, existing: Self):
+        self.value = existing.value
