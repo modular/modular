@@ -36,6 +36,8 @@ from gpu.random import Random
 ```
 """
 
+from sys import is_little_endian
+
 from math import cos, log, sin, sqrt
 
 from memory import bitcast
@@ -120,8 +122,10 @@ struct Random[rounds: Int = 10]:
             n: Amount to increment the counter by.
         """
         var hilo = bitcast[DType.uint32, 2](n)
-        var hi = hilo[0]
-        var lo = hilo[1]
+        var hi, lo = (hilo[1], hilo[0]) if is_little_endian() else (
+            hilo[0],
+            hilo[1],
+        )
 
         self._counter[0] += lo
         if self._counter[0] < lo:
@@ -152,7 +156,7 @@ struct Random[rounds: Int = 10]:
         alias K_PHILOX_SB = 0xCD9E8D57
 
         var res0 = _mulhilow(K_PHILOX_SA, counter[0])
-        var res1 = _mulhilow(K_PHILOX_SB, counter[3])
+        var res1 = _mulhilow(K_PHILOX_SB, counter[2])
         return SIMD[DType.uint32, 4](
             res1[1] ^ counter[1] ^ key[0],
             res1[0],
