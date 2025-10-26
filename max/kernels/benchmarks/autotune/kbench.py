@@ -205,12 +205,21 @@ class KBENCH_MODE(Enum):
     BUILD = auto()
 
 
+# Singleton build failed state
+@dataclass(frozen=True)
+class _BuildFailed:
+    pass
+
+
+BuildFailed = _BuildFailed()
+
+
 class KbenchCache:
     """Cache for compiled binaries."""
 
     def __init__(self, path: Path | str = "kbench_cache.pkl") -> None:
         self.path = Path(path)
-        self.data: dict[str, str] = {}
+        self.data: dict[str, str | _BuildFailed] = {}
         self.is_active = False
 
     def clear(self) -> None:
@@ -230,22 +239,33 @@ class KbenchCache:
         if self.is_active and self.data:
             store_pickle(self.path, self.data)
 
-    def query(self, key: str) -> str | None:
+    def query(self, key: str) -> str | _BuildFailed | None:
         """Get cached path for given key if it exists."""
         if not self.is_active:
             return None
-        obj_path = str(self.data.get(key))
-        return obj_path if Path(obj_path).exists() else None
+        obj_path = self.data.get(key)
+        if isinstance(obj_path, str):
+            return obj_path if Path(obj_path).exists() else None
+        return obj_path
 
     def store(self, key: str, obj_path: Path) -> Path | None:
         """Store object in cache and return its new path."""
         if not self.is_active:
             return None
         # TODO: revise the following conflict.
-        if obj_path in self.data:
+        if key in self.data:
             logging.debug(f"overwriting {key} already in obj-cache")
         self.data[key] = str(obj_path)
         return obj_path
+
+    def store_failed(self, key: str) -> None:
+        """Store build failure result for the specified key."""
+        if not self.is_active:
+            return None
+        # TODO: revise the following conflict.
+        if key in self.data:
+            logging.debug(f"overwriting {key} already in obj-cache")
+        self.data[key] = BuildFailed
 
 
 @dataclass(frozen=True)
@@ -908,8 +928,12 @@ class Scheduler:
             # first, check cache for build from previous rounds
             bin_path = self.obj_cache.query(bin_name)
             debug_msg += [f"In cache: {bool(bin_path)}"]
-            if bin_path:
+            if isinstance(bin_path, str):
                 unique_build_paths[bin_name] = bin_path
+            elif bin_path is BuildFailed:
+                # This binary failed to build before and would just fail again.
+                # Skip it.
+                continue
             else:
                 # Neither found in the cache, nor exists in the unique_build_items
                 if bin_name not in unique_build_items:
@@ -995,6 +1019,9 @@ class Scheduler:
                     binary_path = build_output.path
                     obj_cache.store(bin_name, binary_path)
                     unique_build_paths[bin_name] = binary_path
+                else:
+                    obj_cache.store_failed(bin_name)
+
                 self.progress.update(build_progress, advance=1)
             logging.info(
                 f"finished building {len(unique_build_paths)} unique items"
