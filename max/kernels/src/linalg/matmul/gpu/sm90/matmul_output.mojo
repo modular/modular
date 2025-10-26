@@ -43,6 +43,7 @@ from .tile_writer import (
     TileCoordinates,
     RegTileWriter,
 )
+import itertools
 
 # Helper functions for GEMM output processing
 
@@ -434,7 +435,7 @@ fn write_gemm_output_to_global_memory[
 
     @parameter
     if use_stmatrix:
-        # Path 1: bf16 output using st.matrix hardware instructions
+        # bf16 output using st.matrix hardware instructions
         handle_optimized_bfloat16_output[
             wgmma_shape,
             num_consumer,
@@ -459,31 +460,14 @@ fn write_gemm_output_to_global_memory[
             block_y,
             block_x,
         )
-
-    # Path 2: N divisible by tile size, no column bounds checking needed
-    elif N % BN == 0:
-        write_gemm_output_aligned[
-            c_tile_shape=c_tile_shape,
-            wgmma_shape=wgmma_shape,
-            num_consumer=num_consumer,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        ](
-            c,
-            c_reg_tile,
-            warp_group_thread_idx,
-            local_warp_group_idx,
-            block_y,
-            block_x,
-        )
-
-    # Path 3: Arbitrary matrix dimensions with full bounds checking
     else:
-        write_gemm_output_with_bounds_check[
+        # arbitrary matrix dimensions with full bounds checking
+        write_gemm_output[
             c_tile_shape=c_tile_shape,
             wgmma_shape=wgmma_shape,
             num_consumer=num_consumer,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            check_runtime_bounds = (N % BN != 0),
         ](
             c,
             c_reg_tile,
@@ -495,22 +479,7 @@ fn write_gemm_output_to_global_memory[
 
 
 @always_inline
-fn write_tiles[
-    Writer: RegTileWriter, //, num_m_mmas: Int, num_n_mmas: Int
-](reg_writer: Writer, c_reg_tile: RegTileType[_, _, _]) capturing -> None:
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
-            reg_writer.write_tile(
-                c_reg_tile,
-                (UInt(m_mma), UInt(n_mma)),
-            )
-
-
-@always_inline
-fn write_gemm_output_aligned[
+fn write_gemm_output[
     c_type: DType,
     accum_type: DType,
     c_layout: Layout,
@@ -524,6 +493,7 @@ fn write_gemm_output_aligned[
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
+    check_runtime_bounds: Bool = False,
 ](
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin, *_, **_],
     c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
@@ -532,7 +502,6 @@ fn write_gemm_output_aligned[
     block_y: Int,
     block_x: Int,
 ):
-    """Write output when N divisible by BN (no column bounds check needed)."""
     alias BM = c_tile_shape[0]
     alias BN = c_tile_shape[1]
     alias N = c_layout.shape[1].value()
@@ -547,113 +516,38 @@ fn write_gemm_output_aligned[
         BM // num_consumer, BN
     ](Int(local_warp_group_idx), 0)
 
-    var max_row = UInt32(c.dim[0]())
+    var tile_coords: OptionalReg[TileCoordinates] = None
+    var max_row: OptionalReg[UInt32] = None
 
     @parameter
-    if elementwise_lambda_fn:
-        var reg_writer = RegisterToGMemWriter[
-            wgmma_shape=wgmma_shape,
-            num_consumer=num_consumer,
-            N=N,
-            epilogue_fn=elementwise_lambda_fn,
-        ](
-            c_gmem_split,
-            warp_group_thread_idx,
-            num_m_mmas,
-            TileCoordinates(
-                IndexList[2](c_gmem_corner_coords[0], c_gmem_corner_coords[1]),
-                IndexList[2](split_coords[0], split_coords[1]),
-            ),
-            max_row,
+    if (
+        elementwise_lambda_fn is not None
+        or elementwise_compute_lambda_fn is not None
+    ):
+        tile_coords = TileCoordinates(
+            IndexList[2](c_gmem_corner_coords[0], c_gmem_corner_coords[1]),
+            IndexList[2](split_coords[0], split_coords[1]),
         )
-
-        write_tiles[num_m_mmas, num_n_mmas](reg_writer, c_reg_tile)
-
-    elif elementwise_compute_lambda_fn:
-        var compute_writer = RegisterToGMemWriter[
-            wgmma_shape=wgmma_shape,
-            num_consumer=num_consumer,
-            N=N,
-            compute_lambda_fn=elementwise_compute_lambda_fn,
-        ](
-            c_gmem_split,
-            warp_group_thread_idx,
-            num_m_mmas,
-            TileCoordinates(
-                IndexList[2](c_gmem_corner_coords[0], c_gmem_corner_coords[1]),
-                IndexList[2](split_coords[0], split_coords[1]),
-            ),
-            max_row,
-        )
-
-        write_tiles[num_m_mmas, num_n_mmas](compute_writer, c_reg_tile)
-    else:
-        var reg_writer = RegisterToGMemWriter[
-            wgmma_shape=wgmma_shape,
-            num_consumer=num_consumer,
-            N=N,
-            epilogue_fn=None,  # No epilogue
-        ](
-            c_gmem_split,
-            warp_group_thread_idx,
-            num_m_mmas,
-        )
-
-        write_tiles[num_m_mmas, num_n_mmas](reg_writer, c_reg_tile)
-
-
-@always_inline
-fn write_gemm_output_with_bounds_check[
-    c_type: DType,
-    accum_type: DType,
-    c_layout: Layout,
-    c_reg_layout: Layout,
-    /,
-    *,
-    c_tile_shape: IndexList[2],
-    wgmma_shape: IndexList[3],
-    num_consumer: Int = 1,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin, *_, **_],
-    c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
-    warp_group_thread_idx: UInt,
-    local_warp_group_idx: UInt,
-    block_y: Int,
-    block_x: Int,
-):
-    """Write output with full bounds checking for arbitrary matrix dimensions.
-    """
-    alias BM = c_tile_shape[0]
-    alias BN = c_tile_shape[1]
-    alias N = c_layout.shape[1].value()
-    alias num_m_mmas = BM // wgmma_shape[0] // num_consumer
-    alias num_n_mmas = BN // wgmma_shape[1]
-
-    var c_gmem_tile, c_gmem_corner_coords, _ = c.tile_with_offset[BM, BN](
-        block_y, block_x
-    )
-    var c_gmem_split, split_coords, _ = c_gmem_tile.tile_with_offset[
-        BM // num_consumer, BN
-    ](Int(local_warp_group_idx), 0)
-
-    var max_row = UInt32(c.dim[0]())
+        max_row = UInt32(c.dim[0]())
 
     var reg_writer = RegisterToGMemWriter[
         wgmma_shape=wgmma_shape,
         num_consumer=num_consumer,
         N=N,
         epilogue_fn=elementwise_lambda_fn,
-        check_runtime_bounds=True,
+        compute_lambda_fn=elementwise_compute_lambda_fn,
+        check_runtime_bounds=check_runtime_bounds,
     ](
         c_gmem_split,
         warp_group_thread_idx,
         num_m_mmas,
-        TileCoordinates(
-            IndexList[2](c_gmem_corner_coords[0], c_gmem_corner_coords[1]),
-            IndexList[2](split_coords[0], split_coords[1]),
-        ),
+        tile_coords,
         max_row,
     )
 
-    write_tiles[num_m_mmas, num_n_mmas](reg_writer, c_reg_tile)
+    @parameter
+    for m_mma, n_mma in itertools.product(range(num_m_mmas), range(num_n_mmas)):
+        reg_writer.write_tile(
+            c_reg_tile,
+            (UInt(m_mma), UInt(n_mma)),
+        )
