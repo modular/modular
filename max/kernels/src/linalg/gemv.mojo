@@ -42,7 +42,7 @@ from gpu.host import (
     get_gpu_target,
 )
 from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
-from gpu.memory import AddressSpace, load
+from gpu.memory import load
 
 # layout imports
 from layout import (

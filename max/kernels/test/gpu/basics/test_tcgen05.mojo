@@ -13,7 +13,6 @@
 
 from gpu.host import get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.memory import AddressSpace
 from gpu.mma_sm100 import MMASmemDescriptor
 from gpu.tcgen05 import (
     tcgen05_alloc,

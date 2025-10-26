@@ -21,7 +21,6 @@ from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu import block_idx, thread_idx
-from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -35,7 +34,6 @@ from layout.tensor_core_async import (
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
@@ -182,7 +180,7 @@ fn tma_wgmma_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:

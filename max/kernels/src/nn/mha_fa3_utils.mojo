@@ -24,7 +24,6 @@ from gpu import block_idx, thread_idx
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.memory import AddressSpace
 from gpu.mma import st_matrix
 from gpu.sync import async_copy_arrive
 from layout.int_tuple import IntTuple

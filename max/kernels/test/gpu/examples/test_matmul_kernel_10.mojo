@@ -30,7 +30,6 @@ from gpu import (
 )
 from gpu.host import DeviceContext
 from gpu.intrinsics import ldg
-from gpu.memory import AddressSpace
 from linalg.utils import elementwise_epilogue_type
 from memory import stack_allocation
 

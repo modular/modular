@@ -46,7 +46,6 @@ from layout.tma_async import PipelineState
 from ....structuring import SMemBarrier
 from gpu.sync import async_copy_arrive
 from gpu.globals import WARPGROUP_SIZE
-from gpu.memory import AddressSpace
 from ....structuring import NVIDIASharedMemoryManager
 from ....structuring import SMemBarrier
 

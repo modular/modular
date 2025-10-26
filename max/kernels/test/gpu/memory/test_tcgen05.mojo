@@ -15,7 +15,6 @@ from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu import thread_idx
-from gpu.memory import AddressSpace
 from gpu.mma_sm100 import *
 from gpu.sync import barrier
 from gpu.tcgen05 import *

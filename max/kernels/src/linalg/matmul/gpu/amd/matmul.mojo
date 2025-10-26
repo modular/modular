@@ -22,7 +22,6 @@ from gpu import (
     lane_id,
 )
 from gpu import warp_id as get_warp_id
-from gpu.memory import AddressSpace
 from gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,

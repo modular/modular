@@ -14,7 +14,6 @@
 
 This package provides GPU memory operations including:
 
-- **AddressSpace**: GPU memory address space types (GLOBAL, SHARED, etc.)
 - **async_copy**: Asynchronous memory copy operations
 - **cp_async_bulk**: Bulk tensor memory copy operations (TMA)
 - **load/store**: Memory access operations with cache control
@@ -27,12 +26,12 @@ GPU memory spaces and coordination of memory operations across threads.
 
 from .memory import (
     AddressSpace,
+    GPUAddressSpace,
     CacheEviction,
     CacheOperation,
     Consistency,
     Fill,
     ReduceOp,
-    _GPUAddressSpace,
     async_copy,
     async_copy_commit_group,
     async_copy_wait_all,

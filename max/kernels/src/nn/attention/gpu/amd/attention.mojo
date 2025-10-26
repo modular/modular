@@ -20,7 +20,6 @@ from sys.info import _cdna_4_or_newer
 from algorithm.functional import unswitch
 from gpu import barrier, block_idx, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
-from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
 from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.int_tuple import UNKNOWN_VALUE
@@ -32,7 +31,7 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from memory import AddressSpace as BaseAddressSpace
+from memory.pointer import AddressSpace as BaseAddressSpace
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
 from nn.mha_utils import (

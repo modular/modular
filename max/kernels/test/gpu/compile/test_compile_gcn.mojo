@@ -33,7 +33,6 @@ from gpu.intrinsics import (
     permlane_shuffle,
     permlane_swap,
 )
-from gpu.memory import AddressSpace
 from gpu.primitives.warp import (
     shuffle_down,
     shuffle_idx,

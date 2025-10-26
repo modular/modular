@@ -40,7 +40,6 @@ from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
@@ -5036,7 +5035,7 @@ struct LayoutTensor[
         ```mojo
         from layout import LayoutTensor, Layout
         from gpu import thread_idx, block_idx, block_dim
-        from gpu.memory import AddressSpace, async_copy_wait_all
+        from gpu.memory import async_copy_wait_all
 
         alias dtype = DType.float32
         alias in_size = 128
@@ -5087,7 +5086,7 @@ struct LayoutTensor[
         - A synchronization barrier is required before using the copied data.
         """
         constrained[
-            self.address_space == _GPUAddressSpace.SHARED,
+            self.address_space == AddressSpace.SHARED,
             "Async is only supported for destinations in shared memory",
         ]()
 
@@ -5126,9 +5125,9 @@ struct LayoutTensor[
         )
 
         var dst_ptr = self.ptr.address_space_cast[
-            _GPUAddressSpace.SHARED
+            AddressSpace.SHARED
         ]().mut_cast[True]()
-        var src_ptr = src.ptr.address_space_cast[_GPUAddressSpace.GLOBAL]()
+        var src_ptr = src.ptr.address_space_cast[AddressSpace.GLOBAL]()
 
         # Coalesce element layouts to simplify vectorization condition.
         alias coalesce_src_element_layout = coalesce(src.element_layout)
@@ -5468,7 +5467,6 @@ fn stack_allocation_like[
     ```mojo
     from layout import LayoutTensor, Layout
     from layout.layout_tensor import stack_allocation_like
-    from gpu.memory import AddressSpace
 
     var global_tensor = LayoutTensor[
         DType.float32,
@@ -5696,13 +5694,12 @@ fn _copy_dram_to_sram_validate_args(
     ]()
 
     constrained[
-        src.address_space
-        in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+        src.address_space in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
         "src address space must be GENERIC or GLOBAL.",
     ]()
 
     constrained[
-        dst.address_space == _GPUAddressSpace.SHARED,
+        dst.address_space == AddressSpace.SHARED,
         "dst address space must be SHARED.",
     ]()
 
@@ -6389,13 +6386,12 @@ fn copy_dram_to_sram_async[
     - The maximum size of each element that can be copied is 16 bytes.
     """
     constrained[
-        src.address_space
-        in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+        src.address_space in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
         "src address space must be GENERIC or GLOBAL.",
     ]()
 
     constrained[
-        dst.address_space == _GPUAddressSpace.SHARED,
+        dst.address_space == AddressSpace.SHARED,
         "dst address space must be SHARED.",
     ]()
 
@@ -6614,13 +6610,12 @@ fn copy_sram_to_dram[
         copy operations before proceeding.
     """
     constrained[
-        dst.address_space
-        in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+        dst.address_space in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
         "dst address space must be GENERIC or GLOBAL.",
     ]()
 
     constrained[
-        src.address_space == _GPUAddressSpace.SHARED,
+        src.address_space == AddressSpace.SHARED,
         "src address space must be SHARED.",
     ]()
 
@@ -6810,12 +6805,12 @@ fn copy_sram_to_local[
     ]()
 
     constrained[
-        src.address_space == _GPUAddressSpace.SHARED,
+        src.address_space == AddressSpace.SHARED,
         "src address space must be SHARED.",
     ]()
 
     constrained[
-        dst.address_space == _GPUAddressSpace.LOCAL,
+        dst.address_space == AddressSpace.LOCAL,
         "dst address space must be LOCAL.",
     ]()
 
@@ -6833,13 +6828,12 @@ fn copy_sram_to_local[
 @always_inline("nodebug")
 fn _copy_local_to_dram_validate_args(dst: LayoutTensor, src: LayoutTensor):
     constrained[
-        src.address_space == _GPUAddressSpace.LOCAL,
+        src.address_space == AddressSpace.LOCAL,
         "src address space must be LOCAL.",
     ]()
 
     constrained[
-        dst.address_space
-        in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+        dst.address_space in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
         "dst address space must be GENERIC or GLOBAL.",
     ]()
 
@@ -7447,10 +7441,8 @@ fn copy_local_to_shared[
     *,
     row_major: Bool = False,
 ](
-    dst: LayoutTensor[
-        mut=True, *_, address_space = _GPUAddressSpace.SHARED, **_
-    ],
-    src: LayoutTensor[*_, address_space = _GPUAddressSpace.LOCAL, **_],
+    dst: LayoutTensor[mut=True, *_, address_space = AddressSpace.SHARED, **_],
+    src: LayoutTensor[*_, address_space = AddressSpace.LOCAL, **_],
 ):
     """Synchronously copy data from local memory (registers) to SRAM (shared
     memory).
@@ -7508,12 +7500,12 @@ fn copy_local_to_shared[
         a prefetching pattern from DRAM to SRAM via registers.
     """
     constrained[
-        dst.address_space == _GPUAddressSpace.SHARED,
+        dst.address_space == AddressSpace.SHARED,
         "dst address space must be SHARED.",
     ]()
 
     constrained[
-        src.address_space == _GPUAddressSpace.LOCAL,
+        src.address_space == AddressSpace.LOCAL,
         "src address space must be LOCAL.",
     ]()
 
@@ -7630,7 +7622,6 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
     ```mojo
     from layout import LayoutTensor, Layout
     from layout.layout_tensor import copy_local_to_local
-    from gpu.memory import AddressSpace
 
     fn kernel():
         ...
@@ -7674,12 +7665,12 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
         precision formats while keeping data in registers.
     """
     constrained[
-        dst.address_space == _GPUAddressSpace.LOCAL,
+        dst.address_space == AddressSpace.LOCAL,
         "dst address space must be LOCAL.",
     ]()
 
     constrained[
-        src.address_space == _GPUAddressSpace.LOCAL,
+        src.address_space == AddressSpace.LOCAL,
         "src address space must be LOCAL.",
     ]()
 

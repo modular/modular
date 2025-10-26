@@ -18,7 +18,6 @@ from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
 
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu import AddressSpace
 from gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
 
 from utils.index import IndexList

@@ -15,7 +15,6 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu import block_dim, block_idx, thread_idx
-from gpu.memory import AddressSpace
 from gpu.mma import mma
 from gpu.sync import barrier
 from layout import *

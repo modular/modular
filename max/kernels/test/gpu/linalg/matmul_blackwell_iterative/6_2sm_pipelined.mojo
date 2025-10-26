@@ -31,7 +31,7 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
-from gpu.memory import AddressSpace, fence_async_view_proxy, external_memory
+from gpu.memory import fence_async_view_proxy, external_memory
 from gpu.mma import st_matrix
 from gpu.mma_sm100 import *
 from gpu.sync import named_barrier

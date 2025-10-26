@@ -27,7 +27,6 @@ from sys.intrinsics import PrefetchOptions, masked_load, masked_store, prefetch
 from buffer.dimlist import Dim, DimList, _make_tuple
 from builtin.device_passable import DevicePassable
 from memory import memset_zero, stack_allocation
-from memory.pointer import AddressSpace, _GPUAddressSpace
 
 from utils._serialize import _serialize
 from utils.index import IndexList
@@ -47,9 +46,9 @@ This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
 @always_inline
 fn _use_32bit_indexing[address_space: AddressSpace]() -> Bool:
     return is_gpu() and address_space in (
-        _GPUAddressSpace.SHARED,
-        _GPUAddressSpace.LOCAL,
-        _GPUAddressSpace.CONSTANT,
+        AddressSpace.SHARED,
+        AddressSpace.LOCAL,
+        AddressSpace.CONSTANT,
     )
 
 

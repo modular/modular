@@ -27,7 +27,6 @@ from gpu import WARP_SIZE, barrier, block_idx, grid_dim, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceAttribute, DeviceContext
 from gpu.host.info import is_cpu, is_gpu
-from gpu.memory import AddressSpace
 from layout._utils import idx2crd
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout

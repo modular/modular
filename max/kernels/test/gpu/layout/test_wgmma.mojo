@@ -16,7 +16,6 @@ from buffer import DimList, NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu import thread_idx
-from gpu.memory import AddressSpace
 from gpu.mma import (
     wgmma_async,
     wgmma_commit_group_sync,

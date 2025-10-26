@@ -256,6 +256,13 @@ what we publish.
   from gpu.sync.semaphore import Semaphore
   ```
 
+- The `_GPUAddressSpace` type has been removed and consolidated into
+  `AddressSpace`. GPU-specific address space constants (GLOBAL, SHARED,
+  CONSTANT, LOCAL, SHARED_CLUSTER) are now available as aliases on the unified
+  `AddressSpace` type. The `GPUAddressSpace` alias has also been removed in
+  favor of using `AddressSpace` directly. Since `AddressSpace` is part of the
+  prelude, it no longer needs to be explicitly imported in most code.
+
 ### Tooling changes {#25-7-tooling-changes}
 
 - `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)

@@ -35,7 +35,7 @@ from gpu import (
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import external_memory
 from layout import (
     UNKNOWN_VALUE,
     IntTuple,

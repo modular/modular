@@ -24,7 +24,6 @@ from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_sram_to_dram
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
 
 
@@ -58,7 +57,7 @@ fn test_tma_mcast_load_kernel[
             dtype,
             tile_layout,
             MutableAnyOrigin,
-            address_space = _GPUAddressSpace.SHARED,
+            address_space = AddressSpace.SHARED,
             alignment=128,
         ]
         .stack_allocation()
@@ -70,7 +69,7 @@ fn test_tma_mcast_load_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -193,7 +192,7 @@ fn test_tma_sliced_multicast_load_kernel[
             dtype,
             tile_layout,
             MutableAnyOrigin,
-            address_space = _GPUAddressSpace.SHARED,
+            address_space = AddressSpace.SHARED,
             alignment=128,
         ]
         .stack_allocation()
@@ -205,7 +204,7 @@ fn test_tma_sliced_multicast_load_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:

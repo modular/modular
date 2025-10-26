@@ -27,13 +27,13 @@ from gpu import (
 )
 from gpu import warp_id as get_warp_id
 from gpu.intrinsics import ds_read_tr16_b64
-from gpu.memory import AddressSpace, CacheOperation
+from gpu.memory import CacheOperation
 from gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
     schedule_group_barrier,
 )
-from memory import AddressSpace as BaseAddressSpace
+from memory.pointer import AddressSpace as BaseAddressSpace
 from layout import IntTuple, Layout, LayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import blocked_product

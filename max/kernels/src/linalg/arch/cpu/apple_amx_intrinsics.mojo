@@ -20,7 +20,7 @@
 from sys._assembly import inlined_assembly
 
 from buffer import DimList, NDBuffer
-from memory import AddressSpace, memcpy, memset_zero, stack_allocation
+from memory import memcpy, memset_zero, stack_allocation
 
 # All AMX instructions are of the form
 # `0x00201000 | ((op & 0x1F) << 5) | (operand & 0x1F)`

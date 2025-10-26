@@ -123,8 +123,6 @@ from gpu.intrinsics import (
     Scope,
     AMDBufferResource,
 )
-from gpu.memory import AddressSpace
-from gpu.memory import AddressSpace as GPUAddressSpace
 from gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
 from gpu.memory import CacheOperation
 from memory import stack_allocation
@@ -140,7 +138,7 @@ alias elementwise_epilogue_type = fn[
 
 # On AMD Systems, the loads from GLOBAL addressspace gives an improvement
 # to the performance.
-alias _target_address_space = GPUAddressSpace.GLOBAL if is_amd_gpu() else GPUAddressSpace.GENERIC
+alias _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
 
 
 # NOTE: the above result was true on A100, but on H100 we need more SMs to
@@ -558,7 +556,7 @@ fn _load_reduce[
             scope = Scope.GPU,
             consistency = Consistency.RELAXED,
             accum_type=accum_type,
-        ]((ptrs[0] + elem_idx).address_space_cast[GPUAddressSpace.GLOBAL]())
+        ]((ptrs[0] + elem_idx).address_space_cast[AddressSpace.GLOBAL]())
     else:
         # Regular mode: manual accumulation
         var accum: SIMD[accum_type, simd_width]
@@ -677,7 +675,7 @@ fn _allreduce_2stage_kernel[
         var target = (my_rank + i) % ngpus
         # Skip Signal header.
         tmps[i] = (
-            rank_sigs[target].address_space_cast[GPUAddressSpace.GENERIC]() + 1
+            rank_sigs[target].address_space_cast[AddressSpace.GENERIC]() + 1
         ).bitcast[Scalar[dtype]]()
 
     @parameter
@@ -1316,7 +1314,7 @@ fn allreduce_2stage_quickreduce_tile[
     @parameter
     for rr in range(ngpus):
         var payload_generic = (
-            (rank_sigs[rr].address_space_cast[GPUAddressSpace.GENERIC]() + 1)
+            (rank_sigs[rr].address_space_cast[AddressSpace.GENERIC]() + 1)
             .bitcast[Scalar[DType.uint8]]()
             .address_space_cast[_target_address_space]()
         )

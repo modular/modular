@@ -61,7 +61,6 @@ from os import abort
 from buffer import DimList
 from builtin.range import _StridedRange
 from memory import memcpy
-from memory.pointer import _GPUAddressSpace
 from sys.intrinsics import _type_is_eq_parse_time
 
 from utils.numerics import max_finite
@@ -73,8 +72,8 @@ alias INT_TUPLE_VALIDATION = False
 fn _get_index_type(address_space: AddressSpace) -> DType:
     """Returns int32 for shared/constant GPU memory, index otherwise."""
     if address_space in (
-        _GPUAddressSpace.SHARED,
-        _GPUAddressSpace.CONSTANT,
+        AddressSpace.SHARED,
+        AddressSpace.CONSTANT,
     ):
         return DType.int32
     else:

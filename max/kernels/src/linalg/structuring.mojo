@@ -15,7 +15,7 @@ from collections import OptionalReg
 from sys import align_of, simd_width_of, size_of
 
 from gpu.intrinsics import AMDBufferResource
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import external_memory
 from layout import Layout, LayoutTensor
 from layout.layout import coalesce
 from layout._utils import _get_bounds, make_amd_buffer_resource

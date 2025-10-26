@@ -14,7 +14,6 @@
 from sys import align_of
 from collections import OptionalReg
 from gpu import WARP_SIZE, thread_idx
-from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
 from layout.layout_tensor import (
     ThreadScope,

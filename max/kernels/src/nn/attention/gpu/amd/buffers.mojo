@@ -19,7 +19,6 @@ from sys.intrinsics import readfirstlane
 
 from gpu import barrier, block_idx, lane_id
 from gpu import warp_id as get_warp_id
-from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
 from layout._utils import idx2crd
 from layout.layout import blocked_product
@@ -31,7 +30,7 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from memory import AddressSpace as BaseAddressSpace
+from memory.pointer import AddressSpace as BaseAddressSpace
 from nn.mha_utils import _kernel_mask
 
 from utils import IndexList

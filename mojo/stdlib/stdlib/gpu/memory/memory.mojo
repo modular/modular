@@ -43,9 +43,7 @@ from sys.info import CompilationTarget, _is_sm_9x_or_newer
 from sys.intrinsics import _RegisterPackType
 
 from builtin.dtype import _uint_type_of_width
-from memory.pointer import AddressSpace as _AddressSpace
-from memory.pointer import _GPUAddressSpace
-from memory.pointer import _GPUAddressSpace as GPUAddressSpace
+from memory.pointer import AddressSpace, GPUAddressSpace
 from memory.unsafe import bitcast
 
 from utils import IndexList, StaticTuple
@@ -59,12 +57,6 @@ from .._utils import (
     to_llvm_shared_cluster_mem_ptr,
 )
 from ..intrinsics import Scope
-
-# ===-----------------------------------------------------------------------===#
-# AddressSpace
-# ===-----------------------------------------------------------------------===#
-
-alias AddressSpace = _GPUAddressSpace
 
 # ===-----------------------------------------------------------------------===#
 # CacheOperation
@@ -891,7 +883,7 @@ fn async_copy_wait_all():
 fn external_memory[
     dtype: AnyTrivialRegType,
     *,
-    address_space: _AddressSpace,
+    address_space: AddressSpace,
     alignment: Int,
     name: StaticString = "extern_ptr_syml",
 ]() -> UnsafePointer[dtype, address_space=address_space]:
@@ -943,7 +935,7 @@ fn external_memory[
 fn fence_proxy_tensormap_generic_sys_acquire[
     dtype: AnyType,
 ](
-    ptr: UnsafePointer[dtype, address_space = GPUAddressSpace.GENERIC, **_],
+    ptr: UnsafePointer[dtype, address_space = AddressSpace.GENERIC, **_],
     size: Int32,
 ):
     """Acquires a system-wide memory fence for tensor map operations.
@@ -1032,11 +1024,11 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     cta_group: Int = 1,
 ](
     dst_mem: UnsafePointer[
-        dst_type, mut=True, origin=_, address_space = GPUAddressSpace.SHARED
+        dst_type, mut=True, origin=_, address_space = AddressSpace.SHARED
     ],
     tma_descriptor: UnsafePointer[NoneType, mut=False],
     mem_bar: UnsafePointer[
-        mbr_type, mut=False, address_space = GPUAddressSpace.SHARED
+        mbr_type, mut=False, address_space = AddressSpace.SHARED
     ],
     coords: IndexList[rank],
 ):
@@ -1092,7 +1084,7 @@ fn cp_async_bulk_tensor_shared_cluster_global[
             # introduced. Cast the address space here to avoid modifying all the
             # callsites that use the old SHARED address space.
             var dst_mem_cluster = dst_mem.address_space_cast[
-                GPUAddressSpace.SHARED_CLUSTER
+                AddressSpace.SHARED_CLUSTER
             ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,3,1,0,0,0,0>}`
@@ -1122,7 +1114,7 @@ fn cp_async_bulk_tensor_shared_cluster_global[
         @parameter
         if cta_group == 1:
             var dst_mem_cluster = dst_mem.address_space_cast[
-                GPUAddressSpace.SHARED_CLUSTER
+                AddressSpace.SHARED_CLUSTER
             ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,0,0,0>}`
@@ -1150,7 +1142,7 @@ fn cp_async_bulk_tensor_shared_cluster_global[
         @parameter
         if cta_group == 1:
             var dst_mem_cluster = dst_mem.address_space_cast[
-                GPUAddressSpace.SHARED_CLUSTER
+                AddressSpace.SHARED_CLUSTER
             ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,0,0,0>}`
@@ -1183,11 +1175,11 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     cta_group: Int = 1,
 ](
     dst_mem: UnsafePointer[
-        dst_type, mut=True, origin=_, address_space = GPUAddressSpace.SHARED
+        dst_type, mut=True, origin=_, address_space = AddressSpace.SHARED
     ],
     tma_descriptor: UnsafePointer[NoneType, mut=False],
     mem_bar: UnsafePointer[
-        mbr_type, mut=False, address_space = GPUAddressSpace.SHARED
+        mbr_type, mut=False, address_space = AddressSpace.SHARED
     ],
     coords: IndexList[rank],
     multicast_mask: UInt16,
@@ -1245,7 +1237,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
         @parameter
         if cta_group == 1:
             var dst_mem_cluster = dst_mem.address_space_cast[
-                GPUAddressSpace.SHARED_CLUSTER
+                AddressSpace.SHARED_CLUSTER
             ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,1,0,0>}`
@@ -1275,7 +1267,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
         @parameter
         if cta_group == 1:
             var dst_mem_cluster = dst_mem.address_space_cast[
-                GPUAddressSpace.SHARED_CLUSTER
+                AddressSpace.SHARED_CLUSTER
             ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,1,0,0>}`
@@ -1307,9 +1299,7 @@ fn cp_async_bulk_tensor_global_shared_cta[
     /,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src_mem: UnsafePointer[
-        src_type, address_space = GPUAddressSpace.SHARED, **_
-    ],
+    src_mem: UnsafePointer[src_type, address_space = AddressSpace.SHARED, **_],
     tma_descriptor: UnsafePointer[NoneType, mut=False],
     coords: IndexList[rank],
 ):
@@ -1376,9 +1366,7 @@ fn cp_async_bulk_tensor_reduce[
     reduction_kind: ReduceOp,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src_mem: UnsafePointer[
-        src_type, address_space = GPUAddressSpace.SHARED, **_
-    ],
+    src_mem: UnsafePointer[src_type, address_space = AddressSpace.SHARED, **_],
     tma_descriptor: UnsafePointer[NoneType, mut=False],
     coords: IndexList[rank],
 ):
@@ -1464,9 +1452,7 @@ fn _load_impl[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]](),
 ](
-    ptr: UnsafePointer[
-        Scalar[dtype], address_space = _GPUAddressSpace.GENERIC, **_
-    ]
+    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, **_]
 ) -> SIMD[dtype, width]:
     """Internal implementation of vectorized memory loads from global memory.
 
@@ -1616,9 +1602,7 @@ fn load[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
 ](
-    ptr: UnsafePointer[
-        Scalar[dtype], address_space = _GPUAddressSpace.GENERIC, **_
-    ]
+    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, **_]
 ) -> SIMD[dtype, width]:
     """Loads data from global memory into a SIMD vector.
 
@@ -1663,7 +1647,7 @@ fn load[
     alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
 ](
     ptr: UnsafePointer[
-        Scalar[dtype], address_space = _GPUAddressSpace.GENERIC, **_
+        Scalar[dtype], address_space = AddressSpace.GENERIC, **_
     ],
     offset: OffsetType,
 ) -> SIMD[dtype, width]:

@@ -30,7 +30,6 @@ from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import A100, B200, H100, MI355X, GPUInfo
-from gpu.memory import AddressSpace
 from layout import LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *

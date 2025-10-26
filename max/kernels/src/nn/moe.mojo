@@ -26,7 +26,6 @@ from gpu import (
     thread_idx,
 )
 from gpu.host.info import is_gpu
-from gpu.memory import AddressSpace
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel

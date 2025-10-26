@@ -41,10 +41,7 @@ from sys import simd_width_of
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from layout.layout import coalesce
 from layout import Layout
-from memory import AddressSpace
 from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
-
-# from memory.pointer import _GPUAddressSpace
 
 from gpu.mma import st_matrix
 from memory import bitcast

@@ -23,7 +23,6 @@ from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
 
 from utils.index import Index
@@ -67,7 +66,7 @@ fn test_tma_3d_load_kernel[
         dtype,
         smem_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -76,7 +75,7 @@ fn test_tma_3d_load_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 

@@ -31,7 +31,7 @@ from math import align_up
 
 from memory import stack_allocation
 
-from gpu import WARP_SIZE, lane_id, thread_idx, warp_id, AddressSpace, barrier
+from gpu import WARP_SIZE, lane_id, thread_idx, warp_id, barrier
 import .warp
 
 # ===-----------------------------------------------------------------------===#

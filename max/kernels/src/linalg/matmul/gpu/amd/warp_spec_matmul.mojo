@@ -27,7 +27,6 @@ from gpu import (
     warp_id as get_warp_id,
 )
 
-from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
 from layout.layout_tensor import (
     ThreadScope,

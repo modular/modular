@@ -24,7 +24,6 @@ from collections.string.string_slice import _get_kgen_string
 from sys import is_compile_time
 from sys.info import _is_sm_9x_or_newer, is_gpu
 
-from memory.pointer import _GPUAddressSpace
 
 from ._assembly import inlined_assembly
 from .info import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, size_of
@@ -980,7 +979,7 @@ fn lane_id() -> UInt:
 
 @always_inline
 fn implicitarg_ptr() -> (
-    UnsafePointer[UInt8, address_space = _GPUAddressSpace.CONSTANT]
+    UnsafePointer[UInt8, address_space = AddressSpace.CONSTANT]
 ):
     """
     Get a pointer to AMD's implicit arguments table.
@@ -991,7 +990,7 @@ fn implicitarg_ptr() -> (
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
     return llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
-        UnsafePointer[UInt8, address_space = _GPUAddressSpace.CONSTANT],
+        UnsafePointer[UInt8, address_space = AddressSpace.CONSTANT],
     ]()
 
 
@@ -1202,7 +1201,7 @@ alias block_idx = _BlockIdx()
 fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
     var ptr = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
-        UnsafePointer[Scalar[dtype], address_space = _GPUAddressSpace.CONSTANT],
+        UnsafePointer[Scalar[dtype], address_space = AddressSpace.CONSTANT],
         has_side_effect=False,
     ]()
     return UInt(ptr.load[alignment=4](offset))

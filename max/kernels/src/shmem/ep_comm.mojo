@@ -26,7 +26,6 @@ from gpu import (
     warp_id,
 )
 from gpu.intrinsics import Scope, load_acquire, store_release
-from gpu.memory import AddressSpace
 from gpu.sync import syncwarp
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.int_tuple import (

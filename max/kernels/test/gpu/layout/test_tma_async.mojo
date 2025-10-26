@@ -25,7 +25,6 @@ from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
 
 from utils.index import Index
@@ -50,14 +49,14 @@ fn test_tma_load_kernel[
         dtype,
         tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -99,14 +98,14 @@ fn test_tma_multiple_loads_kernel[
         dtype,
         tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -223,7 +222,7 @@ fn test_tma_async_store_kernel[
         dtype,
         tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
@@ -255,7 +254,7 @@ fn test_tma_async_multiple_store_kernel[
         dtype,
         tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
@@ -358,7 +357,7 @@ fn test_tma_async_reduce_kernel[
         dtype,
         tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
@@ -390,7 +389,7 @@ fn test_tma_async_multiple_reduce_kernel[
         dtype,
         tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
@@ -507,7 +506,7 @@ fn test_tma_loads_two_buffers_kernel[
         dtype,
         a_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -515,14 +514,14 @@ fn test_tma_loads_two_buffers_kernel[
         dtype,
         b_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -666,7 +665,7 @@ fn test_tma_loads_and_store_two_buffers_kernel[
         dtype,
         a_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -674,14 +673,14 @@ fn test_tma_loads_and_store_two_buffers_kernel[
         dtype,
         b_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 

@@ -32,7 +32,6 @@ from gpu._utils import (
     simd_to_llvm_struct,
 )
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu import AddressSpace
 from gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
 from memory import bitcast
 

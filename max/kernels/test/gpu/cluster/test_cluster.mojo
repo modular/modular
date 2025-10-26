@@ -28,7 +28,6 @@ from gpu.cluster import (
 from gpu.host import DeviceContext
 from gpu import block_id_in_cluster, lane_id
 from gpu.intrinsics import Scope
-from gpu.memory import _GPUAddressSpace as AddressSpace
 from gpu.memory import fence_mbarrier_init
 from layout.tma_async import PipelineState, SharedMemBarrier
 from memory import stack_allocation

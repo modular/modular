@@ -17,7 +17,7 @@ from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
 from gpu import block_idx
 from gpu.memory import (
-    _GPUAddressSpace,
+    AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
 )
 from gpu.sync import (
@@ -33,11 +33,9 @@ from utils.index import Index
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
 fn kernel_copy_async_tma(descriptor: TMADescriptor):
     var shmem = stack_allocation[
-        16, DType.float32, alignment=16, address_space = _GPUAddressSpace.SHARED
+        16, DType.float32, alignment=16, address_space = AddressSpace.SHARED
     ]()
-    var mbar = stack_allocation[
-        1, Int64, address_space = _GPUAddressSpace.SHARED
-    ]()
+    var mbar = stack_allocation[1, Int64, address_space = AddressSpace.SHARED]()
     var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 

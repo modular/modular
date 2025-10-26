@@ -16,7 +16,6 @@ from math import ceildiv
 from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu import block_idx
-from gpu.memory import AddressSpace
 from nn.mha_fa3_utils import NullPointer
 from nn.mha_tile_scheduler import (
     MHASchedule,

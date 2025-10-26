@@ -13,7 +13,6 @@
 
 from gpu.host import get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier
 from memory import stack_allocation
 

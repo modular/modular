@@ -44,7 +44,6 @@ from gpu.host._nvidia_cuda import (
 )
 from gpu.intrinsics import Scope
 from gpu.memory import (
-    AddressSpace,
     ReduceOp,
     async_copy,
     cp_async_bulk_tensor_global_shared_cta,
@@ -63,7 +62,6 @@ from gpu.sync import (
 from layout import IntTuple, Layout, LayoutTensor
 from layout.int_tuple import product
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
-from memory.pointer import _GPUAddressSpace
 
 from utils.index import Index, IndexList
 from builtin.device_passable import DevicePassable
@@ -1084,7 +1082,7 @@ struct TMATensorTile[
     fn smem_tensormap_init(
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = _GPUAddressSpace.SHARED
+            TMADescriptor, address_space = AddressSpace.SHARED
         ],
     ):
         """
@@ -1108,7 +1106,7 @@ struct TMATensorTile[
         var src_desc = (
             UnsafePointer(to=self.descriptor)
             .bitcast[UInt8]()
-            .address_space_cast[_GPUAddressSpace.GLOBAL]()
+            .address_space_cast[AddressSpace.GLOBAL]()
         )
         var dst_desc = smem_tma_descriptor_ptr.bitcast[UInt8]()
 
@@ -1151,7 +1149,7 @@ struct TMATensorTile[
 
         constrained[
             src_ptr.address_space
-            in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+            in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
             "src address space must be GENERIC or GLOBAL.",
         ]()
 
@@ -1219,7 +1217,7 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = _GPUAddressSpace.SHARED, **_
+            TMADescriptor, address_space = AddressSpace.SHARED, **_
         ],
         src_ptr: UnsafePointer[Scalar[_dtype],],
     ):
@@ -1249,7 +1247,7 @@ struct TMATensorTile[
 
         constrained[
             src_ptr.address_space
-            in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+            in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
             "src address space must be GENERIC or GLOBAL.",
         ]()
 
@@ -1271,7 +1269,7 @@ struct TMATensorTile[
     fn tensormap_cp_fence_release(
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = _GPUAddressSpace.SHARED
+            TMADescriptor, address_space = AddressSpace.SHARED
         ],
     ):
         """
@@ -1321,7 +1319,7 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = _GPUAddressSpace.SHARED, **_
+            TMADescriptor, address_space = AddressSpace.SHARED, **_
         ],
         gmem_dims: IndexList[rank],
         gmem_strides: IndexList[rank],
@@ -1399,7 +1397,7 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = _GPUAddressSpace.SHARED, **_
+            TMADescriptor, address_space = AddressSpace.SHARED, **_
         ],
         dim_value: UInt32,
         dim_stride: Optional[UInt64] = None,

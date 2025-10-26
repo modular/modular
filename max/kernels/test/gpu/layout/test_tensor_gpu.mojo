@@ -14,7 +14,7 @@
 from gpu import block_idx, grid_dim
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import (
-    _GPUAddressSpace,
+    AddressSpace,
     async_copy_commit_group,
     async_copy_wait_group,
 )
@@ -43,7 +43,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
             DType.float32,
             Layout.row_major(4, 4),
             MutableAnyOrigin,
-            address_space = _GPUAddressSpace.SHARED,
+            address_space = AddressSpace.SHARED,
         ].stack_allocation()
         sram_tensor.copy_from_async(dram_tile)
 

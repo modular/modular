@@ -24,7 +24,6 @@ from sys import _RegisterPackType, llvm_intrinsic
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
 
-from gpu import AddressSpace
 
 from utils.index import IndexList, product
 

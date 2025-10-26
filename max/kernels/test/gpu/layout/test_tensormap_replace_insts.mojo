@@ -31,7 +31,6 @@ from layout.tma_async import (
     create_tma_tile,
 )
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
 
 from utils.index import Index, IndexList
@@ -62,7 +61,7 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
         dtype,
         cta_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -75,7 +74,7 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -199,12 +198,12 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
         dtype,
         cta_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var smem_desc = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space = _GPUAddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space = AddressSpace.SHARED
     ]()
 
     # load the tensormap from gmem into smem. Only the one elected thread should call this
@@ -232,7 +231,7 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -354,12 +353,12 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
         dtype,
         cta_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var smem_desc = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space = _GPUAddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space = AddressSpace.SHARED
     ]()
 
     # load the tensormap from gmem into smem. Only the one elected thread should call this
@@ -404,7 +403,7 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 

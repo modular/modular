@@ -29,7 +29,6 @@ from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor
-from memory.pointer import _GPUAddressSpace
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import trace_arg
@@ -978,9 +977,9 @@ struct ManagedTensorSlice[
         # We can do the offset computation in int32 instead.
         @parameter
         if is_gpu() and Self.address_space in (
-            _GPUAddressSpace.SHARED,
-            _GPUAddressSpace.LOCAL,
-            _GPUAddressSpace.CONSTANT,
+            AddressSpace.SHARED,
+            AddressSpace.LOCAL,
+            AddressSpace.CONSTANT,
         ):
             var offset: Int32 = 0
 

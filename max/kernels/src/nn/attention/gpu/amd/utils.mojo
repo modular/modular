@@ -15,7 +15,6 @@ from sys import align_of, simd_width_of, size_of
 
 from gpu import lane_id, thread_idx
 from gpu import warp_id as get_warp_id
-from gpu.memory import AddressSpace
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.element import Element

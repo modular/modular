@@ -13,7 +13,6 @@
 
 from linalg.matmul.gpu.amd.warp_spec_matmul import warp_specialized_matmul
 from gpu import WARP_SIZE
-from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
 from gpu.host import DeviceContext
 from layout._fillers import random

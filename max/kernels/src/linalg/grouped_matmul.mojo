@@ -34,7 +34,7 @@ from gpu import (
     warp_id as get_warp_id,
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from gpu.memory import external_memory, fence_mbarrier_init
 from gpu.grid_controls import PDLLevel
 
 from gpu.mma_sm100 import *

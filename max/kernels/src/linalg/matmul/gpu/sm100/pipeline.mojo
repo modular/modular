@@ -14,7 +14,6 @@
 
 from sys import size_of
 
-from gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier
 
 

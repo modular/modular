@@ -40,7 +40,7 @@ from sys.intrinsics import llvm_intrinsic, readfirstlane
 
 from memory.unsafe import bitcast
 
-from .memory.memory import AddressSpace, CacheOperation, _int_to_str
+from .memory.memory import CacheOperation, _int_to_str
 
 # ===-----------------------------------------------------------------------===#
 # ldg

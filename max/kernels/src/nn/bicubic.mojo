@@ -21,7 +21,6 @@ from math import clamp, floor
 from gpu.host.info import is_gpu
 from gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor
-from memory import AddressSpace
 from runtime.asyncrt import DeviceContextPtr
 from utils import Index
 from itertools import product

@@ -29,7 +29,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.intrinsics import lop
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import external_memory
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,

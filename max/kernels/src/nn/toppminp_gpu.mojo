@@ -19,7 +19,7 @@ from builtin.dtype import _uint_type_of_width
 from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.dim import Dim
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import external_memory
 from gpu.random import Random
 from layout import Layout, LayoutTensor, RuntimeTuple, RuntimeLayout
 from layout.int_tuple import UNKNOWN_VALUE, fill_like
