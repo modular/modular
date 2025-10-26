@@ -838,7 +838,15 @@ struct AddressSpace:
     fn __init__(out self, value: Int):
         self._value = value
 
+    # CPU address space
     alias GENERIC = AddressSpace(0)
+
+    # GPU address spaces
+    alias GLOBAL = AddressSpace(1)
+    alias SHARED = AddressSpace(3)
+    alias CONSTANT = AddressSpace(4)
+    alias LOCAL = AddressSpace(5)
+    alias SHARED_CLUSTER = AddressSpace(7)
 
     @always_inline("builtin")
     fn __mlir_index__(self) -> __mlir_type.index:
