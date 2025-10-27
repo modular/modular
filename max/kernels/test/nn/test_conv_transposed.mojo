@@ -541,7 +541,23 @@ fn test_3d_multi_channel() raises:
 
 
 def main():
-    TestSuite.discover_tests[__functions_in_module()]().run()
+    var suite = TestSuite()
+
+    # Test conv_transpose_shape function
+    suite.test[test_conv_transpose_shape_basic]()
+
+    # Test full conv transposed operations
+    suite.test[test_2d_stride_3_2_pad_1_1_2_2]()
+    suite.test[test_2d_basic_no_pad]()
+    suite.test[test_2d_dilation_2_2]()
+    suite.test[test_2d_stride_3_2_kernel_2_2]()
+    suite.test[test_3d_stride_1_3_2]()
+    suite.test[test_3d_stride_2_1_2_dilation_1_1_2]()
+    suite.test[test_3d_with_padding]()
+    suite.test[test_3d_complex_padding_dilation]()
+    suite.test[test_3d_multi_channel]()
+
+    suite^.run()
 
     # Large shapes commented out to save CI cost.
 
