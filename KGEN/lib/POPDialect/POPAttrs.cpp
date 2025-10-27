@@ -1699,6 +1699,13 @@ foldCastFromBuiltinAttr(MLIRContext *ctx, TypedAttr input, SIMDType out_type) {
     return Error("input must be IntegerAttr");
 
   APInt literalVal = literal.getValue();
+
+  // Special case bools
+  if (auto boolVal = dyn_cast<BoolAttr>(input)) {
+    return SIMDAttr::get(DTypeValue(boolVal.getValue(), KGENDType::kBool),
+                         SIMDType::get(ctx, 1, KGENDType::kBool));
+  }
+
   if (literalVal.getBitWidth() > 64)
     return Error("input too large for SIMDAttr");
 
