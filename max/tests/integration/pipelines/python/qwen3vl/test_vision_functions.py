@@ -8,11 +8,13 @@
 import numpy as np
 import pytest
 import torch
+import torch.nn.functional as F
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     get_rope_index as get_rope_index_qwen25vl,
 )
 from max.pipelines.architectures.qwen3vl.nn.data_processing import (
     get_bilinear_interpolation_weights_and_indices,
+    get_seqlens,
     mrope_pos_ids_3d,
 )
 from utils.config_loader import ConfigNames, get_config_loader
@@ -349,6 +351,36 @@ def get_bilinear_interpolation_weights_and_indices_torch(
     return torch.cat(indices_list, dim=1), torch.cat(weights_list, dim=1)
 
 
+def get_seqlens_torch(
+    grid_thw: torch.Tensor,
+) -> tuple[torch.Tensor, int]:
+    """Torch implementation of get_seqlens for testing purposes.
+    Args:
+        grid_thw: Tensor of shape [n_images, 3] with (t, h, w) for each image/video
+
+    Returns:
+        Tuple of (cu_seqlens, max_seqlen)
+    """
+    # Calculate repeated sizes: repeat h*w for each frame (t times)
+    repeated_sizes = torch.repeat_interleave(
+        grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
+    )
+
+    # Calculate cumulative sum with proper dtype handling
+    cu_seqlens = repeated_sizes.cumsum(
+        dim=0,
+        dtype=grid_thw.dtype if torch.jit.is_tracing() else torch.int32,
+    )
+
+    # Pad with zero at the beginning
+    cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
+
+    # Calculate max sequence length
+    max_seqlen = max_seqlen = (cu_seqlens[1:] - cu_seqlens[:-1]).max()
+
+    return cu_seqlens, max_seqlen
+
+
 def test_mrope_pos_ids_3d() -> None:
     """Test mrope_pos_ids_3d implementation comparing numpy, torch, and vllm versions."""
     # Load configuration
@@ -597,6 +629,53 @@ def test_get_bilinear_interpolation_weights_and_indices() -> None:
         rtol=1e-4,
         atol=1e-4,
     )
+
+
+def test_get_seqlens() -> None:
+    """Test get_seqlens implementation comparing numpy and torch versions."""
+    # Test cases with different grid configurations
+    test_cases = [
+        # Single frame, small grid
+        np.array([[1, 4, 4]], dtype=np.int64),
+        # Single frame, larger grid
+        np.array([[1, 8, 8]], dtype=np.int64),
+        # Multiple frames
+        np.array([[2, 4, 4], [1, 6, 6]], dtype=np.int64),
+        # Real-world example
+        np.array([[1, 98, 146], [1, 76, 114]], dtype=np.int64),
+        # Multiple videos with different frame counts
+        np.array([[3, 4, 4], [2, 6, 6], [1, 8, 8]], dtype=np.int64),
+        # Edge case: single pixel
+        np.array([[1, 1, 1]], dtype=np.int64),
+        # Edge case: very large grid
+        np.array([[1, 256, 256]], dtype=np.int64),
+    ]
+
+    for grid_thw in test_cases:
+        # Convert to torch tensor for torch implementation
+        grid_thw_torch = torch.from_numpy(grid_thw)
+
+        # Get results from both implementations
+        cu_seqlens_numpy, max_seqlen_numpy = get_seqlens(grid_thw)
+        cu_seqlens_torch, max_seqlen_torch = get_seqlens_torch(grid_thw_torch)
+
+        # Convert torch results to numpy for comparison
+        cu_seqlens_torch_np = cu_seqlens_torch.numpy()
+
+        # Verify shapes match
+        assert cu_seqlens_numpy.shape == cu_seqlens_torch_np.shape, (
+            f"Shape mismatch: numpy {cu_seqlens_numpy.shape} vs torch {cu_seqlens_torch_np.shape}"
+        )
+
+        # Verify values match exactly
+        assert np.array_equal(cu_seqlens_numpy, cu_seqlens_torch_np), (
+            "cu_seqlens values differ between numpy and torch implementations"
+        )
+
+        # Verify max_seqlen matches
+        assert max_seqlen_numpy == max_seqlen_torch, (
+            f"max_seqlen mismatch: numpy {max_seqlen_numpy} vs torch {max_seqlen_torch}"
+        )
 
 
 if __name__ == "__main__":
