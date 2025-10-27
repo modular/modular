@@ -13,7 +13,7 @@
 
 from sys import align_of, simd_width_of, size_of
 
-from gpu import lane_id, thread_idx
+from gpu import lane_id, thread_idx, block_idx
 from gpu import warp_id as get_warp_id
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import idx2crd, make_amd_buffer_resource
@@ -158,20 +158,25 @@ fn convert_f32_to_bf16[dtype: DType](x: SIMD, out res: SIMD[dtype, x.size]):
 
 
 struct SharedMemoryManager[
+    shared_kv: Bool,
+    full_kv: Bool,
+    depth_padded: Bool,
+    double_buffer: Bool,
     dtype: DType,
     BM: Int,
     BN: Int,
     BK: Int,
     depth: Int,
-    num_rowwise_warps: Int,
     token_gen: Bool,
-    depth_v: Int = depth,
-](Defaultable):
+]:
     var p_smem: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.SHARED
     ]
     # p_smem is used for p
-    var k_v_smem: UnsafePointer[
+    var k_smem: UnsafePointer[
+        Scalar[dtype], address_space = AddressSpace.SHARED
+    ]
+    var v_smem: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.SHARED
     ]
     # k_v_smem is used for k, v, and scratch
@@ -180,10 +185,12 @@ struct SharedMemoryManager[
     alias p_smem_size = BM * BN if token_gen else 0
     alias simd_width = simd_width_of[dtype]()
     # depth // simd_width is the padding
-
-    alias k_smem_size = BN * BK
-    alias v_smem_size = BK * pad[dtype, depth, depth]()
-    alias k_v_smem_size = max(Self.k_smem_size, Self.v_smem_size)
+    alias k_smem_size = BN * (depth if full_kv else BK) * (
+        2 if double_buffer else 1
+    )
+    alias v_smem_size = (BN if full_kv else BK) * (
+        pad[dtype, depth, depth]() if depth_padded else depth
+    ) * (2 if double_buffer else 1)
 
     @always_inline
     fn __init__(out self):
@@ -193,8 +200,18 @@ struct SharedMemoryManager[
             address_space = AddressSpace.SHARED,
             alignment = Self.alignment,
         ]()
-        self.k_v_smem = stack_allocation[
-            Self.k_v_smem_size,
+
+        alias kv_smem_size = max(Self.k_smem_size, Self.v_smem_size)
+
+        self.k_smem = stack_allocation[
+            kv_smem_size if shared_kv else Self.k_smem_size,
+            dtype,
+            address_space = AddressSpace.SHARED,
+            alignment = Self.alignment,
+        ]()
+
+        self.v_smem = self.k_smem if shared_kv else stack_allocation[
+            Self.v_smem_size,
             dtype,
             address_space = AddressSpace.SHARED,
             alignment = Self.alignment,
@@ -209,7 +226,7 @@ struct SharedMemoryManager[
         Scalar[_dtype],
         address_space = AddressSpace.SHARED,
     ]:
-        return self.k_v_smem.bitcast[Scalar[_dtype]]()
+        return self.k_smem.bitcast[Scalar[_dtype]]()
 
     @always_inline
     fn get_v_ptr[
@@ -220,24 +237,29 @@ struct SharedMemoryManager[
         Scalar[_dtype],
         address_space = AddressSpace.SHARED,
     ]:
-        return self.get_k_ptr[_dtype]()
+        return self.v_smem.bitcast[Scalar[_dtype]]()
 
     @always_inline
-    fn get_p_ptr(
-        self,
-    ) -> UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED,]:
-        return self.p_smem.bitcast[Scalar[dtype]]()
-
-    @always_inline
-    fn get_warp_scratch_ptr(
+    fn get_p_ptr[
+        _dtype: DType
+    ](
         self,
     ) -> UnsafePointer[
-        Scalar[Self.accum_type],
+        Scalar[_dtype],
         address_space = AddressSpace.SHARED,
     ]:
-        return self.k_v_smem.bitcast[
-            Scalar[Self.accum_type]
-        ]() if token_gen else {}
+        return self.p_smem.bitcast[Scalar[_dtype]]()
+
+    @always_inline
+    fn get_warp_scratch_ptr[
+        _dtype: DType
+    ](
+        self,
+    ) -> UnsafePointer[
+        Scalar[_dtype],
+        address_space = AddressSpace.SHARED,
+    ]:
+        return self.k_smem.bitcast[Scalar[_dtype]]() if token_gen else {}
 
 
 struct GlobalMemoryManager[

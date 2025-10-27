@@ -908,6 +908,7 @@ struct PRegisterBuffer[
     shared_memory_backed: Bool,
     mma_shape: IndexList[3],
     k_group_size: Int,
+    tr_load_enabled: Bool = False,
 ](RegisterMMABuffer):
     alias reg_dtype = accum_type_
     alias mma_dtype = dtype
@@ -958,20 +959,33 @@ struct PRegisterBuffer[
         var out = Self.OutputTileType.stack_allocation()
 
         @parameter
-        for j in range(4):
-            out[0, 2 * j] = convert_f32_to_bf16[Self.mma_dtype](
-                self.reg_tile[tile_idx, j]
-            )
+        if tr_load_enabled:
+            # if tr loads are used then we don't need any packing logic
+            # just convert the registers to bf16
 
-            out[0, 2 * j + 1] = convert_f32_to_bf16[Self.mma_dtype](
-                self.reg_tile[tile_idx, 4 + j]
-            )
-            out[0, 2 * j + 8] = convert_f32_to_bf16[Self.mma_dtype](
-                self.reg_tile[tile_idx, 8 + j]
-            )
-            out[0, 2 * j + 8 + 1] = convert_f32_to_bf16[Self.mma_dtype](
-                self.reg_tile[tile_idx, 12 + j]
-            )
+            @parameter
+            for j in range(16):
+                out[0, j] = convert_f32_to_bf16[dtype](
+                    self.reg_tile[tile_idx, j]
+                )
+        else:
+            # this is special packing, the pattern here depends on how we load
+            # and transpose the v tile when writing to the shared memory
+            @parameter
+            for j in range(4):
+                out[0, 2 * j] = convert_f32_to_bf16[Self.mma_dtype](
+                    self.reg_tile[tile_idx, j]
+                )
+
+                out[0, 2 * j + 1] = convert_f32_to_bf16[Self.mma_dtype](
+                    self.reg_tile[tile_idx, 4 + j]
+                )
+                out[0, 2 * j + 8] = convert_f32_to_bf16[Self.mma_dtype](
+                    self.reg_tile[tile_idx, 8 + j]
+                )
+                out[0, 2 * j + 8 + 1] = convert_f32_to_bf16[Self.mma_dtype](
+                    self.reg_tile[tile_idx, 12 + j]
+                )
         return rebind[Self.MMATileType](
             out.tile[num_n_mmas, simd_width_of[Self.mma_dtype]()](0, k_idx)
         )

@@ -14,6 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv
 from sys.info import _cdna_4_or_newer
+from sys import env_get_bool
 
 from gpu import barrier, block_idx, lane_id
 from layout import LayoutTensor
@@ -52,6 +53,19 @@ from .utils import (
 struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     AttentionConfig
 ):
+    alias USE_EXPERIMENTAL_CDNA4_MHA_KERNEL = _cdna_4_or_newer() and env_get_bool[
+        "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
+    ]() and not token_gen
+
+    # share shared memory for k and v
+    alias shared_kv = False if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else True
+    # shared memory for the full tile vs BK blocks
+    alias full_kv = True if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else False
+    # pad the depth for v smem
+    alias depth_padded = False if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else True
+    # double shared memory for k and v
+    alias double_buffer = True if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else False
+
     @staticmethod
     @always_inline
     fn q_head_idx() -> UInt:

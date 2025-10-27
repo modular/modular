@@ -30,6 +30,15 @@ from .mha_gfx942 import Attention, MHAAttentionConfig
 
 @fieldwise_init
 struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
+    # share shared memory for k and v
+    alias shared_kv = True
+    # shared memory for the full tile vs BK blocks
+    alias full_kv = False
+    # pad the depth for v smem
+    alias depth_padded = True
+    # double buffer
+    alias double_buffer = False
+
     @staticmethod
     @always_inline
     fn q_head_idx() -> UInt:

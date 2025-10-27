@@ -23,7 +23,6 @@ from sys import (
     is_nvidia_gpu,
     simd_width_of,
     size_of,
-    env_get_bool,
 )
 from sys.info import _cdna_4_or_newer
 import gpu.warp as warp
@@ -70,8 +69,9 @@ from linalg.bmm import batched_matmul
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.transpose import transpose
 from memory import stack_allocation
-from .attention.gpu.amd.mha_gfx942 import Attention, MHAAttentionConfig
-from .attention.gpu.amd.mha_gfx950 import mha_single_batch_gfx950
+
+from .attention.gpu.amd.mha_gfx942 import MHAAttentionConfig
+from .attention.gpu.amd.mha_gfx950 import Attention
 from nn.mha_mask import MaterializedMask, MHAMask, TileMaskStatus
 from nn.mha_operand import (
     KVCacheMHAOperand,
@@ -1462,40 +1462,26 @@ fn mha[
             "use_score_mod must be False for AMD flash attention",
         ]()
 
+        alias attention_config = MHAAttentionConfig[False, config, group]()
+        var attention = Attention[config, group, False, sink](
+            attention_config,
+            output_ptr.offset(q_batch_offset),
+            q_ptr.offset(q_batch_offset),
+            k,
+            v,
+            mask,
+            sink_weights,
+            Int(batch_idx),
+            scale,
+            seq_len,
+            num_keys,
+            Int(start_pos),
+        )
+
         @parameter
-        if (
-            _cdna_4_or_newer()
-            and env_get_bool["USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False]()
-        ):
-            mha_single_batch_gfx950[group=group, config=config, sink=sink](
-                output_ptr.offset(q_batch_offset),
-                q_ptr.offset(q_batch_offset),
-                k,
-                v,
-                seq_len,
-                num_keys,
-                scale,
-                Int(batch_idx),
-                Int(start_pos),
-                mask,
-                sink_weights,
-            )
+        if attention_config.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL:
+            attention.mha_prefill_experimental()
         else:
-            alias attention_config = MHAAttentionConfig[False, config, group]()
-            var attention = Attention[config, group, False, sink](
-                attention_config,
-                output_ptr.offset(q_batch_offset),
-                q_ptr.offset(q_batch_offset),
-                k,
-                v,
-                mask,
-                sink_weights,
-                Int(batch_idx),
-                scale,
-                seq_len,
-                num_keys,
-                Int(start_pos),
-            )
             attention.mha_prefill()
     else:
         return CompilationTarget.unsupported_target_error[operation="mha"]()
