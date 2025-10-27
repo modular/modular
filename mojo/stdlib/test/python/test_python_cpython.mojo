@@ -192,6 +192,12 @@ def _test_floating_point_object_api(cpy: CPython):
     var f = cpy.PyFloat_FromDouble(3.14)
     assert_true(f)
     assert_equal(cpy.PyFloat_AsDouble(f), 3.14)
+    assert_true(cpy.PyFloat_Check(f))
+    assert_true(cpy.PyFloat_CheckExact(f))
+
+    var none = cpy.Py_None()
+    assert_false(cpy.PyFloat_Check(none))
+    assert_false(cpy.PyFloat_CheckExact(none))
 
 
 def _test_unicode_object_api(cpy: CPython):
