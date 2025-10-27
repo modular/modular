@@ -41,7 +41,7 @@ def _test_layer_norm(
             dtype=DType.float32,
             eps=1e-6,
             use_bias=True,
-            device=DeviceRef.CPU(),
+            devices=[DeviceRef.CPU()],
         ),
         input_types=[input_type],
     )
