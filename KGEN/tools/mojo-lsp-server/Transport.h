@@ -30,7 +30,7 @@ public:
   LSPResponder(LSPResponder &&old)
       : lspTelemetryCtx(old.lspTelemetryCtx), request(std::move(old.request)),
         start(std::move(old.start)),
-        replyCallback(std::move(old.replyCallback)), spanID(old.spanID) {};
+        replyCallback(std::move(old.replyCallback)), spanID(old.spanID) {}
 
   /// Used to reply to the client with the input data is invalid, e.g. the
   /// input location is not valid.

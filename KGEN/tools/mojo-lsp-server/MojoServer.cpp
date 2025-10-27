@@ -1219,7 +1219,7 @@ static ItemAccessKind getItemAccessKind(const lsp::CompletionItem &item) {
     return ItemAccessKind::kPrivate;
 
   return ItemAccessKind::kOther;
-};
+}
 
 lsp::CompletionList MojoDocument::onCodeCompletionSync(SMLoc completeLoc) {
   if (!context)

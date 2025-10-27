@@ -61,7 +61,7 @@ static TypedAttr digOutSingleField(TypedAttr value, StringRef fieldName,
     return {};
 
   return LIT::StructExtractAttr::get(value, fieldOp);
-};
+}
 
 /// Given a parameter that is a !lit.origin or an Origin, return the
 /// underlying !lit.origin.  This returns null on failure.

@@ -87,7 +87,7 @@ public:
                          return {};
                        }),
                    domain);
-  };
+  }
 
   /// Add a domain-agnostic replacement function.
   /// Since TypedAttr replacements only need to happen in the type domain, any
@@ -114,7 +114,7 @@ public:
       return failure();
 
     return cast<TypedAttr>(*attrOr);
-  };
+  }
 };
 
 using TypeDomain = LowerLITReplacer::TypeDomain;

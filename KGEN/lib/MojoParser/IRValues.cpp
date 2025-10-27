@@ -427,7 +427,7 @@ static void addEmptyTuple(CallOperands &operands, StringRef kwargName,
           paramEmitter.emitExprRValue(&emptyTuple, EC_CollectionLiteral))
     operands.add(StringAttr::get(paramEmitter.getContext(), kwargName),
                  {tupleValue, expr});
-};
+}
 
 ASTType InitializerUValue::getDefaultType(SharedState &shared) const {
   switch (syntax) {
@@ -507,7 +507,7 @@ InitializerUValue::getOperandsForInferredType(ASTType type,
     break;
   }
   return operands;
-};
+}
 
 /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.

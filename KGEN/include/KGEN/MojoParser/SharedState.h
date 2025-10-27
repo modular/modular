@@ -69,9 +69,7 @@ public:
   /// The name of the capture
   StringRef getSpelling() const { return spelling; }
   CaptureConvention getCaptureConvention() const { return kind; }
-  void setCaptureConvention(CaptureConvention convention) {
-    kind = convention;
-  };
+  void setCaptureConvention(CaptureConvention convention) { kind = convention; }
 
 private:
   CValue value;

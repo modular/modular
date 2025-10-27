@@ -307,7 +307,7 @@ static bool hasIntLikeType(OpT op) {
 static bool isIntZero(Value val) {
   std::optional<APSInt> maybeConst = getIntVal(val);
   return maybeConst && maybeConst->isZero();
-};
+}
 
 OpFoldResult AddOp::fold(FoldAdaptor adaptor) {
   if (SIMDAttr const &res = foldSIMDOp(

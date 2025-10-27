@@ -93,7 +93,7 @@ public:
 
   Type getReboundTypeAlways(Type type) override {
     return getCurrentParamEval().getReboundType(type);
-  };
+  }
 
   TypedAttr getReboundAttribute(TypedAttr attr) override {
     if (!isCurrOpParam)
@@ -144,11 +144,11 @@ public:
                      llvm::ArrayRef<TypedAttr> paramValues, int id) override;
   void popEvalFrame() override;
   void popEvalFrame(size_t size) override;
-  void dumpParams() override { dump(); };
+  void dumpParams() override { dump(); }
 
-  void *currentEvaluator() override { return &paramEvaluators.back(); };
-  size_t numParamEvals() override { return paramEvaluators.size(); };
-  void *currentFrame() override { return &stack.back(); };
+  void *currentEvaluator() override { return &paramEvaluators.back(); }
+  size_t numParamEvals() override { return paramEvaluators.size(); }
+  void *currentFrame() override { return &stack.back(); }
 
   void pushParamValues(llvm::ArrayRef<TypedAttr> values, bool pushFrame,
                        Operation *op = nullptr) override;
@@ -159,12 +159,12 @@ public:
 
   DenseMap<Operation *, OpSideEffectState> &currOpSideEffectState() override {
     return stack.back().opSideEffectState;
-  };
+  }
 
   void setRewritten(const DenseMap<std::pair<size_t, const void *>,
                                    const void *> &value) override {
     getCurrentParamEval().setRewritten(value);
-  };
+  }
 
   DenseSet<Operation *> *getParamOps(Operation *op, std::string &name) override;
   void setIsCurrOpParam(Operation *op) override;

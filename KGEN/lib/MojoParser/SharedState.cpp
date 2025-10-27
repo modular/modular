@@ -2430,7 +2430,7 @@ struct BuiltinFunctionFolder {
     if (!doEmitError) // Only emit an error if requested.
       result.abandon();
     return result;
-  };
+  }
 
   // Lookup a pre-bound value and check for validity.  This emits an error and
   // returns null if something goes wrong.
@@ -2439,7 +2439,7 @@ struct BuiltinFunctionFolder {
     if (!result)
       emitError(v.getLoc()) << "could not resolve operand value";
     return result;
-  };
+  }
 
   void recordValue(Value v, TypedAttr attr) {
     assert(evaluator.getReboundType(v.getType()) == attr.getType() &&
