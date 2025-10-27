@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import copy
 import functools
+import importlib
+import inspect
 import os
 import sys
 import traceback
@@ -32,8 +34,10 @@ from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import PipelineTask, PipelineTokenizer
+from max.nn.hooks import PrintHook
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
+from max.pipelines.lib import PipelineModel
 from peft.peft_model import PeftModel
 
 # Tests
@@ -43,6 +47,7 @@ from test_common import (
     evaluate_embeddings,
     numpy_encoder,
     test_data,
+    torch_print_hook,
     torch_utils,
 )
 from test_common.evaluate import NUM_STEPS, ModelOutput
@@ -1392,6 +1397,46 @@ def _detect_hf_flakes(
     return wrapper
 
 
+@contextmanager
+def _add_max_hooks(pipe: Any) -> Any:
+    """Context manager that adds tensor printing hooks by patching the model class."""
+
+    # Get the module path from the model
+    model_module = importlib.import_module(pipe._pipeline_model.__module__)
+
+    # Find the class that inherits from PipelineModel
+    model_class = None
+    for _, obj in inspect.getmembers(model_module):
+        if (
+            inspect.isclass(obj)
+            and issubclass(obj, PipelineModel)
+            and obj != PipelineModel
+        ):
+            model_class = obj
+            break
+    hook = PrintHook()
+    assert model_class is not None
+
+    # Store the original __init__ in a closure
+    def get_wrapped_init(
+        original_init: Callable[..., None],
+    ) -> Callable[..., None]:
+        def wrapped_init(self: Any, *args: Any, **kwargs: Any) -> None:
+            original_init(self, *args, **kwargs)
+            hook.name_layers(self)
+
+        return wrapped_init
+
+    original_init = model_class.__init__
+    model_class.__init__ = get_wrapped_init(original_init)  # type: ignore[method-assign]
+
+    try:
+        yield
+    finally:
+        hook.remove()
+        model_class.__init__ = original_init  # type: ignore[method-assign]
+
+
 @click.command()
 @click.option(
     "--device",
@@ -1436,6 +1481,13 @@ def _detect_hf_flakes(
     help="Dump goldens in non-JSON format to stdout",
 )
 @click.option(
+    "--print-intermediates",
+    "print_intermediates",
+    is_flag=True,
+    default=False,
+    help="Outputs intermediate tensors from both frameworks to the console.",
+)
+@click.option(
     "--max-batch-size",
     "max_batch_size",
     type=int,
@@ -1458,6 +1510,7 @@ def main(
     print_output: bool,
     max_batch_size: int | None,
     log_hf_downloads: bool,
+    print_intermediates: bool,
 ) -> None:
     """Click command entry point that delegates to the implementation function.
 
@@ -1479,6 +1532,7 @@ def main(
             print_output=print_output,
             max_batch_size=max_batch_size,
             log_hf_downloads=log_hf_downloads,
+            print_intermediates=print_intermediates,
         )
     except Flake:
         sys.exit(EX_TEMPFAIL)
@@ -1495,6 +1549,7 @@ def generate_llm_logits(
     max_batch_size: int | None = None,
     reference: list[ModelOutput] | None = None,
     log_hf_downloads: bool = False,
+    print_intermediates: bool = False,
 ) -> None:
     """Output logits to a file for a model based on a fixed set of prompts.
 
@@ -1539,6 +1594,15 @@ def generate_llm_logits(
                         device_specs=device_specs,
                     )
                 )
+                if print_intermediates:
+                    with _add_max_hooks(max_pipeline_and_tokenizer.pipeline):
+                        # we call create_max_pipeline again to get a fresh pipeline with the print hooks added
+                        max_pipeline_and_tokenizer = (
+                            pipeline_oracle.create_max_pipeline(
+                                encoding=encoding_name,
+                                device_specs=device_specs,
+                            )
+                        )
             print(f"Running {pipeline_name} model on MAX")
             if pipeline_oracle.task == PipelineTask.TEXT_GENERATION:
                 assert isinstance(
@@ -1594,6 +1658,10 @@ def generate_llm_logits(
                         device=device,
                     )
                 )
+            if print_intermediates:
+                hook = torch_print_hook.TorchPrintHook()
+                hook.name_layers(torch_pipeline_and_tokenizer.model)
+
             if pipeline_oracle.task == PipelineTask.TEXT_GENERATION:
                 results = pipeline_oracle.run_torch_text_generation(
                     torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
