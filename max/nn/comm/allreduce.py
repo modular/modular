@@ -74,12 +74,6 @@ class Allreduce(Module):
         """
         return ops.allreduce.sum(inputs, signal_buffers)
 
-    def _p2p_available(self) -> bool:
-        """Check if peer-to-peer communication is available between devices."""
-        # Implementation note: Currently checks first two devices as proxy
-        # for full p2p connectivity. May need expansion for multi-device topologies.
-        return self.devices[0].can_access(self.devices[1])
-
 
 class Signals:
     """Signal buffers used for peer-to-peer communication in allreduce.

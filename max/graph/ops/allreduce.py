@@ -35,9 +35,6 @@ def sum(
     The result is then broadcasted back to the same devices that the inputs
     came from.
 
-    This version of the allreduce sum op uses device-to-device transfers and
-    hence is expected to be much slower than the :obj:`ops.allreduce.sum` version.
-
     Args:
         inputs: The input tensors to reduce.
         signal_buffers: Device buffer values used for synchronization.
