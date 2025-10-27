@@ -137,15 +137,22 @@ def call_lm_eval(model: str, task: str, output_path: Path) -> None:
     )
 
     include_path = str(Path(__file__).parent.resolve() / "chartqa_modular")
-    lm_eval_cmd = (
-        f"lm_eval --tasks {task} --model local-chat-completions --log_samples "
-        f"--model_args model={model},base_url={URL},num_concurrent=64 "
-        f"--apply_chat_template --output_path {output_path}/lm_eval_output "
-        f"--limit 320 --seed 42 --gen_kwargs seed=42{max_gen_toks}{gen_params} "
-        f"--include_path {include_path} --fewshot_as_multiturn"
-    )
+    lm_eval_cmd = [
+        "lm_eval",
+        f"--tasks={task}",
+        "--model=local-chat-completions",
+        "--log_samples",
+        f"--model_args=model={model},base_url={URL},num_concurrent=64",
+        "--apply_chat_template",
+        f"--output_path={output_path / 'lm_eval_output'}",
+        "--limit=320",
+        "--seed=42",
+        f"--gen_kwargs=seed=42{max_gen_toks}{gen_params}",
+        f"--include_path={include_path}",
+        "--fewshot_as_multiturn",
+    ]
 
-    args = [interpreter, "-m", *lm_eval_cmd.split()]
+    args = [interpreter, "-m", *lm_eval_cmd]
     logger.info(f"Running lm-eval with:\n {' '.join(args)}")
     check_call(args, timeout=600)
 
