@@ -166,6 +166,8 @@ build:remote --repo_env=MODULAR_REMOTE_EXEC=1
 build --internal_spawn_scheduler
 build:linux --spawn_strategy=dynamic,remote,worker,sandboxed,standalone
 build:macos --spawn_strategy=remote,worker,sandboxed,standalone
+build:macos --strategy=CppCompile=dynamic,remote,worker,sandboxed,standalone
+build:macos --strategy=CppLink=dynamic,remote,worker,sandboxed,standalone
 
 # https://github.com/bazelbuild/bazel/issues/25221
 build --strategy=TestRunner=remote,worker,sandboxed,standalone
@@ -183,6 +185,8 @@ build:ci-no-config --ui_event_filters=+WARNING
 build:ci-no-config --verbose_failures
 # Disable dynamic execution for remote exec
 build:ci-no-config --spawn_strategy=remote,worker,sandboxed,standalone
+build:ci-no-config --strategy=CppCompile=remote,worker,sandboxed,standalone
+build:ci-no-config --strategy=CppLink=remote,worker,sandboxed,standalone
 
 build:ci --config=ci-no-config
 # Set CI builds to lower priority than local builds, some CI builds override this
