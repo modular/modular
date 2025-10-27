@@ -214,9 +214,7 @@ fn tcgen05_ld[
     # fmt: off
     @parameter
     if width == 1:
-        return call_ld_intrinsic[
-                _RegisterPackType[UInt32]
-            ]()
+        return call_ld_intrinsic[UInt32]()
     elif width == 2:
         return call_ld_intrinsic[
                 _RegisterPackType[UInt32, UInt32]
