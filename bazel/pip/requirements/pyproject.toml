@@ -3,7 +3,7 @@ name = "bazel-pyproject"
 version = "0"
 requires-python = ">=3.10" # NOTE: Must be kept in sync with other global settings
 dependencies = [
-  "editdistance",
+  "levenshtein",
   "absl-py",
   "aiofiles",
   "aiohttp",
