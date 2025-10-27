@@ -17,6 +17,7 @@ from bit import next_power_of_two
 from collections.set import Set
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import B200
+from itertools.itertools import product
 from layout.tensor_core import get_mma_shape
 from memory.unsafe_pointer import UnsafePointer
 from utils.index import Index, IndexList
@@ -169,31 +170,6 @@ struct MatmulConfig[
             // AB_smem_per_stage
         )
 
-    fn copy_field(mut self, other: MatmulConfig):
-        self.cta_group = other.cta_group
-        self.mma_shape = other.mma_shape
-        self.cluster_shape = other.cluster_shape
-        self.AB_swapped = other.AB_swapped
-        self.num_pipeline_stages = other.num_pipeline_stages
-        self.num_clc_pipeline_stages = other.num_clc_pipeline_stages
-        self.num_accum_pipeline_stages = other.num_accum_pipeline_stages
-        self.num_output_stages = other.num_output_stages
-        self.output_tile_shape = other.output_tile_shape
-        self.a_swizzle = other.a_swizzle
-        self.b_swizzle = other.b_swizzle
-        self.c_swizzle = other.c_swizzle
-
-    fn swapAB(self) -> MatmulConfig[b_type, a_type, c_type, transpose_b]:
-        var new_config = UnsafePointer(to=self).bitcast[
-            MatmulConfig[b_type, a_type, c_type, transpose_b]
-        ]()[0]
-        # new_config.copy_field(self)
-        new_config.AB_swapped = not self.AB_swapped
-        # Swap A and B swizzles
-        new_config.a_swizzle = self.b_swizzle
-        new_config.b_swizzle = self.a_swizzle
-        return new_config
-
     fn __eq__(
         self, other: MatmulConfig[a_type, b_type, c_type, transpose_b]
     ) -> Bool:
@@ -296,20 +272,35 @@ fn choose_config[
 ](M: Int, N: Int, K: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     constrained[a_type == b_type, "a_type and b_type must be the same"]()
 
-    # Hardcode to 2 now since main only dispatches 2xSM MMA
-    alias cta_group = 2
+    # Use 1 for small M and 2 for large shapes.
+    var cta_group = 1 if M <= 128 else 2
     alias num_SMs = B200.sm_count
     # Nvidia mma instruction process 32B in K.
     alias Kbytes_per_mma = 32
 
     var mma_mn = Tuple[Int, Int](64, 128)
     var min_num_waves = Int.MAX
+    var swapAB = M <= 128
+
+    # For M <= 128, swap A and B and use cta_group = 1
+    # The min mma_n we support for cta_group = 1 is 32 for now.
+    # TODO: support mma_n = 8, 16
+    if M <= 128:
+        mma_mn[1] = max(next_power_of_two(M), 16)
+        for bm in [64, 128]:
+            num_ctas = ceildiv(M, bm) * ceildiv(N, mma_mn[1])
+            num_waves = ceildiv(num_ctas, num_SMs)
+            if num_waves < min_num_waves or (
+                num_waves == min_num_waves and bm < mma_mn[0]
+            ):
+                min_num_waves = num_waves
+                mma_mn[0] = bm
 
     # Travers possible combinations of BM x MMA_N to choose the one minizes the
     # workload per SM. The computation per SM is the flops (ignoring 2x in 2MNK)
     # timed by max number of ctas per SM i.e. number of waves.
-    for bm in [64, 128]:
-        for mma_n in range(16, min(257, N), 16):
+    else:
+        for bm, mma_n in product([64, 128], range(16, min(257, N), 16)):
             # We only support MMA_N % 32 == 0 for MMA_M=128 cta_group = 2
             # TODO: lift the restriction, multiple of 16 is supported by instruction.
             if bm == 64 and mma_n % 32 != 0:
@@ -359,6 +350,9 @@ fn choose_config[
         mma_shape=IndexList[3](
             mma_mn[0], mma_mn[1], Kbytes_per_mma // a_type.size_of()
         ),
+        cta_group=cta_group,
+        cluster_shape=Index(cta_group, 1, 1),
+        AB_swapped=swapAB,
         block_swizzle_size=optimal_block_swizzle_size,
     )
 

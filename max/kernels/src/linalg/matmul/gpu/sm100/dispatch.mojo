@@ -650,6 +650,7 @@ fn matmul_dispatch_sm100_fp8[
         alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             mma_shape=umma_shape,
             cluster_shape=cluster_shape,
+            AB_swapped=True,
         )
         _matmul_dispatch_sm100[
             transpose_b=transpose_b,
@@ -657,7 +658,6 @@ fn matmul_dispatch_sm100_fp8[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
-            swapAB=True,
         ](c, a, b, ctx)
         return DISPATCH_HIT
 
@@ -1690,48 +1690,6 @@ fn _bf16_experimental[
     alias MMA_K = 16
     alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
 
-    @parameter
-    fn matmul_swapab[static_m: Int]() raises -> Int:
-        constrained[
-            static_m % 2 == 0,
-            "static_m must be even",
-        ]()
-        alias block_tile_shape = Index(128, static_m // 2, BK)
-        alias umma_shape = Index(
-            block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-        )
-        alias cluster_shape = Index(2, 1, 1)
-        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            mma_shape=umma_shape,
-            cluster_shape=cluster_shape,
-        )
-        _matmul_dispatch_sm100[
-            transpose_b=transpose_b,
-            config=config,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-            swapAB=True,
-        ](c, a, b, ctx)
-        return DISPATCH_HIT
-
-    @parameter
-    if (
-        c_type == DType.bfloat16
-        # these are the profitable shapes that gemma-3-27b models might execute
-        and static_N in (4096, 8192, 43008, 5376)
-        and static_K in (4096, 5376, 21504)
-    ):
-        if m <= 128 and m * size_of[c_type]() % 16 == 0:
-            if m <= 16:
-                return matmul_swapab[16]()
-            elif m <= 32:
-                return matmul_swapab[32]()
-            elif m <= 64:
-                return matmul_swapab[64]()
-            else:
-                return matmul_swapab[128]()
-
     alias outliers = Table(
         _get_tuning_list_sm100_bf16(), "bf16_heuristic_outliers"
     )
@@ -2408,7 +2366,6 @@ fn _matmul_dispatch_sm100[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
-    swapAB: Bool = False,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
     a: NDBuffer[a_type, 2, _, _],
@@ -2439,7 +2396,6 @@ fn _matmul_dispatch_sm100[
             transpose_b=transpose_b,
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            swapAB=swapAB,
         ](c_tensor, a_tensor, b_tensor, ctx)
         return
 
@@ -2476,7 +2432,6 @@ fn _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                swapAB=swapAB,
             ](c_tensor, a_tensor, b_tensor, ctx)
 
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
@@ -2500,7 +2455,6 @@ fn _matmul_dispatch_sm100[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
-            swapAB=swapAB,
         ](c_tmp, a, b, ctx)
 
         _ = tmp_device_buffer^

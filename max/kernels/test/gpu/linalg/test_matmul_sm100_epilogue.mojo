@@ -149,6 +149,7 @@ def test_matmul_sm100_epilogue[
         ),
         mma_shape=mma_shape,
         cta_group=cta_group,
+        AB_swapped=swapAB,
     )
 
     alias optional_lambda_fn = OptionalReg[elementwise_compute_lambda_type](
@@ -160,7 +161,6 @@ def test_matmul_sm100_epilogue[
         config=matmul_config,
         elementwise_compute_lambda_fn=optional_lambda_fn,
         register_based_epilogue=register_based_epilogue,
-        swapAB=swapAB,
     ](
         c_device.to_layout_tensor(),
         a_device.to_layout_tensor(),

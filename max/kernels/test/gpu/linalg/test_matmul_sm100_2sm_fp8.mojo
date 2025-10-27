@@ -151,12 +151,12 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         mma_shape=mma_shape,
         cta_group=2,
         block_swizzle_size=block_swizzle_size,
+        AB_swapped=swapAB,
     )
 
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
-        swapAB=swapAB,
     ](
         c_device.to_layout_tensor(),
         a_device.to_layout_tensor(),

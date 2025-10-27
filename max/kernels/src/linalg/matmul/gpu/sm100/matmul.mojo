@@ -1634,7 +1634,6 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
-    swapAB: Bool = False,
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, *_, **_],
@@ -1643,7 +1642,9 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     ctx: DeviceContext,
 ) raises:
     @parameter
-    if swapAB:
+    if config.AB_swapped:
+        # Swap the a_type, b_type in signature
+        # TODO: Do this without creating a new instance.
         alias new_config = MatmulConfig[b_type, a_type, c_type, transpose_b](
             cta_group=config.cta_group,
             mma_shape=config.mma_shape,
