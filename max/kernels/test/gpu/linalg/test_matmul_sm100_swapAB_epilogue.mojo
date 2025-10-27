@@ -289,17 +289,14 @@ def main():
                 static[1024](),
             )
 
+        # we support all range of mma_n_scales in range(1, 33) but the test will time out so we only test a subset
         @parameter
-        for mma_m_scale in range(1, 3):
+        for mma_m in [64, 128]:
 
             @parameter
-            for mma_n_scale in range(2, 33, 2):
-                alias block_tile_shape = Index(
-                    64 * mma_m_scale, 8 * mma_n_scale, BK
-                )
-                alias umma_shape = Index(
-                    64 * mma_m_scale, 8 * mma_n_scale, MMA_K
-                )
+            for mma_n in [8, 16, 32, 40, 48, 64, 88, 104, 128]:
+                alias block_tile_shape = Index(mma_m, mma_n, BK)
+                alias umma_shape = Index(mma_m, mma_n, MMA_K)
 
                 test_matmul_sm100_epilogue[
                     dtype,

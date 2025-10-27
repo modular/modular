@@ -310,15 +310,18 @@ fn consumer_main_loop[
 @always_inline
 fn stsm_helper[
     swizzle: Swizzle,
+    stageN: UInt,
     transpose_c: Bool = False,
 ](
     vec: SIMD[_, _],
     dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
 ):
-    # Number of elements in one row per stsmx4 tile, a row is 32B.
-    alias stsmx4_row_size = 32 // size_of[dst.dtype]()
+    # Number of elements in one row is 32B and 16B per stsmx4 and stmtx2 tile, respectively.
+    alias stsmx_row_size = 32 // size_of[
+        dst.dtype
+    ]() if stageN % 16 == 0 else 16 // size_of[dst.dtype]()
     # Number of elements owned by each lane, each lane has 16B
-    alias stsmx4_lane_size = 16 // size_of[dst.dtype]()
+    alias stsmx_lane_size = 16 // size_of[dst.dtype]()
     # TODO: constrain the shared memory layout to be 2D row-major.
     # E.g. dst layout can be (16, 16) : (32, 1), which is tiled from
     # row-major(16, 32). The map should use tile's stride to calculate
@@ -335,9 +338,9 @@ fn stsm_helper[
     alias trans_st_matrix_layout = Layout(
         IntTuple(8, 2, 2), IntTuple(stride0, 8 * stride1, 8 * stride0)
     )
-    alias stsmx4_tile_offset = (
+    alias stsmx_tile_offset = (
         stride0 if transpose_c else stride1
-    ) * stsmx4_row_size
+    ) * stsmx_row_size
 
     var lane = lane_id()
     alias RLayout32Bits[layout: Layout] = RuntimeLayout[
@@ -362,14 +365,15 @@ fn stsm_helper[
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
     @parameter
-    for i in range(shape0 // stsmx4_row_size):
-        alias n_offset = i * stsmx4_tile_offset
+    for i in range(shape0 // stsmx_row_size):
+        alias n_offset = i * stsmx_tile_offset
         var offset = swizzle(stsm_lane_offset + n_offset)
-        var v = slice[i * stsmx4_lane_size, stsmx4_lane_size](vec).cast[
+        alias stmtx_simd_width = 4 if stageN % 16 == 0 else 2
+        var v = slice[i * stsmx_lane_size, 2 * stmtx_simd_width](vec).cast[
             dst.dtype
         ]()
-        st_matrix[simd_width=4, transpose=transpose_c](
-            dst.ptr + offset, bitcast[DType.float32, 4](v)
+        st_matrix[simd_width=stmtx_simd_width, transpose=transpose_c](
+            dst.ptr + offset, bitcast[DType.float32, stmtx_simd_width](v)
         )
 
 
@@ -936,7 +940,7 @@ fn multi_stage_store_C[
             var c_smem_warp_tile_upper = c_smem_tile.tile[
                 stageN * 16 // stage_contiguous_size, stage_contiguous_size
             ](tile_idx, 0).reshape[Layout.row_major(stageN, 16)]()
-            stsm_helper[swizzle, transpose_c](
+            stsm_helper[swizzle, UInt(stageN), transpose_c](
                 upper_frag_casted, c_smem_warp_tile_upper
             )
 
@@ -946,7 +950,7 @@ fn multi_stage_store_C[
 
             @parameter
             if is_lower_frag_required:
-                stsm_helper[swizzle, transpose_c](
+                stsm_helper[swizzle, UInt(stageN), transpose_c](
                     lower_frag_casted, c_smem_warp_tile_lower
                 )
 
@@ -991,7 +995,7 @@ fn multi_stage_store_C[
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                 data_paths, stageN
             ](0, 0)
-            stsm_helper[swizzle, transpose_c](
+            stsm_helper[swizzle, UInt(stageN), transpose_c](
                 upper_frag_casted, c_smem_warp_tile_upper
             )
 
@@ -1001,7 +1005,7 @@ fn multi_stage_store_C[
 
             @parameter
             if is_lower_frag_required:
-                stsm_helper[swizzle, transpose_c](
+                stsm_helper[swizzle, UInt(stageN), transpose_c](
                     lower_frag_casted, c_smem_warp_tile_lower
                 )
 
@@ -1729,6 +1733,10 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
             "Only support cta_group == 2 with MMA_M == 128 or 256",
         ]()
         constrained[
+            (MMA_M != 256) or (MMA_N % 16 == 0),
+            "MMA_N must be a multiple of 16 when MMA_M is 256",
+        ]()
+        constrained[
             (MMA_M != 128) or (MMA_N % 32 == 0),
             "if MMA_M is 128, then MMA_N must be a multiple of 32",
         ]()
@@ -1742,10 +1750,6 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         constrained[
             MMA_M == 128 or MMA_M == 64,
             "Only support MMA_M == 128 or 64 when cta_group == 1",
-        ]()
-        constrained[
-            (MMA_N % 16 == 0),
-            "MMA_N must be a multiple of 16",
         ]()
         constrained[
             register_based_epilogue or elementwise_compute_lambda_fn is None,

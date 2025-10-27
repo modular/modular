@@ -326,10 +326,10 @@ fn multi_stage_reg_epilogue[
         var c_smem_warp_tile = c_smem_tile.tile[32, stageN](Int(warp_id), 0)
 
         # Pack the upper frag to shared memory
-        stsm_helper[swizzle](
+        stsm_helper[swizzle, UInt(stageN)](
             upper_frag, c_smem_warp_tile.tile[16, stageN](0, 0)
         )
-        stsm_helper[swizzle](
+        stsm_helper[swizzle, UInt(stageN)](
             lower_frag, c_smem_warp_tile.tile[16, stageN](1, 0)
         )
 

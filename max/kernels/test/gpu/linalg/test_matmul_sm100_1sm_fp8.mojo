@@ -14,7 +14,7 @@
 from hashlib import default_comp_time_hasher
 from math import align_up
 from sys import argv, size_of
-
+import itertools
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -218,24 +218,36 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
 def main():
     with DeviceContext() as ctx:
-        alias dtype = DType.bfloat16
+        alias dtype = DType.float8_e4m3fn
 
         @parameter
         for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
             alias BK = (swizzle.bytes() // size_of[dtype]())
-            alias MMA_K = 16
+            alias MMA_K = 32
 
+            # we support all range of mma_n_scales in range(1, 33) but the test will time out so we only test a subset
             @parameter
-            for mma_m_scale in range(1, 3):
+            for mma_m in [64, 128]:
 
                 @parameter
-                for mma_n_scale in range(2, 33, 2):
-                    alias block_tile_shape = Index(
-                        64 * mma_m_scale, 8 * mma_n_scale, BK
-                    )
-                    alias umma_shape = Index(
-                        64 * mma_m_scale, 8 * mma_n_scale, MMA_K
-                    )
+                for mma_n in [
+                    8,
+                    16,
+                    32,
+                    40,
+                    64,
+                    88,
+                    104,
+                    128,
+                    144,
+                    152,
+                    160,
+                    176,
+                    192,
+                    256,
+                ]:
+                    alias block_tile_shape = Index(mma_m, mma_n, BK)
+                    alias umma_shape = Index(mma_m, mma_n, MMA_K)
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,

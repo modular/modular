@@ -91,7 +91,11 @@ struct MatmulConfig[
             ) else self.mma_shape[1]
             // 2
         )
-        var output_tile_n = 32 if c_tile_n % 32 == 0 else 16
+        var output_tile_n = 8
+        if c_tile_n % 32 == 0:
+            output_tile_n = 32
+        elif c_tile_n % 16 == 0:
+            output_tile_n = 16
 
         # MMA_M=128/256 cta_group=2 all use 128 rows in output tile.
         var output_tile_m = 128 if self.cta_group == 2 else self.mma_shape[0]
@@ -107,10 +111,13 @@ struct MatmulConfig[
 
         self.a_swizzle = TensorMapSwizzle.SWIZZLE_128B
         self.b_swizzle = TensorMapSwizzle.SWIZZLE_128B
-        self.c_swizzle = TensorMapSwizzle.SWIZZLE_32B if self.AB_swapped else (
-            TensorMapSwizzle.SWIZZLE_64B if output_tile_n
-            == 32 else TensorMapSwizzle.SWIZZLE_32B
-        )
+        self.c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
+        if self.AB_swapped:
+            self.c_swizzle = TensorMapSwizzle.SWIZZLE_32B
+        elif output_tile_n == 32:
+            self.c_swizzle = TensorMapSwizzle.SWIZZLE_64B
+        elif output_tile_n == 16:
+            self.c_swizzle = TensorMapSwizzle.SWIZZLE_32B
 
         self.num_pipeline_stages = 4  # Need for compilation
         self._maximize_pipline_stages_by_default()
