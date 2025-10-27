@@ -14,6 +14,7 @@
 from __future__ import annotations
 from typing import Any, cast
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from max.driver import Device, Tensor, DLPackArray
 from max.dtype import DType
@@ -59,10 +60,78 @@ from .weight_adapters import (
 )
 
 import logging
+import math
 import numpy as np
 import numpy.typing as npt
 
 logger = logging.getLogger("max.pipelines")
+
+
+class _VisionStacker:
+    """Helper class for efficient parallel stacking of vision patches.
+
+    Uses ThreadPoolExecutor for thread management and bulk numpy operations
+    for optimal memory bandwidth utilization.
+    """
+
+    def __init__(self, max_workers: int = 24) -> None:
+        """Initialize the vision stacker with a thread pool.
+
+        Args:
+            max_workers: Maximum number of worker threads (default: 24).
+        """
+        self._pool = ThreadPoolExecutor(max_workers=max_workers)
+
+    def stack(
+        self, images: list[npt.NDArray[np.floating[Any]]]
+    ) -> npt.NDArray[np.floating[Any]]:
+        """Stack images using parallel bulk copy operations.
+
+        Args:
+            images: List of numpy arrays to stack.
+
+        Returns:
+            Stacked numpy array.
+        """
+        n = len(images)
+        if n == 0:
+            return np.empty((0,), dtype=np.float32)
+
+        # Pre-allocate output.
+        out = np.empty((n, *images[0].shape), dtype=images[0].dtype)
+
+        # Divide work evenly among threads.
+        # ThreadPoolExecutor will handle cases where n < workers.
+        workers = self._pool._max_workers
+        step = math.ceil(n / workers)
+        slices = [slice(i, min(i + step, n)) for i in range(0, n, step)]
+
+        # Launch parallel bulk copy tasks.
+        futures = [
+            self._pool.submit(self._copy_block, out, images, sl)
+            for sl in slices
+        ]
+
+        # Wait for completion and propagate any exceptions.
+        for f in as_completed(futures):
+            f.result()
+
+        return out
+
+    @staticmethod
+    def _copy_block(
+        out: npt.NDArray[np.floating[Any]],
+        images: list[npt.NDArray[np.floating[Any]]],
+        sl: slice,
+    ) -> None:
+        """Copy a block of images using bulk numpy operations.
+
+        This method performs a C-level bulk copy that releases the GIL,
+        allowing true parallel execution.
+        """
+        # Convert slice of list to temporary array view and bulk copy.
+        np.copyto(out[sl], np.asarray(images[sl], dtype=images[0].dtype))
+
 
 class Gemma3MultiModalModelInputs(ModelInputs):
     """A class representing inputs for the Gemma3 multi modal model.
@@ -205,13 +274,9 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             for dev in self.devices
         ]
 
-        # logger.info(f"\nPIPELINE CONFIG:\n{self.pipeline_config}\n--------------")
-        # logger.info(f"\nHUGGINGFACE CONFIG:\n{self.huggingface_config}\n")
-        # logger.info(f"\nHF info: {self.huggingface_config.model_type}, {self.huggingface_config.__class__.__name__}\n")
+        logger.info(f"*** layers {huggingface_config.vision_config} ***")
 
         self.vision_model, self.language_model = self.load_model(session)
-        # self.language_model = self.load_model(session)
-        logger.info(f"Language model: {self.language_model}")
 
     @classmethod
     def calculate_max_seq_len(
@@ -319,7 +384,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             kv_cache_inputs: KVCacheInputs | None = None,
             return_n_logits: int = 1,
         ) -> ModelInputs:
-
         assert kv_cache_inputs is not None
         kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
         input_row_offsets = np.cumsum(
@@ -331,9 +395,11 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             for device in self.devices
         ]
 
-        # TODO
-        # image_token_indices = self._batch_image_token_indices(context_batch)
-        # pixel_values = self._prepare_vision_inputs(context_batch)
+        pixel_values = self._prepare_vision_inputs(context_batch)
+        image_token_indices = self._batch_image_token_indices(context_batch) # TODO this might be wrong approach
+
+        logger.info(f"*** PVs: {pixel_values} ***")
+        logger.info(f"*** ITI: {image_token_indices} ***")
 
         return Gemma3MultiModalModelInputs(
             tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
@@ -343,8 +409,8 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             ),
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
-            #pixel_values=None,
-            #image_token_indices=None,
+            pixel_values=pixel_values,
+            image_token_indices=image_token_indices,
         )
 
     def prepare_next_token_inputs(
@@ -368,7 +434,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        model_inputs = cast(Gemma3MultiModalModelInputs, model_inputs)
+        model_inputs = cast(Gemma3MultiModalModelInputs, model_inputs) # TODO do we want this?
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
 
         # Check if input_row_offsets is a list or a single tensor
@@ -389,10 +455,36 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     for device in self.devices
                 ]
 
+        # more borrowing from InternVL
+        image_embeddings: list[Tensor]
+        image_token_indices: list[Tensor]
+        if model_inputs.has_vision_inputs:
+            assert model_inputs.pixel_values is not None
+            assert model_inputs.image_token_indices is not None
+
+            # Execute vision model: pixel_values -> image_embeddings.
+            vision_outputs = self.vision_model.execute(
+                *model_inputs.pixel_values, *model_inputs.signal_buffers
+            )
+            assert len(vision_outputs) == len(self.devices)
+
+            image_embeddings = [
+                output
+                for output in vision_outputs
+                if isinstance(output, Tensor)
+            ]
+            image_token_indices = model_inputs.image_token_indices
+        else:
+            # Initialize empty tensors for text-only mode.
+            image_embeddings = self._create_empty_image_embeddings()
+            image_token_indices = self._create_empty_indices()
+
         model_outputs = self.language_model.execute(
             model_inputs.tokens,
             model_inputs.return_n_logits,
             *input_row_offsets_list,
+            *image_embeddings,
+            *image_token_indices,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
         )
@@ -529,6 +621,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             graph.output(*outputs)
         return graph, language_model.state_dict()
     
+    # copied from InternVL, replace with siglip
     def _build_vision_graph(
         self, config: Gemma3ForConditionalGenerationConfig, state_dict: dict[str, WeightData]
     ) -> tuple[Graph, dict[str, DLPackArray]]:
@@ -566,7 +659,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Initialize graph with input types
         with Graph(
-            getattr(self.huggingface_config, "model_type", "Gemma3"),
+            getattr(self.huggingface_config, "model_type", "Gemma3"), # TODO should be siglip_vision_model?
             input_types=[*pixel_values_types, *signals.input_types()],
         ) as graph:
             # Build vision model architecture.
@@ -655,3 +748,94 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 )
             )
         return kv_caches_per_dev
+
+    # borrowed from InternVL
+    def _prepare_vision_inputs(
+        self, context_batch: Sequence[TextAndVisionContext]
+    ) -> list[Tensor] | None:
+        # copied InternVL's approach:
+        # iterate over contexts in the batch
+        #   get the `next_images`, then get its pixel value (error if more than 1 image)
+        #   check the image's shape
+        #   append each `patch_group` in the image to `images` (a list)
+        # VisionStacker the images and create a Tensor from it
+        # check data type of the tensor
+        # return list of Tensors
+        images = []
+        for context in context_batch:
+            if context.needs_vision_encoding:
+                next_images = context.next_images
+                if len(next_images) != 1:
+                    raise ValueError("Currently only supporting one image per request") # TODO is this desired?
+                image = next_images[0].pixel_values
+
+                # if len(image.shape) != IMAGE_NDIMS:
+                #     raise ValueError(
+                #         "InternVL vision model expects image shape to be [num_patches, height_patches, width_patches, channels, patch_size, patch_size]"
+                #     )
+
+                # Each image patch group needs to be processed separately by the vision model
+                # So we add each patch group as a separate "batch" item
+                for patch_group in image:
+                    images.append(patch_group)
+
+        if not images:
+            return None
+
+        final_images = _VisionStacker().stack(images)
+        tensor = Tensor.from_numpy(final_images)
+
+        # If uint16, interpret as bfloat16 to work around lack of NumPy
+        # bfloat16 support.
+        if final_images.dtype == np.uint16:
+            tensor = tensor.view(DType.bfloat16, tensor.shape)
+        return [tensor.to(dev) for dev in self.devices]
+
+    # borrowed from InternVL
+    def _batch_image_token_indices(
+        self, context_batch: Sequence[TextAndVisionContext]
+    ) -> list[Tensor] | None:
+        # copied InternVL's approach:
+        # for context in batch
+        #   if the context has `image_token_indices"
+        #      append the indices and offsets to a list
+        #   increase the batch offset
+        # if we found no indicies and offsets, return None
+        # concat the indicies and offsets
+        # return them in a tensor
+        indices_and_offsets = []
+        batch_offset = 0
+
+        for ctx in context_batch:
+            if "image_token_indices" in ctx.extra_model_args:
+                indices = ctx.extra_model_args["image_token_indices"]
+                indices_and_offsets.append(indices + batch_offset)
+            batch_offset += ctx.active_length
+
+        if not indices_and_offsets:
+            return None
+
+        np_indices = np.concatenate(indices_and_offsets).astype(
+            np.int32, copy=False
+        )
+
+        return [Tensor.from_numpy(np_indices).to(dev) for dev in self.devices]
+
+    # borrowed from InternVL
+    def _create_empty_image_embeddings(self) -> list[Tensor]:
+        """Create empty image embeddings for text-only inputs."""
+        return [
+            Tensor.zeros(
+                shape=[0, self.huggingface_config.llm_config.hidden_size],
+                dtype=self.dtype,
+            ).to(dev)
+            for dev in self.devices
+        ]
+
+    # borrowed from InternVL
+    def _create_empty_indices(self) -> list[Tensor]:
+        """Create empty image token indices tensor."""
+        return [
+            Tensor.zeros(shape=[0], dtype=DType.int32).to(dev)
+            for dev in self.devices
+        ]
