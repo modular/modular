@@ -42,7 +42,7 @@ dependencies = [
   "notebook",
   "numpy",
   "nvitop",
-  "onnxruntime==1.19.2 ", # Needed by faster_whisper, newer versions don't support python 3.9
+  "onnxruntime", # Needed by faster_whisper
   "opentelemetry-api",
   "opentelemetry-exporter-otlp-proto-http>=1.28.2",
   "opentelemetry-exporter-prometheus",
