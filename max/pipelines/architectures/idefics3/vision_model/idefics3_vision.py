@@ -54,7 +54,7 @@ class Idefics3VisionModel(Module):
         self.post_layernorm = LayerNorm(
             self.embed_dim,
             eps=config.layer_norm_eps,
-            device=device,
+            devices=[device],
             dtype=dtype,
         )
 

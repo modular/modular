@@ -112,10 +112,10 @@ class WhisperEncoderLayer(Module):
         self.attention = WhisperSdpaAttention(huggingface_config, dtype, device)
         self.mlp = MLP(huggingface_config, dtype, device)
         self.attention_norm = LayerNorm(
-            huggingface_config.d_model, device, dtype, eps=1e-5
+            huggingface_config.d_model, devices=[device], dtype=dtype, eps=1e-5
         )
         self.mlp_norm = LayerNorm(
-            huggingface_config.d_model, device, dtype, eps=1e-5
+            huggingface_config.d_model, devices=[device], dtype=dtype, eps=1e-5
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -183,7 +183,7 @@ class WhisperEncoder(Module):
         # Hugging Face model uses default eps for nn.LayerNormV1 which is = 1e-5
         # TODO: Is LayerNorm here not the same as nn.LayerNorm
         self.norm = LayerNorm(
-            huggingface_config.d_model, device, dtype, eps=1e-5
+            huggingface_config.d_model, devices=[device], dtype=dtype, eps=1e-5
         )
 
     def __call__(self, input_features: TensorValue) -> tuple[TensorValue, ...]:

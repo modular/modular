@@ -59,8 +59,8 @@ class MPNetEmbeddings(Module):
         )
         self.layer_norm = LayerNorm(
             config.hidden_size,
-            device,
-            DType.float32,
+            devices=[device],
+            dtype=DType.float32,
             eps=config.layer_norm_eps,
             use_bias=True,
         )
@@ -194,8 +194,8 @@ class MPNetAttention(Module):
         )
         self.layer_norm = LayerNorm(
             config.hidden_size,
-            device,
-            DType.float32,
+            devices=[device],
+            dtype=DType.float32,
             eps=config.layer_norm_eps,
             use_bias=True,
         )
@@ -267,8 +267,8 @@ class MPNetOutput(Module):
         )
         self.layer_norm = LayerNorm(
             config.hidden_size,
-            device,
-            DType.float32,
+            devices=[device],
+            dtype=DType.float32,
             eps=config.layer_norm_eps,
         )
 

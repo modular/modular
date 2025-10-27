@@ -779,7 +779,7 @@ class InternVLMLP1(Module, Shardable):
 
         self.layer_norm = LayerNorm(
             dims=mlp_input_size,
-            device=device,
+            devices=[device],
             dtype=config.vision_config.dtype,
             eps=1e-6,
             use_bias=True,
@@ -949,14 +949,14 @@ class InternVisionEncoderLayer(Module):
         else:  # layer_norm
             self.norm1 = LayerNorm(
                 dims=self.embed_dim,
-                device=default_device,
+                devices=[default_device],
                 dtype=config.llm_config.dtype,
                 eps=layer_norm_eps,
                 use_bias=True,
             )
             self.norm2 = LayerNorm(
                 dims=self.embed_dim,
-                device=default_device,
+                devices=[default_device],
                 dtype=config.llm_config.dtype,
                 eps=layer_norm_eps,
                 use_bias=True,
@@ -1061,14 +1061,14 @@ class InternVisionEncoderLayer(Module):
             else:
                 norm1_copy = LayerNorm(
                     dims=self.embed_dim,
-                    device=device,
+                    devices=[device],
                     dtype=config.llm_config.dtype,
                     eps=layer_norm_eps,
                     use_bias=True,
                 )
                 norm2_copy = LayerNorm(
                     dims=self.embed_dim,
-                    device=device,
+                    devices=[device],
                     dtype=config.llm_config.dtype,
                     eps=layer_norm_eps,
                     use_bias=True,

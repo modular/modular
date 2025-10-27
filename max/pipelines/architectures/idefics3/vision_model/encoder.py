@@ -132,7 +132,7 @@ class Idefics3VisionEncoderLayer(Module):
         # Layer normalization layers (pre-norm architecture)
         self.layer_norm1 = LayerNorm(
             dims=self.embed_dim,
-            device=device,
+            devices=[device],
             dtype=dtype,
             eps=vision_config.layer_norm_eps,
             use_bias=True,
@@ -140,7 +140,7 @@ class Idefics3VisionEncoderLayer(Module):
 
         self.layer_norm2 = LayerNorm(
             dims=self.embed_dim,
-            device=device,
+            devices=[device],
             dtype=dtype,
             eps=vision_config.layer_norm_eps,
             use_bias=True,
