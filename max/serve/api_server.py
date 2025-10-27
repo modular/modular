@@ -81,7 +81,7 @@ async def lifespan(
     app: FastAPI,
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
-) -> AsyncGenerator[None, None]:
+) -> AsyncGenerator[None]:
     try:
         if not settings.disable_telemetry:
             send_telemetry_log(
@@ -99,6 +99,7 @@ async def lifespan(
 
     async with AsyncExitStack() as exit_stack:
         # start telemetry worker and configure Metrics to use it
+
         metric_client = await exit_stack.enter_async_context(
             start_telemetry_consumer(settings)
         )
@@ -138,7 +139,6 @@ async def lifespan(
                 tokenizer=serving_settings.tokenizer,
                 lora_queue=lora_queue,
                 scheduler_zmq_configs=scheduler_zmq_configs,
-                worker_monitor=worker_monitor,
             )
         elif serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION:
             pipeline = AudioGeneratorPipeline(
@@ -146,7 +146,6 @@ async def lifespan(
                 tokenizer=serving_settings.tokenizer,
                 lora_queue=lora_queue,
                 scheduler_zmq_configs=scheduler_zmq_configs,
-                worker_monitor=worker_monitor,
             )
         else:
             raise ValueError(
@@ -164,6 +163,8 @@ async def lifespan(
         )
 
         yield
+
+        logger.info("Shutting down workers...")
 
 
 def version() -> JSONResponse:
