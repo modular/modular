@@ -217,8 +217,8 @@ bool Config::getValueAsBool(StringRef key, bool defaultValue) {
   if (stringValue.empty())
     return defaultValue;
   return llvm::StringSwitch<bool>(stringValue)
-      .CasesLower("0", "false", "no", false)
-      .CasesLower("1", "true", "yes", true)
+      .CasesLower({"0", "false", "no"}, false)
+      .CasesLower({"1", "true", "yes"}, true)
       .Default(defaultValue);
 }
 
