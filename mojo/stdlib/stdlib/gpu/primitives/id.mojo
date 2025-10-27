@@ -105,13 +105,7 @@ fn warp_id() -> UInt:
         The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
     """
 
-    var warp_id = thread_idx.x // UInt(WARP_SIZE)
-
-    @parameter
-    if is_nvidia_gpu():
-        return broadcast(warp_id)
-    else:
-        return warp_id
+    return thread_idx.x // UInt(WARP_SIZE)
 
 
 # ===-----------------------------------------------------------------------===#
