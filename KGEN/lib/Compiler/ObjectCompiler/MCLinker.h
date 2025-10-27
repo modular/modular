@@ -41,7 +41,7 @@ struct MCInfo {
         mcContext(std::move(mcContext)),
         machineModuleInfo(std::move(machineModuleInfo)),
         fnNameToFnPtr(std::move(fnNameToFnPtr)),
-        targetMachine(std::move(targetMachine)), splitIdx(splitIdx) {};
+        targetMachine(std::move(targetMachine)), splitIdx(splitIdx) {}
 
   MCInfo(MCInfo &&other)
       : moduleBuf(std::move(other.moduleBuf)),

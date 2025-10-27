@@ -103,8 +103,8 @@ const char *getContextMessage(ExprContext context);
 /// implicitly declared variables and discard patterns to infer their type in
 // `_ = foo()` and destructuring an alias pattern in `alias a, b = ...`
 struct LPValueInitializerType {
-  LPValueInitializerType(ASTType type) : typeSrc(type) {};
-  LPValueInitializerType(TypedAttr type) : typeSrc(type) {};
+  LPValueInitializerType(ASTType type) : typeSrc(type) {}
+  LPValueInitializerType(TypedAttr type) : typeSrc(type) {}
 
   ASTType getInitializerType() const {
     if (auto lvType = dyn_cast<ASTType>(typeSrc))
