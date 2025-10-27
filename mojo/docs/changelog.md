@@ -268,10 +268,95 @@ what we publish.
 - `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)
   and will be removed in a future release.
 
+- Elaboration error now reports the full call instantiation failure path.
+  For this mojo file:
+
+  ```mojo
+  fn fn1[T: ImplicitlyCopyable, //] (a: T):
+      constrained[False]()
+  fn fn2[T: ImplicitlyCopyable, //] (a: T):
+      return fn1(a)
+  fn main():
+      fn2(1)
+  ```
+
+  now the error prints the path of `main -> fn2 -> fn1 -> constrained[False]`
+  instead of just `constrained[False]`.
+
+- Elaboration error now prints out trivial parameter values with call expansion failures.
+ For this simple mojo program:
+
+  ```mojo
+  fn fn1[a: Int, b: Int]():
+      constrained[a < b]()
+
+  fn fn2[a: Int, b: Int]():
+      fn1[a, b]()
+
+  fn main():
+      fn2[4, 2]()
+  ```
+
+  now the error message shows `parameter value(s): ("a": 4, "b": 2)`.
+  Only string value and numerical values are printed out by default now,
+   other values are shown as `...`.
+  use `--elaboration-error-verbose` to show all parameter values.
+
+  ```mojo
+  test.mojo:6:14: note: call expansion failed with parameter value(s): ("a": 4, "b": 2)
+      fn1[a, b]()
+
+  ```
+
+- `--elaboration-error-limit` option is added to `mojo run` and `mojo build`.
+  This option sets a limit to number of elaboration errors that get printed.
+  The default value is 20.
+  This limit can be changed by `--elaboration-error-limit=n` to `n` where
+   `0` means unlimited.
+
+- `--help-hidden` option is added to all mojo tools to show hidden options.
+
 ### ❌ Removed {#25-7-removed}
 
 - `LayoutTensorBuild` type has been removed.  Use `LayoutTensor` with parameters
   directly instead.
+
+- Elaboration error message prelude is removed by default.
+ Preludes are call expansion locations in `stdlib/builtin/_startup.mojo`
+  which persists in all call expansion path but rarely is where error happens.
+   Remove these to de-clutter elaboration errors.
+ Use `--elaboration-error-include-prelude` to include prelude.
+  - By default (without prelude)
+
+    ```mojo
+      test.mojo:43:4: error: function instantiation failed
+      fn main():
+         ^
+      test.mojo:45:12: note: call expansion failed
+          my_func()
+      ...
+    ```
+
+  - with prelude
+
+    ```mojo
+    open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:119:4: error: function instantiation failed
+    fn __mojo_main_prototype(
+       ^
+    open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:119:4: note: call expansion failed with parameter value(s): (...)
+    open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:42:4: note: function instantiation failed
+    fn __wrap_and_execute_main[
+       ^
+    open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:68:14: note: call expansion failed
+        main_func()
+                 ^
+    test.mojo:43:4: note: function instantiation failed
+    fn main():
+       ^
+    test:45:12: note: call expansion failed
+        my_func()
+    ...
+    ```
 
 ### 🛠️ Fixed {#25-7-fixed}
 
