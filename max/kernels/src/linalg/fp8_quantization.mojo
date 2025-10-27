@@ -640,6 +640,9 @@ fn naive_blockwise_scaled_fp8_matmul[
     var b_scales_dim0 = b_scales.dim(0)
     var b_scales_dim1 = b_scales.dim(1)
 
+    if M == 0 or N == 0 or K == 0:
+        return
+
     # these checks are only applicable when A_SCALES_SIZE and B_SCALES_SIZE are not provided
     @parameter
     if not scales_granularity_mnk:
@@ -755,12 +758,12 @@ fn naive_blockwise_scaled_fp8_matmul[
     var N = c_device.dim(1)
     var K = a_device.dim(1)
 
-    if M == 0:
-        return
-
     var a_scales_dim0 = a_scales.dim(0)
     var b_scales_dim0 = b_scales.dim(0)
     var b_scales_dim1 = b_scales.dim(1)
+
+    if M == 0 or N == 0 or K == 0:
+        return
 
     # these checks are only applicable when A_SCALES_SIZE and B_SCALES_SIZE are not provided
     @parameter
@@ -1014,6 +1017,9 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
             " fp8 matmul"
         ),
     ]()
+
+    if max_num_tokens_per_expert == 0:
+        return
 
     var logger = Logger()
     logger.info("Executing Naive Grouped Blockwise Scaled FP8 GEMM")

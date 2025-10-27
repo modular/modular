@@ -537,6 +537,10 @@ fn _reduce_generator[
     """
     constrained[is_valid_target[target](), "unsupported target"]()
 
+    for i in range(len(shape)):
+        if shape[i] == 0:
+            return
+
     @parameter
     if is_cpu[target]():
         _reduce_generator_cpu[

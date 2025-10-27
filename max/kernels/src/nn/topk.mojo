@@ -34,7 +34,7 @@ from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.dim import Dim
 from gpu.host.info import is_cpu
-from gpu.memory import external_memory
+from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
 from layout import (
     UNKNOWN_VALUE,
@@ -326,7 +326,7 @@ fn _top_k_cpu[
                         var ptr = idxs.unsafe_ptr() + i
                         sort(
                             Span[idxs.T, origin_of(idxs)](
-                                ptr=ptr, length=num_equal
+                                ptr=ptr, length=UInt(num_equal)
                             )
                         )
                     i += num_equal
@@ -887,9 +887,7 @@ fn _topk_stage1_old[
 
                 # Remove the found maximum from consideration in the next iteration
                 if total.p >= 0:
-                    var orig_tid = (vector_idx - Int(block_offset)) % Int(
-                        stride
-                    )
+                    var orig_tid = (vector_idx - block_offset) % stride
                     topk_sram[orig_tid].u = _topk_dead_val[T, largest]()
 
             barrier()
@@ -1348,6 +1346,10 @@ fn _topk_gpu[
     )
     var N = input_buf.runtime_layout.shape.value.canonicalize()[1]
 
+    # Do not launch gpu kernels with grid_dim = 0
+    if batch_size == 0:
+        return
+
     # Define the number of blocks per grid
     var num_blocks_per_input_: Int = ceildiv(
         N, block_size
@@ -1356,10 +1358,6 @@ fn _topk_gpu[
     if block_size % WARP_SIZE != 0:
         # TODO: Need to pad in this case
         raise Error("block_size must be a multiple of WARP_SIZE")
-
-    # Do not launch gpu kernels with grid_dim = 0
-    if batch_size == 0:
-        return
 
     var shared_mem_bytes_1 = _get_shmem_size_stg_1[dtype](block_size)
 

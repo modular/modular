@@ -55,6 +55,18 @@ def test_reductions():
     print(sum(vector))
 
 
+def test_reductions_zero_size():
+    print("== test_reductions_zero_size")
+
+    alias size = 0
+    var vector_stack = InlineArray[Float32, size](uninitialized=True)
+    var vector = NDBuffer[DType.float32, 1, _, size](vector_stack)
+
+    print(min(vector))
+    print(max(vector))
+    print(sum(vector))
+
+
 # CHECK-LABEL: test_fused_reductions_inner
 def test_fused_reductions_inner():
     print("== test_fused_redtest_fused_reductions_inneructions")

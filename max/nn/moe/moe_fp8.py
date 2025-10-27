@@ -230,7 +230,7 @@ class MoEFp8(MoE):
 
         down_projs = ops.gather(
             down_projs, restore_token_order, axis=0
-        ).reshape([seq_len, self.num_experts_per_token, -1])
+        ).reshape([seq_len, self.num_experts_per_token, down_projs.shape[-1]])
 
         # (seq_len, 1, n_expert) @ (seq_len, n_expert, hidden_dim) -> (seq_len, 1, hidden_dim)
         routed_expert_out = ops.unsqueeze(router_weight, axis=1) @ down_projs

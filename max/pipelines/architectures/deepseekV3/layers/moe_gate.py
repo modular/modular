@@ -89,6 +89,11 @@ class DeepseekV3TopKRouter(MoEGate):
         self.gate_dtype = gate_dtype
         self.correction_bias_dtype = correction_bias_dtype
 
+        if self.num_experts % self.n_group != 0:
+            raise ValueError(
+                f"num_experts must be divisible by n_group: {self.num_experts} % {self.n_group} != 0"
+            )
+
         if self.topk_method == "noaux_tc":
             if correction_bias_dtype is None:
                 raise ValueError(

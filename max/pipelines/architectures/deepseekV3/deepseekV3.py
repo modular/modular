@@ -240,6 +240,7 @@ class DeepseekV3DecoderLayer(Module):
     ) -> list[TensorValue]:
         # we split the inputs outside the layer when using EP
         if self.config.ep_config is None:
+            original_shape = xs[0].shape
             xs, input_row_offsets = split_batch_replicated(
                 self.config.devices,
                 xs,
@@ -289,15 +290,15 @@ class DeepseekV3DecoderLayer(Module):
             mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
 
         else:
-            attn_outs = ops.allgather(attn_outs, signal_buffers)
-
-            # Use rebind to assert that the gathered shape is the same as the
-            # original input shape
-            attn_outs = [out.rebind(xs[0].shape) for out in attn_outs]
-
             hs = [
                 x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)
             ]
+
+            hs = ops.allgather(hs, signal_buffers)
+
+            # Use rebind to assert that the gathered shape is the same as the
+            # original input shape
+            hs = [out.rebind(original_shape) for out in hs]
 
             # Post-attention norm (per-device)
             norm_outs = forward_sharded_layers(
