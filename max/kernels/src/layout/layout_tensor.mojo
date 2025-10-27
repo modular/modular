@@ -3656,12 +3656,10 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(fragments_layout_stride)):
-                alias fragments_stride_i = UInt(
-                    mlir_value=Int(fragments_layout_stride[i])._mlir_value
-                )
+                alias fragments_stride_i = UInt(Int(fragments_layout_stride[i]))
                 alias shape_i = UInt(Int(thread_projected_shape[i]))
                 alias stride_i = UInt(Int(thread_projected_stride[i]))
-                var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
+                var thread_coord_i = (thread_id // stride_i) % shape_i
                 offset += thread_coord_i * fragments_stride_i
 
             # Swizzling applies to the index of elements rather than scalars because
@@ -3720,15 +3718,13 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(flatten(Self.layout.stride))):
-                var fragments_stride_i = self.runtime_layout.stride.value[i]
-                alias shape_i = UInt(
-                    mlir_value=Int(thread_projected_shape[i])._mlir_value
+                var fragments_stride_i = UInt(
+                    self.runtime_layout.stride.value[i]
                 )
-                alias stride_i = UInt(
-                    mlir_value=Int(thread_projected_stride[i])._mlir_value
-                )
-                var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
-                offset += thread_coord_i * UInt(fragments_stride_i)
+                alias shape_i = UInt(Int(thread_projected_shape[i]))
+                alias stride_i = UInt(Int(thread_projected_stride[i]))
+                var thread_coord_i = (thread_id // stride_i) % shape_i
+                offset += thread_coord_i * fragments_stride_i
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -3831,12 +3827,10 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(fragments_layout_stride)):
-                alias fragments_stride_i = UInt(
-                    mlir_value=Int(fragments_layout_stride[i])._mlir_value
-                )
+                alias fragments_stride_i = UInt(Int(fragments_layout_stride[i]))
                 alias shape_i = UInt(Int(thread_projected_shape[i]))
                 alias stride_i = UInt(Int(thread_projected_stride[i]))
-                var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
+                var thread_coord_i = (thread_id // stride_i) % shape_i
                 offset_coords[i] = Int(thread_coord_i)
                 offset += thread_coord_i * fragments_stride_i
 
@@ -3904,16 +3898,14 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(flatten(Self.layout.stride))):
-                var fragments_stride_i = self.runtime_layout.stride.value[i]
-                alias shape_i = UInt(
-                    mlir_value=Int(thread_projected_shape[i])._mlir_value
+                var fragments_stride_i = UInt(
+                    self.runtime_layout.stride.value[i]
                 )
-                alias stride_i = UInt(
-                    mlir_value=Int(thread_projected_stride[i])._mlir_value
-                )
-                var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
+                alias shape_i = UInt(Int(thread_projected_shape[i]))
+                alias stride_i = UInt(Int(thread_projected_stride[i]))
+                var thread_coord_i = (thread_id // stride_i) % shape_i
                 offset_coords[i] = Int(thread_coord_i)
-                offset += thread_coord_i * UInt(fragments_stride_i)
+                offset += thread_coord_i * fragments_stride_i
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
