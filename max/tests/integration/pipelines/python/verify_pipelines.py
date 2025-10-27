@@ -1129,20 +1129,33 @@ PIPELINES = {
             kl_div_threshold=6.9e-01,
         ),
     ),
-    # TODO(MODELS-714): High thresholds likely due to bf16 vs fp8 comparison, needs investigation.
     "RedHatAI/gemma-3-27b-it-FP8-dynamic": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big", "float8-support"],
         run=_make_pipeline_runner(
             pipeline="gemma3-27b-float8-dynamic",
             encoding="float8_e4m3fn",
-            # Doesn't run with torch+transformers, so compare to bf16 goldens.
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-27b_golden/0/d4747c90804cbfb6ee4ee06ec15c042dd436558354cfae819e0203d1c3610b38/torch_gemma3-27b_golden.tar.gz",
-                json_file="torch_gemma3-27b_bfloat16_golden.json",
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_gemma3-27b_golden/1/1a619d49187cdce335f4492acab40fd950922748e6631c0478572344ff295efc/vllm_gemma3-27b_golden.tar.gz",
+                json_file="vllm_gemma3-27b_float8-dynamic_golden.json",
             ),
-            cos_dist_threshold=2.8e-02,
-            kl_div_threshold=8.3e-01,
+            cos_dist_threshold=2.7e-2,
+            kl_div_threshold=5.9e-1,
+        ),
+    ),
+    # Multi-GPU variant
+    "RedHatAI/gemma-3-27b-it-FP8-dynamic-multi": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["big", "float8-support", "nvidia-multi"],
+        run=_make_pipeline_runner(
+            pipeline="gemma3-27b-float8-dynamic",
+            encoding="float8_e4m3fn",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_gemma3-27b_golden/1/1a619d49187cdce335f4492acab40fd950922748e6631c0478572344ff295efc/vllm_gemma3-27b_golden.tar.gz",
+                json_file="vllm_gemma3-27b_float8-dynamic_golden.json",
+            ),
+            cos_dist_threshold=2.3e-2,
+            kl_div_threshold=5.8e-1,
         ),
     ),
     "HKUSTAudio/Llasa-8B-bfloat16": PipelineDef(
