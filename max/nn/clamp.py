@@ -19,12 +19,12 @@ from max.graph import TensorValue, ops
 def clamp(
     x: TensorValue, min: float | None = None, max: float | None = None
 ) -> TensorValue:
-    """Clamps values in `x` to `[min, max]`
+    """Clamps values in ``x`` to ``[min, max]``.
 
     Args:
         x: Input tensor to clamp.
-        min: Minimum value. If None, no lower bound is applied.
-        max: Maximum value. If None, no upper bound is applied.
+        min: Minimum value. If ``None``, no lower bound is applied.
+        max: Maximum value. If ``None``, no upper bound is applied.
 
     Returns:
         Clamped tensor.

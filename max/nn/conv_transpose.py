@@ -23,20 +23,20 @@ from .layer import Module
 @dataclass
 class ConvTranspose1d(Module):
     """A 1D transposed convolution operator over an input image composed of several input planes.
-    Example:
-        .. code-block:: python
 
-            conv = nn.ConvTranspose1d(
-                in_channels,
-                out_channels,
-                kernel_size,
-                stride,
-                padding,
-                output_padding,
-                has_bias=False,
-                name="conv3d_weight",
-                device=DeviceRef.GPU(),
-            )
+    .. code-block:: python
+
+        conv = nn.ConvTranspose1d(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride,
+            padding,
+            output_padding,
+            has_bias=False,
+            name="conv3d_weight",
+            device=DeviceRef.GPU(),
+        )
     """
 
     device: DeviceRef | None
@@ -47,7 +47,7 @@ class ConvTranspose1d(Module):
     Model init moves the weight to :obj:`device`."""
 
     stride: tuple[int, int]
-    """Controls the stride for the cross-correlation. """
+    """Controls the stride for the cross-correlation."""
 
     padding: tuple[int, int, int, int]
     """Controls the amount of padding applied before and after the input for depth, height, and width dimensions."""
@@ -85,18 +85,18 @@ class ConvTranspose1d(Module):
         """Initializes the ConvTranspose1d layer with weights and optional bias.
 
         Args:
-            length: The length of the convolution kernel
-            in_channels: Number of channels in the input image
-            out_channels: Number of channels produced by the convolution
-            dtype: The data type for weights and bias
-            stride: Stride of the convolution. Default: 1
-            padding: Padding added to input. Default: 0
-            dilation: Spacing between kernel elements. Default: 1
-            output_padding: Additional size added to output shape. Default: 0
-            device: The target device for computation
-            has_bias: When True, adds a bias vector. Default: False
-            permute: Whether to permute weights between PyTorch and MAX format
-            name: Base name for weights
+            length: The length of the convolution kernel.
+            in_channels: Number of channels in the input image.
+            out_channels: Number of channels produced by the convolution.
+            dtype: The data type for weights and bias.
+            stride: Stride of the convolution. Default: 1.
+            padding: Padding added to input. Default: 0.
+            dilation: Spacing between kernel elements. Default: 1.
+            output_padding: Additional size added to output shape. Default: 0.
+            device: The target device for computation.
+            has_bias: When True, adds a bias vector. Default: False.
+            permute: Whether to permute weights between PyTorch and MAX format.
+            name: Base name for weights.
         """
         super().__init__()
 
@@ -167,11 +167,11 @@ class ConvTranspose1d(Module):
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        """Applied ConvTranspose1d to input `x`. Permutes pytorch weights to match max API if permute=True.
+        """Applied ConvTranspose1d to input ``x``. Permutes pytorch weights to match MAX API if ``permute=True``.
 
         Args:
-            x: a tensor of shape (batch_size, length, in_channels)
-            if self.permute, then input is of shape: (batch_size, in_channels, length)
+            x: a tensor of shape ``(batch_size, length, in_channels)``
+            if self.permute, then input is of shape: ``(batch_size, in_channels, length)``
             and will be permuted to match max's expected input shape.
             Also, self.weight will be permuted from (kernel_length, in_channels, out_channels) to
             (in_channels, out_channels, kernel_length)
@@ -227,12 +227,12 @@ class ConvTranspose1d(Module):
 
 class WeightNormConvTranspose1d(Module):
     """A 1D transposed convolution operator over an input image composed of several input planes.
-    This version uses weight normalization as described in https://arxiv.org/abs/1602.07868
+    This version uses weight normalization as described in https://arxiv.org/abs/1602.07868.
 
-    Weight normalization reparameterizes weights in terms of a direction vector v and a magnitude scalar g.
+    Weight normalization reparameterizes weights in terms of a direction vector ``v`` and a magnitude scalar ``g``.
     This can help improve optimization by decoupling the length and direction of weight vectors.
 
-    Example:
+    For example:
         .. code-block:: python
 
             conv = WeightNormConvTranspose1d(
@@ -252,13 +252,13 @@ class WeightNormConvTranspose1d(Module):
     """The device where matrix operations are performed."""
 
     conv: ConvTranspose1d
-    """The underlying ConvTranspose1d layer"""
+    """The underlying ConvTranspose1d layer."""
 
     weight_g: Weight
-    """The magnitude parameter g for weight normalization"""
+    """The magnitude parameter g for weight normalization."""
 
     weight_v: Weight
-    """The direction parameter v for weight normalization"""
+    """The direction parameter v for weight normalization."""
 
     def __init__(
         self,
@@ -278,18 +278,18 @@ class WeightNormConvTranspose1d(Module):
         """Initializes the WeightNormConvTranspose1d layer.
 
         Args:
-            length: The length of the convolution kernel
-            in_channels: Number of channels in the input image
-            out_channels: Number of channels produced by the convolution
-            dtype: The data type for weights and bias
-            stride: Stride of the convolution. Default: 1
-            padding: Padding added to input. Default: 0
-            dilation: Spacing between kernel elements. Default: 1
-            output_padding: Additional size added to output shape. Default: 0
-            device: The target device for computation
-            has_bias: When True, adds a bias vector. Default: False
-            permute: Whether to permute weights between PyTorch and MAX format
-            name: Base name for weights
+            length: The length of the convolution kernel.
+            in_channels: Number of channels in the input image.
+            out_channels: Number of channels produced by the convolution.
+            dtype: The data type for weights and bias.
+            stride: Stride of the convolution. Default: 1.
+            padding: Padding added to input. Default: 0.
+            dilation: Spacing between kernel elements. Default: 1.
+            output_padding: Additional size added to output shape. Default: 0.
+            device: The target device for computation.
+            has_bias: When True, adds a bias vector. Default: False.
+            permute: Whether to permute weights between PyTorch and MAX format.
+            name: Base name for weights.
         """
         super().__init__()
 
@@ -336,13 +336,13 @@ class WeightNormConvTranspose1d(Module):
         del self.conv.bias
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        """Apply the weight normalized convolution to input x.
+        """Apply the weight normalized convolution to input ``x``.
 
         Args:
-            x: Input tensor
+            x: Input tensor.
 
         Returns:
-            Output tensor after applying convolution with normalized weights
+            Output tensor after applying convolution with normalized weights.
         """
         if not hasattr(self.conv, "weight"):
             # Compute normalized weight sqrt(sum(x**2))
