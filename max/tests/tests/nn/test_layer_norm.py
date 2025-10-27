@@ -29,7 +29,7 @@ def test_layer_norm_dimension_mismatch() -> None:
         Graph(
             "test",
             forward=LayerNorm(
-                dims=32, device=DeviceRef.CPU(), dtype=DType.float32
+                dims=32, devices=[DeviceRef.CPU()], dtype=DType.float32
             ),
             input_types=[
                 TensorType(DType.float32, (2, 10, 64), DeviceRef.CPU())
@@ -41,7 +41,9 @@ def test_layer_norm_basic() -> None:
     """Tests basic LayerNorm functionality."""
     g = Graph(
         "test",
-        forward=LayerNorm(dims=64, device=DeviceRef.CPU(), dtype=DType.float32),
+        forward=LayerNorm(
+            dims=64, devices=[DeviceRef.CPU()], dtype=DType.float32
+        ),
         input_types=[TensorType(DType.float32, (2, 10, 64), DeviceRef.CPU())],
     )
 
@@ -55,7 +57,7 @@ def test_layer_norm_basic() -> None:
 def test_layer_norm_no_bias() -> None:
     """Tests LayerNorm without bias."""
     norm = LayerNorm(
-        dims=64, device=DeviceRef.CPU(), dtype=DType.float32, use_bias=False
+        dims=64, devices=[DeviceRef.CPU()], dtype=DType.float32, use_bias=False
     )
     assert norm.bias is None
 
@@ -75,7 +77,7 @@ def test_layer_norm_shapes(shape, dim) -> None:  # noqa: ANN001
     g = Graph(
         "test",
         forward=LayerNorm(
-            dims=dim, device=DeviceRef.CPU(), dtype=DType.float32
+            dims=dim, devices=[DeviceRef.CPU()], dtype=DType.float32
         ),
         input_types=[TensorType(DType.float32, shape, DeviceRef.CPU())],
     )
