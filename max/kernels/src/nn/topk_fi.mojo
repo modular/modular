@@ -119,8 +119,8 @@ fn TopKMaskLogitsKernel[
     var tx = thread_idx.x
     var row_idx = bx
 
-    var logits_ptr = logits.ptr + bx * d
-    var masked_logits_ptr = masked_logits.ptr + bx * d
+    var logits_ptr = logits.ptr + bx * UInt(d)
+    var masked_logits_ptr = masked_logits.ptr + bx * UInt(d)
 
     alias row_layout = Layout.row_major(1, UNKNOWN_VALUE)
     var logits_row = LayoutTensor[dtype, row_layout, MutableAnyOrigin](
@@ -141,7 +141,7 @@ fn TopKMaskLogitsKernel[
 
     if k < d:
         var min_max = get_min_max_value[vec_size, block_size](
-            logits.ptr, row_idx, d
+            logits.ptr, Int(row_idx), d
         )
         var min_val, max_val = min_max[0], min_max[1]
 
@@ -161,9 +161,9 @@ fn TopKMaskLogitsKernel[
             var max_le_high = Float32(low)
 
             for i in range(ceildiv(d, block_size * vec_size)):
-                if (i * block_size + tx) * vec_size < d:
+                if (i * block_size + Int(tx)) * vec_size < d:
                     logits_vec = logits_row.load[width=vec_size](
-                        0, i * block_size * vec_size + tx * vec_size
+                        0, i * block_size * vec_size + Int(tx * UInt(vec_size))
                     ).cast[DType.float32]()
 
                 var probs_gt_pivot_0_count = SIMD[DType.int32, vec_size]()
@@ -173,7 +173,7 @@ fn TopKMaskLogitsKernel[
                 for j in range(vec_size):
                     # Calculate the global index for this element in the row.
                     # Will only count if the index is within the valid range [0, d).
-                    var idx = (i * block_size + tx) * vec_size + j
+                    var idx = (i * block_size + Int(tx)) * vec_size + j
 
                     # Count elements greater than pivot_0 (higher ternary search bound).
                     probs_gt_pivot_0_count[j] = 1 if (
@@ -231,19 +231,19 @@ fn TopKMaskLogitsKernel[
 
     for i in range(ceildiv(d, block_size * vec_size)):
         logits_vec = 0
-        if (i * block_size + tx) * vec_size < d:
+        if (i * block_size + Int(tx)) * vec_size < d:
             logits_vec = logits_row.load[width=vec_size](
-                0, i * block_size * vec_size + tx * vec_size
+                0, i * block_size * vec_size + Int(tx * UInt(vec_size))
             ).cast[DType.float32]()
 
         logits_vec = (logits_vec.cast[DType.float64]().gt(pivot)).select(
             logits_vec, Float32.MIN
         )
 
-        if (i * block_size + tx) * vec_size < d:
+        if (i * block_size + Int(tx)) * vec_size < d:
             masked_logits_row.store[width=vec_size](
                 0,
-                i * block_size * vec_size + tx * vec_size,
+                i * block_size * vec_size + Int(tx * UInt(vec_size)),
                 logits_vec.cast[dtype](),
             )
 

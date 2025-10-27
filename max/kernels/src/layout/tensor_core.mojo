@@ -1076,9 +1076,9 @@ struct TensorCore[
 
                     @parameter
                     for i in range(0, num_frags, 2):
-                        var swizzle_offset = i + warp_tile_coord_n * UInt(
-                            WN
-                        ) // UInt(simd_size)
+                        var swizzle_offset = i + Int(
+                            warp_tile_coord_n * UInt(WN) // UInt(simd_size)
+                        )
                         var vec = _load_matrix_frag[
                             swizzle=swizzle, transposed=True
                         ](mma_tile_shifted, Int(swizzle_offset))

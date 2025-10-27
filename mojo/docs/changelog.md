@@ -145,9 +145,13 @@ what we publish.
   casting function and explicitly unsafe `unsafe_mut_cast` and
   `unsafe_origin_cast` casting function.
 
-- The `@implicit` decorator on `UInt.__init__(Int)` has been deprecated.
-  Conversion from `Int` to `UInt` should now be done explicitly using
-  `UInt(int_value)`.
+- Implicit conversions between `Int` and `UInt` are now deprecated.
+
+  The `@implicit` decorator on `Int.__init__(UInt)` and `UInt.__init__(Int)`
+  will be removed in a future version of Mojo. Code that currently performs
+  implicit conversions between `Int` and `UInt` will issue a deprecation warning,
+  and should be updated to explicitly read `Int(uint_val)` or `UInt(int_val)`
+  respectively.
 
 - `assert_equal` now displays colored character-by-character diffs when string
   comparisons fail, making it easier to spot differences. Differing characters

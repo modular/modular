@@ -307,7 +307,7 @@ fn handle_optimized_bfloat16_output[
 
                 if local_thread_idx < UInt(WG_BN // TMA_BN):
                     var smem_offset = c_tile.ptr.offset(
-                        WG_BM * TMA_BN * local_thread_idx
+                        WG_BM * TMA_BN * Int(local_thread_idx)
                     )
                     var c_tma_tile = SMemTileType[
                         c_type,
@@ -320,7 +320,7 @@ fn handle_optimized_bfloat16_output[
                         UInt(
                             block_x * BN
                             + sub_wg_bn_id * WG_BN
-                            + local_thread_idx * UInt(TMA_BN)
+                            + Int(local_thread_idx * UInt(TMA_BN))
                         ),
                         UInt(block_y * BM),
                     )
