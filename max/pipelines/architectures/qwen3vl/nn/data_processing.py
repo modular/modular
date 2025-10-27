@@ -140,3 +140,28 @@ def mrope_pos_ids_3d(
         pos_ids.append(np.tile(coords, (t, 1)))
 
     return np.concatenate(pos_ids, axis=0)
+
+
+@traced
+def get_seqlens(
+    grid_thw: npt.NDArray[np.integer[Any]],
+) -> tuple[
+    npt.NDArray[np.integer[Any]],
+    int,
+]:
+    """Generate attention masks for visual tokens using seq_length and cu_seqlens.
+    cu_seqlens is used for all blocks in Qwen3VL to implement full attention.
+
+    Args:
+        grid_thw: number of patches in spatial and temporal dims in images. Shape = [n_images, 3]
+
+    Returns:
+        Tuple of (cu_seqlens, max_seqlen)
+    """
+    repeated_sizes = np.repeat(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0])
+    cu_seqlens = np.cumsum(repeated_sizes, dtype=np.int32)
+
+    cu_seqlens = np.pad(cu_seqlens, (1, 0), constant_values=0)
+    max_seqlen = int(np.max(np.diff(cu_seqlens)))
+
+    return cu_seqlens, max_seqlen
