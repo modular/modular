@@ -134,7 +134,7 @@ class Device:
             from max import driver
 
             device = driver.Accelerator()
-            device.archname
+            device.architecture_name
         """
 
     @property
