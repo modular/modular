@@ -17,6 +17,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     RopeType,
 )
+from max.pipelines.architectures.gemma3.model_config import Gemma3Config
 
 @dataclass
 class SiglipVisionConfig:
@@ -78,140 +79,6 @@ class SiglipVisionConfig:
         )
     
 @dataclass
-class Gemma3TextConfig:    
-    attention_bias: bool
-    """Whether to use a bias in the query, key, value and output projection
-    layers during self-attention."""
-
-    attn_logit_softcapping: int | None
-    """Scaling factor when applying tanh softcapping on the attention scores."""
-
-    sliding_window: int
-    """In the Gemma3 language model, every other layer uses sliding window
-    attention. This is the size of the sliding window."""
-
-    _sliding_window_pattern: int # TODO required?
-    """transformers/models/gemma3/configuration_gemma.py no idea what it does or what the value represents"""
-
-    final_logit_softcapping: float | None
-    """Scaling factor when applying tanh softcapping on the logits."""
-
-    head_dim: int
-    """The attention head dimension."""
-
-    hidden_activation: str
-    """The non-linear activation function (function or string) in the decoder.
-    Will default to `"gelu_tanh"` if not specified. `"gelu_tanh"`
-    uses an approximation of the `"gelu"` activation function."""
-    
-    hidden_size: int
-    """Dimension of the hidden representations."""
-
-    initializer_range: float # TODO figure out.  in Text and overall config??
-    """The standard deviation of the truncated_normal_initializer for initializing all weight matrices"""
-    
-    intermediate_size: int
-    """Dimension of the MLP representations."""
-
-    layer_types: list[str] | None
-    """Attention pattern for each layer, optional"""
-    
-    max_position_embeddings: int
-    """The maximum sequence length that this model might ever be used with."""
-    
-    num_hidden_layers: int
-    """Number of hidden layers in the Transformer decoder."""
-
-    num_attention_heads: int
-    """Number of attention heads for each attention layer in the Transformer
-    decoder."""
-
-    num_key_value_heads: int
-    """Number of key_value heads that should be used to implement Grouped Query
-    Attention."""
-
-    query_pre_attn_scalar: float | None
-    """Scaling factor used on the attention scores."""
-    
-    rms_norm_eps: float
-    """The epsilon used by the rms normalization layers."""
-    
-    rope_scaling: LinearScalingParams | None
-    """Scaling configuration for the RoPE embeddings used in global attention."""
-
-    rope_local_base_freq: float
-    """The base period of the RoPE embeddings for local attention."""
-    
-    rope_theta: float
-    """The base period of the RoPE embeddings."""
-
-    vocab_size: int
-    """Vocabulary size of the Gemma3Text model."""
-
-    attention_dropout: float = 0.0
-    """The dropout ratio for the attention probabilities.  Optional, defaults to 0.0"""
-
-    use_bidirectional_attention: bool = False
-    """If True, the model will attend to all text tokens instead of using a causal mask. This does not change
-    behavior for vision tokens."""
-
-    use_cache: bool = True
-    """Whether or not the model should return the last key/values attentions (not used by all models). Only
-    relevant if `config.is_decoder=True`"""
-
-    @staticmethod
-    def generate(
-        text_config: AutoConfig
-    ) -> Gemma3TextConfig:
-        rope_scaling_params = None
-        rope_scaling = text_config.rope_scaling
-
-        if rope_scaling is not None:
-            # Since "rope_type" huggingface config is not standardized, we need
-            # to check for both "type" and "rope_type" keys.
-            rope_type = rope_scaling.get("type")
-            rope_type_alt = rope_scaling.get("rope_type")
-            if rope_type is None and rope_type_alt is None:
-                raise ValueError(
-                    "Neither 'type' nor 'rope_type' found in rope_scaling huggingface config"
-                )
-            if rope_type == "linear" or rope_type_alt == "linear":
-                rope_scaling_params = LinearScalingParams(
-                    factor=rope_scaling["factor"]
-                )
-
-        hidden_activation = _HIDDEN_ACTIVATION_MAP.get(
-            text_config.hidden_activation,
-            text_config.hidden_activation,
-        )
-        
-        return Gemma3TextConfig(
-            sliding_window=text_config.sliding_window,
-            attention_bias=text_config.attention_bias,
-            _sliding_window_pattern=6, # TODO no idea.  came from transformers code comments
-            layer_types=text_config.layer_types,
-            initializer_range=text_config.initializer_range,
-            use_bidirectional_attention=text_config.use_bidirectional_attention,
-            use_cache=text_config.use_cache,
-            attn_logit_softcapping=text_config.attn_logit_softcapping,
-            final_logit_softcapping=text_config.final_logit_softcapping,
-            head_dim=text_config.head_dim,
-            hidden_activation=hidden_activation,
-            hidden_size=text_config.hidden_size,
-            intermediate_size=text_config.intermediate_size,
-            max_position_embeddings=text_config.max_position_embeddings,
-            num_hidden_layers=text_config.num_hidden_layers,
-            num_attention_heads=text_config.num_attention_heads,
-            num_key_value_heads=text_config.num_key_value_heads,
-            query_pre_attn_scalar=text_config.query_pre_attn_scalar,
-            rms_norm_eps=text_config.rms_norm_eps,
-            rope_scaling=rope_scaling_params,
-            rope_local_base_freq=text_config.rope_local_base_freq,
-            rope_theta=text_config.rope_theta,
-            vocab_size=text_config.vocab_size,
-        )
-    
-@dataclass
 class Gemma3MultiModalConfigBase(MAXModelConfigBase):
     """Base configuration for Gemma 3 models.
 
@@ -253,7 +120,7 @@ class Gemma3MultiModalConfigBase(MAXModelConfigBase):
     uses the same
     weight as the embedding layer."""
 
-    text_config: Gemma3TextConfig
+    text_config: Gemma3Config
     """The config object of the text backbone"""
     
     # https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/gemma3/configuration_gemma3.py
@@ -342,7 +209,7 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfig, Gemma3MultiModalConfi
             ignored_modules_prefix=layer_name_prefix,
         )
 
-        # override SiglipVisionConfig and Gemma3TextConfig from the huggingface AutoConfig
+        # override SiglipVisionConfig and Gemma3Config from the huggingface AutoConfig
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
@@ -351,7 +218,25 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfig, Gemma3MultiModalConfi
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
             raise ValueError("text_config not found in huggingface_config")
-        text_config = Gemma3TextConfig.generate(hf_text_config)
+        text_config = Gemma3Config.generate(
+            pipeline_config=pipeline_config,
+            huggingface_config=hf_text_config,
+            state_dict = state_dict,
+            dtype = dtype,
+            n_devices = n_devices,
+            cache_dtype = cache_dtype,
+            kv_cache_config = kv_cache_config,
+            return_logits = return_logits,
+            norm_method = norm_method,
+            attention_bias = attention_bias,
+        )
+
+        kv_params = Gemma3ForConditionalGenerationConfig.get_kv_params(
+            huggingface_config=huggingface_config,
+            n_devices=n_devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
 
         gemma3_config = Gemma3ForConditionalGenerationConfig(
             tie_word_embeddings=tie_word_embeddings,
@@ -359,14 +244,8 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfig, Gemma3MultiModalConfi
             devices=device_refs,
             interleaved_rope_weights=interleaved_rope_weights,
             return_logits=return_logits,
-            kv_params=Gemma3ForConditionalGenerationConfig.get_kv_params(
-                huggingface_config=huggingface_config,
-                n_devices=n_devices,
-                kv_cache_config=kv_cache_config,
-                cache_dtype=cache_dtype,
-            ),
-            float8_config=float8_config,
-            
+            kv_params=kv_params,
+            float8_config=float8_config,            
             vision_config=vision_config,
             text_config=text_config,
             mm_tokens_per_image=huggingface_config.mm_tokens_per_image,
@@ -375,12 +254,6 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfig, Gemma3MultiModalConfi
             image_token_index=huggingface_config.image_token_index,
             initializer_range=0.0,
         )
-
-        gemma3_config.mm_tokens_per_image = huggingface_config.mm_tokens_per_image
-        gemma3_config.boi_token_index = huggingface_config.boi_token_index
-        gemma3_config.eoi_token_index = huggingface_config.eoi_token_index
-        gemma3_config.image_token_index = huggingface_config.image_token_index
-        gemma3_config.initializer_range = huggingface_config.initializer_range
 
         return gemma3_config
 
