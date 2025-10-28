@@ -23,6 +23,10 @@ namespace M::KGEN::POP {
 LogicalResult
 verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
                      SIMDType simd, Type builtinType, bool fromSimd);
+
+/// Fold a conversion from a MLIR builtin type to a SIMD type.
+OpFoldResult foldCastFromBuiltin(TypedAttr input, SIMDType resultType);
+
 } // namespace M::KGEN::POP
 
 #endif // KGEN_POPDIALECT_POPUTILS_H

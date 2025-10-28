@@ -11,6 +11,7 @@
 #include "KGEN/POPDialect/POPEnums.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/POPDialect/POPUtils.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
@@ -2910,42 +2911,7 @@ OpFoldResult CastFromBuiltinOp::fold(FoldAdaptor adaptor) {
     return {};
   }
 
-  // Ensure the incoming value is an expected constant kind.
-  if (!isa<IntArrayElementsAttr, FloatArrayElementsAttr, IndexArrayElementsAttr,
-           IntegerAttr, FloatAttr>(val))
-    return {};
-
-  // Conversion from vector constant.
-  std::optional<KGENDType> dtype = getType().getResolvedDType();
-  if (!dtype)
-    return {};
-  if (auto vector = dyn_cast<VectorType>(val.getType())) {
-    SmallVector<DTypeValue> values;
-    if (dtype->isBool())
-      for (APInt value : cast<IntArrayElementsAttr>(val).getValues())
-        values.emplace_back(!value.isZero(), *dtype);
-    else if (dtype->isIndex() || dtype->isUIndex())
-      for (int64_t value : cast<IndexArrayElementsAttr>(val))
-        values.emplace_back(value, *dtype);
-    else if (dtype->isInt())
-      for (APInt value : cast<IntArrayElementsAttr>(val).getValues())
-        values.emplace_back(value, *dtype);
-    else
-      for (APFloat value : cast<FloatArrayElementsAttr>(val).getValues())
-        values.emplace_back(value, *dtype);
-    return SIMDAttr::get(values, getType());
-  }
-
-  // Handle scalar constants.
-  if (dtype->isBool())
-    return SIMDAttr::get({cast<BoolAttr>(val).getValue(), *dtype}, getType());
-  if (dtype->isIndex() || dtype->isUIndex())
-    return SIMDAttr::get({cast<IntegerAttr>(val).getInt(), *dtype}, getType());
-  if (dtype->isInt())
-    return SIMDAttr::get({cast<IntegerAttr>(val).getValue(), *dtype},
-                         getType());
-  assert(dtype->isFloat() && "unexpected dtype");
-  return SIMDAttr::get({cast<FloatAttr>(val).getValue(), *dtype}, getType());
+  return POP::foldCastFromBuiltin(val, getType());
 }
 
 ErrorTreeOrSuccess CastFromBuiltinOp::interpret(ArrayRef<Attribute> operands,
