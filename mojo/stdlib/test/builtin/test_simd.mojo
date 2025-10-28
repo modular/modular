@@ -16,6 +16,7 @@ from sys.info import CompilationTarget, is_64bit
 
 from bit import count_leading_zeros
 from builtin.simd import _modf
+from itertools import product
 from testing import (
     assert_almost_equal,
     assert_equal,
