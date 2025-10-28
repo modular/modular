@@ -41,11 +41,11 @@ from max.serve.scheduler.base import (
     PrefillRequest,
     PrefillResponse,
 )
-from max.serve.scheduler.di_dispatchers import PrefillDispatcherServerV2
-from max.serve.scheduler.text_batch_constructor import (
+from max.serve.scheduler.batch_constructor import (
     TextBatchConstructor,
     TokenGenerationSchedulerConfig,
 )
+from max.serve.scheduler.di_dispatchers import PrefillDispatcherServerV2
 
 from .base import SchedulerProgress
 from .utils import SchedulerLogger, add_newly_encoded_reqs_to_tg_batch

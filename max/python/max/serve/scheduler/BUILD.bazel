@@ -15,6 +15,7 @@ modular_py_library(
         "//SDK/lib/API/python/max/serve:process_control",
         "//SDK/lib/API/python/max/serve/kvcache_agent",
         "//SDK/lib/API/python/max/serve/queue",
+        "//SDK/lib/API/python/max/serve/scheduler/batch_constructor",
         "//SDK/lib/API/python/max/serve/telemetry",
         requirement("msgspec"),
         requirement("numpy"),

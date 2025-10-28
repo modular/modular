@@ -33,11 +33,11 @@ from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
 
 from .base import SchedulerProgress
-from .data_parallelism_utils import split_by_replica_idx
-from .text_batch_constructor import (
+from .batch_constructor import (
     TextBatchConstructor,
     TokenGenerationSchedulerConfig,
 )
+from .data_parallelism_utils import split_by_replica_idx
 from .utils import (
     SchedulerLogger,
     add_newly_encoded_reqs_to_tg_batch,

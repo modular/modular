@@ -48,7 +48,7 @@ from max.serve.scheduler.base import (
 from max.serve.scheduler.di_dispatchers import DecodeDispatcherClientV2
 
 from .base import SchedulerProgress
-from .text_batch_constructor import (
+from .batch_constructor import (
     TextBatchConstructor,
     TokenGenerationSchedulerConfig,
 )
