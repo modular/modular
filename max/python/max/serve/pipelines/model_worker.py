@@ -31,7 +31,7 @@ from max.nn.kv_cache.paged_cache import ResetPrefixCacheBackend
 from max.pipelines.lib import PipelineConfig, PipelineModel, get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.exceptions import detect_and_wrap_cuda_oom
+from max.serve.exceptions import detect_and_wrap_oom
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import (
     ProcessManager,
@@ -179,9 +179,9 @@ class ModelWorker:
                     else:
                         count_no_progress = 0
                 except Exception as e:
-                    wrapped_error = detect_and_wrap_cuda_oom(e)
+                    wrapped_error = detect_and_wrap_oom(e)
                     if wrapped_error is not e:
-                        # It was a CUDA OOM error, raise the wrapped version with helpful message
+                        # It was a OOM error, raise the wrapped version with helpful message
                         raise wrapped_error from e
                     raise e
 
