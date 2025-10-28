@@ -18,7 +18,7 @@ from buffer.buffer import NDBuffer
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext
 from gpu.host.info import H100
-from internal_utils import Table, TuningConfig
+from internal_utils import Table
 from logger import Logger
 
 from utils.index import Index, IndexList
@@ -27,6 +27,7 @@ from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from .matmul import warp_specialize_gemm_with_multicasting
+from .tuning_configs import _get_tuning_list_bf16, TuningConfigSM90
 
 alias MAX_M = Int.MAX
 
@@ -117,57 +118,6 @@ fn matmul_dispatch_sm90[
 # ===----------------------------------------------------------------------=== #
 # FP8 (e4m3fn) Dispatch
 # ===----------------------------------------------------------------------=== #
-
-
-@register_passable("trivial")
-struct TuningConfigSM90(TuningConfig):
-    var M: Int
-    var N: Int
-    var K: Int
-
-    var mma_shape: IndexList[3]
-    var block_tile_shape: IndexList[3]
-    var num_pipeline_stages: UInt
-    var cluster_shape: IndexList[3]
-    var num_consumer: UInt
-    var partitioned_multicast: Bool
-    var grid_shape: OptionalReg[IndexList[2]]  # = None
-    var schedule: MatmulSchedule  # =  MatmulSchedule.NONE
-    var splits: OptionalReg[Int]
-    var raster_order: OptionalReg[RasterOrder]
-
-    fn __init__(
-        out self,
-        M: Int,
-        N: Int,
-        K: Int,
-        mma_shape: IndexList[3],
-        block_tile_shape: IndexList[3],
-        num_pipeline_stages: UInt,
-        cluster_shape: IndexList[3],
-        num_consumer: UInt,
-        partitioned_multicast: Bool,
-        grid_shape: OptionalReg[IndexList[2]] = None,
-        schedule: MatmulSchedule = MatmulSchedule.NONE,
-        splits: OptionalReg[Int] = None,
-        raster_order: OptionalReg[RasterOrder] = None,
-    ):
-        self.M = M
-        self.N = N
-        self.K = K
-        self.mma_shape = mma_shape
-        self.block_tile_shape = block_tile_shape
-        self.num_pipeline_stages = num_pipeline_stages
-        self.cluster_shape = cluster_shape
-        self.num_consumer = num_consumer
-        self.partitioned_multicast = partitioned_multicast
-        self.grid_shape = grid_shape
-        self.schedule = schedule
-        self.splits = splits
-        self.raster_order = raster_order
-
-    fn __str__(self) -> String:
-        return String("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
 
 
 # llama-405B-FP8 gemm shapes
@@ -2336,6 +2286,11 @@ fn matmul_dispatch_sm90_bf16_fp32[
         return DISPATCH_MISS
 
     # load custom tables
+    alias tuning_list = _get_tuning_list_bf16[mma_k, BK]()
+    alias tuning_table = Table(tuning_list, "tuning_table_bf16")
+
+    # TODO: merge these custom lists into tuning_table_sm90_bf16.yaml
+    # Then everything can just dispatch from the core list.
     # Internvl gemm shapes
     alias internvl_list = _get_internvl_list[size_factor, mma_k, BK]()
     alias internvl_table = Table(internvl_list, "internvl")
@@ -2433,6 +2388,15 @@ fn matmul_dispatch_sm90_bf16_fp32[
     @always_inline
     fn rule_eq_nk(x: TuningConfigSM90) -> Bool:
         return x.K == static_K and x.N == static_N
+
+    # First check the new tuning table before falling back on any old results
+    alias tuning_nk_idx_list = tuning_table.query_index[rule_eq_nk]()
+
+    # make sure the domain (nk_idx_list) is not empty!
+    @parameter
+    if tuning_nk_idx_list:
+        if _search[tuning_table, domain=tuning_nk_idx_list]() == DISPATCH_HIT:
+            return DISPATCH_HIT
 
     @parameter
     if a_is_bfloat16_or_float32 and (
