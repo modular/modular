@@ -1343,6 +1343,24 @@ struct CPython(Defaultable, Movable):
     var _PyObject_Hash: PyObject_Hash.type
     var _PyObject_IsTrue: PyObject_IsTrue.type
     var _PyObject_Type: PyObject_Type.type
+
+    fn _PyObject_TypeCheck(
+        self, obj: PyObjectPtr, type: PyTypeObjectPtr
+    ) -> c_int:
+        """Return non-zero if the object `obj` is of type `type` or a subtype of type,
+        and 0 otherwise. Both parameters must be non-NULL.
+
+        Note: this is a static inline function in the Python C API.
+        https://github.com/python/cpython/blob/3dab11f888fda34c02734e4468d1acd4c36927fe/Include/object.h#L431
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_TypeCheck
+        """
+        var type_ptr = self.Py_TYPE(obj)
+        return c_int(
+            (type_ptr == type) or self._PyType_IsSubtype(type_ptr, type)
+        )
+
     var _PyObject_Length: PyObject_Length.type
     var _PyObject_GetItem: PyObject_GetItem.type
     var _PyObject_SetItem: PyObject_SetItem.type
@@ -1369,9 +1387,7 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3.13/c-api/type.html#c.PyType_HasFeature
         """
         # Note this is another static helper function in the C API.
-        if (self._PyType_GetFlags(ptr) & feature) != 0:
-            return 1
-        return 0
+        return c_int(self._PyType_GetFlags(ptr) & feature)
 
     var _PyType_IsSubtype: PyType_IsSubtype.type
     var _PyType_GenericAlloc: PyType_GenericAlloc.type
@@ -1383,7 +1399,8 @@ struct CPython(Defaultable, Movable):
     var _PyLong_Type: PyTypeObjectPtr
 
     fn _PyLong_Check(self, obj: PyObjectPtr) -> c_int:
-        """Return true if its argument is a PyLongObject or a subtype of PyLongObject. This function always succeeds.
+        """Return true if its argument is a PyLongObject or a subtype of
+        PyLongObject. This function always succeeds.
 
         References:
         - https://docs.python.org/3/c-api/long.html#c.PyLong_Check
@@ -1395,16 +1412,15 @@ struct CPython(Defaultable, Movable):
         )
 
     fn _PyLong_CheckExact(self, obj: PyObjectPtr) -> c_int:
-        """Return true if its argument is a PyLongObject, but not a subtype of PyLongObject. This function always succeeds.
+        """Return true if its argument is a PyLongObject, but not a subtype of
+        PyLongObject. This function always succeeds.
 
         References:
         - https://docs.python.org/3/c-api/long.html#c.PyLong_CheckExact
         - https://github.com/python/cpython/blob/main/Include/longobject.h
         """
         # Note: this a C macro in the Python C API.
-        if self.Py_TYPE(obj) == self._PyLong_Type:
-            return 1
-        return 0
+        return c_int(self.Py_TYPE(obj) == self._PyLong_Type)
 
     var _PyLong_FromSsize_t: PyLong_FromSsize_t.type
     var _PyLong_FromSize_t: PyLong_FromSize_t.type
@@ -1413,23 +1429,23 @@ struct CPython(Defaultable, Movable):
     var _PyBool_Type: PyTypeObjectPtr
 
     fn _PyBool_Check(self, obj: PyObjectPtr) -> c_int:
-        """Return true if obj is of type PyBool_Type. This function always succeeds.
+        """Return true if obj is of type PyBool_Type. This function
+        always succeeds.
 
         References:
         - https://docs.python.org/3.13/c-api/bool.html#c.PyBool_Check
         - https://github.com/python/cpython/blob/main/Include/boolobject.h
         """
         # Note: this a C macro in the Python C API.
-        if self.Py_TYPE(obj) == self._PyBool_Type:
-            return 1
-        return 0
+        return c_int(self.Py_TYPE(obj) == self._PyBool_Type)
 
     var _PyBool_FromLong: PyBool_FromLong.type
     # Floating-Point Objects
     var _PyFloat_Type: PyTypeObjectPtr
 
     fn _PyFloat_Check(self, obj: PyObjectPtr) -> c_int:
-        """Return true if its argument is a PyFloatObject or a subtype of PyFloatObject. This function always succeeds.
+        """Return true if its argument is a PyFloatObject or a subtype of
+        PyFloatObject. This function always succeeds.
 
         References:
         - https://docs.python.org/3/c-api/float.html#c.PyFloat_Check
@@ -1439,16 +1455,15 @@ struct CPython(Defaultable, Movable):
         return self.PyObject_TypeCheck(obj, self._PyFloat_Type)
 
     fn _PyFloat_CheckExact(self, obj: PyObjectPtr) -> c_int:
-        """Return true if its argument is a PyFloatObject, but not a subtype of PyFloatObject. This function always succeeds.
+        """Return true if its argument is a PyFloatObject, but not a subtype of
+        PyFloatObject. This function always succeeds.
 
         References:
         - https://docs.python.org/3/c-api/float.html#c.PyFloat_CheckExact
         - https://github.com/python/cpython/blob/main/Include/floatobject.h
         """
         # Note: this a C macro in the Python C API.
-        if self.Py_TYPE(obj) == self._PyFloat_Type:
-            return 1
-        return 0
+        return c_int(self.Py_TYPE(obj) == self._PyFloat_Type)
 
     var _PyFloat_FromDouble: PyFloat_FromDouble.type
     var _PyFloat_AsDouble: PyFloat_AsDouble.type
@@ -2182,10 +2197,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/object.html#c.PyObject_TypeCheck
         """
-        var type_ptr = self.Py_TYPE(obj)
-        if (type_ptr == type) or self._PyType_IsSubtype(type_ptr, type):
-            return 1
-        return 0
+        return self._PyObject_TypeCheck(obj, type)
 
     fn PyObject_Length(self, obj: PyObjectPtr) -> Py_ssize_t:
         """Return the length of object `obj`.
@@ -2336,9 +2348,7 @@ struct CPython(Defaultable, Movable):
         self,
         type: PyTypeObjectPtr,
     ) -> c_ulong:
-        """Return the feature flags for the `type` pointer.
-
-        Return value: Feature flags.
+        """Return the `tp_flags` member of type.
 
         References:
         - https://docs.python.org/3/c-api/type.html#c.PyType_GetFlags
@@ -2424,7 +2434,8 @@ struct CPython(Defaultable, Movable):
     # ===-------------------------------------------------------------------===#
 
     fn PyLong_Check(self, obj: PyObjectPtr) -> c_int:
-        """Return true if its argument is a PyLongObject or a subtype of PyLongObject. This function always succeeds.
+        """Return true if its argument is a PyLongObject or a subtype of
+        PyLongObject. This function always succeeds.
 
         References:
         - https://docs.python.org/3/c-api/long.html#c.PyLong_Check
@@ -2434,7 +2445,8 @@ struct CPython(Defaultable, Movable):
         return self._PyLong_Check(obj)
 
     fn PyLong_CheckExact(self, obj: PyObjectPtr) -> c_int:
-        """Return true if its argument is a PyLongObject, but not a subtype of PyLongObject. This function always succeeds.
+        """Return true if its argument is a PyLongObject, but not a subtype of
+        PyLongObject. This function always succeeds.
 
         References:
         - https://docs.python.org/3/c-api/long.html#c.PyLong_CheckExact
@@ -2484,7 +2496,8 @@ struct CPython(Defaultable, Movable):
     # ===-------------------------------------------------------------------===#
 
     fn PyBool_Check(self, obj: PyObjectPtr) -> c_int:
-        """Return true if o is of type PyBool_Type. This function always succeeds.
+        """Return true if o is of type PyBool_Type. This function always
+        succeeds.
 
         References:
         - https://docs.python.org/3.13/c-api/bool.html#c.PyBool_Check
@@ -2510,7 +2523,8 @@ struct CPython(Defaultable, Movable):
     # ===-------------------------------------------------------------------===#
 
     fn PyFloat_Check(self, obj: PyObjectPtr) -> c_int:
-        """Return true if its argument is a PyFloatObject or a subtype of PyFloatObject. This function always succeeds.
+        """Return true if its argument is a PyFloatObject or a subtype of
+        PyFloatObject. This function always succeeds.
 
         References:
         - https://docs.python.org/3/c-api/float.html#c.PyFloat_Check
@@ -2519,7 +2533,8 @@ struct CPython(Defaultable, Movable):
         return self._PyFloat_Check(obj)
 
     fn PyFloat_CheckExact(self, obj: PyObjectPtr) -> c_int:
-        """Return true if its argument is a PyFloatObject, but not a subtype of PyFloatObject. This function always succeeds.
+        """Return true if its argument is a PyFloatObject, but not a subtype of
+        PyFloatObject. This function always succeeds.
 
         References:
         - https://docs.python.org/3/c-api/float.html#c.PyFloat_CheckExact
