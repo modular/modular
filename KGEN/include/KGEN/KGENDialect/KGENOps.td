@@ -174,6 +174,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<StrAttr>:$sourceName,
     TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
@@ -211,22 +212,25 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   }];
 
   let builders = [
-    OpBuilder<(ins "StringAttr":$name, "FuncTypeGeneratorType":$type,
+    OpBuilder<(ins "StringAttr":$symName, "StringAttr":$sourceName,
+                   "FuncTypeGeneratorType":$type,
                    "FunctionType":$functionType,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"ArrayAttr", "{}">:$llvmMetadataArray,
                    CArg<"ArrayAttr", "{}">:$llvmArgMetadataArray), [{
       if (!llvmMetadataArray)
-        llvmMetadataArray = ArrayAttr::get(name.getContext(), {});
+        llvmMetadataArray = ArrayAttr::get(symName.getContext(), {});
       if (!llvmArgMetadataArray)
-        llvmArgMetadataArray = ArrayAttr::get(name.getContext(), {});
-      build($_builder, $_state, name, type, functionType, inputParams,
+        llvmArgMetadataArray = ArrayAttr::get(symName.getContext(), {});
+      build($_builder, $_state,
+            symName, sourceName, type, functionType, inputParams,
             /*decorators=*/{}, inlineLevel, ExportKind::NotExported,
             /*external=*/false, llvmMetadataArray, llvmArgMetadataArray);
     }]>,
-    OpBuilder<(ins "StringAttr":$name, "FuncTypeGeneratorType":$type), [{
-      build($_builder, $_state, name, type, type.getBody().getValues(), {}, {});
+    OpBuilder<(ins "StringAttr":$symName, "FuncTypeGeneratorType":$type), [{
+      build($_builder, $_state, symName, StringAttr::get(symName.getContext()),
+            type, type.getBody().getValues(), {}, {});
     }]>
   ];
   let hasVerifier = 1;
