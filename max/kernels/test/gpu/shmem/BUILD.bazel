@@ -3,6 +3,9 @@ load("//bazel:api.bzl", "lit_tests")
 lit_tests(
     name = "test",
     srcs = glob(["**/*.mojo"]),
+    env = {
+        "MODULAR_NVSHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },

@@ -10,6 +10,7 @@ mojo_library(
         "--bitcode-libs",
         "$(location @nvshmem_prebuilt//:device)",
     ],
+    data = ["@nvshmem_prebuilt//:host"],
     validate_missing_docs = False,
     visibility = ["//visibility:public"],
     deps = [
