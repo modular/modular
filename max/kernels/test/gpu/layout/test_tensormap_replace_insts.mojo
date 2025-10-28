@@ -16,7 +16,7 @@ from sys import size_of
 from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle, TMADescriptor
+from gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
 from gpu import block_idx, thread_idx
 from gpu.sync import syncwarp
 from layout import Layout, LayoutTensor

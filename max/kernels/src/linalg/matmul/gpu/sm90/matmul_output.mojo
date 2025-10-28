@@ -15,7 +15,7 @@ from math import ceildiv
 from sys import simd_width_of, size_of
 
 from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import lane_id
 from gpu.memory import fence_async_view_proxy
 from gpu.mma import st_matrix

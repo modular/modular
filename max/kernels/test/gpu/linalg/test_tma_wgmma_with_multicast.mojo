@@ -19,7 +19,7 @@ from buffer import NDBuffer
 from gpu import barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_idx, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.memory import fence_mbarrier_init

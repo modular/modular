@@ -15,7 +15,7 @@ from hashlib.hasher import Hasher
 
 from bit import next_power_of_two
 from collections.set import Set
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from itertools.itertools import product
 from layout.tensor_core import get_mma_shape

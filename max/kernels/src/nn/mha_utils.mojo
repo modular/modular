@@ -30,7 +30,7 @@ from sys.info import _accelerator_arch
 
 from bit import prev_power_of_two
 from gpu import WARP_SIZE, lane_id
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter

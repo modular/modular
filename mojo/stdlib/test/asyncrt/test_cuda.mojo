@@ -13,7 +13,11 @@
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import DeviceContext, Dim
-from gpu.host._nvidia_cuda import CUDA, CUcontext, CUDA_get_current_context
+from gpu.host._nvidia_cuda import (
+    CUDA,
+    CUcontext,
+    CUDA_get_current_context,
+)
 from testing import TestSuite
 
 

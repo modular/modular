@@ -20,7 +20,7 @@ from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
 from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import (
     block_id_in_cluster,
     block_idx,

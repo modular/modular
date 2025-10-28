@@ -35,7 +35,7 @@ from ....structuring import SharedMemBarrier, SMemBarrier, SMemTileType
 from layout.swizzle import make_swizzle
 from gpu import thread_idx
 from sys import simd_width_of
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
 
 

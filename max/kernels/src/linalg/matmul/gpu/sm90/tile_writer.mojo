@@ -42,7 +42,7 @@ from ....structuring import (
 from layout.swizzle import Swizzle
 from gpu import thread_idx, lane_id
 from sys import simd_width_of
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
 from layout import Layout
 from gpu.globals import WARP_SIZE, WARPGROUP_SIZE

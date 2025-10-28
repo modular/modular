@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from kv_cache.types import KVCacheT
 from layout import Layout, LayoutTensor
 from layout.layout import UNKNOWN_VALUE, DimList

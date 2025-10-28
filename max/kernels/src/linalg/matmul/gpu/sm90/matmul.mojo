@@ -19,7 +19,7 @@ from buffer.dimlist import DimList
 from gpu.globals import WARPGROUP_SIZE
 from gpu.grid_controls import pdl_launch_attributes
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import H100
 from layout import Layout
 from layout._ndbuffer_stub import from_ndbuffer_row_major

@@ -13,7 +13,7 @@
 from sys import size_of
 
 from gpu.cluster import cluster_mask_base
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_id_in_cluster
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *

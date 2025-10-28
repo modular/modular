@@ -17,7 +17,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_idx, thread_idx
 from gpu.memory import (
     AddressSpace,

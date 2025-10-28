@@ -21,7 +21,7 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier, warp
 from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
+from gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from gpu import block_idx, lane_id, thread_idx, warp_id
 from gpu.memory import (
     AddressSpace,

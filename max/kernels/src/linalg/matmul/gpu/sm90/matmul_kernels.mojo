@@ -23,7 +23,7 @@ from gpu.grid_controls import (
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.device_context import DeviceBuffer
 from gpu import (
     block_id_in_cluster,

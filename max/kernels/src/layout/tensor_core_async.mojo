@@ -38,7 +38,7 @@ from collections import OptionalReg
 from sys import size_of
 from sys._assembly import inlined_assembly
 
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.mma import (
     WGMMADescriptor,
     wgmma_async,

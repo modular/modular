@@ -22,7 +22,7 @@ from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync, elect_one_sync
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
 from gpu.memory import fence_async_view_proxy, external_memory
 from gpu.mma import st_matrix

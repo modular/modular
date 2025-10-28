@@ -27,7 +27,7 @@ from gpu.cluster import (
     elect_one_sync_with_mask,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx, grid_dim
 from gpu import warp_id as get_warp_id
