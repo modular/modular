@@ -604,6 +604,28 @@ class GetLinkageNameAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
+class GetSourceNameAttr(max._core.Attribute):
+    """
+    The `#kgen.get_source_name` attribute is used to get the source name of a
+    function symbol.
+
+    Example:
+
+    ```mlir
+    #kgen.get_source_name<
+      #kgen.symbol.constant<@return_two> : !kgen.generator<() -> index>
+    > : !kgen.string
+    ```
+    """
+
+    def __init__(
+        self, func: max._core.dialects.builtin.TypedAttr, type: max._core.Type
+    ) -> None: ...
+    @property
+    def func(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
 class GetTypeNameAttr(max._core.Attribute):
     """
     The `#kgen.get_type_name` attribute is used to get the name of a struct
