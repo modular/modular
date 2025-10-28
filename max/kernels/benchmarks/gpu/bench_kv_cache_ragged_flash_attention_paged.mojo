@@ -90,6 +90,7 @@ def execute_kv_cache_ragged_flash_attention[
     use_random_seq_lengths: Bool,
     cache_len: Int,
     use_random_cache_lengths: Bool,
+    run_benchmark: Bool,
 ):
     alias num_layers = 1
     alias layer_idx = 0
@@ -155,13 +156,6 @@ def execute_kv_cache_ragged_flash_attention[
     random(q_host.tensor)
     var q_device = q_host.copy_to_device(ctx)
 
-    # initialize mask tensor
-    # dummy mask to satisfy the argument.
-    dummy_mask = LayoutTensor[dtype, Layout.row_major[4]()](
-        UnsafePointer[Scalar[dtype]](),
-        RuntimeLayout[Layout.row_major[4]()].row_major(IndexList[4]()),
-    )
-
     # initialize reference output
     output_host = HostNDBuffer[dtype, 3, DimList(Dim(), num_q_heads, head_dim)](
         IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
@@ -214,53 +208,56 @@ def execute_kv_cache_ragged_flash_attention[
         k_cache_device,
         v_cache_device,
         output_device_tensor,
-        dummy_mask,
         input_row_offsets_device,
     )
     @always_inline
-    fn bench_func(mut b: Bencher):
+    fn kernel_launch(ctx: DeviceContext) raises:
+        flash_attention[ragged=True](
+            # TODO: move to_layout_tensor here once unified closures are supported.
+            output_device_tensor.as_any_origin(),
+            q_device.to_layout_tensor(),
+            k_cache_device,
+            v_cache_device,
+            CausalMask(),
+            IdentityScoreMod(),
+            ManagedTensorSlice[
+                io_spec=IOUnknown,
+                static_spec = StaticTensorSpec[
+                    DType.uint32, 1
+                ].create_unknown(),
+            ](input_row_offsets_device.tensor),
+            rsqrt(Float32(head_dim)),
+            ctx,
+        )
+
+    if run_benchmark:
+
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
-            flash_attention[ragged=True](
-                # TODO: move to_layout_tensor here once unified closures are supported.
-                output_device_tensor.as_any_origin(),
-                q_device.to_layout_tensor(),
-                k_cache_device,
-                v_cache_device,
-                CausalMask(),
-                IdentityScoreMod(),
-                ManagedTensorSlice[
-                    io_spec=IOUnknown,
-                    static_spec = StaticTensorSpec[
-                        DType.uint32, 1
-                    ].create_unknown(),
-                ](input_row_offsets_device.tensor),
-                rsqrt(Float32(head_dim)),
-                ctx,
-            )
+        fn bench_func(mut b: Bencher):
+            b.iter_custom[kernel_launch](ctx)
 
-        b.iter_custom[kernel_launch](ctx)
-
-    flop_count = flops(
-        batch_size,
-        num_q_heads,
-        seq_len,
-        cache_len + seq_len,
-        head_dim,
-    )
-    m.bench_function[bench_func](
-        BenchId(
-            _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
-                batch_size,
-                seq_len,
-                use_random_seq_lengths,
-                cache_len,
-                use_random_cache_lengths,
-            )
-        ),
-        ThroughputMeasure(BenchMetric.flops, flop_count),
-    )
+        flop_count = flops(
+            batch_size,
+            num_q_heads,
+            seq_len,
+            cache_len + seq_len,
+            head_dim,
+        )
+        m.bench_function[bench_func](
+            BenchId(
+                _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
+                    batch_size,
+                    seq_len,
+                    use_random_seq_lengths,
+                    cache_len,
+                    use_random_cache_lengths,
+                )
+            ),
+            ThroughputMeasure(BenchMetric.flops, flop_count),
+        )
+    else:
+        kernel_launch(ctx)
     _ = kv_block_paged_device^
     _ = output_device^
     _ = q_device^
@@ -281,6 +278,7 @@ def main():
     var seq_len = arg_parse("seq_len", 1)
     var cache_len = arg_parse("cache_len", 1)
     var use_random_cache_lengths = arg_parse("use_random_cache_lengths", False)
+    var run_benchmark = arg_parse("run_benchmark", True)
 
     seed(0)
 
@@ -302,6 +300,7 @@ def main():
                 use_random_seq_lengths,
                 cache_len,
                 use_random_cache_lengths,
+                run_benchmark,
             )
 
     except e:
