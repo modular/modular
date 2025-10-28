@@ -522,16 +522,8 @@ class InferenceSession:
 
         self._set_mojo_define("LOGGING_LEVEL", level)
 
-    def set_mojo_assert_level(self, level: str | AssertLevel) -> None:
+    def set_mojo_assert_level(self, level: AssertLevel) -> None:
         """Sets which mojo asserts are kept in the compiled model."""
-        if not isinstance(level, AssertLevel):
-            try:
-                level = AssertLevel[level]
-            except Exception as e:
-                raise TypeError(
-                    f"Invalid assert level ({level}). Please use one of: {[x.name for x in AssertLevel]}"
-                ) from e
-
         self._set_mojo_define("ASSERT", level)
 
     def gpu_profiling(self, mode: GPUProfilingMode) -> None:
