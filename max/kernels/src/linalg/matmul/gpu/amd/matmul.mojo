@@ -48,7 +48,6 @@ from ....structuring import (
     RegTileType,
     ScatterGatherAmd,
     SMemTileType,
-    SMemWarpTileType,
 )
 from ....utils import elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig
@@ -57,6 +56,11 @@ from .._multistage_gemm_gpu import (
     WarpSplitKReductionSMem,
 )
 from itertools import product
+
+alias SMemWarpTileType[
+    _dtype: DType, layout: Layout, warp_rows: Int, warp_cols: Int
+] = SMemTileType[_dtype, layout].TileType[warp_rows, warp_cols]
+"""Type alias for warp-level shared memory tiles with specified dimensions."""
 
 
 struct MmaOpAMD[

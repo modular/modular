@@ -25,7 +25,11 @@ from layout.layout_tensor import (
     _copy_dram_to_local,
     _copy_local_to_dram,
 )
-from layout.int_tuple import _get_index_type
+from layout.int_tuple import (
+    _get_index_type,
+    _get_layout_type,
+    _get_unsigned_type,
+)
 from layout.tma_async import SharedMemBarrier
 from layout.layout import blocked_product, logical_product
 
@@ -144,30 +148,45 @@ struct IteratorScatterGatherAmd[
 alias SMemTileType[
     _dtype: DType,
     layout: Layout,
-    alignment: Int = align_of[SIMD[_dtype, simd_width_of[_dtype]()]](),
+    /,
+    *,
+    element_layout: Layout = Layout(1, 1),
+    layout_int_type: DType = _get_layout_type(layout, AddressSpace.SHARED),
+    linear_idx_type: DType = _get_index_type(layout, AddressSpace.SHARED),
+    masked: Bool = False,
+    alignment: Int = align_of[_dtype](),
 ] = LayoutTensor[
     _dtype,
     layout,
     MutableAnyOrigin,
     address_space = AddressSpace.SHARED,
+    element_layout=element_layout,
+    layout_int_type=layout_int_type,
+    linear_idx_type=linear_idx_type,
+    masked=masked,
     alignment=alignment,
 ]
 """Type alias for shared memory tile tensors."""
 
-alias SMemWarpTileType[
-    _dtype: DType, layout: Layout, warp_rows: Int, warp_cols: Int
-] = SMemTileType[_dtype, layout].TileType[warp_rows, warp_cols]
-"""Type alias for warp-level shared memory tiles with specified dimensions."""
-
 alias RegTileType[
     _dtype: DType,
     layout: Layout,
-    alignment: Int = align_of[SIMD[_dtype, simd_width_of[_dtype]()]](),
+    /,
+    *,
+    element_layout: Layout = Layout(1, 1),
+    layout_int_type: DType = _get_layout_type(layout, AddressSpace.LOCAL),
+    linear_idx_type: DType = _get_index_type(layout, AddressSpace.LOCAL),
+    masked: Bool = False,
+    alignment: Int = align_of[_dtype](),
 ] = LayoutTensor[
     _dtype,
     layout,
     MutableAnyOrigin,
     address_space = AddressSpace.LOCAL,
+    element_layout=element_layout,
+    layout_int_type=layout_int_type,
+    linear_idx_type=linear_idx_type,
+    masked=masked,
     alignment=alignment,
 ]
 """Type alias for register (local memory) tile tensors."""

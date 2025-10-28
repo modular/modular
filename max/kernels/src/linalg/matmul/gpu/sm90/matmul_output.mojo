@@ -160,7 +160,7 @@ fn handle_optimized_bfloat16_output[
     c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin, *_, **_],
     c_tile: SMemTileType[c_type, c_tile_layout, alignment=128],
-    c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
+    c_reg_tile: RegTileType[accum_type, c_reg_layout],
     c_gmem_tile: LayoutTensor[c_type, _, MutableAnyOrigin, *_, **_],
     c_gmem_corner_coords: c.CornerCoordsType,
     warp_group_thread_idx: UInt,
@@ -376,7 +376,6 @@ fn write_gemm_output_to_global_memory[
     c_reg_tile: RegTileType[
         accum_type,
         c_reg_layout,
-        _,
     ],
     warp_group_thread_idx: UInt,
     local_warp_group_idx: UInt,
@@ -496,7 +495,7 @@ fn write_gemm_output[
     check_runtime_bounds: Bool = False,
 ](
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin, *_, **_],
-    c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
+    c_reg_tile: RegTileType[accum_type, c_reg_layout],
     warp_group_thread_idx: UInt,
     local_warp_group_idx: UInt,
     block_y: Int,

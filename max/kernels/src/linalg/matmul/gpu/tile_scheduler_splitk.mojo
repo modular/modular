@@ -506,7 +506,7 @@ struct SplitKTileScheduler[
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
+        c_reg_tile: RegTileType[accum_type, c_reg_layout],
         work_tile_info: WorkInfo,
         num_barriers: UInt32,
         warp_group_local_idx: UInt32,
@@ -645,7 +645,7 @@ struct SplitKTileScheduler[
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
+        c_reg_tile: RegTileType[accum_type, c_reg_layout],
         reduction_tile_idx: UInt32,
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,
@@ -695,7 +695,7 @@ struct SplitKTileScheduler[
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
+        c_reg_tile: RegTileType[accum_type, c_reg_layout],
         reduction_tile_idx: UInt32,
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,

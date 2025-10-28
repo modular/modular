@@ -1303,8 +1303,8 @@ struct HopperMatmulSM90Kernel[
     fn wgmma(
         wgmma_op: Self.WgmmaOp,
         local_warp_group_idx: UInt,
-        a_tile: SMemTileType[a_type, _, _],
-        b_tile: SMemTileType[b_type, _, _],
+        a_tile: SMemTileType[a_type, _, **_],
+        b_tile: SMemTileType[b_type, _, **_],
         c_reg_tile: Self.AccumRegTileType,
     ):
         warpgroup_fence(c_reg_tile)
