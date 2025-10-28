@@ -6,6 +6,7 @@ modular_py_test(
     srcs = glob(["test_*.py"]) + ["conftest.py"],
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.2",  # reserve memory for NVSHMEM
+        "MODULAR_NVSHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     exec_properties = {
         "test.resources:gpu-memory": "20",
