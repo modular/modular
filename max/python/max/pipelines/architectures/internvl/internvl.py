@@ -285,8 +285,8 @@ class InternVLLanguageModel(Module):
             raise ValueError("tied embeddings unsupported by InternVL")
 
         interleaved_rope = getattr(
-            llm_config, "interleaved_rope_weights", True
-        ) or isinstance(llm_config, Qwen3Config)
+            llm_config, "interleaved_rope_weights", False
+        )
 
         self.rope = DynamicRotaryEmbedding(
             dim=llm_config.hidden_size,
