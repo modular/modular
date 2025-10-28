@@ -28,6 +28,8 @@ from testing import (
     assert_true,
     TestSuite,
 )
+from testing.prop import PropTest
+from testing.prop.strategy import List, SIMD
 
 
 def test_mojo_issue_698():
@@ -218,6 +220,22 @@ def test_list_resize():
     assert_equal(l[1], 0)
     l.shrink(0)
     assert_equal(len(l), 0)
+
+
+# TODO: Rework to use property testing framework.
+def test_list_reverse_property_test():
+    @parameter
+    def properties(forward: List[Scalar[DType.int]]):
+        var rev = forward.copy()
+        rev.reverse()
+
+        assert_equal(len(forward), len(rev))
+        for a, b in zip(forward, reversed(rev)):
+            assert_equal(a, b)
+
+    PropTest().test[properties](
+        List[Scalar[DType.int]].strategy(Scalar[DType.int].strategy())
+    )
 
 
 def test_list_reverse():
