@@ -19,9 +19,9 @@ from max._core import (
     Type,
     lower,
 )
-from max._core.dialects import builtin, m, mo, mosh
+from max._core.dialects import builtin, kgen, m, mo, mosh, rmo
 from max._core.dtype import DType
-from max.graph import Graph
+from max.graph import DeviceRef, Graph, TensorType
 
 
 def test_mo_attr(mlir_context) -> None:  # noqa: ANN001
@@ -87,6 +87,18 @@ def test_mo_graph_op(mlir_context) -> None:  # noqa: ANN001
     assert graph.name == "hello"
     assert list(graph.input_parameters) == []
     assert graph.function_type == builtin.FunctionType([], [])
+
+
+def test_infer_type_op_adaptor() -> None:
+    input_type = TensorType(DType.float32, [1], DeviceRef.GPU())
+    with Graph("empty", input_types=[input_type, input_type]) as graph:
+        with graph._context, mlir.Location.unknown() as location:
+            assert isinstance(location, mlir.Location)
+            builder = OpBuilder(Block._from_cmlir(graph._current_block).end)
+            x, y = graph.inputs
+            params = kgen.ParamDeclArrayAttr([])
+            op = rmo.AddOp(builder, location, x.to_mlir(), y.to_mlir(), params)
+            op.verify()
 
 
 def test_regions_and_blocks(mlir_context) -> None:  # noqa: ANN001
