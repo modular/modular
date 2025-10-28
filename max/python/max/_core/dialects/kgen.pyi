@@ -2550,6 +2550,7 @@ class GeneratorOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        source_name: max._core.dialects.builtin.StringAttr,
         func_type_generator: max._core.dialects.builtin.TypeAttr,
         function_type: max._core.dialects.builtin.TypeAttr,
         input_params: ParamDeclArrayAttr,
@@ -2565,7 +2566,8 @@ class GeneratorOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        name: max._core.dialects.builtin.StringAttr,
+        sym_name: max._core.dialects.builtin.StringAttr,
+        source_name: max._core.dialects.builtin.StringAttr,
         type: FuncTypeGeneratorType,
         function_type: max._core.dialects.builtin.FunctionType,
         input_params: Sequence[ParamDeclAttr],
@@ -2578,13 +2580,19 @@ class GeneratorOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        name: max._core.dialects.builtin.StringAttr,
+        sym_name: max._core.dialects.builtin.StringAttr,
         type: FuncTypeGeneratorType,
     ) -> None: ...
     @property
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def source_name(self) -> str | None: ...
+    @source_name.setter
+    def source_name(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
