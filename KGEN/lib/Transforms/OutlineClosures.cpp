@@ -182,9 +182,9 @@ void OutlineClosuresPass::runOnOperation() {
       auto uniqueName = b.getStringAttr(getUniqueSymbolName(
           (generator.getName() + "_" + regionName).str(), symtab, counter));
       auto liftedWrapper = GeneratorOp::create(
-          b, uniqueName, wrapperSignature, regionDecl.getFunctionType(),
-          inputParamDecls, regionDecl.getInlineLevel(),
-          regionDecl.getLLVMMetadataArray(),
+          b, uniqueName, generator.getSourceNameAttr(), wrapperSignature,
+          regionDecl.getFunctionType(), inputParamDecls,
+          regionDecl.getInlineLevel(), regionDecl.getLLVMMetadataArray(),
           regionDecl.getLLVMArgMetadataArray());
       symtab.insert(liftedWrapper);
       outlinedGenerators.insert(liftedWrapper);

@@ -487,6 +487,7 @@ void ClosureLifter::createClosureGenerator(
       GeneratorOp::create(b, closureInitData.getLiftedLocation(), uniqueName,
                           FuncTypeGeneratorType::get(
                               {}, FunctionType::get(b.getContext(), {}, {})));
+  closureGenerator.setSourceNameAttr(generator.getSourceNameAttr());
   populateBody(closureGenerator);
   auto fromParamToExtractExpr =
       unpackCapturesInto(b, closureGenerator.getBodyRegion(), closureInitData);
@@ -729,7 +730,7 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
       (generator.getName() + "_" + closureInitData.regionName()).str(), symtab,
       counter));
   auto liftedWrapper = GeneratorOp::create(
-      b, loc, uniqueName,
+      b, loc, uniqueName, generator.getSourceNameAttr(),
       FuncTypeGeneratorType::get({}, FunctionType::get(b.getContext(), {}, {})),
       funcType, allParams);
   liftedWrapper.setInlineLevel(

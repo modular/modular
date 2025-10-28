@@ -377,14 +377,13 @@ bool ParamAssertOp::isImplicitlyParametric() { return true; }
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
-                                    StringAttr &name, TypeAttr &signatureAttr,
-                                    TypeAttr &functionTypeAttr,
-                                    ParamDeclArrayAttr &inputParams,
-                                    InlineLevelAttr &inlineLevel,
-                                    DecoratorsAttr &decorators,
-                                    NamedAttrList &attrs, Region &body) {
-  if (parseSymbolExport(p, exportKind) || p.parseSymbolName(name))
+static ParseResult
+parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
+                 StringAttr &symName, TypeAttr &signatureAttr,
+                 TypeAttr &functionTypeAttr, ParamDeclArrayAttr &inputParams,
+                 InlineLevelAttr &inlineLevel, DecoratorsAttr &decorators,
+                 NamedAttrList &attrs, Region &body) {
+  if (parseSymbolExport(p, exportKind) || p.parseSymbolName(symName))
     return failure();
 
   SmallVector<OpAsmParser::Argument> args;
@@ -409,7 +408,7 @@ static ParseResult parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
 }
 
 static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
-                             ExportKindAttr exportKind, StringAttr name,
+                             ExportKindAttr exportKind, StringAttr symName,
                              TypeAttr signature, TypeAttr functionType,
                              ParamDeclArrayAttr inputParams,
                              InlineLevelAttr inlineLevel,
@@ -417,7 +416,7 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
                              Region &body) {
   printSymbolExport(p, op, exportKind);
   p << ' ';
-  p.printSymbolName(name);
+  p.printSymbolName(symName);
   printFunctionFuncTypeGenerator(
       p, &body, inputParams, /*resultParams=*/{},
       cast<FunctionType>(functionType.getValue()),

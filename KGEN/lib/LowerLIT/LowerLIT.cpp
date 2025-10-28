@@ -486,11 +486,12 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
 
   // Directly lower since these operations are exactly identical right now.
   OperationState state(func.getLoc(), GeneratorOp::getOperationName());
-  GeneratorOp::build(
-      b, state, func.getSymNameAttr(), sigAttr, func.getFunctionTypeAttr(),
-      inputParamsArr, func.getDecoratorsAttr(), func.getInlineLevelAttr(),
-      func.getExportKindAttr(), func.getExternalAttr(),
-      func.getLLVMMetadataArray(), func.getLLVMArgMetadataArray());
+  GeneratorOp::build(b, state, func.getSymNameAttr(), func.getSourceNameAttr(),
+                     sigAttr, func.getFunctionTypeAttr(), inputParamsArr,
+                     func.getDecoratorsAttr(), func.getInlineLevelAttr(),
+                     func.getExportKindAttr(), func.getExternalAttr(),
+                     func.getLLVMMetadataArray(),
+                     func.getLLVMArgMetadataArray());
 
   for (const NamedAttribute &attr : func->getDialectAttrs())
     state.attributes.push_back(attr);
