@@ -153,7 +153,7 @@ struct _fdopen[mode: StaticString = "a"]:
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice[buffer.origin](ptr=buffer, length=UInt(bytes_read - 1))
+            StringSlice[buffer.origin](ptr=buffer, length=bytes_read - 1)
         )
         # Explicitly free the buffer using free() instead of the Mojo allocator.
         libc.free(buffer.bitcast[NoneType]())
@@ -424,7 +424,7 @@ fn print[
                 var msg = printf_begin()
                 _ = printf_append_string_n(
                     msg,
-                    Span(ptr=buffer.data, length=UInt(buffer.pos)),
+                    Span(ptr=buffer.data, length=buffer.pos),
                     is_last=True,
                 )
             else:
@@ -473,6 +473,9 @@ fn input(prompt: String = "") raises -> String:
     ```
 
     If the user enters "Mojo" it prints "Hello Mojo".
+
+    Raises:
+        If the operation fails.
     """
     if prompt != "":
         print(prompt, end="")

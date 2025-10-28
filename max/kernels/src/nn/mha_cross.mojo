@@ -75,13 +75,13 @@ fn _bmm0_bs[
     q_seq_start = Int(q_input_row_offsets[batch])
     q_seq_end = Int(q_input_row_offsets[batch + 1])
     cur_query_len = q_seq_end - q_seq_start
-    q_offset = Int((q_seq_start * num_heads + head) * depth)
+    q_offset = (q_seq_start * num_heads + Int(head)) * depth
 
     kv_seq_start = Int(kv_input_row_offsets[batch])
     kv_seq_end = Int(kv_input_row_offsets[batch + 1])
     cur_kv_len = kv_seq_end - kv_seq_start
     # num_heads * kv_max_seq_len * batch * depth + depth * head
-    num_keys = cur_kv_len + k_cache.cache_length(batch)
+    num_keys = cur_kv_len + k_cache.cache_length(Int(batch))
 
     debug_assert(cur_kv_len <= kv_max_seq_len, "Invalid cur_kv_len")
     debug_assert(num_keys <= padded_num_keys, "Invalid max_cache_size")
@@ -100,7 +100,9 @@ fn _bmm0_bs[
     # Set total KV length: KV written previous to and during this forward.
     if x < UInt(num_keys) and y < UInt(cur_query_len):
         var accum_vec = SIMD[p_type, simd_width_of[p_type]()](0)
-        var k_ptr = k_cache.block_paged_ptr[tile_size=1](batch, x, kv_head, 0)
+        var k_ptr = k_cache.block_paged_ptr[tile_size=1](
+            Int(batch), Int(x), kv_head, 0
+        )
 
         @parameter
         fn accum_fn[width: Int](offset: Int):
@@ -113,9 +115,9 @@ fn _bmm0_bs[
 
             @parameter
             if width == 1:
-                accum += rebind[__type_of(accum)](qk_val)
+                accum += rebind[type_of(accum)](qk_val)
             else:
-                accum_vec += rebind[__type_of(accum_vec)](qk_val)
+                accum_vec += rebind[type_of(accum_vec)](qk_val)
 
         vectorize[accum_fn, simd_width_of[p_type]()](depth)
         accum += accum_vec.reduce_add()
@@ -176,7 +178,7 @@ fn _bmm1_bs[
     q_seq_end = Int(q_input_row_offsets[batch + 1])
     cur_query_len = q_seq_end - q_seq_start
 
-    output_offset = Int((q_seq_start * num_heads + head) * depth)
+    output_offset = Int((q_seq_start * num_heads + Int(head)) * depth)
 
     kv_seq_start = Int(kv_input_row_offsets[batch])
     kv_seq_end = Int(kv_input_row_offsets[batch + 1])
@@ -195,8 +197,10 @@ fn _bmm1_bs[
 
     var accum = Float32(0.0)
 
-    for i in range(cur_kv_len + v_cache.cache_length(batch)):
-        var v_ptr = v_cache.block_paged_ptr[tile_size=1](batch, i, kv_head, x)
+    for i in range(cur_kv_len + v_cache.cache_length(Int(batch))):
+        var v_ptr = v_cache.block_paged_ptr[tile_size=1](
+            Int(batch), i, kv_head, Int(x)
+        )
         accum += (
             p[y * UInt(padded_num_keys) + UInt(i)].cast[v_type]() * v_ptr[0]
         ).cast[DType.float32]()
@@ -298,7 +302,7 @@ fn mha_cross_gpu_naive[
     alias kernel_0 = _bmm0_bs[
         q_layout = q.layout,
         kv_layout = kv_input_row_offsets.layout,
-        __type_of(k),
+        type_of(k),
         mask_t,
         q_type,
         p_type,
@@ -343,7 +347,7 @@ fn mha_cross_gpu_naive[
     alias kernel_1 = _bmm1_bs[
         q_layout = q.layout,
         kv_layout = kv_input_row_offsets.layout,
-        __type_of(v),
+        type_of(v),
         p_type,
         output.dtype,
     ]

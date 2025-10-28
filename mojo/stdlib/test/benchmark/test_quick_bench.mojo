@@ -256,12 +256,12 @@ def test_overloaded():
 
 
 @always_inline
-fn exp(x: SIMD[DType.float32, 4]) -> __type_of(x):
+fn exp(x: SIMD[DType.float32, 4]) -> type_of(x):
     return math.exp(x)
 
 
 @always_inline
-fn tanh(x: SIMD[DType.float32, 4]) -> __type_of(x):
+fn tanh(x: SIMD[DType.float32, 4]) -> type_of(x):
     return math.tanh(x)
 
 
@@ -353,4 +353,8 @@ def test_all():
 
 
 def main():
-    TestSuite.discover_tests[__functions_in_module()]().run()
+    # NOTE: we pass an empty list since the benchmark infra also tries to parse
+    # the arguments for its own purposes.
+    TestSuite.discover_tests[__functions_in_module()](
+        cli_args=List[StaticString]()
+    ).run()

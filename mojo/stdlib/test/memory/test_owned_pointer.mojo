@@ -36,7 +36,7 @@ def test_from_unsafe_pointer_constructor():
     var deleted = False
     var unsafe_ptr = UnsafePointer[ObservableDel].alloc(1)
     unsafe_ptr.init_pointee_move(
-        ObservableDel(UnsafePointer(to=deleted).as_immutable())
+        ObservableDel(UnsafePointer(to=deleted).as_any_origin())
     )
 
     var ptr = OwnedPointer(unsafe_from_raw_pointer=unsafe_ptr)

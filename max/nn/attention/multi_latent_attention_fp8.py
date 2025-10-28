@@ -662,7 +662,9 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             #     _mla_decode,
             # )[0].tensor
 
-        result = ops.reshape(result, shape=[result.shape[0], -1])
+        result = ops.reshape(
+            result, shape=[result.shape[0], self.n_heads * self.v_head_dim]
+        )
 
         return result
 
@@ -750,10 +752,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         )
 
         # Apply rope.
-        if xq.device is not None:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq_rope = fused_qk_ragged_rope(
             self.kv_params,

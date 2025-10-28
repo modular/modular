@@ -246,6 +246,21 @@ def test_load_store_ellipsis_slice(
         assert "mo.chain.create" in str(graph)
 
 
+@given(tensor_type=tensor_type)
+def test_store_slice_mismatched_devices(tensor_type: TensorType) -> None:
+    buffer_device = DeviceRef.GPU(1)
+    assume(tensor_type.device != buffer_device)
+    buffer_type = BufferType(
+        tensor_type.dtype, tensor_type.shape, buffer_device
+    )
+    with Graph(
+        "buffer_store_slice", input_types=[tensor_type, buffer_type]
+    ) as graph:
+        tensor, buffer = graph.inputs
+        with pytest.raises(ValueError, match="same device"):
+            ops.buffer_store_slice(buffer.buffer, tensor.tensor, [...])
+
+
 @given(tensor_type=tensor_type, buffer_type=buffer_type)
 def test_load_store_slice(
     tensor_type: TensorType, buffer_type: BufferType

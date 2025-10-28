@@ -13,7 +13,7 @@
 
 from sys import simd_width_of, size_of
 
-from memory import AddressSpace, memcmp, memcpy, memset, memset_zero
+from memory import memcmp, memcpy, memset, memset_zero
 from testing import TestSuite
 from testing import (
     assert_almost_equal,
@@ -605,7 +605,7 @@ def test_dtypepointer_string():
 def test_pointer_explicit_copy():
     var ptr = UnsafePointer[Int].alloc(1)
     ptr[] = 42
-    var copy = UnsafePointer(other=ptr)
+    var copy = ptr.copy()
     assert_equal(copy[], 42)
     ptr.free()
 

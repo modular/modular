@@ -26,7 +26,7 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
-from max.nn.kv_cache import TPPagedKVCacheManager
+from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
@@ -61,7 +61,7 @@ class TokenGenerationScheduler(Scheduler):
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        paged_manager: TPPagedKVCacheManager | None = None,
+        paged_manager: PagedKVCacheManager | None = None,
         offload_queue_draining: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
@@ -172,21 +172,23 @@ class TokenGenerationScheduler(Scheduler):
 
         # TODO(E2EOPT-399): Add proper data parallelism support. Currently
         # this naively splits the batch onto different devices.
-        split_by_replica_idx(
-            inputs,
-            self.scheduler_config.data_parallel_degree,
-            self.batch_constructor.paged_cache,
-        )
+        if self.batch_constructor.paged_cache is not None:
+            split_by_replica_idx(
+                inputs,
+                self.scheduler_config.data_parallel_degree,
+                self.batch_constructor.paged_cache,
+            )
 
         # execute the batch
         responses = self.pipeline.execute(inputs)
 
         # If there is a chunked request, we put it back into the request queue
-        add_newly_encoded_reqs_to_tg_batch(
-            inputs.batch,
-            responses,
-            self.batch_constructor,
-        )
+        for batch in inputs.batches:
+            add_newly_encoded_reqs_to_tg_batch(
+                batch,
+                responses,
+                self.batch_constructor,
+            )
 
         # remove terminated requests from the batch
         num_terminated_reqs = release_terminated_requests(

@@ -294,7 +294,6 @@ class InternVLLanguageModel(Module):
             theta=llm_config.rope_theta,
             max_seq_len=llm_config.max_seq_len,
             interleaved=interleaved_rope,
-            device=self.devices[0],
         )
 
         # Create decoder layers.

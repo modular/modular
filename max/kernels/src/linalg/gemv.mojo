@@ -42,7 +42,7 @@ from gpu.host import (
     get_gpu_target,
 )
 from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
-from gpu.memory import AddressSpace, load
+from gpu.memory import load
 
 # layout imports
 from layout import (
@@ -124,7 +124,6 @@ fn gemv_kernel[
     a_type: DType,
     b_type: DType,
     *,
-    reduction_method: warp.ReductionMethod,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
@@ -146,16 +145,14 @@ fn gemv_kernel[
 
     # Every warp processes a single row of the resultant vector
     for i in range(ceildiv(k, WARP_SIZE)):
-        var idx = i * WARP_SIZE + lane_id()
+        var idx = i * WARP_SIZE + Int(lane_id())
         if idx < k:
             accum += (
                 a.load(warp_id * UInt(k) + UInt(idx)).cast[s_type]()
                 * b.load(idx).cast[s_type]()
             )
 
-    accum = warp.sum[
-        a_type, reduction_method=reduction_method, output_type=s_type
-    ](accum)
+    accum = warp.sum[a_type, output_type=s_type](accum)
 
     if lane_id() == 0:
 
@@ -179,7 +176,6 @@ fn gemv_kernel_vector[
     a_layout: Layout,
     b_layout: Layout,
     *,
-    reduction_method: warp.ReductionMethod,
     simd_width: UInt,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -194,7 +190,7 @@ fn gemv_kernel_vector[
 ):
     var tid = global_idx.x
     var warp_id = Int(warp.broadcast(tid // UInt(WARP_SIZE)))
-    alias step = WARP_SIZE * simd_width
+    alias step = WARP_SIZE * Int(simd_width)
 
     var idx = lane_id() * simd_width
 
@@ -204,11 +200,11 @@ fn gemv_kernel_vector[
     # Every warp processes a single row of the resultant vector
     var local_accum = SIMD[s_type, Int(simd_width)](0)
 
-    alias local_accum_type = __type_of(local_accum)
+    alias local_accum_type = type_of(local_accum)
 
-    for i in range(Int(ceildiv(k // simd_width, WARP_SIZE))):
-        var a_tile = a.tile[1, Int(WARP_SIZE * simd_width)](warp_id, i)
-        var b_tile = b.tile[1, Int(WARP_SIZE * simd_width)](0, i)
+    for i in range(Int(ceildiv(k // Int(simd_width), WARP_SIZE))):
+        var a_tile = a.tile[1, Int(WARP_SIZE * Int(simd_width))](warp_id, i)
+        var b_tile = b.tile[1, Int(WARP_SIZE * Int(simd_width))](0, i)
 
         if idx >= UInt(k):
             continue
@@ -221,9 +217,7 @@ fn gemv_kernel_vector[
 
         idx += UInt(step)
 
-    var accum = warp.sum[
-        a_type, reduction_method=reduction_method, output_type=s_type
-    ](local_accum)
+    var accum = warp.sum[a_type, output_type=s_type](local_accum)
 
     if lane_id() == 0:
 
@@ -285,7 +279,7 @@ fn gemv_split_k[
     var tid = thread_idx.x
     var tile_w = LayoutTensor[
         b_type,
-        Layout.row_major(tile_n, simd_width),
+        Layout.row_major(Int(tile_n), Int(simd_width)),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
@@ -294,7 +288,7 @@ fn gemv_split_k[
     var acc = (
         LayoutTensor[
             s_type,
-            Layout.row_major(tile_m, tile_n),
+            Layout.row_major(Int(tile_m), Int(tile_n)),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
@@ -303,11 +297,15 @@ fn gemv_split_k[
     )
     var output_idx = tile_id_m * UInt(n) + tile_id_n
     var iteration = 0
-    alias WeightVecType = SIMD[b_type, simd_width]
+    alias WeightVecType = SIMD[b_type, Int(simd_width)]
     # Each thread sums local data in K.
     for _ in range(tid * simd_width, k, tile_k):
-        var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
-        var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
+        var weight_tile = weight.tile[Int(tile_n), Int(tile_k)](
+            Int(block_idx.y), iteration
+        )
+        var act_tile = act.tile[Int(tile_m), Int(tile_k)](
+            Int(block_idx.x), iteration
+        )
 
         @parameter
         for i in range(tile_n):
@@ -319,8 +317,12 @@ fn gemv_split_k[
             if check_bounds:
                 if i + tile_id_n >= UInt(n):
                     continue
-            var b_vec = weight_tile.vectorize[1, simd_width]()[i, thread_idx.x]
-            tile_w.store[simd_width](i, 0, rebind[WeightVecType](b_vec))
+            var b_vec = weight_tile.vectorize[1, Int(simd_width)]()[
+                i, thread_idx.x
+            ]
+            tile_w.store[Int(simd_width)](
+                Int(i), 0, rebind[WeightVecType](b_vec)
+            )
 
         @parameter
         for i in range(tile_m):
@@ -333,23 +335,26 @@ fn gemv_split_k[
             if check_bounds:
                 if i + tile_id_m >= UInt(m):
                     continue
-            var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
+            var act_vec = act_tile.vectorize[1, Int(simd_width)]()[
+                i, thread_idx.x
+            ]
 
             # Now we multiply tile_a by tile_w and store the partials
             # in acc
             @parameter
             for j in range(tile_n):
-                var weight_vec = tile_w.vectorize[1, simd_width]()[j, 0]
+                var weight_vec = tile_w.vectorize[1, Int(simd_width)]()[j, 0]
 
                 var local_accum = rebind[Scalar[s_type]](acc[i, j])
 
                 @parameter
                 for l in range(simd_width):
                     local_accum += (
-                        act_vec[l].cast[s_type]() * weight_vec[l].cast[s_type]()
+                        act_vec[Int(l)].cast[s_type]()
+                        * weight_vec[Int(l)].cast[s_type]()
                     )
 
-                acc.store[1](i, j, local_accum)
+                acc.store[1](Int(i), Int(j), local_accum)
 
         iteration += 1
 
@@ -358,7 +363,7 @@ fn gemv_split_k[
     var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
     var shmem = LayoutTensor[
         s_type,
-        Layout.row_major(1, tile_m * tile_n * k_warp_num),
+        Layout.row_major(1, Int(tile_m * tile_n * k_warp_num)),
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
@@ -380,7 +385,7 @@ fn gemv_split_k[
         var mid = ii // tile_n
         var nid = ii % tile_n
         var val = Scalar[s_type]()
-        alias ValType = __type_of(val)
+        alias ValType = type_of(val)
 
         @parameter
         for jj in range(k_warp_num):
@@ -460,7 +465,6 @@ fn gevm_kernel[
 @always_inline
 fn gemv_gpu_dispatch[
     transpose_b: Bool = False,
-    reduction_method: warp.ReductionMethod = warp.ReductionMethod.WARP,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     kernel_func: GEMVAlgorithm,
@@ -555,7 +559,6 @@ fn gemv_gpu_dispatch[
                     a_tensor.layout,
                     b_tensor.layout,
                     simd_width = UInt(simd_width),
-                    reduction_method = warp.ReductionMethod.WARP,
                     transpose_b=False,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
@@ -622,7 +625,6 @@ fn gemv_gpu_dispatch[
                         a_tensor.layout,
                         b_layout_template,
                         simd_width = UInt(simd_width),
-                        reduction_method = warp.ReductionMethod.WARP,
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
@@ -646,7 +648,6 @@ fn gemv_gpu_dispatch[
                         a_tensor.layout,
                         b_layout_template,
                         simd_width = UInt(simd_width),
-                        reduction_method = warp.ReductionMethod.WARP,
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
@@ -669,7 +670,6 @@ fn gemv_gpu_dispatch[
                 b_tensor.layout,
                 a_tensor.layout,
                 simd_width = UInt(simd_width),
-                reduction_method=reduction_method,
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ]
@@ -691,7 +691,6 @@ fn gemv_gpu_dispatch[
             c.type,
             a.type,
             b.type,
-            reduction_method = warp.ReductionMethod.WARP,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
 
@@ -713,7 +712,6 @@ fn gemv_gpu_dispatch[
             c.type,
             b.type,
             a.type,
-            reduction_method = warp.ReductionMethod.WARP,
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
@@ -860,13 +858,8 @@ fn gemv_gpu[
     else:
         kernel_func = GEMVAlgorithm.MATMUL_NAIVE
 
-    # default reduction method
-    alias reduction_method = warp.ReductionMethod.WARP
-
     gemv_gpu_dispatch[
-        transpose_b=transpose_b,
-        reduction_method=reduction_method,
-        elementwise_lambda_fn=elementwise_lambda_fn,
+        transpose_b=transpose_b, elementwise_lambda_fn=elementwise_lambda_fn
     ](kernel_func, c, a, b, ctx, logger)
 
 

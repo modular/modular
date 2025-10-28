@@ -26,7 +26,7 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from tensor_internal import ManagedTensorSlice
+from tensor import ManagedTensorSlice
 
 from utils import Index, IndexList, StaticTuple
 

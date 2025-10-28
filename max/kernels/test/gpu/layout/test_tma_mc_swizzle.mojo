@@ -17,7 +17,7 @@ from gpu import barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import cluster_dim, cluster_idx, thread_idx
+from gpu import cluster_dim, cluster_idx, thread_idx
 from gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
@@ -25,7 +25,6 @@ from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
 
 from utils.index import Index, IndexList
@@ -63,7 +62,7 @@ fn tma_swizzle_multicast_load_kernel[
         dtype,
         cluster_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -72,7 +71,7 @@ fn tma_swizzle_multicast_load_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -95,7 +94,7 @@ fn tma_swizzle_multicast_load_kernel[
         var copy_offset = subcluster_tileM * subcluster_tileN * block_rank
 
         tma_tile.async_multicast_load(
-            __type_of(tile)(tile.ptr + copy_offset),
+            type_of(tile)(tile.ptr + copy_offset),
             mbar[0],
             (UInt(slice_cord_x), UInt(slice_cord_y)),
             tma_multicast_mask,
@@ -154,15 +153,15 @@ def test_tma_multicast_swizzle[
     print(test_name)
 
     alias kernel = tma_swizzle_multicast_load_kernel[
-        dtype = __type_of(tma_tensor).dtype,
+        dtype = type_of(tma_tensor).dtype,
         layout=layout,
         cluster_tile_layout = Layout.row_major(tileM, tileN),
-        subcluster_tile_layout = __type_of(tma_tensor).layout,
-        desc_layout = __type_of(tma_tensor).desc_layout,
+        subcluster_tile_layout = type_of(tma_tensor).layout,
+        desc_layout = type_of(tma_tensor).desc_layout,
         CLUSTER_M=CLUSTER_M,
         CLUSTER_N=CLUSTER_N,
     ]
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(
@@ -175,12 +174,12 @@ def test_tma_multicast_swizzle[
 
     ctx.synchronize()
     # Descriptor tile is the copy per tma instruction. One load could have multiple tma copies.
-    alias descM = __type_of(tma_tensor).desc_layout.shape[0].value()
-    alias descN = __type_of(tma_tensor).desc_layout.shape[1].value()
+    alias descM = type_of(tma_tensor).desc_layout.shape[0].value()
+    alias descN = type_of(tma_tensor).desc_layout.shape[1].value()
     alias desc_tile_size = descM * descN
 
     desc_tile = LayoutTensor[
-        dtype, __type_of(tma_tensor).desc_layout, MutableAnyOrigin
+        dtype, type_of(tma_tensor).desc_layout, MutableAnyOrigin
     ].stack_allocation()
 
     src_host = src.tensor()

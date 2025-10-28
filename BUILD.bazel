@@ -120,6 +120,7 @@ platform(
         ":nvidia_gpu",
         ":has_gpu",
         ":has_multi_gpu",
+        ":has_4_gpus",
         ":h100_gpu",
     ],
     exec_properties = {

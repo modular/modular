@@ -19,7 +19,7 @@ from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 from gpu.memory import fence_async_view_proxy
 from internal_utils import HostNDBuffer, random
 from kv_cache.types import (
@@ -31,7 +31,6 @@ from layout import Layout, LayoutTensor
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import SharedMemBarrier, TMANestedTensorTile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from nn.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
@@ -78,9 +77,9 @@ fn mha_operand_tma_copy_kernel[
     # Allocate shared memory tile
     smem_tile = LayoutTensor[
         kv_t.dtype,
-        __type_of(src_tma_tile).layout,
+        type_of(src_tma_tile).layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -88,7 +87,7 @@ fn mha_operand_tma_copy_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 

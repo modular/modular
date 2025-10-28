@@ -77,6 +77,18 @@ class FusedSamplingProcessor:
         self.bitmask = bitmask
         self.vocab_size = vocab_size
 
+        # If a structured decoding bitmask was provided, unpack packed-int masks once.
+        if (
+            self.bitmask is not None
+            and self.vocab_size is not None
+            and self.bitmask.shape[1] != self.vocab_size
+        ):
+            bits = 2 ** np.arange(32, dtype=np.int32)
+            self.bitmask = (self.bitmask[..., np.newaxis] & bits) != 0
+            self.bitmask = self.bitmask.reshape(self.batch_size, -1).astype(
+                np.bool_
+            )
+
         self.generated_tokens = Tensor(
             shape=(len(context_batch), 0),
             dtype=DType.int64,
@@ -101,12 +113,14 @@ class FusedSamplingProcessor:
         max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
         self.max_k = Tensor.from_numpy(max_k_np)
 
-        self.top_p = Tensor.from_numpy(
-            np.array(
-                [context.sampling_params.top_p for context in context_batch],
-                dtype=np.float32,
-            )
-        ).to(device)
+        top_p_np = np.array(
+            [context.sampling_params.top_p for context in context_batch],
+            dtype=np.float32,
+        )
+        self.top_p = Tensor.from_numpy(top_p_np).to(device)
+        min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
+        self.min_top_p = Tensor.from_numpy(min_top_p_np)
+
         self.seed = Tensor.from_numpy(
             np.array(
                 [
@@ -174,31 +188,11 @@ class FusedSamplingProcessor:
         logits = inputs.logits
         logit_offsets = inputs.logit_offsets
         tensor_bitmask = None
-        if (
-            self.bitmask is not None
-            and self.bitmask.shape[1] != self.vocab_size
-        ):
-            assert self.vocab_size is not None
-            bits = 2 ** np.arange(32, dtype=np.int32)
-            self.bitmask = (self.bitmask[..., np.newaxis] & bits) != 0
-            self.bitmask = self.bitmask.reshape(self.batch_size, -1).astype(
-                np.bool_
-            )
-
-            logits_vocab_size = logits.shape[1]
-            if self.bitmask.shape[1] > logits_vocab_size:
-                # Shrink down to logits_vocab_size
-                self.bitmask = self.bitmask[:, 0:logits_vocab_size]
-            elif self.bitmask.shape[1] < logits_vocab_size:
-                # Pad up to shape[:, logits.shape[1]] with zeros
-                pad_width = logits.shape[1] - self.bitmask.shape[1]
-                if pad_width > 0:
-                    self.bitmask = np.pad(
-                        self.bitmask,
-                        ((0, 0), (0, pad_width)),
-                        mode="constant",
-                        constant_values=False,
-                    )
+        if self.bitmask is not None:
+            if self.step_counter > 0:
+                raise ValueError(
+                    "A new bitmask must be provided for each step."
+                )
 
             tensor_bitmask = Tensor.from_numpy(self.bitmask).to(self.device)
 
@@ -210,6 +204,7 @@ class FusedSamplingProcessor:
             self.max_k,
             self.temperature,
             self.top_p,
+            self.min_top_p,
             self.seed,
             logit_offsets=logit_offsets,
             bitmask=tensor_bitmask,
@@ -357,6 +352,7 @@ def _sample_logits(
     max_k: Tensor,
     temperature: Tensor,
     top_p: Tensor,
+    min_top_p: Tensor,
     seed: Tensor,
     *,
     logit_offsets: Tensor | None = None,
@@ -376,6 +372,7 @@ def _sample_logits(
         max_k,
         temperature,
         top_p,
+        min_top_p,
         seed,
     ]
 

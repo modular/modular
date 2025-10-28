@@ -26,9 +26,8 @@ from gpu.cluster import (
     elect_one_sync_with_mask,
 )
 from gpu.host import DeviceContext
-from gpu.id import block_id_in_cluster, lane_id
+from gpu import block_id_in_cluster, lane_id
 from gpu.intrinsics import Scope
-from gpu.memory import _GPUAddressSpace as AddressSpace
 from gpu.memory import fence_mbarrier_init
 from layout.tma_async import PipelineState, SharedMemBarrier
 from memory import stack_allocation

@@ -18,7 +18,7 @@ modular_generate_stubfiles(
 A stubfile is out of sync with its generated counterpart.
 If you modified just a .pyi file, you need to modify the corresponding .cpp file instead.
 When you modify a .cpp file in the _core/src directory, you can run
-`./utils/sync-stubfiles.py` and commit the results.
+'./utils/sync-stubfiles.py' and commit the results.
 """,
     extension = ":_core.bindings",
     full_name = "max._core",
@@ -52,6 +52,7 @@ When you modify a .cpp file in the _core/src directory, you can run
 modular_py_library(
     name = "max",
     srcs = [],
+    imports = [".."],
     deps = [
         ":_core",
         "//SDK/lib/API/python/max/_core_mojo",

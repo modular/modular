@@ -21,14 +21,14 @@ from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import (
+from gpu import (
     block_id_in_cluster,
     block_idx,
     grid_dim,
     thread_idx,
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from gpu.memory import external_memory, fence_mbarrier_init
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import LayoutTensorIter
@@ -150,7 +150,9 @@ fn grouped_matmul_sm90[
         ctx, c_tensor
     )
 
-    alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
+    alias num_threads = WARPGROUP_SIZE * Int(
+        config.num_consumer
+    ) + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
         BM * BK * size_of[a_type]()
         + BN * BK * size_of[b_type]()
@@ -182,12 +184,13 @@ fn grouped_matmul_sm90[
     ].run_grouped[
         a_tma_op.layout,
         b_tma_op.layout,
+        c_tma_op.layout,
         a_tma_op.desc_layout,
         b_tma_op.desc_layout,
         c_tma_op.desc_layout,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

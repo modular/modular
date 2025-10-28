@@ -209,12 +209,16 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
     fn unsafe_ptr[
         mut: Bool, origin: Origin[mut], //
     ](ref [origin]self) -> UnsafePointer[
-        Self.ElementType, mut=mut, origin = __origin_of(self._array)
+        Self.ElementType, mut=mut, origin = origin_of(self._array)
     ]:
         """Get a pointer to the underlying element.
 
         Note that this method does not assumes that the memory is initialized
         or not. It can always be called.
+
+        Parameters:
+            mut: Whether the pointer should be mutable.
+            origin: The origin of the reference.
 
         Returns:
             A pointer to the underlying element.

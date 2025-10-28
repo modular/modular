@@ -257,6 +257,9 @@ fn time_function[func: fn () raises capturing [_] -> None]() raises -> UInt:
 
     Returns:
         The time elapsed in the function in ns.
+
+    Raises:
+        If the operation fails.
     """
     var tic = perf_counter_ns()
     func()

@@ -734,7 +734,7 @@ struct MemoryElement[
         Returns:
             An `Element` containing the loaded data organized according to the layout.
         """
-        return __type_of(result).load(self.ptr, self.runtime_layout)
+        return type_of(result).load(self.ptr, self.runtime_layout)
 
     @always_inline("nodebug")
     fn store(

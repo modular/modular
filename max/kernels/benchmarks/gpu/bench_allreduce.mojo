@@ -64,7 +64,13 @@ fn _per_gpu_value[
 
 # TODO: convert 'ngpus' to runtime variable
 fn bench_reduce[
-    dtype: DType, rank: Int, ngpus: Int, max_num_blocks: Int, use_multimem: Bool
+    dtype: DType,
+    rank: Int,
+    ngpus: Int,
+    max_num_blocks: Int,
+    *,
+    use_multimem: Bool,
+    use_quickreduce: Bool,
 ](mut m: Bench, list_of_ctx: List[DeviceContext], num_bytes: Int) raises:
     constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
     constrained[rank == 1, "this test code currently assumes rank 1"]()
@@ -207,6 +213,7 @@ fn bench_reduce[
                         ngpus=ngpus,
                         output_lambda = outputs_lambda[input_index=i],
                         use_multimem=use_multimem,
+                        use_quickreduce=use_quickreduce,
                     ](
                         in_bufs,
                         out_bufs[i],
@@ -222,6 +229,7 @@ fn bench_reduce[
                         ngpus=ngpus,
                         output_lambda = outputs_lambda[input_index=i],
                         use_multimem=use_multimem,
+                        use_quickreduce=use_quickreduce,
                     ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
 
         b.iter_custom_multicontext[call_fn](list_of_ctx)
@@ -293,6 +301,7 @@ def main():
     # Force passing `max_num_blocks` explicitly.
     alias max_num_blocks = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
     alias use_multimem = env_get_bool["multimem", False]()
+    alias use_quickreduce = env_get_bool["quickreduce", False]()
 
     var num_gpus_found = DeviceContext.number_of_devices()
     assert_true(
@@ -316,12 +325,57 @@ def main():
 
     var m = Bench()
 
+    if use_quickreduce:
+        bench_allreduce_push[
+            dtype=dtype,
+            rank=rank,
+            ngpus=num_gpus,
+            max_num_blocks=max_num_blocks,
+        ](m, ctx, num_bytes)
+    else:
+        bench_allreduce_pull[
+            dtype=dtype,
+            rank=rank,
+            ngpus=num_gpus,
+            max_num_blocks=max_num_blocks,
+            use_multimem=use_multimem,
+        ](m, ctx, num_bytes)
+
+    m.dump_report()
+
+
+# Convenience wrappers matching reviewer terminology.
+fn bench_allreduce_pull[
+    dtype: DType,
+    rank: Int,
+    ngpus: Int,
+    max_num_blocks: Int,
+    *,
+    use_multimem: Bool = False,
+](mut m: Bench, list_of_ctx: List[DeviceContext], num_bytes: Int,) raises:
+    # Pull path: default allreduce (use_quickreduce=False)
     bench_reduce[
         dtype=dtype,
         rank=rank,
-        ngpus=num_gpus,
+        ngpus=ngpus,
         max_num_blocks=max_num_blocks,
         use_multimem=use_multimem,
-    ](m, ctx, num_bytes)
+        use_quickreduce=False,
+    ](m, list_of_ctx, num_bytes)
 
-    m.dump_report()
+
+fn bench_allreduce_push[
+    dtype: DType,
+    rank: Int,
+    ngpus: Int,
+    max_num_blocks: Int,
+](mut m: Bench, list_of_ctx: List[DeviceContext], num_bytes: Int,) raises:
+    # Push path: quickreduce (use_quickreduce=True)
+    bench_reduce[
+        dtype=dtype,
+        rank=rank,
+        ngpus=ngpus,
+        max_num_blocks=max_num_blocks,
+        use_multimem=False,
+        use_quickreduce=True,
+    ](m, list_of_ctx, num_bytes)

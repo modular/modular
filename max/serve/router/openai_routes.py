@@ -60,7 +60,7 @@ from max.interfaces import (
 )
 from max.pipelines.core.exceptions import InputError
 from max.pipelines.lib import PipelineConfig
-from max.profiler import Tracer, traced
+from max.profiler import traced
 from max.serve.config import Settings
 from max.serve.parser import LlamaToolParser, parse_json_from_text
 from max.serve.pipelines.llm import (
@@ -166,8 +166,11 @@ class OpenAIResponseGenerator(ABC, Generic[_T]):
     @abstractmethod
     async def stream(
         self, request: TextGenerationRequest
-    ) -> AsyncGenerator[str, None]:
-        pass
+    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
+        # This yield is required to make this method an async generator
+        # for proper type checking. It will never be called due to @abstractmethod.
+        yield ""
+        raise NotImplementedError
 
     @abstractmethod
     async def complete(self, requests: list[TextGenerationRequest]) -> _T:
@@ -218,7 +221,9 @@ class OpenAIChatResponseGenerator(
         self.stream_options = stream_options
         self.parser = parser
 
-    async def stream(self, request: TextGenerationRequest):  # noqa: ANN201
+    async def stream(
+        self, request: TextGenerationRequest
+    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
         self.logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
@@ -1011,7 +1016,9 @@ def get_app_pipeline_config(app: FastAPI) -> PipelineConfig:
 class OpenAICompletionResponseGenerator(
     OpenAIResponseGenerator[CreateCompletionResponse]
 ):
-    async def stream(self, request: TextGenerationRequest):  # noqa: ANN201
+    async def stream(
+        self, request: TextGenerationRequest
+    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
         logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
@@ -1026,11 +1033,8 @@ class OpenAICompletionResponseGenerator(
                     token.decoded_token,
                 )
 
-                tracer = Tracer("process_log_probabilities")
                 log_probs = _process_log_probabilities([token])
-                del tracer  # process_log_probabilities
 
-                tracer = Tracer("create_completion_stream_response")
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
                 # https://platform.openai.com/docs/api-reference/chat/object
@@ -1040,13 +1044,19 @@ class OpenAICompletionResponseGenerator(
                             index=0,
                             text=token.decoded_token,
                             logprobs=log_probs,
-                            finish_reason=None,
+                            finish_reason=get_finish_reason_from_status(
+                                token.status, allow_none=True
+                            ),
                         )
                     ]
                 else:
                     choices = [
                         CompletionResponseStreamChoice(
-                            index=0, text="", finish_reason=None
+                            index=0,
+                            text="",
+                            finish_reason=get_finish_reason_from_status(
+                                token.status, allow_none=False
+                            ),
                         )
                     ]
 
@@ -1060,41 +1070,35 @@ class OpenAICompletionResponseGenerator(
                     object="text_completion",
                 )
                 n_tokens += 1
-                del tracer  # create_completion_stream_response
 
-                tracer = Tracer("response.model_dump_json")
                 payload = response.model_dump_json()
-                del tracer  # response.model_dump_json
 
                 yield payload
 
             logger.debug("Streaming: Done: %s, %d tokens", request, n_tokens)
             yield "[DONE]"
-        except queue.Full as qe:
-            status_code = 529
+        except queue.Full:
             logger.exception("Request queue full %s", request.request_id)
             yield JSONResponse(
-                status_code=status_code,
+                status_code=529,
                 content={"detail": "Too Many Requests"},
                 headers={"Retry-After": "30"},
             )
         except InputError as e:
-            status_code = 400
             logger.warning(
                 "Input validation error in request %s: %s",
                 request.request_id,
                 str(e),
             )
             yield JSONResponse(
-                status_code=status_code,
+                status_code=400,
                 content={"detail": "Input validation error", "message": str(e)},
             )
         except ValueError as e:
-            status_code = 500
             logger.exception("ValueError in request %s", request.request_id)
             # TODO (SI-722) - propagate better errors back.
             yield JSONResponse(
-                status_code=status_code,
+                status_code=500,
                 content={"detail": "Value error", "message": str(e)},
             )
         finally:

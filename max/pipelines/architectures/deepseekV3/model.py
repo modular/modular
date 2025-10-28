@@ -17,24 +17,33 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
-from max.driver import Tensor
+from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
-from max.graph.weights import WeightData
-from max.nn import Signals
+from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.nn import ReturnLogits, Signals
+from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.float8_config import parse_float8_config
 from max.nn.kv_cache import (
-    DPPagedKVCacheManager,
     KVCacheInputs,
-    TPPagedKVCacheManager,
+    KVCacheParams,
+    PagedKVCacheManager,
     load_kv_manager,
 )
 from max.pipelines.core import TextContext
-from max.pipelines.lib import ModelInputs, ModelOutputs
+from max.pipelines.lib import (
+    KVCacheConfig,
+    ModelInputs,
+    ModelOutputs,
+    PipelineConfig,
+    SupportedEncoding,
+)
 from max.pipelines.lib.config_enums import PipelineRole
+from transformers import AutoConfig
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Inputs, DeepseekV2Model
@@ -71,8 +80,68 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
         )
 
 
+def _choose_correct_data_parallel_degree(
+    pipeline_config: PipelineConfig,
+    devices: list[Device],
+) -> None:
+    """Ensures the data parallel degree is set correctly in the PipelineConfig.
+
+    For DeepSeekV3, DP is only used in the MLA layer (which does not support
+    TP), so the DP degree must be equal to the number of devices.
+    """
+    data_parallel_degree = pipeline_config.model_config.data_parallel_degree
+    if data_parallel_degree > 1 and data_parallel_degree != len(devices):
+        raise ValueError(
+            "--data-parallel-degree for DeepSeekV3 must be "
+            " equal to the number of devices"
+        )
+    pipeline_config.model_config.data_parallel_degree = len(devices)
+
+
 class DeepseekV3Model(DeepseekV2Model):
     """A DeepseekV3 model."""
+
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: WeightsAdapter | None = None,
+        return_logits: ReturnLogits = ReturnLogits.ALL,
+    ) -> None:
+        _choose_correct_data_parallel_degree(pipeline_config, devices)
+        super().__init__(
+            pipeline_config,
+            session,
+            huggingface_config,
+            encoding,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter,
+            return_logits,
+        )
+
+    @classmethod
+    def get_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        n_devices: int,
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        return DeepseekV3Config.get_kv_params(
+            huggingface_config=huggingface_config,
+            n_devices=n_devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+            # DP should always set to the number of devices.
+            data_parallel_degree=n_devices,
+        )
 
     def _create_model_config(
         self, state_dict: dict[str, WeightData]
@@ -92,6 +161,7 @@ class DeepseekV3Model(DeepseekV2Model):
             n_devices=len(self.devices),
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.encoding.cache_dtype,
+            data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
         )
 
         dtype = self.encoding.dtype
@@ -99,6 +169,32 @@ class DeepseekV3Model(DeepseekV2Model):
             float8_config = parse_float8_config(config, state_dict, dtype)
         else:
             float8_config = None
+
+        if self.pipeline_config.ep_size == 1:
+            ep_config = None
+        else:
+            if self.pipeline_config.ep_size % len(self.devices) != 0:
+                raise ValueError(
+                    "If you are running with expert parallelism, ep_size must"
+                    " be set to the total number of GPUs across nodes."
+                )
+            n_nodes = self.pipeline_config.ep_size // len(self.devices)
+            ep_kwargs: dict[str, Any] = dict(
+                dispatch_dtype=dtype,
+                combine_dtype=DType.bfloat16,
+                hidden_size=config.hidden_size,
+                top_k=config.num_experts_per_tok,
+                n_experts=config.n_routed_experts,
+                max_tokens_per_rank=self.pipeline_config.prefill_chunk_size,
+                n_gpus_per_node=len(self.devices),
+                n_nodes=n_nodes,
+                dispatch_fp8_config=None,
+            )
+
+            if float8_config is not None:
+                ep_kwargs["dispatch_fp8_config"] = float8_config.input_scale
+
+            ep_config = EPConfig(**ep_kwargs)
 
         norm_dtype = state_dict[
             "layers.0.self_attn.kv_a_layernorm.weight"
@@ -154,6 +250,7 @@ class DeepseekV3Model(DeepseekV2Model):
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
             float8_config=float8_config,
+            ep_config=ep_config,
             graph_mode=graph_mode,
             data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
             use_subgraphs=self.pipeline_config.model_config.use_subgraphs,
@@ -195,6 +292,12 @@ class DeepseekV3Model(DeepseekV2Model):
             }
         # Create the model
         config = self._create_model_config(state_dict)
+
+        self.ep_comm_initializer: EPCommInitializer | None = None
+        if config.ep_config is not None:
+            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
+            self.ep_comm_initializer.ep_init(session)
+
         nn_model = DeepseekV3(config)
         nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
 
@@ -210,15 +313,23 @@ class DeepseekV3Model(DeepseekV2Model):
                 data_parallel_splits,
                 *variadic_args,
             ) = graph.inputs
+
+            variadic_args_iter = iter(variadic_args)
             # Multi-GPU passes a signal buffer per device: unmarshal these.
             signal_buffers = [
-                v.buffer for v in variadic_args[: len(self.devices)]
+                next(variadic_args_iter).buffer
+                for _ in range(len(self.devices))
             ]
 
-            # Unmarshal the remaining arguments, which are for KV cache.
+            # Unmarshal the KV cache arguments.
+            fetch_types = self.kv_manager.input_symbols()[0]
+            len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
             kv_caches_per_dev = self._unflatten_kv_inputs(
-                variadic_args[len(self.devices) :]
+                [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
             )
+
+            # all remaining arguments are for EP inputs
+            ep_model_inputs = list(variadic_args_iter)
 
             outputs = nn_model(
                 tokens.tensor,
@@ -227,6 +338,7 @@ class DeepseekV3Model(DeepseekV2Model):
                 return_n_logits.tensor,
                 input_row_offsets.tensor,
                 data_parallel_splits.tensor,
+                ep_model_inputs,
             )
 
             graph.output(*outputs)
@@ -255,6 +367,11 @@ class DeepseekV3Model(DeepseekV2Model):
     ) -> ModelOutputs:
         assert isinstance(model_inputs, DeepseekV3Inputs)
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+        ep_inputs = (
+            ()
+            if self.ep_comm_initializer is None
+            else self.ep_comm_initializer.model_inputs()
+        )
 
         model_outputs = self.model.execute(
             model_inputs.tokens,
@@ -263,6 +380,7 @@ class DeepseekV3Model(DeepseekV2Model):
             model_inputs.data_parallel_splits,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
+            *ep_inputs,
         )
         if len(model_outputs) == 3:
             assert isinstance(model_outputs[0], Tensor)
@@ -294,17 +412,9 @@ class DeepseekV3Model(DeepseekV2Model):
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
-
-        data_parallel_splits: Tensor
-        if self.pipeline_config.model_config.data_parallel_degree > 1:
-            assert isinstance(self.kv_manager, DPPagedKVCacheManager)
-            data_parallel_splits = self.kv_manager.get_data_parallel_splits(
-                context_batch
-            )
-        else:
-            data_parallel_splits = Tensor.from_numpy(
-                np.array([0, len(context_batch)], dtype=np.int64)
-            )
+        data_parallel_splits = self.kv_manager.get_data_parallel_splits(
+            context_batch
+        )
 
         return DeepseekV3Inputs(
             tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
@@ -340,7 +450,7 @@ class DeepseekV3Model(DeepseekV2Model):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> TPPagedKVCacheManager:
+    ) -> PagedKVCacheManager:
         return load_kv_manager(
             params=DeepseekV3Config.get_kv_params(
                 huggingface_config=self.huggingface_config,

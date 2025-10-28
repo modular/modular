@@ -48,9 +48,10 @@ from max.support.math import ceildiv
 
 from ..cache_params import KVCacheParams
 from ..manager import RaggedKVCacheInputs
+from ..metrics import KVCacheMetrics
 from ..utils import build_max_lengths_tensor
 from .block_copy_engine import BlockCopyEngine
-from .block_manager import BlockManager, InsufficientBlocksError, KVCacheMetrics
+from .block_manager import BlockManager, InsufficientBlocksError
 
 logger = logging.getLogger("max.pipelines")
 
@@ -71,7 +72,15 @@ class PagedCacheValues(NestedIterableDataclass):
     max_lengths: TensorValue
 
 
-class TPPagedKVCacheManager:
+class _TPPagedKVCacheManager:
+    """Internal class used for managing KVCache blocks that supports tensor parallelism.
+
+    This class should not be used directly by scheduler/pipelines. Instead, we
+    should use the PagedKVCacheManager class instead.
+
+    This class does NOT support data parallelism.
+    """
+
     page_size: int
     """Number of tokens stored per block."""
 
@@ -136,7 +145,7 @@ class TPPagedKVCacheManager:
 
         if params.data_parallel_degree > 1:
             raise ValueError(
-                "TPPagedKVCacheManager does not support data parallelism."
+                "PagedKVCacheManager does not support data parallelism."
             )
 
         # Attributes for managing available slots.
@@ -367,22 +376,6 @@ class TPPagedKVCacheManager:
 
         # return the minimum of the two
         return min(available_cache_memory, size_to_support_full_cache)
-
-    @classmethod
-    def infer_optimal_batch_size(
-        cls,
-        params: KVCacheParams,
-        max_seq_len: int,
-        num_layers: int,
-        available_cache_memory: int,
-        devices: Sequence[Device],
-        **kwargs: Any,
-    ) -> int:
-        # We just hard-code a default of 512 for paged attention.
-        # The worst case scenario if this is too high is that we'll evict
-        # requests at an elevated rate. We print warnings in that case so users
-        # are aware of what needs to be tweaked/changed.
-        return 512
 
     def block_shape(
         self,
@@ -734,9 +727,9 @@ class TPPagedKVCacheManager:
 
     def increment_cache_lengths(
         self,
-        kv_cache_inputs: list[RaggedKVCacheInputs],
+        kv_cache_inputs: Sequence[RaggedKVCacheInputs],
         prev_model_inputs: Any,
-    ) -> list[RaggedKVCacheInputs]:
+    ) -> Sequence[RaggedKVCacheInputs]:
         """Prepares cache inputs for the next token in multistep execution.
 
         Updates the cache lengths for the next inference step without requiring device
@@ -779,6 +772,7 @@ class TPPagedKVCacheManager:
         updated_max_lengths = max_lengths[1:, :]
 
         # Return our updated batch.
+        assert isinstance(kv_cache_inputs, list)
         for i in range(len(self.devices)):
             updated_cache_length = updated_cache_lengths[i]
             assert isinstance(updated_cache_length, Tensor)
@@ -790,20 +784,8 @@ class TPPagedKVCacheManager:
             )
         return kv_cache_inputs
 
-    def get_or_recommend_replica(self, _: TextGenerationContext) -> int:
-        """Return idx of the replica that should be used for the given request."""
-        # As there is only one replica, we always return 0
-        return 0
-
-    def external_claim(
-        self, request_id: RequestID, replica_idx: int | None = None
-    ) -> None:
+    def external_claim(self, request_id: RequestID) -> None:
         """Reserve a sequence ID for the given request ID."""
-        if replica_idx is not None:
-            raise ValueError(
-                "TPPagedKVCacheManager does not support multiple replicas"
-            )
-
         if request_id in self._request_to_seq_id:
             raise ValueError(f"Request ID {request_id} is already claimed")
 

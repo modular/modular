@@ -15,9 +15,8 @@ from math import ceildiv, isclose
 from random import rand
 from sys.info import simd_width_of
 
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
-from layout import IntTuple
+from itertools import product
+from layout import IntTuple, LayoutTensor, RuntimeLayout, Layout
 from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
 from nn.conv_utils import (
     ConvShape,
@@ -75,13 +74,18 @@ fn test[
     rand[type](input_ptr, N * H * W * C)
     rand[type](filter_ptr, R * S * C * F)
 
-    var input = NDBuffer[type, 4, _, DimList(N, H, W, C)](input_ptr)
-    var filter = NDBuffer[type, 4](filter_ptr, Index(R, S, C, F))
-    var output_static = NDBuffer[type, 4, _, DimList(N, HO, WO, F)](
+    alias layout_4d = Layout.row_major[4]()
+    alias layout_5d = Layout.row_major[5]()
+    var input = LayoutTensor[type, Layout.row_major(N, H, W, C)](input_ptr)
+    var filter = LayoutTensor[type, layout_4d](
+        filter_ptr, RuntimeLayout[layout_4d].row_major(Index(R, S, C, F))
+    )
+    var output_static = LayoutTensor[type, Layout.row_major(N, HO, WO, F)](
         output_ptr_static
     )
-    var output_dynamic = NDBuffer[type, 4](
-        output_ptr_dynamic, Index(N, HO, WO, F)
+    var output_dynamic = LayoutTensor[type, layout_4d](
+        output_ptr_dynamic,
+        RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F)),
     )
 
     # Pre-packed filter for dynamic shapes.
@@ -93,14 +97,16 @@ fn test[
     var packed_filter_ptr_dynamic = UnsafePointer[Scalar[type]].alloc(
         R * S * C * rounded_F_dynamic
     )
-    var packed_filter_dynamic = NDBuffer[type, 5](
+    var packed_filter_dynamic = LayoutTensor[type, layout_5d](
         packed_filter_ptr_dynamic,
-        Index(
-            ceildiv(F, micro_kernel_f_size_default),
-            R,
-            S,
-            C,
-            micro_kernel_f_size_default,
+        RuntimeLayout[layout_5d].row_major(
+            Index(
+                ceildiv(F, micro_kernel_f_size_default),
+                R,
+                S,
+                C,
+                micro_kernel_f_size_default,
+            )
         ),
     )
 
@@ -110,15 +116,12 @@ fn test[
     alias conv_attr_dynamic = ConvInfoStatic[2]()
 
     ConvDirectNHWC[
-        4,
-        5,
-        4,
+        input.layout,  # input shape
+        layout_5d,  # filter shape
+        layout_4d,  # output shape
         _,
         _,
         _,
-        DimList.create_unknown[4](),  # input shape
-        DimList.create_unknown[5](),  # filter shape
-        DimList.create_unknown[4](),  # output shape
         type,  # input type
         type,  # filter type
         type,  # output type
@@ -126,7 +129,7 @@ fn test[
         conv_attr_dynamic,
     ].run(
         output_dynamic,
-        rebind[NDBuffer[type, 4, input.origin]](input),
+        input,
         packed_filter_dynamic,
         conv_shape,
     )
@@ -144,39 +147,29 @@ fn test[
     alias micro_kernel_f_size = micro_kernel_shape[1] * simd_size
     alias num_f_micro_tiles = ceildiv(F, micro_kernel_f_size)
     alias rounded_F_static = num_f_micro_tiles * micro_kernel_f_size
-    alias packed_filter_shape = DimList(
+    alias packed_filter_layout = Layout.row_major(
         num_f_micro_tiles, R, S, C, micro_kernel_f_size
     )
     var packed_filter_ptr_static = UnsafePointer[Scalar[type]].alloc(
         R * S * C * rounded_F_static
     )
-    var packed_filter_static = NDBuffer[type, 5, _, packed_filter_shape](
+    var packed_filter_static = LayoutTensor[type, packed_filter_layout](
         packed_filter_ptr_static
     )
 
     pack_filter[simd_size, micro_kernel_f_size](
         filter,
-        rebind[
-            NDBuffer[
-                type,
-                5,
-                packed_filter_static.origin,
-                DimList.create_unknown[5](),
-            ]
-        ](packed_filter_static),
+        packed_filter_static,
         num_groups,
     )
 
     ConvDirectNHWC[
-        4,
-        5,
-        4,
+        Layout.row_major(N, H, W, C),
+        packed_filter_layout,
+        Layout.row_major(N, HO, WO, F),
         _,
         _,
         _,
-        DimList(N, H, W, C),
-        packed_filter_shape,
-        DimList(N, HO, WO, F),
         type,  # input type
         type,  # filter type
         type,  # output type
@@ -195,33 +188,30 @@ fn test[
     packed_filter_ptr_static.free()
 
     # Check results, return on the first failed comparison.
-    for n in range(N):
-        for ho in range(HO):
-            for wo in range(WO):
-                for f in range(F):
-                    if not isclose(
-                        output_dynamic[n, ho, wo, f],
-                        output_static[n, ho, wo, f],
-                        atol=1e-4,  # absolute error tolerance
-                        rtol=1e-5,  # relative error tolerance
-                    ):
-                        var expected = output_dynamic[n, ho, wo, f]
-                        var actual = output_static[n, ho, wo, f]
-                        print("Input shape NHWC: ", Index(N, H, W, C))
-                        print("filter shape RSCF: ", Index(R, S, C, F))
-                        print(
-                            "Failed at",
-                            Index(n, ho, wo, f),
-                            "expected",
-                            expected,
-                            "actual",
-                            actual,
-                            "rerr",
-                            abs(actual - expected) / abs(expected + 1e-10),
-                        )
-                        output_ptr_dynamic.free()
-                        output_ptr_static.free()
-                        return
+    for n, ho, wo, f in product(range(N), range(HO), range(WO), range(F)):
+        if not isclose(
+            output_dynamic[n, ho, wo, f],
+            output_static[n, ho, wo, f],
+            atol=1e-4,  # absolute error tolerance
+            rtol=1e-5,  # relative error tolerance
+        ):
+            var expected = output_dynamic[n, ho, wo, f]
+            var actual = output_static[n, ho, wo, f]
+            print("Input shape NHWC: ", Index(N, H, W, C))
+            print("filter shape RSCF: ", Index(R, S, C, F))
+            print(
+                "Failed at",
+                Index(n, ho, wo, f),
+                "expected",
+                expected,
+                "actual",
+                actual,
+                "rerr",
+                abs(actual - expected) / abs(expected + 1e-10),
+            )
+            output_ptr_dynamic.free()
+            output_ptr_static.free()
+            return
 
     output_ptr_dynamic.free()
     output_ptr_static.free()

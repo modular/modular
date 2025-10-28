@@ -24,13 +24,7 @@ from collections.abc import AsyncGenerator, Iterable, Sequence
 from dataclasses import dataclass
 from os import environ
 from pathlib import Path
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Generic,
-    Protocol,
-    runtime_checkable,
-)
+from typing import TYPE_CHECKING, Any, Generic, Protocol, runtime_checkable
 
 import llguidance.hf
 import llguidance.numpy
@@ -64,11 +58,10 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.nn.kv_cache import (
-    DPPagedKVCacheManager,
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
     infer_optimal_batch_size,
 )
 from max.nn.transformer import ReturnLogits
@@ -411,7 +404,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         next_tokens: Tensor,
         batch_top_n: list[int],
         batch_echo: list[bool],
-    ) -> list[LogProbabilities | None] | None:
+    ) -> list[LogProbabilities | None]:
         """Optional method that can be overridden to compute log probabilities.
 
         Args:
@@ -438,7 +431,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 class KVCacheMixin(Protocol):
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> TPPagedKVCacheManager:
+    ) -> PagedKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:
@@ -489,15 +482,26 @@ class KVCacheMixin(Protocol):
 
 def get_paged_manager(
     pipeline: Pipeline[Any, Any],
-) -> TPPagedKVCacheManager | None:
-    if (
-        hasattr(pipeline, "_pipeline_model")
-        and hasattr(pipeline._pipeline_model, "kv_manager")
-        and isinstance(
-            pipeline._pipeline_model.kv_manager, TPPagedKVCacheManager
-        )
+) -> PagedKVCacheManager | None:
+    if hasattr(pipeline, "_pipeline_model") and hasattr(
+        pipeline._pipeline_model, "kv_manager"
     ):
-        return pipeline._pipeline_model.kv_manager
+        kv_manager = pipeline._pipeline_model.kv_manager
+        # Accept standard PagedKVCacheManager
+        if isinstance(kv_manager, PagedKVCacheManager):
+            return kv_manager
+        # Duck-type acceptance for multimodal managers exposing the same interface
+        required_attrs = [
+            "maybe_reserve",
+            "fetch",
+            "step",
+            "release",
+            "contains",
+            "device_tensors",
+            "total_num_pages",
+        ]
+        if all(hasattr(kv_manager, a) for a in required_attrs):
+            return kv_manager
 
     return None
 
@@ -521,7 +525,7 @@ class _TextGenerationProtocol(
     Protocol, Generic[TextGenerationContextType, RequestType]
 ):
     @property
-    def kv_managers(self) -> list[TPPagedKVCacheManager]: ...
+    def kv_managers(self) -> list[PagedKVCacheManager]: ...
 
     @property
     def pipeline_config(self) -> PipelineConfig: ...
@@ -590,43 +594,32 @@ class GenerateMixin(
         # by replica.
         batches: list[dict[RequestID, TextGenerationContextType]] = []
         batch_to_replica_idx: dict[RequestID, int] = {}
-
-        if data_parallel_degree > 1:
-            if len(kv_managers) > 1:
-                raise ValueError(
-                    "Having multiple KV managers (e.g. when using"
-                    " speculative decoding) is not supported when data "
-                    "parallelism is enabled."
-                )
-
-            if not isinstance(kv_managers[0], DPPagedKVCacheManager):
-                raise ValueError(
-                    "DPPagedKVCacheManager is required when data parallelism is enabled."
-                )
-
+        if data_parallel_degree > 1 and len(kv_managers) > 1:
+            # We don't support speculative decoding when data parallelism is
+            # enabled, because the KV cache managers might place the same
+            # context on different devices/replicas.
+            raise ValueError(
+                "Having multiple KV managers (e.g. when using"
+                " speculative decoding) is not supported when data "
+                "parallelism is enabled."
+            )
         batches = [{} for _ in range(data_parallel_degree)]
         for context in context_batch:
-            replica_idx: int | None = None
-            if data_parallel_degree > 1:
-                replica_idx = kv_managers[0].get_or_recommend_replica(context)
-
+            req_id = context.request_id
+            # Use whatever replica the main models KVCache recommends.
+            replica_idx = kv_managers[0].get_or_recommend_replica(context)
+            # Claim the slot for all kv_managers (eg: main + draft model)
             for kv_manager in self.kv_managers:
-                kv_manager.external_claim(
-                    context.request_id, replica_idx=replica_idx
-                )
-
-            if replica_idx is None:
-                replica_idx = 0
-
-            batches[replica_idx][context.request_id] = context
-            batch_to_replica_idx[context.request_id] = replica_idx
-
+                kv_manager.external_claim(req_id, replica_idx=replica_idx)
+            batches[replica_idx][req_id] = context
+            batch_to_replica_idx[req_id] = replica_idx
         inputs = TextGenerationInputs(
             batches=batches,
             num_steps=self.pipeline_config.max_num_steps,
         )
 
         # Generate outputs until all requests are done.
+
         done = 0
 
         try:
@@ -681,6 +674,24 @@ class TextGenerationPipeline(
             TextGenerationRequest,
         ],
     ) -> None:
+        """Initialize a text generation pipeline instance.
+
+        This sets up devices, the inference session, tokenizer, KV-cache manager,
+        sampling kernel, and loads model weights and adapters.
+
+        Args:
+            pipeline_config: Configuration for the pipeline and runtime behavior.
+            pipeline_model: Concrete model implementation to use for execution.
+            eos_token_id: Default EOS token id used when HF config does not supply
+                one or to seed the EOS set.
+            weight_adapters: Mapping from weights format to adapter implementation.
+            tokenizer: Tokenizer implementation used to build contexts and decode.
+
+        Raises:
+            ValueError: If ``quantization_encoding`` is not configured in
+                ``pipeline_config.model_config`` or if structured output is
+                requested without a valid tokenizer delegate.
+        """
         self._pipeline_config = pipeline_config
         self._devices = load_devices(pipeline_config.model_config.device_specs)
         self._weight_adapters = weight_adapters
@@ -709,7 +720,7 @@ class TextGenerationPipeline(
                 else:
                     self._eos_token_id = set([eos_token_id])
             else:
-                msg = f"eos_token_id in huggingface_config, is neither int or list: {eos_tokens}"
+                msg = f"eos_token_id in huggingface_config is neither int or list: {eos_tokens}"
                 logger.warning(msg)
                 self._eos_token_id = set([eos_token_id])
 
@@ -807,6 +818,7 @@ class TextGenerationPipeline(
 
     @property
     def pipeline_config(self) -> PipelineConfig:
+        """Return the pipeline configuration."""
         return self._pipeline_config
 
     @property
@@ -817,12 +829,14 @@ class TextGenerationPipeline(
         npt.NDArray[np.integer[Any]],
         TextGenerationRequest,
     ]:
+        """Return the tokenizer used for building contexts and decoding."""
         return self._tokenizer
 
     @property
     def kv_managers(
         self,
-    ) -> list[TPPagedKVCacheManager]:
+    ) -> list[PagedKVCacheManager]:
+        """Return the list of KV cache managers backing this pipeline."""
         return [self._pipeline_model.kv_manager]
 
     def calculate_num_steps(
@@ -830,6 +844,21 @@ class TextGenerationPipeline(
         num_steps: int,
         context: TextGenerationContextType,
     ) -> int:
+        """Compute the number of generation steps allowed for a context.
+
+        The value is clamped by the remaining capacity with respect to
+        the model's configured ``max_seq_len``.
+
+        Args:
+            num_steps: Desired number of steps to attempt.
+            context: The context whose sequence length constraints apply.
+
+        Returns:
+            The number of steps to execute for this context (>= 1).
+
+        Raises:
+            ValueError: If the current request length is already >= ``max_seq_len``.
+        """
         max_seq_len = self._pipeline_model.max_seq_len
         num_available_steps = context.compute_num_available_steps(max_seq_len)
 
@@ -840,82 +869,151 @@ class TextGenerationPipeline(
 
         return min(num_available_steps, num_steps)
 
+    def update_for_structured_output(
+        self,
+        context: TextGenerationContextType,
+        bitmask: npt.NDArray[np.int32] | None,
+        index: int,
+    ) -> None:
+        """Update context and logits bitmask for structured output.
+
+        If a ``json_schema`` is present and no matcher is set, this compiles a
+        grammar matcher and installs it on the context. It may also jump ahead in
+        generation and fills the per-request token bitmask used to constrain the
+        next-token distribution.
+
+        Args:
+            context: Request context to update.
+            bitmask: Optional preallocated bitmask buffer; updated in-place.
+            index: Global position into the bitmask for this request.
+
+        Raises:
+            ValueError: If a JSON schema is provided but structured output is not
+                enabled via sampling configuration.
+        """
+        if context.json_schema and context.matcher is None:
+            if not self._pipeline_config.sampling_config.enable_structured_output:
+                raise ValueError(
+                    "json_schema provided but constrained decoding is not enabled."
+                )
+
+            try:
+                serialized_grammar = LLMatcher.grammar_from_json_schema(
+                    context.json_schema,
+                )
+                matcher = LLMatcher(self._tokenizer_info, serialized_grammar)
+                context.set_matcher(matcher)
+            except Exception as e:
+                msg = f"Json schema provided in request cannot be compiled to valid grammar. \
+                Please update your json schema to produce valid structured output. From llguidance: {e}"
+                logger.warning(msg)
+                # I am removing the json_schema, so it doesn't try to load the grammar repeatedly.
+                context.json_schema = None  # type: ignore
+
+        if context.matcher:
+            # Jump ahead in generation if possible.
+            jump_forward_tokens = context.matcher.compute_ff_tokens()
+            for token in jump_forward_tokens:
+                context.jump_ahead(token)
+
+            # Update the bitmask for the context.
+            if bitmask is not None:
+                llguidance.numpy.fill_next_token_bitmask(
+                    context.matcher, bitmask, index=index
+                )
+
+    def initialize_bitmask(
+        self, batch_size: int
+    ) -> npt.NDArray[np.int32] | None:
+        """Allocate a per-request token bitmask for structured decoding.
+
+        Args:
+            batch_size: Number of requests in the batch.
+
+        Returns:
+            A bitmask array of shape [batch_size, vocab_size] if structured
+            output is enabled; otherwise ``None``.
+        """
+        if not self._pipeline_config.sampling_config.enable_structured_output:
+            return None
+
+        if self.vocab_size is None:
+            raise ValueError("vocab_size must be set to use structured output")
+
+        return llguidance.numpy.allocate_token_bitmask(
+            batch_size, self.vocab_size
+        )
+
     @traced
     def prepare_batch(
         self,
-        batches: list[list[TextGenerationContextType]],
+        batches: list[dict[RequestID, TextGenerationContextType]],
         num_steps: int,
-    ) -> tuple[ModelInputs, int, npt.NDArray[np.int32] | None]:
-        tracer: Tracer = Tracer("prepare_batch")
-        flat_batch = [context for batch in batches for context in batch]
+    ) -> tuple[
+        ModelInputs,
+        int,
+        npt.NDArray[np.int32] | None,
+        list[TextGenerationContextType],
+    ]:
+        """Prepare model inputs and ancillary state for multi-step execution.
 
-        if self._pipeline_config.sampling_config.enable_structured_output:
-            assert self.vocab_size is not None
-            bitmask = llguidance.numpy.allocate_token_bitmask(
-                len(flat_batch), self.vocab_size
-            )
-        else:
-            bitmask = None
+        This flattens replica batches, optionally initializes constrained
+        decoding bitmasks, ensures KV-cache reservations, clamps ``num_steps``
+        per context, and builds initial model inputs.
 
-        tracer.next("claim_cache_rows")
-        for replica_idx, batch in enumerate(batches):
-            for i, context in enumerate(batch):
-                # Initialize a matcher if needed
-                if context.json_schema and context.matcher is None:
-                    if not self._pipeline_config.sampling_config.enable_structured_output:
-                        raise ValueError(
-                            "json_schema provided but constrained decoding is not enabled."
-                        )
+        Args:
+            batches: Per-replica mapping of ``RequestID`` to context.
+            num_steps: Desired number of steps to run.
 
-                    try:
-                        serialized_grammar = LLMatcher.grammar_from_json_schema(
-                            context.json_schema,
-                            defaults={
-                                "whitespace_flexible": False,
-                            },
-                        )
-                        matcher = LLMatcher(
-                            self._tokenizer_info, serialized_grammar
-                        )
-                        context.set_matcher(matcher)
-                    except Exception as e:
-                        msg = f"Json schema provided in request cannot be compiled to valid grammar. \
-                        Please update your json schema to produce valid structured output. From llguidance: {e}"
-                        logger.warning(msg)
-                        # I am removing the json_schema, so it doesn't try to load the grammar repeatedly.
-                        context.json_schema = None  # type: ignore
+        Returns:
+            A tuple of:
+                - ModelInputs: Prepared inputs for the first step.
+                - int: The clamped number of steps to run.
+                - Optional[np.ndarray]: The structured decoding bitmask or None.
+                - list[TextGenerationContextType]: The flattened context batch.
+        """
+        # Initialize a flat batch of contexts and their replica ids.
+        replica_ids: list[int] = [
+            replica_idx
+            for replica_idx, batch in enumerate(batches)
+            for _ in batch.values()
+        ]
+        flat_batch: list[TextGenerationContextType] = [
+            context
+            for batch in batches
+            for context in self._maybe_sort_loras(batch).values()
+        ]
 
-                if context.matcher:
-                    jump_forward_tokens = context.matcher.compute_ff_tokens()
-                    for token in jump_forward_tokens:
-                        context.jump_ahead(token)
+        # Optionally, initialize a bitmask for structured output.
+        bitmask = self.initialize_bitmask(len(flat_batch))
 
-                # Claim cache rows for context.
-                if not self._pipeline_model.kv_manager.contains(
-                    context.request_id
-                ):
-                    self._pipeline_model.kv_manager.external_claim(
-                        context.request_id, replica_idx=replica_idx
-                    )
+        # Keep a global index for bitmask indexing.
+        i = 0
+        for i, (replica_idx, context) in enumerate(
+            zip(replica_ids, flat_batch, strict=False)
+        ):
+            # Update state for structured output. Initialize a matcher if needed, this includes:
+            # - Initializing a matcher if needed [once per request]
+            # - Jumping ahead in generation if possible
+            # - Updating the bitmask for the context.
+            self.update_for_structured_output(context, bitmask, i)
 
-                # Update num_steps.
-                num_steps = self.calculate_num_steps(num_steps, context)
+            if not self._pipeline_model.kv_manager.contains(context.request_id):
+                self._pipeline_model.kv_manager.external_claim(
+                    context.request_id, replica_idx=replica_idx
+                )
 
-                # Update bitmask
-                if (
-                    self._pipeline_config.sampling_config.enable_structured_output
-                    and context.matcher
-                    and bitmask is not None
-                ):
-                    llguidance.numpy.fill_next_token_bitmask(
-                        context.matcher, bitmask, index=i
-                    )
+            # Update num_steps.
+            num_steps = self.calculate_num_steps(num_steps, context)
 
-        # `fetch` may shorten the input context by bumping the start_idx.
-        tracer.next("fetch_kv_cache")
+        # Retrieve the KV Cache Inputs.
         kv_cache_inputs = self._pipeline_model.kv_manager.fetch(
             flat_batch, num_steps
         )
+
+        # Log batch details
+        if self.batch_info_output_fname is not None:
+            self._record_batch_info(flat_batch, num_steps)
 
         return (
             self._pipeline_model.prepare_initial_token_inputs(
@@ -926,6 +1024,7 @@ class TextGenerationPipeline(
             ),
             num_steps,
             bitmask,
+            flat_batch,
         )
 
     @traced
@@ -944,17 +1043,15 @@ class TextGenerationPipeline(
     def _record_batch_info(
         self, contexts: Iterable[TextGenerationContextType], num_steps: int
     ) -> None:
-        """
-        Records batch information for the current inference step.
+        """Record per-step batch statistics for diagnostics.
 
         Args:
-            contexts (Iterable[TextGenerationContextType]): An iterable of context objects, each containing
-                'start_idx' (past sequence length) and 'active_length' (current sequence length).
-            num_steps (int): The number of steps processed in this batch.
+            contexts: Contexts in the step, providing ``start_idx`` and
+                ``active_length``.
+            num_steps: Number of steps processed in this batch.
 
         Side Effects:
-            Appends a BatchInfo instance to self.batch_infos, capturing the past sequence lengths,
-            current sequence lengths, and number of steps for the batch.
+            Appends a ``BatchInfo`` entry to ``self.batch_infos``.
         """
         self.batch_infos.append(
             BatchInfo(
@@ -965,6 +1062,11 @@ class TextGenerationPipeline(
         )
 
     def __del__(self) -> None:
+        """Flush recorded batch information to disk if configured.
+
+        When ``MAX_BATCH_INFO_FILENAME`` is set, this writes a JSON file
+        containing per-step batch statistics collected during execution.
+        """
         if (
             hasattr(self, "batch_info_output_fname")
             and self.batch_info_output_fname is not None
@@ -977,6 +1079,54 @@ class TextGenerationPipeline(
                 f.flush()  # Refer to MAXSERV-893
 
     @traced
+    def update_context_and_prepare_responses(
+        self,
+        generated_tokens_host: npt.NDArray[np.int32],
+        batch_log_probabilities: list[list[LogProbabilities | None]],
+        flat_batch: list[TextGenerationContextType],
+        num_steps: int,
+        enable_log_probs: bool,
+    ) -> dict[RequestID, TextGenerationOutput]:
+        """
+        Update the context objects and prepare the response objects for each context in the batch after generation.
+
+        Args:
+            generated_tokens_host: Array of generated tokens on the host, indexed as [batch, step].
+            batch_log_probabilities: List of per-step log probability outputs (or None), each entry is a list per batch for that step.
+            flat_batch: List of generation contexts, one per request, matching batch dimension.
+            num_steps: Number of generation steps to process for each context.
+            enable_log_probs: Whether to include log probability data in outputs.
+
+        Returns:
+            A dictionary mapping request IDs to their respective generation outputs.
+        """
+        res: dict[RequestID, TextGenerationOutput] = {}
+        for batch_index, context in enumerate(flat_batch):
+            for step in range(num_steps):
+                # Convert to a Python scalar to improve serialization performance.
+                next_token = int(generated_tokens_host[batch_index, step])
+
+                # Get Log probs if needed.
+                log_probs: LogProbabilities | None = None
+                if enable_log_probs and step < len(batch_log_probabilities):
+                    log_probs_for_step = batch_log_probabilities[step]
+                    if log_probs_for_step and batch_index < len(
+                        log_probs_for_step
+                    ):
+                        log_probs = log_probs_for_step[batch_index]
+
+                context.update(
+                    new_token=next_token, log_probabilities=log_probs
+                )
+
+                if context.is_done:
+                    break
+
+            res[context.request_id] = context.to_generation_output()
+
+        return res
+
+    @traced
     def execute(
         self,
         inputs: TextGenerationInputs[TextGenerationContextType],
@@ -984,37 +1134,15 @@ class TextGenerationPipeline(
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
-        batches = []
-        for batch in inputs.batches:
-            batch = self._maybe_sort_loras(batch)
-            batches.append(list(batch.values()))
-            if self.batch_info_output_fname is not None:
-                self._record_batch_info(batch.values(), inputs.num_steps)
-        del batch  # Unbind the batch variable.
-
-        tracer: Tracer = Tracer("compute_parameters")
-
-        # Flatten our batch for consistent indexing.
-        context_batch = [context for batch in batches for context in batch]
-
-        # Get extra compute parameters for each input.
-        batch_top_n = [context.log_probabilities for context in context_batch]
-        compute_log_probabilities = any(batch_top_n)
-        batch_echo: list[bool] = [
-            context.log_probabilities_echo for context in context_batch
-        ]
-
         # Prepare the batch.
-        model_inputs, num_steps, bitmask = self.prepare_batch(
-            batches, inputs.num_steps
+        model_inputs, num_steps, bitmask, flat_batch = self.prepare_batch(
+            inputs.batches, inputs.num_steps
         )
 
-        # Multistep execution loop.
-        tracer.next("prepare_sampling_processor")
         sampling_processor = FusedSamplingProcessor(
             sampler=self._sampler,
             pipeline_config=self._pipeline_config,
-            context_batch=context_batch,
+            context_batch=flat_batch,
             num_steps=num_steps,
             device=self._devices[0],
             bitmask=bitmask,
@@ -1023,62 +1151,60 @@ class TextGenerationPipeline(
         batch_processors: list[BatchLogitsProcessor] = [sampling_processor]
 
         curr_step_inputs = model_inputs
-        batch_log_probabilities = []
-        tracer.next(f"multistep_execution_loop_{num_steps}_steps")
+        batch_log_probabilities: list[list[LogProbabilities | None]] = []
         for i in range(num_steps):
-            tracer.push(f"step_{i}")
-
-            # Execute the model and get next tokens.
-            try:
-                model_outputs = self._pipeline_model.execute(
-                    model_inputs=curr_step_inputs
-                )
-            except Exception:
-                batch_size = len(context_batch)
-                cache_tokens = sum(ctx.start_idx for ctx in context_batch)
-                input_tokens = sum(ctx.active_length for ctx in context_batch)
-                logger.error(
-                    "Encountered an exception while executing batch: "
-                    f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}, {num_steps=:}"
-                )
-                raise  # re-raise the original exception
+            with Tracer(f"multistep_execution_loop_step_{i}"):
+                # Execute the model and get next tokens.
+                try:
+                    model_outputs = self._pipeline_model.execute(
+                        model_inputs=curr_step_inputs
+                    )
+                except Exception:
+                    batch_size = len(flat_batch)
+                    cache_tokens = sum(ctx.start_idx for ctx in flat_batch)
+                    input_tokens = sum(ctx.active_length for ctx in flat_batch)
+                    logger.error(
+                        "Encountered an exception while executing batch: "
+                        f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}, {num_steps=:}"
+                    )
+                    raise  # re-raise the original exception
 
             # Sample next token.
-            tracer.next("sample_next_token")
-            apply_logits_processors(
-                context_batch=context_batch,
-                batch_logits=model_outputs.logits,
-                batch_logit_offsets=model_outputs.logit_offsets,
-                batch_processors=batch_processors,
-            )
-            new_tokens = sampling_processor.new_tokens
-            assert new_tokens is not None
+            with Tracer("sample_next_token_step_{i}"):
+                apply_logits_processors(
+                    context_batch=flat_batch,
+                    batch_logits=model_outputs.logits,
+                    batch_logit_offsets=model_outputs.logit_offsets,
+                    batch_processors=batch_processors,
+                )
+                new_tokens = sampling_processor.new_tokens
+                assert new_tokens is not None
 
-            if compute_log_probabilities:
-                try:
-                    tracer.next("compute_log_probabilities")
-                    batch_log_probabilities.append(
-                        self._pipeline_model.compute_log_probabilities(
-                            self.session,
-                            curr_step_inputs,
-                            model_outputs,
-                            new_tokens,
-                            batch_top_n,
-                            batch_echo,
+            if inputs.enable_log_probs:
+                with Tracer("compute_log_probabilities_step_{i}"):
+                    try:
+                        batch_log_probabilities.append(
+                            self._pipeline_model.compute_log_probabilities(
+                                self.session,
+                                curr_step_inputs,
+                                model_outputs,
+                                new_tokens,
+                                inputs.batch_top_log_probs,
+                                inputs.batch_echo,
+                            )
                         )
-                    )
-                except NotImplementedError:
-                    logger.warning(
-                        "Unable to compute log probabilities for"
-                        f" {self._pipeline_config.model_config.model_path}"
-                    )
-                    batch_log_probabilities.append(None)
+                    except NotImplementedError:
+                        logger.warning(
+                            "Unable to compute log probabilities for"
+                            f" {self._pipeline_config.model_config.model_path}"
+                        )
+                        batch_log_probabilities.append(
+                            [None for _ in flat_batch]
+                        )
+
             # Check if we're on our last iteration. If so, skip preparing the next batch
             if i == num_steps - 1:
-                tracer.pop()  # pops f"step_{i}"
                 break
-            # Prepare inputs for the next token in multistep execution
-            tracer.next("increment_cache_lengths")  # pops sample_next_token
 
             assert isinstance(
                 curr_step_inputs.kv_cache_inputs, KVCacheInputsSequence
@@ -1095,46 +1221,28 @@ class TextGenerationPipeline(
                 )
             )
 
-            tracer.next("prepare_next_token_inputs")  # pops inc_cache_lengths
             curr_step_inputs = self._pipeline_model.prepare_next_token_inputs(
                 new_tokens, curr_step_inputs
             )
-            tracer.pop()  # pops step_{i}
 
         # Do the copy to host for each token generated.
-        tracer.next(
-            "generated_tokens.to(CPU())"
-        )  # pops multistep_execution_loop_steps
-        generated_tokens_host = sampling_processor.generated_tokens.to_numpy()
+        with Tracer("generated_tokens.to(CPU())") as tracer:
+            generated_tokens_host = (
+                sampling_processor.generated_tokens.to_numpy()
+            )
 
         # Update the context object.
-        tracer.push("update_context")
-        res: dict[RequestID, TextGenerationOutput] = {}
-        for batch_index, context in enumerate(context_batch):
-            for step in range(num_steps):
-                # Convert to a Python scalar to improve serialization performance.
-                next_token = int(generated_tokens_host[batch_index, step])
-
-                # Get log probs if needed.
-                log_probs: LogProbabilities | None = None
-                if compute_log_probabilities and (
-                    log_probs_for_step := batch_log_probabilities[step]
-                ):
-                    log_probs = log_probs_for_step[batch_index]
-
-                context.update(
-                    new_token=next_token, log_probabilities=log_probs
-                )
-                if context.is_done:
-                    break
-
-            res[context.request_id] = context.to_generation_output()
+        res = self.update_context_and_prepare_responses(
+            generated_tokens_host,
+            batch_log_probabilities,
+            flat_batch,
+            num_steps,
+            inputs.enable_log_probs,
+        )
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
-        tracer.next("kv_manager.step")  # pops prepare_response
-        self._pipeline_model.kv_manager.step(context_batch)
-        tracer.pop()  # pops kv_manager.step
+        self._pipeline_model.kv_manager.step(flat_batch)
 
         return res
 

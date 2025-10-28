@@ -28,6 +28,7 @@ from memory import stack_allocation
 from memory.unsafe import bitcast
 
 from utils import IndexList, StaticTuple
+from builtin.device_passable import DevicePassable
 
 
 struct _CUctx_st:
@@ -247,8 +248,21 @@ struct TensorMapFloatOOBFill:
 
 # The TMA descriptor is a 128-byte opaque object filled by the driver API.
 # It should be 64-byte aligned both on the host and the device (if passed to constant memory).
-struct TMADescriptor(ImplicitlyCopyable):
+struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
     var data: StaticTuple[UInt8, 128]
+
+    alias device_type: AnyType = TMADescriptor
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "TMADescriptor"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn __init__(out self):

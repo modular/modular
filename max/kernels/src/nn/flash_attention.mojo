@@ -619,9 +619,9 @@ struct _FlashAttention[
                 simd_width,
                 dtype,
                 dtype,
-                __origin_of(),
+                origin_of(),
                 pass1_input_gen_fn,
-                __origin_of(),
+                origin_of(),
                 _simd_max_elementwise,
                 _simd_max,
                 output_fn,
@@ -644,9 +644,9 @@ struct _FlashAttention[
                 simd_width,
                 dtype,
                 dtype,
-                __origin_of(),
+                origin_of(),
                 pass2_input_gen_fn,
-                __origin_of(),
+                origin_of(),
                 _simd_sum_elementwise,
                 _simd_sum,
                 output_fn,
@@ -1216,7 +1216,7 @@ fn _flash_attention_kv_cache[
     alias num_heads = Int(q.layout.shape[2])
     alias head_size = cache_t.kv_params.head_size
     alias output_shape = IndexList[4](
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, head_size
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, Int(head_size)
     )
 
     @always_inline
@@ -1325,8 +1325,8 @@ fn _flash_attention_kv_cache[
     ].run(
         num_batches,
         num_heads,
-        depth_dim,
-        num_kv_heads,
+        Int(depth_dim),
+        Int(num_kv_heads),
         max_seq_len,
         scale,
         sink_weights,
@@ -1477,7 +1477,7 @@ fn flash_attention_kv_cache[
     alias num_heads = Int(q.layout.shape[q.rank - 2])
     alias head_size = cache_t.kv_params.head_size
     alias output_shape = IndexList[4](
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, head_size
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, Int(head_size)
     )
 
     _flash_attention_kv_cache[

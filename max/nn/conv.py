@@ -434,7 +434,7 @@ class Conv1D(Module):
     device: DeviceRef | None
     """The device where matrix operations are performed."""
 
-    weight: Weight
+    filter: Weight
     """The weight matrix stored on CPU with shape (kernel_size, in_channels / num_groups, out_channels).
     Model init moves the weight to :obj:`device`."""
 
@@ -455,7 +455,7 @@ class Conv1D(Module):
     Model init moves the bias to :obj:`device` if present."""
 
     permute: bool = False
-    """bool controls whether self.weight is permuted from PyTorch order to max order.
+    """bool controls whether self.filter is permuted from PyTorch order to max order.
     PyTorch order is: (out_channels, in_channels / num_groups, kernel_size)
     Max API order: (kernel_size, in_channels / num_groups, out_channels)."""
 
@@ -503,14 +503,14 @@ class Conv1D(Module):
         self.permute = permute
 
         if self.permute:
-            self.weight = Weight(
+            self.filter = Weight(
                 name=f"{name}.weight" if name else "weight",
                 dtype=dtype,
                 shape=[out_channels, in_channels // num_groups, kernel_size],
                 device=self.device or DeviceRef.CPU(),
             )
         else:
-            self.weight = Weight(
+            self.filter = Weight(
                 name=f"{name}.weight" if name else "weight",
                 dtype=dtype,
                 shape=[kernel_size, in_channels // num_groups, out_channels],
@@ -532,8 +532,8 @@ class Conv1D(Module):
         self.num_groups = num_groups
 
         if (
-            isinstance(self.weight, Weight)
-            and self.weight.quantization_encoding is not None
+            isinstance(self.filter, Weight)
+            and self.filter.quantization_encoding is not None
         ):
             raise ValueError("Conv1D not implemented with weight quantization.")
 
@@ -550,7 +550,7 @@ class Conv1D(Module):
             if self.permute, then output shape will be [batch_size, out_channels, new_length]
             new_length = ((length + 2 * padding - (kernel_size - 1) - 1) / stride) + 1
         """
-        weight: TensorValue = self.weight.to(x.device)
+        weight: TensorValue = self.filter
 
         is_nvidia_gpu = (
             isinstance(self.device, DeviceRef)
@@ -575,11 +575,6 @@ class Conv1D(Module):
         # Reshape for Conv2dV1
         x = ops.unsqueeze(x, 1)  # [batch_size, height=1, length, in_channels]
 
-        if self.bias is not None:
-            bias = self.bias.to(x.device)
-        else:
-            bias = None
-
         output = ops.conv2d(
             x,
             weight,
@@ -587,7 +582,7 @@ class Conv1D(Module):
             (1, self.dilation),
             (0, 0, self.padding, self.padding),
             self.num_groups,
-            bias,
+            self.bias,
             filter_layout=FilterLayout.FCRS
             if (self.permute and is_nvidia_gpu)
             else FilterLayout.RSCF,

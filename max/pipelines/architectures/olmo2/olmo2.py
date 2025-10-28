@@ -27,9 +27,7 @@ from max.nn import (
     RMSNorm,
     Transformer,
 )
-from max.nn.kv_cache import (
-    TPPagedKVCacheManager,
-)
+from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.architectures.llama3.llama3 import StackedMLP
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.olmo2.layers.attention import Olmo2Attention
@@ -49,7 +47,6 @@ class Olmo2(Transformer):
             head_dim=config.kv_params.head_dim,
             interleaved=config.interleaved_rope_weights,
             scaling_params=config.rope_scaling_params,
-            device=config.devices[0],
         )
 
         # Select norm layer class.
@@ -179,7 +176,7 @@ class Olmo2(Transformer):
         )
 
     def input_types(
-        self, kv_manager: TPPagedKVCacheManager
+        self, kv_manager: PagedKVCacheManager
     ) -> tuple[TensorType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model

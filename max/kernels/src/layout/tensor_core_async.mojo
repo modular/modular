@@ -39,7 +39,6 @@ from sys import size_of
 from sys._assembly import inlined_assembly
 
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.memory import AddressSpace
 from gpu.mma import (
     WGMMADescriptor,
     wgmma_async,
@@ -972,9 +971,9 @@ struct TensorCoreAsync[
         a_frags = a_frag_tile.vectorize[1, a_frag_size]()
         c_frags = c_reg_tile.vectorize[1, c_frag_size]()
         constrained[
-            __type_of(c_frags).layout.size() == num_m_mmas * num_n_mmas,
+            type_of(c_frags).layout.size() == num_m_mmas * num_n_mmas,
             "C fragments' size: ",
-            String(__type_of(c_frags).layout.size()),
+            String(type_of(c_frags).layout.size()),
             (
                 "\nDoesn't match the total number of wgmmas\n= num_m_mmas *"
                 " num_n_mmas: "

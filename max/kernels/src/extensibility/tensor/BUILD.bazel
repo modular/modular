@@ -1,0 +1,33 @@
+load("//bazel:api.bzl", "mojo_library", "pkg_files", "strip_prefix")
+
+exports_files(["__init__.mojo"])
+
+mojo_library(
+    name = "tensor",
+    srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
+    visibility = ["//visibility:public"],
+    deps = [
+        "@mojo//:compiler_internal",
+        "@mojo//:layout",
+        "@mojo//:register",
+        "@mojo//:stdlib",
+    ],
+)
+
+filegroup(
+    name = "extensibility/tensor.doc_group",
+    srcs = [
+        ":tensor.docs",
+    ],
+    tags = ["manual"],  # TODO: Make this build and remove this tag
+    visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "docs",
+    srcs = [":extensibility/tensor.doc_group"],
+    prefix = "tensor",
+    strip_prefix = strip_prefix.from_pkg("tensor.docs"),
+    visibility = ["//visibility:public"],
+)

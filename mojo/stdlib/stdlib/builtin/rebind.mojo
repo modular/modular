@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements type rebind.
+"""Implements type rebind/trait downcast
 
 These are Mojo built-ins, so you don't need to import them.
 """
@@ -67,7 +67,7 @@ fn rebind[
         A reference to the value rebound as `dest_type`.
     """
     lit = __get_mvalue_as_litref(src)
-    rebound = rebind[Pointer[dest_type, __origin_of(src)]._mlir_type](lit)
+    rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_type](lit)
     return __get_litref_as_mvalue(rebound)
 
 
@@ -101,3 +101,52 @@ fn rebind_var[
     ref dest_ref = rebind[dest_type](src)
     dest = UnsafePointer(to=dest_ref).take_pointee()
     __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(src))
+
+
+alias downcast[_Trait: type_of(AnyType), T: AnyType] = __mlir_attr[
+    `#kgen.downcast<`, T, `> : `, _Trait
+]
+
+
+@always_inline
+fn trait_downcast[
+    T: AnyTrivialRegType, //, Trait: type_of(AnyType)
+](var src: T) -> downcast[Trait, T]:
+    """Downcast a parameter input type `T` and rebind the type such that the
+    return value's type conforms the provided `Trait`. If `T`, after resolving
+    to a concrete type, does not actually conform to `Trait`, a compilation
+    error would occur.
+
+    Parameters:
+        T: The original type.
+        Trait: The trait to downcast into.
+
+    Args:
+        src: The value to downcast.
+
+    Returns:
+        The downcasted value.
+    """
+    return rebind[downcast[Trait, T]](src)
+
+
+@always_inline
+fn trait_downcast[
+    T: AnyType, //, Trait: type_of(AnyType)
+](ref src: T) -> ref [src] downcast[Trait, T]:
+    """Downcast a parameter input type `T` and rebind the type such that the
+    return value's type conforms the provided `Trait`. If `T`, after resolving
+    to a concrete type, does not actually conform to `Trait`, a compilation
+    error would occur.
+
+    Parameters:
+        T: The original type.
+        Trait: The trait to downcast into.
+
+    Args:
+        src: The value to downcast.
+
+    Returns:
+        The downcasted value.
+    """
+    return rebind[downcast[Trait, T]](src)

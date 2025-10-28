@@ -32,7 +32,7 @@ from builtin.device_passable import DevicePassable
 from builtin.dtype import _unsigned_integral_type_of
 from gpu.host import DeviceBuffer, HostBuffer, DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_dim, block_idx, lane_id, thread_idx
+from gpu import block_dim, block_idx, lane_id, thread_idx
 from gpu.intrinsics import AMDBufferResource
 from gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
 from layout._fillers import BATCH_SIZE
@@ -40,7 +40,6 @@ from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
@@ -311,7 +310,7 @@ struct LayoutTensor[
     """
 
     # `trait DevicePassable` implementation, to allow LayoutTensor to be passed directly to kernels
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -324,16 +323,26 @@ struct LayoutTensor[
         Returns:
             The host type's name.
         """
-        return (
-            "LayoutTensor[mut = "
-            + String(mut)
-            + ", dtype = "
-            + String(dtype)
-            + ", layout = "
-            + String(layout)
-            + ", address_space = "
-            + String(address_space)
-            + "]"
+        return String(
+            "LayoutTensor[mut = ",
+            mut,
+            ", dtype = ",
+            dtype,
+            ", layout = ",
+            layout,
+            ", address_space = ",
+            address_space,
+            ", element_layout = ",
+            element_layout,
+            ", layout_int_type = ",
+            layout_int_type,
+            ", linear_idx_type = ",
+            linear_idx_type,
+            ", masked = ",
+            masked,
+            ", alignment = ",
+            alignment,
+            "]",
         )
 
     @staticmethod
@@ -359,6 +368,8 @@ struct LayoutTensor[
 
     This pointer respects the specified address space, alignment, mutability,
     and origin tracking for memory safety and performance optimization."""
+
+    alias storage_size = size_of[dtype]() * layout.size()
 
     alias RuntimeLayoutType = RuntimeLayout[
         layout,
@@ -767,7 +778,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(
+        other_type: type_of(
             LayoutTensor[
                 dtype,
                 layout,
@@ -786,7 +797,7 @@ struct LayoutTensor[
             mut = mut & other_type.origin.mut,
             dtype,
             layout,
-            __origin_of(origin, other_type.origin),
+            origin_of(origin, other_type.origin),
             alignment=alignment,
             address_space=address_space,
             element_layout=element_layout,
@@ -875,7 +886,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn as_any_origin(
         self: Self._AsMut,
-    ) -> __type_of(self).OriginCastType[True, MutableAnyOrigin]:
+    ) -> type_of(self).OriginCastType[True, MutableAnyOrigin]:
         """Casts the origin of the mutable `LayoutTensor` to `MutableAnyOrigin`.
 
         Returns:
@@ -898,7 +909,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn as_any_origin(
         self: LayoutTensor[mut=False, *_, **_],
-    ) -> __type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
+    ) -> type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
         """Casts the origin of the immutable `LayoutTensor` to `ImmutableAnyOrigin`.
 
         Returns:
@@ -918,7 +929,7 @@ struct LayoutTensor[
     @doc_private
     fn as_any_origin(
         self: LayoutTensor[*_, **_],
-        out result: __type_of(self).OriginCastType[False, ImmutableAnyOrigin],
+        out result: type_of(self).OriginCastType[False, ImmutableAnyOrigin],
     ):
         constrained[
             False,
@@ -928,7 +939,7 @@ struct LayoutTensor[
                 " mutability explicitly before calling this function."
             ),
         ]()
-        result = abort[__type_of(result)]()
+        result = abort[type_of(result)]()
 
     alias AddressSpaceCastType[
         address_space: AddressSpace = Self.address_space,
@@ -3487,7 +3498,9 @@ struct LayoutTensor[
                 thread_shape_i
             )
             var tile_shape_i = ceildiv(self.dim[i](), thread_shape_i)
-            var bound_i = Int((tile_shape_i - 1) * thread_shape_i + tile_idx)
+            var bound_i = Int(
+                (tile_shape_i - 1) * thread_shape_i + Int(tile_idx)
+            )
             tile_shape[i] = min(self.dim[i]() - bound_i, tile_shape_i)
 
         return tile_shape
@@ -3643,11 +3656,11 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(fragments_layout_stride)):
-                alias fragments_stride_i: UInt = UInt(
+                alias fragments_stride_i = UInt(
                     mlir_value=Int(fragments_layout_stride[i])._mlir_value
                 )
-                alias shape_i: UInt = UInt(Int(thread_projected_shape[i]))
-                alias stride_i: UInt = UInt(Int(thread_projected_stride[i]))
+                alias shape_i = UInt(Int(thread_projected_shape[i]))
+                alias stride_i = UInt(Int(thread_projected_stride[i]))
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset += thread_coord_i * fragments_stride_i
 
@@ -3708,10 +3721,10 @@ struct LayoutTensor[
             @parameter
             for i in range(len(flatten(Self.layout.stride))):
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
-                alias shape_i: UInt = UInt(
+                alias shape_i = UInt(
                     mlir_value=Int(thread_projected_shape[i])._mlir_value
                 )
-                alias stride_i: UInt = UInt(
+                alias stride_i = UInt(
                     mlir_value=Int(thread_projected_stride[i])._mlir_value
                 )
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
@@ -3818,11 +3831,11 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(fragments_layout_stride)):
-                alias fragments_stride_i: UInt = UInt(
+                alias fragments_stride_i = UInt(
                     mlir_value=Int(fragments_layout_stride[i])._mlir_value
                 )
-                alias shape_i: UInt = UInt(Int(thread_projected_shape[i]))
-                alias stride_i: UInt = UInt(Int(thread_projected_stride[i]))
+                alias shape_i = UInt(Int(thread_projected_shape[i]))
+                alias stride_i = UInt(Int(thread_projected_stride[i]))
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset_coords[i] = Int(thread_coord_i)
                 offset += thread_coord_i * fragments_stride_i
@@ -3892,10 +3905,10 @@ struct LayoutTensor[
             @parameter
             for i in range(len(flatten(Self.layout.stride))):
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
-                alias shape_i: UInt = UInt(
+                alias shape_i = UInt(
                     mlir_value=Int(thread_projected_shape[i])._mlir_value
                 )
-                alias stride_i: UInt = UInt(
+                alias stride_i = UInt(
                     mlir_value=Int(thread_projected_stride[i])._mlir_value
                 )
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
@@ -3963,7 +3976,7 @@ struct LayoutTensor[
         vector_len: Int,
         linear_vectorize: Bool = True,
     ](self) -> Self.ShapeVectorizedType[
-        __origin_of(),
+        origin_of(),
         IntTuple(vector_len),
         linear_vectorize=linear_vectorize,
     ]:
@@ -3979,7 +3992,7 @@ struct LayoutTensor[
             vector length.
         """
         return self._vectorize_2[
-            __origin_of(),
+            origin_of(),
             IntTuple(vector_len),
             linear_vectorize=linear_vectorize,
         ]()
@@ -4159,7 +4172,7 @@ struct LayoutTensor[
         """
 
         alias shape = IntTuple(vector_shape)
-        alias _origin = __origin_of()  # FIXME: MOCO-1912
+        alias _origin = origin_of()  # FIXME: MOCO-1912
         var ret = self._vectorize_2[
             _origin,
             shape,
@@ -5022,7 +5035,7 @@ struct LayoutTensor[
         ```mojo
         from layout import LayoutTensor, Layout
         from gpu import thread_idx, block_idx, block_dim
-        from gpu.memory import AddressSpace, async_copy_wait_all
+        from gpu.memory import async_copy_wait_all
 
         alias dtype = DType.float32
         alias in_size = 128
@@ -5073,7 +5086,7 @@ struct LayoutTensor[
         - A synchronization barrier is required before using the copied data.
         """
         constrained[
-            self.address_space == _GPUAddressSpace.SHARED,
+            self.address_space == AddressSpace.SHARED,
             "Async is only supported for destinations in shared memory",
         ]()
 
@@ -5112,9 +5125,9 @@ struct LayoutTensor[
         )
 
         var dst_ptr = self.ptr.address_space_cast[
-            _GPUAddressSpace.SHARED
+            AddressSpace.SHARED
         ]().mut_cast[True]()
-        var src_ptr = src.ptr.address_space_cast[_GPUAddressSpace.GLOBAL]()
+        var src_ptr = src.ptr.address_space_cast[AddressSpace.GLOBAL]()
 
         # Coalesce element layouts to simplify vectorization condition.
         alias coalesce_src_element_layout = coalesce(src.element_layout)
@@ -5212,9 +5225,9 @@ struct LayoutTensor[
         use_runtime_layout: Bool = (
             not layout.all_dims_known() or layout.size() > BATCH_SIZE
         ),
-    ](
-        self: LayoutTensor[mut=True, dtype, **_], val: Scalar[dtype]
-    ) -> __type_of(self):
+    ](self: LayoutTensor[mut=True, dtype, **_], val: Scalar[dtype]) -> type_of(
+        self
+    ):
         """Fill the entire tensor with a single value.
 
         This method sets all elements of the tensor to the specified value. It
@@ -5454,7 +5467,6 @@ fn stack_allocation_like[
     ```mojo
     from layout import LayoutTensor, Layout
     from layout.layout_tensor import stack_allocation_like
-    from gpu.memory import AddressSpace
 
     var global_tensor = LayoutTensor[
         DType.float32,
@@ -5682,13 +5694,12 @@ fn _copy_dram_to_sram_validate_args(
     ]()
 
     constrained[
-        src.address_space
-        in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+        src.address_space in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
         "src address space must be GENERIC or GLOBAL.",
     ]()
 
     constrained[
-        dst.address_space == _GPUAddressSpace.SHARED,
+        dst.address_space == AddressSpace.SHARED,
         "dst address space must be SHARED.",
     ]()
 
@@ -6124,13 +6135,16 @@ fn cp_async_mn_major[
     alias src_shape0 = src_layout.shape[0].value()
     alias src_shape1 = src_layout.shape[1].value()
 
-    alias desc_layout = _tma_desc_tile_layout[
-        dtype,
-        2,
-        Index(src_shape0, src_shape1),
-        is_k_major=False,
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
-    ]()
+    # we can't use the tma desc layout, as if swizzle_granularity ==
+    # `src_shape1`, the tma will want to fuse the rows into a large
+    # description. We need to partition the copy among the 4 warps
+    # of the warp group. Thus, we use the minimal desc layout.
+    alias core_matrix_num_rows = 8
+    alias swizzle_bytes = 128  # assume 128B swizzle
+    alias swizzle_granularity = swizzle_bytes // dtype.size_of()
+    alias desc_layout = Layout.row_major(
+        core_matrix_num_rows, swizzle_granularity
+    )
     alias desc_shape0 = desc_layout.shape[0].value()
     alias desc_shape1 = desc_layout.shape[1].value()
     alias desc_size = desc_layout.size()
@@ -6372,13 +6386,12 @@ fn copy_dram_to_sram_async[
     - The maximum size of each element that can be copied is 16 bytes.
     """
     constrained[
-        src.address_space
-        in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+        src.address_space in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
         "src address space must be GENERIC or GLOBAL.",
     ]()
 
     constrained[
-        dst.address_space == _GPUAddressSpace.SHARED,
+        dst.address_space == AddressSpace.SHARED,
         "dst address space must be SHARED.",
     ]()
 
@@ -6597,13 +6610,12 @@ fn copy_sram_to_dram[
         copy operations before proceeding.
     """
     constrained[
-        dst.address_space
-        in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+        dst.address_space in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
         "dst address space must be GENERIC or GLOBAL.",
     ]()
 
     constrained[
-        src.address_space == _GPUAddressSpace.SHARED,
+        src.address_space == AddressSpace.SHARED,
         "src address space must be SHARED.",
     ]()
 
@@ -6793,12 +6805,12 @@ fn copy_sram_to_local[
     ]()
 
     constrained[
-        src.address_space == _GPUAddressSpace.SHARED,
+        src.address_space == AddressSpace.SHARED,
         "src address space must be SHARED.",
     ]()
 
     constrained[
-        dst.address_space == _GPUAddressSpace.LOCAL,
+        dst.address_space == AddressSpace.LOCAL,
         "dst address space must be LOCAL.",
     ]()
 
@@ -6816,13 +6828,12 @@ fn copy_sram_to_local[
 @always_inline("nodebug")
 fn _copy_local_to_dram_validate_args(dst: LayoutTensor, src: LayoutTensor):
     constrained[
-        src.address_space == _GPUAddressSpace.LOCAL,
+        src.address_space == AddressSpace.LOCAL,
         "src address space must be LOCAL.",
     ]()
 
     constrained[
-        dst.address_space
-        in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+        dst.address_space in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
         "dst address space must be GENERIC or GLOBAL.",
     ]()
 
@@ -7430,10 +7441,8 @@ fn copy_local_to_shared[
     *,
     row_major: Bool = False,
 ](
-    dst: LayoutTensor[
-        mut=True, *_, address_space = _GPUAddressSpace.SHARED, **_
-    ],
-    src: LayoutTensor[*_, address_space = _GPUAddressSpace.LOCAL, **_],
+    dst: LayoutTensor[mut=True, *_, address_space = AddressSpace.SHARED, **_],
+    src: LayoutTensor[*_, address_space = AddressSpace.LOCAL, **_],
 ):
     """Synchronously copy data from local memory (registers) to SRAM (shared
     memory).
@@ -7491,12 +7500,12 @@ fn copy_local_to_shared[
         a prefetching pattern from DRAM to SRAM via registers.
     """
     constrained[
-        dst.address_space == _GPUAddressSpace.SHARED,
+        dst.address_space == AddressSpace.SHARED,
         "dst address space must be SHARED.",
     ]()
 
     constrained[
-        src.address_space == _GPUAddressSpace.LOCAL,
+        src.address_space == AddressSpace.LOCAL,
         "src address space must be LOCAL.",
     ]()
 
@@ -7613,7 +7622,6 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
     ```mojo
     from layout import LayoutTensor, Layout
     from layout.layout_tensor import copy_local_to_local
-    from gpu.memory import AddressSpace
 
     fn kernel():
         ...
@@ -7657,12 +7665,12 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
         precision formats while keeping data in registers.
     """
     constrained[
-        dst.address_space == _GPUAddressSpace.LOCAL,
+        dst.address_space == AddressSpace.LOCAL,
         "dst address space must be LOCAL.",
     ]()
 
     constrained[
-        src.address_space == _GPUAddressSpace.LOCAL,
+        src.address_space == AddressSpace.LOCAL,
         "src address space must be LOCAL.",
     ]()
 

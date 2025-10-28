@@ -25,7 +25,7 @@ There are a few main tools in this module:
     These are useful helpers to specialize for the general bytes implementation.
 """
 
-from memory import UnsafePointer
+from memory import UnsafePointer, Span
 
 from .hasher import Hasher, default_hasher
 
@@ -65,9 +65,9 @@ trait Hashable:
 
         Parameters:
             H: Any Hasher type.
+
         Args:
             hasher: The hasher instance to contribute to.
-
         """
         ...
 
@@ -101,7 +101,19 @@ fn hash[
     ],
     n: Int,
 ) -> UInt64:
+    """Hash a sequence of bytes using the specified hasher.
+
+    Parameters:
+        HasherType: Type of the hasher to use for hashing (default: `AHasher`).
+
+    Args:
+        bytes: Pointer to the byte sequence to hash.
+        n: The number of bytes to hash.
+
+    Returns:
+        A 64-bit integer hash value.
+    """
     var hasher = HasherType()
-    hasher._update_with_bytes(bytes, n)
+    hasher._update_with_bytes(Span(ptr=bytes, length=n))
     var value = hasher^.finish()
     return value

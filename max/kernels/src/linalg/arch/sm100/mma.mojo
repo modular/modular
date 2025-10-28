@@ -14,8 +14,7 @@ from sys import size_of
 
 from gpu.cluster import cluster_mask_base
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_id_in_cluster
-from gpu.memory import AddressSpace
+from gpu import block_id_in_cluster
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import IntTuple, Layout, LayoutTensor
@@ -190,7 +189,7 @@ struct MmaOpSM100_SS[
     ):
         @parameter
         if product(cluster_shape) == 1:
-            mma_arrive(ptr_mbar)
+            mma_arrive[cta_group](ptr_mbar)
         else:
             mma_arrive_multicast[cta_group](ptr_mbar, self.mask)
 

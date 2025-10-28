@@ -16,6 +16,7 @@ from max.mlir.dialects import rmo
 
 from ..graph import Graph
 from ..value import TensorValue, TensorValueLike
+from .validation import assert_same_device
 
 
 def matmul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
@@ -47,6 +48,7 @@ def matmul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
         matrices together and then performing a matrix multiply
         along the innermost two dimension of each tensor.
     """
-    return Graph.current._add_op(
-        rmo.matmul, TensorValue(lhs), TensorValue(rhs)
-    )[0].tensor
+    lhs = TensorValue(lhs)
+    rhs = TensorValue(rhs)
+    assert_same_device(lhs=lhs, rhs=rhs)
+    return Graph.current._add_op(rmo.matmul, lhs, rhs)[0].tensor

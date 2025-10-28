@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import fma
-from sys import external_call
+from sys import external_call, size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -24,14 +24,14 @@ from memory import memcpy
 from nn.concat import concat
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import (
+from tensor import (
     DynamicTensor,
     InputTensor,
     IOSpec,
     ManagedTensorSlice,
 )
-from tensor_internal.io_spec import IO
-from tensor_internal.managed_tensor_slice import get_kernel_simd_width
+from tensor.io_spec import IO
+from tensor.managed_tensor_slice import get_kernel_simd_width
 from weights_registry import WeightsRegistry
 
 from utils import Index, IndexList, StaticTuple
@@ -47,6 +47,11 @@ fn bytecount_with_dtype(shape: IndexList, dtype: DType) -> Int:
     return shape.flattened_length() * dtype.size_of()
 
 
+# TODO: This struct should be deleted. Mojo and C++ should always communicate
+# with pointers. If the Mojo wants to do something with this object, we should
+# just create a C++ function for it. For the time being, this is safe because of
+# the `constrained` and `static_assert` we added to ensure the type has the
+# right byte size.
 @register_passable("trivial")
 struct StateContext:
     """Defines a StateContext structure which holds a ptr to context and has accessors that go to external calls
@@ -60,6 +65,14 @@ struct StateContext:
         self.num_slots = num_slots
         self.ctx_ptr = ctx_ptr
 
+        constrained[
+            size_of[StateContext]() == 16,
+            (
+                "Expecting StateContext to be 16 bytes wide, to match the C++"
+                " equivalent"
+            ),
+        ]()
+
     @always_inline
     fn __getitem__(self, index: Int) -> OpaquePointer:
         debug_assert(0 <= index < self.num_slots, "index must be within bounds")
@@ -69,12 +82,10 @@ struct StateContext:
         ](index, self.ctx_ptr)
 
 
-fn pack_string_res(
-    str_ptr: UnsafePointer[Byte], str_len: UInt
-) raises -> String:
+fn pack_string_res(str_ptr: UnsafePointer[Byte], str_len: Int) raises -> String:
     var span = Span[Byte, ImmutableAnyOrigin](
         ptr=str_ptr,
-        length=str_len,
+        length=Int(str_len),
     )
     # We can not free the resource ptr embedded in MEF, create a copy
     return String(StringSlice(from_utf8=span))
@@ -432,146 +443,6 @@ fn get_buffer_data(
 
 
 # ===-----------------------------------------------------------------------===#
-# Mojo generation hooks
-# ===-----------------------------------------------------------------------===#
-
-
-@register_internal("mogg.async.__del__")
-@no_inline
-fn mogg_async_del(async_ptr: OpaquePointer):
-    var ptr = UnsafePointer(to=async_ptr)
-    external_call["KGEN_CompilerRT_DestructAsyncRefs", NoneType](1, ptr, False)
-
-
-@register_internal("mogg.async.unpack")
-@no_inline
-fn mogg_async_unpack[T: AnyTrivialRegType](async_ptr: OpaquePointer) -> T:
-    return external_call["KGEN_CompilerRT_GetValueFromAsync", OpaquePointer](
-        async_ptr
-    ).bitcast[T]()[0]
-
-
-struct MoggAsyncPackHelper:
-    """
-    Helper struct for packing various data types into an asynchronous context for MOGG operations.
-    Provides constructor overloads for different supported types.
-    """
-
-    fn __init__(out self, data: Int, async_ptr: OpaquePointer):
-        """
-        Packs an integer value into the asynchronous context.
-        Calls create_index_async to handle the packing.
-        """
-        create_index_async(data, async_ptr)
-
-    fn __init__(out self, data: Int64, async_ptr: OpaquePointer):
-        """
-        Packs a 64-bit integer value into the asynchronous context.
-        Calls create_si64_async to handle the packing.
-        """
-        create_si64_async(data, async_ptr)
-
-    fn __init__(out self, data: Bool, async_ptr: OpaquePointer):
-        """
-        Packs a boolean value into the asynchronous context.
-        Calls create_i1_async to handle the packing.
-        """
-        create_i1_async(data, async_ptr)
-
-    fn __init__[
-        spec_rank: Int
-    ](out self, data: IndexList[spec_rank], async_ptr: OpaquePointer):
-        """
-        Packs an IndexList of specified rank into the asynchronous context.
-        Calls create_tensor_spec_async to handle the packing.
-        """
-        create_tensor_spec_async(data, async_ptr)
-
-
-@register_internal("mogg.async.pack")
-@no_inline
-fn mogg_async_pack(pack_helper: MoggAsyncPackHelper):
-    """
-    Packs asynchronous data using the provided MoggAsyncPackHelper.
-
-    This function serves as an entry point for packing data into an asynchronous
-    reference. The actual packing logic is handled by the MoggAsyncPackHelper struct,
-    which provides specialized constructors for different data types. This function
-    itself is a no-op and exists to satisfy the internal registration mechanism.
-    """
-    return
-
-
-@register_internal("mogg.tensor.__init__")
-@no_inline
-fn mogg_tensor_init[
-    dtype: DType,
-    rank: Int,
-    mut: Bool,
-    input: IO,
-    static_shape: DimList,
-    static_stride: DimList,
-    alignment: Int,
-    exclusive: Bool,
-](ptr: OpaquePointer, shape: IndexList[rank]) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank](
-        static_shape,
-        static_stride,
-        alignment,
-        AddressSpace.GENERIC,
-        exclusive,
-        None,
-        None,
-        None,
-    ),
-]:
-    alias static_spec = StaticTensorSpec[dtype, rank](
-        static_shape,
-        static_stride,
-        alignment,
-        AddressSpace.GENERIC,
-        exclusive,
-        None,
-        None,
-        None,
-    )
-    return ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec=static_spec,
-    ](ptr.bitcast[Scalar[dtype]](), shape)
-
-
-@register_internal("mogg.async.ready")
-@no_inline
-fn mogg_async_ready(async_ptr: OpaquePointer):
-    external_call["KGEN_CompilerRT_CreateAsync_chain", NoneType](async_ptr)
-
-
-@register_internal("mogg.async.error")
-@no_inline
-fn mogg_async_error(async_ptr: OpaquePointer, err: Error):
-    """Indicates to the C++ runtime that the kernel has failed."""
-    external_call["KGEN_CompilerRT_AsyncRT_CreateAsync_Error", NoneType](
-        async_ptr,
-        err.unsafe_cstr_ptr(),
-        err.byte_length(),
-    )
-
-
-# ===-----------------------------------------------------------------------===#
-# MGP Common Primitives
-# ===-----------------------------------------------------------------------===#
-
-
-@register_internal("mgp.assert")
-@no_inline
-fn mgp_assert(cond: Bool, msg_ptr: UnsafePointer[Byte], msg_len: Int) raises:
-    if not cond:
-        raise Error(pack_string_res(msg_ptr, UInt(msg_len)))
-
-
-# ===-----------------------------------------------------------------------===#
 # MGP Tensor Primitives
 # ===-----------------------------------------------------------------------===#
 
@@ -684,7 +555,7 @@ fn mgp_buffer_constant_external(
             "received null weights registry in mgp.buffer.constant.external"
         )
 
-    var weight_ptr = weights[][pack_string_res(name_ptr, name_len)]
+    var weight_ptr = weights[][pack_string_res(name_ptr, Int(name_len))]
     if (Int(weight_ptr) % align) != 0:
         raise Error(
             "invalid alignment for address ",
@@ -1169,7 +1040,7 @@ fn ListOfTensorDef[
             static_spec = StaticTensorSpec[dtype, rank].create_unknown()
         ]
     ]
-) -> __type_of(ty):
+) -> type_of(ty):
     return ty.copy()
 
 
@@ -1200,45 +1071,6 @@ fn reshape_contiguous_buffer[
     shape: IndexList[new_rank],
 ) -> DynamicTensor[dtype, new_rank]:
     return DynamicTensor[dtype, new_rank](buffer._ptr, shape)
-
-
-# TODO: Rename it without `_v2` and get rid of the implementation above.
-# The previous implementation didn't propagate the StaticTensorSpec correctly.
-# This wasn't a problem because we manipulated KGEN in the GC and passed the correct parameter to the kernel either way.
-# But for mojo we need to compute it correctly.
-@register_internal("reshape_contiguous_managed_tensor_slice_v2")
-@always_inline
-fn reshape_contiguous_buffer_v2[
-    static_shape: DimList, static_stride: DimList, new_rank: Int
-](
-    buffer: ManagedTensorSlice,
-    shape: IndexList[new_rank],
-) -> ManagedTensorSlice[
-    io_spec = buffer.io_spec,
-    static_spec = StaticTensorSpec[buffer.dtype, new_rank](
-        static_shape,
-        static_stride,
-        1,
-        AddressSpace.GENERIC,
-        True,
-        None,
-        None,
-        None,
-    ),
-]:
-    return ManagedTensorSlice[
-        io_spec = buffer.io_spec,
-        static_spec = StaticTensorSpec[buffer.dtype, new_rank](
-            static_shape,
-            static_stride,
-            1,
-            AddressSpace.GENERIC,
-            True,
-            None,
-            None,
-            None,
-        ),
-    ](buffer._ptr, shape)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1355,12 +1187,6 @@ fn get_scalar_from_managed_tensor_slice[
     return _get_scalar_from_managed_tensor_slice(tensor)
 
 
-@register_internal("mogg.as_scalar")
-@always_inline
-fn mogg_as_scalar(tensor: ManagedTensorSlice) -> Scalar[tensor.dtype]:
-    return _get_scalar_from_managed_tensor_slice(tensor)
-
-
 @register_internal("get_int_from_shape")
 @always_inline
 fn get_int_from_shape[
@@ -1471,8 +1297,343 @@ fn to_managed_tensor_slice_list[
     return out_list^
 
 
+# ===-----------------------------------------------------------------------===#
+# Opaque Test Primitives
+# ===-----------------------------------------------------------------------===#
+
+
+struct MyInt(Movable):
+    var val: Int
+
+    fn __init__(out self, val: Int):
+        self.val = val
+
+    fn __moveinit__(out self, deinit other: MyInt):
+        print("MyInt.__moveinit__", other.val)
+        self.val = other.val
+
+    fn __del__(deinit self):
+        print("MyInt.__del__", self.val)
+
+
+@register_internal("testfuse.my_int.from_index")
+@no_inline
+fn test_my_int_from_index(x: Int) -> MyInt:
+    return MyInt(x)
+
+
+@register_internal("testfuse.my_int.square")
+@no_inline
+fn test_my_int_square(x: MyInt) -> MyInt:
+    return MyInt(x.val * x.val)
+
+
+@register_internal("testfuse.my_int.to_index")
+@no_inline
+fn test_my_int_to_index(x: MyInt) -> Int:
+    return x.val
+
+
+@register_passable("trivial")
+struct MyIntReg(ImplicitlyCopyable, Movable):
+    var val: Int
+
+    fn __init__(out self, val: Int):
+        self.val = val
+
+
+@register_internal("testfuse.my_int_reg.square")
+@no_inline
+fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
+    return MyIntReg(x.val * x.val)
+
+
+@register_passable
+struct MyIntReg2(ImplicitlyCopyable, Movable):
+    var val: Int
+
+    fn __init__(out self, val: Int):
+        self.val = val
+
+    fn __del__(deinit self):
+        print("MyIntReg2.__del__", self.val)
+
+
+@register_internal("testfuse.my_int_reg2.from_index")
+@no_inline
+fn test_my_int_reg2_from_index(x: Int) -> MyIntReg2:
+    return MyIntReg2(x)
+
+
+@register_internal("testfuse.my_int_reg2.square")
+@no_inline
+fn test_my_int_reg2_square(x: MyIntReg2) -> MyIntReg2:
+    return MyIntReg2(x.val * x.val)
+
+
+@register_internal("testfuse.my_int_reg2.to_index")
+@no_inline
+fn test_my_int_reg2_to_index(x: MyIntReg2) -> Int:
+    return x.val
+
+
+# ===-----------------------------------------------------------------------===#
+# Mojo generation hooks
+# ===-----------------------------------------------------------------------===#
+
+# ===-----------------------------------------------------------------------===#
+# Mojo-C++ interop aliases
+# ===-----------------------------------------------------------------------===#
+
+# The purpose of these aliases is to make it easier to visually parse the
+# interop. There is only one rule: Do not use types, always use OpaquePointer.
+# This saves us from having to statically assert that a certain type has a
+# specific byte size.
+
+# AnyAsyncValueRef is a C++ struct. The runtime passes a reference to it.
+# Therefore, we alias it to OpaquePointer which will have the same bitwidth as
+# C++'s pointers.
+alias AnyAsyncValueRefPtr = OpaquePointer
+
+# TensorBufferRef is a C++ struct. Primitives should always manipulate a
+# reference to it. Therefore, it is modeled here as an OpaquePointer.
+alias TensorBufferRefPtr = OpaquePointer
+
+# StateContext is a C++ struct. Primitives should always manipulate a reference
+# to it. Therefore, it is modeled here as an OpaquePointer.
+alias StateContextRef = OpaquePointer
+
+
+# ===-----------------------------------------------------------------------===#
+# MOGG primitives
+# ===-----------------------------------------------------------------------===#
+
+
+@register_internal("mogg.as_scalar")
+@always_inline
+fn mogg_as_scalar(tensor: ManagedTensorSlice) -> Scalar[tensor.dtype]:
+    return _get_scalar_from_managed_tensor_slice(tensor)
+
+
+@register_internal("mogg.async.__del__")
+@no_inline
+fn mogg_async_del(async_ptr: AnyAsyncValueRefPtr):
+    """
+    Decrement the AnyAsyncValueRef. Typically called at the end of a kernel for
+    all input and output operands.
+    """
+    var ptr = UnsafePointer(to=async_ptr)
+    external_call["KGEN_CompilerRT_DestructAsyncRefs", NoneType](1, ptr, False)
+
+
+@register_internal("mogg.async.unpack")
+@no_inline
+fn mogg_async_unpack[T: AnyTrivialRegType](async_ptr: AnyAsyncValueRefPtr) -> T:
+    """
+    Returns the value stored in the AnyAsyncValueRef.
+    """
+    return external_call["KGEN_CompilerRT_GetValueFromAsync", OpaquePointer](
+        async_ptr
+    ).bitcast[T]()[0]
+
+
+struct MoggAsyncPackHelper:
+    """
+    Helper struct for packing various data types into an asynchronous context
+    for MOGG operations. Provides constructor overloads for different supported
+    types.
+    """
+
+    fn __init__(out self, data: Int, async_ptr: AnyAsyncValueRefPtr):
+        """
+        Packs an integer value into the asynchronous context.
+        Calls create_index_async to handle the packing.
+        """
+        create_index_async(data, async_ptr)
+
+    fn __init__(out self, data: Int64, async_ptr: AnyAsyncValueRefPtr):
+        """
+        Packs a 64-bit integer value into the asynchronous context.
+        Calls create_si64_async to handle the packing.
+        """
+        create_si64_async(data, async_ptr)
+
+    fn __init__(out self, data: Bool, async_ptr: AnyAsyncValueRefPtr):
+        """
+        Packs a boolean value into the asynchronous context.
+        Calls create_i1_async to handle the packing.
+        """
+        create_i1_async(data, async_ptr)
+
+    fn __init__[
+        spec_rank: Int
+    ](out self, data: IndexList[spec_rank], async_ptr: AnyAsyncValueRefPtr):
+        """
+        Packs an IndexList of specified rank into the asynchronous context.
+        Calls create_tensor_spec_async to handle the packing.
+        """
+        create_tensor_spec_async(data, async_ptr)
+
+
+@register_internal("mogg.async.pack")
+@no_inline
+fn mogg_async_pack(pack_helper: MoggAsyncPackHelper):
+    """
+    Packs asynchronous data using the provided MoggAsyncPackHelper.
+
+    This function serves as an entry point for packing data into an asynchronous
+    reference. The actual packing logic is handled by the MoggAsyncPackHelper struct,
+    which provides specialized constructors for different data types. This function
+    itself is a no-op and exists to satisfy the internal registration mechanism.
+    """
+    return
+
+
+@register_internal("mogg.async.pack.borrow")
+@no_inline
+fn mogg_async_pack_borrow(
+    borrower: AnyAsyncValueRefPtr, borrowee: TensorBufferRefPtr
+):
+    """
+    Borrows an async value. This differs from `mogg.async.pack` which assigns a
+    value to the given async value in that it's a simple refcount increment.
+    """
+    external_call["MGP_RT_BufferBorrow", NoneType](borrower, borrowee)
+
+
+@register_internal("mogg.tensor.__init__")
+@no_inline
+fn mogg_tensor_init[
+    dtype: DType,
+    rank: Int,
+    mut: Bool,
+    input: IO,
+    static_shape: DimList,
+    static_stride: DimList,
+    alignment: Int,
+    exclusive: Bool,
+](ptr: OpaquePointer, shape: IndexList[rank]) -> ManagedTensorSlice[
+    io_spec = IOSpec[mut, input](),
+    static_spec = StaticTensorSpec[dtype, rank](
+        static_shape,
+        static_stride,
+        alignment,
+        AddressSpace.GENERIC,
+        exclusive,
+        None,
+        None,
+        None,
+    ),
+]:
+    """
+    Helper for constructing a ManagedTensorSlice.
+    """
+    alias static_spec = StaticTensorSpec[dtype, rank](
+        static_shape,
+        static_stride,
+        alignment,
+        AddressSpace.GENERIC,
+        exclusive,
+        None,
+        None,
+        None,
+    )
+    return ManagedTensorSlice[
+        io_spec = IOSpec[mut, input](),
+        static_spec=static_spec,
+    ](ptr.bitcast[Scalar[dtype]](), shape)
+
+
+@register_internal("mogg.async.ready")
+@no_inline
+fn mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
+    """
+    Marks the chain as ready.
+    """
+    external_call["KGEN_CompilerRT_CreateAsync_chain", NoneType](async_ptr)
+
+
+@register_internal("mogg.async.error")
+@no_inline
+fn mogg_async_error(async_ptr: AnyAsyncValueRefPtr, err: Error):
+    """Indicates to the C++ runtime that the kernel has failed."""
+    external_call["KGEN_CompilerRT_AsyncRT_CreateAsync_Error", NoneType](
+        async_ptr,
+        err.unsafe_cstr_ptr(),
+        err.byte_length(),
+    )
+
+
+@register_internal("tmp.reshape_contiguous_managed_tensor_slice")
+@always_inline
+fn tmp_reshape_contiguous_buffer[
+    static_shape: DimList, static_stride: DimList, new_rank: Int
+](
+    buffer: ManagedTensorSlice,
+    shape: IndexList[new_rank],
+) -> ManagedTensorSlice[
+    io_spec = buffer.io_spec,
+    static_spec = StaticTensorSpec[buffer.dtype, new_rank](
+        static_shape,
+        static_stride,
+        1,
+        AddressSpace.GENERIC,
+        True,
+        None,
+        None,
+        None,
+    ),
+]:
+    """
+    Constructs a new ManagedTensorSlice with with a new shape and static spec.
+    """
+    return ManagedTensorSlice[
+        io_spec = buffer.io_spec,
+        static_spec = StaticTensorSpec[buffer.dtype, new_rank](
+            static_shape,
+            static_stride,
+            1,
+            AddressSpace.GENERIC,
+            True,
+            None,
+            None,
+            None,
+        ),
+    ](buffer._ptr, shape)
+
+
+# ===-----------------------------------------------------------------------===#
+# MGP primitives
+# ===-----------------------------------------------------------------------===#
+
+
+@register_internal("tmp.mgp.buffer.get_cached")
+@no_inline
+fn tmp_mgp_buffer_get_cached(
+    ctx: StateContextRef,
+    buffer_slot: Int,
+) -> TensorBufferRefPtr:
+    """
+    Get a reference to the cached TensorBufferRef.
+    """
+    return external_call["TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr](
+        buffer_slot,
+        ctx,
+    )
+
+
+@register_internal("mgp.assert")
+@no_inline
+fn mgp_assert(cond: Bool, msg_ptr: UnsafePointer[Byte], msg_len: Int) raises:
+    """
+    Raises an error when the input condition is not true.
+    """
+    if not cond:
+        raise Error(pack_string_res(msg_ptr, msg_len))
+
+
 # ===----------------------------------------------------------------------===#
-# Affine view kernel implementations
+# Affine view kernels
 # ===----------------------------------------------------------------------===#
 
 
@@ -1553,83 +1714,3 @@ fn insert_index[
             out[i] = value
 
     return out
-
-
-# ===-----------------------------------------------------------------------===#
-# Opaque Test Primitives
-# ===-----------------------------------------------------------------------===#
-
-
-struct MyInt(Movable):
-    var val: Int
-
-    fn __init__(out self, val: Int):
-        self.val = val
-
-    fn __moveinit__(out self, deinit other: MyInt):
-        print("MyInt.__moveinit__", other.val)
-        self.val = other.val
-
-    fn __del__(deinit self):
-        print("MyInt.__del__", self.val)
-
-
-@register_internal("testfuse.my_int.from_index")
-@no_inline
-fn test_my_int_from_index(x: Int) -> MyInt:
-    return MyInt(x)
-
-
-@register_internal("testfuse.my_int.square")
-@no_inline
-fn test_my_int_square(x: MyInt) -> MyInt:
-    return MyInt(x.val * x.val)
-
-
-@register_internal("testfuse.my_int.to_index")
-@no_inline
-fn test_my_int_to_index(x: MyInt) -> Int:
-    return x.val
-
-
-@register_passable("trivial")
-struct MyIntReg(ImplicitlyCopyable, Movable):
-    var val: Int
-
-    fn __init__(out self, val: Int):
-        self.val = val
-
-
-@register_internal("testfuse.my_int_reg.square")
-@no_inline
-fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
-    return MyIntReg(x.val * x.val)
-
-
-@register_passable
-struct MyIntReg2(ImplicitlyCopyable, Movable):
-    var val: Int
-
-    fn __init__(out self, val: Int):
-        self.val = val
-
-    fn __del__(deinit self):
-        print("MyIntReg2.__del__", self.val)
-
-
-@register_internal("testfuse.my_int_reg2.from_index")
-@no_inline
-fn test_my_int_reg2_from_index(x: Int) -> MyIntReg2:
-    return MyIntReg2(x)
-
-
-@register_internal("testfuse.my_int_reg2.square")
-@no_inline
-fn test_my_int_reg2_square(x: MyIntReg2) -> MyIntReg2:
-    return MyIntReg2(x.val * x.val)
-
-
-@register_internal("testfuse.my_int_reg2.to_index")
-@no_inline
-fn test_my_int_reg2_to_index(x: MyIntReg2) -> Int:
-    return x.val

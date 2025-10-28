@@ -18,6 +18,7 @@ from .. import dtype_promotion
 from ..graph import Graph
 from ..type import ConvInputLayout, FilterLayout, Shape
 from ..value import TensorValue, TensorValueLike
+from .validation import assert_same_device
 
 
 def conv2d(
@@ -100,6 +101,8 @@ def conv2d(
             "filter for a 2-D convolution must be rank 4 with shape (height,"
             " width, in_channels / num_groups, out_channels)"
         )
+
+    assert_same_device(x=x, filter=filter)
 
     conv_output = Graph.current._add_op(
         rmo.conv,

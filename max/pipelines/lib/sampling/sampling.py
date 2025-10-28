@@ -64,6 +64,9 @@ def _sampling_input_types(
     top_p_type = TensorType(DType.float32, ["batch"], device=device)
     inputs["top_p"] = top_p_type
 
+    min_p_type = TensorType(DType.float32, [], device=DeviceRef.CPU())
+    inputs["min_top_p"] = min_p_type
+
     seed_type = TensorType(DType.uint64, ["batch"], device=device)
     inputs["seed"] = seed_type
 
@@ -83,8 +86,10 @@ def _sampling_input_types(
 
     # If we have structured_outputs enabled
     if sampling_config.enable_structured_output:
+        # Use seperate symbolic dimension to avoid conflicts with logits' vocab_size
+        # since llguidance creates 32-bit aligned bitmasks.
         bitmask_type = TensorType(
-            DType.bool, ["batch", "vocab_size"], device=device
+            DType.bool, ["batch", "vocab_size_structured"], device=device
         )
         inputs["bitmask"] = bitmask_type
 
@@ -211,6 +216,11 @@ def token_sampler(
 
         if "bitmask" in _input_dict:
             bitmask = graph.inputs[list(_input_dict).index("bitmask")].tensor
+
+            # Remove extra padding provided by llguidance.
+            if logits.shape[1] != bitmask.shape[1]:
+                bitmask = bitmask[:, : logits.shape[1]]
+
             logits = ops.where(
                 bitmask,
                 logits,
@@ -224,6 +234,7 @@ def token_sampler(
         top_k = graph.inputs[list(_input_dict).index("top_k")].tensor
         max_k = graph.inputs[list(_input_dict).index("max_k")].tensor
         top_p = graph.inputs[list(_input_dict).index("top_p")].tensor
+        min_top_p = graph.inputs[list(_input_dict).index("min_top_p")].tensor
         seed = graph.inputs[list(_input_dict).index("seed")].tensor
 
         tokens = topk_fused_sampling(
@@ -232,6 +243,7 @@ def token_sampler(
             max_k=max_k,
             temperature=temperature,
             top_p=top_p,
+            min_top_p=min_top_p,
             seed=seed,
         )
 

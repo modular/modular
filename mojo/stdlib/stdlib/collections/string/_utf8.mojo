@@ -24,6 +24,10 @@ from memory import Span
 # Validate UTF-8
 # ===-----------------------------------------------------------------------===#
 
+alias BIGGEST_UTF8_FIRST_BYTE = Byte(0b1111_0100)
+"""Since the biggest unicode codepoint is 0x10FFFF then the biggest
+first byte that a utf-8 sequence can have is 0b1111_0100 (0xF4).
+"""
 
 alias TOO_SHORT: UInt8 = 1 << 0
 alias TOO_LONG: UInt8 = 1 << 1
@@ -169,6 +173,8 @@ fn _is_valid_utf8_comptime(span: Span[mut=False, Byte, **_]) -> Bool:
 
     while offset < length:
         var b0 = ptr[offset]
+        if b0 > BIGGEST_UTF8_FIRST_BYTE:
+            return False
         var byte_type = _utf8_byte_type(b0)
         if byte_type == 0:
             offset += 1
@@ -183,15 +189,15 @@ fn _is_valid_utf8_comptime(span: Span[mut=False, Byte, **_]) -> Bool:
 
         # special unicode ranges
         var b1 = ptr[offset + 1]
-        if byte_type == 2 and b0 < UInt8(0b1100_0010):
+        if byte_type == 2 and b0 < 0b1100_0010:
             return False
-        elif b0 == 0xE0 and b1 < UInt8(0xA0):
+        elif b0 == 0xE0 and b1 < 0xA0:
             return False
-        elif b0 == 0xED and b1 > UInt8(0x9F):
+        elif b0 == 0xED and b1 > 0x9F:
             return False
-        elif b0 == 0xF0 and b1 < UInt8(0x90):
+        elif b0 == 0xF0 and b1 < 0x90:
             return False
-        elif b0 == 0xF4 and b1 > UInt8(0x8F):
+        elif b0 == 0xF4 and b1 > 0x8F:
             return False
 
         offset += UInt(byte_type)
@@ -246,7 +252,7 @@ fn _is_utf8_continuation_byte[
 
 @always_inline
 fn _count_utf8_continuation_bytes(span: Span[Byte]) -> Int:
-    return span.count[func=_is_utf8_continuation_byte]()
+    return Int(span.count[func=_is_utf8_continuation_byte]())
 
 
 @always_inline
@@ -254,6 +260,9 @@ fn _utf8_first_byte_sequence_length(b: Byte) -> UInt:
     """Get the length of the sequence starting with given byte. Do note that
     this does not work correctly if given a continuation byte."""
 
+    debug_assert(
+        b <= BIGGEST_UTF8_FIRST_BYTE, "first byte is out of range for utf-8"
+    )
     debug_assert(
         not _is_utf8_continuation_byte(b),
         "Function does not work correctly if given a continuation byte.",
@@ -263,7 +272,7 @@ fn _utf8_first_byte_sequence_length(b: Byte) -> UInt:
     )
 
 
-fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
+fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):
     """UTF-8 byte type.
 
     Returns:
@@ -277,7 +286,10 @@ fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
         - 3 -> start of 3 byte long sequence.
         - 4 -> start of 4 byte long sequence.
     """
-    return count_leading_zeros(~b | 0b0000_1111)
+    debug_assert(
+        b <= BIGGEST_UTF8_FIRST_BYTE, "first byte is out of range for utf-8"
+    )
+    return count_leading_zeros(~b)
 
 
 @always_inline

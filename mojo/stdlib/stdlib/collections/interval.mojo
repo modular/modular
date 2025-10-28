@@ -511,6 +511,7 @@ struct IntervalTree[
         self._len = 0
 
     fn __del__(deinit self):
+        """Destructor that frees the interval tree's memory."""
         Self._del_helper(self._root)
 
     @staticmethod
@@ -687,7 +688,7 @@ struct IntervalTree[
 
         # Find the insertion point by traversing down the tree
         # parent_node tracks the parent of the current node
-        var parent_node = __type_of(self._root)()
+        var parent_node = type_of(self._root)()
         # current_node traverses down the tree until we find an empty spot
         var current_node = self._root
         while current_node:
@@ -998,6 +999,9 @@ struct IntervalTree[
 
         Returns:
             A list of data associated with overlapping intervals.
+
+        Raises:
+            If the operation fails.
         """
         return self.search(Interval(interval[0], interval[1]))
 
@@ -1009,6 +1013,9 @@ struct IntervalTree[
 
         Returns:
             A list of data associated with overlapping intervals.
+
+        Raises:
+            If the operation fails.
         """
         return self._search_helper(self._root, interval)
 

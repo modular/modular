@@ -27,7 +27,6 @@ from gpu import WARP_SIZE, barrier, block_idx, grid_dim, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceAttribute, DeviceContext
 from gpu.host.info import is_cpu, is_gpu
-from gpu.memory import AddressSpace
 from layout._utils import idx2crd
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
@@ -72,27 +71,27 @@ fn reduce_add_simd[
 
 
 @always_inline
-fn sub(x: SIMD, y: __type_of(x)) -> __type_of(x):
+fn sub(x: SIMD, y: type_of(x)) -> type_of(x):
     return x - y
 
 
 @always_inline
-fn mul(x: SIMD, y: __type_of(x)) -> __type_of(x):
+fn mul(x: SIMD, y: type_of(x)) -> type_of(x):
     return x * y
 
 
 @always_inline
-fn identity(x: SIMD) -> __type_of(x):
+fn identity(x: SIMD) -> type_of(x):
     return x
 
 
 @always_inline
-fn reciprocal(x: SIMD) -> __type_of(x):
+fn reciprocal(x: SIMD) -> type_of(x):
     return 1 / x
 
 
 @always_inline
-fn _exp_concrete(x: SIMD) -> __type_of(x):
+fn _exp_concrete(x: SIMD) -> type_of(x):
     """The concrete implementation of the exp function.
 
     This is a helper function that is used to provide a concrete implementation
@@ -103,7 +102,7 @@ fn _exp_concrete(x: SIMD) -> __type_of(x):
 
 
 @always_inline
-fn _exp2_concrete(x: SIMD) -> __type_of(x):
+fn _exp2_concrete(x: SIMD) -> type_of(x):
     """The concrete implementation of the exp2 function."""
     return exp2(x)
 
@@ -613,7 +612,7 @@ fn _softmax_cpu[
             softmax_3_pass[
                 simd_width,
                 dtype,
-                __origin_of(),
+                origin_of(),
                 input_fn_1d,
                 logsoftmax=logsoftmax,
             ](output_buffer_view)
@@ -866,7 +865,7 @@ fn softmax[
                 dtype,
                 simd_width,
                 rank,
-                __origin_of(),
+                origin_of(),
                 input_fn,
                 logsoftmax=logsoftmax,
             ](shape, output, axis)
@@ -1238,7 +1237,7 @@ fn _online_softmax_iter_for_mma_output[
                 score_frag_rowmax[col_tile, row]
             )
 
-    var coords = idx2crd[warp_layout](lane)
+    var coords = idx2crd[warp_layout](Int(lane))
     var lane_contains_first_column = coords[1] == 0
     var lane_row = coords[0]
 
@@ -1458,7 +1457,7 @@ fn _online_softmax_iter_for_mma_output[
             for row_tile in range(num_rowwise_tiles):
                 alias tile_id = col_tile + row_tile * num_colwise_tiles + k * num_colwise_tiles * num_rowwise_tiles
 
-                alias output_frag_type = __type_of(output_reg_tile).element_type
+                alias output_frag_type = type_of(output_reg_tile).element_type
 
                 @parameter
                 if frag_is_row_vector:
@@ -1600,7 +1599,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     # 3-4. ((WM*WN)//frag_size) x frag_size: the two trailing dimensions of
     #    output_reg_tile
     alias warp_tile_size = WM * WN  # ((WM*WN)//frag_size) x frag_size
-    alias row_warp_tile_size = (num_warps_n - 1) * warp_tile_size
+    alias row_warp_tile_size = (num_warps_n - 1) * Int(warp_tile_size)
     # Makes sure arithmetic is optimized away when `num_warps_m == 1`.
     var o_smem_ptr = (
         o_smem_ptr_base
@@ -1614,7 +1613,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     var out_reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](0, 0)
 
     alias o_smem_layout = Layout.row_major(
-        WM * WN // UInt(2 * frag_size), frag_size
+        Int(WM * WN // UInt(2 * frag_size)), frag_size
     )
 
     alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
@@ -1781,7 +1780,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         @parameter
         for row_tile in range(num_n_mmas):
             alias tile_id = col_tile + row_tile * num_m_mmas
-            alias output_frag_type = __type_of(output_reg_tile).element_type
+            alias output_frag_type = type_of(output_reg_tile).element_type
 
             @parameter
             for row in range(frag_num_rows):
@@ -1799,7 +1798,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         var reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](
             warp_n, 0
         )
-        if warp_n == warp_x:
+        if warp_n == Int(warp_x):
 
             @parameter
             if warp_n > 0:
@@ -1818,9 +1817,9 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
             # `N\X` refer to `warp_n`, `warp_x`
             alias row = warp_n
             var col = warp_x - UInt(1 if warp_x > UInt(warp_n) else 0)
-            var o_smem_ptr_write = (
-                o_smem_ptr + (row * (num_warps_n - 1) + col) * warp_tile_size
-            )
+            var o_smem_ptr_write = o_smem_ptr + (
+                row * (num_warps_n - 1) + Int(col)
+            ) * Int(warp_tile_size)
             var o_smem_write = (
                 LayoutTensor[
                     dtype,
@@ -1928,7 +1927,7 @@ fn _rowmax_online_softmax[
             " where `frag_num_rows > 1`. This simplifies the implementation."
         ),
     ]()
-    score_frag_rowmax = __type_of(rowmax_tensor).stack_allocation()
+    score_frag_rowmax = type_of(rowmax_tensor).stack_allocation()
 
     alias num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
 
@@ -2016,7 +2015,7 @@ fn _rowsum[
     # The online softmax attributes for each thread's elements (fragments).
     alias num_rows_per_thread = num_colwise_tiles * frag_num_rows
 
-    score_frag_rowsum = __type_of(score_frag_rowsum).stack_allocation()
+    score_frag_rowsum = type_of(score_frag_rowsum).stack_allocation()
 
     # Initialize local max with the running max, and local sum with zero.
     @parameter

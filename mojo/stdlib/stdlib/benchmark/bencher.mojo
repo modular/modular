@@ -105,6 +105,9 @@ struct BenchMetric(ImplicitlyCopyable, Movable, Stringable, Writable):
 
         Returns:
             The selected metric.
+
+        Raises:
+            If the operation fails.
         """
         for m in metric_list:
             if m.check_name(name):
@@ -156,6 +159,9 @@ struct ThroughputMeasure(ImplicitlyCopyable, Movable):
                 - `ThroughputMeasure(BenchMetric.fmas, 1024)`
                 - `ThroughputMeasure("fmas", 1024)`
                 - `ThroughputMeasure("fmas", 1024, BenchMetric.DEFAULTS)`
+
+        Raises:
+            If the operation fails.
         """
         var metric = BenchMetric.get_metric_from_list(name, reference)
         self.metric = metric
@@ -332,6 +338,9 @@ struct BenchConfig(Copyable, Movable):
             max_iters: Max number of iterations to run (default `1_000`).
             num_repetitions: Number of times the benchmark has to be repeated.
             flush_denormals: Whether or not the denormal values are flushed.
+
+        Raises:
+            If the operation fails.
         """
 
         self.min_runtime_secs = min_runtime_secs
@@ -574,6 +583,9 @@ struct Bench(Stringable, Writable):
         Args:
             config: Benchmark configuration object to control length and frequency of benchmarks.
             mode: Benchmark mode object representing benchmark or test mode.
+
+        Raises:
+            If the operation fails.
         """
 
         self.config = config.value().copy() if config else BenchConfig()
@@ -610,6 +622,9 @@ struct Bench(Stringable, Writable):
             bench_id: The benchmark Id object used for identification.
             input: Represents the target function's input arguments.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -643,6 +658,9 @@ struct Bench(Stringable, Writable):
             bench_id: The benchmark Id object used for identification.
             input: Represents the target function's input arguments.
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
         var measures_list = List[ThroughputMeasure]()
         for m in measures:
@@ -668,6 +686,9 @@ struct Bench(Stringable, Writable):
             bench_id: The benchmark Id object used for identification.
             input: Represents the target function's input arguments.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -701,6 +722,9 @@ struct Bench(Stringable, Writable):
             bench_id: The benchmark Id object used for identification.
             input: Represents the target function's input arguments.
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
         var measures_list = List[ThroughputMeasure]()
         for m in measures:
@@ -723,6 +747,9 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -756,6 +783,9 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -785,6 +815,9 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         if self.mode == Mode.Benchmark:
@@ -804,6 +837,9 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
         var measures_list = List[ThroughputMeasure]()
         for m in measures:
@@ -826,6 +862,9 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -856,6 +895,9 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
         var measures_list = List[ThroughputMeasure]()
         for m in measures:
@@ -947,7 +989,11 @@ struct Bench(Stringable, Writable):
     fn dump_report(mut self) raises:
         """Prints out the report from a Benchmark execution. If
         `Bench.config.out_file` is set, it will also write the output in the format
-        set in `out_file_format` to the file defined in `out_file`."""
+        set in `out_file_format` to the file defined in `out_file`.
+
+        Raises:
+            If the operation fails.
+        """
         print(self)
 
         if self.config.out_file:
@@ -1046,7 +1092,7 @@ struct Bench(Stringable, Writable):
         # Write the timing labels
         if self.config.verbose_timing:
             var labels = materialize[
-                __type_of(self.config).VERBOSE_TIMING_LABELS
+                type_of(self.config).VERBOSE_TIMING_LABELS
             ]()
             # skip the met label
             for i in range(len(labels)):
@@ -1069,7 +1115,7 @@ struct Bench(Stringable, Writable):
 
             if self.config.verbose_timing:
                 var labels = materialize[
-                    __type_of(self.config).VERBOSE_TIMING_LABELS
+                    type_of(self.config).VERBOSE_TIMING_LABELS
                 ]()
                 # skip the met label
                 for i in range(len(labels)):
@@ -1178,7 +1224,7 @@ struct Bench(Stringable, Writable):
         # If label is larger than any value, will pad to the label length
 
         var max_met = len(met_label)
-        alias ConfigType = __type_of(self.config)
+        alias ConfigType = type_of(self.config)
         # NOTE: We insert an explicit materialization for Int here to avoid
         # materialize a more expensive `VERBOSE_TIMING_LABELS[]` object.
         var max_min = materialize[len(ConfigType.VERBOSE_TIMING_LABELS[0])]()
@@ -1333,6 +1379,9 @@ struct Bencher:
 
         Parameters:
             iter_fn: The target function to benchmark.
+
+        Raises:
+            If the operation fails.
         """
 
         var start = time.perf_counter_ns()

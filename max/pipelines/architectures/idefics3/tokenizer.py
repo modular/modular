@@ -233,20 +233,20 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
                 )
             pixel_values = processed_inputs["pixel_values"]
 
-            if isinstance(pixel_values, list):
-                pixel_values = tuple(pixel_values)
-            elif isinstance(pixel_values, np.ndarray):
+            if isinstance(pixel_values, np.ndarray):
                 # Handle the extra batch dimension that return_tensors="np" adds
                 if pixel_values.ndim == 5:
                     # Remove the extra batch dimension (1, N, C, H, W) -> (N, C, H, W)
                     pixel_values = pixel_values.squeeze(0)
-                pixel_values = (pixel_values,)
-            else:
+                # Convert from (N, C, H, W) -> [(C, H, W), ...] with len(N)
+                pixel_values = list(pixel_values)
+
+            if not isinstance(pixel_values, list):
                 raise ValueError(
-                    f"pixel_values is not a numpy array but it is {type(pixel_values)}"
+                    f"pixel_values is not a list but it is {type(pixel_values)}"
                 )
         else:
-            pixel_values = tuple()
+            pixel_values = []
 
         # Pass through image token indices if present
         if "image_token_indices" in processed_inputs:
@@ -273,6 +273,10 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         start_and_end_idxs = find_contiguous_ranges(
             encoded_prompt, self.vision_token_ids
         )
+        if len(start_and_end_idxs) != len(pixel_values):
+            raise ValueError(
+                f"Number of image token indices ({len(start_and_end_idxs)}) does not match number of pixel values ({len(pixel_values)})"
+            )
         context = TextAndVisionContext(
             request_id=request.request_id,
             eos_token_ids=eos_token_ids,

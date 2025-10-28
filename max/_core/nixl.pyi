@@ -93,15 +93,12 @@ class RemoteDisconnectError(Exception):
 
 class TransferDescriptorList:
     @overload
-    def __init__(
-        self, type: MemoryType, sorted: bool = False, init_size: int = 0
-    ) -> None:
+    def __init__(self, type: MemoryType, init_size: int = 0) -> None:
         """
         Constructs an empty descriptor list.
 
         Args:
           type: The type of memory each element describes
-          sorted: Initial value of the 'sorted' field
           init_size: Initial capacity of the list
         """
 
@@ -110,7 +107,6 @@ class TransferDescriptorList:
         self,
         type: MemoryType,
         descs: Sequence[ArrayLike | tuple[int, int, int]],
-        sorted: bool = False,
     ) -> None:
         """
         Constructs a descriptor list with given values.
@@ -119,7 +115,6 @@ class TransferDescriptorList:
           type: The type of memory each element describes
           descs: A list of descriptors, each describing a section of memory.
                  Each element is either a tuple or a dlpack object.
-          sorted: Whether to verify if the list is sorted or not.
         """
 
     def append(self, desc: ArrayLike | tuple[int, int, int]) -> None:
@@ -136,27 +131,22 @@ class TransferDescriptorList:
     @property
     def descriptor_count(self) -> int: ...
     def is_empty(self) -> bool: ...
-    def is_sorted(self) -> bool: ...
     def __eq__(self, arg: object, /) -> bool: ...
     def __getitem__(self, idx: int) -> tuple[int, int, int]: ...
     def __setitem__(self, idx: int, desc: tuple[int, int, int]) -> None: ...
     def index(self, desc: tuple) -> int: ...
     def remove(self, idx: int) -> None: ...
-    def verify_sorted(self) -> bool: ...
     def clear(self) -> None: ...
     def print(self) -> None: ...
 
 class RegistrationDescriptorList:
     @overload
-    def __init__(
-        self, type: MemoryType, sorted: bool = False, init_size: int = 0
-    ) -> None:
+    def __init__(self, type: MemoryType, init_size: int = 0) -> None:
         """
         Constructs an empty descriptor list.
 
         Args:
           type: The type of memory each element describes
-          sorted: Initial value of the 'sorted' field
           init_size: Initial capacity of the list
         """
 
@@ -165,7 +155,6 @@ class RegistrationDescriptorList:
         self,
         type: MemoryType,
         descs: Sequence[ArrayLike | tuple[int, int, int, str]],
-        sorted: bool = False,
     ) -> None:
         """
         Constructs a descriptor list with given values.
@@ -174,7 +163,6 @@ class RegistrationDescriptorList:
           type: The type of memory each element describes
           descs: A list of descriptors, each describing a section of memory.
                  Each element is either a tuple or a dlpack object.
-          sorted: Whether to verify if the list is sorted or not.
         """
 
     def append(self, desc: ArrayLike | tuple[int, int, int, str]) -> None:
@@ -191,7 +179,6 @@ class RegistrationDescriptorList:
     @property
     def descriptor_count(self) -> int: ...
     def is_empty(self) -> bool: ...
-    def is_sorted(self) -> bool: ...
     def __eq__(self, arg: object, /) -> bool: ...
     def __getitem__(self, idx: int) -> tuple[int, int, int, str]: ...
     def __setitem__(
@@ -200,7 +187,6 @@ class RegistrationDescriptorList:
     def index(self, desc: tuple) -> int: ...
     def trim(self) -> TransferDescriptorList: ...
     def remove(self, idx: int) -> None: ...
-    def verify_sorted(self) -> bool: ...
     def clear(self) -> None: ...
     def print(self) -> None: ...
 

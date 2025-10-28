@@ -36,6 +36,8 @@ from gpu.random import Random
 ```
 """
 
+from sys import is_little_endian
+
 from math import cos, log, sin, sqrt
 
 from memory import bitcast
@@ -48,7 +50,7 @@ fn _mulhilow(a: UInt32, b: UInt32) -> SIMD[DType.uint32, 2]:
     return bitcast[DType.uint32, 2](res)
 
 
-struct Random[rounds: Int = 6]:
+struct Random[rounds: Int = 10]:
     """A high-performance random number generator using the Philox algorithm.
 
     The Philox algorithm is a counter-based random number generator designed for parallel
@@ -90,11 +92,16 @@ struct Random[rounds: Int = 6]:
         """
         alias K_PHILOX_10 = SIMD[DType.uint32, 2](0x9E3779B9, 0xBB67AE85)
 
+        var counter = self._counter
+        var key = self._key
+
         @parameter
-        for i in range(rounds):
-            self._counter = self._single_round(self._counter, self._key)
-            self._key += K_PHILOX_10
-        return self._single_round(self._counter, self._key)
+        for i in range(rounds - 1):
+            counter = self._single_round(counter, key)
+            key += K_PHILOX_10
+        var res = self._single_round(counter, key)
+        self._incrn(1)
+        return res
 
     @always_inline
     fn step_uniform(mut self) -> SIMD[DType.float32, 4]:
@@ -103,9 +110,9 @@ struct Random[rounds: Int = 6]:
         Returns:
             SIMD vector containing 4 random float32 values in range [0,1).
         """
-        # The inverse of 2^32
-        alias INV_2_32 = 2.3283064e-10
-        return self.step().cast[DType.float32]() * INV_2_32
+        # maximum value such that `MAX_INT * scale < 1.0` (with float rounding)
+        alias SCALE = 4.6566127342e-10
+        return (self.step() & 0x7FFFFFFF).cast[DType.float32]() * SCALE
 
     @always_inline
     fn _incrn(mut self, n: Int64):
@@ -115,8 +122,10 @@ struct Random[rounds: Int = 6]:
             n: Amount to increment the counter by.
         """
         var hilo = bitcast[DType.uint32, 2](n)
-        var hi = hilo[0]
-        var lo = hilo[1]
+        var hi, lo = (hilo[1], hilo[0]) if is_little_endian() else (
+            hilo[0],
+            hilo[1],
+        )
 
         self._counter[0] += lo
         if self._counter[0] < lo:
@@ -147,7 +156,7 @@ struct Random[rounds: Int = 6]:
         alias K_PHILOX_SB = 0xCD9E8D57
 
         var res0 = _mulhilow(K_PHILOX_SA, counter[0])
-        var res1 = _mulhilow(K_PHILOX_SB, counter[3])
+        var res1 = _mulhilow(K_PHILOX_SB, counter[2])
         return SIMD[DType.uint32, 4](
             res1[1] ^ counter[1] ^ key[0],
             res1[0],
@@ -156,7 +165,7 @@ struct Random[rounds: Int = 6]:
         )
 
 
-struct NormalRandom[rounds: Int = 6]:
+struct NormalRandom[rounds: Int = 10]:
     """A high-performance random number generator using the Box-Muller transform.
 
     The Box-Muller transform is a method for generating pairs of independent standard normal random variables.
@@ -176,6 +185,13 @@ struct NormalRandom[rounds: Int = 6]:
         subsequence: UInt64 = 0,
         offset: UInt64 = 0,
     ):
+        """Initializes the normal distribution random number generator.
+
+        Args:
+            seed: Seed value for the RNG.
+            subsequence: Subsequence number for the RNG.
+            offset: Offset value for the RNG.
+        """
         self._rng = Random[rounds](
             seed=seed, subsequence=subsequence, offset=offset
         )
@@ -185,16 +201,18 @@ struct NormalRandom[rounds: Int = 6]:
     ) -> SIMD[DType.float32, 8]:
         """Generate 8 normally distributed random numbers using Box-Muller transform.
 
+        Args:
+            mean: Mean of the normal distribution.
+            stddev: Standard deviation of the normal distribution.
+
         Returns:
             SIMD vector containing 8 random float32 values from a normal distribution with mean `mean` and standard deviation `stddev`.
         """
-        var u1 = self._rng.step_uniform()
-        var u2 = self._rng.step_uniform()
+        # Convert from range of [0,1) to (0,1]. This avoids having 0 and passing to to log.
+        var u1 = 1.0 - self._rng.step_uniform()
+        var u2 = 1.0 - self._rng.step_uniform()
 
-        var epsilon = SIMD[DType.float32, 4](1e-7)
-        var safe_u1 = max(u1, epsilon)
-
-        var r = sqrt(-2.0 * log(safe_u1))
+        var r = sqrt(-2.0 * log(u1))
         var theta = 2.0 * math.pi * u2
         var z0 = r * cos(theta)
         var z1 = r * sin(theta)

@@ -181,6 +181,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         Returns:
             A PythonObject representing the value.
+
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
         """
         return PythonObject(self)
 
@@ -208,20 +211,24 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     @always_inline
     fn __int__(self) raises -> Int:
         """Parses the given string as a base-10 integer and returns that value.
-        If the string cannot be parsed as an int, an error is raised.
 
         Returns:
-            An integer value that represents the string, or otherwise raises.
+            An integer value that represents the string.
+
+        Raises:
+            If the string cannot be parsed as a valid base-10 integer.
         """
         return Int(self.as_string_slice())
 
     @always_inline
     fn __float__(self) raises -> Float64:
-        """Parses the string as a float point number and returns that value. If
-        the string cannot be parsed as a float, an error is raised.
+        """Parses the string as a floating-point number and returns that value.
 
         Returns:
-            A float value that represents the string, or otherwise raises.
+            A float value that represents the string.
+
+        Raises:
+            If the string cannot be parsed as a valid floating-point number.
         """
         return Float64(self.as_string_slice())
 
@@ -290,7 +297,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     # eventually merge into String through nonmaterialization.
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(StringLiteral[_]),
+        other_type: type_of(StringLiteral[_]),
     ](self) -> StaticString:
         """Returns a StaticString after merging with another string literal.
 
@@ -364,7 +371,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         #   guaranteed to be valid.
         return StaticString(
             ptr=self.unsafe_ptr(),
-            length=UInt(self.byte_length()),
+            length=self.byte_length(),
         )
 
     @always_inline("nodebug")
@@ -377,7 +384,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
 
         return Span[Byte, StaticConstantOrigin](
-            ptr=self.unsafe_ptr(), length=UInt(self.byte_length())
+            ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
     fn write_to(self, mut writer: Some[Writer]):
@@ -629,15 +636,18 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         For more information, see the discussion in the
         [`format` module](/mojo/stdlib/collections/string/format/).
 
-        Args:
-            args: The substitution values.
-
         Parameters:
             Ts: The types of substitution values that implement `Representable`
                 and `Stringable` (to be changed and made more flexible).
 
+        Args:
+            args: The substitution values.
+
         Returns:
             The template with the given values substituted.
+
+        Raises:
+            If the format string is invalid or argument count/types don't match.
 
         Example:
 

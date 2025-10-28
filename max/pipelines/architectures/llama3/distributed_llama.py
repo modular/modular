@@ -32,9 +32,7 @@ from max.nn import (
     TensorParallelAttentionWithRope,
     VocabParallelEmbedding,
 )
-from max.nn.kv_cache import (
-    TPPagedKVCacheManager,
-)
+from max.nn.kv_cache import PagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
 from .model_config import Llama3Config, create_rope_embedding
@@ -200,7 +198,7 @@ class DistributedLlama3(DistributedTransformer):
         )
 
     def input_types(
-        self, kv_manager: TPPagedKVCacheManager
+        self, kv_manager: PagedKVCacheManager
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model

@@ -31,7 +31,7 @@ from sys import (
     is_gpu,
     is_nvidia_gpu,
 )
-from sys.ffi import c_ssize_t, external_call
+from sys.ffi import c_ssize_t, c_int, external_call, _external_call_const
 
 from memory import Span
 
@@ -87,6 +87,9 @@ struct FileDescriptor(Writer):
 
         Notes:
             [Reference](https://pubs.opengroup.org/onlinepubs/9799919799/functions/read.html).
+
+        Raises:
+            If the operation fails.
         """
 
         constrained[
@@ -122,3 +125,23 @@ struct FileDescriptor(Writer):
         @parameter
         for i in range(args.__len__()):
             args[i].write_to(self)
+
+    fn isatty(self) -> Bool:
+        """Checks whether a file descriptor refers to a terminal.
+
+        Returns `True` if the file descriptor is open and connected to a
+        tty(-like) device, otherwise `False`.
+
+        Returns:
+            `True` if the file descriptor is connected to a terminal, `False` otherwise.
+
+        Examples:
+            ```mojo
+            # Check if stdout is a terminal
+            if stdout.isatty():
+                print("Running in a terminal")
+            else:
+                print("Output is redirected")
+            ```
+        """
+        return _external_call_const["isatty", c_int](c_int(self.value)) != 0

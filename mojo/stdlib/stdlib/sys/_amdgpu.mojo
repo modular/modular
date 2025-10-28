@@ -23,7 +23,6 @@ from sys.intrinsics import (
 from time import sleep
 
 from memory import Span
-from memory.pointer import _GPUAddressSpace
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.
@@ -57,7 +56,7 @@ struct amd_signal_t(Copyable, Movable):
 @always_inline
 fn update_mbox(sig: UnsafePointer[amd_signal_t, **_]):
     var mb = UnsafePointer(to=sig[].event_mailbox_ptr).bitcast[
-        UnsafePointer[UInt64, address_space = _GPUAddressSpace.GLOBAL]
+        UnsafePointer[UInt64, address_space = AddressSpace.GLOBAL]
     ]()[]
     if mb:
         var id = sig[].event_id.cast[DType.uint64]()
@@ -68,7 +67,7 @@ fn update_mbox(sig: UnsafePointer[amd_signal_t, **_]):
 @always_inline
 fn hsa_signal_add(sig: UInt64, value: UInt64):
     var s = UnsafePointer(to=sig).bitcast[
-        UnsafePointer[amd_signal_t, address_space = _GPUAddressSpace.GLOBAL]
+        UnsafePointer[amd_signal_t, address_space = AddressSpace.GLOBAL]
     ]()[]
     _ = Atomic.fetch_add(UnsafePointer(to=s[].value), value)
     update_mbox(s)
@@ -517,9 +516,7 @@ fn printf_append_string_n(
 @fieldwise_init
 @register_passable("trivial")
 struct Header(ImplicitlyCopyable, Movable):
-    var _handle: UnsafePointer[
-        header_t, address_space = _GPUAddressSpace.GLOBAL
-    ]
+    var _handle: UnsafePointer[header_t, address_space = AddressSpace.GLOBAL]
 
     fn fill_packet(
         mut self,
@@ -634,9 +631,7 @@ struct payload_t(Copyable, Movable):
 @fieldwise_init
 @register_passable("trivial")
 struct Buffer(ImplicitlyCopyable, Movable):
-    var _handle: UnsafePointer[
-        buffer_t, address_space = _GPUAddressSpace.GLOBAL
-    ]
+    var _handle: UnsafePointer[buffer_t, address_space = AddressSpace.GLOBAL]
 
     @always_inline
     fn get_header(self, ptr: UInt64) -> Header:
@@ -727,9 +722,7 @@ struct Buffer(ImplicitlyCopyable, Movable):
 @fieldwise_init
 @register_passable("trivial")
 struct buffer_t(Copyable, Movable):
-    var headers: UnsafePointer[
-        header_t, address_space = _GPUAddressSpace.GLOBAL
-    ]
+    var headers: UnsafePointer[header_t, address_space = AddressSpace.GLOBAL]
     var payloads: UnsafePointer[payload_t]
     var doorbell: UInt64
     var free_stack: UInt64
@@ -869,9 +862,7 @@ fn hostcall(
     """
     var buffer = Buffer(
         implicitarg_ptr()
-        .bitcast[
-            UnsafePointer[buffer_t, address_space = _GPUAddressSpace.GLOBAL]
-        ]()
+        .bitcast[UnsafePointer[buffer_t, address_space = AddressSpace.GLOBAL]]()
         .offset(10)[]
     )
 

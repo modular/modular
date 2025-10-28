@@ -94,7 +94,7 @@ from utils.static_tuple import StaticTuple
 
 from .mha_utils import get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
-from .mla_amd import mla_prefill_single_batch_amd
+from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
@@ -193,7 +193,7 @@ fn flare_mla_decoding[
         var k_operand = KVCacheMHAOperand(k)
 
         flare_mla_decoding_dispatch[
-            kv_num_heads=kv_num_heads,
+            kv_num_heads = Int(kv_num_heads),
             use_score_mod=use_score_mod,
             config=config,
             ragged=ragged,
@@ -345,8 +345,8 @@ fn flare_mla_decoding_dispatch[
         kv_num_heads == 1, "flareMLA_decoding only supports kv_num_heads == 1."
     ]()
     constrained[
-        has_nvidia_gpu_accelerator(),
-        "flareMLA_decoding currently only supports Nvidia GPUs.",
+        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
+        "flareMLA_decoding currently only supports Nvidia and AMD GPUs.",
     ]()
 
     constrained[
@@ -374,20 +374,22 @@ fn flare_mla_decoding_dispatch[
     if batch_size == 0:
         return
 
-    alias BM = 16 if num_heads == 16 or not has_enough_smem else 32  # for deepseek-v2 lite
-    alias BN = 64
-    alias BK = 64  # need 8 mma_tile per row the resolve the bank conflict
+    alias BM = 16 if (
+        num_heads == 16 or not has_enough_smem or has_amd_gpu_accelerator()
+    ) else 32  # for deepseek-v2 lite
+    alias BN = 64 if has_nvidia_gpu_accelerator() else 128
+    alias BK = 64 if has_nvidia_gpu_accelerator() else 32  # need 8 mma_tile per row to resolve the bank conflict on nvidia
     alias WM = BM
-    alias WN = 16
+    alias WN = 16 if has_nvidia_gpu_accelerator() else 32
     # num warps in M and N, multiplied by warp size.
     alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
     alias accum_type = get_accum_type[q.dtype]()
     alias num_pipeline_stages = 6
     # smem for q
-    var shared_mem_bytes = BM * depth * size_of[q.dtype]()
+    var shared_mem_bytes = BM * Int(depth) * size_of[q.dtype]()
 
-    shared_mem_bytes += BN * depth * size_of[k_t.dtype]()
+    shared_mem_bytes += BN * Int(depth) * size_of[k_t.dtype]()
 
     alias num_warps = ceildiv(num_threads, WARP_SIZE)
 
@@ -396,6 +398,9 @@ fn flare_mla_decoding_dispatch[
         BM * BN * size_of[k_t.dtype]()
         + 2 * num_warps * BM * size_of[accum_type]()
     )
+
+    shared_mem_bytes = shared_mem_bytes if has_nvidia_gpu_accelerator() else 0
+
     alias num_blocks_y = num_heads // UInt(BM)
 
     alias kernel = mla_decoding[
@@ -512,11 +517,11 @@ fn mla_decoding[
     var exp_sum_offset = qk_max_offset
 
     # split-k intermediate buffers
-    var qk_max_batch_ptr: __type_of(qk_max_ptr) = {}
+    var qk_max_batch_ptr: type_of(qk_max_ptr) = {}
     if qk_max_ptr:
         qk_max_batch_ptr = qk_max_ptr.offset(qk_max_offset)
 
-    var exp_sum_batch_ptr: __type_of(exp_sum_ptr) = {}
+    var exp_sum_batch_ptr: type_of(exp_sum_ptr) = {}
     if exp_sum_ptr:
         exp_sum_batch_ptr = exp_sum_ptr.offset(exp_sum_offset)
 
@@ -529,49 +534,97 @@ fn mla_decoding[
         start_of_seq = Int(valid_length[batch_idx])
         end_of_seq = Int(valid_length[batch_idx + 1])
         seq_len = end_of_seq - start_of_seq
-        q_batch_offset = start_of_seq * depth * num_heads
+        q_batch_offset = start_of_seq * Int(depth) * Int(num_heads)
     elif _use_valid_length:
         # treat valid_lengths as valid lengths
-        q_batch_offset = depth * num_heads * batch_idx
+        q_batch_offset = Int(depth * num_heads * batch_idx)
         seq_len = Int(valid_length[batch_idx])
     else:
         seq_len = 1
-        q_batch_offset = depth * num_heads * batch_idx
+        q_batch_offset = Int(depth * num_heads * batch_idx)
 
-    var num_keys = k.cache_length(batch_idx)
+    var num_keys = k.cache_length(Int(batch_idx))
 
     @parameter
     if not _is_cache_length_accurate:
         num_keys += seq_len
 
-    mla_decoding_single_batch[
-        BM=BM,
-        BN=BN,
-        BK=BK,
-        WM=WM,
-        WN=WN,
-        depth=depth,
-        depth_v=depth_v,
-        num_heads=num_heads,
-        num_threads=num_threads,
-        num_pipeline_stages=num_pipeline_stages,
-        group=group,
-        use_score_mod=use_score_mod,
-        decoding_warp_split_k=decoding_warp_split_k,
-    ](
-        q_ptr.offset(q_batch_offset),
-        k,
-        output_ptr.offset(output_batch_offset),
-        exp_sum_batch_ptr,
-        qk_max_batch_ptr,
-        scale,
-        UInt(num_keys),
-        UInt(num_partitions),
-        UInt(max_cache_valid_length),
-        mask,
-        score_mod,
-        batch_idx,
-    )
+    @parameter
+    if is_nvidia_gpu():
+        mla_decoding_single_batch[
+            BM=BM,
+            BN=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            depth=depth,
+            depth_v=depth_v,
+            num_heads=num_heads,
+            num_threads=num_threads,
+            num_pipeline_stages=num_pipeline_stages,
+            group=group,
+            use_score_mod=use_score_mod,
+            decoding_warp_split_k=decoding_warp_split_k,
+        ](
+            q_ptr.offset(q_batch_offset),
+            k,
+            output_ptr.offset(output_batch_offset),
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
+            scale,
+            UInt(num_keys),
+            UInt(num_partitions),
+            UInt(max_cache_valid_length),
+            mask,
+            score_mod,
+            Int(batch_idx),
+        )
+    elif is_amd_gpu():
+        alias config = MHAConfig(
+            q_type,
+            num_heads,
+            depth,
+            num_queries_per_block=BM,
+            num_keys_per_block=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            num_pipeline_stages=num_pipeline_stages,
+            k_group_size=group,
+        )
+
+        alias attention_config = MLAAttentionConfig[True, config]()
+
+        var attention = Attention[
+            config,
+            Int(group),
+            True,
+            False,
+            q_depth = Int(depth),
+            output_depth = Int(depth_v),
+        ](
+            attention_config,
+            output_ptr.offset(output_batch_offset),
+            q_ptr.offset(q_batch_offset),
+            k,
+            k,
+            mask,
+            None,
+            Int(batch_idx),
+            scale,
+            seq_len,
+            num_keys,
+            0,
+        )
+        attention.mla_decoding(
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
+            num_partitions,
+        )
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="mla_decoding"
+        ]()
 
 
 @always_inline
@@ -649,15 +702,15 @@ fn mla_decoding_single_batch[
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
-        Layout.row_major(BM, BK),
+        Layout.row_major(Int(BM), Int(BK)),
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ](
         rebind[
-            __type_of(
+            type_of(
                 LayoutTensorIter[
                     q_type,
-                    Layout.row_major(BM, BK),
+                    Layout.row_major(Int(BM), Int(BK)),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
                     alignment=alignment,
@@ -679,7 +732,7 @@ fn mla_decoding_single_batch[
     # K[:, :nope_dim] tensor stored continuously in the smem.
     var kv_nope_smem_iter = LayoutTensorIter[
         k_type,
-        Layout(IntTuple(BN, BK), IntTuple(nope_dim, 1)),
+        Layout(IntTuple(Int(BN), Int(BK)), IntTuple(Int(nope_dim), 1)),
         address_space = AddressSpace.SHARED,
         circular=True,
     ](k_smem, nope_dim, stride=BK)
@@ -687,7 +740,7 @@ fn mla_decoding_single_batch[
     # view the K[:, :nope_dim] as V tensor.
     var v_smem_iter = LayoutTensorIter[
         k_type,
-        Layout.row_major(BK, nope_dim),
+        Layout.row_major(Int(BK), Int(nope_dim)),
         address_space = AddressSpace.SHARED,
         circular=True,
     ](k_smem, BN * nope_dim)
@@ -696,7 +749,7 @@ fn mla_decoding_single_batch[
     # Q @ K calculation.
     var k_rope_smem_iter = LayoutTensorIter[
         k_type,
-        Layout.row_major(BN, BK),
+        Layout.row_major(Int(BN), Int(BK)),
         address_space = AddressSpace.SHARED,
         circular=True,
     ](k_smem + BN * nope_dim, BN * rope_dim)
@@ -715,7 +768,7 @@ fn mla_decoding_single_batch[
 
     var p_reg_tile = LayoutTensor[
         accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
@@ -725,7 +778,7 @@ fn mla_decoding_single_batch[
     var output_reg_tile = (
         LayoutTensor[
             accum_type,
-            Layout.row_major(num_output_rows_full, p_frag_size),
+            Layout.row_major(Int(num_output_rows_full), p_frag_size),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
@@ -737,8 +790,12 @@ fn mla_decoding_single_batch[
     alias row_alignment = align_of[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
-    var rowmax = stack_allocation[WM, accum_type, alignment=row_alignment]()
-    var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
+    var rowmax = stack_allocation[
+        Int(WM), accum_type, alignment=row_alignment
+    ]()
+    var rowsum = stack_allocation[
+        Int(WM), accum_type, alignment=row_alignment
+    ]()
 
     @parameter
     for i in range(WM):
@@ -749,13 +806,15 @@ fn mla_decoding_single_batch[
     var p_smem = (k_smem + kv_smem_size).bitcast[Scalar[k_type]]()
     alias p_smem_size = BM * BN
     var p_smem_iter = LayoutTensorIter[
-        k_type, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
+        k_type,
+        Layout.row_major(Int(BM), Int(BK)),
+        address_space = AddressSpace.SHARED,
     ](p_smem, BM * BN)
 
     # Scratch shared memory for reduction across warps.
     var warp_scratch = LayoutTensor[
         accum_type,
-        Layout.row_major(2 * num_warps_n, BM),
+        Layout.row_major(2 * Int(num_warps_n), Int(BM)),
         address_space = AddressSpace.SHARED,
     ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
 
@@ -765,12 +824,14 @@ fn mla_decoding_single_batch[
 
     var q_offset = depth * BM * q_head_group
 
-    alias q_gmem_layout = Layout.row_major(BM, depth)
+    alias q_gmem_layout = Layout.row_major(Int(BM), Int(depth))
     var q_gmem_block = LayoutTensor[q_type, q_gmem_layout](q_ptr + q_offset)
-    var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
+    var q_gmem_iter = q_gmem_block.tiled_iterator[Int(BM), Int(BK), axis=1](
+        0, 0
+    )
 
-    start, end = get_start_and_end_for_partitions[BN](
-        num_keys, num_partitions, block_idx.x
+    start, end = get_start_and_end_for_partitions[Int(BN)](
+        Int(num_keys), Int(num_partitions), Int(block_idx.x)
     )
 
     # Mask global memory iterator, seq_len = 1
@@ -781,8 +842,8 @@ fn mla_decoding_single_batch[
     alias q_num_vecs = BM * BK // UInt(simd_size)
 
     alias async_copy_q_layout = Layout.row_major(
-        min(num_threads, q_num_vecs) * UInt(simd_size) // BK,
-        BK // UInt(simd_size),
+        Int(min(num_threads, q_num_vecs) * UInt(simd_size) // BK),
+        Int(BK // UInt(simd_size)),
     )
 
     @parameter
@@ -792,7 +853,7 @@ fn mla_decoding_single_batch[
         copy_dram_to_sram_async[
             thread_layout=async_copy_q_layout,
             swizzle=True,
-            num_threads=num_threads,
+            num_threads = Int(num_threads),
         ](
             q_smem_tile.vectorize[1, simd_size](),
             q_gmem_iter[].vectorize[1, simd_size](),
@@ -807,13 +868,13 @@ fn mla_decoding_single_batch[
     fn loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
-        var k_ptr = k.block_paged_ptr[BN](
+        var k_ptr = k.block_paged_ptr[Int(BN)](
             batch_idx, kv_tile_start_row, kv_head_idx, 0
         )
 
         alias kv_gmem_layout = Layout(
             IntTuple(Int(BN), Int(depth)),
-            IntTuple(Int(kv_num_heads * depth), 1),
+            IntTuple(Int(kv_num_heads * Int(depth)), 1),
         )
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
@@ -822,10 +883,10 @@ fn mla_decoding_single_batch[
             element_type = DType.int32, linear_idx_type = DType.int32
         ](
             RuntimeTuple[kv_gmem_layout.shape, element_type = DType.int32](
-                kv_tile_num_rows, depth
+                kv_tile_num_rows, Int(depth)
             ),
             RuntimeTuple[kv_gmem_layout.stride, element_type = DType.int32](
-                kv_num_heads * depth, 1
+                kv_num_heads * Int(depth), 1
             ),
         )
 
@@ -841,14 +902,18 @@ fn mla_decoding_single_batch[
             k_ptr,
             kv_runtime_layout,
         )
-        var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
+        var k_gmem_iter = k_gmem_block.tiled_iterator[Int(BN), Int(BK), axis=1](
+            0, 0
+        )
 
         # load K[:, nope_dim:(nope_dim+rope_dim)], this would be used later
         alias k_rope_num_ves = BN * rope_dim // UInt(simd_size)
         alias async_copy_k_rope_layout = Layout.row_major(
-            min(num_threads, k_rope_num_ves)
-            * UInt(simd_size)
-            // UInt(k_rope_smem_iter.layout.shape[1].value()),
+            Int(
+                min(num_threads, k_rope_num_ves)
+                * UInt(simd_size)
+                // UInt(k_rope_smem_iter.layout.shape[1].value())
+            ),
             k_rope_smem_iter.layout.shape[1].value() // simd_size,
         )
 
@@ -859,23 +924,23 @@ fn mla_decoding_single_batch[
             copy_dram_to_sram_async[
                 thread_layout=async_copy_k_rope_layout,
                 swizzle=True,
-                num_threads=num_threads,
+                num_threads = Int(num_threads),
             ](
                 k_rope_smem_tile.vectorize[1, simd_size](),
-                k_gmem_iter.next(Int(nope_dim // BK) + k_id)[].vectorize[
+                k_gmem_iter.next(Int(nope_dim // BK) + Int(k_id))[].vectorize[
                     1, simd_size
                 ](),
             )
 
         # Calculate Q[:, :nope_dim] @ K[:, :nope_dim] (K transposed)
         multistage_mma[
-            BM,
-            BN,
-            BK,
-            WM,
-            WN,
-            num_threads,
-            num_pipeline_stages,
+            Int(BM),
+            Int(BN),
+            Int(BK),
+            Int(WM),
+            Int(WN),
+            Int(num_threads),
+            Int(num_pipeline_stages),
             True,  # transpose_b
             swizzle_a=True,
             prefetch_init=True,
@@ -886,17 +951,17 @@ fn mla_decoding_single_batch[
             k_gmem_iter,
             q_smem_iter,
             kv_nope_smem_iter,
-            nope_dim // BK,
+            Int(nope_dim // BK),
         )
 
         # Calculate the last `rope_dim` part of Q @ K
         multistage_mma[
-            BM,
-            BN,
-            BK,
-            WM,
-            WN,
-            num_threads,
+            Int(BM),
+            Int(BN),
+            Int(BK),
+            Int(WM),
+            Int(WN),
+            Int(num_threads),
             1,
             True,  # transpose_b
             swizzle_a=True,
@@ -908,7 +973,7 @@ fn mla_decoding_single_batch[
             k_rope_smem_iter,
             q_smem_iter.next_unsafe(Int(nope_dim // BK)),
             k_rope_smem_iter,
-            nope_dim // BK,
+            Int(nope_dim // BK),
         )
 
         # Vectorize by 2.
@@ -956,10 +1021,10 @@ fn mla_decoding_single_batch[
                         if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
                                 IndexList[4, element_type = DType.uint32,](
-                                    block_idx.z,
-                                    score_head_idx,
-                                    score_row_with_start_pos,
-                                    score_col,
+                                    Int(block_idx.z),
+                                    Int(score_head_idx),
+                                    Int(score_row_with_start_pos),
+                                    Int(score_col),
                                 ),
                                 p_reg_vec2[mma_id, i] * scale_log2e,
                             )
@@ -973,10 +1038,10 @@ fn mla_decoding_single_batch[
                             p_reg_vec2[mma_id, i] = (
                                 score_mod.score_mod(
                                     IndexList[4, element_type = DType.uint32,](
-                                        block_idx.z,
-                                        score_head_idx,
-                                        score_row_with_start_pos,
-                                        score_col,
+                                        Int(block_idx.z),
+                                        Int(score_head_idx),
+                                        Int(score_row_with_start_pos),
+                                        Int(score_col),
                                     ),
                                     p_reg_vec2[mma_id, i],
                                     1,
@@ -991,11 +1056,11 @@ fn mla_decoding_single_batch[
                         if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
                                 IndexList[2, element_type = DType.uint32](
-                                    score_row, score_col
+                                    score_row, Int(score_col)
                                 ),
                                 IndexList[2, element_type = DType.uint32](
                                     seq_len,
-                                    num_keys,
+                                    Int(num_keys),
                                 ),
                                 p_reg_vec2[mma_id, i],
                             )
@@ -1015,19 +1080,19 @@ fn mla_decoding_single_batch[
         mask_warp_col += BN
 
         alias reg_layout_by_mma_unit = Layout.row_major(
-            2 * num_m_mmas * num_n_mmas, 2
+            2 * Int(num_m_mmas) * Int(num_n_mmas), 2
         )
 
         alias output_layout_by_mma_unit = Layout.row_major(
-            2 * num_m_mmas * (WN_O // MMA_N), 2
+            2 * Int(num_m_mmas) * (WN_O // MMA_N), 2
         )
         _online_softmax_iter_for_mma_output[
             accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            Layout.row_major(2 * Int(num_m_mmas), Int(num_n_mmas)),
             # threads layout by warp
-            Layout.row_major(num_warps_m, num_warps_n),
+            Layout.row_major(Int(num_warps_m), Int(num_warps_n)),
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
@@ -1035,7 +1100,7 @@ fn mla_decoding_single_batch[
                 1, 2
             ](),
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
+            warp_scratch.tile[Int(num_warps_n), Int(WM)](0, Int(warp_y)),
             rowmax,
             rowsum,
         )
@@ -1054,13 +1119,13 @@ fn mla_decoding_single_batch[
 
         # S[m, :] @ V[:, (0:WN) + n*WN]
         multistage_mma[
-            BM,
-            nope_dim,
-            BK,
-            WM,
+            Int(BM),
+            Int(nope_dim),
+            Int(BK),
+            Int(WM),
             WN_O,
-            num_threads,
-            num_pipeline_stages,
+            Int(num_threads),
+            Int(num_pipeline_stages),
             False,  # transpose_b
             swizzle_a=True,
             prefetch_init=False,
@@ -1071,27 +1136,29 @@ fn mla_decoding_single_batch[
             v_smem_iter,
             p_smem_iter,
             v_smem_iter,
-            BN // BK,
+            Int(BN // BK),
         )
 
         barrier()
 
-    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](start, end)
+    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](Int(BN))](start, end)
 
     # Apply softmax denumerator.
     @parameter
     for m_mma in range(num_m_mmas):
-        var rowsum_inv0 = recip(rowsum[2 * m_mma])
-        var rowsum_inv1 = recip(rowsum[2 * m_mma + 1])
+        var rowsum_inv0 = recip(rowsum[2 * Int(m_mma)])
+        var rowsum_inv1 = recip(rowsum[2 * Int(m_mma) + 1])
 
         @parameter
         for n_mma in range(WN_O // 8):
 
             @parameter
             for i in range(p_frag_size // 2):
-                output_reg_tile[n_mma * num_m_mmas + m_mma, i] *= rowsum_inv0
                 output_reg_tile[
-                    n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
+                    n_mma * Int(num_m_mmas) + Int(m_mma), i
+                ] *= rowsum_inv0
+                output_reg_tile[
+                    n_mma * Int(num_m_mmas) + Int(m_mma), i + p_frag_size // 2
                 ] *= rowsum_inv1
 
     var o_offset = nope_dim * BM * q_head_group
@@ -1102,7 +1169,7 @@ fn mla_decoding_single_batch[
     var output_gmem_tile = LayoutTensor[output_type, output_gmem_layout](
         output_ptr + Int(o_offset),
     )
-    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN_O](
+    var output_gmem_warp_tile = output_gmem_tile.tile[Int(WM), WN_O](
         Int(warp_y), Int(warp_x)
     )
 
@@ -1110,16 +1177,16 @@ fn mla_decoding_single_batch[
     @parameter
     if output_type.is_half_float():
         alias swizzle = make_swizzle[
-            num_rows = MMA_M // 2, row_size=nope_dim, access_size=MMA_N
+            num_rows = MMA_M // 2, row_size = Int(nope_dim), access_size=MMA_N
         ]()
         # Reuse a_smem for c tile in smem
         var accum_smem_tile = LayoutTensor[
             output_type,
-            Layout.row_major(BM, nope_dim),
+            Layout.row_major(Int(BM), Int(nope_dim)),
             address_space = AddressSpace.SHARED,
         ](q_smem.bitcast[Scalar[output_type]]())
 
-        var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN_O](
+        var accum_smem_warp_tile = accum_smem_tile.tile[Int(WM), WN_O](
             Int(warp_y), Int(warp_x)
         )
 
@@ -1318,9 +1385,9 @@ fn flare_mla_prefill[
         )
 
         flare_mla_prefill_dispatch[
-            kv_num_heads=kv_num_heads,
+            kv_num_heads = Int(kv_num_heads),
             q_depth=q_depth,
-            cache_depth=cache_depth,
+            cache_depth = Int(cache_depth),
             config=mha_config,
             write_softmax_info=write_softmax_info,
             use_cascade_attention=use_cascade_attention,
@@ -1638,7 +1705,7 @@ fn flare_mla_prefill_dispatch[
         score_mod_t,
         valid_length.layout,
         config,
-        group=group,
+        group = Int(group),
         use_score_mod=use_score_mod,
         q_depth=q_depth,
         cache_depth=cache_depth,
@@ -1663,7 +1730,7 @@ fn flare_mla_prefill_dispatch[
         mask_functor,
         score_mod_functor,
         grid_dim=(
-            Int(ceildiv(max_prompt_len, BM)),
+            Int(ceildiv(max_prompt_len, Int(BM))),
             Int(config.num_heads),
             Int(batch_size),
         ),
@@ -1746,23 +1813,23 @@ fn mla_prefill[
     end_of_seq = Int(valid_length[batch_idx + 1])
     seq_len = end_of_seq - start_of_seq
 
-    if seq_len < block_idx.x * config.block_m():
+    if seq_len < Int(block_idx.x * config.block_m()):
         return
 
-    num_keys = k.cache_length(batch_idx)
+    num_keys = k.cache_length(Int(batch_idx))
 
     @parameter
     if _ndbuffer_mha_operand:
-        start_pos = k_rope.cache_length(batch_idx) - seq_len
+        start_pos = k_rope.cache_length(Int(batch_idx)) - seq_len
     else:
-        start_pos = k_rope.cache_length(batch_idx)
+        start_pos = k_rope.cache_length(Int(batch_idx))
 
     if cache_offsets:
         var cache_offsets_nd = cache_offsets.value()
         cache_start_pos = cache_offsets_nd[batch_idx][0]
 
-    q_batch_offset = start_of_seq * q_depth * config.num_heads
-    o_batch_offset = start_of_seq * depth * config.num_heads
+    q_batch_offset = start_of_seq * q_depth * Int(config.num_heads)
+    o_batch_offset = start_of_seq * Int(depth) * Int(config.num_heads)
     softmax_info_offset = start_of_seq * 2 + total_seq_len * block_idx.y * 2
 
     @parameter
@@ -1792,27 +1859,27 @@ fn mla_prefill[
             num_keys,
             mask,
             score_mod,
-            batch_idx,
+            Int(batch_idx),
         )
     elif is_amd_gpu():
-        mla_prefill_single_batch_amd[
-            config=config,
-            group=group,
-            q_depth=q_depth,
-            cache_depth=cache_depth,
-        ](
+        alias attention_config = MLAAttentionConfig[False, config]()
+        var attention = Attention[config, 1, False, False, q_depth=q_depth](
+            attention_config,
             output_ptr.offset(o_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,
             v,
-            k_rope,
-            seq_len,
-            max_seq_len,
-            scale,
-            batch_idx,
-            start_pos,
-            cache_start_pos,
             mask,
+            None,
+            Int(batch_idx),
+            scale,
+            seq_len,
+            num_keys,
+            Int(start_pos),
+            Int(cache_start_pos),
+        )
+        attention.mla_prefill(
+            k_rope,
         )
     else:
         return CompilationTarget.unsupported_target_error[
@@ -1875,7 +1942,7 @@ fn mla_prefill_single_batch[
     alias num_heads = config.num_heads
     alias depth = config.depth
 
-    alias rope_depth = q_depth - depth
+    alias rope_depth = q_depth - Int(depth)
 
     alias cache_num_heads = num_heads // UInt(group)
 
@@ -1884,7 +1951,7 @@ fn mla_prefill_single_batch[
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
-    var tid: Int = thread_idx.x
+    var tid: Int = Int(thread_idx.x)
     var warp_id: UInt32 = warp.broadcast(tid // WARP_SIZE)
     var lane: UInt32 = lane_id()
 
@@ -1902,15 +1969,15 @@ fn mla_prefill_single_batch[
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
-        Layout.row_major(BM, BK),
+        Layout.row_major(Int(BM), Int(BK)),
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ](
         rebind[
-            __type_of(
+            type_of(
                 LayoutTensorIter[
                     q_type,
-                    Layout.row_major(BM, BK),
+                    Layout.row_major(Int(BM), Int(BK)),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
                     alignment=alignment,
@@ -1925,7 +1992,7 @@ fn mla_prefill_single_batch[
     var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
     var k_smem_iter = LayoutTensorIter[
         k_type,
-        Layout.row_major(BN, BK),
+        Layout.row_major(Int(BN), Int(BK)),
         address_space = AddressSpace.SHARED,
         circular=True,
     ](k_smem, k_smem_size)
@@ -1934,7 +2001,7 @@ fn mla_prefill_single_batch[
     var v_smem = (k_smem + k_smem_size).bitcast[Scalar[v_type]]()
     var v_smem_iter = LayoutTensorIter[
         v_type,
-        Layout.row_major(BK, depth),
+        Layout.row_major(Int(BK), Int(depth)),
         address_space = AddressSpace.SHARED,
         circular=True,
     ](v_smem, v_smem_size)
@@ -1965,11 +2032,13 @@ fn mla_prefill_single_batch[
                 Int(q_tile_num_rows), q_depth
             ),
             RuntimeTuple[q_gmem_layout.stride, element_type = DType.int32](
-                num_heads * UInt(q_depth), 1
+                Int(num_heads * UInt(q_depth)), 1
             ),
         ),
     )
-    var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
+    var q_gmem_iter = q_gmem_block.tiled_iterator[Int(BM), Int(BK), axis=1](
+        0, 0
+    )
     # q tile has valid shape q_tile_num_rows x q_depth
     # q_tile_num_rows could be less than BM when seqlen % BM != 0
 
@@ -1991,7 +2060,7 @@ fn mla_prefill_single_batch[
 
     var p_reg_tile = LayoutTensor[
         accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
@@ -1999,7 +2068,7 @@ fn mla_prefill_single_batch[
     var output_reg_tile = (
         LayoutTensor[
             accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas_output, p_frag_size),
+            Layout.row_major(Int(num_m_mmas * num_n_mmas_output), p_frag_size),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
@@ -2011,8 +2080,12 @@ fn mla_prefill_single_batch[
     alias row_alignment = align_of[
         SIMD[accum_type, simd_width_of[accum_type]()]
     ]()
-    var rowmax = stack_allocation[WM, accum_type, alignment=row_alignment]()
-    var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
+    var rowmax = stack_allocation[
+        Int(WM), accum_type, alignment=row_alignment
+    ]()
+    var rowsum = stack_allocation[
+        Int(WM), accum_type, alignment=row_alignment
+    ]()
 
     @parameter
     for i in range(0, Int(WM), 2):
@@ -2024,7 +2097,7 @@ fn mla_prefill_single_batch[
     var p_smem = (v_smem + v_smem_size).bitcast[Scalar[v_type]]()
     var p_smem_iter = LayoutTensorIter[
         v_type,
-        Layout.row_major(BM, BK),
+        Layout.row_major(Int(BM), Int(BK)),
         address_space = AddressSpace.SHARED,
         circular=True,
     ](p_smem, BM * BN)
@@ -2032,7 +2105,7 @@ fn mla_prefill_single_batch[
     # Scratch shared memory for reduction across warps.
     var warp_scratch = LayoutTensor[
         accum_type,
-        Layout.row_major(2 * num_warps_n, BM),
+        Layout.row_major(2 * Int(num_warps_n), Int(BM)),
         address_space = AddressSpace.SHARED,
     ](
         (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
@@ -2050,18 +2123,18 @@ fn mla_prefill_single_batch[
     alias q_num_vecs = BM * BK // UInt(simd_size)
 
     alias async_copy_q_layout = Layout.row_major(
-        min(num_threads, q_num_vecs) * UInt(simd_size) // BK,
-        BK // UInt(simd_size),
+        Int(min(num_threads, q_num_vecs) * UInt(simd_size) // BK),
+        Int(BK // UInt(simd_size)),
     )
 
     @parameter
-    for q_id in range(q_depth // BK):
+    for q_id in range(q_depth // Int(BK)):
         var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
         copy_dram_to_sram_async[
             thread_layout=async_copy_q_layout,
             swizzle=True,
-            num_threads=num_threads,
+            num_threads = Int(num_threads),
         ](
             q_smem_tile.vectorize[1, simd_size](),
             q_gmem_iter[].vectorize[1, simd_size](),
@@ -2110,10 +2183,10 @@ fn mla_prefill_single_batch[
             element_type = DType.int32, linear_idx_type = DType.int32
         ](
             RuntimeTuple[kv_gmem_layout.shape, element_type = DType.int32](
-                kv_tile_num_rows, depth
+                kv_tile_num_rows, Int(depth)
             ),
             RuntimeTuple[kv_gmem_layout.stride, element_type = DType.int32](
-                num_heads * depth, 1
+                Int(num_heads * depth), 1
             ),
         )
 
@@ -2124,12 +2197,14 @@ fn mla_prefill_single_batch[
             linear_idx_type = DType.int32,
             masked = not not_last_iter,
         ](
-            k.block_paged_ptr[BN](
+            k.block_paged_ptr[Int(BN)](
                 batch_idx, kv_tile_start_row, Int(head_idx), 0
             ),
             kv_runtime_layout,
         )
-        var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
+        var k_gmem_iter = k_gmem_block.tiled_iterator[Int(BN), Int(BK), axis=1](
+            0, 0
+        )
 
         var v_gmem_block = LayoutTensor[
             v_type,
@@ -2138,12 +2213,14 @@ fn mla_prefill_single_batch[
             linear_idx_type = DType.int32,
             masked = not not_last_iter,
         ](
-            v.block_paged_ptr[BN](
+            v.block_paged_ptr[Int(BN)](
                 batch_idx, kv_tile_start_row, Int(head_idx), 0
             ),
             kv_runtime_layout,
         )
-        var v_gmem_iter = v_gmem_block.tiled_iterator[BK, depth, axis=0](0, 0)
+        var v_gmem_iter = v_gmem_block.tiled_iterator[
+            Int(BK), Int(depth), axis=0
+        ](0, 0)
 
         # here we set up variables for k_rope tensor
         alias k_rope_gmem_layout = Layout(
@@ -2158,7 +2235,7 @@ fn mla_prefill_single_batch[
                 kv_tile_num_rows, cache_depth
             ),
             RuntimeTuple[k_rope_gmem_layout.stride, element_type = DType.int32](
-                cache_num_heads * UInt(cache_depth), 1
+                Int(cache_num_heads * UInt(cache_depth)), 1
             ),
         )
 
@@ -2169,7 +2246,7 @@ fn mla_prefill_single_batch[
             linear_idx_type = DType.int32,
             masked = not not_last_iter,
         ](
-            k_rope.block_paged_ptr[BN](
+            k_rope.block_paged_ptr[Int(BN)](
                 batch_idx,
                 kv_tile_start_row + cache_start_pos,
                 Int(head_idx // group),
@@ -2177,9 +2254,9 @@ fn mla_prefill_single_batch[
             ),
             k_rope_runtime_layout,
         )
-        var k_rope_gmem_iter = k_rope_gmem_block.tiled_iterator[BN, BK, axis=1](
-            0, 0
-        )
+        var k_rope_gmem_iter = k_rope_gmem_block.tiled_iterator[
+            Int(BN), Int(BK), axis=1
+        ](0, 0)
 
         # P = Q @ K, register tile holding mma result.
         _ = p_reg_tile.fill(0)
@@ -2187,7 +2264,7 @@ fn mla_prefill_single_batch[
         @always_inline
         @parameter
         fn _mask_tensor_row(
-            tensor: LayoutTensor, num_rows: Int, out result: __type_of(tensor)
+            tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
         ):
             return {
                 tensor.ptr,
@@ -2196,9 +2273,11 @@ fn mla_prefill_single_batch[
 
         alias kv_num_vecs = BN * BK // UInt(simd_size)
         alias async_copy_k_layout = Layout.row_major(
-            min(num_threads, kv_num_vecs)
-            * UInt(simd_size)
-            // UInt(k_smem_iter.layout.stride[0].value()),
+            Int(
+                min(num_threads, kv_num_vecs)
+                * UInt(simd_size)
+                // UInt(k_smem_iter.layout.stride[0].value())
+            ),
             k_smem_iter.layout.stride[0].value() // simd_size,
         )
 
@@ -2210,7 +2289,7 @@ fn mla_prefill_single_batch[
             copy_dram_to_sram_async[
                 thread_layout=async_copy_k_layout,
                 swizzle=True,
-                num_threads=num_threads,
+                num_threads = Int(num_threads),
             ](
                 k_smem_tile.vectorize[1, simd_size](),
                 k_gmem_iter[].vectorize[1, simd_size](),
@@ -2221,13 +2300,13 @@ fn mla_prefill_single_batch[
             k_gmem_iter._incr()
 
         @parameter
-        for k_id in range(depth // BK, q_depth // BK):
+        for k_id in range(depth // BK, q_depth // Int(BK)):
             var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
             copy_dram_to_sram_async[
                 thread_layout=async_copy_k_layout,
                 swizzle=True,
-                num_threads=num_threads,
+                num_threads = Int(num_threads),
             ](
                 k_smem_tile.vectorize[1, simd_size](),
                 k_rope_gmem_iter[].vectorize[1, simd_size](),
@@ -2242,17 +2321,17 @@ fn mla_prefill_single_batch[
         barrier()
 
         multistage_mma[
-            BM,
-            BN,
-            BK,
-            WM,
-            WN,
-            num_threads,
-            num_pipeline_stages,
+            Int(BM),
+            Int(BN),
+            Int(BK),
+            Int(WM),
+            Int(WN),
+            Int(num_threads),
+            Int(num_pipeline_stages),
             True,  # transpose_b
             swizzle_a=True,
             prefetch_init=False,
-            static_num_iters = Int(q_depth // BK),
+            static_num_iters = Int(q_depth // Int(BK)),
             k_group_size = config.k_group_size,
         ](
             p_reg_tile,
@@ -2260,7 +2339,7 @@ fn mla_prefill_single_batch[
             k_smem_iter,
             q_smem_iter,
             k_smem_iter,
-            q_depth // BK,
+            q_depth // Int(BK),
         )
 
         # Vectorize by 2.
@@ -2366,19 +2445,19 @@ fn mla_prefill_single_batch[
         mask_warp_col += BN
 
         alias reg_layout_by_mma_unit = Layout.row_major(
-            2 * num_m_mmas * num_n_mmas, 2
+            2 * Int(num_m_mmas) * Int(num_n_mmas), 2
         )
         alias reg_output_layout_by_mma_unit = Layout.row_major(
-            2 * num_m_mmas * num_n_mmas_output, 2
+            2 * Int(num_m_mmas) * Int(num_n_mmas_output), 2
         )
 
         _online_softmax_iter_for_mma_output[
             accum_type,
             # score layout by mma unit
             # TODO: generalize beyond 16x8 layout
-            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            Layout.row_major(2 * Int(num_m_mmas), Int(num_n_mmas)),
             # threads layout by warp
-            Layout.row_major(num_warps_m, num_warps_n),
+            Layout.row_major(Int(num_warps_m), Int(num_warps_n)),
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
@@ -2386,15 +2465,17 @@ fn mla_prefill_single_batch[
                 1, 2
             ](),
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
+            warp_scratch.tile[Int(num_warps_n), Int(WM)](0, Int(warp_y)),
             rowmax,
             rowsum,
         )
 
         alias async_copy_v_layout = Layout.row_major(
-            min(num_threads, kv_num_vecs)
-            * UInt(simd_size)
-            // UInt(v_smem_iter.layout.stride[0].value()),
+            Int(
+                min(num_threads, kv_num_vecs)
+                * UInt(simd_size)
+                // UInt(v_smem_iter.layout.stride[0].value())
+            ),
             v_smem_iter.layout.stride[0].value() // simd_size,
         )
 
@@ -2406,7 +2487,7 @@ fn mla_prefill_single_batch[
             @parameter
             if not not_last_iter:
                 var num_rows_bound = min(
-                    Int(BK), end - (kv_tile_start_row + v_id * BK)
+                    Int(BK), end - (kv_tile_start_row + Int(v_id * BK))
                 )
                 v_tensor = _mask_tensor_row(v_gmem_iter[], num_rows_bound)
             else:
@@ -2415,7 +2496,7 @@ fn mla_prefill_single_batch[
             copy_dram_to_sram_async[
                 thread_layout=async_copy_v_layout,
                 swizzle = v_smem_tile.dtype.is_half_float(),
-                num_threads=num_threads,
+                num_threads = Int(num_threads),
             ](
                 v_smem_tile.vectorize[1, simd_size](),
                 v_tensor.vectorize[1, simd_size](),
@@ -2443,13 +2524,13 @@ fn mla_prefill_single_batch[
             barrier()
 
             multistage_mma[
-                BM,
-                depth,
-                BK,
-                WM,
-                depth,
-                num_threads,
-                num_pipeline_stages,
+                Int(BM),
+                Int(depth),
+                Int(BK),
+                Int(WM),
+                Int(depth),
+                Int(num_threads),
+                Int(num_pipeline_stages),
                 False,  # transpose_b
                 swizzle_a=True,
                 prefetch_init=False,
@@ -2461,26 +2542,26 @@ fn mla_prefill_single_batch[
                 v_smem_iter,
                 p_smem_iter,
                 v_smem_iter,
-                BN // BK,
+                Int(BN // BK),
             )
 
         else:
             # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
             # The num_n_mmas dim becomes "num_k_mmas" for 2nd mma.
             var p_reg_iter = p_reg_tile.tiled_iterator[
-                MMA_K // MMA_N * num_m_mmas, p_frag_size
+                MMA_K // MMA_N * Int(num_m_mmas), p_frag_size
             ](0, 0)
 
             async_copy_wait_all()
             barrier()
 
             multistage_mma[
-                BM,
-                depth,
-                BK,
-                WM,
-                depth,
-                num_threads,
+                Int(BM),
+                Int(depth),
+                Int(BK),
+                Int(WM),
+                Int(depth),
+                Int(num_threads),
                 2,
                 False,  # transpose_b
                 swizzle_a=False,
@@ -2493,10 +2574,12 @@ fn mla_prefill_single_batch[
                 v_smem_iter,
                 p_smem_iter,
                 v_smem_iter,
-                BN // BK,
+                Int(BN // BK),
             )
 
-    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](0, num_keys)
+    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](Int(BN))](
+        0, num_keys
+    )
 
     alias output_gmem_layout = Layout(
         IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
@@ -2507,10 +2590,10 @@ fn mla_prefill_single_batch[
         element_type = DType.int32, linear_idx_type = DType.int32
     ](
         RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
-            Int(q_tile_num_rows), depth
+            Int(q_tile_num_rows), Int(depth)
         ),
         RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
-            num_heads * depth, 1
+            Int(num_heads * depth), 1
         ),
     )
     var output_gmem_tile = LayoutTensor[
@@ -2523,14 +2606,14 @@ fn mla_prefill_single_batch[
         output_ptr + Int(output_offset),
         output_gemm_runtime_layout,
     )
-    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN_O](
+    var output_gmem_warp_tile = output_gmem_tile.tile[Int(WM), Int(WN_O)](
         Int(warp_y), Int(warp_x)
     )
 
     var softmax_info_offset = 2 * (q_tile_idx * BM)
     var softmax_info_gmem_tile = LayoutTensor[
         accum_type,
-        Layout.row_major(BM, 2),
+        Layout.row_major(Int(BM), 2),
         layout_int_type = DType.int32,
         linear_idx_type = DType.int32,
     ](
@@ -2540,28 +2623,28 @@ fn mla_prefill_single_batch[
     @parameter
     if use_cascade_attention:
         # load previous iteration's softmax stats, and previous attn output.
-        var prev_output_gmem_tile: __type_of(output_gmem_tile) = {
+        var prev_output_gmem_tile: type_of(output_gmem_tile) = {
             prev_output_ptr + Int(output_offset),
             output_gemm_runtime_layout,
         }
-        prev_output_gemm_warp_tile = prev_output_gmem_tile.tile[WM, WN_O](
-            Int(warp_y), Int(warp_x)
-        )
+        prev_output_gemm_warp_tile = prev_output_gmem_tile.tile[
+            Int(WM), Int(WN_O)
+        ](Int(warp_y), Int(warp_x))
 
-        prev_softmax_info_gmem_tile: __type_of(softmax_info_gmem_tile) = {
+        prev_softmax_info_gmem_tile: type_of(softmax_info_gmem_tile) = {
             prev_softmax_info_ptr + Int(softmax_info_offset),
         }
 
         var prev_output_reg_tile = LayoutTensor[
             accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas_output, p_frag_size),
+            Layout.row_major(Int(num_m_mmas * num_n_mmas_output), p_frag_size),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
 
         var softmax_info_smem_tile = LayoutTensor[
             accum_type,
-            Layout.row_major(BM, 2),
+            Layout.row_major(Int(BM), 2),
             address_space = AddressSpace.SHARED,
         ]((q_smem + BM * depth).bitcast[Scalar[accum_type]]())
 
@@ -2581,8 +2664,8 @@ fn mla_prefill_single_batch[
         # and add them together.
         @parameter
         for m_mma in range(num_m_mmas):
-            alias row_0 = 2 * m_mma
-            alias row_1 = 2 * m_mma + 1
+            alias row_0 = 2 * Int(m_mma)
+            alias row_1 = 2 * Int(m_mma) + 1
             var thd_row_ind = Int(lane // 4 + WM * warp_y)
 
             var prev_rowmax_0 = rebind[Scalar[accum_type]](
@@ -2652,8 +2735,8 @@ fn mla_prefill_single_batch[
 
         @parameter
         for m_mma in range(num_m_mmas):
-            alias row_0 = 2 * m_mma
-            alias row_1 = 2 * m_mma + 1
+            alias row_0 = 2 * Int(m_mma)
+            alias row_1 = 2 * Int(m_mma) + 1
             var thd_row_ind = Int(lane // 4 + WM * warp_y)
 
             if lane % 4 == 0:
@@ -2668,8 +2751,8 @@ fn mla_prefill_single_batch[
     # Apply softmax denumerator.
     @parameter
     for m_mma in range(num_m_mmas):
-        var rowsum_inv0 = recip(rowsum[2 * m_mma])
-        var rowsum_inv1 = recip(rowsum[2 * m_mma + 1])
+        var rowsum_inv0 = recip(rowsum[2 * Int(m_mma)])
+        var rowsum_inv1 = recip(rowsum[2 * Int(m_mma) + 1])
 
         @parameter
         for n_mma in range(num_n_mmas_output):
@@ -2685,16 +2768,16 @@ fn mla_prefill_single_batch[
     @parameter
     if output_type.is_half_float():
         alias swizzle = make_swizzle[
-            num_rows = MMA_M // 2, row_size=depth, access_size=MMA_N
+            num_rows = MMA_M // 2, row_size = Int(depth), access_size=MMA_N
         ]()
         # Reuse a_smem for c tile in smem
         var accum_smem_tile = LayoutTensor[
             output_type,
-            Layout.row_major(BM, depth),
+            Layout.row_major(Int(BM), Int(depth)),
             address_space = AddressSpace.SHARED,
         ](q_smem.bitcast[Scalar[output_type]]())
 
-        var accum_smem_warp_tile = accum_smem_tile.tile[WM, depth](
+        var accum_smem_warp_tile = accum_smem_tile.tile[Int(WM), Int(depth)](
             Int(warp_y), Int(warp_x)
         )
         copy_local_to_shared[
@@ -2712,8 +2795,8 @@ fn mla_prefill_single_batch[
         # vector and stored using 16B store instruction.
         copy_sram_to_dram[
             thread_layout = Layout.row_major(
-                num_threads * UInt(simd_size) // depth,
-                depth // UInt(simd_size),
+                Int(num_threads * UInt(simd_size) // depth),
+                Int(depth // UInt(simd_size)),
             ),
             swizzle=swizzle,
         ](
@@ -2782,7 +2865,8 @@ fn mla_prefill_plan[
 
     if batch_size == 0:
         # Fill buffer lengths with 0
-        ctx.enqueue_function[set_buffer_lengths_to_zero[buffer_lengths.layout]](
+        alias kernel = set_buffer_lengths_to_zero[buffer_lengths.layout]
+        ctx.enqueue_function_checked[kernel, kernel](
             buffer_lengths, grid_dim=1, block_dim=1
         )
     else:
@@ -2850,14 +2934,14 @@ fn mla_prefill_plan_kernel[
 
     # Calculate starting position for this sequence
     for i in range(seq_idx):
-        seq_start_pos += k_cache.cache_length(i)
+        seq_start_pos += k_cache.cache_length(Int(i))
     seq_start_pos += Int(input_row_offsets[seq_idx])
 
     # which chunk this sequence starts in
     var start_chunk = seq_start_pos // buffer_size
 
     var processed_seq_len = UInt32(0)
-    var curr_seq_len = k_cache.cache_length(seq_idx) + Int(
+    var curr_seq_len = k_cache.cache_length(Int(seq_idx)) + Int(
         input_row_offsets[seq_idx + 1] - input_row_offsets[seq_idx]
     )
     var seq_len_left = curr_seq_len

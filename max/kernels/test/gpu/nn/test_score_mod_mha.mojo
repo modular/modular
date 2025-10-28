@@ -27,8 +27,8 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
-from tensor_internal import IOUnknown, ManagedTensorSlice
-from tensor_internal.managed_tensor_slice import StaticTensorSpec
+from tensor import IOUnknown, ManagedTensorSlice
+from tensor.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
@@ -309,12 +309,12 @@ def execute_flash_attention[
         MaterializedMask(
             LayoutTensor[
                 mask_device_mod.dtype,
-                __type_of(mask_device_mod.to_layout_tensor()).layout,
+                type_of(mask_device_mod.to_layout_tensor()).layout,
                 MutableAnyOrigin,
             ](
                 mask_device_mod.to_layout_tensor().ptr,
                 RuntimeLayout[
-                    __type_of(mask_device_mod.to_layout_tensor()).layout
+                    type_of(mask_device_mod.to_layout_tensor()).layout
                 ].row_major(
                     mask_device_mod.to_layout_tensor().runtime_layout.shape.value.canonicalize()
                 ),

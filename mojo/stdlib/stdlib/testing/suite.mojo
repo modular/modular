@@ -15,10 +15,12 @@ from math import ceil, floor
 from os import sep
 from time import perf_counter_ns
 from utils._ansi import Color, Text
+from collections import Set
 
 from builtin._location import __call_location, _SourceLocation
 from compile.reflection import get_linkage_name
 from sys.intrinsics import _type_is_eq
+from sys import argv
 
 
 fn _get_test_func_name[
@@ -73,6 +75,257 @@ fn _format_nsec(nanoseconds: UInt) -> String:
     return result
 
 
+# TODO: (MOCO-2450) - Add defaulted `writeln` to `Writer` trait.
+fn _writeln[
+    *Ts: Writable
+](mut writer: Some[Writer], *args: *Ts, sep: StaticString = StaticString("")):
+    @parameter
+    for i in range(args.__len__()):
+        args[i].write_to(writer)
+        sep.write_to(writer)
+    writer.write("\n")
+
+
+@fieldwise_init
+struct TestResult(EqualityComparable, ImplicitlyCopyable, Movable, Writable):
+    """A test result code."""
+
+    var _value: Int
+
+    alias PASS = Self(0)
+    """The test passed."""
+
+    alias FAIL = Self(1)
+    """The test failed."""
+
+    alias SKIP = Self(2)
+    """The test was skipped."""
+
+    fn __eq__(self, rhs: Self) -> Bool:
+        """Compare two test result codes for equality.
+
+        Args:
+            rhs: The other test result code to compare against.
+
+        Returns:
+            True if the result codes are equal, False otherwise.
+        """
+        return self._value == rhs._value
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write the result code to the writer.
+
+        Args:
+            writer: The writer to output the result code to.
+        """
+        if self == Self.PASS:
+            writer.write(Text[Color.GREEN]("PASS"))
+        elif self == Self.FAIL:
+            writer.write(Text[Color.RED]("FAIL"))
+        elif self == Self.SKIP:
+            writer.write(Text[Color.YELLOW]("SKIP"))
+
+
+struct TestReport(Copyable, Movable, Writable):
+    """A report for a single unit test."""
+
+    alias _ErrorIndent = 3
+
+    var name: String
+    """The name of the test."""
+
+    var duration_ns: UInt
+    """The duration of the test in nanoseconds."""
+
+    var result: TestResult
+    """The result code of the test."""
+
+    var error: Error
+    """The error associated with a failing test."""
+
+    @staticmethod
+    fn passed(*, var name: String, duration_ns: UInt) -> Self:
+        """Create a passing test report.
+
+        Args:
+            name: The name of the test.
+            duration_ns: The duration of the test in nanoseconds.
+
+        Returns:
+            A new passing test report.
+        """
+        return {
+            name = name^,
+            duration_ns = duration_ns,
+            result = TestResult.PASS,
+        }
+
+    @staticmethod
+    fn failed(*, var name: String, duration_ns: UInt, var error: Error) -> Self:
+        """Create a failing test report.
+
+        Args:
+            name: The name of the test.
+            duration_ns: The duration of the test in nanoseconds.
+            error: The error raised by the failing test.
+
+        Returns:
+            A new failing test report.
+        """
+        return {
+            name = name^,
+            duration_ns = duration_ns,
+            result = TestResult.FAIL,
+            error = error^,
+        }
+
+    @staticmethod
+    fn skipped(*, var name: String) -> Self:
+        """Create a skipped test report.
+
+        Args:
+            name: The name of the test.
+
+        Returns:
+            A new skipped test report.
+        """
+        return {name = name^, duration_ns = 0, result = TestResult.SKIP}
+
+    @doc_private
+    fn __init__(
+        out self,
+        *,
+        var name: String,
+        duration_ns: UInt,
+        result: TestResult,
+        var error: Error = {},
+    ):
+        self.name = name^
+        self.duration_ns = duration_ns
+        self.result = result
+        self.error = error^
+
+    @doc_private
+    @staticmethod
+    fn _format_error(e: Error) -> String:
+        var replacement = String("\n", _Indent("", level=Self._ErrorIndent))
+        return e.__str__().replace("\n", replacement)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write the formatted test report to the writer.
+
+        Args:
+            writer: The writer to output the formatted report to.
+        """
+        writer.write(_Indent(self.result, level=2))
+
+        writer.write(" [ ", _format_nsec(self.duration_ns), " ] ")
+        writer.write(Text[Color.CYAN](self.name))
+
+        if self.result == TestResult.FAIL:
+            writer.write(
+                "\n",
+                _Indent(
+                    Self._format_error(self.error),
+                    level=Self._ErrorIndent,
+                ),
+            )
+
+
+struct TestSuiteReport(Copyable, Movable, Writable):
+    """A report for an entire test suite."""
+
+    var reports: List[TestReport]
+    """The reports for each test in the suite."""
+
+    var total_duration_ns: UInt
+    """The total duration of the suite in nanoseconds."""
+
+    var failures: Int
+    """The number of tests that failed."""
+
+    var skipped: Int
+    """The number of tests skipped."""
+
+    var passed: Int
+    """The number of tests that passed."""
+
+    var location: _SourceLocation
+    """The source location of the test suite."""
+
+    fn __init__(
+        out self, *, var reports: List[TestReport], location: _SourceLocation
+    ):
+        """Initialize a test suite report.
+
+        Args:
+            reports: The list of individual test reports.
+            location: The source location where the test suite is defined.
+        """
+        self.reports = reports^
+        self.total_duration_ns = 0
+        self.failures = 0
+        self.skipped = 0
+        self.passed = 0
+        self.location = location
+
+        for ref report in self.reports:
+            self.total_duration_ns += report.duration_ns
+            if report.result == TestResult.FAIL:
+                self.failures += 1
+            elif report.result == TestResult.SKIP:
+                self.skipped += 1
+        self.passed = len(self.reports) - self.failures - self.skipped
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write the formatted test suite report to the writer.
+
+        Args:
+            writer: The writer to output the formatted suite report to.
+        """
+        _writeln(writer)
+        _writeln(
+            writer,
+            Text[Color.GREEN]("Running"),
+            Text[Color.BOLD_WHITE](len(self.reports)),
+            "tests for",
+            Text[Color.CYAN](self.location.file_name),
+            sep=" ",
+        )
+        for ref report in self.reports:
+            _writeln(writer, report)
+        _writeln(writer, "--------")
+        _writeln(
+            writer,
+            Text[Color.MAGENTA]("Summary"),
+            "[",
+            _format_nsec(self.total_duration_ns),
+            "]",
+            Text[Color.BOLD_WHITE](len(self.reports)),
+            "tests run:",
+            Text[Color.BOLD_WHITE](
+                len(self.reports) - self.failures - self.skipped
+            ),
+            Text[Color.GREEN]("passed"),
+            ",",
+            Text[Color.BOLD_WHITE](self.failures),
+            Text[Color.RED]("failed"),
+            ",",
+            Text[Color.BOLD_WHITE](self.skipped),
+            Text[Color.YELLOW]("skipped"),
+            sep=" ",
+        )
+
+        if self.failures > 0:
+            _writeln(
+                writer,
+                "Test suite'",
+                Text[Color.CYAN](self.location.file_name),
+                "'failed!",
+                sep=" ",
+            )
+
+
 @fieldwise_init
 struct _Test(Copyable & Movable):
     """A single test to run."""
@@ -82,7 +335,7 @@ struct _Test(Copyable & Movable):
     var name: String
 
 
-@explicit_destroy("TestSuite must be ran via `TestSuite.run`")
+@explicit_destroy("TestSuite must be destroyed via `run()`")
 struct TestSuite(Movable):
     """A suite of tests to run.
 
@@ -120,21 +373,42 @@ struct TestSuite(Movable):
     ```
     """
 
-    alias _ErrorIndent = 3
-
     var tests: List[_Test]
+    """The list of tests registered in this suite."""
+
     var location: _SourceLocation
+    """The source location where the test suite was created."""
+
+    var skip_list: Set[String]
+    """The list of tests to skip in this suite."""
+
+    var allow_list: Optional[Set[String]]
+    """The list of tests to allow in this suite."""
+
+    var cli_args: List[StaticString]
+    """The raw command line arguments passed to the test suite."""
 
     @always_inline
-    fn __init__(out self, *, location: Optional[_SourceLocation] = None):
+    fn __init__(
+        out self,
+        *,
+        location: Optional[_SourceLocation] = None,
+        var cli_args: Optional[List[StaticString]] = None,
+    ):
         """Create a new test suite.
 
-        Arguments:
+        Args:
             location: The location of the test suite (defaults to
                 `__call_location`).
+            cli_args: The command line arguments to pass to the test suite
+                (defaults to `sys.argv()`).
         """
         self.tests = List[_Test]()
         self.location = location.or_else(__call_location())
+        # TODO: would be better if these were StaticString
+        self.skip_list = Set[String]()
+        self.allow_list = None  # None means no allow list specified.
+        self.cli_args = cli_args.or_else(List[StaticString](argv()))
 
     fn _register_tests[test_funcs: Tuple, /](mut self):
         """Internal function to prevent all registrations from being inlined."""
@@ -144,7 +418,7 @@ struct TestSuite(Movable):
             alias test_func = test_funcs[idx]
 
             @parameter
-            if _type_is_eq[__type_of(test_func), _Test.fn_type]():
+            if _type_is_eq[type_of(test_func), _Test.fn_type]():
 
                 @parameter
                 if _get_test_func_name[test_func]().startswith("test_"):
@@ -159,23 +433,35 @@ struct TestSuite(Movable):
     @staticmethod
     fn discover_tests[
         test_funcs: Tuple, /
-    ](*, location: Optional[_SourceLocation] = None) -> Self:
+    ](
+        *,
+        location: Optional[_SourceLocation] = None,
+        var cli_args: Optional[List[StaticString]] = None,
+    ) -> Self:
         """Discover tests from the given list of functions, and register them.
 
         Parameters:
             test_funcs: The pack of functions to discover tests from. In most
                 cases, callers should pass `__functions_in_module()`.
 
-        Arguments:
+        Args:
             location: The location of the test suite (defaults to
                 `__call_location`).
+            cli_args: The command line arguments to pass to the test suite
+                (defaults to `sys.argv()`).
+
+        Returns:
+            A new TestSuite with all discovered tests registered.
         """
 
-        var suite = Self(location=location.or_else(__call_location()))
+        var suite = Self(
+            location=location.or_else(__call_location()), cli_args=cli_args^
+        )
         suite._register_tests[test_funcs]()
         return suite^
 
     fn __del__(deinit self):
+        """Destructor for the test suite."""
         pass
 
     fn test[f: _Test.fn_type](mut self):
@@ -186,77 +472,144 @@ struct TestSuite(Movable):
         """
         self.tests.append(_Test(f, _get_test_func_name[f]()))
 
-    @staticmethod
-    fn _format_error(e: Error) -> String:
-        var replacement = String("\n", _Indent("", level=Self._ErrorIndent))
-        return e.__str__().replace("\n", replacement)
+    fn skip[f: _Test.fn_type](mut self) raises:
+        """Registers a test to be skipped.
 
-    fn run(deinit self) raises:
-        """Runs the test suite and prints the results to the console.
+        If attempting to skip a test that is not registered in the suite (either
+        explicitly or via automatic discovery), an error will be raised.
+
+        Parameters:
+            f: The function to skip.
 
         Raises:
-            An error if a test in the test suite fails.
+            If the test is not found in the test suite.
         """
-        var n_tests = len(self.tests)
-        var failures = 0
-        var runtime = 0
-        print(
-            Text[Color.GREEN]("Running"),
-            Text[Color.BOLD_WHITE](n_tests),
-            "tests for",
-            Text[Color.CYAN](self.location.file_name),
-        )
-
-        var passed = Text[Color.GREEN]("PASS")
-        var failed = Text[Color.RED]("FAIL")
-
+        # TODO: _Test doesn't conform to EqualityComparable, so we can't use
+        # `in` here. Also, we might wanna do this in O(1) time.
         for test in self.tests:
-            var name = Text[Color.CYAN](test.name)
+            if test.name == _get_test_func_name[f]():
+                self.skip_list.add(test.name)
+                return
+        raise Error("test not found in suite: ", _get_test_func_name[f]())
+
+    fn _parse_filter_lists(mut self) raises:
+        # TODO: We need a proper argument parsing library to do this right.
+        ref args = self.cli_args
+        var num_args = len(args)
+        if num_args <= 1:
+            return
+
+        if args[1] == "--only":
+            self.allow_list = Set[String]()
+        elif args[1] == "--skip-all":
+            if num_args > 2:
+                raise Error("'--skip-all' does not take any arguments")
+            # --skip-all implies an empty allow list.
+            self.allow_list = Set[String]()
+            return
+        elif args[1] != "--skip":
+            raise Error(
+                "invalid argument: ",
+                args[1],
+                " (expected '--only' or '--skip')",
+            )
+
+        if num_args == 2:
+            raise Error("expected test name(s) after '--only' or '--skip'")
+
+        # TODO: would be better if this was StaticString
+        var discovered_tests = Set[String]()
+        for test in self.tests:
+            discovered_tests.add(test.name)
+
+        for idx in range(2, num_args):
+            var arg = args[idx]
+            if arg not in discovered_tests:
+                raise Error(
+                    "explicitly ",
+                    "allowed" if self.allow_list else "skipped",
+                    " test not found in suite: ",
+                    arg,
+                )
+            if self.allow_list:
+                self.allow_list[].add(arg)
+            else:
+                self.skip_list.add(arg)
+
+    fn _should_skip(self, test: _Test) -> Bool:
+        if test.name in self.skip_list:
+            return True
+        if not self.allow_list:
+            return False
+        # SAFETY: We know that `self.allow_list` is not `None` here.
+        return test.name not in self.allow_list.unsafe_value()
+
+    fn generate_report(
+        mut self, skip_all: Bool = False
+    ) raises -> TestSuiteReport:
+        """Runs the test suite and generates a report.
+
+        Args:
+            skip_all: Only collect tests, but don't execute them (defaults to
+                `False`).
+
+        Raises:
+            If an error occurs during test collection.
+
+        Returns:
+            A report containing the results of all tests.
+        """
+
+        # We call `_parse_filter_lists` even if `skip_all` is true to make sure
+        # CLI arguments are parsed and checked. We should probably refactor this
+        # when we have a proper argument parsing library.
+        self._parse_filter_lists()
+        if skip_all:
+            self.allow_list = Set[String]()
+
+        var reports = List[TestReport](capacity=len(self.tests))
+        for test in self.tests:
+            if self._should_skip(test):
+                reports.append(TestReport.skipped(name=test.name))
+                continue
+
+            var error: Optional[Error] = None
             var start = perf_counter_ns()
             try:
                 test.test_fn()
-                var duration = perf_counter_ns() - start
-                runtime += duration
-                print(
-                    _Indent(passed, level=2),
-                    "[",
-                    _format_nsec(duration),
-                    "]",
-                    name,
-                )
             except e:
-                failures += 1
-                var duration = perf_counter_ns() - start
-                runtime += duration
-                print(
-                    _Indent(failed, level=2),
-                    "[",
-                    _format_nsec(duration),
-                    "]",
-                    name,
+                error = {e^}
+            var duration = perf_counter_ns() - start
+
+            var name = test.name.copy()
+            if error:
+                reports.append(
+                    TestReport.failed(
+                        name=name^, duration_ns=duration, error=error.take()
+                    )
                 )
-                print(_Indent(Self._format_error(e), level=Self._ErrorIndent))
+            else:
+                reports.append(
+                    TestReport.passed(name=name^, duration_ns=duration)
+                )
 
-        print("--------")
-        print(
-            " ",
-            Text[Color.MAGENTA]("Summary"),
-            " [ ",
-            _format_nsec(UInt(runtime)),
-            " ] ",
-            Text[Color.BOLD_WHITE](n_tests),
-            " tests run: ",
-            Text[Color.BOLD_WHITE](n_tests - failures),
-            Text[Color.GREEN](" passed"),
-            ", ",
-            Text[Color.BOLD_WHITE](failures),
-            Text[Color.RED](" failed"),
-            sep="",
-        )
+        return TestSuiteReport(reports=reports^, location=self.location)
 
-        if failures > 0:
-            raise Error(
-                "Test suite '",
-                Text[Color.CYAN](self.location.file_name),
-                "' failed!",
-            )
+    fn run(deinit self, *, quiet: Bool = False, skip_all: Bool = False) raises:
+        """Runs the test suite and prints the results to the console.
+
+        Args:
+            quiet: Suppresses printing the report when the suite does not fail
+                (defaults to `False`).
+            skip_all: Only collect tests, but don't execute them (defaults to
+                `False`).
+
+        Raises:
+            If a test in the test suite fails or if an error occurs during test
+            collection.
+        """
+        var report = self.generate_report(skip_all=skip_all)
+        if report.failures > 0:
+            raise Error(report)
+        if not quiet:
+            print(report)

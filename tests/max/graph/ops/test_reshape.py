@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
+import re
 from collections.abc import Collection
 
 import pytest
@@ -257,14 +258,25 @@ def test_reshape_statically_known_impossible_shape() -> None:
             x.reshape([n_patches // 4, 4, 4])
 
 
-@pytest.mark.skip(
-    "MAXPLAT-329: Point users towards using a rebind before reshape"
-)
 def test_reshape_needs_rebind_error_message() -> None:
     input_type = TensorType(
         DType.float32, ["n_patches", 2048], DeviceRef.from_device(CPU())
     )
+    expected_error = re.escape("""Failed to create op 'reshape':
+Inputs:
+    input = TensorValue(dtype=float32, shape=[Dim('n_patches'), Dim(2048)], device=cpu:0)
+    new_shape = ShapeAttr(#mosh<ape[div(n_patches, 4), 4, 2048]> : !mosh.ape)
+
+Diagnostics:
+    [reshape] input and output number of elements must match: #mosh<ape[n_patches, 2048]> : !mosh.ape != #mosh<ape[div(n_patches, 4), 4, 2048]> : !mosh.ape
+If you are confident this is correct, consider a rebind to assert that the reshape is valid.
+Ex: ```
+    n, m = x.shape
+    x = x.rebind([(n // 4) * 4, m])
+    x.reshape([n // 4, 4, m])
+```""")
     with Graph("test_MAXPLAT_329", input_types=[input_type]) as graph:
         (x,) = graph.inputs
         n_patches, _ = x.tensor.shape
-        graph.output(x.tensor.reshape([n_patches // 4, 4, 2048]))
+        with pytest.raises(Exception, match=expected_error):
+            _ = x.tensor.reshape([n_patches // 4, 4, 2048])

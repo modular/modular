@@ -35,6 +35,7 @@ from ....utils_gpu import MatmulConfig, get_hilbert_lut_with_cache
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
 from .matmul_kernels import HopperMatmulSM90Kernel, find_K_alignment_upto_16B
+from .matmul_kernel_persistent import HopperMatmulSM90Kernel
 
 
 fn _is_valid_cluster_shape[
@@ -119,6 +120,8 @@ fn warp_specialize_gemm_with_multicasting[
     ctx: DeviceContext,
 ) raises:
     """Unified dispatcher for all matmul kernel variants."""
+
+    @parameter
     if splits > 0:
         # Dispatch to split-k kernel
         warp_specialize_gemm_with_multicasting_splitk[
@@ -281,7 +284,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     ]()
     alias c_smem_tile = Index(
         c_smem_layout.shape[0].value(),
-        c_smem_layout.shape[1].value() // config.num_consumer,
+        c_smem_layout.shape[1].value() // Int(config.num_consumer),
     )
 
     alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -315,7 +318,9 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         var grid_y = ceildiv(M, BM)
         lut_ptr = get_hilbert_lut_with_cache(ctx, grid_x, grid_y)
 
-    alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
+    alias num_threads = WARPGROUP_SIZE * Int(
+        config.num_consumer
+    ) + WARPGROUP_SIZE
 
     alias matmul_kernel[hilbert_swizzle: Bool = False] = HopperMatmulSM90Kernel[
         a_type,
@@ -360,14 +365,14 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     if k_align == 16:
         var a_tma_op = create_tma_tile[
             Index(
-                BM // CLUSTER_N, BK
+                BM // Int(CLUSTER_N), BK
             ) if config.partitioned_multicast else Index(BM, BK),
             swizzle_mode=a_swizzle,
         ](ctx, a)
 
         var b_tma_op = create_tma_tile[
             Index(
-                BN // CLUSTER_M, BK
+                BN // Int(CLUSTER_M), BK
             ) if config.partitioned_multicast else Index(BN, BK),
             swizzle_mode=b_swizzle,
         ](ctx, b)
@@ -385,7 +390,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 schedule=schedule,
             ]
 
-            ctx.enqueue_function[kernel](
+            ctx.enqueue_function_checked[kernel, kernel](
                 a_tma_op,
                 b_tma_op,
                 c_tma_op,
@@ -409,7 +414,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 c_tma_op.desc_layout,
             ]
 
-            ctx.enqueue_function[kernel](
+            ctx.enqueue_function_checked[kernel, kernel](
                 a_tma_op,
                 b_tma_op,
                 c_tma_op,
@@ -433,7 +438,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
             c_tma_op.layout,
         ]
 
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             c_tma_op,
             a,
             b,
@@ -592,7 +597,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     ]()
     alias c_smem_tile = Index(
         c_smem_layout.shape[0].value(),
-        c_smem_layout.shape[1].value() // config.num_consumer,
+        c_smem_layout.shape[1].value() // Int(config.num_consumer),
     )
 
     alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -603,15 +608,15 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
     a_tma_op = create_tma_tile[
-        Index(BM // CLUSTER_N, BK) if config.partitioned_multicast else Index(
-            BM, BK
-        ),
+        Index(
+            BM // Int(CLUSTER_N), BK
+        ) if config.partitioned_multicast else Index(BM, BK),
         swizzle_mode=a_swizzle,
     ](ctx, a)
     b_tma_op = create_tma_tile[
-        Index(BN // CLUSTER_M, BK) if config.partitioned_multicast else Index(
-            BN, BK
-        ),
+        Index(
+            BN // Int(CLUSTER_M), BK
+        ) if config.partitioned_multicast else Index(BN, BK),
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
@@ -713,7 +718,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         raster_order=raster_order,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

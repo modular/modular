@@ -14,7 +14,7 @@
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from comm.allreduce import MAX_GPUS, Signal, allreduce
-from gpu.grid_controls import _SUPPORT_PDL_LAUNCH, PDLLevel
+from gpu.primitives.grid_controls import _SUPPORT_PDL_LAUNCH, PDLLevel
 from gpu.host import DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
 

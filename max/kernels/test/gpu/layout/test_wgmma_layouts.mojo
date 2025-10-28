@@ -13,8 +13,7 @@
 
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.id import thread_idx
-from gpu.memory import AddressSpace
+from gpu import thread_idx
 from gpu.mma import (
     WGMMADescriptor,
     wgmma_async,

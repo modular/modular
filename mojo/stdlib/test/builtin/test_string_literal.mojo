@@ -254,7 +254,7 @@ def test_layout():
     # assert_equal(empty[0], 0)
 
     # Test non-empty StringLiteral C string
-    var ptr: UnsafePointer[c_char] = "hello".unsafe_cstr_ptr()
+    var ptr = "hello".unsafe_cstr_ptr()
     assert_equal(ptr[0], ord("h"))
     assert_equal(ptr[1], ord("e"))
     assert_equal(ptr[2], ord("l"))

@@ -18,8 +18,7 @@ from sys import size_of
 from gpu import NamedBarrierSemaphore
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host.info import H100
-from gpu.id import block_idx, grid_dim, thread_idx
-from gpu.memory import AddressSpace
+from gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from stdlib.bit import log2_floor
@@ -131,7 +130,7 @@ struct SplitKTileScheduler[
         out self,
         prob_shape: IndexList[3],
         block_id_in_cluster: IndexList[2],
-        locks_ptr: UnsafePointer[NoneType],
+        locks_ptr: UnsafePointer[UInt8],
     ):
         _check_scheduler_constraints[
             problem_shape_nk,

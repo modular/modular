@@ -22,7 +22,7 @@ from utils import IndexList
 
 
 @always_inline
-fn add(x: SIMD, y: __type_of(x)) -> __type_of(x):
+fn add(x: SIMD, y: type_of(x)) -> type_of(x):
     return x + y
 
 

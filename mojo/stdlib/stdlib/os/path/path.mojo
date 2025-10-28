@@ -110,6 +110,9 @@ fn expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
 
     Returns:
         The expanded path.
+
+    Raises:
+        If the operation fails.
     """
     var fspath = path.__fspath__()
     if not fspath.startswith("~"):
@@ -276,7 +279,7 @@ fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
 
     # We wrote the data directly into the String buffer
     # now we need to figure out the length
-    string.set_byte_length(_unsafe_strlen(string._ptr_or_data))
+    string.set_byte_length(Int(_unsafe_strlen(string._ptr_or_data)))
     string._set_nul_terminated()
 
     return string^
@@ -346,6 +349,9 @@ fn getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
 
     Returns:
         The size of the path in bytes.
+
+    Raises:
+        If the operation fails.
     """
     return stat(path.__fspath__()).st_size
 
@@ -540,6 +546,9 @@ fn split_extension[
 
     Returns:
         A tuple containing two strings: (root, extension).
+
+    Raises:
+        If the operation fails.
     """
     return _split_extension(path.__fspath__(), sep, "", ".")
 
@@ -698,7 +707,7 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     while j < len(bytes):
         if bytes[j] == ord("$") and j + 1 < len(bytes):
             if not buf:
-                buf.reserve(new_capacity=UInt(2 * len(bytes)))
+                buf.reserve(new_capacity=2 * len(bytes))
             buf.write_bytes(bytes[i:j])
 
             var name, length = _parse_variable_name(bytes[j + 1 :])

@@ -323,6 +323,10 @@ class InferenceSession:
         if env_val := os.getenv("MOJO_LOGGING_LEVEL"):
             self.set_mojo_log_level(env_val)
 
+        # TODO: Remove this once the new topk kernel is stable.
+        if use_old_top_k_kernel := os.getenv("USE_OLD_TOP_K_KERNEL"):
+            self.use_old_top_k_kernel(use_old_top_k_kernel)
+
     def __repr__(self) -> str:
         if self.num_threads:
             return f"<modular engine InferenceSession(num_threads={self.num_threads})>"
@@ -541,6 +545,21 @@ class InferenceSession:
             self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING_DETAILED", 1)
 
         set_gpu_profiling_state(mode.value)
+
+    def use_old_top_k_kernel(self, mode: str) -> None:
+        """Enables the old top-k kernel.
+
+        Default is to use the new top-k kernel to keep it consistent with
+        max/kernels/src/nn/topk.mojo
+
+        Args:
+            mode: String to enable/disable. Accepts "false", "off", "no", "0"
+                to disable, any other value to enable.
+        """
+        if mode.lower() in ("false", "off", "no", "0"):
+            return
+
+        self._set_mojo_define("USE_OLD_TOP_K_KERNEL", 1)
 
     def _use_experimental_kernels(self, mode: str) -> None:
         """Enables experimental kernels."""

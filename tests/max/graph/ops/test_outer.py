@@ -17,7 +17,7 @@ from conftest import shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 shared_dtypes = st.shared(st.from_type(DType))
 tensor_types_1d = tensor_types(
@@ -42,4 +42,16 @@ def test_outer_nd_tensors(lhs_type: TensorType, rhs_type: TensorType) -> None:
 
     with Graph("outer", input_types=[lhs_type, rhs_type]) as graph:
         with pytest.raises(ValueError):
-            out = ops.outer(graph.inputs[0].tensor, graph.inputs[1].tensor)
+            ops.outer(graph.inputs[0].tensor, graph.inputs[1].tensor)
+
+
+@given(lhs_type=tensor_types_1d, rhs_type=tensor_types_1d)
+def test_outer_mismatched_devices(
+    lhs_type: TensorType, rhs_type: TensorType
+) -> None:
+    device = DeviceRef.GPU(1)
+    assume(lhs_type.device != device)
+    rhs_type = TensorType(rhs_type.dtype, rhs_type.shape, device)
+    with Graph("outer", input_types=[lhs_type, rhs_type]) as graph:
+        with pytest.raises(ValueError, match="same device"):
+            ops.outer(graph.inputs[0].tensor, graph.inputs[1].tensor)

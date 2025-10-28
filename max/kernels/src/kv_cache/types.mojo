@@ -36,7 +36,7 @@ from builtin.device_passable import DevicePassable
 @parameter
 fn _strides_from_shape[shape: DimList, *, skip: Int = 0]() -> DimList:
     alias rank = len(shape)
-    var strides = List[Dim](length=UInt(rank), fill=Dim())
+    var strides = List[Dim](length=rank, fill=Dim())
     var stride = Dim(1)
 
     # Skip over dimensions that are not contiguous. This occurs when computing the
@@ -279,7 +279,7 @@ struct ContinuousBatchingKVCache[
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -449,9 +449,9 @@ struct ContinuousBatchingKVCache[
         var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
         alias cols = Self.kv_params.num_heads * Self.kv_params.head_size
 
-        alias layout = Layout.row_major(UNKNOWN_VALUE, cols)
+        alias layout = Layout.row_major(UNKNOWN_VALUE, Int(cols))
         rt_layout = RuntimeLayout[layout].row_major(
-            IndexList[2](Int(rows), cols)
+            IndexList[2](Int(rows), Int(cols))
         )
 
         # Create a LayoutTensor view with compile-time shape
@@ -524,7 +524,7 @@ struct PagedKVCache[
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self

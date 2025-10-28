@@ -23,12 +23,19 @@ struct QuickBench:
 
     @always_inline
     fn __init__(out self) raises:
-        """Just initialize the Bench object."""
+        """Initializes the `Bench` object.
+
+        Raises:
+            If the operation fails.
+        """
         self.m = Bench()
 
     @always_inline
     fn dump_report(mut self) raises:
         """Prints out the report from a Benchmark execution collected in Bench object.
+
+        Raises:
+            If the operation fails.
         """
         self.m.dump_report()
 
@@ -52,6 +59,9 @@ struct QuickBench:
             func: The function to be benchmarked (run in benchmark iterations).
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -90,6 +100,9 @@ struct QuickBench:
             x0: The 1st argument of func.
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -134,6 +147,9 @@ struct QuickBench:
             x1: The 2nd argument of func.
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -182,6 +198,9 @@ struct QuickBench:
             x2: The 3rd argument of func.
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -234,6 +253,9 @@ struct QuickBench:
             x3: The 4th argument of func.
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -290,6 +312,9 @@ struct QuickBench:
             x4: The 5th argument of func.
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -350,6 +375,9 @@ struct QuickBench:
             x5: The 6th argument of func.
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -414,6 +442,9 @@ struct QuickBench:
             x6: The 7th argument of func.
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -482,6 +513,9 @@ struct QuickBench:
             x7: The 8th argument of func.
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -554,6 +588,9 @@ struct QuickBench:
             x8: The 9th argument of func.
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -630,6 +667,9 @@ struct QuickBench:
             x9: The 10th argument of func.
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter

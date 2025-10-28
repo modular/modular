@@ -35,7 +35,7 @@ from io.write import _WriteBufferStack
 from os import PathLike, abort
 from sys import external_call, size_of
 
-from memory import AddressSpace, Span
+from memory import Span
 
 
 # This type is used to pass into CompilerRT functions.  It is an owning
@@ -113,7 +113,11 @@ struct FileHandle(Defaultable, Movable, Writer):
             pass
 
     fn close(mut self) raises:
-        """Closes the file handle."""
+        """Closes the file handle.
+
+        Raises:
+            If the operation fails.
+        """
         if not self.handle:
             return
 

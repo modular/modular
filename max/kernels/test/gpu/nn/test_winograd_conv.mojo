@@ -26,7 +26,7 @@ from math import ceildiv
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, thread_idx
+from gpu import block_dim, block_idx, thread_idx
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -41,7 +41,7 @@ from utils.numerics import get_accum_type
 fn _get_b[
     dtype: DType
 ](out B: LayoutTensor[dtype, Layout.row_major(4, 4), MutableAnyOrigin]):
-    B = __type_of(B).stack_allocation()
+    B = type_of(B).stack_allocation()
     # fmt:off
     B[0,0] = 1.0; B[0,1] =  0.0; B[0,2] = -1.0; B[0,3] =  0.0
     B[1,0] = 0.0; B[1,1] =  1.0; B[1,2] =  1.0; B[1,3] =  0.0
@@ -54,7 +54,7 @@ fn _get_b[
 fn _get_g[
     dtype: DType
 ](out G: LayoutTensor[dtype, Layout.row_major(4, 3), MutableAnyOrigin]):
-    G = __type_of(G).stack_allocation()
+    G = type_of(G).stack_allocation()
     # fmt:off
     G[0,0] = 1.0; G[0,1] =  0.0; G[0,2] = 0.0
     G[1,0] = 0.5; G[1,1] =  0.5; G[1,2] = 0.5
@@ -67,7 +67,7 @@ fn _get_g[
 fn _get_a[
     dtype: DType
 ](out A: LayoutTensor[dtype, Layout.row_major(2, 4), MutableAnyOrigin]):
-    A = __type_of(A).stack_allocation()
+    A = type_of(A).stack_allocation()
     # fmt:off
     A[0,0] = 1.0; A[0,1] = 1.0; A[0,2] =  1.0; A[0,3] =  0.0
     A[1,0] = 0.0; A[1,1] = 1.0; A[1,2] = -1.0; A[1,3] = -1.0
@@ -402,10 +402,17 @@ fn test_winograd_conv_gpu[
     var device_input = host_input.copy_to_device(ctx)
     var device_filter = host_filter.copy_to_device(ctx)
 
-    conv_gpu[4, 4, input_dim, filter_dim, output_dim, dtype, dtype, dtype](
-        device_input.tensor,
-        device_filter.tensor,
-        device_output_ref.tensor,
+    conv_gpu[
+        type_of(device_input.to_layout_tensor()).layout,
+        type_of(device_filter.to_layout_tensor()).layout,
+        type_of(device_output_ref.to_layout_tensor()).layout,
+        dtype,
+        dtype,
+        dtype,
+    ](
+        device_input.to_layout_tensor().as_any_origin(),
+        device_filter.to_layout_tensor().as_any_origin(),
+        device_output_ref.to_layout_tensor().as_any_origin(),
         stride,
         dilation,
         pad,

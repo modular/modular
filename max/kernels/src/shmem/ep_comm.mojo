@@ -26,7 +26,6 @@ from gpu import (
     warp_id,
 )
 from gpu.intrinsics import Scope, load_acquire, store_release
-from gpu.memory import AddressSpace
 from gpu.sync import syncwarp
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.int_tuple import (
@@ -40,6 +39,8 @@ from memory.unsafe import bitcast
 from shmem import SHMEM_SIGNAL_SET, SHMEMScope, shmem_put_nbi, shmem_signal_op
 
 from utils.index import IndexList, StaticTuple
+
+from builtin.device_passable import DevicePassable
 
 alias RtTuple_2 = RuntimeTuple[
     IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), element_type = DType.int32
@@ -57,7 +58,7 @@ alias EP_DATA_READY_FLAG = 1 << 10
 
 
 @register_passable("trivial")
-trait TokenFormat:
+trait TokenFormat(DevicePassable):
     alias hid_dim: Int
     alias top_k: Int
     alias alignment: Int
@@ -132,6 +133,35 @@ struct BF16TokenFormat[
         DType.bfloat16, output_layout, MutableAnyOrigin
     ]
     var output_tokens: Self.TensorType
+
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Convert the host type object to a device_type and store it at the
+        target address.
+
+        Args:
+            target: The target address to store the device type.
+        """
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return String(
+            "BF16TokenFormat[output_layout = ",
+            String(output_layout),
+            ", hid_dim = ",
+            String(Self.hid_dim),
+            ", top_k = ",
+            String(Self.top_k),
+            ", alignment = ",
+            String(Self.alignment),
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn __init__(out self, output_tokens: Self.TensorType):
@@ -209,6 +239,41 @@ struct BlockwiseFP8TokenFormat[
     var output_scales: Self.ScalesTensorType
 
     alias group_size = 128
+
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Convert the host type object to a device_type and store it at the
+        target address.
+
+        Args:
+            target: The target address to store the device type.
+        """
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return String(
+            "BlockwiseFP8TokenFormat[fp8_dtype = ",
+            String(Self.fp8_dtype),
+            ", scales_dtype = ",
+            String(Self.scales_dtype),
+            ", output_layout = ",
+            String(Self.output_layout),
+            ", scales_layout = ",
+            String(Self.scales_layout),
+            ", hid_dim = ",
+            String(Self.hid_dim),
+            ", top_k = ",
+            String(Self.top_k),
+            ", alignment = ",
+            String(Self.alignment),
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn __init__(
@@ -515,13 +580,13 @@ fn dispatch_kernel[
                 # The remote device will use the expert ID to determine a token's
                 # top-k id.
                 # Cast the expert ID to a 16-bit integer to save space.
-                var top_k_idx = topk_ids.load[width=1](token_idx, tid)
+                var top_k_idx = topk_ids.load[width=1](token_idx, Int(tid))
                 curr_send_buf_ptr.store[
                     width = size_of[UInt16](),
                     alignment = align_of[DType.uint16](),
                 ](
                     token_fmt_type.topk_info_offset()
-                    + tid * UInt(size_of[UInt16]()),
+                    + Int(tid * UInt(size_of[UInt16]())),
                     bitcast[DType.uint8, size_of[UInt16]()](UInt16(top_k_idx)),
                 )
 
@@ -736,6 +801,8 @@ fn dispatch_cb_kernel[
                     )
 
                 prefix_sum_arr[round_i] = UInt32(token_count)
+            else:
+                prefix_sum_arr[round_i] = UInt32(0)
             syncwarp()
             prefix_sum_arr[round_i] = warp.prefix_sum(prefix_sum_arr[round_i])
             syncwarp()
@@ -844,7 +911,7 @@ fn dispatch_cb_kernel[
                 var src_topk_idx = bitcast[DType.uint16, 1](
                     recv_buf_ptr.load[width = size_of[UInt16]()](
                         token_fmt_type.topk_info_offset()
-                        + lane_id() * UInt(size_of[UInt16]()),
+                        + Int(lane_id() * UInt(size_of[UInt16]())),
                     )
                 )
                 var global_expert_idx = (
@@ -984,7 +1051,7 @@ fn combine_kernel[
 
         # The tokens are sent back to the original rank using the same RC as the
         # one they come from.
-        var rc_map_offset = (sm_id * n_warps + warp_id()) % n_local_experts
+        var rc_map_offset = (sm_id * n_warps + Int(warp_id())) % n_local_experts
 
         # Info for where the tokens for the current expert and rank start and end
         # are stored in the atomic counter by the `dispatch_cb_kernel`.

@@ -15,7 +15,7 @@ from collections import OptionalReg
 from sys import align_of, simd_width_of, size_of
 
 from gpu.intrinsics import AMDBufferResource
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import external_memory
 from layout import Layout, LayoutTensor
 from layout.layout import coalesce
 from layout._utils import _get_bounds, make_amd_buffer_resource
@@ -36,15 +36,12 @@ struct ScatterGatherAmd[
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
 ]:
-    """Tile-based AMD data movement delegate for scatter-gather operations.
-
-    This struct facilitates data movement between DRAM and registers on AMD GPUs
-    using tile-based operations.
+    """AMD tile-based scatter-gather for DRAM-register data movement.
 
     Parameters:
-        thread_layout: The layout defining thread organization.
-        num_threads: Total number of threads (defaults to thread_layout size).
-        thread_scope: The scope of thread execution (block or warp).
+        thread_layout: Thread organization layout.
+        num_threads: Total threads (defaults to thread_layout size).
+        thread_scope: Thread execution scope (block or warp).
         block_dim_count: Number of block dimensions.
     """
 
@@ -52,10 +49,10 @@ struct ScatterGatherAmd[
 
     @always_inline
     fn __init__(out self, tensor: LayoutTensor):
-        """Initialize the scatter-gather delegate with a tensor.
+        """Initialize with a tensor.
 
         Args:
-            tensor: The layout tensor to create an AMD buffer resource from.
+            tensor: Layout tensor for AMD buffer resource creation.
         """
         self.buffer = make_amd_buffer_resource(tensor)
 
@@ -69,13 +66,13 @@ struct ScatterGatherAmd[
         src_tensor: LayoutTensor,
         offset: OptionalReg[UInt] = None,
     ):
-        """Copy data from DRAM to registers (local memory).
+        """Copy DRAM to registers.
 
         Args:
-            dst_reg_tile: Destination register tile in local address space.
+            dst_reg_tile: Destination register tile.
             src_gmem_tile: Source global memory tile.
-            src_tensor: Source tensor for the copy operation.
-            offset: Optional offset for the copy operation.
+            src_tensor: Source tensor.
+            offset: Optional copy offset.
         """
         _copy_dram_to_local[
             thread_layout, num_threads, thread_scope, block_dim_count
@@ -87,11 +84,11 @@ struct ScatterGatherAmd[
         dst_gmem_tile: LayoutTensor[mut=True, *_, **_],
         src_reg_tile: LayoutTensor[*_, address_space = AddressSpace.LOCAL, **_],
     ):
-        """Copy data from registers (local memory) to DRAM.
+        """Copy registers to DRAM.
 
         Args:
             dst_gmem_tile: Destination global memory tile.
-            src_reg_tile: Source register tile in local address space.
+            src_reg_tile: Source register tile.
         """
         _copy_local_to_dram[
             thread_layout, num_threads, thread_scope, block_dim_count
@@ -104,15 +101,12 @@ struct IteratorScatterGatherAmd[
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
 ]:
-    """Iterator-based AMD data movement delegate for scatter-gather operations.
-
-    This struct provides an iterator-based approach for data movement between
-    DRAM and registers on AMD GPUs.
+    """Iterator-based AMD scatter-gather for DRAM-register data movement.
 
     Parameters:
-        thread_layout: The layout defining thread organization.
-        num_threads: Total number of threads (defaults to thread_layout size).
-        thread_scope: The scope of thread execution (block or warp).
+        thread_layout: Thread organization layout.
+        num_threads: Total threads (defaults to thread_layout size).
+        thread_scope: Thread execution scope (block or warp).
         block_dim_count: Number of block dimensions.
     """
 
@@ -120,11 +114,11 @@ struct IteratorScatterGatherAmd[
 
     @always_inline
     fn __init__(out self, tensor: LayoutTensor, tensor_iter: LayoutTensorIter):
-        """Initialize the iterator-based scatter-gather delegate.
+        """Initialize with tensor and iterator.
 
         Args:
-            tensor: The layout tensor for bounds information.
-            tensor_iter: The layout tensor iterator for creating the AMD buffer resource.
+            tensor: Layout tensor for bounds.
+            tensor_iter: Iterator for AMD buffer resource.
         """
         self.buffer = make_amd_buffer_resource(tensor_iter, _get_bounds(tensor))
 
@@ -134,11 +128,11 @@ struct IteratorScatterGatherAmd[
         dst_reg_tile: LayoutTensor[mut=True, *_, **_],
         src_gmem_tile_iter: LayoutTensorIter,
     ):
-        """Copy data from DRAM to registers using an iterator.
+        """Copy DRAM to registers via iterator.
 
         Args:
             dst_reg_tile: Destination register tile.
-            src_gmem_tile_iter: Source global memory tile iterator.
+            src_gmem_tile_iter: Source memory iterator.
         """
         _copy_dram_to_local[
             thread_layout, num_threads, thread_scope, block_dim_count
@@ -191,20 +185,22 @@ struct SMemTileArrayType[
     num_tiles: Int,
     alignment: Int,
 ]:
-    """Shared memory tile array for managing multiple tiles in shared memory.
+    """Array of tiles in shared memory.
 
     Parameters:
-        dtype: Data type of the tiles.
-        layout: Layout configuration for each tile.
-        num_tiles: Number of tiles in the array.
-        alignment: Memory alignment requirement.
+        dtype: Tile data type.
+        layout: Tile layout configuration.
+        num_tiles: Number of tiles.
+        alignment: Memory alignment.
     """
 
-    alias TileType = SMemTileType[
+    alias Tile = SMemTileType[
         dtype,
         Self.layout,
         alignment=alignment,
     ]
+
+    alias storage_size = eval[layout.size()] * size_of[dtype]() * num_tiles
 
     var ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED]
 
@@ -219,10 +215,10 @@ struct SMemTileArrayType[
             origin=origin,
         ],
     ):
-        """Initialize the shared memory tile array.
+        """Initialize with shared memory pointer.
 
         Args:
-            unsafe_ptr: Pointer to the shared memory location.
+            unsafe_ptr: Shared memory pointer.
         """
         constrained[
             layout.all_dims_known(), "Layout must be known at compile time."
@@ -230,125 +226,107 @@ struct SMemTileArrayType[
 
         self.ptr = unsafe_ptr
 
-    fn __getitem__[T: Intable](self, index: T) -> Self.TileType:
-        """Access a tile at the specified index.
+    fn __getitem__[T: Intable](self, index: T) -> Self.Tile:
+        """Get tile at index.
 
         Args:
-            index: The index of the tile to access.
+            index: Tile index.
 
         Returns:
-            The tile at the specified index.
+            Tile at index.
         """
-        return Self.TileType(self.ptr + eval[layout.size()] * Int(index))
+        return Self.Tile(self.ptr + eval[layout.size()] * Int(index))
+
+
+@register_passable("trivial")
+struct SMemArrayType[type: AnyType, size: Int]:
+    """Shared memory array of fixed size.
+
+    Parameters:
+        type: Element type.
+        size: Number of elements.
+    """
+
+    alias ptr_type = UnsafePointer[type, address_space = AddressSpace.SHARED]
+    alias storage_size = size * size_of[type]()
+
+    var ptr: Self.ptr_type
+
+    @always_inline
+    fn __init__(
+        out self,
+        unsafe_ptr: Self.ptr_type,
+    ):
+        """Initialize with shared memory pointer.
+
+        Args:
+            unsafe_ptr: Shared memory pointer.
+        """
+        self.ptr = unsafe_ptr
+
+    @always_inline
+    fn __getitem__[T: Intable](self, index: T) -> Self.ptr_type:
+        """Get element at index.
+
+        Args:
+            index: Element index.
+
+        Returns:
+            Pointer to element.
+        """
+        return self.ptr + size_of[type]() * Int(index)
+
+    @always_inline
+    @staticmethod
+    fn len() -> Int:
+        """Get array length in bytes.
+
+        Returns:
+            Total size in bytes.
+        """
+        return size * size_of[type]()
 
 
 alias eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
 
 
-struct SMemArray[type: AnyType, size: Int]:
-    """Helper struct for allocating shared memory arrays.
+trait SharedMemoryBasePtr:
+    alias alignment: Int
 
-    Parameters:
-        type: The type of elements in the array.
-        size: The number of elements in the array.
-    """
-
-    alias T = UnsafePointer[type, address_space = AddressSpace.SHARED]
-    alias storage_size = size * size_of[type]()
-
-    @staticmethod
     @always_inline
-    fn build(mut smem_mgr: NVIDIASharedMemoryManager) -> Self.T:
-        """Build a shared memory array using the memory manager.
-
-        Args:
-            smem_mgr: The NVIDIA shared memory manager.
-
-        Returns:
-            Pointer to the allocated shared memory array.
-        """
-        return rebind[Self.T](smem_mgr.array[type, size]())
-
-
-struct SMemTile[dtype: DType, layout: Layout, alignment: Int]:
-    """Helper struct for allocating shared memory tiles.
-
-    Parameters:
-        dtype: Data type of the tile elements.
-        layout: Layout configuration for the tile.
-        alignment: Memory alignment requirement.
-    """
-
-    alias T = SMemTileType[dtype, layout, alignment=alignment]
-    alias storage_size = layout.size() * size_of[dtype]()
-
     @staticmethod
-    @always_inline
-    fn build(mut smem_mgr: NVIDIASharedMemoryManager) -> Self.T:
-        """Build a shared memory tile using the memory manager.
-
-        Args:
-            smem_mgr: The NVIDIA shared memory manager.
-
-        Returns:
-            The allocated shared memory tile.
-        """
-        return rebind[Self.T](smem_mgr.tile[dtype, layout]())
+    fn ptr() -> UnsafePointer[Int8, address_space = AddressSpace.SHARED]:
+        ...
 
 
-struct SMemTileArray[
-    dtype: DType, layout: Layout, alignment: Int, num_tiles: Int
-]:
-    """Helper struct for allocating arrays of shared memory tiles.
-
-    Parameters:
-        dtype: Data type of the tile elements.
-        layout: Layout configuration for each tile.
-        alignment: Memory alignment requirement.
-        num_tiles: Number of tiles in the array.
-    """
-
-    alias T = SMemTileArrayType[dtype, layout, num_tiles, alignment=alignment]
-    alias storage_size = Self.layout.size() * size_of[dtype]() * num_tiles
-
-    @staticmethod
-    @always_inline
-    fn build(mut smem_mgr: NVIDIASharedMemoryManager) -> Self.T:
-        """Build a shared memory tile array using the memory manager.
-
-        Args:
-            smem_mgr: The NVIDIA shared memory manager.
-
-        Returns:
-            The allocated shared memory tile array.
-        """
-        return rebind[Self.T](smem_mgr.tile_array[dtype, layout, num_tiles]())
-
-
-struct NVIDIASharedMemoryManager[
+struct NVIDIASharedMemoryBasePtr[
     name: StaticString = "extern_ptr_syml",
-    alignment: Int = 128,
     memory_alignment: Int = 8,
-]:
-    """Manager for allocating and organizing shared memory on NVIDIA GPUs.
+](SharedMemoryBasePtr):
+    alias alignment: Int = 128
 
-    This struct provides a unified interface for allocating tiles, tile arrays,
-    and regular arrays in shared memory with proper alignment.
+    @always_inline
+    @staticmethod
+    fn ptr() -> UnsafePointer[Int8, address_space = AddressSpace.SHARED]:
+        return external_memory[
+            Int8,
+            address_space = AddressSpace.SHARED,
+            alignment=memory_alignment,
+            name=name,
+        ]()
 
-    Parameters:
-        name: Symbol name for external shared memory.
-        alignment: Default alignment for memory allocations (default: 128).
-        memory_alignment: Base memory alignment (default: 8).
-    """
 
-    alias Tile[dtype: DType, layout: Layout] = SMemTile[
-        dtype, layout, alignment=alignment
+struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
+    alias Tile[dtype: DType, layout: Layout] = SMemTileType[
+        dtype, layout, alignment = SMBP.alignment
     ]
+
     alias TileArray[
         dtype: DType, layout: Layout, num_tiles: Int
-    ] = SMemTileArray[dtype, layout, alignment, num_tiles=num_tiles]
-    alias Array[type: AnyType, num_tiles: Int] = SMemArray[type, num_tiles]
+    ] = SMemTileArrayType[dtype, layout, num_tiles, SMBP.alignment]
+
+    alias Array[type: AnyType, size: Int] = SMemArrayType[type, size]
 
     var base_ptr: UnsafePointer[Int8, address_space = AddressSpace.SHARED]
     var offset: Int
@@ -356,57 +334,58 @@ struct NVIDIASharedMemoryManager[
     @always_inline
     fn __init__(out self):
         """Initialize the shared memory manager."""
-        self.base_ptr = external_memory[
-            Int8,
-            address_space = AddressSpace.SHARED,
-            alignment=memory_alignment,
-            name=name,
-        ]()
+        self.base_ptr = SMBP.ptr()
         self.offset = 0
 
     @always_inline
-    fn tile[
-        dtype: DType, layout: Layout
-    ](mut self) -> SMemTileType[dtype, layout, alignment=alignment]:
-        """Allocate a single tile in shared memory.
+    fn build[
+        dtype: DType,
+        layout: Layout, //,
+        T: type_of(Self.Tile[dtype, layout]),
+    ](mut self) -> T:
+        """Allocate a single tile.
 
         Returns:
-            A shared memory tile with the specified configuration.
+            Allocated tile.
         """
-        var result = SMemTileType[dtype, layout, alignment=alignment](
+        var result = T(
             self.base_ptr.offset(self.offset).bitcast[Scalar[dtype]](),
         )
-        self.offset += eval[layout.size()] * size_of[dtype]()
+        self.offset += T.storage_size
         return result
 
     @always_inline
-    fn tile_array[
-        dtype: DType, layout: Layout, num_tiles: Int
-    ](mut self) -> SMemTileArrayType[
-        dtype, layout, num_tiles, alignment=alignment
-    ]:
-        """Allocate an array of tiles in shared memory.
+    fn build[
+        dtype: DType,
+        layout: Layout,
+        num_tiles: Int, //,
+        T: type_of(Self.TileArray[dtype, layout, num_tiles]),
+    ](mut self) -> T:
+        """Allocate a tile array.
 
         Returns:
-            A shared memory tile array with the specified configuration.
+            Allocated tile array.
         """
-        var result = SMemTileArrayType[
-            dtype, layout, num_tiles, alignment=alignment
-        ](
+        var result = T(
             self.base_ptr.offset(self.offset).bitcast[Scalar[dtype]](),
         )
-        self.offset += eval[layout.size()] * size_of[dtype]() * num_tiles
+        self.offset += T.storage_size
         return result
 
     @always_inline
-    fn array[
-        type: AnyType, size: Int
-    ](mut self) -> UnsafePointer[type, address_space = AddressSpace.SHARED]:
-        """Allocate a regular array in shared memory.
+    fn build[
+        type: AnyType,
+        size: Int, //,
+        T: type_of(Self.Array[type, size]),
+    ](mut self) -> T:
+        """Allocate a regular array.
 
         Returns:
-            A pointer to the allocated shared memory array.
+            Allocated array.
         """
         var result = self.base_ptr.offset(self.offset).bitcast[type]()
-        self.offset += size * size_of[type]()
-        return result
+        self.offset += T.storage_size
+        return T(result)
+
+
+alias NVIDIASharedMemoryManager = SharedMemoryManager[NVIDIASharedMemoryBasePtr]

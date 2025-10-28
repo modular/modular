@@ -44,7 +44,6 @@ from gpu.host._nvidia_cuda import (
 )
 from gpu.intrinsics import Scope
 from gpu.memory import (
-    AddressSpace,
     ReduceOp,
     async_copy,
     cp_async_bulk_tensor_global_shared_cta,
@@ -63,9 +62,9 @@ from gpu.sync import (
 from layout import IntTuple, Layout, LayoutTensor
 from layout.int_tuple import product
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
-from memory.pointer import _GPUAddressSpace
 
 from utils.index import Index, IndexList
+from builtin.device_passable import DevicePassable
 
 
 # Returns an IntTuple of variadic Int values.
@@ -113,15 +112,16 @@ fn _tma_desc_tile_layout[
                 "Only support 128B swizzle for mn-major.",
             ]()
 
-            # This is inefficient when MN_dim = swizzle_mode.bytes() because we can copy
-            # by MN x BK. The better solution to follow cutlass using `tile_to_shape` and
-            # automatically set the max descriptor layout.
-            # Note that our input is row_major(K, MN) for MN-major, the descriptor tile's
-            # dimensions are also ordered by (K, MN).
-            alias core_matrix_num_rows = 8
-            return Layout.row_major(
-                core_matrix_num_rows, swizzle_mode.bytes() // dtype.size_of()
-            )
+            alias swizzle_granularity = swizzle_mode.bytes() // dtype.size_of()
+
+            @parameter
+            if dim1 == swizzle_granularity:
+                return Layout.row_major(dim0, swizzle_granularity)
+            else:
+                alias core_matrix_num_rows = 8
+                return Layout.row_major(
+                    core_matrix_num_rows, swizzle_granularity
+                )
 
     else:
         alias dim0 = tile_shape[0]
@@ -567,7 +567,7 @@ struct TMATensorTile[
     layout: Layout,
     desc_layout: Layout = layout,
     is_k_major: Bool = True,
-](ImplicitlyCopyable, Movable):
+](DevicePassable, ImplicitlyCopyable, Movable):
     """
     A hardware-accelerated tensor memory access (TMA) tile for efficient asynchronous data movement.
 
@@ -604,6 +604,44 @@ struct TMATensorTile[
     The descriptor is used by the GPU's Tensor Memory Accelerator hardware to
     efficiently transfer data between global and shared memory.
     """
+
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return String(
+            "TMATensorTile[dtype = ",
+            dtype,
+            ", layout = ",
+            layout,
+            ", desc_layout = ",
+            desc_layout,
+            ", is_k_major = ",
+            is_k_major,
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing arguments
+        to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return Self.get_type_name()
 
     @always_inline
     @implicit
@@ -672,12 +710,12 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(dst).alignment % 128 == 0,
+            type_of(dst).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
 
         constrained[
-            __type_of(dst).dtype == dtype,
+            type_of(dst).dtype == dtype,
             "Input tensor has a different type than the TMA op",
         ]()
 
@@ -755,7 +793,7 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(dst).alignment % 128 == 0,
+            type_of(dst).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
 
@@ -838,7 +876,7 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(dst).alignment % 128 == 0,
+            type_of(dst).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
 
@@ -949,7 +987,7 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(src).alignment % 128 == 0,
+            type_of(src).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
 
@@ -1008,7 +1046,7 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(src).alignment % 128 == 0,
+            type_of(src).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
         cp_async_bulk_tensor_reduce[reduction_kind=reduction_kind](
@@ -1044,7 +1082,7 @@ struct TMATensorTile[
     fn smem_tensormap_init(
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = _GPUAddressSpace.SHARED
+            TMADescriptor, address_space = AddressSpace.SHARED
         ],
     ):
         """
@@ -1068,7 +1106,7 @@ struct TMATensorTile[
         var src_desc = (
             UnsafePointer(to=self.descriptor)
             .bitcast[UInt8]()
-            .address_space_cast[_GPUAddressSpace.GLOBAL]()
+            .address_space_cast[AddressSpace.GLOBAL]()
         )
         var dst_desc = smem_tma_descriptor_ptr.bitcast[UInt8]()
 
@@ -1111,7 +1149,7 @@ struct TMATensorTile[
 
         constrained[
             src_ptr.address_space
-            in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+            in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
             "src address space must be GENERIC or GLOBAL.",
         ]()
 
@@ -1179,7 +1217,7 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = _GPUAddressSpace.SHARED, **_
+            TMADescriptor, address_space = AddressSpace.SHARED, **_
         ],
         src_ptr: UnsafePointer[Scalar[_dtype],],
     ):
@@ -1209,7 +1247,7 @@ struct TMATensorTile[
 
         constrained[
             src_ptr.address_space
-            in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+            in (AddressSpace.GENERIC, AddressSpace.GLOBAL),
             "src address space must be GENERIC or GLOBAL.",
         ]()
 
@@ -1231,7 +1269,7 @@ struct TMATensorTile[
     fn tensormap_cp_fence_release(
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = _GPUAddressSpace.SHARED
+            TMADescriptor, address_space = AddressSpace.SHARED
         ],
     ):
         """
@@ -1281,7 +1319,7 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = _GPUAddressSpace.SHARED, **_
+            TMADescriptor, address_space = AddressSpace.SHARED, **_
         ],
         gmem_dims: IndexList[rank],
         gmem_strides: IndexList[rank],
@@ -1359,7 +1397,7 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = _GPUAddressSpace.SHARED, **_
+            TMADescriptor, address_space = AddressSpace.SHARED, **_
         ],
         dim_value: UInt32,
         dim_stride: Optional[UInt64] = None,
@@ -1696,8 +1734,11 @@ fn create_nested_tma_tile[
     Returns:
         The `TMATensorTile` configured with the specified tile dimensions and
         swizzle mode, ready for use in asynchronous data transfer operations.
+
+    Raises:
+        If there was an error creating the underlying TMADescriptor.
     """
-    alias ResultType = __type_of(res)
+    alias ResultType = type_of(res)
     alias desc_layout = ResultType.desc_layout
     alias desc_bytes_size = desc_layout.size() * size_of[dtype]()
     alias layout_size = ResultType.layout.size() * size_of[dtype]()
@@ -1809,7 +1850,7 @@ struct TMATensorTileArray[
     dtype: DType,
     cta_tile_layout: Layout,
     desc_layout: Layout,
-](ImplicitlyCopyable, Movable):
+](DevicePassable, ImplicitlyCopyable, Movable):
     """An array of TMA descripotr.
 
     Parameters:
@@ -1842,11 +1883,49 @@ struct TMATensorTileArray[
     It is used to calculate the offset of the TMA descriptor in the device memory.
     """
 
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return String(
+            "TMATensorTileArray[num_of_tensormaps = ",
+            num_of_tensormaps,
+            ", dtype = ",
+            dtype,
+            ", cta_tile_layout = ",
+            cta_tile_layout,
+            ", desc_layout = ",
+            desc_layout,
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing arguments
+        to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return Self.get_type_name()
+
     @always_inline
     fn __init__(
         out self,
         tensormaps_device: DeviceBuffer[DType.uint8],
-    ) raises:
+    ):
         """
         Initializes a new TMATensorTileArray.
 

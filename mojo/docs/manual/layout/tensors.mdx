@@ -232,10 +232,10 @@ itself:
   storage. Although you can create this tensor on the CPU and pass it in to a
   kernel function, you can't directly modify its values on the CPU, since the
   memory is on the GPU.
-* On the GPU: When a `DeviceBuffer` is passed in to `enqueue_function()`, the
-  kernel receives a corresponding `UnsafePointer` in place of the
-  `DeviceBuffer.` The kernel can then create a `LayoutTensor` using the
-  `pointer`.
+* On the GPU: When a `DeviceBuffer` is passed in to
+  `enqueue_function_checked()`, the kernel receives a corresponding
+  `UnsafePointer` in place of the `DeviceBuffer.` The kernel can then create a
+  `LayoutTensor` using the `pointer`.
 
 In both cases, if you want to initialize data for the tensor from the CPU, you
 can call
@@ -274,7 +274,7 @@ fn initialize_tensor_from_cpu_example():
         ctx.enqueue_copy(dev_buf, host_buf)
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
 
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             tensor,
             grid_dim=(num_blocks, num_blocks),
             block_dim=(block_size, block_size),
@@ -393,10 +393,10 @@ usually results in an error.
 
 If you need to know the type of the tile (to declare a variable, for example),
 you can use the `tile_type()` method, with the same tile size parameters. Only
-use `tile_type()` inside the `__type_of()` operator.
+use `tile_type()` inside the `type_of()` operator.
 
 ```mojo
-alias MyTileType = __type_of(tensor.tile_type[32, 32]())
+alias MyTileType = type_of(tensor.tile_type[32, 32]())
 var my_tile: MyTileType
 ```
 
@@ -642,7 +642,7 @@ fn copy_from_async_example():
         ctx.enqueue_memset(dev_buf, 0.0)
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
 
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             tensor,
             grid_dim=(num_blocks, num_blocks),
             block_dim=(block_size, block_size),

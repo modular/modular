@@ -44,13 +44,11 @@ modular_py_binary(
 modular_run_binary_test(
     name = "hello_test",
     binary = "hello",
-    external_noop = True,
 )
 
 modular_run_binary_test(
     name = "person_test",
     binary = "person",
-    external_noop = True,
 )
 
 modular_run_binary_test(

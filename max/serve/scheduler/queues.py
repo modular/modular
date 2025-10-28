@@ -32,6 +32,9 @@ from max.interfaces import (
     SchedulerResult,
 )
 from max.interfaces.queue import MAXPullQueue, MAXPushQueue
+from max.pipelines.architectures.qwen2_5vl.context import (
+    Qwen2_5VLTextAndVisionContext,
+)
 from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 from max.serve.process_control import ProcessMonitor
 from max.serve.queue.zmq_queue import ZmqConfig
@@ -47,7 +50,9 @@ def _get_request_type_from_pipeline_task(
         PipelineTask.TEXT_GENERATION,
         PipelineTask.EMBEDDINGS_GENERATION,
     ]:
-        return TextContext | TextAndVisionContext
+        return (
+            TextContext | TextAndVisionContext | Qwen2_5VLTextAndVisionContext
+        )
     elif pipeline_task in [PipelineTask.AUDIO_GENERATION]:
         return TTSContext
     else:

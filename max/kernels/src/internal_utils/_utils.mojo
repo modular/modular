@@ -34,7 +34,7 @@ from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.random import Random
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from tensor_internal import DynamicTensor
+from tensor import DynamicTensor
 from testing import assert_equal, assert_true
 
 from utils import IndexList
@@ -121,7 +121,7 @@ struct HostNDBuffer[
     ):
         result = {
             self.tensor.data,
-            RuntimeLayout[__type_of(result).layout](
+            RuntimeLayout[type_of(result).layout](
                 self.tensor.get_shape(), self.tensor.get_strides()
             ),
         }
@@ -221,12 +221,12 @@ struct DeviceNDBuffer[
     fn to_layout_tensor(
         ref self,
         out result: LayoutTensor[
-            dtype, Layout.row_major(IntTuple(shape)), __origin_of(self.buffer)
+            dtype, Layout.row_major(IntTuple(shape)), origin_of(self.buffer)
         ],
     ):
         result = {
             self.buffer,
-            RuntimeLayout[__type_of(result).layout](
+            RuntimeLayout[type_of(result).layout](
                 self.tensor.get_shape(), self.tensor.get_strides()
             ),
         }
@@ -285,7 +285,7 @@ struct InitializationType(
     alias arange = InitializationType(3)
     alias fill = InitializationType(4)
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -786,8 +786,8 @@ fn init_vector_gpu[
         values = SIMD[dtype, 4](
             UInt64(tid).cast[dtype](),
             UInt64(tid + stride).cast[dtype](),
-            UInt64(tid + UInt(2 * stride)).cast[dtype](),
-            UInt64(tid + UInt(3 * stride)).cast[dtype](),
+            UInt64(tid + UInt(2 * Int(stride))).cast[dtype](),
+            UInt64(tid + UInt(3 * Int(stride))).cast[dtype](),
         )
     apply(values)
 

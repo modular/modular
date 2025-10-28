@@ -31,7 +31,7 @@ from max.nn.kv_cache import (
     KVCacheInputsSequence,
     KVCacheParams,
     PagedCacheValues,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -559,7 +559,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> TPPagedKVCacheManager:
+    ) -> PagedKVCacheManager:
         """Loads and initializes the KVCacheManager for the GPT OSS model.
 
         Configures the KV cache manager based on model parameters, pipeline settings,

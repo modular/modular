@@ -474,7 +474,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     fn __merge_with__[
-        other_type: __type_of(
+        other_type: type_of(
             UnsafePointer[
                 type,
                 address_space=address_space,
@@ -485,7 +485,7 @@ struct UnsafePointer[
     ](self) -> UnsafePointer[
         type=type,
         mut = mut & other_type.origin.mut,
-        origin = __origin_of(origin, other_type.origin),
+        origin = origin_of(origin, other_type.origin),
         address_space=address_space,
     ]:
         """Returns a pointer merged with the specified `other_type`.
@@ -989,7 +989,7 @@ struct UnsafePointer[
         ]()
 
         var base = offset.cast[DType.int]().fma(size_of[dtype](), Int(self))
-        return gather(base, mask, default, alignment)
+        return gather[alignment=alignment](base, mask, default)
 
     @always_inline("nodebug")
     fn scatter[
@@ -1043,10 +1043,14 @@ struct UnsafePointer[
         ]()
 
         var base = offset.cast[DType.int]().fma(size_of[dtype](), Int(self))
-        scatter(val, base, mask, alignment)
+        scatter[alignment=alignment](val, base, mask)
 
     @always_inline
-    fn free(self: UnsafePointer[_, address_space = AddressSpace.GENERIC, **_]):
+    fn free(
+        self: UnsafePointer[
+            _, mut=True, address_space = AddressSpace.GENERIC, **_
+        ]
+    ):
         """Free the memory referenced by the pointer."""
         _free(self)
 
@@ -1195,7 +1199,7 @@ struct UnsafePointer[
                 " the mutability explicitly before calling this function."
             ),
         ]()
-        result = abort[__type_of(result)]()
+        result = abort[type_of(result)]()
 
     @always_inline("builtin")
     fn as_any_origin(

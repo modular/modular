@@ -13,7 +13,7 @@
 
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.id import block_idx
+from gpu import block_idx
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from buffer import NDBuffer
@@ -22,8 +22,8 @@ from utils.index import Index
 
 
 fn test_kernel[
-    swizzle: Bool
-](group_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin]):
+    swizzle: Bool, shape: DimList
+](group_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, shape]):
     scheduler = TileScheduler[
         M=20,
         tile_shape = Index(4, 8, 16),
@@ -84,7 +84,10 @@ def test(ctx: DeviceContext):
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function[test_kernel[False]](
+    ctx.enqueue_function_checked[
+        test_kernel[False, offset_shape],
+        test_kernel[False, offset_shape],
+    ](
         dev_group_offsets.tensor,
         grid_dim=(4),
         block_dim=(1),
@@ -123,7 +126,9 @@ def test(ctx: DeviceContext):
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function[test_kernel[True]](
+    ctx.enqueue_function_checked[
+        test_kernel[True, offset_shape], test_kernel[True, offset_shape]
+    ](
         dev_group_offsets.tensor,
         grid_dim=(4),
         block_dim=(1),

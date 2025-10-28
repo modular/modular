@@ -21,7 +21,7 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.info import _is_amd_mi355x, _accelerator_arch
+from sys.info import _accelerator_arch
 
 from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
@@ -30,7 +30,6 @@ from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import A100, B200, H100, MI355X, GPUInfo
-from gpu.memory import AddressSpace
 from layout import LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
@@ -129,12 +128,13 @@ fn matmul_kernel[
 
         @parameter
         if not full_tile:
-            a_val = a[Int(row), Int(offset + localCol)] if (
-                row < UInt(m) and offset + localCol < k
+            a_val = a[Int(row), Int(offset + Int(localCol))] if (
+                row < UInt(m) and offset + Int(localCol) < k
             ) else 0.0
         else:
             a_val = (
-                a[Int(row), Int(offset + localCol)] if row < UInt(m) else 0.0
+                a[Int(row), Int(offset + Int(localCol))] if row
+                < UInt(m) else 0.0
             )
         a_shared[localRow * UInt(tile_size) + localCol] = a_val
 
@@ -143,12 +143,13 @@ fn matmul_kernel[
 
         @parameter
         if not full_tile:
-            b_val = b[Int(offset + localRow), Int(col)] if (
-                col < UInt(n) and offset + localRow < k
+            b_val = b[Int(offset + Int(localRow)), Int(col)] if (
+                col < UInt(n) and offset + Int(localRow) < k
             ) else 0.0
         else:
             b_val = (
-                b[Int(offset + localRow), Int(col)] if col < UInt(n) else 0.0
+                b[Int(offset + Int(localRow)), Int(col)] if col
+                < UInt(n) else 0.0
             )
         b_shared[localRow * UInt(tile_size) + localCol] = b_val
 
@@ -157,7 +158,7 @@ fn matmul_kernel[
         for kk in range(tile_size):
             result += (
                 a_shared[localRow * UInt(tile_size) + UInt(kk)].cast[s_type]()
-                * b_shared[kk * tile_size + localCol].cast[s_type]()
+                * b_shared[kk * tile_size + Int(localCol)].cast[s_type]()
             )
 
         barrier()
@@ -229,7 +230,7 @@ fn matmul_kernel_naive[
 
 fn _amdgpu_get_mma_shape[dtype: DType, transpose_b: Bool]() -> IndexList[3]:
     @parameter
-    if transpose_b and _is_amd_mi355x():
+    if transpose_b and _accelerator_arch() == "amdgpu:gfx950":
 
         @parameter
         if dtype.is_half_float():

@@ -22,6 +22,7 @@ from ..graph import Graph
 from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
 from .cast import cast
+from .validation import assert_same_device
 
 # ===----------------------------------------------------------------------=== #
 # Utilities
@@ -30,7 +31,9 @@ from .cast import cast
 
 # This implementation needs to be in sync with the mojo implementation found in
 # stdlib/utils/numerics.mojo
-def _accum_type(x: TensorValue, preferred_type: DType = DType.float32) -> DType:
+def _accum_type(
+    x: TensorValue | TensorType, preferred_type: DType = DType.float32
+) -> DType:
     dtype = x.dtype
     if dtype.is_float8():
         return (
@@ -56,6 +59,7 @@ def _elementwise_binary(op):  # noqa: ANN001, ANN202
         lhs: TensorValueLike, rhs: TensorValueLike
     ) -> TensorValue:
         lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
+        assert_same_device(lhs=lhs, rhs=rhs)
         return Graph.current._add_op(op, lhs, rhs)[0].tensor
 
     elementwise_op.__name__ = op.__name__
@@ -140,6 +144,7 @@ def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
         lhs = cast(lhs, float_dtype)
         rhs = cast(rhs, float_dtype)
 
+    assert_same_device(lhs, rhs)
     return Graph.current._add_op(rmo.div, lhs, rhs)[0].tensor
 
 
@@ -667,26 +672,30 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-_gelu_exact = _elementwise_unary(rmo.mo_gelu)
-"""
-Computes the elementwise gelu function of a symbolic tensor.
 
-Creates a new op node to compute the elementwise gelu function of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+def _gelu_exact(x: TensorValue):  # noqa: ANN202
+    """
+    Computes the elementwise gelu function of a symbolic tensor.
 
-``gelu`` is defined as ``$$gelu(x) = x \\Phi(x)$$`` where ``$$\\Phi$$`` is the
-cumulative distribution function of the Gaussian distribution.
+    Creates a new op node to compute the elementwise gelu function of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
 
-Args:
-    value: The symbolic tensor to use as the input to the gelu function
-        computation.
+    ``gelu`` is defined as ``$$gelu(x) = x \\Phi(x)$$`` where ``$$\\Phi$$`` is the
+    cumulative distribution function of the Gaussian distribution.
 
-Returns:
-    A new symbolic tensor value representing the output of the gelu computation.
+    Args:
+        value: The symbolic tensor to use as the input to the gelu function
+            computation.
 
-Raises:
-    Error: If the symbol doesn't represent a tensor value.
-"""
+    Returns:
+        A new symbolic tensor value representing the output of the gelu computation.
+
+    Raises:
+        Error: If the symbol doesn't represent a tensor value.
+    """
+    sqrt2 = 1.4142135623730951
+    x_cast = x.cast(_accum_type(x))
+    return (0.5 * x_cast * (1 + erf(x_cast / sqrt2))).cast(x.dtype)
 
 
 def _gelu_quick(x: TensorValue):  # noqa: ANN202
@@ -883,24 +892,27 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-sigmoid = _elementwise_unary(rmo.sigmoid)
-"""
-Computes the elementwise sigmoid of a symbolic tensor.
 
-Creates a new op node to compute the elementwise sigmoid of a
-symbolic tensor and adds it to the graph, returning the symbolic result.
+def sigmoid(x: TensorValue) -> TensorValue:
+    """
+    Computes the elementwise sigmoid of a symbolic tensor.
 
-Args:
-    value: The symbolic tensor to use as the input to the sigmoid
-        computation.
+    Creates a new op node to compute the elementwise sigmoid of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
 
-Returns:
-    A new symbolic tensor value representing the output of the sigmoid
-        value computation.
+    Args:
+        value: The symbolic tensor to use as the input to the sigmoid
+            computation.
 
-Raises:
-    Error: If the symbol doesn't represent a tensor value.
-"""
+    Returns:
+        A new symbolic tensor value representing the output of the sigmoid
+            value computation.
+
+    Raises:
+        Error: If the symbol doesn't represent a tensor value.
+    """
+    x_cast = x.cast(_accum_type(x))
+    return (1 / (1 + exp(-x_cast))).cast(x.dtype)
 
 
 def silu(x: TensorValue):  # noqa: ANN201
@@ -1020,7 +1032,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-rsqrt = _elementwise_unary(rmo.mo_isqrt)
+rsqrt = _elementwise_unary(rmo.mo_rsqrt)
 """
 Computes the elementwise inverse-square-root of a symbolic tensor.
 

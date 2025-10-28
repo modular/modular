@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from memory import Span
+
 from ._ahash import AHasher
 from ._fnv1a import Fnv1a
 
@@ -18,23 +20,40 @@ alias default_comp_time_hasher = Fnv1a
 
 
 trait Hasher:
+    """A trait for types that can incrementally compute hash values.
+
+    The `Hasher` trait defines the interface for hash algorithms that can process
+    data in chunks and produce a final hash value.
+
+    Implementers must provide methods to initialize the hasher, update it with
+    data, and finalize the hash computation.
+    """
+
     fn __init__(out self):
+        """Initialize a new hasher instance."""
         ...
 
-    fn _update_with_bytes(
-        mut self,
-        data: UnsafePointer[
-            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-        ],
-        length: Int,
-    ):
+    fn _update_with_bytes(mut self, data: Span[Byte, _]):
         ...
 
     fn _update_with_simd(mut self, value: SIMD[_, _]):
         ...
 
     fn update[T: Hashable](mut self, value: T):
+        """Update the hash with a value.
+
+        Parameters:
+            T: The type of value to hash, which must implement `Hashable`.
+
+        Args:
+            value: The value to incorporate into the hash.
+        """
         ...
 
     fn finish(var self) -> UInt64:
+        """Finalize the hash computation and return the hash value.
+
+        Returns:
+            The computed hash value as a 64-bit unsigned integer.
+        """
         ...

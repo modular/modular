@@ -22,9 +22,10 @@ from layout import Layout
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from sys.info import align_of, simd_width_of, size_of
+from sys.ffi import external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
-from tensor_internal import InputTensor, OutputTensor
-from tensor_internal.managed_tensor_slice import (
+from tensor import InputTensor, OutputTensor
+from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
 )
 
@@ -37,6 +38,23 @@ from shmem.ep_comm import (
     combine_kernel,
     combine_cb_kernel,
 )
+
+
+# This should eventually be moved to ffi.mojo with a more general global cache method
+# cache key is a string and cache value is a pointer.
+@always_inline
+fn global_cache_lookup(key: String) -> OpaquePointer:
+    return external_call["KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer](
+        key.unsafe_ptr(), key.byte_length()
+    )
+
+
+@always_inline
+fn global_cache_insert(key: String, value: OpaquePointer):
+    external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
+        StringSlice(key),
+        value,
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -307,7 +325,15 @@ struct Struct_ep_dispatch:
             task_id=get_safe_task_id(context),
         ):
             var func = gpu_ctx.compile_function[dispatch]()
-            shmem_module_init(func)
+            var cached_module_key = String("EP_DISPATCH_INITED_DEV_", gpu_id)
+
+            # Don't initialize the module repeatedly
+            if not Int(global_cache_lookup(cached_module_key)):
+                shmem_module_init(func)
+                global_cache_insert(
+                    cached_module_key,
+                    _unsafe_aliasing_address_to_pointer[NoneType](1),
+                )
 
             var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
                 Int(send_ptrs[gpu_id])
@@ -428,7 +454,7 @@ struct Struct_ep_dispatch_cb:
             n_experts,
             n_ranks,
             max_token_per_rank,
-            __type_of(format_handler),
+            type_of(format_handler),
         ]
 
         @always_inline
@@ -457,15 +483,27 @@ struct Struct_ep_dispatch_cb:
             var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
                 Int(recv_count_ptrs[gpu_id])
             )
+            var recv_buf_p_dev = DeviceBuffer[DType.uint8](
+                gpu_ctx, recv_buf_p, 1, owning=False
+            )
+            var recv_count_p_dev = DeviceBuffer[DType.uint64](
+                gpu_ctx, recv_count_p, 1, owning=False
+            )
+            var atomic_counters_0_dev = DeviceBuffer[DType.int32](
+                gpu_ctx,
+                atomic_counters_0._ptr,
+                atomic_counters_0.size(),
+                owning=False,
+            )
 
-            gpu_ctx.enqueue_function[dispatch_cb](
+            gpu_ctx.enqueue_function_checked[dispatch_cb, dispatch_cb](
                 format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
                 src_info_tensor,
-                recv_buf_p,
-                recv_count_p,
-                atomic_counters_0._ptr,
+                recv_buf_p_dev,
+                recv_count_p_dev,
+                atomic_counters_0_dev,
                 Int32(gpu_id),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -612,7 +650,15 @@ struct Struct_ep_dispatch_fp8:
             task_id=get_safe_task_id(context),
         ):
             var func = gpu_ctx.compile_function[dispatch]()
-            shmem_module_init(func)
+            var cached_module_key = String("EP_DISPATCH_INITED_DEV_", gpu_id)
+
+            # Don't initialize the module repeatedly
+            if not Int(global_cache_lookup(cached_module_key)):
+                shmem_module_init(func)
+                global_cache_insert(
+                    cached_module_key,
+                    _unsafe_aliasing_address_to_pointer[NoneType](1),
+                )
 
             var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
                 Int(send_ptrs[gpu_id])
@@ -743,7 +789,7 @@ struct Struct_ep_dispatch_cb_fp8:
             n_experts,
             n_ranks,
             max_token_per_rank,
-            __type_of(format_handler),
+            type_of(format_handler),
         ]
 
         @always_inline
@@ -774,15 +820,27 @@ struct Struct_ep_dispatch_cb_fp8:
             var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
                 Int(recv_count_ptrs[gpu_id])
             )
+            var recv_buf_p_dev = DeviceBuffer[DType.uint8](
+                gpu_ctx, recv_buf_p, 1, owning=False
+            )
+            var recv_count_p_dev = DeviceBuffer[DType.uint64](
+                gpu_ctx, recv_count_p, 1, owning=False
+            )
+            var atomic_counters_0_dev = DeviceBuffer[DType.int32](
+                gpu_ctx,
+                atomic_counters_0._ptr,
+                atomic_counters_0.size(),
+                owning=False,
+            )
 
-            gpu_ctx.enqueue_function[dispatch_cb](
+            gpu_ctx.enqueue_function_checked[dispatch_cb, dispatch_cb](
                 format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
                 src_info_tensor,
-                recv_buf_p,
-                recv_count_p,
-                atomic_counters_0._ptr,
+                recv_buf_p_dev,
+                recv_count_p_dev,
+                atomic_counters_0_dev,
                 Int32(gpu_id),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -904,7 +962,15 @@ struct Struct_ep_combine:
             task_id=get_safe_task_id(context),
         ):
             var func = gpu_ctx.compile_function[combine]()
-            shmem_module_init(func)
+            var cached_module_key = String("EP_COMBINE_INITED_DEV_", gpu_id)
+
+            # Don't initialize the module repeatedly
+            if not Int(global_cache_lookup(cached_module_key)):
+                shmem_module_init(func)
+                global_cache_insert(
+                    cached_module_key,
+                    _unsafe_aliasing_address_to_pointer[NoneType](1),
+                )
 
             var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
                 Int(send_ptrs[gpu_id])
@@ -1031,12 +1097,24 @@ struct Struct_ep_combine_cb:
             var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
                 Int(recv_count_ptrs[gpu_id])
             )
-
-            gpu_ctx.enqueue_function[combine_cb](
-                output_tokens_tensor,
-                recv_buf_p,
-                recv_count_p,
+            var recv_buf_p_dev = DeviceBuffer[DType.uint8](
+                gpu_ctx, recv_buf_p, 1, owning=False
+            )
+            var recv_count_p_dev = DeviceBuffer[DType.uint64](
+                gpu_ctx, recv_count_p, 1, owning=False
+            )
+            var atomic_counters_1_dev = DeviceBuffer[DType.int32](
+                gpu_ctx,
                 atomic_counters_1._ptr,
+                atomic_counters_1.size(),
+                owning=False,
+            )
+
+            gpu_ctx.enqueue_function_checked[combine_cb, combine_cb](
+                output_tokens_tensor,
+                recv_buf_p_dev,
+                recv_count_p_dev,
+                atomic_counters_1_dev,
                 Int32(gpu_id),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,

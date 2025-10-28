@@ -7,6 +7,7 @@ modular_py_library(
     deps = [
         "//SDK/lib/API/python/max:_core",
         "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/pipelines/core",
         "//SDK/lib/API/python/max/pipelines/dataprocessing",
         "//SDK/lib/API/python/max/pipelines/lib",

@@ -17,12 +17,11 @@ from buffer.dimlist import DimList
 from gpu import barrier, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
-from gpu.memory import AddressSpace, async_copy
+from gpu.memory import async_copy
 from gpu.sync import async_copy_arrive
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout.tma_async import PipelineState, SharedMemBarrier
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
 
 
@@ -31,7 +30,7 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
     var mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -71,13 +70,13 @@ fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
     var producer_mbar = stack_allocation[
         Q_SIZE,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     var consumer_mbar = stack_allocation[
         Q_SIZE,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -177,13 +176,13 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
     var produced_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     var consumed_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 

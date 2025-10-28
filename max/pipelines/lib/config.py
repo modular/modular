@@ -91,6 +91,10 @@ class PipelineConfig(MAXConfig):
     you know what you are doing.
     """
 
+    ep_size: int = 1
+    """The expert parallelism size. Needs to be 1 (no expert parallelism) or the
+    total number of GPUs across nodes."""
+
     ce_delay_ms: float = 0.0
     """Duration of scheduler sleep prior to starting a prefill batch.
 
@@ -742,6 +746,8 @@ class PipelineConfig(MAXConfig):
         if not self.force:
             self._validate_required_arguments_against_architecture(arch)
 
+        devices = load_devices(model_config.device_specs)
+
         # Validate LoRA support - currently only Llama3 models support LoRA
         if self._lora_config and self._lora_config.enable_lora:
             # Check if the architecture is Llama3 (LlamaForCausalLM)
@@ -750,6 +756,11 @@ class PipelineConfig(MAXConfig):
                     f"LoRA is not currently supported for architecture '{arch.name}'. "
                     f"LoRA support is currently only available for Llama-3.x models (LlamaForCausalLM architecture). "
                     f"Model '{model_config.model_path}' uses the '{arch.name}' architecture."
+                )
+            # Currently, LoRA supported on only 1 device.
+            if len(devices) > 1:
+                raise ValueError(
+                    "LoRA is currently not supported with the number of devices > 1."
                 )
 
         # TODO(E2EOPT-28): remove this constraint.
@@ -786,7 +797,6 @@ class PipelineConfig(MAXConfig):
             default_weights_format=arch.default_weights_format,
         )
 
-        devices = load_devices(model_config.device_specs)
         MEMORY_ESTIMATOR.estimate_memory_footprint(
             self, arch.pipeline_model, model_config, devices
         )
@@ -897,7 +907,7 @@ class PipelineConfig(MAXConfig):
         if len(self.model_config.weight_path) == 1:
             # Single weight path - format inline
             logger.info(
-                f"    weight_path             : {self.model_config.weight_path[0]}"
+                f"    weight_path            : {self.model_config.weight_path[0]}"
             )
         elif len(self.model_config.weight_path) > 5:
             # Many weight paths - replace middle with "..."

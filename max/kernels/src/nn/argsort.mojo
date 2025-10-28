@@ -67,7 +67,7 @@ fn _argsort_cpu[
         Span[
             Scalar[indices.dtype],
             indices.origin,
-        ](ptr=indices.ptr, length=UInt(indices.size()))
+        ](ptr=indices.ptr, length=indices.size())
     )
 
 

@@ -332,7 +332,6 @@ class KVTransferEngine:
                         "",
                     )
                 ],
-                sorted=True,
             )
 
             status = agent.register_memory(reg_dlist, [ucx_backend])
@@ -677,14 +676,6 @@ class KVTransferEngine:
         for send_transfer_req in list(self.inflight_send_transfers.values()):
             self._cleanup_send_transfer(send_transfer_req)
 
-        # Deregister NIXL memory for all tensors
-        for i, ta in enumerate(self.tensor_agents):
-            status = ta.agent.deregister_memory(ta.reg_dlist, [ta.ucx_backend])
-            if status != nixl.Status.SUCCESS:
-                raise ValueError(
-                    f"Failed to deregister memory for tensor {i}: {status}"
-                )
-
         # Invalidate metadata of other agents
         for remote_name in self.remote_connections:
             remote = self.remote_connections[remote_name]
@@ -699,3 +690,11 @@ class KVTransferEngine:
                     raise ValueError(
                         f"Failed to invalidate metadata for agent {i}: {status}"
                     )
+
+        # Deregister NIXL memory for all tensors
+        for i, ta in enumerate(self.tensor_agents):
+            status = ta.agent.deregister_memory(ta.reg_dlist, [ta.ucx_backend])
+            if status != nixl.Status.SUCCESS:
+                raise ValueError(
+                    f"Failed to deregister memory for tensor {i}: {status}"
+                )

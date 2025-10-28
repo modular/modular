@@ -78,17 +78,18 @@ mojo_binary(
         "@mojo//:compiler",
         "@mojo//:layout",
         "@mojo//:stdlib",
-        "@mojo//:tensor_internal",
+        "@mojo//:tensor",
     ],
 )
 
 mojo_library(
     name = "kernels",
     srcs = [":kernel_sources"],
+    validate_missing_docs = False,
     deps = [
         "@mojo//:compiler",
         "@mojo//:layout",
         "@mojo//:stdlib",
-        "@mojo//:tensor_internal",
+        "@mojo//:tensor",
     ],
 )

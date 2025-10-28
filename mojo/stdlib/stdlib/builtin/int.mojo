@@ -252,7 +252,7 @@ struct Int(
     alias MIN = Int(Scalar[DType.int].MIN)
     """Returns the minimum value of type."""
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
     """Int is remapped to the same type when passed to accelerator devices."""
 
     fn _to_device_type(self, target: OpaquePointer):
@@ -1193,6 +1193,9 @@ struct Int(
 
         Returns:
             A PythonObject representing the value.
+
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
         """
         return PythonObject(self)
 

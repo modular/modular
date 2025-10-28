@@ -54,11 +54,7 @@ mojo_filecheck_test(
     srcs = ["test_function_error.mojo"],
     expect_crash = True,
     tags = ["gpu"],
-    target_compatible_with = ["//:nvidia_gpu"] + select({
-        "//:h100_gpu": ["@platforms//:incompatible"],
-        "//:b200_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    target_compatible_with = ["//:nvidia_gpu"],
     deps = [
         "@mojo//:internal_utils",
         "@mojo//:kv_cache",
@@ -77,11 +73,7 @@ mojo_filecheck_test(
     },
     expect_crash = True,
     tags = ["gpu"],
-    target_compatible_with = ["//:nvidia_gpu"] + select({
-        "//:h100_gpu": ["@platforms//:incompatible"],
-        "//:b200_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    target_compatible_with = ["//:nvidia_gpu"],
     deps = [
         "@mojo//:internal_utils",
         "@mojo//:kv_cache",

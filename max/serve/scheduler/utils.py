@@ -34,7 +34,7 @@ from max.interfaces.pipeline import (
     PipelineOutputType,
 )
 from max.interfaces.queue import drain_queue
-from max.nn.kv_cache import TPPagedKVCacheManager
+from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext, TTSContext
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
@@ -76,7 +76,7 @@ class SchedulerLogger:
         self,
         sch_config: TokenGenerationSchedulerConfig,
         inputs: TextGenerationInputs[TextContext],
-        paged_cache: TPPagedKVCacheManager | None,
+        paged_cache: PagedKVCacheManager | None,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
         num_pending_reqs: int,
@@ -88,7 +88,7 @@ class SchedulerLogger:
         Args:
             sch_config: The scheduler configuration.
             inputs: The pipeline input / batch.
-            paged_cache: The TPPagedKVCacheManager, if any.
+            paged_cache: The PagedKVCacheManager, if any.
             batch_creation_time_s: The time it took to create the batch.
             batch_execution_time_s: The time it took to execute the batch.
             num_pending_reqs: The number of pending requests.
@@ -216,6 +216,11 @@ def add_newly_encoded_reqs_to_tg_batch(
     responses: dict[RequestID, TextGenerationOutput],
     batch_constructor: TextBatchConstructor,
 ) -> None:
+    # When we use data parallelism, a batch would only contain requests for one
+    # device, and some devices might have zero request.
+    if len(batch) == 0:
+        return
+
     # Only the last request in a batch could be chunked. We discard its response
     # and put it back into the request queue if it is chunked.
     # We know if a request is chunked because it still needs CE even after one

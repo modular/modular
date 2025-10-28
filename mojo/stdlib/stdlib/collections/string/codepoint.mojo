@@ -62,9 +62,7 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
     )
 
 
-struct Codepoint(
-    EqualityComparable, ImplicitlyCopyable, Intable, Movable, Stringable
-):
+struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Stringable):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
 
@@ -293,6 +291,58 @@ struct Codepoint(
         """
         return self.to_u32() != other.to_u32()
 
+    fn __lt__(self, other: Self) -> Bool:
+        """Return True if this character is less than a different codepoint value from
+        `other`.
+
+        Args:
+            other: The codepoint value to compare against.
+
+        Returns:
+            True if this character's value is less than the other codepoint value;
+            False otherwise.
+        """
+        return self.to_u32() < other.to_u32()
+
+    fn __le__(self, other: Self) -> Bool:
+        """Return True if this character is less than or equal to a different codepoint value from
+        `other`.
+
+        Args:
+            other: The codepoint value to compare against.
+
+        Returns:
+            True if this character's value is less than or equal to the other codepoint value;
+            False otherwise.
+        """
+        return self.to_u32() <= other.to_u32()
+
+    fn __ge__(self, other: Self) -> Bool:
+        """Return True if this character is greater than or equal to a different codepoint value from
+        `other`.
+
+        Args:
+            other: The codepoint value to compare against.
+
+        Returns:
+            True if this character's value is greater than or equal to the other codepoint value;
+            False otherwise.
+        """
+        return self.to_u32() >= other.to_u32()
+
+    fn __gt__(self, other: Self) -> Bool:
+        """Return True if this character is greater than a different codepoint value from
+        `other`.
+
+        Args:
+            other: The codepoint value to compare against.
+
+        Returns:
+            True if this character's value is greater than the other codepoint value;
+            False otherwise.
+        """
+        return self.to_u32() > other.to_u32()
+
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
@@ -481,7 +531,7 @@ struct Codepoint(
     @always_inline
     fn unsafe_write_utf8[
         optimize_ascii: Bool = True, branchless: Bool = False
-    ](self, ptr: UnsafePointer[Byte, mut=True, **_]) -> UInt:
+    ](self, ptr: UnsafePointer[Byte, mut=True, **_]) -> Int:
         """Shift unicode to utf8 representation.
 
         Parameters:
@@ -561,7 +611,7 @@ struct Codepoint(
                     ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
             else:
                 var shift = 6 * (num_bytes - 1)
-                var mask = UInt8(0xFF) >> (num_bytes + UInt(Int(num_bytes > 1)))
+                var mask = UInt8(0xFF) >> (num_bytes + Int(num_bytes > 1))
                 var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
                 ptr[0] = ((c >> shift) & mask) | (
                     num_bytes_marker & splat(num_bytes != 1)
@@ -569,10 +619,10 @@ struct Codepoint(
                 for i in range(1, num_bytes):
                     shift -= 6
                     ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
-        return num_bytes
+        return Int(num_bytes)
 
     @always_inline
-    fn utf8_byte_length(self) -> UInt:
+    fn utf8_byte_length(self) -> Int:
         """Returns the number of UTF-8 bytes required to encode this character.
 
         Returns:
@@ -588,4 +638,4 @@ struct Codepoint(
 
         # Count how many of the minimums this codepoint exceeds, which is equal
         # to the number of bytes needed to encode it.
-        return UInt(sizes.le(self.to_u32()).cast[DType.uint8]().reduce_add())
+        return Int(sizes.le(self.to_u32()).cast[DType.uint8]().reduce_add())

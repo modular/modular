@@ -1281,7 +1281,7 @@ struct CPython(Defaultable, Movable):
     """The handle to the CPython shared library."""
     var version: PythonVersion
     """The version of the Python runtime."""
-    var init_error: StringSlice[StaticConstantOrigin]
+    var init_error: StaticString
     """An error message if initialization failed."""
 
     # fields holding function pointers to CPython C API functions
@@ -2366,7 +2366,7 @@ struct CPython(Defaultable, Movable):
         var length = Py_ssize_t(0)
         var ptr = self._PyUnicode_AsUTF8AndSize(obj, UnsafePointer(to=length))
         return StringSlice[ImmutableAnyOrigin](
-            ptr=ptr.bitcast[Byte](), length=UInt(length)
+            ptr=ptr.bitcast[Byte](), length=length
         )
 
     # ===-------------------------------------------------------------------===#

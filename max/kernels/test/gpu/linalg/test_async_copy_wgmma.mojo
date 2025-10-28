@@ -18,7 +18,7 @@ from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 from gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
@@ -240,8 +240,8 @@ def test_cpasync_wgmma[
         a_type,
         b_type,
         c_type,
-        __type_of(a).layout,
-        __type_of(b).layout,
+        type_of(a).layout,
+        type_of(b).layout,
         Layout.row_major(M, N),
         block_tile_shape,
         wgmma_shape,

@@ -16,7 +16,12 @@ as utility functions for dealing with memory."""
 from .arc import ArcPointer
 from .memory import memcmp, memcpy, memset, memset_zero, stack_allocation
 from .owned_pointer import OwnedPointer
-from .pointer import AddressSpace, Pointer
+from .pointer import (
+    AddressSpace,
+    _GPUAddressSpace,
+    GPUAddressSpace,
+    Pointer,
+)
 from .span import Span
 from .unsafe import bitcast, pack_bits
 from .unsafe_pointer import OpaquePointer, UnsafePointer

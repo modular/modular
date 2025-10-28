@@ -85,7 +85,7 @@ alias elementwise_epilogue_type = fn[
 @always_inline
 fn _get_batch_dims[
     rank: Int
-](flat_index: Int, shape: IndexList[rank, **_], out res: __type_of(shape)):
+](flat_index: Int, shape: IndexList[rank, **_], out res: type_of(shape)):
     res = {}
     var curr_index = flat_index
 
@@ -626,10 +626,10 @@ fn naive_batched_matmul_kernel[
     b_tensor: LayoutTensor[b_type, b_layout, MutableAnyOrigin],  # 1 * k
     c_buff_nd_shape: IndexList[rank],
 ) -> None:
-    var batch_size: UInt = UInt(c_tensor.dim(0))
-    var m: UInt = UInt(c_tensor.dim(1))
-    var n: UInt = UInt(c_tensor.dim(2))
-    var k: UInt = UInt(a_tensor.dim(2))
+    var batch_size = UInt(c_tensor.dim(0))
+    var m = UInt(c_tensor.dim(1))
+    var n = UInt(c_tensor.dim(2))
+    var k = UInt(a_tensor.dim(2))
 
     var x = Int(global_idx.x)
     var y = Int(global_idx.y)
@@ -1172,15 +1172,15 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
         a_scales_type,
         b_scales_type,
         a_layout,
-        __type_of(c).layout,
+        type_of(c).layout,
         a_scales_layout,
-        __type_of(b_scales).layout,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
-        __type_of(a_scales_tma_op).layout,
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
-        __type_of(a_scales_tma_op).desc_layout,
+        type_of(b_scales).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
+        type_of(a_scales_tma_op).layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
+        type_of(a_scales_tma_op).desc_layout,
         block_tile_shape,
         mma_shape,
         transpose_b=True,
@@ -1351,16 +1351,16 @@ fn bmm_sm100_blockwise_scaled_fp8[
         c_type,
         a_scales_type,
         b_scales_type,
-        __type_of(a).layout,
-        __type_of(c).layout,
-        __type_of(a_scales).layout,
-        __type_of(b_scales).layout,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
-        __type_of(a_scales_tma_op).layout,
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
-        __type_of(a_scales_tma_op).desc_layout,
+        type_of(a).layout,
+        type_of(c).layout,
+        type_of(a_scales).layout,
+        type_of(b_scales).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
+        type_of(a_scales_tma_op).layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
+        type_of(a_scales_tma_op).desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=True,
@@ -1370,13 +1370,13 @@ fn bmm_sm100_blockwise_scaled_fp8[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c,
         a_scales_tma_op,
         b_scales,
-        ceildiv(K, BK),
+        UInt(ceildiv(K, BK)),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
         block_dim=(block_dim),
         shared_mem_bytes=Int(smem_use),

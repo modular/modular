@@ -30,6 +30,9 @@ struct FastDiv[dtype: DType](Stringable, Writable):
     replacing the division operation with a series of shifts and
     multiplications. This approach significantly improves performance,
     especially in scenarios where division is a frequent operation.
+
+    Parameters:
+        dtype: The data type for the division operation.
     """
 
     alias uint_type = _uint_type_of_width[dtype.bit_width()]()
@@ -146,6 +149,9 @@ struct FastDiv[dtype: DType](Stringable, Writable):
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
         """Writes the FastDiv parameters to a writer.
+
+        Parameters:
+            W: The type of the writer.
 
         Args:
             writer: The writer to which the parameters are written.

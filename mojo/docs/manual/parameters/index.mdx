@@ -440,46 +440,76 @@ bound to `DType.float32`.
 The code above shows the use of concrete types (that is, the parameters are all
 bound to known values). But the major power of parameters comes from the
 ability to define parametric algorithms and types (code that uses the parameter
-values). For example, here's how to define a parametric algorithm with `SIMD`
-that is type- and width-agnostic:
+values). For example, here's how to define a parametric algorithm with `Scalar`
+that is datatype agnostic:
 
 ```mojo
 from math import sqrt
 
-fn rsqrt[dt: DType, width: Int](x: SIMD[dt, width]) -> SIMD[dt, width]:
+fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)
 
 def main():
-    var v = SIMD[DType.float16, 4](42)
+    var v = Scalar[DType.float16](42)
     print(rsqrt(v))
 ```
 
 ```output
-[0.154296875, 0.154296875, 0.154296875, 0.154296875]
+0.154296875
 ```
 
-Notice that the `x` argument is actually a `SIMD` type based on the function
-parameters. The runtime program can use the value of the parameters, because the
-parameters are resolved at compile-time before they are needed by the runtime
-program (but compile-time parameter expressions cannot use runtime values).
+Notice that the `x` argument is a `Scalar` type that's parameterized
+based on the `dt` function parameter. And note that the actual call to `rsqrt()`
+doesn't specify the `dt` parameter, because it can be _inferred_ from the
+argument's type (here, `Scalar[DType.float16]`).
 
 ### Parameter inference
 
 The Mojo compiler can often *infer* parameter values, so you don't always have
 to specify them. For example, you can call the `rsqrt()` function defined above
-without any parameters:
+without specifying the `dt` parameter:
 
 ```mojo
-var v = SIMD[DType.float16, 4](33)
-print(rsqrt(v))
+from math import sqrt
+
+fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
+    return 1 / sqrt(x)
+
+def main():
+    var v = Scalar[DType.float16](33)
+    print(rsqrt(v))
 ```
 
 ```output
-[0.174072265625, 0.174072265625, 0.174072265625, 0.174072265625]
+0.174072265625
 ```
 
-The compiler infers its parameters based on the parametric `v`
-value passed into it, as if you wrote `rsqrt[DType.float16, 4](v)` explicitly.
+The compiler infers the `dt` parameter based on the parametric `v`
+value passed into it, as if you wrote `rsqrt[DType.float16](v)` explicitly.
+Figure 1 shows a mental model for how parameter inference works.
+
+<figure>
+
+![](../images/parameters/parameter-inference.png#light)
+![](../images/parameters/parameter-inference-dark.png#dark)
+
+<figcaption><b>Figure 1.</b> Parameter inference</figcaption>
+</figure>
+
+Parameter inference can seem a little confusing: it might seem like the compiler
+is inferring compile-time parameter values from run-time argument values. But in
+fact it's inferring parameters from the statically-known *types* of the
+arguments.
+
+:::note Inference failures
+
+If parameter inference fails, the compiler will report an error, usually "failed
+to infer parameter 'param_name'". Unfortunately, the compiler also sometimes
+reports this error incorrectly, for example, when the actual error is a type
+mismatch. In these cases, specifying the missing parameters explicitly will
+often allow Mojo to report the correct error.
+
+:::
 
 Mojo can also infer the values of struct parameters from the arguments passed to
 a constructor or static method.
@@ -495,8 +525,8 @@ struct One[Type: Writable & Copyable & Movable]:
 
 
 def use_one():
-    s1 = One(123)
-    s2 = One("Hello")
+    s1 = One(123)  # equivalent to One[Int](123)
+    s2 = One("Hello")  # equivalent to One[String]("Hello")
 ```
 
 Note that you can create an instance of `One` without specifying the `Type`
@@ -1145,7 +1175,7 @@ For example, if you want your function to take two SIMD vectors with the same
 type and size, you can write code like this:
 
 ```mojo
-fn interleave(v1: SIMD, v2: __type_of(v1)) -> SIMD[v1.type, v1.size*2]:
+fn interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.type, v1.size*2]:
     var result = SIMD[v1.type, v1.size*2]()
     for i in range(v1.size):
         result[i*2] = SIMD[v1.type, 1](v1[i])
@@ -1162,7 +1192,7 @@ print(c)
 [1, 0, 2, 0, 3, 0, 4, 0]
 ```
 
-As shown in the example, you can use the magic `__type_of(x)` call if you just want to
+As shown in the example, you can use the magic `type_of(x)` call if you just want to
 match the type of an argument. In this case, it's more convenient and compact that
 writing the equivalent `SIMD[v1.type, v1.size]`.
 

@@ -94,12 +94,16 @@ def execute_ragged_flash_attention():
     mixed_ce_row_offsets.tensor[batch_size] = mixed_ce_total_length
     true_ce_q_ragged = HostNDBuffer[
         type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](true_ce_total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](true_ce_total_length, num_q_heads, Int(kv_params.head_size)))
     random(true_ce_q_ragged.tensor)
 
     mixed_ce_q_ragged = HostNDBuffer[
         type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](mixed_ce_total_length, num_q_heads, kv_params.head_size))
+    ](
+        IndexList[3](
+            mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        )
+    )
     for bs_idx in range(batch_size):
         true_ce_prompt_len = true_ce_prompt_lens[bs_idx]
         mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
@@ -119,16 +123,20 @@ def execute_ragged_flash_attention():
         memcpy(
             dest=mixed_ce_offset,
             src=true_ce_offset,
-            count=mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
+            count=mixed_ce_prompt_len * num_q_heads * Int(kv_params.head_size),
         )
 
     # initialize reference output
     mixed_ce_output = HostNDBuffer[
         type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](mixed_ce_total_length, num_q_heads, kv_params.head_size))
+    ](
+        IndexList[3](
+            mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        )
+    )
     true_ce_output = HostNDBuffer[
         type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](true_ce_total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](true_ce_total_length, num_q_heads, Int(kv_params.head_size)))
 
     # initialize our KVCache
     kv_block_paged = HostNDBuffer[type, 6](
@@ -137,8 +145,8 @@ def execute_ragged_flash_attention():
             2,
             num_layers,
             page_size,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         )
     )
     random(kv_block_paged.tensor)
@@ -218,8 +226,10 @@ def execute_ragged_flash_attention():
                 for hd in range(kv_params.head_size):
                     try:
                         assert_almost_equal(
-                            true_ce_out[true_ce_ragged_offset + s, h, hd],
-                            mixed_ce_out[mixed_ce_ragged_offset + s, h, hd],
+                            true_ce_out[true_ce_ragged_offset + s, h, Int(hd)],
+                            mixed_ce_out[
+                                mixed_ce_ragged_offset + s, h, Int(hd)
+                            ],
                             atol=1e-3,
                         )
                     except e:
@@ -229,8 +239,10 @@ def execute_ragged_flash_attention():
                             s,
                             h,
                             hd,
-                            true_ce_out[true_ce_ragged_offset + s, h, hd],
-                            mixed_ce_out[mixed_ce_ragged_offset + s, h, hd],
+                            true_ce_out[true_ce_ragged_offset + s, h, Int(hd)],
+                            mixed_ce_out[
+                                mixed_ce_ragged_offset + s, h, Int(hd)
+                            ],
                         )
                         raise e
 

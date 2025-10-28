@@ -62,8 +62,8 @@ ignore = [
   "F405", # TODO: glob imports undefined
   "F821", # TODO: Undefined names, means script is invalid
   "F841", # TODO: unused variables
+  "FURB122", # Questionable readability improvement
   "RUF005", # Consider iterable unpacking instead of concatenation
-  "RUF009", # Do not perform function call in dataclass defaults
   "RUF010", # Use explicit conversion flag
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "RUF015", # Prefer `next(iter(iterable))` over single element slice
@@ -106,16 +106,3 @@ convention = "google"
 # Disable lints which complain about weird unicode characters in files that include
 # a large number of LLM test prompts.
 "SDK/integration-test/pipelines/python/test_common/test_data.py" = ["RUF001", "RUF003"]
-
-[tool.pyright]
-# TODO: Upgrade to strict mode
-typeCheckingMode = "basic"
-include = ["GenericML/tools/model/"]
-exclude = [
-  "**/node_modules",
-  "**/__pycache__",
-  "GenericML/tools/model/tests",
-  "utils/mblack",
-]
-force-exclude = ["GenericML/tools/model/tests", "utils/mblack"]
-reportMissingImports = false

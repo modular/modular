@@ -17,8 +17,7 @@ from gpu import barrier
 from gpu.host import DeviceContext
 
 # from testing import assert_almost_equal
-from gpu.id import thread_idx
-from gpu.memory import AddressSpace
+from gpu import thread_idx
 from gpu.mma import (
     wgmma_async,
     wgmma_commit_group_sync,

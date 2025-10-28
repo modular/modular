@@ -56,7 +56,7 @@ struct _ListIter[
     var src: Pointer[List[Self.Element], origin]
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     @always_inline
@@ -279,7 +279,7 @@ struct List[T: Copyable & Movable](
         self._len = 0
         self.capacity = capacity
 
-    fn __init__(out self, *, length: UInt, fill: T):
+    fn __init__(out self, *, length: Int, fill: T):
         """Constructs a list with the given capacity.
 
         Args:
@@ -287,7 +287,7 @@ struct List[T: Copyable & Movable](
             fill: The element to fill each element of the list.
         """
         self = Self()
-        self.resize(Int(length), fill)
+        self.resize(length, fill)
 
     @always_inline
     fn __init__(out self, var *values: T, __list_literal__: () = ()):
@@ -332,9 +332,12 @@ struct List[T: Copyable & Movable](
     fn __init__[
         IterableType: Iterable
     ](out self, iterable: IterableType) where _type_is_eq_parse_time[
-        T, IterableType.IteratorType[__origin_of(iterable)].Element
+        T, IterableType.IteratorType[origin_of(iterable)].Element
     ]():
         """Constructs a list from an iterable of values.
+
+        Parameters:
+            IterableType: The type of the `iterable` argument.
 
         Args:
             iterable: The iterable of values to populate the list with.
@@ -523,7 +526,7 @@ struct List[T: Copyable & Movable](
         """
         self.extend(other^)
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
 
         Returns:
@@ -533,7 +536,7 @@ struct List[T: Copyable & Movable](
 
     fn __reversed__(
         ref self,
-    ) -> _ListIter[T, __origin_of(self), False]:
+    ) -> _ListIter[T, origin_of(self), False]:
         """Iterate backwards over the list, returning immutable references.
 
         Returns:
@@ -1231,8 +1234,8 @@ struct List[T: Copyable & Movable](
         ref self,
     ) -> UnsafePointer[
         T,
-        mut = Origin(__origin_of(self)).mut,
-        origin = __origin_of(self),
+        mut = Origin(origin_of(self)).mut,
+        origin = origin_of(self),
     ]:
         """Retrieves a pointer to the next uninitialized element position.
 

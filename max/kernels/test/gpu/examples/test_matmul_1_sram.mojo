@@ -17,7 +17,6 @@ from algorithm.functional import tile_and_unswitch
 from buffer import DimList, NDBuffer
 from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.host import DeviceContext
-from gpu.memory import AddressSpace
 from memory import stack_allocation
 from testing import assert_false
 
@@ -92,11 +91,13 @@ fn matmul_sram(
 
         @parameter
         if not full_tile:
-            a_val = a[row, offset + localCol] if (
-                row < UInt(M) and offset + localCol < K
+            a_val = a[Int(row), offset + Int(localCol)] if (
+                row < UInt(M) and offset + Int(localCol) < K
             ) else 0.0
         else:
-            a_val = a[row, offset + localCol] if row < UInt(M) else 0.0
+            a_val = (
+                a[Int(row), offset + Int(localCol)] if row < UInt(M) else 0.0
+            )
         a_shared[localRow * UInt(tile_size) + localCol] = a_val
 
         # Load B tile into shared memory.
@@ -104,11 +105,13 @@ fn matmul_sram(
 
         @parameter
         if not full_tile:
-            b_val = b[offset + localRow, col] if (
-                col < UInt(N) and offset + localRow < K
+            b_val = b[offset + Int(localRow), Int(col)] if (
+                col < UInt(N) and offset + Int(localRow) < K
             ) else 0.0
         else:
-            b_val = b[offset + localRow, col] if col < UInt(N) else 0.0
+            b_val = (
+                b[offset + Int(localRow), Int(col)] if col < UInt(N) else 0.0
+            )
         b_shared[localRow * UInt(tile_size) + localCol] = b_val
 
         barrier()
@@ -116,7 +119,7 @@ fn matmul_sram(
         for k in range(tile_size):
             result += a_shared.load(
                 localRow * UInt(tile_size) + UInt(k)
-            ) * b_shared.load(k * tile_size + localCol)
+            ) * b_shared.load(k * tile_size + Int(localCol))
 
         barrier()
 

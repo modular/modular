@@ -27,7 +27,6 @@ from sys.intrinsics import PrefetchOptions, masked_load, masked_store, prefetch
 from buffer.dimlist import Dim, DimList, _make_tuple
 from builtin.device_passable import DevicePassable
 from memory import memset_zero, stack_allocation
-from memory.pointer import AddressSpace, _GPUAddressSpace
 
 from utils._serialize import _serialize
 from utils.index import IndexList
@@ -47,9 +46,9 @@ This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
 @always_inline
 fn _use_32bit_indexing[address_space: AddressSpace]() -> Bool:
     return is_gpu() and address_space in (
-        _GPUAddressSpace.SHARED,
-        _GPUAddressSpace.LOCAL,
-        _GPUAddressSpace.CONSTANT,
+        AddressSpace.SHARED,
+        AddressSpace.LOCAL,
+        AddressSpace.CONSTANT,
     )
 
 
@@ -184,7 +183,7 @@ fn _compute_ndbuffer_offset(
 @always_inline
 fn _compute_ndbuffer_stride[
     rank: Int
-](shape: IndexList[rank, **_]) -> __type_of(shape):
+](shape: IndexList[rank, **_]) -> type_of(shape):
     """Computes the NDBuffer's default dynamic strides using the input shape.
     The default strides correspond to contiguous memory layout.
 
@@ -392,7 +391,7 @@ struct NDBuffer[
             "cannot convert between buffers with incompatible strides",
         ]()
 
-        self.data = rebind[__type_of(self.data)](other.data)
+        self.data = rebind[type_of(self.data)](other.data)
         self.dynamic_shape = other.dynamic_shape
         self.dynamic_stride = other.dynamic_stride
 
@@ -418,8 +417,8 @@ struct NDBuffer[
             dynamic_shape: A static tuple of size 'rank' representing shapes.
         """
         self.data = ptr.bitcast[Scalar[dtype]]()
-        self.dynamic_shape = rebind[__type_of(self.dynamic_shape)](
-            dynamic_shape.cast[__type_of(self.dynamic_shape).element_type]()
+        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
+            dynamic_shape.cast[type_of(self.dynamic_shape).element_type]()
         )
         self.dynamic_stride = _compute_ndbuffer_stride[rank](self.dynamic_shape)
 
@@ -442,8 +441,8 @@ struct NDBuffer[
             dynamic_shape: A static tuple of size 'rank' representing shapes.
         """
         self.data = ptr
-        self.dynamic_shape = rebind[__type_of(self.dynamic_shape)](
-            dynamic_shape.cast[__type_of(self.dynamic_shape).element_type]()
+        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
+            dynamic_shape.cast[type_of(self.dynamic_shape).element_type]()
         )
         self.dynamic_stride = _compute_ndbuffer_stride[rank](self.dynamic_shape)
 
@@ -524,11 +523,11 @@ struct NDBuffer[
             dynamic_stride: A static tuple of size 'rank' representing strides.
         """
         self.data = ptr
-        self.dynamic_shape = rebind[__type_of(self.dynamic_shape)](
-            dynamic_shape.cast[__type_of(self.dynamic_shape).element_type]()
+        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
+            dynamic_shape.cast[type_of(self.dynamic_shape).element_type]()
         )
-        self.dynamic_stride = rebind[__type_of(self.dynamic_stride)](
-            dynamic_stride.cast[__type_of(self.dynamic_shape).element_type]()
+        self.dynamic_stride = rebind[type_of(self.dynamic_stride)](
+            dynamic_stride.cast[type_of(self.dynamic_shape).element_type]()
         )
 
     @always_inline
@@ -629,7 +628,7 @@ struct NDBuffer[
     @always_inline("nodebug")
     fn as_any_origin(
         self: NDBuffer[mut=True, *_, **_],
-    ) -> __type_of(self).OriginCastType[True, MutableAnyOrigin]:
+    ) -> type_of(self).OriginCastType[True, MutableAnyOrigin]:
         """Changes the origin of the `NDBuffer` to `MutableAnyOrigin`.
 
         Returns:
@@ -652,7 +651,7 @@ struct NDBuffer[
     @always_inline("nodebug")
     fn as_any_origin(
         self: NDBuffer[mut=False, *_, **_],
-    ) -> __type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
+    ) -> type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
         """Changes the origin of the `NDBuffer` to `ImmutableAnyOrigin`.
 
         Returns:
@@ -1257,7 +1256,7 @@ struct NDBuffer[
         Returns:
             The rebound NDBuffer with unknown shape.
         """
-        return rebind[__type_of(result)](self)
+        return rebind[type_of(result)](self)
 
     @always_inline
     fn bytecount(self) -> Int:
@@ -1335,6 +1334,9 @@ struct NDBuffer[
 
         Args:
             path: Path to the output file.
+
+        Raises:
+            If the operation fails.
         """
         with open(path.__str__(), "w") as f:
             var ptr = self.data.bitcast[UInt8]()
@@ -1423,7 +1425,7 @@ struct NDBuffer[
         prefetch[params](self._offset(indices))
 
     # `trait DevicePassable` implementation
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         """Convert the host type object to a device_type and store it at the

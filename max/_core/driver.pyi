@@ -543,13 +543,31 @@ class Tensor:
         """
 
     @overload
-    def to(self, device: DeviceStream) -> Tensor:
+    def to(self, stream: DeviceStream) -> Tensor:
         """
         Return a tensor that's guaranteed to be on the given device and associated
         with the given stream.
 
         The tensor is only copied if the requested device is different from the
         device upon which the tensor is already resident.
+        """
+
+    @overload
+    def to(self, devices: Sequence[Device]) -> list[Tensor]:
+        """
+        Return a list of tensors that are guaranteed to be on the given devices.
+
+        The tensors are only copied if the requested devices are different from the
+        device upon which the tensor is already resident.
+        """
+
+    @overload
+    def to(self, streams: Sequence[DeviceStream]) -> list[Tensor]:
+        """
+        Return a list of tensors that are guaranteed to be on the given streams.
+
+        The tensors are only copied if the requested streams are different from the
+        stream upon which the tensor is already resident.
         """
 
     def to_numpy(self) -> numpy.ndarray:

@@ -1,0 +1,376 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from sys import align_of, simd_width_of, size_of
+
+from gpu import lane_id, thread_idx
+from gpu import warp_id as get_warp_id
+from layout import IntTuple, Layout, LayoutTensor
+from layout._utils import idx2crd, make_amd_buffer_resource
+from layout.element import Element
+from layout.layout_tensor import ThreadScope
+from layout.runtime_layout import RuntimeLayout
+from layout.tensor_core import num_matrix_reg
+from memory import AddressSpace as BaseAddressSpace
+from memory import stack_allocation
+
+from utils import IndexList
+from utils.numerics import get_accum_type
+
+
+@always_inline
+fn get_fragment_layout[mma_shape: IndexList[3]]() -> Layout:
+    return Layout.row_major(1, num_matrix_reg[mma_shape[0], mma_shape[1]]())
+
+
+@always_inline
+fn get_nested_fragment_layout[mma_shape: IndexList[3]]() -> Layout:
+    return (
+        Layout(
+            IntTuple(1, IntTuple(4, 4)), IntTuple(1, IntTuple(1, 8))
+        ) if mma_shape[0]
+        == 32 else get_fragment_layout[mma_shape]()
+    )
+
+
+@always_inline
+fn get_warp_layout[mma_shape: IndexList[3]]() -> Layout:
+    return Layout.col_major(32, 2) if mma_shape[0] == 32 else Layout.col_major(
+        16, 4
+    )
+
+
+@always_inline
+fn get_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
+    alias num_warps_n = BN // WN
+    var warp_row = get_warp_id() // UInt(num_warps_n)
+    var warp_col = get_warp_id() % UInt(num_warps_n)
+    return IndexList[2](Int(warp_row), Int(warp_col))
+
+
+@always_inline
+fn pad[dtype: DType, depth: Int, size: Int]() -> Int:
+    alias simd_width = simd_width_of[dtype]()
+    alias padding = 0 if depth == 64 else size // simd_width
+    return size + padding
+
+
+alias LocalLayoutTensor[dtype: DType, layout: Layout] = LayoutTensor[
+    dtype,
+    layout,
+    MutableAnyOrigin,
+    address_space = AddressSpace.LOCAL,
+]
+
+alias SharedLayoutTensor[dtype: DType, layout: Layout] = LayoutTensor[
+    dtype,
+    layout,
+    MutableAnyOrigin,
+    address_space = AddressSpace.SHARED,
+]
+
+
+@always_inline("nodebug")
+fn copy_local_to_dram2[
+    dst_thread_layout: Layout,
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+](dst: LayoutTensor, src: LayoutTensor, dst_base: LayoutTensor):
+    # TODO: use copy_local_to_dram instead. This is a hack for hackathon :|.
+
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
+    var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
+
+    var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
+    var buffer = make_amd_buffer_resource(dst_base)
+    var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
+
+    alias M = src.layout.shape[0].value()
+    alias N = src.layout.shape[1].value()
+
+    @parameter
+    for n in range(N):
+
+        @parameter
+        for m in range(M):
+            alias src_idx = 4 * n + 16 * m
+            alias i = 4 * m + n
+
+            alias dst_static_idx = dst_fragments.layout(i)
+            var dst_idx = dst_frag_offset
+
+            @parameter
+            if dst_fragments.layout.all_dims_known():
+                dst_idx += dst_static_idx
+            else:
+                dst_idx += dst_fragments.runtime_layout(i)
+
+            var src_element = Element[index_type = src.linear_idx_type].load(
+                src.ptr.offset(src_idx),
+                src.runtime_element_layout,
+            )
+
+            alias element_stride = dst_fragments.element_layout.stride[
+                1
+            ].value()
+
+            @parameter
+            if element_stride == 1:
+                buffer.store(
+                    Int32(dst_idx),
+                    src_element.element_data.cast[dst.dtype](),
+                )
+            else:
+
+                @parameter
+                for i in range(dst_fragments.element_layout.size()):
+                    alias element_offset = dst_fragments.element_layout(i)
+                    var src = src_element.element_data[i].cast[dst.dtype]()
+                    buffer.store(
+                        Int32(dst_idx + element_offset),
+                        src,
+                    )
+
+
+@always_inline
+fn convert_f32_to_bf16[dtype: DType](x: SIMD, out res: SIMD[dtype, x.size]):
+    # CK uses truncation for f32 to bf16 conversion but it's not accurate,
+    # we only use it when benchmarking against CK otherwise in practice
+    # we use the accurate conversion.
+    alias use_truncation = False
+
+    @parameter
+    if use_truncation:
+        res = type_of(res)(from_bits=(x.to_bits() >> 16).cast[DType.uint16]())
+    else:
+        res = x.cast[dtype]()
+
+
+struct SharedMemoryManager[
+    dtype: DType,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    depth: Int,
+    num_rowwise_warps: Int,
+    token_gen: Bool,
+    depth_v: Int = depth,
+](Defaultable):
+    var p_smem: UnsafePointer[
+        Scalar[dtype], address_space = AddressSpace.SHARED
+    ]
+    # p_smem is used for p
+    var k_v_smem: UnsafePointer[
+        Scalar[dtype], address_space = AddressSpace.SHARED
+    ]
+    # k_v_smem is used for k, v, and scratch
+    alias alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
+    alias accum_type = get_accum_type[dtype]()
+    alias p_smem_size = BM * BN if token_gen else 0
+    alias simd_width = simd_width_of[dtype]()
+    # depth // simd_width is the padding
+
+    alias k_smem_size = BN * BK
+    alias v_smem_size = BK * pad[dtype, depth, depth]()
+    alias k_v_smem_size = max(Self.k_smem_size, Self.v_smem_size)
+
+    @always_inline
+    fn __init__(out self):
+        self.p_smem = stack_allocation[
+            Self.p_smem_size,
+            dtype,
+            address_space = AddressSpace.SHARED,
+            alignment = Self.alignment,
+        ]()
+        self.k_v_smem = stack_allocation[
+            Self.k_v_smem_size,
+            dtype,
+            address_space = AddressSpace.SHARED,
+            alignment = Self.alignment,
+        ]()
+
+    @always_inline
+    fn get_k_ptr[
+        _dtype: DType
+    ](
+        self,
+    ) -> UnsafePointer[
+        Scalar[_dtype],
+        address_space = AddressSpace.SHARED,
+    ]:
+        return self.k_v_smem.bitcast[Scalar[_dtype]]()
+
+    @always_inline
+    fn get_v_ptr[
+        _dtype: DType
+    ](
+        self,
+    ) -> UnsafePointer[
+        Scalar[_dtype],
+        address_space = AddressSpace.SHARED,
+    ]:
+        return self.get_k_ptr[_dtype]()
+
+    @always_inline
+    fn get_p_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED,]:
+        return self.p_smem.bitcast[Scalar[dtype]]()
+
+    @always_inline
+    fn get_warp_scratch_ptr(
+        self,
+    ) -> UnsafePointer[
+        Scalar[Self.accum_type],
+        address_space = AddressSpace.SHARED,
+    ]:
+        return self.k_v_smem.bitcast[
+            Scalar[Self.accum_type]
+        ]() if token_gen else {}
+
+
+struct GlobalMemoryManager[
+    dtype: DType,
+    BM: UInt32,
+    BN: UInt32,
+    BK: UInt32,
+    depth: UInt32,
+    num_heads: UInt32,
+    group: UInt32,
+    token_gen: Bool,
+    q_depth: UInt32 = depth,
+    output_depth: UInt32 = depth,
+]:
+    alias kv_num_heads = num_heads // group
+    # BHSD layout for q and kv cache
+    alias q_gmem_layout = Layout(
+        IntTuple(Int(BM), Int(q_depth)),
+        IntTuple(Int(num_heads * q_depth), 1),
+    ) if not token_gen else Layout.row_major(Int(BM), Int(q_depth))
+
+    alias output_gmem_layout = Layout(
+        IntTuple(Int(BM), Int(output_depth)),
+        IntTuple(Int(num_heads * output_depth), 1),
+    ) if not token_gen else Layout.row_major(Int(BM), Int(output_depth))
+
+    alias kv_gmem_layout = Layout(
+        IntTuple(Int(BN), Int(depth)),
+        IntTuple(Int(Self.kv_num_heads * depth), 1),
+    )
+
+    var q_offset: UInt32
+    var q_runtime_layout: RuntimeLayout[
+        Self.q_gmem_layout,
+        element_type = DType.int32,
+        linear_idx_type = DType.int32,
+    ]
+
+    var output_offset: UInt32
+    var output_runtime_layout: RuntimeLayout[
+        Self.output_gmem_layout,
+        element_type = DType.int32,
+        linear_idx_type = DType.int32,
+    ]
+
+    @always_inline
+    fn __init__(
+        out self,
+        q_tile_idx: UInt32,
+        kv_head_idx: UInt32,
+        seq_len: Int,
+        q_offset: UInt32,
+        output_offset: UInt32,
+    ):
+        var q_tile_num_rows = min(
+            BM, UInt(seq_len) - q_tile_idx * BM
+        ) if not token_gen else group
+
+        self.q_offset = q_offset
+        self.output_offset = output_offset
+
+        self.q_runtime_layout = type_of(self.q_runtime_layout)(
+            {Int(q_tile_num_rows), Int(q_depth)},
+            {Int(num_heads * q_depth if not token_gen else q_depth), 1},
+        )
+
+        self.output_runtime_layout = type_of(self.output_runtime_layout)(
+            {Int(q_tile_num_rows), Int(output_depth)},
+            {
+                Int(
+                    num_heads * output_depth if not token_gen else output_depth
+                ),
+                1,
+            },
+        )
+
+    @always_inline
+    fn get_q_tensor[
+        qtype: DType,
+    ](
+        self,
+        ptr: UnsafePointer[Scalar[qtype]],
+        out result: LayoutTensor[
+            qtype,
+            Self.q_gmem_layout,
+            MutableAnyOrigin,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
+            masked=True,
+        ],
+    ):
+        return {ptr + Int(self.q_offset), self.q_runtime_layout}
+
+    @always_inline
+    fn get_output_tensor[
+        out_type: DType,
+    ](
+        self,
+        ptr: UnsafePointer[Scalar[out_type]],
+        out result: LayoutTensor[
+            out_type,
+            Self.output_gmem_layout,
+            MutableAnyOrigin,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
+            masked=True,
+        ],
+    ):
+        return {ptr + Int(self.output_offset), self.output_runtime_layout}
+
+    @always_inline
+    fn get_kv_tensor[
+        kvtype: DType, //,
+    ](
+        self,
+        ptr: UnsafePointer[Scalar[kvtype], **_],
+        kv_tile_num_rows: UInt32,
+        out result: LayoutTensor[
+            kvtype,
+            Self.kv_gmem_layout,
+            ptr.origin,
+            masked=True,
+            address_space = ptr.address_space,
+        ],
+    ):
+        # kv cache gmem has to clip num rows as runtime layout
+        var kv_runtime_layout = type_of(result.runtime_layout)(
+            type_of(result.runtime_layout.shape)(
+                Int(kv_tile_num_rows), Int(depth)
+            ),
+            type_of(result.runtime_layout.stride)(
+                Int(Self.kv_num_heads * depth), 1
+            ),
+        )
+
+        return {ptr, kv_runtime_layout}

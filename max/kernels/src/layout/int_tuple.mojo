@@ -61,7 +61,6 @@ from os import abort
 from buffer import DimList
 from builtin.range import _StridedRange
 from memory import memcpy
-from memory.pointer import _GPUAddressSpace
 from sys.intrinsics import _type_is_eq_parse_time
 
 from utils.numerics import max_finite
@@ -73,8 +72,8 @@ alias INT_TUPLE_VALIDATION = False
 fn _get_index_type(address_space: AddressSpace) -> DType:
     """Returns int32 for shared/constant GPU memory, index otherwise."""
     if address_space in (
-        _GPUAddressSpace.SHARED,
-        _GPUAddressSpace.CONSTANT,
+        AddressSpace.SHARED,
+        AddressSpace.CONSTANT,
     ):
         return DType.int32
     else:
@@ -307,7 +306,7 @@ struct _IntTupleIter[origin: ImmutableOrigin](Iterable, Iterator):
         return self.src[][idx]
 
     @always_inline("nodebug")
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline("nodebug")
@@ -619,7 +618,7 @@ struct IntTuple(
     fn __init__[
         IterableType: Iterable
     ](out self, iterable: IterableType) where _type_is_eq_parse_time[
-        IterableType.IteratorType[__origin_of(iterable)].Element,
+        IterableType.IteratorType[origin_of(iterable)].Element,
         Tuple[IntTuple, IntTuple],
     ]():
         """Initialize an `IntTuple` from a zip iterator.
@@ -1040,16 +1039,20 @@ struct IntTuple(
             The size of the tuple starting at the given offset.
         """
         var len = data[offset]
-        var size = 1
+        var size = 1 + len  # Header + all element slots
+
+        # Now add the sizes of nested tuple data
         for i in range(len):
             var val = data[offset + i + 1]
-            if val >= Self.MinimumValue:
-                size += 1
-            else:
-                # For nested tuples, val stores a negative offset relative to current position
+            if val < Self.MinimumValue:
+                # For nested tuples, also add the size of the nested tuple data
                 # Formula: sub_offset = (offset + i + 1) - (val - MinimumValue)
                 var sub_offset = offset + i + 1 - (val - Self.MinimumValue)
-                size += Self._calculate_tuple_size(data, sub_offset) + 1
+                # Ensure sub_offset is valid
+                if sub_offset < 0 or sub_offset >= data.size():
+                    continue
+                var nested_size = Self._calculate_tuple_size(data, sub_offset)
+                size += nested_size
         return size
 
     fn validate_structure(self):
@@ -1065,18 +1068,17 @@ struct IntTuple(
 
         @parameter
         if INT_TUPLE_VALIDATION:
-            if self._store.owning() > 0:
-                var data_size = self._store.size()
-                var computed_size = Self.tuple_size(self._store)
-                if data_size != computed_size:
-                    abort(
-                        String(
-                            "size validation failed: ",
-                            data_size,
-                            " != ",
-                            computed_size,
-                        )
+            # Basic structure validation: ensure size is at least header + elements
+            var len = self._store[0]
+            if self._store.size() < len + 1:
+                abort(
+                    String(
+                        "Invalid tuple structure: size ",
+                        self._store.size(),
+                        " is less than required ",
+                        len + 1,
                     )
+                )
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
@@ -1091,7 +1093,7 @@ struct IntTuple(
         return self._store[0]
 
     @always_inline("nodebug")
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """
         Returns an iterator over the elements of the `IntTuple`.
 

@@ -14,6 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv
 from math.constants import log2e
+from memory import bitcast
 from sys import size_of
 
 import gpu.warp as warp
@@ -23,7 +24,6 @@ from gpu import block_idx, thread_idx
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.memory import AddressSpace, bitcast
 from gpu.mma import st_matrix
 from gpu.sync import async_copy_arrive
 from layout.int_tuple import IntTuple
@@ -63,6 +63,7 @@ from nn.mha_utils import (
 )
 
 from utils.index import Index, IndexList
+from builtin.device_passable import DevicePassable
 
 
 @register_passable("trivial")
@@ -274,11 +275,11 @@ struct MHAPosition[
     ):
         gmem_block = {
             ptr + self.q_out_offset,
-            __type_of(gmem_block.runtime_layout)(
-                __type_of(gmem_block.runtime_layout.shape)(
+            type_of(gmem_block.runtime_layout)(
+                type_of(gmem_block.runtime_layout.shape)(
                     Int(self.q_tile_num_rows()), depth
                 ),
-                __type_of(gmem_block.runtime_layout.stride)(Self.q_stride, 1),
+                type_of(gmem_block.runtime_layout.stride)(Self.q_stride, 1),
             ),
         }
 

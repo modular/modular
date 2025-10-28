@@ -28,7 +28,6 @@ import copy
 import logging
 from collections import defaultdict
 from collections.abc import Iterable
-from dataclasses import dataclass
 
 from max.interfaces import (
     RequestID,
@@ -41,6 +40,7 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: igno
 )
 from max.support.math import ceildiv
 
+from .. import KVCacheMetrics
 from .block_copy_engine import BlockCopyEngine
 from .block_pool import BlockPool
 from .block_utils import KVCacheBlock, hash_request_tokens
@@ -50,34 +50,6 @@ logger = logging.getLogger("max.pipelines")
 
 class InsufficientBlocksError(Exception):
     pass
-
-
-@dataclass
-class KVCacheMetrics:
-    """Metrics for the KV cache."""
-
-    input_tokens: int = 0
-    cache_tokens: int = 0
-    h2d_blocks_copied: int = 0
-    d2h_blocks_copied: int = 0
-
-    @property
-    def prompt_tokens(self) -> int:
-        return self.input_tokens + self.cache_tokens
-
-    @property
-    def cache_hit_rate(self) -> float:
-        if self.prompt_tokens == 0:
-            return 0.0
-        return self.cache_tokens / self.prompt_tokens
-
-    def __add__(self, other: KVCacheMetrics) -> KVCacheMetrics:
-        return KVCacheMetrics(
-            input_tokens=self.input_tokens + other.input_tokens,
-            cache_tokens=self.cache_tokens + other.cache_tokens,
-            h2d_blocks_copied=self.h2d_blocks_copied + other.h2d_blocks_copied,
-            d2h_blocks_copied=self.d2h_blocks_copied + other.d2h_blocks_copied,
-        )
 
 
 class BlockManager:

@@ -19,7 +19,7 @@ from builtin.dtype import _uint_type_of_width
 from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.dim import Dim
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import external_memory
 from gpu.random import Random
 from layout import Layout, LayoutTensor, RuntimeTuple, RuntimeLayout
 from layout.int_tuple import UNKNOWN_VALUE, fill_like
@@ -97,7 +97,7 @@ fn topk_wrapper[
     ]()
 
     # Pack the topk_vals and topk_idxs into shared memory
-    var block_offset: UInt = UInt(block_lane * block_size)
+    var block_offset = UInt(block_lane * block_size)
     var stride = block_size * UInt(num_blocks_per_input)
     topk_sram[tid] = TopK_2[T, largest]()
     for i in range(tid + block_offset, num_elements, stride):
@@ -115,7 +115,7 @@ fn topk_wrapper[
 
         if tid == 0:
             # Store the local top-K values and indices in global memory
-            var vector_idx: UInt = UInt(total.p)
+            var vector_idx = UInt(total.p)
             local_topk_vals[bid * UInt(K) + UInt(k)] = total.u
             local_topk_idxs[bid * UInt(K) + UInt(k)] = Scalar[DType.int](
                 vector_idx
@@ -349,7 +349,7 @@ fn radix_sort_pairs_kernel[
 
         @parameter
         for t in range(BLOCK_SIZE):
-            sum += s_counts[t * NUM_BUCKETS + bucket_offset]
+            sum += s_counts[t * NUM_BUCKETS + Int(bucket_offset)]
         total_counts[bucket_offset] = sum
     barrier()
 
@@ -836,6 +836,8 @@ fn _topp_minp_sampling_gpu[
         grid_dim=Dim(batch_size),
         block_dim=Dim(BLOCK_SIZE),
     )
+    _ = max_vals^
+    _ = skip_sort^
     _ = probs_buf^
     _ = ids_buf^
 

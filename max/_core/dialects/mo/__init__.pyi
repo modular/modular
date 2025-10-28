@@ -22,7 +22,7 @@ import max._core.dialects.builtin
 import max._core.dialects.kgen
 import max._core.dialects.m
 import max._core.dtype
-from max.mlir import Location
+from max.mlir import Context, Location
 
 from . import passes as passes
 
@@ -307,6 +307,24 @@ class CoordinateTransformModeAttr(max._core.Attribute):
     def __init__(self, value: CoordinateTransformMode) -> None: ...
     @property
     def value(self) -> CoordinateTransformMode: ...
+
+class IOKind(enum.Enum):
+    _unknown = 32
+
+    _output = 0
+
+    _input = 1
+
+    _fused_input = 2
+
+    _fused_output = 3
+
+    _fused_compute_output = 31
+
+class IOKindAttr(max._core.Attribute):
+    def __init__(self, arg0: Context, arg1: IOKind, /) -> None: ...
+    @property
+    def value(self) -> IOKind: ...
 
 class MOConditionallyInPlaceInterface(Protocol):
     """
@@ -3221,29 +3239,6 @@ class GatherSumOp(max._core.Operation):
     @property
     def indices(self) -> max._core.Value[TensorType]: ...
 
-class GeluOp(max._core.Operation):
-    """
-    Returns `(x / 2) * (1 + erf(x/sqrt(2)))`, where `erf` denotes the
-    (Gaussian) error function.
-
-    Example:
-
-    ```mlir
-      %arg: !mo.tensor<[2, 3], f32>
-      %res = mo.gelu(%arg) : !mo.tensor<[2, 3], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-
 class GraphOp(max._core.Operation):
     """
     This op represents a computation graph that consists of:
@@ -3554,28 +3549,6 @@ class IsNanOp(max._core.Operation):
     ) -> None: ...
     @property
     def input_x(self) -> max._core.Value[TensorType]: ...
-
-class IsqrtOp(max._core.Operation):
-    """
-    Returns `1/sqrt(x)`, where `x` is the input tensor.
-
-    Example:
-
-    ```mlir
-      %arg: !mo.tensor<[2, 3], f32>
-      %res = mo.isqrt(%arg) : !mo.tensor<[2, 3], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
 
 class LayerNormOp(max._core.Operation):
     """
@@ -5578,6 +5551,28 @@ class RoundOp(max._core.Operation):
     ```mlir
       %arg: !mo.tensor<[2, 3], f32>
       %res = mo.round(%arg) : !mo.tensor<[2, 3], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+
+class RsqrtOp(max._core.Operation):
+    """
+    Returns `1/sqrt(x)`, where `x` is the input tensor.
+
+    Example:
+
+    ```mlir
+      %arg: !mo.tensor<[2, 3], f32>
+      %res = mo.rsqrt(%arg) : !mo.tensor<[2, 3], f32>
     ```
     """
 

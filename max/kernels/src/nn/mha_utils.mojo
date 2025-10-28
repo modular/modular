@@ -31,7 +31,6 @@ from sys.info import _accelerator_arch
 from bit import prev_power_of_two
 from gpu import WARP_SIZE, lane_id
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.memory import AddressSpace
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
@@ -178,7 +177,7 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
     fn q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> UInt:
         q_size = self.block_m() * self.padded_depth
         num_q = 2 if fa3 and persistent else 1
-        return UInt(num_q * q_size)
+        return UInt(num_q * Int(q_size))
 
     fn kv_smem_size(self, fa3: Bool = False) -> UInt:
         if fa3:
@@ -204,7 +203,9 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
 
     fn warp_scratch_smem_size(self) -> UInt:
         n_warps_n = self.num_warps_n()
-        return UInt(2 * n_warps_n * self.block_m() if n_warps_n > 1 else 0)
+        return UInt(
+            2 * Int(n_warps_n) * Int(self.block_m()) if n_warps_n > 1 else 0
+        )
 
     fn shared_mem_bytes[
         shared_kv: Bool = False, sm_90: Bool = False
@@ -235,10 +236,10 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
         if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
             num_smem_elements += self.p_smem_size()
 
-        num_smem_bytes = self.dtype.size_of() * num_smem_elements
+        num_smem_bytes = self.dtype.size_of() * Int(num_smem_elements)
         if sm_90_fa3:
             alias i64_size = size_of[DType.int64]()
-            num_smem_bytes += (2 * self.num_pipeline_stages) * i64_size + (
+            num_smem_bytes += (2 * Int(self.num_pipeline_stages)) * i64_size + (
                 4 * i64_size + 2 * size_of[DType.uint32]() if persistent
                 != 0 else 0
             )
@@ -294,7 +295,7 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
                 # reg_per >= 16*BN//32 + 16*depth//32 + 16*BN//64 + 4
                 # (reg_per - depth//2 - 4) >= 3*BN//4
                 # BN <= (4*reg_per - 2*depth - 16)//3
-                reg_upper_bound = (4 * reg_per - 2 * depth - 16) // 3
+                reg_upper_bound = (4 * reg_per - 2 * Int(depth) - 16) // 3
                 alias persistent = (
                     env_get_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
                 )
@@ -307,10 +308,14 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
                 #        - 20*persistent) // (depth*pipeline_stages)
                 smem_upper_bound = (
                     smem_total // 2
-                    - self.num_queries_per_block * depth * UInt(1 + persistent)
-                    - 8 * num_pipeline_stages
+                    - Int(
+                        self.num_queries_per_block
+                        * depth
+                        * UInt(1 + persistent)
+                    )
+                    - 8 * Int(num_pipeline_stages)
                     - 20 * persistent
-                ) // (depth * num_pipeline_stages)
+                ) // Int(depth * num_pipeline_stages)
                 # divide and multiply by 16 to get a multiple of MMA_K
                 min_upper_bound = 16 * (
                     min(reg_upper_bound, smem_upper_bound) // 16
@@ -431,22 +436,24 @@ fn _copy_frag_to_smem_nvidia[
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     var p_smem_tile = LayoutTensor[
         p_smem_iter.dtype,
-        Layout.row_major(BM, BN),
+        Layout.row_major(Int(BM), Int(BN)),
         address_space = AddressSpace.SHARED,
     ](p_smem_iter.ptr)
-    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
-    var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
+    var p_smem_warp_tile = p_smem_tile.tile[Int(WM), Int(WN)](
+        Int(warp_y), Int(warp_x)
+    )
+    var p_reg_vecs = p_reg_tile.vectorize[1, Int(frag_simd_width)]()
 
-    alias swizzle_fn = make_ldmatrix_swizzle[p_smem_tile.dtype, BK]()
+    alias swizzle_fn = make_ldmatrix_swizzle[p_smem_tile.dtype, Int(BK)]()
 
     @parameter
     for n_mma in range(num_n_mmas):
 
         @parameter
         for m_mma in range(num_m_mmas):
-            var p_smem_mma_tile = p_smem_warp_tile.tile[MMA_M, MMA_N](
-                m_mma, n_mma
-            ).vectorize[1, frag_simd_width]()
+            var p_smem_mma_tile = p_smem_warp_tile.tile[Int(MMA_M), Int(MMA_N)](
+                Int(m_mma), Int(n_mma)
+            ).vectorize[1, Int(frag_simd_width)]()
             var p_smem_frag = p_smem_mma_tile.distribute[
                 Layout.row_major(8, 4)
             ](lane_id())
@@ -454,7 +461,7 @@ fn _copy_frag_to_smem_nvidia[
 
             @parameter
             for i in range(p_reg_vecs.shape[1]()):
-                alias offset_in_frag = __type_of(p_smem_frag).layout(i)
+                alias offset_in_frag = type_of(p_smem_frag).layout(i)
 
                 # Translate offset in BM x BN matrix to the right BM x BK tile.
                 var offset_BMxBN = frag_offset + offset_in_frag
@@ -475,7 +482,7 @@ fn _copy_frag_to_smem_nvidia[
                     Int((offset_BMxBN % BN) // BK)
                 )[]
                 alias align = align_of[
-                    SIMD[p_smem_iter.dtype, frag_simd_width]
+                    SIMD[p_smem_iter.dtype, Int(frag_simd_width)]
                 ]()
                 tile_BMxBK.ptr.store[alignment=align](offset_BMxBK, vec)
 
@@ -518,21 +525,23 @@ fn _copy_frag_to_smem_amd[
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     var p_smem_tile = LayoutTensor[
         p_smem_iter.dtype,
-        Layout.row_major(BM, BN),
+        Layout.row_major(Int(BM), Int(BN)),
         address_space = AddressSpace.SHARED,
     ](p_smem_iter.ptr)
 
-    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
-    var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
+    var p_smem_warp_tile = p_smem_tile.tile[Int(WM), Int(WN)](
+        Int(warp_y), Int(warp_x)
+    )
+    var p_reg_vecs = p_reg_tile.vectorize[1, Int(frag_simd_width)]()
 
     @parameter
     for n_mma in range(num_n_mmas):
 
         @parameter
         for m_mma in range(num_m_mmas):
-            var p_smem_mma_tile = p_smem_warp_tile.tile[MMA_M, MMA_N](
-                m_mma, n_mma
-            ).vectorize[frag_simd_width, 1]()
+            var p_smem_mma_tile = p_smem_warp_tile.tile[Int(MMA_M), Int(MMA_N)](
+                Int(m_mma), Int(n_mma)
+            ).vectorize[Int(frag_simd_width), 1]()
             var p_smem_frag = p_smem_mma_tile.distribute[
                 Layout.row_major(4, 16)
             ](lane_id())
@@ -545,9 +554,9 @@ fn _copy_frag_to_smem_amd[
                 var offset_BMxBN = frag_offset + offset_in_frag
                 var offset_BMxBK = (offset_BMxBN // BN) * BK + offset_BMxBN % BK
 
-                var vec = p_reg_vecs[n_mma * num_m_mmas + m_mma, 0][i].cast[
-                    p_smem_tile.dtype
-                ]()
+                var vec = p_reg_vecs[n_mma * num_m_mmas + m_mma, 0][
+                    Int(i)
+                ].cast[p_smem_tile.dtype]()
                 # Grep the right BMxBK tile and store the casted vec.
                 var tile_BMxBK = p_smem_iter.next_unsafe(
                     Int((offset_BMxBN % BN) // BK)

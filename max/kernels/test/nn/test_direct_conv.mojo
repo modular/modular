@@ -15,8 +15,7 @@ from math import ceildiv, isclose
 from random import rand
 from sys.info import num_physical_cores, simd_width_of
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import LayoutTensor, Layout, RuntimeLayout
 from nn.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -99,18 +98,29 @@ fn test[
     var micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
-    var input = NDBuffer[dtype, 4](input_ptr, Index(N, H, W, C))
-    var filter = NDBuffer[dtype, 4](filter_ptr, Index(R, S, C // num_groups, F))
+    alias layout_4d = Layout.row_major[4]()
+    alias layout_5d = Layout.row_major[5]()
+    var input = LayoutTensor[dtype, layout_4d](
+        input_ptr, RuntimeLayout[layout_4d].row_major(Index(N, H, W, C))
+    )
+    var filter = LayoutTensor[dtype, layout_4d](
+        filter_ptr,
+        RuntimeLayout[layout_4d].row_major(Index(R, S, C // num_groups, F)),
+    )
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
     var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
         packed_filter_shape.flattened_length()
     )
-    var packed_filter = NDBuffer[dtype, 5, _, DimList.create_unknown[5]()](
+    var packed_filter = LayoutTensor[dtype, layout_5d](
         packed_filter_ptr,
-        packed_filter_shape,
+        RuntimeLayout[layout_5d].row_major(packed_filter_shape),
     )
-    var output = NDBuffer[dtype, 4](output_ptr, Index(N, HO, WO, F))
-    var output_ref = NDBuffer[dtype, 4](output_ref_ptr, Index(N, HO, WO, F))
+    var output = LayoutTensor[dtype, layout_4d](
+        output_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
+    )
+    var output_ref = LayoutTensor[dtype, layout_4d](
+        output_ref_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
+    )
 
     @parameter
     if filter_packed:
@@ -142,15 +152,12 @@ fn test[
     @parameter
     if filter_packed:
         ConvDirectNHWC[
-            4,
-            5,
-            4,
-            _,
-            _,
-            _,
-            DimList.create_unknown[4](),
-            DimList.create_unknown[5](),
-            DimList.create_unknown[4](),
+            layout_4d,
+            layout_5d,
+            layout_4d,
+            input.origin,
+            filter.origin,
+            output.origin,
             dtype,
             dtype,
             dtype,
@@ -164,15 +171,12 @@ fn test[
         )
     else:
         ConvDirectNHWC[
-            4,
-            4,
-            4,
+            layout_4d,
+            layout_4d,
+            layout_4d,
             _,
             _,
             _,
-            DimList.create_unknown[4](),
-            DimList.create_unknown[4](),
-            DimList.create_unknown[4](),
             dtype,
             dtype,
             dtype,

@@ -75,7 +75,6 @@ struct _SpanIter[
             return self.src[self.index]
 
 
-@fieldwise_init
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
@@ -131,10 +130,10 @@ struct Span[
         Args:
             other: The Span to cast.
         """
-        self = rebind[__type_of(self)](other)
+        self = rebind[type_of(self)](other)
 
     @always_inline("builtin")
-    fn __init__(out self, *, ptr: Self.UnsafePointerType, length: UInt):
+    fn __init__(out self, *, ptr: Self.UnsafePointerType, length: Int):
         """Unsafe construction from a pointer and length.
 
         Args:
@@ -142,7 +141,7 @@ struct Span[
             length: The length of the view.
         """
         self._data = ptr
-        self._len = Int(length)
+        self._len = length
 
     @always_inline
     @implicit
@@ -225,7 +224,7 @@ struct Span[
         debug_assert(step == 1, "Slice step must be 1")
 
         return Self(
-            ptr=(self._data + start), length=UInt(len(range(start, end, step)))
+            ptr=(self._data + start), length=len(range(start, end, step))
         )
 
     @always_inline
@@ -409,6 +408,9 @@ struct Span[
         Args:
             idx: The index of the element to get.
 
+        Returns:
+            A reference to the element at the specified index.
+
         Safety:
             - This function does not do bounds checking and assumes the provided
             index is in: [0, len(self)). Not upholding this contract will result
@@ -574,7 +576,7 @@ struct Span[
             If a or b are larger than the length of the span.
         """
         var length = UInt(len(self))
-        if a > length or b > length:
+        if a > Int(length) or b > Int(length):
             raise Error(
                 "index out of bounds (length: ",
                 length,
@@ -589,13 +591,13 @@ struct Span[
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(Span[T, _, address_space=address_space]),
+        other_type: type_of(Span[T, _, address_space=address_space]),
     ](
         self,
         out result: Span[
             mut = mut & other_type.origin.mut,
             T,
-            __origin_of(origin, other_type.origin),
+            origin_of(origin, other_type.origin),
             address_space=address_space,
         ],
     ):
@@ -611,7 +613,7 @@ struct Span[
             ptr = self._data.unsafe_mut_cast[result.mut]().unsafe_origin_cast[
                 result.origin
             ](),
-            length = UInt(self._len),
+            length = self._len,
         }
 
     fn reverse[
@@ -748,9 +750,9 @@ struct Span[
 
             @parameter
             if width == 1:
-                count += rebind[__type_of(count)](vec)
+                count += rebind[type_of(count)](vec)
             else:
-                countv += rebind[__type_of(countv)](vec)
+                countv += rebind[type_of(countv)](vec)
 
         vectorize[do_count, simdwidth](length)
 
@@ -763,6 +765,9 @@ struct Span[
         Args:
             offset: The starting offset of the subspan (self._data + offset).
             length: The length of the new subspan.
+
+        Returns:
+            A new span representing the specified subspan.
 
         Safety:
             This function does not do bounds checking and assumes the current
@@ -777,4 +782,4 @@ struct Span[
             0 <= offset + length <= len(self),
             "subspan out of bounds.",
         )
-        return Self(ptr=self._data + offset, length=UInt(length))
+        return Self(ptr=self._data + offset, length=length)

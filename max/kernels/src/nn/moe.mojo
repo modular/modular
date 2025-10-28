@@ -26,7 +26,6 @@ from gpu import (
     thread_idx,
 )
 from gpu.host.info import is_gpu
-from gpu.memory import AddressSpace
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel
@@ -163,7 +162,7 @@ fn moe_create_indices_kernel[
                     num_tokens_padded,
                     step,
                     stage,
-                    i,
+                    Int(i),
                 )
             barrier()
             step //= 2
@@ -370,7 +369,7 @@ fn moe_create_indices_bucket_sort_kernel[
                 smem[0, offset] = idx + i
 
     # Handle remainder elements that couldn't be vectorized
-    start_idx = UInt((topk_ids_length // width) * width + thread_idx.x)
+    start_idx = UInt((topk_ids_length // width) * width + Int(thread_idx.x))
 
     var expert_id = (
         topk_ids[0, start_idx] if start_idx

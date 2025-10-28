@@ -25,8 +25,8 @@ from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_operand import LayoutTensorMHAOperand
 from nn.mha_score_mod import IdentityScoreMod
 from nn.mla import flare_mla_decoding, flare_mla_prefill
-from tensor_internal import IOUnknown, ManagedTensorSlice
-from tensor_internal.managed_tensor_slice import StaticTensorSpec
+from tensor import IOUnknown, ManagedTensorSlice
+from tensor.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
 
 from utils.index import Index
@@ -1330,14 +1330,14 @@ def main():
             # tests with mask tensor
             test_decoding[27, 1, False, False](ctx, False)
 
-            # tests with casual mask
-            test_decoding[27, 1, False, True](ctx, False)
-
             # test mla cascade prefill
             test_mla_cascade_prefill[2](ctx)
             test_mla_cascade_prefill[0](ctx)
             test_decoding[0, 1, False, False](ctx, False)
-            test_decoding[0, 1, False, True](ctx, False)
+
+        # tests with causal mask
+        test_decoding[27, 1, False, True](ctx, False)
+        test_decoding[0, 1, False, True](ctx, False)
 
         # test mla prefill
         test_mla_prefill[2](ctx)

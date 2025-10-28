@@ -46,8 +46,7 @@ from layout.tma_async import PipelineState
 from ....structuring import SMemBarrier
 from gpu.sync import async_copy_arrive
 from gpu.globals import WARPGROUP_SIZE
-from gpu.memory import AddressSpace
-from ....structuring import NVIDIASharedMemoryManager as SharedMemoryManager
+from ....structuring import NVIDIASharedMemoryManager
 from ....structuring import SMemBarrier
 
 
@@ -59,7 +58,7 @@ from ....structuring import SMemBarrier
 @register_passable("trivial")
 struct ProducerTiles[
     origin: Origin[True],
-    ring_buffer_type: __type_of(RingBuffer),
+    ring_buffer_type: type_of(RingBuffer),
 ]:
     """Context manager for producer access to ring buffer tiles.
 
@@ -68,15 +67,15 @@ struct ProducerTiles[
     when entering and exiting the context.
     """
 
-    alias ATileType = ring_buffer_type.ATileType
-    alias BTileType = ring_buffer_type.BTileType
+    alias ATile = ring_buffer_type.ATile
+    alias BTile = ring_buffer_type.BTile
     alias RingBufferPtrType = Pointer[Self.ring_buffer_type, origin]
 
     var ring_buffer_ptr: Self.RingBufferPtrType
 
     var barrier: SMemBarrier
-    var a_tile: Self.ATileType
-    var b_tile: Self.BTileType
+    var a_tile: Self.ATile
+    var b_tile: Self.BTile
 
     fn __init__(out self, ring_buffer_ptr: Self.RingBufferPtrType):
         self.ring_buffer_ptr = ring_buffer_ptr
@@ -96,7 +95,7 @@ struct ProducerTiles[
 @register_passable("trivial")
 struct ConsumerTiles[
     origin: Origin[True],
-    ring_buffer_type: __type_of(RingBuffer),
+    ring_buffer_type: type_of(RingBuffer),
 ]:
     """Context manager for consumer access to ring buffer tiles.
 
@@ -105,15 +104,15 @@ struct ConsumerTiles[
     the slot when exiting the context.
     """
 
-    alias ATileType = ring_buffer_type.ATileType
-    alias BTileType = ring_buffer_type.BTileType
+    alias ATile = ring_buffer_type.ATile
+    alias BTile = ring_buffer_type.BTile
     alias RingBufferPtrType = Pointer[Self.ring_buffer_type, origin]
 
     var ring_buffer_ptr: Self.RingBufferPtrType
 
     var read_idx: UInt32
-    var a_tile: Self.ATileType
-    var b_tile: Self.BTileType
+    var a_tile: Self.ATile
+    var b_tile: Self.BTile
 
     fn __init__(out self, ring_buffer_ptr: Self.RingBufferPtrType):
         self.ring_buffer_ptr = ring_buffer_ptr
@@ -133,7 +132,7 @@ struct ConsumerTiles[
 @register_passable("trivial")
 struct RingBufferConsumer[
     origin: Origin[True],
-    ring_buffer_type: __type_of(RingBuffer),
+    ring_buffer_type: type_of(RingBuffer),
 ]:
     """Consumer view of the ring buffer.
 
@@ -142,8 +141,8 @@ struct RingBufferConsumer[
     the initial barrier arrival when entering the consumer context.
     """
 
-    alias ATileType = ring_buffer_type.ATileType
-    alias BTileType = ring_buffer_type.BTileType
+    alias ATile = ring_buffer_type.ATile
+    alias BTile = ring_buffer_type.BTile
     alias RingBufferPtrType = Pointer[Self.ring_buffer_type, origin]
 
     var ring_buffer_ptr: Self.RingBufferPtrType
@@ -167,7 +166,7 @@ struct RingBufferConsumer[
 @register_passable("trivial")
 struct RingBufferProducer[
     origin: Origin[True],
-    ring_buffer_type: __type_of(RingBuffer),
+    ring_buffer_type: type_of(RingBuffer),
 ]:
     """Producer view of the ring buffer.
 
@@ -175,8 +174,8 @@ struct RingBufferProducer[
     the producer to wait for empty slots and fill them with new tiles.
     """
 
-    alias ATileType = ring_buffer_type.ATileType
-    alias BTileType = ring_buffer_type.BTileType
+    alias ATile = ring_buffer_type.ATile
+    alias BTile = ring_buffer_type.BTile
     alias RingBufferPtrType = Pointer[Self.ring_buffer_type, origin]
 
     var ring_buffer_ptr: Self.RingBufferPtrType
@@ -203,7 +202,7 @@ struct RingBuffer[
     num_pipeline_stages: Int,
     num_consumers: Int,
     cluster_size: Int,
-    use_async_copy: Bool = False,
+    tma_transfer: Bool = True,
 ](ImplicitlyCopyable):
     """Ring buffer for managing pipeline synchronization between producers and consumers.
 
@@ -223,21 +222,21 @@ struct RingBuffer[
         num_pipeline_stages: Number of stages in the circular buffer
         num_consumers: Number of consumer warp groups
         cluster_size: Number of blocks in the cluster (1 for single-block)
-        use_async_copy: Whether to use cp.async instructions (default: False)
+        tma_transfer: Whether the RingBuffer is used for TMA transfers (default: True)
     """
 
-    alias SMM = SharedMemoryManager[]
+    alias SMM = NVIDIASharedMemoryManager[]
 
     # Tile iterator types for managing shared memory tiles
-    alias ATileArrayType = Self.SMM.TileArray[
+    alias ATileArray = Self.SMM.TileArray[
         a_type, a_tile_layout, num_pipeline_stages
     ]
-    alias BTileArrayType = Self.SMM.TileArray[
+    alias BTileArray = Self.SMM.TileArray[
         b_type, b_tile_layout, num_pipeline_stages
     ]
     # Actual tile tensor types that hold the data
-    alias ATileType = Self.ATileArrayType.T.TileType
-    alias BTileType = Self.BTileArrayType.T.TileType
+    alias ATile = Self.ATileArray.Tile
+    alias BTile = Self.BTileArray.Tile
 
     # Barriers for synchronization:
     # - full_mbar[i]: Signaled by producer when slot i contains data
@@ -253,16 +252,16 @@ struct RingBuffer[
     var warp_group_thread_idx: UInt
 
     # Tile storage arrays in shared memory
-    var a_tiles: Self.ATileArrayType.T
-    var b_tiles: Self.BTileArrayType.T
+    var a_tiles: Self.ATileArray
+    var b_tiles: Self.BTileArray
 
     fn __init__(
         out self,
         full_mbar: SMemBarrier,
         empty_mbar: SMemBarrier,
         warp_group_thread_idx: UInt,
-        a_tiles: Self.ATileArrayType.T,
-        b_tiles: Self.BTileArrayType.T,
+        a_tiles: Self.ATileArray,
+        b_tiles: Self.BTileArray,
     ):
         """Initialize ring buffer with barrier pointers.
 
@@ -288,7 +287,7 @@ struct RingBuffer[
             for i in range(num_pipeline_stages):
                 # Full barrier: expects arrivals from producer threads
                 # For async_copy, all threads in warp group participate
-                self.full_mbar[i].init(WARPGROUP_SIZE if use_async_copy else 1)
+                self.full_mbar[i].init(1 if tma_transfer else WARPGROUP_SIZE)
                 # Empty barrier: expects arrivals from all consumers across cluster
                 self.empty_mbar[i].init(num_consumers * cluster_size)
 
@@ -301,7 +300,7 @@ struct RingBuffer[
     fn get_expected_bytes() -> Int:
         """Calculate expected bytes per pipeline stage for TMA transfers."""
         return (
-            Self.ATileArrayType.storage_size + Self.BTileArrayType.storage_size
+            Self.ATileArray.storage_size + Self.BTileArray.storage_size
         ) // num_pipeline_stages
 
     @always_inline
@@ -317,8 +316,8 @@ struct RingBuffer[
         var write_idx = self.write_state.index()
         # Wait for all consumers to signal this slot is empty
         self.empty_mbar[Int(write_idx)].wait(self.write_state.phase())
-        # For TMA transfers, set expected bytes for the barrier
-        if not use_async_copy:
+        if tma_transfer:
+            # For TMA transfers, set expected bytes for the barrier
             alias expected_bytes = Self.get_expected_bytes()
             self.full_mbar[Int(write_idx)].expect_bytes(expected_bytes)
         return write_idx
@@ -326,17 +325,17 @@ struct RingBuffer[
     @always_inline
     fn get_producer_tiles(
         mut self,
-    ) -> Tuple[SMemBarrier, Self.ATileType, Self.BTileType]:
+    ) -> Tuple[SMemBarrier, Self.ATile, Self.BTile]:
         """Get the next available slot for the producer to fill.
 
         Returns:
             Tuple of (barrier, a_tile, b_tile) for the producer to use.
         """
-        var idx = self.get_slot()
+        var slot = self.get_slot()
         return (
-            self.full_mbar.offset(idx),
-            self.a_tiles[idx],
-            self.b_tiles[idx],
+            SMemBarrier(to=self.full_mbar[slot]),
+            self.a_tiles[slot],
+            self.b_tiles[slot],
         )
 
     @always_inline
@@ -349,10 +348,10 @@ struct RingBuffer[
 
         After signaling, advances to the next pipeline stage.
         """
-        if use_async_copy:
+        if not tma_transfer:
             var write_idx = self.write_state.index()
             # Signal that async copy operations have been issued
-            async_copy_arrive(self.full_mbar[write_idx].unsafe_ptr())
+            async_copy_arrive(SMemBarrier(to=self.full_mbar[write_idx]))
             # Arrive at barrier to signal tile is ready
             _ = self.full_mbar[write_idx].arrive()
         # Move to next slot in the ring buffer
@@ -375,7 +374,7 @@ struct RingBuffer[
     @always_inline
     fn get_consumer_tiles(
         mut self,
-    ) -> Tuple[UInt32, Self.ATileType, Self.BTileType]:
+    ) -> Tuple[UInt32, Self.ATile, Self.BTile]:
         """Consumer waits for full buffer slot and returns the tiles.
 
         Returns:
@@ -418,12 +417,12 @@ struct RingBuffer[
         self.read_state.step()
 
     @always_inline
-    fn consumer(mut self) -> RingBufferConsumer[__origin_of(self), Self]:
+    fn consumer(mut self) -> RingBufferConsumer[origin_of(self), Self]:
         """Create a consumer view of this ring buffer."""
         return {Pointer(to=self)}
 
     @always_inline
-    fn producer(mut self) -> RingBufferProducer[__origin_of(self), Self]:
+    fn producer(mut self) -> RingBufferProducer[origin_of(self), Self]:
         """Create a producer view of this ring buffer."""
         return {Pointer(to=self)}
 

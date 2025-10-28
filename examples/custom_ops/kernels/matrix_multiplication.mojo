@@ -32,7 +32,7 @@ from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
+from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
 from utils import StaticTuple
 from utils.index import Index

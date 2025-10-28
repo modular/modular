@@ -22,7 +22,7 @@ from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier, warp
 from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
-from gpu.id import block_idx, lane_id, thread_idx, warp_id
+from gpu import block_idx, lane_id, thread_idx, warp_id
 from gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
@@ -209,7 +209,7 @@ fn gemv_tma_kernel[
                     var row_idx = warp_row_offset + i
                     if global_row_idx + i < M:
                         var a_val = current_a_tile[row_idx, col_idx]
-                        dot_products[i] += rebind[__type_of(dot_products[i])](
+                        dot_products[i] += rebind[type_of(dot_products[i])](
                             a_val.cast[accum_type]() * b_val.cast[accum_type]()
                         )
 
@@ -290,15 +290,15 @@ def gemv_tma[
         NUM_PIPELINE_STAGES,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         tma_desc_a,
         tma_desc_b,
         c,
         a,
         b,
-        M,
-        N,
-        K,
+        UInt(M),
+        UInt(N),
+        UInt(K),
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
         block_dim=(THREAD_NUM),
         shared_mem_bytes=Int(smem_use),

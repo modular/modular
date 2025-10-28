@@ -79,11 +79,11 @@ struct Table[type: TuningConfig](Stringable):
 
         @parameter
         if len(domain):
-            flag = List[Bool](length=self.num_configs, fill=False)
+            flag = List[Bool](length=Int(self.num_configs), fill=False)
             for idx in materialize[domain]():
                 flag[idx] = True
         else:
-            flag = List[Bool](length=self.num_configs, fill=True)
+            flag = List[Bool](length=Int(self.num_configs), fill=True)
 
         for i in range(self.num_configs):
             flag[i] &= rule(self.configs[i])
@@ -91,7 +91,7 @@ struct Table[type: TuningConfig](Stringable):
 
         for i in range(self.num_configs):
             if flag[i]:
-                result_idx_list.append(i)
+                result_idx_list.append(Int(i))
         return result_idx_list^
 
     # Apply rule on all configs in the table and return list of all the unique results.
@@ -108,7 +108,7 @@ struct Table[type: TuningConfig](Stringable):
             if len(materialize[domain]()):
                 return materialize[domain]()
             else:
-                return [idx for idx in range(self.num_configs)]
+                return [Int(idx) for idx in range(self.num_configs)]
 
         var search_domain = _get_search_domain()
 
@@ -122,4 +122,15 @@ struct Table[type: TuningConfig](Stringable):
             return lsh < rhs
 
         _quicksort[_cmp](result)
+        return result^
+
+    fn find[
+        rule: fn (type) capturing -> Bool,
+    ](self) -> List[type]:
+        var result = List[type]()
+
+        for config in self.configs:
+            if rule(config):
+                result.append(config)
+
         return result^

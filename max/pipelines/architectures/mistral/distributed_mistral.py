@@ -48,7 +48,6 @@ class DistributedMistral(DistributedTransformer):
             theta=config.rope_theta,
             max_seq_len=config.max_seq_len,
             interleaved=False,
-            device=config.devices[0],
         )
 
         distributed_norm = functools.partial(

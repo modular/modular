@@ -20,7 +20,6 @@ modular_py_library(
         # Hooks added for convenience for when we want to print the model layers
         "//SDK/lib/API/python/max/nn/hooks",
         "//SDK/lib/API/python/max/profiler",
-        "//SDK/lib/API/python/max/serve",
         "//SDK/lib/API/python/max/support",
     ],
 )

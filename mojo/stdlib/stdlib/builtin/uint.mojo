@@ -79,7 +79,7 @@ struct UInt(
     alias MIN = UInt(Scalar[DType.uint].MIN)
     """Returns the minimum value of type."""
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
     """UInt is remapped to the same type when passed to accelerator devices."""
 
     fn _to_device_type(self, target: OpaquePointer):

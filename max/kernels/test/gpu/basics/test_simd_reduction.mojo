@@ -51,7 +51,7 @@ def test_simd_reduction(ctx: DeviceContext):
         input: UnsafePointer[Scalar[DType.int]],
     ):
         output[global_idx.x] = input.load[width=simd_width](
-            simd_width * global_idx.x
+            simd_width * Int(global_idx.x)
         ).reduce_add()
 
     ctx.enqueue_function_checked[kernel, kernel](

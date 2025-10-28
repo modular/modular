@@ -32,7 +32,7 @@ from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
     TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
@@ -68,7 +68,7 @@ class DecodeScheduler(Scheduler):
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_manager: TPPagedKVCacheManager,
+        paged_manager: PagedKVCacheManager,
         *,
         request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
         response_queue: MAXPushQueue[
@@ -96,9 +96,13 @@ class DecodeScheduler(Scheduler):
         self.inflight_transfers: dict[RequestID, TransferReqData] = {}
 
         # Create Transfer Engine
+        if self.paged_manager.num_replicas > 1:
+            raise ValueError(
+                "DecodeScheduler does not support data parallelism"
+            )
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
-            tensors=self.paged_manager.device_tensors,
+            tensors=self.paged_manager._replica_managers[0].device_tensors,
             total_num_pages=self.paged_manager.total_num_pages,
         )
 
@@ -235,7 +239,7 @@ class DecodeScheduler(Scheduler):
                 break
 
             # Send to the Prefill Node
-            dst_idxs = self.paged_manager.block_manager.get_req_blocks(req_id)
+            dst_idxs = self.paged_manager.get_req_blocks(req_id)
             self.prefill_reqs[req_id] = context
             self.send_prefill_request(req_id, context, dst_idxs)
 

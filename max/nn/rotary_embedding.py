@@ -35,7 +35,6 @@ class RotaryEmbedding(Module):
     """The maximum sequence length for model's input."""
     head_dim: int
     """head_dim = dim // n_heads if not specified in the config."""
-    device: DeviceRef
     _freqs_cis: TensorValueLike | None = None
     interleaved: bool = True
 
@@ -45,7 +44,6 @@ class RotaryEmbedding(Module):
         n_heads: int,
         theta: float,
         max_seq_len: int,
-        device: DeviceRef,
         head_dim: int | None = None,
         _freqs_cis: TensorValueLike | None = None,
         interleaved: bool = True,
@@ -57,7 +55,6 @@ class RotaryEmbedding(Module):
         self.max_seq_len = max_seq_len
         self.head_dim = head_dim if head_dim is not None else dim // n_heads
         self.interleaved = interleaved
-        self.device = device
         self._freqs_cis = _freqs_cis
 
     def _compute_inv_freqs(self) -> TensorValue:
@@ -71,7 +68,9 @@ class RotaryEmbedding(Module):
 
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
         # Calculate theta for n/2 blocks: theta_for_block_i = theta ** (-2i/n) where n is dim for each head.
-        iota = ops.range(0, n, step=2, dtype=DType.float64, device=self.device)
+        iota = ops.range(
+            0, n, step=2, dtype=DType.float64, device=DeviceRef.CPU()
+        )
         inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
 
         return inv_freq
@@ -92,7 +91,10 @@ class RotaryEmbedding(Module):
 
             # Generate position ids [0, 1, ..., max_seq_len*2] for a sequence of length (max_seq_len*2).
             t = ops.range(
-                0, self.max_seq_len * 2, device=self.device, dtype=DType.float32
+                0,
+                self.max_seq_len * 2,
+                device=DeviceRef.CPU(),
+                dtype=DType.float32,
             )
             # Rotation matrix for block i =  [cos(m*theta_i) -sin(m*theta_i); sin(m*theta_i) -cos(m*theta_i)] for each position_id m.
             freqs = ops.outer(t, inv_freqs)  # [max_seq_len*2, head_dim // 2]
@@ -132,6 +134,9 @@ class RotaryEmbedding(Module):
         """
         v = TensorValue(x)
 
+        # Transfer to match v's device.
+        freqs_cis = self.freqs_cis.to(v.device)
+
         if self.interleaved:
             complex = ops.as_interleaved_complex(v)
             x_re = complex[..., 0]
@@ -147,7 +152,7 @@ class RotaryEmbedding(Module):
         if seq_len is None:
             seq_len = v.shape[-3]
 
-        freqs_cis_sliced = self.freqs_cis[start_pos : start_pos + seq_len]
+        freqs_cis_sliced = freqs_cis[start_pos : start_pos + seq_len]
         # Handle optimized case that flattens freqs_cis.
         # This is needed so naive llama3 can still use Llama3RotaryEmbedding with correct freqs_cis.
         if len(freqs_cis_sliced.shape) == 2:
@@ -192,7 +197,6 @@ class DynamicRotaryEmbedding(RotaryEmbedding):
         n_heads: int,
         theta: float,
         max_seq_len: int,
-        device: DeviceRef,
         head_dim: int | None = None,
         _freqs_cis: TensorValueLike | None = None,
         interleaved: bool = True,
@@ -202,7 +206,6 @@ class DynamicRotaryEmbedding(RotaryEmbedding):
             n_heads,
             theta,
             max_seq_len,
-            device,
             head_dim,
             _freqs_cis,
             interleaved,
@@ -261,7 +264,7 @@ class DynamicRotaryEmbedding(RotaryEmbedding):
             t = ops.range(
                 0,
                 self.max_seq_len_cached * 2,
-                device=self.device,
+                device=DeviceRef.CPU(),
                 dtype=DType.float32,
             )
             freqs = ops.outer(t, self.inv_freq)  # [seq*2, dim/2]
@@ -311,7 +314,6 @@ class Llama3RotaryEmbedding(RotaryEmbedding):
         n_heads: int,
         theta: float,
         max_seq_len: int,
-        device: DeviceRef,
         head_dim: int | None = None,
         _freqs_cis: TensorValueLike | None = None,
         interleaved: bool = True,
@@ -322,7 +324,6 @@ class Llama3RotaryEmbedding(RotaryEmbedding):
             n_heads,
             theta,
             max_seq_len,
-            device,
             head_dim,
             _freqs_cis,
             interleaved,
@@ -354,7 +355,7 @@ class Llama3RotaryEmbedding(RotaryEmbedding):
                     - self.scaling_params.low_freq_factor
                 )
             else:
-                smooth = ops.constant(0, DType.float32, device=self.device)
+                smooth = ops.constant(0, DType.float32, device=DeviceRef.CPU())
             inv_freqs = ops.where(
                 wave_len < high_freq_wavelen,
                 inv_freqs,
@@ -400,7 +401,6 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         n_heads: int,
         theta: float,
         max_seq_len: int,
-        device: DeviceRef,
         head_dim: int | None = None,
         _freqs_cis: TensorValueLike | None = None,
         interleaved: bool = True,
@@ -411,7 +411,6 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
             n_heads,
             theta,
             max_seq_len,
-            device,
             head_dim,
             _freqs_cis,
             interleaved,
@@ -447,7 +446,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
             inv_freqs = self._compute_yarn_freqs()
 
             t = ops.range(
-                0, self.max_seq_len, device=self.device, dtype=DType.float32
+                0, self.max_seq_len, device=DeviceRef.CPU(), dtype=DType.float32
             )
             freqs = ops.outer(t, inv_freqs)
             cos = ops.cos(freqs) * _mscale
@@ -469,7 +468,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
             raise ValueError("scaling_params must be provided")
 
         range_output = ops.range(
-            0, self.dim, step=2, dtype=DType.float32, device=self.device
+            0, self.dim, step=2, dtype=DType.float32, device=DeviceRef.CPU()
         )
 
         freq_base = self.theta ** (range_output / float(self.dim))
@@ -480,12 +479,12 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
             ops.constant(
                 self.scaling_params.beta_fast,
                 dtype=DType.float32,
-                device=self.device,
+                device=DeviceRef.CPU(),
             ),
             ops.constant(
                 self.scaling_params.beta_slow,
                 dtype=DType.float32,
-                device=self.device,
+                device=DeviceRef.CPU(),
             ),
             self.dim,
             int(self.theta),  # Explicitly convert base to int
@@ -573,13 +572,13 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         max_pos = ops.constant(
             float(max_position_embeddings),
             dtype=DType.float32,
-            device=self.device,
+            device=DeviceRef.CPU(),
         )
         base_tensor = ops.constant(
-            float(base), dtype=DType.float32, device=self.device
+            float(base), dtype=DType.float32, device=DeviceRef.CPU()
         )
         dim_tensor = ops.constant(
-            float(dim), dtype=DType.float32, device=self.device
+            float(dim), dtype=DType.float32, device=DeviceRef.CPU()
         )
 
         return (
@@ -601,7 +600,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
             max += 0.001  # Prevent singularity
 
         linear_func = (
-            ops.range(0, dim, device=self.device, dtype=DType.float32) - min
+            ops.range(0, dim, device=DeviceRef.CPU(), dtype=DType.float32) - min
         ) / (max - min)
 
         return ops.min(ops.max(linear_func, 0), 1)
@@ -639,7 +638,6 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
         n_heads: int,
         theta: float,
         max_seq_len: int,
-        device: DeviceRef,
         head_dim: int | None = None,
         _freqs_cis: TensorValueLike | None = None,
         interleaved: bool = True,
@@ -652,7 +650,6 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
             n_heads: Number of attention heads
             theta: Base for computing frequencies (usually 10000.0)
             max_seq_len: Maximum sequence length
-            device: Device to place tensors on
             head_dim: Head dimension (if None, computed as dim // n_heads)
             _freqs_cis: Pre-computed frequency tensor (optional)
             interleaved: Whether to use interleaved RoPE weights
@@ -663,7 +660,6 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
             n_heads,
             theta,
             max_seq_len,
-            device,
             head_dim,
             _freqs_cis,
             interleaved,
@@ -698,7 +694,7 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
         factors_to_use = factors[:num_freqs]
 
         factor_tensors = [
-            ops.constant(factor, dtype=DType.float32, device=self.device)
+            ops.constant(factor, dtype=DType.float32, device=DeviceRef.CPU())
             for factor in factors_to_use
         ]
         factors_tensor = ops.stack(factor_tensors, axis=0)
@@ -734,7 +730,7 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
             t_short = ops.range(
                 0,
                 self.scaling_params.original_max_position,
-                device=self.device,
+                device=DeviceRef.CPU(),
                 dtype=DType.float32,
             )
 
@@ -743,7 +739,10 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
             long_end = self.max_seq_len * 2
 
             t_long = ops.range(
-                long_start, long_end, device=self.device, dtype=DType.float32
+                long_start,
+                long_end,
+                device=DeviceRef.CPU(),
+                dtype=DType.float32,
             )
 
             # Compute frequencies for both parts
@@ -803,7 +802,6 @@ class YarnRotaryEmbedding(RotaryEmbedding):
         n_heads: int,
         theta: float,
         max_seq_len: int,
-        device: DeviceRef,
         head_dim: int | None = None,
         _freqs_cis: TensorValueLike | None = None,
         interleaved: bool = True,
@@ -817,7 +815,6 @@ class YarnRotaryEmbedding(RotaryEmbedding):
             n_heads: Number of attention heads.
             theta: Base frequency for rotary embeddings.
             max_seq_len: Maximum sequence length.
-            device: Device to place the embeddings on.
             head_dim: Optional head dimension override.
             _freqs_cis: Optional precomputed frequencies.
             interleaved: Whether to use interleaved complex format.
@@ -833,7 +830,6 @@ class YarnRotaryEmbedding(RotaryEmbedding):
             n_heads,
             theta,
             max_seq_len,
-            device,
             head_dim,
             _freqs_cis,
             interleaved,
@@ -857,7 +853,7 @@ class YarnRotaryEmbedding(RotaryEmbedding):
                 self.max_seq_len,
                 1,
                 out_dim=self.max_seq_len,
-                device=self.device,
+                device=DeviceRef.CPU(),
                 dtype=DType.float32,
             )
 
@@ -890,7 +886,7 @@ class YarnRotaryEmbedding(RotaryEmbedding):
             stop=rope_dim,
             step=2,
             out_dim=dim_2,
-            device=self.device,
+            device=DeviceRef.CPU(),
             dtype=DType.float64,
         )
 
@@ -938,10 +934,10 @@ class YarnRotaryEmbedding(RotaryEmbedding):
         """Find the correction range for YARN scaling."""
         # Convert to tensors
         low_rot = ops.constant(
-            beta_fast, dtype=DType.float32, device=self.device
+            beta_fast, dtype=DType.float32, device=DeviceRef.CPU()
         )
         high_rot = ops.constant(
-            beta_slow, dtype=DType.float32, device=self.device
+            beta_slow, dtype=DType.float32, device=DeviceRef.CPU()
         )
 
         low = ops.floor(
@@ -971,13 +967,13 @@ class YarnRotaryEmbedding(RotaryEmbedding):
         max_pos = ops.constant(
             float(max_position_embeddings),
             dtype=DType.float32,
-            device=self.device,
+            device=DeviceRef.CPU(),
         )
         base_tensor = ops.constant(
-            float(base), dtype=DType.float32, device=self.device
+            float(base), dtype=DType.float32, device=DeviceRef.CPU()
         )
         dim_tensor = ops.constant(
-            float(dim), dtype=DType.float32, device=self.device
+            float(dim), dtype=DType.float32, device=DeviceRef.CPU()
         )
 
         return (
@@ -992,13 +988,18 @@ class YarnRotaryEmbedding(RotaryEmbedding):
         diff = max_val - min_val
         diff = ops.where(
             diff == 0,
-            ops.constant(0.001, dtype=DType.float32, device=self.device),
+            ops.constant(0.001, dtype=DType.float32, device=DeviceRef.CPU()),
             diff,
         )
 
         linear_func = (
             ops.range(
-                0, dim, 1, out_dim=dim, device=self.device, dtype=DType.int64
+                0,
+                dim,
+                1,
+                out_dim=dim,
+                device=DeviceRef.CPU(),
+                dtype=DType.int64,
             ).cast(DType.float32)
             - min_val
         ) / diff

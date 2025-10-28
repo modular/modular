@@ -12,6 +12,7 @@ modular_py_library(
         ":ir_py",
         "//SDK/lib/API/python/max/_mlir/dialects",
     ],
+    imports = ["../.."],
     tags = ["no-mypy"],  # Upstream files with violations
     visibility = ["//visibility:public"],
     deps = [

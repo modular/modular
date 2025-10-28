@@ -24,7 +24,6 @@ from collections.string.string_slice import _get_kgen_string
 from sys import is_compile_time
 from sys.info import _is_sm_9x_or_newer, is_gpu
 
-from memory.pointer import _GPUAddressSpace
 
 from ._assembly import inlined_assembly
 from .info import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, size_of
@@ -106,12 +105,15 @@ fn _unsafe_aliasing_address_to_pointer[
 
 @always_inline("nodebug")
 fn gather[
-    dtype: DType, size: Int, //, *, invariant: Bool = False
+    dtype: DType,
+    size: Int, //,
+    *,
+    invariant: Bool = False,
+    alignment: Int = 0,
 ](
     var base: SIMD[DType.int, size],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
-    alignment: Int = 0,
 ) -> SIMD[dtype, size]:
     """Reads scalar values from a SIMD vector, and gathers them into one vector.
 
@@ -141,6 +143,8 @@ fn gather[
       dtype: DType of the return SIMD buffer.
       size: Size of the return SIMD buffer.
       invariant: Whether the memory is load invariant.
+      alignment: The alignment of the source addresses. Must be 0 or a power
+        of two constant integer value.
 
     Args:
       base: The vector containing memory addresses that gather will access.
@@ -148,8 +152,6 @@ fn gather[
         the base vector.
       passthrough: In the result vector, the masked-off lanes are replaced
         with the passthrough vector.
-      alignment: The alignment of the source addresses. Must be 0 or a power
-        of two constant integer value.
 
     Returns:
       A SIMD[dtype, size] containing the result of the gather operation.
@@ -194,12 +196,13 @@ fn gather[
 
 @always_inline("nodebug")
 fn scatter[
-    dtype: DType, size: Int, //
+    dtype: DType,
+    size: Int, //,
+    alignment: Int = 0,
 ](
     value: SIMD[dtype, size],
     var base: SIMD[DType.int, size],
     mask: SIMD[DType.bool, size],
-    alignment: Int = 0,
 ):
     """Takes scalar values from a SIMD vector and `scatters` them into a
     vector of pointers.
@@ -238,14 +241,14 @@ fn scatter[
     Parameters:
       dtype: DType of `value`, the result SIMD buffer.
       size: Size of `value`, the result SIMD buffer.
+      alignment: The alignment of the source addresses. Must be 0 or a power
+        of two constant integer value.
 
     Args:
       value: The vector that will contain the result of the scatter operation.
       base: The vector containing memory addresses that scatter will access.
       mask: A binary vector which prevents memory access to certain lanes of
         the base vector.
-      alignment: The alignment of the source addresses. Must be 0 or a power
-        of two constant integer value.
     """
 
     @parameter
@@ -517,12 +520,13 @@ fn prefetch[
 
 @always_inline("nodebug")
 fn masked_load[
-    dtype: DType, //, size: Int
+    dtype: DType, //,
+    size: Int,
+    alignment: Int = 1,
 ](
     addr: UnsafePointer[Scalar[dtype], mut=False, **_],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
-    alignment: Int = 1,
 ) -> SIMD[dtype, size]:
     """Loads data from memory and return it, replacing masked lanes with values
     from the passthrough vector.
@@ -530,6 +534,8 @@ fn masked_load[
     Parameters:
       dtype: DType of the return SIMD buffer.
       size: Size of the return SIMD buffer.
+      alignment: The alignment of the destination locations. Must be 0 or a
+        power of two constant integer value. Default is 1.
 
     Args:
       addr: The base pointer for the load.
@@ -537,8 +543,6 @@ fn masked_load[
         the memory stored at addr.
       passthrough: In the result vector, the masked-off lanes are replaced
         with the passthrough vector.
-      alignment: The alignment of the source addresses. Must be 0 or a power
-        of two constant integer value. Default is 1.
 
     Returns:
       The loaded memory stored in a vector of type SIMD[dtype, size].
@@ -563,25 +567,25 @@ fn masked_load[
 
 @always_inline("nodebug")
 fn masked_store[
-    size: Int
+    size: Int,
+    alignment: Int = 1,
 ](
     value: SIMD,
     addr: UnsafePointer[Scalar[value.dtype], mut=True, **_],
     mask: SIMD[DType.bool, size],
-    alignment: Int = 1,
 ):
     """Stores a value at a memory location, skipping masked lanes.
 
     Parameters:
       size: Size of `value`, the data to store.
+      alignment: The alignment of the destination locations. Must be 0 or a
+        power of two constant integer value. Default is 1.
 
     Args:
       value: The vector containing data to store.
       addr: A vector of memory location to store data at.
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
-      alignment: The alignment of the destination locations. Must be 0 or a
-        power of two constant integer value.
     """
 
     @parameter
@@ -975,7 +979,7 @@ fn lane_id() -> UInt:
 
 @always_inline
 fn implicitarg_ptr() -> (
-    UnsafePointer[UInt8, address_space = _GPUAddressSpace.CONSTANT]
+    UnsafePointer[UInt8, address_space = AddressSpace.CONSTANT]
 ):
     """
     Get a pointer to AMD's implicit arguments table.
@@ -986,7 +990,7 @@ fn implicitarg_ptr() -> (
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
     return llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
-        UnsafePointer[UInt8, address_space = _GPUAddressSpace.CONSTANT],
+        UnsafePointer[UInt8, address_space = AddressSpace.CONSTANT],
     ]()
 
 
@@ -1012,7 +1016,7 @@ fn readfirstlane(value: Int32) -> Int32:
 
 # TODO: this can be parameterized for AnyTrivialRegType but I am hitting compiler errors so skipping for now
 @always_inline
-fn readfirstlane(value: UnsafePointer) -> __type_of(value):
+fn readfirstlane(value: UnsafePointer) -> type_of(value):
     """
     Get the value in the lowest active lane of the input operand.
 
@@ -1024,12 +1028,12 @@ fn readfirstlane(value: UnsafePointer) -> __type_of(value):
     """
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
     return llvm_intrinsic[
-        "llvm.amdgcn.readfirstlane", __type_of(value), __type_of(value)
+        "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
     ](value)
 
 
 @always_inline
-fn readfirstlane(value: Int) -> __type_of(value):
+fn readfirstlane(value: Int) -> type_of(value):
     """
     Get the value in the lowest active lane of the input operand.
 
@@ -1041,7 +1045,7 @@ fn readfirstlane(value: Int) -> __type_of(value):
     """
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
     return llvm_intrinsic[
-        "llvm.amdgcn.readfirstlane", __type_of(value), __type_of(value)
+        "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
     ](value)
 
 
@@ -1197,7 +1201,7 @@ alias block_idx = _BlockIdx()
 fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
     var ptr = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
-        UnsafePointer[Scalar[dtype], address_space = _GPUAddressSpace.CONSTANT],
+        UnsafePointer[Scalar[dtype], address_space = AddressSpace.CONSTANT],
         has_side_effect=False,
     ]()
     return UInt(ptr.load[alignment=4](offset))

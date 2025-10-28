@@ -141,8 +141,8 @@ def get_seqlens(
     grid_thw: npt.NDArray[np.integer[Any]],
     cu_win_seqlens: npt.NDArray[np.integer[Any]],
 ) -> tuple[
-    npt.NDArray[np.integer[Any]],
-    npt.NDArray[np.integer[Any]],
+    npt.NDArray[np.uint32],
+    npt.NDArray[np.uint32],
     int,
     int,
 ]:
@@ -156,7 +156,7 @@ def get_seqlens(
     Returns:
         Tuple of (attention_mask_full, attention_mask_window, cu_seqlens, cu_window_seqlens_unique)
     """
-    cu_window_seqlens = np.array(cu_win_seqlens, dtype=np.int32)
+    cu_window_seqlens = np.array(cu_win_seqlens, dtype=np.uint32)
     # 1. Remove consecutive duplicates (equivalent to torch.unique_consecutive)
     _, unique_indices = np.unique(cu_window_seqlens, return_index=True)
     cu_window_seqlens = cu_window_seqlens[np.sort(unique_indices)]
@@ -166,7 +166,7 @@ def get_seqlens(
         grid_thw[:, 1] * grid_thw[:, 2]
     )  # Window sizes = n_patches in each image
     repeated_sizes = np.repeat(window_sizes, grid_thw[:, 0])
-    cu_seqlens = np.cumsum(repeated_sizes, dtype=np.int32)
+    cu_seqlens = np.cumsum(repeated_sizes, dtype=np.uint32)
 
     # 3. Pad cu_seqlens with 0 at the beginning
     cu_seqlens = np.pad(cu_seqlens, (1, 0), constant_values=0)
@@ -193,7 +193,7 @@ def get_rope_index(
     video_grid_thw: npt.NDArray[np.integer[Any]] | None = None,
     second_per_grid_ts: npt.NDArray[np.floating[Any]] | None = None,
     attention_mask: npt.NDArray[np.floating[Any]] | None = None,
-) -> tuple[npt.NDArray[np.integer[Any]], npt.NDArray[np.integer[Any]]]:
+) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]]:
     """Calculates position ids for 3D rotary position embeddings (RoPE) for vLLM.
 
     It determines the temporal, height, and width position indices for vision tokens
@@ -236,7 +236,7 @@ def get_rope_index(
 
         for i, input_ids_row in enumerate(total_input_ids):
             # Extract valid input_ids using the attention_mask.
-            input_ids_row = input_ids_row[attention_mask[i] == 1]  # type: ignore
+            input_ids_row = input_ids_row[attention_mask[i] == 1]
             vision_start_indices = np.where(
                 input_ids_row == vision_start_token_id
             )[0]
@@ -339,24 +339,30 @@ def get_rope_index(
                 llm_positions.max() + 1 - len(total_input_ids[i])
             )
 
-        mrope_position_deltas_array = np.array(mrope_position_deltas).reshape(
-            -1, 1
-        )
+        mrope_position_deltas_array = np.array(
+            mrope_position_deltas, dtype=np.int64
+        ).reshape(-1, 1)
         return position_ids, mrope_position_deltas_array
     else:
         if attention_mask is not None:
-            position_ids = np.cumsum(attention_mask, axis=-1) - 1
+            position_ids = (np.cumsum(attention_mask, axis=-1) - 1).astype(
+                np.int64
+            )
             position_ids[attention_mask == 0] = 1
             position_ids = np.tile(position_ids[np.newaxis, ...], (3, 1, 1))  # type: ignore
             # Max across rope dimensions (axis=0) and sequence (axis=-1) to get (batch_size,)
             # This matches the logic in the image branch where we compute per-batch deltas
             max_position_ids = position_ids.max(axis=(0, -1))
             mrope_position_deltas_array = (
-                max_position_ids + 1 - attention_mask.shape[-1]
-            ).reshape(-1, 1)
+                (max_position_ids + 1 - attention_mask.shape[-1])
+                .reshape(-1, 1)
+                .astype(np.int64)
+            )
         else:
-            position_ids = np.tile(
-                np.arange(input_ids.shape[1])[np.newaxis, np.newaxis, :],
+            position_ids = np.tile(  # type: ignore[assignment]
+                np.arange(input_ids.shape[1], dtype=np.int64)[
+                    np.newaxis, np.newaxis, :
+                ],
                 (3, input_ids.shape[0], 1),
             )
             mrope_position_deltas_array = np.zeros(

@@ -270,7 +270,7 @@ class CustomOp:
 
         # Filter to keep only tensor-like types
         tensor_like_types = {
-            "tensor_internal::ManagedTensorSlice",
+            "tensor::ManagedTensorSlice",
             "stdlib::SIMD",
         }
         io_specs = [spec for spec in io_specs if spec in tensor_like_types]
@@ -674,7 +674,7 @@ def _validate_op_arg_types(io_specs: list[str], op_name: str) -> None:
     """
     # The set of types that are legal tensor inputs.
     tensor_like_types = {
-        "tensor_internal::ManagedTensorSlice",
+        "tensor::ManagedTensorSlice",
         "stdlib::SIMD",
     }
 

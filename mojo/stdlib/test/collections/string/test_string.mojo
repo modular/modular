@@ -1405,7 +1405,7 @@ def test_uninit_ctor():
     var hello_len = len("hello")
     var s = String(unsafe_uninit_length=UInt(hello_len))
     memcpy(
-        dest=s.unsafe_ptr(),
+        dest=s.unsafe_ptr_mut(),
         src=StaticString("hello").unsafe_ptr(),
         count=hello_len,
     )
@@ -1551,17 +1551,6 @@ def test_sso():
     s = String(42)
     assert_equal(s, "42")
     assert_equal(s._is_inline(), True)
-
-
-def test_python_object():
-    var s = String(PythonObject("hello"))
-    assert_equal(s, "hello")
-
-    var p = Python()
-    _ = p.eval("class A:\n  def __str__(self): pass")
-    var a = p.evaluate("A()")
-    with assert_raises(contains="__str__ returned non-string"):
-        _ = String(a)
 
 
 def test_copyinit():

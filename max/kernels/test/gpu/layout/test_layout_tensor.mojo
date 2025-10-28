@@ -17,7 +17,6 @@ from itertools import product
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout.layout import blocked_product
 from layout._fillers import arange
-from memory import AddressSpace
 from testing import assert_equal
 
 from utils.index import IndexList

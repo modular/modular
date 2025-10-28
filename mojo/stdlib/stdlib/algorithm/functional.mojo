@@ -32,13 +32,11 @@ from gpu import (
     block_idx,
     grid_dim,
     thread_idx,
-)
-from gpu.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
-    pdl_launch_attributes,
     wait_on_dependent_grids,
 )
+from gpu.primitives.grid_controls import pdl_launch_attributes  # @doc_private
 from gpu.host import DeviceContext
 from gpu.host.info import B200, is_cpu, is_gpu
 from runtime import tracing
@@ -718,6 +716,9 @@ fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool) raises:
     Args:
         dynamic_switch: The dynamic condition that enables the unswitched code
           path.
+
+    Raises:
+        If the operation fails.
     """
     if dynamic_switch:
         switched_func[True]()
@@ -1066,7 +1067,7 @@ fn _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
 @always_inline
 fn _get_start_indices_of_nth_subvolume[
     rank: Int, //, subvolume_rank: Int = 1
-](n: Int, shape: IndexList[rank, **_], out res: __type_of(shape)):
+](n: Int, shape: IndexList[rank, **_], out res: type_of(shape)):
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
@@ -1134,7 +1135,7 @@ fn _get_start_indices_of_nth_subvolume[
 fn _get_start_indices_of_nth_subvolume_uint[
     rank: Int, //,
     subvolume_rank: UInt = 1,
-](n: UInt, shape: IndexList[rank, **_]) -> __type_of(shape):
+](n: UInt, shape: IndexList[rank, **_]) -> type_of(shape):
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
@@ -1199,6 +1200,9 @@ fn elementwise[
 
     Args:
         shape: The shape of the buffer.
+
+    Raises:
+        If the operation fails.
     """
 
     elementwise[
@@ -1236,6 +1240,9 @@ fn elementwise[
 
     Args:
         shape: The shape of the buffer.
+
+    Raises:
+        If the operation fails.
     """
 
     constrained[
@@ -1276,6 +1283,9 @@ fn elementwise[
     Args:
         shape: The shape of the buffer.
         context: The device context to use.
+
+    Raises:
+        If the operation fails.
     """
 
     elementwise[
@@ -1313,6 +1323,9 @@ fn elementwise[
     Args:
         shape: The shape of the buffer.
         context: The device context to use.
+
+    Raises:
+        If the operation fails.
     """
 
     _elementwise_impl[
@@ -1347,6 +1360,9 @@ fn elementwise[
     Args:
         shape: The shape of the buffer.
         context: The device context to use.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -1609,10 +1625,8 @@ fn _elementwise_impl_gpu[
     alias registers_per_thread = 255
     alias num_waves = 32
     alias registers_per_block = hw_info.max_registers_per_block
-    alias sm_count: UInt = UInt(hw_info.sm_count)
-    alias threads_per_multiprocessor: UInt = UInt(
-        hw_info.threads_per_multiprocessor
-    )
+    alias sm_count = UInt(hw_info.sm_count)
+    alias threads_per_multiprocessor = UInt(hw_info.threads_per_multiprocessor)
 
     constrained[
         sm_count > 0 and threads_per_multiprocessor > 0,
@@ -1620,7 +1634,7 @@ fn _elementwise_impl_gpu[
     ]()
 
     # split between packed and tail regions of input
-    var length: UInt = UInt(shape.flattened_length())
+    var length = UInt(shape.flattened_length())
     var num_packed_elems = length // simd_width
     var unpacked_tail_length = length % simd_width
     var packed_region_length = length - unpacked_tail_length
@@ -1671,7 +1685,7 @@ fn _elementwise_impl_gpu[
 
             @parameter
             if handle_uneven_simd:
-                if start_indices[rank - 1] + simd_width >= shape[rank - 1]:
+                if start_indices[rank - 1] + Int(simd_width) >= shape[rank - 1]:
 
                     @parameter
                     for off in range(Int(simd_width)):
@@ -1701,7 +1715,7 @@ fn _elementwise_impl_gpu[
         if PDLLevel() == PDLLevel.OVERLAP_AT_END:
             launch_dependent_grids()
 
-    if shape[rank - 1] % simd_width == 0:
+    if shape[rank - 1] % Int(simd_width) == 0:
         alias kernel = _elementwise_gpu_kernel[
             block_size = UInt(block_size), handle_uneven_simd=False
         ]

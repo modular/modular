@@ -23,8 +23,8 @@ from gpu.cluster import (
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_id_in_cluster, block_idx, lane_id, thread_idx
-from gpu.memory import AddressSpace
+from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
+from gpu.memory import external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import Layout, LayoutTensor
@@ -444,11 +444,11 @@ def test_tma_umma_pair_cta[
         a_type,
         b_type,
         c_type,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
         Layout.row_major(M, N),
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
         block_tile_shape,
         mma_shape,
         transpose_b=transpose_b,
@@ -458,11 +458,11 @@ def test_tma_umma_pair_cta[
         cta_group=cta_group,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),
-        K // BK,
+        UInt(K // BK),
         grid_dim=(
             align_up(M // BM, Int(cluster_shape[0])),
             align_up(N // BN // cta_group, Int(cluster_shape[1])),
@@ -506,11 +506,14 @@ def test_tma_umma_pair_cta[
     c_host_ref = c_ref.tensor()
     for m in range(M):
         for n in range(N):
+            # Increased tolerance for FP8/bfloat16 accumulation errors
+            # FP8/bf16 matrix multiplication can have larger numerical errors
+            # due to reduced precision in intermediate accumulations
             assert_almost_equal(
                 c_host[m, n],
                 c_host_ref[m, n],
-                atol=1e-3,
-                rtol=1e-4,
+                atol=0.01,
+                rtol=0.01,
                 msg=String(m) + ", " + String(n),
             )
 

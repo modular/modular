@@ -16,12 +16,10 @@ from sys import align_of, size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu.id import thread_idx
-from gpu.memory import CacheEviction, async_copy
+from gpu import thread_idx, CacheEviction, async_copy
 from layout import Layout, LayoutTensor
 from layout.int_tuple import depth
 from layout.layout import make_layout
-from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 
@@ -500,12 +498,8 @@ fn _copy_nd_buffer_to_layout_tensor[
             @parameter
             if is_async:
                 alias element_size_bytes = vec_size * size_of[dtype]()
-                var src_ptr = src.data.address_space_cast[
-                    _GPUAddressSpace.GLOBAL
-                ]()
-                var dst_ptr = dst.ptr.address_space_cast[
-                    _GPUAddressSpace.SHARED
-                ]()
+                var src_ptr = src.data.address_space_cast[AddressSpace.GLOBAL]()
+                var dst_ptr = dst.ptr.address_space_cast[AddressSpace.SHARED]()
                 async_copy[
                     element_size_bytes,
                     fill=fill,
@@ -541,10 +535,10 @@ fn _copy_nd_buffer_to_layout_tensor[
                 if is_async:
                     alias element_size_bytes = vec_width * size_of[dtype]()
                     var src_ptr = src.data.address_space_cast[
-                        _GPUAddressSpace.GLOBAL
+                        AddressSpace.GLOBAL
                     ]()
                     var dst_ptr = dst.ptr.address_space_cast[
-                        _GPUAddressSpace.SHARED
+                        AddressSpace.SHARED
                     ]()
                     async_copy[
                         element_size_bytes,
@@ -571,12 +565,8 @@ fn _copy_nd_buffer_to_layout_tensor[
 
             @parameter
             if is_async:
-                var src_ptr = src.data.address_space_cast[
-                    _GPUAddressSpace.GLOBAL
-                ]()
-                var dst_ptr = dst.ptr.address_space_cast[
-                    _GPUAddressSpace.SHARED
-                ]()
+                var src_ptr = src.data.address_space_cast[AddressSpace.GLOBAL]()
+                var dst_ptr = dst.ptr.address_space_cast[AddressSpace.SHARED]()
                 async_copy[4, fill=fill, eviction_policy=eviction_policy](
                     src_ptr + src_idx, dst_ptr + dst_idx
                 )
@@ -652,12 +642,8 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
             @parameter
             if is_async:
                 alias element_size_bytes = vec_size * size_of[dtype]()
-                var src_ptr = src.data.address_space_cast[
-                    _GPUAddressSpace.GLOBAL
-                ]()
-                var dst_ptr = dst.ptr.address_space_cast[
-                    _GPUAddressSpace.SHARED
-                ]()
+                var src_ptr = src.data.address_space_cast[AddressSpace.GLOBAL]()
+                var dst_ptr = dst.ptr.address_space_cast[AddressSpace.SHARED]()
                 async_copy[
                     element_size_bytes,
                     fill=fill,
@@ -693,10 +679,10 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                 if is_async:
                     alias element_size_bytes = vec_width * size_of[dtype]()
                     var src_ptr = src.data.address_space_cast[
-                        _GPUAddressSpace.GLOBAL
+                        AddressSpace.GLOBAL
                     ]()
                     var dst_ptr = dst.ptr.address_space_cast[
-                        _GPUAddressSpace.SHARED
+                        AddressSpace.SHARED
                     ]()
                     async_copy[
                         element_size_bytes,
@@ -732,12 +718,8 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
 
             @parameter
             if is_async:
-                var src_ptr = src.data.address_space_cast[
-                    _GPUAddressSpace.GLOBAL
-                ]()
-                var dst_ptr = dst.ptr.address_space_cast[
-                    _GPUAddressSpace.SHARED
-                ]()
+                var src_ptr = src.data.address_space_cast[AddressSpace.GLOBAL]()
+                var dst_ptr = dst.ptr.address_space_cast[AddressSpace.SHARED]()
                 async_copy[4, fill=fill, eviction_policy=eviction_policy](
                     src_ptr + src_idx, dst_ptr + dst_idx
                 )
@@ -1305,7 +1287,7 @@ fn from_ndbuffer_row_major(
     """This function takes the underlying buffer from NDBuffer without explicitly
     copying any data.
     """
-    var runtime_layout = __type_of(result.runtime_layout).row_major(
+    var runtime_layout = type_of(result.runtime_layout).row_major(
         buffer.get_shape().cast[result.layout_int_type]()
     )
     return {buffer.data, runtime_layout}

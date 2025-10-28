@@ -51,15 +51,15 @@ if TYPE_CHECKING:
     from max.diagnostics.gpu import GPUStats
 
 try:
-    from .benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from max.benchmark.benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ServingBenchmarkConfig,
         parse_benchmark_args,
     )
-    from .benchmark_shared.cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from max.benchmark.benchmark_shared.cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         CpuMetricsCollector,
         collect_pids_for_port,
     )
-    from .benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from max.benchmark.benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ArxivSummarizationBenchmarkDataset,
         AxolotlBenchmarkDataset,
         BatchJobBenchmarkDataset,
@@ -74,13 +74,13 @@ try:
         SonnetBenchmarkDataset,
         VisionArenaBenchmarkDataset,
     )
-    from .benchmark_shared.metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from max.benchmark.benchmark_shared.metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         BenchmarkMetrics,
         LoRAMetrics,
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
-    from .benchmark_shared.server_metrics import (  # type: ignore[import-not-found]
+    from max.benchmark.benchmark_shared.server_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         fetch_and_parse_metrics,
         print_server_metrics,
     )
@@ -114,7 +114,7 @@ except ImportError:
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
-    from benchmark_shared.server_metrics import (
+    from benchmark_shared.server_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         compute_metrics_delta,
         fetch_and_parse_metrics,
         print_server_metrics,
@@ -144,8 +144,8 @@ class RequestFuncInput:
     ignore_eos: bool
     model: str
     session_id: str | None = None
-    temperature: float = 0.0
-    top_p: float = 1.0
+    temperature: float | None = None
+    top_p: float | None = None
     top_k: int | None = None
 
 
@@ -216,11 +216,9 @@ async def async_request_trt_llm(
     assert api_url.endswith("generate_stream")
 
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        payload = {
+        payload: dict[str, bool | str | int | float | list[dict[str, Any]]] = {
             "accumulate_tokens": True,
             "text_input": request_func_input.prompt,
-            "temperature": request_func_input.temperature,
-            "top_p": request_func_input.top_p,
             "ignore_eos": request_func_input.ignore_eos,
             "stream": True,
         }
@@ -229,6 +227,10 @@ async def async_request_trt_llm(
             payload["max_tokens"] = request_func_input.max_tokens
         if request_func_input.top_k is not None:
             payload["top_k"] = request_func_input.top_k
+        if request_func_input.temperature is not None:
+            payload["temperature"] = request_func_input.temperature
+        if request_func_input.top_p is not None:
+            payload["top_p"] = request_func_input.top_p
 
         output = RequestFuncOutput()
         output.prompt_len = request_func_input.prompt_len
@@ -412,7 +414,7 @@ async def async_request_openai_chat_completions(
         for img in request_func_input.images:
             # TODO: Remove this type ignore
             # (error: Value of type "object" is not indexable)
-            payload["messages"][0]["content"].append(img)  # type: ignore[index]
+            payload["messages"][0]["content"].append(img)  # type: ignore[index, union-attr]
 
         headers = {
             "Content-Type": "application/json",

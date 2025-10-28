@@ -14,7 +14,6 @@
 
 from utils import StaticTuple
 
-from .memory import AddressSpace as GPUAddressSpace
 
 # ===-----------------------------------------------------------------------===#
 # MLIR type conversion utils
@@ -25,9 +24,7 @@ from .memory import AddressSpace as GPUAddressSpace
 fn to_llvm_shared_cluster_mem_ptr[
     type: AnyType
 ](
-    ptr: UnsafePointer[
-        type, address_space = GPUAddressSpace.SHARED_CLUSTER, **_
-    ]
+    ptr: UnsafePointer[type, address_space = AddressSpace.SHARED_CLUSTER, **_]
 ) -> __mlir_type.`!llvm.ptr<7>`:
     """Cast shared cluster memory pointer to LLVMPointer Type.
 
@@ -43,7 +40,7 @@ fn to_llvm_shared_cluster_mem_ptr[
 fn to_llvm_shared_mem_ptr[
     type: AnyType
 ](
-    ptr: UnsafePointer[type, address_space = GPUAddressSpace.SHARED, **_]
+    ptr: UnsafePointer[type, address_space = AddressSpace.SHARED, **_]
 ) -> __mlir_type.`!llvm.ptr<3>`:
     """Cast shared memory pointer to LLVMPointer Type.
 

@@ -16,7 +16,7 @@ from sys import exit
 from sys.info import has_accelerator
 
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, thread_idx
+from gpu import block_dim, block_idx, thread_idx
 
 alias num_elements = 20
 

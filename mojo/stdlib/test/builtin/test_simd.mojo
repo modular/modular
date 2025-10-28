@@ -754,6 +754,17 @@ def test_floordiv():
     assert_equal(f.__floordiv__(3), F(1, -2, 0, 1))
     assert_equal(f.__floordiv__(Float32(3)), F(1, -2, 0, 1))
 
+    var res = F.__floordiv__(F(1, 0, 3, -1), F(0, 0, 1, 0))
+    alias B = SIMD[DType.bool, 4]
+    assert_equal(isfinite(res), B(False, False, True, False))
+    assert_equal(isinf(res), B(True, False, False, True))
+    assert_equal(isnan(res), B(False, True, False, False))
+
+    # test that if any element of the divisor is zero, the result is all zeros.
+    var a = SIMD[DType.int32, 4](99, 0, 8, 0)
+    var b = SIMD[DType.int32, 4](4, 3, -2, 0)
+    assert_equal(a.__floordiv__(b), SIMD[DType.int32, 4](0, 0, 0, 0))
+
 
 def test_rfloordiv():
     alias I = SIMD[DType.int32, 4]
@@ -783,63 +794,105 @@ def test_mod():
         SIMD[DType.int32, 2](7, 7) % Int(4), SIMD[DType.int32, 2](3, 3)
     )
 
+    # fmt: off
     var a = SIMD[DType.float32, 16](
-        3.1,
-        3.1,
-        3.1,
-        3.1,
-        3.1,
-        3.1,
-        -3.1,
-        -3.1,
-        -3.1,
-        -3.1,
-        -3.1,
-        -3.1,
-        3.1,
-        3.1,
-        -3.1,
-        -3.1,
+         3.1,  3.1,  3.1,  3.1,
+         3.1,  3.1, -3.1, -3.1,
+        -3.1, -3.1, -3.1, -3.1,
+         3.1,  3.1, -3.1, -3.1,
     )
     var b = SIMD[DType.float32, 16](
-        3.2,
-        2.2,
-        1.2,
-        -3.2,
-        -2.2,
-        -1.2,
-        3.2,
-        2.2,
-        1.2,
-        -3.2,
-        -2.2,
-        -1.2,
-        3.1,
-        -3.1,
-        3.1,
-        -3.1,
+         3.2,  2.2,  1.2, -3.2,
+        -2.2, -1.2,  3.2,  2.2,
+         1.2, -3.2, -2.2, -1.2,
+         3.1, -3.1,  3.1, -3.1,
     )
-    assert_equal(
-        a % b,
-        SIMD[DType.float32, 16](
-            3.0999999046325684,
-            0.89999985694885254,
-            0.69999980926513672,
-            -0.10000014305114746,
-            -1.3000001907348633,
-            -0.5000002384185791,
-            0.10000014305114746,
-            1.3000001907348633,
-            0.5000002384185791,
-            -3.0999999046325684,
-            -0.89999985694885254,
-            -0.69999980926513672,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-        ),
+    assert_equal(a % b, SIMD[DType.float32, 16](
+         3.0999999046325684,  0.89999985694885254, 0.69999980926513672, -0.10000014305114746,
+        -1.3000001907348633, -0.5000002384185791,  0.10000014305114746,  1.3000001907348633,
+         0.5000002384185791, -3.0999999046325684, -0.89999985694885254, -0.69999980926513672,
+         0.0,                 0.0,                -0.0,                  0.0,
+    ))
+    # fmt: on
+
+    alias F = SIMD[DType.float32, 4]
+    var res = F.__mod__(F(1, 0, 3, -1), F(0, 0, 1, 0))
+    alias B = SIMD[DType.bool, 4]
+    assert_equal(isfinite(res), B(False, False, True, False))
+    assert_equal(isinf(res), B(False, False, False, False))
+    assert_equal(isnan(res), B(True, True, False, True))
+
+    # test that if any element of the divisor is zero, the result is all zeros.
+    var c = SIMD[DType.int32, 4](99, 0, 8, 0)
+    var d = SIMD[DType.int32, 4](4, 3, -2, 0)
+    assert_equal(c % d, SIMD[DType.int32, 4](0, 0, 0, 0))
+
+
+def test_divmod():
+    # TODO(MSTDL-1946): test using tuple comparison.
+    var a, b = divmod(Int32(99), Int32(1))
+    assert_equal(a, Int32(99))
+    assert_equal(b, Int32(0))
+    a, b = divmod(Int32(99), Int32(3))
+    assert_equal(a, Int32(33))
+    assert_equal(b, Int32(0))
+    a, b = divmod(Int32(99), Int32(-2))
+    assert_equal(a, Int32(-50))
+    assert_equal(b, Int32(-1))
+    a, b = divmod(Int32(99), Int32(8))
+    assert_equal(a, Int32(12))
+    assert_equal(b, Int32(3))
+    a, b = divmod(Int32(99), Int32(-8))
+    assert_equal(a, Int32(-13))
+    assert_equal(b, Int32(-5))
+    a, b = divmod(Int32(2), Int32(-1))
+    assert_equal(a, Int32(-2))
+    assert_equal(b, Int32(0))
+    a, b = divmod(Int32(2), Int32(-2))
+    assert_equal(a, Int32(-1))
+    assert_equal(b, Int32(0))
+
+    var c, d = divmod(UInt32(99), UInt32(3))
+    assert_equal(c, UInt32(33))
+    assert_equal(d, UInt32(0))
+    c, d = divmod(UInt32(99), UInt32(4))
+    assert_equal(c, UInt32(24))
+    assert_equal(d, UInt32(3))
+
+    # fmt: off
+    var e = SIMD[DType.float32, 16](
+         3.1,  3.1,  3.1,  3.1,
+         3.1,  3.1, -3.1, -3.1,
+        -3.1, -3.1, -3.1, -3.1,
+         3.1,  3.1, -3.1, -3.1,
     )
+    var f = SIMD[DType.float32, 16](
+         3.2,  2.2,  1.2, -3.2,
+        -2.2, -1.2,  3.2,  2.2,
+         1.2, -3.2, -2.2, -1.2,
+         3.1, -3.1,  3.1, -3.1,
+    )
+    var g, h = divmod(e, f)
+    assert_equal(g, SIMD[DType.float32, 16](
+         0.0,  1.0,  2.0, -1.0,
+        -2.0, -3.0, -1.0, -2.0,
+        -3.0,  0.0,  1.0,  2.0,
+         1.0, -1.0, -1.0,  1.0,
+    ))
+    assert_equal(h, SIMD[DType.float32, 16](
+         3.1,         0.89999986,  0.6999998,  -0.10000014,
+        -1.3000002,  -0.50000024,  0.10000014,  1.3000002,
+         0.50000024, -3.1,        -0.89999986, -0.6999998,
+         0.0,         0.0,         0.0,         0.0,
+    ))
+    # fmt: on
+
+    # test that if any element of the divisor is zero, the result is all zeros.
+    var i = SIMD[DType.int32, 4](99, 0, 8, 0)
+    var j = SIMD[DType.int32, 4](4, 3, -2, 0)
+    var k, l = divmod(i, j)
+    assert_equal(k, SIMD[DType.int32, 4](0, 0, 0, 0))
+    assert_equal(l, SIMD[DType.int32, 4](0, 0, 0, 0))
 
 
 def test_rmod():
@@ -1213,12 +1266,12 @@ def test_deinterleave():
     assert_equal(tup2[1], Float32(2))
 
     var tup4 = SIMD[DType.int, 4](0, 1, -2, -3).deinterleave()
-    assert_equal(tup4[0], __type_of(tup4[0])(0, -2))
-    assert_equal(tup4[1], __type_of(tup4[0])(1, -3))
+    assert_equal(tup4[0], type_of(tup4[0])(0, -2))
+    assert_equal(tup4[1], type_of(tup4[0])(1, -3))
 
     var tup8 = SIMD[DType.uint, 8](0, 1, 2, 3, 4, 5, 6, 7).deinterleave()
-    assert_equal(tup8[0], __type_of(tup8[0])(0, 2, 4, 6))
-    assert_equal(tup8[1], __type_of(tup8[0])(1, 3, 5, 7))
+    assert_equal(tup8[0], type_of(tup8[0])(0, 2, 4, 6))
+    assert_equal(tup8[1], type_of(tup8[0])(1, 3, 5, 7))
 
 
 def test_extract():
@@ -1821,12 +1874,12 @@ def test_modf():
 
 def test_split():
     var tup4 = SIMD[DType.int, 4](1, 2, -3, -4).split()
-    assert_equal(tup4[0], __type_of(tup4[0])(1, 2))
-    assert_equal(tup4[1], __type_of(tup4[1])(-3, -4))
+    assert_equal(tup4[0], type_of(tup4[0])(1, 2))
+    assert_equal(tup4[1], type_of(tup4[1])(-3, -4))
 
     var tup8 = SIMD[DType.uint, 8](1, 2, 3, 4, 5, 6, 7, 8).split()
-    assert_equal(tup8[0], __type_of(tup8[0])(1, 2, 3, 4))
-    assert_equal(tup8[1], __type_of(tup8[1])(5, 6, 7, 8))
+    assert_equal(tup8[0], type_of(tup8[0])(1, 2, 3, 4))
+    assert_equal(tup8[1], type_of(tup8[1])(5, 6, 7, 8))
 
 
 def test_contains():

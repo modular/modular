@@ -31,7 +31,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -255,7 +255,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> TPPagedKVCacheManager:
+    ) -> PagedKVCacheManager:
         return load_kv_manager(
             params=DeepseekV2Config.get_kv_params(
                 huggingface_config=self.huggingface_config,
@@ -286,7 +286,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         return estimate_kv_cache_size(
-            params=DeepseekV2Config.get_kv_params(
+            params=cls.get_kv_params(
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
                 kv_cache_config=kv_cache_config,
@@ -345,7 +345,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        kv_params = DeepseekV2Config.get_kv_params(
+        kv_params = self.get_kv_params(
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),
             kv_cache_config=self.kv_cache_config,
@@ -562,7 +562,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         next_tokens: Tensor,
         batch_top_n: list[int],
         batch_echo: list[bool],
-    ) -> list[LogProbabilities | None] | None:
+    ) -> list[LogProbabilities | None]:
         logits = model_outputs.logits
         assert model_outputs.next_token_logits is not None
         next_token_logits = model_outputs.next_token_logits

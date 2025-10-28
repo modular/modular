@@ -89,7 +89,7 @@ more problems:
 Consider something like this:
 
 ```python
-def origin_broken(x: String) -> ref [__origin_of(x)] String:
+def origin_broken(x: String) -> ref [origin_of(x)] String:
     mutate(x)
     return x
 ```
@@ -100,7 +100,7 @@ checking the body, we see that we need a mutation, so we end up getting
 something like this, which breaks:
 
 ```python
-def origin_broken(x: String) -> ref [__origin_of(x)] String:
+def origin_broken(x: String) -> ref [origin_of(x)] String:
     var x2 = x
     mutate(x2)
     return x2 # Origin mismatch, with horrible error

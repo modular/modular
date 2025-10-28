@@ -444,6 +444,40 @@ class DeferredAttr(max._core.Attribute):
     @property
     def attr(self) -> max._core.Attribute | None: ...
 
+class DowncastAttr(max._core.Attribute):
+    """
+    The `#kgen.downcast` attribute is used to convert from a typeValue to a
+    typeValue of a more-derived trait. For example, this can represent a cast
+    from AnyType to Movable.
+
+    Note that parser does not (also can not) verify whether the downcast is
+    legal and a illegal downcast can lead to elaboration time error.
+
+
+    Example:
+
+    ```mlir
+    #kgen.downcast<:AnyType T> : !lit.trait<Movable>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        type: max._core.Type,
+        input_type_value: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: max._core.Type,
+        input_type_value: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+    @property
+    def input_type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class EnvAttr(max._core.Attribute):
     """
     The `#kgen.env` attribute defines a generic dictionary of environment
@@ -642,14 +676,46 @@ class LLVMBitcodeLibArrayAttr(max._core.Attribute):
     bitcode libraries, each with their own usage tracking. This is typically
     attached to ModuleOp to store all bitcode libraries that should be
     linked during compilation.
-    A bitcode library can either be:
-    - StringAttr: For bitcode libraries passed via command line
-    - PackagedLLVMBitcodeLibAttr: For bitcode libraries from packages
     """
 
-    def __init__(self, value: Sequence[max._core.Attribute]) -> None: ...
+    def __init__(self, value: Sequence[LLVMBitcodeLibAttr]) -> None: ...
     @property
-    def value(self) -> Sequence[max._core.Attribute]: ...
+    def value(self) -> Sequence[LLVMBitcodeLibAttr]: ...
+
+class LLVMBitcodeLibAttr(max._core.Attribute):
+    """
+    The `#kgen.llvm.bitcode.lib` attribute represents a single LLVM bitcode
+    library with usage tracking. It contains:
+    - `used`: A boolean flag indicating whether this library was used
+    - `library`: The actual bitcode library, which can be either:
+      - StringAttr: For bitcode libraries passed via command line
+      - DenseResourceElementsAttr: For bitcode libraries from packages
+
+    Example:
+    ```mlir
+    #kgen.llvm.bitcode.lib<used = false, library = "/path/to/lib.bc">
+    #kgen.llvm.bitcode.lib<used = true, library = dense_resource<data> : ...>
+    ```
+    """
+
+    @overload
+    def __init__(self, used: bool, library: max._core.Attribute) -> None: ...
+    @overload
+    def __init__(
+        self,
+        used: max._core.dialects.builtin.BoolAttr,
+        library: max._core.Attribute,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        used: max._core.dialects.builtin.BoolAttr,
+        library: max._core.Attribute,
+    ) -> None: ...
+    @property
+    def used(self) -> max._core.dialects.builtin.BoolAttr: ...
+    @property
+    def library(self) -> max._core.Attribute | None: ...
 
 class LinkDependencyArrayAttr(max._core.Attribute):
     """
@@ -786,41 +852,6 @@ class PackAttr(max._core.Attribute):
     def values(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
     @property
     def type(self) -> PackType: ...
-
-class PackagedLLVMBitcodeLibAttr(max._core.Attribute):
-    """
-    The `#kgen.llvm.bitcode.packaged` attribute represents a Packaged LLVM
-    bitcode library. It contains:
-    - `packageName`: A string attribute indicating the name of the package.
-    - `resource`: The actual bitcode library embedded as a
-                  DenseResourceElementsAttr.
-
-    Example:
-    ```mlir
-    #kgen.llvm.bitcode.packaged<
-      packageName = "lib", resource = dense_resource<data> : ...
-    >
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        package_name: max._core.dialects.builtin.StringAttr,
-        resource: max._core.dialects.builtin.DenseResourceElementsAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        package_name: max._core.dialects.builtin.StringAttr,
-        resource: max._core.dialects.builtin.DenseResourceElementsAttr,
-    ) -> None: ...
-    @property
-    def package_name(self) -> max._core.dialects.builtin.StringAttr: ...
-    @property
-    def resource(
-        self,
-    ) -> max._core.dialects.builtin.DenseResourceElementsAttr: ...
 
 class ParamDeclArrayAttr(max._core.Attribute):
     @overload
@@ -1273,6 +1304,34 @@ class ToStringDeferredAttr(max._core.Attribute):
     def attr(self) -> max._core.Attribute | None: ...
     @property
     def need_elide_type(self) -> max._core.dialects.builtin.UnitAttr: ...
+
+class TypeConformsToTraitAttr(max._core.Attribute):
+    """
+    This represents a flag to indicate the type, specified by `typeValue`,
+    conforms to specific traits, specified by a list of trait names.
+
+    FIXME: The only reason that we uses a list of string to represent trait in
+    this attr is because trait types are not preserved after lower-lit, meaning
+    that the only way to refer to a specific trait during elaboration time is
+    through symbol names.
+    """
+
+    @overload
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        trait_names: VariadicAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type_value: max._core.dialects.builtin.TypedAttr,
+        trait_names: VariadicAttr,
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def trait_names(self) -> VariadicAttr: ...
 
 class TypeGeneratorRefAttr(max._core.Attribute):
     """

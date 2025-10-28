@@ -190,7 +190,7 @@ pkg_filegroup(
     name = "kernel_benchmark_files",
     srcs = [
         ":kernel_benchmark_input_files",
-        "//open-source/max/max/kernels/benchmarks/autotune:autotune_files",
+        "//max/kernels/benchmarks/autotune:autotune_files",
     ],
     visibility = ["//visibility:public"],
 )

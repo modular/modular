@@ -33,8 +33,12 @@ from gpu.intrinsics import (
     permlane_shuffle,
     permlane_swap,
 )
-from gpu.memory import AddressSpace
-from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
+from gpu.primitives.warp import (
+    shuffle_down,
+    shuffle_idx,
+    shuffle_up,
+    shuffle_xor,
+)
 from benchmark import keep
 
 alias MI300X_TARGET = get_gpu_target["mi300x"]()
@@ -44,11 +48,11 @@ alias FULL_MASK_AMD = 2**WARP_SIZE - 1
 
 
 fn kernel(x: UnsafePointer[Int]):
-    x[0] = thread_idx.x
+    x[0] = Int(thread_idx.x)
 
 
 fn kernel_laneid(x: UnsafePointer[Int]):
-    x[0] = lane_id()
+    x[0] = Int(lane_id())
 
 
 fn kernel_exp[dtype: DType](x: UnsafePointer[Scalar[dtype]]):

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections.string.string_slice import get_static_string
-from os import abort
+from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of
 from sys.ffi import (
@@ -75,7 +75,19 @@ alias NVSHMEM_LIBRARY = _Global[
 
 
 fn _init_nvshmem_dylib() -> _OwnedDLHandle:
-    return _find_dylib["NVSHMEM"](materialize[NVSHMEM_LIBRARY_PATHS]())
+    var candidates = materialize[NVSHMEM_LIBRARY_PATHS]()
+    # Prefer loading NVSHMEM libs from MODULAR_NVSHMEM_LIB_DIR if set.
+    var dir = getenv("MODULAR_NVSHMEM_LIB_DIR")
+    if dir:
+        var prefixed = List[Path](
+            String(dir, "/libnvshmem_host.so.3.4.5"),
+            String(dir, "/libnvshmem_host.so.3"),
+            String(dir, "/libnvshmem_host.so"),
+        )
+        for p in candidates:
+            prefixed.append(p)
+        candidates = prefixed^
+    return _find_dylib["NVSHMEM"](candidates)
 
 
 @always_inline

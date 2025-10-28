@@ -13,6 +13,7 @@
 
 from hashlib._ahash import AHasher
 from hashlib.hasher import Hasher
+from memory import Span
 from pathlib import Path
 
 from testing import assert_equal
@@ -25,14 +26,8 @@ struct DummyHasher(Hasher):
     fn __init__(out self):
         self._dummy_value = 0
 
-    fn _update_with_bytes(
-        mut self,
-        data: UnsafePointer[
-            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-        ],
-        length: Int,
-    ):
-        for i in range(length):
+    fn _update_with_bytes(mut self, data: Span[Byte, _]):
+        for i in range(len(data)):
             self._dummy_value += data[i].cast[DType.uint64]()
 
     fn _update_with_simd(mut self, value: SIMD[_, _]):
@@ -103,8 +98,7 @@ struct ComplexHashableStructWithList(Hashable):
         # This is okay because self is passed as read-only so the pointer will
         # be valid until at least the end of the function
         hasher._update_with_bytes(
-            data=self._value3.unsafe_ptr(),
-            length=len(self._value3),
+            Span(ptr=self._value3.unsafe_ptr(), length=UInt(len(self._value3)))
         )
 
 
@@ -121,8 +115,7 @@ struct ComplexHashableStructWithListAndWideSIMD(Hashable):
         # This is okay because self is passed as read-only so the pointer will
         # be valid until at least the end of the function
         hasher._update_with_bytes(
-            data=self._value3.unsafe_ptr(),
-            length=len(self._value3),
+            Span(ptr=self._value3.unsafe_ptr(), length=UInt(len(self._value3)))
         )
         hasher.update(self._value4)
 

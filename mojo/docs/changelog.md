@@ -21,6 +21,18 @@ what we publish.
 
 ### Language enhancements {#25-7-language-enhancements}
 
+- [Issue #3925](https://github.com/modular/modular/issues/3925): Mojo now allows
+  methods to be overloaded based on "owned" vs "by-ref" argument conventions,
+  selecting the owned overload when given an owned value, and selecting the
+  by-ref version otherwise.  This allows somewhat more efficient algorithms,
+  e.g. consuming vs borrowing iterators:
+
+  ```mojo
+  struct MyCollection:
+    fn __iter__(var self) -> Self.ConsumingIterator: ...
+    fn __iter__(self) -> Self.BorrowingIterator: ...
+  ```
+
 - Literals now have a default type. For example, you can now bind `[1,2,3]` to
   `T` in a call to a function defined as `fn zip[T: Iterable](impl:T)` because
   it will default to the standard library's List type.
@@ -82,7 +94,21 @@ what we publish.
   `Tuple[Int, Float]`. It instead creates a tuple instance of two type values,
   i.e., `(Int, Float) : Tuple[__typeof(Int), __typeof(Float)]`.
 
+- The `__type_of` magic function has been been renamed to `type_of`. Using the
+  old spelling will yield a deprecation warning. Similarly, `__origin_of` has
+  been deprecated in favor of the new `origin_of`.
+
 ### Library changes {#25-7-library-changes}
+
+#### Libraries
+
+- Added `os.isatty()` function to check whether a file descriptor refers to a
+  terminal. This function accepts an `Int` file descriptor. If you have a
+  `FileDescriptor` object, use its `isatty()` method instead.
+
+- The `Hasher` trait's `_update_with_bytes` method now takes `Span[Byte]`
+  instead of `UnsafePointer[UInt8]` and a separate length parameter. This
+  change applies to all hasher implementations including `AHasher` and `Fnv1a`.
 
 - Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
 
@@ -94,6 +120,10 @@ what we publish.
 - Added `swap_pointees` function to `UnsafePointer` as an alternative to `swap`
   when the pointers may potentially alias each other.
 
+- `Span` and `StringSlice` constructors now accept `Int` for length parameters
+  instead of `UInt`. This change makes these types more ergonomic to use with
+  integer literals and other `Int`-based APIs.
+
 - `memcpy` and `parallel_memcpy` without keyword arguments are deprecated.
 
 - The `math` package now has a mojo native implementation of `acos`, `asin`,
@@ -102,6 +132,8 @@ what we publish.
 - Added support for NVIDIA GeForce GTX 970.
 
 - Added support for NVIDIA Jetson Thor.
+
+- Added support for NVIDIA DGX Spark.
 
 - `Optional` now conforms to `Iterable` and `Iterator` acting as a collection of
   size 1 or 0.
@@ -124,10 +156,117 @@ what we publish.
 - Added `sys.compile.SanitizeAddress` providing a way for mojo code to detect
   `--sanitize address` at compile time.
 
-### Tooling changes {#25-7-tooling-changes}
-
 - Error messages now preserve symbolic calls to `always_inline("builtin")`
   functions rather than inlining them into the error message.
+
+- `SIMD` now implements the `DivModable` trait.
+
+- Mojo now uses system allocators in programs built with `mojo build --sanitize address`.
+  This means asan can see mojo heap allocations and should now be able to
+  detect many more heap memory errors.
+
+- `TestSuite` now can generate test reports with `.generate_report()`. Also
+  a `TestReport` and `TestSuiteReport` structs were added.
+
+- `TestSuite` now allows explicitly skipping registered tests using the
+  `TestSuite.skip` API.
+
+- `TestSuite` now allows basic control from CLI arguments. Tests can be skipped
+  from the CLI by passing test function names after a `--skip` flag, e.g.
+
+  ```console
+  mojo run test_my_stuff.mojo --skip test_currently_failing test_also_failing
+  ```
+
+  Similarly, the `--only` flag enables the specification of an allowlist, e.g.
+  the following will skip any other registered test cases:
+
+  ```console
+  mojo run test_my_stuff.mojo --only test_only_this test_this_as_well
+  ```
+
+  The `--skip-all` flag will skip all registered test cases in the suite. Note
+  that `--only` respects skipped tests, i.e. it does not run tests that are
+  skipped using `TestSuite.skip`.
+
+- `Codepoint` now conforms to `Comparable` adding `__le__`, `__lt__`, `__ge__`,
+  and `__gt__` implementations.
+
+- Several standard library APIs have been updated to use `Int` instead of `UInt`
+  for improved ergonomics, eliminating the need for explicit casts when using
+  `Int` values (the default type for integer literals and loop indices):
+  - `BitSet[size: Int]` - Changed parameter from `UInt` to `Int`
+  - `BitSet.set(idx: Int)`, `BitSet.clear(idx: Int)`, `BitSet.toggle(idx: Int)`,
+    `BitSet.test(idx: Int)` - Changed from `UInt` to `Int`
+  - `String(unsafe_uninit_length: Int)` - Changed from `UInt` to `Int`
+  - `String.capacity() -> Int` - Changed return type from `UInt` to `Int`
+  - `String.reserve(new_capacity: Int)` - Changed from `UInt` to `Int`
+  - `List(length: Int, fill: T)` - Changed from `UInt` to `Int`
+  - `Codepoint.unsafe_write_utf8() -> Int` - Changed return type from `UInt` to `Int`
+  - `Codepoint.utf8_byte_length() -> Int` - Changed return type from `UInt` to `Int`
+
+- Added `repeat()` function to the `itertools` module that creates an iterator
+  which repeats an element a specified number of times. Unlike Python's
+  `itertools.repeat()`, infinite iteration is not currently supported - the
+  `times` parameter is required. Example usage:
+
+  ```mojo
+  from itertools import repeat
+
+  for val in repeat(42, times=3):
+      print(val)  # Prints: 42, 42, 42
+  ```
+
+- `gpu.sync.syncwarp()` now supports Apple GPUs via `SIMDGROUP` barrier
+  implementation. On Apple GPUs, this provides execution synchronization for
+  all active lanes using a `SIMDGROUP` barrier with no memory fence. For
+  threadgroup memory ordering, use `barrier()` instead. Note that lane masks
+  are not supported on Apple GPUs, so the mask argument is ignored.
+
+- The `gpu` package has been reorganized into logical subdirectories for better
+  code organization:
+  - `gpu/primitives/` - Low-level GPU execution primitives (warp, block,
+    cluster, id, grid_controls)
+  - `gpu/memory/` - Memory operations (async_copy, TMA, address spaces)
+  - `gpu/sync/` - Synchronization primitives (barriers, semaphores)
+  - `gpu/compute/` - Compute operations (mma, tensor cores, tcgen05)
+
+  **Backward compatibility**: All existing imports continue to work unchanged.
+  Deprecated import paths (`gpu.id`, `gpu.mma`, `gpu.cluster`,
+  `gpu.grid_controls`, `gpu.warp`, `gpu.semaphore`, `gpu.mma_sm100`,
+  `gpu.tcgen05`, `gpu.mma_util`, `gpu.mma_operand_descriptor`,
+  `gpu.tensor_ops`) are preserved as re-export wrappers with deprecation
+  notices. Users can migrate to the new recommended import patterns at their
+  own pace:
+
+  ```mojo
+  # Old (deprecated but still works):
+  from gpu.id import block_idx, thread_idx
+  from gpu.mma import mma
+  from gpu.mma_sm100 import UMMAKind
+  from gpu.tcgen05 import tcgen05_alloc
+  from gpu.semaphore import Semaphore
+  from gpu.cluster import cluster_sync
+
+  # New (recommended):
+  from gpu import block_idx, thread_idx, cluster_sync
+  from gpu.compute.mma import mma
+  from gpu.compute.mma_sm100 import UMMAKind
+  from gpu.compute.tcgen05 import tcgen05_alloc
+  from gpu.sync.semaphore import Semaphore
+  ```
+
+- The `_GPUAddressSpace` type has been removed and consolidated into
+  `AddressSpace`. GPU-specific address space constants (GLOBAL, SHARED,
+  CONSTANT, LOCAL, SHARED_CLUSTER) are now available as aliases on the unified
+  `AddressSpace` type. The `GPUAddressSpace` alias has also been removed in
+  favor of using `AddressSpace` directly. Since `AddressSpace` is part of the
+  prelude, it no longer needs to be explicitly imported in most code.
+
+### Tooling changes {#25-7-tooling-changes}
+
+- `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)
+  and will be removed in a future release.
 
 ### ❌ Removed {#25-7-removed}
 
@@ -167,3 +306,6 @@ what we publish.
   tensors with nested layouts like
   `Layout(IntTuple(IntTuple(16, 8), IntTuple(32, 2)), ...)` because it
   attempted to extract shape values from nested tuples incorrectly.
+
+- Fixed [PR5479](https://github.com/modular/modular/issues/5479): mojo crashes
+  when compiling standalone `__del__` function without struct context.

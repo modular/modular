@@ -133,11 +133,11 @@ fn compile_sm90_matmul_ptx[
         a_type,
         b_type,
         c_type,
-        config.num_pipeline_stages,
+        Int(config.num_pipeline_stages),
     ]()
     alias c_smem_tile = Index(
         c_smem_layout.shape[0].value(),
-        c_smem_layout.shape[1].value() // config.num_consumer,
+        c_smem_layout.shape[1].value() // Int(config.num_consumer),
     )
 
     alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -154,10 +154,10 @@ fn compile_sm90_matmul_ptx[
     alias c_layout = Layout.row_major(M, N)
 
     alias a_tile_shape = Index(
-        BM // CLUSTER_N, BK
+        BM // Int(CLUSTER_N), BK
     ) if config.partitioned_multicast else Index(BM, BK)
     alias b_tile_shape = Index(
-        BN // CLUSTER_M, BK
+        BN // Int(CLUSTER_M), BK
     ) if config.partitioned_multicast else Index(BN, BK)
 
     alias a_tile_layout = Layout.row_major(a_tile_shape[0], a_tile_shape[1])
@@ -172,7 +172,9 @@ fn compile_sm90_matmul_ptx[
     ]()
     alias c_tma_desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1])
 
-    alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
+    alias num_threads = WARPGROUP_SIZE * Int(
+        config.num_consumer
+    ) + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
         BM * BK * size_of[a_type]()
         + BN * BK * size_of[b_type]()
@@ -197,7 +199,7 @@ fn compile_sm90_matmul_ptx[
             config.block_tile_shape,
             config.mma_shape,
             cluster_shape,
-            config.num_pipeline_stages,
+            Int(config.num_pipeline_stages),
             num_threads,
             transpose_b=True,
             a_swizzle=a_swizzle,
@@ -238,7 +240,7 @@ fn compile_sm90_matmul_ptx[
             config.block_tile_shape,
             config.mma_shape,
             cluster_shape,
-            config.num_pipeline_stages,
+            Int(config.num_pipeline_stages),
             num_threads,
             transpose_b=True,
             a_swizzle=a_swizzle,
