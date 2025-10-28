@@ -949,14 +949,14 @@ class InternVisionEncoderLayer(Module):
         else:  # layer_norm
             self.norm1 = LayerNorm(
                 dims=self.embed_dim,
-                devices=[default_device],
+                devices=self.devices,
                 dtype=config.llm_config.dtype,
                 eps=layer_norm_eps,
                 use_bias=True,
             )
             self.norm2 = LayerNorm(
                 dims=self.embed_dim,
-                devices=[default_device],
+                devices=self.devices,
                 dtype=config.llm_config.dtype,
                 eps=layer_norm_eps,
                 use_bias=True,
@@ -1005,21 +1005,13 @@ class InternVisionEncoderLayer(Module):
         # Create per-device attention instances using the shard method
         self.attn_per_device = self.attn.shard(self.devices)
 
-        # Set sharding strategies for weights
-        self.norm1.weight.sharding_strategy = ShardingStrategy.replicate(
+        # Set sharding strategies for norms
+        self.norm1.sharding_strategy = ShardingStrategy.replicate(
             len(self.devices)
         )
-        self.norm2.weight.sharding_strategy = ShardingStrategy.replicate(
+        self.norm2.sharding_strategy = ShardingStrategy.replicate(
             len(self.devices)
         )
-        if hasattr(self.norm1, "bias") and self.norm1.bias is not None:
-            self.norm1.bias.sharding_strategy = ShardingStrategy.replicate(
-                len(self.devices)
-            )
-        if hasattr(self.norm2, "bias") and self.norm2.bias is not None:
-            self.norm2.bias.sharding_strategy = ShardingStrategy.replicate(
-                len(self.devices)
-            )
 
         # Set MLP sharding strategies for tensor parallelism
         self.mlp.fc1.sharding_strategy = ShardingStrategy.rowwise(
@@ -1029,63 +1021,9 @@ class InternVisionEncoderLayer(Module):
             len(self.devices)
         )
 
-        # Shard norm weights
-        norm1_weight_shards = self.norm1.weight.shard(self.devices)
-        norm2_weight_shards = self.norm2.weight.shard(self.devices)
-        norm1_bias_shards = []
-        norm2_bias_shards = []
-        if isinstance(self.norm1, LayerNorm) and self.norm1.bias is not None:
-            norm1_bias_shards = self.norm1.bias.shard(self.devices)
-        if isinstance(self.norm2, LayerNorm) and self.norm2.bias is not None:
-            norm2_bias_shards = self.norm2.bias.shard(self.devices)
-
         # Create per-device norm instances.
-        self.norm1_per_device: list[RMSNorm | LayerNorm] = []
-        self.norm2_per_device: list[RMSNorm | LayerNorm] = []
-        for n, device in enumerate(self.devices):
-            norm1_copy: RMSNorm | LayerNorm
-            norm2_copy: RMSNorm | LayerNorm
-            if self.norm_type == "rms_norm":
-                norm1_copy = RMSNorm(
-                    dim=self.embed_dim,
-                    dtype=config.llm_config.dtype,
-                    eps=layer_norm_eps,
-                    multiply_before_cast=False,
-                )
-                norm2_copy = RMSNorm(
-                    dim=self.embed_dim,
-                    dtype=config.llm_config.dtype,
-                    eps=layer_norm_eps,
-                    multiply_before_cast=False,
-                )
-            else:
-                norm1_copy = LayerNorm(
-                    dims=self.embed_dim,
-                    devices=[device],
-                    dtype=config.llm_config.dtype,
-                    eps=layer_norm_eps,
-                    use_bias=True,
-                )
-                norm2_copy = LayerNorm(
-                    dims=self.embed_dim,
-                    devices=[device],
-                    dtype=config.llm_config.dtype,
-                    eps=layer_norm_eps,
-                    use_bias=True,
-                )
-
-            # Weights will be assigned later after sharding
-
-            # Assign sharded weights.
-            norm1_copy.weight = norm1_weight_shards[n]
-            norm2_copy.weight = norm2_weight_shards[n]
-            if norm1_bias_shards and isinstance(norm1_copy, LayerNorm):
-                norm1_copy.bias = norm1_bias_shards[n]
-            if norm2_bias_shards and isinstance(norm2_copy, LayerNorm):
-                norm2_copy.bias = norm2_bias_shards[n]
-
-            self.norm1_per_device.append(norm1_copy)
-            self.norm2_per_device.append(norm2_copy)
+        self.norm1_per_device = self.norm1.shard(self.devices)
+        self.norm2_per_device = self.norm2.shard(self.devices)
 
         # Create per-device MLP instances.
         self.mlp_per_device = self.mlp.shard(self.devices)
