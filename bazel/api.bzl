@@ -25,7 +25,6 @@ modular_py_venv = _modular_py_venv
 mojo_filecheck_test = _mojo_filecheck_test
 mojo_test_environment = _mojo_test_environment
 proto_library = _proto_library
-py_grpc_library = _py_grpc_library
 requirement = _requirement
 strip_prefix = _strip_prefix
 
@@ -59,7 +58,7 @@ def _rewrite_deps(deps):
             replaced_dep = dep.replace("//SDK/lib/API/python/max/benchmark", "//benchmark")
             new_deps.append(replaced_dep)
         elif dep.startswith("//SDK/lib/API/python/"):
-            replaced_dep = dep.replace("//SDK/lib/API/python/", "//")
+            replaced_dep = dep.replace("//SDK/lib/API/python/", "//max/python/")
             new_deps.append(replaced_dep)
         elif dep.startswith("//open-source/max/"):
             replaced_dep = dep.replace("//open-source/max/", "//")
@@ -194,6 +193,13 @@ def lit_tests(tools = [], data = [], **kwargs):
 
 def modular_generate_stubfiles(name, **_kwargs):
     native.alias(name = name, actual = "@modular_wheel//:wheel", visibility = ["//visibility:public"])
+
+# buildifier: disable=unused-variable
+def py_grpc_library(strip_prefixes, **kwargs):
+    _py_grpc_library(
+        strip_prefixes = ["max.python."],
+        **kwargs
+    )
 
 def _noop(**_kwargs):
     pass
