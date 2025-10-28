@@ -230,22 +230,24 @@ kgen.generator @closureSymbol(){
 } : () -> ()
 
 "some.op"() {
-  // CHECK: a = #pop.cast_from_builtin<#M.dense_array<2, 5> : vector<2xsi32>> : !pop.simd<2, si32>
+  // CHECK: a = #pop.simd<2, 5> : !pop.simd<2, si32>
   a = #pop.cast_from_builtin< #M.dense_array<2, 5> : vector<2xsi32>> : !pop.simd<2, si32>,
-  // CHECK: b = #pop.cast_from_builtin<0.000000e+00 : f8E5M2> : !pop.scalar<f8e5m2>
+  // CHECK: b = #pop<simd "0"> : !pop.scalar<f8e5m2>
   b = #pop.cast_from_builtin< 0.0 : f8E5M2> : !pop.scalar<f8e5m2>,
-  // CHECK: c = #pop.cast_from_builtin<0.000000e+00 : f8E5M2FNUZ> : !pop.scalar<f8e5m2fnuz>
+  // CHECK: c = #pop<simd "0"> : !pop.scalar<f8e5m2fnuz>
   c = #pop.cast_from_builtin< 0.0 : f8E5M2FNUZ> : !pop.scalar<f8e5m2fnuz>,
-  // CHECK: d = #pop.cast_from_builtin<0.000000e+00 : f8E4M3FN> : !pop.scalar<f8e4m3fn>
+  // CHECK: d = #pop<simd "0"> : !pop.scalar<f8e4m3fn>
   d = #pop.cast_from_builtin< 0.0 : f8E4M3FN> : !pop.scalar<f8e4m3fn>,
-  // CHECK: e = #pop.cast_from_builtin<0.000000e+00 : f8E4M3FNUZ> : !pop.scalar<f8e4m3fnuz>
+  // CHECK: e = #pop<simd "0"> : !pop.scalar<f8e4m3fnuz>
   e = #pop.cast_from_builtin< 0.0 : f8E4M3FNUZ> : !pop.scalar<f8e4m3fnuz>,
-  // CHECK: f = #pop.cast_from_builtin<0.000000e+00 : f8E3M4> : !pop.scalar<f8e3m4>
+  // CHECK: f = #pop<simd "0"> : !pop.scalar<f8e3m4>
   f = #pop.cast_from_builtin< 0.0 : f8E3M4> : !pop.scalar<f8e3m4>,
-  // CHECK: g = #pop.cast_from_builtin<0.000000e+00 : bf16> : !pop.scalar<bf16>
+  // CHECK: g = #pop<simd "0"> : !pop.scalar<bf16>
   g = #pop.cast_from_builtin< 0.0 : bf16> : !pop.scalar<bf16>,
   // CHECK: h = #pop<simd -1> : !pop.scalar<si64>
   h = #pop.cast_from_builtin< -1 : si64> : !pop.scalar<si64>,
   // CHECK: i = #pop<simd 18446744073709551615> : !pop.scalar<ui64>
-  i = #pop.cast_from_builtin< 0xffffffffffffffff : ui64> : !pop.scalar<ui64>
+  i = #pop.cast_from_builtin< 0xffffffffffffffff : ui64> : !pop.scalar<ui64>,
+  // CHECK: j = #pop<simd 0> : !pop.scalar<si128>
+  j = #pop.cast_from_builtin< 0 : si128> : !pop.scalar<si128>
 } : () -> ()

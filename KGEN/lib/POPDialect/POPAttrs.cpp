@@ -1692,41 +1692,12 @@ DTypeToUI8Attr::verify(function_ref<InFlightDiagnostic()> emitError,
 // CastFromBuiltinAttr
 //===----------------------------------------------------------------------===//
 
-static ErrorOr<SIMDAttr>
-foldCastFromBuiltinAttr(MLIRContext *ctx, TypedAttr input, SIMDType out_type) {
-  auto literal = dyn_cast<IntegerAttr>(input);
-  if (!literal)
-    return Error("input must be IntegerAttr");
-
-  APInt literalVal = literal.getValue();
-
-  // Special case bools
-  if (auto boolVal = dyn_cast<BoolAttr>(input)) {
-    return SIMDAttr::get(DTypeValue(boolVal.getValue(), KGENDType::kBool),
-                         SIMDType::get(ctx, 1, KGENDType::kBool));
-  }
-
-  if (literalVal.getBitWidth() > 64)
-    return Error("input too large for SIMDAttr");
-
-  auto dtype = DType::getInt(literalVal.getBitWidth(),
-                             literal.getType().isSignedInteger());
-  if (failed(dtype))
-    return Error("input could not be represented as DType");
-
-  auto simdTy = SIMDType::get(ctx, /*size=*/1, *dtype);
-  return SIMDAttr::get(literal.getType().isSignedInteger()
-                           ? literalVal.getSExtValue()
-                           : literalVal.getZExtValue(),
-                       simdTy);
-}
-
 TypedAttr CastFromBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
                                    SIMDType out_type) {
-  // If this is a known constant, fold this directly to a constant SIMDAttr
-  auto result = foldCastFromBuiltinAttr(ctx, arg, out_type);
-  if (!result.isError())
-    return result.get();
+  if (auto fold = POP::foldCastFromBuiltin(arg, out_type))
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+
   return Base::get(ctx, arg, out_type);
 }
 
