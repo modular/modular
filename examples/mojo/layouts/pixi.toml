@@ -1,4 +1,4 @@
-[project]
+[workspace]
 name = "Layout examples"
 version = "0.1.0"
 description = "Examples of using the Layout struct"

@@ -1,4 +1,4 @@
-[project]
+[workspace]
 name = "Operators for custom Mojo struct"
 version = "0.1.0"
 description = "An example of implementing operators for a custom Mojo struct"

@@ -1,4 +1,4 @@
-[project]
+[workspace]
 authors = ["Modular <hello@modular.com>"]
 channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
 description = "Examples of using Mojo to write GPU functions"

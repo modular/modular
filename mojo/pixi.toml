@@ -1,4 +1,4 @@
-[project]
+[workspace]
 name = "Mojo"
 authors = ["Modular <hello@modular.com>"]
 channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]

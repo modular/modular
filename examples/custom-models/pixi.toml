@@ -1,4 +1,4 @@
-[project]
+[workspace]
 authors = ["Modular <hello@modular.com>"]
 channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
 description = "An example of a custom model architecture served by MAX"
