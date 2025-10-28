@@ -1337,10 +1337,10 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
         tmem_dealloc_mbar[].init(EPILOGUE_THREADS * config.cta_group)
 
-    @parameter
-    for i in range(config.num_clc_pipeline_stages):
-        clc_full_mbar[i].init(clc_producer_arv_count)
-        clc_empty_mbar[i].init(clc_consumer_arv_count)
+        @parameter
+        for i in range(config.num_clc_pipeline_stages):
+            clc_full_mbar[i].init(clc_producer_arv_count)
+            clc_empty_mbar[i].init(clc_consumer_arv_count)
 
     fence_mbarrier_init()
     cluster_sync()
@@ -1467,6 +1467,12 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 load_mma_pipeline.producer_step()
 
     if WarpRole.is_scheduler() and is_first_cta_in_cluster:
+        # Implies each SM will only process initial work, there is no
+        # mroe work to schedule.
+        @parameter
+        if config.num_clc_pipeline_stages == 0:
+            return
+
         with MatmulProfilerType[1](workspace, 0):
             var required_clc_query = True
 
@@ -1643,16 +1649,8 @@ fn blackwell_matmul_tma_umma_warp_specialized[
 ) raises:
     @parameter
     if config.AB_swapped:
-        # Swap the a_type, b_type in signature
-        # TODO: Do this without creating a new instance.
-        alias new_config = MatmulConfig[b_type, a_type, c_type, transpose_b](
-            cta_group=config.cta_group,
-            mma_shape=config.mma_shape,
-            cluster_shape=config.cluster_shape,
-            AB_swapped=True,
-            block_swizzle_size=config.block_swizzle_size,
-            raster_order=config.raster_order,
-        )
+        alias new_config = config.swap_AB_type()
+
         # When both A and B are K-major, then the matrix multiplication math is
         # C = A @ B'
         # If we swap A and B, we have

@@ -68,6 +68,7 @@ struct MatmulConfig[
         raster_order: RasterOrder = RasterOrder.AlongM,
         num_pipeline_stages: Optional[UInt] = None,
         num_accum_pipeline_stages: UInt = 2,
+        num_clc_pipeline_stages: UInt = 2,
     ):
         constrained[a_type == b_type]()
 
@@ -105,7 +106,7 @@ struct MatmulConfig[
             output_tile_n, output_tile_m
         ) if self.AB_swapped else Index(output_tile_m, output_tile_n)
 
-        self.num_clc_pipeline_stages = 2
+        self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_accum_pipeline_stages = num_accum_pipeline_stages
         self.num_output_stages = 2
 
@@ -188,6 +189,19 @@ struct MatmulConfig[
             and self.c_swizzle == other.c_swizzle
             and self.block_swizzle_size == other.block_swizzle_size
             and self.raster_order == other.raster_order
+        )
+
+    fn swap_AB_type(self) -> MatmulConfig[b_type, a_type, c_type, transpose_b]:
+        return MatmulConfig[b_type, a_type, c_type, transpose_b](
+            cta_group=self.cta_group,
+            mma_shape=self.mma_shape,
+            cluster_shape=self.cluster_shape,
+            AB_swapped=self.AB_swapped,
+            num_pipeline_stages=self.num_pipeline_stages,
+            num_accum_pipeline_stages=self.num_accum_pipeline_stages,
+            num_clc_pipeline_stages=self.num_clc_pipeline_stages,
+            block_swizzle_size=self.block_swizzle_size,
+            raster_order=self.raster_order,
         )
 
     fn __str__(self) -> String:
@@ -287,7 +301,7 @@ fn choose_config[
     if M <= 128:
         mma_mn[1] = max(next_power_of_two(M), 16)
         for bm in [64, 128]:
-            num_ctas = ceildiv(M, bm) * ceildiv(N, mma_mn[1])
+            num_ctas = ceildiv(M, mma_mn[1]) * ceildiv(N, bm)
             num_waves = ceildiv(num_ctas, num_SMs)
             if num_waves < min_num_waves or (
                 num_waves == min_num_waves and bm < mma_mn[0]
@@ -345,6 +359,12 @@ fn choose_config[
                 min_load_volume = load_volume_per_wave
                 optimal_block_swizzle_size = tile_size
 
+    # TODO: evaluate the comment's perf impact
+    # var num_clc_pipeline_stages: UInt = UInt(min(min_num_waves-1, 2))
+    var num_clc_pipeline_stages: UInt = UInt(0) if min_num_waves == 1 else UInt(
+        2
+    )
+
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
         mma_shape=IndexList[3](
             mma_mn[0], mma_mn[1], Kbytes_per_mma // a_type.size_of()
@@ -354,6 +374,7 @@ fn choose_config[
         AB_swapped=swapAB,
         block_swizzle_size=optimal_block_swizzle_size,
         num_accum_pipeline_stages=UInt(min(2, min_num_waves)),
+        num_clc_pipeline_stages=num_clc_pipeline_stages,
     )
 
 

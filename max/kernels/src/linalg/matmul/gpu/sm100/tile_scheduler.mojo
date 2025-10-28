@@ -241,6 +241,12 @@ struct TileScheduler[
         work_info: WorkInfo,
         consumer_state: PipelineState[num_stages],
     ) -> WorkInfo:
+        # num_stages == 0 implies there is only one wave. Only initial
+        # work info is valid, next work info is invalid.
+        @parameter
+        if Self.num_stages == 0:
+            return WorkInfo(0, 0, 0, False)
+
         self.full_mbar[consumer_state.index()].wait(consumer_state.phase())
         var work_tile = self.work_info_from_clc_response(
             self.clc_response + consumer_state.index()

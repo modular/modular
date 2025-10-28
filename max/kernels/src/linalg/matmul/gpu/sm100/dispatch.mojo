@@ -487,7 +487,11 @@ fn matmul_dispatch_sm100[
     # 1. `N * size_of(c_type) % 16B == 0` for output buffer (TMA requirement)
     # 2. `c_type == DType.bfloat16` SM100 kernel only supports bfloat16 for output buffer
     @parameter
-    if c_type == DType.bfloat16 and static_N * size_of[c_type]() % 16 == 0:
+    if (
+        c_type == DType.bfloat16
+        and static_N * size_of[c_type]() % 16 == 0
+        and transpose_b
+    ):
         var status = DISPATCH_MISS
 
         @parameter

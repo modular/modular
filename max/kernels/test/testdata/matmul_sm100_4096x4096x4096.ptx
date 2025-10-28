@@ -77,14 +77,13 @@
 	mbarrier.init.shared.b64 	[extern_ptr_syml+213160], %r43;
 	mbarrier.init.shared.b64 	[extern_ptr_syml+213176], %r43;
 	mbarrier.init.shared.b64 	[extern_ptr_syml+213216], %r42;
-$L__BB0_2:
-	mov.b32 	%r35, extern_ptr_syml;
-	mov.b32 	%r1030, 1;
-	mbarrier.init.shared.b64 	[extern_ptr_syml+213120], %r1030;
+	mbarrier.init.shared.b64 	[extern_ptr_syml+213120], %r41;
 	mov.b32 	%r44, 416;
 	mbarrier.init.shared.b64 	[extern_ptr_syml+213136], %r44;
-	mbarrier.init.shared.b64 	[extern_ptr_syml+213128], %r1030;
+	mbarrier.init.shared.b64 	[extern_ptr_syml+213128], %r41;
 	mbarrier.init.shared.b64 	[extern_ptr_syml+213144], %r44;
+$L__BB0_2:
+	mov.b32 	%r35, extern_ptr_syml;
 	// begin inline asm
 	fence.mbarrier_init.release.cluster;
 	// end inline asm
@@ -115,6 +114,7 @@ $L__BB0_2:
 	add.s32 	%r9, %r35, %r50;
 	add.s32 	%r1029, %r35, 213152;
 	add.s32 	%r1028, %r35, 213168;
+	mov.b32 	%r1030, 1;
 	mov.b32 	%r1043, 0;
 	setp.eq.b32 	%p8, %r3, 0;
 	mov.b32 	%r1042, %r1043;
