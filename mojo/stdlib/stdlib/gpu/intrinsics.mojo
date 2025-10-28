@@ -31,7 +31,7 @@ from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, size_of, _RegisterPackType
 from sys._assembly import inlined_assembly
 from sys.info import (
     CompilationTarget,
-    _is_sm_9x,
+    _is_sm_9x_or_newer,
     align_of,
     bit_width_of,
     _cdna_4_or_newer,
@@ -117,7 +117,7 @@ fn warpgroup_reg_alloc[count: Int]():
     ]()
 
     @parameter
-    if _is_sm_9x():
+    if _is_sm_9x_or_newer():
         inlined_assembly[
             "setmaxnreg.inc.sync.aligned.u32 $0;",
             NoneType,
@@ -154,7 +154,7 @@ fn warpgroup_reg_dealloc[count: Int]():
     ]()
 
     @parameter
-    if _is_sm_9x():
+    if _is_sm_9x_or_newer():
         inlined_assembly[
             "setmaxnreg.dec.sync.aligned.u32 $0;",
             NoneType,
