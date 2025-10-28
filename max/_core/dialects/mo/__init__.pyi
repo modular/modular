@@ -3374,11 +3374,20 @@ class GuardOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         results: Sequence[max._core.Type],
+        chain: max._core.Value[ChainType],
+        inputs: Sequence[max._core.Value[max._core.Type]],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         chain: max._core.Value[ChainType],
         inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...

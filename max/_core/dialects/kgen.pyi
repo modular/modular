@@ -2209,6 +2209,14 @@ class CreateClosureOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         callee: max._core.dialects.builtin.TypedAttr,
+        captures: Sequence[max._core.Value[max._core.Type]],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        callee: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def callee(self) -> max._core.dialects.builtin.TypedAttr: ...
@@ -2714,11 +2722,20 @@ class PackExtractOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.Type,
+        pack: max._core.Value[PackType],
+        index: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         pack: max._core.Value[PackType],
         index: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
@@ -2736,11 +2753,20 @@ class PackGepOp(max._core.Operation):
     operation is resolved post-elaboration when the pack details become known.
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: PointerType,
+        pack: max._core.Value[PointerType],
+        index: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         pack: max._core.Value[PointerType],
         index: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
@@ -2758,11 +2784,19 @@ class PackLoadOp(max._core.Operation):
     elements with trivially loadable types supported by pop.load.
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: PackType,
+        pack: max._core.Value[PackType],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         pack: max._core.Value[PackType],
     ) -> None: ...
     @property
@@ -3369,11 +3403,20 @@ class StructExtractOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.Type,
+        container: max._core.Value[StructType],
+        index: max._core.dialects.builtin.IntegerAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         container: max._core.Value[StructType],
         index: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
@@ -3406,11 +3449,20 @@ class StructGepOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: PointerType,
+        container: max._core.Value[PointerType],
+        index: max._core.dialects.builtin.IntegerAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         container: max._core.Value[PointerType],
         index: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
@@ -3621,11 +3673,20 @@ class VariantGetOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.Type,
+        variant: max._core.Value[VariantType],
+        index: max._core.dialects.builtin.IntegerAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         variant: max._core.Value[VariantType],
         index: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...

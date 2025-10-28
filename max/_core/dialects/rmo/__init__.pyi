@@ -5270,11 +5270,21 @@ class AddOp(max._core.Operation):
     A flexible binary elementwise add operation with implicit broadcasting and implicit dtype promotion.
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -5309,11 +5319,21 @@ class AndOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -5364,11 +5384,25 @@ class AvgPoolOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input: max._core.Value[max._core.dialects.mo.TensorType],
+        filter_shape: max._core.dialects.mosh.ShapeAttr,
+        strides: max._core.dialects.mosh.ShapeAttr,
+        dilations: max._core.dialects.mosh.ShapeAttr,
+        paddings: max._core.dialects.mosh.ShapeAttr,
+        ceil_mode: max._core.dialects.builtin.BoolAttr,
+        count_boundary: max._core.dialects.builtin.BoolAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input: max._core.Value[max._core.dialects.mo.TensorType],
         filter_shape: max._core.dialects.mosh.ShapeAttr,
         strides: max._core.dialects.mosh.ShapeAttr,
@@ -5462,11 +5496,20 @@ class BroadcastToOp(max._core.Operation):
     2. `newShape` may not contain any dynamic dimensions.
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input: max._core.Value[max._core.dialects.mo.TensorType],
+        new_shape: max._core.dialects.mosh.ShapeAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input: max._core.Value[max._core.dialects.mo.TensorType],
         new_shape: max._core.dialects.mosh.ShapeAttr,
     ) -> None: ...
@@ -5538,11 +5581,25 @@ class ConvOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input: max._core.Value[max._core.dialects.mo.TensorType],
+        filter: max._core.Value[max._core.dialects.mo.TensorType],
+        strides: max._core.dialects.mosh.ShapeAttr,
+        dilations: max._core.dialects.mosh.ShapeAttr,
+        paddings: max._core.dialects.mosh.ShapeAttr,
+        num_groups: max._core.dialects.builtin.IntegerAttr,
+        input_layout: max._core.dialects.builtin.StringAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input: max._core.Value[max._core.dialects.mo.TensorType],
         filter: max._core.Value[max._core.dialects.mo.TensorType],
         strides: max._core.dialects.mosh.ShapeAttr,
@@ -5642,11 +5699,25 @@ class ConvTransposeOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input: max._core.Value[max._core.dialects.mo.TensorType],
+        filter: max._core.Value[max._core.dialects.mo.TensorType],
+        strides: max._core.dialects.mosh.ShapeAttr,
+        dilations: max._core.dialects.mosh.ShapeAttr,
+        paddings: max._core.dialects.mosh.ShapeAttr,
+        output_paddings: max._core.dialects.mosh.ShapeAttr,
+        input_layout: max._core.dialects.builtin.StringAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input: max._core.Value[max._core.dialects.mo.TensorType],
         filter: max._core.Value[max._core.dialects.mo.TensorType],
         strides: max._core.dialects.mosh.ShapeAttr,
@@ -5689,11 +5760,21 @@ class DivOp(max._core.Operation):
     A flexible binary elementwise div operation with implicit broadcasting and implicit dtype promotion.
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -5728,11 +5809,21 @@ class EqualOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -5767,11 +5858,21 @@ class GreaterEqualOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -5806,11 +5907,21 @@ class GreaterOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -5855,11 +5966,20 @@ class MatmulOp(max._core.Operation):
     [K] @ [10, 4, K, 7] -> [10, 4, 7]
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
     ) -> None: ...
@@ -5873,11 +5993,21 @@ class MaxOp(max._core.Operation):
     A flexible binary elementwise max operation with implicit broadcasting and implicit dtype promotion.
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -5927,11 +6057,24 @@ class MaxPoolOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input: max._core.Value[max._core.dialects.mo.TensorType],
+        filter_shape: max._core.dialects.mosh.ShapeAttr,
+        strides: max._core.dialects.mosh.ShapeAttr,
+        dilations: max._core.dialects.mosh.ShapeAttr,
+        paddings: max._core.dialects.mosh.ShapeAttr,
+        ceil_mode: max._core.dialects.builtin.BoolAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input: max._core.Value[max._core.dialects.mo.TensorType],
         filter_shape: max._core.dialects.mosh.ShapeAttr,
         strides: max._core.dialects.mosh.ShapeAttr,
@@ -5971,11 +6114,21 @@ class MinOp(max._core.Operation):
     A flexible binary elementwise min operation with implicit broadcasting and implicit dtype promotion.
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -5998,11 +6151,21 @@ class ModOp(max._core.Operation):
     A flexible binary elementwise mod operation with implicit broadcasting and implicit dtype promotion.
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -6025,11 +6188,21 @@ class MulOp(max._core.Operation):
     A flexible binary elementwise mul operation with implicit broadcasting and implicit dtype promotion.
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -6064,11 +6237,21 @@ class NotEqualOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -6103,11 +6286,21 @@ class OrOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -6130,11 +6323,21 @@ class PowOp(max._core.Operation):
     A flexible binary elementwise pow operation with implicit broadcasting and implicit dtype promotion.
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -6224,11 +6427,20 @@ class ReshapeOp(max._core.Operation):
     2. `newShape` may not contain any dynamic dimensions.
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input: max._core.Value[max._core.dialects.mo.TensorType],
+        new_shape: max._core.dialects.mosh.ShapeAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input: max._core.Value[max._core.dialects.mo.TensorType],
         new_shape: max._core.dialects.mosh.ShapeAttr,
     ) -> None: ...
@@ -6260,11 +6472,21 @@ class SelectOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        cond: max._core.Value[max._core.dialects.mo.TensorType],
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         cond: max._core.Value[max._core.dialects.mo.TensorType],
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
@@ -6330,11 +6552,23 @@ class SliceOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input: max._core.Value[max._core.dialects.mo.TensorType],
+        starts: max._core.dialects.mosh.ShapeAttr,
+        stops: max._core.dialects.mosh.ShapeAttr,
+        steps: max._core.dialects.mosh.ShapeAttr,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input: max._core.Value[max._core.dialects.mo.TensorType],
         starts: max._core.dialects.mosh.ShapeAttr,
         stops: max._core.dialects.mosh.ShapeAttr,
@@ -6369,11 +6603,21 @@ class SubOp(max._core.Operation):
     A flexible binary elementwise sub operation with implicit broadcasting and implicit dtype promotion.
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -6410,12 +6654,23 @@ class TopKOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         values: max._core.dialects.mo.TensorType,
         indices: max._core.dialects.mo.TensorType,
+        input: max._core.Value[max._core.dialects.mo.TensorType],
+        k: max._core.dialects.builtin.IntegerAttr,
+        axis: max._core.dialects.builtin.IntegerAttr,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input: max._core.Value[max._core.dialects.mo.TensorType],
         k: max._core.dialects.builtin.IntegerAttr,
         axis: max._core.dialects.builtin.IntegerAttr,
@@ -6457,11 +6712,21 @@ class XorOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         result: max._core.dialects.mo.TensorType,
+        input_x: max._core.Value[max._core.dialects.mo.TensorType],
+        input_y: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
