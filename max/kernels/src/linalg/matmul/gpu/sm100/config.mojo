@@ -67,6 +67,7 @@ struct MatmulConfig[
         block_swizzle_size: Int = 0,
         raster_order: RasterOrder = RasterOrder.AlongM,
         num_pipeline_stages: Optional[UInt] = None,
+        num_accum_pipeline_stages: UInt = 2,
     ):
         constrained[a_type == b_type]()
 
@@ -105,9 +106,7 @@ struct MatmulConfig[
         ) if self.AB_swapped else Index(output_tile_m, output_tile_n)
 
         self.num_clc_pipeline_stages = 2
-        self.num_accum_pipeline_stages = UInt(
-            512 // next_power_of_two(self.mma_shape[1])
-        )
+        self.num_accum_pipeline_stages = num_accum_pipeline_stages
         self.num_output_stages = 2
 
         self.a_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -354,6 +353,7 @@ fn choose_config[
         cluster_shape=Index(cta_group, 1, 1),
         AB_swapped=swapAB,
         block_swizzle_size=optimal_block_swizzle_size,
+        num_accum_pipeline_stages=UInt(min(2, min_num_waves)),
     )
 
 

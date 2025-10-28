@@ -1819,11 +1819,13 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     ]()  # 4 bytes or 32 bits for tensor memory address
     # the 'N' dimension of tensor memory is 512
     alias TMEM_N = 512
-    # the maximum different number of mma's that can be run in parallel is TMEM_N/MMA_N
-    alias max_accum_pipeline_stages = TMEM_N // next_power_of_two(MMA_N)
     # Mainloop barrier
-    alias accum_full_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
-    alias accum_empty_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
+    alias accum_full_mbar_bytes = MBAR_BYTES * Int(
+        config.num_accum_pipeline_stages
+    )
+    alias accum_empty_mbar_bytes = MBAR_BYTES * Int(
+        config.num_accum_pipeline_stages
+    )
 
     alias clc_response_bytes = CLC_RESPONSE_BYTES * Int(
         config.num_clc_pipeline_stages
