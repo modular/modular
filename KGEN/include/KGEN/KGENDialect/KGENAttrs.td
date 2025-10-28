@@ -641,6 +641,34 @@ def KGEN_GetLinkageNameAttr : KGEN_ExprAttr<"GetLinkageName",
 }
 
 //===----------------------------------------------------------------------===//
+// GetSourceNameAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_GetSourceNameAttr : KGEN_ExprAttr<"GetSourceName",
+    "get_source_name", [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Get the source name of a function symbol.";
+  let description = [{
+    The `#kgen.get_source_name` attribute is used to get the source name of a
+    function symbol.
+
+    Example:
+
+    ```mlir
+    #kgen.get_source_name<
+      #kgen.symbol.constant<@return_two> : !kgen.generator<() -> index>
+    > : !kgen.string
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$func,
+    AttributeSelfTypeParameter<"", "Type">:$type
+  );
+
+  let assemblyFormat = "`<` $func `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // CompileAssemblyAttr
 //===----------------------------------------------------------------------===//
 
