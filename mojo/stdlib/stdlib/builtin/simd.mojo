@@ -44,7 +44,7 @@ import math
 from collections import InlineArray
 from hashlib.hasher import Hasher
 from math import Ceilable, CeilDivable, Floorable, Truncable
-from math.math import _call_ptx_intrinsic
+from math.math import _call_ptx_intrinsic, trunc
 from sys import (
     CompilationTarget,
     _RegisterPackType,
@@ -73,7 +73,7 @@ from bit import bit_width, byte_swap, pop_count
 from builtin._format_float import _write_float
 from builtin.device_passable import DevicePassable
 from builtin.format_int import _try_write_int
-from builtin.math import Powable
+from builtin.math import DivModable, Powable
 from documentation import doc_private
 from memory import bitcast, memcpy
 from python import ConvertibleToPython, Python, PythonObject
@@ -234,6 +234,86 @@ fn _has_native_f8_support() -> Bool:
 
 
 # ===----------------------------------------------------------------------=== #
+# FastMathFlag
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+@register_passable
+struct FastMathFlag(ImplicitlyCopyable):
+    """Flags for controlling fast-math optimizations in floating-point operations.
+
+    FastMathFlag provides compile-time controls for various floating-point math
+    optimization modes that trade strict IEEE 754 compliance for performance.
+
+    Available flags:
+    - `NONE`: No fast-math optimizations.
+    - `NNAN`: Assume operands and results are not NaN.
+    - `NINF`: Assume operands and results are not +/- infinity.
+    - `NSZ`: Treat the sign of a zero as insignificant.
+    - `ARCP`: Allow reciprocal of values.
+    - `CONTRACT`: Allow floating-point contraction (e.g., fused multiply-add).
+    - `AFN`: Allow algebraic function approximations.
+    - `REASSOC`: Allow reassociation of floating-point operations.
+    - `FAST`: Enable all fast-math optimizations.
+
+    Examples:
+        ```mojo
+        # Use contract flag for fused multiply-add
+        var result = value.fma[FastMathFlag.CONTRACT](multiplier, accumulator)
+
+        # Use fast flag for maximum optimization
+        var fast_result = value.fma[FastMathFlag.FAST](multiplier, accumulator)
+        ```
+    """
+
+    var _value: UInt8
+
+    alias NONE = Self(0)
+    alias NNAN = Self(1)
+    alias NINF = Self(2)
+    alias NSZ = Self(3)
+    alias ARCP = Self(4)
+    alias CONTRACT = Self(5)
+    alias AFN = Self(6)
+    alias REASSOC = Self(7)
+    alias FAST = Self(8)
+
+    fn __is__(self, other: Self) -> Bool:
+        """Compares two FastMathFlag values for identity.
+
+        Args:
+            other: The FastMathFlag to compare against.
+
+        Returns:
+            True if both flags have the same value, False otherwise.
+        """
+        return self._value == other._value
+
+    fn _mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
+        if self is FastMathFlag.NONE:
+            return __mlir_attr.`#pop<fmf none>`
+        if self is FastMathFlag.NNAN:
+            return __mlir_attr.`#pop<fmf nnan>`
+        if self is FastMathFlag.NINF:
+            return __mlir_attr.`#pop<fmf ninf>`
+        if self is FastMathFlag.NSZ:
+            return __mlir_attr.`#pop<fmf nsz>`
+        if self is FastMathFlag.ARCP:
+            return __mlir_attr.`#pop<fmf arcp>`
+        if self is FastMathFlag.CONTRACT:
+            return __mlir_attr.`#pop<fmf contract>`
+        if self is FastMathFlag.AFN:
+            return __mlir_attr.`#pop<fmf afn>`
+        if self is FastMathFlag.REASSOC:
+            return __mlir_attr.`#pop<fmf reassoc>`
+        if self is FastMathFlag.FAST:
+            return __mlir_attr.`#pop<fmf fast>`
+
+        return __mlir_attr.`#pop<fmf none>`
+
+
+# ===----------------------------------------------------------------------=== #
 # SIMD
 # ===----------------------------------------------------------------------=== #
 
@@ -246,15 +326,13 @@ struct SIMD[dtype: DType, size: Int](
     CeilDivable,
     Ceilable,
     Comparable,
-    ConvertibleToPython,
     Defaultable,
     DevicePassable,
+    DivModable,
     Floorable,
     Hashable,
-    ImplicitlyCopyable,
     Indexer,
     Intable,
-    Movable,
     Powable,
     Representable,
     Roundable,
@@ -414,7 +492,7 @@ struct SIMD[dtype: DType, size: Int](
 
     alias _Mask = SIMD[DType.bool, size]
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
     """SIMD types are remapped to the same type when passed to accelerator devices."""
 
     fn _to_device_type(self, target: OpaquePointer):
@@ -568,9 +646,6 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             value: The object to get the float point representation of.
         """
-
-        # TODO(MOCO-2186): remove when the parser ensures this for constructors.
-        constrained[_type_is_eq[__type_of(self), Self]()]()
         self = value.__float__()
 
     @always_inline
@@ -586,43 +661,7 @@ struct SIMD[dtype: DType, size: Int](
         Raises:
             If the type does not have a float point representation.
         """
-        # TODO(MOCO-2186): remove when the parser ensures this for constructors.
-        constrained[_type_is_eq[__type_of(self), Self]()]()
         self = value.__float__()
-
-    # TODO(MSTDL-1587): Remove the dummy parameter.
-    @always_inline
-    fn __init__[
-        *, `_`: NoneType = None
-    ](out self: Scalar[dtype], obj: PythonObject, /) raises:
-        """Initialize a SIMD value from a PythonObject.
-
-        Parameters:
-            _: A dummy parameter to ensure this overload has lower priority than
-                the others. Its value is ignored.
-
-        Args:
-            obj: The PythonObject to convert.
-
-        Raises:
-            If the conversion to double fails.
-        """
-
-        @parameter
-        if dtype.is_floating_point():
-            ref cpy = Python().cpython()
-            var float_value = cpy.PyFloat_AsDouble(obj._obj_ptr)
-            if float_value == -1.0 and cpy.PyErr_Occurred():
-                # Note that -1.0 does not guarantee an error, it just means we
-                # need to check if there was an exception.
-                raise cpy.unsafe_get_error()
-            # NOTE: if dtype is not float64, we truncate.
-            self = Scalar[dtype](float_value)
-        elif dtype.is_integral() and dtype.bit_width() <= 64:
-            self = Int(obj)
-        else:
-            self = Scalar[dtype]()
-            constrained[False, "unsupported dtype"]()
 
     @always_inline("nodebug")
     @implicit
@@ -676,11 +715,6 @@ struct SIMD[dtype: DType, size: Int](
             ),
         ]()
 
-        # TODO(MOCO-2186): remove when the parser ensures this for constructors.
-        constrained[
-            _type_is_eq[__type_of(self), Self](),
-            "Target type doesn't support conversion from `Bool`",
-        ]()
         _simd_construction_checks[dtype, size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<bool>`
@@ -697,11 +731,6 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             fill: The bool value to fill each element of the SIMD vector with.
         """
-        # TODO(MOCO-2186): remove when the parser ensures this for constructors.
-        constrained[
-            _type_is_eq[__type_of(self), Self](),
-            "Target type doesn't support conversion from `Bool`",
-        ]()
         _simd_construction_checks[dtype, size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<bool>`
@@ -969,9 +998,11 @@ struct SIMD[dtype: DType, size: Int](
         """
         constrained[dtype.is_numeric(), "the type must be numeric"]()
 
-        if not any(rhs):
-            # this should raise an exception.
-            return 0
+        @parameter
+        if dtype.is_integral():
+            if not all(rhs):
+                # this should raise an exception.
+                return Self()
 
         var div = self / rhs
 
@@ -993,16 +1024,18 @@ struct SIMD[dtype: DType, size: Int](
         """Returns the remainder of self divided by rhs.
 
         Args:
-            rhs: The value to divide on.
+            rhs: The value to divide with.
 
         Returns:
             The remainder of dividing self by rhs.
         """
         constrained[dtype.is_numeric(), "the type must be numeric"]()
 
-        if not any(rhs):
-            # this should raise an exception.
-            return 0
+        @parameter
+        if dtype.is_integral():
+            if not all(rhs):
+                # this should raise an exception.
+                return Self()
 
         @parameter
         if dtype.is_unsigned():
@@ -1016,13 +1049,44 @@ struct SIMD[dtype: DType, size: Int](
 
             @parameter
             if dtype.is_floating_point():
-                div = llvm_intrinsic["llvm.trunc", Self, has_side_effect=False](
-                    div
-                )
+                div = trunc(div)
 
             var mod = self - div * rhs
             var mask = (rhs.lt(0) ^ self.lt(0)) & mod.ne(0)
             return mod + mask.select(rhs, Self(0))
+
+    @always_inline("nodebug")
+    fn __divmod__(self, denominator: Self) -> Tuple[Self, Self]:
+        """Computes both the quotient and remainder using floor division.
+
+        Args:
+            denominator: The value to divide on.
+
+        Returns:
+            The quotient and remainder as a
+            `Tuple(self // denominator, self % denominator)`.
+        """
+        if not all(denominator):
+            # this should raise an exception.
+            return Self(0), Self(0)
+
+        @parameter
+        if dtype.is_unsigned():
+            return self // denominator, self % denominator
+
+        var div = self / denominator
+
+        @parameter
+        if dtype.is_floating_point():
+            div = trunc(div)
+
+        var mod = self - div * denominator
+        var mask = (denominator.lt(0) ^ self.lt(0)) & mod.ne(0)
+
+        if any(mask):
+            div = div - mask.cast[dtype]()
+
+        return div, mod + mask.select(denominator, Self(0))
 
     @always_inline("nodebug")
     fn __pow__(self, exp: Int) -> Self:
@@ -1772,15 +1836,6 @@ struct SIMD[dtype: DType, size: Int](
     # Trait implementations
     # ===------------------------------------------------------------------=== #
 
-    fn to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-        """
-        constrained[size == 1, "only works with scalar values"]()
-        return PythonObject(self._refine[new_size=1]())
-
     @always_inline("nodebug")
     fn __len__(self) -> Int:
         """Gets the length of the SIMD vector.
@@ -2326,9 +2381,14 @@ struct SIMD[dtype: DType, size: Int](
 
     # TODO: Move to global function.
     @always_inline("nodebug")
-    fn fma(self, multiplier: Self, accumulator: Self) -> Self:
+    fn fma[
+        flag: FastMathFlag = FastMathFlag.CONTRACT
+    ](self, multiplier: Self, accumulator: Self) -> Self:
         """Performs a fused multiply-add operation, i.e.
         `self*multiplier + accumulator`.
+
+        Parameters:
+            flag: Fast-math optimization flags to apply (default: CONTRACT).
 
         Args:
             multiplier: The value to multiply.
@@ -2341,9 +2401,11 @@ struct SIMD[dtype: DType, size: Int](
         constrained[dtype.is_numeric(), "the SIMD type must be numeric"]()
 
         return Self(
-            mlir_value=__mlir_op.`pop.fma`[
-                fastmathFlags = __mlir_attr.`#pop<fmf contract>`
-            ](self._mlir_value, multiplier._mlir_value, accumulator._mlir_value)
+            mlir_value=__mlir_op.`pop.fma`[fastmathFlags = flag._mlir_attr()](
+                self._mlir_value,
+                multiplier._mlir_value,
+                accumulator._mlir_value,
+            )
         )
 
     @always_inline("nodebug")
@@ -3223,7 +3285,7 @@ fn _tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:
 @always_inline
 fn _pow[
     width: Int
-](base: SIMD[_, width], exp: SIMD[_, width], out result: __type_of(base)):
+](base: SIMD[_, width], exp: SIMD[_, width], out result: type_of(base)):
     """Computes the power of the elements of a SIMD vector raised to the
     corresponding elements of another SIMD vector.
 
@@ -3240,7 +3302,18 @@ fn _pow[
 
     @parameter
     if exp.dtype.is_floating_point() and base.dtype is exp.dtype:
-        return _powf(base, exp)
+
+        @parameter
+        if is_apple_gpu():
+            return llvm_intrinsic[
+                "llvm.air.pow",
+                type_of(base),
+                type_of(base),
+                type_of(exp),
+                has_side_effect=False,
+            ](base, exp)
+        else:
+            return _powf(base, exp)
     elif exp.dtype.is_integral():
         # Common cases
         if all(exp.eq(2)):
@@ -3259,7 +3332,7 @@ fn _pow[
 
 
 @always_inline
-fn _powf_scalar(base: Scalar, exponent: Scalar) -> __type_of(base):
+fn _powf_scalar(base: Scalar, exponent: Scalar) -> type_of(base):
     constrained[
         exponent.dtype.is_floating_point(), "exponent must be floating point"
     ]()
@@ -3278,7 +3351,7 @@ fn _powf_scalar(base: Scalar, exponent: Scalar) -> __type_of(base):
 @always_inline
 fn _powf[
     width: Int
-](base: SIMD[_, width], exp: SIMD[_, width], out result: __type_of(base)):
+](base: SIMD[_, width], exp: SIMD[_, width], out result: type_of(base)):
     constrained[
         exp.dtype.is_floating_point(), "exponent must be floating point"
     ]()
@@ -3290,7 +3363,7 @@ fn _powf[
 
 
 @always_inline
-fn _powi(base: Scalar, exp: Int32) -> __type_of(base):
+fn _powi(base: Scalar, exp: Int32) -> type_of(base):
     if base.dtype.is_integral() and exp < 0:
         # Not defined for Integers, this should raise an
         # exception.
@@ -3790,7 +3863,7 @@ fn _simd_apply[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _modf_scalar(x: Scalar) -> Tuple[__type_of(x), __type_of(x)]:
+fn _modf_scalar(x: Scalar) -> Tuple[type_of(x), type_of(x)]:
     constrained[
         x.dtype.is_floating_point(), "the type must be floating point"
     ]()
@@ -3806,15 +3879,15 @@ fn _modf_scalar(x: Scalar) -> Tuple[__type_of(x), __type_of(x)]:
     return (f, x - f)
 
 
-fn _modf(x: SIMD) -> Tuple[__type_of(x), __type_of(x)]:
+fn _modf(x: SIMD) -> Tuple[type_of(x), type_of(x)]:
     constrained[x.dtype.is_numeric(), "the type must be numeric"]()
 
     @parameter
     if x.dtype.is_integral():
         return (x, {0})
 
-    var result_int: __type_of(x) = {}
-    var result_frac: __type_of(x) = {}
+    var result_int: type_of(x) = {}
+    var result_frac: type_of(x) = {}
 
     @parameter
     for i in range(x.size):
@@ -3830,7 +3903,7 @@ fn _modf(x: SIMD) -> Tuple[__type_of(x), __type_of(x)]:
 # ===----------------------------------------------------------------------=== #
 
 
-fn _floor(x: SIMD) -> __type_of(x):
+fn _floor(x: SIMD) -> type_of(x):
     @parameter
     if x.dtype.is_integral():
         return x
@@ -3849,7 +3922,7 @@ fn _floor(x: SIMD) -> __type_of(x):
         bits & ~((1 << (shift_factor - e)) - 1),
         bits,
     )
-    return __type_of(x)(from_bits=bits)
+    return type_of(x)(from_bits=bits)
 
 
 fn _write_scalar[
@@ -3873,3 +3946,48 @@ fn _write_scalar[
         constrained[
             False, "unable to write dtype, only integral/float/bool supported"
         ]()
+
+
+__extension SIMD(ConvertibleToPython):
+    # TODO(MSTDL-1587): Remove the dummy parameter.
+    @always_inline
+    fn __init__[
+        *, `_`: NoneType = None
+    ](out self: Scalar[dtype], obj: PythonObject, /) raises:
+        """Initialize a SIMD value from a PythonObject.
+
+        Parameters:
+            _: A dummy parameter to ensure this overload has lower priority than
+                the others. Its value is ignored.
+
+        Args:
+            obj: The PythonObject to convert.
+
+        Raises:
+            If the conversion to double fails.
+        """
+
+        @parameter
+        if dtype.is_floating_point():
+            ref cpy = Python().cpython()
+            var float_value = cpy.PyFloat_AsDouble(obj._obj_ptr)
+            if float_value == -1.0 and cpy.PyErr_Occurred():
+                # Note that -1.0 does not guarantee an error, it just means we
+                # need to check if there was an exception.
+                raise cpy.unsafe_get_error()
+            # NOTE: if dtype is not float64, we truncate.
+            self = Scalar[dtype](float_value)
+        elif dtype.is_integral() and dtype.bit_width() <= 64:
+            self = Int(obj)
+        else:
+            self = Scalar[dtype]()
+            constrained[False, "unsupported dtype"]()
+
+    fn to_python_object(var self) raises -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        constrained[size == 1, "only works with scalar values"]()
+        return PythonObject(self._refine[new_size=1]())

@@ -36,6 +36,12 @@ alias log = logger.Logger[logger.Level.INFO](fd=sys.stderr, prefix="[OP] ")
 
 fn get_safe_task_id(ctx: DeviceContextPtr) -> OptionalReg[Int]:
     """Safely extract task_id from DeviceContextPtr, returning None if null/invalid.
+
+    Args:
+        ctx: The device context pointer to extract the task ID from.
+
+    Returns:
+        An OptionalReg containing the task ID if valid, None otherwise.
     """
     # Check if the underlying handle is null
     if not ctx._handle:
@@ -49,6 +55,12 @@ fn get_safe_task_id(ctx: DeviceContextPtr) -> OptionalReg[Int]:
 
 fn get_safe_task_id(ctx: DeviceContext) -> OptionalReg[Int]:
     """Safely extract task_id from DeviceContext, returning None if null/invalid.
+
+    Args:
+        ctx: The device context to extract the task ID from.
+
+    Returns:
+        An OptionalReg containing the task ID if valid, None otherwise.
     """
     return get_safe_task_id(DeviceContextPtr(ctx))
 
@@ -572,6 +584,9 @@ struct Trace[
         """Enters the trace context.
 
         This begins recording of the trace event.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -670,6 +685,9 @@ struct Trace[
         """Exits the trace context.
 
         This finishes recording of the trace event.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -699,6 +717,9 @@ struct Trace[
         """Marks the tracer with the info at the specific point of time.
 
         This creates a point event in the trace timeline rather than a range.
+
+        Raises:
+            If the operation fails.
         """
 
         @parameter
@@ -744,6 +765,9 @@ struct Trace[
         """Start recording trace event.
 
         This begins recording of the trace event, similar to __enter__.
+
+        Raises:
+            If the operation fails.
         """
         self.__enter__()
 
@@ -752,6 +776,9 @@ struct Trace[
         """End recording trace event.
 
         This finishes recording of the trace event, similar to __exit__.
+
+        Raises:
+            If the operation fails.
         """
         self.__exit__()
 

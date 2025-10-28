@@ -47,11 +47,11 @@ def _initialize_ragged_inputs[
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
-) -> (
+) -> Tuple[
     DeviceNDBuffer[DType.uint32, 1],
     DeviceNDBuffer[dtype, 2, DimList(Dim(), hidden_size)],
     DeviceNDBuffer[dtype, 2, DimList(Dim(), hidden_size)],
-):
+]:
     """Initializes input row offsets and hidden state ragged tensor inputs."""
     total_length = 0
     max_seq_length_batch = -1
@@ -245,9 +245,9 @@ def execute_matmul_kv_cache_ragged[
 
     # Execute test.
     _matmul_kv_cache_ragged_impl[target="gpu"](
-        hidden_state_ragged_device.tensor,
-        input_row_offsets_device.tensor,
-        weight_device.tensor,
+        hidden_state_ragged_device.to_layout_tensor(),
+        input_row_offsets_device.to_layout_tensor(),
+        weight_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
         ctx,
@@ -434,9 +434,9 @@ def execute_matmul_k_cache_ragged[
 
     # Execute test.
     _matmul_k_cache_ragged_impl[target="gpu"](
-        hidden_state_ragged_device.tensor,
-        input_row_offsets_device.tensor,
-        weight_device.tensor,
+        hidden_state_ragged_device.to_layout_tensor(),
+        input_row_offsets_device.to_layout_tensor(),
+        weight_device.to_layout_tensor(),
         k_cache_device,
         ctx,
     )
@@ -597,19 +597,20 @@ def generic_execute_fused_qkv_cache_ragged[
     k_cache: cache_t,
     v_cache: cache_t,
     ctx: DeviceContext,
-    out result: (
+    out result: Tuple[
         DeviceNDBuffer[
             dtype,
             2,
             DimList(
                 Dim(),
-                (kv_params.num_heads * 2 + num_q_heads) * kv_params.head_size,
+                (kv_params.num_heads * 2 + UInt(num_q_heads))
+                * kv_params.head_size,
             ),
         ],
         DeviceNDBuffer[
             dtype, 2, DimList(Dim(), num_q_heads * kv_params.head_size)
         ],
-    ),
+    ],
 ):
     """Executes fused QKV matmul, writing results kv_cache objects.
 
@@ -678,12 +679,12 @@ def generic_execute_fused_qkv_cache_ragged[
 
     # execute the matmul
     _fused_qkv_matmul_kv_cache_ragged_impl[target="gpu"](
-        hidden_state_ragged_device.tensor,
-        input_row_offsets_device.tensor,
-        weight_device.tensor,
+        hidden_state_ragged_device.to_layout_tensor(),
+        input_row_offsets_device.to_layout_tensor(),
+        weight_device.to_layout_tensor(),
         k_cache,
         v_cache,
-        test_output_device.tensor,
+        test_output_device.to_layout_tensor(),
         ctx,
     )
 
@@ -704,7 +705,7 @@ def generic_execute_fused_qkv_cache_ragged[
     # Pass around the DeviceNDBuffers, these are reference counted using DeviceBuffers.
     # If we return around HostNDBuffers then we'll double free because HostNDBuffers are
     # @value decorated and can't be moved.
-    return rebind[__type_of(result)](
+    return rebind[type_of(result)](
         (
             ref_output_device,
             test_output_device,

@@ -16,7 +16,6 @@ from random import random_si64
 
 from gpu import WARP_SIZE, barrier, lane_id, thread_idx
 from gpu.host import DeviceContext
-from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
 from gpu.mma_util import store_matrix_d
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
@@ -116,10 +115,12 @@ fn test_ldmatrix_transposed[
     barrier()
 
     var a_reg = ld_matrix[a_frag_size](
-        a_shared + Int((lane % M) * K + (lane // M) * K // 2)
+        a_shared
+        + Int((lane % UInt(M)) * UInt(K) + (lane // UInt(M)) * UInt(K) // 2)
     )
     var b_reg = ld_matrix[b_frag_size, transpose=True](
-        b_shared + Int((lane % K) * N + (lane // K) * N // 2)
+        b_shared
+        + Int((lane % UInt(K)) * UInt(N) + (lane // UInt(K)) * UInt(N) // 2)
     )
 
     mma(d, a_reg, b_reg, d)

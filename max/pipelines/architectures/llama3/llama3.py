@@ -36,9 +36,7 @@ from max.nn import (
     Transformer,
     TransformerBlock,
 )
-from max.nn.kv_cache import (
-    PagedKVCacheManager,
-)
+from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.lib.lora import LoRAManager
 
 from .model_config import Llama3Config, create_rope_embedding

@@ -12,7 +12,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Run: bazel test open-source/max/max/kernels/benchmarks/autotune:autotune_tests
+# Run: bazel test max/kernels/benchmarks/autotune:autotune_tests
 
 import os
 import string
@@ -30,7 +30,7 @@ def get_abs_path(path: str) -> Path:
     return Path(string.Template(str(path)).substitute(os.environ)).absolute()
 
 
-kernel_benchmarks_root = get_abs_path("open-source/max/max/kernels/benchmarks/")
+kernel_benchmarks_root = get_abs_path("max/kernels/benchmarks/")
 os.environ["KERNEL_BENCHMARKS_ROOT"] = str(kernel_benchmarks_root)
 
 

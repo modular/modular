@@ -20,7 +20,7 @@
 from sys._assembly import inlined_assembly
 
 from buffer import DimList, NDBuffer
-from memory import AddressSpace, memcpy, memset_zero, stack_allocation
+from memory import memcpy, memset_zero, stack_allocation
 
 # All AMX instructions are of the form
 # `0x00201000 | ((op & 0x1F) << 5) | (operand & 0x1F)`
@@ -481,7 +481,7 @@ fn dot_at_b_impl(
 
 
 @always_inline
-fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
+fn dot_at_b(c: NDBuffer, a: type_of(c), b: type_of(c)):
     constrained[
         c.type is DType.float32 or c.type is DType.float16,
         "the buffer dtype must be float32 or float16",

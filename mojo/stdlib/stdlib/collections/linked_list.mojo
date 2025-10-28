@@ -110,7 +110,7 @@ struct _LinkedListIter[
         else:
             self.curr = self.src[]._tail
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     fn __has_next__(self) -> Bool:
@@ -297,6 +297,9 @@ struct LinkedList[
 
         Notes:
             Time Complexity: O(1).
+
+        Raises:
+            If the operation fails.
         """
         var elem = self._tail
         if not elem:
@@ -327,6 +330,9 @@ struct LinkedList[
 
         Notes:
             Time Complexity: O(n) in len(self).
+
+        Raises:
+            If the operation fails.
         """
         var idx = index(i)
         var current = self._get_node_ptr(idx)
@@ -428,12 +434,12 @@ struct LinkedList[
         Parameters:
             I: The type of index to use.
 
-        Raises:
-            When given an out of bounds index.
-
         Args:
             idx: The index to insert `elem` at `-len(self) <= idx <= len(self)`.
             elem: The item to insert into the list.
+
+        Raises:
+            When given an out of bounds index.
 
         Notes:
             Time Complexity: O(n) in len(self).
@@ -687,7 +693,7 @@ struct LinkedList[
         """
         return self._size
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
 
         Returns:
@@ -702,7 +708,7 @@ struct LinkedList[
 
     fn __reversed__(
         self,
-    ) -> _LinkedListIter[ElementType, __origin_of(self), forward=False]:
+    ) -> _LinkedListIter[ElementType, origin_of(self), forward=False]:
         """Iterate backwards over the list, returning immutable references.
 
         Returns:
@@ -713,7 +719,7 @@ struct LinkedList[
             - O(1) for iterator construction.
             - O(n) in len(self) for a complete iteration of the list.
         """
-        return _LinkedListIter[ElementType, __origin_of(self), forward=False](
+        return _LinkedListIter[ElementType, origin_of(self), forward=False](
             Pointer(to=self)
         )
 

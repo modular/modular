@@ -1,0 +1,21 @@
+load("//bazel:api.bzl", "copy_files", "modular_py_library")
+
+copy_files(
+    name = "ir_py",
+    srcs = ["@llvm-project//mlir/python:IRPyFiles"],
+    outs = ["ir.py"],
+)
+
+modular_py_library(
+    name = "_mlir",
+    srcs = [
+        ":ir_py",
+        "//SDK/lib/API/python/max/_mlir/dialects",
+    ],
+    imports = ["../.."],
+    tags = ["no-mypy"],  # Upstream files with violations
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/_mlir/_mlir_libs:_mlir",
+    ],
+)

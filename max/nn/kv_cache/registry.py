@@ -20,7 +20,6 @@ from max.engine import InferenceSession
 
 from .cache_params import KVCacheParams, KVCacheStrategy
 from .paged_cache import PagedKVCacheManager
-from .paged_cache.multi_cache_manager import MultiPagedKVCacheManager
 
 CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[PagedKVCacheManager]] = {
     KVCacheStrategy.PAGED: PagedKVCacheManager,
@@ -54,18 +53,6 @@ def load_kv_manager(
         if available_cache_memory is None:
             raise ValueError(
                 "Missing required argument available_cache_memory for KVCacheStrategy.PAGED"
-            )
-
-        if params.data_parallel_degree > 1 and len(devices) > 1:
-            return MultiPagedKVCacheManager(
-                params=params,
-                max_batch_size=max_batch_size,
-                max_seq_len=max_seq_len,
-                num_layers=num_layers,
-                devices=devices,
-                session=session,
-                available_cache_memory=available_cache_memory,
-                page_size=page_size,
             )
 
         return PagedKVCacheManager(

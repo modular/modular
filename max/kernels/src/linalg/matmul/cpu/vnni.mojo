@@ -113,7 +113,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
             # exclusivity checking, but it is safe in the sense that
             # `a` will be guaranteed to remain alive because
             # it is an argument to the function.
-        ) else a_base_ptr.origin_cast[True, MutableAnyOrigin]()
+        ) else a_base_ptr.unsafe_mut_cast[True]().as_any_origin()
         var a_ptr_stride = 4 if (
             is_tail and not CompilationTarget.has_avx512f()
         ) else K

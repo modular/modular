@@ -16,7 +16,7 @@ from math import ceildiv
 from sys import has_accelerator
 
 from gpu.host import DeviceContext
-from gpu.id import global_idx
+from gpu import global_idx
 from layout import Layout, LayoutTensor
 
 alias WIDTH = 5

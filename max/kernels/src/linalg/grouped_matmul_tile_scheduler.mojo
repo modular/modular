@@ -13,7 +13,7 @@
 
 from math import ceildiv
 
-from gpu.id import block_idx, grid_dim
+from gpu import block_idx, grid_dim, thread_idx
 
 from utils.fast_div import FastDiv
 from utils.index import Index, IndexList
@@ -98,13 +98,17 @@ struct TileScheduler[
     # shape
     tile_shape: IndexList[3],
     cluster: IndexList[3] = Index(1, 1, 1),
+    cta_group: Int = 1,
     swizzle: Bool = False,
 ]:
+    var num_active_experts: Int
     var group_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     var current_iter: Int32  # Tracks the scheduler's progress across kernel launches
     var current_group_idx: UInt32
-    alias div_block_n = FastDiv[DType.uint32](tile_shape[1])
+    alias tile_n = tile_shape[1] * cta_group
+    alias div_block_n = FastDiv[DType.uint32](Self.tile_n)
     var current_n_cumsum: UInt32
+    var block_idx_start: UInt32
 
     alias num_m_blocks: UInt32 = ceildiv(M, tile_shape[0])
 
@@ -112,15 +116,24 @@ struct TileScheduler[
 
     @always_inline
     fn __init__(
-        out self, group_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        out self,
+        num_active_experts: Int,
+        group_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
     ):
         constrained[
             cluster[1] == cluster[2] == 1,
             "Currently multicasting along non-M dimension is not supported",
         ]()
+        constrained[
+            cta_group == cluster[0],
+            "cta_group must be equal to cluster M size. Got cta_group = "
+            + String(cta_group)
+            + " and cluster M size = "
+            + String(cluster[0]),
+        ]()
         alias cluster_m_size = cluster[0] * tile_shape[0]
         constrained[
-            M % cluster_m_size == 0,
+            cluster[0] == 1 or M % cluster_m_size == 0,
             "Problem shape M must be divisible by cluster M size. Got "
             + String(M)
             + " and cluster M size "
@@ -131,10 +144,12 @@ struct TileScheduler[
             + String(tile_shape[0]),
         ]()
 
+        self.num_active_experts = num_active_experts
         self.group_offsets = group_offsets
         self.current_iter = -1
         self.current_group_idx = 0
         self.current_n_cumsum = 0
+        self.block_idx_start = 0
 
     @always_inline
     fn fetch_next_work(mut self) -> WorkInfo:
@@ -142,16 +157,14 @@ struct TileScheduler[
         var next_block_idx = (
             UInt32(self.current_iter) * grid_dim.x + block_idx.x
         )
-        var num_groups = len(self.group_offsets) - 1
         var start_idx = self.group_offsets[Int(self.current_group_idx)]
         var end_idx: UInt32 = 0
-        var block_idx_start: UInt32 = 0
         var num_n_blocks: UInt32 = 0
         var current_n: UInt32 = 0
 
         # Trim to the next group
         while True:
-            if self.current_group_idx >= num_groups:
+            if self.current_group_idx >= self.num_active_experts:
                 # at this point, we finished all groups
                 return WorkInfo(0, 0, False, True)
 
@@ -159,7 +172,7 @@ struct TileScheduler[
             current_n = end_idx - start_idx
             num_n_blocks = UInt32(
                 rebind[Scalar[Self.div_block_n.uint_type]](
-                    current_n + UInt32(Self.tile_shape[1] - 1)
+                    current_n + UInt32(Self.tile_n - 1)
                 )
                 / Self.div_block_n
             )
@@ -171,15 +184,19 @@ struct TileScheduler[
                 break
             self.current_group_idx += 1
             self.current_n_cumsum = current_n_block_cumsum
-            block_idx_start = current_block_idx_start
+            self.block_idx_start = current_block_idx_start
             start_idx = end_idx
 
-        var group_local_block_idx = next_block_idx - block_idx_start
+        var group_local_block_idx = next_block_idx - self.block_idx_start
+        var is_valid = group_local_block_idx < num_n_blocks * Self.num_m_blocks
+        if not is_valid:
+            return WorkInfo(0, 0, False, False)
+
         var m_block_idx, n_block_idx = self._get_swizzled_block_idx(
             num_n_blocks, group_local_block_idx
         )
-        var m = UInt32(m_block_idx * Self.tile_shape[0])
-        var n = UInt32(start_idx + n_block_idx * Self.tile_shape[1])
+        var m = UInt32(m_block_idx) * UInt32(Self.tile_shape[0])
+        var n = UInt32(start_idx + n_block_idx * Self.tile_n)
         # In GMM scheduler, a tile may be invalid, but that is an independent
         # condition from `is_done/terminate`, that is, the CTA might have more
         # work to do in the next group. This is the consequence of not aligning
@@ -187,7 +204,7 @@ struct TileScheduler[
         return WorkInfo(
             m,
             n,
-            group_local_block_idx < num_n_blocks * Self.num_m_blocks,
+            True,
             False,
         )
 

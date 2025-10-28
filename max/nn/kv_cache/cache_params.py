@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
 
@@ -18,39 +20,109 @@ from max.dtype import DType
 
 
 class KVCacheStrategy(str, Enum):
+    """Enumeration of supported KV cache strategies for attention mechanisms.
+
+    This enum defines the different strategies for managing key-value caches
+    in transformer models during inference.
+    """
+
     MODEL_DEFAULT = "model_default"
+    """Use the model's default caching strategy."""
+
     PAGED = "paged"
+    """Use paged attention for efficient memory management."""
 
     def kernel_substring(self) -> str:
-        """Returns the common substring that we include in the kernel name for this caching strategy."""
+        """Returns the common substring included in the kernel name for this caching strategy.
+
+        Returns:
+            The string representation of the cache strategy value.
+        """
         return self.value
 
     def uses_opaque(self) -> bool:
+        """Determines if this cache strategy uses opaque cache implementations.
+
+        Returns:
+            True if the strategy uses opaque caching, False otherwise.
+        """
         return True
 
 
 @dataclass
 class KVCacheParams:
+    """Configuration parameters for key-value cache management in transformer models.
+
+    This class encapsulates all configuration options for managing KV caches during
+    inference, including parallelism settings, memory management, and cache strategy.
+    """
+
     dtype: DType
+    """Data type for storing key and value tensors in the cache."""
+
     n_kv_heads: int
+    """Total number of key-value attention heads across all devices."""
+
     head_dim: int
+    """Dimensionality of each attention head."""
+
     enable_prefix_caching: bool = False
+    """Whether to enable prefix caching for efficient reuse of common prompt prefixes."""
+
     enable_kvcache_swapping_to_host: bool = False
+    """Whether to enable swapping of KV cache blocks to host memory when device memory is full."""
+
     host_kvcache_swap_space_gb: float | None = None
+    """Amount of host memory (in GB) to reserve for KV cache swapping. Required when swapping is enabled."""
+
     cache_strategy: KVCacheStrategy = KVCacheStrategy.PAGED
+    """Strategy to use for managing the KV cache."""
+
     page_size: int | None = None
+    """Size of each page in the paged cache strategy. Required for paged caching."""
+
     n_devices: int = 1
+    """Total number of devices (GPUs/accelerators) available for inference."""
+
+    is_mla: bool = False
+    """Whether the model uses Multi-Latent Attention (MLA) architecture."""
 
     data_parallel_degree: int = 1
+    """Degree of data parallelism. Must be 1 or equal to n_devices (DP+TP not yet supported)."""
 
-    # Computed fields (set in __post_init__)
-    n_kv_heads_per_device: int = 0  # Will be computed
+    n_kv_heads_per_device: int = 0
+    """Number of KV heads allocated to each device. Computed automatically in __post_init__."""
 
     def __post_init__(self):
+        """Validates configuration and computes derived fields after initialization.
+
+        This method:
+        - Validates parallelism configuration (data parallel vs tensor parallel)
+        - Computes n_kv_heads_per_device based on parallelism strategy
+        - Validates cache strategy compatibility with enabled features
+
+        Raises:
+            ValueError: If configuration parameters are invalid or incompatible.
+        """
         if self.data_parallel_degree > 1:
+            if self.n_devices < self.data_parallel_degree:
+                raise ValueError(
+                    f"Data parallelism degree ({self.data_parallel_degree}) cannot be greater than the number of devices ({self.n_devices})"
+                )
+            if self.data_parallel_degree < self.n_devices:
+                raise ValueError(
+                    f"We do not yet support DP + TP at the same time. Found {self.data_parallel_degree=} and {self.n_devices=}"
+                )
             self.n_kv_heads_per_device = self.n_kv_heads
+        elif self.is_mla:
+            # MLA always caches one latent vector per device.
+            self.n_kv_heads_per_device = 1
         else:
             # Tensor parallel mode: shard by heads, keep all layers per device
+            if self.n_kv_heads % self.n_devices != 0:
+                raise ValueError(
+                    f"Number of KV heads ({self.n_kv_heads}) must be divisible by the number of devices ({self.n_devices})"
+                )
             self.n_kv_heads_per_device = max(
                 self.n_kv_heads // self.n_devices, 1
             )
@@ -92,15 +164,59 @@ class KVCacheParams:
 
     @property
     def dtype_shorthand(self) -> str:
-        """The textual representation in shorthand of the dtype."""
+        """Returns a shorthand textual representation of the data type.
+
+        Returns:
+            "bf16" for bfloat16 dtype, "f32" otherwise.
+        """
         return "bf16" if self.dtype == DType.bfloat16 else "f32"
 
     @property
     def static_cache_shape(self) -> tuple[str, str, str, str, str]:
+        """Returns the dimension names for the static cache tensor shape.
+
+        Returns:
+            A tuple of dimension names: (num_layers, batch_size, seq_len, n_kv_heads, head_dim).
+        """
         return (
             "num_layers",
             "batch_size",
             "seq_len",
             "n_kv_heads",
             "head_dim",
+        )
+
+    def copy_as_dp_1(self) -> KVCacheParams:
+        """Creates a copy of the KVCacheParams with data parallelism disabled.
+
+        This method creates a new instance of the current configuration and adjusts
+        the device count to reflect a tensor-parallel-only setup (data_parallel_degree=1).
+        The number of devices is divided by the current data parallel degree.
+
+        Returns:
+            A new KVCacheParams instance with data_parallel_degree set to 1.
+
+        Raises:
+            ValueError: If n_devices is not evenly divisible by data_parallel_degree.
+        """
+        if self.n_devices % self.data_parallel_degree != 0:
+            raise ValueError(
+                f"Number of devices ({self.n_devices}) must be evenly divisible "
+                f"by data parallel degree ({self.data_parallel_degree})"
+            )
+
+        new_n_devices = self.n_devices // self.data_parallel_degree
+
+        return KVCacheParams(
+            dtype=self.dtype,
+            n_kv_heads=self.n_kv_heads,
+            head_dim=self.head_dim,
+            enable_prefix_caching=self.enable_prefix_caching,
+            enable_kvcache_swapping_to_host=self.enable_kvcache_swapping_to_host,
+            host_kvcache_swap_space_gb=self.host_kvcache_swap_space_gb,
+            cache_strategy=self.cache_strategy,
+            page_size=self.page_size,
+            n_devices=new_n_devices,
+            is_mla=self.is_mla,
+            data_parallel_degree=1,
         )

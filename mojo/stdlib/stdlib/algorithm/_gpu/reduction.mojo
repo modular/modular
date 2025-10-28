@@ -13,7 +13,6 @@
 
 from math import align_up
 
-import gpu.warp as warp
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -25,15 +24,14 @@ from gpu import (
     lane_id,
     thread_idx,
     warp_id,
-)
-from gpu.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
-    pdl_launch_attributes,
     wait_on_dependent_grids,
+    AddressSpace,
 )
 from gpu.host import DeviceContext
-from gpu.memory import AddressSpace
+from gpu.primitives import warp
+from gpu.primitives.grid_controls import pdl_launch_attributes  # @doc_private
 from memory import stack_allocation
 
 from utils import IndexList
@@ -142,7 +140,7 @@ fn block_reduce[
         @parameter
         for i in range(num_reductions):
             last_accum[i] = shared.load[width=simd_width](
-                (num_reductions * lane_id() + i) * simd_width
+                (num_reductions * Int(lane_id()) + i) * simd_width
             )
     else:
 
@@ -237,7 +235,7 @@ fn row_reduce[
 
     var tid: UInt = thread_idx.x
     for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
-        var idx_in_padded_row: UInt = UInt(
+        var idx_in_padded_row = UInt(
             (tid + UInt(offset_in_row)) * UInt(simd_width)
         )
 
@@ -369,6 +367,10 @@ fn reduce_launch[
     var num_rows = shape.flattened_length() // shape[axis] // packing_factor
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
+
+    # Do not launch gpu kernels with grid_dim = 0
+    if num_blocks == 0:
+        return
 
     alias kernel = reduce_kernel[
         rank,

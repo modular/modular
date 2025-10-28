@@ -16,15 +16,16 @@ from sys.info import _current_target, _TargetType
 
 fn get_linkage_name[
     func_type: AnyType, //,
-    target: _TargetType,
     func: func_type,
+    *,
+    target: _TargetType = _current_target(),
 ]() -> StaticString:
     """Returns `func` symbol name.
 
     Parameters:
         func_type: Type of func.
-        target: The compilation target.
         func: A mojo function.
+        target: The compilation target, defaults to the current target.
 
     Returns:
         Symbol name.
@@ -37,22 +38,6 @@ fn get_linkage_name[
         `> : !kgen.string`,
     ]
     return StaticString(res)
-
-
-fn get_linkage_name[
-    func_type: AnyType, //,
-    func: func_type,
-]() -> StaticString:
-    """Returns `func` symbol name.
-
-    Parameters:
-        func_type: Type of func.
-        func: A mojo function.
-
-    Returns:
-        Symbol name.
-    """
-    return get_linkage_name[_current_target(), func]()
 
 
 fn get_type_name[

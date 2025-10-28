@@ -15,8 +15,8 @@
 from gpu import barrier
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.id import thread_idx
-from gpu.memory import AddressSpace, CacheOperation
+from gpu import thread_idx
+from gpu.memory import CacheOperation
 from layout import *
 from layout._fillers import arange
 from layout._utils import load_to_simd

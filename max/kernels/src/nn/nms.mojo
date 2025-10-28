@@ -348,9 +348,9 @@ fn non_max_suppression[
                 # Note: Use num_boxes_curr_pred (not num_boxes_remaining) because it
                 # represents the count before we marked boxes as suppressed above
                 sort[_greater_than](
-                    Span[box_idxs.T, __origin_of(box_idxs)](
+                    Span[box_idxs.T, origin_of(box_idxs)](
                         ptr=box_idxs.unsafe_ptr() + pred_idx,
-                        length=UInt(num_boxes_curr_pred),
+                        length=num_boxes_curr_pred,
                     )
                 )
 

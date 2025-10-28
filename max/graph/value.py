@@ -976,6 +976,12 @@ class TensorValue(Value[mo.TensorType]):
         """Performs element-wise negation."""
         return ops.negate(self)
 
+    def __round__(self) -> TensorValue:
+        """Rounds to the elementwise nearest integer, with ties going towards
+        the nearest even number.
+        """
+        return ops.round(self)
+
     def __ne__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
         """Performs element-wise inequality comparison.
 

@@ -22,8 +22,8 @@ from gpu import lane_id as get_lane_id
 from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx
-from gpu.memory import AddressSpace, external_memory
+from gpu import block_idx, lane_id, thread_idx
+from gpu.memory import external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 

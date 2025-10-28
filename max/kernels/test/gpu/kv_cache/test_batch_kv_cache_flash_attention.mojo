@@ -26,8 +26,8 @@ from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
-from tensor_internal import IOUnknown, ManagedTensorSlice
-from tensor_internal.managed_tensor_slice import StaticTensorSpec
+from tensor import IOUnknown, ManagedTensorSlice
+from tensor.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
@@ -203,19 +203,19 @@ def execute_flash_attention[
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     flash_attention(
-        test_output_device.tensor,
-        q_device.tensor,
+        test_output_device.to_layout_tensor(),
+        q_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
         MaterializedMask(
             LayoutTensor[
                 mask_device.dtype,
-                __type_of(mask_device.to_layout_tensor()).layout,
+                type_of(mask_device.to_layout_tensor()).layout,
                 MutableAnyOrigin,
             ](
                 mask_device.to_layout_tensor().ptr,
                 RuntimeLayout[
-                    __type_of(mask_device.to_layout_tensor()).layout
+                    type_of(mask_device.to_layout_tensor()).layout
                 ].row_major(
                     mask_device.to_layout_tensor().runtime_layout.shape.value.canonicalize()
                 ),
@@ -232,25 +232,25 @@ def execute_flash_attention[
     )
 
     mha_gpu_naive(
-        q_device.tensor,
+        q_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
         MaterializedMask(
             LayoutTensor[
                 mask_device.dtype,
-                __type_of(mask_device.to_layout_tensor()).layout,
+                type_of(mask_device.to_layout_tensor()).layout,
                 MutableAnyOrigin,
             ](
                 mask_device.to_layout_tensor().ptr,
                 RuntimeLayout[
-                    __type_of(mask_device.to_layout_tensor()).layout
+                    type_of(mask_device.to_layout_tensor()).layout
                 ].row_major(
                     mask_device.to_layout_tensor().runtime_layout.shape.value.canonicalize()
                 ),
             ),
             start_pos=cache_lengths_device_lt,
         ),
-        ref_output_device.tensor,
+        ref_output_device.to_layout_tensor(),
         ManagedTensorSlice[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),

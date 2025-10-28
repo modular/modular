@@ -17,7 +17,13 @@ from sys import CompilationTarget
 from tempfile import NamedTemporaryFile
 
 from builtin._location import __source_location
-from testing import assert_equal, assert_false, assert_not_equal, assert_true
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+    TestSuite,
+)
 
 
 def test_cwd():
@@ -212,16 +218,4 @@ def test_parts():
 
 
 def main():
-    test_cwd()
-    test_path()
-    test_path_exists()
-    test_path_isdir()
-    test_path_isfile()
-    test_suffix()
-    test_joinpath()
-    test_read_write()
-    test_expand_user()
-    test_home()
-    test_stat()
-    test_name()
-    test_parts()
+    TestSuite.discover_tests[__functions_in_module()]().run()

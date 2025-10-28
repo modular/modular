@@ -32,9 +32,7 @@ from max.nn import (
     TensorParallelAttentionWithRope,
     VocabParallelEmbedding,
 )
-from max.nn.kv_cache import (
-    PagedKVCacheManager,
-)
+from max.nn.kv_cache import PagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
 from .model_config import Llama3Config, create_rope_embedding

@@ -34,7 +34,7 @@ fn bench_func[
         @parameter
         @always_inline
         fn call_fn():
-            sleep(0.1)
+            sleep(0.01)
 
         b.iter[call_fn]()
 

@@ -19,13 +19,7 @@ from testing import TestSuite
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_debug_assert]()
-    suite.test[test_debug_assert_multiple_args]()
-    suite.test[test_debug_assert_writable]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 # CHECK-LABEL: test_debug_assert

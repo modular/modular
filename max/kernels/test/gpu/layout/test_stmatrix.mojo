@@ -16,7 +16,6 @@ from random import random_si64
 
 from gpu import WARP_SIZE, barrier, lane_id, thread_idx
 from gpu.host import DeviceContext
-from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma, st_matrix
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
@@ -76,10 +75,12 @@ fn test_stmatrix(
 
     var lane = lane_id()
     var a_reg = ld_matrix[4](
-        a_shared + Int((lane % m) * k + (lane // m) * k // 2)
+        a_shared
+        + Int((lane % UInt(m)) * UInt(k) + (lane // UInt(m)) * UInt(k) // 2)
     )
     var b_reg = ld_matrix[2](
-        b_shared + Int((lane % k) * n + (lane // k) * n // 2)
+        b_shared
+        + Int((lane % UInt(k)) * UInt(n) + (lane // UInt(k)) * UInt(n) // 2)
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
@@ -92,7 +93,7 @@ fn test_stmatrix(
 
     var base = tid * 4
     for i in range(4):
-        var d = base + i
+        var d = base + UInt(i)
         var r = d & 63
         var src = ((d >> 6) << 6) + ((r & 1) << 5) + (r >> 1)
         c_ptr[d] = c_shared[src]
@@ -142,10 +143,12 @@ fn test_stmatrix_gen[
     barrier()
 
     var a_reg = ld_matrix[a_frag_size](
-        a_shared + Int((lane % M) * K + (lane // M) * K // 2)
+        a_shared
+        + Int((lane % UInt(M)) * UInt(K) + (lane // UInt(M)) * UInt(K) // 2)
     )
     var b_reg = ld_matrix[b_frag_size, transpose=True](
-        b_shared + Int((lane % K) * N + (lane // K) * N // 2)
+        b_shared
+        + Int((lane % UInt(K)) * UInt(N) + (lane // UInt(K)) * UInt(N) // 2)
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
@@ -158,7 +161,7 @@ fn test_stmatrix_gen[
 
     var base = thread_idx.x * 4
     for i in range(4):
-        var d = base + i
+        var d = base + UInt(i)
         var r = d & 63
         var src = ((d >> 6) << 6) + ((r & 1) << 5) + (r >> 1)
         c_ptr[d] = c_shared[src].cast[output_type]()

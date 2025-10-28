@@ -45,10 +45,4 @@ def test_unsetenv():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_getenv]()
-    suite.test[test_setenv]()
-    suite.test[test_unsetenv]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

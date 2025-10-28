@@ -111,6 +111,11 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
     @always_inline("nodebug")
     @staticmethod
     fn __arch() -> __mlir_type.`!kgen.string`:
+        """Get the target architecture string from the compilation target.
+
+        Returns:
+            The architecture string (e.g., "x86_64", "aarch64").
+        """
         return __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
             Self.value,
@@ -374,17 +379,20 @@ fn platform_map[
     on the current compilation target, raising a compilation
     error if trying to access the value on an unsupported target.
 
+    Parameters:
+        T: The type of the platform-specific value.
+        operation: Optional operation name for error messages.
+        linux: The value to use on Linux platforms.
+        macos: The value to use on macOS platforms.
+
+    Returns:
+        The platform-specific value for the current target.
+
     Example:
 
     ```mojo
     alias EDEADLK = platform_alias["EDEADLK", linux=35, macos=11]()
     ```
-
-    Parameters:
-        T: The type of the value.
-        operation: The operation to show in the compilation error.
-        linux: Optional support for linux targets.
-        macos: Optional support for macos targets.
     """
 
     @parameter
@@ -474,6 +482,11 @@ fn _is_sm_101x() -> Bool:
 
 
 @always_inline("nodebug")
+fn _is_sm_110x() -> Bool:
+    return is_nvidia_gpu["sm_110"]() or is_nvidia_gpu["sm_110a"]()
+
+
+@always_inline("nodebug")
 fn _is_sm_120x() -> Bool:
     return is_nvidia_gpu["sm_120"]() or is_nvidia_gpu["sm_120a"]()
 
@@ -495,7 +508,12 @@ fn _is_sm_9x_or_newer() -> Bool:
 
 @always_inline("nodebug")
 fn _is_sm_100x_or_newer() -> Bool:
-    return _is_sm_100x() or _is_sm_120x_or_newer()
+    return _is_sm_100x() or _is_sm_110x_or_newer()
+
+
+@always_inline("nodebug")
+fn _is_sm_110x_or_newer() -> Bool:
+    return _is_sm_110x() or _is_sm_120x_or_newer()
 
 
 @always_inline("nodebug")
@@ -506,6 +524,7 @@ fn _is_sm_120x_or_newer() -> Bool:
 @always_inline("nodebug")
 fn is_apple_gpu() -> Bool:
     """Returns True if the target triple is for Apple GPU (Metal) and False otherwise.
+
     Returns:
         True if the triple target is Apple GPU and False otherwise.
     """
@@ -554,20 +573,20 @@ fn is_nvidia_gpu[subarch: StaticString]() -> Bool:
 @always_inline("nodebug")
 fn _is_amd_rdna3() -> Bool:
     return (
-        is_amd_gpu["amdgpu:gfx1100"]()
-        or is_amd_gpu["amdgpu:gfx1101"]()
-        or is_amd_gpu["amdgpu:gfx1102"]()
-        or is_amd_gpu["amdgpu:gfx1103"]()
+        is_amd_gpu["gfx1100"]()
+        or is_amd_gpu["gfx1101"]()
+        or is_amd_gpu["gfx1102"]()
+        or is_amd_gpu["gfx1103"]()
         # These last two are technically RDNA3.5, but we'll treat them as RDNA3
         # for now.
-        or is_amd_gpu["amdgpu:gfx1150"]()
-        or is_amd_gpu["amdgpu:gfx1151"]()
+        or is_amd_gpu["gfx1150"]()
+        or is_amd_gpu["gfx1151"]()
     )
 
 
 @always_inline("nodebug")
 fn _is_amd_rdna4() -> Bool:
-    return is_amd_gpu["amdgpu:gfx1200"]() or is_amd_gpu["amdgpu:gfx1201"]()
+    return is_amd_gpu["gfx1200"]() or is_amd_gpu["gfx1201"]()
 
 
 @always_inline("nodebug")
@@ -577,12 +596,12 @@ fn _is_amd_rdna() -> Bool:
 
 @always_inline("nodebug")
 fn _is_amd_mi300x() -> Bool:
-    return is_amd_gpu["amdgpu:gfx942"]()
+    return is_amd_gpu["gfx942"]()
 
 
 @always_inline("nodebug")
 fn _is_amd_mi355x() -> Bool:
-    return is_amd_gpu["amdgpu:gfx950"]()
+    return is_amd_gpu["gfx950"]()
 
 
 @always_inline("nodebug")
@@ -636,10 +655,13 @@ fn is_amd_gpu[subarch: StaticString]() -> Bool:
     """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
     and we are compiling for the specified sub-architecture, False otherwise.
 
+    Parameters:
+        subarch: The AMD GPU sub-architecture to check for (e.g., "gfx90a").
+
     Returns:
         True if the triple target is amdgpu and False otherwise.
     """
-    return is_amd_gpu() and _accelerator_arch() == subarch
+    return is_amd_gpu() and CompilationTarget._is_arch[subarch]()
 
 
 @always_inline("nodebug")
@@ -991,7 +1013,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
 
     # Overallocate the string.
     var buf_len = Int(INITIAL_CAPACITY)
-    var osver = String(unsafe_uninit_length=UInt(buf_len))
+    var osver = String(unsafe_uninit_length=buf_len)
 
     var err = external_call["sysctlbyname", Int32](
         "kern.osproductversion".unsafe_cstr_ptr(),
@@ -1062,6 +1084,7 @@ fn has_nvidia_gpu_accelerator() -> Bool:
 @always_inline("nodebug")
 fn has_apple_gpu_accelerator() -> Bool:
     """Returns True if the host system has a Metal GPU and False otherwise.
+
     Returns:
         True if the host system has a Metal GPU.
     """

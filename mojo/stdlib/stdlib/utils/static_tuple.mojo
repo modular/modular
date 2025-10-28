@@ -52,7 +52,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
     alias _mlir_type = __mlir_type[
         `!pop.array<`, size._mlir_value, `, `, Self.element_type, `>`
     ]
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     var _mlir_value: Self._mlir_type
     """The underlying storage for the static tuple."""
@@ -62,6 +62,11 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
 
     @staticmethod
     fn get_type_name() -> String:
+        """Get the human-readable type name for this `StaticTuple`.
+
+        Returns:
+            A string representation of the type, e.g. "StaticTuple[Int, 3]".
+        """
         return String(
             "StaticTuple[",
             get_type_name[Self.element_type](),
@@ -72,6 +77,11 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
 
     @staticmethod
     fn get_device_type_name() -> String:
+        """Get the human-readable device type name for this `StaticTuple`.
+
+        Returns:
+            A string representation of the device type (same as type name for StaticTuple).
+        """
         return Self.get_type_name()
 
     @always_inline

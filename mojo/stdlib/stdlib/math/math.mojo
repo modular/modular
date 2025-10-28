@@ -125,6 +125,9 @@ fn ceildiv[T: CeilDivableRaising, //](numerator: T, denominator: T) raises -> T:
 
     Returns:
         The ceiling of dividing numerator by denominator.
+
+    Raises:
+        If the operation fails.
     """
     return numerator.__ceildiv__(denominator)
 
@@ -134,7 +137,7 @@ fn ceildiv[T: CeilDivableRaising, //](numerator: T, denominator: T) raises -> T:
 @always_inline("builtin")
 fn ceildiv(
     numerator: IntLiteral, denominator: IntLiteral
-) -> __type_of(numerator.__ceildiv__(denominator)):
+) -> type_of(numerator.__ceildiv__(denominator)):
     """Return the rounded-up result of dividing numerator by denominator.
 
     Args:
@@ -200,7 +203,7 @@ fn sqrt(x: Int) -> Int:
 
 
 @always_inline
-fn _sqrt_nvvm(x: SIMD, out res: __type_of(x)):
+fn _sqrt_nvvm(x: SIMD, out res: type_of(x)):
     constrained[
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
@@ -261,7 +264,7 @@ fn sqrt[
 
 
 @always_inline
-fn _rsqrt_nvvm(x: SIMD, out res: __type_of(x)):
+fn _rsqrt_nvvm(x: SIMD, out res: type_of(x)):
     constrained[
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
@@ -275,7 +278,7 @@ fn _rsqrt_nvvm(x: SIMD, out res: __type_of(x)):
 
 
 @always_inline
-fn rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Performs elementwise reciprocal square root on a SIMD vector.
 
     Parameters:
@@ -319,7 +322,7 @@ fn rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 
 
 @always_inline
-fn _recip_nvvm(x: SIMD, out res: __type_of(x)):
+fn _recip_nvvm(x: SIMD, out res: type_of(x)):
     constrained[
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
@@ -333,7 +336,7 @@ fn _recip_nvvm(x: SIMD, out res: __type_of(x)):
 
 
 @always_inline
-fn recip[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn recip[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Performs elementwise reciprocal on a SIMD vector.
 
     Parameters:
@@ -443,7 +446,7 @@ fn exp2[
 
 
 @always_inline
-fn _exp2_float32(x: SIMD[DType.float32, _]) -> __type_of(x):
+fn _exp2_float32(x: SIMD[DType.float32, _]) -> type_of(x):
     alias u32 = DType.uint32
     var xc = x.clamp(-126, 126)
     var m = xc.cast[DType.int32]()
@@ -459,7 +462,7 @@ fn _exp2_float32(x: SIMD[DType.float32, _]) -> __type_of(x):
             1.33336498402e-3,
         ),
     ](xc)
-    return __type_of(x)(
+    return type_of(x)(
         from_bits=r.to_bits[u32]()
         + (m.cast[u32]() << FPUtils[DType.float32].mantissa_width())
     )
@@ -526,7 +529,7 @@ fn _ldexp_impl[
     alias integral_type = FPUtils[dtype].integral_type
     var m = exp.cast[integral_type]() + FPUtils[dtype].exponent_bias()
 
-    return x * __type_of(x)(from_bits=m << FPUtils[dtype].mantissa_width())
+    return x * type_of(x)(from_bits=m << FPUtils[dtype].mantissa_width())
 
 
 @always_inline
@@ -663,6 +666,126 @@ fn exp[T: _Expable](x: T) -> T:
         The exponential of the input value.
     """
     return x.__exp__()
+
+
+@always_inline
+fn _exp2_approx_f32[
+    W: Int
+](x: SIMD[DType.float32, W]) -> SIMD[DType.float32, W]:
+    """Computes a fast approximation of 2^x using a fused analytic (FA-4)
+        exponential method, using Polynomial (Horner form):
+        p(r) = c0 + r*(c1 + r*(c2 + r*c3))
+
+    Approximation strategy:
+        We compute 2^x by range reduction x = n + r where r ∈ [−0.5, 0.5]
+        then evaluate 2^r with a fixed-degree Horner polynomial and scale
+        by 2^n via the float exponent-bias (±2^23) / ldexp trick. e^x is
+        then 2^(x·log2(e)).
+
+        This function splits the input `x` into integer and fractional components,
+        clamps it to avoid underflow, and reconstructs 2^x as `ldexp(p(r), n)`,
+        where `p(r)` is a cubic polynomial approximation computed via
+        `polynomial_computation`. The method uses floating-point biasing and fused
+        multiply-add operations for efficient SIMD execution with high numerical
+        stability.
+
+    Expected accuracy:
+        Order-of-magnitude relative error is ~1e-4,1e-3 for 2^r on the target
+        interval, which is adequate for softmax once values are stabilized by
+        subtracting max(x).
+
+    Constraints:
+        The input must be a SIMD vector of 32-bit floating-point values.
+
+    Parameters:
+        W: The width of the SIMD vector.
+
+    Args:
+        x: The input SIMD vector representing the exponent.
+
+    Returns:
+        A SIMD vector containing the fast approximate result of 2^x.
+    """
+
+    # --- Constants ------------------------------------------------------------
+
+    # Rounding bias for IEEE-754 float32 via the “add/subtract big constant”
+    # trick.
+    # We use 1.5 * 2^23 (i.e., 2^23 + 2^22) so it works cleanly with
+    # round-to-nearest-even across positive/negative inputs in this range.
+    alias ROUND_BIAS_F32 = 3 * FPUtils[DType.float32].mantissa_mask()
+    alias NEG_ROUND_BIAS_F32 = -ROUND_BIAS_F32
+
+    # Lower clamp for exp2 range reduction:
+    # The float32 exponent bias is 127. Clamping at −127 keeps n from becoming
+    # too negative (extreme subnormals/FTZ) and maintains accuracy of the cubic.
+    # If you require strictly normal outputs, use −126.0 instead.
+    alias EXP2_MIN_INPUT = -FPUtils[DType.float32].exponent_bias()
+    # --- Kernel ---------------------------------------------------------------
+
+    # 1) clamp in float
+    var x_min = max(x, EXP2_MIN_INPUT)
+
+    # 2) bias trick: vi = round(x_min) in float via +bias then −bias
+    # (works for |x| < 2^23; we use 1.5*2^23 to behave well around 0 and negatives)
+    var vb = x_min + ROUND_BIAS_F32
+    var vi = vb + NEG_ROUND_BIAS_F32
+
+    # 3) fractional part in [−0.5, 0.5] without extra clamp
+    var r = x_min - vi
+
+    # 4) cubic (FA-4) poly approximation Degree-3 coefficients for 2^r
+    #  A cubic gives the best throughput/accuracy trade-off for softmax on GPU:
+    #  only ~3 FMAs in the hot path, vectorizes cleanly (SIMD W=1/2), and yields
+    #  low relative error that remains stable once we subtract max(x) before
+    #  exponentiation. Going to degree-4/5 reduces error a bit but costs extra
+    #  FMAs, registers, and latency with minimal end-to-end benefit.
+    #  The coefficients below are a minimax fit for 2^r over the centered reduced
+    #  interval (usually r ∈ [−0.5, 0.5]). They look close to the Taylor series
+    #  at r=0: 2^r ≈ 1 + (ln 2) r + (ln 2)^2 r^2 / 2 + (ln 2)^3 r^3 / 6,
+    #  but are tweaked (via Remez) to minimize the maximum relative error
+    #  across the interval, which improves worst-case behavior vs plain Taylor.
+    var p = polynomial_evaluate[
+        List[Float32](
+            1.0000000000,
+            0.6951461434,
+            0.2275643945,
+            0.0771190897,
+        ),
+    ](r)
+
+    # 5) exponent as int lanes (no extra clamp needed due to early float clamp)
+    var n = SIMD[DType.int32, W](vi)
+
+    # result: 2^x ≈ 2^n * p
+    return ldexp(p, n)
+
+
+# ---------- e^x helpers ----------
+@always_inline
+fn exp_approx_f32[W: Int](x: SIMD[DType.float32, W]) -> SIMD[DType.float32, W]:
+    """Computes a fast approximate e^x for SIMD vectors of 32-bit floats
+    using the base-2 approximation as a backend.
+
+    This function converts the natural exponential input `z` to base-2 space
+    using the identity e^z = 2^(z * log2(e)), then calls the internal
+    `_exp2_approx_f32` function to evaluate the FA-4 polynomial approximation
+    of 2^x. It is optimized for small SIMD widths and is fully inlined for
+    high performance.
+
+    Constraints:
+        The input must be a SIMD vector of 32-bit floating-point values.
+
+    Parameters:
+        W: The width of the SIMD vector.
+
+    Args:
+        x: The input SIMD vector representing the exponent.
+
+    Returns:
+        A SIMD vector containing the approximate value of e^x.
+    """
+    return _exp2_approx_f32[W](x * SIMD[DType.float32, W](log2e))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -808,7 +931,7 @@ fn _log_base[
 
 
 @always_inline
-fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Performs elementwise natural log (base E) of a SIMD vector.
 
     Parameters:
@@ -848,7 +971,7 @@ fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 
 
 @always_inline
-fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Performs elementwise log (base 2) of a SIMD vector.
 
     Args:
@@ -862,13 +985,12 @@ fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
         Vector containing result of performing log base 2 on x.
     """
 
-    @parameter
-    if size_of[dtype]() < size_of[DType.float32]() and not (
-        is_amd_gpu() and dtype is DType.float16
-    ):
-        return log2(x.cast[DType.float32]()).cast[dtype]()
-
     if is_compile_time():
+
+        @parameter
+        if size_of[dtype]() < size_of[DType.float32]():
+            return log2(x.cast[DType.float32]()).cast[dtype]()
+
         return _log_base[2](x)
 
     @parameter
@@ -880,6 +1002,8 @@ fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
         return _call_amdgcn_intrinsic[
             String("llvm.amdgcn.log.", _get_amdgcn_type_suffix[dtype]())
         ](x)
+    elif size_of[dtype]() < size_of[DType.float32]():
+        return log2(x.cast[DType.float32]()).cast[dtype]()
 
     return _log_base[2](x)
 
@@ -1121,7 +1245,7 @@ fn isclose[
         a.dtype.is_floating_point(),
         "isclose only supports floating-point types",
     ]()
-    alias T = __type_of(a)
+    alias T = type_of(a)
 
     var check_nan = isnan(a) & isnan(b)
     var check_fin: T._Mask
@@ -1383,7 +1507,7 @@ fn align_up(value: UInt, alignment: UInt) -> UInt:
 # ===----------------------------------------------------------------------=== #
 
 
-fn acos[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn acos[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `acos` of the inputs.
 
     Constraints:
@@ -1428,7 +1552,7 @@ fn acos[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     var d = directed_polynomial_mask.select(abs(x), sqrt(x_squared))
 
     # Special case: handle |x| = 1 to avoid numerical instability
-    d = x_abs.eq(1).select(__type_of(x)(0.0), d)
+    d = x_abs.eq(1).select(type_of(x)(0.0), d)
 
     # Evaluate Remez polynomial using Horner's method
     # Coefficients derived to minimize maximum absolute error
@@ -1463,7 +1587,7 @@ fn acos[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `asin` of the inputs.
 
     Constraints:
@@ -1537,7 +1661,7 @@ fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn atan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn atan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `atan` of the inputs.
 
     Constraints:
@@ -1695,7 +1819,7 @@ fn sin[
 # ===----------------------------------------------------------------------=== #
 
 
-fn tan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn tan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `tan` of the inputs.
 
     Constraints:
@@ -1719,7 +1843,7 @@ fn tan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn acosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn acosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `acosh` of the inputs.
 
     Constraints:
@@ -1743,7 +1867,7 @@ fn acosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn asinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn asinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `asinh` of the inputs.
 
     Constraints:
@@ -1767,7 +1891,7 @@ fn asinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn _atanh_float32(x: SIMD) -> __type_of(x):
+fn _atanh_float32(x: SIMD) -> type_of(x):
     """This computes the `atanh` of the inputs for float32. It uses the same
     approximation used by Eigen library."""
 
@@ -1811,7 +1935,7 @@ fn _atanh_float32(x: SIMD) -> __type_of(x):
 
 
 @always_inline
-fn atanh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn atanh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `atanh` of the inputs.
 
     Constraints:
@@ -1849,7 +1973,7 @@ fn atanh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn cosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn cosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `cosh` of the inputs.
 
     Constraints:
@@ -1873,7 +1997,7 @@ fn cosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn sinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn sinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `sinh` of the inputs.
 
     Constraints:
@@ -1898,7 +2022,7 @@ fn sinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 
 
 @always_inline
-fn expm1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn expm1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `expm1` of the inputs.
 
     Constraints:
@@ -1922,7 +2046,7 @@ fn expm1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `log10` of the inputs.
 
     Constraints:
@@ -1955,6 +2079,8 @@ fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
             )
     elif is_amd_gpu():
         return _llvm_unary_fn["llvm.log10"](x)
+    elif is_apple_gpu():
+        return _llvm_unary_fn["llvm.air.log10"](x)
 
     return _call_libm["log10"](x)
 
@@ -1965,7 +2091,7 @@ fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 
 
 @always_inline
-fn _log1p_f64[width: Int, //](x: SIMD[DType.float64, width]) -> __type_of(x):
+fn _log1p_f64[width: Int, //](x: SIMD[DType.float64, width]) -> type_of(x):
     # This uses the approximation from cephes to compute log1p via the approximation
     # log(1+x) = x - x**2/2 + x**3 P(x)/Q(x)
     # in the domain 1/sqrt(2) <= x < sqrt(2)
@@ -2008,7 +2134,7 @@ fn _log1p_f64[width: Int, //](x: SIMD[DType.float64, width]) -> __type_of(x):
     return in_domain_mask.select(log1x, x + z)
 
 
-fn log1p[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn log1p[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `log1p` of the inputs.
 
     The `log1p(x)` is equivalent to `log(1+x)`.
@@ -2039,7 +2165,7 @@ fn log1p[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn logb[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn logb[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `logb` of the inputs.
 
     Constraints:
@@ -2225,7 +2351,7 @@ fn _cbrtf(x: Float32) -> Float32:
     return y
 
 
-fn cbrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn cbrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `cbrt` of the inputs.
 
     Constraints:
@@ -2257,7 +2383,7 @@ fn cbrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     for i in range(width):
         result[i] = _cbrtf(rebind[Float32](x[i]))
 
-    return rebind[__type_of(x)](result)
+    return rebind[type_of(x)](result)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2439,7 +2565,7 @@ fn _erfcf(x: Float32) -> Float32:
     return result
 
 
-fn erfc[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn erfc[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `erfc` of the inputs.
 
     Constraints:
@@ -2470,7 +2596,7 @@ fn erfc[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     for i in range(width):
         result[i] = _erfcf(rebind[Float32](x[i]))
 
-    return rebind[__type_of(x)](result)
+    return rebind[type_of(x)](result)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2478,7 +2604,7 @@ fn erfc[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the `lgamma` of the inputs.
 
     Constraints:
@@ -2502,7 +2628,7 @@ fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn gamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn gamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the Gamma of the input.
 
     For details, see https://en.wikipedia.org/wiki/Gamma_function.
@@ -2581,7 +2707,7 @@ fn remainder[
 # ===----------------------------------------------------------------------=== #
 
 
-fn j0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn j0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the Bessel function of the first kind of order 0 for each input
     value.
 
@@ -2606,7 +2732,7 @@ fn j0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn j1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn j1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the Bessel function of the first kind of order 1 for each input
     value.
 
@@ -2631,7 +2757,7 @@ fn j1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn y0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn y0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the Bessel function of the second kind of order 0 for each input
     value.
 
@@ -2656,7 +2782,7 @@ fn y0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn y1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn y1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     """Computes the Bessel function of the second kind of order 1 for each input
     value.
 
@@ -2890,7 +3016,7 @@ fn lcm(*values: Int) -> Int:
 
 fn modf[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width]) -> Tuple[__type_of(x), __type_of(x)]:
+](x: SIMD[dtype, width]) -> Tuple[type_of(x), type_of(x)]:
     """Computes the integral and fractional part of the value.
 
     Parameters:
@@ -3001,8 +3127,8 @@ fn factorial(n: Int) -> Int:
 
 
 fn clamp(
-    val: Int, lower_bound: __type_of(val), upper_bound: __type_of(val)
-) -> __type_of(val):
+    val: Int, lower_bound: type_of(val), upper_bound: type_of(val)
+) -> type_of(val):
     """Clamps the integer value vector to be in a certain range.
 
     Args:
@@ -3017,8 +3143,8 @@ fn clamp(
 
 
 fn clamp(
-    val: UInt, lower_bound: __type_of(val), upper_bound: __type_of(val)
-) -> __type_of(val):
+    val: UInt, lower_bound: type_of(val), upper_bound: type_of(val)
+) -> type_of(val):
     """Clamps the integer value vector to be in a certain range.
 
     Args:
@@ -3036,9 +3162,9 @@ fn clamp[
     dtype: DType, width: Int, //
 ](
     val: SIMD[dtype, width],
-    lower_bound: __type_of(val),
-    upper_bound: __type_of(val),
-) -> __type_of(val):
+    lower_bound: type_of(val),
+    upper_bound: type_of(val),
+) -> type_of(val):
     """Clamps the values in a SIMD vector to be in a certain range.
 
     Clamp cuts values in the input SIMD vector off at the upper bound and
@@ -3072,7 +3198,7 @@ fn _llvm_unary_fn[
     width: Int, //,
     fn_name: StaticString,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    return llvm_intrinsic[fn_name, __type_of(x), has_side_effect=False](x)
+    return llvm_intrinsic[fn_name, type_of(x), has_side_effect=False](x)
 
 
 @always_inline("nodebug")
@@ -3217,7 +3343,7 @@ fn _call_ptx_intrinsic[
 
 
 @always_inline
-fn _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD, out res: __type_of(x)):
+fn _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD, out res: type_of(x)):
     res = {}
 
     @parameter
@@ -3380,6 +3506,9 @@ trait CeilDivableRaising:
 
         Returns:
             The ceiling of dividing numerator by denominator.
+
+        Raises:
+            If the operation fails.
         """
         ...
 

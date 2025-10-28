@@ -54,6 +54,22 @@ def test_char_comparison():
     assert_equal(Codepoint(0), Codepoint(0))
     assert_not_equal(Codepoint(0), Codepoint(1))
 
+    # Test less than and less than or equal to
+    assert_true(Codepoint.__le__(Codepoint(0), Codepoint(1)))
+    assert_true(Codepoint.__le__(Codepoint(1), Codepoint(1)))
+    assert_false(Codepoint.__le__(Codepoint(1), Codepoint(0)))
+    assert_false(Codepoint.__lt__(Codepoint(1), Codepoint(1)))
+    assert_true(Codepoint.__lt__(Codepoint(0), Codepoint(1)))
+    assert_false(Codepoint.__lt__(Codepoint(1), Codepoint(0)))
+
+    # Test greater than and greater than or equal to
+    assert_true(Codepoint.__ge__(Codepoint(1), Codepoint(0)))
+    assert_true(Codepoint.__ge__(Codepoint(1), Codepoint(1)))
+    assert_false(Codepoint.__ge__(Codepoint(0), Codepoint(1)))
+    assert_true(Codepoint.__gt__(Codepoint(1), Codepoint(0)))
+    assert_false(Codepoint.__gt__(Codepoint(0), Codepoint(1)))
+    assert_false(Codepoint.__gt__(Codepoint(1), Codepoint(1)))
+
 
 def test_char_formatting():
     assert_equal(String(Codepoint(0)), "\0")
@@ -232,19 +248,4 @@ def test_char_comptime():
 
 
 def main():
-    var suite = TestSuite()
-    suite.test[test_char_validity]()
-    suite.test[test_char_from_u8]()
-    suite.test[test_char_comparison]()
-    suite.test[test_char_formatting]()
-    suite.test[test_char_properties]()
-    suite.test[test_char_is_posix_space]()
-    suite.test[test_char_is_lower]()
-    suite.test[test_char_is_upper]()
-    suite.test[test_char_is_digit]()
-    suite.test[test_char_is_printable]()
-    suite.test[test_char_utf8_encoding]()
-    suite.test[test_char_utf8_byte_length]()
-    suite.test[test_char_comptime]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

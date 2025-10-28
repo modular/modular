@@ -476,10 +476,10 @@ struct PythonModuleBuilder:
 
         Example signatures:
         ```mojo
-        fn func(arg1: PythonObject) -> PythonObject
-        fn func(arg1: PythonObject, arg2: PythonObject) raises
-        fn func(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject
-        fn func(arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]) raises
+        fn func(arg1: PythonObject) -> PythonObject: ...
+        fn func(arg1: PythonObject, arg2: PythonObject) raises: ...
+        fn func(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject: ...
+        fn func(arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]) raises: ...
         ```
 
         Parameters:
@@ -698,7 +698,17 @@ struct PythonTypeBuilder(Copyable, Movable):
         T: Defaultable & Movable,
     ](mut self) raises -> ref [self] Self:
         """Declare a binding for the `__init__` method of the type which
-        initializes the type with a default value."""
+        initializes the type with a default value.
+
+        Parameters:
+            T: The Mojo type to bind, which must be `Defaultable` and `Movable`.
+
+        Returns:
+            A reference to self for method chaining.
+
+        Raises:
+            If the slot insertion fails.
+        """
 
         @always_inline
         fn default_init_func(
@@ -717,7 +727,18 @@ struct PythonTypeBuilder(Copyable, Movable):
         T: Movable, //,
         init_func: fn (out T, args: PythonObject, kwargs: PythonObject),
     ](mut self) raises -> ref [self] Self:
-        """Declare a binding for the `__init__` method of the type."""
+        """Declare a binding for the `__init__` method of the type.
+
+        Parameters:
+            T: The Mojo type to bind.
+            init_func: The initialization function to bind.
+
+        Returns:
+            A reference to self for method chaining.
+
+        Raises:
+            If the slot insertion fails.
+        """
 
         @always_inline
         fn raising_wrapper[
@@ -731,7 +752,18 @@ struct PythonTypeBuilder(Copyable, Movable):
         T: Movable, //,
         init_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
     ](mut self) raises -> ref [self] Self:
-        """Declare a binding for the `__init__` method of the type."""
+        """Declare a binding for the `__init__` method of the type.
+
+        Parameters:
+            T: The Mojo type to bind.
+            init_func: The initialization function to bind (may raise).
+
+        Returns:
+            A reference to self for method chaining.
+
+        Raises:
+            If the slot insertion fails.
+        """
         self._insert_slot(
             PyType_Slot.tp_init(_py_init_function_wrapper[T, init_func])
         )
@@ -948,8 +980,8 @@ struct PythonTypeBuilder(Copyable, Movable):
 
         Example signatures:
         ```mojo
-        fn method(mut self: PythonObject) -> PythonObject
-        fn method(mut self: PythonObject, arg1: PythonObject) raises
+        fn method(mut self: PythonObject) -> PythonObject: ...
+        fn method(mut self: PythonObject, arg1: PythonObject) raises: ...
         ```
 
         Parameters:
@@ -986,8 +1018,8 @@ struct PythonTypeBuilder(Copyable, Movable):
 
         Example signatures:
         ```mojo
-        fn static_method(arg1: PythonObject) -> PythonObject
-        fn static_method(arg1: PythonObject, arg2: PythonObject) raises
+        fn static_method(arg1: PythonObject) -> PythonObject: ...
+        fn static_method(arg1: PythonObject, arg2: PythonObject) raises: ...
         ```
 
         Parameters:
@@ -1215,8 +1247,8 @@ fn check_arguments_arity(
         args: A tuple containing the actual arguments passed to the function.
 
     Raises:
-        Error: If the argument count doesn't match the expected arity. The error
-               message follows Python's convention for TypeError messages,
+        If the argument count doesn't match the expected arity. The error
+               message follows Python's convention for `TypeError` messages,
                indicating whether too few or too many arguments were provided.
     """
     # TODO: try to extract the current function name from cpython
@@ -1242,7 +1274,7 @@ fn check_arguments_arity(
                   to provide better debugging information.
 
     Raises:
-        Error: If the argument count doesn't match the expected arity. The error
+        If the argument count doesn't match the expected arity. The error
                message follows Python's convention for TypeError messages,
                indicating whether too few or too many arguments were provided,
                along with the specific function name.
@@ -1282,6 +1314,9 @@ fn check_and_get_arg[
     func_name: StaticString, py_args: PythonObject, index: Int
 ) raises -> UnsafePointer[T]:
     """Get the argument at the given index and downcast it to a given Mojo type.
+
+    Parameters:
+        T: The Mojo type to downcast the argument to.
 
     Args:
         func_name: The name of the function referenced in the error message if
@@ -1337,6 +1372,9 @@ fn check_and_get_or_convert_arg[
 
     If the argument cannot be directly downcast to the given type, it will be
     converted to it.
+
+    Parameters:
+        T: The Mojo type to downcast or convert the argument to.
 
     Args:
         func_name: The name of the function referenced in the error message if

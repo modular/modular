@@ -57,7 +57,6 @@ class Gemma3TextModel(Module):
             n_heads=config.num_attention_heads,
             theta=config.rope_theta,
             max_seq_len=config.max_position_embeddings,
-            device=config.devices[0],
             head_dim=config.head_dim,
             interleaved=False,
             scaling_params=scaling_params,
@@ -69,7 +68,6 @@ class Gemma3TextModel(Module):
             n_heads=config.num_attention_heads,
             theta=config.rope_local_base_freq,
             max_seq_len=config.max_position_embeddings,
-            device=config.devices[0],
             head_dim=config.head_dim,
             interleaved=False,
             scaling_params=None,  # No scaling

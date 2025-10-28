@@ -20,6 +20,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.softmax import softmax
 from nn.toppminp_gpu import min_p_sampling_gpu, top_p_sampling_gpu
 from testing import assert_almost_equal, assert_equal
@@ -300,7 +301,29 @@ fn test_case_sampling[
     for i in range(in_logits.num_elements()):
         in_logits_cpu_test.data[i] = in_logits.data[i] / temperature
 
-    softmax[simd_width=1](in_logits_cpu_test, probs_cpu_test, axis=1)
+    softmax[simd_width=1, rank=rank](
+        LayoutTensor[
+            in_logits_cpu_test.type,
+            Layout.row_major[in_logits_cpu_test.rank](in_logits_cpu_test.shape),
+        ](
+            in_logits_cpu_test.data,
+            RuntimeLayout[
+                Layout.row_major[in_logits_cpu_test.rank](
+                    in_logits_cpu_test.shape
+                )
+            ].row_major(in_logits_cpu_test.get_shape().canonicalize()),
+        ),
+        LayoutTensor[
+            probs_cpu_test.type,
+            Layout.row_major[probs_cpu_test.rank](probs_cpu_test.shape),
+        ](
+            probs_cpu_test.data,
+            RuntimeLayout[
+                Layout.row_major[probs_cpu_test.rank](probs_cpu_test.shape)
+            ].row_major(probs_cpu_test.get_shape().canonicalize()),
+        ),
+        axis=1,
+    )
     in_logits_cpu_test_ptr.free()
     sort_buf_descending(probs_cpu_test, vocab_size)
 

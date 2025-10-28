@@ -14,9 +14,9 @@
 from math import ceildiv
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
-from gpu.id import global_idx
+from gpu import global_idx
 from layout import Layout, LayoutTensor
-from tensor_internal import InputTensor, OutputTensor, StaticTensorSpec
+from tensor import InputTensor, OutputTensor, StaticTensorSpec
 from testing import TestSuite
 
 from utils import IndexList
@@ -128,6 +128,8 @@ def test_color_to_grayscale():
 
 
 def main():
+    # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
+    # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()
 
     suite.test[test_color_to_grayscale]()

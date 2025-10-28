@@ -29,6 +29,9 @@ fn cwd() raises -> Path:
 
     Returns:
       The current directory.
+
+    Raises:
+        If the operation fails.
     """
     alias MAX_CWD_BUFFER_SIZE = 1024
     var buf = InlineArray[c_char, MAX_CWD_BUFFER_SIZE](uninitialized=True)
@@ -77,7 +80,11 @@ struct Path(
     """The underlying path string representation."""
 
     fn __init__(out self) raises:
-        """Initializes a path with the current directory."""
+        """Initializes a path with the current directory.
+
+        Raises:
+            If the operation fails.
+        """
         self = cwd()
 
     # Note: Not @implicit so that allocation is not implicit.
@@ -226,6 +233,9 @@ struct Path(
 
         Returns:
           A stat_result object containing information about the path.
+
+        Raises:
+            If the operation fails.
         """
         return os.stat(self)
 
@@ -236,6 +246,9 @@ struct Path(
 
         Returns:
           A stat_result object containing information about the path.
+
+        Raises:
+            If the operation fails.
         """
         return os.lstat(self)
 
@@ -255,6 +268,9 @@ struct Path(
 
         Returns:
             The expanded path.
+
+        Raises:
+            If the operation fails.
         """
         return os.path.expanduser(self)
 
@@ -265,6 +281,9 @@ struct Path(
 
         Returns:
             Path to user home directory.
+
+        Raises:
+            If the operation fails.
         """
         return os.path.expanduser("~")
 
@@ -291,6 +310,9 @@ struct Path(
 
         Returns:
           Contents of file as string.
+
+        Raises:
+            If the operation fails.
         """
         with open(self, "r") as f:
             return f.read()
@@ -300,6 +322,9 @@ struct Path(
 
         Returns:
           Contents of file as list of bytes.
+
+        Raises:
+            If the operation fails.
         """
         with open(self, "r") as f:
             return f.read_bytes()
@@ -312,6 +337,9 @@ struct Path(
 
         Args:
             value: The value to write.
+
+        Raises:
+            If the operation fails.
         """
         with open(self, "w") as f:
             f.write(value)
@@ -321,6 +349,9 @@ struct Path(
 
         Args:
             bytes: The bytes to write to this file.
+
+        Raises:
+            If the operation fails.
         """
         with open(self, "w") as f:
             f.write_bytes(bytes)
@@ -370,6 +401,9 @@ struct Path(
 
         Returns:
             The list of entries in the path provided.
+
+        Raises:
+            If the operation fails.
         """
 
         var ls = listdir(self)
@@ -393,7 +427,7 @@ struct Path(
         """
         return os.path.basename(self)
 
-    fn parts(self) -> List[StringSlice[__origin_of(self.path)]]:
+    fn parts(self) -> List[StringSlice[origin_of(self.path)]]:
         """Returns the parts of the path separated by `DIR_SEPARATOR`.
 
         Returns:

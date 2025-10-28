@@ -16,7 +16,7 @@ from sys import size_of
 from gpu import barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 from gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
@@ -24,7 +24,6 @@ from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_sram_to_dram
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
 
 
@@ -58,7 +57,7 @@ fn test_tma_mcast_load_kernel[
             dtype,
             tile_layout,
             MutableAnyOrigin,
-            address_space = _GPUAddressSpace.SHARED,
+            address_space = AddressSpace.SHARED,
             alignment=128,
         ]
         .stack_allocation()
@@ -70,7 +69,7 @@ fn test_tma_mcast_load_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -89,7 +88,10 @@ fn test_tma_mcast_load_kernel[
             tma_tile.async_multicast_load(
                 tile,
                 mbar[0],
-                (UInt(block_idx.x * tileN), UInt(block_idx.y * tileM)),
+                (
+                    UInt(block_idx.x * UInt(tileN)),
+                    UInt(block_idx.y * UInt(tileM)),
+                ),
                 multicast_mask.cast[DType.uint16](),
             )
 
@@ -127,16 +129,16 @@ def test_tma_multicast_load_row_major[
     var tma_tensor = create_tma_tile[tileM, tileN](ctx, src.device_tensor())
     ctx.synchronize()
 
-    ctx.enqueue_function[
-        test_tma_mcast_load_kernel[
-            __type_of(tma_tensor).dtype,
-            dst_layout,  # dst layout
-            __type_of(tma_tensor).layout,  # smem layout
-            __type_of(tma_tensor).layout,  # thread layout
-            CLUSTER_M,
-            CLUSTER_N,
-        ]
-    ](
+    alias kernel = test_tma_mcast_load_kernel[
+        type_of(tma_tensor).dtype,
+        dst_layout,  # dst layout
+        type_of(tma_tensor).layout,  # smem layout
+        type_of(tma_tensor).layout,  # thread layout
+        CLUSTER_M,
+        CLUSTER_N,
+    ]
+
+    ctx.enqueue_function_checked[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(dst_N // tileN, dst_M // tileM),
@@ -190,7 +192,7 @@ fn test_tma_sliced_multicast_load_kernel[
             dtype,
             tile_layout,
             MutableAnyOrigin,
-            address_space = _GPUAddressSpace.SHARED,
+            address_space = AddressSpace.SHARED,
             alignment=128,
         ]
         .stack_allocation()
@@ -202,7 +204,7 @@ fn test_tma_sliced_multicast_load_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -217,12 +219,12 @@ fn test_tma_sliced_multicast_load_kernel[
     if thread_idx.x == 0:
         mbar[0].expect_bytes(expected_bytes)
         var slice_cord = Int(
-            block_idx.y * tileM
+            block_idx.y * UInt(tileM)
             + Int(block_rank % CLUSTER_N) * tileM // CLUSTER_N
         )
         var multicast_mask = tma_multicast_mask << (rank_m * CLUSTER_N)
         tma_tile.async_multicast_load(
-            __type_of(tile)(
+            type_of(tile)(
                 tile.ptr + (block_rank % CLUSTER_N) * tileM * tileN // CLUSTER_N
             ),
             mbar[0],
@@ -267,16 +269,16 @@ def test_tma_sliced_multicast_load_row_major[
     ctx.synchronize()
 
     alias kernel = test_tma_sliced_multicast_load_kernel[
-        __type_of(tma_tensor).dtype,
+        type_of(tma_tensor).dtype,
         dst_layout,  # dst layout
         Layout.row_major(tileM, tileN),
         Layout.row_major(tileM, tileN),
         CLUSTER_M,
         CLUSTER_N,
-        __type_of(tma_tensor).layout,  # smem layout
+        type_of(tma_tensor).layout,  # smem layout
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(dst_N // tileN, dst_M // tileM),

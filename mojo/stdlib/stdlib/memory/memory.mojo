@@ -35,7 +35,6 @@ from sys import (
 )
 
 from algorithm import vectorize
-from memory.pointer import AddressSpace, _GPUAddressSpace
 
 # ===-----------------------------------------------------------------------===#
 # memcmp
@@ -423,7 +422,7 @@ fn stack_allocation[
         alias global_name = name.value() if name else "_global_alloc"
 
         @parameter
-        if address_space == _GPUAddressSpace.SHARED:
+        if address_space == AddressSpace.SHARED:
             return __mlir_op.`pop.global_alloc`[
                 name = _get_kgen_string[global_name](),
                 count = count._mlir_value,
@@ -433,7 +432,7 @@ fn stack_allocation[
                 ]._mlir_type,
                 alignment = alignment._mlir_value,
             ]()
-        elif address_space == _GPUAddressSpace.CONSTANT:
+        elif address_space == AddressSpace.CONSTANT:
             # No need to annotation this global_alloc because constants in
             # GPU shared memory won't prevent llvm module splitting to
             # happen since they are immutables.
@@ -449,7 +448,7 @@ fn stack_allocation[
         # MSTDL-797: The NVPTX backend requires that `alloca` instructions may
         # only have generic address spaces. When allocating LOCAL memory,
         # addrspacecast the resulting pointer.
-        elif address_space == _GPUAddressSpace.LOCAL:
+        elif address_space == AddressSpace.LOCAL:
             var generic_ptr = __mlir_op.`pop.stack_allocation`[
                 count = count._mlir_value,
                 _type = UnsafePointer[type]._mlir_type,
@@ -491,9 +490,9 @@ fn _malloc[
     if is_gpu():
         alias U = UnsafePointer[NoneType, address_space = AddressSpace.GENERIC]
         var ptr = external_call["malloc", U](size)
-        return ptr.bitcast[type]().origin_cast[True, MutableOrigin.empty]()
+        return ptr.bitcast[type]().unsafe_origin_cast[MutableOrigin.empty]()
     else:
-        return __mlir_op.`pop.aligned_alloc`[_type = __type_of(res)._mlir_type](
+        return __mlir_op.`pop.aligned_alloc`[_type = type_of(res)._mlir_type](
             alignment._mlir_value, size._mlir_value
         )
 
@@ -504,7 +503,7 @@ fn _malloc[
 
 
 @always_inline
-fn _free(ptr: UnsafePointer[_, mut=True, **_]):
+fn _free(ptr: UnsafePointer[mut=True, **_]):
     @parameter
     if is_gpu():
         libc.free(ptr.bitcast[NoneType]())

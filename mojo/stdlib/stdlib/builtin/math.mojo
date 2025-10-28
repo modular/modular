@@ -97,6 +97,9 @@ trait DivModable(ImplicitlyCopyable, Movable):
     fn __divmod__(self, denominator: Self) -> Tuple[Self, Self]:
         """Performs division and returns the quotient and the remainder.
 
+        Args:
+            denominator: The value to divide by.
+
         Returns:
             A `Tuple` containing the quotient and the remainder.
         """
@@ -153,7 +156,7 @@ fn max(x: UInt, y: UInt, /) -> UInt:
 
 
 @always_inline("nodebug")
-fn max[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
+fn max[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
     """Performs elementwise maximum of x and y.
 
     An element of the result SIMD vector will be the maximum of the
@@ -236,7 +239,7 @@ fn min(x: UInt, y: UInt, /) -> UInt:
 
 
 @always_inline("nodebug")
-fn min[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
+fn min[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
     """Gets the elementwise minimum of x and y.
 
     An element of the result SIMD vector will be the minimum of the
@@ -360,7 +363,7 @@ fn pow[T: Powable](base: T, exp: T) -> T:
     return base.__pow__(exp)
 
 
-fn pow(base: SIMD, exp: Int) -> __type_of(base):
+fn pow(base: SIMD, exp: Int) -> type_of(base):
     """Computes elementwise value of a SIMD vector raised to the power of the
     given integer.
 

@@ -25,7 +25,7 @@ from memory import Span, bitcast, memcpy
 
 alias HEAP_BUFFER_BYTES = env_get_int["HEAP_BUFFER_BYTES", 2048]()
 """How much memory to pre-allocate for the heap buffer, will abort if exceeded."""
-alias STACK_BUFFER_BYTES: UInt = UInt(env_get_int["STACK_BUFFER_BYTES", 4096]())
+alias STACK_BUFFER_BYTES = UInt(env_get_int["STACK_BUFFER_BYTES", 4096]())
 """The size of the stack buffer for IO operations from CPU."""
 
 
@@ -206,9 +206,7 @@ struct _WriteBufferHeap(Writable, Writer):
             args[i].write_to(self)
 
     fn write_to(self, mut writer: Some[Writer]):
-        writer.write_bytes(
-            Span[Byte, __origin_of(self)](ptr=self.data, length=UInt(self.pos))
-        )
+        writer.write_bytes(Span(ptr=self.data, length=self.pos))
 
     fn nul_terminate(mut self):
         if self.pos + 1 > HEAP_BUFFER_BYTES:
@@ -250,7 +248,7 @@ struct _WriteBufferStack[
 
     fn flush(mut self):
         self.writer[].write_bytes(
-            Span(ptr=self.data.unsafe_ptr(), length=UInt(self.pos))
+            Span(ptr=self.data.unsafe_ptr(), length=self.pos)
         )
         self.pos = 0
 
@@ -285,8 +283,13 @@ struct _TotalWritableBytes(Writer):
         self.size = 0
 
     fn __init__[
-        T: Copyable & Movable & Writable, //
-    ](out self, values: List[T, *_], sep: String = String()):
+        T: Copyable & Movable & Writable, //,
+        origin: ImmutableOrigin = StaticConstantOrigin,
+    ](
+        out self,
+        values: List[T, *_],
+        sep: StringSlice[origin] = StringSlice[origin](),
+    ):
         self.size = 0
         var length = len(values)
         if length == 0:
@@ -332,7 +335,7 @@ fn _hex_digits_to_hex_chars(ptr: UnsafePointer[Byte], decimal: Scalar):
     %# from utils import StringSlice
     %# from io.write import _hex_digits_to_hex_chars
     items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
-    alias S = StringSlice[__origin_of(items)]
+    alias S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _hex_digits_to_hex_chars(ptr, UInt32(ord("🔥")))
     assert_equal("0001f525", S(ptr=ptr, length=8))
@@ -363,7 +366,7 @@ fn _write_hex[amnt_hex_bytes: Int](p: UnsafePointer[Byte], decimal: Int):
     %# from utils import StringSlice
     %# from io.write import _write_hex
     items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
-    alias S = StringSlice[__origin_of(items)]
+    alias S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _write_hex[8](ptr, ord("🔥"))
     assert_equal(r"\\U0001f525", S(ptr=ptr, length=10))

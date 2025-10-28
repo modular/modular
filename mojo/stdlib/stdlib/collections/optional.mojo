@@ -236,26 +236,41 @@ struct Optional[T: Copyable & Movable](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the Optional's possibly contained value.
 
         Optionals act as a collection of size 0 or 1.
+
+        Returns:
+            An iterator over the Optional's value (if present).
         """
         return self.copy()
 
     @always_inline
     fn __has_next__(self) -> Bool:
-        """Return true if the Optional has a value."""
+        """Return true if the Optional has a value.
+
+        Returns:
+            True if the Optional contains a value, False otherwise.
+        """
         return self.__bool__()
 
     @always_inline
     fn __next__(mut self) -> Self.Element:
-        """Return the contained value of the Optional."""
+        """Return the contained value of the Optional.
+
+        Returns:
+            The value contained in the Optional.
+        """
         return self.take()
 
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
-        """Return the bounds of the Optional, which is 0 or 1."""
+        """Return the bounds of the `Optional`, which is 0 or 1.
+
+        Returns:
+            A tuple containing the length (0 or 1) and an `Optional` containing the length.
+        """
         var len = 1 if self else 0
         return (len, {len})
 
@@ -326,7 +341,7 @@ struct Optional[T: Copyable & Movable](
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(Bool),
+        other_type: type_of(Bool),
     ](self) -> Bool:
         """Merge with other bools in an expression.
 
@@ -494,17 +509,27 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
     alias _mlir_type = __mlir_type[`!kgen.variant<`, T, `, i1>`]
     var _value: Self._mlir_type
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
     fn get_type_name() -> String:
+        """Get the human-readable type name for this `OptionalReg` type.
+
+        Returns:
+            A string representation of the type, e.g. `OptionalReg[Int]`.
+        """
         return String("OptionalReg[", get_type_name[T](), "]")
 
     @staticmethod
     fn get_device_type_name() -> String:
+        """Get the human-readable device type name for this `OptionalReg` type.
+
+        Returns:
+            A string representation of the device type (same as type name for `OptionalReg`).
+        """
         return Self.get_type_name()
 
     # ===-------------------------------------------------------------------===#
@@ -586,7 +611,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(Bool),
+        other_type: type_of(Bool),
     ](self) -> Bool:
         """Merge with other bools in an expression.
 

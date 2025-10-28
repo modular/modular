@@ -88,7 +88,7 @@ def test_write_int_padded():
 
 def test_hex_digits_to_hex_chars():
     items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
-    alias S = StringSlice[__origin_of(items)]
+    alias S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _hex_digits_to_hex_chars(ptr, UInt32(ord("🔥")))
     assert_equal("0001f525", String(S(ptr=ptr, length=8)))
@@ -114,7 +114,7 @@ def test_hex_digits_to_hex_chars():
 
 def test_write_hex():
     items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-    alias S = StringSlice[__origin_of(items)]
+    alias S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _write_hex[8](ptr, ord("🔥"))
     assert_equal(r"\U0001f525", String(S(ptr=ptr, length=10)))
@@ -155,20 +155,4 @@ def test_closure_capturing(mut writer: Some[Writer & Writable]):
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_writer_of_string]()
-    suite.test[test_string_write_seq]()
-    suite.test[test_stringable_based_on_format]()
-    suite.test[test_write_int_padded]()
-    suite.test[test_hex_digits_to_hex_chars]()
-    suite.test[test_write_hex]()
-    suite.test[test_closure_non_capturing]()
-
-    def run_test_closure_capturing():
-        var writer = String()
-        test_closure_capturing(writer)
-
-    suite.test[run_test_closure_capturing]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

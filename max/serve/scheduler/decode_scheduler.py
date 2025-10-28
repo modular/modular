@@ -21,6 +21,7 @@ from collections import OrderedDict
 from max.interfaces import (
     MAXPullQueue,
     MAXPushQueue,
+    Pipeline,
     RequestID,
     Scheduler,
     SchedulerResult,
@@ -35,7 +36,7 @@ from max.nn.kv_cache import (
     TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, TextGenerationPipelineType
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
@@ -63,7 +64,9 @@ logger = logging.getLogger("max.serve")
 class DecodeScheduler(Scheduler):
     def __init__(
         self,
-        pipeline: TextGenerationPipelineType[TextContext],
+        pipeline: Pipeline[
+            TextGenerationInputs[TextContext], TextGenerationOutput
+        ],
         scheduler_config: TokenGenerationSchedulerConfig,
         paged_manager: PagedKVCacheManager,
         *,
@@ -93,9 +96,13 @@ class DecodeScheduler(Scheduler):
         self.inflight_transfers: dict[RequestID, TransferReqData] = {}
 
         # Create Transfer Engine
+        if self.paged_manager.num_replicas > 1:
+            raise ValueError(
+                "DecodeScheduler does not support data parallelism"
+            )
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
-            tensors=self.paged_manager.device_tensors,
+            tensors=self.paged_manager._replica_managers[0].device_tensors,
             total_num_pages=self.paged_manager.total_num_pages,
         )
 
@@ -232,7 +239,7 @@ class DecodeScheduler(Scheduler):
                 break
 
             # Send to the Prefill Node
-            dst_idxs = self.paged_manager.block_manager.get_req_blocks(req_id)
+            dst_idxs = self.paged_manager.get_req_blocks(req_id)
             self.prefill_reqs[req_id] = context
             self.send_prefill_request(req_id, context, dst_idxs)
 
@@ -397,7 +404,7 @@ class DecodeScheduler(Scheduler):
 
 
 def load_decode_scheduler(
-    pipeline: TextGenerationPipelineType[TextContext],
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
     pipeline_config: PipelineConfig,
     request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
     response_queue: MAXPushQueue[

@@ -661,10 +661,7 @@ class LatentAttentionWithRope(Module, Shardable):
         )
 
         # Apply rope.
-        if xq.device is not None:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq_rope = fused_qk_ragged_rope(
             self.kv_params,
@@ -716,17 +713,20 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
             raise TypeError(
                 "All elements in input_row_offsets must be TensorValue instances"
             )
+
+        inputs = [
+            self.list_of_attentions[i](
+                layer_idx,
+                xs[i],
+                kv_collections[i],
+                freqs_cis=freqs_cis[i],
+                input_row_offsets=input_row_offsets[i],
+            )
+            for i in range(len(self.devices))
+        ]
+
         return self.allreduce(
-            inputs=[
-                self.list_of_attentions[i](
-                    layer_idx,
-                    xs[i],
-                    kv_collections[i],
-                    freqs_cis=freqs_cis[i],
-                    input_row_offsets=input_row_offsets[i],
-                )
-                for i in range(len(self.devices))
-            ],
+            inputs=inputs,
             signal_buffers=signal_buffers,
         )
 

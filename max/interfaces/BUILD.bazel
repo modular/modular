@@ -1,0 +1,17 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//visibility:public"])
+
+modular_py_library(
+    name = "interfaces",
+    srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/profiler",
+        requirement("msgspec"),
+        requirement("numpy"),
+        requirement("typing-extensions"),
+    ],
+)

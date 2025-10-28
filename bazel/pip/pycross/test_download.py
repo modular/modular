@@ -83,6 +83,6 @@ def test_initialize_sdist() -> None:
     )
 
     with pytest.raises(
-        NotImplementedError, match="Tags are only supported for wheels."
+        NotImplementedError, match=r"Tags are only supported for wheels."
     ):
         _ = download.tags

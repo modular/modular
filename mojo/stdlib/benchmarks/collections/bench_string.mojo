@@ -109,7 +109,7 @@ fn bench_string_split[
     @always_inline
     @parameter
     fn call_fn() raises:
-        var res: List[__type_of(items)]
+        var res: List[type_of(items)]
 
         @parameter
         if sequence:

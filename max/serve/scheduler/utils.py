@@ -141,6 +141,10 @@ class SchedulerLogger:
         )
 
         METRICS.batch_size(batch_size)
+        METRICS.batch_execution_time(
+            batch_execution_time_s * 1000,
+            batch_type=batch_type.value,  # "CE" (prefill) or "TG" (decode)
+        )  # Convert to ms
 
         if paged_cache is None:
             if log_batch_info:
@@ -212,6 +216,11 @@ def add_newly_encoded_reqs_to_tg_batch(
     responses: dict[RequestID, TextGenerationOutput],
     batch_constructor: TextBatchConstructor,
 ) -> None:
+    # When we use data parallelism, a batch would only contain requests for one
+    # device, and some devices might have zero request.
+    if len(batch) == 0:
+        return
+
     # Only the last request in a batch could be chunked. We discard its response
     # and put it back into the request queue if it is chunked.
     # We know if a request is chunked because it still needs CE even after one

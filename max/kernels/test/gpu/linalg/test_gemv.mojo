@@ -28,9 +28,7 @@ from utils.numerics import isnan
 from internal_utils import assert_almost_equal
 
 
-def run_matvec[
-    reduction_method: warp.ReductionMethod
-](M: Int, N: Int, K: Int, *, ctx: DeviceContext):
+def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     print("== run_matvec kernel")
 
     var iterations = 100
@@ -63,12 +61,7 @@ def run_matvec[
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        alias kernel = gemv_kernel[
-            DType.float32,
-            DType.float32,
-            DType.float32,
-            reduction_method=reduction_method,
-        ]
+        alias kernel = gemv_kernel[DType.float32, DType.float32, DType.float32]
 
         ctx.enqueue_function_checked[kernel, kernel](
             c_device,
@@ -184,9 +177,9 @@ def run_matvec[
     _ = c_host_naive
 
 
-fn run_matvec_with_epilogue_fn[
-    reduction_method: warp.ReductionMethod
-](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
+fn run_matvec_with_epilogue_fn(
+    M: Int, N: Int, K: Int, *, ctx: DeviceContext
+) raises:
     alias c_stride = 5
     alias seed_val = 42
 
@@ -244,7 +237,6 @@ fn run_matvec_with_epilogue_fn[
             DType.float32,
             DType.float32,
             DType.float32,
-            reduction_method=reduction_method,
             elementwise_lambda_fn=epilogue_fn,
         ]
         var func = ctx.compile_function_checked[kernel, kernel]()
@@ -371,24 +363,11 @@ fn run_matvec_with_epilogue_fn[
 
 
 def main():
-    def run_tests[reduction_method: warp.ReductionMethod](ctx: DeviceContext):
+    with DeviceContext() as ctx:
         # gemv for matrix vector multiply
-        run_matvec[reduction_method=reduction_method](4096, 1, 4096, ctx=ctx)
-        run_matvec_with_epilogue_fn[reduction_method=reduction_method](
-            4096, 1, 4096, ctx=ctx
-        )
+        run_matvec(4096, 1, 4096, ctx=ctx)
+        run_matvec_with_epilogue_fn(4096, 1, 4096, ctx=ctx)
         # gevm for vector matrix multiply
         if has_nvidia_gpu_accelerator():
-            run_matvec[reduction_method=reduction_method](
-                1, 4096, 4096, ctx=ctx
-            )
-            run_matvec_with_epilogue_fn[reduction_method=reduction_method](
-                1, 4096, 4096, ctx=ctx
-            )
-
-    with DeviceContext() as ctx:
-        run_tests[warp.ReductionMethod.WARP](ctx)
-
-        @parameter
-        if has_nvidia_gpu_accelerator():
-            run_tests[warp.ReductionMethod.TENSOR_CORE](ctx)
+            run_matvec(1, 4096, 4096, ctx=ctx)
+            run_matvec_with_epilogue_fn(1, 4096, 4096, ctx=ctx)

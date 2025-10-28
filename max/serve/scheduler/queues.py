@@ -21,6 +21,7 @@ import queue
 from collections.abc import AsyncGenerator, Generator
 from typing import Any, Generic
 
+import zmq
 from max.interfaces import (
     BaseContext,
     BaseContextType,
@@ -31,6 +32,9 @@ from max.interfaces import (
     SchedulerResult,
 )
 from max.interfaces.queue import MAXPullQueue, MAXPushQueue
+from max.pipelines.architectures.qwen2_5vl.context import (
+    Qwen2_5VLTextAndVisionContext,
+)
 from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 from max.serve.process_control import ProcessMonitor
 from max.serve.queue.zmq_queue import ZmqConfig
@@ -46,7 +50,9 @@ def _get_request_type_from_pipeline_task(
         PipelineTask.TEXT_GENERATION,
         PipelineTask.EMBEDDINGS_GENERATION,
     ]:
-        return TextContext | TextAndVisionContext
+        return (
+            TextContext | TextAndVisionContext | Qwen2_5VLTextAndVisionContext
+        )
     elif pipeline_task in [PipelineTask.AUDIO_GENERATION]:
         return TTSContext
     else:
@@ -242,18 +248,21 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
 
                     count_no_progress = 0
 
-                except queue.Empty:
+                except (queue.Empty, zmq.error.Again) as e:
                     # If the worker dies this loop will keep running,
                     # so we have to check the worker status.
-                    if not self.is_worker_healthy():
+                    if (
+                        isinstance(e, zmq.error.Again)
+                        or not self.is_worker_healthy()
+                    ):
                         logger.error("Model worker process is not healthy")
                         self.worker_monitor.pc.set_canceled()
-                        raise Exception("Worker failed!")  # noqa: B904
+                        raise Exception(
+                            "Worker stopped unexpectedly."
+                        ) from None
 
                     await sleep_with_backoff(count_no_progress)
                     count_no_progress += 1
 
-        except asyncio.CancelledError:
-            raise
         finally:
             logger.debug("Terminating response worker [self=%s]", os.getpid())

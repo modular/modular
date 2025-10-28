@@ -40,7 +40,12 @@ Compile using `--config=production`:
 
 ```bash
 br //:install --config=production
-setup-gpu-benchmarking
+```
+
+Lock the clock frequencies for consistent benchmarking:
+
+```bash
+sudo utils/setup-gpu-clock.sh
 ```
 
 ### Setup kbench
@@ -49,7 +54,7 @@ Before running you many need to export the `$KERNEL_BENCHMARKS_ROOT`
 environment variable. This is the root directory of the kbench repository.
 
 ```bash
-export KERNEL_BENCHMARKS_ROOT=$MODULAR_PATH/open-source/max/max/kernels/benchmarks
+export KERNEL_BENCHMARKS_ROOT=$MODULAR_PATH/max/kernels/benchmarks
 ```
 
 There are two ways to run kbench:
@@ -58,7 +63,7 @@ There are two ways to run kbench:
    Running with bazel should automatically build and install mojo
 
     ```bash
-    br //open-source/max/max/kernels/benchmarks/autotune:kbench -- --help
+    br //max/kernels/benchmarks/autotune:kbench -- --help
 
     ```
 
@@ -66,7 +71,7 @@ There are two ways to run kbench:
     you'll need to be in a directory where that file is accessible.
 
     ```bash
-    br //open-source/max/max/kernels/benchmarks/autotune:kbench --  test.yaml --dryrun
+    br //max/kernels/benchmarks/autotune:kbench --  test.yaml --dryrun
     ```
 
 2. Using uv:

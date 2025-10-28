@@ -47,10 +47,4 @@ def test_none_representation():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_explicit_conformance]()
-    suite.test[test_implicit_conformance]()
-    suite.test[test_none_representation]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -26,8 +26,4 @@ def test_is_absolute():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_is_absolute]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

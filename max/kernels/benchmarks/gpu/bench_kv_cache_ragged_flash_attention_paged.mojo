@@ -17,15 +17,16 @@ from random import random_ui64, seed
 from sys import env_get_dtype, env_get_int
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import Dim, DimList, NDBuffer
+from buffer import Dim, DimList
 from gpu.host import DeviceContext
 from internal_utils import HostNDBuffer, arg_parse, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
-from tensor_internal import IOUnknown, ManagedTensorSlice
-from tensor_internal.managed_tensor_slice import StaticTensorSpec
+from tensor import IOUnknown, ManagedTensorSlice
+from tensor.managed_tensor_slice import StaticTensorSpec
 
 from utils import IndexList
 
@@ -156,8 +157,9 @@ def execute_kv_cache_ragged_flash_attention[
 
     # initialize mask tensor
     # dummy mask to satisfy the argument.
-    dummy_mask = NDBuffer[dtype, 4](
-        UnsafePointer[Scalar[dtype]](), IndexList[4]()
+    dummy_mask = LayoutTensor[dtype, Layout.row_major[4]()](
+        UnsafePointer[Scalar[dtype]](),
+        RuntimeLayout[Layout.row_major[4]()].row_major(IndexList[4]()),
     )
 
     # initialize reference output
@@ -165,6 +167,7 @@ def execute_kv_cache_ragged_flash_attention[
         IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
     )
     var output_device = output_host.copy_to_device(ctx)
+    var output_device_tensor = output_device.to_layout_tensor()
     paged_lut_host = HostNDBuffer[DType.uint32, 2](
         IndexList[2](batch_size, ceildiv(max_context_length, page_size))
     )
@@ -210,7 +213,7 @@ def execute_kv_cache_ragged_flash_attention[
         q_device,
         k_cache_device,
         v_cache_device,
-        output_device,
+        output_device_tensor,
         dummy_mask,
         input_row_offsets_device,
     )
@@ -220,8 +223,9 @@ def execute_kv_cache_ragged_flash_attention[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             flash_attention[ragged=True](
-                output_device.tensor,
-                q_device.tensor,
+                # TODO: move to_layout_tensor here once unified closures are supported.
+                output_device_tensor.as_any_origin(),
+                q_device.to_layout_tensor(),
                 k_cache_device,
                 v_cache_device,
                 CausalMask(),

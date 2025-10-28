@@ -18,8 +18,7 @@ from sys import size_of
 from gpu import NamedBarrierSemaphore
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host.info import H100
-from gpu.id import block_idx, grid_dim, thread_idx
-from gpu.memory import AddressSpace
+from gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from stdlib.bit import log2_floor
@@ -27,6 +26,8 @@ from stdlib.bit import log2_floor
 from utils.index import Index, IndexList
 
 from .tile_scheduler import RasterOrder, WorkInfo
+
+from ...structuring import RegTileType
 
 
 @always_inline("nodebug")
@@ -120,12 +121,16 @@ struct SplitKTileScheduler[
     # cluster size is power of 2 (1, 2 ,4)
     alias log_cluster_size = log2_floor(cluster_shape[0] * cluster_shape[1])
 
+    alias WorkTileType[dtype: DType, layout: Layout] = LayoutTensor[
+        dtype, layout, MutableAnyOrigin
+    ]
+
     @always_inline
     fn __init__(
         out self,
         prob_shape: IndexList[3],
         block_id_in_cluster: IndexList[2],
-        locks_ptr: UnsafePointer[NoneType],
+        locks_ptr: UnsafePointer[UInt8],
     ):
         _check_scheduler_constraints[
             problem_shape_nk,
@@ -500,18 +505,8 @@ struct SplitKTileScheduler[
         workspace_layout: Layout,
     ](
         self,
-        reduction_workspace: LayoutTensor[
-            accum_type,
-            workspace_layout,
-            MutableAnyOrigin,
-            # address_space = AddressSpace.GLOBAL,
-        ],
-        c_reg_tile: LayoutTensor[
-            accum_type,
-            c_reg_layout,
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ],
+        reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
+        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
         work_tile_info: WorkInfo,
         num_barriers: UInt32,
         warp_group_local_idx: UInt32,
@@ -649,17 +644,8 @@ struct SplitKTileScheduler[
         workspace_layout: Layout,
     ](
         self,
-        reduction_workspace: LayoutTensor[
-            accum_type,
-            workspace_layout,
-            MutableAnyOrigin,
-        ],
-        c_reg_tile: LayoutTensor[
-            accum_type,
-            c_reg_layout,
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ],
+        reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
+        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
         reduction_tile_idx: UInt32,
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,
@@ -708,17 +694,8 @@ struct SplitKTileScheduler[
         write_back: Bool,
     ](
         self,
-        reduction_workspace: LayoutTensor[
-            accum_type,
-            workspace_layout,
-            MutableAnyOrigin,
-        ],
-        c_reg_tile: LayoutTensor[
-            accum_type,
-            c_reg_layout,
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ],
+        reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
+        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
         reduction_tile_idx: UInt32,
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,
@@ -789,18 +766,13 @@ struct SplitKTileScheduler[
         workspace_layout: Layout,
     ](
         self,
-        reduction_workspace: LayoutTensor[
-            accum_type,
-            workspace_layout,
-            MutableAnyOrigin,
-        ],
+        reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
         reduction_tile_idx: UInt32,
-        out reshaped_workspace: LayoutTensor[
+        out reshaped_workspace: Self.WorkTileType[
             accum_type,
             Layout.row_major(
                 reduction_workspace.shape[1](), reduction_workspace.shape[2]()
             ),
-            MutableAnyOrigin,
         ],
     ):
         alias BM = workspace_layout.shape[1].value()

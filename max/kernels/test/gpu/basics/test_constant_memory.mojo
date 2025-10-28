@@ -14,19 +14,17 @@
 
 from gpu.host import ConstantMemoryMapping, DeviceContext
 from gpu.host.compile import _compile_code
-from gpu.id import thread_idx
-from gpu.memory import AddressSpace
+from gpu import thread_idx
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_equal, assert_true
 
 
 def test_constant_memory_compile(ctx: DeviceContext):
     fn alloc[
         n: Int
-    ]() -> UnsafePointer[Float32, address_space = _GPUAddressSpace.CONSTANT]:
+    ]() -> UnsafePointer[Float32, address_space = AddressSpace.CONSTANT]:
         return stack_allocation[
-            n, Float32, address_space = _GPUAddressSpace.CONSTANT
+            n, Float32, address_space = AddressSpace.CONSTANT
         ]()
 
     assert_true(".const .align 4 .b8 " in _compile_code[alloc[20]]())

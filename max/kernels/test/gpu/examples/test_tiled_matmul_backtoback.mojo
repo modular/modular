@@ -29,7 +29,7 @@ from gpu import (
     thread_idx,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import external_memory
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
@@ -79,14 +79,14 @@ struct BackToBackMatmulConfig[
         return UInt(self.block_tile_shape[1] // self.warp_tile_shape[1])
 
     fn num_threads(self) -> UInt:
-        return UInt(self.num_warps_m() * self.num_warps_n() * WARP_SIZE)
+        return UInt(self.num_warps_m() * self.num_warps_n() * UInt(WARP_SIZE))
 
     fn shared_mem_usage(self, K: UInt) -> Int:
         return (
             self.block_tile_shape[0] * K
             + self.num_pipeline_stages
-            * self.block_tile_shape[1]
-            * self.block_tile_shape[2]
+            * UInt(self.block_tile_shape[1])
+            * UInt(self.block_tile_shape[2])
         ) * size_of[src_type]()
 
     fn grid_dim(self, M: UInt) -> IndexList[3]:
@@ -169,13 +169,13 @@ fn b2b_gemm[
     # B is K x L
     # C is L x N
     # B is M x N
-    var M: UInt = UInt(D.dim[0]())
-    var L: UInt = UInt(B.dim[0 if transpose_b else 1]())
+    var M = UInt(D.dim[0]())
+    var L = UInt(B.dim[0 if transpose_b else 1]())
     # var K: UInt = B.dim[1 if transpose_b else 0]()
     # TODO: allow dynamic `K`, so long as it still
     # fits in shared memory, we shouldn't require static.
-    alias K: UInt = UInt(Int(A.layout.shape[1]))
-    alias N: UInt = UInt(Int(D.layout.shape[1]))
+    alias K = UInt(Int(A.layout.shape[1]))
+    alias N = UInt(Int(D.layout.shape[1]))
 
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
@@ -198,7 +198,7 @@ fn b2b_gemm[
     # To avoid recalculating `A*B`:
     constrained[N == UInt(BN)]()
     # TODO: lift this restriction
-    constrained[K % BK == 0, "K must be an integer multiple of BK"]()
+    constrained[K % UInt(BK) == 0, "K must be an integer multiple of BK"]()
     constrained[BN % BK == 0, "BN must be an integer multiple of BK"]()
     constrained[
         K == UInt(BK),
@@ -212,7 +212,7 @@ fn b2b_gemm[
 
     var tid = thread_idx.x
     # var ln_id = lane_id()
-    var warp_id = tid // WARP_SIZE
+    var warp_id = tid // UInt(WARP_SIZE)
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = in_type.is_half_float()
@@ -310,8 +310,8 @@ fn b2b_gemm[
     for l in range(num_l_iter):
         _ = ab_reg_tile.fill(0)
         var b_tile_coords = (Int(l), 0) if transpose_b else (0, Int(l))
-        var c_tile_coords = (0, Int(l * (BN // BK))) if transpose_c else (
-            Int(l * (BN // BK)),
+        var c_tile_coords = (0, Int(l * UInt(BN // BK))) if transpose_c else (
+            Int(l * UInt(BN // BK)),
             0,
         )
         # We fetch c_gmem_iter when done
@@ -321,7 +321,7 @@ fn b2b_gemm[
         var c_gmem_iter = C.tiled_iterator[CD_0, CD_1, axis=c_tile_axis](
             c_tile_coords[0], c_tile_coords[1]
         )
-        var num_rows_b = min(BN, Int(L - BN * l))
+        var num_rows_b = min(BN, Int(L - UInt(BN * l)))
         # FIXME: this is a lot of code duplication, for only
         # a few different branches within `multistage_mma`!
         # Maybe fetch `A` outside, and always use `prefetch_a=False`?
@@ -337,7 +337,7 @@ fn b2b_gemm[
                 num_pipeline_stages,
                 transpose_b,
                 b_next_smem_layout=c_smem_layout,
-                next_op_b_iter_masked = __type_of(c_gmem_iter).masked,
+                next_op_b_iter_masked = type_of(c_gmem_iter).masked,
                 continue_prefetch_b=True,
                 prefetch_init=True,
                 transpose_b_next=transpose_c,
@@ -363,7 +363,7 @@ fn b2b_gemm[
                 num_pipeline_stages,
                 transpose_b,
                 b_next_smem_layout=c_smem_layout,
-                next_op_b_iter_masked = __type_of(c_gmem_iter).masked,
+                next_op_b_iter_masked = type_of(c_gmem_iter).masked,
                 continue_prefetch_b=True,
                 prefetch_init=True,
                 transpose_b_next=transpose_c,
@@ -452,7 +452,7 @@ fn b2b_gemm[
             Layout.row_major(WM, WN),
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
-        ](a_smem.bitcast[Scalar[accum_type]]() + warp_id * WM * WN)
+        ](a_smem.bitcast[Scalar[accum_type]]() + warp_id * UInt(WM) * UInt(WN))
 
         copy_local_to_shared[
             thread_layout = Layout.row_major(8, 4),
@@ -481,7 +481,7 @@ fn b2b_gemm[
                 1, simd_size
             ]().distribute[warp_layout](thread_idx.x)
             var thread_offset = d_gmem_frag.distance(D.ptr)
-            alias num_stores_per_thread = __type_of(d_gmem_frag).layout.size()
+            alias num_stores_per_thread = type_of(d_gmem_frag).layout.size()
             alias src_align = align_of[
                 SIMD[accum_type, simd_width_of[accum_type]()]
             ]()
@@ -493,14 +493,14 @@ fn b2b_gemm[
 
             @parameter
             for i in range(num_stores_per_thread):
-                alias src_idx = __type_of(d_smem_frag).layout(i)
+                alias src_idx = type_of(d_smem_frag).layout(i)
                 alias src_idx_base = src_idx % swizzle.size()
                 alias src_idx_diff = src_idx - src_idx_base
                 var swizzled_idx = (
                     swizzle(d_smem_frag_offset + src_idx_base) + src_idx_diff
                 )
 
-                alias dst_static_idx = __type_of(d_gmem_frag).layout(i)
+                alias dst_static_idx = type_of(d_gmem_frag).layout(i)
 
                 @parameter
                 if d_layout.all_dims_known():
@@ -541,11 +541,9 @@ fn b2b_gemm[
             var thread_offset = d_gmem_frag.distance(D.ptr)
 
             @parameter
-            for i in range(__type_of(d_gmem_frag).layout.size()):
+            for i in range(type_of(d_gmem_frag).layout.size()):
                 alias src_idx = d_reg_frag.layout(i)
-                alias dst_static_idx: UInt = UInt(
-                    __type_of(d_gmem_frag).layout(i)
-                )
+                alias dst_static_idx = UInt(type_of(d_gmem_frag).layout(i))
 
                 @parameter
                 if d_layout.all_dims_known():

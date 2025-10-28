@@ -22,7 +22,7 @@ from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier, warp
 from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
-from gpu.id import block_idx, lane_id, thread_idx, warp_id
+from gpu import block_idx, lane_id, thread_idx, warp_id
 from gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
@@ -104,9 +104,9 @@ fn gemv_tma_kernel[
 
     alias a_size = a_smem_layout.size()
 
-    var b_smem_base = (a_smem_base + NUM_PIPELINE_STAGES * a_size).bitcast[
-        Scalar[dtype]
-    ]()
+    var b_smem_base = (
+        a_smem_base + NUM_PIPELINE_STAGES * UInt(a_size)
+    ).bitcast[Scalar[dtype]]()
 
     alias b_size = b_smem_layout.size()
 
@@ -157,14 +157,14 @@ fn gemv_tma_kernel[
     var producer_phase = PipelineState[NUM_PIPELINE_STAGES](0, 1, 0)
 
     for col_offset in range(0, K, BLOCK_SIZE_K):
-        var current_block_size = min(BLOCK_SIZE_K, K - col_offset)
+        var current_block_size = min(BLOCK_SIZE_K, K - UInt(col_offset))
 
         # Producer: Thread 0 loads data.
         if thread_idx.x == 0:
             var stage = producer_phase.index()
             tma_mbar[stage].expect_bytes(
-                BLOCK_SIZE_M * current_block_size * size_of[dtype]()
-                + current_block_size * size_of[dtype]()
+                BLOCK_SIZE_M * current_block_size * UInt(size_of[dtype]())
+                + current_block_size * UInt(size_of[dtype]())
             )
 
             cp_async_bulk_tensor_shared_cluster_global[
@@ -209,7 +209,7 @@ fn gemv_tma_kernel[
                     var row_idx = warp_row_offset + i
                     if global_row_idx + i < M:
                         var a_val = current_a_tile[row_idx, col_idx]
-                        dot_products[i] += rebind[__type_of(dot_products[i])](
+                        dot_products[i] += rebind[type_of(dot_products[i])](
                             a_val.cast[accum_type]() * b_val.cast[accum_type]()
                         )
 
@@ -290,15 +290,15 @@ def gemv_tma[
         NUM_PIPELINE_STAGES,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         tma_desc_a,
         tma_desc_b,
         c,
         a,
         b,
-        M,
-        N,
-        K,
+        UInt(M),
+        UInt(N),
+        UInt(K),
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
         block_dim=(THREAD_NUM),
         shared_mem_bytes=Int(smem_use),

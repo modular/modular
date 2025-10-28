@@ -17,7 +17,7 @@ from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle, TMADescriptor
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 from gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
@@ -31,7 +31,6 @@ from layout.tma_async import (
     create_tma_tile,
 )
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
 
 from utils.index import Index, IndexList
@@ -62,7 +61,7 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
         dtype,
         cta_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -75,7 +74,7 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -120,9 +119,9 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
     )
     var tensormaps = TMATensorTileArray[
         num_of_tensormaps,
-        __type_of(template_tma_tensormap).dtype,
-        __type_of(template_tma_tensormap).layout,
-        __type_of(template_tma_tensormap).desc_layout,
+        type_of(template_tma_tensormap).dtype,
+        type_of(template_tma_tensormap).layout,
+        type_of(template_tma_tensormap).desc_layout,
     ](device_tensormaps)
 
     var tensormaps_host_ptr = stack_allocation[num_of_tensormaps * 128, UInt8]()
@@ -138,20 +137,18 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
     ctx.synchronize()
 
     alias kernel = test_tma_replace_global_addr_in_gmem_descriptor_kernel[
-        __type_of(template_tma_tensormap).dtype,
+        type_of(template_tma_tensormap).dtype,
         num_of_tensormaps,
         src_layout,  # src layout
         dst_layout,  # dst layout
-        __type_of(template_tma_tensormap).layout,  # smem layout
-        __type_of(template_tma_tensormap).desc_layout,  # desc layout
-        __type_of(template_tma_tensormap).layout,  # thread layout
+        type_of(template_tma_tensormap).layout,  # smem layout
+        type_of(template_tma_tensormap).desc_layout,  # desc layout
+        type_of(template_tma_tensormap).layout,  # thread layout
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         dst.device_tensor(),
-        rebind[NDBuffer[DType.bfloat16, 2, MutableAnyOrigin]](
-            new_src.device_buffer()
-        ),
+        new_src.device_tensor(),
         template_tma_tensormap,
         tensormaps,
         grid_dim=(num_of_tensormaps),
@@ -201,12 +198,12 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
         dtype,
         cta_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var smem_desc = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space = _GPUAddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space = AddressSpace.SHARED
     ]()
 
     # load the tensormap from gmem into smem. Only the one elected thread should call this
@@ -234,7 +231,7 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -278,9 +275,9 @@ def test_tma_replace_global_addr_in_smem_descriptor[
     )
     var tensormaps = TMATensorTileArray[
         num_of_tensormaps,
-        __type_of(template_tma_tensormap).dtype,
-        __type_of(template_tma_tensormap).layout,
-        __type_of(template_tma_tensormap).desc_layout,
+        type_of(template_tma_tensormap).dtype,
+        type_of(template_tma_tensormap).layout,
+        type_of(template_tma_tensormap).desc_layout,
     ](device_tensormaps)
 
     var tensormaps_host_ptr = stack_allocation[num_of_tensormaps * 128, UInt8]()
@@ -296,20 +293,18 @@ def test_tma_replace_global_addr_in_smem_descriptor[
     ctx.synchronize()
 
     alias kernel = test_tma_replace_global_addr_in_gmem_descriptor_kernel[
-        __type_of(template_tma_tensormap).dtype,
+        type_of(template_tma_tensormap).dtype,
         num_of_tensormaps,
         src_layout,  # src layout
         dst_layout,  # dst layout
-        __type_of(template_tma_tensormap).layout,  # smem layout
-        __type_of(template_tma_tensormap).desc_layout,  # desc layout
-        __type_of(template_tma_tensormap).layout,  # thread layout
+        type_of(template_tma_tensormap).layout,  # smem layout
+        type_of(template_tma_tensormap).desc_layout,  # desc layout
+        type_of(template_tma_tensormap).layout,  # thread layout
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         dst.device_tensor(),
-        rebind[NDBuffer[DType.bfloat16, 2, MutableAnyOrigin]](
-            new_src.device_buffer()
-        ),
+        new_src.device_tensor(),
         template_tma_tensormap,
         tensormaps,
         grid_dim=(num_of_tensormaps),
@@ -358,12 +353,12 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
         dtype,
         cta_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var smem_desc = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space = _GPUAddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space = AddressSpace.SHARED
     ]()
 
     # load the tensormap from gmem into smem. Only the one elected thread should call this
@@ -408,7 +403,7 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -491,8 +486,8 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     var tensormaps = TMATensorTileArray[
         num_of_subtensors,
         dtype,
-        __type_of(template_tma_tensormap).layout,
-        __type_of(template_tma_tensormap).desc_layout,
+        type_of(template_tma_tensormap).layout,
+        type_of(template_tma_tensormap).desc_layout,
     ](device_tensormaps)
 
     ctx.synchronize()
@@ -502,15 +497,13 @@ def test_tma_replace_global_dim_in_smem_descriptor[
         num_of_subtensors,
         src_layout,  # new src layout
         dst_layout,  # dst layout
-        __type_of(template_tma_tensormap).layout,  # smem layout
-        __type_of(template_tma_tensormap).desc_layout,  # desc layout
+        type_of(template_tma_tensormap).layout,  # smem layout
+        type_of(template_tma_tensormap).desc_layout,  # desc layout
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         dst.device_tensor(),
-        rebind[NDBuffer[DType.bfloat16, 2, MutableAnyOrigin]](
-            new_src.device_buffer()
-        ),
+        new_src.device_tensor(),
         template_tma_tensormap,
         subtensors_m,
         tensormaps,

@@ -19,6 +19,7 @@ from max.graph.weights import WeightData, Weights
 DEEPSEEK_SAFETENSOR_MAP = {
     "model.": "",  # Removes the "model" prefix.
     "gate.weight": "gate.gate_score.weight",
+    "weight_scale_inv": "weight_scale",
 }
 
 

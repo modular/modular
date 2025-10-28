@@ -100,6 +100,17 @@ def test_div__python_int__operator(tensor_type: TensorType) -> None:
             pass
 
 
+@given(tensor_type=...)
+def test_div__mismatched_devices(tensor_type: TensorType) -> None:
+    device = DeviceRef.GPU(1)
+    assume(tensor_type.device != device)
+    other_type = TensorType(tensor_type.dtype, tensor_type.shape, device)
+    with Graph("div", input_types=[tensor_type, other_type]) as graph:
+        tensor, other = graph.inputs
+        with pytest.raises(ValueError, match="same device"):
+            _ = tensor.tensor / other.tensor
+
+
 def build_models(lhs_dtype: DType, rhs_dtype: DType) -> Graph:
     lhs_type = TensorType(lhs_dtype, [], device=DeviceRef.CPU())
     rhs_type = TensorType(rhs_dtype, [], device=DeviceRef.CPU())

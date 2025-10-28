@@ -69,3 +69,26 @@ modular_run_binary_test(
     binary = "mandelbrot",
     tags = ["gpu"],
 )
+
+mojo_binary(
+    name = "reduction",
+    srcs = ["reduction.mojo"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "@mojo//:layout",
+        "@mojo//:stdlib",
+    ],
+)
+
+modular_run_binary_test(
+    name = "reduction_test",
+    binary = "reduction",
+    gpu_constraints = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+)

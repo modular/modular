@@ -26,12 +26,13 @@ from typing import TYPE_CHECKING, Any, TypeVar
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
+    ImageMetadata,
     PipelineTokenizer,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
-from max.pipelines.core import ImageMetadata, TextAndVisionContext, TextContext
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.support.image import find_contiguous_ranges
 from PIL import Image
 from transformers import (
@@ -56,6 +57,56 @@ TokenGeneratorContext = TypeVar("TokenGeneratorContext")
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+
+
+def _handle_decode_overflow(
+    encoded: npt.NDArray[np.integer[Any]],
+    vocab_size: int,
+) -> str:
+    """Diagnose and raise a helpful OverflowError for token decoding issues.
+
+    Args:
+        encoded: The token array that caused the overflow.
+        vocab_size: The tokenizer's vocabulary size.
+        original_error: The original OverflowError that was caught.
+
+    """
+    issues = []
+
+    if (encoded >= vocab_size).any():
+        invalid_mask = encoded >= vocab_size
+        invalid_indices = np.where(invalid_mask)[0]
+        invalid_values = encoded[invalid_mask]
+        issues.append(
+            f"Token IDs exceeding vocab size ({vocab_size}) at indices "
+            f"{invalid_indices.tolist()}: {invalid_values.tolist()}"
+        )
+
+    if (encoded < 0).any():
+        negative_mask = encoded < 0
+        negative_indices = np.where(negative_mask)[0]
+        negative_values = encoded[negative_mask]
+        issues.append(
+            f"Negative token IDs at indices {negative_indices.tolist()}: "
+            f"{negative_values.tolist()}"
+        )
+
+    if issues:
+        error_msg = (
+            f"OverflowError during token decoding. Invalid token IDs detected:\n"
+            f"  {'; '.join(issues)}\n"
+            f"  Vocab size: {vocab_size}, Array shape: {encoded.shape}, "
+            f"dtype: {encoded.dtype}"
+        )
+    else:
+        error_msg = (
+            f"OverflowError during token decoding (no obvious invalid values). "
+            f"Vocab size: {vocab_size}, Array shape: {encoded.shape}, "
+            f"dtype: {encoded.dtype}, Token IDs: {encoded.tolist()}"
+        )
+
+    logger.error(error_msg)
+    return error_msg
 
 
 class IdentityPipelineTokenizer(
@@ -124,7 +175,11 @@ class PreTrainedPipelineTokenizer(
     async def decode(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
-        return self.delegate.decode(encoded, **kwargs)
+        try:
+            return self.delegate.decode(encoded, **kwargs)
+        except OverflowError as e:
+            error_msg = _handle_decode_overflow(encoded, len(self.delegate))
+            raise OverflowError(error_msg) from e
 
 
 def max_tokens_to_generate(
@@ -383,7 +438,11 @@ class TextTokenizer(
         if self._enable_llama_whitespace_fix and encoded.size == 1:
             return self._decode_with_llama_whitespace_fix(encoded, **kwargs)
 
-        return self.delegate.decode(encoded, **kwargs)
+        try:
+            return self.delegate.decode(encoded, **kwargs)
+        except OverflowError as e:
+            error_msg = _handle_decode_overflow(encoded, len(self.delegate))
+            raise OverflowError(error_msg) from e
 
     async def _generate_prompt_and_token_ids(
         self,
@@ -430,7 +489,7 @@ class TextTokenizer(
     async def new_context(self, request: TextGenerationRequest) -> TextContext:
         """Create a new TextContext object, leveraging necessary information from TextGenerationRequest."""
         # Encode Prompt / Messages
-        prompt, token_ids = await self._generate_prompt_and_token_ids(
+        _prompt, token_ids = await self._generate_prompt_and_token_ids(
             prompt=request.prompt,
             messages=request.messages,
             tools=request.tools,
@@ -667,7 +726,11 @@ class TextAndVisionTokenizer(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
         """Transformer a provided encoded token array, back into readable text."""
-        return self.delegate.decode(encoded, **kwargs)
+        try:
+            return self.delegate.decode(encoded, **kwargs)
+        except OverflowError as e:
+            error_msg = _handle_decode_overflow(encoded, len(self.delegate))
+            raise OverflowError(error_msg) from e
 
     async def new_context(
         self, request: TextGenerationRequest

@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import random
+import re
 import struct
 import time
 from dataclasses import dataclass
@@ -483,7 +484,18 @@ class HuggingFaceRepo:
                                 )
 
             elif self.repo_type == RepoType.online:
-                if safetensors_info := self.info.safetensors:
+                safetensors_info = self.info.safetensors
+
+                # Workaround for FP8 models that don't have safetensors metadata populated
+                # Some repos like "RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic"
+                # do not have safetensors metadata populated so we need to add a
+                # workaround to support them.
+                if safetensors_info is None and re.search(
+                    r"FP8|fp8", self.repo_id, re.IGNORECASE
+                ):
+                    supported_encodings.add(SupportedEncoding.float8_e4m3fn)
+
+                if safetensors_info:
                     for params in safetensors_info.parameters:
                         if "F8_E4M3" in params:
                             supported_encodings.add(

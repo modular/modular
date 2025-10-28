@@ -13,6 +13,7 @@
 
 from hashlib import default_comp_time_hasher
 from math import align_up
+from memory import bitcast
 from sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -22,8 +23,8 @@ from gpu import WARP_SIZE, barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync, elect_one_sync
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_id_in_cluster, block_idx, lane_id, thread_idx
-from gpu.memory import AddressSpace, fence_async_view_proxy
+from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
+from gpu.memory import fence_async_view_proxy, external_memory
 from gpu.mma import st_matrix
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
@@ -294,10 +295,10 @@ fn kernel_5[
                 sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
 
-                var a_smem_slice = __type_of(sub_a_smem_tile)(
+                var a_smem_slice = type_of(sub_a_smem_tile)(
                     sub_a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
                 )
-                var b_smem_slice = __type_of(sub_b_smem_tile)(
+                var b_smem_slice = type_of(sub_b_smem_tile)(
                     sub_b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
                 )
                 a_tma_op.async_multicast_load[cta_group](
@@ -532,12 +533,12 @@ fn blackwell_kernel_5[
         a_type,
         b_type,
         c_type,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
-        __type_of(c_tma_op).layout,
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
-        __type_of(c_tma_op).desc_layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
+        type_of(c_tma_op).layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
+        type_of(c_tma_op).desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=transpose_b,

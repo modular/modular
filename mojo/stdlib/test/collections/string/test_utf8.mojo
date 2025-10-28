@@ -18,6 +18,7 @@ from collections.string._utf8 import (
     _is_valid_utf8_comptime,
     _is_valid_utf8_runtime,
     _utf8_byte_type,
+    BIGGEST_UTF8_FIRST_BYTE,
 )
 
 from testing import assert_equal, assert_false, assert_raises, assert_true
@@ -26,6 +27,7 @@ from testing import TestSuite
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data
 # ===----------------------------------------------------------------------=== #
+
 
 alias GOOD_SEQUENCES = [
     List("a".as_bytes()),
@@ -101,7 +103,7 @@ def validate_utf8(span: Span[Byte]) -> Bool:
     return comptime
 
 
-fn test_utf8_validation() raises:
+def test_utf8_validation():
     alias text = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam
     varius tellus quis tincidunt dictum. Donec eros orci, ultricies ac metus non
     , rutrum faucibus neque. Nunc ultricies turpis ut lacus consequat dapibus.
@@ -266,9 +268,7 @@ def test_count_utf8_continuation_bytes():
 
     def _test(amnt: Int, items: List[UInt8]):
         var p = items.unsafe_ptr()
-        var span = Span[Byte, StaticConstantOrigin](
-            ptr=p, length=UInt(len(items))
-        )
+        var span = Span(ptr=p, length=UInt(len(items)))
         assert_equal(amnt, _count_utf8_continuation_bytes(span))
 
     _test(5, List[UInt8](c, c, c, c, c))
@@ -295,23 +295,9 @@ def test_utf8_byte_type():
         assert_equal(_utf8_byte_type(i), 2)
     for i in range(UInt8(0b1110_0000), UInt8(0b1111_0000)):
         assert_equal(_utf8_byte_type(i), 3)
-    for i in range(UInt8(0b1111_0000), UInt8(0b1111_1111)):
+    for i in range(UInt8(0b1111_0000), BIGGEST_UTF8_FIRST_BYTE + 1):
         assert_equal(_utf8_byte_type(i), 4)
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_count_utf8_continuation_bytes]()
-    suite.test[test_utf8_byte_type]()
-    suite.test[test_utf8_validation]()
-    suite.test[test_good_utf8_sequences]()
-    suite.test[test_bad_utf8_sequences]()
-    suite.test[test_stringslice_from_utf8]()
-    suite.test[test_combination_good_utf8_sequences]()
-    suite.test[test_combination_bad_utf8_sequences]()
-    suite.test[test_combination_good_bad_utf8_sequences]()
-    suite.test[test_combination_10_good_utf8_sequences]()
-    suite.test[test_combination_10_good_10_bad_utf8_sequences]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -22,7 +22,7 @@ import threading
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 logger = logging.getLogger("max.serve.process_control")
 
@@ -138,7 +138,7 @@ class ProcessControl:
         return self.completed_event.is_set()
 
 
-def forever() -> Iterable:
+def forever() -> Iterable[None]:
     while True:
         yield
 
@@ -209,11 +209,11 @@ class ProcessMonitor:
         return self.proc.is_alive()
 
     async def shutdown(self) -> None:
-        logger.info("Shutting down")
+        logger.info(f"Shutting down {self.pc.name}")
         self.pc.set_canceled()
         if not self.proc.is_alive():
             logger.info(
-                f"Early exit. Process was already dead. exitcode: {self.proc.exitcode}"
+                f"Early exit. Process {self.pc.name} was already dead. exitcode: {self.proc.exitcode}"
             )
             return
 
@@ -221,7 +221,7 @@ class ProcessMonitor:
         completed_task = loop.create_task(self.until_completed())
         dead_task = loop.create_task(self.until_dead())
 
-        completed_tasks, pending_tasks = await asyncio.wait(
+        await asyncio.wait(
             [completed_task, dead_task], return_when=asyncio.FIRST_COMPLETED
         )
 
@@ -236,7 +236,7 @@ class ProcessMonitor:
             logger.info("Process is still alive.  Killing")
             self.proc.kill()
             dead = await self.until_dead()
-        logger.info("Shut down")
+        logger.info(f"Shut down {self.pc.name}")
 
     async def shutdown_if_unhealthy(
         self, cb: Callable[[], None] | None = None
@@ -287,7 +287,7 @@ async def _until_true(
     is_done: Callable[[], bool], poll_s: float, max_time_s: float | None
 ) -> bool:
     """Poll a predicate until it is true or you exceed 'max_time_s'"""
-    steps: Iterable
+    steps: Iterable[Any]
     if max_time_s is None:
         steps = forever()
     else:

@@ -41,9 +41,7 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
 
     fn to_layout_tensor(
         ref self,
-    ) -> LayoutTensor[
-        dtype, Layout.row_major[rank](), __origin_of(self.storage)
-    ]:
+    ) -> LayoutTensor[dtype, Layout.row_major[rank](), origin_of(self.storage)]:
         return {
             Span[Scalar[dtype]](self.storage),
             RuntimeLayout[Layout.row_major[rank]()].row_major(self.shape),
@@ -353,6 +351,7 @@ def main():
             5,
             0,
             IndexList[1](10),
+            temperature=0,
         )
 
     # CHECK-LABEL: test_1d_sorted_sampling
@@ -365,6 +364,7 @@ def main():
             5,
             1,
             IndexList[2](5, 10),
+            temperature=0,
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling
@@ -377,6 +377,7 @@ def main():
             5,
             2,
             IndexList[3](3, 5, 10),
+            temperature=0,
         )
 
     # CHECK-LABEL: test_3d_sorted_sampling
@@ -411,7 +412,7 @@ def main():
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling_temp
-    # CHECK: 6,6,0,0,5,2,6,4,3,1,0,4,8,0,0,0,5,7,7,4,6,3,4,2,5,3,6,7,8,6,6,5,9,7,8,3,7,4,8,6,2,8,6,4,5,7,8,3,5,0,
+    # CHECK: 6,6,0,0,5,2,6,4,3,1,0,4,8,0,0,0,7,7,7,4,6,3,4,2,5,3,6,7,8,6,6,5,9,7,8,3,7,4,8,6,2,8,6,4,5,7,8,3,5,0,
     test_2d_sorted_sampling_temp()
 
     fn test_2d_sorted_sampling_temp_zero() raises:
@@ -436,5 +437,5 @@ def main():
         )
 
     # CHECK-LABEL: test_deterministic_sampling
-    # CHECK: 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    # CHECK: 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
     test_deterministic_sampling()

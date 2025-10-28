@@ -67,7 +67,9 @@ fn kernel_thread_idx(ptr: UnsafePointer[Int32]):
     alias layout = MixedLayout(
         shape=[Idx[8](), Idx[2]()], stride=[Idx[1](), Idx[1]()]
     )
-    ptr[0] = Int32(layout(MixedTuple(Idx(thread_idx.x), Idx(thread_idx.y))))
+    ptr[0] = Int32(
+        layout(MixedTuple(Idx(Int(thread_idx.x)), Idx(Int(thread_idx.y))))
+    )
 
 
 def main():

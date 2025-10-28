@@ -117,7 +117,12 @@ struct CodepointSliceIter[
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        """Iterate over the `StringSlice` yielding individual characters.
+
+        Returns:
+            An iterator over the characters in the string slice.
+        """
         return self.copy()
 
     @always_inline
@@ -208,7 +213,7 @@ struct CodepointSliceIter[
             # SAFETY: Will not read out of bounds because `_slice` is guaranteed
             #   to contain valid UTF-8.
             var curr_ptr = self._slice.unsafe_ptr()
-            var byte_len = _utf8_first_byte_sequence_length(curr_ptr[])
+            var byte_len = Int(_utf8_first_byte_sequence_length(curr_ptr[]))
             return StringSlice[origin](ptr=curr_ptr, length=byte_len)
         else:
             return None
@@ -259,7 +264,7 @@ struct CodepointSliceIter[
                 byte_len += 1
                 back_ptr -= 1
 
-            return StringSlice[origin](ptr=back_ptr, length=UInt(byte_len))
+            return StringSlice[origin](ptr=back_ptr, length=byte_len)
         else:
             return None
 
@@ -308,7 +313,7 @@ struct CodepointSliceIter[
 
 
 struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
-    ImplicitlyCopyable, Movable, Sized
+    ImplicitlyCopyable, Iterable, Iterator, Movable, Sized
 ):
     """Iterator over the `Codepoint`s in a string slice, constructed by
     `StringSlice.codepoints()`.
@@ -318,6 +323,9 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
         origin: Origin of the underlying string data.
     """
 
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
     alias Element = Codepoint
 
     var _slice: StringSlice[origin]
@@ -340,7 +348,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
     # ===-------------------------------------------------------------------===#
 
     @doc_private
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     @always_inline
@@ -515,7 +523,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Args:
             other: The Span to cast.
         """
-        self = rebind[__type_of(self)](other)
+        self = rebind[type_of(self)](other)
 
     @doc_private
     @always_inline
@@ -523,12 +531,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
         # encoded, they can be arbitrary binary data.
         var length: Int = Int(mlir_value=__mlir_op.`pop.string.size`(_kgen))
-        var ptr = UnsafePointer(__mlir_op.`pop.string.address`(_kgen)).bitcast[
-            Byte
-        ]()
-        self._slice = Span[Byte, StaticConstantOrigin](
-            ptr=ptr, length=UInt(length)
-        )
+        var ptr = UnsafePointer[mut=False, origin=StaticConstantOrigin](
+            __mlir_op.`pop.string.address`(_kgen)
+        ).bitcast[Byte]()
+        self._slice = {ptr = ptr, length = length}
 
     @always_inline
     @implicit
@@ -569,7 +575,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             ptr=unsafe_from_utf8.unsafe_ptr().address_space_cast[
                 Span[Byte, origin].address_space
             ](),
-            length=UInt(unsafe_from_utf8.__len__()),
+            length=unsafe_from_utf8.__len__(),
         )
 
     fn __init__(
@@ -593,7 +599,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         var byte_slice = Span(
             ptr=unsafe_from_utf8_ptr,
-            length=_unsafe_strlen(unsafe_from_utf8_ptr),
+            length=Int(_unsafe_strlen(unsafe_from_utf8_ptr)),
         )
         self = Self(unsafe_from_utf8=byte_slice)
 
@@ -639,7 +645,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         out self,
         *,
         ptr: UnsafePointer[Byte, mut=mut, origin=origin, **_],
-        length: UInt,
+        length: Int,
     ):
         """Construct a `StringSlice` from a pointer to a sequence of UTF-8
         encoded bytes and a length.
@@ -699,7 +705,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             the provided string slice.
         """
         var len = self.byte_length()
-        var result = String(unsafe_uninit_length=UInt(len))
+        var result = String(
+            unsafe_uninit_length=len
+        )  # TODO: make `unsafe_uninit_length` an `Int`
         memcpy(dest=result.unsafe_ptr_mut(), src=self.unsafe_ptr(), count=len)
         return result^
 
@@ -806,7 +814,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Args:
             hasher: The hasher instance.
         """
-        hasher._update_with_bytes(self.unsafe_ptr(), len(self))
+        hasher._update_with_bytes(Span(ptr=self.unsafe_ptr(), length=len(self)))
 
     fn __fspath__(self) -> String:
         """Return the file system path representation of this string.
@@ -825,10 +833,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         Returns:
             A new StringSlice containing the substring at the specified positions.
-
-        Raises: This function will raise if the specified slice start or end
-            position are outside the bounds of the string, or if they do not
-            both fall on codepoint boundaries.
         """
         # TODO: Introduce a new slice type that just has a start+end but no
         # step.  Mojo supports slice type inference that can express this in the
@@ -841,6 +845,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         Returns:
             A PythonObject representing the value.
+
+        Raises:
+            If the operation fails.
         """
         return PythonObject(self)
 
@@ -1096,6 +1103,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         Returns:
             An integer value that represents the string, or otherwise raises.
+
+        Raises:
+            If the operation fails.
         """
         return atol(self)
 
@@ -1106,6 +1116,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         Returns:
             A float value that represents the string, or otherwise raises.
+
+        Raises:
+            If the operation fails.
         """
         return atof(self)
 
@@ -1150,12 +1163,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(StringSlice[_]),
+        other_type: type_of(StringSlice[_]),
     ](
         self,
         out result: StringSlice[
             mut = mut & other_type.origin.mut,
-            __origin_of(origin, other_type.origin),
+            origin_of(origin, other_type.origin),
         ],
     ):
         """Returns a string slice with merged origins.
@@ -1167,8 +1180,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             A StringSlice merged with the other origin.
         """
         return {
-            ptr = self.unsafe_ptr().origin_cast[result.mut, result.origin](),
-            length = UInt(len(self)),
+            ptr = self.unsafe_ptr()
+            .unsafe_mut_cast[result.mut]()
+            .unsafe_origin_cast[result.origin](),
+            length = len(self),
         }
 
     # ===------------------------------------------------------------------===#
@@ -1642,7 +1657,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             return self.find(prefix, start) == start
         # FIXME: use normalize_index
         return StringSlice[origin](
-            ptr=self.unsafe_ptr() + start, length=UInt(end - start)
+            ptr=self.unsafe_ptr() + start, length=end - start
         ).startswith(prefix)
 
     fn endswith(
@@ -1668,7 +1683,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             return self.rfind(suffix, start) + len(suffix) == len(self)
         # FIXME: use normalize_index
         return StringSlice[origin](
-            ptr=self.unsafe_ptr() + start, length=UInt(end - start)
+            ptr=self.unsafe_ptr() + start, length=end - start
         ).endswith(suffix)
 
     fn removeprefix(self, prefix: StringSlice, /) -> Self:
@@ -1787,6 +1802,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # Automatic indexing:
         print(StringSlice("{} {}").format(True, "hello world")) # True hello world
         ```
+
+        Raises:
+            If the operation fails.
         """
         return _FormatCurlyEntry.format(self, args)
 
@@ -2137,7 +2155,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                     if is_r_n:  # the line was already appended
                         line_start = line_end
                         continue
-                var s = Self.Immutable(ptr=ptr + line_start, length=str_len)
+                var s = Self.Immutable(
+                    ptr=ptr + line_start, length=Int(str_len)
+                )
                 output.append(s)
                 line_start = line_end
 
@@ -2322,9 +2342,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if len(elems) == 0:
             return String()
 
-        var sep = StaticString(
-            ptr=self.unsafe_ptr(), length=UInt(self.byte_length())
-        )
+        var sep = StringSlice(ptr=self.unsafe_ptr(), length=self.byte_length())
         var total_bytes = _TotalWritableBytes(elems, sep=sep).size
         var result = String(capacity=total_bytes)
 
@@ -2437,7 +2455,7 @@ fn _to_string_list[
         var elt_ptr = Pointer(to=items[i])
         var og_len = len_fn(elt_ptr[])
         var og_ptr = unsafe_ptr_fn(elt_ptr[])
-        out_list.append(String(StringSlice(ptr=og_ptr, length=UInt(og_len))))
+        out_list.append(String(StringSlice(ptr=og_ptr, length=og_len)))
     return out_list^
 
 
@@ -2655,7 +2673,7 @@ fn _memrchr[
     source: UnsafePointer[Scalar[dtype], mut=False, **_],
     char: Scalar[dtype],
     len: Int,
-) -> __type_of(source):
+) -> type_of(source):
     if not len:
         return {}
     for i in reversed(range(len)):
@@ -2676,7 +2694,7 @@ fn _memrmem[
         Scalar[dtype], address_space=address_space, mut=False, **_
     ],
     needle_len: Int,
-) -> __type_of(haystack):
+) -> type_of(haystack):
     if not needle_len:
         return haystack
     if needle_len > haystack_len:
@@ -2697,10 +2715,10 @@ fn _split[
     src_str: StringSlice,
     sep: StringSlice,
     maxsplit: Int,
-    out output: List[__type_of(src_str).Immutable],
+    out output: List[type_of(src_str).Immutable],
 ):
-    alias S = __type_of(src_str).Immutable
-    var ptr = src_str.unsafe_ptr().origin_cast[False]()
+    alias S = type_of(src_str).Immutable
+    var ptr = src_str.unsafe_ptr().as_immutable()
     var sep_len = sep.byte_length()
     if sep_len == 0:
         var iterator = src_str.codepoint_slices()
@@ -2737,7 +2755,7 @@ fn _split[
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 
-        output.append(S(ptr=ptr + lhs, length=UInt(rhs - lhs)))
+        output.append(S(ptr=ptr + lhs, length=rhs - lhs))
         lhs = rhs + sep_len
 
 
@@ -2747,9 +2765,9 @@ fn _split[
     src_str: StringSlice,
     sep: NoneType,
     maxsplit: Int,
-    out output: List[__type_of(src_str).Immutable],
+    out output: List[type_of(src_str).Immutable],
 ):
-    alias S = __type_of(src_str).Immutable
+    alias S = type_of(src_str).Immutable
     alias prealloc = 32  # guessing, Python's implementation uses 12
     var amnt = prealloc
 
@@ -2761,11 +2779,11 @@ fn _split[
     var lhs = 0
     var rhs: Int
     var items = 0
-    var ptr = src_str.unsafe_ptr().origin_cast[False]()
+    var ptr = src_str.unsafe_ptr().as_immutable()
 
     @always_inline("nodebug")
-    fn _build_slice(p: __type_of(ptr), start: Int, end: Int) -> S:
-        return S(ptr=p + start, length=UInt(end - start))
+    fn _build_slice(p: type_of(ptr), start: Int, end: Int) -> S:
+        return S(ptr=p + start, length=end - start)
 
     while lhs <= str_byte_len:
         # Python adds all "whitespace chars" as one separator
@@ -2778,7 +2796,7 @@ fn _split[
         # until the start of the whitespace which was already appended
         if lhs == str_byte_len:
             break
-        rhs = lhs + _utf8_first_byte_sequence_length(ptr[lhs])
+        rhs = lhs + Int(_utf8_first_byte_sequence_length(ptr[lhs]))
         for s in _build_slice(ptr, rhs, str_byte_len).codepoint_slices():
             if s.isspace[single_character=True]():
                 break
@@ -2789,5 +2807,5 @@ fn _split[
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 
-        output.append(S(ptr=ptr + lhs, length=UInt(rhs - lhs)))
+        output.append(S(ptr=ptr + lhs, length=rhs - lhs))
         lhs = rhs

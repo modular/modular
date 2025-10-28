@@ -39,7 +39,7 @@ from typing import (
 from urllib.parse import unquote, urlparse
 
 import aiofiles
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
 from max.interfaces import (
@@ -59,7 +59,8 @@ from max.interfaces import (
     TextGenerationResponseFormat,
 )
 from max.pipelines.core.exceptions import InputError
-from max.profiler import Tracer, traced
+from max.pipelines.lib import PipelineConfig
+from max.profiler import traced
 from max.serve.config import Settings
 from max.serve.parser import LlamaToolParser, parse_json_from_text
 from max.serve.pipelines.llm import (
@@ -165,8 +166,11 @@ class OpenAIResponseGenerator(ABC, Generic[_T]):
     @abstractmethod
     async def stream(
         self, request: TextGenerationRequest
-    ) -> AsyncGenerator[str, None]:
-        pass
+    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
+        # This yield is required to make this method an async generator
+        # for proper type checking. It will never be called due to @abstractmethod.
+        yield ""
+        raise NotImplementedError
 
     @abstractmethod
     async def complete(self, requests: list[TextGenerationRequest]) -> _T:
@@ -217,7 +221,9 @@ class OpenAIChatResponseGenerator(
         self.stream_options = stream_options
         self.parser = parser
 
-    async def stream(self, request: TextGenerationRequest):  # noqa: ANN201
+    async def stream(
+        self, request: TextGenerationRequest
+    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
         self.logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
@@ -777,7 +783,7 @@ async def openai_create_chat_completion(
         response_generator = OpenAIChatResponseGenerator(
             pipeline, stream_options=stream_options
         )
-        sampling_params = SamplingParams.from_input(
+        sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(
                 top_k=completion_request.top_k,
                 top_p=completion_request.top_p,
@@ -791,7 +797,8 @@ async def openai_create_chat_completion(
                 seed=completion_request.seed or randint(0, 2**63 - 1),
                 stop_token_ids=completion_request.stop_token_ids,
                 stop=_convert_stop(completion_request.stop),
-            )
+            ),
+            sampling_params_defaults=request.app.state.pipeline_config.model_config.sampling_params_defaults,
         )
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
@@ -1000,10 +1007,18 @@ def _process_log_probabilities(
     )
 
 
+def get_app_pipeline_config(app: FastAPI) -> PipelineConfig:
+    pipeline_config = app.state.pipeline_config
+    assert isinstance(pipeline_config, PipelineConfig)
+    return pipeline_config
+
+
 class OpenAICompletionResponseGenerator(
     OpenAIResponseGenerator[CreateCompletionResponse]
 ):
-    async def stream(self, request: TextGenerationRequest):  # noqa: ANN201
+    async def stream(
+        self, request: TextGenerationRequest
+    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
         logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
@@ -1018,11 +1033,8 @@ class OpenAICompletionResponseGenerator(
                     token.decoded_token,
                 )
 
-                tracer = Tracer("process_log_probabilities")
                 log_probs = _process_log_probabilities([token])
-                del tracer  # process_log_probabilities
 
-                tracer = Tracer("create_completion_stream_response")
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
                 # https://platform.openai.com/docs/api-reference/chat/object
@@ -1032,13 +1044,19 @@ class OpenAICompletionResponseGenerator(
                             index=0,
                             text=token.decoded_token,
                             logprobs=log_probs,
-                            finish_reason=None,
+                            finish_reason=get_finish_reason_from_status(
+                                token.status, allow_none=True
+                            ),
                         )
                     ]
                 else:
                     choices = [
                         CompletionResponseStreamChoice(
-                            index=0, text="", finish_reason=None
+                            index=0,
+                            text="",
+                            finish_reason=get_finish_reason_from_status(
+                                token.status, allow_none=False
+                            ),
                         )
                     ]
 
@@ -1052,41 +1070,35 @@ class OpenAICompletionResponseGenerator(
                     object="text_completion",
                 )
                 n_tokens += 1
-                del tracer  # create_completion_stream_response
 
-                tracer = Tracer("response.model_dump_json")
                 payload = response.model_dump_json()
-                del tracer  # response.model_dump_json
 
                 yield payload
 
             logger.debug("Streaming: Done: %s, %d tokens", request, n_tokens)
             yield "[DONE]"
-        except queue.Full as qe:
-            status_code = 529
+        except queue.Full:
             logger.exception("Request queue full %s", request.request_id)
             yield JSONResponse(
-                status_code=status_code,
+                status_code=529,
                 content={"detail": "Too Many Requests"},
                 headers={"Retry-After": "30"},
             )
         except InputError as e:
-            status_code = 400
             logger.warning(
                 "Input validation error in request %s: %s",
                 request.request_id,
                 str(e),
             )
             yield JSONResponse(
-                status_code=status_code,
+                status_code=400,
                 content={"detail": "Input validation error", "message": str(e)},
             )
         except ValueError as e:
-            status_code = 500
             logger.exception("ValueError in request %s", request.request_id)
             # TODO (SI-722) - propagate better errors back.
             yield JSONResponse(
-                status_code=status_code,
+                status_code=500,
                 content={"detail": "Value error", "message": str(e)},
             )
         finally:
@@ -1256,7 +1268,7 @@ async def openai_create_completion(
         token_requests = []
         for i, prompt in enumerate(prompts):
             prompt = cast(str | Sequence[int], prompt)
-            sampling_params = SamplingParams.from_input(
+            sampling_params = SamplingParams.from_input_and_generation_config(
                 SamplingParamsInput(
                     top_k=completion_request.top_k,
                     top_p=completion_request.top_p,
@@ -1270,7 +1282,10 @@ async def openai_create_completion(
                     seed=completion_request.seed or randint(0, 2**63 - 1),
                     stop_token_ids=completion_request.stop_token_ids,
                     stop=_convert_stop(completion_request.stop),
-                )
+                ),
+                sampling_params_defaults=get_app_pipeline_config(
+                    request.app
+                ).model_config.sampling_params_defaults,
             )
             tgr = TextGenerationRequest(
                 # Generate a unique request_id for each prompt in the request
@@ -1385,8 +1400,11 @@ async def create_streaming_audio_speech(
             TokenGeneratorPipeline | AudioGeneratorPipeline
         ) = await get_pipeline(request, audio_generation_request.model)
         assert isinstance(pipeline, AudioGeneratorPipeline)
-        sampling_params = SamplingParams(
-            min_new_tokens=audio_generation_request.min_tokens
+        sampling_params = SamplingParams.from_input_and_generation_config(
+            SamplingParamsInput(
+                min_new_tokens=audio_generation_request.min_tokens
+            ),
+            sampling_params_defaults=request.app.state.pipeline_config.model_config.sampling_params_defaults,
         )
         audio_request = AudioGenerationRequest(
             request_id=request_id,

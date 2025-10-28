@@ -91,6 +91,10 @@ class PipelineConfig(MAXConfig):
     you know what you are doing.
     """
 
+    ep_size: int = 1
+    """The expert parallelism size. Needs to be 1 (no expert parallelism) or the
+    total number of GPUs across nodes."""
+
     ce_delay_ms: float = 0.0
     """Duration of scheduler sleep prior to starting a prefill batch.
 
@@ -108,7 +112,7 @@ class PipelineConfig(MAXConfig):
 
     experimental_background_queue: bool = False
     """When enabled, offloads queue draining to a background thread for improved performance.
-    
+
     This is an experimental flag. Use with caution.
     """
 
@@ -277,11 +281,11 @@ class PipelineConfig(MAXConfig):
         # TODO(zheng): Make this more efficient by using MaxConfig instance
         # instead of hardcoding the config names.
         config_mappings = [
+            # NOTE: _model_config must come before _sampling_config so that
+            # SamplingConfig can use generation_config from the model
+            "_model_config",
             "_sampling_config",
             "_profiling_config",
-            # TODO(zheng): Remove this once backward compatibility is no
-            # longer needed for MAXModelConfig.
-            "_model_config",
         ]
 
         for config_name in config_mappings:
@@ -348,11 +352,21 @@ class PipelineConfig(MAXConfig):
                     **kv_cache_kwargs
                 )
 
-        elif config_name == "_sampling_config" and (
-            self.enable_echo or self._draft_model_config
-        ):
-            sampling_config = config_class(**matched_kwargs)
-            sampling_config.enable_variable_logits = True
+        elif config_name == "_sampling_config":
+            if hasattr(self, "_model_config") and self._model_config:
+                assert isinstance(self._model_config, MAXModelConfig)
+                assert hasattr(
+                    config_class, "from_generation_config_sampling_defaults"
+                )
+                sampling_config = config_class.from_generation_config_sampling_defaults(
+                    sampling_params_defaults=self._model_config.sampling_params_defaults,
+                    **matched_kwargs,
+                )
+            else:
+                sampling_config = config_class(**matched_kwargs)
+
+            if self.enable_echo or self._draft_model_config:
+                sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
             setattr(self, config_name, config_class(**matched_kwargs))
@@ -732,6 +746,8 @@ class PipelineConfig(MAXConfig):
         if not self.force:
             self._validate_required_arguments_against_architecture(arch)
 
+        devices = load_devices(model_config.device_specs)
+
         # Validate LoRA support - currently only Llama3 models support LoRA
         if self._lora_config and self._lora_config.enable_lora:
             # Check if the architecture is Llama3 (LlamaForCausalLM)
@@ -740,6 +756,11 @@ class PipelineConfig(MAXConfig):
                     f"LoRA is not currently supported for architecture '{arch.name}'. "
                     f"LoRA support is currently only available for Llama-3.x models (LlamaForCausalLM architecture). "
                     f"Model '{model_config.model_path}' uses the '{arch.name}' architecture."
+                )
+            # Currently, LoRA supported on only 1 device.
+            if len(devices) > 1:
+                raise ValueError(
+                    "LoRA is currently not supported with the number of devices > 1."
                 )
 
         # TODO(E2EOPT-28): remove this constraint.
@@ -776,7 +797,6 @@ class PipelineConfig(MAXConfig):
             default_weights_format=arch.default_weights_format,
         )
 
-        devices = load_devices(model_config.device_specs)
         MEMORY_ESTIMATOR.estimate_memory_footprint(
             self, arch.pipeline_model, model_config, devices
         )
@@ -887,7 +907,7 @@ class PipelineConfig(MAXConfig):
         if len(self.model_config.weight_path) == 1:
             # Single weight path - format inline
             logger.info(
-                f"    weight_path             : {self.model_config.weight_path[0]}"
+                f"    weight_path            : {self.model_config.weight_path[0]}"
             )
         elif len(self.model_config.weight_path) > 5:
             # Many weight paths - replace middle with "..."

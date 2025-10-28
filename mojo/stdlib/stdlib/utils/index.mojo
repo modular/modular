@@ -55,7 +55,7 @@ fn _reduce_and_fn(a: Bool, b: Bool) -> Bool:
 @always_inline
 fn _int_tuple_binary_apply[
     binary_fn: fn[dtype: DType] (Scalar[dtype], Scalar[dtype]) -> Scalar[dtype],
-](a: IndexList, b: __type_of(a), out c: __type_of(a)):
+](a: IndexList, b: type_of(a), out c: type_of(a)):
     """Applies a given element binary function to each pair of corresponding
     elements in two tuples.
 
@@ -84,7 +84,7 @@ fn _int_tuple_binary_apply[
 @always_inline
 fn _int_tuple_compare[
     comp_fn: fn[dtype: DType] (Scalar[dtype], Scalar[dtype]) -> Bool,
-](a: IndexList, b: __type_of(a)) -> StaticTuple[Bool, a.size]:
+](a: IndexList, b: type_of(a)) -> StaticTuple[Bool, a.size]:
     """Applies a given element compare function to each pair of corresponding
     elements in two tuples and produces a tuple of Bools containing result.
 
@@ -204,7 +204,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
     @always_inline
     @implicit
-    fn __init__(out self, elems: (Int, Int)):
+    fn __init__(out self, elems: Tuple[Int, Int]):
         """Constructs a static int tuple given a tuple of integers.
 
         Args:
@@ -229,7 +229,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    fn __init__(out self, elems: (Int, Int, Int)):
+    fn __init__(out self, elems: Tuple[Int, Int, Int]):
         """Constructs a static int tuple given a tuple of integers.
 
         Args:
@@ -254,7 +254,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    fn __init__(out self, elems: (Int, Int, Int, Int)):
+    fn __init__(out self, elems: Tuple[Int, Int, Int, Int]):
         """Constructs a static int tuple given a tuple of integers.
 
         Args:
@@ -728,8 +728,10 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
+
         Parameters:
             H: The hasher type.
+
         Args:
             hasher: The hasher instance.
         """

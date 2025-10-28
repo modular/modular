@@ -616,17 +616,11 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         """Batches up pixel_values for vision processing."""
         images = []
         for context in context_batch:
-            if context.needs_vision_encoding:
-                # We only support one image per request for Idefics3.
-                next_images = context.next_images
-                if len(next_images) != 1:
-                    raise ValueError(
-                        "Idefics3 only supports one image per request"
-                    )
-                image = next_images[0].pixel_values
-
-                for patch_group in image:
-                    images.append(patch_group)
+            # For Idefics, a single image may be split into multiple "patch_groups"
+            # which appear as multiple images in the context object.
+            for img in context.next_images:
+                patch_group_pixels = img.pixel_values
+                images.append(patch_group_pixels)
 
         if not images:
             return None

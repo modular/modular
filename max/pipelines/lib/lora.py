@@ -22,7 +22,7 @@ import re
 from collections import OrderedDict
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -34,10 +34,10 @@ from max.graph.value import TensorValue
 from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.graph.weights.weights import _cast_to_dtype
 from max.interfaces import (
-    InputContext,
     LoRAStatus,
     LoRAType,
     RequestID,
+    TextGenerationContextType,
 )
 from max.interfaces.pipeline import (
     Pipeline,
@@ -54,8 +54,6 @@ from .lora_request_processor import LoRARequestProcessor
 logger = logging.getLogger("max.serve")
 
 ADAPTER_CONFIG_FILE = "adapter_config.json"
-
-T = TypeVar("T", bound=InputContext)
 
 
 class LoRALRUCache:
@@ -542,7 +540,7 @@ class LoRAManager:
 
     def get_lora_graph_inputs(
         self,
-        context_batch: Sequence[T],
+        context_batch: Sequence[TextGenerationContextType],
         input_row_offsets: npt.NDArray[np.integer[Any]],
         device: Device,
     ) -> tuple[Tensor, ...]:
@@ -591,15 +589,15 @@ class LoRAManager:
 
         grouped_offsets.append(input_row_offsets[-1])
 
-        # TODO: Move to GPU when KERN-1981 is complete
-        lora_ids = Tensor.from_numpy(np.array(grouped_ids, dtype=np.int32))
+        lora_ids = Tensor.from_numpy(np.array(grouped_ids, dtype=np.int32)).to(
+            device
+        )
         lora_ranks = Tensor.from_numpy(
             np.array(grouped_ranks, dtype=np.uint32)
         ).to(device)
-        # TODO: Move to GPU when KERN-1981 is complete
         lora_grouped_offsets = Tensor.from_numpy(
             np.array(grouped_offsets, dtype=np.uint32)
-        )
+        ).to(device)
 
         return lora_ids, lora_ranks, lora_grouped_offsets
 
@@ -931,16 +929,14 @@ class LoRAManager:
         Returns:
             The graph input symbols.
         """
-        # TODO: Move to GPU when KERN-1981 is complete
         lora_ids_type = TensorType(
-            DType.int32, shape=["lora_ids"], device=DeviceRef.CPU()
+            DType.int32, shape=["lora_ids"], device=device_ref
         )
         lora_ranks_type = TensorType(
             DType.uint32, shape=["lora_ranks"], device=device_ref
         )
-        # TODO: Move to GPU when KERN-1981 is complete
         lora_grouped_offsets_type = TensorType(
-            DType.uint32, shape=["lora_grouped_offsets"], device=DeviceRef.CPU()
+            DType.uint32, shape=["lora_grouped_offsets"], device=device_ref
         )
         return [lora_ids_type, lora_ranks_type, lora_grouped_offsets_type]
 
@@ -964,8 +960,8 @@ class LoRAManager:
                 )
 
     def sort_lora_batch(
-        self, context_batch: dict[RequestID, T]
-    ) -> dict[RequestID, T]:
+        self, context_batch: dict[RequestID, TextGenerationContextType]
+    ) -> dict[RequestID, TextGenerationContextType]:
         """
         Sorts the LoRA batch by LRU cache id.
 

@@ -29,28 +29,11 @@ py_grpc_library = _py_grpc_library
 requirement = _requirement
 strip_prefix = _strip_prefix
 
-# Deps that aren't open source so we need to remap to pull from the wheel instead.
-_DEPS_FROM_WHEEL = [
-    "//max",
-    "//max/_core_mojo",
-    "//max/driver",
-    "//max/dtype",
-    "//max/engine",
-    "//max/experimental",
-    "//max/interfaces",
-    "//max/mlir",
-    "//max/profiler",
-    "//max/support",
-    "//max/torch",
-    "//max:_core",
-]
-
 def _is_internal_reference(dep):
     """Check if a dependency is an internal reference."""
     return dep.startswith((
         "//GenericML",
         "//KGEN/",
-        "//Kernels/",
         "//SDK/integration-test:",
         "//SDK/integration-test/pipelines/python",
         "//SDK:max",
@@ -72,15 +55,12 @@ def _rewrite_deps(deps):
         if dep.startswith("//SDK/lib/API/python/tests/graph"):
             replaced_dep = dep.replace("//SDK/lib/API/python/tests/graph", "//tests/max/graph")
             new_deps.append(replaced_dep)
-        elif dep.startswith("//SDK/lib/API/python/max/benchmark:"):
-            replaced_dep = dep.replace("//SDK/lib/API/python/max/benchmark:", "//benchmark:")
+        elif dep.startswith("//SDK/lib/API/python/max/benchmark"):
+            replaced_dep = dep.replace("//SDK/lib/API/python/max/benchmark", "//benchmark")
             new_deps.append(replaced_dep)
         elif dep.startswith("//SDK/lib/API/python/"):
             replaced_dep = dep.replace("//SDK/lib/API/python/", "//")
-            if replaced_dep in _DEPS_FROM_WHEEL:
-                replaced_dep = "@modular_wheel//:wheel"
-            if replaced_dep not in new_deps:
-                new_deps.append(replaced_dep)
+            new_deps.append(replaced_dep)
         elif dep.startswith("//open-source/max/"):
             replaced_dep = dep.replace("//open-source/max/", "//")
             new_deps.append(replaced_dep)
@@ -97,15 +77,22 @@ def _rewrite_trivial_env(env):
             new_env[k] = v.replace("SDK/lib/API/python/tests/graph", "tests/max/graph")
     return new_env
 
+# buildifier: disable=function-docstring
 def modular_py_library(
+        name,
         data = [],
         deps = [],
         visibility = ["//visibility:public"],
         **kwargs):
+    if name == "_mlir":
+        native.alias(name = name, actual = "@modular_wheel//:wheel", visibility = visibility)
+        return
+
     if _has_internal_reference(deps):
         return
 
     _modular_py_library(
+        name = name,
         data = _remove_internal_data(data),
         deps = _rewrite_deps(deps),
         visibility = visibility,
@@ -114,25 +101,15 @@ def modular_py_library(
 
 # buildifier: disable=function-docstring
 def modular_py_binary(
-        name,
         deps = [],
         data = [],
-        env = {},
         **kwargs):
-    if name == "pipelines":
-        # TODO: Fix this hack, there is a layering issue with what is open source right now
-        deps.append("//mojo/python/mojo")
-        data = []
-        env = {}
-
     # TODO: There is some data we can fix by pulling from the wheel
     if _has_internal_reference(deps) or _has_internal_reference(data):
         return
 
     _modular_py_binary(
-        name = name,
         data = data,
-        env = env,
         deps = _rewrite_deps(deps),
         **kwargs
     )
@@ -215,10 +192,15 @@ def lit_tests(tools = [], data = [], **kwargs):
         **kwargs
     )
 
+def modular_generate_stubfiles(name, **_kwargs):
+    native.alias(name = name, actual = "@modular_wheel//:wheel", visibility = ["//visibility:public"])
+
 def _noop(**_kwargs):
     pass
 
+copy_files = _noop
 mojo_kgen_lib = _noop
 pkg_attributes = _noop
 pkg_filegroup = _noop
 pkg_files = _noop
+modular_nanobind_extension = _noop

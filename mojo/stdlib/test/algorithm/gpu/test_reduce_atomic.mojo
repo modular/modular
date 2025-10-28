@@ -17,7 +17,7 @@ from os.atomic import Atomic
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 @fieldwise_init
@@ -88,7 +88,7 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
 
     alias kernel = reduce
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         res_add_device,
         res_min_device,
         res_max_device,
@@ -133,10 +133,20 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     _ = vec_device
 
 
-def main():
+def test_reduce_atomic():
     with DeviceContext() as ctx:
         run_reduce(FillStrategy.LINSPACE, ctx)
         run_reduce(FillStrategy.NEG_LINSPACE, ctx)
         run_reduce(FillStrategy.SYMMETRIC_LINSPACE, ctx)
         run_reduce(FillStrategy.ZEROS, ctx)
         run_reduce(FillStrategy.ONES, ctx)
+
+
+def main():
+    # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
+    # TestSuite.discover_tests[__functions_in_module()]().run()
+    var suite = TestSuite()
+
+    suite.test[test_reduce_atomic]()
+
+    suite^.run()

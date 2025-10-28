@@ -194,10 +194,7 @@ class ModelWorker:
                     if wrapped_error is not e:
                         # It was a CUDA OOM error, raise the wrapped version with helpful message
                         raise wrapped_error from e
-                    else:
-                        # Not OOM, handle normally
-                        logger.exception("An error occurred during scheduling")
-                        raise e
+                    raise e
 
         logger.debug("Stopped model worker!")
 
@@ -227,7 +224,13 @@ class ModelWorker:
             metric_client_factory: Factory for creating metric client instances
         """
         try:
+            # kill when parent is killed
             _set_pdeathsig(signal.SIGTERM)
+
+            # ignore SIGINT (let parent orchestrate shutdown)
+            # otherwise we get zmq disconnect errors intermittently
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+
             uvloop.run(
                 ModelWorker.run(
                     pc,
@@ -239,11 +242,7 @@ class ModelWorker:
                 )
             )
         except KeyboardInterrupt:
-            pass
-        except Exception as e:
-            logger.exception(
-                "Encountered an error in ModelWorker.run %s", e, stack_info=True
-            )
+            pass  # suppress noisy stack traces for user abort
 
 
 @asynccontextmanager

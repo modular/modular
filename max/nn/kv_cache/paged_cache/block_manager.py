@@ -28,15 +28,19 @@ import copy
 import logging
 from collections import defaultdict
 from collections.abc import Iterable
-from dataclasses import dataclass
 
-from max.interfaces import RequestID, TextGenerationContext
+from max.interfaces import (
+    RequestID,
+    TextGenerationContext,
+    VLMTextGenerationContext,
+)
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
 )
 from max.support.math import ceildiv
 
+from .. import KVCacheMetrics
 from .block_copy_engine import BlockCopyEngine
 from .block_pool import BlockPool
 from .block_utils import KVCacheBlock, hash_request_tokens
@@ -46,34 +50,6 @@ logger = logging.getLogger("max.pipelines")
 
 class InsufficientBlocksError(Exception):
     pass
-
-
-@dataclass
-class KVCacheMetrics:
-    """Metrics for the KV cache."""
-
-    input_tokens: int = 0
-    cache_tokens: int = 0
-    h2d_blocks_copied: int = 0
-    d2h_blocks_copied: int = 0
-
-    @property
-    def prompt_tokens(self) -> int:
-        return self.input_tokens + self.cache_tokens
-
-    @property
-    def cache_hit_rate(self) -> float:
-        if self.prompt_tokens == 0:
-            return 0.0
-        return self.cache_tokens / self.prompt_tokens
-
-    def __add__(self, other: KVCacheMetrics) -> KVCacheMetrics:
-        return KVCacheMetrics(
-            input_tokens=self.input_tokens + other.input_tokens,
-            cache_tokens=self.cache_tokens + other.cache_tokens,
-            h2d_blocks_copied=self.h2d_blocks_copied + other.h2d_blocks_copied,
-            d2h_blocks_copied=self.d2h_blocks_copied + other.d2h_blocks_copied,
-        )
 
 
 class BlockManager:
@@ -189,8 +165,14 @@ class BlockManager:
         unhashed_tokens = ctx.tokens[
             len(hashes) * self.block_size : ctx.current_length
         ]
+
+        images = ctx.images if isinstance(ctx, VLMTextGenerationContext) else []
         new_hashes = hash_request_tokens(
-            unhashed_tokens, self.block_size, parent_hash_value
+            token_ids=unhashed_tokens,
+            block_size=self.block_size,
+            parent_hash=parent_hash_value,
+            prefix_length=len(hashes) * self.block_size,
+            images=images,
         )
         hashes.extend(new_hashes)
 
@@ -233,14 +215,13 @@ class BlockManager:
             new_committed_idx = (
                 prev_committed_idx + len(prefix_cache_blocks) * self.block_size
             )
-            # Update BlockManager's committed index and advance context start.
+            # Update BlockManager's committed index and advance ctx start_idx
             self.req_to_committed_idx[ctx.request_id] = new_committed_idx
             ctx.set_token_indices(start_idx=new_committed_idx)
             assert ctx.start_idx == new_committed_idx
 
             # Check that the cached_idx has increased.
             assert ctx.start_idx > orig_start_idx
-            orig_start_idx = ctx.start_idx
 
     def _get_full_blocks_from_device_prefix_cache(
         self,
@@ -356,7 +337,7 @@ class BlockManager:
         This increments the committed_idx.
 
         Args:
-            ctx: Request InputContext.
+            ctx: TextGenerationContext.
         """
 
         req_blocks = self.req_to_blocks[ctx.request_id]

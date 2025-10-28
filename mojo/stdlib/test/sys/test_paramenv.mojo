@@ -43,11 +43,4 @@ def test_env_get_bool():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_is_defined]()
-    suite.test[test_get_string]()
-    suite.test[test_env_get_int]()
-    suite.test[test_env_get_bool]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

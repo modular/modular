@@ -80,7 +80,6 @@ struct RuntimeTuple[
     values and runtime-determined values.
 
     Parameters:
-        origin: The origin corresponding to the `IntTuple`.
         S: `IntTuple` with compile-time known values (or `UNKNOWN_VALUE` for runtime values).
         element_type: Integer type of the underlying elements.
     """
@@ -119,7 +118,7 @@ struct RuntimeTuple[
         Args:
             values: Variadic number of integer values to initialize the tuple with.
         """
-        self.value = __type_of(self.value)(values)
+        self.value = type_of(self.value)(values)
 
     @always_inline
     @implicit
@@ -133,9 +132,17 @@ struct RuntimeTuple[
             values: `IndexList` to initialize from. Must have same length as the `RuntimeTuple`.
                     The values will be cast to the appropriate element type if needed.
         """
-        constrained[Self.scalar_length == l, "Must use same tuple length"]()
-        self.value = rebind[__type_of(self.value)](
-            values.cast[__type_of(values).element_type]()
+        constrained[
+            Self.scalar_length == l,
+            String(
+                "Must use same tuple length, expected ",
+                Self.scalar_length,
+                " but got ",
+                l,
+            ),
+        ]()
+        self.value = rebind[type_of(self.value)](
+            values.cast[type_of(values).element_type]()
         )
 
     @staticmethod

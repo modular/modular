@@ -47,7 +47,7 @@ from ._gpu.reduction import reduce_launch
 
 @always_inline
 fn _get_nd_indices_from_flat_index(
-    flat_index: Int, shape: IndexList, skip_dim: Int, out res: __type_of(shape)
+    flat_index: Int, shape: IndexList, skip_dim: Int, out res: type_of(shape)
 ):
     """Converts a flat index into ND indices but skip over one of the dimensions.
 
@@ -188,6 +188,26 @@ fn map_reduce[
         idx: Int, val: SIMD[dtype_, width]
     ) capturing -> None,
 ](length: Int, init: Scalar[acc_type]) -> Scalar[acc_type]:
+    """Performs a vectorized map-reduce operation over a sequence.
+
+    Parameters:
+        simd_width: The SIMD vector width to use.
+        dtype: The data type of the input elements.
+        acc_type: The data type of the accumulator.
+        origins_gen: Origin set for the input generation function.
+        input_gen_fn: Function that generates input values at each index.
+        origins_vec: Origin set for the reduction function.
+        reduce_vec_to_vec_fn: Function that reduces a vector into the accumulator.
+        reduce_vec_to_scalar_fn: Function that reduces a final vector to a scalar.
+        output_fn: Function to output intermediate results.
+
+    Args:
+        length: The number of elements to process.
+        init: The initial accumulator value.
+
+    Returns:
+        The final reduced scalar value.
+    """
     alias unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
     alias unrolled_simd_width = simd_width * unroll_factor
@@ -235,6 +255,9 @@ fn reduce[
 
     Returns:
         The computed reduction value.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -430,6 +453,9 @@ fn reduce[
         src: The input buffer.
         dst: The output buffer.
         init: The initial value to use in accumulator.
+
+    Raises:
+        If the operation fails.
     """
 
     var h_dynamic = prod_dims[0, reduce_axis](src)
@@ -607,7 +633,7 @@ fn _reduce_generator_cpu[
     shape: IndexList[_, element_type = DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
-) raises:
+):
     """Reduce the given tensor using the given reduction function on CPU. The
     num_reductions parameter enables callers to execute fused reductions. The
     reduce_0_fn and output_0_fn should be implemented in a way which routes
@@ -1125,6 +1151,9 @@ fn max(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
     Returns:
         The maximum of the buffer elements.
+
+    Raises:
+        If the operation fails.
     """
     return reduce[_simd_max_elementwise](src, Scalar[src.type].MIN)
 
@@ -1140,6 +1169,9 @@ fn max[
     Args:
         src: The input buffer.
         dst: The output buffer.
+
+    Raises:
+        If the operation fails.
     """
     return reduce[_simd_max_elementwise, _simd_max, reduce_axis](
         src, dst, Scalar[src.type].MIN
@@ -1181,6 +1213,9 @@ fn max[
         input_shape: The input shape.
         reduce_dim: The axis to perform the max on.
         context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -1248,6 +1283,9 @@ fn min(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
     Returns:
         The minimum of the buffer elements.
+
+    Raises:
+        If the operation fails.
     """
     return reduce[_simd_min_elementwise](src, Scalar[src.type].MAX)
 
@@ -1263,6 +1301,9 @@ fn min[
     Args:
         src: The input buffer.
         dst: The output buffer.
+
+    Raises:
+        If the operation fails.
     """
     return reduce[_simd_min_elementwise, _simd_min, reduce_axis](
         src, dst, Scalar[src.type].MAX
@@ -1304,6 +1345,9 @@ fn min[
         input_shape: The input shape.
         reduce_dim: The axis to perform the min on.
         context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -1371,6 +1415,9 @@ fn sum(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
     Returns:
         The sum of the buffer elements.
+
+    Raises:
+        If the operation fails.
     """
 
     @parameter
@@ -1394,6 +1441,9 @@ fn sum[
     Args:
         src: The input buffer.
         dst: The output buffer.
+
+    Raises:
+        If the operation fails.
     """
     return reduce[_simd_sum_elementwise, _simd_sum, reduce_axis=reduce_axis](
         src, dst, Scalar[src.type](0)
@@ -1435,6 +1485,9 @@ fn sum[
         input_shape: The input shape.
         reduce_dim: The axis to perform the sum on.
         context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -1568,6 +1621,9 @@ fn product(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
     Returns:
         The product of the buffer elements.
+
+    Raises:
+        If the operation fails.
     """
     return reduce[_simd_product_elementwise](src, Scalar[src.type](1))
 
@@ -1583,6 +1639,9 @@ fn product[
     Args:
         src: The input buffer.
         dst: The output buffer.
+
+    Raises:
+        If the operation fails.
     """
     return reduce[_simd_product_elementwise, _simd_product, reduce_axis](
         src, dst, Scalar[src.type](1)
@@ -1624,6 +1683,9 @@ fn product[
         input_shape: The input shape.
         reduce_dim: The axis to perform the product on.
         context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -1669,6 +1731,9 @@ fn mean(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
     Returns:
         The mean value of the elements in the given buffer.
+
+    Raises:
+        If the operation fails.
     """
 
     debug_assert(len(src) != 0, "input must not be empty")
@@ -1694,6 +1759,9 @@ fn mean[
     Args:
         src: The input buffer.
         dst: The output buffer.
+
+    Raises:
+        If the operation fails.
     """
     alias simd_width = simd_width_of[dst.dtype]()
     sum[reduce_axis](src, dst)
@@ -1742,7 +1810,7 @@ fn mean[
 ](
     input_shape: IndexList[_, element_type = DType.int64],
     reduce_dim: Int,
-    output_shape: __type_of(input_shape),
+    output_shape: type_of(input_shape),
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Computes the mean across the input and output shape.
@@ -1764,6 +1832,9 @@ fn mean[
         reduce_dim: The axis to perform the mean on.
         output_shape: The output shape.
         context: The pointer to DeviceContext.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -1859,8 +1930,21 @@ fn mean[
         dtype_, width
     ],
 ](length: Int) raises -> Scalar[dtype]:
-    # TODO docstring.
+    """Computes the arithmetic mean of values generated by a function.
 
+    Parameters:
+        dtype: The data type of the elements.
+        input_fn_1d: A function that generates SIMD values at each index.
+
+    Args:
+        length: The number of elements to average.
+
+    Returns:
+        The mean value. For integral types, uses integer division.
+
+    Raises:
+        To comply with how generators are used in this module.
+    """
     var total = sum[dtype, input_fn_1d](length)
 
     @parameter
@@ -1893,6 +1977,9 @@ fn variance(
 
     Returns:
         The variance value of the elements in a buffer.
+
+    Raises:
+        If the operation fails.
     """
 
     debug_assert(len(src) > 1, "input length must be greater than 1")
@@ -1916,7 +2003,30 @@ fn variance[
 ](length: Int, mean_value: Scalar[dtype], correction: Int = 1) raises -> Scalar[
     dtype
 ]:
-    # TODO docstring.
+    """Computes the variance of values generated by a function.
+
+    Variance is calculated as:
+    $$\\operatorname{variance}(X) =  \\frac{ \\sum_{i=0}^{length-1} (X_i - \\operatorname{E}(X_i))^2}{size - correction}$$
+    where `E` represents the deviation of a sample from the mean.
+
+    This version takes the mean value as an argument to avoid a second pass
+    over the data.
+
+    Parameters:
+        dtype: The data type of the elements.
+        input_fn_1d: A function that generates SIMD values at each index.
+
+    Args:
+        length: The number of elements.
+        mean_value: The pre-computed mean value.
+        correction: Normalize variance by size - correction (default: 1 for sample variance).
+
+    Returns:
+        The variance value.
+
+    Raises:
+        If length is less than or equal to correction.
+    """
 
     @always_inline
     @parameter
@@ -1975,6 +2085,9 @@ fn variance(
 
     Returns:
         The variance value of the elements in a buffer.
+
+    Raises:
+        If the operation fails.
     """
 
     @always_inline
@@ -1993,6 +2106,24 @@ fn variance[
         dtype_, width
     ],
 ](length: Int, correction: Int = 1) raises -> Scalar[dtype]:
+    """Computes the variance of values generated by a function.
+
+    This version computes the mean automatically in a first pass.
+
+    Parameters:
+        dtype: The data type of the elements.
+        input_fn_1d: A function that generates SIMD values at each index.
+
+    Args:
+        length: The number of elements.
+        correction: Normalize variance by size - correction (default: 1 for sample variance).
+
+    Returns:
+        The variance value.
+
+    Raises:
+        If length is less than or equal to correction.
+    """
     var mean_value = mean[dtype, input_fn_1d](length)
     return variance[dtype, input_fn_1d](length, mean_value, correction)
 

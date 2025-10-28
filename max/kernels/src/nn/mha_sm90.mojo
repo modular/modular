@@ -17,7 +17,6 @@ from math.constants import log2e
 from sys import align_of, env_get_int, simd_width_of, size_of
 
 import gpu.warp as warp
-from buffer import NDBuffer
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -31,9 +30,9 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import H100
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import external_memory
 from gpu.sync import named_barrier
-from layout.int_tuple import IntTuple
+from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import (
     LayoutTensor,
@@ -93,7 +92,7 @@ from nn.softmax import (
     _rowmax_online_softmax,
     _rowsum,
 )
-from tensor_internal import ManagedTensorSlice
+from tensor import ManagedTensorSlice
 
 from utils.index import Index
 from utils.numerics import get_accum_type, min_or_neg_inf
@@ -128,12 +127,16 @@ fn mha_sm90_dispatch[
     max_cache_valid_length_arg: Int,
     scale: Float32,
     kv_input_row_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
+    sink_weights: OptionalReg[
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+    ],
 ) raises:
     constrained[
         config.dtype == KVType.dtype and config.dtype == q_type,
@@ -184,7 +187,7 @@ fn mha_sm90_dispatch[
     # var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, BM)
     # var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
-    alias q_num_heads: Int = new_config.num_heads
+    alias q_num_heads: Int = Int(new_config.num_heads)
     alias num_scheduler_heads = q_num_heads // group if decoding else q_num_heads
     # if decoding,
     alias scheduler_tile_shape = 1 if decoding else BM
@@ -192,27 +195,27 @@ fn mha_sm90_dispatch[
         QTMATile[
             KVType.dtype,
             swizzle_mode,
-            BM = new_config.block_m(),
-            depth = new_config.padded_depth,
+            BM = Int(new_config.block_m()),
+            depth = Int(new_config.padded_depth),
             group=group,
             decoding = _is_decoding[MaxPromptLenType](),
         ]
     ](
         q_out_tma[
             swizzle_mode,
-            BM=BM,
-            depth = new_config.depth,
-            padded_depth = new_config.padded_depth,
-            q_num_heads = new_config.num_heads,
+            BM = Int(BM),
+            depth = Int(new_config.depth),
+            padded_depth = Int(new_config.padded_depth),
+            q_num_heads = Int(new_config.num_heads),
             group=group,
             decoding=decoding,
         ](ctx, q, num_rows_q)
     )
     k_tma_op = k.create_tma_tile[
-        BN, new_config.padded_depth, swizzle_mode, is_k_major=True
+        Int(BN), Int(new_config.padded_depth), swizzle_mode, is_k_major=True
     ](ctx)
     v_tma_op = v.create_tma_tile[
-        BN, new_config.padded_depth, swizzle_mode, is_k_major=False
+        Int(BN), Int(new_config.padded_depth), swizzle_mode, is_k_major=False
     ](ctx)
 
     # materialize scheduler, call max prompt len
@@ -250,9 +253,15 @@ fn mha_sm90_dispatch[
             max_cache_valid_length,
             valid_length,
             kv_input_row_offsets,
-            rebind[OptionalReg[NDBuffer[KVType.dtype, 1, MutableAnyOrigin]]](
-                sink_weights
-            ),
+            rebind[
+                OptionalReg[
+                    LayoutTensor[
+                        KVType.dtype,
+                        Layout.row_major(UNKNOWN_VALUE),
+                        MutableAnyOrigin,
+                    ]
+                ]
+            ](sink_weights),
             partition,
             mask_functor,
             score_mod,
@@ -291,9 +300,15 @@ fn mha_sm90_dispatch[
             max_cache_valid_length,
             valid_length,
             kv_input_row_offsets,
-            rebind[OptionalReg[NDBuffer[KVType.dtype, 1, MutableAnyOrigin]]](
-                sink_weights
-            ),
+            rebind[
+                OptionalReg[
+                    LayoutTensor[
+                        KVType.dtype,
+                        Layout.row_major(UNKNOWN_VALUE),
+                        MutableAnyOrigin,
+                    ]
+                ]
+            ](sink_weights),
             partition,
             mask_functor,
             score_mod,
@@ -336,9 +351,15 @@ fn mha_sm90_dispatch[
             max_cache_valid_length,
             valid_length,
             kv_input_row_offsets,
-            rebind[OptionalReg[NDBuffer[KVType.dtype, 1, MutableAnyOrigin]]](
-                sink_weights
-            ),
+            rebind[
+                OptionalReg[
+                    LayoutTensor[
+                        KVType.dtype,
+                        Layout.row_major(UNKNOWN_VALUE),
+                        MutableAnyOrigin,
+                    ]
+                ]
+            ](sink_weights),
             partition,
             mask_functor,
             score_mod,
@@ -369,22 +390,22 @@ fn _mha_sm90_sink_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = config.block_m(),
-        depth = config.padded_depth,
+        BM = Int(config.block_m()),
+        depth = Int(config.padded_depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=False,
     ],
@@ -396,9 +417,15 @@ fn _mha_sm90_sink_dispatch[
     num_keys_arg: UInt32,
     valid_length: UnsafePointer[UInt32],
     kv_input_row_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ],
-    sink_weights: OptionalReg[NDBuffer[KVLUTType.dtype, 1, MutableAnyOrigin]],
+    sink_weights: OptionalReg[
+        LayoutTensor[
+            KVLUTType.dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
+    ],
     partition: PartitionType,
     mask: MaskType,
     score_mod: ScoreModType,
@@ -407,7 +434,7 @@ fn _mha_sm90_sink_dispatch[
     @parameter
     if sink:
         alias SinkType = NonNullPointer[KVLUTType.dtype]
-        var sink_ptr: SinkType = {sink_weights.value().data}
+        var sink_ptr: SinkType = {sink_weights.value().ptr}
         _mha_sm90_kv_input_row_offset_dispatch[
             SchedulerType=SchedulerType,
             KVLUTType=KVLUTType,
@@ -508,22 +535,22 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = config.block_m(),
-        depth = config.padded_depth,
+        BM = Int(config.block_m()),
+        depth = Int(config.padded_depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=False,
     ],
@@ -535,7 +562,9 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
     num_keys_arg: UInt32,
     valid_length: UnsafePointer[UInt32],
     kv_input_row_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ],
     sink_weights: SinkType,
     partition: PartitionType,
@@ -547,7 +576,7 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
     alias KVRowOffsetsNull = NullPointer[DType.uint32]
     if kv_input_row_offsets:
         var kv_row_offsets: KVRowOffsetsNonNull = {
-            kv_input_row_offsets.value().data
+            kv_input_row_offsets.value().ptr
         }
         _mha_sm90_valid_length_dispatch[
             SchedulerType=SchedulerType,
@@ -645,22 +674,22 @@ fn _mha_sm90_valid_length_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = config.block_m(),
-        depth = config.padded_depth,
+        BM = Int(config.block_m()),
+        depth = Int(config.padded_depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=False,
     ],
@@ -779,22 +808,22 @@ fn _mha_sm90_enqueue[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = config.block_m(),
-        depth = config.padded_depth,
+        BM = Int(config.block_m()),
+        depth = Int(config.padded_depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=False,
     ],
@@ -903,22 +932,22 @@ fn _mha_sm90[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = config.block_m(),
-        depth = config.padded_depth,
+        BM = Int(config.block_m()),
+        depth = Int(config.padded_depth),
         group=group,
         decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
-        config.block_n(),
-        config.padded_depth,
+        Int(config.block_n()),
+        Int(config.padded_depth),
         swizzle_mode,
         is_k_major=False,
     ],
@@ -990,7 +1019,10 @@ fn _mha_sm90[
     alias warp_x: UInt32 = 0  # warp_id % num_warps_n
 
     alias q_smem_layout_consumer = tile_layout_k_major[
-        DType.bfloat16, BM, config.padded_depth, swizzle_mode=swizzle_mode
+        DType.bfloat16,
+        Int(BM),
+        Int(config.padded_depth),
+        swizzle_mode=swizzle_mode,
     ]()
     alias k_smem_layout = k_tma_op.layout
     alias v_smem_layout = v_tma_op.layout
@@ -1032,8 +1064,8 @@ fn _mha_sm90[
     # alias num_k_mmas = BK // MMA_K
 
     alias accum_type = get_accum_type[kv_type]()
-    alias p_frag_size = MMA_M * MMA_N0 // WARP_SIZE
-    alias o_frag_size = MMA_M * MMA_N1 // WARP_SIZE
+    alias p_frag_size = MMA_M * Int(MMA_N0) // WARP_SIZE
+    alias o_frag_size = MMA_M * Int(MMA_N1) // WARP_SIZE
     alias frag_simdwidth = 2
 
     alias a_frag_size = MMA_M * MMA_K // WARP_SIZE
@@ -1094,7 +1126,9 @@ fn _mha_sm90[
     # )
     # Vectorizing the layout:
     alias element_layout = Layout.row_major(1, frag_simdwidth)
-    alias vec_output_row_shape = IntTuple(num_row_blocks_per_mma, num_m_mmas)
+    alias vec_output_row_shape = IntTuple(
+        num_row_blocks_per_mma, Int(num_m_mmas)
+    )
     alias p_vec_output_layout = Layout(
         IntTuple(
             vec_output_row_shape,
@@ -1107,7 +1141,7 @@ fn _mha_sm90[
             IntTuple(frag_simdwidth, p_frag_size),
             IntTuple(
                 num_row_blocks_per_mma * frag_simdwidth,
-                num_m_mmas * UInt(p_frag_size),
+                Int(num_m_mmas * UInt(p_frag_size)),
             ),
         ),
     )
@@ -1123,7 +1157,7 @@ fn _mha_sm90[
             IntTuple(frag_simdwidth, o_frag_size),
             IntTuple(
                 num_row_blocks_per_mma * frag_simdwidth,
-                num_m_mmas * UInt(o_frag_size),
+                Int(num_m_mmas * UInt(o_frag_size)),
             ),
         ),
     )
@@ -1222,7 +1256,13 @@ fn _mha_sm90[
                 consumed_mbar_q[i].init(num_consumer_threads)
 
     alias PositionType = MHAPosition[
-        BM, BN, config.depth, config.padded_depth, num_heads, group, decoding
+        Int(BM),
+        Int(BN),
+        Int(config.depth),
+        Int(config.padded_depth),
+        Int(num_heads),
+        group,
+        decoding,
     ]
 
     @parameter
@@ -1263,11 +1303,11 @@ fn _mha_sm90[
     @always_inline
     fn get_position(seq_info: SeqInfo) -> PositionType:
         return _get_position[
-            BM,
-            BN,
-            config.depth,
-            config.padded_depth,
-            num_heads,
+            Int(BM),
+            Int(BN),
+            Int(config.depth),
+            Int(config.padded_depth),
+            Int(num_heads),
             group,
             ragged,
             _is_cache_length_accurate,
@@ -1350,10 +1390,10 @@ fn _mha_sm90[
         # shape  = (2, num_m_mmas) x (2, num_n_mmas)
         # stride = (2, 4*num_n_mmas) x (1, 4)
         alias s_reg_tile_layout = Layout.row_major(
-            num_m_mmas * num_n_mmas, p_frag_size
+            Int(num_m_mmas * num_n_mmas), p_frag_size
         )
         alias o_reg_tile_layout = Layout.row_major(
-            num_m_mmas * num_n_mmas, o_frag_size
+            Int(num_m_mmas * num_n_mmas), o_frag_size
         )
         p_reg_tile = LayoutTensor[
             accum_type,
@@ -1372,7 +1412,7 @@ fn _mha_sm90[
             .fill(0)
         )
         alias p_reg_tile_layout = Layout.row_major(
-            num_m_mmas * num_n_mmas * UInt(frag_ratio), a_frag_size
+            Int(num_m_mmas * num_n_mmas * UInt(frag_ratio)), a_frag_size
         )
         p_frag = LayoutTensor[
             kv_type,
@@ -1444,10 +1484,10 @@ fn _mha_sm90[
             warpgroup_fence(p_reg_tile)
             wgmma_0.arrive()
             wgmma_0.wgmma[
-                num_consumer,
+                Int(num_consumer),
                 scale_c=0,
                 num_k_iters = OptionalReg[Int](
-                    depth // UInt(wgmma_0.mma_shape[2])
+                    Int(depth // UInt(wgmma_0.mma_shape[2]))
                 ),
             ](
                 q_smem_sub,
@@ -1495,7 +1535,9 @@ fn _mha_sm90[
             var max_len: UInt32 = (
                 num_keys_arg if decoding else max_seq_len.as_uint32()
             )
-            _apply_mask[WM, MMA_N0, num_m_mmas, num_n_mmas, use_score_mod](
+            _apply_mask[
+                Int(WM), Int(MMA_N0), Int(num_m_mmas), num_n_mmas, use_score_mod
+            ](
                 mask_warp_row,
                 position,
                 lane,
@@ -1510,7 +1552,7 @@ fn _mha_sm90[
 
         @parameter
         @always_inline
-        fn scale_output(correction: __type_of(rowmax)):
+        fn scale_output(correction: type_of(rowmax)):
             # we are now able to read/modify `output_reg_tile` and modify `p_frag`
             vout = vectorize_o_reg_tile()
 
@@ -1530,7 +1572,7 @@ fn _mha_sm90[
 
         @always_inline
         fn elementwise_reciprocal(
-            old_rowsum: __type_of(rowsum), new_rowsum: __type_of(rowsum)
+            old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)
         ):
             # new_rowsum, old_rowsum = 1/old_rowsum, new_rowsum
             @parameter
@@ -1545,7 +1587,7 @@ fn _mha_sm90[
         fn write_output(
             position: PositionType,
             q_idx: UInt32,
-            rowsum_inv: __type_of(rowsum),
+            rowsum_inv: type_of(rowsum),
         ):
             vout = vectorize_o_reg_tile()
 
@@ -1568,7 +1610,7 @@ fn _mha_sm90[
             output_gmem_tile = position.q_out_gmem_tensor(output_ptr)
 
             alias swizzle = make_swizzle[
-                num_rows = MMA_M // 2, row_size=BN, access_size=8
+                num_rows = MMA_M // 2, row_size = Int(BN), access_size=8
             ]()
             # Reuse a_smem for c tile in smem
             alias q_tile_size: UInt32 = q_smem_size // 2
@@ -1576,20 +1618,20 @@ fn _mha_sm90[
             # ensure all threads have finished reading `q_smem`
             named_barrier[num_consumer_threads]()
             accum_smem_tile = output_reg_to_smem[
-                BM,
-                BN,
-                WM,
-                config.padded_depth,
+                Int(BM),
+                Int(BN),
+                Int(WM),
+                Int(config.padded_depth),
                 kv_type,
                 output_type,
                 accum_type,
                 o_reg_tile_layout,
                 o_frag_size,
-                num_consumer_threads,
+                Int(num_consumer_threads),
                 simd_size,
                 swizzle,
-                num_m_mmas,
-                num_consumer,
+                Int(num_m_mmas),
+                Int(num_consumer),
                 mma_thread_layout,
             ](
                 tid,
@@ -1606,8 +1648,8 @@ fn _mha_sm90[
             # vector and stored using 16B store instruction.
             copy_sram_to_dram[
                 thread_layout = Layout.row_major(
-                    num_consumer_threads * UInt(simd_size) // config.depth,
-                    config.depth // UInt(simd_size),
+                    Int(num_consumer_threads * UInt(simd_size) // config.depth),
+                    Int(config.depth // UInt(simd_size)),
                 ),
                 swizzle=swizzle,
             ](
@@ -1735,7 +1777,7 @@ fn _mha_sm90[
                 ]().copy_from(  # copy new pfrag, used by `p_mul_v` on next iter
                     p_reg_tile.reshape[
                         Layout.row_major(
-                            num_m_mmas * num_n_mmas * UInt(frag_ratio),
+                            Int(num_m_mmas * num_n_mmas * UInt(frag_ratio)),
                             a_frag_size,
                         )
                     ]().vectorize[1, a_frag_size](),
@@ -1803,7 +1845,7 @@ fn _mha_sm90[
                             qk_max_ptr[q_head_idx] = rebind[
                                 Scalar[PartitionType.accum_dtype]
                             ](rowmax[0])
-                    score_frag_rowsum = rebind[__type_of(rowsum)](
+                    score_frag_rowsum = rebind[type_of(rowsum)](
                         _rowsum[mma_thread_layout](vectorize_p_reg_tile())
                     )
                     rowmax.copy_from(score_frag_rowmax)
@@ -1847,7 +1889,7 @@ fn _mha_sm90[
                     q_idx_old = q_idx_new
                     q_phase_old = q_pipeline_state.phase()
                 else:
-                    score_frag_rowsum = rebind[__type_of(rowsum)](
+                    score_frag_rowsum = rebind[type_of(rowsum)](
                         _rowsum[mma_thread_layout](vectorize_p_reg_tile())
                     )
 
@@ -1911,7 +1953,7 @@ fn _mha_sm90[
         p_frag.vectorize[1, a_frag_size]().copy_from(
             p_reg_tile.reshape[
                 Layout.row_major(
-                    num_m_mmas * num_n_mmas * UInt(frag_ratio), a_frag_size
+                    Int(num_m_mmas * num_n_mmas * UInt(frag_ratio)), a_frag_size
                 )
             ]().vectorize[1, a_frag_size](),
         )

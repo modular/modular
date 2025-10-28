@@ -23,8 +23,8 @@ from memory import memcpy
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
-from tensor_internal import IOUnknown, ManagedTensorSlice
-from tensor_internal.managed_tensor_slice import StaticTensorSpec
+from tensor import IOUnknown, ManagedTensorSlice
+from tensor.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -202,8 +202,8 @@ def execute_ragged_flash_attention(
     # "true CE" execution
     print("true")
     flash_attention[ragged=True](
-        true_ce_output_device.tensor,
-        true_ce_q_ragged_device.tensor,
+        true_ce_output_device.to_layout_tensor(),
+        true_ce_q_ragged_device.to_layout_tensor(),
         true_ce_kv_collection_device.get_key_cache(layer_idx),
         true_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
@@ -220,8 +220,8 @@ def execute_ragged_flash_attention(
     # "mixed CE" execution
     print("mixed")
     flash_attention[ragged=True](
-        mixed_ce_output_device.tensor,
-        mixed_ce_q_ragged_device.tensor,
+        mixed_ce_output_device.to_layout_tensor(),
+        mixed_ce_q_ragged_device.to_layout_tensor(),
         mixed_ce_kv_collection_device.get_key_cache(layer_idx),
         mixed_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),

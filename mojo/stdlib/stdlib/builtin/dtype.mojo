@@ -459,7 +459,7 @@ struct DType(
         return DType(mlir_value=res)
 
     @doc_private
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn _as_ui8(self) -> UInt8._mlir_type:
         return __mlir_op.`pop.cast_from_builtin`[_type = UInt8._mlir_type](
             __mlir_op.`pop.dtype.to_ui8`(self._mlir_value)

@@ -26,116 +26,6 @@ from memory import Pointer
 
 
 @register_passable("trivial")
-struct _GPUAddressSpace(
-    EqualityComparable, Identifiable, ImplicitlyCopyable, Movable
-):
-    var _value: Int
-
-    # See https://docs.nvidia.com/cuda/nvvm-ir-spec/#address-space
-    # And https://llvm.org/docs/AMDGPUUsage.html#address-spaces
-    alias GENERIC = AddressSpace(0)
-    """Generic address space."""
-    alias GLOBAL = AddressSpace(1)
-    """Global address space."""
-    alias SHARED = AddressSpace(3)
-    """Shared address space."""
-    alias CONSTANT = AddressSpace(4)
-    """Constant address space."""
-    alias LOCAL = AddressSpace(5)
-    """Local address space."""
-    alias SHARED_CLUSTER = AddressSpace(7)
-    """Shared cluster address space."""
-
-    @always_inline("builtin")
-    fn __init__(out self, value: Int):
-        self._value = value
-
-    @always_inline("builtin")
-    fn value(self) -> Int:
-        """The integral value of the address space.
-
-        Returns:
-          The integral value of the address space.
-        """
-        return self._value
-
-    @always_inline("builtin")
-    fn __int__(self) -> Int:
-        """The integral value of the address space.
-
-        Returns:
-          The integral value of the address space.
-        """
-        return self._value
-
-    @always_inline("nodebug")
-    fn __eq__(self, other: Self) -> Bool:
-        """Checks if the two address spaces are equal.
-
-        Returns:
-          True if the two address spaces are equal and False otherwise.
-        """
-        return self is other
-
-    @always_inline("nodebug")
-    fn __eq__(self, other: AddressSpace) -> Bool:
-        """Checks if the two address spaces are equal.
-
-        Returns:
-          True if the two address spaces are equal and False otherwise.
-        """
-        return self is other
-
-    @always_inline("nodebug")
-    fn __ne__(self, other: AddressSpace) -> Bool:
-        """Checks if the two address spaces are not equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are inequal and False otherwise.
-        """
-        return self is not other
-
-    @always_inline("nodebug")
-    fn __is__(self, other: Self) -> Bool:
-        """Checks if the two address spaces are equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are equal and False otherwise.
-        """
-        return self.value() == other.value()
-
-    @always_inline("nodebug")
-    fn __is__(self, other: AddressSpace) -> Bool:
-        """Checks if the two address spaces are equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are equal and False otherwise.
-        """
-        return self.value() == other.value()
-
-    @always_inline("nodebug")
-    fn __isnot__(self, other: AddressSpace) -> Bool:
-        """Checks if the two address spaces are not equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are not equal and False otherwise.
-        """
-        return self.value() != other.value()
-
-
-@register_passable("trivial")
 struct AddressSpace(
     EqualityComparable,
     Identifiable,
@@ -145,12 +35,33 @@ struct AddressSpace(
     Stringable,
     Writable,
 ):
-    """Address space of the pointer."""
+    """Address space of the pointer.
+
+    This type represents memory address spaces for both CPU and GPU targets.
+    On CPUs, typically only GENERIC is used. On GPUs (NVIDIA/AMD), various
+    address spaces provide access to different memory regions with different
+    performance characteristics.
+    """
 
     var _value: Int
 
+    # CPU address space
     alias GENERIC = AddressSpace(0)
-    """Generic address space."""
+    """Generic address space. Used for CPU memory and default GPU memory."""
+
+    # GPU address spaces
+    # See https://docs.nvidia.com/cuda/nvvm-ir-spec/#address-space
+    # And https://llvm.org/docs/AMDGPUUsage.html#address-spaces
+    alias GLOBAL = AddressSpace(1)
+    """Global GPU memory address space."""
+    alias SHARED = AddressSpace(3)
+    """Shared GPU memory address space (per thread block/workgroup)."""
+    alias CONSTANT = AddressSpace(4)
+    """Constant GPU memory address space (read-only)."""
+    alias LOCAL = AddressSpace(5)
+    """Local GPU memory address space (per thread, private)."""
+    alias SHARED_CLUSTER = AddressSpace(7)
+    """Shared cluster GPU memory address space (NVIDIA-specific)."""
 
     @always_inline("builtin")
     fn __init__(out self, value: Int):
@@ -160,15 +71,6 @@ struct AddressSpace(
           value: The address space value.
         """
         self._value = value
-
-    @always_inline("builtin")
-    fn __init__(out self, value: _GPUAddressSpace):
-        """Initializes the address space from the underlying integral value.
-
-        Args:
-          value: The address space value.
-        """
-        self._value = value._value
 
     @always_inline("builtin")
     fn value(self) -> Int:
@@ -242,8 +144,31 @@ struct AddressSpace(
         """
         if self is AddressSpace.GENERIC:
             writer.write("AddressSpace.GENERIC")
+        elif self is AddressSpace.GLOBAL:
+            writer.write("AddressSpace.GLOBAL")
+        elif self is AddressSpace.SHARED:
+            writer.write("AddressSpace.SHARED")
+        elif self is AddressSpace.CONSTANT:
+            writer.write("AddressSpace.CONSTANT")
+        elif self is AddressSpace.LOCAL:
+            writer.write("AddressSpace.LOCAL")
+        elif self is AddressSpace.SHARED_CLUSTER:
+            writer.write("AddressSpace.SHARED_CLUSTER")
         else:
             writer.write("AddressSpace(", self.value(), ")")
+
+
+# ===-----------------------------------------------------------------------===#
+# Deprecated aliases for backward compatibility
+# ===-----------------------------------------------------------------------===#
+
+alias _GPUAddressSpace = AddressSpace
+"""Deprecated: Use `AddressSpace` instead. This alias is provided for backward
+compatibility and will be removed in a future release."""
+
+alias GPUAddressSpace = AddressSpace
+"""Deprecated: Use `AddressSpace` instead. This alias is provided for backward
+compatibility and will be removed in a future release."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -396,13 +321,13 @@ struct Pointer[
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(Pointer[type, _, address_space]),
+        other_type: type_of(Pointer[type, _, address_space]),
     ](
         self,
         out result: Pointer[
             mut = mut & other_type.origin.mut,
             type=type,
-            origin = __origin_of(origin, other_type.origin),
+            origin = origin_of(origin, other_type.origin),
             address_space=address_space,
         ],
     ):

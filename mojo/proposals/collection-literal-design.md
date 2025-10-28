@@ -160,7 +160,7 @@ foo({1, kwarg=42})
 
 While this is a minor convenience in this case, it can be more significant when
 working with more complex types that have lots of parameters that would
-otherwise require complicated uses of `__type_of(x)`.
+otherwise require complicated uses of `type_of(x)`.
 
 ## Ambiguity resolution between Set Literals and Initializer Lists
 

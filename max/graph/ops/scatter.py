@@ -22,6 +22,7 @@ from ..type import DeviceRef
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
 from .nonzero import nonzero
+from .validation import assert_same_device
 
 
 def scatter(
@@ -62,6 +63,7 @@ def scatter(
             f"Invalid indices dtype: '{indices.dtype}'. Indices must be of type int32 or int64."
         )
 
+    assert_same_device(input=input, updates=updates, indices=indices)
     axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
 
     # TODO(GEX-2197): Support scatter on GPU
@@ -114,12 +116,7 @@ def scatter_nd(
             f"Invalid indices dtype: '{indices.dtype}'. Indices must be of type int32 or int64."
         )
 
-    # Check that all tensors are on the same device
-    if not (input.device == updates.device == indices.device):
-        raise ValueError(
-            f"All tensors must be on the same device. Got input.device={input.device}, "
-            f"updates.device={updates.device}, indices.device={indices.device}"
-        )
+    assert_same_device(input=input, updates=updates, indices=indices)
 
     return Graph.current._add_op_generated(
         rmo.MoScatterNdOp,
@@ -159,16 +156,6 @@ def masked_scatter(
             f"The input dtype ({input.dtype}) and updates dtype"
             f" ({updates.dtype}) must match"
         )
-
-    # input_size = reduce(mul, input.shape, 1)
-    # updates_size = reduce(mul, updates.shape, 1)
-    # TODO: This is a bug. They don't have to match.
-    # Assuming it will throw a run-time error if updates_size != non-zeros in mask
-    # if input_size != updates_size and updates_size != 1:
-    #    raise ValueError(
-    #        f"The number of elements in the input ({input_size}) and the number"
-    #        f" of elements in updates ({updates_size}) must match"
-    #    )
 
     mask = mask.broadcast_to(input.shape)
     indices = nonzero(mask, out_dim)

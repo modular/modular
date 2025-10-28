@@ -38,7 +38,7 @@ fn semaphore_vector_reduce[
 
     sema.wait(block_idx)
 
-    c_ptr[tid] += a_ptr[block_idx * N + tid]
+    c_ptr[tid] += a_ptr[block_idx * UInt(N) + tid]
     var lx: Int
     if num_parts == (block_idx + 1):
         lx = 0
@@ -122,7 +122,7 @@ fn semaphore_matrix_reduce[
         var row = x // N
         var col = x % N
         c_ptr[row * N + col] += a_ptr[
-            row * (N * num_parts) + (block_idx * num_parts + col)
+            row * (N * num_parts) + (block_idx * UInt(num_parts) + UInt(col))
         ]
 
     var lx: Int

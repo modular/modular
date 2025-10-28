@@ -24,7 +24,7 @@ from conftest import (
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Graph, Shape, StaticDim, TensorType, ops
+from max.graph import DeviceRef, Graph, Shape, StaticDim, TensorType, ops
 
 # gather not meaningful for scalar inputs
 input_types = tensor_types(shapes=st.lists(dims, min_size=1))
@@ -42,6 +42,8 @@ def test_gather(
     with Graph("gather", input_types=[input_type, indices_type]) as graph:
         input, indices = graph.inputs[0].tensor, graph.inputs[1].tensor
         out = ops.gather(input, indices, axis)
+        if axis < 0:
+            axis += input.rank
         target_shape = [
             *input.shape[:axis],
             *indices.shape,
@@ -49,6 +51,31 @@ def test_gather(
         ]
         assert out.type == TensorType(input.dtype, target_shape, input.device)
         graph.output(out)
+
+
+def test_gather_simple() -> None:
+    input_type = TensorType(DType.float32, [5, 10], DeviceRef.CPU())
+    indices_type = TensorType(DType.int64, [5], DeviceRef.CPU())
+    with Graph("gather", input_types=[input_type, indices_type]) as graph:
+        input, indices = graph.inputs[0].tensor, graph.inputs[1].tensor
+        out = ops.gather(input, indices, axis=-1)
+        assert out.type == TensorType(input.dtype, [5, 5], input.device)
+
+
+@given(
+    input_type=st.shared(input_types, key="input"),
+    indices_type=tensor_types(dtypes=st.just(DType.int64)),
+    axis=...,
+)
+def test_gather__invalid_axis(
+    input_type: TensorType, indices_type: TensorType, axis: int
+) -> None:
+    assume(indices_type.rank > 0)
+    assume(not -input_type.rank <= axis < input_type.rank)
+    with Graph("gather", input_types=[input_type, indices_type]) as graph:
+        input, indices = graph.inputs[0].tensor, graph.inputs[1].tensor
+        with pytest.raises(IndexError):
+            ops.gather(input, indices, axis)
 
 
 @given(input=..., indices=tensor_types(dtypes=st.just(DType.uint64)))
@@ -222,3 +249,33 @@ def test_gather_nd__non_int_indices(
     with Graph("gather_nd", input_types=[input, indices]) as graph:
         with pytest.raises(ValueError):
             ops.gather_nd(*graph.inputs, batch_dims=batch_dims)  # type: ignore
+
+
+@given(
+    input_type=st.shared(input_types, key="input"),
+    indices_type=tensor_types(dtypes=st.just(DType.int64)),
+    axis=axes(st.shared(input_types, key="input")),
+)
+def test_gather__mismatched_devices(
+    input_type: TensorType, indices_type: TensorType, axis: int
+) -> None:
+    assume(indices_type.rank > 0)
+    device = DeviceRef.GPU(1)
+    assume(input_type.device != device)
+    indices_type = TensorType(indices_type.dtype, indices_type.shape, device)
+    with Graph("gather_nd", input_types=[input_type, indices_type]) as graph:
+        input, indices = graph.inputs
+        with pytest.raises(ValueError, match="same device"):
+            ops.gather(input.tensor, indices.tensor, axis)
+
+
+@given(input=..., indices=tensor_types(dtypes=st.just(DType.uint64)))
+def test_gather_nd__mismatched_devices(
+    input: TensorType, indices: TensorType
+) -> None:
+    device = DeviceRef.GPU(1)
+    assume(input.device != device)
+    indices = TensorType(indices.dtype, indices.shape, device)
+    with Graph("gather_nd", input_types=[input, indices]) as graph:
+        with pytest.raises(ValueError, match="same device"):
+            ops.gather_nd(*graph.inputs)  # type: ignore

@@ -21,9 +21,9 @@ from buffer import NDBuffer
 from gpu import WARP_SIZE, lane_id
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
-from gpu.id import block_dim, block_idx, thread_idx
+from gpu import block_dim, block_idx, thread_idx
 from gpu.memory import (
-    _GPUAddressSpace,
+    AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )
@@ -45,10 +45,10 @@ fn block_reduce[
     dtype: DType, max_warps_per_block: Int = 32
 ](val: Scalar[dtype]) -> Scalar[dtype]:
     var m2_shared = stack_allocation[
-        max_warps_per_block, dtype, address_space = _GPUAddressSpace.SHARED
+        max_warps_per_block, dtype, address_space = AddressSpace.SHARED
     ]()
     var m2_broadcast = stack_allocation[
-        1, dtype, address_space = _GPUAddressSpace.SHARED
+        1, dtype, address_space = AddressSpace.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -62,7 +62,7 @@ fn block_reduce[
 
     var warp_m2 = warp.sum(val)
 
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
     var lane_idx = lane_id()
 
     if lane_idx == 0:
@@ -90,10 +90,10 @@ fn global_reduction_kernel[
 ](d_out: UnsafePointer[Scalar[accum_type]], num_cols: Int):
     var tid = thread_idx.x
     var row = block_idx.x
-    var idx = tid * simd_width
+    var idx = tid * UInt(simd_width)
     var vec_data = SIMD[accum_type, simd_width](0)
 
-    if idx < num_cols:
+    if idx < UInt(num_cols):
         vec_data = input_fn[simd_width, 2](IndexList[2](row, idx)).cast[
             accum_type
         ]()
@@ -121,15 +121,13 @@ fn tma_reduction_kernel[
     d_out: UnsafePointer[Scalar[accum_type]],
 ):
     var shmem = external_memory[
-        Scalar[dtype], address_space = _GPUAddressSpace.SHARED, alignment=128
+        Scalar[dtype], address_space = AddressSpace.SHARED, alignment=128
     ]()
     # Calculate elements offset for this block (row).
     var block_offset = block_idx.x
 
     # Create barrier for TMA transfer from GMEM to SMEM.
-    var mbar = stack_allocation[
-        1, Int64, address_space = _GPUAddressSpace.SHARED
-    ]()
+    var mbar = stack_allocation[1, Int64, address_space = AddressSpace.SHARED]()
 
     var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
@@ -150,8 +148,8 @@ fn tma_reduction_kernel[
 
     # Local thread reduction of loaded data.
     var vec_data = SIMD[accum_type, simd_width](0)
-    var idx = thread_idx.x * simd_width
-    if idx < cols:
+    var idx = thread_idx.x * UInt(simd_width)
+    if idx < UInt(cols):
         vec_data = shmem.load[width=simd_width](idx).cast[accum_type]()
     var local_sum = vec_data.reduce_add()
 
@@ -204,9 +202,8 @@ def test_tma_block_reduce[
             )
             # Calculate shared memory size needed per row.
             var shared_mem_bytes = cols * size_of[dtype]()
-            ctx.enqueue_function[
-                tma_reduction_kernel[dtype, accum_type, simd_width]
-            ](
+            alias kernel = tma_reduction_kernel[dtype, accum_type, simd_width]
+            ctx.enqueue_function_checked[kernel, kernel,](
                 tma_desc,
                 rows,
                 cols,

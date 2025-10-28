@@ -395,7 +395,6 @@ def instantiate_language_model(
         theta=rope_theta,
         max_seq_len=max_seq_len,
         interleaved=False,
-        device=device,
     )
 
     # Track the cross attention KV cache layer index to compute the self

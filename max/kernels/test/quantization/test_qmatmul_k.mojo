@@ -16,7 +16,14 @@ from random import rand, random_float64
 from sys import size_of
 
 from algorithm import sync_parallelize
-from buffer import NDBuffer
+from layout import (
+    LayoutTensor,
+    Layout,
+    RuntimeLayout,
+    RuntimeTuple,
+    IntTuple,
+    UNKNOWN_VALUE,
+)
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
 from quantization.qmatmul_k import (
     _block_Q4_K,
@@ -28,7 +35,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K_pack_b,
 )
 
-from utils.index import Index
+from utils.index import Index, IndexList
 
 
 fn fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype]]):
@@ -86,28 +93,28 @@ trait QuantizedGemm:
     @staticmethod
     fn build_b_buffer(
         N: Int, K: Int
-    ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
+    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutableAnyOrigin]:
         ...
 
     @staticmethod
     def pack_b_buffer(
-        b: NDBuffer[mut=True, DType.uint8, 2],
-        b_packed: NDBuffer[mut=True, DType.uint8, 2],
+        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
+        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
     ):
         ...
 
     @staticmethod
     fn kernel(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
-        c: NDBuffer[DType.float32, 2],
+        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
+        c: LayoutTensor[DType.float32, Layout.row_major[2]()],
     ):
         ...
 
     @staticmethod
     fn dot_product(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
+        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
         m: Int,
         n: Int,
         k: Int,
@@ -130,7 +137,7 @@ struct qgemm_Q4_0(QuantizedGemm):
     @staticmethod
     fn build_b_buffer(
         N: Int, K: Int
-    ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
+    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutableAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = UnsafePointer[UInt8].alloc(
             N * k_groups * size_of[_block_Q4_0]()
@@ -143,43 +150,48 @@ struct qgemm_Q4_0(QuantizedGemm):
                 fill_random(block_ptr[].q_bits)
                 block_ptr += 1
 
-        return NDBuffer[DType.uint8, 2](
-            b_ptr, Index(N, k_groups * size_of[_block_Q4_0]())
+        return LayoutTensor[
+            DType.uint8, Layout.row_major[2](), MutableAnyOrigin
+        ](
+            b_ptr,
+            RuntimeLayout[Layout.row_major[2]()].row_major(
+                Index(N, k_groups * size_of[_block_Q4_0]())
+            ),
         )
 
     @staticmethod
     def pack_b_buffer(
-        b: NDBuffer[mut=True, DType.uint8, 2],
-        b_packed: NDBuffer[mut=True, DType.uint8, 2],
+        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
+        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
     ):
         matmul_qint4_pack_b[_block_Q4_0.group_size](b, b_packed)
 
     @staticmethod
     fn kernel(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
-        c: NDBuffer[DType.float32, 2],
+        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
+        c: LayoutTensor[DType.float32, Layout.row_major[2]()],
     ):
         matmul_qint4[_block_Q4_0.group_size](a, b, c)
 
     @staticmethod
     fn dot_product(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
+        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
         m: Int,
         n: Int,
         k: Int,
     ) -> Float32:
-        var block_ptr = b._offset(Index(n, 0)).bitcast[_block_Q4_0]() + (
-            k // Self.k_group_size()
-        )
+        var block_ptr = (b.ptr + b._offset(Index(n, 0))).bitcast[
+            _block_Q4_0
+        ]() + (k // Self.k_group_size())
 
         var a_quant_data = InlineArray[Int8, _block_Q4_0.group_size](
             uninitialized=True
         )
 
         var a_scale = quantize_a_Q8[_block_Q4_0.group_size](
-            a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
+            a.ptr + a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
         )
 
         var b_quant_data = InlineArray[UInt8, _block_Q4_0.group_size](
@@ -223,7 +235,7 @@ struct qgemm_Q4_K(QuantizedGemm):
     @staticmethod
     fn build_b_buffer(
         N: Int, K: Int
-    ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
+    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutableAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = UnsafePointer[UInt8].alloc(
             N * k_groups * size_of[_block_Q4_K]()
@@ -238,43 +250,48 @@ struct qgemm_Q4_K(QuantizedGemm):
                 fill_random(block_ptr[].q_bits)
                 block_ptr += 1
 
-        return NDBuffer[DType.uint8, 2](
-            b_ptr, Index(N, k_groups * size_of[_block_Q4_K]())
+        return LayoutTensor[
+            DType.uint8, Layout.row_major[2](), MutableAnyOrigin
+        ](
+            b_ptr,
+            RuntimeLayout[Layout.row_major[2]()].row_major(
+                Index(N, k_groups * size_of[_block_Q4_K]())
+            ),
         )
 
     @staticmethod
     def pack_b_buffer(
-        b: NDBuffer[mut=True, DType.uint8, 2],
-        b_packed: NDBuffer[mut=True, DType.uint8, 2],
+        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
+        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
     ):
         matmul_Q4_K_pack_b(b, b_packed)
 
     @staticmethod
     fn kernel(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
-        c: NDBuffer[DType.float32, 2],
+        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
+        c: LayoutTensor[DType.float32, Layout.row_major[2]()],
     ):
         matmul_Q4_K(a, b, c)
 
     @staticmethod
     fn dot_product(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
+        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
         m: Int,
         n: Int,
         k: Int,
     ) -> Float32:
-        var block_ptr = b._offset(Index(n, 0)).bitcast[_block_Q4_K]() + (
-            k // Self.k_group_size()
-        )
+        var block_ptr = (b.ptr + b._offset(Index(n, 0))).bitcast[
+            _block_Q4_K
+        ]() + (k // Self.k_group_size())
 
         var a_quant_data = InlineArray[Int8, _block_QK_K.quantized_k](
             uninitialized=True
         )
 
         var a_scale = quantize_a_Q8[_block_QK_K.quantized_k](
-            a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
+            a.ptr + a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
         )
 
         var a_block_sums = InlineArray[Int32, _block_Q4_K.group_count](
@@ -355,7 +372,7 @@ struct qgemm_Q6_K(QuantizedGemm):
     @staticmethod
     fn build_b_buffer(
         N: Int, K: Int
-    ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
+    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutableAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = UnsafePointer[UInt8].alloc(
             N * k_groups * size_of[_block_Q6_K]()
@@ -370,43 +387,48 @@ struct qgemm_Q6_K(QuantizedGemm):
                 block_ptr[].base_scale = random_float16(max=0.001)
                 block_ptr += 1
 
-        return NDBuffer[DType.uint8, 2](
-            b_ptr, Index(N, k_groups * size_of[_block_Q6_K]())
+        return LayoutTensor[
+            DType.uint8, Layout.row_major[2](), MutableAnyOrigin
+        ](
+            b_ptr,
+            RuntimeLayout[Layout.row_major[2]()].row_major(
+                Index(N, k_groups * size_of[_block_Q6_K]())
+            ),
         )
 
     @staticmethod
     def pack_b_buffer(
-        b: NDBuffer[mut=True, DType.uint8, 2],
-        b_packed: NDBuffer[mut=True, DType.uint8, 2],
+        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
+        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
     ):
         matmul_Q6_K_pack_b(b, b_packed)
 
     @staticmethod
     fn kernel(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
-        c: NDBuffer[DType.float32, 2],
+        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
+        c: LayoutTensor[DType.float32, Layout.row_major[2]()],
     ):
         matmul_Q6_K(a, b, c)
 
     @staticmethod
     fn dot_product(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
+        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
         m: Int,
         n: Int,
         k: Int,
     ) -> Float32:
-        var block_ptr = b._offset(Index(n, 0)).bitcast[_block_Q6_K]() + (
-            k // Self.k_group_size()
-        )
+        var block_ptr = (b.ptr + b._offset(Index(n, 0))).bitcast[
+            _block_Q6_K
+        ]() + (k // Self.k_group_size())
 
         var a_quant_data = InlineArray[Int8, _block_QK_K.quantized_k](
             uninitialized=True
         )
 
         var a_scale = quantize_a_Q8[_block_QK_K.quantized_k](
-            a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
+            a.ptr + a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
         )
 
         var b_quant_data = InlineArray[UInt8, _block_QK_K.quantized_k](
@@ -453,9 +475,9 @@ struct qgemm_Q6_K(QuantizedGemm):
 fn reference_gemm[
     qgemm: QuantizedGemm
 ](
-    a: NDBuffer[DType.float32, 2],
-    b: NDBuffer[DType.uint8, 2],
-    c: NDBuffer[mut=True, DType.float32, 2],
+    a: LayoutTensor[DType.float32, Layout.row_major[2]()],
+    b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
+    c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2]()],
 ):
     var M = a.dim[0]()
     var N = b.dim[0]()
@@ -487,33 +509,46 @@ fn reference_gemm[
 
 
 struct GemmContext[qgemm: QuantizedGemm]:
-    var a: NDBuffer[DType.float32, 2, MutableAnyOrigin]
-    var b: NDBuffer[DType.uint8, 2, MutableAnyOrigin]
-    var b_packed: NDBuffer[DType.uint8, 2, MutableAnyOrigin]
-    var c: NDBuffer[DType.float32, 2, MutableAnyOrigin]
-    var c_golden: NDBuffer[DType.float32, 2, MutableAnyOrigin]
+    var a: LayoutTensor[DType.float32, Layout.row_major[2](), MutableAnyOrigin]
+    var b: LayoutTensor[DType.uint8, Layout.row_major[2](), MutableAnyOrigin]
+    var b_packed: LayoutTensor[
+        DType.uint8, Layout.row_major[2](), MutableAnyOrigin
+    ]
+    var c: LayoutTensor[DType.float32, Layout.row_major[2](), MutableAnyOrigin]
+    var c_golden: LayoutTensor[
+        DType.float32, Layout.row_major[2](), MutableAnyOrigin
+    ]
 
     @staticmethod
     def _build_float_buffer(
         M: Int, N: Int
-    ) -> NDBuffer[DType.float32, 2, MutableAnyOrigin]:
+    ) -> LayoutTensor[DType.float32, Layout.row_major[2](), MutableAnyOrigin]:
         var ptr = UnsafePointer[Float32].alloc(M * N)
         for i in range(M * N):
             ptr[i] = random_float64(min=-1.0, max=+1.0).cast[DType.float32]()
-        return NDBuffer[DType.float32, 2](ptr, Index(M, N))
+        return LayoutTensor[
+            DType.float32, Layout.row_major[2](), MutableAnyOrigin
+        ](ptr, RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, N)))
 
     @staticmethod
     def _build_b_buffer(
         N: Int, K: Int
-    ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
+    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutableAnyOrigin]:
         return qgemm.build_b_buffer(N, K)
 
     @staticmethod
     def _pack_b_buffer(
-        b: NDBuffer[mut=True, DType.uint8, 2]
-    ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
-        var b_packed_buffer = UnsafePointer[UInt8].alloc(len(b))
-        var b_packed = NDBuffer[DType.uint8, 2](b_packed_buffer, b.get_shape())
+        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()]
+    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutableAnyOrigin]:
+        var b_packed_buffer = UnsafePointer[UInt8].alloc(b.size())
+        var b_packed = LayoutTensor[
+            DType.uint8, Layout.row_major[2](), MutableAnyOrigin
+        ](
+            b_packed_buffer,
+            RuntimeLayout[Layout.row_major[2]()].row_major(
+                b.runtime_layout.shape.value.canonicalize()
+            ),
+        )
         qgemm.pack_b_buffer(b, b_packed)
         return b_packed
 
@@ -525,11 +560,11 @@ struct GemmContext[qgemm: QuantizedGemm]:
         self.c_golden = Self._build_float_buffer(M, N)
 
     def free(mut self):
-        self.a.data.free()
-        self.b.data.free()
-        self.b_packed.data.free()
-        self.c.data.free()
-        self.c_golden.data.free()
+        self.a.ptr.free()
+        self.b.ptr.free()
+        self.b_packed.ptr.free()
+        self.c.ptr.free()
+        self.c_golden.ptr.free()
 
 
 def test_case[qgemm: QuantizedGemm](M: Int, N: Int, K: Int):
@@ -542,15 +577,15 @@ def test_case[qgemm: QuantizedGemm](M: Int, N: Int, K: Int):
     qgemm.kernel(ctx.a, ctx.b_packed, ctx.c)
 
     var mismatch = False
-    for i in range(len(ctx.c)):
-        if not isclose(
-            ctx.c.data[i], ctx.c_golden.data[i], atol=1e-4, rtol=1e-4
-        ):
+    for i in range(ctx.c.size()):
+        if not isclose(ctx.c.ptr[i], ctx.c_golden.ptr[i], atol=1e-4, rtol=1e-4):
             print(
                 "MISMATCH",
-                ctx.c.get_nd_index(i),
-                ctx.c.data[i],
-                ctx.c_golden.data[i],
+                ctx.c.runtime_layout.idx2crd(
+                    RuntimeTuple[IntTuple(UNKNOWN_VALUE)](i)
+                ),
+                ctx.c.ptr[i],
+                ctx.c_golden.ptr[i],
             )
             mismatch = True
             break

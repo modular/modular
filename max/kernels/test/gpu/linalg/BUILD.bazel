@@ -35,8 +35,11 @@ _EXTRA_CONSTRAINTS = {
     "test_grouped_matmul_sm100_blockwise_fp8.mojo": ["//:b200_gpu"],
     "test_batched_matmul_sm100_scaled.mojo": ["//:b200_gpu"],
     "test_matmul_sm100_epilogue.mojo": ["//:b200_gpu"],
-    "test_matmul_sm100_bf16.mojo": ["//:b200_gpu"],
-    "test_matmul_sm100_fp8.mojo": ["//:b200_gpu"],
+    "test_matmul_sm100_swapAB_epilogue.mojo": ["//:b200_gpu"],
+    "test_matmul_sm100_cg2_bf16.mojo": ["//:b200_gpu"],
+    "test_matmul_sm100_cg1_bf16.mojo": ["//:b200_gpu"],
+    "test_matmul_sm100_cg2_fp8.mojo": ["//:b200_gpu"],
+    "test_matmul_sm100_cg1_fp8.mojo": ["//:b200_gpu"],
     "test_matmul_sm100_ptx.mojo": ["//:b200_gpu"],
     "test_matmul_tile_scheduler_sm100.mojo": ["//:b200_gpu"],
     "test_tma_wgmma.mojo": ["//:h100_gpu"],
@@ -152,7 +155,7 @@ _GPU_MEMORY = {
         name = src + ".test",
         size = "large",
         srcs = [src],
-        data = ["//open-source/max/max/kernels/test/testdata:ptx_files"],
+        data = ["//max/kernels/test/testdata:ptx_files"],
         enable_assertions = False,  # PTX comparison assertions disabled
         deps = [
             "@mojo//:linalg",

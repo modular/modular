@@ -21,6 +21,8 @@ from testing import assert_almost_equal, assert_equal, TestSuite
 
 def test_exp_bfloat16():
     assert_equal(exp(BFloat16(2.0)), 7.375)
+    assert_equal(exp(5.0) * exp(6.0), exp(5.0 + 6.0))
+    assert_equal(exp(5.0) / exp(2.0), exp(5.0 - 2.0))
 
 
 def test_exp_float16():
@@ -109,14 +111,4 @@ def test_exapble_trait():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_exp_bfloat16]()
-    suite.test[test_exp_float16]()
-    suite.test[test_exp_float32]()
-    suite.test[test_exp_float64]()
-    suite.test[test_exp_libm[DType.float32]]()
-    suite.test[test_exp_libm[DType.float64]]()
-    suite.test[test_exapble_trait]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

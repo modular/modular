@@ -55,7 +55,6 @@ from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
-from memory.pointer import _GPUAddressSpace as AddressSpace
 
 from utils import StaticTuple
 from utils.index import Index, IndexList
@@ -138,7 +137,7 @@ fn warp_split_k_reduction[
             @parameter
             for i in range(num_mmas):
                 c_reg_tile_vectorized[0, i] += rebind[
-                    __type_of(c_reg_tile_vectorized[0, i])
+                    type_of(c_reg_tile_vectorized[0, i])
                 ](red_tb_thread_tile[0, i])
         i_red //= 2
 
@@ -208,10 +207,16 @@ fn multistage_mma[
     a_iter_arg: LayoutTensorIter[_, a_layout, **_],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, **_],
     a_smem_iter_arg: LayoutTensorIter[
-        a_type, a_smem_layout, address_space = AddressSpace.SHARED, **_
+        mut=True,
+        a_type,
+        a_smem_layout,
+        address_space = AddressSpace.SHARED, **_,
     ],
     mut b_smem_iter: LayoutTensorIter[
-        b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
+        mut=True,
+        b_type,
+        b_smem_layout,
+        address_space = AddressSpace.SHARED, **_,
     ],
     num_iters: Int,
     /,
@@ -277,7 +282,7 @@ fn multistage_mma[
     @always_inline
     @parameter
     fn _mask_tensor_row(
-        tensor: LayoutTensor, num_rows: Int, out result: __type_of(tensor)
+        tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
     ):
         return {
             tensor.ptr,
@@ -296,7 +301,7 @@ fn multistage_mma[
     @parameter
     fn _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
-    ](dst: LayoutTensor, src: LayoutTensor):
+    ](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
         @parameter
         if is_nvidia_gpu():
             copy_dram_to_sram_async[
@@ -360,12 +365,12 @@ fn multistage_mma[
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
-    alias num_k_mmas: UInt = UInt(BK // MMA_K)
+    alias num_k_mmas = UInt(BK // MMA_K)
     alias num_k_mma_iters: UInt = num_k_mmas // k_group_size
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
     constrained[
-        num_k_mmas % UInt(2 * k_group_size) == 0,
+        num_k_mmas % UInt(2 * Int(k_group_size)) == 0,
         "num_k_mmas must be an integer multiple of 2*k_group_size",
     ]()
 
@@ -375,10 +380,10 @@ fn multistage_mma[
     alias b_frag_size = frag_size[1]
     alias c_frag_size = frag_size[2]
 
-    alias num_reg_tiles = 2 * k_group_size
+    alias num_reg_tiles = 2 * Int(k_group_size)
     # Register tiles.
     alias a_reg_layout = Layout.row_major(
-        Int(2 * k_group_size * num_m_mmas), a_frag_size
+        Int(2 * Int(k_group_size) * num_m_mmas), a_frag_size
     )
     var a_reg_tiles = (
         LayoutTensor[
@@ -388,11 +393,11 @@ fn multistage_mma[
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
-        .split[Int(2 * k_group_size)]()
+        .split[Int(2 * Int(k_group_size))]()
     )
 
     alias b_reg_layout = Layout.row_major(
-        Int(2 * k_group_size * num_n_mmas), b_frag_size
+        Int(2 * Int(k_group_size) * num_n_mmas), b_frag_size
     )
     var b_reg_tiles = (
         LayoutTensor[
@@ -403,7 +408,7 @@ fn multistage_mma[
         ]
         .stack_allocation()
         .vectorize[1, b_frag_size]()
-        .split[Int(2 * k_group_size)]()
+        .split[Int(2 * Int(k_group_size))]()
     )
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
@@ -748,9 +753,9 @@ fn multistage_gemm_kernel[
     ]()
     alias simd_size = simd_width_of[c_type]()
 
-    var M: UInt = UInt(c.dim[0]())
-    var N: UInt = UInt(b.dim[0 if transpose_b else 1]())
-    var K: UInt = UInt(b.dim[1 if transpose_b else 0]())
+    var M = UInt(c.dim[0]())
+    var N = UInt(b.dim[0 if transpose_b else 1]())
+    var K = UInt(b.dim[1 if transpose_b else 0]())
 
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
@@ -932,9 +937,9 @@ fn multistage_gemm_kernel[
         var thread_offset = c_gmem_frag.distance(c.ptr)
 
         @parameter
-        for i in range(__type_of(c_gmem_frag).layout.size()):
+        for i in range(type_of(c_gmem_frag).layout.size()):
             alias src_idx = c_reg_frag.layout(i)
-            alias dst_static_idx: UInt = UInt(__type_of(c_gmem_frag).layout(i))
+            alias dst_static_idx = UInt(type_of(c_gmem_frag).layout(i))
             var dst_idx: Int
 
             @parameter
@@ -943,9 +948,8 @@ fn multistage_gemm_kernel[
             else:
                 dst_idx = Int(c_gmem_frag.runtime_layout(i))
             alias alignment = align_of[SIMD[c_type, src_simd_width_y]]()
-            var m = (Int(thread_offset) + dst_idx) // N
-            var n = (Int(thread_offset) + dst_idx) % N
-            if m < M and n < N:
+            var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
+            if m < Int(M) and n < Int(N):
                 var vec = c_reg_frag.ptr.offset(src_idx).load[
                     width=src_simd_width_y,
                     alignment = align_of[SIMD[c_type, src_simd_width_y]](),
@@ -958,7 +962,7 @@ fn multistage_gemm_kernel[
 
                     @parameter
                     for j in range(dst_simd_width_x):
-                        if m + j < M:
+                        if m + j < Int(M):
                             epilogue[alignment=alignment](
                                 (Int(m + j), Int(n)), vec[j].cast[c_type]()
                             )
@@ -1007,7 +1011,7 @@ fn multistage_gemm_kernel[
                 1, simd_size
             ]().distribute[warp_layout](thread_idx.x)
             var thread_offset = c_gmem_frag.distance(c.ptr)
-            alias num_stores_per_thread = __type_of(c_gmem_frag).layout.size()
+            alias num_stores_per_thread = type_of(c_gmem_frag).layout.size()
 
             var c_smem_frag_offset = c_smem_frag.distance(
                 accum_smem_warp_tile.ptr
@@ -1015,14 +1019,14 @@ fn multistage_gemm_kernel[
 
             @parameter
             for i in range(num_stores_per_thread):
-                alias src_idx = __type_of(c_smem_frag).layout(i)
+                alias src_idx = type_of(c_smem_frag).layout(i)
                 alias src_idx_base = src_idx % swizzle.size()
                 alias src_idx_diff = src_idx - src_idx_base
                 var swizzled_idx = (
                     swizzle(c_smem_frag_offset + src_idx_base) + src_idx_diff
                 )
 
-                alias dst_static_idx = __type_of(c_gmem_frag).layout(i)
+                alias dst_static_idx = type_of(c_gmem_frag).layout(i)
                 var dst_idx: Int
 
                 @parameter
@@ -1031,10 +1035,10 @@ fn multistage_gemm_kernel[
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-                var m = (Int(thread_offset) + dst_idx) // N
-                var n = (Int(thread_offset) + dst_idx) % N
+                var m = (Int(thread_offset) + dst_idx) // Int(N)
+                var n = (Int(thread_offset) + dst_idx) % Int(N)
                 alias alignment = align_of[SIMD[c_type, simd_size]]()
-                if m < M and n < N:
+                if m < Int(M) and n < Int(N):
                     epilogue[alignment=alignment](
                         (Int(m), Int(n)),
                         accum_smem_warp_tile.ptr.load[

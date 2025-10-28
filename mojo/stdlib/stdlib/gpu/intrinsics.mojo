@@ -27,14 +27,20 @@ underlying GPU architecture.
 
 from collections.string.string_slice import get_static_string
 from os.atomic import Consistency
-from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, size_of
+from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, size_of, _RegisterPackType
 from sys._assembly import inlined_assembly
-from sys.info import CompilationTarget, _is_sm_9x, align_of, bit_width_of
+from sys.info import (
+    CompilationTarget,
+    _is_sm_9x,
+    align_of,
+    bit_width_of,
+    _cdna_4_or_newer,
+)
 from sys.intrinsics import llvm_intrinsic, readfirstlane
 
 from memory.unsafe import bitcast
 
-from .memory import AddressSpace, CacheOperation, _int_to_str
+from .memory.memory import CacheOperation, _int_to_str
 
 # ===-----------------------------------------------------------------------===#
 # ldg
@@ -622,6 +628,10 @@ fn threadfence[scope: Scope = Scope.GPU]():
         scope in (Scope.GPU, Scope.BLOCK, Scope.SYSTEM),
         "invalid threadfence scope",
     ]()
+    constrained[
+        is_nvidia_gpu(), "threadfence is only implemented on NVIDIA GPUs"
+    ]()
+
     alias suffix = "gl" if scope is Scope.GPU else scope.mnemonic()
     llvm_intrinsic["llvm.nvvm.membar." + suffix, NoneType]()
 
@@ -734,6 +744,57 @@ fn store_release[
 
 
 @always_inline
+fn store_relaxed[
+    dtype: DType, //,
+    *,
+    scope: Scope = Scope.SYSTEM,
+    memory: Bool = True,
+    alignment: Int = align_of[Scalar[dtype]](),
+](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
+    """Performs an atomic store with relaxed memory ordering semantics.
+
+    On NVIDIA, maps to PTX st.relaxed; on AMD, maps to POP atomic store with MONOTONIC ordering.
+
+    Parameters:
+        dtype: Data type of the value to store.
+        scope: Memory scope for the atomic operation.
+        memory: Whether to add memory clobber constraint.
+        alignment: Alignment requirement for the pointer.
+
+    Args:
+        ptr: Pointer to the memory location.
+        value: Value to store.
+    """
+    constrained[is_gpu(), "atomic store only supported on GPU"]()
+
+    @parameter
+    if is_nvidia_gpu():
+        alias mem_constraint = StaticString(",~{memory}") if memory else ""
+        alias constraints = _get_nvtx_register_constraint[
+            dtype
+        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
+        alias scope_str = scope.mnemonic()
+        inlined_assembly[
+            "st.relaxed."
+            + ((scope_str + ".") if scope_str else "")
+            + "global."
+            + _get_type_suffix[dtype]()
+            + " [$1], $0;",
+            NoneType,
+            constraints=constraints,
+        ](value, ptr)
+    elif is_amd_gpu():
+        __mlir_op.`pop.store`[
+            alignment = alignment._mlir_value,
+            ordering = Consistency.MONOTONIC.__mlir_attr(),
+        ](value, ptr.address)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="store_relaxed"
+        ]()
+
+
+@always_inline
 fn load_acquire[
     dtype: DType, //,
     *,
@@ -792,6 +853,60 @@ fn load_acquire[
         return CompilationTarget.unsupported_target_error[
             Scalar[dtype],
             operation="load_acquire",
+        ]()
+
+
+@always_inline
+fn load_relaxed[
+    dtype: DType, //,
+    *,
+    scope: Scope = Scope.SYSTEM,
+    memory: Bool = True,
+    alignment: Int = align_of[Scalar[dtype]](),
+](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
+    """Performs an atomic load with relaxed memory ordering semantics.
+
+    On NVIDIA, maps to PTX ld.relaxed; on AMD, maps to POP atomic load with MONOTONIC ordering.
+
+    Parameters:
+        dtype: Data type of the value to load.
+        scope: Memory scope for the atomic operation.
+        memory: Whether to add memory clobber constraint.
+        alignment: Alignment requirement for the pointer.
+
+    Args:
+        ptr: Pointer to the memory location.
+
+    Returns:
+        The loaded value.
+    """
+    constrained[is_gpu(), "atomic load only supported on GPU"]()
+
+    @parameter
+    if is_nvidia_gpu():
+        alias mem_constraint = StaticString(",~{memory}") if memory else ""
+        alias constraints = "=" + _get_nvtx_register_constraint[
+            dtype
+        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
+        alias scope_str = scope.mnemonic()
+        return inlined_assembly[
+            "ld.relaxed."
+            + ((scope_str + ".") if scope_str else "")
+            + "global."
+            + _get_type_suffix[dtype]()
+            + " $0, [$1];",
+            Scalar[dtype],
+            constraints=constraints,
+        ](ptr.address_space_cast[AddressSpace.GENERIC]())
+    elif is_amd_gpu():
+        return __mlir_op.`pop.load`[
+            alignment = alignment._mlir_value,
+            ordering = Consistency.MONOTONIC.__mlir_attr(),
+        ](ptr.address)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            Scalar[dtype],
+            operation="load_relaxed",
         ]()
 
 
@@ -875,9 +990,13 @@ fn load_volatile[
 
 @register_passable("trivial")
 struct AMDBufferResource:
+    """128-bit descriptor for a buffer resource on AMD GPUs.
+
+    Used for buffer_load/buffer_store instructions.
+    """
+
     var desc: SIMD[DType.uint32, 4]
-    """128-bit descriptor for a buffer resource on AMD GPUs. Used for
-    buffer_load/buffer_store instructions."""
+    """The 128-bit buffer descriptor encoded as four 32-bit values."""
 
     @always_inline("nodebug")
     fn __init__[
@@ -887,6 +1006,15 @@ struct AMDBufferResource:
         gds_ptr: UnsafePointer[Scalar[dtype], **_],
         num_records: Int = Int(UInt32.MAX),
     ):
+        """Constructs an AMD buffer resource descriptor.
+
+        Parameters:
+            dtype: Data type of the buffer elements.
+
+        Args:
+            gds_ptr: Pointer to the buffer in global memory.
+            num_records: Number of records in the buffer.
+        """
         constrained[
             is_amd_gpu(),
             (
@@ -906,6 +1034,7 @@ struct AMDBufferResource:
 
     @always_inline("nodebug")
     fn __init__(out self):
+        """Constructs a zeroed AMD buffer resource descriptor."""
         constrained[
             is_amd_gpu(),
             (
@@ -917,6 +1046,11 @@ struct AMDBufferResource:
 
     @always_inline("nodebug")
     fn get_base_ptr(self) -> Int:
+        """Gets the base pointer address from the buffer resource descriptor.
+
+        Returns:
+            The base pointer address as an integer.
+        """
         return Int(
             bitcast[DType.int64, 1](
                 SIMD[DType.uint32, 2](self.desc[0], self.desc[1])
@@ -937,6 +1071,20 @@ struct AMDBufferResource:
     ) -> SIMD[
         dtype, width
     ]:
+        """Loads data from the buffer using AMD buffer load intrinsic.
+
+        Parameters:
+            dtype: Data type to load.
+            width: Number of elements to load.
+            cache_policy: Cache operation policy.
+
+        Args:
+            vector_offset: Offset in elements from the base pointer.
+            scalar_offset: Additional scalar offset in elements.
+
+        Returns:
+            SIMD vector containing the loaded data.
+        """
         constrained[
             is_amd_gpu(),
             "The buffer_load function is only applicable on AMDGPU hardware.",
@@ -1143,6 +1291,9 @@ fn ds_read_tr16_b64[
 ) -> SIMD[dtype, 4]:
     """Reads a 64-bit LDS transpose block using TR16 layout and returns SIMD[dtype, 4] of 16-bit types.
 
+    Parameters:
+        dtype: Data type of the elements (must be 16-bit type).
+
     Args:
         shared_ptr: Pointer to the LDS transpose block.
 
@@ -1159,11 +1310,95 @@ fn ds_read_tr16_b64[
         is_amd_gpu(),
         "The ds_read_tr16_b64 function is only applicable on AMDGPU hardware.",
     ]()
+
     constrained[
         size_of[dtype]() == 2,
         "ds_read_tr16_b64 supports 16-bit dtypes.",
     ]()
 
+    constrained[
+        _cdna_4_or_newer(), "ds_read_tr16_b64 is only supported on CDNA4+"
+    ]()
+
     return llvm_intrinsic[
         "llvm.amdgcn.ds.read.tr16.b64", SIMD[dtype, 4], has_side_effect=False
     ](shared_ptr)
+
+
+# ===-----------------------------------------------------------------------===#
+# AMD permlane shuffle
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn permlane_swap[
+    dtype: DType, //, stride: Int
+](val1: Scalar[dtype], val2: Scalar[dtype]) -> SIMD[dtype, 2]:
+    """Swaps values between lanes using AMD permlane swap instruction.
+
+    Parameters:
+        dtype: Data type of the values (must be 32-bit type).
+        stride: Swap stride (must be 16 or 32).
+
+    Args:
+        val1: First value to swap.
+        val2: Second value to swap.
+
+    Returns:
+        SIMD vector containing the swapped values.
+    """
+    constrained[
+        is_amd_gpu(),
+        (
+            "The _amd_permlane_swap function is only applicable on AMDGPU"
+            " hardware."
+        ),
+    ]()
+    constrained[
+        _cdna_4_or_newer(), "permlane swap is only supported on CDNA4+"
+    ]()
+    constrained[bit_width_of[dtype]() == 32, "Unsupported dtype"]()
+    constrained[stride in (16, 32), "Unsupported stride"]()
+
+    alias asm = "llvm.amdgcn.permlane" + String(stride) + ".swap"
+    var result = llvm_intrinsic[
+        asm,
+        _RegisterPackType[Int32, Int32],
+        has_side_effect=False,
+    ](
+        bitcast[DType.int32, 1](val1),
+        bitcast[DType.int32, 1](val2),
+        False,
+        False,
+    )
+    return SIMD[dtype, 2](
+        bitcast[dtype, 1](result[0]), bitcast[dtype, 1](result[1])
+    )
+
+
+fn permlane_shuffle[
+    dtype: DType, simd_width: Int, //, stride: Int
+](val: SIMD[dtype, simd_width], out res: type_of(val)):
+    """Shuffles SIMD values across lanes using AMD permlane operations.
+
+    Parameters:
+        dtype: Data type of the values.
+        simd_width: Width of the SIMD vector.
+        stride: Shuffle stride.
+
+    Args:
+        val: Input SIMD vector to shuffle.
+
+    Returns:
+        Shuffled SIMD vector in the `res` output parameter.
+    """
+    var lane_group = lane_id() // UInt(stride)
+
+    var out = type_of(res)()
+
+    @parameter
+    for i in range(simd_width):
+        out[i] = permlane_swap[stride](val[i], val[i])[
+            Int((lane_group + 1) % 2)
+        ]
+    return out

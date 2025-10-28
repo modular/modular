@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from gpu.id import block_idx, cluster_dim, cluster_idx
+from gpu import block_idx, cluster_dim, cluster_idx
 
 from utils.static_tuple import StaticTuple
 

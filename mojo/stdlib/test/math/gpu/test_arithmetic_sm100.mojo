@@ -16,7 +16,7 @@ from random import random_float64
 
 from gpu import block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext, HostBuffer
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 fn simd_add_kernel[
@@ -27,7 +27,7 @@ fn simd_add_kernel[
     c_span: UnsafePointer[Float32],
 ):
     # Calculate the index for this thread's data
-    var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
+    var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
 
     var vector_a = a_span.load[width=width](idx)
     var vector_b = b_span.load[width=width](idx)
@@ -43,7 +43,7 @@ fn simd_mult_kernel[
     c_span: UnsafePointer[Float32],
 ):
     # Calculate the index for this thread's data
-    var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
+    var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
 
     var vector_a = a_span.load[width=width](idx)
     var vector_b = b_span.load[width=width](idx)
@@ -59,7 +59,7 @@ fn simd_fma_kernel[
     c_span: UnsafePointer[Float32],
 ):
     # Calculate the index for this thread's data
-    var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
+    var idx = (thread_idx.x + block_idx.x * block_dim.x) * UInt(width)
 
     var vector_a = a_span.load[width=width](idx)
     var vector_b = b_span.load[width=width](idx)
@@ -138,7 +138,7 @@ def test_arithmetic[
     if mode == "add":
         alias kernel = simd_add_kernel[width]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             a_device_buffer,
             b_device_buffer,
             c_device_buffer,
@@ -150,7 +150,7 @@ def test_arithmetic[
     elif mode == "mult":
         alias kernel = simd_mult_kernel[width]
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             a_device_buffer,
             b_device_buffer,
             c_device_buffer,
@@ -163,7 +163,7 @@ def test_arithmetic[
         alias kernel = simd_fma_kernel[width]
 
         # Execute kernel on GPU
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             a_device_buffer,
             b_device_buffer,
             c_device_buffer,
@@ -182,7 +182,7 @@ def test_arithmetic[
         assert_equal(c_result[i], c_expected[i])
 
 
-def main():
+def test_arithmetic_sm100():
     with DeviceContext() as ctx:
         test_arithmetic[2, "add"](ctx)
         test_arithmetic[4, "add"](ctx)
@@ -193,3 +193,7 @@ def main():
         test_arithmetic[2, "fma"](ctx)
         test_arithmetic[4, "fma"](ctx)
         test_arithmetic[8, "fma"](ctx)
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

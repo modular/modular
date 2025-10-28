@@ -20,9 +20,9 @@ from gpu import barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
-from gpu.id import warp_id as get_warp_id
-from gpu.memory import AddressSpace, fence_mbarrier_init
+from gpu import block_idx, thread_idx
+from gpu import warp_id as get_warp_id
+from gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -35,7 +35,6 @@ from layout.tensor_core_async import (
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
@@ -132,7 +131,7 @@ fn multicast_tma_wgmma_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -158,7 +157,7 @@ fn multicast_tma_wgmma_kernel[
                     var a_gmem_slice_coord = (
                         block_idx.y * BM + Int(rank_n) * a_tma_rows
                     )
-                    var a_smem_slice = __type_of(a_smem_tile)(
+                    var a_smem_slice = type_of(a_smem_tile)(
                         a_smem_tile.ptr + rank_n * a_tma_load_size
                     )
 
@@ -196,7 +195,7 @@ fn multicast_tma_wgmma_kernel[
                     var b_gmem_slice_coord = (
                         block_idx.x * BN + Int(rank_m) * b_tma_rows
                     )
-                    var b_smem_slice = __type_of(b_smem_tile)(
+                    var b_smem_slice = type_of(b_smem_tile)(
                         b_smem_tile.ptr + rank_m * b_tma_load_size
                     )
 
@@ -399,11 +398,11 @@ def test_multicast_tma_wgmma[
         a_type,
         b_type,
         c_type,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
         Layout.row_major(M, N),
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
         block_tile_shape,
         wgmma_shape,
         a_smem_layout,
@@ -415,7 +414,7 @@ def test_multicast_tma_wgmma[
         partitioned_multicast=partitioned_multicast,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),

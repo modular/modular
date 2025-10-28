@@ -38,10 +38,10 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = Tr
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-fOkBbbvPAZmBji2zJ7KSXxpvCgxSTi6buwMJal4zOEE=",
-    strip_prefix = "rules_mojo-ffd2636629835c1f1287dcf6846251e088eec1d8",
+    integrity = "sha256-w7hPwnIRS1yyx0j6nZCD/yGqM0AZiFfJiF9U9DxIr5k=",
+    strip_prefix = "rules_mojo-87f860f96f73ce624d51fe8e836978888e14344c",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/ffd2636629835c1f1287dcf6846251e088eec1d8.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/87f860f96f73ce624d51fe8e836978888e14344c.tar.gz",
     ],
 )
 
@@ -87,9 +87,23 @@ single_version_override(
 archive_override(
     module_name = "rules_pycross",
     integrity = "sha256-80I/HQ37qIGF7o632GMRKV7PK4/wpEvBGQyXJsnKkPo=",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/jvolkman/rules_pycross/pull/199
+        "//bazel/public-patches:rules_pycross_patch.patch",
+    ],
     strip_prefix = "rules_pycross-1d8bdc0e0a48ce338c0de8122c952af841d40d2d",
     urls = [
         "https://github.com/jvolkman/rules_pycross/archive/1d8bdc0e0a48ce338c0de8122c952af841d40d2d.tar.gz",
+    ],
+)
+
+single_version_override(
+    module_name = "rules_swift",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/bazelbuild/rules_swift/pull/1535
+        "//bazel/public-patches:rules_swift.patch",
     ],
 )
 
@@ -215,7 +229,7 @@ module_versions(
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-RUFF_VERSION = "0.11.13"
+RUFF_VERSION = "0.14.0"
 
 [
     http_archive(
@@ -229,31 +243,52 @@ RUFF_VERSION = "0.11.13"
         ),
     )
     for arch, sha in [
-        ("x86_64-unknown-linux-gnu", "01aa32d29d00876b8d1429c617ed63a00b1fc81abfa4183bb05c9cb647fbc3d0"),
-        ("aarch64-unknown-linux-gnu", "551af2ebc439d8268dcaf871ea60ad035f688728d30943dcbb2bf775e105213e"),
-        ("aarch64-apple-darwin", "7d5e8feea7ee5c3962807996cad557e8a0c4d676c1cba6223bfb0e8b2ca07723"),
+        ("x86_64-unknown-linux-gnu", "28fe06f700caf99eee235f90e6e349f48b7f9a4b0d42e3ee5b3686f9259649a3"),
+        ("aarch64-unknown-linux-gnu", "60fc3b464a723456ba1bc8cd91d29806753c885f72e26ac67b718cee6b35aaca"),
+        ("aarch64-apple-darwin", "0b7c193d5c45eda02226720eb75239fabeca995d5a0eb3830fd2973caa3030ec"),
     ]
 ]
 
-NVSHMEM_VERSION = "3.4.5"
-
 http_archive(
-    name = "libnvshmem",
+    name = "nvshmem_prebuilt",
     build_file_content = """
+package(default_visibility = ["//visibility:public"])
+
+# This is the device-side bitcode that is linked into shmem.mojopkg.
 filegroup(
     name = "device",
     srcs = ["lib/libnvshmem_device.bc"],
-    visibility = ["//visibility:public"],
 )
-filegroup(
-    name = "host",
+
+# For linking the nvshmem hostlibs when compiling Mojo binaries from bazel
+cc_library(
+    name = "hostlibs",
     srcs = glob(["lib/*.so*"]),
-    visibility = ["//visibility:public"],
+)
+
+# This has three purposes:
+#  - copy the libs to python wheel `site-packages/modular/lib` folder
+#  - relink and copy the libs to conda package `lib` folder
+#  - enable `bmojo` to dlopen the libs from `bazel-bin/external/+http_archive+nvshmem_prebuilt`
+genrule(
+    name = "hostlibs_data",
+    srcs = glob(["lib/*.so*"]),
+    outs = [
+        "libnvshmem_host.so.3",
+        "nvshmem_bootstrap_mpi.so.3",
+        "nvshmem_transport_ibrc.so.3",
+        "nvshmem_transport_ibgda.so.3",
+    ],
+    cmd = '''
+        # Copy all lib/*.so* files from our prebuilt tar
+        for src in $(SRCS); do
+            cp -L $$src $(@D)
+        done
+    ''',
 )
 """,
-    # custom NVSHMEM at commit: https://github.com/modularml/NVSHMEM/commit/6ce0e34
-    sha256 = "786253323825e8b13a511069071f4b4ace4190129551e2f03c488081a660997f",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/{}/786253323825e8b13a511069071f4b4ace4190129551e2f03c488081a660997f/nvshmem.tar.gz".format(NVSHMEM_VERSION),
+    sha256 = "8f74673b958e8c3b2e5c2cacfa48aa90139d36377317f48cbd1851f993789655",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/8f74673b958e8c3b2e5c2cacfa48aa90139d36377317f48cbd1851f993789655/nvshmem.tar.gz",
 )
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
@@ -358,18 +393,21 @@ archive_override(
 
 http_archive(
     name = "clang-linux-x86_64",
+    build_file = "//bazel/public-patches:clang.BUILD",  # TODO: Delete next bump
     sha256 = "4ec4349717c3e6c7ffa0777b6f7e8987af039e05f0a32af5316c3dd730496651",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-x86_64/20.1.8/4ec4349717c3e6c7ffa0777b6f7e8987af039e05f0a32af5316c3dd730496651/llvm-linux-x86_64.tar.xz",
 )
 
 http_archive(
     name = "clang-linux-aarch64",
+    build_file = "//bazel/public-patches:clang.BUILD",  # TODO: Delete next bump
     sha256 = "5bda1756f6cfb7a3472b5a885acb8d747040662305922eb809154481f1222189",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-aarch64/20.1.8/5bda1756f6cfb7a3472b5a885acb8d747040662305922eb809154481f1222189/llvm-linux-aarch64.tar.xz",
 )
 
 http_archive(
     name = "clang-macos",
+    build_file = "//bazel/public-patches:clang.BUILD",  # TODO: Delete next bump
     sha256 = "a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/20.1.8/a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8/llvm-macos.tar.xz",
 )

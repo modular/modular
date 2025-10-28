@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_true
+from testing import assert_true, TestSuite
 
 from utils.lock import SpinWaiter
 
@@ -25,4 +25,4 @@ def test_spin_waiter():
 
 
 def main():
-    test_spin_waiter()
+    TestSuite.discover_tests[__functions_in_module()]().run()

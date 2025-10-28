@@ -1,0 +1,78 @@
+load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extension", "modular_py_library", "requirement")
+
+modular_nanobind_extension(
+    name = "_core.bindings",
+    srcs = ["_core.cpp"],
+    module_name = "_core",
+    new_link_root = "../modular/lib",
+    deps = [
+        "//SDK/lib/API/python/max/_core/src:modules",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_generate_stubfiles(
+    name = "_core",
+    additional_update_targets = ["//SDK/lib/API/python/max/_mlir/_mlir_libs:_mlir.sync-stubfiles"],
+    diff_test_failure_message = """
+A stubfile is out of sync with its generated counterpart.
+If you modified just a .pyi file, you need to modify the corresponding .cpp file instead.
+When you modify a .cpp file in the _core/src directory, you can run
+'./utils/sync-stubfiles.py' and commit the results.
+""",
+    extension = ":_core.bindings",
+    full_name = "max._core",
+    header = """
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+# GENERATED FILE, DO NOT EDIT MANUALLY!
+# ===----------------------------------------------------------------------=== #
+""",
+    imports = [".."],
+    include_private = True,
+    pattern_file = ":patterns.nb",
+    pyi_srcs = glob(["**/*.pyi"]),
+    deps = [
+        "//SDK/lib/API/python/max/_core_types",
+        "//SDK/lib/API/python/max/mlir",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "max",
+    srcs = [],
+    imports = [".."],
+    deps = [
+        ":_core",
+        "//SDK/lib/API/python/max/_core_mojo",
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/entrypoints:gpu-query",
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        "//SDK/lib/API/python/max/entrypoints:replay_recording",
+        "//SDK/lib/API/python/max/experimental",
+        "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/interfaces",
+        "//SDK/lib/API/python/max/mlir",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/profiler",
+        "//SDK/lib/API/python/max/serve",
+        "//SDK/lib/API/python/max/support",
+        "//SDK/lib/API/python/max/torch",
+    ],
+)

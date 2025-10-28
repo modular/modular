@@ -18,14 +18,15 @@ import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass
 
-from max.interfaces import RequestID, TextGenerationInputs
+from max.interfaces import (
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+)
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core.context import TextContext
-from max.pipelines.lib import (
-    LoRAManager,
-    PipelineConfig,
-    TextGenerationPipelineType,
-)
+from max.pipelines.lib import LoRAManager, PipelineConfig
 from max.profiler import traced
 from max.serve.telemetry.metrics import METRICS
 
@@ -113,7 +114,9 @@ class TextBatchConstructor:
     def __init__(
         self,
         scheduler_config: TokenGenerationSchedulerConfig,
-        pipeline: TextGenerationPipelineType[TextContext],
+        pipeline: Pipeline[
+            TextGenerationInputs[TextContext], TextGenerationOutput
+        ],
         paged_cache: PagedKVCacheManager | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
@@ -357,6 +360,11 @@ class TextBatchConstructor:
             for _, ctx in self.tg_reqs.items():
                 if self._lora_manager.is_lora(ctx.model_name):
                     active_loras.add(ctx.model_name)
+                    # Refresh LRU position for TG LoRAs to protect them from eviction.
+                    # This ensures they are marked as most-recently-used before we
+                    # activate any new CE LoRAs.
+                    if self._lora_manager.is_active_lora(ctx.model_name):
+                        self._lora_manager.activate_adapter(ctx.model_name)
 
             deferred_lora_requests = {}
 

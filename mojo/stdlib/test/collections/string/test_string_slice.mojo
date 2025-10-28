@@ -959,16 +959,12 @@ def test_chars_iter():
 
 def test_string_slice_from_pointer():
     var a = StringSlice("AAA")
-    var b = StringSlice[StaticConstantOrigin](
-        unsafe_from_utf8_ptr=a.unsafe_ptr()
-    )
+    var b = StaticString(unsafe_from_utf8_ptr=a.unsafe_ptr())
     assert_equal(3, len(a))
     assert_equal(3, len(b))
     var c = "ABCD"
-    var d = StringSlice[__origin_of(c)](
-        unsafe_from_utf8_ptr=c.unsafe_cstr_ptr()
-    )
-    var e = StringSlice[__origin_of(c)](unsafe_from_utf8_ptr=c.unsafe_ptr())
+    var d = StringSlice(unsafe_from_utf8_ptr=c.unsafe_cstr_ptr())
+    var e = StringSlice(unsafe_from_utf8_ptr=c.unsafe_ptr())
     assert_equal(4, len(c))
     assert_equal(4, len(d))
     assert_equal(4, len(e))
@@ -1045,50 +1041,11 @@ def test_merge():
 
     fn cond(
         pred: Bool, a: StringSlice, b: StringSlice
-    ) -> StringSlice[__origin_of(a.origin, b.origin)]:
+    ) -> StringSlice[origin_of(a.origin, b.origin)]:
         return a if pred else b
 
     _ = cond(True, a, b)
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_string_slice_layout]()
-    suite.test[test_constructors]()
-    suite.test[test_string_literal_byte_span]()
-    suite.test[test_string_byte_span]()
-    suite.test[test_heap_string_from_string_slice]()
-    suite.test[test_slice_len]()
-    suite.test[test_slice_char_length]()
-    suite.test[test_slice_eq]()
-    suite.test[test_slice_bool]()
-    suite.test[test_slice_repr]()
-    suite.test[test_find]()
-    suite.test[test_find_compile_time]()
-    suite.test[test_is_codepoint_boundary]()
-    suite.test[test_comparison_operators]()
-    suite.test[test_split]()
-    suite.test[test_splitlines]()
-    suite.test[test_rstrip]()
-    suite.test[test_lstrip]()
-    suite.test[test_strip]()
-    suite.test[test_startswith]()
-    suite.test[test_endswith]()
-    suite.test[test_isupper]()
-    suite.test[test_islower]()
-    suite.test[test_lower]()
-    suite.test[test_upper]()
-    suite.test[test_is_ascii_digit]()
-    suite.test[test_is_ascii_printable]()
-    suite.test[test_rjust]()
-    suite.test[test_ljust]()
-    suite.test[test_center]()
-    suite.test[test_count]()
-    suite.test[test_chars_iter]()
-    suite.test[test_string_slice_from_pointer]()
-    suite.test[test_replace]()
-    suite.test[test_join]()
-    suite.test[test_string_slice_intern]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

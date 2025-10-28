@@ -132,7 +132,7 @@ struct String(
     """The underlying storage for the string data."""
     var _len_or_data: Int
     """The number of bytes in the string data."""
-    var _capacity_or_data: UInt
+    var _capacity_or_data: Int
     """The capacity and bit flags for this String."""
 
     # Useful string aliases.
@@ -151,20 +151,20 @@ struct String(
     # This is the number of bytes that can be stored inline in the string value.
     # 'String' is 3 words in size and we use the top byte of the capacity field
     # to store flags.
-    alias INLINE_CAPACITY: UInt = UInt(Int.BITWIDTH // 8 * 3 - 1)
+    alias INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
-    alias FLAG_HAS_NUL_TERMINATOR: UInt = UInt(1) << UInt(UInt.BITWIDTH - 3)
+    alias FLAG_HAS_NUL_TERMINATOR = 1 << (Int.BITWIDTH - 3)
     # When FLAG_IS_REF_COUNTED is set, the string is pointing to a mutable buffer
     # that may have other references to it.
-    alias FLAG_IS_REF_COUNTED: UInt = UInt(1) << UInt(UInt.BITWIDTH - 2)
+    alias FLAG_IS_REF_COUNTED = 1 << (Int.BITWIDTH - 2)
     # When FLAG_IS_INLINE is set, the string is inline or "Short String
     # Optimized" (SSO). The first 23 bytes of the fields are treated as UTF-8
     # data
-    alias FLAG_IS_INLINE: UInt = UInt(1) << UInt(UInt.BITWIDTH - 1)
+    alias FLAG_IS_INLINE = 1 << (Int.BITWIDTH - 1)
     # gives us 5 bits for the length.
-    alias INLINE_LENGTH_START = UInt(Int.BITWIDTH - 8)
-    alias INLINE_LENGTH_MASK = UInt(0b1_1111 << Self.INLINE_LENGTH_START)
+    alias INLINE_LENGTH_START = Int.BITWIDTH - 8
+    alias INLINE_LENGTH_MASK = 0b1_1111 << Self.INLINE_LENGTH_START
     # This is the size to offset the pointer by, to get access to the
     # atomic reference count prepended to the UTF-8 data.
     alias REF_COUNT_SIZE = size_of[Atomic[DType.int]]()
@@ -197,7 +197,7 @@ struct String(
                 __get_mvalue_as_litref(self)
             )
         else:
-            self._capacity_or_data = UInt(capacity + 7) >> 3
+            self._capacity_or_data = (capacity + 7) >> 3
             self._ptr_or_data = Self._alloc(self._capacity_or_data << 3)
             self._len_or_data = 0
             self._set_ref_counted()
@@ -215,7 +215,7 @@ struct String(
         # Safety: This should be safe since we set `capacity_or_data` to 0.
         # Meaning any mutation will cause us to either reallocate or inline
         # the string.
-        self._ptr_or_data = data._slice._data.origin_cast[True]()
+        self._ptr_or_data = data._slice._data.unsafe_mut_cast[True]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = 0
@@ -246,7 +246,7 @@ struct String(
             bytes: The bytes to copy.
         """
         var length = len(bytes)
-        self = Self(unsafe_uninit_length=UInt(length))
+        self = Self(unsafe_uninit_length=length)
         memcpy(dest=self.unsafe_ptr_mut(), src=bytes.unsafe_ptr(), count=length)
 
     fn __init__[T: Stringable](out self, value: T):
@@ -489,7 +489,7 @@ struct String(
         if total_bytes.size <= Self.INLINE_CAPACITY:
             _write(self)
         else:
-            self.reserve(UInt(total_bytes.size))
+            self.reserve(total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
             _write(buffer)
             buffer.flush()
@@ -497,8 +497,11 @@ struct String(
     fn write[T: Writable](mut self, value: T):
         """Write a single Writable argument to the provided Writer.
 
+        Parameters:
+            T: The type of the value to write, which must implement `Writable`.
+
         Args:
-            value: The Writable argument to write.
+            value: The `Writable` argument to write.
         """
         value.write_to(self)
 
@@ -506,15 +509,21 @@ struct String(
     fn write[T: Writable](value: T) -> Self:
         """Write a single Writable argument to the provided Writer.
 
+        Parameters:
+            T: The type of the value to write, which must implement `Writable`.
+
         Args:
-            value: The Writable argument to write.
+            value: The `Writable` argument to write.
+
+        Returns:
+            A new `String` containing the written value.
         """
         var result = String()
         value.write_to(result)
         return result^
 
     @always_inline("nodebug")
-    fn __init__(out self, *, unsafe_uninit_length: UInt):
+    fn __init__(out self, *, unsafe_uninit_length: Int):
         """Construct a String with the specified length, with uninitialized
         memory. This is unsafe, as it relies on the caller initializing the
         elements with unsafe operations, not assigning over the uninitialized
@@ -523,8 +532,8 @@ struct String(
         Args:
             unsafe_uninit_length: The number of bytes to allocate.
         """
-        self = Self(capacity=Int(unsafe_uninit_length))
-        self.set_byte_length(Int(unsafe_uninit_length))
+        self = Self(capacity=unsafe_uninit_length)
+        self.set_byte_length(unsafe_uninit_length)
 
     fn __init__(
         out self,
@@ -593,12 +602,17 @@ struct String(
     # stored in the capacity field.
 
     @always_inline("nodebug")
-    fn capacity(self) -> UInt:
+    fn capacity(self) -> Int:
+        """Get the current capacity of the `String`'s internal buffer.
+
+        Returns:
+            The number of bytes that can be stored before reallocation is needed.
+        """
         # Max inline capacity before reallocation.
         if self._is_inline():
             return Self.INLINE_CAPACITY
         if not self._is_ref_counted():
-            return UInt(self._len_or_data)
+            return self._len_or_data
         return self._capacity_or_data << 3
 
     @always_inline("nodebug")
@@ -670,9 +684,9 @@ struct String(
                 ptr.free()
 
     @staticmethod
-    fn _alloc(capacity: UInt) -> UnsafePointer[Byte]:
+    fn _alloc(capacity: Int) -> UnsafePointer[Byte]:
         """Allocate space for a new out-of-line string buffer."""
-        var ptr = UnsafePointer[Byte].alloc(Int(capacity) + Self.REF_COUNT_SIZE)
+        var ptr = UnsafePointer[Byte].alloc(capacity + Self.REF_COUNT_SIZE)
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(
@@ -702,7 +716,7 @@ struct String(
 
     fn __getitem__[
         I: Indexer, //
-    ](self, idx: I) -> StringSlice[__origin_of(self)]:
+    ](self, idx: I) -> StringSlice[origin_of(self)]:
         """Gets the character at the specified position.
 
         Parameters:
@@ -738,7 +752,7 @@ struct String(
             return String(
                 StringSlice(
                     ptr=self.unsafe_ptr() + start,
-                    length=UInt(len(r)),
+                    length=len(r),
                 )
             )
 
@@ -848,7 +862,7 @@ struct String(
         var lhs_len = len(lhs)
         var rhs_len = len(rhs)
 
-        var result = String(unsafe_uninit_length=UInt(lhs_len + rhs_len))
+        var result = String(unsafe_uninit_length=lhs_len + rhs_len)
         var result_ptr = result.unsafe_ptr_mut()
         memcpy(dest=result_ptr, src=lhs.unsafe_ptr(), count=lhs_len)
         memcpy(dest=result_ptr + lhs_len, src=rhs.unsafe_ptr(), count=rhs_len)
@@ -873,9 +887,9 @@ struct String(
         """
         self._clear_nul_terminator()
         var len = self.byte_length()
-        self.reserve(UInt(len) + 1)
+        self.reserve(len + 1)
         self.unsafe_ptr_mut()[len] = byte
-        self.set_byte_length(Int(len + 1))
+        self.set_byte_length(len + 1)
 
     fn __radd__(self, other: StringSlice[mut=False]) -> String:
         """Creates a string by prepending another string slice to the start.
@@ -895,7 +909,7 @@ struct String(
         var old_len = self.byte_length()
         var new_len = old_len + other_len
         memcpy(
-            dest=self.unsafe_ptr_mut(UInt(new_len)) + old_len,
+            dest=self.unsafe_ptr_mut(new_len) + old_len,
             src=other.unsafe_ptr(),
             count=other_len,
         )
@@ -911,7 +925,7 @@ struct String(
         self._iadd(other.as_bytes())
 
     @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
-    fn __iter__(self) -> CodepointSliceIter[__origin_of(self)]:
+    fn __iter__(self) -> CodepointSliceIter[origin_of(self)]:
         """Iterate over the string, returning immutable references.
 
         Returns:
@@ -919,13 +933,13 @@ struct String(
         """
         return self.codepoint_slices()
 
-    fn __reversed__(self) -> CodepointSliceIter[__origin_of(self), False]:
+    fn __reversed__(self) -> CodepointSliceIter[origin_of(self), False]:
         """Iterate backwards over the string, returning immutable references.
 
         Returns:
             A reversed iterator of references to the string elements.
         """
-        return CodepointSliceIter[__origin_of(self), forward=False](self)
+        return CodepointSliceIter[origin_of(self), forward=False](self)
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
@@ -1013,6 +1027,9 @@ struct String(
 
         Returns:
             A PythonObject representing the value.
+
+        Raises:
+            If the operation fails.
         """
         return PythonObject(self)
 
@@ -1042,7 +1059,7 @@ struct String(
             writer: The object to write to.
         """
         writer.write_bytes(
-            Span(ptr=self.unsafe_ptr(), length=UInt(self.byte_length()))
+            Span(ptr=self.unsafe_ptr(), length=self.byte_length())
         )
 
     fn join[*Ts: Writable](self, *elems: *Ts) -> String:
@@ -1058,7 +1075,7 @@ struct String(
             The joined string.
         """
         var sep = rebind[StaticString](  # FIXME(#4414): this should not be so
-            StringSlice(ptr=self.unsafe_ptr(), length=UInt(self.byte_length()))
+            StringSlice(ptr=self.unsafe_ptr(), length=self.byte_length())
         )
         return String(elems, sep=sep)
 
@@ -1091,7 +1108,7 @@ struct String(
         """
         return self.as_string_slice().join(elems)
 
-    fn codepoints(self) -> CodepointsIter[__origin_of(self)]:
+    fn codepoints(self) -> CodepointsIter[origin_of(self)]:
         """Returns an iterator over the `Codepoint`s encoded in this string slice.
 
         Returns:
@@ -1132,7 +1149,7 @@ struct String(
         """
         return self.as_string_slice().codepoints()
 
-    fn codepoint_slices(self) -> CodepointSliceIter[__origin_of(self)]:
+    fn codepoint_slices(self) -> CodepointSliceIter[origin_of(self)]:
         """Returns an iterator over single-character slices of this string.
 
         Each returned slice points to a single Unicode codepoint encoded in the
@@ -1161,7 +1178,7 @@ struct String(
     @always_inline("nodebug")
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, mut=False, origin = __origin_of(self)]:
+    ) -> UnsafePointer[Byte, mut=False, origin = origin_of(self)]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:
@@ -1173,14 +1190,17 @@ struct String(
             return (
                 UnsafePointer(to=self)
                 .bitcast[Byte]()
-                .origin_cast[False, __origin_of(self)]()
+                .as_immutable()
+                .unsafe_origin_cast[origin_of(self)]()
             )
         else:
-            return self._ptr_or_data.origin_cast[False, __origin_of(self)]()
+            return self._ptr_or_data.as_immutable().unsafe_origin_cast[
+                origin_of(self)
+            ]()
 
     fn unsafe_ptr_mut(
-        mut self, var capacity: UInt = 0
-    ) -> UnsafePointer[Byte, mut=True, origin = __origin_of(self)]:
+        mut self, var capacity: Int = 0
+    ) -> UnsafePointer[Byte, mut=True, origin = origin_of(self)]:
         """Retrieves a mutable pointer to the unique underlying memory. Passing
         a larger capacity will reallocate the string to the new capacity if
         larger than the existing capacity, allowing you to write more data.
@@ -1199,11 +1219,11 @@ struct String(
         elif not self._is_unique() or new_cap > self.capacity():
             self._realloc_mutable(new_cap)
 
-        return self.unsafe_ptr().origin_cast[True, __origin_of(self)]()
+        return self.unsafe_ptr().unsafe_mut_cast[True]()
 
     fn unsafe_cstr_ptr(
         mut self,
-    ) -> UnsafePointer[c_char, mut=False, origin = __origin_of(self)]:
+    ) -> UnsafePointer[c_char, mut=False, origin = origin_of(self)]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be null, or NUL terminated.
@@ -1213,7 +1233,7 @@ struct String(
         """
         # Add a nul terminator, making the string mutable if not already
         if not self._has_nul_terminator():
-            var ptr = self.unsafe_ptr_mut(capacity=UInt(len(self)) + 1)
+            var ptr = self.unsafe_ptr_mut(capacity=len(self) + 1)
             var len = self.byte_length()
             ptr[len] = 0
             self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
@@ -1221,18 +1241,18 @@ struct String(
 
         return self.unsafe_ptr().bitcast[c_char]()
 
-    fn as_bytes(self) -> Span[Byte, __origin_of(self)]:
+    fn as_bytes(self) -> Span[Byte, origin_of(self)]:
         """Returns a contiguous slice of the bytes owned by this string.
 
         Returns:
             A contiguous slice pointing to the bytes owned by this string.
         """
 
-        return Span[Byte, __origin_of(self)](
-            ptr=self.unsafe_ptr(), length=UInt(self.byte_length())
+        return Span[Byte, origin_of(self)](
+            ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
-    fn as_bytes_mut(mut self) -> Span[Byte, __origin_of(self)]:
+    fn as_bytes_mut(mut self) -> Span[Byte, origin_of(self)]:
         """Returns a mutable contiguous slice of the bytes owned by this string.
         This name has a _mut suffix so the as_bytes() method doesn't have to
         guarantee mutability.
@@ -1240,11 +1260,11 @@ struct String(
         Returns:
             A contiguous slice pointing to the bytes owned by this string.
         """
-        return Span[Byte, __origin_of(self)](
-            ptr=self.unsafe_ptr_mut(), length=UInt(self.byte_length())
+        return Span[Byte, origin_of(self)](
+            ptr=self.unsafe_ptr_mut(), length=self.byte_length()
         )
 
-    fn as_string_slice(self) -> StringSlice[__origin_of(self)]:
+    fn as_string_slice(self) -> StringSlice[origin_of(self)]:
         """Returns a string slice of the data owned by this string.
 
         Returns:
@@ -1255,7 +1275,7 @@ struct String(
         #   guaranteed to be valid.
         return StringSlice(unsafe_from_utf8=self.as_bytes())
 
-    fn as_string_slice_mut(mut self) -> StringSlice[__origin_of(self)]:
+    fn as_string_slice_mut(mut self) -> StringSlice[origin_of(self)]:
         """Returns a mutable string slice of the data owned by this string.
 
         Returns:
@@ -1278,10 +1298,17 @@ struct String(
             return self._len_or_data
 
     fn set_byte_length(mut self, new_len: Int):
+        """Set the byte length of the `String`.
+
+        This is an internal helper method that updates the length field.
+
+        Args:
+            new_len: The new byte length to set.
+        """
         if self._is_inline():
             self._capacity_or_data = (
                 self._capacity_or_data & ~Self.INLINE_LENGTH_MASK
-            ) | UInt(new_len << Self.INLINE_LENGTH_START)
+            ) | (new_len << Self.INLINE_LENGTH_START)
         else:
             self._len_or_data = new_len
 
@@ -1353,7 +1380,7 @@ struct String(
         return self.as_string_slice().isspace()
 
     @always_inline
-    fn split(self, sep: StringSlice) -> List[StringSlice[__origin_of(self)]]:
+    fn split(self, sep: StringSlice) -> List[StringSlice[origin_of(self)]]:
         """Split the string by a separator.
 
         Args:
@@ -1380,7 +1407,7 @@ struct String(
     @always_inline
     fn split(
         self, sep: StringSlice, maxsplit: Int
-    ) -> List[StringSlice[__origin_of(self)]]:
+    ) -> List[StringSlice[origin_of(self)]]:
         """Split the string by a separator.
 
         Args:
@@ -1403,9 +1430,7 @@ struct String(
         return self.as_string_slice().split(sep, maxsplit=maxsplit)
 
     @always_inline
-    fn split(
-        self, sep: NoneType = None
-    ) -> List[StringSlice[__origin_of(self)]]:
+    fn split(self, sep: NoneType = None) -> List[StringSlice[origin_of(self)]]:
         """Split the string by every Whitespace separator.
 
         Args:
@@ -1434,7 +1459,7 @@ struct String(
     @always_inline
     fn split(
         self, sep: NoneType = None, *, maxsplit: Int
-    ) -> List[StringSlice[__origin_of(self)]]:
+    ) -> List[StringSlice[origin_of(self)]]:
         """Split the string by every Whitespace separator.
 
         Args:
@@ -1454,7 +1479,7 @@ struct String(
 
     fn splitlines(
         self, keepends: Bool = False
-    ) -> List[StringSlice[__origin_of(self)]]:
+    ) -> List[StringSlice[origin_of(self)]]:
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
@@ -1481,7 +1506,7 @@ struct String(
         """
         return StringSlice(self).replace(old, new)
 
-    fn strip(self, chars: StringSlice) -> StringSlice[__origin_of(self)]:
+    fn strip(self, chars: StringSlice) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with leading and trailing characters
         removed.
 
@@ -1494,7 +1519,7 @@ struct String(
 
         return self.lstrip(chars).rstrip(chars)
 
-    fn strip(self) -> StringSlice[__origin_of(self)]:
+    fn strip(self) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with leading and trailing whitespaces
         removed. This only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -1504,7 +1529,7 @@ struct String(
         """
         return self.lstrip().rstrip()
 
-    fn rstrip(self, chars: StringSlice) -> StringSlice[__origin_of(self)]:
+    fn rstrip(self, chars: StringSlice) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with trailing characters removed.
 
         Args:
@@ -1516,7 +1541,7 @@ struct String(
 
         return self.as_string_slice().rstrip(chars)
 
-    fn rstrip(self) -> StringSlice[__origin_of(self)]:
+    fn rstrip(self) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with trailing whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -1526,7 +1551,7 @@ struct String(
         """
         return self.as_string_slice().rstrip()
 
-    fn lstrip(self, chars: StringSlice) -> StringSlice[__origin_of(self)]:
+    fn lstrip(self, chars: StringSlice) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with leading characters removed.
 
         Args:
@@ -1538,7 +1563,7 @@ struct String(
 
         return self.as_string_slice().lstrip(chars)
 
-    fn lstrip(self) -> StringSlice[__origin_of(self)]:
+    fn lstrip(self) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with leading whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -1613,7 +1638,7 @@ struct String(
 
     fn removeprefix(
         self, prefix: StringSlice, /
-    ) -> StringSlice[__origin_of(self)]:
+    ) -> StringSlice[origin_of(self)]:
         """Returns a new string with the prefix removed if it was present.
 
         Args:
@@ -1634,7 +1659,7 @@ struct String(
 
     fn removesuffix(
         self, suffix: StringSlice, /
-    ) -> StringSlice[__origin_of(self)]:
+    ) -> StringSlice[origin_of(self)]:
         """Returns a new string with the suffix removed if it was present.
 
         Args:
@@ -1659,6 +1684,9 @@ struct String(
 
         Returns:
             An integer value that represents the string, or otherwise raises.
+
+        Raises:
+            If the operation fails.
         """
         return atol(self)
 
@@ -1668,6 +1696,9 @@ struct String(
 
         Returns:
             A float value that represents the string, or otherwise raises.
+
+        Raises:
+            If the operation fails.
         """
         return atof(self)
 
@@ -1711,6 +1742,9 @@ struct String(
         # Automatic indexing:
         print("{} {}".format(True, "hello world")) # True hello world
         ```
+
+        Raises:
+            If the operation fails.
         """
         return _FormatCurlyEntry.format(self, args)
 
@@ -1807,7 +1841,7 @@ struct String(
         var old_len = self.byte_length()
         if length > old_len:
             memset(
-                self.unsafe_ptr_mut(UInt(length)) + old_len,
+                self.unsafe_ptr_mut(length) + old_len,
                 fill_byte,
                 length - old_len,
             )
@@ -1825,11 +1859,11 @@ struct String(
             unsafe_uninit_length: The new size.
         """
         self._clear_nul_terminator()
-        if UInt(unsafe_uninit_length) > self.capacity():
-            self.reserve(UInt(unsafe_uninit_length))
+        if unsafe_uninit_length > self.capacity():
+            self.reserve(unsafe_uninit_length)
         self.set_byte_length(unsafe_uninit_length)
 
-    fn reserve(mut self, new_capacity: UInt):
+    fn reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
 
         Args:
@@ -1857,7 +1891,7 @@ struct String(
     # This is the out-of-line implementation of reserve called when we need
     # to grow the capacity of the string. Make sure our capacity at least
     # doubles to avoid O(n^2) behavior, and make use of extra space if it exists.
-    fn _realloc_mutable(mut self, capacity: UInt):
+    fn _realloc_mutable(mut self, capacity: Int):
         # Get these fields before we change _capacity_or_data
         var byte_len = self.byte_length()
         var old_ptr = self.unsafe_ptr()
@@ -2151,7 +2185,9 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     return result
 
 
-fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
+fn _trim_and_handle_sign(
+    str_slice: StringSlice, str_len: Int
+) -> Tuple[Int, Bool]:
     """Trims leading whitespace, handles the sign of the number in the string.
 
     Args:
@@ -2174,7 +2210,7 @@ fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
 
 fn _handle_base_prefix(
     pos: Int, str_slice: StringSlice, str_len: Int, base: Int
-) -> (Int, Bool):
+) -> Tuple[Int, Bool]:
     """Adjusts the starting position if a valid base prefix is present.
 
     Handles "0b"/"0B" for base 2, "0o"/"0O" for base 8, and "0x"/"0X" for base
@@ -2267,15 +2303,15 @@ fn atof(str_slice: StringSlice) raises -> Float64:
 
     This function is in the prelude, so you don't need to import it.
 
-    Raises:
-        If the given string cannot be parsed as an floating point value, for
-        example in `atof("hi")`.
-
     Args:
         str_slice: A string to be parsed as a floating point.
 
     Returns:
-        An floating point value that represents the string, or otherwise raises.
+        A floating-point value that represents the string.
+
+    Raises:
+        If the given string cannot be parsed as an floating-point value, for
+        example in `atof("hi")`.
     """
     return _atof(str_slice)
 

@@ -26,9 +26,7 @@ from utils.index import IndexList
 from utils.numerics import isnan
 
 
-fn run_matvec[
-    reduction_method: warp.ReductionMethod
-](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
+fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     print("== run_matvec kernel")
 
     var iterations = 100
@@ -64,12 +62,7 @@ fn run_matvec[
     ctx.enqueue_copy(b_device, b_host)
 
     alias WARPS_PER_BLOCK = 32
-    alias kernel = gemv_kernel[
-        DType.float32,
-        DType.bfloat16,
-        DType.bfloat16,
-        reduction_method=reduction_method,
-    ]
+    alias kernel = gemv_kernel[DType.float32, DType.bfloat16, DType.bfloat16]
 
     @always_inline
     @parameter
@@ -196,9 +189,4 @@ fn run_matvec[
 
 def main():
     with DeviceContext() as ctx:
-        run_matvec[reduction_method = warp.ReductionMethod.WARP](
-            4096, 1, 4096, ctx=ctx
-        )
-        run_matvec[reduction_method = warp.ReductionMethod.TENSOR_CORE](
-            4096, 1, 4096, ctx=ctx
-        )
+        run_matvec(4096, 1, 4096, ctx=ctx)

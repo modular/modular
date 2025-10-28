@@ -62,7 +62,7 @@ class WeightUnpickler(pickle.Unpickler):
 
     def persistent_load(self, pid):  # noqa: ANN001, ANN201
         data = pid[1:]
-        storage_type, key, unused_location, unused_num_elements = data
+        storage_type, key, _unused_location, _unused_num_elements = data
 
         if storage_type is torch.UntypedStorage:
             dtype = torch.uint8

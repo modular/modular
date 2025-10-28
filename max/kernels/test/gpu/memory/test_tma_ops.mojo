@@ -17,7 +17,7 @@ from gpu.host.compile import _compile_code
 from gpu.memory import (
     CacheEviction,
     ReduceOp,
-    _GPUAddressSpace,
+    AddressSpace,
     cp_async_bulk_tensor_global_shared_cta,
     cp_async_bulk_tensor_reduce,
     cp_async_bulk_tensor_shared_cluster_global,
@@ -33,13 +33,9 @@ fn test_async_copy_asm():
     print("== test_async_copy_asm")
 
     fn test_async_copy_kernel(
-        dst_mem: UnsafePointer[
-            Float32, address_space = _GPUAddressSpace.SHARED
-        ],
+        dst_mem: UnsafePointer[Float32, address_space = AddressSpace.SHARED],
         tma_descriptor: OpaquePointer,
-        mem_bar: UnsafePointer[
-            Float32, address_space = _GPUAddressSpace.SHARED
-        ],
+        mem_bar: UnsafePointer[Float32, address_space = AddressSpace.SHARED],
         *coords: Int32,
     ):
         # CHECK: cp.async.bulk.tensor.2d.shared::cluster.global.tile.mbarrier::complete_tx::bytes
@@ -64,9 +60,7 @@ fn test_async_store_asm():
     print("== test_async_store_asm")
 
     fn test_async_store_kernel(
-        src_mem: UnsafePointer[
-            Float32, address_space = _GPUAddressSpace.SHARED
-        ],
+        src_mem: UnsafePointer[Float32, address_space = AddressSpace.SHARED],
         tma_descriptor: OpaquePointer,
         *coords: Int32,
     ):
@@ -100,9 +94,7 @@ fn test_async_bulk_tensor_reduce_asm():
     print("== test_async_bulk_tensor_reduce_asm")
 
     fn test_async_bulk_tensor_reduce_asm(
-        src_mem: UnsafePointer[
-            Float32, address_space = _GPUAddressSpace.SHARED
-        ],
+        src_mem: UnsafePointer[Float32, address_space = AddressSpace.SHARED],
         tma_descriptor: OpaquePointer,
         *coords: Int32,
     ):

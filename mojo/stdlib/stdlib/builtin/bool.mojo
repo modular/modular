@@ -87,13 +87,14 @@ trait ImplicitlyBoolable(Boolable):
     ```
     """
 
+    @always_inline
     fn __as_bool__(self) -> Bool:
         """Get the boolean representation of the value.
 
         Returns:
             The boolean representation of the value.
         """
-        ...
+        return self.__bool__()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -138,6 +139,14 @@ struct Bool(
 
     alias MAX = Bool(True)
     """The maximum value of a Bool."""
+
+    # ===-------------------------------------------------------------------===#
+    # Trivial bits for special functions.
+    # ===-------------------------------------------------------------------===#
+
+    alias __del__is_trivial: Bool = True
+    alias __moveinit__is_trivial: Bool = True
+    alias __copyinit__is_trivial: Bool = True
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -536,6 +545,9 @@ struct Bool(
 
         Returns:
             A PythonObject representing the value.
+
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
         """
         return PythonObject(self)
 

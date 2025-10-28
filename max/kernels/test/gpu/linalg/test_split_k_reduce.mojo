@@ -80,7 +80,7 @@ fn _split_k_reduce_verify[
             var idx = IndexList[2]((i, j))
             var vec = A[idx]
             for k in range(num_partition):
-                vec += B[i, j + k * N]
+                vec += B[i, j + k * UInt(N)]
             A.store(idx, vec)
 
 

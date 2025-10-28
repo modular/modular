@@ -21,7 +21,7 @@ struct Foo[z: Int]:
 
 @fieldwise_init
 struct Bar[x: Int, //, y: Int, *, foo: Foo[x], bar: Foo[y] = Foo[y]()](
-    Intable, ImplicitlyCopyable
+    ImplicitlyCopyable, Intable
 ):
     fn __int__(self) -> Int:
         return self.x + self.y + self.foo.z + self.bar.z
@@ -47,7 +47,7 @@ def test_some_param():
     assert_equal(takes_some_param[Bar[foo = Foo[5](), bar = Foo[7]()]()](), 24)
 
 
-fn takes_multiple_traits(x: Some[Intable & Copyable]) -> __type_of(x):
+fn takes_multiple_traits(x: Some[Intable & Copyable]) -> type_of(x):
     return x.copy()
 
 
@@ -66,11 +66,4 @@ def test_closure():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_some_arg]()
-    suite.test[test_some_param]()
-    suite.test[test_some_return]()
-    suite.test[test_closure]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -16,5 +16,9 @@ from subprocess import run
 from testing import *
 
 
-def main():
+def test_run():
     assert_not_equal(run("ls"), "")
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

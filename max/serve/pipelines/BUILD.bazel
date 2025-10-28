@@ -3,6 +3,7 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 modular_py_library(
     name = "pipelines",
     srcs = glob(["*.py"]),
+    imports = ["../../.."],
     deps = [
         "//SDK/lib/API/python/max/pipelines/core",
         "//SDK/lib/API/python/max/pipelines/lib",
@@ -17,5 +18,6 @@ modular_py_library(
         requirement("uvloop"),
         requirement("psutil"),
         requirement("pyzmq"),
+        requirement("taskgroup"),  # only for python < 3.11
     ],
 )

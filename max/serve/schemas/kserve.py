@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field, RootModel
 
 
@@ -31,8 +33,8 @@ class Parameters(BaseModel):
     pass
 
 
-class TensorData(RootModel[list]):
-    root: list = Field(..., title="tensor_data")
+class TensorData(RootModel[list[Any]]):
+    root: list[Any] = Field(..., title="tensor_data")
 
 
 class RequestOutput(BaseModel):

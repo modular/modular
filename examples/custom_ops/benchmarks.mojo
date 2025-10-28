@@ -30,7 +30,7 @@ from kernels.causal_conv1d import CausalConv1Dcpu, CausalConv1Dgpu
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.tensor_core_mma import TensorCoreMMA
 from kernels.top_k import TopK
-from tensor_internal import (
+from tensor import (
     Input,
     IOSpec,
     ManagedTensorSlice,

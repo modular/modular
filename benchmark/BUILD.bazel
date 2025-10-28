@@ -15,8 +15,8 @@ modular_py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//SDK/lib/API/python/max/benchmark/benchmark_shared",
         "//SDK/lib/API/python/max/diagnostics",
-        "//open-source/max/benchmark/benchmark_shared",
         requirement("aiohttp"),
         requirement("datasets"),
         requirement("huggingface-hub"),
@@ -34,11 +34,11 @@ modular_py_library(
 modular_py_binary(
     name = "benchmark_serving",
     srcs = ["benchmark_serving.py"],
-    imports = ["."],
+    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//SDK/lib/API/python/max/benchmark/benchmark_shared",
         "//SDK/lib/API/python/max/diagnostics",
-        "//open-source/max/benchmark/benchmark_shared",
         requirement("aiohttp"),
         requirement("datasets"),
         requirement("huggingface-hub"),
@@ -58,14 +58,14 @@ modular_py_binary(
         "//KGEN/tools/mojo",
         "//SDK:max",
     ],
-    imports = ["."],
+    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//SDK/lib/API/python/max/benchmark/benchmark_shared",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/entrypoints:pipelines",
         "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/serve",
-        "//open-source/max/benchmark/benchmark_shared",
         requirement("click"),
         requirement("msgspec"),
         requirement("pyarrow"),
@@ -95,9 +95,12 @@ pkg_files(
 
 pkg_files(
     name = "python_files",
-    srcs = glob(["**/*.py"]) + ["//open-source/max/benchmark/benchmark_shared:python_files"],
+    srcs = glob(["**/*.py"]) + ["//SDK/lib/API/python/max/benchmark/benchmark_shared:python_files"],
     prefix = "benchmark",
     strip_prefix = strip_prefix.from_pkg(""),
+    # Symlink shenanigans.
+    # This is used in open-source, but not used in SDK, so the linter gets confused.
+    tags = ["maybe-unused"],
     visibility = ["//visibility:public"],
 )
 

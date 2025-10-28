@@ -138,15 +138,4 @@ def test_assume():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_intrinsic_comp_eval]()
-    suite.test[test_compressed_store]()
-    suite.test[test_masked_load]()
-    suite.test[test_masked_store]()
-    suite.test[test_strided_load]()
-    suite.test[test_strided_store]()
-    suite.test[test_likely_unlikely]()
-    suite.test[test_assume]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

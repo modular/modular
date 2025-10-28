@@ -39,6 +39,7 @@ from max.graph import (
     TensorValue,
     Value,
 )
+from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .ep_config import NUM_GROUPS, EPConfig
 from .ep_kernels import (
@@ -46,6 +47,7 @@ from .ep_kernels import (
     call_ep_combine_cb,
     call_ep_dispatch,
     call_ep_dispatch_cb,
+    call_ep_dispatch_cb_fp8,
     call_ep_init,
 )
 
@@ -131,6 +133,50 @@ class EPBatchManager:
             )
         return self._atomic_counters
 
+    def _atomic_counters_input_types(self) -> list[BufferType]:
+        """Generate input types for atomic counter buffers.
+
+        Returns:
+            list[BufferType]: List of buffer types for atomic counters.
+        """
+        return [
+            BufferType(
+                DType.int32,
+                [2 * self.config.n_experts],
+                device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
+            )
+            for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
+        ]
+
+    def _dev_ptrs_input_types(self) -> list[TensorType]:
+        """Generate input types for device pointer tensors.
+
+        Returns:
+            list[TensorType]: List of tensor types for device pointers.
+        """
+        return (
+            [
+                TensorType(
+                    DType.uint64,
+                    [self.config.n_gpus_per_node],
+                    device=DeviceRef.CPU(),
+                ),
+            ]
+            * 3  # 3 buffer types: send, recv, recv_count
+            * NUM_GROUPS  # For double buffering
+        )
+
+    def input_types(self) -> list[TensorType | BufferType]:
+        """Get the input types for the MoE graph.
+
+        Returns:
+            list[TensorType | BufferType]: List of input types for atomic
+                                          counters and device pointers.
+        """
+        return (
+            self._atomic_counters_input_types() + self._dev_ptrs_input_types()
+        )
+
     def fetch_buffers(self, _input_vals: Iterable[Value[Any]]) -> None:
         """Extract and organize communication buffers from graph input values.
 
@@ -200,9 +246,7 @@ class EPBatchManager:
             self.config,
         )
 
-    def ep_dispatch_cb(
-        self, device_id: int
-    ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
+    def ep_dispatch_cb(self, device_id: int) -> tuple[TensorValue, ...]:
         """Complete Expert Parallelism token dispatch phase.
 
         This function launches the EP dispatch callback kernel that waits for
@@ -216,6 +260,9 @@ class EPBatchManager:
             A tuple containing:
             - output_tokens: Aggregated tokens ready for grouped matmul computation.
                 Shape: (max_recv_tokens, hidden_size).
+            - output_scales: Aggregated scales ready for grouped matmul computation.
+                Only returned when we use FP8 quantization.
+                Shape: (hidden_size // block_size, max_recv_tokens).
             - expert_start_indices: Row offsets for grouped matmul computation.
                 Shape: (n_local_experts + 1,).
             - expert_ids: Local expert IDs for the grouped computation.
@@ -225,20 +272,36 @@ class EPBatchManager:
         """
         DISPATCH_GROUP = 0
 
-        # Collect results from all devices
-        results = call_ep_dispatch_cb(
-            self.atomic_counters[DISPATCH_GROUP][device_id],
-            self.recv_buf_ptrs[DISPATCH_GROUP],
-            self.recv_count_ptrs[DISPATCH_GROUP],
-            self.config,
-        )
+        if self.config.dispatch_fp8_config is not None:
+            results = call_ep_dispatch_cb_fp8(
+                self.atomic_counters[DISPATCH_GROUP][device_id],
+                self.recv_buf_ptrs[DISPATCH_GROUP],
+                self.recv_count_ptrs[DISPATCH_GROUP],
+                self.config,
+            )
 
-        # The first four elements are the input for the grouped matmul
-        # operation. The last element is the src_info, we need to store it for
-        # the combine phase.
-        self._src_info[device_id] = results[4]
+            # The first five elements are the input for the grouped matmul
+            # operation. The last element is the src_info, we need to store it for
+            # the combine phase.
+            self._src_info[device_id] = results[5]
 
-        return results[:4]
+            return results[:5]
+
+        else:
+            # Collect results from all devices
+            results = call_ep_dispatch_cb(
+                self.atomic_counters[DISPATCH_GROUP][device_id],
+                self.recv_buf_ptrs[DISPATCH_GROUP],
+                self.recv_count_ptrs[DISPATCH_GROUP],
+                self.config,
+            )
+
+            # The first four elements are the input for the grouped matmul
+            # operation. The last element is the src_info, we need to store it for
+            # the combine phase.
+            self._src_info[device_id] = results[4]
+
+            return results[:4]
 
     def ep_combine(self, input_tokens: TensorValue, device_id: int) -> None:
         """Initiate Expert Parallelism combine phase.
@@ -373,39 +436,6 @@ class EPCommInitializer:
             for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
         ]
 
-    def _atomic_counters_input_types(self) -> list[BufferType]:
-        """Generate input types for atomic counter buffers.
-
-        Returns:
-            list[BufferType]: List of buffer types for atomic counters.
-        """
-        return [
-            BufferType(
-                DType.int32,
-                [self.atomic_counter_size],
-                device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
-            )
-            for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
-        ]
-
-    def _dev_ptrs_input_types(self) -> list[TensorType]:
-        """Generate input types for device pointer tensors.
-
-        Returns:
-            list[TensorType]: List of tensor types for device pointers.
-        """
-        return (
-            [
-                TensorType(
-                    DType.uint64,
-                    [self.config.n_gpus_per_node],
-                    device=DeviceRef.CPU(),
-                ),
-            ]
-            * 3  # 3 buffer types: send, recv, recv_count
-            * NUM_GROUPS  # For double buffering
-        )
-
     def _build_ep_init_graph(self) -> Graph:
         """Build the computation graph for EP initialization.
 
@@ -418,7 +448,14 @@ class EPCommInitializer:
         """
         with Graph(
             "ep_init",
-            input_types=self._atomic_counters_input_types(),
+            input_types=[
+                BufferType(
+                    DType.int32,
+                    [2 * self.config.n_experts],
+                    device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
+                )
+                for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
+            ],
         ) as g:
             dev_ptrs_list: list[TensorValue] = []
 
@@ -434,7 +471,9 @@ class EPCommInitializer:
                 dev_ptrs = call_ep_init(
                     atomic_counter_group_0, atomic_counter_group_1, self.config
                 )
-                dev_ptrs_list.append(dev_ptrs)
+                # Device pointers cannot be output as CPU tensors since the InferenceSession
+                # may not be initialized with CPU; moved to the device as a workaround.
+                dev_ptrs_list.append(dev_ptrs.to(atomic_counter_group_0.device))
 
             g.output(*dev_ptrs_list)
         return g
@@ -447,7 +486,7 @@ class EPCommInitializer:
         """
         logger.info("Initializing SHMEM context and allocating SHMEM memory...")
         logger.info(
-            f"Estimated EP memory usage: {self._estimate_ep_memory_usage() / 1024 / 1024 / 1024:.2f} GB"
+            f"Estimated EP memory usage per device: {to_human_readable_bytes(self._estimate_ep_memory_usage())}"
         )
 
         # Build and compile the initialization graph
@@ -459,7 +498,7 @@ class EPCommInitializer:
         all_outputs_np: list[npt.NDArray[Any]] = []
         for dev_ptr in all_outputs:
             assert isinstance(dev_ptr, Tensor)
-            all_outputs_np.append(np.from_dlpack(dev_ptr))
+            all_outputs_np.append(dev_ptr.to_numpy())
 
         # Process the output device pointers:
         # Each device returns a tensor of shape (NUM_GROUPS, 3) where:
@@ -493,17 +532,6 @@ class EPCommInitializer:
         self.recv_count_ptrs = [
             Tensor.from_numpy(dev_ptr) for dev_ptr in recv_count_ptrs_np
         ]
-
-    def input_types(self) -> list[TensorType | BufferType]:
-        """Get the input types for the MoE graph.
-
-        Returns:
-            list[TensorType | BufferType]: List of input types for atomic
-                                          counters and device pointers.
-        """
-        return (
-            self._atomic_counters_input_types() + self._dev_ptrs_input_types()
-        )
 
     def model_inputs(self) -> list[Tensor]:
         """Get the model inputs for the MoE model.

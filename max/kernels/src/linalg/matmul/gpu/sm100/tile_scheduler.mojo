@@ -22,8 +22,8 @@ from gpu.cluster import (
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )
-from gpu.id import block_id_in_cluster, block_idx, lane_id, warp_id
-from gpu.memory import AddressSpace, fence_async_view_proxy
+from gpu import block_id_in_cluster, block_idx, lane_id, warp_id
+from gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 
 from utils.fast_div import FastDiv
@@ -212,10 +212,12 @@ struct TileScheduler[
             new_n_global = new_normalized_n
 
         return WorkInfo(
-            m=Int(new_m_global) * Self.cluster_shape[0] + block_id_in_cluster.x,
-            n=Int(new_n_global) * Self.cluster_shape[1] + block_id_in_cluster.y,
+            m=Int(new_m_global) * Self.cluster_shape[0]
+            + Int(block_id_in_cluster.x),
+            n=Int(new_n_global) * Self.cluster_shape[1]
+            + Int(block_id_in_cluster.y),
             k_start=Int(normalized_k) * Self.cluster_shape[2]
-            + block_id_in_cluster.z,
+            + Int(block_id_in_cluster.z),
             is_valid_tile=work_info.is_valid_tile,
         )
 

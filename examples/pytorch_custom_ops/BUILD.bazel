@@ -59,10 +59,11 @@ custom_op_example_py_binary(
 mojo_library(
     name = "operations",
     srcs = [":kernel_sources"],
+    validate_missing_docs = False,
     deps = [
         "@mojo//:compiler",
         "@mojo//:layout",
         "@mojo//:stdlib",
-        "@mojo//:tensor_internal",
+        "@mojo//:tensor",
     ],
 )

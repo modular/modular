@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import llguidance
 import msgspec
@@ -25,23 +25,16 @@ import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
     GenerationStatus,
-    InputContext,
+    ImageMetadata,
     LogProbabilities,
     RequestID,
     SamplingParams,
+    TextGenerationContext,
     TextGenerationOutput,
+    VLMTextGenerationContext,
 )
 
 CHUNK_SIZE = 128
-
-
-def _check_text_context_implements_input_context(
-    context: TextContext,
-) -> InputContext:
-    # Not used at run-time; here only for the type checker to check that
-    # TextContext properly implements InputContext.  If you get an "incompatible
-    # type" error here, you introduced an incompatibility!
-    return context
 
 
 class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
@@ -250,6 +243,40 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         """
         return self._active_idx - self._start_idx
 
+    def to_generation_output(self) -> TextGenerationOutput:
+        """Get completion tokens that are ready to be returned to the user.
+
+        This method retrieves tokens that have been generated but not yet
+        delivered to the user, along with their associated log probability data.
+
+        Returns:
+            TextGenerationOutput: The completion tokens and their associated
+            log probabilities, if available.
+        """
+        tokens: list[int] = []
+        log_probabilities: list[LogProbabilities] | None = None
+        for token_idx in range(
+            self._completion_start_idx, self._completion_end_idx
+        ):
+            tokens.append(int(self.tokens[token_idx]))
+            if token_idx in self._log_probabilities_data:
+                if log_probabilities is None:
+                    log_probabilities = []
+                # We are using a pop here instead of a get, as we should not have
+                # to maintain this data once it is returned. The expectation is that
+                # this method never returns the same tokens more than once.
+                log_probability = self._log_probabilities_data.pop(token_idx)
+                log_probabilities.append(log_probability)
+
+        self._completion_start_idx = self._completion_end_idx
+
+        return TextGenerationOutput(
+            request_id=self.request_id,
+            tokens=tokens,
+            log_probabilities=log_probabilities,
+            final_status=self.status,
+        )
+
     def bump_token_indices(
         self,
         start_idx: int = 0,
@@ -323,9 +350,11 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         """
         return self.tokens[self._prompt_len : self._end_idx]
 
-    @property
-    def last_generated_token(self) -> int:
+    def get_last_generated_token(self) -> int:
         """Returns the most recently generated token. If no tokens have been generated, raises an error.
+
+        This is not a @property method since it can raise.
+
         Returns:
             int: The most recently generated token.
         """
@@ -414,7 +443,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
     def jump_ahead(self, new_token: int) -> None:
         """Updates the token array, while ensuring the new token is returned to the user."""
-        is_eos = new_token in self.eos_token_ids
         self._upsize()
 
         # Update tokens
@@ -424,7 +452,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         self._active_idx += 1
         self._end_idx += 1
 
-        if is_eos:
+        if self._is_eos(new_token):
             self.status = GenerationStatus.END_OF_SEQUENCE
 
         if self.status == GenerationStatus.ACTIVE:
@@ -442,40 +470,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         self._prompt_len = self._active_idx
 
         self._is_initial_prompt = True
-
-    def to_generation_output(self) -> TextGenerationOutput:
-        """Get completion tokens that are ready to be returned to the user.
-
-        This method retrieves tokens that have been generated but not yet
-        delivered to the user, along with their associated log probability data.
-
-        Returns:
-            TextGenerationOutput: The completion tokens and their associated
-            log probabilities, if available.
-        """
-        tokens: list[int] = []
-        log_probabilities: list[LogProbabilities] | None = None
-        for token_idx in range(
-            self._completion_start_idx, self._completion_end_idx
-        ):
-            tokens.append(int(self.tokens[token_idx]))
-            if token_idx in self._log_probabilities_data:
-                if log_probabilities is None:
-                    log_probabilities = []
-                # We are using a pop here instead of a get, as we should not have
-                # to maintain this data once it is returned. The expectation is that
-                # this method never returns the same tokens more than once.
-                log_probability = self._log_probabilities_data.pop(token_idx)
-                log_probabilities.append(log_probability)
-
-        self._completion_start_idx = self._completion_end_idx
-
-        return TextGenerationOutput(
-            request_id=self.request_id,
-            tokens=tokens,
-            log_probabilities=log_probabilities,
-            final_status=self.status,
-        )
 
     def compute_num_available_steps(
         self,
@@ -510,32 +504,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             f"end_idx={self._end_idx}"
             ")"
         )
-
-
-class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
-    """Metadata about an image in the prompt. Each image corresponds to a range
-    in the text token array [start_idx, end_idx).
-    """
-
-    start_idx: int
-    """Index of the first <vision_token_id> special token for the image"""
-
-    end_idx: int
-    """One after the index of the last <vision_token_id> special token for the image"""
-
-    pixel_values: npt.NDArray[np.floating[Any]]
-    """Pixel values for the image"""
-
-    def __post_init__(self) -> None:
-        if self.start_idx < 0:
-            raise ValueError("Images must have a valid start index")
-        if self.end_idx <= self.start_idx:
-            raise ValueError(
-                "Images must have a valid start and end index containing at least one <vision_token_id>"
-            )
-
-    def __repr__(self):
-        return f"ImageMetadata(start_idx={self.start_idx}, end_idx={self.end_idx}, pixel_values={self.pixel_values.shape})"
 
 
 class TextAndVisionContext(
@@ -615,7 +583,7 @@ class TextAndVisionContext(
         self._validate_state()
 
     @property
-    def _image_idx(self) -> int:
+    def image_idx(self) -> int:
         """Index of the next unencoded image in the prompt."""
         for i, img in enumerate(self.images):
             if self.start_idx < img.end_idx:
@@ -625,15 +593,15 @@ class TextAndVisionContext(
     @property
     def next_images(self) -> list[ImageMetadata]:
         """Returns the images that are not yet encoded."""
-        image_idx = self._image_idx
-        if len(self.images) == 0 or self._image_idx == len(self.images):
+        image_idx = self.image_idx
+        if len(self.images) == 0 or self.image_idx == len(self.images):
             return []
         return self.images[image_idx:]
 
     @property
     def needs_vision_encoding(self) -> bool:
         """Returns whether vision encoding is needed for this context."""
-        return self._image_idx < len(self.images)
+        return self.image_idx < len(self.images)
 
     def compute_image_aligned_idx(self, idx: int) -> int:
         """Possibly aligns a index value downward if it lies in the middle of an image."""
@@ -659,10 +627,6 @@ class TextAndVisionContext(
         if img := self._find_bisected_image(self.active_idx):
             raise ValueError(
                 f"It is invalid for the active_idx ({self.active_idx}) to bisect an image ({img})."
-            )
-        if img := self._find_bisected_image(self.start_idx):
-            raise ValueError(
-                f"It is invalid for the start_idx ({self.start_idx}) to bisect an image ({img})."
             )
         if self.active_idx != self.end_idx:
             raise ValueError(
@@ -830,3 +794,24 @@ class TTSContext(TextContext):
         chunk = self._speech_tokens[start_idx:end_idx]
 
         return chunk, buffer or 0
+
+
+if TYPE_CHECKING:
+    # Verify that concrete classes implement their respective protocols
+    def _verify_text_context_protocol() -> TextGenerationContext:
+        return TextContext(
+            request_id=RequestID(),
+            max_length=5,
+            tokens=np.array([], dtype=np.int32),
+            eos_token_ids=set(),
+        )
+
+    def _verify_vlm_context_protocol() -> VLMTextGenerationContext:
+        return TextAndVisionContext(
+            request_id=RequestID(),
+            max_length=5,
+            tokens=np.array([], dtype=np.int32),
+            eos_token_ids=set(),
+            vision_token_ids=[],
+            images=[],
+        )

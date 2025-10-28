@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from .context import (
-    ImageMetadata,
     TextAndVisionContext,
     TextContext,
     TTSContext,
@@ -28,7 +27,6 @@ from .context_validators import (
 )
 
 __all__ = [
-    "ImageMetadata",
     "TTSContext",
     "TextAndVisionContext",
     "TextContext",

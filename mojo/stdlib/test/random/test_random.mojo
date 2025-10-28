@@ -20,7 +20,7 @@ from random import (
     shuffle,
 )
 
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, TestSuite
 
 
 def test_random():
@@ -214,6 +214,4 @@ def test_shuffle():
 
 
 def main():
-    test_random()
-    test_seed()
-    test_shuffle()
+    TestSuite.discover_tests[__functions_in_module()]().run()

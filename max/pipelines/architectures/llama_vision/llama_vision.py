@@ -36,14 +36,16 @@ from max.graph import (
     ops,
 )
 from max.graph.weights import Weights, WeightsAdapter
-from max.interfaces import InputContext
+from max.interfaces import TextGenerationContext
 from max.interfaces.nested_iterable import NestedIterableDataclass
 from max.interfaces.request import RequestID
 from max.nn import LinearV1, ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
+    KVCacheMetrics,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheInputSymbols,
     PagedCacheValues,
     PagedKVCacheManager,
     RaggedKVCacheInputs,
@@ -52,7 +54,6 @@ from max.nn.kv_cache import (
     infer_optimal_batch_size,
     load_kv_manager,
 )
-from max.nn.kv_cache.paged_cache.paged_cache import PagedCacheInputSymbols
 from max.nn.layer import Layer
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
@@ -89,7 +90,7 @@ class MultimodalKVCacheInputs(KVCacheInputs):
     vision_kv_cache_inputs: KVCacheInputs
 
 
-class MultimodalKVCacheManager(PagedKVCacheManager):
+class MultimodalKVCacheManager:
     """A lightweight wrapper around text and vision KV managers.
 
     Note on runtime and graph build time return types:
@@ -123,9 +124,27 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
         available_cache_memory: int,
         page_size: int,
     ) -> None:
+        """Initialize the multimodal KV cache manager with separate text and vision caches.
+
+        Args:
+            params: KV cache parameters for the text modality.
+            max_batch_size: Maximum batch size for the KV cache.
+            text_max_seq_len: Maximum sequence length for text inputs.
+            vision_max_seq_len: Maximum sequence length for vision inputs.
+            text_num_layers: Number of layers in the text model.
+            vision_num_layers: Number of layers in the vision model.
+            devices: Sequence of devices to use for the KV cache.
+            session: Inference session for executing operations.
+            available_cache_memory: Total available memory for KV caching in bytes.
+            page_size: Page size for the text KV cache.
+        """
         self.params = params
 
         assert max_batch_size, "Expected max_batch_size to be set"
+        if params.data_parallel_degree > 1:
+            raise ValueError(
+                "MultimodalKVCacheManager does not support data parallelism"
+            )
         paged_text_kv_manager = load_kv_manager(
             params=params,
             max_batch_size=max_batch_size,
@@ -136,8 +155,27 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
             page_size=page_size,
             session=session,
         )
-        assert isinstance(paged_text_kv_manager, PagedKVCacheManager)
         self.text_kv_manager = paged_text_kv_manager
+
+        # Expose commonly used attributes from the text KV manager for downstream schedulers.
+        # These mirror the single-modality manager so schedulers can interact with this
+        # multimodal manager via duck-typing.
+        self.max_seq_len = text_max_seq_len
+        self.devices = devices
+        self.session = session
+        self.page_size = self.text_kv_manager.page_size
+        self.total_num_pages = self.text_kv_manager.total_num_pages
+        self.total_num_host_pages = self.text_kv_manager.total_num_host_pages
+        text_kv_manager_replica = self.text_kv_manager._replica_managers[0]
+        self.device_tensors = text_kv_manager_replica.device_tensors
+        self.host_tensors = text_kv_manager_replica.host_tensors
+        self.block_manager = text_kv_manager_replica.block_manager
+        self.enable_prefix_caching = (
+            text_kv_manager_replica.enable_prefix_caching
+        )
+        self.enable_kvcache_swapping_to_host = (
+            text_kv_manager_replica.enable_kvcache_swapping_to_host
+        )
 
         # Assume the number of vision tokens is fixed per batch.
         # This is true until we support multi-image.
@@ -180,9 +218,41 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
             available_cache_memory=cache_memory,
             page_size=page_size,
         )
+        vision_kv_manager_replica = self.vision_kv_manager._replica_managers[0]
+        self.vision_device_tensors = vision_kv_manager_replica.device_tensors
 
         # Store language kvcache attributes.
         self.text_kv_params = params
+
+    # -------- Scheduler-visible properties forwarded from the text KV manager --------
+    @property
+    def num_free_blocks(self) -> int:
+        """Returns the number of free blocks in the text KV cache."""
+        return self.text_kv_manager.num_free_blocks
+
+    @property
+    def used_blocks_pct(self) -> float:
+        """Returns the percentage of blocks currently in use in the text KV cache."""
+        return self.text_kv_manager.used_blocks_pct
+
+    @property
+    def host_committed_block_pct(self) -> float:
+        """Returns the percentage of host memory blocks committed in the text KV cache."""
+        return self.text_kv_manager.host_committed_block_pct
+
+    @property
+    def free_blocks_pct(self) -> float:
+        """Returns the percentage of free blocks in the text KV cache."""
+        return self.text_kv_manager.free_blocks_pct
+
+    @property
+    def metrics(self) -> KVCacheMetrics:
+        """Returns the KV cache metrics from the text KV manager."""
+        return self.text_kv_manager.metrics
+
+    def reset_metrics(self) -> None:
+        """Resets the KV cache metrics in the text KV manager."""
+        self.text_kv_manager.reset_metrics()
 
     @classmethod
     @final
@@ -268,7 +338,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
 
     @final
     def fetch(
-        self, batch: Sequence[InputContext], num_steps: int = 1
+        self, batch: Sequence[TextGenerationContext], num_steps: int = 1
     ) -> Sequence[RaggedKVCacheInputs]:
         """Returns KV cache inputs for both modalities' KV managers."""
         # Here we call into the text KV manager's fetch method to update
@@ -311,11 +381,12 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
         # Note that each page is enough to fit up to vision_max_seq_len so there
         # is at most one page per sequence.
 
+        vision_kv_manager_replica = self.vision_kv_manager._replica_managers[0]
         lookup_table_tensor_vision = Tensor.from_numpy(
             np.array(
                 [
                     [
-                        self.vision_kv_manager._request_to_seq_id[
+                        vision_kv_manager_replica._request_to_seq_id[
                             ctx.request_id
                         ],
                         1,
@@ -329,7 +400,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
         vision_fetch_results = RaggedKVCacheInputs(
             # Block 0 for the first device (since MultimodalKVCacheManager
             # assumes only 1 device).
-            blocks=self.vision_kv_manager.device_tensors[0],
+            blocks=self.vision_device_tensors[0],
             cache_lengths=Tensor.from_numpy(cache_lengths_np).to(device),
             lookup_table=lookup_table_tensor_vision.to(device),
             max_lengths=max_lengths_host,
@@ -384,36 +455,83 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
             )
         ]
 
-    def step(self, batch: Sequence[InputContext]) -> None:
-        """Steps both text and vision modalities' KV managers."""
+    def step(self, batch: Sequence[TextGenerationContext]) -> None:
+        """Steps both text and vision modalities' KV managers.
+
+        Only the text KV manager is stepped, as autoregressive generation
+        is text-only and vision inputs are processed during prefill.
+
+        Args:
+            batch: Sequence of text generation contexts to step.
+        """
         # Step the text KV manager as usual for autoregressive text generation.
         self.text_kv_manager.step(batch)
 
-    def get_or_recommend_replica(self, _: InputContext) -> int:
-        """Return idx of the replica that should be used for the given request."""
+    def get_or_recommend_replica(self, _: TextGenerationContext) -> int:
+        """Returns the index of the replica that should be used for the given request.
+
+        Args:
+            _: Text generation context (unused).
+
+        Returns:
+            Always returns 0 as only a single replica is supported.
+        """
         # As there is only one replica, we always return 0
         return 0
 
     def external_claim(
-        self, request_id: RequestID, replica_idx: int = 0
+        self, request_id: RequestID, replica_idx: int | None = None
     ) -> None:
-        """Reserves sequence IDs for the given request ID in both modalities' KV caches."""
+        """Reserves sequence IDs for the given request ID in both modalities' KV caches.
+
+        Args:
+            request_id: Unique identifier for the request.
+            replica_idx: Index of the replica to use.
+        """
+        if replica_idx is not None and replica_idx != 0:
+            raise ValueError(
+                "replica_idx must be 0 for MultimodalKVCacheManager"
+            )
         self.text_kv_manager.external_claim(request_id, replica_idx)
         self.vision_kv_manager.external_claim(request_id, replica_idx)
 
     def release(self, request_id: RequestID) -> None:
-        """Marks the sequence complete for both modalities' KV caches."""
+        """Marks the sequence complete for both modalities' KV caches.
+
+        Args:
+            request_id: Unique identifier for the request to release.
+        """
         self.text_kv_manager.release(request_id)
         self.vision_kv_manager.release(request_id)
 
     def contains(self, request_id: RequestID) -> bool:
-        """Returns whether `request_id` is in the KV cache."""
+        """Returns whether `request_id` is in the KV cache.
+
+        Args:
+            request_id: Unique identifier for the request to check.
+
+        Returns:
+            True if the request ID exists in both text and vision KV caches,
+            False otherwise.
+        """
         text_kv_contains = self.text_kv_manager.contains(request_id)
 
         # Assume that the modalities' KV caches have consistent request ids.
         assert text_kv_contains == self.vision_kv_manager.contains(request_id)
 
         return text_kv_contains
+
+    def maybe_reserve(
+        self, data: TextGenerationContext, num_steps: int = 1
+    ) -> bool:
+        """Pre-reserve blocks for both text and vision caches.
+
+        Returns True only if reservation succeeds for both managers.
+        """
+        text_reserved = self.text_kv_manager.maybe_reserve(data, num_steps)
+        # For vision, reserve using provided num_steps to maintain symmetry.
+        vision_reserved = self.vision_kv_manager.maybe_reserve(data, num_steps)
+        return bool(text_reserved and vision_reserved)
 
     def num_kv_inputs(self) -> int:
         """Returns the sum of the KV input lengths for both modalities.
@@ -424,9 +542,9 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
 
     def increment_cache_lengths(
         self,
-        kv_cache_inputs: list[RaggedKVCacheInputs],
+        kv_cache_inputs: Sequence[RaggedKVCacheInputs],
         prev_model_inputs: Iterable[Any],
-    ) -> list[RaggedKVCacheInputs]:
+    ) -> Sequence[RaggedKVCacheInputs]:
         """Updates the cache lengths for multistep execution.
 
         This increments the text and vision KV cache lengths separately using
@@ -874,7 +992,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         cross_row_offsets_type = input_row_offsets_type
 
         # Unpack multimodal KV inputs.
-        assert isinstance(self.kv_manager, MultimodalKVCacheManager)
+        assert hasattr(self, "kv_manager") and isinstance(
+            self.kv_manager, MultimodalKVCacheManager
+        )
         input_symbols = self.kv_manager.input_symbols()[0]
         text_kv_input_symbols = input_symbols.text_kv_input_symbols
         vision_kv_input_symbols = input_symbols.vision_kv_input_symbols
@@ -1183,7 +1303,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             A pair of KV managers: one for self the other for cross attention.
         """
         num_cross_attn_layers = len(self.text_config.cross_attention_layers)
-        return MultimodalKVCacheManager(
+        # TODO: Remove this type ignore as we appropriately create an
+        # interface for using multiple KV Cache)) Managers in a single model.
+        return MultimodalKVCacheManager(  # type: ignore
             params=self.get_kv_params(
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),

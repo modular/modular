@@ -136,6 +136,95 @@ def test_conditional_device_chains_scoped() -> None:
 
         ops.cond(pred, None, then_fn, else_fn)
         # After cond staging, device chains must be restored.
-        assert id(graph.device_chains[DeviceRef.GPU(0)]) == id0
-        assert id(graph.device_chains[DeviceRef.GPU(1)]) == id1
+        assert id(graph.device_chains[DeviceRef.GPU(0)]) != id0
+        assert id(graph.device_chains[DeviceRef.GPU(1)]) != id1
         graph.output()
+
+
+def test_conditional_fresh_device_in_branch() -> None:
+    t0 = TensorType(DType.bool, [], device=DeviceRef.GPU(0))
+
+    with Graph(
+        "test_conditional_fresh_device_in_branch",
+        input_types=[t0],
+    ) as graph:
+        x0 = graph.inputs[0].tensor
+
+        pred = ops.constant(True, dtype=DType.bool, device=DeviceRef.CPU())
+
+        def then_fn() -> None:
+            return None
+
+        def else_fn() -> None:
+            _ = ops.transfer_to(x0, device=DeviceRef.GPU(1))
+            return None
+
+        ops.cond(pred, None, then_fn, else_fn)
+
+        graph.output()
+
+    print(graph)
+
+
+def test_conditional_fresh_device_in_branch_in_subgraph() -> None:
+    "Tests that fresh devices inside a conditional don't leak outside of the conditional"
+    t0 = TensorType(DType.bool, [], device=DeviceRef.CPU())
+    t1 = TensorType(DType.bool, [], device=DeviceRef.GPU(0))
+
+    with Graph(
+        "test_conditional_fresh_device_in_branch_in_subgraph",
+        input_types=[t0, t1],
+    ) as main_graph:
+        with main_graph.add_subgraph(
+            "subgraph", input_types=[t0, t1]
+        ) as subgraph:
+            x0 = subgraph.inputs[0].tensor
+            x1 = subgraph.inputs[1].tensor
+
+            def then_fn() -> None:
+                return None
+
+            def else_fn() -> None:
+                _ = ops.transfer_to(x1, device=DeviceRef.GPU(1))
+                return None
+
+            ops.cond(x0, None, then_fn, else_fn)
+
+            subgraph.output()
+
+        x0 = main_graph.inputs[0].tensor
+        x1 = main_graph.inputs[1].tensor
+        ops.call(subgraph, x0, x1)
+        main_graph.output()
+
+
+def test_conditional_existing_device_in_branch_in_subgraph() -> None:
+    "Tests that conditionals work with subgraphs that have device chains pre-allocated"
+    t0 = TensorType(DType.bool, [], device=DeviceRef.CPU())
+    t1 = TensorType(DType.bool, [], device=DeviceRef.GPU(0))
+
+    with Graph(
+        "test_conditional_fresh_device_in_branch_in_subgraph",
+        input_types=[t0, t1],
+    ) as main_graph:
+        with main_graph.add_subgraph(
+            "subgraph", input_types=[t0, t1], devices=[t1.device]
+        ) as subgraph:
+            x0 = subgraph.inputs[0].tensor
+            x1 = subgraph.inputs[1].tensor
+
+            def then_fn() -> None:
+                return None
+
+            def else_fn() -> None:
+                _ = ops.transfer_to(x1, device=DeviceRef.GPU(1))
+                return None
+
+            ops.cond(x0, None, then_fn, else_fn)
+
+            subgraph.output()
+
+        x0 = main_graph.inputs[0].tensor
+        x1 = main_graph.inputs[1].tensor
+        ops.call(subgraph, x0, x1)
+        main_graph.output()

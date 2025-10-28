@@ -14,7 +14,7 @@
 from math import recip
 
 from gpu.host import DeviceContext
-from testing import assert_almost_equal
+from testing import assert_almost_equal, TestSuite
 
 
 fn run_func[
@@ -27,9 +27,7 @@ fn run_func[
         var result = recip(lhs)
         out_dev[0] = result
 
-    ctx.enqueue_function_checked[kernel, kernel](
-        out, val, grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function_experimental[kernel](out, val, grid_dim=1, block_dim=1)
     with out.map_to_host() as out_host:
         assert_almost_equal(
             out_host[0],
@@ -39,9 +37,13 @@ fn run_func[
         )
 
 
-def main():
+def test_recip():
     with DeviceContext() as ctx:
         run_func[DType.float64](8, 0.125, ctx)
         run_func[DType.float32](5, 0.2, ctx)
         run_func[DType.float16](-4, -0.25, ctx)
         run_func[DType.bfloat16](2, 0.5, ctx)
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

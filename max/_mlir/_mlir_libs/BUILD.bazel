@@ -1,0 +1,61 @@
+load("//bazel:api.bzl", "copy_files", "modular_generate_stubfiles", "modular_nanobind_extension")
+
+package(default_visibility = ["//visibility:public"])
+
+copy_files(
+    name = "py_srcs",
+    srcs = ["@llvm-project//mlir/python:MlirLibsPyFiles"],
+    outs = ["__init__.py"],
+)
+
+modular_nanobind_extension(
+    name = "_mlir.bindings",
+    srcs = [
+        "@llvm-raw//:mlir/lib/Bindings/Python/Globals.h",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRAffine.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRAttributes.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRCore.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRInterfaces.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRModule.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRModule.h",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRTypes.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/MainModule.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/NanobindUtils.h",
+        "@llvm-raw//:mlir/lib/Bindings/Python/Pass.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/Pass.h",
+        "@llvm-raw//:mlir/lib/Bindings/Python/Rewrite.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/Rewrite.h",
+    ],
+    local_defines = [
+        # Set definition used in Interop.h to prefix the MLIR package.
+        "MLIR_PYTHON_PACKAGE_PREFIX=max._mlir.",
+    ],
+    module_name = "_mlir",
+    new_link_root = "../../../modular/lib",
+    # Don't lint these files, they're from LLVM.
+    tags = ["no-clang-tidy"],
+    deps = [
+        "//:MLIRBindingsPythonHeaders",
+        "//SDK:max",
+    ],
+)
+
+modular_generate_stubfiles(
+    name = "_mlir",
+    srcs = [":py_srcs"],
+    diff_test_failure_message = """
+A stubfile is out of sync with its generated counterpart.
+This is likely to occur when bumping LLVM, you can run
+'./utils/sync-stubfiles.py' and commit the results.
+""",
+    extension = ":_mlir.bindings",
+    full_name = "max._mlir._mlir_libs._mlir",
+    header = """
+# ===----------------------------------------------------------------------=== #
+# GENERATED FILE, DO NOT EDIT MANUALLY!
+# ===----------------------------------------------------------------------=== #
+""",
+    imports = ["../../.."],
+    pyi_srcs = glob(["**/*.pyi"]),
+    tags = ["no-mypy"],
+)

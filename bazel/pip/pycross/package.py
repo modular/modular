@@ -165,8 +165,9 @@ class Package:
         if len(unique_downloads) == 1:
             actual = f'"{next(iter(unique_downloads))}",'
         else:
+            newline = "\n"
             actual = f"""select({{
-            {",\n            ".join(sorted(f'"{k}": "{v}"' for k, v in select_values.items()))},
+            {f",{newline}            ".join(sorted(f'"{k}": "{v}"' for k, v in select_values.items()))},
         }}),"""
 
         tags_line = ""
@@ -174,6 +175,13 @@ class Package:
             tags_line = """
         tags = ["no-remote"],
         exec_compatible_with = HOST_CONSTRAINTS,"""
+
+        patches_line = ""
+        if self.library_name.startswith("torch@"):
+            # Apply something like https://github.com/pytorch/pytorch/pull/165648,
+            # with a few more fixups specific to 2.8.0
+            patches_line = """
+        patches = ["@@//bazel/public-patches:torch-cuda-deps.patch"],"""
 
         package += f"""\
     native.alias(
@@ -183,7 +191,7 @@ class Package:
 
     pycross_wheel_library(
         name = "{self.library_name}",{deps_line}
-        wheel = ":{self.wheel_target_name}",{tags_line}{testonly_line}
+        wheel = ":{self.wheel_target_name}",{tags_line}{testonly_line}{patches_line}
     )
 
 """

@@ -37,16 +37,33 @@ if TYPE_CHECKING:
 
 _T = TypeVar("_T", bound=np.generic)
 
-# The token ID for "<IMG_CONTEXT>" in the InternVL tokenizer.
-# This is used to identify where to insert image embeddings in the text.
-IMAGE_CONTEXT_TOKEN_ID = 151667
-
 # Number of dimensions for the pixel values tensor for InternVL.
 IMAGE_NDIMS = 6
 
 # ImageNet normalization constants.
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+
+
+def _get_image_context_token_id(huggingface_config: Any) -> int:
+    """Get the correct token ID for "<IMG_CONTEXT>" based on the InternVL
+    version. This is used to identify where to insert image embeddings in the
+    text.
+
+    Args:
+        huggingface_config: HuggingFace model configuration
+
+    Returns:
+        The correct token ID for "<IMG_CONTEXT>"
+    """
+    llm_config = getattr(huggingface_config, "llm_config", huggingface_config)
+    model_type = getattr(llm_config, "model_type", None)
+    architectures = getattr(llm_config, "architectures", None) or []
+
+    if model_type == "qwen3" or "Qwen3ForCausalLM" in architectures:
+        return 151671  # InternVL3.5+ (Qwen3)
+    else:
+        return 151667  # InternVL3 and earlier (Qwen2)
 
 
 def float32_to_bfloat16_as_uint16(
@@ -111,7 +128,11 @@ class InternVLImageConfig:
             config: HuggingFace model configuration
             vision_overrides: Vision config overrides from pipeline config
         """
-        vision_config = config.vision_config
+        vision_config = getattr(config, "vision_config", None)
+        if vision_config is None:
+            raise ValueError(
+                "`vision_config` not found in `config` (HuggingFace config)"
+            )
 
         # Get configuration values with defaults.
         self.image_size = getattr(vision_config, "image_size", 448)
@@ -427,7 +448,7 @@ class InternVLProcessor:
         images: list[Image.Image] | None = None,
         add_special_tokens: bool = True,
         return_tensors: str = "np",
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | BatchEncoding:
         """Process text and images for InternVL.
 
         This method needs to match the interface expected by TextAndVisionTokenizer.new_context().
@@ -493,11 +514,17 @@ class InternVLProcessor:
                     # or if no user turn is present.
                     processed_text = image_tokens + "\n" + processed_text
 
+            vision_config = getattr(self.config, "vision_config", None)
+            patch_size = (
+                getattr(vision_config, "patch_size", 14)
+                if vision_config
+                else 14
+            )
             image_array = preprocess_image_to_tensor(
                 image,
                 input_size=self.image_size,
                 max_num=self.max_dynamic_patch,
-                patch_size=self.config.vision_config.patch_size,
+                patch_size=patch_size,
             )
             # Store the uint16 array (bfloat16 representation)
             raw_pixel_values.append(image_array)
@@ -518,8 +545,9 @@ class InternVLProcessor:
             # by converting to numpy and flattening.
             seq = np.asarray(input_ids).ravel()
 
+            image_context_token_id = _get_image_context_token_id(self.config)
             image_token_indices = (
-                (seq == IMAGE_CONTEXT_TOKEN_ID).nonzero()[0].astype(np.int32)
+                (seq == image_context_token_id).nonzero()[0].astype(np.int32)
             )
             text_inputs["image_token_indices"] = image_token_indices
 
@@ -568,12 +596,12 @@ class InternVLTokenizer(TextAndVisionTokenizer):
         )
 
         # Load config for image processing
-        config = AutoConfig.from_pretrained(
+        config: Any = AutoConfig.from_pretrained(
             model_path, revision=revision, trust_remote_code=trust_remote_code
         )
 
         # Set the vision_token_id for use in super's new_context method
-        self.vision_token_ids = [IMAGE_CONTEXT_TOKEN_ID]
+        self.vision_token_ids = [_get_image_context_token_id(config)]
 
         # Get vision config overrides from pipeline config.
         vision_overrides = (

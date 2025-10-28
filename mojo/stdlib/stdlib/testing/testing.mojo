@@ -36,6 +36,7 @@ from math import isclose
 from builtin._location import __call_location, _SourceLocation
 from memory import memcmp
 from python import PythonObject
+from utils._ansi import Color, Text
 
 # ===----------------------------------------------------------------------=== #
 # Assertions
@@ -247,7 +248,20 @@ fn assert_equal[
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
-    """Asserts that a `StringSlice` is equal to a `String`."""
+    """Asserts that a `StringSlice` is equal to a `String`.
+
+    Parameters:
+        O: The origin of the `StringSlice`.
+
+    Args:
+        lhs: The left-hand side value.
+        rhs: The right-hand side value.
+        msg: An optional custom error message.
+        location: The source location of the assertion (defaults to caller location).
+
+    Raises:
+        If the values are not equal.
+    """
     if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
             lhs.__str__(),
@@ -267,7 +281,20 @@ fn assert_equal[
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
-    """Asserts that a `String` is equal to a `StringSlice`."""
+    """Asserts that a `String` is equal to a `StringSlice`.
+
+    Parameters:
+        O: The origin of the `StringSlice`.
+
+    Args:
+        lhs: The left-hand side value.
+        rhs: The right-hand side value.
+        msg: An optional custom error message.
+        location: The source location of the assertion (defaults to caller location).
+
+    Raises:
+        If the values are not equal.
+    """
     if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
             lhs,
@@ -529,10 +556,59 @@ fn assert_is_not[
         )
 
 
+fn _colorize_diff_string[color: Color](s: String, other: String) -> String:
+    """Colorizes a string by highlighting characters that differ from another string.
+
+    Parameters:
+        color: The color to use for highlighting differences.
+
+    Args:
+        s: The string to colorize.
+        other: The string to compare against.
+
+    Returns:
+        A string with differences highlighted in the specified color.
+    """
+    var result = String()
+    for i in range(len(s)):
+        var char = s[i]
+        if i < len(other) and char == other[i]:
+            # Characters match - no color
+            result += char
+        else:
+            # Character differs - apply color
+            result += String(Text[color](char))
+    return result
+
+
+fn _create_colored_diff(lhs: String, rhs: String) -> String:
+    """Creates a colored character-by-character diff of two strings.
+
+    Highlights differences in red for the left string and green for the right string.
+
+    Args:
+        lhs: The left-hand side string.
+        rhs: The right-hand side string.
+
+    Returns:
+        A string containing the colored diff output.
+    """
+    return String(
+        "\n   left: ",
+        _colorize_diff_string[Color.RED](lhs, rhs),
+        "\n  right: ",
+        _colorize_diff_string[Color.GREEN](rhs, lhs),
+    )
+
+
 fn _assert_cmp_error[
     cmp: String
 ](lhs: String, rhs: String, *, msg: String, loc: _SourceLocation) -> Error:
-    var err = cmp + " failed:\n   left: " + lhs + "\n  right: " + rhs
+    var err = cmp + " failed:"
+
+    # For string comparisons, show colored diff
+    err += _create_colored_diff(lhs, rhs)
+
     if msg:
         err += "\n  reason: " + msg
     return _assert_error(err, loc)

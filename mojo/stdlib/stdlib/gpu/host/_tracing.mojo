@@ -353,12 +353,14 @@ struct _RangeStart:
             self._fn = _roctxRangeStartA.load()
 
     fn __call__(
-        self, val: UnsafePointer[_C_EventAttributes, mut=False]
+        self, val: UnsafePointer[_C_EventAttributes, mut=False, origin=_]
     ) -> RangeID:
         constrained[has_nvidia_gpu_accelerator()]()
         return self._fn[_nvtxRangeStartEx.fn_type](val)
 
-    fn __call__(self, val: UnsafePointer[UInt8, mut=False]) -> RangeID:
+    fn __call__(
+        self, val: UnsafePointer[UInt8, mut=False, origin=_]
+    ) -> RangeID:
         constrained[has_amd_gpu_accelerator()]()
         return self._fn[_roctxRangeStartA.fn_type](val)
 
@@ -388,14 +390,14 @@ struct _RangePush:
             self._fn = _roctxRangePushA.load()
 
     fn __call__(
-        self, val: UnsafePointer[_C_EventAttributes, mut=False]
+        self, val: UnsafePointer[_C_EventAttributes, mut=False, origin=_]
     ) -> Int32:
         constrained[has_nvidia_gpu_accelerator()]()
-        return self._fn[_nvtxRangePushEx.fn_type](val)
+        return self._fn[_nvtxRangePushEx.fn_type](val.as_any_origin())
 
-    fn __call__(self, val: UnsafePointer[UInt8, mut=False]) -> Int32:
+    fn __call__(self, val: UnsafePointer[UInt8, mut=False, origin=_]) -> Int32:
         constrained[has_amd_gpu_accelerator()]()
-        return self._fn[_roctxRangePushA.fn_type](val)
+        return self._fn[_roctxRangePushA.fn_type](val.as_any_origin())
 
 
 struct _RangePop:

@@ -194,13 +194,13 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
         Returns:
             The result.
         """
-        alias len_pos_args = __type_of(args).__len__()
+        alias len_pos_args = type_of(args).__len__()
         ref entries, size_estimation = Self._create_entries(
             fmt_src, len_pos_args
         )
         var fmt_len = fmt_src.byte_length()
 
-        var res = String(capacity=UInt(fmt_len + size_estimation))
+        var res = String(capacity=fmt_len + size_estimation)
         var offset = 0
         var ptr = fmt_src.unsafe_ptr()
 
@@ -208,7 +208,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
         fn _build_slice(
             p: UnsafePointer[UInt8, mut=_, origin=_], start: Int, end: Int
         ) -> StringSlice[p.origin]:
-            return StringSlice(ptr=p + start, length=UInt(end - start))
+            return StringSlice(ptr=p + start, length=end - start)
 
         var auto_arg_index = 0
         for e in entries:
@@ -223,7 +223,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
     @staticmethod
     fn _create_entries(
         fmt_src: StringSlice, len_pos_args: Int
-    ) raises -> (List[Self], Int):
+    ) raises -> Tuple[List[Self], Int]:
         """Returns a list of entries and its total estimated entry byte width.
         """
         var manual_indexing_count = 0
@@ -325,7 +325,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
         fn _build_slice(
             p: UnsafePointer[UInt8, mut=_, origin=_], start: Int, end: Int
         ) -> StringSlice[p.origin]:
-            return StringSlice(ptr=p + start, length=UInt(end - start))
+            return StringSlice(ptr=p + start, length=end - start)
 
         var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)
         var field_ptr = field.unsafe_ptr()

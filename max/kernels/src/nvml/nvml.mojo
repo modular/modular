@@ -373,7 +373,7 @@ struct Device(Writable):
                 fn (UnsafePointer[c_char], UInt32) -> Result,
             ]()(driver_version_buffer, UInt32(max_length))
         )
-        var driver_version_list = StaticString(
+        var driver_version_list = StringSlice(
             unsafe_from_utf8_ptr=driver_version_buffer
         ).split(".")
         return DriverVersion(_to_string_list(driver_version_list))
@@ -410,7 +410,7 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32](length=UInt(num_clocks), fill=0)
+        var clocks = List[UInt32](length=Int(UInt(num_clocks)), fill=0)
 
         _check_error(
             _get_dylib_function[
@@ -451,7 +451,7 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32](length=UInt(num_clocks), fill=0)
+        var clocks = List[UInt32](length=Int(UInt(num_clocks)), fill=0)
 
         _check_error(
             _get_dylib_function[

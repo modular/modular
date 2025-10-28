@@ -20,9 +20,9 @@ from gpu import WARP_SIZE, barrier
 from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx
-from gpu.id import warp_id as get_warp_id
-from gpu.memory import AddressSpace, external_memory
+from gpu import block_idx, lane_id, thread_idx
+from gpu import warp_id as get_warp_id
+from gpu.memory import external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import Layout, LayoutTensor
@@ -279,7 +279,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     ]()
 
     # final results accumulator regs for C
-    alias c_frag_size = MMA_M * MMA_N // num_threads
+    alias c_frag_size = MMA_M * MMA_N // Int(num_threads)
     var c_frag = SIMD[accum_type, c_frag_size]()
 
     # temporary accumulators for TMEM loads
@@ -360,7 +360,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             if BN != BK:
                 var global_n = block_idx.x * UInt(BN)
 
-                var begin_n = min(BN, BK - global_n % UInt(BK))
+                var begin_n = min(BN, BK - Int(global_n % UInt(BK)))
                 alias end_n = BN  # if N % BN !=0 then it should be  min(BN, N - block_idx.x * BN)
 
                 var idx0 = global_n // UInt(BK)
@@ -407,9 +407,9 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     warp_id = thread_idx.x // UInt(WARP_SIZE)
 
     ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
-        block_idx.y, block_idx.x
+        Int(block_idx.y), Int(block_idx.x)
     )
-    alias c_coord_type = __type_of(ctile_coords)
+    alias c_coord_type = type_of(ctile_coords)
 
     @parameter
     for m_mma in range(num_m_mmas):
@@ -419,8 +419,8 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             alias mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
-                ctile.tile_with_offset[MMA_M // num_warps, MMA_N](
-                    4 * m_mma + warp_id, n_mma
+                ctile.tile_with_offset[MMA_M // Int(num_warps), MMA_N](
+                    4 * m_mma + Int(warp_id), n_mma
                 )
             )
             c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](
@@ -445,7 +445,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                 @parameter
                 for m_vec in range(num_vecs_m):
                     alias i_vec = n_vec * num_vecs_m + m_vec
-                    alias dst_idx = __type_of(c_gmem_frag).layout(
+                    alias dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
                     )
                     alias dst_m_offset = dst_idx // N
@@ -730,16 +730,16 @@ fn matmul_sm100_blockwise_scaled_fp8[
         c_type,
         a_scales_type,
         b_scales_type,
-        __type_of(a_3D).layout,
-        __type_of(c).layout,
-        __type_of(a_scales_3D).layout,
-        __type_of(b_scales).layout,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
-        __type_of(a_scales_tma_op).layout,
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
-        __type_of(a_scales_tma_op).desc_layout,
+        type_of(a_3D).layout,
+        type_of(c).layout,
+        type_of(a_scales_3D).layout,
+        type_of(b_scales).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
+        type_of(a_scales_tma_op).layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
+        type_of(a_scales_tma_op).desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=True,
@@ -749,13 +749,13 @@ fn matmul_sm100_blockwise_scaled_fp8[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c,
         a_scales_tma_op,
         b_scales,
-        ceildiv(K, BK),
+        UInt(ceildiv(K, BK)),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=Int(smem_use),

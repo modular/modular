@@ -31,6 +31,9 @@ fn variadic_size[T: AnyType](seq: Variadic[T]) -> Int:
     Parameters:
         T: The type of values in the sequence.
 
+    Args:
+        seq: The variadic sequence to measure.
+
     Returns:
         The length of the variadic sequence.
     """
@@ -43,6 +46,9 @@ fn variadic_size[T: _AnyTypeMetaType](seq: VariadicOf[T]) -> Int:
 
     Parameters:
         T: The trait that types in the sequence must conform to.
+
+    Args:
+        seq: The variadic sequence of types to measure.
 
     Returns:
         The length of the variadic sequence.
@@ -81,7 +87,7 @@ struct _VariadicListIter[type: AnyTrivialRegType](
         self.index += 1
         return self.src[self.index - 1]
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
@@ -188,7 +194,7 @@ struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
         return __mlir_op.`pop.variadic.get`(self.value, index(idx)._mlir_value)
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the list.
 
         Returns:
@@ -307,7 +313,9 @@ struct VariadicListMem[
         if is_owned:
             for i in reversed(range(len(self))):
                 # Safety: We own the elements in this list.
-                UnsafePointer(to=self[i]).origin_cast[True]().destroy_pointee()
+                UnsafePointer(to=self[i]).unsafe_mut_cast[
+                    True
+                ]().destroy_pointee()
 
     fn consume_elements[
         elt_handler: fn (idx: Int, var elt: element_type) capturing
@@ -360,7 +368,7 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[elt_is_mutable].cast_from[__origin_of(origin, self)]
+        Origin[elt_is_mutable].cast_from[origin_of(origin, self)]
     ] element_type:
         """Gets a single element on the variadic list.
 
@@ -377,9 +385,7 @@ struct VariadicListMem[
 
     fn __iter__(
         self,
-    ) -> _VariadicListMemIter[
-        element_type, origin, __origin_of(self), is_owned
-    ]:
+    ) -> _VariadicListMemIter[element_type, origin, origin_of(self), is_owned]:
         """Iterate over the list.
 
         Returns:
@@ -393,7 +399,7 @@ struct VariadicListMem[
 # ===-----------------------------------------------------------------------===#
 
 
-alias _AnyTypeMetaType = __type_of(AnyType)
+alias _AnyTypeMetaType = type_of(AnyType)
 
 
 @register_passable
@@ -496,7 +502,9 @@ struct VariadicPack[
             @parameter
             for i in reversed(range(Self.__len__())):
                 # Safety: We own the elements in this pack.
-                UnsafePointer(to=self[i]).origin_cast[True]().destroy_pointee()
+                UnsafePointer(to=self[i]).unsafe_mut_cast[
+                    True
+                ]().destroy_pointee()
 
     fn consume_elements[
         elt_handler: fn[idx: Int] (var elt: element_types[idx]) capturing

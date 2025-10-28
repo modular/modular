@@ -18,7 +18,7 @@ from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.compile import _compile_code
 from gpu.host.info import MI355X
 from gpu.intrinsics import AMDBufferResource
-from gpu.memory import AddressSpace, CacheOperation
+from gpu.memory import CacheOperation
 from memory import stack_allocation
 from testing import assert_equal, assert_true
 

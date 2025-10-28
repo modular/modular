@@ -43,9 +43,6 @@ struct MyTrue(ImplicitlyBoolable):
     fn __bool__(self) -> Bool:
         return True
 
-    fn __as_bool__(self) -> Bool:
-        return self.__bool__()
-
 
 fn takes_bool(cond: Bool) -> Bool:
     return cond
@@ -150,17 +147,4 @@ def test_float_conversion():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_default]()
-    suite.test[test_min_max]()
-    suite.test[test_bool_cast_to_int]()
-    suite.test[test_bool_none]()
-    suite.test[test_convert_from_implicitly_boolable]()
-    suite.test[test_bool_representation]()
-    suite.test[test_bitwise]()
-    suite.test[test_indexer]()
-    suite.test[test_comparisons]()
-    suite.test[test_float_conversion]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

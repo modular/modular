@@ -23,6 +23,7 @@ from max.graph import (
     BufferType,
     DeviceRef,
     Graph,
+    SymbolicDim,
     TensorType,
     Weight,
     _ChainType,
@@ -168,7 +169,7 @@ def test_call_num_inputs_mismatch() -> None:
         input_types=input_types,
     ) as main_graph:
         subgraph = create_multi_input_subgraph(main_graph, input_types)
-        with pytest.raises(ValueError, match="Expected 4 args.*, got 1"):
+        with pytest.raises(ValueError, match=r"Expected 4 args.*, got 1"):
             ops.call(subgraph, main_graph.inputs[0])
 
 
@@ -383,3 +384,76 @@ def test_device_chain_map_sorted_iteration() -> None:
         assert "cpu:2" in repr_devices
         assert repr_devices.index("cpu:2") < repr_devices.index("gpu:1")
         assert repr_devices.index("gpu:1") < repr_devices.index("gpu:5")
+
+
+def _graph_param_names(g: Graph) -> list[str]:
+    """Extract input parameter names from the Graph's IR text.
+
+    Avoids relying on specific binding layers (nanobind vs pybind MLIR OpView)
+    by parsing the GraphOp's textual form.
+    """
+    ir = str(g)
+    match = re.search(
+        r"inputParameters\s*=\s*#kgen<param\.decls\[(.*?)\]>",
+        ir,
+        flags=re.DOTALL,
+    )
+    if not match:
+        return []
+
+    body = match.group(1)
+    # Decls look like: " name : si64"; split on commas and strip to first colon.
+    return [
+        part.split(":", 1)[0].strip() for part in body.split(",") if ":" in part
+    ]
+
+
+def test_add_subgraph_unions_parent_and_callee_params() -> None:
+    """Subgraph should declare both its own and parent params.
+
+    The callee has an input with symbolic dim K; the parent has P. Expect the
+    subgraph's inputParameters to include both K and P. This currently fails
+    because the subgraph inputParameters are not built as a union.
+    """
+    P = SymbolicDim("P")
+    K = SymbolicDim("K")
+    t_parent = TensorType(DType.float32, [P], DeviceRef.CPU())
+    t_callee = TensorType(DType.float32, [K], DeviceRef.CPU())
+
+    with Graph("main_params_union", input_types=[t_parent]) as main_graph:
+        with main_graph.add_subgraph(
+            "sg_union", input_types=[t_callee]
+        ) as subgraph:
+            subgraph.output(subgraph.inputs[0])
+
+    names = _graph_param_names(subgraph)
+    assert "P" in names, names
+    assert "K" in names, names
+
+
+def test_call_refreshes_subgraph_input_parameters_from_internal_ops() -> None:
+    """Calling should refresh callee param decls to include internal op params.
+
+    Inside the callee, `ops.rebind` declares a new parameter K via
+    output_param_decls. Expect K to be present in the callee's inputParameters
+    (post-call) so verification does not fail when the callee uses K.
+    """
+    N = SymbolicDim("N")
+    K = SymbolicDim("K")
+    type_N = TensorType(DType.float32, [N], DeviceRef.CPU())
+    type_K = TensorType(DType.float32, [K], DeviceRef.CPU())
+
+    with Graph("main_refresh", input_types=[type_N]) as main_graph:
+        y = ops.rebind(main_graph.inputs[0].tensor, [K])
+        with main_graph.add_subgraph(
+            "callee_refresh", input_types=[type_K]
+        ) as subgraph:
+            x = subgraph.inputs[0].tensor
+            subgraph.output(x)
+
+        # Call the subgraph: the expectation is that call updates callee param decls.
+        _ = ops.call(subgraph, y)
+
+    names = _graph_param_names(subgraph)
+    assert "N" in names, names
+    assert "K" in names, names

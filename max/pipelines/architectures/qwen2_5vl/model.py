@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
 
@@ -42,9 +43,6 @@ from max.nn.kv_cache import (
     load_kv_manager,
 )
 from max.nn.parallel import ParallelArrayOps
-from max.pipelines.architectures.internvl.model import (
-    assert_image_embeddings_invariant,
-)
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -58,31 +56,29 @@ from max.pipelines.lib import (
 from max.profiler import Tracer, traced
 from transformers import AutoConfig
 
+from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
 from .model_config import Qwen2_5VLConfig
+from .nn.data_processing import get_rope_index
 from .qwen2_5vl import Qwen2_5VL
+from .util import compute_scatter_gather_indices
 
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass(eq=False)
 class Qwen2_5VLInputs(ModelInputs):
     """A class representing inputs for the Qwen2.5VL model.
 
-    This class encapsulates the input tensors required for the Qwen2.5VL model execution:
-    - input_ids: A tensor containing the input token IDs
-    - input_row_offsets: Per-device tensors containing the offsets for each row in the ragged input sequence
-    - pixel_values: image pixel values for vision processing
-    - window_index: window indices for vision attention mechanism
-    - position_ids: 3D RoPE position IDs for vision inputs
-    - attention_mask_full:  full attention masks for vision inputs
-    - attention_mask_window:  window attention masks for vision inputs
-    - max_grid_size: Maximum grid size for vision inputs
-    """
+    This class encapsulates the input tensors required for the Qwen2.5VL model execution,
+    including both text and vision inputs. Vision inputs are optional and can be None
+    for text-only processing."""
 
     input_ids: Tensor
     """Tensor containing the input token IDs."""
 
     input_row_offsets: list[Tensor]
     """Per-device tensors containing the offsets for each row in the ragged input sequence."""
+
     signal_buffers: list[Tensor]
     """Device buffers used for synchronization in communication collectives."""
 
@@ -95,8 +91,17 @@ class Qwen2_5VLInputs(ModelInputs):
     kv_cache_inputs: KVCacheInputs
     """KV cache inputs for the model."""
 
-    image_token_indices: list[Tensor] | None = None
-    """Per-device pre-computed indices of image tokens in the input sequence."""
+    scatter_indices: list[Tensor] | None = None
+    """Per-device pre-computed scatter indices for the image embeddings.
+
+    These are the locations of the image_token_id in the inputs fed to the model."""
+
+    gather_indices: list[Tensor] | None = None
+    """Per-device pre-computed gather indices for the image embeddings.
+
+    These are the indices within the image embeddings that will participate in
+    the subsequent scatter operation."""
+
     # Vision inputs.
     pixel_values: list[Tensor] | None = None
     """Pixel values for vision inputs."""
@@ -121,40 +126,6 @@ class Qwen2_5VLInputs(ModelInputs):
 
     max_window_seqlen: list[Tensor] | None = None
     """Maximum sequence length for window attention for vision inputs."""
-
-    def __init__(
-        self,
-        input_ids: Tensor,
-        input_row_offsets: list[Tensor],
-        signal_buffers: list[Tensor],
-        position_ids: Tensor,
-        return_n_logits: Tensor,
-        kv_cache_inputs: KVCacheInputs,
-        image_token_indices: list[Tensor] | None = None,
-        pixel_values: list[Tensor] | None = None,
-        window_index: list[Tensor] | None = None,
-        vision_position_ids: list[Tensor] | None = None,
-        max_grid_size: list[Tensor] | None = None,
-        cu_seqlens: list[Tensor] | None = None,
-        cu_window_seqlens: list[Tensor] | None = None,
-        max_seqlen: list[Tensor] | None = None,
-        max_window_seqlen: list[Tensor] | None = None,
-    ) -> None:
-        self.signal_buffers = signal_buffers
-        self.input_ids = input_ids
-        self.input_row_offsets = input_row_offsets
-        self.position_ids = position_ids
-        self.return_n_logits = return_n_logits
-        self.kv_cache_inputs = kv_cache_inputs
-        self.image_token_indices = image_token_indices
-        self.pixel_values = pixel_values
-        self.window_index = window_index
-        self.vision_position_ids = vision_position_ids
-        self.max_grid_size = max_grid_size
-        self.cu_seqlens = cu_seqlens
-        self.cu_window_seqlens = cu_window_seqlens
-        self.max_seqlen = max_seqlen
-        self.max_window_seqlen = max_window_seqlen
 
     @property
     def has_vision_inputs(self) -> bool:
@@ -302,14 +273,9 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = [
-            Tensor.from_numpy(
-                np.arange(
-                    self.pipeline_config.max_batch_size + 1, dtype=np.uint32
-                )
-            ).to(dev)
-            for dev in self.devices
-        ]
+        self._input_row_offsets_prealloc = Tensor.from_numpy(
+            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+        ).to(self.devices)
 
         # Get LLM weights dictionary. Needed before model config generation
         # because we need to know if word embeddings are tied or not.
@@ -585,7 +551,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         ]
 
         # Add image token indices type - one per device
-        image_token_indices_types = [
+        scatter_indices_types = [
             TensorType(
                 DType.int32,
                 shape=["total_image_tokens"],
@@ -593,6 +559,17 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             )
             for device in self.devices
         ]
+
+        # Add gather indices type - one per device
+        gather_indices_types = [
+            TensorType(
+                DType.int64,  # gather requires int64 indices
+                shape=["total_image_tokens"],
+                device=DeviceRef.from_device(device),
+            )
+            for device in self.devices
+        ]
+
         position_ids_type = TensorType(
             DType.uint32,
             shape=[len(self.model_config.mrope_section), "total_seq_len"],
@@ -611,7 +588,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 return_n_logits_type,
                 *input_row_offsets_types,
                 *image_embeddings_types,
-                *image_token_indices_types,
+                *scatter_indices_types,
+                *gather_indices_types,
                 position_ids_type,
                 *signals.input_types(),
                 *flattened_kv_types,
@@ -636,7 +614,13 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             variadic_args = variadic_args[len(self.devices) :]
 
             # Extract image token indices (one per device)
-            image_token_indices = [
+            scatter_indices = [
+                v.tensor for v in variadic_args[: len(self.devices)]
+            ]
+            variadic_args = variadic_args[len(self.devices) :]
+
+            # Extract gather indices (one per device)
+            gather_indices = [
                 v.tensor for v in variadic_args[: len(self.devices)]
             ]
             variadic_args = variadic_args[len(self.devices) :]
@@ -659,7 +643,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 tokens=input_ids.tensor,
                 return_n_logits=return_n_logits.tensor,
                 image_embeddings=image_embeddings,
-                image_token_indices=image_token_indices,
+                scatter_indices=scatter_indices,
+                gather_indices=gather_indices,
                 position_ids=position_ids,
                 signal_buffers=signal_buffers,
                 kv_collections=kv_collections,
@@ -674,28 +659,30 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     @cached_property
     def _empty_image_embeddings(self) -> list[Tensor]:
         """Create empty image embeddings for text-only inputs on multi-device."""
-        return [
-            Tensor.zeros(
-                shape=[0, self.huggingface_config.text_config.hidden_size],
-                dtype=self.dtype,
-            ).to(device)
-            for device in self.devices
-        ]
+        return Tensor.zeros(
+            shape=[0, self.huggingface_config.text_config.hidden_size],
+            dtype=self.dtype,
+        ).to(self.devices)
 
     @cached_property
-    def _empty_image_token_indices(self) -> list[Tensor]:
-        """Create empty image token indices for text-only inputs on multi-device."""
-        return [
-            Tensor.zeros(
-                shape=[0],
-                dtype=DType.int32,
-            ).to(device)
-            for device in self.devices
-        ]
+    def _empty_image_scatter_indices(self) -> list[Tensor]:
+        """Create empty image scatter indices for text-only inputs on multi-device."""
+        return Tensor.zeros(
+            shape=[0],
+            dtype=DType.int32,
+        ).to(self.devices)
+
+    @cached_property
+    def _empty_image_gather_indices(self) -> list[Tensor]:
+        """Create empty image gather indices for text-only inputs on multi-device."""
+        return Tensor.zeros(
+            shape=[0],
+            dtype=DType.int64,
+        ).to(self.devices)
 
     def _batch_image_token_indices(
-        self, context_batch: Sequence[TextAndVisionContext]
-    ) -> list[Tensor]:
+        self, context_batch: Sequence[Qwen2_5VLTextAndVisionContext]
+    ) -> tuple[list[Tensor], list[Tensor]]:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
 
@@ -707,43 +694,20 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 indices
 
         Returns:
-            List of tensors containing all batched indices distributed across devices
+            List of tensors containing all scatter indices distributed across devices
+            List of tensors containing all gather indices distributed across devices
         """
-        # Collect indices and offsets.
-        indices_and_offsets = []
-        batch_offset = 0
-
         assert self.model_config is not None, "Model config must be initialized"
 
-        for ctx in context_batch:
-            if "image_token_indices" in ctx.extra_model_args:
-                # We have to pop this, as we can only compute it once for CE in advance.
-                indices = ctx.extra_model_args.pop("image_token_indices")
-                indices_and_offsets.append(indices + batch_offset)
-            else:
-                input_ids = ctx.next_tokens
-                # make sure image_token_id is correct in model config
-                special_image_token_mask = (
-                    input_ids == self.model_config.image_token_id
-                )
-                indices = np.where(special_image_token_mask)[0].tolist()
-                indices_and_offsets.append(
-                    [idx + batch_offset for idx in indices]  # type: ignore
-                )
-
-            batch_offset += ctx.active_length
-
-        if not indices_and_offsets:
-            np_indices = np.array([], dtype=np.int32)
-        else:
-            np_indices = np.concatenate(indices_and_offsets).astype(
-                np.int32, copy=False
-            )
+        np_scatter_indices, np_gather_indices = compute_scatter_gather_indices(
+            context_batch
+        )
 
         # Create tensor and distribute to devices
-        return [
-            Tensor.from_numpy(np_indices).to(device) for device in self.devices
-        ]
+        return (
+            Tensor.from_numpy(np_scatter_indices).to(self.devices),
+            Tensor.from_numpy(np_gather_indices).to(self.devices),
+        )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Qwen2.5VL model with the prepared inputs."""
@@ -756,7 +720,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         image_embeddings: list[Tensor]
 
         if model_inputs.has_vision_inputs:
-            assert model_inputs.image_token_indices is not None
+            assert model_inputs.scatter_indices is not None
+            assert model_inputs.gather_indices is not None
             assert model_inputs.pixel_values is not None
             assert model_inputs.vision_position_ids is not None
             assert model_inputs.window_index is not None
@@ -765,7 +730,6 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             assert model_inputs.max_seqlen is not None
             assert model_inputs.max_window_seqlen is not None
             assert model_inputs.max_grid_size is not None
-            assert model_inputs.image_token_indices is not None
 
             # Execute vision model: pixel_values -> image_embeddings (multi-GPU)
 
@@ -788,14 +752,28 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 for output in vision_outputs
                 if isinstance(output, Tensor)
             ]
-            image_token_indices = model_inputs.image_token_indices
-            assert_image_embeddings_invariant(
-                image_embeddings, image_token_indices
+            scatter_indices = model_inputs.scatter_indices
+            gather_indices = model_inputs.gather_indices
+
+            # The size of scatter and gather indices must match, equalling the
+            # number of image placeholder tokens in the input ids.
+            assert scatter_indices[0].shape[0] == gather_indices[0].shape[0]
+
+            # Since we gather a subset of the image embeddings, the number of
+            # gathered indices cannot exceed the number of image embeddings.
+            assert gather_indices[0].shape[0] <= image_embeddings[0].shape[0]
+
+            # Since we scatter these image embeddings to some rows of the text
+            # embeddings, the number of scattered indices cannot exceed the
+            # number of input ids.
+            assert (
+                scatter_indices[0].shape[0] <= model_inputs.input_ids.shape[0]
             )
         else:
             # Initialize empty tensors for text-only mode
             image_embeddings = self._empty_image_embeddings
-            image_token_indices = self._empty_image_token_indices
+            gather_indices = self._empty_image_gather_indices
+            scatter_indices = self._empty_image_scatter_indices
 
         # Execute language model with text and image embeddings
         language_outputs = self.language_model.execute(
@@ -803,7 +781,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             model_inputs.return_n_logits,
             *model_inputs.input_row_offsets,
             *image_embeddings,
-            *image_token_indices,
+            *scatter_indices,
+            *gather_indices,
             model_inputs.position_ids,
             *model_inputs.signal_buffers,
             *model_inputs.kv_cache_inputs,
@@ -829,7 +808,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     @traced
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextAndVisionContext],
+        context_batch: Sequence[Qwen2_5VLTextAndVisionContext],  # type: ignore[override]
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> Qwen2_5VLInputs:
@@ -838,12 +817,24 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         if kv_cache_inputs is None:
             raise ValueError("KV Cache Inputs must be provided")
 
+        # Gather all vision data from contexts that need vision encoding
+        vision_datas: list[VisionEncodingData] = []
+        for ctx in context_batch:
+            # Validate all contexts are the correct type
+            assert isinstance(ctx, Qwen2_5VLTextAndVisionContext), (
+                f"Expected Qwen2_5VLTextAndVisionContext, got {type(ctx).__name__}"
+            )
+            if ctx.needs_vision_encoding:
+                assert ctx.vision_data is not None, (
+                    "vision_data must be present when needs_vision_encoding is True"
+                )
+                vision_datas.append(ctx.vision_data)
+        any_needs_vision_encoding = len(vision_datas) > 0
+
         # Prepare Inputs Needed Regardless of Images
         with Tracer("prepare_input_ids"):
             input_ids = Tensor.from_numpy(
-                self._parallel_ops.concatenate(
-                    [ctx.next_tokens for ctx in context_batch]
-                )
+                np.concatenate([ctx.next_tokens for ctx in context_batch])
             ).to(self.devices[0])
 
         with Tracer("prepare_input_row_offsets"):
@@ -851,35 +842,94 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 [0] + [ctx.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
-            input_row_offsets_tensors = [
-                Tensor.from_numpy(input_row_offsets).to(device)
-                for device in self.devices
-            ]
+            input_row_offsets_tensors = Tensor.from_numpy(input_row_offsets).to(
+                self.devices
+            )
 
         with Tracer("prepare_decoder_position_ids"):
             position_ids_list = []
 
             for ctx in context_batch:
-                ctx_decoder_position_ids: npt.NDArray[np.int32] | None = None
-                if "decoder_position_ids" in ctx.extra_model_args:
-                    ctx_decoder_position_ids = ctx.extra_model_args.pop(
-                        "decoder_position_ids"
-                    )
-                    if ctx_decoder_position_ids.shape[1] == ctx.active_length:
-                        position_ids_list.append(ctx_decoder_position_ids)
-                    else:
-                        ctx_decoder_position_ids = None
+                ctx_decoder_position_ids = ctx.decoder_position_ids
 
-                if ctx_decoder_position_ids is None:
-                    # Recompute this value on the fly.
-                    context_seq_length = ctx.next_tokens.shape[0]
-                    temp_position_ids = np.arange(context_seq_length)
-                    temp_position_ids = temp_position_ids.reshape(1, 1, -1)  # type: ignore
-                    temp_position_ids = np.tile(temp_position_ids, (3, 1, 1))
-                    delta = (
-                        ctx.current_length
-                        + ctx.extra_model_args["rope_delta"].item()
+                # - For each text token, the position id increases by one each time.
+                # - Each image token of same image has the same position id as they
+                #   occupy the same "position" in the sequence.
+                # - The entire image takes up some number of positions so there may
+                #   by a jump > 1 at the image end boundary.
+                #
+                # eg:
+                #               token_ids = [10, 11, 12, 13, IMG, IMG, IMG, IMG, IMG, 14, 15]
+                # temp_position_ids[0, :] = [0, 1, 2, 3, 4, 4, 4, 4, 4, 7, 8]
+                #                                                 jump ^
+                if (
+                    ctx.needs_vision_encoding
+                    and ctx_decoder_position_ids.shape[1] == ctx.current_length
+                ):
+                    position_ids_list.append(
+                        ctx_decoder_position_ids[
+                            :, ctx.start_idx : ctx.active_idx
+                        ]
                     )
+                elif ctx.needs_vision_encoding:
+                    # Recompute decoder_position_ids using get_rope_index
+                    # This handles the case after preemption where we need to recompute the prompt
+
+                    # Extract required parameters from context
+                    spatial_merge_size = ctx.spatial_merge_size
+                    image_token_id = ctx.image_token_id
+                    video_token_id = ctx.video_token_id
+                    vision_start_token_id = ctx.vision_start_token_id
+                    tokens_per_second = ctx.tokens_per_second
+                    image_grid_thw = (
+                        ctx.vision_data.image_grid_thw
+                        if ctx.vision_data is not None
+                        else None
+                    )
+
+                    # Always create a fresh attention mask based on current context length
+                    # The stored attention_mask in extra_model_args may be outdated if tokens
+                    # were added after context creation (e.g., during generation before reset)
+                    attention_mask = np.ones(
+                        (1, ctx.current_length), dtype=np.float32
+                    )
+
+                    # Recompute position_ids using get_rope_index (same logic as tokenizer)
+                    temp_position_ids, rope_delta_array = get_rope_index(
+                        spatial_merge_size=spatial_merge_size,
+                        image_token_id=image_token_id,
+                        video_token_id=video_token_id,
+                        vision_start_token_id=vision_start_token_id,
+                        tokens_per_second=tokens_per_second,
+                        input_ids=ctx.tokens[: ctx.current_length].reshape(
+                            1, -1
+                        ),
+                        image_grid_thw=image_grid_thw,
+                        video_grid_thw=None,
+                        second_per_grid_ts=None,
+                        attention_mask=attention_mask,
+                    )
+                    temp_position_ids = temp_position_ids.squeeze(1)
+
+                    # Update rope_delta in context if needed
+                    ctx.rope_delta = int(rope_delta_array.item())
+
+                    # Slice to get only the active portion
+                    position_ids_list.append(
+                        temp_position_ids[:, ctx.start_idx : ctx.active_idx]
+                    )
+                else:
+                    # This case should only happen during Token Generation
+
+                    # Recompute this value on the fly.
+                    # This assumes that there are no image placeholder tokens in
+                    # next_tokens so it is a simple arange operation.
+                    context_seq_length = ctx.active_length
+                    temp_position_ids = np.arange(context_seq_length)
+                    temp_position_ids = temp_position_ids.reshape(1, 1, -1)
+                    temp_position_ids = np.tile(temp_position_ids, (3, 1, 1))
+                    # Offset by the number of previous tokens (start_idx).
+                    delta = ctx.start_idx + ctx.rope_delta
                     temp_position_ids = temp_position_ids + delta
                     temp_position_ids = temp_position_ids.squeeze(1)
                     position_ids_list.append(temp_position_ids)
@@ -891,9 +941,11 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             ).to(self.devices[0])
 
         with Tracer("prepare_image_token_indices"):
-            image_token_indices = self._batch_image_token_indices(context_batch)
+            scatter_indices, gather_indices = self._batch_image_token_indices(
+                context_batch
+            )
 
-        if not any(ctx.needs_vision_encoding for ctx in context_batch):
+        if not any_needs_vision_encoding:
             return Qwen2_5VLInputs(
                 input_ids=input_ids,
                 input_row_offsets=input_row_offsets_tensors,
@@ -903,7 +955,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     np.array([return_n_logits], dtype=np.int64)
                 ),
                 kv_cache_inputs=kv_cache_inputs,
-                image_token_indices=image_token_indices,
+                scatter_indices=scatter_indices,
+                gather_indices=gather_indices,
                 pixel_values=None,
                 window_index=None,
                 vision_position_ids=None,
@@ -914,23 +967,19 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 max_window_seqlen=None,
             )
 
-        # From here on, assume that all inputs are available in extra_model_args
+        # From here on, assume that all inputs are available in vision_data
         # due to context validators
         with Tracer("preparing_pixel_values"):
             # pixel_values is a tuple of tensors, that is always length 1 with
             # Qwen, so we can just take the first element.
-            pixel_values_tensor = Tensor.from_numpy(
-                self._parallel_ops.concatenate(
-                    [
-                        ctx.extra_model_args["concatenated_pixel_values"]
-                        for ctx in context_batch
-                        if ctx.needs_vision_encoding
-                    ]
-                )
-            )
-            pixel_values = [
-                pixel_values_tensor.to(device) for device in self.devices
+            pixel_values_list = [
+                vision_data.concatenated_pixel_values
+                for vision_data in vision_datas
             ]
+            pixel_values_tensor = Tensor.from_numpy(
+                self._parallel_ops.concatenate(pixel_values_list)
+            )
+            pixel_values = pixel_values_tensor.to(self.devices)
 
         with Tracer("preparing_window_index"):
             # Concatenate per-context window_index with cross-context offsets so indices are unique
@@ -938,36 +987,32 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             index_offset = 0
             for ctx in context_batch:
                 if ctx.needs_vision_encoding:
-                    per_ctx_index = ctx.extra_model_args["window_index"].astype(
+                    assert ctx.vision_data is not None, (
+                        "vision_data must be present when needs_vision_encoding is True"
+                    )
+                    per_ctx_index = ctx.vision_data.window_index.astype(
                         np.int64
                     )
                     window_index_parts.append(per_ctx_index + index_offset)
                     index_offset += int(per_ctx_index.shape[0])
             window_index_np = np.concatenate(window_index_parts, axis=0)
             window_index_tensor = Tensor.from_numpy(window_index_np)
-            window_index = [
-                window_index_tensor.to(device) for device in self.devices
-            ]
+            window_index = window_index_tensor.to(self.devices)
 
         with Tracer("preparing_vision_position_ids"):
-            vision_position_ids_tensor = Tensor.from_numpy(
-                self._parallel_ops.concatenate(
-                    [
-                        ctx.extra_model_args["vision_position_ids"]
-                        for ctx in context_batch
-                        if ctx.needs_vision_encoding
-                    ]
-                ).astype(np.int64)
-            )
-            vision_position_ids = [
-                vision_position_ids_tensor.to(device) for device in self.devices
+            vision_position_ids_list = [
+                vision_data.vision_position_ids for vision_data in vision_datas
             ]
+            vision_position_ids_tensor = Tensor.from_numpy(
+                self._parallel_ops.concatenate(vision_position_ids_list).astype(
+                    np.int64
+                )
+            )
+            vision_position_ids = vision_position_ids_tensor.to(self.devices)
 
         with Tracer("preparing_max_grid_size"):
             max_grid_size_value = max(
-                ctx.extra_model_args["max_grid_size"].item()
-                for ctx in context_batch
-                if ctx.needs_vision_encoding
+                vision_data.max_grid_size.item() for vision_data in vision_datas
             )
             max_grid_size_tensor = Tensor.from_numpy(
                 np.array(max_grid_size_value, dtype=np.int32)
@@ -978,37 +1023,33 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             # Handle cumulative offsets properly when batching
             cu_seqlens_list = []
             offset = 0
-            for ctx in context_batch:
-                if ctx.needs_vision_encoding:
-                    seqlens = ctx.extra_model_args["cu_seqlens"]
-                    adjusted = seqlens.copy()
-                    adjusted[1:] += offset
-                    cu_seqlens_list.append(adjusted[1:])
-                    offset = adjusted[-1]
+            for vision_data in vision_datas:
+                seqlens = vision_data.cu_seqlens
+                adjusted = seqlens.copy()
+                adjusted[1:] += offset
+                cu_seqlens_list.append(adjusted[1:])
+                offset = adjusted[-1]
 
             cu_seqlens_tensor = Tensor.from_numpy(
                 np.concatenate(
                     [np.array([0], dtype=np.uint32), *cu_seqlens_list]
                 ).astype(np.uint32)
             )
-            cu_seqlens = [
-                cu_seqlens_tensor.to(device) for device in self.devices
-            ]
+            cu_seqlens = cu_seqlens_tensor.to(self.devices)
 
         with Tracer("preparing_cu_window_seqlens"):
             # cu_window_seqlens_unique is already scaled by spatial_merge_unit per-context.
             # We only need to add cross-context offsets and concatenate.
             cu_window_seqlens_parts: list[npt.NDArray[np.uint32]] = []
             offset = 0
-            for ctx in context_batch:
-                if ctx.needs_vision_encoding:
-                    seqlens_unique = ctx.extra_model_args[
-                        "cu_window_seqlens_unique"
-                    ].astype(np.uint32)
-                    cu_window_seqlens_parts.append(
-                        (seqlens_unique[1:] + offset).astype(np.uint32)
-                    )
-                    offset = offset + seqlens_unique[-1]
+            for vision_data in vision_datas:
+                seqlens_unique = vision_data.cu_window_seqlens_unique.astype(
+                    np.uint32
+                )
+                cu_window_seqlens_parts.append(
+                    (seqlens_unique[1:] + offset).astype(np.uint32)
+                )
+                offset = offset + seqlens_unique[-1]
 
             cu_window_seqlens_np = np.concatenate(
                 [np.array([0], dtype=np.uint32), *cu_window_seqlens_parts]
@@ -1016,16 +1057,11 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             cu_window_seqlens_unique_tensor = Tensor.from_numpy(
                 cu_window_seqlens_np
             )
-            cu_window_seqlens = [
-                cu_window_seqlens_unique_tensor.to(device)
-                for device in self.devices
-            ]
+            cu_window_seqlens = cu_window_seqlens_unique_tensor.to(self.devices)
 
         with Tracer("preparing_max_seqlen"):
             max_seqlen_value = max(
-                ctx.extra_model_args["max_seqlen"].item()
-                for ctx in context_batch
-                if ctx.needs_vision_encoding
+                vision_data.max_seqlen.item() for vision_data in vision_datas
             )
             max_seqlen_tensor = Tensor.from_numpy(
                 np.array([max_seqlen_value], dtype=np.uint32)
@@ -1034,9 +1070,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         with Tracer("preparing_max_window_seqlen"):
             window_max_seqlen_value = max(
-                ctx.extra_model_args["window_max_seqlen"].item()
-                for ctx in context_batch
-                if ctx.needs_vision_encoding
+                vision_data.window_max_seqlen.item()
+                for vision_data in vision_datas
             )
             window_max_seqlen_tensor = Tensor.from_numpy(
                 np.array([window_max_seqlen_value], dtype=np.uint32)
@@ -1052,7 +1087,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
-            image_token_indices=image_token_indices,
+            scatter_indices=scatter_indices,
+            gather_indices=gather_indices,
             pixel_values=pixel_values,
             window_index=window_index,
             vision_position_ids=vision_position_ids,
@@ -1099,7 +1135,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             position_ids=position_ids,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             return_n_logits=prev_model_inputs.return_n_logits,
-            image_token_indices=None,
+            scatter_indices=None,
+            gather_indices=None,
             # Leave vision inputs empty since they are only processed on the
             # first step.
             pixel_values=None,

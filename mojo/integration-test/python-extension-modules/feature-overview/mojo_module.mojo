@@ -155,7 +155,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
     ) raises -> PythonObject:
         var self0 = UnsafePointer[Self, **_](
             unchecked_downcast_value=self_
-        ).origin_cast[True]()
+        ).unsafe_mut_cast[True]()
 
         if len(new_name) > len(self0[].name.codepoints()):
             raise Error("cannot make name longer than current name")

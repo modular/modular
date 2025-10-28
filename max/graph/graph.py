@@ -80,15 +80,22 @@ class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
 
     def __getitem__(self, device: DeviceRef) -> _ChainValue:
         if device not in self:
-            super().__setitem__(
-                device,
+            self[device] = (
                 self._graph._add_chain_block_arg()
                 if self._graph._has_chain_input
-                else self._graph._current_chain,
+                # prevent block arguments from being added when we're inside a
+                # region of a control flow op (mo.if, mo.while). For simplicity
+                # currently control flow ops merge new device chains with the
+                # global chain instead of shuttling device chains from the
+                # parent scope via block arguments. Any device chains that
+                # exist prior to the control flow op will be used as expected.
+                and self._graph._graph_body == self._graph._current_block
+                else self._graph._current_chain
             )
         return super().__getitem__(device)
 
     def __setitem__(self, device: DeviceRef, chain: _ChainValue) -> None:
+        assert isinstance(chain, _ChainValue)
         super().__setitem__(device, chain)
 
     def __iter__(self):
@@ -97,11 +104,26 @@ class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
     def _value(self, device: DeviceRef) -> _ChainValue:
         return super().__getitem__(device)
 
+    def ordered_values(self) -> Generator[_ChainValue]:
+        for device in self:
+            yield self._value(device)
+
     def copy(self) -> _DeviceChainMap:
         result = _DeviceChainMap(self._graph)
         for device in self:
             result[device] = self._value(device)
         return result
+
+    def _merge_chains(self, others: Sequence[_DeviceChainMap]) -> None:
+        for device in self:
+            # Collect all chains for this device
+            chains = [self[device]] + [other[device] for other in others]
+            # Unique them
+            chains = list(dict.fromkeys(chains).keys())
+            # Create the new chain
+            chain = self._graph._add_op(mo.chain_create, chains)[0]
+            assert isinstance(chain, _ChainValue)
+            self[device] = chain
 
     def __repr__(self) -> str:
         items = ", ".join(f"{device}: {self._value(device)}" for device in self)
@@ -345,7 +367,7 @@ class Graph:
     _should_verify_ops: bool
     _has_chain_input: bool
     # Per-device chains that ensure the correct sequence of device execution.
-    device_chains: OrderedDict[DeviceRef, _ChainValue]
+    device_chains: _DeviceChainMap
 
     _kernel_library: KernelLibrary
 
@@ -359,7 +381,7 @@ class Graph:
         input_types: Iterable[Type[Any]] = (),
         path: Path | None = None,
         *args,
-        custom_extensions: list[Path] = [],  # noqa: B006
+        custom_extensions: Iterable[Path] = [],
         context: mlir.Context | None = None,
         kernel_library: KernelLibrary | None = None,
         module: mlir.Module | None = None,
@@ -492,7 +514,8 @@ class Graph:
         | None = None,
         input_types: Iterable[Type[Any]] = (),
         path: Path | None = None,
-        custom_extensions: list[Path] = [],  # noqa: B006
+        custom_extensions: Iterable[Path] = [],
+        devices: Iterable[DeviceRef] = [],
     ) -> Graph:
         """Creates and adds a subgraph to the current graph.
 
@@ -516,6 +539,7 @@ class Graph:
             custom_extensions: The list of paths to custom operation libraries
                 to load for the subgraph. Supports ``.mojopkg`` files and Mojo
                 source directories.
+            devices: The list of devices this subgraph is meant to use.
         """
         subgraph = Graph(
             name=name,
@@ -528,11 +552,24 @@ class Graph:
             module=self._module,
             # **kwargs,
         )
-        subgraph._mlir_op.attributes["isSubgraph"] = mlir.UnitAttr.get()
-        subgraph._mlir_op.attributes["inputParameters"] = (
-            self._mlir_op.attributes["inputParameters"]
+
+        # Mark the new graph op as a subgraph and set its input parameters.
+        op = Operation._from_cmlir(subgraph._mlir_op)
+        assert isinstance(op, _mo.GraphOp)
+        op.is_subgraph = builtin.UnitAttr()
+
+        # Union callee's existing params  with the caller's params.
+        # This may over-declare but is deterministic and comprehensive.
+        union_names = list(dict.fromkeys([*subgraph._params, *self._params]))
+        si64 = builtin.IntegerType(
+            width=64, signedness=builtin.SignednessSemantics.signed
         )
-        subgraph._params = dict.fromkeys(self._params)
+        op.input_parameters = kgen.ParamDeclArrayAttr(
+            [kgen.ParamDeclAttr(name, si64) for name in union_names]
+        )
+        subgraph._params = dict.fromkeys(union_names)
+        for device in devices:
+            subgraph.device_chains[device] = subgraph._add_chain_block_arg()
         self._subgraphs[name] = subgraph
         return subgraph
 
@@ -540,7 +577,11 @@ class Graph:
         self._current_chain = new_chain
 
     def _merge_chains(self, chains: Sequence[_ChainValue]) -> _ChainValue:
-        chain = self._add_op(mo.chain_create, chains)[0]
+        unique_chains = list(dict.fromkeys(chains))
+        if len(unique_chains) == 1:
+            return unique_chains[0]
+
+        chain = self._add_op(mo.chain_create, unique_chains)[0]
         assert isinstance(chain, _ChainValue)
         self._current_chain = chain
         return self._current_chain
@@ -588,16 +629,21 @@ class Graph:
         """
 
         old_chain = Graph.current._current_chain
+        old_device_chains = Graph.current.device_chains.copy()
         new_chains = []
+        new_device_chains = []
 
         class Async:
             def __enter__(self):
                 Graph.current._update_chain(old_chain)
+                Graph.current.device_chains = old_device_chains
                 return self
 
             def __exit__(self, *exc):
                 new_chains.append(Graph.current._current_chain)
+                new_device_chains.append(Graph.current.device_chains.copy())
                 Graph.current._update_chain(old_chain)
+                Graph.current.device_chains = old_device_chains
 
             def __call__(self):
                 return self
@@ -616,6 +662,7 @@ class Graph:
 
             if new_chains:
                 Graph.current._merge_chains(new_chains)
+                Graph.current.device_chains._merge_chains(new_device_chains)
 
     def __enter__(self) -> Graph:
         self._context_state.append(state := self._enter())
@@ -873,7 +920,12 @@ class Graph:
                 )
 
             _ = self._add_op(
-                block_terminator_op, results + [self._current_chain]
+                block_terminator_op,
+                [
+                    *results,
+                    self._current_chain,
+                    *self.device_chains.ordered_values(),
+                ],
             )
 
     def output(self, *outputs: Value[Any] | TensorValueLike) -> None:

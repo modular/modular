@@ -23,7 +23,6 @@ from sys.intrinsics import (
 from time import sleep
 
 from memory import Span
-from memory.pointer import _GPUAddressSpace
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.
@@ -57,7 +56,7 @@ struct amd_signal_t(Copyable, Movable):
 @always_inline
 fn update_mbox(sig: UnsafePointer[amd_signal_t, **_]):
     var mb = UnsafePointer(to=sig[].event_mailbox_ptr).bitcast[
-        UnsafePointer[UInt64, address_space = _GPUAddressSpace.GLOBAL]
+        UnsafePointer[UInt64, address_space = AddressSpace.GLOBAL]
     ]()[]
     if mb:
         var id = sig[].event_id.cast[DType.uint64]()
@@ -68,7 +67,7 @@ fn update_mbox(sig: UnsafePointer[amd_signal_t, **_]):
 @always_inline
 fn hsa_signal_add(sig: UInt64, value: UInt64):
     var s = UnsafePointer(to=sig).bitcast[
-        UnsafePointer[amd_signal_t, address_space = _GPUAddressSpace.GLOBAL]
+        UnsafePointer[amd_signal_t, address_space = AddressSpace.GLOBAL]
     ]()[]
     _ = Atomic.fetch_add(UnsafePointer(to=s[].value), value)
     update_mbox(s)
@@ -149,7 +148,7 @@ fn append_bytes(
     service_id: UInt32,
     msg_desc: UInt64,
     mut data: Span[UInt8],
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     var msg_desc_ = msg_set_len(msg_desc, (len(data) + 7) // 8)
 
     @parameter
@@ -190,7 +189,7 @@ fn append_bytes(
 @no_inline
 fn message_append_bytes(
     service_id: UInt32, msg_desc: UInt64, data: Span[UInt8]
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     """
     Append an array of bytes to a message.
 
@@ -249,7 +248,7 @@ fn message_append_args(
     arg4: UInt64,
     arg5: UInt64,
     arg6: UInt64,
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     """
     Append up to seven ulong values to a message.
 
@@ -517,9 +516,7 @@ fn printf_append_string_n(
 @fieldwise_init
 @register_passable("trivial")
 struct Header(ImplicitlyCopyable, Movable):
-    var _handle: UnsafePointer[
-        header_t, address_space = _GPUAddressSpace.GLOBAL
-    ]
+    var _handle: UnsafePointer[header_t, address_space = AddressSpace.GLOBAL]
 
     fn fill_packet(
         mut self,
@@ -554,7 +551,7 @@ struct Header(ImplicitlyCopyable, Movable):
 
     fn get_return_value(
         mut self, payload: Payload, me: UInt32, low: UInt32
-    ) -> (UInt64, UInt64):
+    ) -> Tuple[UInt64, UInt64]:
         """
         Wait for the host response and return the first two ulong
         entries per workitem.
@@ -634,9 +631,7 @@ struct payload_t(Copyable, Movable):
 @fieldwise_init
 @register_passable("trivial")
 struct Buffer(ImplicitlyCopyable, Movable):
-    var _handle: UnsafePointer[
-        buffer_t, address_space = _GPUAddressSpace.GLOBAL
-    ]
+    var _handle: UnsafePointer[buffer_t, address_space = AddressSpace.GLOBAL]
 
     @always_inline
     fn get_header(self, ptr: UInt64) -> Header:
@@ -727,9 +722,7 @@ struct Buffer(ImplicitlyCopyable, Movable):
 @fieldwise_init
 @register_passable("trivial")
 struct buffer_t(Copyable, Movable):
-    var headers: UnsafePointer[
-        header_t, address_space = _GPUAddressSpace.GLOBAL
-    ]
+    var headers: UnsafePointer[header_t, address_space = AddressSpace.GLOBAL]
     var payloads: UnsafePointer[payload_t]
     var doorbell: UInt64
     var free_stack: UInt64
@@ -834,7 +827,7 @@ fn hostcall(
     arg5: UInt64,
     arg6: UInt64,
     arg7: UInt64,
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     """
     Submit a wave-wide hostcall packet.
 
@@ -869,9 +862,7 @@ fn hostcall(
     """
     var buffer = Buffer(
         implicitarg_ptr()
-        .bitcast[
-            UnsafePointer[buffer_t, address_space = _GPUAddressSpace.GLOBAL]
-        ]()
+        .bitcast[UnsafePointer[buffer_t, address_space = AddressSpace.GLOBAL]]()
         .offset(10)[]
     )
 

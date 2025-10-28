@@ -30,7 +30,6 @@ from layout.layout_tensor import (
 )
 from layout.math import outer_product_acc
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory.pointer import _GPUAddressSpace as AddressSpace
 from testing import assert_almost_equal
 
 
@@ -74,12 +73,12 @@ fn sgemm_double_buffer[
     alias num_warps_n = (BN // WN)
 
     var tid = thread_idx.x
-    var warp_id = tid // WARP_SIZE
-    var lane_id = tid % WARP_SIZE
+    var warp_id = tid // UInt(WARP_SIZE)
+    var lane_id = tid % UInt(WARP_SIZE)
 
     # Coordinates of the current warp.
-    var warp_x = warp_id % num_warps_n
-    var warp_y = warp_id // num_warps_n
+    var warp_x = warp_id % UInt(num_warps_n)
+    var warp_y = warp_id // UInt(num_warps_n)
 
     # Warp shape in 2D.
     alias warp_dim_x = WN // TN

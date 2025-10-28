@@ -70,7 +70,7 @@ struct _POpenHandle:
 
             # Note: This will raise if the subprocess yields non-UTF-8 bytes.
             res += StringSlice(
-                from_utf8=Span(ptr=line.bitcast[Byte](), length=UInt(read))
+                from_utf8=Span(ptr=line.bitcast[Byte](), length=read)
             )
 
         if line:

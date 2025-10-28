@@ -16,7 +16,7 @@ from sys import size_of
 
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.id import block_idx, thread_idx
+from gpu import block_idx, thread_idx
 from gpu.memory import ReduceOp, fence_async_view_proxy
 from gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from layout import Layout, LayoutTensor
@@ -25,7 +25,6 @@ from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
 
 from utils.index import Index
@@ -50,14 +49,14 @@ fn test_tma_load_kernel[
         dtype,
         tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -99,14 +98,14 @@ fn test_tma_multiple_loads_kernel[
         dtype,
         tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -162,12 +161,12 @@ def test_tma_load_row_major[
     @parameter
     if load_along_last_dim:
         alias kernel = test_tma_multiple_loads_kernel[
-            __type_of(tma_tensor).dtype,
+            type_of(tma_tensor).dtype,
             Layout.row_major(M_roundup, N_roundup),  # dst layout
-            __type_of(tma_tensor).layout,  # smem layout
-            __type_of(tma_tensor).layout,  # thread layout
+            type_of(tma_tensor).layout,  # smem layout
+            type_of(tma_tensor).layout,  # thread layout
         ]
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             dst.device_tensor(),
             tma_tensor,
             grid_dim=(1, M_roundup // tileM),
@@ -175,12 +174,12 @@ def test_tma_load_row_major[
         )
     else:
         alias kernel = test_tma_load_kernel[
-            __type_of(tma_tensor).dtype,
+            type_of(tma_tensor).dtype,
             Layout.row_major(M_roundup, N_roundup),  # dst layout
-            __type_of(tma_tensor).layout,  # smem layout
-            __type_of(tma_tensor).layout,  # thread layout
+            type_of(tma_tensor).layout,  # smem layout
+            type_of(tma_tensor).layout,  # thread layout
         ]
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             dst.device_tensor(),
             tma_tensor,
             grid_dim=(N_roundup // tileN, M_roundup // tileM),
@@ -223,7 +222,7 @@ fn test_tma_async_store_kernel[
         dtype,
         tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
@@ -255,7 +254,7 @@ fn test_tma_async_multiple_store_kernel[
         dtype,
         tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
@@ -302,12 +301,12 @@ def test_tma_async_store[
     @parameter
     if load_along_last_dim:
         alias kernel = test_tma_async_multiple_store_kernel[
-            __type_of(tma_tensor).dtype,
-            __type_of(tma_tensor).layout,
-            __type_of(tma_tensor).layout,
+            type_of(tma_tensor).dtype,
+            type_of(tma_tensor).layout,
+            type_of(tma_tensor).layout,
             src_layout,
         ]
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(1, src_M // tileM),
@@ -315,13 +314,13 @@ def test_tma_async_store[
         )
     else:
         alias kernel = test_tma_async_store_kernel[
-            __type_of(tma_tensor).dtype,
-            __type_of(tma_tensor).layout,
-            __type_of(tma_tensor).desc_layout,
-            __type_of(tma_tensor).layout,
+            type_of(tma_tensor).dtype,
+            type_of(tma_tensor).layout,
+            type_of(tma_tensor).desc_layout,
+            type_of(tma_tensor).layout,
             src_layout,
         ]
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(src_N // tileN, src_M // tileM),
@@ -358,7 +357,7 @@ fn test_tma_async_reduce_kernel[
         dtype,
         tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
@@ -390,7 +389,7 @@ fn test_tma_async_multiple_reduce_kernel[
         dtype,
         tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
@@ -437,12 +436,12 @@ def test_tma_async_reduce[
     @parameter
     if load_along_last_dim:
         alias kernel = test_tma_async_multiple_reduce_kernel[
-            __type_of(tma_tensor).dtype,
-            __type_of(tma_tensor).layout,
-            __type_of(tma_tensor).layout,
+            type_of(tma_tensor).dtype,
+            type_of(tma_tensor).layout,
+            type_of(tma_tensor).layout,
             src_layout,
         ]
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(1, src_M // tileM),
@@ -450,12 +449,12 @@ def test_tma_async_reduce[
         )
     else:
         alias kernel = test_tma_async_reduce_kernel[
-            __type_of(tma_tensor).dtype,
-            __type_of(tma_tensor).layout,
-            __type_of(tma_tensor).layout,
+            type_of(tma_tensor).dtype,
+            type_of(tma_tensor).layout,
+            type_of(tma_tensor).layout,
             src_layout,
         ]
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(src_N // tileN, src_M // tileM),
@@ -507,7 +506,7 @@ fn test_tma_loads_two_buffers_kernel[
         dtype,
         a_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -515,14 +514,14 @@ fn test_tma_loads_two_buffers_kernel[
         dtype,
         b_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -585,15 +584,15 @@ def test_tma_load_two_buffers_row_major[
     ctx.synchronize()
 
     alias kernel = test_tma_loads_two_buffers_kernel[
-        __type_of(a_tma_tensor).dtype,
+        type_of(a_tma_tensor).dtype,
         Layout.row_major(M_roundup, N_roundup),  # dst layout
         Layout.row_major(M_roundup, N_roundup),  # dst layout
-        __type_of(a_tma_tensor).layout,  # smem layout
-        __type_of(b_tma_tensor).layout,  # smem layout
-        __type_of(a_tma_tensor).layout,  # thread layout
-        __type_of(b_tma_tensor).layout,  # thread layout
+        type_of(a_tma_tensor).layout,  # smem layout
+        type_of(b_tma_tensor).layout,  # smem layout
+        type_of(a_tma_tensor).layout,  # thread layout
+        type_of(b_tma_tensor).layout,  # thread layout
     ]
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_dst.device_tensor(),
         b_dst.device_tensor(),
         a_tma_tensor,
@@ -666,7 +665,7 @@ fn test_tma_loads_and_store_two_buffers_kernel[
         dtype,
         a_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -674,14 +673,14 @@ fn test_tma_loads_and_store_two_buffers_kernel[
         dtype,
         b_tile_layout,
         MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space = AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -769,15 +768,15 @@ def test_tma_load_and_store_two_buffers_row_major[
     ctx.synchronize()
 
     alias kernel = test_tma_loads_and_store_two_buffers_kernel[
-        __type_of(a_tma_src_tensor).dtype,
-        __type_of(a_tma_src_tensor).layout,  # smem layout
-        __type_of(a_tma_src_tensor).layout,  # smem layout
-        __type_of(a_tma_src_tensor).desc_layout,
-        __type_of(b_tma_src_tensor).desc_layout,
+        type_of(a_tma_src_tensor).dtype,
+        type_of(a_tma_src_tensor).layout,  # smem layout
+        type_of(a_tma_src_tensor).layout,  # smem layout
+        type_of(a_tma_src_tensor).desc_layout,
+        type_of(b_tma_src_tensor).desc_layout,
         a_layout=dst_layout,  # dst layout
         b_layout=dst_layout,  # dst layout
     ]
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_dst_tensor,
         b_tma_dst_tensor,
         a_tma_src_tensor,

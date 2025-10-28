@@ -21,7 +21,7 @@ from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx, warp
 from gpu.memory import AddressSpace, external_memory
 from memory import Span
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import InputTensor, OutputTensor
+from tensor import InputTensor, OutputTensor
 
 from utils.numerics import min_or_neg_inf
 
@@ -80,9 +80,9 @@ struct TopK:
         fn top_k_gpu[
             K: Int,
         ](
-            out_vals: __type_of(out_vals_tensor),
-            out_idxs: __type_of(out_idxs_tensor),
-            in_vals: __type_of(in_vals_tensor),
+            out_vals: type_of(out_vals_tensor),
+            out_idxs: type_of(out_idxs_tensor),
+            in_vals: type_of(in_vals_tensor),
         ):
             var bid = block_idx.x
             var tid = thread_idx.x
@@ -156,7 +156,7 @@ struct TopK:
                         )
 
                     sort[val_greater_than](
-                        Span(out_idxs.unsafe_ptr() + offset, K)
+                        Span(ptr=out_idxs.unsafe_ptr() + offset, length=K)
                     )
 
                     for i in range(K):

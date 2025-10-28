@@ -33,8 +33,4 @@ def test_print_stderr():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_print_stderr]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

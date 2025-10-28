@@ -16,15 +16,15 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
-import numpy.typing as npt
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import Weights, WeightsAdapter
+from max.interfaces import LogProbabilities
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -45,6 +45,10 @@ from max.pipelines.lib import (
     PipelineModel,
     SupportedEncoding,
 )
+from max.pipelines.lib.log_probabilities import (
+    compute_log_probabilities_ragged,
+    log_probabilities_ragged_graph,
+)
 from transformers import AutoConfig
 
 from .gemma3 import Gemma3
@@ -60,21 +64,20 @@ class Gemma3Inputs(ModelInputs):
     execution.
     """
 
-    tokens: npt.NDArray[np.integer[Any]] | Tensor
+    tokens: Tensor
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor | list[Tensor]
-    """Tensor containing the offsets for each row in the ragged input sequence,
-    or the attention mask for the padded input sequence. For distributed execution,
-    this can be a list of tensors, one per device."""
+    input_row_offsets: list[Tensor]
+    """List of tensors containing the offsets for each row in the ragged input
+    sequence, one per device."""
 
     signal_buffers: list[Tensor]
     """Device buffers used for synchronization in communication collectives."""
 
     def __init__(
         self,
-        tokens: npt.NDArray[np.integer[Any]] | Tensor,
-        input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor | list[Tensor],
+        tokens: Tensor,
+        input_row_offsets: list[Tensor],
         return_n_logits: Tensor,
         signal_buffers: list[Tensor],
         kv_cache_inputs: KVCacheInputs | None = None,
@@ -156,6 +159,8 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         ]
 
         self.model = self.load_model(session)
+        self.logprobs_device = devices[0]
+        self.logprobs_model = self.load_logprobs_model(session)
 
     @staticmethod
     def calculate_max_seq_len(
@@ -271,11 +276,6 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
     def load_model(self, session: InferenceSession) -> Model:
         """Loads the compiled Gemma 3 model into the MAX Engine session.
 
-        Note:
-            This method currently returns a dummy Model object and needs to be
-            implemented with the actual graph building and model loading logic
-            for Gemma 3.
-
         Args:
             session: The MAX Engine inference session.
 
@@ -310,6 +310,13 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
 
         return model
 
+    def load_logprobs_model(self, session: InferenceSession) -> Model:
+        # TODO: Perhaps 'levels' ought to be configurable.
+        graph = log_probabilities_ragged_graph(
+            DeviceRef.from_device(self.logprobs_device), levels=3
+        )
+        return session.load(graph)
+
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
@@ -339,7 +346,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
     # overridden for Gemma3 multi-modal.
     _strict_state_dict_loading = True
 
-    def _build_graph(self):  # noqa: ANN202
+    def _build_graph(self) -> Graph:
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
@@ -440,12 +447,41 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
             graph.output(*outputs)
         return graph
 
+    def compute_log_probabilities(
+        self,
+        session: InferenceSession,
+        model_inputs: ModelInputs,
+        model_outputs: ModelOutputs,
+        next_tokens: Tensor,
+        batch_top_n: list[int],
+        batch_echo: list[bool],
+    ) -> list[LogProbabilities | None]:
+        logits = model_outputs.logits
+        assert model_outputs.next_token_logits is not None
+        next_token_logits = model_outputs.next_token_logits
+
+        assert isinstance(model_inputs, Gemma3Inputs)
+        gemma3_inputs: Gemma3Inputs = model_inputs
+
+        sampled_tokens = next_tokens.to_numpy()
+        tokens = gemma3_inputs.tokens.to_numpy()
+        assert gemma3_inputs.input_row_offsets[0].device == self.logprobs_device
+        input_row_offsets = gemma3_inputs.input_row_offsets[0].to_numpy()
+
+        return compute_log_probabilities_ragged(
+            self.logprobs_device,
+            self.logprobs_model,
+            input_row_offsets=input_row_offsets,
+            logits=logits,
+            next_token_logits=next_token_logits,
+            tokens=tokens,
+            sampled_tokens=sampled_tokens,
+            batch_top_n=batch_top_n,
+            batch_echo=batch_echo,
+        )
+
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Gemma 3 model with the prepared inputs.
-
-        Note:
-            This method currently returns dummy output and needs to be implemented
-            with the actual model execution logic for Gemma 3.
 
         Args:
             model_inputs: The prepared inputs for the model execution, typically including
@@ -454,31 +490,13 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         Returns:
             An object containing the output logits from the model execution.
         """
-        model_inputs = cast(Gemma3Inputs, model_inputs)
+        assert isinstance(model_inputs, Gemma3Inputs)
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
-
-        # Check if input_row_offsets is a list or a single tensor
-        if isinstance(model_inputs.input_row_offsets, list):
-            input_row_offsets_list = model_inputs.input_row_offsets
-        else:
-            # For backward compatibility, distribute the single tensor to all devices
-            if isinstance(model_inputs.input_row_offsets, np.ndarray):
-                # Convert numpy array to tensor first
-                tensor = Tensor.from_numpy(model_inputs.input_row_offsets)
-                input_row_offsets_list = [
-                    tensor.to(device) for device in self.devices
-                ]
-            else:
-                # Already a tensor
-                input_row_offsets_list = [
-                    model_inputs.input_row_offsets.to(device)
-                    for device in self.devices
-                ]
 
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.return_n_logits,
-            *input_row_offsets_list,
+            *model_inputs.input_row_offsets,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
         )
@@ -506,11 +524,6 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the Gemma 3 model.
 
-        Note:
-            This method currently returns dummy inputs and needs to be implemented
-            with the actual input preparation logic for Gemma 3, considering
-            batching, ragged tensors, and KV cache integration.
-
         Args:
             context_batch: A sequence of :obj:`TextContext` objects representing
                 the input prompts.
@@ -520,9 +533,8 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
             The prepared :obj:`ModelInputs` object for the initial execution step.
         """
         assert kv_cache_inputs is not None
-        kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
+        assert isinstance(kv_cache_inputs, KVCacheInputsSequence)
 
-        # This needs to be replaced with actual input preparation
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
@@ -553,11 +565,6 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
     ) -> ModelInputs:
         """Prepares the inputs for subsequent execution steps in a multi-step generation.
 
-        Note:
-            This method currently returns dummy inputs and needs to be implemented
-            with the actual input preparation logic for subsequent steps in Gemma 3,
-            efficiently handling the next token and KV cache updates.
-
         Args:
             next_tokens: The tensor containing the token IDs generated in the previous step.
             prev_model_inputs: The :obj:`ModelInputs` used in the previous execution step.
@@ -565,7 +572,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         Returns:
             The prepared :obj:`ModelInputs` object for the next execution step.
         """
-        prev_model_inputs = cast(Gemma3Inputs, prev_model_inputs)
+        assert isinstance(prev_model_inputs, Gemma3Inputs)
 
         row_offsets_size = prev_model_inputs.input_row_offsets[0].shape[0]
 

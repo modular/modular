@@ -193,6 +193,14 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         )
         input_ids = Tensor.from_numpy(tokens).to(self.devices[0])
 
+        num_images = sum(len(ctx.next_images) for ctx in context_batch)
+
+        # TODO(MODELS-810): Support multiple images per batch
+        if num_images > 1:
+            raise ValueError(
+                "The pixtral implementation currently supports only one image per batch"
+            )
+
         # TODO: change this to work with all contexts in the batch.
         # check if the request has pixel_values
         if context_batch[0].needs_vision_encoding:

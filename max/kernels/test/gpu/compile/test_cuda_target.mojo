@@ -30,7 +30,6 @@ from gpu import (
 )
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.memory import AddressSpace
 from memory import memset_zero, stack_allocation
 from testing import *
 
@@ -354,8 +353,8 @@ fn gemm(
 
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
-        if row < UInt(m) and col + out_idx < n:
-            set_c(row, col + out_idx, c_reg.load(out_idx))
+        if row < UInt(m) and col + UInt(out_idx) < UInt(n):
+            set_c(row, col + UInt(out_idx), c_reg.load(out_idx))
 
 
 def _verify_gemm(asm: StringSlice):
@@ -497,7 +496,7 @@ fn block_reduce(val: Float32) -> Float32:
 
     return warp_sum_reduce(
         shared.load(lane) if thread_idx.x
-        < UInt(block_dim.x // WARP_SIZE) else 0
+        < UInt(block_dim.x // UInt(WARP_SIZE)) else 0
     )
 
 

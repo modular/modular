@@ -17,8 +17,8 @@ from sys import argv
 from buffer import DimList, NDBuffer
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
-from gpu.id import block_idx, thread_idx, warp_id
-from gpu.memory import AddressSpace, async_copy_wait_all
+from gpu import block_idx, thread_idx, warp_id
+from gpu.memory import async_copy_wait_all
 from gpu.sync import barrier
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import (

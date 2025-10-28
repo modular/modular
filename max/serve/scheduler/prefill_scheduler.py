@@ -17,7 +17,13 @@ import queue
 import time
 import uuid
 
-from max.interfaces import RequestID, Scheduler, TextGenerationInputs
+from max.interfaces import (
+    Pipeline,
+    RequestID,
+    Scheduler,
+    TextGenerationInputs,
+    TextGenerationOutput,
+)
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -25,7 +31,7 @@ from max.nn.kv_cache import (
     TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, TextGenerationPipelineType
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
@@ -50,7 +56,9 @@ logger = logging.getLogger("max.serve")
 class PrefillScheduler(Scheduler):
     def __init__(
         self,
-        pipeline: TextGenerationPipelineType[TextContext],
+        pipeline: Pipeline[
+            TextGenerationInputs[TextContext], TextGenerationOutput
+        ],
         scheduler_config: TokenGenerationSchedulerConfig,
         paged_cache: PagedKVCacheManager,
         dispatcher: PrefillDispatcherServerV2,
@@ -68,9 +76,13 @@ class PrefillScheduler(Scheduler):
         ] = {}
 
         # Create Transfer Engine
+        if paged_cache.num_replicas > 1:
+            raise ValueError(
+                "PrefillScheduler does not support data parallelism"
+            )
         self.transfer_engine = KVTransferEngine(
             name=f"prefill_agent_{uuid.uuid4()}",
-            tensors=paged_cache.device_tensors,
+            tensors=paged_cache._replica_managers[0].device_tensors,
             total_num_pages=paged_cache.total_num_pages,
         )
 
@@ -176,9 +188,8 @@ class PrefillScheduler(Scheduler):
             ]
 
             # Retrieve source block ids.
-            src_idxs = self.paged_cache.block_manager.get_req_blocks(
-                context.request_id,
-            )
+            req_id = context.request_id
+            src_idxs = self.paged_cache.get_req_blocks(req_id)
             assert len(src_idxs) == len(dst_idxs)
 
             # Transfer only the blocks that are not already on decode node.
@@ -205,7 +216,7 @@ class PrefillScheduler(Scheduler):
             self.dispatcher.send_reply_nowait(
                 PrefillResponse(
                     id=req_id,
-                    generated_token_id=context.last_generated_token,
+                    generated_token_id=context.get_last_generated_token(),
                     transfer_metadata=transfer_data,
                 ),
                 identity,
@@ -276,7 +287,7 @@ class PrefillScheduler(Scheduler):
 
 
 def load_prefill_scheduler(
-    pipeline: TextGenerationPipelineType[TextContext],
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
     pipeline_config: PipelineConfig,
     settings: Settings,
 ) -> PrefillScheduler:

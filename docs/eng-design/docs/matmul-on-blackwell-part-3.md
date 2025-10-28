@@ -150,7 +150,7 @@ the base pointer:
 ```mojo
 alias a_tma_load_size = a_desc_layout.size()
 var rank_n = block_id_in_cluster.y
-var a_smem_slice = __type_of(a_smem_tile)(
+var a_smem_slice = type_of(a_smem_tile)(
     a_smem_tile.ptr + rank_n * a_tma_load_size
 )
 

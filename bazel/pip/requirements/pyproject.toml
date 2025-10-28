@@ -11,11 +11,13 @@ dependencies = [
   "async-asgi-testclient",
   "boto3",
   "click>=8.1",
+  "codeowners",
   "datasets",
   "device-smi",
   "docutils",
   "einops",
   "einx",
+  "expandvars",
   "fastapi>=0.115.3", # >=0.115.3 is required for resolving CVE-2024-47874
   "faster_whisper",
   "fire ", # For mistral-evals.
@@ -68,6 +70,7 @@ dependencies = [
   "plotly",
   "requests>=2.28",
   "regex",
+  "ruamel.yaml",
   "safetensors",
   "sentencepiece",
   "setuptools",
@@ -83,7 +86,7 @@ dependencies = [
   "tokenicer",
   "tomli",
   "tqdm",
-  "transformers>=4.55.2", # v4.47.0 and v4.49.0 introduced changes that break our torch.compile backend.
+  "transformers>=4.57",
   "tokenizers",
   "typing-extensions",
   "uvloop>=0.21.0",
@@ -137,17 +140,18 @@ dependencies = [
 
 [dependency-groups]
 amd = [
-  "torch==2.7.0",
-  "torchaudio==2.7.0",
-  "torchvision==0.22.0",
+  "torch==2.8.0",
+  "torchaudio==2.8.0",
+  "torchvision",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "pytorch-triton-rocm; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
-  "lm-eval[api,ifeval,math]>=0.4.7",
+  "lm-eval[api,ifeval,math]>=0.4.9.1",
   "mteb",
   "optimum",
+  "peft", # For LoRA adapter support
   "sentence-transformers",
   "timm",
   "torchmetrics",
@@ -155,14 +159,15 @@ amd = [
 ]
 
 cpu = [
-  "torch==2.7.0",
-  "torchaudio==2.7.0",
-  "torchvision==0.22.0",
+  "torch==2.8.0",
+  "torchaudio==2.8.0",
+  "torchvision",
 
   "accelerate",
-  "lm-eval[api,ifeval,math]>=0.4.7",
+  "lm-eval[api,ifeval,math]>=0.4.9.1",
   "mteb",
   "optimum",
+  "peft", # For LoRA adapter support
   "sentence-transformers",
   "timm",
   "torchmetrics",
@@ -170,16 +175,17 @@ cpu = [
 ]
 
 nvidia = [
-  "torch==2.7.0",
-  "torchaudio==2.7.0",
-  "torchvision==0.22.0",
+  "torch==2.8.0",
+  "torchaudio==2.8.0",
+  "torchvision",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
-  "lm-eval[api,ifeval,math]>=0.4.7",
+  "lm-eval[api,ifeval,math]>=0.4.9.1",
   "mteb",
   "optimum",
+  "peft", # For LoRA adapter support
   "sentence-transformers",
   "timm",
   "torchmetrics",
@@ -203,22 +209,22 @@ environments = [
 
 [tool.uv.sources]
 torch = [
-  { index = "pytorch-amd" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0/torch-2.8.0%2Brocm7.0.0.git64359f59-cp312-cp312-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
-  { url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch/2.7.0/76be807ccbeeca14632a7a49c3737b9b4e4b8f57e78889730314de0807d28bb7/torch-2.7.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl", group = "nvidia" },
+  { index = "pytorch-nvidia", group = "nvidia" },
 ]
 torchvision = [
-  { index = "pytorch-amd" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0/torchvision-0.23.0%2Brocm7.0.0.git824e8c87-cp312-cp312-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
 torchaudio = [
-  { index = "pytorch-amd" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0/torchaudio-2.8.0%2Brocm7.0.0.git6e1c7fe9-cp312-cp312-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
 ]
 pytorch-triton-rocm = [
-  { index = "pytorch-amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0/pytorch_triton_rocm-3.4.0%2Brocm7.0.0.gitf9e5bf54-cp312-cp312-linux_x86_64.whl" },
 ]
 gptqmodel = [
   { url = "https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp312-cp312-linux_x86_64.whl" },

@@ -13,16 +13,16 @@
 from collections import OptionalReg
 from math import ceildiv, gcd
 from sys import align_of, size_of
-from gpu.host.info import B200
+from gpu.host.info import B200, H100
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
 from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx
-from gpu.id import warp_id as get_warp_id
-from gpu.memory import AddressSpace, external_memory
+from gpu import block_idx, lane_id, thread_idx
+from gpu import warp_id as get_warp_id
+from gpu.memory import external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import Layout, LayoutTensor
@@ -32,7 +32,7 @@ from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from logger import Logger
-
+from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
@@ -272,7 +272,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     ]()
 
     # final results accumulator regs for C
-    alias c_frag_size = MMA_M * MMA_N // num_threads
+    alias c_frag_size = MMA_M * MMA_N // Int(num_threads)
     var c_frag = SIMD[accum_type, c_frag_size]()
 
     # temporary accumulators for TMEM loads
@@ -346,7 +346,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
             if BN != BK:
                 var global_n = block_idx.x * UInt(BN)
 
-                var begin_n = min(BN, BK - global_n % UInt(BK))
+                var begin_n = min(BN, BK - Int(global_n % UInt(BK)))
                 alias end_n = BN  # if N % BN !=0 then it should be  min(BN, N - block_idx.x * BN)
 
                 var idx0 = global_n // UInt(BK)
@@ -409,9 +409,9 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     )
 
     ctile, ctile_coords, _ = c_by_expert.tile_with_offset[BM, BN](
-        block_idx.y, block_idx.x
+        Int(block_idx.y), Int(block_idx.x)
     )
-    alias c_coord_type = __type_of(ctile_coords)
+    alias c_coord_type = type_of(ctile_coords)
 
     @parameter
     for m_mma in range(num_m_mmas):
@@ -421,8 +421,8 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
             alias mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
-                ctile.tile_with_offset[MMA_M // num_warps, MMA_N](
-                    4 * m_mma + warp_id, n_mma
+                ctile.tile_with_offset[MMA_M // Int(num_warps), MMA_N](
+                    4 * m_mma + Int(warp_id), n_mma
                 )
             )
             c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](
@@ -447,7 +447,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                 @parameter
                 for m_vec in range(num_vecs_m):
                     alias i_vec = n_vec * num_vecs_m + m_vec
-                    alias dst_idx = __type_of(c_gmem_frag).layout(
+                    alias dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
                     )
                     alias dst_m_offset = dst_idx // N
@@ -485,7 +485,9 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
-    b_scales_type: DType, //,
+    b_scales_type: DType,
+    a_offsets_type: DType,
+    expert_ids_type: DType, //,
     *,
     transpose_b: Bool,
     umma_shape: IndexList[3],
@@ -499,8 +501,8 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     b: LayoutTensor[b_type, b_layout, *_, **_],
     a_scales: LayoutTensor[a_scales_type, a_scales_layout, *_, **_],
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, *_, **_],
-    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, *_, **_],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, *_, **_],
+    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, *_, **_],
+    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, *_, **_],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -601,19 +603,19 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         a_scales_type,
         b_scales_type,
         accum_type,
-        __type_of(a).layout,
-        __type_of(b).layout,
-        __type_of(c).layout,
-        __type_of(a_offsets).layout,
-        __type_of(expert_ids).layout,
-        __type_of(a_scales).layout,
-        __type_of(b_scales).layout,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
-        __type_of(a_scales_tma_op).layout,
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
-        __type_of(a_scales_tma_op).desc_layout,
+        type_of(a).layout,
+        type_of(b).layout,
+        type_of(c).layout,
+        type_of(a_offsets).layout,
+        type_of(expert_ids).layout,
+        type_of(a_scales).layout,
+        type_of(b_scales).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
+        type_of(a_scales_tma_op).layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
+        type_of(a_scales_tma_op).desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=True,
@@ -623,7 +625,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         a_offsets,
@@ -631,7 +633,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         c,
         a_scales_tma_op,
         b_scales,
-        ceildiv(K, BK),
+        UInt(ceildiv(K, BK)),
         grid_dim=(
             ceildiv(N, BN),
             ceildiv(max_num_tokens_per_expert, BM),
@@ -648,29 +650,38 @@ fn grouped_matmul_dynamic_scaled_fp8[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
-    b_scales_type: DType, //,
+    b_scales_type: DType,
+    a_offsets_type: DType,
+    expert_ids_type: DType, //,
     input_scale_granularity: StaticString,
     weight_scale_granularity: StaticString,
+    m_scale_granularity: Int,
+    n_scale_granularity: Int,
+    k_scale_granularity: Int,
     transpose_b: Bool = False,
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 3, _, _],
-    a_scales: NDBuffer[a_scales_type, 2, _, _],
-    b_scales: NDBuffer[b_scales_type, 3, _, _],
-    a_offsets: NDBuffer[DType.uint32, 1, _, _],
-    expert_ids: NDBuffer[DType.int32, 1, _, _],
+    c: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, _],
+    a: NDBuffer[a_type, 2, MutableAnyOrigin, _],
+    b: NDBuffer[b_type, 3, MutableAnyOrigin, _],
+    a_scales: NDBuffer[a_scales_type, 2, MutableAnyOrigin, _],
+    b_scales: NDBuffer[b_scales_type, 3, MutableAnyOrigin, _],
+    a_offsets: NDBuffer[a_offsets_type, 1, MutableAnyOrigin, _],
+    expert_ids: NDBuffer[expert_ids_type, 1, MutableAnyOrigin, _],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    constrained[ctx.default_device_info is B200, "Only support B200"]()
-    constrained[transpose_b, "Only support transpose_b = True"]()
     constrained[
-        c_type == DType.float32,
-        "output dtype should be float32",
+        ctx.default_device_info is B200 or ctx.default_device_info is H100,
+        "Only support SM100 or SM90",
     ]()
+    constrained[
+        m_scale_granularity == 1
+        and n_scale_granularity == k_scale_granularity == 128,
+        "Only support (1,128,128) scale granularity",
+    ]()
+    constrained[transpose_b, "Only support transpose_b = True"]()
     constrained[
         a_type == b_type == DType.float8_e4m3fn,
         "input A and B dtype should be float8_e4m3fn",
@@ -683,6 +694,20 @@ fn grouped_matmul_dynamic_scaled_fp8[
         input_scale_granularity == "block"
         and weight_scale_granularity == "block",
         "Only support block-wise scale granularity",
+    ]()
+    constrained[
+        a_offsets_type == DType.uint32,
+        (
+            "Only uint32 is supported for a_offsets in grouped blockwise scaled"
+            " fp8 matmul"
+        ),
+    ]()
+    constrained[
+        expert_ids_type == DType.int32,
+        (
+            "Only int32 is supported for expert_ids in grouped blockwise scaled"
+            " fp8 matmul"
+        ),
     ]()
 
     var a_tensor = from_ndbuffer_row_major(a)
@@ -698,13 +723,37 @@ fn grouped_matmul_dynamic_scaled_fp8[
     # alias K = b.shape.get[2]()
     # var seq_len = a.dim[0]()
 
-    alias umma_shape: IndexList[3] = Index(64, 64, 32)
-    alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+    # TODO: (KERN-2107) enable this when we have a working grouped blockwise fp8 kernel for small Ms per expert
+    # @parameter
+    # if ctx.default_device_info is B200:
+    #     alias umma_shape: IndexList[3] = Index(64, 64, 32)
+    #     alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
-    grouped_matmul_sm100_blockwise_scaled_fp8[
+    #     grouped_matmul_sm100_blockwise_scaled_fp8[
+    #         transpose_b=transpose_b,
+    #         umma_shape=umma_shape,
+    #         block_tile_shape=block_tile_shape,
+    #     ](
+    #         c_tensor,
+    #         a_tensor,
+    #         b_tensor,
+    #         a_scales_tensor,
+    #         b_scales_tensor,
+    #         a_offsets_tensor,
+    #         expert_ids_tensor,
+    #         max_num_tokens_per_expert,
+    #         num_active_experts,
+    #         ctx,
+    #     )
+    #     return
+
+    naive_blockwise_scaled_fp8_grouped_matmul[
+        BLOCK_DIM_M=16,
+        BLOCK_DIM_N=16,
         transpose_b=transpose_b,
-        umma_shape=umma_shape,
-        block_tile_shape=block_tile_shape,
+        scales_granularity_mnk = Index(
+            m_scale_granularity, n_scale_granularity, k_scale_granularity
+        ),
     ](
         c_tensor,
         a_tensor,

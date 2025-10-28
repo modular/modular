@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from pathlib import Path
+from os import getenv
 from sys.ffi import (
     _find_dylib,
     _get_dylib_function,
@@ -34,7 +35,25 @@ alias MPI_LIBRARY = _Global["MPI_LIBRARY", _init_mpi_dylib]
 
 
 fn _init_mpi_dylib() -> _OwnedDLHandle:
-    return _find_dylib["MPI"](materialize[MPI_LIBRARY_PATHS]())
+    var candidates = materialize[MPI_LIBRARY_PATHS]()
+
+    # If provided, allow an override directory for nvshmem bootstrap libs.
+    # Example:
+    #   export MODULAR_NVSHMEM_LIB_DIR="/path/to/venv/lib"
+    # This will try:
+    #   /path/to/venv/lib/nvshmem_bootstrap_mpi.so.3[.0.0]
+    var dir = Path(getenv("MODULAR_NVSHMEM_LIB_DIR"))
+    if dir:
+        var prefixed = List[Path](
+            dir / "/nvshmem_bootstrap_mpi.so.3.0.0",
+            dir / "/nvshmem_bootstrap_mpi.so.3",
+            dir / "/nvshmem_bootstrap_mpi.so",
+        )
+        for p in candidates:
+            prefixed.append(p)
+        candidates = prefixed^
+
+    return _find_dylib["MPI"](candidates)
 
 
 @always_inline
@@ -59,7 +78,7 @@ alias MPIComm = UnsafePointer[OpaquePointer]
 # ===-----------------------------------------------------------------------===#
 
 
-fn MPI_Init(argc: Int, argv: VariadicList[StaticString]) raises:
+fn MPI_Init(mut argc: Int, mut argv: VariadicList[StaticString]) raises:
     """Initialize MPI."""
     var result = _get_mpi_function[
         "MPI_Init",

@@ -33,11 +33,11 @@ from testing import assert_equal
 
 # Initialize parameters
 # To achieve high bandwidth increase SIZE to large value
-alias TPB = 512
+alias TPB: UInt = 512
 alias LOG_TPB = log2_floor(TPB)
 alias BATCH_SIZE = 8  # needs to be power of 2
-alias SIZE = 1 << 29
-alias NUM_BLOCKS = ceildiv(SIZE, TPB * BATCH_SIZE)
+alias SIZE = 1 << 12
+alias NUM_BLOCKS: UInt = UInt(ceildiv(SIZE, TPB * BATCH_SIZE))
 alias WARP_SIZE = 32
 alias dtype = DType.int32
 
@@ -83,18 +83,29 @@ fn sum_kernel[
             _ = Atomic.fetch_add(output, warp_sum)
 
 
+struct SumKernelBenchmarkParams:
+    var out_ptr: UnsafePointer[Int32]
+    var a_ptr: UnsafePointer[Int32]
+
+    fn __init__(
+        out self, out_ptr: UnsafePointer[Int32], a_ptr: UnsafePointer[Int32]
+    ):
+        self.out_ptr = out_ptr
+        self.a_ptr = a_ptr
+
+
 # Benchmark function for sum_kernel
 @parameter
 @always_inline
 fn sum_kernel_benchmark(
-    mut b: Bencher, input_data: (UnsafePointer[Int32], UnsafePointer[Int32])
+    mut b: Bencher, input_data: SumKernelBenchmarkParams
 ) capturing raises:
     @parameter
     @always_inline
     fn kernel_launch_sum(ctx: DeviceContext) raises:
         alias kernel = sum_kernel[SIZE, BATCH_SIZE]
-        var out_ptr = input_data[0]
-        var a_ptr = input_data[1]
+        var out_ptr = input_data.out_ptr
+        var a_ptr = input_data.a_ptr
         var out_buffer = DeviceBuffer[dtype](ctx, out_ptr, 1, owning=False)
         var a_buffer = DeviceBuffer[dtype](ctx, a_ptr, SIZE, owning=False)
         ctx.enqueue_function_checked[kernel, kernel](
@@ -151,11 +162,9 @@ def main():
 
         # Benchmark performance
         var bench = Bench(BenchConfig(max_iters=50000))
-        bench.bench_with_input[
-            (UnsafePointer[Int32], UnsafePointer[Int32]), sum_kernel_benchmark
-        ](
+        bench.bench_with_input[SumKernelBenchmarkParams, sum_kernel_benchmark](
             BenchId("sum_kernel_benchmark", "gpu"),
-            (out_ptr, a_ptr),
+            SumKernelBenchmarkParams(out_ptr, a_ptr),
             ThroughputMeasure(BenchMetric.bytes, SIZE * size_of[dtype]()),
         )
         # Pretty print in table format

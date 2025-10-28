@@ -219,7 +219,7 @@ def test_concat_different_devices(graph_builder: GraphBuilder) -> None:
     with (
         graph_builder(input_types=input_types) as graph,
         pytest.raises(
-            ValueError, match="Cannot concat inputs on different devices .*"
+            ValueError, match=r"Input values must be on the same device.*"
         ),
     ):
-        out = ops.concat(graph.inputs, 0)  # type: ignore
+        ops.concat([i.tensor for i in graph.inputs], 0)
