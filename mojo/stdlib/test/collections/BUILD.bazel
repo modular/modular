@@ -6,20 +6,6 @@ _FILECHECK_TESTS = [
     "test_list_getitem_invalid_index_uint.mojo",
 ]
 
-_NO_ASAN = [
-    "string/test_string.mojo",
-    "string/test_string_slice.mojo",  # TODO(MOCO-2316): Takes too long to compile
-    "string/test_utf8.mojo",  # TODO(MSTDL-1881): materialization leak
-]
-
-_PLATFORM_CONSTRAINTS = {
-    src: select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    })
-    for src in _NO_ASAN
-}
-
 _MOJO_COMPILE_OPTS = {
     "test_index_normalization.mojo": [
         "-D",
@@ -54,7 +40,6 @@ _EXPECT_CRASH = [
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         enable_assertions = src not in _DISABLED_ASSERTIONS,
         expect_crash = src in _EXPECT_CRASH,
-        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",
@@ -72,7 +57,6 @@ _EXPECT_CRASH = [
             "full",
         ],
         data = [src],  # NOTE: some tests attempt to read their source files
-        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",
