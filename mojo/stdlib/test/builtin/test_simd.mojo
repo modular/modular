@@ -24,6 +24,8 @@ from testing import (
     assert_true,
     TestSuite,
 )
+from testing.prop import PropTest
+from testing.prop.strategy import SIMD
 
 from utils import StaticTuple
 from utils.numerics import isfinite, isinf, isnan, nan
@@ -218,7 +220,14 @@ def test_to_bits():
     assert_equal(reconstructed_int16, int16_vals)
 
 
-def test_from_to_bits_roundtrip():
+# TODO: Use property testing framework to test this.
+def test_from_to_bits_roundtrip_property_test():
+    @parameter
+    def properties[dtype: DType, size: Int](simd: SIMD[dtype, size]):
+        var bits = simd.to_bits()
+        var reconstructed = SIMD[dtype, size](from_bits=bits)
+        assert_equal(reconstructed, simd)
+
     alias dtypes = [
         DType.bool,
         DType.int,
@@ -231,34 +240,23 @@ def test_from_to_bits_roundtrip():
         DType.int32,
         DType.uint64,
         DType.int64,
-        DType.uint128,
-        DType.int128,
-        DType.uint256,
+        # TODO: Figure out compiler crash when testing with 128-bit types.
+        # DType.int128,
+        # DType.uint128,
         DType.int256,
+        DType.uint256,
+        DType.float16,
+        DType.float32,
+        DType.float64,
+        DType.bfloat16,
     ]
+    alias sizes = [1, 2, 4]
+
+    var prop_test = PropTest()
 
     @parameter
-    for dt in dtypes:
-        alias S = Scalar[dt]
-        for n in range(-5, 5):
-            var res = S(from_bits=S(n).to_bits())
-            assert_equal(res, S(n))
-
-    fn floating_point_dtypes() -> List[DType]:
-        var res = [DType.float16, DType.float32, DType.float64]
-
-        res.append(DType.bfloat16)
-        return res^
-
-    alias fp_dtypes = floating_point_dtypes()
-
-    @parameter
-    for dt in fp_dtypes:
-        alias S = Scalar[dt]
-        for i in range(-10, 10):
-            var v = 1 / S(i)
-            var res = S(from_bits=S(v).to_bits())
-            assert_equal(res, S(v))
+    for dtype, size in product(dtypes, sizes):
+        prop_test.test[properties[dtype, size]](SIMD[dtype, size].strategy())
 
 
 def test_simd_variadic():

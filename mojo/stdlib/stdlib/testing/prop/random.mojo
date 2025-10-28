@@ -118,7 +118,9 @@ struct Rng(Movable):
             return min
 
         @parameter
-        if dtype.is_integral():
+        if dtype == DType.bool:
+            return rebind[Scalar[dtype]](Scalar[DType.bool](self.rand_bool()))
+        elif dtype.is_integral():
             var offset = UInt64(0) - UInt64(Scalar[dtype].MIN)
             var a = UInt64(min) + offset
             var b = UInt64(max) + offset
@@ -131,7 +133,7 @@ struct Rng(Movable):
             return Scalar[dtype](result)
         else:
             constrained[
-                False, "rand_scalar expected integral or floating point"
+                False, "rand_scalar expected bool, integral, or floating point"
             ]()
             return 0
 
