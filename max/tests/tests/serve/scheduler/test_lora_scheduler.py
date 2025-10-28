@@ -19,7 +19,7 @@ from max.interfaces import (
 )
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
-from max.serve.scheduler.text_batch_constructor import (
+from max.serve.scheduler.batch_constructor import (
     TextBatchConstructor,
     TokenGenerationSchedulerConfig,
 )

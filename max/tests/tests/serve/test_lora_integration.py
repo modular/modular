@@ -454,7 +454,7 @@ def test_lora_allocation_respects_protected_tg_loras(
     - Non-protected globally active LoRAs can be evicted
     """
     from max.pipelines.core.context import TextContext
-    from max.serve.scheduler.lora_scheduler_utils import (
+    from max.serve.scheduler.batch_constructor.lora_scheduler_utils import (
         can_allocate_lora_request,
     )
 
