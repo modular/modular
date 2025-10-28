@@ -1149,7 +1149,10 @@ class Scheduler:
 
         for idx, b in enumerate(bi_list):
             valid = False
-            if os.path.exists(b.output_path):
+            if (
+                os.path.exists(b.output_path)
+                and b.exec_output.return_code == os.EX_OK
+            ):
                 df = pd.read_csv(b.output_path, index_col=None, header=0)
                 if not df.empty:
                     df.insert(0, "mesh_idx", b.idx)
