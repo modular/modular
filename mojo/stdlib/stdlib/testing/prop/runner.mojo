@@ -32,7 +32,7 @@ struct PropTestConfig(Copyable, Movable):
             seed: The seed for the random number generator.
         """
         self.runs = runs
-        self.seed = seed.or_else(perf_counter_ns())
+        self.seed = seed.or_else(Int(perf_counter_ns()))
 
 
 struct PropTest(Movable):
