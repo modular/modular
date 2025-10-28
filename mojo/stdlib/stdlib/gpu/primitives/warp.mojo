@@ -765,96 +765,20 @@ fn lane_group_sum_and_broadcast[
 
 
 @always_inline
-fn sum[
-    val_type: DType, simd_width: Int, //
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+fn sum(val: SIMD) -> Scalar[val.dtype]:
     """Computes the sum of values across all lanes in a warp.
 
     This is a convenience wrapper around lane_group_sum_and_broadcast that
     operates on the entire warp.  It performs a parallel reduction using warp
     shuffle operations to find the global sum across all lanes in the warp.
 
-    Parameters:
-        val_type: The data type of the SIMD elements (e.g. float32, int32).
-        simd_width: The number of elements in the SIMD vector.
-
     Args:
         val: The SIMD value to reduce. Each lane contributes its value to the sum.
 
     Returns:
-        A SIMD value where all lanes contain the sum found across the entire warp.
-        The sum is broadcast to all lanes.
+        The scalar sum of values across all lanes in the warp.
     """
-    return lane_group_sum_and_broadcast[num_lanes=WARP_SIZE](val)
-
-
-@fieldwise_init
-@register_passable("trivial")
-struct ReductionMethod(EqualityComparable, Identifiable):
-    """Enumerates the supported reduction methods."""
-
-    var _value: Int
-
-    alias TENSOR_CORE = Self(0)
-    """Use tensor core for reduction."""
-    alias WARP = Self(1)
-    """Use warp shuffle for reduction."""
-
-    fn __eq__(self, other: Self) -> Bool:
-        """Checks if two ReductionMethod are equal.
-
-        Args:
-            other: The other ReductionMethod to compare.
-
-        Returns:
-            True if the ReductionMethod are equal, false otherwise.
-        """
-        return self._value == other._value
-
-    fn __is__(self, other: Self) -> Bool:
-        """Checks if two ReductionMethod are identical.
-
-        Args:
-            other: The other ReductionMethod to compare.
-
-        Returns:
-            True if the ReductionMethod are identical, false otherwise.
-        """
-        return self == other
-
-
-@always_inline
-fn sum[
-    intermediate_type: DType,
-    *,
-    output_type: DType,
-](x: SIMD) -> Scalar[output_type]:
-    """Performs a warp-level reduction to compute the sum of values across threads.
-
-    This function provides two reduction methods:
-    1. Warp shuffle: Uses warp shuffle operations to efficiently sum values across threads
-    2. Tensor core: Leverages tensor cores for high-performance reductions, with dtype casting
-
-    The tensor core method will cast the input to the specified intermediate dtype before
-    reduction to ensure compatibility with tensor core operations. The warp shuffle method
-    requires the output dtype to match the input dtype.
-
-    Parameters:
-        intermediate_type: The data type to cast to when using tensor core reduction.
-        output_type: The desired output data type for the reduced value.
-
-    Args:
-        x: The SIMD value to reduce across the warp.
-
-    Returns:
-        A scalar containing the sum of the input values across all threads in the warp,
-        cast to the specified output dtype.
-
-    Constraints:
-        - For warp shuffle reduction, output_type must match the input value dtype.
-        - For tensor core reduction, input will be cast to intermediate_type.
-    """
-    return sum(x.reduce_add())._refine[output_type]()
+    return lane_group_sum_and_broadcast[num_lanes=WARP_SIZE](val.reduce_add())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1045,27 +969,20 @@ fn lane_group_max_and_broadcast[
 
 
 @always_inline
-fn max[
-    val_type: DType,
-    simd_width: Int, //,
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+fn max(val: SIMD) -> Scalar[val.dtype]:
     """Computes the maximum value across all lanes in a warp.
 
     This is a convenience wrapper around lane_group_max that operates on the entire warp.
     It performs a parallel reduction using warp shuffle operations to find the global maximum
     value across all lanes in the warp.
 
-    Parameters:
-        val_type: The data type of the SIMD elements (e.g. float32, int32).
-        simd_width: The number of elements in the SIMD vector.
-
     Args:
         val: The SIMD value to reduce. Each lane contributes its value to find the maximum.
 
     Returns:
-        A SIMD value where all lanes contain the maximum value found across the entire warp.
+        The scalar maximum value across all lanes in the warp.
     """
-    return lane_group_max[num_lanes=WARP_SIZE](val)
+    return lane_group_max[num_lanes=WARP_SIZE](val.reduce_max())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1117,27 +1034,20 @@ fn lane_group_min[
 
 
 @always_inline
-fn min[
-    val_type: DType, simd_width: Int, //
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+fn min(val: SIMD) -> Scalar[val.dtype]:
     """Computes the minimum value across all lanes in a warp.
 
     This is a convenience wrapper around lane_group_min that operates on the entire warp.
     It performs a parallel reduction using warp shuffle operations to find the global minimum
     value across all lanes in the warp.
 
-    Parameters:
-        val_type: The data type of the SIMD elements (e.g. float32, int32).
-        simd_width: The number of elements in the SIMD vector.
-
     Args:
         val: The SIMD value to reduce. Each lane contributes its value to find the minimum.
 
     Returns:
-        A SIMD value where all lanes contain the minimum value found across the entire warp.
-        The minimum value is broadcast to all lanes.
+        The scalar minimum value across all lanes in the warp.
     """
-    return lane_group_min[num_lanes=WARP_SIZE](val)
+    return lane_group_min[num_lanes=WARP_SIZE](val.reduce_min())
 
 
 # ===-----------------------------------------------------------------------===#

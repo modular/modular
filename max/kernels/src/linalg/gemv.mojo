@@ -152,7 +152,7 @@ fn gemv_kernel[
                 * b.load(idx).cast[s_type]()
             )
 
-    accum = warp.sum[a_type, output_type=s_type](accum)
+    accum = warp.sum(accum)
 
     if lane_id() == 0:
 
@@ -217,7 +217,7 @@ fn gemv_kernel_vector[
 
         idx += UInt(step)
 
-    var accum = warp.sum[a_type, output_type=s_type](local_accum)
+    var accum = warp.sum(local_accum)
 
     if lane_id() == 0:
 

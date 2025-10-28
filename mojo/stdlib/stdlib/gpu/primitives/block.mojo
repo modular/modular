@@ -26,7 +26,6 @@ NVIDIA and AMD GPU architectures and supports various data types with SIMD
 vectorization.
 """
 
-
 from math import align_up
 
 from memory import stack_allocation
@@ -41,16 +40,13 @@ import .warp
 
 @always_inline
 fn _block_reduce[
-    dtype: DType,
-    width: Int, //,
+    dtype: DType, //,
     block_size: Int,
-    warp_reduce_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
-        dtype, width
+    warp_reduce_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> Scalar[
+        dtype
     ],
     broadcast: Bool = False,
-](val: SIMD[dtype, width], *, initial_val: SIMD[dtype, width]) -> SIMD[
-    dtype, width
-]:
+](val: Scalar[dtype], *, initial_val: Scalar[dtype]) -> Scalar[dtype]:
     """Performs a generic block-level reduction operation.
 
     This function implements a block-level reduction using warp-level operations
@@ -59,7 +55,6 @@ fn _block_reduce[
 
     Parameters:
         dtype: The data type of the SIMD elements.
-        width: The SIMD width for vector operations.
         block_size: The number of threads in the block.
         warp_reduce_fn: A function that performs warp-level reduction.
         broadcast: If True, the final reduced value is broadcast to all
@@ -100,7 +95,7 @@ fn _block_reduce[
         return warp_result
 
     var shared_mem = stack_allocation[
-        n_warps * width, dtype, address_space = AddressSpace.SHARED
+        n_warps, dtype, address_space = AddressSpace.SHARED
     ]()
 
     # Step 1: Perform warp-level reduction.
@@ -122,7 +117,7 @@ fn _block_reduce[
         # Load values from the shared memory (ith lane will have ith warp's
         # value).
         if lid < UInt(n_warps):
-            block_val = shared_mem.load[width=width](lid)
+            block_val = shared_mem[lid]
 
         # Reduce across the first warp
         warp_result = warp_reduce_fn(block_val)
@@ -131,14 +126,14 @@ fn _block_reduce[
         if broadcast:
             # Store the final result back to shared memory for broadcast
             if lid == 0:
-                shared_mem.store(warp_result)
+                shared_mem[] = warp_result
 
     @parameter
     if broadcast:
         # Synchronize and broadcast the result to all threads
         barrier()
         # All threads read the final result from shared memory
-        warp_result = shared_mem.load[width=width](0)
+        warp_result = shared_mem[]
 
     return warp_result
 
@@ -174,7 +169,7 @@ fn sum[
     """
 
     return _block_reduce[block_size, warp.sum, broadcast=broadcast](
-        val, initial_val=0
+        val.reduce_add(), initial_val=0
     )
 
 
@@ -211,7 +206,7 @@ fn max[
     """
 
     return _block_reduce[block_size, warp.max, broadcast=broadcast](
-        val, initial_val=Scalar[dtype].MIN_FINITE
+        val.reduce_max(), initial_val=Scalar[dtype].MIN_FINITE
     )
 
 
@@ -247,7 +242,7 @@ fn min[
     """
 
     return _block_reduce[block_size, warp.min, broadcast=broadcast](
-        val, initial_val=Scalar[dtype].MAX_FINITE
+        val.reduce_min(), initial_val=Scalar[dtype].MAX_FINITE
     )
 
 
