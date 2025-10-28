@@ -1430,11 +1430,14 @@ fn allreduce_2stage_quickreduce_tile[
     @parameter
     @always_inline
     fn phase1b_reduce():
-        if thread_idx.x < UInt(ngpus):
-            wait_for_flag(
-                flag_buf[my_rank] + comm_flags0_offset + thread_idx.x,
-                flag_color,
-            )
+        if thread_idx.x == UInt(0):
+
+            @parameter
+            for r in range(ngpus):
+                wait_for_flag(
+                    flag_buf[my_rank] + comm_flags0_offset + r,
+                    flag_color,
+                )
         barrier()
 
         @parameter
@@ -1476,11 +1479,14 @@ fn allreduce_2stage_quickreduce_tile[
         # No additional barrier: thread 0 will wait on all flags below and
         # a barrier after the wait will synchronize the block.
 
-        if thread_idx.x < UInt(ngpus):
-            wait_for_flag(
-                flag_buf[my_rank] + comm_flags1_offset + thread_idx.x,
-                flag_color,
-            )
+        if thread_idx.x == UInt(0):
+
+            @parameter
+            for r in range(ngpus):
+                wait_for_flag(
+                    flag_buf[my_rank] + comm_flags1_offset + r,
+                    flag_color,
+                )
         barrier()
 
         @parameter

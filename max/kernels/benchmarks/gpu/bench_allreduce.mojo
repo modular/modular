@@ -198,6 +198,9 @@ fn bench_reduce[
             rebind[IndexList[rank]](coords), rebind[SIMD[dtype, _width]](val)
         )
 
+    # Monotonic iteration counter to color quickreduce flags across launches.
+    var iter = 0
+
     @parameter
     @always_inline
     fn bench_iter(mut b: Bencher) raises:
@@ -220,7 +223,10 @@ fn bench_reduce[
                         rank_sigs,
                         list_of_ctx[i],
                         max_num_blocks,
+                        iter,
                     )
+                # Increment color after launching one multi-GPU allreduce.
+                iter += 1
             else:
 
                 @parameter
@@ -230,7 +236,16 @@ fn bench_reduce[
                         output_lambda = outputs_lambda[input_index=i],
                         use_multimem=use_multimem,
                         use_quickreduce=use_quickreduce,
-                    ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
+                    ](
+                        in_bufs,
+                        out_bufs[i],
+                        rank_sigs,
+                        list_of_ctx[i],
+                        None,
+                        iter,
+                    )
+                # Increment color after launching one multi-GPU allreduce.
+                iter += 1
 
         b.iter_custom_multicontext[call_fn](list_of_ctx)
 
