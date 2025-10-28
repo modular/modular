@@ -895,9 +895,8 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="internvl3_5-8b-instruct",
             encoding="bfloat16",
-            cos_dist_threshold=1.4e00,
-            # TODO(MODELS-785): Fix InternVL3.5 correctness.
-            kl_div_threshold=9.0e00,
+            cos_dist_threshold=1.2e-2,
+            kl_div_threshold=7.7e-03,
         ),
     ),
     "mistral-community/pixtral-12b-bfloat16": PipelineDef(
