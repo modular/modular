@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from max.graph import TensorValue
-from max.nn.attention.interfaces import AttentionImpl, AttentionImplQKV
+from max.nn.attention.interfaces import AttentionImplQKV
 from max.nn.kv_cache import (
     PagedCacheValues,
 )
@@ -30,7 +30,7 @@ class Olmo2TransformerBlock(Module):
 
     def __init__(
         self,
-        attention: AttentionImpl | AttentionImplQKV | Module,
+        attention: AttentionImplQKV | Module,
         mlp: Layer,
         post_attention_layer_norm: Layer,
         post_feedforward_layer_norm: Layer,

@@ -24,7 +24,7 @@ from max.graph import (
     ops,
 )
 
-from ..attention.interfaces import AttentionImpl, AttentionImplQKV
+from ..attention.interfaces import AttentionImplQKV
 from ..embedding import Embedding, EmbeddingV1
 from ..kv_cache import (
     KVCacheParams,
@@ -40,7 +40,7 @@ class TransformerBlock(Module):
 
     def __init__(
         self,
-        attention: AttentionImpl | AttentionImplQKV | Module,
+        attention: AttentionImplQKV | Module,
         mlp: Layer,
         attention_norm: Layer,
         mlp_norm: Layer,

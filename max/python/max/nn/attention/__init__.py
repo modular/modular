@@ -15,16 +15,11 @@
 from .attention_with_rope import (
     AttentionWithRope,
     AttentionWithRopeQKV,
-    AttentionWithRopeV1,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
     TensorParallelAttentionWithRope,
 )
-from .interfaces import (
-    AttentionImpl,
-    AttentionImplQKV,
-    DistributedAttentionImpl,
-)
+from .interfaces import AttentionImplQKV, DistributedAttentionImpl
 from .mask_config import (
     AttentionMaskVariant,
     MHAMaskConfig,
@@ -39,12 +34,10 @@ from .multihead_attention import MultiheadAttention
 from .ragged_attention import RaggedAttention
 
 __all__ = [
-    "AttentionImpl",
     "AttentionImplQKV",
     "AttentionMaskVariant",
     "AttentionWithRope",
     "AttentionWithRopeQKV",
-    "AttentionWithRopeV1",
     "DistributedAttentionImpl",
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
