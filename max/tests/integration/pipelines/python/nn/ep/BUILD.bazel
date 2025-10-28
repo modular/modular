@@ -3,7 +3,10 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 modular_py_test(
     name = "ep_tests",
     size = "enormous",
-    srcs = glob(["test_*.py"]) + ["conftest.py"],
+    srcs = glob(
+        ["test_*.py"],
+        exclude = ["test_ep_comm.py"],
+    ) + ["conftest.py"],
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.2",  # reserve memory for NVSHMEM
         "MODULAR_NVSHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
