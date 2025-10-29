@@ -84,7 +84,7 @@ def test_mo_graph_op(mlir_context) -> None:  # noqa: ANN001
     builder = OpBuilder(module.body.end)
     graph = mo.GraphOp(builder, loc, "hello", [], [], is_subgraph=False)
 
-    assert graph.name == "hello"
+    assert graph.sym_name == "hello"
     assert list(graph.input_parameters) == []
     assert graph.function_type == builtin.FunctionType([], [])
 
