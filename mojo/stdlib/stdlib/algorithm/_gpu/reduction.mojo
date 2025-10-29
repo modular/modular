@@ -387,7 +387,7 @@ fn small_reduce_kernel[
         grid_dim.x * UInt(warps_per_block),
     ):
         var row_coords = _get_nd_indices_from_flat_index(
-            Int(row_idx) + (warp_id()), shape, axis
+            Int(row_idx) + Int(warp_id()), shape, axis
         )
 
         # One row per warp, warp collectively reads from global
