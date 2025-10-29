@@ -189,6 +189,8 @@ def gracefully_stop_process(process: Popen) -> None:
         try:
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
             process.wait(5)
+        except ProcessLookupError:
+            pass  # process already dead
         except TimeoutExpired:
             logger.warning("Process did not terminate gracefully, forcing kill")
             os.killpg(os.getpgid(process.pid), signal.SIGKILL)
@@ -381,9 +383,8 @@ def smoke_test(
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
     results = []
     all_samples = []
+    server_process, startup_time = start_server(cmd)
     try:
-        server_process, startup_time = start_server(cmd)
-
         logger.info(f"Server started in {startup_time:.2f} seconds")
         write_github_output("startup_time", f"{startup_time:.2f}")
 
