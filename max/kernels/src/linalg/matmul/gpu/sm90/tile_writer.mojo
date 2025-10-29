@@ -59,6 +59,9 @@ from collections import OptionalReg
 from layout.layout_tensor import copy_local_to_dram
 import itertools
 from memory.pointer import _GPUAddressSpace
+from layout.swizzle import Swizzle, make_ldmatrix_swizzle
+from layout.tensor_core_async import st_matrix_n_layout
+from stdlib.bit import log2_floor
 
 
 # Import ThreadInfo from matmul_output
@@ -168,7 +171,7 @@ struct TileWriterTMA[
     tma_origin: Origin[False],
     dtype: DType,
     tma_layout: Layout,
-    desc_layout: Layout,
+    desc_layout: Layout, //,
 ](SMemTileWriter):
     """TMA-based tile writer for hardware-accelerated memory transfers.
 
@@ -231,7 +234,7 @@ struct TileWriterTMA[
 
 
 @register_passable("trivial")
-struct TileWriterRegular[
+struct TileWriterThreadwise[
     dtype: DType,
     dst_layout: Layout,
     dst_address_space: AddressSpace,
@@ -241,9 +244,8 @@ struct TileWriterRegular[
     dst_masked: Bool,
     dst_alignment: Int, //,
     thread_layout: Layout,
-    swizzle: Swizzle,
     simd_size: Int,
-    use_x2_for_last_iter: Bool = False,  # Handle masked x2 case
+    half_tile: Bool = False,  # Handle masked x2 case
 ](SMemTileWriter):
     alias _dtype = Self.dtype
 
@@ -267,7 +269,7 @@ struct TileWriterRegular[
         dst: Self.DstType,
         thread_idx: UInt,
     ):
-        """Initialize the regular tile writer.
+        """Initialize the threadwise tile writer.
 
         Args:
             dst: Destination tensor in global memory.
@@ -282,21 +284,27 @@ struct TileWriterRegular[
         src: SMemTileType[Self._dtype, _, alignment=128, **_],
         coords: Tuple[UInt, UInt],
     ):
-        """Write a tile using regular stores.
+        """Write a tile using thread-distributed stores.
 
-        Distributes the write operation across threads with proper swizzling
+        Each thread writes a portion of the tile with proper swizzling
         for optimal memory access patterns.
 
         Args:
             src: Source tile in shared memory.
             coords: Tile indices (row_tile, col_tile) in the destination matrix.
         """
-        # For the regular writer used in _perform_output_store, coords are always (0, 0)
-        # because the destination tile is already pre-extracted as c_gmem_wg_tile.
+        # For the threadwise writer, coords are always (0, 0) because the
+        # destination tile is already pre-extracted as the workgroup tile.
         # We directly use self.dst as the destination.
 
+        alias swizzle = make_ldmatrix_swizzle[
+            Self._dtype,
+            src.stride[0](),
+            log2_floor(16 // size_of[Self._dtype]()),
+        ]()
+
         @parameter
-        if use_x2_for_last_iter:
+        if half_tile:
             # Handle masked x2 case - write only half the tile width
             # Get compile-time layout dimensions
             alias dst_height = dst_layout.shape[0].value()
@@ -367,10 +375,10 @@ struct FragmentToSMemWriter[
     tile_n_size: Int,  # Size of each tile in N dimension (e.g., TMA_BN)
     num_m_mmas: Int,
     num_consumer: Int,
-    use_x2_for_last_iter: Bool,
+    half_tile: Bool,
     WG_BM: Int,  # Warp group M dimension
     WG_BN: Int,  # Warp group N dimension
-    sub_wg_bn_id: Int,  # Sub warp group ID in N dimension
+    sub_wg_id: Int,  # Sub warp group ID in N dimension
 ](RegTileWriter):
     """Writes WGMMA accumulator results from registers to shared memory using st.matrix.
 
@@ -383,16 +391,24 @@ struct FragmentToSMemWriter[
         tile_n_size: Width of each output tile (typically TMA_BN).
         num_m_mmas: Number of MMA operations in M dimension.
         num_consumer: Number of consumer warp groups.
-        use_x2_for_last_iter: Special mode for handling partial tiles.
+        half_tile: Special mode for handling partial tiles.
         WG_BM: Warp group tile height.
         WG_BN: Warp group tile width.
-        sub_wg_bn_id: Which portion of WG_BN this instance handles.
+        sub_wg_id: Which portion of WG_BN this instance handles.
     """
+
+    alias st_matrix_swizzle = make_ldmatrix_swizzle[
+        c_type, tile_n_size, log2_floor(16 // size_of[c_type]())
+    ]()
+    alias st_matrix_rt_layout_type = RuntimeLayout[
+        st_matrix_n_layout[c_type, tile_n_size, num_m_mmas, num_consumer](),
+        element_type = DType.int32,
+        linear_idx_type = DType.int32,
+    ]
 
     var c_tile: SMemTileType[c_type, c_tile_layout, alignment=128]
     var warp_group_thread_idx: UInt
     var local_warp_group_idx: UInt
-    var st_matrix_swizzle: Swizzle
     var st_matrix_rt_layout: RuntimeLayout[
         st_matrix_n_layout[c_type, tile_n_size, num_m_mmas, num_consumer](),
         element_type = DType.int32,
@@ -405,12 +421,6 @@ struct FragmentToSMemWriter[
         c_tile: SMemTileType[c_type, c_tile_layout, alignment=128],
         warp_group_thread_idx: UInt,
         local_warp_group_idx: UInt,
-        st_matrix_swizzle: Swizzle,
-        st_matrix_rt_layout: RuntimeLayout[
-            st_matrix_n_layout[c_type, tile_n_size, num_m_mmas, num_consumer](),
-            element_type = DType.int32,
-            linear_idx_type = DType.int32,
-        ],
     ):
         """Initialize the fragment writer.
 
@@ -418,14 +428,11 @@ struct FragmentToSMemWriter[
             c_tile: Shared memory tile to write to.
             warp_group_thread_idx: Thread index within the warp group.
             local_warp_group_idx: Sub-warp group index (divides N-dimension work).
-            st_matrix_swizzle: Swizzle pattern for bank conflict avoidance.
-            st_matrix_rt_layout: Runtime layout for st.matrix operations.
         """
         self.c_tile = c_tile
         self.warp_group_thread_idx = warp_group_thread_idx
         self.local_warp_group_idx = local_warp_group_idx
-        self.st_matrix_swizzle = st_matrix_swizzle
-        self.st_matrix_rt_layout = st_matrix_rt_layout
+        self.st_matrix_rt_layout = Self.st_matrix_rt_layout_type()
 
     @always_inline
     fn _compute_swizzled_offset[n_frag: Int, m_frag: Int](self) -> Int32:
@@ -517,13 +524,13 @@ struct FragmentToSMemWriter[
         var smem_frag = dest_tile_flat.reshape[Self.st_matrix_layout]()
 
         # st.matrix configuration
-        alias elements_per_store = 4 * (1 if use_x2_for_last_iter else 2)
-        alias reg_fragment_scale = 2 if use_x2_for_last_iter else 1
+        alias elements_per_store = 4 * (1 if half_tile else 2)
+        alias reg_fragment_scale = 2 if half_tile else 1
 
         alias ST_MATRIX_WIDTH_BYTES = 16  # Fragment size: st.matrix operates on 16-byte chunks
         var n_fragment_base = (
             Int(coords[1]) * tile_n_size
-            + sub_wg_bn_id * WG_BN  # Sub-warp handles portion of WG_BN
+            + sub_wg_id * WG_BN  # Sub-warp handles portion of WG_BN
         ) // ST_MATRIX_WIDTH_BYTES
 
         # Store all fragments using st.matrix

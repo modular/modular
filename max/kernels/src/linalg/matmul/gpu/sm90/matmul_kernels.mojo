@@ -70,7 +70,7 @@ from .tile_loader import (
     TileLoaderCPAsync,
     TileLoader,
 )
-from .matmul_output import write_gemm_output_to_global_memory
+from .matmul_output import MatmulTileWriter
 
 
 # Shared memory structure for Hopper SM90 kernel
@@ -512,25 +512,26 @@ struct HopperMatmulSM90Kernel[
         block_x: Int,
     ):
         """Handle consumer output by writing GEMM results to global memory."""
-        write_gemm_output_to_global_memory[
-            c_tile_shape = Index(Self.BM, Self.BN),
-            c_swizzle=c_swizzle,
+        var matmul_tile_writer = MatmulTileWriter[
+            BM = Self.BM,
+            BN = Self.BN,
+            swizzle=c_swizzle,
             wgmma_shape=wgmma_shape,
             num_consumer = Self.num_consumer,
             use_tma_store=use_tma_store,
             elementwise_lambda_fn=custom_elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         ](
-            c_tma_op,
+            # Pointer(to=c_tma_op),
             c,
             c_tile,
-            output_reg_tile,
             warp_group_thread_idx,
             local_warp_group_idx,
             local_thread_idx,
             block_y,
             block_x,
         )
+        matmul_tile_writer.write_tile(c_tma_op, output_reg_tile)
 
     @staticmethod
     @always_inline
