@@ -1340,6 +1340,19 @@ kgen.generator export @get_linkage_name() {
 
 // -----
 
+kgen.generator @some_generator() attributes {sourceName = "foo"} {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @get_source_name
+kgen.generator export @get_source_name() {
+  // CHECK-NEXT: constant: string = <"foo">
+  %0 = kgen.param.constant: string = <#kgen.get_source_name<#kgen.symbol.constant<@some_generator> : !kgen.generator<() -> ()>>>
+  kgen.return
+}
+
+// -----
+
 kgen.struct.generator @NonParametric = struct_inst<
   "NonParametric"(data: index)>
 
