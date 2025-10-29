@@ -21,6 +21,7 @@ from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import ScaledWordEmbedding
 from max.pipelines.architectures.gemma3.layers.transformer_block import Gemma3TransformerBlock
+from max.pipelines.architectures.internvl.embedding_utils import merge_multimodal_embeddings
 
 from .attention import Gemma3VisionAttention
 
@@ -157,11 +158,22 @@ class Gemma3LanguageModel(Module):
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
         image_embeddings: Sequence[TensorValue],
+        image_token_indices: TensorValue,
         **kwargs,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens, signal_buffers)
-
-        # Create KV cache collections per device
+        
+        # Replace image placeholder tokens with vision embeddings
+        h = [
+            merge_multimodal_embeddings(
+                inputs_embeds=h_device,
+                multimodal_embeddings=img_embed,
+                image_token_indices=img_tok_indices,
+            )
+            for h_device, img_embed, img_tok_indices in zip(
+                h, image_embeddings, image_token_indices, strict=True
+            )
+        ]
 
         # Run through transformer layers
         for idx, layer in enumerate(self.layers):
@@ -623,7 +635,7 @@ class Gemma3VisionModel(Module):
     ) -> Sequence[TensorValue]:
         """Process pixel values to image embeddings"""
         # 1. Convert patches to embeddings
-        hidden_states = self.embeddings(pixel_values[0])
+        hidden_states = self.embeddings(pixel_values[0]) # TODO using index cos its internVL on the other end.  remove `[0]`
         # Shape: [batch, num_patches, vision_hidden_size]
 
         # 2. Pass through vision encoder (27 transformer layers)
@@ -634,9 +646,11 @@ class Gemma3VisionModel(Module):
         hidden_states = self.post_layernorm(hidden_states)
         # Shape: [batch, num_patches, vision_hidden_size]
 
-        # NOTE: Projection to language model dimension happens in the language model
-        # via the multi_modal_projector, not here in the vision model.
-        # The vision model just outputs vision embeddings.
+        # hidden_states = self.connector(hidden_states)
 
-        # Return one output per device (for multi-GPU)
-        return [hidden_states for _ in range(len(self.config.devices))]
+        # Reshape to flatten spatial dimensions, keeping the last dimension (feature dimension)
+        image_hidden_states = ops.reshape(
+            hidden_states, (-1, hidden_states.shape[-1])
+        )
+
+        return [image_hidden_states for _ in range(len(self.config.devices))]
