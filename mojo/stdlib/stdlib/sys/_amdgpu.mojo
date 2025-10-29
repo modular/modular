@@ -16,12 +16,12 @@ from os import Atomic
 from sys.intrinsics import (
     ballot,
     implicitarg_ptr,
-    lane_id,
     readfirstlane,
     sendmsg,
 )
 from time import sleep
 
+from gpu.primitives.id import lane_id
 from memory import Span
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
