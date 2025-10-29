@@ -23,11 +23,6 @@ from max.serve.scheduler.batch_constructor import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
 )
-from max.serve.scheduler.utils import (
-    add_newly_encoded_reqs_to_tg_batch,
-    release_cancelled_requests,
-    release_terminated_requests,
-)
 
 ARBITRARY_TOKEN_ID = 999
 
@@ -178,10 +173,8 @@ def test_scheduler_handle_terminated_responses() -> None:
         mock_2.request_id: resp_2,
     }
 
-    num_terminated_reqs = release_terminated_requests(
+    num_terminated_reqs = batch_constructor.release_terminated_requests(
         batch_responses,
-        scheduler.pipeline,
-        scheduler.batch_constructor.tg_reqs,
     )
 
     assert num_terminated_reqs == 1
@@ -204,10 +197,9 @@ def test_scheduler_handle_chunked_requests() -> None:
     mock_2: TextGenerationOutput = Mock(is_done=False, tokens=[])
     batch_responses = {req_1.request_id: mock_1, req_2.request_id: mock_2}
 
-    add_newly_encoded_reqs_to_tg_batch(
-        batch_executed,
+    scheduler.batch_constructor.move_completed_ce_requests_to_tg(
+        [batch_executed],
         batch_responses,
-        scheduler.batch_constructor,
     )
 
     assert req_2.request_id not in batch_responses
@@ -222,12 +214,7 @@ def test_handle_cancelled_requests() -> None:
 
     cancel_push_socket.put_nowait([mock_request.request_id])
 
-    release_cancelled_requests(
-        scheduler.cancel_queue,
-        scheduler.response_queue,
-        scheduler.batch_constructor.tg_reqs,
-        scheduler.pipeline,
-    )
+    scheduler.batch_constructor.cancel_request(mock_request.request_id)
 
     assert len(scheduler.batch_constructor.tg_reqs) == 0
     # Cache cleanup is now handled by pipeline.release()
