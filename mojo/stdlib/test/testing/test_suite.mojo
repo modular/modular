@@ -11,12 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
 from testing import assert_raises, assert_equal, assert_false, TestSuite
-
-
-def test_nonconforming_signature(x: Int):
-    raise Error("should not be run")
 
 
 def nonconforming_name():
@@ -40,7 +35,8 @@ def test_skipped():
 
 
 def main():
-    var suite = TestSuite.discover_tests[__functions_in_module()]()
+    alias funcs = __functions_in_module()
+    var suite = TestSuite.discover_tests[funcs]()
     suite.skip[test_skipped]()
 
     with assert_raises(contains="test not found in suite"):
@@ -70,5 +66,19 @@ def main():
     assert_false(report.reports[3].error)
 
     # Separately test skipping all tests; suppress the report to avoid spam.
-    var skip_all_suite = TestSuite.discover_tests[__functions_in_module()]()
+    var skip_all_suite = TestSuite.discover_tests[funcs]()
     skip_all_suite^.run(quiet=True, skip_all=True)
+
+    # The `__functions_in_module()` reflection returns a Tuple, which we can't
+    # slice into, so we manually build a list of functions to test that
+    # discovery fails if a test function has a nonconforming signature.
+    def test_nonconforming_signature(x: Int):
+        raise Error("should not be run")
+
+    alias failing_funcs = Tuple(
+        test_nonconforming_signature, funcs[1], funcs[2], funcs[3], funcs[4]
+    )
+    with assert_raises(
+        contains="'test_nonconforming_signature' has nonconforming signature"
+    ):
+        var _ = TestSuite.discover_tests[failing_funcs]()

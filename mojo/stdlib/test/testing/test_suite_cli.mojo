@@ -11,12 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from testing import assert_raises, assert_equal, assert_false, TestSuite
-
-
-def test_nonconforming_signature(x: Int):
-    raise Error("should not be run")
+from testing import assert_equal, assert_false, TestSuite
 
 
 def nonconforming_name():

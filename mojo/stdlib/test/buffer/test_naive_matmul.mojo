@@ -40,7 +40,7 @@
 #             print(buf[i][j])
 #
 #
-# def test_my_naive_matmul(c, a, b):
+# def _test_my_naive_matmul(c, a, b):
 #     for m in range(len(c)):
 #         for n in range(len(c[0])):
 #             c_val = 0.0
@@ -49,8 +49,8 @@
 #             c[m][n] = c_val
 #
 #
-# def test_naive_matmul(size):
-#     print("== test_naive_matmul")
+# def _test_naive_matmul(size):
+#     print("== _test_naive_matmul")
 #     c = nd_buffer(size)
 #
 #     b = nd_buffer(size)
@@ -59,7 +59,7 @@
 #     a = nd_buffer(size)
 #     fill_a(a)
 #
-#     test_my_naive_matmul(c, a, b)
+#     _test_my_naive_matmul(c, a, b)
 #     print_matrix(c)
 
 
@@ -70,7 +70,7 @@ from testing import TestSuite
 from utils.index import IndexList
 
 
-fn test_my_naive_matmul[
+fn _test_my_naive_matmul[
     shape: DimList, dtype: DType
 ](
     c: NDBuffer[mut=True, dtype, 2, _, shape],
@@ -123,9 +123,9 @@ fn print_matrix[
             print(buf[i, j])
 
 
-# CHECK-LABEL: test_naive_matmul
-fn test_naive_matmul[size: Int]():
-    print("== test_naive_matmul")
+# CHECK-LABEL: _test_naive_matmul
+fn _test_naive_matmul[size: Int]():
+    print("== _test_naive_matmul")
     var c_stack = InlineArray[Float32, size * size](uninitialized=True)
     var c = NDBuffer[
         DType.float32,
@@ -153,7 +153,7 @@ fn test_naive_matmul[size: Int]():
     ](a_stack)
     fill_a[size](a)
 
-    test_my_naive_matmul[
+    _test_my_naive_matmul[
         DimList(size, size),
         DType.float32,
     ](c, a, b)
@@ -163,22 +163,22 @@ fn test_naive_matmul[size: Int]():
 
 def test_naive_matmul_2():
     # CHECK: 4.0
-    test_naive_matmul[2]()
+    _test_naive_matmul[2]()
 
 
 def test_naive_matmul_4():
     # CHECK: 72.0
-    test_naive_matmul[4]()
+    _test_naive_matmul[4]()
 
 
 def test_naive_matmul_8():
     # CHECK: 784.0
-    test_naive_matmul[8]()
+    _test_naive_matmul[8]()
 
 
 def test_naive_matmul_16():
     # CHECK: 7200.0
-    test_naive_matmul[16]()
+    _test_naive_matmul[16]()
 
 
 def main():

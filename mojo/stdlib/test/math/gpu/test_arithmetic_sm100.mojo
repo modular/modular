@@ -100,9 +100,7 @@ fn host_elementwise_fma(
         c[i] = c_temp
 
 
-def test_arithmetic[
-    width: Int, mode: String
-](ctx: DeviceContext,):
+def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext):
     alias thread_count = 32
     alias block_count = 1
     alias buff_size = thread_count * block_count * width
@@ -184,15 +182,15 @@ def test_arithmetic[
 
 def test_arithmetic_sm100():
     with DeviceContext() as ctx:
-        test_arithmetic[2, "add"](ctx)
-        test_arithmetic[4, "add"](ctx)
-        test_arithmetic[8, "add"](ctx)
-        test_arithmetic[2, "mult"](ctx)
-        test_arithmetic[4, "mult"](ctx)
-        test_arithmetic[8, "mult"](ctx)
-        test_arithmetic[2, "fma"](ctx)
-        test_arithmetic[4, "fma"](ctx)
-        test_arithmetic[8, "fma"](ctx)
+        _test_arithmetic[2, "add"](ctx)
+        _test_arithmetic[4, "add"](ctx)
+        _test_arithmetic[8, "add"](ctx)
+        _test_arithmetic[2, "mult"](ctx)
+        _test_arithmetic[4, "mult"](ctx)
+        _test_arithmetic[8, "mult"](ctx)
+        _test_arithmetic[2, "fma"](ctx)
+        _test_arithmetic[4, "fma"](ctx)
+        _test_arithmetic[8, "fma"](ctx)
 
 
 def main():

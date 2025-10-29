@@ -122,7 +122,7 @@ def test_copysign():
     # TODO: Add some test cases for SIMD vector with width > 1
 
 
-fn test_isclose_numerics[*, symm: Bool]() raises:
+fn _test_isclose_numerics[*, symm: Bool]() raises:
     alias dtype = DType.float64
     alias T = SIMD[dtype, 2]
 
@@ -212,8 +212,8 @@ def test_isclose():
         all(isclose(T(1, 2, nan_, 3), T(1, 2, nan_, 4), equal_nan=True))
     )
 
-    test_isclose_numerics[symm=False]()
-    test_isclose_numerics[symm=True]()
+    _test_isclose_numerics[symm=False]()
+    _test_isclose_numerics[symm=True]()
 
 
 def test_ceil():

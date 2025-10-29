@@ -59,7 +59,7 @@ def test_consistency_stringable():
     assert_equal(String(Consistency.SEQUENTIAL), "SEQUENTIAL")
 
 
-def test_atomic[dtype: DType]():
+def _test_atomic[dtype: DType]():
     alias scalar = Scalar[dtype]
     var atom = Atomic[dtype](3)
 
@@ -86,7 +86,12 @@ def test_atomic[dtype: DType]():
     assert_equal(atom.value, scalar(0))
 
 
-def test_compare_exchange[dtype: DType]():
+def test_atomic():
+    _test_atomic[DType.int32]()
+    _test_atomic[DType.float64]()
+
+
+def _test_compare_exchange[dtype: DType]():
     alias scalar = Scalar[dtype]
     var atom = Atomic[dtype](3)
 
@@ -105,6 +110,11 @@ def test_compare_exchange[dtype: DType]():
     assert_false(failure)
     assert_equal(expected, scalar(42))
     assert_equal(atom.load(), scalar(42))
+
+
+def test_compare_exchange():
+    _test_compare_exchange[DType.int32]()
+    _test_compare_exchange[DType.float64]()
 
 
 def test_comptime_atomic():

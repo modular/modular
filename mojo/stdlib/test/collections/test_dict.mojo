@@ -506,7 +506,7 @@ def test_mojo_issue_1729():
         assert_equal(i, d[key])
 
 
-def test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]):
+def _test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]):
     assert_equal(len(kwargs), 2)
 
     assert_true("fruit" in kwargs)
@@ -552,7 +552,7 @@ def test_owned_kwargs_dict():
     var owned_kwargs = OwnedKwargsDict[Int]()
     owned_kwargs._insert("fruit", 8)
     owned_kwargs._insert("dessert", 9)
-    test_taking_owned_kwargs_dict(owned_kwargs^)
+    _test_taking_owned_kwargs_dict(owned_kwargs^)
 
 
 def test_find_get():

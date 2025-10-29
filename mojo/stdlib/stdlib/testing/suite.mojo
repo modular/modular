@@ -18,19 +18,9 @@ from utils._ansi import Color, Text
 from collections import Set
 
 from builtin._location import __call_location, _SourceLocation
-from compile.reflection import get_linkage_name
+from compile.reflection import get_function_name
 from sys.intrinsics import _type_is_eq
 from sys import argv
-
-
-fn _get_test_func_name[
-    func_type: AnyType, //,
-    func: func_type,
-]() -> String:
-    """Get the name of a function."""
-
-    var name = get_linkage_name[func]()
-    return name.split("::")[-1].split("(", maxsplit=1)[0]
 
 
 struct _Indent[W: Writable, origin: ImmutableOrigin](Writable):
@@ -410,7 +400,7 @@ struct TestSuite(Movable):
         self.allow_list = None  # None means no allow list specified.
         self.cli_args = cli_args.or_else(List[StaticString](argv()))
 
-    fn _register_tests[test_funcs: Tuple, /](mut self):
+    fn _register_tests[test_funcs: Tuple, /](mut self) raises:
         """Internal function to prevent all registrations from being inlined."""
 
         @parameter
@@ -418,16 +408,17 @@ struct TestSuite(Movable):
             alias test_func = test_funcs[idx]
 
             @parameter
-            if _type_is_eq[type_of(test_func), _Test.fn_type]():
+            if get_function_name[test_func]().startswith("test_"):
 
                 @parameter
-                if _get_test_func_name[test_func]().startswith("test_"):
+                if _type_is_eq[type_of(test_func), _Test.fn_type]():
                     self.test[rebind[_Test.fn_type](test_func)]()
-
-            # TODO: raise or notify the user if `test_*` function has
-            # nonconforming signature. This will need some other reflection,
-            # since `_get_test_func_name` currently cannot work on parametric
-            # functions.
+                else:
+                    raise Error(
+                        "test function '",
+                        get_function_name[test_func](),
+                        "' has nonconforming signature",
+                    )
 
     @always_inline
     @staticmethod
@@ -437,7 +428,7 @@ struct TestSuite(Movable):
         *,
         location: Optional[_SourceLocation] = None,
         var cli_args: Optional[List[StaticString]] = None,
-    ) -> Self:
+    ) raises -> Self:
         """Discover tests from the given list of functions, and register them.
 
         Parameters:
@@ -449,6 +440,10 @@ struct TestSuite(Movable):
                 `__call_location`).
             cli_args: The command line arguments to pass to the test suite
                 (defaults to `sys.argv()`).
+
+        Raises:
+            If test discovery fails (e.g. because of a nonconforming test
+            function signature).
 
         Returns:
             A new TestSuite with all discovered tests registered.
@@ -470,7 +465,7 @@ struct TestSuite(Movable):
         Parameters:
             f: The function to run.
         """
-        self.tests.append(_Test(f, _get_test_func_name[f]()))
+        self.tests.append(_Test(f, get_function_name[f]()))
 
     fn skip[f: _Test.fn_type](mut self) raises:
         """Registers a test to be skipped.
@@ -486,11 +481,12 @@ struct TestSuite(Movable):
         """
         # TODO: _Test doesn't conform to EqualityComparable, so we can't use
         # `in` here. Also, we might wanna do this in O(1) time.
+        alias skipped_name = get_function_name[f]()
         for test in self.tests:
-            if test.name == _get_test_func_name[f]():
+            if test.name == skipped_name:
                 self.skip_list.add(test.name)
                 return
-        raise Error("test not found in suite: ", _get_test_func_name[f]())
+        raise Error("test not found in suite: ", skipped_name)
 
     fn _parse_filter_lists(mut self) raises:
         # TODO: We need a proper argument parsing library to do this right.

@@ -57,7 +57,7 @@ def exp_libm[
     return libm_call["expf", "exp"](arg)
 
 
-def test_exp_libm[dtype: DType]():
+def _test_exp_libm[dtype: DType]():
     seed(0)
     alias N = 8192
     for _i in range(N):
@@ -65,6 +65,11 @@ def test_exp_libm[dtype: DType]():
         assert_almost_equal(
             exp(x), exp_libm(x), msg=String("for the input ", x)
         )
+
+
+def test_exp_libm():
+    _test_exp_libm[DType.float32]()
+    _test_exp_libm[DType.float64]()
 
 
 @fieldwise_init

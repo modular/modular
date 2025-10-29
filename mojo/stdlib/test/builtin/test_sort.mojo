@@ -422,7 +422,7 @@ fn test_quick_sort_repeated_val() raises:
         assert_equal(expected[i], list[i])
 
 
-fn test_partition_top_k(length: Int, k: Int) raises:
+fn _test_partition_top_k(length: Int, k: Int) raises:
     var list = List[Float32](capacity=length)
 
     for i in range(0, length):
@@ -683,9 +683,9 @@ def test_ensure_no_copies():
 
 
 def test_partition():
-    test_partition_top_k(7, 5)
-    test_partition_top_k(11, 2)
-    test_partition_top_k(4, 1)
+    _test_partition_top_k(7, 5)
+    _test_partition_top_k(11, 2)
+    _test_partition_top_k(4, 1)
 
 
 def main():

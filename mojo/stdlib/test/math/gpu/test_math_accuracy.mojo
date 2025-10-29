@@ -63,7 +63,7 @@ def run_elementwise[
             )
 
 
-def test_exp[dtype: DType](ctx: DeviceContext):
+def _test_exp[dtype: DType](ctx: DeviceContext):
     var input = ctx.enqueue_create_buffer[dtype](length)
     alias epsilon = 0.001
     with input.map_to_host() as in_host:
@@ -72,7 +72,7 @@ def test_exp[dtype: DType](ctx: DeviceContext):
     run_elementwise[dtype, exp](ctx, input)
 
 
-def test_exp2[dtype: DType](ctx: DeviceContext):
+def _test_exp2[dtype: DType](ctx: DeviceContext):
     var input = ctx.enqueue_create_buffer[dtype](length)
     alias epsilon = 0.001
     with input.map_to_host() as in_host:
@@ -83,12 +83,12 @@ def test_exp2[dtype: DType](ctx: DeviceContext):
 
 def test_math_accuracy():
     with DeviceContext() as ctx:
-        test_exp[DType.float32](ctx)
-        test_exp[DType.float16](ctx)
-        test_exp[DType.bfloat16](ctx)
-        test_exp2[DType.float32](ctx)
-        test_exp2[DType.float16](ctx)
-        test_exp2[DType.bfloat16](ctx)
+        _test_exp[DType.float32](ctx)
+        _test_exp[DType.float16](ctx)
+        _test_exp[DType.bfloat16](ctx)
+        _test_exp2[DType.float32](ctx)
+        _test_exp2[DType.float16](ctx)
+        _test_exp2[DType.bfloat16](ctx)
 
 
 def main():

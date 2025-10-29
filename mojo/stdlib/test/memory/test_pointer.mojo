@@ -65,7 +65,7 @@ def test_merge():
 
 # We don't actually need to run this,
 # but Mojo's exclusivity check shouldn't complain
-def test_get_immutable() -> Int:
+def _test_get_immutable() -> Int:
     fn foo(x: Pointer[mut=False, Int], y: Pointer[mut=False, Int]) -> Int:
         return x[]
 

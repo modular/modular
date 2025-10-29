@@ -252,7 +252,7 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     _ = out_device
 
 
-fn test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
+def _test_elementwise_zero_dimension_3d(ctx: DeviceContext):
     """Test elementwise operations with zero dimension in 3D tensor."""
     alias dtype = DType.float32
     alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
@@ -329,7 +329,7 @@ def test_elementwise_gpu():
         run_elementwise[DType.float16](ctx)
         run_elementwise_uneven_simd[DType.float16](ctx)
         run_elementwise_transpose_copy[DType.float16](ctx)
-        test_elementwise_zero_dimension_3d(ctx)
+        _test_elementwise_zero_dimension_3d(ctx)
 
 
 def main():
