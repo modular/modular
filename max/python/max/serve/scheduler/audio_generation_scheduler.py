@@ -50,7 +50,7 @@ from .batch_constructor.lora_scheduler_utils import (
     is_active_lora,
     is_lora,
 )
-from .utils import release_cancelled_requests, release_terminated_requests
+from .utils import get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
 
@@ -402,6 +402,40 @@ class AudioGenerationScheduler(Scheduler):
 
         return AudioGenerationSchedulerOutput(ce_batch, batch_type=BatchType.CE)
 
+    def _release_terminated_requests(
+        self, responses: dict[RequestID, AudioGenerationOutput]
+    ) -> int:
+        """Releases terminated requests from the decode queue.
+
+        Args:
+            responses: A dict mapping RequestID to AudioGenerationOutput.
+
+        Returns:
+            The number of terminated requests.
+        """
+        num_terminated_reqs = 0
+        for req_id, response in responses.items():
+            if not response.is_done:
+                continue
+            del self.decode_reqs[req_id]
+            self.pipeline.release(req_id)
+            self.response_queue.put_nowait(
+                {req_id: SchedulerResult.cancelled()}
+            )
+            num_terminated_reqs += 1
+        return num_terminated_reqs
+
+    def _cancel_requests(self) -> None:
+        """Cancels requests from the cancel queue."""
+        for req_id in get_cancelled_reqs(self.cancel_queue):
+            # TODO: Support cancelling requests that are in the pending queue.
+            if req_id in self.decode_reqs:
+                del self.decode_reqs[req_id]
+                self.pipeline.release(req_id)
+                self.response_queue.put_nowait(
+                    {req_id: SchedulerResult.cancelled()}
+                )
+
     def _schedule(self, batch: AudioGenerationSchedulerOutput) -> None:
         assert batch.batch_size > 0
 
@@ -420,11 +454,7 @@ class AudioGenerationScheduler(Scheduler):
         self.decode_reqs.update(batch.reqs)
 
         # remove terminated requests from the batch
-        num_terminated_reqs = release_terminated_requests(
-            responses,
-            self.pipeline,
-            self.decode_reqs,
-        )
+        num_terminated_reqs = self._release_terminated_requests(responses)
         # TODO: We set the num_terminated field in the scheduler output object.
         # This is kind of ugly since we default to 0 then override.
         batch.num_terminated = num_terminated_reqs
@@ -510,11 +540,6 @@ class AudioGenerationScheduler(Scheduler):
             num_steps,
         )
 
-        release_cancelled_requests(
-            self.cancel_queue,
-            self.response_queue,
-            self.decode_reqs,
-            self.pipeline,
-        )
+        self._cancel_requests()
 
         return SchedulerProgress.MADE_PROGRESS

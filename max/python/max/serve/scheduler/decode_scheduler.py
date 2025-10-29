@@ -51,11 +51,7 @@ from .batch_constructor import (
     TextBatchConstructor,
     TokenGenerationSchedulerConfig,
 )
-from .utils import (
-    SchedulerLogger,
-    add_newly_encoded_reqs_to_tg_batch,
-    release_terminated_requests,
-)
+from .utils import SchedulerLogger, get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
 
@@ -243,40 +239,33 @@ class DecodeScheduler(Scheduler):
             self.send_prefill_request(req_id, context, dst_idxs)
 
     def _handle_cancelled_requests(self) -> None:
-        while True:
-            try:
-                for request_id in self.cancel_queue.get_nowait():
-                    # Remove it from the active batch.
-                    if request_id in self.batch_constructor.tg_reqs:
-                        del self.batch_constructor.tg_reqs[request_id]
+        for req_id in get_cancelled_reqs(self.cancel_queue):
+            # Remove it from the active batch.
+            if req_id in self.batch_constructor.tg_reqs:
+                del self.batch_constructor.tg_reqs[req_id]
 
-                        # Send the cancelled result back to the response q
-                        self.response_queue.put_nowait(
-                            {request_id: SchedulerResult.cancelled()}
-                        )
+                # Send the cancelled result back to the response q
+                self.response_queue.put_nowait(
+                    {req_id: SchedulerResult.cancelled()}
+                )
 
-                    # If it is pending prefill, remove the pending request.
-                    elif request_id in self.prefill_reqs:
-                        # Remove from pending requests.
-                        del self.prefill_reqs[request_id]
+            # If it is pending prefill, remove the pending request.
+            elif req_id in self.prefill_reqs:
+                # Remove from pending requests.
+                del self.prefill_reqs[req_id]
 
-                        # Send a cancel request to the prefill node
-                        self.dispatcher.send_request_nowait(
-                            CancelRequest(id=request_id)
-                        )
+                # Send a cancel request to the prefill node
+                self.dispatcher.send_request_nowait(CancelRequest(id=req_id))
 
-                        # Send the cancelled result back to the response q
-                        self.response_queue.put_nowait(
-                            {request_id: SchedulerResult.cancelled()}
-                        )
+                # Send the cancelled result back to the response q
+                self.response_queue.put_nowait(
+                    {req_id: SchedulerResult.cancelled()}
+                )
 
-                    else:
-                        logger.debug(
-                            f"cancel request received on decode node for {request_id} not in pending or active batch."
-                        )
-
-            except queue.Empty:
-                break
+            else:
+                logger.debug(
+                    f"cancel request received on decode node for {req_id} not in pending or active batch."
+                )
 
     def check_for_completed_transfers(self) -> None:
         """Updates the active batch by adding new requests from the decode queue and managing memory prefetching.
@@ -320,17 +309,16 @@ class DecodeScheduler(Scheduler):
         assert len(inputs.batches) > 0
         responses = self.pipeline.execute(inputs)
 
-        add_newly_encoded_reqs_to_tg_batch(
-            inputs.batch,
+        self.batch_constructor.move_completed_ce_requests_to_tg(
+            inputs.batches,
             responses,
-            self.batch_constructor,
         )
 
         # remove terminated requests from the batch
-        num_terminated_reqs = release_terminated_requests(
-            responses,
-            self.pipeline,
-            self.batch_constructor.tg_reqs,
+        num_terminated_reqs = (
+            self.batch_constructor.release_terminated_requests(
+                responses,
+            )
         )
 
         # send the responses to the API process

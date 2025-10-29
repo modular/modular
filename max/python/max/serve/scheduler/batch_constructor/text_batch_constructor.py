@@ -73,6 +73,88 @@ class TextBatchConstructor:
         else:
             self.tg_reqs[ctx.request_id] = ctx
 
+    def move_completed_ce_requests_to_tg(
+        self,
+        executed_batches: list[dict[RequestID, TextContext]],
+        responses: dict[RequestID, TextGenerationOutput],
+    ) -> None:
+        """Processes completed context encoding (CE) batches and moves requests to appropriate queues.
+
+        This method performs two key operations after CE execution:
+        1. **Moves completed CE requests to the token generation (TG) queue**: Requests that
+           have completed their context encoding phase are added to the TG batch, where they
+           will proceed to generate tokens.
+        2. **Returns chunked requests to the front of the CE queue**: When chunked prefill
+           is enabled, the last request in a CE batch may have been chunked (partially
+           processed). Such requests still need additional context encoding and are returned
+           to the start of the CE queue to ensure they are processed in the next CE batch.
+           The associated response is also removed from the responses dict to ensure that
+           a partial/incomplete response is not returned to the user.
+
+        Args:
+            executed_batches: A list of CE batches that were just executed. Each dict maps
+                RequestID to TextContext for requests that were in that CE batch.
+            responses: A dict mapping RequestID to TextGenerationOutput for all requests
+                in the executed batches. This is modified in-place to remove responses for
+                chunked requests that need to be re-queued for further CE processing.
+        """
+        for per_batch in executed_batches:
+            # Move the requests from CE to TG
+            self.tg_reqs.update(per_batch)
+
+            # Check if the last request in the batch is chunked.
+            if len(per_batch) > 0:
+                last_req = list(per_batch.values())[-1]
+
+                # if we still need Context Encoding, we put it back into the ce requests queue.
+                if last_req.needs_ce:
+                    req_id = last_req.request_id
+                    del self.tg_reqs[req_id]
+                    self.ce_reqs[req_id] = last_req
+                    self.ce_reqs.move_to_end(req_id, last=False)
+
+                    # Remove the request from the responses dictionary.
+                    del responses[req_id]
+
+    def release_terminated_requests(
+        self,
+        responses: dict[RequestID, TextGenerationOutput],
+    ) -> int:
+        """Releases terminated requests from the batch constructor.
+
+        Args:
+            responses: A dict mapping RequestID to TextGenerationOutput for all requests.
+
+        Returns:
+            The number of terminated requests.
+        """
+        num_terminated_reqs = 0
+        for req_id, response in responses.items():
+            if not response.is_done:
+                continue
+            if req_id not in self.tg_reqs:
+                continue
+            num_terminated_reqs += 1
+            self.pipeline.release(req_id)
+            del self.tg_reqs[req_id]
+        return num_terminated_reqs
+
+    def cancel_request(self, req_id: RequestID) -> bool:
+        """Cancels a request from the batch constructor.
+
+        Args:
+            req_id: The request ID to cancel.
+
+        Returns:
+            True if the request was found and cancelled, False otherwise.
+        """
+        if req_id in self.tg_reqs:
+            del self.tg_reqs[req_id]
+            self.pipeline.release(req_id)
+            return True
+        # TODO: Support cancellation of CE requests!
+        return False
+
     @traced
     def _maybe_chunk_prefill_request(
         self,

@@ -251,6 +251,24 @@ def release_terminated_requests(
     return num_terminated_reqs
 
 
+def get_cancelled_reqs(
+    cancel_q: MAXPullQueue[list[RequestID]],
+) -> list[RequestID]:
+    """Drains the cancel queue and returns all cancelled request IDs.
+
+    Args:
+        cancel_q: The queue containing lists of cancelled request IDs.
+
+    Returns:
+        A list of all cancelled request IDs.
+    """
+    cancelled_reqs = []
+    for req_ids in drain_queue(cancel_q):
+        for req_id in req_ids:
+            cancelled_reqs.append(req_id)
+    return cancelled_reqs
+
+
 def release_cancelled_requests(
     cancel_q: MAXPullQueue[list[RequestID]],
     response_q: MAXPushQueue[

@@ -47,7 +47,7 @@ from max.serve.scheduler.batch_constructor import (
 from max.serve.scheduler.di_dispatchers import PrefillDispatcherServerV2
 
 from .base import SchedulerProgress
-from .utils import SchedulerLogger, add_newly_encoded_reqs_to_tg_batch
+from .utils import SchedulerLogger
 
 logger = logging.getLogger("max.serve")
 
@@ -164,10 +164,9 @@ class PrefillScheduler(Scheduler):
         assert len(inputs.batches) > 0
         responses = self.pipeline.execute(inputs)
 
-        add_newly_encoded_reqs_to_tg_batch(
-            inputs.batch,
+        self.batch_constructor.move_completed_ce_requests_to_tg(
+            inputs.batches,
             responses,
-            self.batch_constructor,
         )
 
         # Send fully encoded requests to decode queue.

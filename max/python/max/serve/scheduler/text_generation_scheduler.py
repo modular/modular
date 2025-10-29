@@ -37,12 +37,7 @@ from .batch_constructor import (
     TokenGenerationSchedulerConfig,
 )
 from .data_parallelism_utils import split_by_replica_idx
-from .utils import (
-    SchedulerLogger,
-    add_newly_encoded_reqs_to_tg_batch,
-    release_cancelled_requests,
-    release_terminated_requests,
-)
+from .utils import SchedulerLogger, get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
 
@@ -156,12 +151,12 @@ class TokenGenerationScheduler(Scheduler):
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
 
-        release_cancelled_requests(
-            self.cancel_queue,
-            self.response_queue,
-            self.batch_constructor.tg_reqs,
-            self.pipeline,
-        )
+        for req_id in get_cancelled_reqs(self.cancel_queue):
+            is_cancelled = self.batch_constructor.cancel_request(req_id)
+            if is_cancelled:
+                self.response_queue.put_nowait(
+                    {req_id: SchedulerResult.cancelled()}
+                )
 
         return SchedulerProgress.MADE_PROGRESS
 
@@ -182,18 +177,16 @@ class TokenGenerationScheduler(Scheduler):
         responses = self.pipeline.execute(inputs)
 
         # If there is a chunked request, we put it back into the request queue
-        for batch in inputs.batches:
-            add_newly_encoded_reqs_to_tg_batch(
-                batch,
-                responses,
-                self.batch_constructor,
-            )
+        self.batch_constructor.move_completed_ce_requests_to_tg(
+            inputs.batches,
+            responses,
+        )
 
         # remove terminated requests from the batch
-        num_terminated_reqs = release_terminated_requests(
-            responses,
-            self.pipeline,
-            self.batch_constructor.tg_reqs,
+        num_terminated_reqs = (
+            self.batch_constructor.release_terminated_requests(
+                responses,
+            )
         )
 
         # send the responses to the API process
