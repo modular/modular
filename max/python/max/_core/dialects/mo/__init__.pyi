@@ -2040,17 +2040,19 @@ class CallOp(max._core.Operation):
         location: Location,
         results: Sequence[max._core.Type],
         operands: Sequence[max._core.Value[max._core.Type]],
-        symbol: max._core.dialects.builtin.SymbolRefAttr,
+        callee: max._core.dialects.builtin.FlatSymbolRefAttr,
         prefix: max._core.dialects.builtin.StringAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+        arg_attrs: max._core.dialects.builtin.ArrayAttr,
+        res_attrs: max._core.dialects.builtin.ArrayAttr,
     ) -> None: ...
     @property
     def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
-    def symbol(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
-    @symbol.setter
-    def symbol(
-        self, arg: max._core.dialects.builtin.SymbolRefAttr, /
+    def callee(self) -> str: ...
+    @callee.setter
+    def callee(
+        self, arg: max._core.dialects.builtin.FlatSymbolRefAttr, /
     ) -> None: ...
     @property
     def prefix(self) -> str: ...
@@ -2063,6 +2065,18 @@ class CallOp(max._core.Operation):
     @output_param_decls.setter
     def output_param_decls(
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+    @property
+    def arg_attrs(self) -> max._core.dialects.builtin.ArrayAttr | None: ...
+    @arg_attrs.setter
+    def arg_attrs(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
+    @property
+    def res_attrs(self) -> max._core.dialects.builtin.ArrayAttr | None: ...
+    @res_attrs.setter
+    def res_attrs(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
     ) -> None: ...
 
 class CastOp(max._core.Operation):
@@ -3238,7 +3252,7 @@ class GraphOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        name: max._core.dialects.builtin.StringAttr,
+        sym_name: max._core.dialects.builtin.StringAttr,
         signature: max._core.dialects.builtin.TypeAttr,
         function_type: max._core.dialects.builtin.TypeAttr,
         input_parameters: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -3257,9 +3271,11 @@ class GraphOp(max._core.Operation):
         is_subgraph: bool = False,
     ) -> None: ...
     @property
-    def name(self) -> str: ...
-    @name.setter
-    def name(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
+    def sym_name(self) -> str: ...
+    @sym_name.setter
+    def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
     @property
     def signature(self) -> max._core.dialects.kgen.FuncTypeGeneratorType: ...
     @signature.setter

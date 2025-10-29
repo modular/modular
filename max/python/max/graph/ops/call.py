@@ -78,7 +78,7 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
     # Add a call operation to the current graph
     call_results = current_graph._add_op(
         mo.call_,
-        symbol=graph.name,
+        callee=graph.name,
         results=output_types,
         operands=call_args,
         prefix=prefix,

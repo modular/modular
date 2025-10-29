@@ -214,7 +214,7 @@ def test_call_tuple_operands_with_add_op() -> None:
         # This is the core of the test: ensuring unwrap handles the tuple.
         call_results = main_graph._add_op(
             mo.call_,
-            symbol=subgraph.name,
+            callee=subgraph.name,
             results=(input_type, _ChainType()),
             operands=(main_graph.inputs[0], main_graph._current_chain),
         )

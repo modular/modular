@@ -98,7 +98,7 @@ def while_(  # type: ignore[no-redef]
 
 
 def call_(
-    symbol,  # noqa: ANN001
+    callee,  # noqa: ANN001
     results,  # noqa: ANN001
     operands,  # noqa: ANN001
     *,
@@ -109,7 +109,7 @@ def call_(
     if results is None:
         results = []
     call_op = CallOp(
-        symbol=symbol,
+        callee=callee,
         results_=results,
         operands_=operands,
         loc=loc,
