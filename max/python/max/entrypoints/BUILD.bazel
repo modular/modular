@@ -71,8 +71,12 @@ modular_py_binary(
     srcs = [
         "pipelines.py",
     ],
+    data = [
+        "@nvshmem_prebuilt//:host",
+    ],
     env = {
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
+        "MODULAR_NVSHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     deps = [
         ":_pipelines",
