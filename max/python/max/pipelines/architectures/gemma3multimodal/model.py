@@ -24,9 +24,7 @@ from max.graph import (
     Graph,
     TensorType,
     Value,
-    BufferValue,
     DeviceRef,
-    TensorValue,
 )
 from max.graph.weights import Weights, WeightsAdapter, WeightData
 from max.nn import ReturnLogits, Signals
@@ -51,14 +49,12 @@ from max.pipelines.lib import (
 )
 from transformers import AutoConfig
 
-from max.pipelines.architectures.gemma3.gemma3 import Gemma3
 from .model_config import Gemma3ForConditionalGenerationConfig
 from .gemma3multimodal import Gemma3LanguageModel, Gemma3VisionModel
 from .weight_adapters import (
     convert_safetensor_language_state_dict,
     convert_safetensor_vision_state_dict,
 )
-from .image_processing import Gemma3ImageProcessor
 
 import logging
 import math
@@ -67,6 +63,35 @@ import numpy.typing as npt
 
 logger = logging.getLogger("max.pipelines")
 
+
+# borrowed from idefics3
+def _cast_to_dtype(
+        raw_tensor: DLPackArray, old_dtype: DType, new_dtype: DType, device: Device
+    ) -> Tensor:
+        tensor = Tensor.from_dlpack(raw_tensor)
+
+        original_shape = tensor.shape
+        session = InferenceSession(devices=[device])
+
+        with Graph(
+            "cast",
+            input_types=[
+                TensorType(
+                    dtype=old_dtype,
+                    shape=["dim"],
+                    device=DeviceRef.from_device(device),
+                )
+            ],
+        ) as graph:
+            graph.output(graph.inputs[0].tensor.cast(new_dtype))
+
+        cast_model = session.load(graph)
+
+        result = cast_model(
+            tensor.view(old_dtype, [tensor.num_elements]).to(device)
+        )[0]
+        assert isinstance(result, Tensor)
+        return result.view(new_dtype, original_shape)
 
 class _VisionStacker:
     """Helper class for efficient parallel stacking of vision patches.
@@ -154,10 +179,10 @@ class Gemma3MultiModalModelInputs(ModelInputs):
 
     # Vision inputs.
     pixel_values: list[Tensor] | None = None
-    """Pixel values for vision inputs. TODO mimicking InternVL"""
+    """Pixel values for vision inputs."""
 
     return_n_logits: Tensor
-    """Number of logits to return, used by speculative decoding for example. TODO mimicking InternVL"""
+    """Number of logits to return, used by speculative decoding for example."""
 
     def __init__(
         self,
@@ -743,42 +768,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 )
             )
         return kv_caches_per_dev
-
-    # borrowed from idefics3
-    def _cast_to_dtype(
-        raw_tensor: DLPackArray, old_dtype: DType, new_dtype: DType, device: Device
-    ) -> Tensor:
-        # FIXME: This is a circular dep
-        from max.engine import InferenceSession
-
-        tensor = Tensor.from_dlpack(raw_tensor)
-
-        original_shape = tensor.shape
-        global _INF_SESSION
-        if not _INF_SESSION:
-            _INF_SESSION = InferenceSession(devices=[device])
-
-        global _CAST_MODEL
-        if not _CAST_MODEL:
-            with Graph(
-                "cast",
-                input_types=[
-                    TensorType(
-                        dtype=old_dtype,
-                        shape=["dim"],
-                        device=DeviceRef.from_device(device),
-                    )
-                ],
-            ) as graph:
-                graph.output(graph.inputs[0].tensor.cast(new_dtype))
-
-            _CAST_MODEL = _INF_SESSION.load(graph)
-
-        result = _CAST_MODEL(
-            tensor.view(old_dtype, [tensor.num_elements]).to(device)
-        )[0]
-        assert isinstance(result, Tensor)
-        return result.view(new_dtype, original_shape)
     
     def _prepare_vision_inputs(
         self, context_batch: Sequence[TextAndVisionContext]
@@ -809,7 +798,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         if not images:
             return None
 
-        final_images = self._stacker.stack(images)
+        final_images = _VisionStacker().stack(images)
 
         return _cast_to_dtype(
             final_images, DType.float32, DType.bfloat16, self.devices[0]
