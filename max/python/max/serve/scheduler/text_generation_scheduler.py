@@ -115,7 +115,7 @@ class TokenGenerationScheduler(Scheduler):
             )
 
         for context in items:
-            self.batch_constructor.ce_reqs[context.request_id] = context
+            self.batch_constructor.enqueue_new_request(context)
 
     @traced
     def run_iteration(self) -> SchedulerProgress:

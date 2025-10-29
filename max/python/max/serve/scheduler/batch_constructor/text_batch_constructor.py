@@ -62,6 +62,17 @@ class TextBatchConstructor:
         self.total_preemption_count = 0
         self.last_preemption_logging_time: float = 0.0
 
+    def enqueue_new_request(self, ctx: TextContext) -> None:
+        """Add a new request to the appropriate queue.
+
+        Args:
+            ctx: The text context for the new request.
+        """
+        if ctx.needs_ce:
+            self.ce_reqs[ctx.request_id] = ctx
+        else:
+            self.tg_reqs[ctx.request_id] = ctx
+
     @traced
     def _maybe_chunk_prefill_request(
         self,

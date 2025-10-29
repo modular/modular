@@ -305,7 +305,7 @@ class DecodeScheduler(Scheduler):
 
             # Remove from pending prefill requests and add to TG requests.
             context = self.prefill_reqs.pop(request_id)
-            self.batch_constructor.tg_reqs[request_id] = context
+            self.batch_constructor.enqueue_new_request(context)
 
         # Manage for cancelled requests
         self._handle_cancelled_requests()

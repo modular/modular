@@ -129,7 +129,7 @@ class PrefillScheduler(Scheduler):
         # It is possible for the context to have a non-zero start_idx due to
         # decode using prefix caching.
         context.reset()
-        self.batch_constructor.ce_reqs[message.id] = context
+        self.batch_constructor.enqueue_new_request(context)
         self.request_id_to_reply_context[message.id] = (
             identity,
             message.transfer_engine_name,
