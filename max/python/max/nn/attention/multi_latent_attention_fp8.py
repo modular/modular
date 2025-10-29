@@ -525,7 +525,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 kv_buffer, [self.qk_nope_head_dim, self.v_head_dim], axis=2
             )
 
-            result, softmax_info = flare_mla_prefill_ragged(
+            result, _ = flare_mla_prefill_ragged(
                 self.kv_params,
                 xq,
                 k_nope,
@@ -540,72 +540,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 self.qk_rope_head_dim,
             )
 
-            iter_i = ops.constant(1, DType.int64, device=DeviceRef.CPU())
-
-            def cond_fn(
-                iter_i: TensorValue,
-                prev_result: TensorValue,
-                prev_softmax_info: TensorValue,
-            ) -> TensorValue:
-                return buffer_lengths_host[iter_i] > 0
-
-            def body_fn(
-                iter_i: TensorValue,
-                prev_result: TensorValue,
-                prev_softmax_info: TensorValue,
-            ) -> list[TensorValue]:
-                k_latent_buffer = k_cache_to_buffer(
-                    self.kv_params,
-                    buffer_row_offsets[iter_i],
-                    cache_offsets[iter_i],
-                    kv_collection,
-                    layer_idx,
-                    buffer_lengths_host[iter_i],
-                    self.BUFFER_TOK_SIZE,
-                    int(self.kv_b_proj.shape[1]),
-                )
-                kv_buffer = matmul_float8(
-                    x=k_latent_buffer,
-                    weight=self.kv_b_proj,
-                    weight_scale=self.kv_b_proj_scale,
-                    input_scale=None,  # Dynamic scaling
-                    float8_config=self.float8_config,
-                    group_size_or_per_token=self.scales_granularity_mnk[2],
-                )
-
-                kv_buffer = kv_buffer.reshape(
-                    (-1, self.n_heads, self.qk_nope_head_dim + self.v_head_dim)
-                )
-                k_nope, v = ops.split(
-                    kv_buffer, [self.qk_nope_head_dim, self.v_head_dim], axis=2
-                )
-
-                new_result, new_softmax_info = flare_mla_prefill_ragged(
-                    self.kv_params,
-                    xq,
-                    k_nope,
-                    v,
-                    input_row_offsets,
-                    buffer_row_offsets[iter_i],
-                    cache_offsets[iter_i],
-                    kv_collection,
-                    layer_idx,
-                    MHAMaskVariant.CAUSAL_MASK,
-                    self.scale,
-                    self.qk_rope_head_dim,
-                    prev_output=prev_result,
-                    prev_softmax_info=prev_softmax_info,
-                )
-
-                iter_i = iter_i + 1
-
-                return [iter_i, new_result, new_softmax_info]
-
-            loop_result = ops.while_loop(
-                (iter_i, result, softmax_info), cond_fn, body_fn
-            )
-
-            return loop_result[1]
+            return result
 
         # def _mla_decode() -> TensorValue:
         #     # from [B, H, D] to [H, B, D]
