@@ -370,7 +370,7 @@ fn stack_allocation[
     alignment: Int = align_of[dtype](),
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]() -> UnsafePointer[
-    Scalar[dtype], address_space=address_space, origin = MutableOrigin.empty
+    Scalar[dtype], address_space=address_space, origin = MutableOrigin.external
 ]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
@@ -399,7 +399,7 @@ fn stack_allocation[
     alignment: Int = align_of[type](),
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]() -> UnsafePointer[
-    type, address_space=address_space, origin = MutableOrigin.empty
+    type, mut=True, origin = MutableOrigin.external, address_space=address_space
 ]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
@@ -483,14 +483,22 @@ fn _malloc[
     *,
     alignment: Int = align_of[type](),
     out res: UnsafePointer[
-        type, address_space = AddressSpace.GENERIC, origin = MutableOrigin.empty
+        type,
+        mut=True,
+        origin = MutableOrigin.external,
+        address_space = AddressSpace.GENERIC,
     ],
 ):
     @parameter
     if is_gpu():
-        alias U = UnsafePointer[NoneType, address_space = AddressSpace.GENERIC]
+        alias U = UnsafePointer[
+            NoneType,
+            mut=True,
+            origin = MutableOrigin.external,
+            address_space = AddressSpace.GENERIC,
+        ]
         var ptr = external_call["malloc", U](size)
-        return ptr.bitcast[type]().unsafe_origin_cast[MutableOrigin.empty]()
+        return ptr.bitcast[type]()
     else:
         return __mlir_op.`pop.aligned_alloc`[_type = type_of(res)._mlir_type](
             alignment._mlir_value, size._mlir_value

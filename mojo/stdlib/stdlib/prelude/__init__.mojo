@@ -133,6 +133,9 @@ from documentation import doc_private
 from iter import Iterable, Iterator, enumerate, iter, map, next, zip
 from memory import (
     AddressSpace,
+    ExternalImmutPointer,
+    ExternalMutPointer,
+    ExternalPointer,
     OpaqueImmutPointer,
     OpaqueMutPointer,
     OpaquePointer,
