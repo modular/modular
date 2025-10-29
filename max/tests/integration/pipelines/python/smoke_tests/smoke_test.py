@@ -135,11 +135,6 @@ def call_lm_eval(model: str, task: str) -> tuple[LmEvalResults, LmEvalSamples]:
         "opengvlab/internvl3_5-8b-instruct": ",max_gen_toks=4096",
     }.get(model, "")
 
-    gen_params = {
-        "qwen/qwen3-8b": ",temperature=0.6,top_p=0.95,top_k=20",
-        "opengvlab/internvl3_5-8b-instruct": ",temperature=0.6,top_p=0.95,top_k=20",
-    }.get(model, ",top_p=1,top_k=1,temperature=0")
-
     interpreter = (
         sys.executable if _inside_bazel() else ".venv-lm-eval/bin/python"
     )
@@ -156,7 +151,7 @@ def call_lm_eval(model: str, task: str) -> tuple[LmEvalResults, LmEvalSamples]:
             f"--output_path={tempdir}",
             "--limit=320",
             "--seed=42",
-            f"--gen_kwargs=seed=42{max_gen_toks}{gen_params}",
+            f"--gen_kwargs=seed=42,top_p=1,top_k=1,temperature=0{max_gen_toks}",
             f"--include_path={include_path}",
             "--fewshot_as_multiturn",
         ]
