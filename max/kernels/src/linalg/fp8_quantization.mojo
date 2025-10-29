@@ -113,7 +113,6 @@ fn quantize_dynamic_scaled_fp8[
     scales_dtype: DType,
     input_shape: DimList, //,
     group_size_or_per_token: Int,
-    input_hidden_size: Int,
 ](
     scaled_output: NDBuffer[mut=True, out_dtype, 2, MutableAnyOrigin],
     scales: NDBuffer[mut=True, scales_dtype, 2, MutableAnyOrigin],
@@ -130,8 +129,10 @@ fn quantize_dynamic_scaled_fp8[
         "output dtype should be float8_e4m3fn or float8_e4m3fnuz",
     ]()
 
-    alias group_size = input_hidden_size if group_size_or_per_token == -1 else group_size_or_per_token
-    alias n_groups = input_hidden_size // group_size
+    alias group_size = input.shape.get[
+        1
+    ]() if group_size_or_per_token == -1 else group_size_or_per_token
+    alias n_groups = input.shape.get[1]() // group_size
     alias simd_width = simd_width_of[in_dtype, target = get_gpu_target()]()
     alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     alias warps_per_block = min(
@@ -141,20 +142,6 @@ fn quantize_dynamic_scaled_fp8[
         "quantize_dynamic_scaled_fp8",
         task_id=Int(ctx.id()),
     ):
-
-        @parameter
-        if n_groups == 0:
-
-            @parameter
-            if input_hidden_size != 0:
-                raise Error(
-                    "Cannot quantize small input where input shape[1] ="
-                    + String(input.shape.get[1]())
-                    + ". Must be greater than group_size "
-                    + String(group_size)
-                )
-            return
-
         if input.dim[0]() == 0:
             return
 

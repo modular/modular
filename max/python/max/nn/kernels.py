@@ -2264,7 +2264,6 @@ def quantize_dynamic_scaled_float8(
         ],
         parameters={
             "group_size_or_per_token": group_size,
-            "input_hidden_size": int(input.shape[1]),
         },
     )
 

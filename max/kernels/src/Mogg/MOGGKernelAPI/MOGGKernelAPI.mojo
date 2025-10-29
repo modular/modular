@@ -8688,7 +8688,6 @@ struct QuantizeDynamicScaledFloat8:
         scales_type: DType,
         output_type: DType, //,
         group_size_or_per_token: Int,
-        input_hidden_size: Int,
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_type, rank=2],
@@ -8698,7 +8697,7 @@ struct QuantizeDynamicScaledFloat8:
         ctx: DeviceContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
-        quantize_dynamic_scaled_fp8[group_size_or_per_token, input_hidden_size](
+        quantize_dynamic_scaled_fp8[group_size_or_per_token](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(scales),
             managed_tensor_slice_to_ndbuffer(input),
