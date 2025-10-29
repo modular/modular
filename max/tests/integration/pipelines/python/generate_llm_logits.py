@@ -1489,6 +1489,13 @@ def _add_max_hooks() -> Any:
     default=False,
     help="Log HuggingFace file downloads for MAX and Torch models.",
 )
+@click.option(
+    "--mini",
+    "mini",
+    is_flag=True,
+    default=False,
+    help="Run only a single prompt for a single step.",
+)
 def main(
     device_type: str | list[int],
     framework_name: str,
@@ -1499,6 +1506,7 @@ def main(
     max_batch_size: int | None,
     log_hf_downloads: bool,
     print_intermediates: bool,
+    mini: bool,
 ) -> None:
     """Click command entry point that delegates to the implementation function.
 
@@ -1521,6 +1529,7 @@ def main(
             max_batch_size=max_batch_size,
             log_hf_downloads=log_hf_downloads,
             print_intermediates=print_intermediates,
+            mini=mini,
         )
     except Flake:
         sys.exit(EX_TEMPFAIL)
@@ -1538,6 +1547,7 @@ def generate_llm_logits(
     reference: list[ModelOutput] | None = None,
     log_hf_downloads: bool = False,
     print_intermediates: bool = False,
+    mini: bool = False,
 ) -> None:
     """Output logits to a file for a model based on a fixed set of prompts.
 
@@ -1550,6 +1560,13 @@ def generate_llm_logits(
         os.chdir(workspace_dir)
 
     pipeline_oracle = PIPELINE_ORACLES[pipeline_name]
+
+    if mini:
+        inputs = pipeline_oracle.inputs[:1]
+        num_steps = 1
+    else:
+        inputs = pipeline_oracle.inputs
+        num_steps = NUM_STEPS
 
     evaluation_batch_size: int | list[int]
     if max_batch_size is None:
@@ -1595,8 +1612,8 @@ def generate_llm_logits(
                 results = evaluate.run_model(
                     max_pipeline_and_tokenizer.pipeline,
                     max_pipeline_and_tokenizer.tokenizer,
-                    requests=pipeline_oracle.inputs,
-                    num_steps=NUM_STEPS,
+                    requests=inputs,
+                    num_steps=num_steps,
                     print_outputs=True,
                     batch_size=evaluation_batch_size,
                     reference=reference,
@@ -1613,7 +1630,7 @@ def generate_llm_logits(
                 results = evaluate_embeddings.encode(
                     max_pipeline_and_tokenizer.pipeline,
                     max_pipeline_and_tokenizer.tokenizer,
-                    prompts=(inp.prompt for inp in pipeline_oracle.inputs),
+                    prompts=(inp.prompt for inp in inputs),
                     batch_size=evaluation_batch_size,
                 )
             else:
@@ -1649,14 +1666,14 @@ def generate_llm_logits(
                 results = pipeline_oracle.run_torch_text_generation(
                     torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
                     device=torch_device,
-                    num_steps=NUM_STEPS,
+                    num_steps=num_steps,
                 )
             elif pipeline_oracle.task == PipelineTask.EMBEDDINGS_GENERATION:
                 results = torch_utils.run_embeddings_generation(
                     model=torch_pipeline_and_tokenizer.model,
                     data_processor=torch_pipeline_and_tokenizer.data_processor,
                     device=torch_device,
-                    prompts=(inp.prompt for inp in pipeline_oracle.inputs),
+                    prompts=(inp.prompt for inp in inputs),
                 )
             else:
                 raise ValueError(
