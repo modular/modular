@@ -430,6 +430,13 @@ fn matmul_dynamic_scaled_fp8[
         input_scale_granularity == "colwise"
         and weight_scale_granularity == "rowwise"
     ) or (input_scale_granularity == weight_scale_granularity == "tensor"):
+        var logger = Logger()
+        logger.info(
+            "Dispatching Matmul Dynamic Scaled FP8. Input Scale Granularity: ",
+            input_scale_granularity,
+            ", Weight Scale Granularity: ",
+            weight_scale_granularity,
+        )
 
         @parameter
         if ctx.default_device_info is B200:

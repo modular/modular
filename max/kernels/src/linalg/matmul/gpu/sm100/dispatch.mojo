@@ -419,31 +419,37 @@ fn matmul_dispatch_sm100[
         var c_tensor = from_ndbuffer_row_major(c)
         var a_tensor = from_ndbuffer_row_major(a)
         var b_tensor = from_ndbuffer_row_major(b)
+
         alias BM = env_get_int["TUNE_BM", 128]()
         alias BN = env_get_int["TUNE_BN", 64]()
         alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+        alias MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
         alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 2]()
         alias CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
         alias CLUSTER_DIM_Z = env_get_int["TUNE_CLUSTER_DIM_Z", 1]()
         alias CLUSTER_DIM = Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z)
         alias BLOCK_SWIZZLE_SIZE = env_get_int["TUNE_BLOCK_SWIZZLE_SIZE", 0]()
         alias RASTERIZE_ORDER = env_get_int["TUNE_RASTER_ORDER", 1]()
+        alias CTA_GROUP = env_get_int["TUNE_CTA_GROUP", 2]()
+        alias K_GROUP_SIZE = env_get_int["TUNE_K_GROUP_SIZE", 1]()
+        alias AB_SWAPPED = env_get_bool["TUNE_AB_SWAPPED", False]()
         # alias PIPELINE_STAGE = env_get_int["TUNE_PIPELINE_STAGE", 4]()
-        alias block_tile_shape = Index(BM, BN, BK)
-        alias MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-        alias UmmaShape = Index(BM * 2, BN * 2, MMA_K)
+
+        alias umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
 
         alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            mma_shape=UmmaShape,
+            mma_shape=umma_shape,
             cluster_shape=CLUSTER_DIM,
             block_swizzle_size=BLOCK_SWIZZLE_SIZE,
             raster_order=RasterOrder(RASTERIZE_ORDER),
+            cta_group=CTA_GROUP,
+            AB_swapped=AB_SWAPPED,
+            k_group_size=UInt(K_GROUP_SIZE),
         )
 
         return blackwell_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
             config=config,
-            # num_pipeline_stages = UInt(PIPELINE_STAGE),
         ](c_tensor, a_tensor, b_tensor, ctx)
 
     var m = c.dim[0]()
