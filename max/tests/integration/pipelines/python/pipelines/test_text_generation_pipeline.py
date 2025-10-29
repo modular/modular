@@ -59,8 +59,8 @@ def test_mock_text_tokenizer() -> None:
     assert test_prompt == decoded
 
 
-@patch("max.pipelines.lib.pipeline.load_weights")
-@patch("max.pipelines.lib.pipeline.weights_format")
+@patch("max.graph.weights.weights_format")
+@patch("max.graph.weights.load_weights")
 def test_text_generation_pipeline(
     mock_load_weights: MagicMock, weights_format: MagicMock
 ) -> None:

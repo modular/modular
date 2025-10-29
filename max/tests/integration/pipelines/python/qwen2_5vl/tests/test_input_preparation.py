@@ -59,7 +59,7 @@ def create_mock_qwen_model(mocker: MockerFixture) -> Qwen2_5VLModel:
     """
     # Mock the parent class __init__ to avoid complex initialization
     mocker.patch(
-        "max.pipelines.lib.pipeline.PipelineModel.__init__",
+        "max.pipelines.lib.interfaces.pipeline_model.PipelineModel.__init__",
         return_value=None,
     )
 
