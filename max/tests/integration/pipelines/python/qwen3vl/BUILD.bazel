@@ -2,23 +2,89 @@
 
 load(
     "//bazel:api.bzl",
+    "modular_py_library",
     "modular_py_test",
     "requirement",
 )
 
 modular_py_test(
-    name = "test_vision_functions",
-    srcs = ["test_vision_functions.py"] + glob(["utils/*.py"]),
+    name = "qwen3vl",
+    size = "enormous",
+    srcs = glob(
+        [
+            "tests/test_*.py",
+        ],
+    ) + ["tests/__init__.py"],
     data = [
-        "configs/qwen3-VL-30B-A3B-Instruct.json",
+        "//SDK:max",
     ],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        ":utils",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/serve",
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("pytest-asyncio"),
+        requirement("pytest-mock"),
+        requirement("requests"),
+        requirement("timm"),
+        requirement("torch"),
+        requirement("torchvision"),
+        requirement("transformers"),
+        requirement("opencv-python"),
+    ],
+)
+
+modular_py_test(
+    name = "test_vision_functions",
+    srcs = ["test_vision_functions.py"],
     target_compatible_with = select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        ":utils",
         "//SDK/lib/API/python/max/pipelines/architectures",
         requirement("torch"),
         requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "utils",
+    testonly = True,
+    srcs = glob(["utils/*.py"]),
+    data = [
+        "configs/qwen3-VL-30B-A3B-Instruct.json",
+    ],
+    imports = ["."],
+    deps = [
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/graph",
+        requirement("torch"),
+        requirement("transformers"),
     ],
 )

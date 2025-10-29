@@ -66,7 +66,7 @@ class ConfigLoader:
 
         # Extract key parameters for MAX implementation
         vision_config = config["vision_config"]
-
+        text_config = config["text_config"]
         return {
             "vision_config": {
                 "hidden_size": vision_config["hidden_size"],
@@ -76,6 +76,9 @@ class ConfigLoader:
                 "patch_size": vision_config["patch_size"],
                 "spatial_merge_size": vision_config["spatial_merge_size"],
                 "temporal_patch_size": vision_config["temporal_patch_size"],
+                "num_position_embeddings": vision_config[
+                    "num_position_embeddings"
+                ],
                 "deepstack_visual_indexes": vision_config[
                     "deepstack_visual_indexes"
                 ],
@@ -87,24 +90,25 @@ class ConfigLoader:
                 "dtype": DType.bfloat16,
             },
             "text_config": {
-                "hidden_size": config["hidden_size"],
-                "intermediate_size": config["intermediate_size"],
-                "num_hidden_layers": config["num_hidden_layers"],
-                "num_attention_heads": config["num_attention_heads"],
-                "num_key_value_heads": config["num_key_value_heads"],
-                "vocab_size": config["vocab_size"],
-                "rope_theta": config["rope_theta"],
-                "max_position_embeddings": config["max_position_embeddings"],
-                "sliding_window": config.get("sliding_window"),
-                "rope_scaling": config.get("rope_scaling"),
-                "rms_norm_eps": config["rms_norm_eps"],
+                "hidden_size": text_config["hidden_size"],
+                "intermediate_size": text_config["intermediate_size"],
+                "num_hidden_layers": text_config["num_hidden_layers"],
+                "num_attention_heads": text_config["num_attention_heads"],
+                "num_key_value_heads": text_config["num_key_value_heads"],
+                "vocab_size": text_config["vocab_size"],
+                "rope_theta": text_config["rope_theta"],
+                "max_position_embeddings": text_config[
+                    "max_position_embeddings"
+                ],
+                "sliding_window": text_config.get("sliding_window"),
+                "rope_scaling": text_config.get("rope_scaling"),
+                "rms_norm_eps": text_config["rms_norm_eps"],
                 "dtype": DType.bfloat16,
             },
             "image_token_id": config["image_token_id"],
             "video_token_id": config["video_token_id"],
             "vision_start_token_id": config["vision_start_token_id"],
             "vision_end_token_id": config["vision_end_token_id"],
-            "vision_token_id": config["vision_token_id"],
             "device": DeviceRef.GPU(),
         }
 
