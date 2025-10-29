@@ -121,7 +121,7 @@ struct TestReport(Copyable, Movable, Writable):
 
     alias _ErrorIndent = 3
 
-    var name: String
+    var name: StaticString
     """The name of the test."""
 
     var duration_ns: UInt
@@ -134,7 +134,7 @@ struct TestReport(Copyable, Movable, Writable):
     """The error associated with a failing test."""
 
     @staticmethod
-    fn passed(*, var name: String, duration_ns: UInt) -> Self:
+    fn passed(*, name: StaticString, duration_ns: UInt) -> Self:
         """Create a passing test report.
 
         Args:
@@ -145,13 +145,15 @@ struct TestReport(Copyable, Movable, Writable):
             A new passing test report.
         """
         return {
-            name = name^,
+            name = name,
             duration_ns = duration_ns,
             result = TestResult.PASS,
         }
 
     @staticmethod
-    fn failed(*, var name: String, duration_ns: UInt, var error: Error) -> Self:
+    fn failed(
+        *, name: StaticString, duration_ns: UInt, var error: Error
+    ) -> Self:
         """Create a failing test report.
 
         Args:
@@ -163,14 +165,14 @@ struct TestReport(Copyable, Movable, Writable):
             A new failing test report.
         """
         return {
-            name = name^,
+            name = name,
             duration_ns = duration_ns,
             result = TestResult.FAIL,
             error = error^,
         }
 
     @staticmethod
-    fn skipped(*, var name: String) -> Self:
+    fn skipped(*, name: StaticString) -> Self:
         """Create a skipped test report.
 
         Args:
@@ -179,18 +181,18 @@ struct TestReport(Copyable, Movable, Writable):
         Returns:
             A new skipped test report.
         """
-        return {name = name^, duration_ns = 0, result = TestResult.SKIP}
+        return {name = name, duration_ns = 0, result = TestResult.SKIP}
 
     @doc_private
     fn __init__(
         out self,
         *,
-        var name: String,
+        name: StaticString,
         duration_ns: UInt,
         result: TestResult,
         var error: Error = {},
     ):
-        self.name = name^
+        self.name = name
         self.duration_ns = duration_ns
         self.result = result
         self.error = error^
@@ -322,7 +324,7 @@ struct _Test(Copyable & Movable):
 
     alias fn_type = fn () raises
     var test_fn: Self.fn_type
-    var name: String
+    var name: StaticString
 
 
 @explicit_destroy("TestSuite must be destroyed via `run()`")
@@ -369,10 +371,10 @@ struct TestSuite(Movable):
     var location: _SourceLocation
     """The source location where the test suite was created."""
 
-    var skip_list: Set[String]
+    var skip_list: Set[StaticString]
     """The list of tests to skip in this suite."""
 
-    var allow_list: Optional[Set[String]]
+    var allow_list: Optional[Set[StaticString]]
     """The list of tests to allow in this suite."""
 
     var cli_args: List[StaticString]
@@ -395,8 +397,7 @@ struct TestSuite(Movable):
         """
         self.tests = List[_Test]()
         self.location = location.or_else(__call_location())
-        # TODO: would be better if these were StaticString
-        self.skip_list = Set[String]()
+        self.skip_list = Set[StaticString]()
         self.allow_list = None  # None means no allow list specified.
         self.cli_args = cli_args.or_else(List[StaticString](argv()))
 
@@ -496,12 +497,12 @@ struct TestSuite(Movable):
             return
 
         if args[1] == "--only":
-            self.allow_list = Set[String]()
+            self.allow_list = Set[StaticString]()
         elif args[1] == "--skip-all":
             if num_args > 2:
                 raise Error("'--skip-all' does not take any arguments")
             # --skip-all implies an empty allow list.
-            self.allow_list = Set[String]()
+            self.allow_list = Set[StaticString]()
             return
         elif args[1] != "--skip":
             raise Error(
@@ -514,7 +515,7 @@ struct TestSuite(Movable):
             raise Error("expected test name(s) after '--only' or '--skip'")
 
         # TODO: would be better if this was StaticString
-        var discovered_tests = Set[String]()
+        var discovered_tests = Set[StaticString]()
         for test in self.tests:
             discovered_tests.add(test.name)
 
@@ -561,7 +562,7 @@ struct TestSuite(Movable):
         # when we have a proper argument parsing library.
         self._parse_filter_lists()
         if skip_all:
-            self.allow_list = Set[String]()
+            self.allow_list = Set[StaticString]()
 
         var reports = List[TestReport](capacity=len(self.tests))
         for test in self.tests:
@@ -577,16 +578,15 @@ struct TestSuite(Movable):
                 error = {e^}
             var duration = perf_counter_ns() - start
 
-            var name = test.name.copy()
             if error:
                 reports.append(
                     TestReport.failed(
-                        name=name^, duration_ns=duration, error=error.take()
+                        name=test.name, duration_ns=duration, error=error.take()
                     )
                 )
             else:
                 reports.append(
-                    TestReport.passed(name=name^, duration_ns=duration)
+                    TestReport.passed(name=test.name, duration_ns=duration)
                 )
 
         return TestSuiteReport(reports=reports^, location=self.location)
