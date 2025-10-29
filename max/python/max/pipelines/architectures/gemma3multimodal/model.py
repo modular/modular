@@ -474,9 +474,13 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         if model_inputs.has_vision_inputs:
             assert model_inputs.pixel_values is not None
 
-            # Execute vision model: pixel_values -> image_embeddings.
+            patched_images = self._extract_patches_from_images(
+                model_inputs.pixel_values
+            )
+
+            # Execute vision model: patched pixel_values -> image_embeddings.
             vision_outputs = self.vision_model.execute(
-                *model_inputs.pixel_values, *model_inputs.signal_buffers
+                *patched_images, *model_inputs.signal_buffers
             )
             assert len(vision_outputs) == len(self.devices)
 
@@ -830,41 +834,102 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             final_images, DType.float32, DType.bfloat16, self.devices[0]
         )
 
+    def _extract_patches_from_images(
+        self, pixel_values: tuple[Tensor, ...]
+    ) -> list[Tensor]:
+        """Extract patches from raw images for vision model input.
+
+        Converts from [batch, channels, height, width] format
+        to [batch, height_patches, width_patches, channels, patch_h, patch_w] format.
+
+        Args:
+            pixel_values: Tuple of tensors with shape [batch, channels, height, width]
+                         (one tensor per device)
+
+        Returns:
+            List of tensors (one per device) with extracted patches
+        """
+        patch_size = self.huggingface_config.vision_config.patch_size
+
+        patched_images = []
+
+        # pixel_values is a tuple of tensors, one per device
+        # Don't iterate - just process each tensor in the tuple
+        if not pixel_values:
+            return patched_images
+        
+        logger.info(f"*** type: {type(pixel_values)}")
+        logger.info(f"*** shape: {pixel_values.shape}")
+
+        for i, pixel_tensor in enumerate(pixel_values):
+            # pixel_tensor shape: [batch, channels, height, width]
+            # e.g., [1, 3, 896, 896]
+
+            # Get shape info
+            shape = pixel_tensor.shape
+            batch, channels, height, width = shape[0], shape[1], shape[2], shape[3]
+
+            # Calculate number of patches
+            height_patches = int(height) // patch_size
+            width_patches = int(width) // patch_size
+
+            # Convert to numpy for reshaping
+            img_np = np.asarray(pixel_tensor)
+
+            # Reshape to extract patches
+            # [B, C, H, W] -> [B, C, H_patches, patch_h, W_patches, patch_w]
+            img_np = img_np.reshape(
+                int(batch), int(channels),
+                height_patches, patch_size,
+                width_patches, patch_size
+            )
+
+            # Transpose to [B, H_patches, W_patches, C, patch_h, patch_w]
+            img_np = img_np.transpose(0, 2, 4, 1, 3, 5)
+
+            # Convert back to tensor on the appropriate device
+            patched_tensor = Tensor.from_numpy(img_np).to(pixel_tensor.device)
+            patched_images.append(patched_tensor)
+
+        return patched_images
+
     def _batch_image_token_indices(
         self, context_batch: Sequence[TextAndVisionContext]
     ) -> Tensor | None:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
 
-        This method efficiently combines image token indices from multiple
-        contexts using vectorized operations.
+        For Gemma3, we find where <image> tokens (self.image_token_id) appear
+        in the token sequence. These positions mark where vision embeddings
+        should be inserted.
 
         Args:
-            context_batch: Sequence of contexts that may contain image token
-                indices
+            context_batch: Sequence of contexts that may contain image tokens
 
         Returns:
             Tensor containing all batched indices, or None if no indices found
         """
-        # Collect indices and offsets.
         indices_and_offsets = []
         batch_offset = 0
 
-        # idefics approach wont work as our config doesn't include a special_image_token_mas
-        # for ctx in context_batch:
-        #     input_ids = ctx.next_tokens
-        #     special_image_token_mask = input_ids == self.image_token_id
-        #     indices = np.where(special_image_token_mask)[0].tolist()
-
-        #     indices_and_offsets.append([idx + batch_offset for idx in indices])
-        #     batch_offset += ctx.active_length
-
-        # internvl approach doesn't work as we dont have this extra arg
         for ctx in context_batch:
-            print(ctx.extra_model_args)
+            # First check if indices were pre-computed (from extra_model_args)
             if "image_token_indices" in ctx.extra_model_args:
                 indices = ctx.extra_model_args["image_token_indices"]
                 indices_and_offsets.append(indices + batch_offset)
+            else:
+                # Fallback: compute indices by finding image_token_id in tokens
+                # Get the active tokens for this context
+                input_ids = ctx.next_tokens
+
+                # Find where image tokens appear
+                special_image_token_mask = input_ids == 262144
+                indices = np.where(special_image_token_mask)[0]
+
+                if len(indices) > 0:
+                    # Adjust indices by batch offset
+                    indices_and_offsets.append(indices + batch_offset)
+
             batch_offset += ctx.active_length
 
         if not indices_and_offsets:
