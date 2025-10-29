@@ -702,51 +702,51 @@ fn grouped_matmul_dynamic_scaled_fp8[
     var a_offsets_tensor = from_ndbuffer_row_major(a_offsets)
     var expert_ids_tensor = from_ndbuffer_row_major(expert_ids)
 
-    # alias num_experts = b.shape.get[0]()
-    # alias N = b.shape.get[1]()
-    # alias K = b.shape.get[2]()
-    # var seq_len = a.dim[0]()
+    alias num_experts = b.shape.get[0]()
+    alias N = b.shape.get[1]()
+    alias K = b.shape.get[2]()
+    var seq_len = a.dim[0]()
 
-    # TODO: (KERN-2107) enable this when we have a working grouped blockwise fp8 kernel for small Ms per expert
-    # @parameter
-    # if ctx.default_device_info is B200:
-    #     alias umma_shape: IndexList[3] = Index(64, 64, 32)
-    #     alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+    @parameter
+    if ctx.default_device_info is B200:
+        alias umma_shape: IndexList[3] = Index(64, 64, 32)
+        alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
-    #     grouped_matmul_sm100_blockwise_scaled_fp8[
-    #         transpose_b=transpose_b,
-    #         umma_shape=umma_shape,
-    #         block_tile_shape=block_tile_shape,
-    #     ](
-    #         c_tensor,
-    #         a_tensor,
-    #         b_tensor,
-    #         a_scales_tensor,
-    #         b_scales_tensor,
-    #         a_offsets_tensor,
-    #         expert_ids_tensor,
-    #         max_num_tokens_per_expert,
-    #         num_active_experts,
-    #         ctx,
-    #     )
-    #     return
+        grouped_matmul_sm100_blockwise_scaled_fp8[
+            transpose_b=transpose_b,
+            umma_shape=umma_shape,
+            block_tile_shape=block_tile_shape,
+        ](
+            c_tensor,
+            a_tensor,
+            b_tensor,
+            a_scales_tensor,
+            b_scales_tensor,
+            a_offsets_tensor,
+            expert_ids_tensor,
+            max_num_tokens_per_expert,
+            num_active_experts,
+            ctx,
+        )
+        return
 
-    naive_blockwise_scaled_fp8_grouped_matmul[
-        BLOCK_DIM_M=16,
-        BLOCK_DIM_N=16,
-        transpose_b=transpose_b,
-        scales_granularity_mnk = Index(
-            m_scale_granularity, n_scale_granularity, k_scale_granularity
-        ),
-    ](
-        c_tensor,
-        a_tensor,
-        b_tensor,
-        a_scales_tensor,
-        b_scales_tensor,
-        a_offsets_tensor,
-        expert_ids_tensor,
-        max_num_tokens_per_expert,
-        num_active_experts,
-        ctx,
-    )
+    else:
+        naive_blockwise_scaled_fp8_grouped_matmul[
+            BLOCK_DIM_M=16,
+            BLOCK_DIM_N=16,
+            transpose_b=transpose_b,
+            scales_granularity_mnk = Index(
+                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            ),
+        ](
+            c_tensor,
+            a_tensor,
+            b_tensor,
+            a_scales_tensor,
+            b_scales_tensor,
+            a_offsets_tensor,
+            expert_ids_tensor,
+            max_num_tokens_per_expert,
+            num_active_experts,
+            ctx,
+        )
