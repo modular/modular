@@ -1,17 +1,16 @@
+# class Gemma3ImageProcessor:
+    # pass
+
 import itertools
 import math
+import logging
 from typing import Optional, Union
 
 import numpy as np
 import PIL
+from max.graph import TensorType
 
-from ...image_processing_utils import BaseImageProcessor, BatchFeature, get_size_dict
-from ...image_transforms import (
-    convert_to_rgb,
-    resize,
-    to_channel_dimension_format,
-)
-from ...image_utils import (
+from transformers.image_utils import (
     IMAGENET_STANDARD_MEAN,
     IMAGENET_STANDARD_STD,
     ChannelDimension,
@@ -25,16 +24,16 @@ from ...image_utils import (
     valid_images,
     validate_preprocess_arguments,
 )
-from ...utils import TensorType, filter_out_non_signature_kwargs, logging
-
+from transformers.image_processing_utils import BaseImageProcessor, BatchFeature, get_size_dict
+from transformers.image_transforms import (
+    convert_to_rgb,
+    resize,
+    to_channel_dimension_format,
+)
+from transformers.utils import TensorType, filter_out_non_signature_kwargs, logging
+from transformers.processing_utils import ImagesKwargs
 
 logger = logging.get_logger(__name__)
-
-
-# TODO this is in huggingface transformers' utils stuff
-class ImagesKwargs:
-    pass
-
 class Gemma3ImageProcessorKwargs(ImagesKwargs, total=False):
     """
     do_pan_and_scan (`bool`, *optional*):
@@ -242,7 +241,7 @@ class Gemma3ImageProcessor(BaseImageProcessor):
     @filter_out_non_signature_kwargs()
     def preprocess(
         self,
-        images: ImageInput,
+        images: np.ndarray | PIL.Image.Image | list[np.ndarray] | list[PIL.Image.Image],
         do_resize: Optional[bool] = None,
         size: Optional[dict[str, int]] = None,
         resample: Optional[PILImageResampling] = None,
@@ -259,7 +258,7 @@ class Gemma3ImageProcessor(BaseImageProcessor):
         pan_and_scan_min_crop_size: Optional[int] = None,
         pan_and_scan_max_num_crops: Optional[int] = None,
         pan_and_scan_min_ratio_to_activate: Optional[float] = None,
-    ) -> PIL.Image.Image:
+    ) -> dict:
         """
         Preprocess an image or batch of images.
 
@@ -401,7 +400,7 @@ class Gemma3ImageProcessor(BaseImageProcessor):
             processed_images.append(image)
 
         data = {"pixel_values": processed_images, "num_crops": num_crops}
-        return BatchFeature(data=data, tensor_type=return_tensors)
+        return data
 
 
 __all__ = ["Gemma3ImageProcessor"]

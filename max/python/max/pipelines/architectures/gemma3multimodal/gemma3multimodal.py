@@ -11,7 +11,7 @@ from max.dtype import DType
 from max.graph import BufferValue, ShardingStrategy, TensorValue, ops, DeviceRef, Weight, Dim, StaticDim
 from max.graph.ops.resize import InterpolationMode
 
-from max.nn import MLP, LayerList
+from max.nn import MLP, LayerList, LayerNorm, Linear
 from max.nn.kv_cache import PagedCacheValues
 from max.nn import ColumnParallelLinear, MLP, LayerList, Module, ReturnLogits, Linear
 from max.nn.rotary_embedding import (
@@ -23,8 +23,11 @@ from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import ScaledWordEmbedding
 from max.pipelines.architectures.gemma3.layers.transformer_block import Gemma3TransformerBlock
 
+from .attention import Attention
+from .model_config import SiglipVisionConfig
+
 # taken from gemma3
-class Gemma3TextModel(Module):
+class Gemma3LanguageModel(Module):
     """The Gemma3 Multi-Modal model's text component"""
 
     def __init__(self, config: Gemma3ForConditionalGenerationConfig) -> None:
@@ -155,6 +158,7 @@ class Gemma3TextModel(Module):
         kv_collections: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
+        image_embeddings: Sequence[TensorValue],
         **kwargs,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens, signal_buffers)
@@ -250,8 +254,27 @@ class Gemma3TextModel(Module):
 
         return (last_logits,)
 
-# class Gemma3MLP1:
-#     pass
+# class Gemma3MLP1/projector:
+#   https://entron.github.io/posts/Try-Gemma3-using-Hugging-Face-Part-1/#multi_modal_projector
+#   may be useful.  uses a Gemma3RMSNorm layer and more
+#   def __init__(Module):
+#        super.__init__()
+#        mm_input_projection_weight (nn.Paramter)
+#        mm_soft_emb_norm = Gemma3RMSNorm(...)
+#        patches_per_image
+#        tokens_per_side
+#        kernel_size
+#        avg_pool
+
+#   def forward(vision_outputs):
+#       get shape of vision_outputs
+#       reshape them with transpose() and reshape() and contiguous()
+#       pool the outputs with avg_pool, then flatten() and transpose()
+#       run through mm_soft_emb_norm
+#       use matmul(normed_vision_outputs, self.mm_input_projection_weight)
+#       return
+        return projected_vision_outputs.type_as(vision_outputs)
+
 
 # borrowed from InternVL
 class Gemma3VisionEmbeddings:
@@ -259,7 +282,7 @@ class Gemma3VisionEmbeddings:
     def __init__(self, config: Gemma3ForConditionalGenerationConfig, device: DeviceRef | None = None) -> None:
         """initializes the vision embeddings module"""
         self.config = config
-        self.dvices = config.devices
+        self.devices = config.devices
         self.embed_dim = config.vision_config.hidden_size
         self.image_size = config.vision_config.image_size
         self.patch_size = config.vision_config.patch_size
@@ -276,14 +299,7 @@ class Gemma3VisionEmbeddings:
         )
 
         self.num_patches = (self.image_size // self.patch_size) ** 2
-        self.num_positions = self.num_patches + 1
-
-        self.class_embedding = Weight(
-            "class_embedding",
-            dtype=self.dtype,
-            shape=(1, 1, self.embed_dim),
-            device=device if device else DeviceRef.CPU(),
-        )
+        self.num_positions = self.num_patches
 
         self.position_embedding = Weight(
             "position_embedding",
@@ -312,7 +328,6 @@ class Gemma3VisionEmbeddings:
             )
 
         self.patch_embedding.sharding_strategy = strategy
-        self.class_embedding.sharding_strategy = strategy
         self.position_embedding.sharding_strategy = strategy
 
     def shard(
@@ -331,14 +346,12 @@ class Gemma3VisionEmbeddings:
 
         # Get sharded weights
         patch_embedding_shards = self.patch_embedding.shard(devices)
-        class_embedding_shards = self.class_embedding.shard(devices)
         position_embedding_shards = self.position_embedding.shard(devices)
 
         shards = []
-        for device, patch_shard, class_shard, pos_shard in zip(
+        for device, patch_shard, pos_shard in zip(
             devices,
             patch_embedding_shards,
-            class_embedding_shards,
             position_embedding_shards,
             strict=True,
         ):
@@ -347,7 +360,6 @@ class Gemma3VisionEmbeddings:
 
             # Assign the sharded weights.
             sharded.patch_embedding = patch_shard
-            sharded.class_embedding = class_shard
             sharded.position_embedding = pos_shard
 
             shards.append(sharded)
@@ -372,8 +384,6 @@ class Gemma3VisionEmbeddings:
                 return self.position_embedding
 
         # Otherwise, interpolate position embeddings.
-        # Split class token and patch position embeddings.
-        class_pos_embed = self.position_embedding[:, :1, :]
         patch_pos_embed = self.position_embedding[:, 1:, :]
 
         # Reshape patch position embeddings to spatial layout.
@@ -400,7 +410,7 @@ class Gemma3VisionEmbeddings:
         )
 
         # Concatenate class token and interpolated patch embeddings
-        return ops.concat([class_pos_embed, patch_pos_embed], axis=1)
+        return patch_pos_embed
 
     def __call__(self, pixel_values: TensorValue, patch_attention_mask) -> TensorValue:
         """Computes embeddings for input pixel values.
@@ -449,38 +459,132 @@ class Gemma3VisionEmbeddings:
         pixel_values = pixel_values.cast(self.patch_embedding.weight.dtype)
         patch_embeds = self.patch_embedding(pixel_values)
 
-        # 3. Add class token
-        class_embeds = self.class_embedding.broadcast_to(
-            (batch_size, 1, self.embed_dim)
-        )
-        embeddings = ops.concat([class_embeds, patch_embeds], axis=1)
-
-        # 4. Add position embeddings.
+        # Add position embeddings.
         position_embedding = self._get_position_embedding(
             num_patches_h, num_patches_w
         )
-        embeddings = embeddings + position_embedding
+        patch_embeds = patch_embeds + position_embedding
 
-        return embeddings
+        return patch_embeds
 
-# class Gemma3VisionEncoderLayer(Module)
-#     pass
+
+class Gemma3VisionEncoderLayer(Module):
+    """Single transformer layer in the SigLIP vision encoder."""
+    
+    def __init__(self, config: Gemma3ForConditionalGenerationConfig):
+        vision_config = config.vision_config
+        text_config = config.text_config
+
+        self.embed_dim = vision_config.hidden_size
+        
+        # Pre-attention layer norm
+        self.layer_norm1 = LayerNorm(
+            self.embed_dim,
+            eps=vision_config.layer_norm_eps,
+            device=config.devices[0],
+            dtype=config.dtype
+        )
+        
+        # Self-attention
+        self.self_attn = Attention(
+            n_heads=vision_config.num_attention_heads,
+            device=config.devices[0],
+            dtype=config.dtype,
+            dim=vision_config.hidden_size,
+            head_dim=text_config.head_dim,
+        )
+        
+        # Pre-MLP layer norm
+        self.layer_norm2 = LayerNorm(
+            self.embed_dim,
+            eps=vision_config.layer_norm_eps,
+            device=config.devices[0],
+            dtype=config.dtype
+        )
+        
+        # MLP (Feed-Forward Network)
+        self.mlp = MLP(
+            dtype=config.dtype,
+            hidden_dim=vision_config.intermediate_size,
+            quantization_encoding=None,
+            activation_function="gelu", # it doesn't like vision_config.hidden_act (gelu_pytorch_tanh),
+            devices=config.devices,
+            feed_forward_length=text_config.intermediate_size, # Size of dimension used to project the inputs TODO ????
+            float8_config=config.float8_config,
+            has_bias=text_config.attention_bias,
+        )
+    
+    def __call__(
+        self,
+        hidden_states: TensorValue,
+    ) -> TensorValue:
+        # Self-attention with residual
+        residual = hidden_states
+        hidden_states = self.layer_norm1(hidden_states)
+        hidden_states = self.self_attn(hidden_states)
+        hidden_states = residual + hidden_states
+        
+        # MLP with residual
+        residual = hidden_states
+        hidden_states = self.layer_norm2(hidden_states)
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = residual + hidden_states
+        
+        return hidden_states
+
+
+class Gemma3VisionEncoder(Module):
+    """SigLIP vision encoder with 27 transformer layers."""
+    
+    def __init__(self, config: Gemma3ForConditionalGenerationConfig):
+        self.layers = LayerList([
+            Gemma3VisionEncoderLayer(config)
+            for _ in range(config.vision_config.num_hidden_layers)
+        ])
+    
+    def __call__(
+        self,
+        hidden_states: TensorValue,
+    ) -> TensorValue:
+        # Pass through all layers
+        for layer in self.layers:
+            hidden_states = layer(hidden_states)
+        return hidden_states
+
 
 class Gemma3VisionModel(Module):
     def __init__(self, config: Gemma3ForConditionalGenerationConfig) -> None:
         super().__init__()
         self.config = config
-        self.devices = config.devices
-        self.image_processor = Gemma3ImageProcessor()
-
-        ## TODO internvl does these, what do we want to do
-        # - create embeddings with InternVisionEmbeddings, with sharding strategy
-        # - get downsampling ratio from config (our config doesn't have it)
-        # - ps version??
-        # - create a LayerList of InternVLVisionEncoderLayer
-        # - set self.mlp1 to an instance of InterVLMLP1
-        # - create an `AllReduce()` whatever that is
-
+        vision_config = config.vision_config
+        text_config = config.text_config
+        
+        # Vision embeddings (you already have this)
+        self.embeddings = Gemma3VisionEmbeddings(config)
+        
+        # Vision encoder (NEW - need to implement)
+        self.encoder = Gemma3VisionEncoder(config)
+        
+        # Post-encoder layer norm (NEW)
+        self.post_layernorm = LayerNorm(
+            vision_config.hidden_size,
+            eps=vision_config.layer_norm_eps,
+            device=config.devices[0],
+            dtype=config.dtype
+        )
+        
+        # Vision-to-language projection (NEW)
+        # Projects from vision hidden_size to language hidden_size
+        self.mlp1 = MLP(
+            dtype=config.dtype,
+            hidden_dim=vision_config.intermediate_size,
+            quantization_encoding=None,
+            activation_function="gelu", # it doesn't like vision_config.hidden_act (gelu_pytorch_tanh),
+            devices=config.devices,
+            feed_forward_length=text_config.intermediate_size, # Size of dimension used to project the inputs TODO ????
+            float8_config=config.float8_config,
+            has_bias=text_config.attention_bias,
+        )
 
     # from huggingface/gemma3/modeling_gemma3.py
     def prepare_inputs_for_generation(
@@ -506,4 +610,22 @@ class Gemma3VisionModel(Module):
         signal_buffers: Sequence[BufferValue],
     ) -> Sequence[TensorValue]:
         """Process pixel values to image embeddings"""
-        return pixel_values
+        # TODO pinched from idefics3
+        # 1. Convert patches to embeddings
+        hidden_states = self.embeddings(pixel_values[0])
+        # Shape: [batch, num_patches, vision_hidden_size]
+        
+        # 2. Pass through vision encoder (27 transformer layers)
+        hidden_states = self.encoder(hidden_states)
+        # Shape: [batch, num_patches, vision_hidden_size]
+        
+        # 3. Post-encoder normalization
+        hidden_states = self.post_layernorm(hidden_states)
+        # Shape: [batch, num_patches, vision_hidden_size]
+        
+        # 4. Project to language model dimension
+        image_features = self.mlp1(hidden_states)
+        # Shape: [batch, num_patches, language_hidden_size]
+        
+        # Return one output per device (for multi-GPU)
+        return [image_features for _ in range(len(self.config.devices))]
