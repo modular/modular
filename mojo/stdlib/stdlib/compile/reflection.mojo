@@ -20,7 +20,7 @@ fn get_linkage_name[
     *,
     target: _TargetType = _current_target(),
 ]() -> StaticString:
-    """Returns `func` symbol name.
+    """Returns `func`'s symbol name.
 
     Parameters:
         func_type: Type of func.
@@ -37,6 +37,24 @@ fn get_linkage_name[
         func,
         `> : !kgen.string`,
     ]
+    return StaticString(res)
+
+
+fn get_function_name[func_type: AnyType, //, func: func_type]() -> StaticString:
+    """Returns `func`'s name as declared in the source code.
+
+    The returned name does not include any information about the function's
+    parameters, arguments, or return type, just the name as declared in the
+    source code.
+
+    Parameters:
+        func_type: Type of func.
+        func: A mojo function.
+
+    Returns:
+        The function's name as declared in the source code.
+    """
+    var res = __mlir_attr[`#kgen.get_source_name<`, func, `> : !kgen.string`]
     return StaticString(res)
 
 
