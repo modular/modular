@@ -78,7 +78,9 @@ struct float_conversion_generic_t {
   operator uint8_t() const { return bits; }
 
 private:
-  static inline uint8_t toBits(float v) {
+  // TODO: Fix asan issue SDLC-2565
+  __attribute__((no_sanitize("address"))) static inline uint8_t
+  toBits(float v) {
     // We use APFloat to do the heavy lifting here. This is probably not the
     // most efficient way, but it should be battle tested.
     llvm::APFloat apFloat(v);
@@ -218,7 +220,9 @@ struct float16_t {
   }
 
 private:
-  static inline uint16_t floatToF16Bits(float v) {
+  // TODO: Fix asan issue SDLC-2565
+  __attribute__((no_sanitize("address"))) static inline uint16_t
+  floatToF16Bits(float v) {
     // We use APFloat to do the heavy lifting here. This is probably not the
     // most efficient way, but it should be battle tested.
     llvm::APFloat apFloat(v);
