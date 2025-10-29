@@ -2964,9 +2964,15 @@ class ParamDeclareRegionOp(max._core.Operation):
     Example:
 
     ```mlir
-    kgen.param.declare.region AddIt = <N>(%arg0: index) -> index {
+    kgen.param.declare.region AddIt[my_add] = <N>(%arg0: index) -> index {
       %0 = kgen.param.constant = <N>
       %1 = index.add %0, %arg0
+      kgen.return %1 : index
+    }
+
+    kgen.param.declare.region SubtractIt = <N>(%arg0: index) -> index {
+      %0 = kgen.param.constant = <N>
+      %1 = index.sub %0, %arg0
       kgen.return %1 : index
     }
     ```
@@ -2975,12 +2981,12 @@ class ParamDeclareRegionOp(max._core.Operation):
     parametrically isolated from above.
     """
 
-    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         param_decl: ParamDeclAttr,
+        source_name: max._core.dialects.builtin.StringAttr,
         func_type_generator: max._core.dialects.builtin.TypeAttr,
         function_type: max._core.dialects.builtin.TypeAttr,
         input_params: ParamDeclArrayAttr,
@@ -2989,21 +2995,16 @@ class ParamDeclareRegionOp(max._core.Operation):
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
         isolated: max._core.dialects.builtin.UnitAttr,
     ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        param_decl: ParamDeclAttr,
-        func_type_generator: FuncTypeGeneratorType,
-        function_type: max._core.dialects.builtin.FunctionType,
-        input_params: Sequence[ParamDeclAttr],
-        inline_level: InlineLevel = InlineLevel.automatic,
-    ) -> None: ...
     @property
     def param_decl(self) -> ParamDeclAttr: ...
     @param_decl.setter
     def param_decl(self, arg: ParamDeclAttr, /) -> None: ...
+    @property
+    def source_name(self) -> str: ...
+    @source_name.setter
+    def source_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
     @property
     def func_type_generator(self) -> FuncTypeGeneratorType: ...
     @func_type_generator.setter
