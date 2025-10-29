@@ -89,7 +89,7 @@ fn repack_Q4_0_for_sm8x[
     alias num_warps_x = BN // repack_tile[0]
     var warp_x = UInt(warp_id % UInt(num_warps_x))
     var warp_y = UInt(warp_id // UInt(num_warps_x))
-    var lane_id: Int = tid % WARP_SIZE
+    var lane_id = Int(tid % WARP_SIZE)
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
     alias N = Int(q_layout.shape[0])
@@ -179,9 +179,11 @@ fn repack_Q4_0_for_sm8x[
         )
         q_gmem_iter._incr()
         barrier()
-        q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](warp_x, warp_y)
+        q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](
+            Int(warp_x), Int(warp_y)
+        )
 
-        if (BK_groups * block_idx[1] + i * 2 + warp_y) < K_groups:
+        if (BK_groups * block_idx[1] + i * 2 + Int(warp_y)) < K_groups:
             var frag_0: SIMD[DType.uint8, 16] = 0
             var frag_1: SIMD[DType.uint8, 16] = 0
             var raw_Q_tile = q_warp_tile.tile[repack_tile[0], group_bytes]()
@@ -200,7 +202,7 @@ fn repack_Q4_0_for_sm8x[
 
             var repack_warp_tile = repacked_gemm_iter[].tile[
                 64, group_size // pack_factor
-            ](warp_x, warp_y)
+            ](Int(warp_x), Int(warp_y))
             # The repack_warp_tile is of shape [64, (2, 2)]. In this case,
             # elements [0, 0], [0, 1], [1, 0] and [1, 1] are stored continuously
             # in the memory. We need to use a element shape of [2, 2] to
@@ -221,7 +223,7 @@ fn repack_Q4_0_for_sm8x[
 
             # cast scales to bf16 before storing back
             var scales_warp_tile = scales_gmem_iter[].tile[1, 64](
-                warp_y, warp_x
+                Int(warp_y), Int(warp_x)
             )
 
             scales_warp_tile[0, 2 * lane_id] = convert_bytes_to_bf16[
@@ -299,14 +301,14 @@ fn create_ref_b[
     ](block_idx[0], block_idx[1])
     var warp_q_tile = b_q_gmem_tile.tile[
         1, (repack_tile[0] * repack_tile[1]) // pack_factor
-    ](warp_x, warp_y)
+    ](Int(warp_x), Int(warp_y))
 
     var scales_tile = scales.tile[ceildiv(BLOCK_K, group_size), BLOCK_N](
         (block_idx[1] * BLOCK_K) // group_size, block_idx[0]
     )
     var warp_scales_tile = scales_tile.tile[
         ceildiv(BLOCK_K, group_size), repack_tile[0]
-    ](0, warp_x)
+    ](0, Int(warp_x))
     alias smem_reg_scales_layout = Layout.row_major(8, 4)
     var scales_reg_tiles = (
         LayoutTensor[
@@ -327,7 +329,7 @@ fn create_ref_b[
 
     var b_out_tile = b_out.tile[BLOCK_N, BLOCK_K](block_idx[0], block_idx[1])
     var warp_out_tile = b_out_tile.tile[repack_tile[0], repack_tile[1]](
-        warp_x, warp_y
+        Int(warp_x), Int(warp_y)
     )
     var mma_tile_iter_1 = warp_out_tile.tiled_iterator[8, 8, axis=0](0, 0)
     var mma_tile_iter_2 = warp_out_tile.tiled_iterator[8, 8, axis=0](0, 1)
@@ -650,8 +652,8 @@ fn test_quantized[
     randint(
         b_host.tensor.data.bitcast[UInt32](),
         n.value * (k.value // pack_factor),
-        UInt.MIN,
-        UInt.MAX,
+        Int(UInt.MIN),
+        Int(UInt.MAX),
     )
 
     var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](

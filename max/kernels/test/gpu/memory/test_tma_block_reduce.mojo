@@ -94,9 +94,9 @@ fn global_reduction_kernel[
     var vec_data = SIMD[accum_type, simd_width](0)
 
     if idx < UInt(num_cols):
-        vec_data = input_fn[simd_width, 2](IndexList[2](row, idx)).cast[
-            accum_type
-        ]()
+        vec_data = input_fn[simd_width, 2](
+            IndexList[2](Int(row), Int(idx))
+        ).cast[accum_type]()
 
     var thread_sum = vec_data.reduce_add()
 

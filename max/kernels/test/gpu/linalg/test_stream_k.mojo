@@ -97,11 +97,11 @@ fn mac_loop[
 
     var tx = thread_idx.x
     var ty = thread_idx.y
-    var global_r = rm_base + ty
-    var global_c = rn_base + tx
+    var global_r = rm_base + Int(ty)
+    var global_c = rn_base + Int(tx)
     var accum = Scalar[c_type](0)
     var thread_id = thread_idx.x + thread_idx.y * block_dim.x
-    var sema = Semaphore(locks.offset(tile_id), thread_id)
+    var sema = Semaphore(locks.offset(tile_id), Int(thread_id))
     sema.fetch()
 
     for iter in range(start_iter, end_iter):
@@ -175,7 +175,7 @@ fn first_wave_kernel[
     )
 
     while start_iter < last_iter:
-        var remainder = iters_per_tile - (start_iter % UInt(iters_per_tile))
+        var remainder = iters_per_tile - Int(start_iter % UInt(iters_per_tile))
         var boundary = start_iter + UInt(remainder)
         var end_iter = boundary if (boundary < last_iter) else last_iter
         mac_loop(
@@ -193,8 +193,8 @@ fn first_wave_kernel[
             stride_cm,
             stride_cn,
             iters_per_tile,
-            start_iter,
-            end_iter,
+            Int(start_iter),
+            Int(end_iter),
             BLOCK_M,
             BLOCK_N,
             BLOCK_K,
@@ -227,7 +227,7 @@ fn full_tiles_kernel[
     stride_cn: Int,
     total_tiles_streamk: Int,
 ):
-    var tile_id = block_idx.x + UInt(total_tiles_streamk)
+    var tile_id = Int(block_idx.x + UInt(total_tiles_streamk))
     var pid: IndexList[2]
     if GROUP_M > 0:
         pid = swizzle_tile(tile_id, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K, GROUP_M)
@@ -240,8 +240,8 @@ fn full_tiles_kernel[
     var tx = thread_idx.x
     var ty = thread_idx.y
 
-    var global_r = rm_base + ty
-    var global_c = rn_base + tx
+    var global_r = rm_base + Int(ty)
+    var global_c = rn_base + Int(tx)
     var accum = Scalar[c_type](0)
 
     var steps = (K + BLOCK_K - 1) // BLOCK_K
