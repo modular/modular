@@ -55,6 +55,9 @@ class SiglipVisionConfig:
     patch_size: int
     """The size (resolution) of each patch"""
 
+    attention_dropout: float = 0.0
+    """The dropout ratio for the attention probabilities"""
+
     model_type: str = "siglip_vision_model"
     """model type for AutoConfig"""
 
@@ -71,7 +74,7 @@ class SiglipVisionConfig:
             image_size=vision_config.image_size,
             intermediate_size=vision_config.intermediate_size,
             num_attention_heads=vision_config.num_attention_heads,
-            num_hidden_layers=getattr(vision_config, "num_hidden_layers", 32),
+            num_hidden_layers=vision_config.num_hidden_layers,
             patch_size=vision_config.patch_size,
             num_channels=vision_config.num_channels,
             hidden_act=vision_config.hidden_act,
@@ -126,6 +129,9 @@ class Gemma3MultiModalConfigBase(MAXModelConfigBase):
     # https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/gemma3/configuration_gemma3.py
     vision_config: SiglipVisionConfig
     """Custom vision config or dict"""
+
+    head_dim: int = 256
+    """The attention head dimension."""
 
     model_type: str = "Gemma3ForConditionalGeneration"
     """the name of the model type for auto config"""
