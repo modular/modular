@@ -24,7 +24,7 @@ GEMMA3_LANGUAGE_SAFETENSOR_MAP: dict[str, str] = {
 
 # For the vision model
 GEMMA3_VISION_SAFETENSOR_MAP: dict[str, str] = {
-    "vision_model.model.": "",
+    "vision_tower.vision_model.": "",
 }
 
 def convert_safetensor_language_state_dict(
@@ -53,7 +53,7 @@ def convert_safetensor_vision_state_dict(
 
     # Remap HuggingFace -> MAX-style names
     for weight_name, value in state_dict.items():
-        if weight_name.startswith("vision_model."):
+        if weight_name.startswith("vision_tower.vision_model."):
             max_name = weight_name
             for before, after in GEMMA3_VISION_SAFETENSOR_MAP.items():
                 max_name = max_name.replace(before, after)
