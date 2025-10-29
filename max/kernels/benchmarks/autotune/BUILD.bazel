@@ -89,6 +89,19 @@ modular_py_binary(
     ],
 )
 
+modular_py_binary(
+    name = "kdiff",
+    srcs = [
+        "kdiff.py",
+    ],
+    imports = ["."],
+    main = "kdiff.py",
+    deps = [
+        requirement("click"),
+        requirement("pyyaml"),
+    ],
+)
+
 modular_py_test(
     name = "autotune_tests",
     srcs = glob(["tests/*.py"]),

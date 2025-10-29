@@ -134,13 +134,13 @@ There are two ways to run kbench:
     For simply running all the configs in the YAML file:
 
     ```bash
-    $MODULAR_PYTHON kbench.py YAML_FILE --output OUTPUT_PATH
+    br -- //max/kernels/benchmarks/autotune:kbench YAML_FILE --output OUTPUT_PATH
     ```
 
     For finding the best measured elapsed time add `--tune`:
 
     ```bash
-    $MODULAR_PYTHON kbench.py YAML_FILE --output OUTPUT_PATH --tune
+    br -- //max/kernels/benchmarks/autotune:kbench YAML_FILE --output OUTPUT_PATH --tune
     ```
 
 5. Avoid recompilation by enabling `kbench` object cache:

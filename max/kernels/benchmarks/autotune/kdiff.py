@@ -149,7 +149,7 @@ def download_artifacts(
         f" {target_name}|grep csv"
     )
     kp = shell(
-        "$MODULAR_PYTHON $KERNEL_BENCHMARKS_ROOT/autotune/kplot.py"
+        "./bazelw run -- //max/kernels/benchmarks/autotune:kplot"
         f" {target_path_main[0]} {target_path_branch[0]} "
         f"--label=main/{target_name} --label=branch/{target_name} "
         f" -o {output_dir}/main_vs_branch_{target_name} -x {extension}"
@@ -225,13 +225,13 @@ kdiff: compare performance with origin/main
 )
 @click.argument("branch_sha", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    branch_sha: click.UNPROCESSED,
+    branch_sha,  # noqa: ANN001
     run_branch,  # noqa: ANN001
     output_path,  # noqa: ANN001
     extension,  # noqa: ANN001
     targets,  # noqa: ANN001
     verbose,  # noqa: ANN001
-) -> bool:
+) -> None:
     assert len(branch_sha) == 1
     assert output_path
     assert len(targets) > 0
@@ -273,4 +273,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
+        os.chdir(directory)
     main()
