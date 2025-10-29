@@ -345,10 +345,10 @@ struct Attention[
         attention_config_t.depth_padded,
         attention_config_t.double_buffer,
         Self.q_type,
-        Self.BM,
-        Self.BN,
-        Self.BK,
-        Self.depth,
+        Int(Self.BM),
+        Int(Self.BN),
+        Int(Self.BK),
+        Int(Self.depth),
         Self.token_gen,
     ]
 
