@@ -1,6 +1,3 @@
-# TODO implement a self-attention layer
-# the below is from pixtral which may use the wrong encoder
-
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2025, Modular Inc. All rights reserved.
 #
@@ -18,26 +15,19 @@
 import math
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
+from max.graph import DeviceRef, TensorValue, ops
 from max.nn import Linear
 from max.nn.layer import Module
 
-def rotate_half(x: TensorValue) -> TensorValue:
-    """Rotates half the hidden dims of the input."""
-    x1 = x[..., : x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2 :]
-    return ops.concat((-x2, x1), axis=-1)
+# claude gave us this
+class Gemma3VisionAttention(Module):
+    """Standard self-attention for SigLIP vision encoder.
 
-
-class Attention(Module):
-    n_heads: int
-    dim: int
-    head_dim: int  # hidden_size // self.n_heads
-
-    k_proj: Linear
-    v_proj: Linear
-    q_proj: Linear
-    o_proj: Linear
+    Unlike Pixtral, SigLIP uses:
+    - Standard self-attention (no rotary embeddings)
+    - No attention masking
+    - Absolute position embeddings (added in embedding layer)
+    """
 
     def __init__(
         self,
@@ -46,127 +36,63 @@ class Attention(Module):
         head_dim: int,
         dtype: DType,
         device: DeviceRef,
+        has_bias: bool = True,
     ) -> None:
         super().__init__()
 
         self.n_heads = n_heads
         self.dim = dim
         self.head_dim = head_dim
+
         self.q_proj = Linear(
-            dim, dim, dtype=dtype, device=device, has_bias=False
+            dim, dim, dtype=dtype, device=device, has_bias=has_bias
         )
         self.k_proj = Linear(
-            dim, dim, dtype=dtype, device=device, has_bias=False
+            dim, dim, dtype=dtype, device=device, has_bias=has_bias
         )
         self.v_proj = Linear(
-            dim, dim, dtype=dtype, device=device, has_bias=False
+            dim, dim, dtype=dtype, device=device, has_bias=has_bias
         )
         self.o_proj = Linear(
-            dim, dim, dtype=dtype, device=device, has_bias=False
+            dim, dim, dtype=dtype, device=device, has_bias=has_bias
         )
 
-    def apply_rotary_embedding(
-        self,
-        xq: TensorValue,
-        xk: TensorValue,
-        cos: TensorValue,
-        sin: TensorValue,
-        unsqueeze_dim: int = 0,
-    ) -> tuple[TensorValue, TensorValue]:
-        """Applies Rotary Position Embedding to the query and key tensors.
+    def __call__(self, x: TensorValue) -> TensorValue:
+        """Standard self-attention.
 
         Args:
-            xq (`TensorValueLike`): The query tensor.
-            xk (`TensorValueLike`): The key tensor.
-            cos (`TensorValueLike`): The cosine part of the rotary embedding.
-            sin (`TensorValueLike`): The sine part of the rotary embedding.
-            unsqueeze_dim (`int`, *optional*, defaults to 1):
-                The 'unsqueeze_dim' argument specifies the dimension along which to unsqueeze cos and
-                sin so that they can be properly broadcasted to the dimensions of q and k. For example, note
-                that cos and sin have the shape [batch_size, seq_len, head_dim]. Then, if q and
-                k have the shape [batch_size, heads, seq_len, head_dim], then setting unsqueeze_dim=1 makes
-                cos and sin broadcastable to the shapes of q and k. Similarly, if q and k have
-                the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
+            x: Input tensor [batch, seq_len, dim]
+
         Returns:
-            `tuple(TensorValueLike)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
+            Output tensor [batch, seq_len, dim]
         """
-        cos = ops.unsqueeze(cos, unsqueeze_dim)
-        sin = ops.unsqueeze(sin, unsqueeze_dim)
-        xq = xq.transpose(1, 2)
-        xk = xk.transpose(1, 2)
-
-        q_embed = (xq * cos) + (rotate_half(xq) * sin)
-        k_embed = (xk * cos) + (rotate_half(xk) * sin)
-        return q_embed, k_embed
-
-    def attention(
-        self,
-        xq: TensorValue,
-        xk: TensorValue,
-        xv: TensorValue,
-        attn_mask: TensorValueLike,
-    ) -> TensorValue:
-        xv = xv.transpose(1, 2)
-
-        scale = math.sqrt(1.0 / self.head_dim)
-        # xk shape = batch_size=1, n_heads=16, head_dim=64, image_seq_len=160
-        scores = xq @ ops.transpose(xk, 2, 3)
-        # Note, the graph compiler currently requires the order of operands
-        # to be `scores * scale` in order to pattern match the fused attention
-        # operator.
-        # attn_mask and pixel_values are model inputs. scores is self-attention
-        # scores between all patches in pixel_values.
-        # attn_mask shape = ("n_images", 1, "num_patches_in_image", "num_patches_in_image")
-        # scores shape = ("n_images", "n_heads", "num_patches_in_image", "num_patches_in_image")
-        attn_mask = TensorValue(attn_mask)
-
-        attn_mask = ops.rebind(
-            attn_mask, (scores.shape[0], 1, scores.shape[2], scores.shape[3])
-        )
-        # This avoids the symbolic dimension mismatch issue
-        scores = ops.softmax(scores * scale + attn_mask)
-
-        return scores @ xv
-
-    def __call__(
-        self,
-        x: TensorValue,
-        attention_mask: TensorValueLike,
-        position_embeddings: tuple[TensorValue, TensorValue],
-    ) -> TensorValue:
-        """Computes attention on x.
-
-        Args:
-            x: Activations with shape (batch, seq_len, dim).
-            attention_mask: a mask to ensure different blocks of patches (images)
-            can only attend to patches within their respective block (image).
-            position_embeddings:
-
-        Returns the result of multi-headed self attention on the input.
-        """
-
         batch_size, n_patches = x.shape[0], x.shape[1]
-        # matmul weights
+
+        # Project to Q, K, V
         xq = self.q_proj(x)
         xk = self.k_proj(x)
         xv = self.v_proj(x)
 
-        xq = ops.reshape(
-            xq, [batch_size, n_patches, self.n_heads, self.head_dim]
-        )
-        xk = ops.reshape(
-            xk, [batch_size, n_patches, self.n_heads, self.head_dim]
-        )
-        xv = ops.reshape(
-            xv, [batch_size, n_patches, self.n_heads, self.head_dim]
-        )
+        # Reshape to multi-head format
+        xq = ops.reshape(xq, [batch_size, n_patches, self.n_heads, self.head_dim])
+        xk = ops.reshape(xk, [batch_size, n_patches, self.n_heads, self.head_dim])
+        xv = ops.reshape(xv, [batch_size, n_patches, self.n_heads, self.head_dim])
 
-        cos, sin = position_embeddings
-        xq, xk = self.apply_rotary_embedding(xq, xk, cos, sin, unsqueeze_dim=0)
+        # Transpose to [batch, n_heads, n_patches, head_dim]
+        xq = xq.transpose(1, 2)
+        xk = xk.transpose(1, 2)
+        xv = xv.transpose(1, 2)
 
-        output = (
-            self.attention(xq, xk, xv, attention_mask)
-            .transpose(1, 2)
-            .reshape([batch_size, n_patches, -1])
-        )
+        # Scaled dot-product attention
+        scale = math.sqrt(1.0 / self.head_dim)
+        scores = xq @ ops.transpose(xk, 2, 3)
+        scores = ops.softmax(scores * scale)
+
+        # Apply attention to values
+        output = scores @ xv  # [batch, n_heads, n_patches, head_dim]
+
+        # Transpose back and reshape
+        output = output.transpose(1, 2).reshape([batch_size, n_patches, -1])
+
+        # Output projection
         return self.o_proj(output)

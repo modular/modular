@@ -46,7 +46,7 @@ gemma3_multimodal_arch = SupportedArchitecture(
     },
     pipeline_model=Gemma3_MultiModalModel,
     task=PipelineTask.TEXT_GENERATION,
-    tokenizer=TextAndVisionTokenizer, # TODO will we need our own? see notes on internvl specific tokenizer
+    tokenizer=TextAndVisionTokenizer, # TODO will we need our own?
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     rope_type=RopeType.normal,
