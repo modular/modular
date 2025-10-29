@@ -34,9 +34,10 @@ def mojo_test(
     _upstream_mojo_test(
         name = name,
         tags = tags,
-        data = data + [
-            "//bazel/internal:lsan-suppressions.txt",
-        ],
+        data = data + select({
+            "//:asan": ["@//bazel/internal:lsan-suppressions.txt"],
+            "//conditions:default": [],
+        }),
         target_compatible_with = target_compatible_with,
         toolchains = toolchains + ["//bazel/internal:current_gpu_toolchain"],
         env = GPU_TEST_ENV | get_default_test_env(exec_properties) | env,

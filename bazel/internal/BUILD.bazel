@@ -64,7 +64,6 @@ modular_py_library(
 
 gpu_toolchain_alias(
     name = "current_gpu_toolchain",
-    testonly = True,
     visibility = ["//visibility:public"],
 )
 

@@ -49,15 +49,18 @@ def mojo_filecheck_test(
             fail("If multiple source files are passed, a main file must be specified.")
         filecheck_src = main
 
+    extra_data = select({
+        "//:asan": ["@//bazel/internal:lsan-suppressions.txt"],
+        "//conditions:default": [],
+    })
+
     mojo_binary(
         name = name + ".binary",
         copts = copts,
         srcs = srcs,
         main = main,
         deps = deps,
-        data = data + [
-            "//bazel/internal:lsan-suppressions.txt",
-        ],
+        data = data + extra_data,
         env = env | GPU_TEST_ENV,
         testonly = True,
         enable_assertions = enable_assertions,
@@ -75,11 +78,10 @@ def mojo_filecheck_test(
         name = name,
         srcs = ["//bazel/internal:mojo-filecheck-test"],
         size = size,
-        data = data + srcs + [
+        data = extra_data + data + srcs + [
             name + ".binary",
             "@llvm-project//llvm:FileCheck",
             "@llvm-project//llvm:not",
-            "//bazel/internal:lsan-suppressions.txt",
         ],
         env = env | GPU_TEST_ENV | get_default_test_env(exec_properties) | {
             "BINARY": "$(location :{}.binary)".format(name),

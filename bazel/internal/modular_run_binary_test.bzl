@@ -33,13 +33,32 @@ def modular_run_binary_test(
 
     validate_gpu_tags(tags, gpu_constraints)
 
+    extra_env = select({
+        "//:asan_linux_x86_64": {
+            "LD_PRELOAD": "$(rootpath @clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so)",
+        },
+        "//:asan_linux_aarch64": {
+            "LD_PRELOAD": "$(rootpath @clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so)",
+        },
+        "//conditions:default": {},
+    })
+    extra_data = select({
+        "//:asan_linux_x86_64": [
+            "@clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so",
+            "@//bazel/internal:lsan-suppressions.txt",
+        ],
+        "//:asan_linux_aarch64": [
+            "@clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so",
+            "@//bazel/internal:lsan-suppressions.txt",
+        ],
+        "//conditions:default": [],
+    })
+
     binary_test(
         name = name,
         binary = binary,
-        data = data + [
-            "//bazel/internal:lsan-suppressions.txt",
-        ],
-        env = GPU_TEST_ENV | get_default_test_env(exec_properties) | env_for_available_tools() | env,
+        data = extra_data + data,
+        env = GPU_TEST_ENV | get_default_test_env(exec_properties) | env_for_available_tools() | extra_env | env,
         tags = tags,
         target_compatible_with = target_compatible_with + gpu_constraints,
         exec_properties = get_default_exec_properties(tags, gpu_constraints) | exec_properties,

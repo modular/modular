@@ -58,10 +58,19 @@ def modular_py_test(
 
     extra_env = {
         "PYTHONUNBUFFERED": "set",
-    }
-    extra_data = [
-        "//bazel/internal:lsan-suppressions.txt",
-    ]
+    } | select({
+        "//:asan_linux_x86_64": {"LD_PRELOAD": "$(location @clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so)"},
+        "//:asan_linux_aarch64": {"LD_PRELOAD": "$(location @clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so)"},
+        "//conditions:default": {},
+    })
+    extra_data = select({
+        "//:asan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so"],
+        "//:asan_linux_aarch64": ["@clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so"],
+        "//conditions:default": [],
+    }) + select({
+        "//:asan": ["@//bazel/internal:lsan-suppressions.txt"],
+        "//conditions:default": [],
+    })
 
     transitive_mojo_deps = name + ".mojo_deps"
     collect_transitive_mojoinfo(
@@ -73,7 +82,7 @@ def modular_py_test(
 
     env_name = name + ".mojo_test_env"
     toolchains.append(env_name)
-    extra_data.append(env_name)
+    extra_data += [env_name]  # buildifier: disable=list-append
     extra_env |= {
         "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(COMPILER_RT_PATH)",
         "MODULAR_MOJO_MAX_DRIVER_PATH": "$(MOJO_BINARY_PATH)",

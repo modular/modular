@@ -5,10 +5,15 @@ load("@with_cfg.bzl//with_cfg/private:select.bzl", "decompose_select_elements") 
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "DEFAULT_GPU_MEMORY")
 
 GPU_TEST_ENV = {
-    "ASAN_OPTIONS": "$(GPU_ASAN_OPTIONS)",
     "GPU_ENV_DO_NOT_USE": "$(GPU_CACHE_ENV)",
-    "LSAN_OPTIONS": "suppressions=$(execpath //bazel/internal:lsan-suppressions.txt)",
-}
+} | select({
+    "@//:asan": {
+        # TODO: SDLC-2566 Remove need for alloc_dealloc_mismatch=0 once python extensions are fixed
+        "ASAN_OPTIONS": "$(GPU_ASAN_OPTIONS),alloc_dealloc_mismatch=0",
+        "LSAN_OPTIONS": "suppressions=$(execpath @//bazel/internal:lsan-suppressions.txt)",
+    },
+    "//conditions:default": {},
+})
 
 def python_version_name(name, python_version):
     if python_version in (DEFAULT_PYTHON_VERSION_UNDERBAR, DEFAULT_PYTHON_VERSION):
