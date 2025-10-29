@@ -404,21 +404,40 @@ class DeepseekV3Model(DeepseekV2Model):
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV3Inputs:
-        # Get input_row_offsets: start and end position of each batch in the
-        # combined total_seq_len dimension.
-        input_row_offsets = np.cumsum(
-            [0] + [ctx.active_length for ctx in context_batch], dtype=np.uint32
-        )
+        # Create tokens
+        if len(context_batch) == 0:
+            tokens = Tensor(shape=[0], dtype=DType.int64).to(self.devices[0])
+            input_row_offsets = Tensor.zeros(shape=[1], dtype=DType.uint32)
+        else:
+            # Create a ragged token vector of length: sum(len(t) for t in tokens).
+            tokens = Tensor.from_numpy(
+                np.concatenate([ctx.next_tokens for ctx in context_batch])
+            ).to(self.devices[0])
 
-        # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
-        data_parallel_splits = self.kv_manager.get_data_parallel_splits(
-            context_batch
-        )
+            # Create a ragged token vector of length: sum(len(t) for t in tokens).
+            # Get input_row_offsets: start and end position of each batch in the
+            # combined total_seq_len dimension.
+            input_row_offsets = Tensor.from_numpy(
+                np.cumsum(
+                    [0] + [ctx.active_length for ctx in context_batch],
+                    dtype=np.uint32,
+                )
+            )
+
+        data_parallel_splits: Tensor
+        if self.pipeline_config.model_config.data_parallel_degree > 1:
+            assert isinstance(self.kv_manager, PagedKVCacheManager)
+            data_parallel_splits = self.kv_manager.get_data_parallel_splits(
+                context_batch
+            )
+        else:
+            data_parallel_splits = Tensor.from_numpy(
+                np.array([0, len(context_batch)], dtype=np.int64)
+            )
 
         return DeepseekV3Inputs(
-            tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=Tensor.from_numpy(input_row_offsets),
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=Tensor.from_numpy(
