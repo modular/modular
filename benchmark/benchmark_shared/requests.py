@@ -15,11 +15,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
 import sys
+import threading
 import time
 import traceback
 from dataclasses import dataclass, field
@@ -65,25 +65,45 @@ class RequestFuncOutput:
 
 
 class RequestCounter:
+    """Thread-safe counter for limiting the number of requests in benchmarks.
+
+    This class provides a simple mechanism to track and limit the total number
+    of requests sent across multiple concurrent threads. It uses a threading.Lock
+    to ensure thread-safe access to the counter.
+
+    Attributes:
+        max_requests: Maximum number of requests allowed
+        total_sent_requests: Current count of sent requests
+        req_counter_lock: Threading lock for thread-safe access
+    """
+
     def __init__(
         self,
         max_requests: int,
-        req_counter_lock: asyncio.locks.Lock,
         total_sent_requests: int = 0,
     ) -> None:
+        """Initialize the request counter.
+
+        Args:
+            max_requests: Maximum number of requests allowed
+            total_sent_requests: Initial count of sent requests (default: 0)
+        """
         self.max_requests = max_requests
-        self.req_counter_lock = req_counter_lock
+        self.req_counter_lock = threading.Lock()
         self.total_sent_requests = total_sent_requests
 
-    async def advance_until_max(self) -> bool:
-        """
-        Checks if the number of sent requests has reached max_requests.
-        If not, increment by one.
+    def advance_until_max(self) -> bool:
+        """Atomically check and increment the request counter.
+
+        This method performs a thread-safe check-and-increment operation.
+        If the current count is below max_requests, it increments the counter
+        and returns True. If the limit has been reached, it returns False.
 
         Returns:
-        bool: True if the request hasn't reached max and can advance, otherwise False.
+            True if the request can proceed (counter was incremented),
+            False if max_requests has been reached.
         """
-        async with self.req_counter_lock:
+        with self.req_counter_lock:
             if self.total_sent_requests >= self.max_requests:
                 logger.warning(
                     f"Ending run: max requests {self.max_requests} have been"

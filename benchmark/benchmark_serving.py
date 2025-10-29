@@ -700,7 +700,7 @@ async def chat_session_driver(
             )
             break
 
-        advance_request = await request_counter.advance_until_max()
+        advance_request = request_counter.advance_until_max()
         if not advance_request:  # reached max_requests
             break
 
@@ -865,7 +865,6 @@ async def run_multiturn_benchmark(
     # Track total sent requests among chat sessions
     request_counter = RequestCounter(
         max_requests=max_requests,
-        req_counter_lock=asyncio.Lock(),
         total_sent_requests=0,
     )
 
@@ -892,27 +891,27 @@ async def run_multiturn_benchmark(
 
         if semaphore is None:
             return await chat_session_driver(
-                model_id if lora_id is None else lora_id,
-                api_url,
-                limited_request_func,
-                request_counter,
-                chat_session,
-                tokenizer.model_max_length,
-                delay_between_chat_turns,
-                skip_first_n_requests,
-                ignore_first_turn_stats,
+                model_id=model_id if lora_id is None else lora_id,
+                api_url=api_url,
+                request_func=limited_request_func,
+                request_counter=request_counter,
+                chat_session=chat_session,
+                max_chat_len=tokenizer.model_max_length,
+                delay_between_chat_turns=delay_between_chat_turns,
+                skip_session_count=skip_first_n_requests,
+                ignore_first_turn_stats=ignore_first_turn_stats,
             )
         async with semaphore:
             return await chat_session_driver(
-                model_id if lora_id is None else lora_id,
-                api_url,
-                limited_request_func,
-                request_counter,
-                chat_session,
-                tokenizer.model_max_length,
-                delay_between_chat_turns,
-                skip_first_n_requests,
-                ignore_first_turn_stats,
+                model_id=model_id if lora_id is None else lora_id,
+                api_url=api_url,
+                request_func=limited_request_func,
+                request_counter=request_counter,
+                chat_session=chat_session,
+                max_chat_len=tokenizer.model_max_length,
+                delay_between_chat_turns=delay_between_chat_turns,
+                skip_session_count=skip_first_n_requests,
+                ignore_first_turn_stats=ignore_first_turn_stats,
             )
 
     tasks: list[asyncio.Task[list[RequestFuncOutput]]] = []
