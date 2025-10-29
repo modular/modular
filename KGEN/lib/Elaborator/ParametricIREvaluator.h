@@ -196,6 +196,8 @@ private:
   FailureOr<TypedAttr> evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry);
   FailureOr<TypedAttr>
   evaluateGetLinkageNameAttr(GetLinkageNameAttr getLinkageNameAttr);
+  FailureOr<TypedAttr>
+  evaluateGetSourceNameAttr(GetSourceNameAttr getSourceNameAttr);
   FailureOr<TypedAttr> evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr);
   FailureOr<TypedAttr> evaluateTypeConformToTraitAttr(
       TypeConformsToTraitAttr typeConformToTraitAttr);

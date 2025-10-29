@@ -493,6 +493,8 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateExpression(
     return evaluateGetWitnessAttr(getWitnessEntry);
   if (auto getLinkageNameAttr = dyn_cast<GetLinkageNameAttr>(attr))
     return evaluateGetLinkageNameAttr(getLinkageNameAttr);
+  if (auto getSourceNameAttr = dyn_cast<GetSourceNameAttr>(attr))
+    return evaluateGetSourceNameAttr(getSourceNameAttr);
   if (auto getTypeNameAttr = dyn_cast<GetTypeNameAttr>(attr))
     return evaluateGetTypeNameAttr(getTypeNameAttr);
   if (auto typeConformToTraitAttr = dyn_cast<TypeConformsToTraitAttr>(attr))
@@ -1013,6 +1015,27 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateGetLinkageNameAttr(
   }
   StringAttr name = pairOrError.takeValue().first;
   return {StringAttr::get(name.getValue(), getLinkageNameAttr.getType())};
+}
+
+FailureOr<TypedAttr> ParametricIREvaluator::evaluateGetSourceNameAttr(
+    GetSourceNameAttr getSourceNameAttr) {
+
+  auto symbol = dyn_cast<SymbolConstantAttr>(getSourceNameAttr.getFunc());
+  if (!symbol) {
+    emitError({*errorLoc, "'get_source_name' function argument did not resolve "
+                          "to a concrete function"});
+    return failure();
+  }
+  auto func = elaborator->oldSymTab.lookup<GeneratorOp>(
+      cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
+  std::optional<StringRef> sourceName = func.getSourceName();
+  if (!sourceName) {
+    emitError({*errorLoc, "function '" +
+                              symbol.getSymbol().getLeafReference().getValue() +
+                              "' has no source name"});
+    return failure();
+  }
+  return {StringAttr::get(*sourceName, getSourceNameAttr.getType())};
 }
 
 /// Print a single SIMD value.
