@@ -27,16 +27,13 @@ import resource
 import statistics
 import sys
 import time
-import traceback
 import warnings
 from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-import aiohttp
 import numpy as np
 import yaml
 from safetensors.numpy import save_file
@@ -67,7 +64,6 @@ try:
         ChatSession,
         CodeDebugBenchmarkDataset,
         ObfuscatedConversationsBenchmarkDataset,
-        OpenAIImage,
         RandomBenchmarkDataset,
         SampledRequest,
         ShareGPTBenchmarkDataset,
@@ -79,6 +75,14 @@ try:
         LoRAMetrics,
         StandardPercentileMetrics,
         ThroughputMetrics,
+    )
+    from max.benchmark.benchmark_shared.requests import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        ASYNC_REQUEST_FUNCS,
+        RequestCounter,
+        RequestFuncInput,
+        RequestFuncOutput,
+        async_request_lora_load,
+        async_request_lora_unload,
     )
     from max.benchmark.benchmark_shared.server_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         fetch_and_parse_metrics,
@@ -101,7 +105,6 @@ except ImportError:
         ChatSession,
         CodeDebugBenchmarkDataset,
         ObfuscatedConversationsBenchmarkDataset,
-        OpenAIImage,
         RandomBenchmarkDataset,
         SampledRequest,
         ShareGPTBenchmarkDataset,
@@ -114,15 +117,19 @@ except ImportError:
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
+    from benchmark_shared.requests import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        ASYNC_REQUEST_FUNCS,
+        RequestCounter,
+        RequestFuncInput,
+        RequestFuncOutput,
+        async_request_lora_load,
+        async_request_lora_unload,
+    )
     from benchmark_shared.server_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         compute_metrics_delta,
         fetch_and_parse_metrics,
         print_server_metrics,
     )
-
-
-# 30 minute timeout per request session
-AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
 
 BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
     "This command runs comprehensive benchmark tests on a model server to"
@@ -134,70 +141,6 @@ BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
 logger = logging.getLogger("benchmark_serving")
 
 
-@dataclass
-class RequestFuncInput:
-    prompt: str | list[dict[str, Any]]
-    images: list[OpenAIImage]
-    api_url: str
-    prompt_len: int
-    max_tokens: int | None
-    ignore_eos: bool
-    model: str
-    session_id: str | None = None
-    temperature: float | None = None
-    top_p: float | None = None
-    top_k: int | None = None
-
-
-@dataclass
-class RequestFuncOutput:
-    cancelled: bool = False
-    generated_text: str = ""
-    success: bool = False
-    latency: float = 0.0
-    ttft: float = 0.0  # Time to first token
-    # List of inter-token latencies
-    itl: list[float] = field(default_factory=list)
-    prompt_len: int = 0
-    error: str = ""
-
-
-class RequestCounter:
-    def __init__(
-        self,
-        max_requests: int,
-        req_counter_lock: asyncio.locks.Lock,
-        total_sent_requests: int = 0,
-    ) -> None:
-        self.max_requests = max_requests
-        self.req_counter_lock = req_counter_lock
-        self.total_sent_requests = total_sent_requests
-
-    async def advance_until_max(self) -> bool:
-        """
-        Checks if the number of sent requests has reached max_requests.
-        If not, increment by one.
-
-        Returns:
-        bool: True if the request hasn't reached max and can advance, otherwise False.
-        """
-        async with self.req_counter_lock:
-            if self.total_sent_requests >= self.max_requests:
-                logger.warning(
-                    f"Ending run: max requests {self.max_requests} have been"
-                    " sent"
-                )
-                return False
-
-            self.total_sent_requests += 1
-            return True
-
-
-def min_ignore_none(x: Sequence[int | None]) -> int | None:
-    filtered = [elem for elem in x if elem is not None]
-    return min(filtered, default=None)
-
-
 def compute_output_len(
     tokenizer: PreTrainedTokenizerBase, output: RequestFuncOutput
 ) -> int:
@@ -207,291 +150,6 @@ def compute_output_len(
             add_special_tokens=False,
         ).input_ids
     )
-
-
-async def async_request_trt_llm(
-    request_func_input: RequestFuncInput, pbar: tqdm | None = None
-) -> RequestFuncOutput:
-    api_url = request_func_input.api_url
-    assert api_url.endswith("generate_stream")
-
-    async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        payload: dict[str, bool | str | int | float | list[dict[str, Any]]] = {
-            "accumulate_tokens": True,
-            "text_input": request_func_input.prompt,
-            "ignore_eos": request_func_input.ignore_eos,
-            "stream": True,
-        }
-
-        if request_func_input.max_tokens is not None:
-            payload["max_tokens"] = request_func_input.max_tokens
-        if request_func_input.top_k is not None:
-            payload["top_k"] = request_func_input.top_k
-        if request_func_input.temperature is not None:
-            payload["temperature"] = request_func_input.temperature
-        if request_func_input.top_p is not None:
-            payload["top_p"] = request_func_input.top_p
-
-        output = RequestFuncOutput()
-        output.prompt_len = request_func_input.prompt_len
-
-        ttft = 0.0
-        st = time.perf_counter()
-        most_recent_timestamp = st
-        try:
-            async with session.post(url=api_url, json=payload) as response:
-                if response.status == 200:
-                    async for chunk_bytes in response.content:
-                        chunk_bytes = chunk_bytes.strip()
-                        if not chunk_bytes:
-                            continue
-
-                        chunk = remove_prefix(
-                            chunk_bytes.decode("utf-8"), "data:"
-                        )
-
-                        data = json.loads(chunk)
-                        output.generated_text += data["text_output"]
-                        timestamp = time.perf_counter()
-                        # First token
-                        if ttft == 0.0:
-                            ttft = time.perf_counter() - st
-                            output.ttft = ttft
-
-                        # Decoding phase
-                        else:
-                            output.itl.append(timestamp - most_recent_timestamp)
-
-                        most_recent_timestamp = timestamp
-
-                    output.latency = most_recent_timestamp - st
-                    output.success = True
-
-                else:
-                    output.error = response.reason or ""
-                    output.success = False
-        except Exception:
-            output.success = False
-            exc_info = sys.exc_info()
-            output.error = "".join(traceback.format_exception(*exc_info))
-
-        if pbar:
-            pbar.update(1)
-        return output
-
-
-async def async_request_openai_completions(
-    request_func_input: RequestFuncInput, pbar: tqdm | None = None
-) -> RequestFuncOutput:
-    api_url = request_func_input.api_url
-    assert api_url.endswith(("completions", "profile")), (
-        "OpenAI Completions API URL must end with 'completions' or 'profile'."
-    )
-
-    async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        payload = {
-            "model": request_func_input.model,
-            "prompt": request_func_input.prompt,
-            "temperature": request_func_input.temperature,
-            "top_p": request_func_input.top_p,
-            "best_of": 1,
-            "stream": True,
-            "ignore_eos": request_func_input.ignore_eos,
-        }
-
-        if request_func_input.max_tokens is not None:
-            payload["max_tokens"] = request_func_input.max_tokens
-
-        if request_func_input.top_k is not None:
-            payload["top_k"] = request_func_input.top_k
-
-        headers = {
-            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
-        }
-
-        output = RequestFuncOutput()
-        output.prompt_len = request_func_input.prompt_len
-
-        generated_text = ""
-        ttft = 0.0
-        st = time.perf_counter()
-        most_recent_timestamp = st
-        has_content = False
-        try:
-            async with session.post(
-                url=api_url, json=payload, headers=headers
-            ) as response:
-                if response.status == 200:
-                    async for chunk_bytes in response.content:
-                        chunk_bytes = chunk_bytes.strip()
-                        if not chunk_bytes:
-                            continue
-
-                        chunk = remove_prefix(
-                            chunk_bytes.decode("utf-8"), "data: "
-                        )
-                        latency = time.perf_counter() - st
-                        if chunk == "[DONE]":
-                            pass
-                        else:
-                            data = json.loads(chunk)
-
-                            # NOTE: Some completion API might have a last
-                            # usage summary response without a token so we
-                            # want to check a token was generated
-                            if data["choices"][0]["text"]:
-                                has_content = True
-
-                                timestamp = time.perf_counter()
-                                # First token
-                                if ttft == 0.0:
-                                    ttft = time.perf_counter() - st
-                                    output.ttft = ttft
-
-                                # Decoding phase
-                                else:
-                                    output.itl.append(
-                                        timestamp - most_recent_timestamp
-                                    )
-
-                                most_recent_timestamp = timestamp
-                                generated_text += data["choices"][0]["text"]
-                    if not has_content:
-                        output.error = (
-                            "No content returned, there could be an issue with"
-                            " accuracy"
-                        )
-                        output.success = False
-                    else:
-                        output.generated_text = generated_text
-                        output.success = True
-                        output.latency = latency
-                else:
-                    output.error = response.reason or ""
-                    output.success = False
-
-        except Exception:
-            output.success = False
-            exc_info = sys.exc_info()
-            output.error = "".join(traceback.format_exception(*exc_info))
-    if pbar:
-        pbar.update(1)
-    return output
-
-
-async def async_request_openai_chat_completions(
-    request_func_input: RequestFuncInput, pbar: tqdm | None = None
-) -> RequestFuncOutput:
-    api_url = request_func_input.api_url
-    assert api_url.endswith("chat/completions"), (
-        "OpenAI Chat Completions API URL must end with 'chat/completions'."
-    )
-
-    async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        if isinstance(request_func_input.prompt, str):  # question only
-            content = [{"type": "text", "text": request_func_input.prompt}]
-            messages_data = [
-                {"role": "user", "content": content},
-            ]
-        else:  # conversation
-            messages_data = request_func_input.prompt
-
-        payload = {
-            "model": request_func_input.model,
-            "messages": messages_data,
-            "temperature": request_func_input.temperature,
-            "top_p": request_func_input.top_p,
-            "stream": True,
-            "ignore_eos": request_func_input.ignore_eos,
-        }
-
-        if request_func_input.max_tokens is not None:
-            payload["max_tokens"] = request_func_input.max_tokens
-
-        if request_func_input.top_k is not None:
-            payload["top_k"] = request_func_input.top_k
-
-        for img in request_func_input.images:
-            # TODO: Remove this type ignore
-            # (error: Value of type "object" is not indexable)
-            payload["messages"][0]["content"].append(img)  # type: ignore[index, union-attr]
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
-        }
-        if request_func_input.session_id:
-            headers["X-Session-ID"] = request_func_input.session_id
-
-        output = RequestFuncOutput()
-        output.prompt_len = request_func_input.prompt_len
-
-        generated_text = ""
-        ttft = 0.0
-        st = time.perf_counter()
-        most_recent_timestamp = st
-        has_content = False
-        try:
-            async with session.post(
-                url=api_url, json=payload, headers=headers
-            ) as response:
-                if response.status == 200:
-                    async for chunk_bytes in response.content:
-                        chunk_bytes = chunk_bytes.strip()
-                        if not chunk_bytes:
-                            continue
-
-                        chunk = remove_prefix(
-                            chunk_bytes.decode("utf-8"), "data: "
-                        )
-                        latency = time.perf_counter() - st
-                        if chunk == "[DONE]":
-                            pass
-                        else:
-                            timestamp = time.perf_counter()
-                            data = json.loads(chunk)
-
-                            delta = data["choices"][0]["delta"]
-                            if delta.get("content", None):
-                                has_content = True
-
-                                # First token
-                                if ttft == 0.0:
-                                    ttft = time.perf_counter() - st
-                                    output.ttft = ttft
-
-                                # Decoding phase
-                                else:
-                                    output.itl.append(
-                                        timestamp - most_recent_timestamp
-                                    )
-
-                                generated_text += delta["content"]
-
-                            most_recent_timestamp = timestamp
-
-                    if not has_content:
-                        output.error = (
-                            "No content returned, there could be an issue with"
-                            " accuracy"
-                        )
-                        output.success = False
-                    else:
-                        output.generated_text = generated_text
-                        output.success = True
-                        output.latency = latency
-                else:
-                    output.error = response.reason or ""
-                    output.success = False
-
-        except Exception:
-            output.success = False
-            exc_info = sys.exc_info()
-            output.error = "".join(traceback.format_exception(*exc_info))
-
-    if pbar:
-        pbar.update(1)
-    return output
 
 
 def generate_lora_adapter(
@@ -650,83 +308,6 @@ def generate_loras(
     return lora_configs
 
 
-async def async_request_lora_load(
-    api_url: str, lora_name: str, lora_path: str
-) -> tuple[bool, float]:
-    """Load a LoRA adapter via the API.
-
-    Returns:
-        Tuple of (success, load_time_ms)
-    """
-    async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        payload = {"lora_name": lora_name, "lora_path": lora_path}
-        headers = {"Content-Type": "application/json"}
-        logger.debug(f"Loading LoRA '{lora_name}' from path: {lora_path}")
-
-        start_time = time.perf_counter()
-        try:
-            async with session.post(
-                url=f"{api_url}/v1/load_lora_adapter",
-                json=payload,
-                headers=headers,
-            ) as response:
-                elapsed_ms = (time.perf_counter() - start_time) * 1000
-                if response.status == 200:
-                    logger.debug(
-                        f"Successfully loaded LoRA '{lora_name}' in"
-                        f" {elapsed_ms:.2f}ms"
-                    )
-                    return True, elapsed_ms
-                else:
-                    error_text = await response.text()
-                    logger.error(
-                        f"Failed to load LoRA '{lora_name}': {error_text}"
-                    )
-                    return False, elapsed_ms
-        except Exception as e:
-            elapsed_ms = (time.perf_counter() - start_time) * 1000
-            logger.exception(f"Exception loading LoRA '{lora_name}'")
-            return False, elapsed_ms
-
-
-async def async_request_lora_unload(
-    api_url: str, lora_name: str
-) -> tuple[bool, float]:
-    """Unload a LoRA adapter via the API.
-
-    Returns:
-        Tuple of (success, unload_time_ms)
-    """
-    async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        payload = {"lora_name": lora_name}
-        headers = {"Content-Type": "application/json"}
-
-        start_time = time.perf_counter()
-        try:
-            async with session.post(
-                url=f"{api_url}/v1/unload_lora_adapter",
-                json=payload,
-                headers=headers,
-            ) as response:
-                elapsed_ms = (time.perf_counter() - start_time) * 1000
-                if response.status == 200:
-                    logger.debug(
-                        f"Successfully unloaded LoRA '{lora_name}' in"
-                        f" {elapsed_ms:.2f}ms"
-                    )
-                    return True, elapsed_ms
-                else:
-                    error_text = await response.text()
-                    logger.error(
-                        f"Failed to unload LoRA '{lora_name}': {error_text}"
-                    )
-                    return False, elapsed_ms
-        except Exception as e:
-            elapsed_ms = (time.perf_counter() - start_time) * 1000
-            logger.exception(f"Exception loading LoRA '{lora_name}'")
-            return False, elapsed_ms
-
-
 async def benchmark_lora_unloading(
     api_url: str,
     lora_configs: dict[str, str],
@@ -793,14 +374,6 @@ async def benchmark_lora_loading(
     await tqdm.gather(*tasks, desc="Loading LoRAs...")
 
 
-# Since vllm must support Python 3.8, we can't use str.removeprefix(prefix)
-# introduced in Python 3.9
-def remove_prefix(text: str, prefix: str) -> str:
-    if text.startswith(prefix):
-        return text[len(prefix) :]
-    return text
-
-
 def get_tokenizer(
     pretrained_model_name_or_path: str,
     model_max_length: int | None,
@@ -811,18 +384,6 @@ def get_tokenizer(
         model_max_length=model_max_length,
         trust_remote_code=trust_remote_code,
     )
-
-
-# TODO: The keys here should match the backend enum in benchmark_config.py
-ASYNC_REQUEST_FUNCS = {
-    "vllm": async_request_openai_completions,
-    "vllm-chat": async_request_openai_chat_completions,
-    "trt-llm": async_request_trt_llm,
-    "modular": async_request_openai_completions,
-    "modular-chat": async_request_openai_chat_completions,
-    "sglang": async_request_openai_completions,
-    "sglang-chat": async_request_openai_chat_completions,
-}
 
 
 # from https://github.com/sgl-project/sglang/blob/v0.4.0/python/sglang/bench_serving.py#L1283
@@ -906,6 +467,29 @@ async def get_request(
 def print_section(title: str, char: str = "-") -> None:
     """Helper function to print a section with formatted header."""
     print("{s:{c}^{n}}".format(s=title, n=50, c=char))
+
+
+def print_input_prompts(
+    input_requests: Sequence[SampledRequest],
+    num_chat_sessions: int | None,
+) -> None:
+    """Helper function to print input prompts."""
+    if num_chat_sessions:
+        raise NotImplementedError(
+            "Printing out multi-turn chats is not supported."
+        )
+
+    print("Input prompts:")
+    for req_id, request in enumerate(input_requests):
+        print(
+            {
+                "req_id": req_id,
+                "output_len": request.output_len,
+                "prompt_len": request.prompt_len,
+                "prompt": request.prompt_formatted,
+                "encoded_images": request.encoded_images,
+            }
+        )
 
 
 def calculate_metrics(
@@ -1082,7 +666,7 @@ def calculate_metrics(
 async def chat_session_driver(
     model_id: str,
     api_url: str,
-    request_func: Callable[[RequestFuncInput], Awaitable[RequestFuncOutput]],
+    request_func: Callable[..., Awaitable[RequestFuncOutput]],
     request_counter: RequestCounter,
     chat_session: ChatSession,
     max_chat_len: int,
@@ -1102,7 +686,7 @@ async def chat_session_driver(
     )
     content_idx = 0  # Assume user initiates the conversation
 
-    session_outputs = []
+    session_outputs: list[RequestFuncOutput] = []
     message_history: list[dict[str, Any]] = []
     chat_len = 0
 
@@ -1167,7 +751,253 @@ async def chat_session_driver(
     return session_outputs
 
 
-async def benchmark(  # noqa: ANN201
+async def run_single_turn_benchmark(
+    input_requests: Sequence[SampledRequest],
+    request_rate: float,
+    burstiness: float,
+    timing_data: dict[str, list[float]] | None,
+    semaphore: asyncio.Semaphore | None,
+    benchmark_should_end_time: int | None,
+    request_func: Callable[..., Awaitable[RequestFuncOutput]],
+    model_id: str,
+    api_url: str,
+    max_output_len: int | None,
+    temperature: float,
+    top_p: float,
+    top_k: int | None,
+    lora_configs: dict[str, str] | None,
+    lora_request_ratio: float,
+    disable_tqdm: bool,
+) -> list[RequestFuncOutput]:
+    """Run single-turn benchmark scenario."""
+    if timing_data is None:
+        timing_data = {}
+    pbar: tqdm | None = (
+        None if disable_tqdm else tqdm(total=len(input_requests))
+    )
+
+    async def limited_request_func(
+        request_func_input: RequestFuncInput,
+    ) -> RequestFuncOutput:
+        if semaphore is None:
+            return await request_func(
+                request_func_input=request_func_input, pbar=pbar
+            )
+        async with semaphore:
+            if benchmark_should_end_time is not None:
+                if time.perf_counter_ns() >= benchmark_should_end_time:
+                    return RequestFuncOutput(cancelled=True)
+            return await request_func(
+                request_func_input=request_func_input, pbar=pbar
+            )
+
+    tasks: list[asyncio.Task[RequestFuncOutput]] = []
+    async for request in get_request(
+        input_requests, request_rate, timing_data, burstiness
+    ):
+        # If we've hit the time limit, then don't issue any more requests
+        if benchmark_should_end_time is not None:
+            if time.perf_counter_ns() >= benchmark_should_end_time:
+                break
+
+        # Use the ignore_eos setting from the dataset.
+        # Each dataset determines whether to respect EOS based on its own logic.
+        ignore_eos = request.ignore_eos
+        max_tokens = min(
+            filter(None, (request.output_len, max_output_len)), default=None
+        )
+
+        lora_id = None
+        if lora_configs and random.random() < lora_request_ratio:
+            lora_id = random.choice(list(lora_configs.keys()))
+
+        request_func_input = RequestFuncInput(
+            model=model_id if lora_id is None else lora_id,
+            prompt=request.prompt_formatted,
+            api_url=api_url,
+            prompt_len=request.prompt_len,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            ignore_eos=ignore_eos,
+            images=request.encoded_images,
+        )
+        tasks.append(
+            asyncio.create_task(limited_request_func(request_func_input))
+        )
+
+    outputs = await asyncio.gather(*tasks)
+
+    if pbar is not None:
+        pbar.close()
+
+    return outputs
+
+
+async def run_multiturn_benchmark(
+    chat_sessions: Sequence[ChatSession],
+    max_requests: int,
+    semaphore: asyncio.Semaphore | None,
+    benchmark_should_end_time: int | None,
+    request_func: Callable[..., Awaitable[RequestFuncOutput]],
+    model_id: str,
+    api_url: str,
+    tokenizer: PreTrainedTokenizerBase,
+    delay_between_chat_turns: int | None,
+    skip_first_n_requests: int,
+    ignore_first_turn_stats: bool,
+    lora_configs: dict[str, str] | None,
+    lora_request_ratio: float,
+    warmup_delay_ms: float,
+    max_concurrency: int | None,
+    disable_tqdm: bool,
+) -> list[RequestFuncOutput]:
+    """Run multi-turn chat benchmark scenario."""
+    if disable_tqdm:
+        pbar = None
+    else:
+        num_qa_turns = [
+            (len(session.messages) // 2) for session in chat_sessions
+        ]
+        pbar = tqdm(total=sum(num_qa_turns))
+
+    # Track total sent requests among chat sessions
+    request_counter = RequestCounter(
+        max_requests=max_requests,
+        req_counter_lock=asyncio.Lock(),
+        total_sent_requests=0,
+    )
+
+    # Limit the request function only to deal with timeouts.
+    async def limited_request_func(
+        request_func_input: RequestFuncInput,
+    ) -> RequestFuncOutput:
+        if benchmark_should_end_time is not None:
+            if time.perf_counter_ns() >= benchmark_should_end_time:
+                return RequestFuncOutput(cancelled=True)
+        return await request_func(
+            request_func_input=request_func_input, pbar=pbar
+        )
+
+    # apply the semaphore at the session level
+    # ex: with max_concurrency = 1,
+    # the first session finishes before the second session starts
+    async def limited_chat_session_driver(
+        chat_session: ChatSession,
+    ) -> list[RequestFuncOutput]:
+        lora_id = None
+        if lora_configs and random.random() < lora_request_ratio:
+            lora_id = random.choice(list(lora_configs.keys()))
+
+        if semaphore is None:
+            return await chat_session_driver(
+                model_id if lora_id is None else lora_id,
+                api_url,
+                limited_request_func,
+                request_counter,
+                chat_session,
+                tokenizer.model_max_length,
+                delay_between_chat_turns,
+                skip_first_n_requests,
+                ignore_first_turn_stats,
+            )
+        async with semaphore:
+            return await chat_session_driver(
+                model_id if lora_id is None else lora_id,
+                api_url,
+                limited_request_func,
+                request_counter,
+                chat_session,
+                tokenizer.model_max_length,
+                delay_between_chat_turns,
+                skip_first_n_requests,
+                ignore_first_turn_stats,
+            )
+
+    tasks: list[asyncio.Task[list[RequestFuncOutput]]] = []
+    for idx, chat_session in enumerate(chat_sessions):
+        if warmup_delay_ms > 0 and max_concurrency and idx < max_concurrency:
+            await asyncio.sleep(warmup_delay_ms / 1000)
+        tasks.append(
+            asyncio.create_task(limited_chat_session_driver(chat_session))
+        )
+
+    session_outputs: list[list[RequestFuncOutput]] = await asyncio.gather(
+        *tasks
+    )
+
+    if pbar is not None:
+        pbar.close()
+
+    return [output for sublist in session_outputs for output in sublist]
+
+
+async def run_single_test_prompt(
+    model_id: str,
+    api_url: str,
+    input_requests: Sequence[SampledRequest],
+    request_func: Callable[..., Awaitable[RequestFuncOutput]],
+    num_chat_sessions: int | None,
+    chat_sessions: Sequence[ChatSession],
+    top_k: int | None,
+    max_output_len: int | None,
+) -> None:
+    logger.info("Starting initial single prompt test run...")
+    test_prompt: str | list[dict[str, Any]]
+
+    if num_chat_sessions:
+        # multi-turn chat scenario
+        test_question = chat_sessions[0].messages[0]
+        test_answer = chat_sessions[0].messages[1]
+        test_prompt = [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": test_question.content}],
+            }
+        ]
+        test_prompt_len = test_question.num_tokens
+        test_max_tokens: int | None = test_answer.num_tokens
+        test_ignore_eos = True
+        test_images = []
+    else:
+        # single-turn chat scenario
+        test_request = input_requests[0]
+        test_prompt = test_request.prompt_formatted
+        test_prompt_len = test_request.prompt_len
+        test_max_tokens = min(
+            filter(None, (test_request.output_len, max_output_len)),
+            default=None,
+        )
+        test_ignore_eos = test_request.ignore_eos
+        test_images = test_request.encoded_images
+
+    test_input = RequestFuncInput(
+        model=model_id,
+        prompt=test_prompt,
+        api_url=api_url,
+        prompt_len=test_prompt_len,
+        max_tokens=test_max_tokens,
+        ignore_eos=test_ignore_eos,
+        images=test_images,
+        top_k=top_k,
+    )
+    test_output = await request_func(
+        request_func_input=test_input,
+    )
+    if not test_output.success:
+        raise ValueError(
+            "Initial test run failed - Please make sure benchmark"
+            " arguments are correctly specified. Error:"
+            f" {test_output.error}"
+        )
+    else:
+        logger.info(
+            "Initial test run completed. Starting main benchmark run..."
+        )
+
+
+async def benchmark(
     backend: str,
     chat: bool,
     api_url: str,
@@ -1200,7 +1030,7 @@ async def benchmark(  # noqa: ANN201
     lora_request_ratio: float = 0.0,
     lora_configs: dict[str, str] | None = None,
     max_concurrent_lora_ops: int = 1,
-):
+) -> dict[str, Any]:
     if ignore_first_turn_stats and skip_first_n_requests:
         logger.warning(
             "--ignore-first-turn-stats and --skip-first-n-requests both set."
@@ -1234,62 +1064,24 @@ async def benchmark(  # noqa: ANN201
     else:
         full_backend = backend
 
+    # TODO: This is another level of indirection we don't need. Create proper
+    # backend -> request_func interfaces for these.
     if full_backend in ASYNC_REQUEST_FUNCS:
         request_func = ASYNC_REQUEST_FUNCS[full_backend]
     else:
         raise ValueError(f"Unknown backend: {full_backend}")
 
     if do_test_prompt:
-        logger.info("Starting initial single prompt test run...")
-        test_prompt: str | list[dict[str, Any]]
-        if num_chat_sessions:
-            test_question = chat_sessions[0].messages[0]
-            test_answer = chat_sessions[0].messages[1]
-            test_prompt = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": test_question.content}
-                    ],
-                }
-            ]
-            test_prompt_len = test_question.num_tokens
-            test_max_tokens: int | None = test_answer.num_tokens
-            test_ignore_eos = True
-            test_images = []
-        else:
-            test_request = input_requests[0]
-            test_prompt = test_request.prompt_formatted
-            test_prompt_len = test_request.prompt_len
-            test_max_tokens = min_ignore_none(
-                (test_request.output_len, max_output_len)
-            )
-            test_ignore_eos = test_request.ignore_eos
-            test_images = test_request.encoded_images
-
-        test_input = RequestFuncInput(
-            model=model_id,
-            prompt=test_prompt,
+        await run_single_test_prompt(
+            model_id=model_id,
             api_url=api_url,
-            prompt_len=test_prompt_len,
-            max_tokens=test_max_tokens,
-            ignore_eos=test_ignore_eos,
-            images=test_images,
+            input_requests=input_requests,
+            num_chat_sessions=num_chat_sessions,
+            chat_sessions=chat_sessions,
+            request_func=request_func,
             top_k=top_k,
+            max_output_len=max_output_len,
         )
-        test_output = await request_func(
-            request_func_input=test_input,
-        )
-        if not test_output.success:
-            raise ValueError(
-                "Initial test run failed - Please make sure benchmark"
-                " arguments are correctly specified. Error:"
-                f" {test_output.error}"
-            )
-        else:
-            logger.info(
-                "Initial test run completed. Starting main benchmark run..."
-            )
 
     if burstiness == 1.0:
         distribution = "Poisson process"
@@ -1339,8 +1131,8 @@ async def benchmark(  # noqa: ANN201
         if max_benchmark_duration_s is None:
             benchmark_should_end_time = None
         else:
-            benchmark_should_end_time = (
-                benchmark_start_time + max_benchmark_duration_s * 1e9
+            benchmark_should_end_time = benchmark_start_time + int(
+                max_benchmark_duration_s * 1e9
             )
 
         # Capture baseline server metrics before benchmark starts
@@ -1357,153 +1149,51 @@ async def benchmark(  # noqa: ANN201
                     f"Failed to capture baseline server metrics: {e}"
                 )
 
-        tasks: list[asyncio.Task] = []  # type: ignore[type-arg, unused-ignore]
-        outputs: list[RequestFuncOutput] = []
+        # Run the appropriate benchmark scenario
         if not num_chat_sessions:
             # single-turn chat scenario
-            if timing_data is None:
-                timing_data = {}
-            pbar = None if disable_tqdm else tqdm(total=len(input_requests))
-
-            async def limited_request_func(
-                request_func_input: RequestFuncInput,
-            ) -> RequestFuncOutput:
-                if semaphore is None:
-                    return await request_func(
-                        request_func_input=request_func_input, pbar=pbar
-                    )
-                async with semaphore:
-                    if benchmark_should_end_time is not None:
-                        if time.perf_counter_ns() >= benchmark_should_end_time:
-                            return RequestFuncOutput(cancelled=True)
-                    return await request_func(
-                        request_func_input=request_func_input, pbar=pbar
-                    )
-
-            async for request in get_request(
-                input_requests, request_rate, timing_data, burstiness
-            ):
-                # If we've hit the time limit, then don't issue any more rquests
-                if benchmark_should_end_time is not None:
-                    if time.perf_counter_ns() >= benchmark_should_end_time:
-                        break
-
-                # Use the ignore_eos setting from the dataset.
-                # Each dataset determines whether to respect EOS based on its own logic.
-                ignore_eos = request.ignore_eos
-                max_tokens = min_ignore_none(
-                    (request.output_len, max_output_len)
-                )
-
-                lora_id = None
-                if lora_configs and random.random() < lora_request_ratio:
-                    lora_id = random.choice(list(lora_configs.keys()))
-
-                request_func_input = RequestFuncInput(
-                    model=model_id if lora_id is None else lora_id,
-                    prompt=request.prompt_formatted,
-                    api_url=api_url,
-                    prompt_len=request.prompt_len,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    top_p=top_p,
-                    top_k=top_k,
-                    ignore_eos=ignore_eos,
-                    images=request.encoded_images,
-                )
-                tasks.append(
-                    asyncio.create_task(
-                        limited_request_func(request_func_input)
-                    )
-                )
-            outputs = await asyncio.gather(*tasks)
+            outputs = await run_single_turn_benchmark(
+                input_requests=input_requests,
+                request_rate=request_rate,
+                burstiness=burstiness,
+                timing_data=timing_data,
+                semaphore=semaphore,
+                benchmark_should_end_time=benchmark_should_end_time,
+                request_func=request_func,
+                model_id=model_id,
+                api_url=api_url,
+                max_output_len=max_output_len,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                lora_configs=lora_configs,
+                lora_request_ratio=lora_request_ratio,
+                disable_tqdm=disable_tqdm,
+            )
         else:
             # multi-turn chat scenario
-            if disable_tqdm:
-                pbar = None
-            else:
-                num_qa_turns = [
-                    (len(session.messages) // 2) for session in chat_sessions
-                ]
-                pbar = tqdm(total=sum(num_qa_turns))
-
-            # Track total sent requests among chat sessions
-            request_counter = RequestCounter(
+            outputs = await run_multiturn_benchmark(
+                chat_sessions=chat_sessions,
                 max_requests=max_requests,
-                req_counter_lock=asyncio.Lock(),
-                total_sent_requests=0,
+                semaphore=semaphore,
+                benchmark_should_end_time=benchmark_should_end_time,
+                request_func=request_func,
+                model_id=model_id,
+                api_url=api_url,
+                tokenizer=tokenizer,
+                delay_between_chat_turns=delay_between_chat_turns,
+                skip_first_n_requests=skip_first_n_requests,
+                ignore_first_turn_stats=ignore_first_turn_stats,
+                lora_configs=lora_configs,
+                lora_request_ratio=lora_request_ratio,
+                warmup_delay_ms=warmup_delay_ms,
+                max_concurrency=max_concurrency,
+                disable_tqdm=disable_tqdm,
             )
-
-            # Limit the request function only to deal with timeouts.
-            async def limited_request_func(
-                request_func_input: RequestFuncInput,
-            ) -> RequestFuncOutput:
-                if benchmark_should_end_time is not None:
-                    if time.perf_counter_ns() >= benchmark_should_end_time:
-                        return RequestFuncOutput(cancelled=True)
-                return await request_func(
-                    request_func_input=request_func_input, pbar=pbar
-                )
-
-            # apply the semaphore at the session level
-            # ex: with max_concurrency = 1,
-            # the first session finishes before the second session starts
-            async def limited_chat_session_driver(
-                chat_session: ChatSession,
-            ) -> list[RequestFuncOutput]:
-                lora_id = None
-                if lora_configs and random.random() < lora_request_ratio:
-                    lora_id = random.choice(list(lora_configs.keys()))
-
-                if semaphore is None:
-                    return await chat_session_driver(
-                        model_id if lora_id is None else lora_id,
-                        api_url,
-                        limited_request_func,
-                        request_counter,
-                        chat_session,
-                        tokenizer.model_max_length,
-                        delay_between_chat_turns,
-                        skip_first_n_requests,
-                        ignore_first_turn_stats,
-                    )
-                async with semaphore:
-                    return await chat_session_driver(
-                        model_id if lora_id is None else lora_id,
-                        api_url,
-                        limited_request_func,
-                        request_counter,
-                        chat_session,
-                        tokenizer.model_max_length,
-                        delay_between_chat_turns,
-                        skip_first_n_requests,
-                        ignore_first_turn_stats,
-                    )
-
-            for idx, chat_session in enumerate(chat_sessions):
-                if (
-                    warmup_delay_ms > 0
-                    and max_concurrency
-                    and idx < max_concurrency
-                ):
-                    await asyncio.sleep(warmup_delay_ms / 1000)
-                tasks.append(
-                    asyncio.create_task(
-                        limited_chat_session_driver(chat_session)
-                    )
-                )
-
-            session_outputs = await asyncio.gather(*tasks)
-            outputs = [
-                output for sublist in session_outputs for output in sublist
-            ]
 
         benchmark_duration = (
             time.perf_counter_ns() - benchmark_start_time
         ) / 1e9
-
-        if pbar is not None:
-            pbar.close()
 
     if print_inputs_and_outputs:
         print("Generated output text:")
@@ -2083,22 +1773,10 @@ def main(args: argparse.Namespace) -> None:
         raise ValueError(f"Unknown / unsupported dataset: {benchmark_dataset}")
 
     if args.print_inputs_and_outputs:
-        if args.num_chat_sessions:
-            raise NotImplementedError(
-                "Printing out multi-turn chats is not supported."
-            )
-
-        print("Input prompts:")
-        for req_id, request in enumerate(input_requests):
-            print(
-                {
-                    "req_id": req_id,
-                    "output_len": request.output_len,
-                    "prompt_len": request.prompt_len,
-                    "prompt": request.prompt_formatted,
-                    "encoded_images": request.encoded_images,
-                }
-            )
+        print_input_prompts(
+            input_requests=input_requests,
+            num_chat_sessions=args.num_chat_sessions,
+        )
 
     # Generate LoRA configurations if needed
     lora_configs = None
@@ -2129,7 +1807,7 @@ def main(args: argparse.Namespace) -> None:
             ) from e
 
     logger.info("starting benchmark run")
-    benchmark_result = asyncio.run(
+    benchmark_result: dict[str, Any] = asyncio.run(
         benchmark(
             backend=backend,
             chat=chat,
