@@ -224,12 +224,6 @@ def main():
 
                 @parameter
                 for mma_n_scale in range(1, 17):
-                    # from 16*1 till 16*16 which is 256
-                    # basically, if MMA_M is 64, then BN must be multiple of 16 (mma_n_scale must be even)
-                    @parameter
-                    if mma_m_scale == 1 and mma_n_scale % 2 != 0:
-                        continue
-
                     alias block_tile_shape = Index(
                         64 * mma_m_scale, 8 * mma_n_scale, BK
                     )

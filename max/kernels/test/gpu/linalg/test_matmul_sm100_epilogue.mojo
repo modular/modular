@@ -254,13 +254,7 @@ def main():
         for mma_m_scale in range(1, 3):
 
             @parameter
-            for mma_n_scale in range(2, 17, 2):
-                # from 16*1 till 16*16 which is 256
-                # basically, if MMA_M is 64, then BN must be multiple of 16 (mma_n_scale must be even)
-                @parameter
-                if mma_m_scale == 1 and mma_n_scale % 2 != 0:
-                    continue
-
+            for mma_n_scale in range(1, 17):
                 alias block_tile_shape = Index(
                     64 * mma_m_scale, 8 * mma_n_scale, BK
                 )
@@ -271,6 +265,15 @@ def main():
 
                 @parameter
                 for register_based_epilogue in [True, False]:
+                    # shared memory based epilogue has accuracy issues for MMA_M == 128 and MMA_N is not a multiple of 32
+                    @parameter
+                    if (
+                        not register_based_epilogue
+                        and mma_m_scale == 1
+                        and mma_n_scale % 2 != 0
+                    ):
+                        continue
+
                     test_matmul_sm100_epilogue[
                         dtype,
                         dtype,

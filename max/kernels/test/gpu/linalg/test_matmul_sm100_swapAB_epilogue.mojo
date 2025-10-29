@@ -252,7 +252,7 @@ def main():
         # swapAB with register based epilogue tests
         # swapAB only supports MMA_M == 256
         @parameter
-        for mma_n_scale in range(2, 17, 2):
+        for mma_n_scale in range(1, 17):
             alias block_tile_shape = Index(128, 8 * mma_n_scale, BK)
 
             alias umma_shape = Index(256, 16 * mma_n_scale, MMA_K)

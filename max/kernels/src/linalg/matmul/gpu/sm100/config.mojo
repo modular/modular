@@ -331,11 +331,6 @@ fn choose_config[
     # timed by max number of ctas per SM i.e. number of waves.
     else:
         for bm, mma_n in product([64, 128], range(16, min(257, N), 16)):
-            # We only support MMA_N % 32 == 0 for MMA_M=128 cta_group = 2
-            # TODO: lift the restriction, multiple of 16 is supported by instruction.
-            if bm == 64 and mma_n % 32 != 0:
-                continue
-
             num_ctas = ceildiv(M, bm) * ceildiv(N, mma_n)
             num_waves = ceildiv(num_ctas, num_SMs)
             if num_waves < min_num_waves or (

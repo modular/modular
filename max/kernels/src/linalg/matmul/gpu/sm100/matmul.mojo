@@ -1750,8 +1750,16 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
             "MMA_N must be a multiple of 16 when MMA_M is 256",
         ]()
         constrained[
-            (MMA_M != 128) or (MMA_N % 32 == 0),
-            "if MMA_M is 128, then MMA_N must be a multiple of 32",
+            (
+                MMA_M != 128
+                or register_based_epilogue
+                or elementwise_compute_lambda_fn is None
+            )
+            or (MMA_N % 32 == 0),
+            (
+                "SM100 doesn't support shared memory based epilogue when MMA_M"
+                " == 128 and MMA_N is not a multiple of 32"
+            ),
         ]()
         # transpose_c => MMA_M == 256 is the same as (not transpose_c) or MMA_M == 256
         constrained[
