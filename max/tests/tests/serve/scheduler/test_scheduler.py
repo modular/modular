@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import queue
-from collections import OrderedDict
-from typing import cast
 from unittest.mock import Mock
 
 import numpy as np
@@ -30,6 +28,8 @@ from max.serve.scheduler.utils import (
     release_cancelled_requests,
     release_terminated_requests,
 )
+
+ARBITRARY_TOKEN_ID = 999
 
 
 def create_mock_pipeline() -> Mock:
@@ -98,6 +98,7 @@ def create_scheduler() -> tuple[
 def create_mock_request(
     seq_len: int = 30,
     start_idx: int = 0,
+    is_tg: bool = False,
 ) -> TextContext:
     tokens = np.ones(seq_len, dtype=np.int32)
     assert len(tokens) == seq_len
@@ -108,6 +109,8 @@ def create_mock_request(
     )
     assert context.active_idx == seq_len
     context.bump_token_indices(start_idx=start_idx)
+    if is_tg:
+        context.update(ARBITRARY_TOKEN_ID)
     return context
 
 
@@ -118,12 +121,9 @@ def test_should_schedule_ce_empty_queue() -> None:
 
 def test_should_schedule_ce_full_batch() -> None:
     scheduler, request_push_socket, _, _ = create_scheduler()
-    scheduler.batch_constructor.tg_reqs = OrderedDict()
     for _ in range(scheduler.scheduler_config.max_batch_size_tg):
-        mock_request = create_mock_request(seq_len=5, start_idx=0)
-        scheduler.batch_constructor.tg_reqs[mock_request.request_id] = (
-            mock_request
-        )
+        mock_request = create_mock_request(is_tg=True)
+        scheduler.batch_constructor.enqueue_new_request(mock_request)
     mock_request = create_mock_request()
     request_push_socket.put_nowait(mock_request)
     assert not scheduler.batch_constructor._should_schedule_ce()
@@ -164,22 +164,22 @@ def test_try_create_chunked_ce_batch() -> None:
 
 def test_scheduler_handle_terminated_responses() -> None:
     scheduler, _, _, _ = create_scheduler()
+    batch_constructor = scheduler.batch_constructor
 
-    mock_1 = create_mock_request()
-    mock_2 = create_mock_request()
-    batch_executed = {
-        mock_1.request_id: mock_1,
-        mock_2.request_id: mock_2,
+    mock_1 = create_mock_request(is_tg=True)
+    mock_2 = create_mock_request(is_tg=True)
+    batch_constructor.enqueue_new_request(mock_1)
+    batch_constructor.enqueue_new_request(mock_2)
+
+    resp_1: TextGenerationOutput = Mock(is_done=False, tokens=[Mock()])
+    resp_2: TextGenerationOutput = Mock(is_done=True, tokens=[])
+    batch_responses = {
+        mock_1.request_id: resp_1,
+        mock_2.request_id: resp_2,
     }
-    batch_responses = {mock_1.request_id: Mock(), mock_2.request_id: Mock()}
-    batch_responses[mock_1.request_id].is_done = False
-    batch_responses[mock_1.request_id].tokens = [Mock()]
-    batch_responses[mock_2.request_id].is_done = True  # req2 is terminated
-    batch_responses[mock_2.request_id].tokens = []
-    scheduler.batch_constructor.tg_reqs = OrderedDict(batch_executed)
 
     num_terminated_reqs = release_terminated_requests(
-        cast(dict[RequestID, TextGenerationOutput], batch_responses),
+        batch_responses,
         scheduler.pipeline,
         scheduler.batch_constructor.tg_reqs,
     )
@@ -192,22 +192,21 @@ def test_scheduler_handle_terminated_responses() -> None:
 def test_scheduler_handle_chunked_requests() -> None:
     scheduler, _, _, _ = create_scheduler()
 
-    req_1 = create_mock_request(seq_len=31, start_idx=30)
-    req_2 = create_mock_request(
-        seq_len=30, start_idx=20
-    )  # this is a partially encoded request
+    req_1 = create_mock_request(is_tg=True)
+    # this is a partially encoded request
+    req_2 = create_mock_request(seq_len=30, start_idx=20)
 
     batch_executed = {
         req_1.request_id: req_1,
         req_2.request_id: req_2,
     }
-    batch_responses = {req_1.request_id: Mock(), req_2.request_id: Mock()}
-    batch_responses[req_1.request_id].is_done = False
-    batch_responses[req_2.request_id].is_done = False
+    mock_1: TextGenerationOutput = Mock(is_done=False, tokens=[Mock()])
+    mock_2: TextGenerationOutput = Mock(is_done=False, tokens=[])
+    batch_responses = {req_1.request_id: mock_1, req_2.request_id: mock_2}
 
     add_newly_encoded_reqs_to_tg_batch(
         batch_executed,
-        cast(dict[RequestID, TextGenerationOutput], batch_responses),
+        batch_responses,
         scheduler.batch_constructor,
     )
 
@@ -218,10 +217,8 @@ def test_scheduler_handle_chunked_requests() -> None:
 def test_handle_cancelled_requests() -> None:
     scheduler, _, _, cancel_push_socket = create_scheduler()
 
-    mock_request = create_mock_request()
-    scheduler.batch_constructor.tg_reqs = OrderedDict(
-        {mock_request.request_id: mock_request}
-    )
+    mock_request = create_mock_request(is_tg=True)
+    scheduler.batch_constructor.enqueue_new_request(mock_request)
 
     cancel_push_socket.put_nowait([mock_request.request_id])
 
@@ -289,7 +286,7 @@ def test_schedule_ce_with_chunked_prefill() -> None:
 
     # check req1 is put back in the request queue with the correct active_idx and active_length
     assert scheduler.batch_constructor.ce_reqs
-    req_id, data = scheduler.batch_constructor.ce_reqs.popitem(last=True)
+    req_id, data = list(scheduler.batch_constructor.ce_reqs.items())[-1]
     assert req_id == mock_request.request_id
     assert data.start_idx == 20
     assert data.active_idx == 30
@@ -330,10 +327,14 @@ def test_schedule_mixed_ce_tg() -> None:
     assert len(batch) == 2
     assert mock_request_tg.request_id in batch
     assert mock_request_ce.request_id in batch
-    assert batch[mock_request_tg.request_id].active_idx == 11
-    assert batch[mock_request_tg.request_id].active_length == 1
-    assert batch[mock_request_ce.request_id].active_idx == 19
-    assert batch[mock_request_ce.request_id].active_length == 19
+
+    tg_req = batch[mock_request_tg.request_id]
+    assert tg_req.active_idx == 11
+    assert tg_req.active_length == 1
+
+    ce_req = batch[mock_request_ce.request_id]
+    assert ce_req.active_idx == 19
+    assert ce_req.active_length == 19
 
 
 def test_schedule_tg() -> None:
