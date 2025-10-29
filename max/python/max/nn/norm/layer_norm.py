@@ -72,7 +72,7 @@ class LayerNorm(Module, Shardable):
     def __init__(
         self,
         dims: int,
-        devices: list[DeviceRef],
+        devices: Sequence[DeviceRef],
         dtype: DType,
         eps: float = 1e-5,
         use_bias: bool = True,
