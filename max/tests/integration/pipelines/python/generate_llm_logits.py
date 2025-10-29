@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import copy
 import functools
-import importlib
-import inspect
 import os
 import sys
 import traceback
@@ -17,7 +15,7 @@ import traceback
 # Standard library
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypeVar
@@ -36,8 +34,8 @@ from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.nn.hooks import PrintHook
 from max.nn.kv_cache import KVCacheStrategy
+from max.nn.layer import Module
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
-from max.pipelines.lib import PipelineModel
 from peft.peft_model import PeftModel
 
 # Tests
@@ -1398,43 +1396,33 @@ def _detect_hf_flakes(
 
 
 @contextmanager
-def _add_max_hooks(pipe: Any) -> Any:
+def _add_max_hooks() -> Any:
     """Context manager that adds tensor printing hooks by patching the model class."""
 
-    # Get the module path from the model
-    model_module = importlib.import_module(pipe._pipeline_model.__module__)
-
-    # Find the class that inherits from PipelineModel
-    model_class = None
-    for _, obj in inspect.getmembers(model_module):
-        if (
-            inspect.isclass(obj)
-            and issubclass(obj, PipelineModel)
-            and obj != PipelineModel
-        ):
-            model_class = obj
-            break
     hook = PrintHook()
-    assert model_class is not None
 
-    # Store the original __init__ in a closure
-    def get_wrapped_init(
-        original_init: Callable[..., None],
-    ) -> Callable[..., None]:
-        def wrapped_init(self: Any, *args: Any, **kwargs: Any) -> None:
-            original_init(self, *args, **kwargs)
+    def get_wrapped_load_state_dict(
+        original_load_state_dict: Callable[..., Any],
+    ) -> Callable[..., Any]:
+        def wrapped_load_state_dict(
+            self: Any, *args: Any, **kwargs: Any
+        ) -> Any:
+            result = original_load_state_dict(self, *args, **kwargs)
             hook.name_layers(self)
+            return result
 
-        return wrapped_init
+        return wrapped_load_state_dict
 
-    original_init = model_class.__init__
-    model_class.__init__ = get_wrapped_init(original_init)  # type: ignore[method-assign]
+    original_load_state_dict = Module.load_state_dict
+    Module.load_state_dict = get_wrapped_load_state_dict(  # type: ignore[method-assign]
+        original_load_state_dict
+    )
 
     try:
         yield
     finally:
         hook.remove()
-        model_class.__init__ = original_init  # type: ignore[method-assign]
+        Module.load_state_dict = original_load_state_dict  # type: ignore[method-assign]
 
 
 @click.command()
@@ -1587,22 +1575,17 @@ def generate_llm_logits(
     title = f"{pipeline_name} - {framework_name.upper()} - {encoding_name}"
     with github_log_group(title):
         if framework_name == "max":
-            with maybe_log_hf_downloads(log_hf_downloads):
+            add_max_hooks = (
+                _add_max_hooks() if print_intermediates else nullcontext()
+            )
+            with add_max_hooks, maybe_log_hf_downloads(log_hf_downloads):
                 max_pipeline_and_tokenizer = (
                     pipeline_oracle.create_max_pipeline(
                         encoding=encoding_name,
                         device_specs=device_specs,
                     )
                 )
-                if print_intermediates:
-                    with _add_max_hooks(max_pipeline_and_tokenizer.pipeline):
-                        # we call create_max_pipeline again to get a fresh pipeline with the print hooks added
-                        max_pipeline_and_tokenizer = (
-                            pipeline_oracle.create_max_pipeline(
-                                encoding=encoding_name,
-                                device_specs=device_specs,
-                            )
-                        )
+
             print(f"Running {pipeline_name} model on MAX")
             if pipeline_oracle.task == PipelineTask.TEXT_GENERATION:
                 assert isinstance(
