@@ -225,8 +225,8 @@ kgen.generator @callee<B>() always_inline {
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<A>() {
-  // CHECK-NEXT: declare B = <1>
-  // CHECK-NEXT: declare.region A0 = ()
+  // CHECK-NEXT: param.declare B = <1>
+  // CHECK-NEXT: param.declare.region A0[A] = ()
   // CHECK: call_param[() -> (): A0]()
   // CHECK-NOT: kgen.call @callee
   kgen.call @callee<1>() : () -> ()
@@ -778,8 +778,8 @@ kgen.generator @main() {
 
   // CHECK: kgen.param.declare.region id0
   // CHECK: kgen.param.declare func3: () -> () = <id0>
-  // CHECK: kgen.param.declare.region func_wrapper0 = () {
-    // CHECK: kgen.param.declare.region nested_func0 = <idx0>() {
+  // CHECK: kgen.param.declare.region func_wrapper0[func_wrapper] = () {
+    // CHECK: kgen.param.declare.region nested_func0[nested_func] = <idx0>() {
       // CHECK: kgen.call_param[() -> (): func3]
     // CHECK: kgen.param.declare func4: <index>() -> () = <nested_func0>
     // CHECK: kgen.param.constant: () -> () = <bind_params(:<index>() -> () func4, 1)>

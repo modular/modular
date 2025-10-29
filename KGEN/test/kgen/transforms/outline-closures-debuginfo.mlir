@@ -1,18 +1,18 @@
 // RUN: kgen-opt %s -split-input-file -outline-closures=debug-build=true -mlir-print-debuginfo | FileCheck %s
 
 
-// CHECK-LABEL: kgen.generator @foo_NestedClosure() -> !pop.array<0, i32> {
+// CHECK-LABEL: kgen.generator @foo_NestedClosure() -> !pop.array<0, i32> attributes {sourceName = "NestedClosure"} {
 // CHECK-NEXT:    %array = kgen.param.constant: array<0, i32> = <[]> loc(#[[LOC_NESTED:loc[0-9]*]])
 // CHECK-NEXT:    kgen.return %array : !pop.array<0, i32> loc(#[[LOC_NESTED]])
 // CHECK-NEXT:  } loc(#[[LOC_NESTED]])
 
-// CHECK-LABEL: kgen.generator @foo_Closure() -> !pop.array<0, i8> {
+// CHECK-LABEL: kgen.generator @foo_Closure() -> !pop.array<0, i8> attributes {sourceName = "Closure"} {
 // CHECK-NEXT:    kgen.param.declare NestedClosure: () -> !pop.array<0, i32> = <@foo_NestedClosure> loc(#[[LOC_NESTED_DEC:loc[0-9]*]])
 // CHECK-NEXT:    %array = kgen.param.constant: array<0, i8> = <[]> loc(#[[LOC_CLOSURE:loc[0-9]*]])
 // CHECK-NEXT:    kgen.return %array : !pop.array<0, i8> loc(#[[LOC_CLOSURE]])
 // CHECK-NEXT:  } loc(#[[LOC_CLOSURE]])
 
-// CHECK-LABEL: kgen.generator @foo_OtherClosure() always_inline_no_debug {
+// CHECK-LABEL: kgen.generator @foo_OtherClosure() always_inline_no_debug attributes {sourceName = "OtherClosure"} {
 // CHECK-NEXT:    kgen.return loc(#[[LOC1:.*]])
 // CHECK-NEXT:  } loc(#[[LOC1]])
 

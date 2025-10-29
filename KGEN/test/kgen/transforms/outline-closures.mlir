@@ -27,7 +27,8 @@ kgen.generator @call_region_2_args<fn: <index>(index, index) capturing ->index>(
 // COM: This is the wrapper that loads values from the global variable.
 // CHECK-LABEL: kgen.generator @raiseClosure_Fn<Jefffffffffff, C, A, B>(%arg0: index, %arg1: index) capturing -> index
 // CHECK-SAME{LITERAL}:   LLVMArgMetadataArray = [[], ["llvm.someattr", 3 : index]]
-// CHECK-SAME:   LLVMMetadataArray = ["llvm.someattr", 4 : index]
+// CHECK-SAME:            LLVMMetadataArray = ["llvm.someattr", 4 : index]
+// CHECK-SAME:            sourceName = "my_nested_func"
 // CHECK-NEXT:   [[ARG0:%.*]] = pop.compiler.global_load "raiseClosure_context_var_0" : index
 // CHECK-NEXT:   [[ARG1:%.*]] = pop.compiler.global_load "raiseClosure_context_var_1" : index
 // CHECK-NEXT:   [[CST:%.*]] = kgen.param.constant = <add(mul(B, Jefffffffffff, -1), mul(A, Jefffffffffff), mul(C, Jefffffffffff))>
@@ -40,7 +41,7 @@ kgen.generator @raiseClosure<Jefffffffffff>(%arg0: index) -> index {
   // CHECK: pop.compiler.global_store "raiseClosure_context_var_0", %idx0 : index
   // CHECK-NEXT: pop.compiler.global_store "raiseClosure_context_var_1", %arg0 : index
   kgen.param.declare C = <15>
-  kgen.param.declare.region Fn = <A, B>(%a: index, %b: index) capturing -> index {
+  kgen.param.declare.region Fn[my_nested_func] = <A, B>(%a: index, %b: index) capturing -> index {
     %0 = kgen.param.constant = <mul(add(sub(A, B), C), Jefffffffffff)>
     %1 = index.add %cst, %arg0
     kgen.return %1 : index
