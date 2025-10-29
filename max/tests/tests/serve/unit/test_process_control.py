@@ -60,7 +60,7 @@ def run_exit(health: Queue[bool]) -> NoReturn:
 
 @async_timeout(10)
 async def test_ready_and_finish() -> None:
-    async with subprocess_manager() as proc:
+    async with subprocess_manager("test1") as proc:
         health = proc.ctx.Queue()
         task = proc.start(work, health, reps=3, pause=0)
         await proc.ready(lambda: health.get(timeout=5))
@@ -75,7 +75,7 @@ async def test_ready_and_finish() -> None:
 
 @async_timeout(15)
 async def test_cancel() -> None:
-    async with subprocess_manager() as proc:
+    async with subprocess_manager("test1") as proc:
         health = proc.ctx.Queue()
         task = proc.start(work, health, reps=5, pause=4)
         await proc.ready(lambda: health.get(timeout=5))
@@ -94,9 +94,9 @@ async def test_cancel() -> None:
 @async_timeout(10)
 @pytest.mark.parametrize("manager", [subprocess_manager, thread_manager])
 async def test_heartbeat_good(
-    manager: Callable[[], AbstractAsyncContextManager[ProcessManager]],
+    manager: Callable[[str], AbstractAsyncContextManager[ProcessManager]],
 ) -> None:
-    async with manager() as proc:
+    async with manager("test1") as proc:
         health = proc.ctx.Queue()
         task = proc.start(work, health, reps=10, pause=0.2)
         await proc.ready(lambda: health.get(timeout=10))
@@ -108,10 +108,10 @@ async def test_heartbeat_good(
 @async_timeout(10)
 @pytest.mark.parametrize("manager", [subprocess_manager, thread_manager])
 async def test_heartbeat_bad(
-    manager: Callable[[], AbstractAsyncContextManager[ProcessManager]],
+    manager: Callable[[str], AbstractAsyncContextManager[ProcessManager]],
 ) -> None:
     with pytest.raises(ExceptionGroup) as exg:
-        async with manager() as proc:
+        async with manager("test1") as proc:
             health = proc.ctx.Queue()
             task = proc.start(work, health, reps=5, pause=4)
             proc.watch_heartbeat(lambda: health.get(timeout=0.1))
@@ -119,16 +119,16 @@ async def test_heartbeat_bad(
 
     ex = exg.value.exceptions[0]
     assert isinstance(ex, TimeoutError)
-    assert str(ex) == "ProcessManager.watch_heartbeat"
+    assert str(ex) == "test1 failed heartbeat check"
 
 
 @async_timeout(10)
 @pytest.mark.parametrize("manager", [subprocess_manager, thread_manager])
 async def test_exception_propagate(
-    manager: Callable[[], AbstractAsyncContextManager[ProcessManager]],
+    manager: Callable[[str], AbstractAsyncContextManager[ProcessManager]],
 ) -> None:
     with pytest.raises(ExceptionGroup) as exg:
-        async with manager() as proc:
+        async with manager("test1") as proc:
             health = proc.ctx.Queue()
             task = proc.start(run_exception, health)
             await proc.ready(lambda: health.get(timeout=10))
@@ -142,7 +142,7 @@ async def test_exception_propagate(
 @async_timeout(10)
 async def test_hard_exit() -> None:
     with pytest.raises(ExceptionGroup) as exg:
-        async with subprocess_manager() as proc:
+        async with subprocess_manager("test1") as proc:
             health = proc.ctx.Queue()
             task = proc.start(run_exit, health)
             await proc.ready(lambda: health.get(timeout=10))
@@ -155,12 +155,12 @@ async def test_hard_exit() -> None:
 
 @async_timeout(10)
 async def test_nested() -> None:
-    async with subprocess_manager() as proc:
+    async with subprocess_manager("test1") as proc:
         health = proc.ctx.Queue()
         task = proc.start(work, health, reps=3, pause=0)
         await proc.ready(lambda: health.get(timeout=10))
 
-        async with subprocess_manager() as proc2:
+        async with subprocess_manager("test2") as proc2:
             health2 = proc2.ctx.Queue()
             task2 = proc2.start(work, health2, reps=3, pause=0)
             await proc2.ready(lambda: health2.get(timeout=10))

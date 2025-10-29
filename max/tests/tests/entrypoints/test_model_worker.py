@@ -170,7 +170,7 @@ async def test_model_worker_start_timeout(
 
     ex = exg.value.exceptions[0]
     assert isinstance(ex, TimeoutError)
-    assert str(ex) == "ProcessManager.ready"
+    assert str(ex) == "Model Worker failed to become ready"
 
 
 class MockTokenizer(PipelineTokenizer):
