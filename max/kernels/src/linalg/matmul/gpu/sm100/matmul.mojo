@@ -152,6 +152,7 @@ fn load_AB[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cta_group: Int = 1,
+    k_group_size: UInt = 1,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
@@ -187,7 +188,9 @@ fn load_AB[
     alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
     alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     # Leader CTAs expect SMEM from itself and their peers
-    alias expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
+    alias expected_bytes = cta_group * (
+        a_expected_bytes + b_expected_bytes
+    ) * Int(k_group_size)
 
     alias a_tma_load_size = a_desc_layout.size()
     alias b_tma_load_size = b_desc_layout.size()
@@ -195,10 +198,7 @@ fn load_AB[
     alias b_tma_rows = b_desc_layout.shape[0].value()
 
     var stage = load_mma_pipeline.producer_stage()
-
-    # Wait until MMA (consumer) has used the buffer.
-    load_mma_pipeline.wait_consumer()
-
+    var tma_mbar = load_mma_pipeline.producer_mbar(stage)
     var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
         a_tma_rows
     ) + work_tile_coord[0] * UInt(BM)
@@ -208,34 +208,38 @@ fn load_AB[
         + work_tile_coord[1] * UInt(MMA_N)
     )
 
-    var a_smem_tile = a_smem.next(stage)[]
-    var b_smem_tile = b_smem.next(stage)[]
-
-    var a_smem_slice = type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
-    )
-    var b_smem_slice = type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
-    )
-    var tma_mbar = load_mma_pipeline.producer_mbar(stage)
+    # Wait until MMA (consumer) has used the buffer.
+    load_mma_pipeline.wait_consumer()
 
     if elect_one_sync():
         if elect_one_cta:
             tma_mbar[0].expect_bytes(expected_bytes)
 
-        a_tma_op.async_multicast_load[cta_group](
-            a_smem_slice,
-            tma_mbar[0],
-            (UInt(iter_idx) * UInt(BK), UInt(a_gmem_slice_coord)),
-            a_multicast_mask,
-        )
+        @parameter
+        for j in range(k_group_size):
+            var a_smem_tile = a_smem.next(stage * k_group_size + j)[]
+            var b_smem_tile = b_smem.next(stage * k_group_size + j)[]
 
-        b_tma_op.async_multicast_load[cta_group](
-            b_smem_slice,
-            tma_mbar[0],
-            (UInt(iter_idx) * UInt(BK), UInt(b_gmem_slice_coord)),
-            b_multicast_mask,
-        )
+            var a_smem_slice = type_of(a_smem_tile)(
+                a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
+            )
+            var b_smem_slice = type_of(b_smem_tile)(
+                b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
+            )
+
+            a_tma_op.async_multicast_load[cta_group](
+                a_smem_slice,
+                tma_mbar[0],
+                (UInt(iter_idx + j) * UInt(BK), UInt(a_gmem_slice_coord)),
+                a_multicast_mask,
+            )
+
+            b_tma_op.async_multicast_load[cta_group](
+                b_smem_slice,
+                tma_mbar[0],
+                (UInt(iter_idx + j) * UInt(BK), UInt(b_gmem_slice_coord)),
+                b_multicast_mask,
+            )
 
 
 @always_inline
@@ -256,6 +260,7 @@ fn consumer_main_loop[
     mma_shape: IndexList[3],
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
+    k_group_size: UInt = 1,
 ](
     tmem_addr: UInt32,
     a_smem_iter: LayoutTensorIter[
@@ -293,17 +298,19 @@ fn consumer_main_loop[
 
     load_mma_pipeline.wait_producer()
 
-    var a_smem_tile = a_smem_iter.next(stage)[]
-    var b_smem_tile = b_smem_iter.next(stage)[]
     # Compose TMEM address: accum stage encoded in column field with stride in columns.
     if elect_one_sync():
-        mma_op.mma(
-            a_smem_tile,
-            b_smem_tile,
-            tmem_addr,
-            init_c=(iter_idx == 0),  # Initialize C on first iteration
-        )
 
+        @parameter
+        for j in range(k_group_size):
+            var a_smem_tile = a_smem_iter.next(stage * k_group_size + j)[]
+            var b_smem_tile = b_smem_iter.next(stage * k_group_size + j)[]
+            mma_op.mma(
+                a_smem_tile,
+                b_smem_tile,
+                tmem_addr,
+                init_c=((iter_idx + j) == 0),  # Initialize C on first iteration
+            )
         mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
 
 
@@ -591,8 +598,8 @@ fn _compute_register_lambda_fn[
     var simd_top = frag.slice[2, offset = Int(offset)]()
     var simd_bottom = frag.slice[2, offset = Int(offset + 2)]()
 
-    # In normal case, simd_top and simd_bottom are elements on the M dimension
-    # when transpose_c is true, they are on the N dimension. We change the index order
+    # In normal case, simd_top and simd_bottom are elements on the N dimension
+    # when transpose_c is true, they are on the M dimension. We change the index order
     # when we do the transpose and pass the SIMD sector one-by-one to the lambda function.
     @parameter
     for i in range(simd_top.size):
@@ -1264,13 +1271,13 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         SharedMemBarrier
     ]()
     var load_mma_pipeline = ProducerConsumerPipeline[
-        Int(config.num_pipeline_stages)
+        Int(config.num_pipeline_stages // config.k_group_size)
     ](load_mma_mbar_ptr)
 
     # MMA warp as producer and Output warp as consumer.
     # Dependence on MMA output in TMEM.
     var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * Int(
-        config.num_pipeline_stages
+        config.num_pipeline_stages // config.k_group_size
     )
     var mma_output_pipeline = ProducerConsumerPipeline[
         Int(config.num_accum_pipeline_stages)
@@ -1433,11 +1440,12 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                     load_clc_pipeline.producer_step()
 
                 # DO TMA LOAD
-                for i in range(num_iters):
+                for i in range(num_iters // config.k_group_size):
                     load_AB[
                         block_tile_shape = config.block_tile_shape,
                         mma_shape = config.mma_shape,
                         cta_group = config.cta_group,
+                        k_group_size = config.k_group_size,
                     ](
                         a_tma_op,
                         b_tma_op,
@@ -1448,7 +1456,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                         (UInt(work_info.m), UInt(work_info.n)),
                         a_multicast_mask,
                         b_multicast_mask,
-                        i,
+                        i * config.k_group_size,
                         elect_one_cta,
                     )
                     load_mma_pipeline.producer_step()
@@ -1462,7 +1470,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
             # Prevent CTA to exit when a peer CTA is still working on mma.
             @parameter
-            for i in range(config.num_pipeline_stages):
+            for i in range(config.num_pipeline_stages // config.k_group_size):
                 load_mma_pipeline.wait_consumer()
                 load_mma_pipeline.producer_step()
 
@@ -1533,12 +1541,13 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                         mma_output_mma_stage * stage_stride_cols
                     )
 
-                    for i in range(num_iters):
+                    for i in range(num_iters // config.k_group_size):
                         consumer_main_loop[
                             block_tile_shape = config.block_tile_shape,
                             mma_shape = config.mma_shape,
                             cta_group = config.cta_group,
                             cluster_shape = config.cluster_shape,
+                            k_group_size = config.k_group_size,
                         ](
                             tmem_offset,
                             a_smem,
@@ -1546,7 +1555,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                             load_mma_pipeline,
                             mma_op,
                             elect_one_warp,
-                            i,
+                            i * config.k_group_size,
                         )
                         load_mma_pipeline.consumer_step()
 
@@ -1725,6 +1734,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
     ]()
 
+    constrained[
+        config.num_pipeline_stages % config.k_group_size == 0,
+        "num_pipeline_stages must be a multiple of k_group_size",
+    ]()
+
     @parameter
     if config.cta_group == 2:
         constrained[
@@ -1761,7 +1775,12 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     var N = c_device.dim[1]()
     var M_maybe_swapped = a_device.dim[0]()
     var N_maybe_swapped = b_device.dim[0]()
-    var K = a_device.dim[1]()
+    alias K = a_layout.shape[1].value()
+
+    constrained[
+        ceildiv(K, BK) % Int(config.k_group_size) == 0,
+        "K iterations must be a multiple of k_group_size",
+    ]()
 
     a_tma_op = create_tma_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode = config.a_swizzle

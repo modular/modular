@@ -67,6 +67,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     block_swizzle_size: Int = 0,
     benchmark: Bool = False,
     swapAB: Bool = False,
+    k_group_size: UInt = 1,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value
@@ -104,6 +105,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
                 ")",
                 " swapAB=",
                 swapAB,
+                " k_group_size=",
+                k_group_size,
             )
         )
 
@@ -162,6 +165,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         block_swizzle_size=block_swizzle_size,
         cta_group=cta_group,
         AB_swapped=swapAB,
+        k_group_size=k_group_size,
     )
 
     blackwell_matmul_tma_umma_warp_specialized[
@@ -298,6 +302,7 @@ def main():
                         b_swizzle=swizzle,
                         block_swizzle_size=0,
                         swapAB=True,
+                        k_group_size=2,
                     ](
                         ctx,
                         dynamic(500),

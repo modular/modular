@@ -51,6 +51,7 @@ def test_matmul_sm100_epilogue[
     test_lambda_fn: Bool = False,
     register_based_epilogue: Bool = False,
     swapAB: Bool = False,
+    k_group_size: UInt = 1,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value
@@ -80,6 +81,8 @@ def test_matmul_sm100_epilogue[
             register_based_epilogue,
             " swapAB=",
             swapAB,
+            " k_group_size=",
+            k_group_size,
         )
     )
 
@@ -150,6 +153,7 @@ def test_matmul_sm100_epilogue[
         mma_shape=mma_shape,
         cta_group=cta_group,
         AB_swapped=swapAB,
+        k_group_size=k_group_size,
     )
 
     alias optional_lambda_fn = OptionalReg[elementwise_compute_lambda_type](
@@ -311,6 +315,7 @@ def main():
                         cta_group=2,
                         test_lambda_fn=True,
                         register_based_epilogue=register_based_epilogue,
+                        k_group_size=2,
                     ](
                         ctx,
                         dynamic(500),
