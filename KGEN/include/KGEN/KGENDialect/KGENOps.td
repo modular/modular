@@ -747,9 +747,15 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     Example:
 
     ```mlir
-    kgen.param.declare.region AddIt = <N>(%arg0: index) -> index {
+    kgen.param.declare.region AddIt[my_add] = <N>(%arg0: index) -> index {
       %0 = kgen.param.constant = <N>
       %1 = index.add %0, %arg0
+      kgen.return %1 : index
+    }
+
+    kgen.param.declare.region SubtractIt = <N>(%arg0: index) -> index {
+      %0 = kgen.param.constant = <N>
+      %1 = index.sub %0, %arg0
       kgen.return %1 : index
     }
     ```
@@ -760,6 +766,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 
   let arguments = (ins
     KGEN_ParamDeclAttr:$paramDecl,
+    StrAttr:$sourceName,
     TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
@@ -775,8 +782,9 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    custom<RegionDeclaration>($paramDecl, $inputParams, $functionType,
-                              $funcTypeGenerator, $inlineLevel, $bodyRegion)
+    custom<RegionDeclaration>($paramDecl, $sourceName, $inputParams,
+                              $functionType, $funcTypeGenerator, $inlineLevel,
+                              $bodyRegion)
     attr-dict
   }];
 
@@ -796,19 +804,6 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     Attribute removeResAttrsAttr() { return nullptr; }
   }];
 
-  let builders = [
-    OpBuilder<(ins "ParamDeclAttr":$paramDecl,
-                   "FuncTypeGeneratorType":$funcTypeGenerator,
-                   "FunctionType":$functionType,
-                   "ArrayRef<ParamDeclAttr>":$inputParams,
-                   CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel), [{
-      build($_builder, $_state, paramDecl, funcTypeGenerator, functionType,
-            inputParams, inlineLevel,
-            /*llvmMetadata=*/ArrayAttr::get(paramDecl.getContext(), {}),
-            /*llvmArgMetadata=*/ArrayAttr::get(paramDecl.getContext(), {}),
-            /*isolated=*/false);
-    }]>,
-  ];
   let hasVerifier = 1;
 }
 

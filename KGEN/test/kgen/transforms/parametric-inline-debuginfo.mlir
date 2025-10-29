@@ -93,7 +93,7 @@ kgen.generator @foo() {
   // CHECK-NEXT: kgen.param.declare A = <1> loc(#[[LOC:.*]])
   // CHECK-NEXT: kgen.return %[[ARG]]
   kgen.call @bar() : () -> ()
-  // CHECK: kgen.param.declare.region SomeClosure0 = <DT0: dtype, N0>(%[[ARG0:.*]]: !pop.simd<N0, DT0>
+  // CHECK: kgen.param.declare.region SomeClosure0[SomeClosure] = <DT0: dtype, N0>(%[[ARG0:.*]]: !pop.simd<N0, DT0>
   // CHECK-NEXT: kgen.param.declare A0 = <1> loc(#[[LOC0:.*]])
   // CHECK-NEXT: kgen.return %[[ARG0]] : !pop.simd<N0, DT0> loc(#[[LOC0]])
   kgen.call @bar() : () -> ()

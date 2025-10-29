@@ -522,9 +522,12 @@ void LITLowerer::lowerNestedFunction(FnOp func) {
   llvm::append_range(inputParams, extractImplicitOriginParams(func));
   removeSingletonParamDecls(singletonTypeHelper, inputParams);
 
+  StringAttr sourceName = func.getSourceNameAttr();
+  if (!sourceName)
+    sourceName = decl.getName();
   auto region = ParamDeclareRegionOp::create(
-      b, decl, func.getFuncTypeGenerator(), func.getFunctionType(), inputParams,
-      func.getInlineLevel(), func.getLLVMMetadataArray(),
+      b, decl, sourceName, func.getFuncTypeGenerator(), func.getFunctionType(),
+      inputParams, func.getInlineLevel(), func.getLLVMMetadataArray(),
       func.getLLVMArgMetadataArray());
   region.getBodyRegion().takeBody(func.getBodyRegion());
   func.erase();

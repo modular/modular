@@ -197,12 +197,23 @@ static ParseResult parseRegionOnly(OpAsmParser &p,
 
 static ParseResult
 parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
-                       ParamDeclArrayAttr &inputParams, TypeAttr &functionType,
-                       TypeAttr &type, InlineLevelAttr &inlineLevel,
-                       Region &body) {
+                       StringAttr &sourceName, ParamDeclArrayAttr &inputParams,
+                       TypeAttr &functionType, TypeAttr &type,
+                       InlineLevelAttr &inlineLevel, Region &body) {
   StringAttr paramName;
+  if (parseParamName(p, paramName))
+    return failure();
 
-  if (parseParamName(p, paramName) || p.parseEqual() ||
+  if (p.parseOptionalLSquare()) {
+    sourceName = paramName;
+  } else {
+    std::string str;
+    if (p.parseKeywordOrString(&str) || p.parseRSquare())
+      return failure();
+    sourceName = StringAttr::get(p.getContext(), str);
+  }
+
+  if (p.parseEqual() ||
       parseRegionOnly(p, inputParams, functionType, type, inlineLevel, body))
     return failure();
   paramDecl = ParamDeclAttr::get(paramName, type.getValue());
@@ -223,10 +234,16 @@ static void printRegionOnly(OpAsmPrinter &p, Operation *op,
 
 static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
                                    ParamDeclAttr paramDecl,
+                                   StringAttr sourceName,
                                    ParamDeclArrayAttr inputParams,
                                    TypeAttr functionType, TypeAttr type,
                                    InlineLevelAttr inlineLevel, Region &body) {
   printParamName(p, paramDecl.getName());
+  if (paramDecl.getName() != sourceName) {
+    p << "[";
+    p.printKeywordOrString(sourceName.getValue());
+    p << "]";
+  }
   p << " = ";
   printRegionOnly(p, op, inputParams, functionType, type, inlineLevel, body);
 }
