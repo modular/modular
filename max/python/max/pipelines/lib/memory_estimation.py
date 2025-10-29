@@ -27,9 +27,9 @@ from transformers import AutoConfig
 if TYPE_CHECKING:
     from .config import PipelineConfig
 
+from .interfaces import KVCacheMixin, PipelineModel
 from .kv_cache_config import KVCacheConfig
 from .model_config import MAXModelConfig
-from .pipeline import KVCacheMixin, PipelineModel
 
 logger = logging.getLogger("max.pipelines")
 

@@ -13,15 +13,12 @@
 """MAX KVCache configuration."""
 
 import enum
-import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 from max.nn.kv_cache import KVCacheStrategy
 
 from .max_config import MAXConfig
-
-logger = logging.getLogger("max.pipelines")
 
 
 # frozen is False (for now) because of _available_cache_memory being set by

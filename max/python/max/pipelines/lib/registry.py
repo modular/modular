@@ -47,7 +47,8 @@ from .audio_generator_pipeline import AudioGeneratorPipeline
 from .config_enums import RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo
-from .pipeline import PipelineModel, TextGenerationPipeline
+from .interfaces import PipelineModel
+from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import TextTokenizer

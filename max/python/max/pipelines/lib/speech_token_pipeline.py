@@ -29,7 +29,8 @@ from max.nn.kv_cache import KVCacheInputsSequence
 from max.pipelines.core import TTSContext
 from max.profiler import Tracer, traced
 
-from .pipeline import PipelineModel, TextGenerationPipeline
+from .interfaces import PipelineModel
+from .pipeline_variants.text_generation import TextGenerationPipeline
 from .sampling import FusedSamplingProcessor, apply_logits_processors
 
 if TYPE_CHECKING:

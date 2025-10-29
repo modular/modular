@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 from max.serve.telemetry.metrics import METRICS
 
-from .pipeline import PipelineModel
+from .interfaces import PipelineModel
 
 AudioGeneratorPipelineType = Pipeline[
     AudioGenerationInputs[TTSContext], AudioGenerationOutput

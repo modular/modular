@@ -29,18 +29,17 @@ from .lib.config_enums import (
 )
 from .lib.embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
 from .lib.hf_utils import download_weight_files
-from .lib.kv_cache_config import KVCacheConfig
-from .lib.lora import ADAPTER_CONFIG_FILE
-from .lib.memory_estimation import MEMORY_ESTIMATOR
-from .lib.model_config import MAXModelConfig
-from .lib.pipeline import (
+from .lib.interfaces import (
     GenerateMixin,
     ModelInputs,
     ModelOutputs,
     PipelineModel,
-    TextGenerationPipeline,
-    upper_bounded_default,
 )
+from .lib.kv_cache_config import KVCacheConfig
+from .lib.lora import ADAPTER_CONFIG_FILE
+from .lib.memory_estimation import MEMORY_ESTIMATOR
+from .lib.model_config import MAXModelConfig
+from .lib.pipeline_variants.text_generation import TextGenerationPipeline
 from .lib.profiling_config import ProfilingConfig
 from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .lib.sampling.sampling_config import SamplingConfig
@@ -52,6 +51,7 @@ from .lib.tokenizer import (
     TextAndVisionTokenizer,
     TextTokenizer,
 )
+from .lib.utils import upper_bounded_default
 
 # Hydrate the registry.
 register_all_models()

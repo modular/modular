@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .hf_utils import download_weight_files
-from .pipeline import PipelineModel
+from .interfaces import PipelineModel
 
 logger = logging.getLogger("max.pipelines")
 

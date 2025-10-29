@@ -54,12 +54,11 @@ from transformers import AutoConfig
 
 from .config_enums import RepoType
 from .hf_utils import download_weight_files
-from .pipeline import (
+from .interfaces import (
     GenerateMixin,
     ModelInputs,
     ModelOutputs,
     PipelineModel,
-    upper_bounded_default,
 )
 from .ragged_token_merger import ragged_token_merger
 from .sampling import (
@@ -67,6 +66,7 @@ from .sampling import (
     rejection_sampler_with_residuals,
     token_sampler,
 )
+from .utils import upper_bounded_default
 
 if TYPE_CHECKING:
     from .config import PipelineConfig

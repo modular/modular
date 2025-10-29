@@ -23,6 +23,13 @@ from .hf_utils import (
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
+from .interfaces import (
+    KVCacheMixin,
+    ModelInputs,
+    ModelOutputs,
+    PipelineModel,
+    get_paged_manager,
+)
 from .kv_cache_config import KVCacheConfig
 from .lora import LoRAManager
 from .lora_config import LoRAConfig
@@ -36,15 +43,7 @@ from .max_config import (
 )
 from .memory_estimation import MEMORY_ESTIMATOR
 from .model_config import MAXModelConfig, MAXModelConfigBase
-from .pipeline import (
-    KVCacheMixin,
-    ModelInputs,
-    ModelOutputs,
-    PipelineModel,
-    TextGenerationPipeline,
-    get_paged_manager,
-    upper_bounded_default,
-)
+from .pipeline_variants.text_generation import TextGenerationPipeline
 from .profiling_config import ProfilingConfig
 from .ragged_token_merger import ragged_token_merger
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
@@ -63,6 +62,7 @@ from .tokenizer import (
     TextTokenizer,
     max_tokens_to_generate,
 )
+from .utils import upper_bounded_default
 from .weight_path_parser import WeightPathParser
 
 __all__ = [
