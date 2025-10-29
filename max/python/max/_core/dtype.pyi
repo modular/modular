@@ -49,40 +49,40 @@ class DType(enum.Enum):
     uint64 = 140
     """64-bit unsigned integer. Range: 0 to 18,446,744,073,709,551,615."""
 
-    float16 = 70
+    float16 = 79
     """
     16-bit IEEE 754 half-precision floating-point. 1 sign bit, 5 exponent bits, 10 mantissa bits.
     """
 
-    float32 = 72
+    float32 = 81
     """
     32-bit IEEE 754 single-precision floating-point. 1 sign bit, 8 exponent bits, 23 mantissa bits.
     """
 
-    float64 = 73
+    float64 = 82
     """
     64-bit IEEE 754 double-precision floating-point. 1 sign bit, 11 exponent bits, 52 mantissa bits.
     """
 
-    bfloat16 = 71
+    bfloat16 = 80
     """
     16-bit bfloat16 (Brain Float) format. 1 sign bit, 8 exponent bits, 7 mantissa bits.
     """
 
-    float8_e4m3fn = 66
+    float8_e4m3fn = 75
     """
     8-bit floating-point with 4 exponent bits and 3 mantissa bits, finite values only.
     """
 
-    float8_e4m3fnuz = 67
+    float8_e4m3fnuz = 76
     """
     8-bit floating-point with 4 exponent bits and 3 mantissa bits, finite values only, no negative zero.
     """
 
-    float8_e5m2 = 68
+    float8_e5m2 = 77
     """8-bit floating-point with 5 exponent bits and 2 mantissa bits."""
 
-    float8_e5m2fnuz = 69
+    float8_e5m2fnuz = 78
     """
     8-bit floating-point with 5 exponent bits and 2 mantissa bits, finite values only, no negative zero.
     """
