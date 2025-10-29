@@ -151,7 +151,7 @@ def call_lm_eval(model: str, task: str) -> tuple[LmEvalResults, LmEvalSamples]:
             f"--tasks={task}",
             "--model=local-chat-completions",
             "--log_samples",
-            f"--model_args=model={model},base_url={URL},num_concurrent=64",
+            f"--model_args=model={model},base_url={URL},num_concurrent=64,max_retries=1",
             "--apply_chat_template",
             f"--output_path={tempdir}",
             "--limit=320",
