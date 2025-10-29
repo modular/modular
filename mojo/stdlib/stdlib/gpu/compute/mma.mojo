@@ -21,6 +21,8 @@ from sys.info import (
     CompilationTarget,
     _cdna_4_or_newer,
     _is_amd_rdna,
+    _is_amd_rdna3,
+    _is_amd_rdna4,
     is_amd_gpu,
 )
 
@@ -47,18 +49,36 @@ fn get_amd_fp8_dtype() -> DType:
     """Gets the appropriate FP8 dtype for the current AMD GPU architecture.
 
     Returns:
-        `DType.float8_e4m3fn` for CDNA4+ GPUs, `DType.float8_e4m3fnuz` for older AMD GPUs.
+        - `DType.float8_e4m3fn` for CDNA4+ and RDNA4+ GPUs
+        - `DType.float8_e4m3fnuz` for CDNA1-3 GPUs
+        - `DType.invalid` for RDNA3 (no native FP8 support).
     """
-    return DType.float8_e4m3fn if _cdna_4_or_newer() else DType.float8_e4m3fnuz
+
+    @parameter
+    if _is_amd_rdna3():
+        return DType.invalid
+    elif _is_amd_rdna4() or _cdna_4_or_newer():
+        return DType.float8_e4m3fn
+    else:
+        return DType.float8_e4m3fnuz
 
 
 fn get_amd_bf8_dtype() -> DType:
     """Gets the appropriate BF8 dtype for the current AMD GPU architecture.
 
     Returns:
-        `DType.float8_e5m2` for CDNA4+ GPUs, `DType.float8_e5m2fnuz` for older AMD GPUs.
+        - `DType.float8_e5m2` for CDNA4+ and RDNA4+ GPUs
+        - `DType.float8_e5m2fnuz` for CDNA1-3 GPUs
+        - `DType.invalid` for RDNA3 (no native BF8 support).
     """
-    return DType.float8_e5m2 if _cdna_4_or_newer() else DType.float8_e5m2fnuz
+
+    @parameter
+    if _is_amd_rdna3():
+        return DType.invalid
+    elif _is_amd_rdna4() or _cdna_4_or_newer():
+        return DType.float8_e5m2
+    else:
+        return DType.float8_e5m2fnuz
 
 
 @always_inline
