@@ -151,7 +151,7 @@ def call_lm_eval(model: str, task: str) -> tuple[LmEvalResults, LmEvalSamples]:
             f"--output_path={tempdir}",
             "--limit=320",
             "--seed=42",
-            f"--gen_kwargs=seed=42,top_p=1,top_k=1,temperature=0{max_gen_toks}",
+            f"--gen_kwargs=seed=42,temperature=0{max_gen_toks}",
             f"--include_path={include_path}",
             "--fewshot_as_multiturn",
         ]
