@@ -181,6 +181,9 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     pixel_values: list[Tensor] | None = None
     """Pixel values for vision inputs."""
 
+    image_token_indices: Tensor | None = None
+    """Pre-computed indices of image tokens in the input sequence."""
+
     return_n_logits: Tensor
     """Number of logits to return, used by speculative decoding for example."""
 
@@ -192,6 +195,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         signal_buffers: list[Tensor],
         kv_cache_inputs: KVCacheInputs | None = None,
         pixel_values: list[Tensor] | None = None,
+        image_token_indices: Tensor | None = None,
     ) -> None:
         """
         Args:
@@ -207,6 +211,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         self.kv_cache_inputs = kv_cache_inputs
         self.return_n_logits = return_n_logits
         self.pixel_values = pixel_values
+        self.image_token_indices = image_token_indices
 
     @property
     def has_vision_inputs(self) -> bool:
@@ -407,6 +412,9 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # the TextAndVisionTokenizer does basically everything we need
         pixel_values = self._prepare_vision_inputs(context_batch)
 
+        # Batch image token indices, offsetting for position in the batch.
+        image_token_indices = self._batch_image_token_indices(context_batch)
+
         return Gemma3MultiModalModelInputs(
             tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
             input_row_offsets=input_row_offsets_tensors,
@@ -416,6 +424,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
             pixel_values=pixel_values,
+            image_token_indices=image_token_indices,
         )
 
     def prepare_next_token_inputs(
@@ -485,6 +494,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             return_n_logits=model_inputs.return_n_logits,
             *input_row_offsets_list,
             *image_embeddings,
+            *model_inputs.image_token_indices,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
         )
@@ -594,6 +604,15 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         flattened_kv_types = [
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]
+        
+        image_token_indices_types = [
+            TensorType(
+                DType.int64,
+                shape=["num_image_tokens"],
+                device=DeviceRef.from_device(dev),
+            )
+            for dev in self.devices
+        ]
 
         with Graph(
             getattr(self.huggingface_config, "model_type", "Gemma3"),
@@ -602,6 +621,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 return_n_logits_type,
                 *input_row_offsets_types,
                 *image_embeddings_types,
+                *image_token_indices_types,
                 *signals.input_types(),
                 *flattened_kv_types,
             ],
@@ -617,6 +637,11 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
             # Extract image embeddings (one per device).
             image_embeddings = [
+                v.tensor for v in variadic_args[: len(self.devices)]
+            ]
+            variadic_args = variadic_args[len(self.devices) :]
+
+            image_token_indices = [
                 v.tensor for v in variadic_args[: len(self.devices)]
             ]
             variadic_args = variadic_args[len(self.devices) :]
@@ -637,6 +662,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 input_row_offsets=input_row_offsets,
                 kv_collections=kv_cache,
                 image_embeddings=image_embeddings,
+                image_token_indices=image_token_indices,
             )
             graph.output(*outputs)
         return graph, language_model.state_dict()
@@ -803,6 +829,53 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         return _cast_to_dtype(
             final_images, DType.float32, DType.bfloat16, self.devices[0]
         )
+
+    def _batch_image_token_indices(
+        self, context_batch: Sequence[TextAndVisionContext]
+    ) -> Tensor | None:
+        """Batch image token indices from multiple contexts, adjusting for
+        position in batch.
+
+        This method efficiently combines image token indices from multiple
+        contexts using vectorized operations.
+
+        Args:
+            context_batch: Sequence of contexts that may contain image token
+                indices
+
+        Returns:
+            Tensor containing all batched indices, or None if no indices found
+        """
+        # Collect indices and offsets.
+        indices_and_offsets = []
+        batch_offset = 0
+
+        # idefics approach wont work as our config doesn't include a special_image_token_mas
+        # for ctx in context_batch:
+        #     input_ids = ctx.next_tokens
+        #     special_image_token_mask = input_ids == self.image_token_id
+        #     indices = np.where(special_image_token_mask)[0].tolist()
+
+        #     indices_and_offsets.append([idx + batch_offset for idx in indices])
+        #     batch_offset += ctx.active_length
+
+        # internvl approach doesn't work as we dont have this extra arg
+        for ctx in context_batch:
+            print(ctx.extra_model_args)
+            if "image_token_indices" in ctx.extra_model_args:
+                indices = ctx.extra_model_args["image_token_indices"]
+                indices_and_offsets.append(indices + batch_offset)
+            batch_offset += ctx.active_length
+
+        if not indices_and_offsets:
+            return None
+
+        np_indices = np.concatenate(indices_and_offsets).astype(
+            np.int32, copy=False
+        )
+
+        # Create tensor and distribute to device
+        return Tensor.from_numpy(np_indices).to(self.devices[0])
 
     # borrowed from InternVL
     def _create_empty_image_embeddings(self) -> list[Tensor]:

@@ -33,6 +33,12 @@ GEMMA3_VISION_SAFETENSOR_MAP: dict[str, str] = {
     # Note: encoder layer MLPs use fc1/fc2 (simple 2-layer MLP), no mapping needed
 }
 
+# NOTE: Huggingface implementation seems to have quite different checkpoint name conversions:
+# "^language_model.model": "model.language_model",
+# "^vision_tower": "model.vision_tower",
+# "^multi_modal_projector": "model.multi_modal_projector",
+# "^language_model.lm_head": "lm_head",
+
 def convert_safetensor_language_state_dict(
     state_dict: dict[str, Weights],
     **unused_kwargs
