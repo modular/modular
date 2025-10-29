@@ -98,7 +98,7 @@ struct ComplexHashableStructWithList(Hashable):
         # This is okay because self is passed as read-only so the pointer will
         # be valid until at least the end of the function
         hasher._update_with_bytes(
-            Span(ptr=self._value3.unsafe_ptr(), length=UInt(len(self._value3)))
+            Span(ptr=self._value3.unsafe_ptr(), length=len(self._value3))
         )
 
 
@@ -115,7 +115,7 @@ struct ComplexHashableStructWithListAndWideSIMD(Hashable):
         # This is okay because self is passed as read-only so the pointer will
         # be valid until at least the end of the function
         hasher._update_with_bytes(
-            Span(ptr=self._value3.unsafe_ptr(), length=UInt(len(self._value3)))
+            Span(ptr=self._value3.unsafe_ptr(), length=len(self._value3))
         )
         hasher.update(self._value4)
 

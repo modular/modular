@@ -33,7 +33,7 @@ def test_mul():
     alias `u3`: UInt = 3
     alias static_concat_0 = "mojo" * 3
     alias static_concat_1 = "mojo" * `3`
-    alias static_concat_2 = "mojo" * `u3`
+    alias static_concat_2 = "mojo" * Int(`u3`)
     assert_equal(static_concat_0, static_concat_1)
     assert_equal(static_concat_1, static_concat_2)
     assert_equal("mojomojomojo", static_concat_0)

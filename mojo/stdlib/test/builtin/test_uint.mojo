@@ -255,7 +255,7 @@ def test_hash():
 def test_comptime():
     alias a: UInt = 32
     # Verify that count_trailing_zeros works at comptime.
-    alias n = count_trailing_zeros(a)
+    alias n = count_trailing_zeros(Int(a))
     assert_equal(n, 5)
 
 

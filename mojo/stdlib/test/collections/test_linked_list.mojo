@@ -506,12 +506,12 @@ def test_list_boolable():
 
 def test_list_count():
     var list = LinkedList[Int](1, 2, 3, 2, 5, 6, 7, 8, 9, 10)
-    assert_equal(1, list.count(1))
-    assert_equal(2, list.count(2))
-    assert_equal(0, list.count(4))
+    assert_equal(1, Int(list.count(1)))
+    assert_equal(2, Int(list.count(2)))
+    assert_equal(0, Int(list.count(4)))
 
     var list2 = LinkedList[Int]()
-    assert_equal(0, list2.count(1))
+    assert_equal(0, Int(list2.count(1)))
 
 
 def test_list_contains():
