@@ -163,6 +163,10 @@ what we publish.
 - Added `sys.compile.SanitizeAddress` providing a way for mojo code to detect
   `--sanitize address` at compile time.
 
+- The `mojo test` command has been removed. The recommended testing strategy is
+  to define test functions, call them explicitly from `main` (or use the new
+  `test_utils.TestSuite` framework), and run with `mojo run`.
+
 - Error messages now preserve symbolic calls to `always_inline("builtin")`
   functions rather than inlining them into the error message.
 

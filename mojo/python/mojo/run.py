@@ -83,7 +83,6 @@ def _sdk_default_env() -> dict[str, str]:
             if sys.platform == "darwin"
             else "-lrt,-ldl,-lpthread,-lm"
         ),
-        "MODULAR_MOJO_MAX_TEST_EXECUTOR_PATH": str(lib / "mojo-test-executor"),
 
         "MODULAR_CRASH_REPORTING_HANDLER_PATH": str(
             bin / "modular-crashpad-handler"
