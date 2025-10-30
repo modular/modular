@@ -53,26 +53,36 @@ def traced(
     message: str | None = None,
     color: str = "modular_purple",
 ) -> _FuncType | Callable[[_FuncType], _FuncType]:
-    """Decorator for creating a profiling span for `func`.
+    """Decorator for creating a profiling span for a function.
+
+    Creates a profiling span that measures the execution time of the decorated
+    function. This is useful for identifying performance bottlenecks without
+    modifying the function's internal code. The decorator supports both
+    synchronous and asynchronous functions.
+
+    .. code-block:: python
+
+        from max.profiler import traced
+
+        # Decorator with custom span name
+        @traced(message="inference", color="red")
+        def run_model() -> None:
+            # The profiling span is named "inference"
+            model.execute()
+
+        # Decorator with default span name (uses function name)
+        @traced
+        def preprocess_data() -> None:
+            # The profiling span is named "preprocess_data"
+            data.normalize()
 
     Args:
-        func: function to profile.
-        message: name of the profiling span; defaults to function name if None.
-        color: color of the profilng span.
+        func: The function to profile.
+        message: The name of the profiling span. If None, uses the function name.
+        color: The color of the profiling span for visualization tools.
 
     Returns:
-        Callable that is `func` wrapped in a trace object.
-
-    Examples:
-        @traced(message="baz", color="red")
-        def foo() -> None:
-            # The span is named "baz".
-            pass
-
-        @traced
-        def bar() -> None:
-            # The span is named "bar".
-            pass
+        Callable: The decorated function wrapped in a trace object.
     """
 
     if func is None:
@@ -105,34 +115,49 @@ def traced(
 
 
 class Tracer:
-    """
-    A stack of Trace objects that allows for nested tracing spans
-    without having to indent code via nested `with Trace(name):` statements.
+    """A stack-based profiling manager for creating nested profiling spans.
 
-    Note: The `Tracer` object can also be used as a context manager the same way
-    the `Trace` object can.
+    Manages a stack of profiling spans that allows for nested tracing without
+    requiring deeply nested ``with Trace(name):`` statements. This is especially
+    useful when you need to dynamically create and manage profiling spans based
+    on runtime conditions or when profiling spans don't align with your code's
+    block structure.
 
-    Example:
-    ```python
-    tracer = Tracer("foo", color="modular_purple")
-    tracer.push("bar")
-    # ...
-    tracer.pop()
+    The ``Tracer`` can be used both as a context manager and as a manual stack
+    manager. As a context manager, it ensures all pushed spans are properly
+    closed when the context exits.
 
-    with Tracer("foo", color="modular_purple") as tracer:
-        # The parent span is named "foo".
-        tracer.push("bar")
-        # The sub-span is named "bar".
+    .. code-block:: python
+
+        from max.profiler import Tracer
+
+        # Manual stack management
+        tracer = Tracer("parent_operation", color="modular_purple")
+        tracer.push("child_operation")
+        # ... perform work ...
         tracer.pop()
-    ```
+
+        # Context manager with manual stack
+        with Tracer("parent_operation", color="modular_purple") as tracer:
+            # The parent span is named "parent_operation"
+            tracer.push("child_operation")
+            # ... perform work ...
+            tracer.pop()
+            # All spans are automatically closed on context exit
     """
 
     def __init__(
         self, message: str | None = None, color: str = "modular_purple"
     ) -> None:
-        """
-        Initialize the stack.
-        Optionally push a new trace onto the stack if message is not None.
+        """Initializes the tracer stack.
+
+        Creates an empty trace stack and optionally pushes an initial profiling
+        span if a message is provided.
+
+        Args:
+            message: The name of the initial profiling span. If None, no initial
+                span is created.
+            color: The color of the profiling span for visualization tools.
         """
         self.trace_stack: list[Trace | None] = []
         self.push(message, color)
@@ -140,9 +165,15 @@ class Tracer:
     def push(
         self, message: str | None = None, color: str = "modular_purple"
     ) -> None:
-        """
-        Push a new trace onto the stack.
-        None is pushed if profiling is disabled or if message is None.
+        """Pushes a new profiling span onto the stack.
+
+        Creates and activates a new profiling span. If profiling is disabled or
+        no message is provided, pushes a None placeholder to maintain stack
+        consistency.
+
+        Args:
+            message: The name of the profiling span. If None, no span is created.
+            color: The color of the profiling span for visualization tools.
         """
         if not is_profiling_enabled() or message is None:
             self.trace_stack.append(None)
@@ -157,24 +188,41 @@ class Tracer:
         exc_value: BaseException | None = None,
         traceback: TracebackType | None = None,
     ) -> None:
-        """
-        Pop a trace off the stack and call its __exit__ method, optionally
-        passing through exception information for in context manager.
+        """Pops a profiling span off the stack and closes it.
+
+        Removes the most recently pushed profiling span from the stack and
+        closes it, recording its execution time. Exception information can be
+        passed through for proper error handling in context managers.
+
+        Args:
+            exc_type: The exception type if an exception occurred, or None.
+            exc_value: The exception instance if an exception occurred, or None.
+            traceback: The traceback object if an exception occurred, or None.
         """
         trace = self.trace_stack.pop()
         if trace is not None:
             trace.__exit__(exc_type, exc_value, traceback)
 
     def next(self, message: str, color: str = "modular_purple") -> None:
-        """
-        Pop current then push a new trace with the next message.
+        """Transitions to the next profiling span.
+
+        Pops the current profiling span and immediately pushes a new one with
+        the specified message. This is a convenience method for sequential
+        operations at the same nesting level.
+
+        Args:
+            message: The name of the new profiling span.
+            color: The color of the profiling span for visualization tools.
         """
         self.pop()
         self.push(message, color)
 
     def cleanup(self) -> None:
-        """
-        Pop all traces that were pushed.
+        """Closes all remaining profiling spans.
+
+        Pops and closes all profiling spans that were pushed onto the stack.
+        This method is automatically called when the tracer is used as a
+        context manager or when the object is deleted.
         """
         while self.trace_stack:
             self.pop()
@@ -194,8 +242,14 @@ class Tracer:
         self.cleanup()
 
     def mark(self) -> None:
-        """
-        Mark the current trace.
+        """Marks the current profiling span with a timestamp.
+
+        Records a timestamp event within the current profiling span. This is
+        useful for marking significant events or milestones within a longer
+        operation.
+
+        Raises:
+            AssertionError: If the stack is empty when mark is called.
         """
         assert self.trace_stack, "stack underflow in Tracer.mark()"
         if self.trace_stack[-1] is not None:

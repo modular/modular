@@ -11,50 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""MAX profiler python package.
+"""Performance profiling and tracing utilities for MAX.
 
-There are 3 ways to profile currently: context manager, decorator, and manual stack.
+This module provides tools for profiling and tracing MAX operations to analyze
+performance characteristics. Profiling captures timing information for code
+execution, which helps identify bottlenecks and optimize your models.
 
-@tracing and Tracer need to have the MODULAR_ENABLE_PROFILING = 1 env variable set.
+To enable profiling, set the ``MODULAR_ENABLE_PROFILING=1`` environment
+variable before running your code. Without this variable, profiling calls will
+be no-ops with minimal overhead.
 
-`Tracer` as a context manager:
+The profiler supports three usage patterns:
 
-```python
-with Tracer("foo", color="modular_purple"):
-    # Run `bar()` inside the profiling span.
-    bar()
-# The profiling span ends when the context manager exits.
-```
-
-`@traced` Decorator:
-
-```python
-@traced(message="baz", color="red")
-def foo() -> None:
-    # The span is named "baz".
-    pass
-
-@traced
-def bar() -> None:
-    # The span is named "bar".
-    pass
-```
-
-`Tracer` as a manual trace stack manager:
-
-```python
-tracer = Tracer("foo", color="modular_purple")
-tracer.push("bar")
-# ...
-tracer.pop()
-
-# or as a context manager:
-with Tracer("foo", color="modular_purple") as tracer:
-    # The parent span is named "foo".
-    tracer.push("bar")
-    # The sub-span is named "bar".
-    tracer.pop()
-```
+1. **Context manager**: Use :class:`Tracer` as a context manager to profile a
+   code block.
+2. **Decorator**: Use :func:`@traced <traced>` to profile entire functions.
+3. **Manual stack**: Use :class:`Tracer` methods to explicitly control profiling
+   spans.
 """
 
 from max._core.profiler import is_profiling_enabled, set_gpu_profiling_state
