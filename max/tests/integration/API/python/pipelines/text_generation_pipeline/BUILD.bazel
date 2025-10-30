@@ -9,7 +9,6 @@ modular_py_test(
     },
     gpu_constraints = ["//:has_gpu"],
     tags = [
-        "AITLIB-293",
         "gpu",
         "manual",
         "no-sandbox",
