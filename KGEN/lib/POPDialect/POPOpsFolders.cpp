@@ -1043,13 +1043,26 @@ OpFoldResult SIMDOrOp::fold(FoldAdaptor adaptor) {
 }
 
 OpFoldResult SIMDXOrOp::fold(FoldAdaptor adaptor) {
-  SIMDAttr attr;
-  if (mlir::matchPattern(getRhs(), mlir::m_Constant(&attr))) {
+  auto ret = foldSIMDOp(
+      adaptor.getOperands(), [](APSInt lhs, APSInt rhs) { return lhs ^ rhs; },
+      [](bool lhs, bool rhs) -> bool { return lhs ^ rhs; });
+
+  // Prefer to fold to a constant if possible.
+  if (isa_and_nonnull<Attribute>(ret))
+    return ret;
+
+  // If we couldn't fold to a constant, try some specific folds which may return
+  // a value.
+  SIMDAttr rhsAttr;
+  if (mlir::matchPattern(getRhs(), mlir::m_Constant(&rhsAttr))) {
     // `xor(x, 0)` -> `x`.
-    if (llvm::all_of(attr.getValues(), [](const DTypeValue &value) {
+    if (llvm::all_of(rhsAttr.getValues(), [](const DTypeValue &value) {
           return value.getData().isZero();
-        }))
+        })) {
+      if (adaptor.getLhs())
+        return adaptor.getLhs();
       return getLhs();
+    }
 
     // `xor(xor(x, 1), 1) -> x`.
     auto pred =
@@ -1058,16 +1071,16 @@ OpFoldResult SIMDXOrOp::fold(FoldAdaptor adaptor) {
             : [](const DTypeValue &value) {
                 return value.getData().isMask(value.getData().getBitWidth());
               };
-    if (llvm::all_of(attr.getValues(), pred)) {
+
+    if (llvm::all_of(rhsAttr.getValues(), pred)) {
       auto xorOp = getLhs().getDefiningOp<SIMDXOrOp>();
       if (xorOp && xorOp.getRhs() == getRhs())
         return xorOp.getLhs();
     }
   }
 
-  return foldSIMDOp(
-      adaptor.getOperands(), [](APSInt lhs, APSInt rhs) { return lhs ^ rhs; },
-      [](bool lhs, bool rhs) -> bool { return lhs ^ rhs; });
+  // Fall back to whatever the generic fold returned.
+  return ret;
 }
 
 //===----------------------------------------------------------------------===//
