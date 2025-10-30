@@ -18,7 +18,7 @@ def test_generate_llm_logits_smollm(tmp_path: Path) -> None:
         generate_llm_logits.main,
         [
             "--framework=max",
-            "--pipeline=smollm",
+            "--pipeline=HuggingFaceTB/SmolLM2-135M",
             "--encoding=bfloat16",
             "--device=gpu",
             "--output",
