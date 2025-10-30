@@ -13,7 +13,6 @@ include "Format/FormatDescription.td"
 include "Package/PackageDescription.td"
 include "REPL/REPLDescription.td"
 include "Run/RunDescription.td"
-include "Test/TestDescription.td"
 
 def : MojoDriverDescription<
   "The Mojo🔥 command line interface.",

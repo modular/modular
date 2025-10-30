@@ -20,7 +20,6 @@ load("//bazel:api.bzl", "driver_option_tablegen", "modular_cc_binary", "pkg_file
         "Package",
         "REPL",
         "Run",
-        "Test",
     ]
 ]
 
@@ -54,7 +53,6 @@ driver_option_tablegen(
         ":Package.td_library",
         ":REPL.td_library",
         ":Run.td_library",
-        ":Test.td_library",
     ],
 )
 
@@ -70,7 +68,6 @@ pkg_files(
         ":Package.man_files",
         ":REPL.man_files",
         ":Run.man_files",
-        ":Test.man_files",
     ],
     visibility = ["//visibility:public"],
 )
@@ -110,7 +107,6 @@ pkg_files(
             ":Package.inc_files",
             ":REPL.inc_files",
             ":Run.inc_files",
-            ":Test.inc_files",
             "//AsyncRT:Runtime",
             "//AsyncRT:RuntimeGlobals",
             "//Config",
@@ -120,7 +116,6 @@ pkg_files(
             "//KGEN:KGENDialect",
             "//KGEN:LITDialect",
             "//KGEN:MojoParser",
-            "//KGEN:MojoTesting",
             "//KGEN:MojoTooling",
             "//KGEN:ObjectCompiler",
             "//KGEN:POPDialect",
@@ -148,7 +143,6 @@ pkg_files(
                 "//KGEN:gdb-server",
                 "//KGEN:mojo-lldb",
                 "//KGEN/tools/mojo-repl-entry-point",
-                "//KGEN/tools/mojo-test-executor",
                 "@llvm-project//lldb:lldb-argdumper",
                 "@llvm-project//llvm:llvm-symbolizer",
             ],

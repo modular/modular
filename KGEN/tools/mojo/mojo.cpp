@@ -12,7 +12,6 @@
 #include "Package/mojo-package.h"
 #include "REPL/mojo-repl.h"
 #include "Run/mojo-run.h"
-#include "Test/mojo-test.h"
 
 #include "Config/Version.h"
 #include "KGEN/Support/Configuration.h"
@@ -74,7 +73,6 @@ int main(int argc, char **argv) {
   registerREPLSubcommand(registry);
   registerDebugSubcommand(registry);
   registerRunSubcommand(registry);
-  registerTestSubcommand(registry);
 
   // If the user hasn't provided any arguments, treat this as the `repl`
   // subcommand.

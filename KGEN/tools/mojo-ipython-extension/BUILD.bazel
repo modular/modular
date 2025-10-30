@@ -22,7 +22,6 @@ modular_shared_library(
         "//KGEN:KGENDialect",
         "//KGEN:LITDialect",
         "//KGEN:MojoParser",
-        "//KGEN:MojoTesting",
         "//KGEN:MojoTooling",
         "//KGEN:ObjectCompiler",
         "//KGEN:POPDialect",

@@ -4,8 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines debug options that apply across both the `mojo debug` and
-// `mojo test` commands.
+// This file defines debug options that apply to the `mojo debug` command.
 //
 //===----------------------------------------------------------------------===//
 

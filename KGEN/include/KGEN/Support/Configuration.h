@@ -90,9 +90,6 @@ public:
   /// Return the path to the REPL entry point executable in the mojo install.
   StringRef getREPLEntryPoint();
 
-  /// Return the path to the test executor executable in the mojo install.
-  StringRef getTestExecutorPath();
-
   /// Return the path to the linker driver to use when linking mojo executables.
   StringRef getLinkerDriver();
 
