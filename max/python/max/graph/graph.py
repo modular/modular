@@ -17,7 +17,9 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+import io
 import itertools
+import os
 import traceback
 from collections import OrderedDict
 from collections.abc import Callable, Generator, Iterable, Sequence
@@ -26,6 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypeGuard, TypeVar, cast
 
+import yaml
 from max import mlir
 from max._core import Attribute as _Attribute
 from max._core import Block, OpBuilder, Operation
@@ -57,6 +60,12 @@ from .type import (
 from .value import BufferValue, TensorValue, TensorValueLike, Value, _ChainValue
 from .weight import Weight
 
+
+def _yaml_parse_bool(config: str) -> bool:
+    return bool(yaml.safe_load(io.StringIO(config)))
+
+
+MODULAR_MAX_DEBUG = _yaml_parse_bool(os.environ.get("MODULAR_MAX_DEBUG", ""))
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 _KERNEL_LIBRARY_PATHS_ATTR_NAME = "_kernel_library_paths"
 
@@ -240,6 +249,9 @@ def _location(ignore_frames: int = 1):  # noqa: ANN202
     """Creates an MLIR Location with the current Python call stack."""
     if not mlir.Context.current:
         raise RuntimeError("Can't create location: No MLIR context active")
+
+    if not MODULAR_MAX_DEBUG:
+        return mlir.Location.unknown()
 
     # Extract the stack into summaries
     # - Avoids reference cycles

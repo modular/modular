@@ -416,10 +416,19 @@ class InferenceSession:
                         )
 
             with self._compilation_lock:
-                _model = self._impl.compile_from_object(
-                    model._module._CAPIPtr,
-                    options_dict,
-                )
+                try:
+                    _model = self._impl.compile_from_object(
+                        model._module._CAPIPtr,
+                        options_dict,
+                    )
+                except Exception as e:
+                    raise RuntimeError(
+                        "Failed to compile the model. Please file an issue, "
+                        "all models should be correct by construction and "
+                        "this error should have been caught during construction.\n"
+                        "For more detailed failure information run with the "
+                        "environment variable `MODULAR_MAX_DEBUG=True`."
+                    ) from e
         else:
             raise RuntimeError("The model is not a valid path or module.")
 

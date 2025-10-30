@@ -12,6 +12,7 @@ modular_py_library(
         "//SDK/lib/API/python/max/mlir",
         "//open-source/max/mojo/python/mojo",
         requirement("numpy"),
+        requirement("pyyaml"),
         requirement("typing-extensions"),
     ],
 )
