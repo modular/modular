@@ -13,6 +13,7 @@
 
 from testing import TestSuite
 from testing import assert_equal, assert_raises, assert_true
+from math import iota
 
 
 def test_span_list_int():
@@ -348,6 +349,36 @@ def test_unsafe_subspan():
 
     var subspan2 = data.unsafe_subspan(offset=1, length=3)
     assert_equal(List(subspan2), [1, 2, 3])
+
+
+def test_binary_search():
+    def _test[dtype: DType]():
+        alias max_val = Int(Scalar[dtype].MAX)
+        var data = List[Scalar[dtype]](unsafe_uninit_length=max_val + 1)
+        iota(data)
+
+        # make sure we aren't reading an empty pointer
+        var view = Span(data)[:0]
+        assert_true(view._binary_search_index(0) is None)
+        view = Span(data)[:1]
+        assert_true(view._binary_search_index(0))
+        assert_equal(view._binary_search_index(0).value(), 0)
+        view = Span(data)[: len(data) - 1]
+        assert_true(view._binary_search_index(1))
+        assert_equal(view._binary_search_index(1).value(), 1)
+        view = Span(data)
+        assert_true(view._binary_search_index(max_val))
+        assert_equal(view._binary_search_index(max_val).value(), UInt(max_val))
+        view = Span(data)[: len(data) - 1]
+        assert_true(view._binary_search_index(max_val - 1))
+        assert_equal(
+            view._binary_search_index(max_val - 1).value(), UInt(max_val - 1)
+        )
+
+    _test[DType.uint8]()
+    _test[DType.int8]()
+    _test[DType.uint16]()
+    _test[DType.int16]()
 
 
 def main():

@@ -21,6 +21,7 @@ from memory import Span
 """
 
 from builtin._location import __call_location
+from bit._mask import splat
 from collections._index_normalization import normalize_index
 from sys import align_of
 from sys.info import simd_width_of
@@ -783,3 +784,27 @@ struct Span[
             "subspan out of bounds.",
         )
         return Self(ptr=self._data + offset, length=length)
+
+    fn _binary_search_index[
+        dtype: DType, //,
+    ](self: Span[Scalar[dtype], **_], needle: Scalar[dtype]) -> Optional[UInt]:
+        """Finds the index of `needle` with binary search.
+        Args:
+            needle: The value to binary search for.
+        Returns:
+            Returns None if `needle` is not present.
+        Notes:
+            This function will return an unspecified index if `self` is not
+            sorted in ascending order.
+        """
+
+        var cursor = UInt(0)
+        var length = UInt(len(self))
+        var value = needle - Scalar[dtype](1)  # just to make it different
+        while length > 0:
+            var half = length >> UInt(Int(length > 1))
+            length -= half
+            value = self.unsafe_get(cursor + half - 1)
+            cursor += UInt(splat(value < needle)) & half
+
+        return Optional(cursor) if value == needle else None
