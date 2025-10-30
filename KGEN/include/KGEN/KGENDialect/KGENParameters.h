@@ -248,7 +248,7 @@ struct ParameterUseDefGraph {
 
   /// Verify the validity of the parameter declarations, uses, and definitions
   /// within the current scope.
-  LogicalResult verify(SymTabEvaluationContext &evaluationContext,
+  LogicalResult verify(SymTabEvaluationContext *evaluationContext,
                        ParameterCollector::Analysis &cache);
 
   /// Copy this graph into a new instance, remapping all the operations using

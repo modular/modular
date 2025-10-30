@@ -213,7 +213,7 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
             ParamCache &paramCache, std::pair<Region *, size_t> item) {
           auto [declRegion, i] = item;
           ParameterUseDefGraph graph(*declRegion);
-          if (failed(graph.verify(evaluationContext, paramCache)))
+          if (failed(graph.verify(&evaluationContext, paramCache)))
             return failure();
           if (simplify)
             graphs[i] = std::move(graph);
