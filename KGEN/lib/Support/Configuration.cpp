@@ -121,11 +121,6 @@ StringRef MojoConfig::getREPLEntryPoint() {
                  "lib/mojo-repl-entry-point");
 }
 
-StringRef MojoConfig::getTestExecutorPath() {
-  return getPath(STRINGIFY_MOJO_CONFIG(".test_executor_path"),
-                 "lib/mojo-test-executor");
-}
-
 StringRef MojoConfig::getLinkerDriver() {
   return getValue(STRINGIFY_MOJO_CONFIG(".linker_driver"));
 }

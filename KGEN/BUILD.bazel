@@ -1160,18 +1160,6 @@ modular_cc_library(
 )
 
 modular_cc_library(
-    name = "MojoTesting",
-    srcs = glob(["lib/MojoTesting/*.cpp"]),
-    hdrs = glob(["include/KGEN/MojoTesting/*.h"]),
-    deps = [
-        ":MojoParser",
-        ":MojoTooling",
-        ":ToolCommon",
-        "@llvm-project//mlir:MlirLspServerSupportLib",
-    ],
-)
-
-modular_cc_library(
     name = "ExecutionEngine.headers",
     hdrs = glob(["include/KGEN/ExecutionEngine/*.h"]),
     tags = ["no-clang-tidy-headers"],

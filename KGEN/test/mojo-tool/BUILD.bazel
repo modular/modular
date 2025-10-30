@@ -22,8 +22,6 @@ lit_tests(
         "package/test_package_with_main/**/*.mojo",
         "package/test_package_moco_773/**/*.mojo",
         "build/inputs/**/*.mojo",
-        "test/inputs/**/*.mojo",
-        "test/inputs/**/*.🔥",
     ]),
     env = {
         "MODULAR_MOJO_MAX_MBLACK_PATH": "$(rootpath //utils/mblack)",
