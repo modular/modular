@@ -13,6 +13,8 @@
 from sys import size_of
 
 from gpu.cluster import cluster_mask_base
+from gpu.host._tensormap import SwizzleMode
+from gpu.memory import AddressSpace
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_id_in_cluster
 from gpu.mma_sm100 import *
@@ -34,7 +36,7 @@ fn extract_first_2_modes[l: Layout]() -> Layout:
     )
 
 
-@fieldwise_init
+@fieldwise_init("implicit")
 @register_passable("trivial")
 struct Major:
     var val: Int
@@ -44,6 +46,36 @@ struct Major:
 
     fn __eq__(self, rhs: Major) -> Bool:
         return self.val == rhs.val
+
+
+fn max_contiguous_tile_shape[
+    rank: Int, //,
+    dtype: DType,
+    tile_shape: IndexList[rank],
+    /,
+    *,
+    major: Major = Major.K,
+    swizzle_mode: SwizzleMode = SwizzleMode.NONE,
+]() -> IntTuple:
+    """Returns the maximum shape of a tile that's contiguous in memory for mma op. This is used to create TMA descriptor.
+    """
+
+    constrained[rank == 2, "Only 2D tensors are supported!"]()
+
+    @parameter
+    if major == Major.K:
+        # Tile shape is (MN, K), max K is based on swizzle.
+        return IntTuple(tile_shape[0], swizzle_mode.bytes() // dtype.size_of())
+    elif major == Major.MN:
+        # Tile shape is (K, MN), max MN is based on swizzle, max K is 8 based on
+        # canonical layout.
+        # The following are rare in practice but worth checking.
+        # TODO: this may not work for swizzle.NONE, need to double-check
+        # TODO: for MN = swizzle_bytes // sizeof,  tile_shape[0] may be the max
+        return IntTuple(8, swizzle_mode.bytes() // dtype.size_of())
+    else:
+        constrained[False, "Invalid major"]()
+        return IntTuple()
 
 
 # TODO: add create method to mma_operand trait and unify this with

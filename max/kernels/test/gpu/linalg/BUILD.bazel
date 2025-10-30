@@ -27,6 +27,10 @@ _EXTRA_CONSTRAINTS = {
     "test_matmul_sm90_epilogue.mojo": ["//:h100_gpu"],
     "test_stream_k.mojo": ["//:nvidia_gpu"],
     "test_matmul_tile_scheduler_sm100.mojo": ["//:b200_gpu"],
+    "_test_tma.mojo": [
+        "//:b200_gpu",
+        "//:h100_gpu",
+    ],
     "test_tma_wgmma.mojo": ["//:h100_gpu"],
     "test_tma_wgmma_with_multicast.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-2060
     "test_vendor_blas.mojo": [

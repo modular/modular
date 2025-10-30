@@ -428,6 +428,20 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return self.cast[DType.int64]()
 
     @always_inline
+    fn reverse(self) -> Self:
+        """Reverses the IndexList.
+
+        Returns:
+            A new IndexList with the elements in reverse order.
+        """
+        var result = Self(0)
+
+        @parameter
+        for i in range(size):
+            result[i] = self[size - i - 1]
+        return result
+
+    @always_inline
     fn flattened_length(self) -> Int:
         """Returns the flattened length of the tuple.
 

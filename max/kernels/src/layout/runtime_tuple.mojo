@@ -717,3 +717,25 @@ fn shape_div[
                 abort(String("Incompatible shape values: ", va, " ", vb))
 
             return {va // vb if va % vb == 0 else signum(va * vb)}
+
+
+fn to_index_list[
+    rank: Int, t: IntTuple
+](tuple: RuntimeTuple[t, **_]) -> IndexList[rank]:
+    """
+    Converts a RuntimeTuple to an IndexList with the same values.
+
+    Parameters:
+        rank: The rank of the resulting IndexList.
+        t: The IntTuple template parameter of the RuntimeTuple.
+
+    Args:
+        tuple: The RuntimeTuple to convert.
+
+    Returns:
+        An IndexList filled with the values of the RuntimeTuple.
+    """
+    var res = IndexList[rank]()
+    for i in range(rank):
+        res[i] = Int(tuple.value[i])
+    return res
