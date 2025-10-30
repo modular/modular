@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+modular_py_test(
+    name = "kv_cache",
+    srcs = glob(["*.py"]),
+    imports = ["pytests"],
+    deps = [
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/kv_cache",
+        "//SDK/lib/API/python/max/nn",
+        requirement("numpy"),
+    ],
+)

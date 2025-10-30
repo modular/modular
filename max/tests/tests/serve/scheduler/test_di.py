@@ -13,7 +13,7 @@ from typing import TypeVar, cast
 
 from max.driver import CPU, Device
 from max.interfaces import RequestID, SchedulerResult, TextGenerationOutput
-from max.nn.kv_cache.paged_cache.transfer_engine import KVTransferEngineMetadata
+from max.kv_cache.paged_cache.transfer_engine import KVTransferEngineMetadata
 from max.pipelines.core import TextContext
 from max.serve.config import generate_zmq_ipc_path
 from max.serve.queue.zmq_queue import ClientIdentity

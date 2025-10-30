@@ -17,7 +17,7 @@ import pytest_asyncio
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.interfaces import TextGenerationRequest
-from max.nn.kv_cache.paged_cache import ResetPrefixCacheBackend
+from max.kv_cache.paged_cache import ResetPrefixCacheBackend
 from max.pipelines.lib import IdentityPipelineTokenizer, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings

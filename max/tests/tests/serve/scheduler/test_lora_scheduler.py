@@ -17,7 +17,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.nn.kv_cache import PagedKVCacheManager
+from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
 from max.serve.scheduler.batch_constructor import (
     TextBatchConstructor,
