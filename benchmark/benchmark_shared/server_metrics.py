@@ -130,11 +130,11 @@ class ParsedMetrics:
         return self.histograms.get(key)
 
 
-def get_metrics_url(backend: Backend | str, base_url: str) -> str:
+def get_metrics_url(backend: Backend, base_url: str) -> str:
     """Get the metrics URL for a backend.
 
     Args:
-        backend: Backend name (Backend enum or string value)
+        backend: Backend name (Backend enum)
         base_url: Base API URL (e.g., 'http://localhost:8000')
 
     Returns:
@@ -143,24 +143,12 @@ def get_metrics_url(backend: Backend | str, base_url: str) -> str:
     Raises:
         ValueError: If backend is not supported
     """
-    # Convert string to Backend enum if needed
-    if isinstance(backend, Backend):
-        backend_enum = backend
-    else:
-        try:
-            backend_enum = Backend(backend)
-        except ValueError:
-            raise ValueError(
-                f"Unsupported backend: {backend}. "
-                f"Supported backends: {', '.join(b.value for b in Backend)}"
-            ) from None
-
     parsed_url = urlparse(base_url)
     host = parsed_url.hostname or "localhost"
 
     # For MAX backends, use dedicated metrics port from SDK config
     # For other backends, use the same port as the base URL
-    if backend_enum in (Backend.modular, Backend.modular_chat):
+    if backend in (Backend.modular, Backend.modular_chat):
         metrics_port = _MAX_METRICS_PORT
     else:
         metrics_port = parsed_url.port or 8000
@@ -295,15 +283,13 @@ def parse_metrics(raw_text: str) -> ParsedMetrics:
     )
 
 
-def fetch_and_parse_metrics(
-    backend: Backend | str, base_url: str
-) -> ParsedMetrics:
+def fetch_and_parse_metrics(backend: Backend, base_url: str) -> ParsedMetrics:
     """Fetch and parse metrics for a backend.
 
     Convenience function that combines get_metrics_url, fetch_metrics, and parse_metrics.
 
     Args:
-        backend: Backend name (Backend enum or string value)
+        backend: Backend name (Backend enum)
         base_url: Base API URL (e.g., 'http://localhost:8000')
 
     Returns:
