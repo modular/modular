@@ -72,6 +72,14 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
     widthShift -= 3;
   } else if (isFloat()) {
     ssize_t bitCount = getWidthInBits();
+
+    // Float4 and Float6 types are sub-byte types.
+    if (bitCount < 8 && numElements == 1) {
+      assert(false && "cannot get the size in bytes for Float4 and Float6 "
+                      "types since they are sub-byte types");
+      return -1;
+    }
+
     assert(llvm::isPowerOf2_32(bitCount) && "all FP types are power of 2 size");
     widthShift = llvm::Log2_32(bitCount) - 3;
   } else {
@@ -228,6 +236,7 @@ size_t DType::getAlignment() const {
       .when<DType::f16>(getAlign)
       .when<DType::bf16>(getAlign)
       .when<DType::bf16>(getAlign)
+      .when<DType::f4e2m1fn>(getAlign)
       .when<DType::f8e4m3fn>(getAlign)
       .when<DType::f8e4m3fnuz>(getAlign)
       .when<DType::f8e5m2>(getAlign)
