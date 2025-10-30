@@ -51,8 +51,8 @@ def _rewrite_deps(deps):
     """Rewrite dependencies to use the open-source package names, or to come from the wheel."""
     new_deps = []
     for dep in deps:
-        if dep.startswith("//SDK/lib/API/python/tests/graph"):
-            replaced_dep = dep.replace("//SDK/lib/API/python/tests/graph", "//tests/max/graph")
+        if dep.startswith("//SDK/lib/API/python/tests"):
+            replaced_dep = dep.replace("//SDK/lib/API/python/tests", "//max/tests/tests")
             new_deps.append(replaced_dep)
         elif dep.startswith("//SDK/lib/API/python/max/benchmark"):
             replaced_dep = dep.replace("//SDK/lib/API/python/max/benchmark", "//benchmark")
@@ -72,8 +72,8 @@ def _rewrite_trivial_env(env):
         return env
     new_env = {}
     for k, v in env.items():
-        if v.startswith("SDK/lib/API/python/tests/graph"):
-            new_env[k] = v.replace("SDK/lib/API/python/tests/graph", "tests/max/graph")
+        if v.startswith("SDK/lib/API/python/tests"):
+            new_env[k] = v.replace("SDK/lib/API/python/tests", "max/tests/tests")
     return new_env
 
 # buildifier: disable=function-docstring
