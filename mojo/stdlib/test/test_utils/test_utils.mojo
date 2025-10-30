@@ -23,6 +23,21 @@ fn libm_call[
     fn_fp32: StaticString,
     fn_fp64: StaticString,
 ](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    """Calls a libm function with the appropriate float32 or float64 version.
+
+    Parameters:
+        dtype: The data type (must be float32 or float64).
+        width: The SIMD width.
+        fn_fp32: Name of the float32 version of the libm function.
+        fn_fp64: Name of the float64 version of the libm function.
+
+    Args:
+        arg: The input SIMD vector.
+
+    Returns:
+        The result of calling the libm function.
+    """
+
     @always_inline("nodebug")
     @parameter
     fn _float32_dispatch[

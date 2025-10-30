@@ -566,6 +566,14 @@ you, утра, боль, хорошие, пришёл, открой, брось,
 
 
 fn gen_word_pairs[words: String = words_en]() -> List[String]:
+    """Generates all pairwise combinations of words from a word list.
+
+    Parameters:
+        words: Comma-separated string of words.
+
+    Returns:
+        List of all word pair combinations as "word1 word2" strings.
+    """
     var result = List[String]()
     var list = words.split(", ")
     for w in list:

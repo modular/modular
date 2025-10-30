@@ -17,6 +17,21 @@ from memory import bitcast
 
 
 fn ulp_distance[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Int:
+    """Computes the distance between two floating-point values in ULPs.
+
+    ULP (Unit in the Last Place) distance measures how many representable
+    floating-point values exist between two numbers.
+
+    Parameters:
+        dtype: The floating-point data type.
+
+    Args:
+        a: First floating-point value.
+        b: Second floating-point value.
+
+    Returns:
+        The ULP distance between the two values.
+    """
     alias bitwidth = dtype.bit_width()
     alias T = _integral_type_of[dtype]()
     # widen to Int first to avoid overflow
