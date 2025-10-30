@@ -419,9 +419,6 @@ class AudioGenerationScheduler(Scheduler):
                 continue
             del self.decode_reqs[req_id]
             self.pipeline.release(req_id)
-            self.response_queue.put_nowait(
-                {req_id: SchedulerResult.cancelled()}
-            )
             num_terminated_reqs += 1
         return num_terminated_reqs
 
