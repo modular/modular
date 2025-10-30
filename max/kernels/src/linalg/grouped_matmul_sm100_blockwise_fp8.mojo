@@ -371,6 +371,8 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                     2 * j + 1
                 ] * rebind[Scalar[accum_type]](scale)
 
+        barrier()
+
     if elect_one_warp:
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
