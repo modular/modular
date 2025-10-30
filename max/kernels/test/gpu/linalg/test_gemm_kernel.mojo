@@ -119,7 +119,7 @@ fn gemm_kernel[
         copy_from_nd_buffer[
             thread_layout = Layout.row_major(NUM_THREADS // BK, BK),
             is_async=True,
-        ](a_tile_sram_local, a_tile_dram, thread_idx.x)
+        ](a_tile_sram_local, a_tile_dram, Int(thread_idx.x))
 
         var b_tile_dram = mat_b.tile[BK, BN](Index(k_i, Int(block_idx.x)))
         var b_tile_sram_local = b_tile_sram.distribute[
@@ -128,7 +128,7 @@ fn gemm_kernel[
         copy_from_nd_buffer[
             thread_layout = Layout.row_major(NUM_THREADS // BN, BN),
             is_async=True,
-        ](b_tile_sram_local, b_tile_dram, thread_idx.x)
+        ](b_tile_sram_local, b_tile_dram, Int(thread_idx.x))
         async_copy_wait_all()
         barrier()
 
@@ -157,7 +157,7 @@ fn gemm_kernel[
     ).tile[WM, WN](Index(warp_m, warp_n))
 
     copy_to_nd_buffer[thread_layout=warp_layout](
-        c_warp_tile, c_reg, thread_idx.x
+        c_warp_tile, c_reg, Int(thread_idx.x)
     )
 
 

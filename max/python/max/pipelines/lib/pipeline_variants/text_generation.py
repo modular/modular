@@ -171,18 +171,8 @@ class TextGenerationPipeline(
         session = InferenceSession(devices=self._devices)
         self.session = session
 
-        # Enable profiling if enabled.
-        session.gpu_profiling(
-            self._pipeline_config.profiling_config.gpu_profiling
-        )
-
-        # Use experimental kernels if enabled by env var `USE_EXPERIMENTAL_KERNELS`.
-        session._use_experimental_kernels(
-            self._pipeline_config.use_experimental_kernels
-        )
-
-        # Set PDL level if enabled by env var `PDL_LEVEL`.
-        session._pdl_level(self._pipeline_config.pdl_level)
+        # Configure session with pipeline settings.
+        self._pipeline_config.configure_session(session)
 
         # Load model.
         if not self._pipeline_config.model_config.quantization_encoding:

@@ -19,7 +19,11 @@ from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import coalesce
-from layout.tensor_core_async import tile_to_descriptor
+from layout.tensor_core_async import (
+    tile_to_descriptor,
+    tile_layout_k_major,
+    tile_layout_mn_major,
+)
 
 from utils.index import Index, IndexList, product
 
@@ -65,6 +69,29 @@ fn _create_mma_desc[
     # Create and return the MMA shared memory descriptor
     # This will be used by the SM100 MMA operations to access shared memory
     return MMASmemDescriptor.create[SBO, LBO, swizzle_mode](ptr)
+
+
+@always_inline
+fn smem_descriptor[
+    dtype: DType, //,
+    *,
+    BMN: Int,
+    BK: Int,
+    swizzle_mode: TensorMapSwizzle,
+    is_k_major: Bool,
+](
+    ptr: UnsafePointer[
+        Scalar[dtype], address_space = AddressSpace.SHARED, *_, **_
+    ]
+) -> MMASmemDescriptor:
+    alias smem_layout = tile_layout_k_major[
+        dtype, BMN, BK, swizzle_mode
+    ]() if is_k_major else tile_layout_mn_major[dtype, BMN, BK, swizzle_mode]()
+    alias canonical_layout = tile_to_descriptor[
+        dtype, smem_layout, is_k_major=is_k_major
+    ]()
+    alias cl = canonical_layout if is_k_major else canonical_layout.transpose()
+    return _create_mma_desc[canonical_layout=cl, swizzle_mode=swizzle_mode](ptr)
 
 
 @register_passable("trivial")

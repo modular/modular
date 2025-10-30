@@ -335,9 +335,9 @@ def test_count_func():
         return v.eq(2)
 
     var data = Span(List[Byte](0, 1, 2, 1, 2, 1, 2))
-    assert_equal(3, data.count[func=is_2]())
-    assert_equal(2, data[:-1].count[func=is_2]())
-    assert_equal(1, data[:3].count[func=is_2]())
+    assert_equal(3, Int(data.count[func=is_2]()))
+    assert_equal(2, Int(data[:-1].count[func=is_2]()))
+    assert_equal(1, Int(data[:3].count[func=is_2]()))
 
 
 def test_unsafe_subspan():

@@ -2334,7 +2334,7 @@ struct LayoutTensor[
             UnsafePointer[
                 Scalar[dtype],
                 address_space=address_space,
-                origin = MutableOrigin.empty,
+                origin = MutableOrigin.external,
             ]()
         )
 

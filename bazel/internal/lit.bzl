@@ -285,9 +285,10 @@ EOF
         "ZERO_AR_DATE": "1",
     } | GPU_TEST_ENV | get_default_test_env(exec_properties)
 
-    extra_data = [
-        "//bazel/internal:lsan-suppressions.txt",
-    ]
+    extra_data = select({
+        "//:asan": ["@//bazel/internal:lsan-suppressions.txt"],
+        "//conditions:default": [],
+    })
     default_args = ["--config-prefix=" + name]
     kwargs = {
         "deps": deps + mojo_test_deps + [

@@ -173,9 +173,7 @@ class SpeculativeDecodingTextGenerationPipeline(
         )
         target_config = self.pipeline_config.model_config.huggingface_config
         target_session = InferenceSession(devices=self.target_devices)
-        target_session.gpu_profiling(
-            self.pipeline_config.profiling_config.gpu_profiling
-        )
+        self.pipeline_config.configure_session(target_session)
         target_config = AutoConfig.from_pretrained(
             self.pipeline_config.model_config.model_path,
             trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
@@ -259,9 +257,7 @@ class SpeculativeDecodingTextGenerationPipeline(
         # For now, we are assuming we are placing the draft model will sit
         self.draft_devices = load_devices(scan_available_devices()[:1])
         draft_session = InferenceSession(devices=self.draft_devices)
-        draft_session.gpu_profiling(
-            self.pipeline_config.profiling_config.gpu_profiling
-        )
+        self.pipeline_config.configure_session(draft_session)
 
         assert self.pipeline_config.draft_model_config is not None
         draft_config = (

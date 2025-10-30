@@ -141,7 +141,7 @@ var j_uint: UInt = 8
 sum_uint = i_uint + j_uint  # Result is type UInt
 print("UInt sum:", sum_uint)
 
-sum_mixed = a_int + i_uint  # Result is type Int
+sum_mixed = a_int + Int(i_uint)  # Result is type Int
 print("Mixed sum:", sum_mixed)
 
 quotient_int = a_int / b_int  # Result is type Float64

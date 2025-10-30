@@ -16,33 +16,20 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Mapping
 
 from max.interfaces import (
-    AudioGenerationOutput,
     BatchType,
     MAXPullQueue,
-    MAXPushQueue,
     RequestID,
-    SchedulerResult,
     TextGenerationInputs,
-    TextGenerationOutput,
-)
-from max.interfaces.pipeline import (
-    Pipeline,
-    PipelineInputsType,
-    PipelineOutputType,
 )
 from max.interfaces.queue import drain_queue
 from max.nn.kv_cache import PagedKVCacheManager
-from max.pipelines.core import TextContext, TTSContext
+from max.pipelines.core import TextContext
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
-from .batch_constructor import (
-    TextBatchConstructor,
-    TokenGenerationSchedulerConfig,
-)
+from .batch_constructor import TokenGenerationSchedulerConfig
 
 logger = logging.getLogger("max.serve")
 
@@ -211,46 +198,6 @@ class SchedulerLogger:
             )
 
 
-def add_newly_encoded_reqs_to_tg_batch(
-    batch: dict[RequestID, TextContext],
-    responses: dict[RequestID, TextGenerationOutput],
-    batch_constructor: TextBatchConstructor,
-) -> None:
-    # When we use data parallelism, a batch would only contain requests for one
-    # device, and some devices might have zero request.
-    if len(batch) == 0:
-        return
-
-    # Only the last request in a batch could be chunked. We discard its response
-    # and put it back into the request queue if it is chunked.
-    # We know if a request is chunked because it still needs CE even after one
-    # round of execution.
-    batch_constructor.tg_reqs |= batch
-    last_req = list(batch.values())[-1]
-    req_id = last_req.request_id
-
-    if last_req.needs_ce:
-        batch_constructor.ce_reqs[req_id] = last_req
-        batch_constructor.ce_reqs.move_to_end(req_id, last=False)
-        del responses[req_id]
-        del batch_constructor.tg_reqs[req_id]
-
-
-def release_terminated_requests(
-    responses: Mapping[RequestID, TextGenerationOutput | AudioGenerationOutput],
-    pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
-    tg_reqs: dict[RequestID, TextContext] | dict[RequestID, TTSContext],
-) -> int:
-    num_terminated_reqs = 0
-    for req_id, response in responses.items():
-        if not response.is_done:
-            continue
-        num_terminated_reqs += 1
-        pipeline.release(req_id)
-        del tg_reqs[req_id]
-    return num_terminated_reqs
-
-
 def get_cancelled_reqs(
     cancel_q: MAXPullQueue[list[RequestID]],
 ) -> list[RequestID]:
@@ -267,20 +214,3 @@ def get_cancelled_reqs(
         for req_id in req_ids:
             cancelled_reqs.append(req_id)
     return cancelled_reqs
-
-
-def release_cancelled_requests(
-    cancel_q: MAXPullQueue[list[RequestID]],
-    response_q: MAXPushQueue[
-        dict[RequestID, SchedulerResult[PipelineOutputType]]
-    ],
-    tg_reqs: dict[RequestID, TextContext] | dict[RequestID, TTSContext],
-    pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
-) -> None:
-    for req_ids in drain_queue(cancel_q):
-        for req_id in req_ids:
-            if req_id not in tg_reqs:
-                continue
-            pipeline.release(req_id)
-            del tg_reqs[req_id]
-            response_q.put_nowait({req_id: SchedulerResult.cancelled()})

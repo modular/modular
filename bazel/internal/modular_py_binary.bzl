@@ -1,7 +1,7 @@
 """A helper macro for python scripts which helps setup various runtime dependencies."""
 
 load("@rules_python//python:defs.bzl", "py_binary")
-load("//bazel/internal:config.bzl", "env_for_available_tools")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "runtime_sanitizer_env")  # buildifier: disable=bzl-visibility
 load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
 load(":mojo_test_environment.bzl", "mojo_test_environment")
@@ -38,12 +38,24 @@ def modular_py_binary(
         testonly: Only test targets can depend on this target
         **kwargs: Extra arguments passed through to py_binary
     """
+    mojo_test_env_name = name + ".mojo_test_env"
     extra_toolchains = [
+        "@//bazel/internal:current_gpu_toolchain",
         "@//bazel/internal:lib_toolchain",
+        mojo_test_env_name,
     ]
-    extra_env = {}
-    extra_data = []
-    extra_deps = []
+    extra_data = RUNTIME_SANITIZER_DATA + [
+        mojo_test_env_name,
+    ]
+    extra_env = {
+        "PYTHONUNBUFFERED": "set",
+        "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(COMPILER_RT_PATH)",
+        "MODULAR_MOJO_MAX_DRIVER_PATH": "$(MOJO_BINARY_PATH)",
+        "MODULAR_MOJO_MAX_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",
+        "MODULAR_MOJO_MAX_LINKER_DRIVER": "$(MOJO_LINKER_DRIVER)",
+        "MODULAR_MOJO_MAX_LLD_PATH": "$(LLD_PATH)",
+        "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
+    } | GPU_TEST_ENV | runtime_sanitizer_env()
 
     transitive_mojo_deps = name + ".mojo_deps"
     collect_transitive_mojoinfo(
@@ -52,19 +64,8 @@ def modular_py_binary(
         testonly = testonly,
     )
 
-    env_name = name + ".mojo_test_env"
-    extra_toolchains.append(env_name)
-    extra_data.append(env_name)
-    extra_env |= {
-        "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(COMPILER_RT_PATH)",
-        "MODULAR_MOJO_MAX_DRIVER_PATH": "$(MOJO_BINARY_PATH)",
-        "MODULAR_MOJO_MAX_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",
-        "MODULAR_MOJO_MAX_LINKER_DRIVER": "$(MOJO_LINKER_DRIVER)",
-        "MODULAR_MOJO_MAX_LLD_PATH": "$(LLD_PATH)",
-        "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
-    }
     mojo_test_environment(
-        name = env_name,
+        name = mojo_test_env_name,
         data = mojo_deps + [transitive_mojo_deps],
         short_path = True,
         testonly = testonly,
@@ -73,7 +74,7 @@ def modular_py_binary(
     py_binary(
         name = name,
         data = extra_data + data,
-        deps = deps + extra_deps + [
+        deps = deps + [
             "@//bazel/internal:bazel_sitecustomize",  # py_repl adds this automatically
         ],
         srcs = srcs,
@@ -90,7 +91,7 @@ def modular_py_binary(
     modular_py_venv(
         name = name + ".venv",
         data = extra_data + data,
-        deps = deps + extra_deps + [
+        deps = deps + [
             "@//bazel/internal:bazel_sitecustomize",  # py_repl adds this automatically
         ],
     )
@@ -98,7 +99,7 @@ def modular_py_binary(
     py_repl(
         name = name + ".debug",
         data = extra_data + data,
-        deps = deps + extra_deps,
+        deps = deps,
         direct = False,
         env = env_for_available_tools(location_specifier = "execpath") | extra_env | env,
         args = [native.package_name() + "/" + (main or srcs[0])],

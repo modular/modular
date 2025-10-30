@@ -13,7 +13,7 @@
 
 
 from collections import OptionalReg
-from math import align_up, ceildiv
+from math import align_up, ceildiv, align_up
 from sys import (
     CompilationTarget,
     align_of,
@@ -136,6 +136,7 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
     var num_pipeline_stages: UInt
     var k_group_size: UInt
     var algorithm: FlashAttentionAlgorithm
+    var swizzle_mode: TensorMapSwizzle
 
     fn block_m(self) -> UInt:
         return self.num_queries_per_block
@@ -173,6 +174,16 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
             self.num_consumer_threads()
             + self.num_producer_threads[producer_consumer_kernel]()
         )
+
+    fn num_fa4_threads(self) -> UInt:
+        # Warp groups:
+        # other (tma, mma)
+        # correction
+        # softmax (1 if BM <= 64, 2 otherwise)
+        return UInt(128 * (3 + (self.block_m() > 64)))
+
+    fn swizzle_granularity(self) -> UInt:
+        return UInt(self.swizzle_mode.bytes()) // UInt(self.dtype.size_of())
 
     fn q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> UInt:
         q_size = self.block_m() * self.padded_depth
@@ -258,21 +269,17 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
         num_pipeline_stages: UInt = 4,
         k_group_size: UInt = 1,
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(-1),
-        padded_depth: OptionalReg[UInt] = None,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     ):
         self.dtype = dtype
         self.num_heads = num_heads
         self.depth = depth
         swizzle_granularity = swizzle_mode.bytes() // size_of[DType.bfloat16]()
-        padded_depth_default = UInt(
-            ceildiv(depth, UInt(swizzle_granularity))
-            * UInt(swizzle_granularity)
-        )
-        self.padded_depth = padded_depth.or_else(padded_depth_default)
+        self.padded_depth = UInt(align_up(depth, UInt(swizzle_granularity)))
         self.num_pipeline_stages = num_pipeline_stages
         self.k_group_size = k_group_size
         self.algorithm = algorithm.init(dtype)
+        self.swizzle_mode = swizzle_mode
         # Not all of these have to be `OptionalReg`, only
         # those that depend on `depth`.
         # Currently, all are `OptionalReg` for consistency.

@@ -256,10 +256,9 @@ struct UnsafePointer[
         count: Int, *, alignment: Int = align_of[type]()
     ) -> UnsafePointer[
         type,
+        mut=True,
         address_space = AddressSpace.GENERIC,
-        # This is a newly allocated pointer, so should not alias anything
-        # already existing.
-        origin = MutableOrigin.empty,
+        origin = MutableOrigin.external,
     ]:
         """Allocates contiguous storage for `count` elements of `type`
         with compile-time alignment `alignment`.

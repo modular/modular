@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from max.graph.weights import WeightData, Weights
+from transformers.configuration_utils import PretrainedConfig
 
 # Maps from Safetensor to MAX weight names.
 DEEPSEEK_SAFETENSOR_MAP = {
@@ -24,7 +25,9 @@ DEEPSEEK_SAFETENSOR_MAP = {
 
 
 def convert_safetensor_state_dict(
-    state_dict: dict[str, Weights], **unused_kwargs
+    state_dict: dict[str, Weights],
+    huggingface_config: PretrainedConfig,
+    **unused_kwargs,
 ) -> dict[str, WeightData]:
     new_state_dict: dict[str, WeightData] = {}
 
@@ -34,5 +37,13 @@ def convert_safetensor_state_dict(
         for before, after in DEEPSEEK_SAFETENSOR_MAP.items():
             max_name = max_name.replace(before, after)
         new_state_dict[max_name] = value.data()
+
+    # TODO(E2EOPT-673): Support MTP. We currently delete the MTP weights
+    # This is also done in the official DeepSeek HF checkpoint converter:
+    # https://github.com/deepseek-ai/DeepSeek-V3/blob/4592be48c07f036b32ef971474068aebc489e3e7/inference/convert.py#L53-L54
+    mtp_layer_idx = huggingface_config.num_hidden_layers
+    for key in list(new_state_dict.keys()):
+        if key.startswith(f"layers.{mtp_layer_idx}."):
+            del new_state_dict[key]
 
     return new_state_dict

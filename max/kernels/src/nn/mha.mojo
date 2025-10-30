@@ -81,7 +81,8 @@ from nn.mha_operand import (
 )
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_sm90 import mha_sm90_dispatch
-from nn.mha_sm100 import mha_sm100_dispatch
+from nn.mha_sm100_1q import mha_sm100_dispatch as mha_sm100_1q_dispatch
+from nn.mha_sm100_2q import mha_sm100_dispatch as mha_sm100_2q_dispatch
 from nn.mha_utils import (
     DynamicInt,
     FlashAttentionAlgorithm,
@@ -533,33 +534,64 @@ fn flash_attention_dispatch[
                     )
                 else:
                     constrained[is_sm100]()
-                    mha_sm100_dispatch[
-                        config=config,
-                        group = Int(group),
-                        use_score_mod=use_score_mod,
-                        ragged=ragged,
-                        sink=sink,
-                        _is_cache_length_accurate=_is_cache_length_accurate,
-                    ](
-                        output.ptr,
-                        q.ptr,
-                        k,
-                        rebind[k_t](v),
-                        num_rows_q,
-                        mask_functor,
-                        score_mod_functor,
-                        valid_length._ptr.address_space_cast[
-                            AddressSpace.GENERIC
-                        ](),
-                        DynamicInt(max_prompt_len),
-                        max_cache_valid_length,
-                        scale,
-                        kv_input_row_offsets,
-                        batch_size,
-                        NoPartition[get_accum_type[q.dtype]()](),
-                        ctx,
-                        sink_weights,
-                    )
+
+                    @parameter
+                    if depth == 256:
+                        mha_sm100_1q_dispatch[
+                            config=config,
+                            group = Int(group),
+                            use_score_mod=use_score_mod,
+                            ragged=ragged,
+                            sink=sink,
+                            _is_cache_length_accurate=_is_cache_length_accurate,
+                        ](
+                            output.ptr,
+                            q.ptr,
+                            k,
+                            rebind[k_t](v),
+                            num_rows_q,
+                            mask_functor,
+                            score_mod_functor,
+                            valid_length._ptr.address_space_cast[
+                                AddressSpace.GENERIC
+                            ](),
+                            DynamicInt(max_prompt_len),
+                            max_cache_valid_length,
+                            scale,
+                            kv_input_row_offsets,
+                            batch_size,
+                            NoPartition[get_accum_type[q.dtype]()](),
+                            ctx,
+                            sink_weights,
+                        )
+                    else:
+                        mha_sm100_2q_dispatch[
+                            config=config,
+                            group = Int(group),
+                            use_score_mod=use_score_mod,
+                            ragged=ragged,
+                            sink=sink,
+                            _is_cache_length_accurate=_is_cache_length_accurate,
+                        ](
+                            output.ptr,
+                            q.ptr,
+                            k,
+                            rebind[k_t](v),
+                            num_rows_q,
+                            mask_functor,
+                            score_mod_functor,
+                            valid_length._ptr.address_space_cast[
+                                AddressSpace.GENERIC
+                            ](),
+                            DynamicInt(max_prompt_len),
+                            max_cache_valid_length,
+                            scale,
+                            kv_input_row_offsets,
+                            batch_size,
+                            NoPartition[get_accum_type[q.dtype]()](),
+                            ctx,
+                            sink_weights,
+                        )
 
             else:
                 alias BM = config.block_m()
@@ -752,7 +784,7 @@ fn flash_attention_dispatch[
                                 sink_weights,
                             )
                         else:
-                            mha_sm100_dispatch[
+                            mha_sm100_1q_dispatch[
                                 config=config,
                                 group = Int(group),
                                 use_score_mod=use_score_mod,
@@ -923,7 +955,7 @@ fn flash_attention_dispatch[
                                 sink_weights,
                             )
                         else:
-                            mha_sm100_dispatch[
+                            mha_sm100_1q_dispatch[
                                 config=config,
                                 group = Int(group),
                                 use_score_mod=use_score_mod,

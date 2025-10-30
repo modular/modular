@@ -273,6 +273,8 @@ what we publish.
   functions `create_tma_descriptor` and `prefetch_tma_descriptor` are now
   available from `gpu.host.nvidia.tma` instead of `gpu.host._nvidia_cuda`.
 
+- The `empty` origin has been renamed to `external`.
+
 ### Tooling changes {#25-7-tooling-changes}
 
 - `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)

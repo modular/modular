@@ -86,9 +86,15 @@ struct Origin[mut: Bool]:
     ```
     """
 
-    alias empty = Self.cast_from[origin_of()]
-    """An empty `origin_of()` of the given mutability. The empty origin
-    is guaranteed not to alias any existing origins."""
+    alias external = Self.cast_from[origin_of()]
+    """An external origin of the given mutability. The external origin is
+    guaranteed not to alias any existing origins.
+
+    An external origin implies there is no previously existing value that this
+    origin aliases. Therefore, the compiler cannot track the origin or the
+    value's lifecycle. The external origin is useful when interfacing with
+    memory that comes from outside the current Mojo program.
+    """
 
     # ===-------------------------------------------------------------------===#
     # Fields

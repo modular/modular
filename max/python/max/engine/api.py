@@ -560,6 +560,13 @@ class InferenceSession:
 
         self._set_mojo_define("USE_EXPERIMENTAL_KERNELS", 1)
 
+    def _use_vendor_blas(self, mode: str) -> None:
+        """Enables vendor BLAS libraries."""
+        if mode.lower() in ("false", "off", "no", "0"):
+            return
+
+        self._set_mojo_define("MODULE_USE_VENDOR_BLAS", 1)
+
     def _pdl_level(self, level: str | PdlLevel) -> None:
         """Level of overlap of kernel launch."""
         if not isinstance(level, PdlLevel):

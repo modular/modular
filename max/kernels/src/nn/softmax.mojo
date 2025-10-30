@@ -1959,7 +1959,7 @@ fn _rowmax_online_softmax[
     @parameter
     for col_tile in range(num_colwise_tiles):
         # Every four threads have elements on the same row.
-        # Reduce max for T0-T3, T4-T7, etc for nvidia
+        # Reduce max for  T0-T3,  T4-T7, etc for nvidia
         #                T0-T15, T16-T31, etc for amd
         score_frag_rowmax[col_tile] = warp.lane_group_max_and_broadcast[
             Int(num_rowwise_lanes)
@@ -2017,7 +2017,7 @@ fn _rowsum[
 
     score_frag_rowsum = type_of(score_frag_rowsum).stack_allocation()
 
-    # Initialize local max with the running max, and local sum with zero.
+    # Initialize sum with first column
     @parameter
     for col_tile in range(num_colwise_tiles):
         score_frag_rowsum[col_tile] = score_reg_tile[col_tile, 0].reduce_add[

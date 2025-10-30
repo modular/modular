@@ -77,7 +77,7 @@ async def start_kv_cache_service(
     process_name = "KVCACHE_AGENT_" + str(uuid.uuid4())
     logger.info("Starting KV Cache Agent: %s", process_name)
 
-    async with subprocess_manager() as proc:
+    async with subprocess_manager("KVCache Worker") as proc:
         health = proc.ctx.Queue()
         proc.start(_kvcache_agent_process_fn, health, settings)
 

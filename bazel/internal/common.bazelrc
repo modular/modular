@@ -72,6 +72,14 @@ build --flag_alias=mojocopt=@rules_mojo//:mojo_copt
 build --dynamic_mode=off
 build --features=-supports_dynamic_linker
 
+# Make sure repository rules don't use host tools
+common --repo_env=CC=false
+common --repo_env=CXX=false
+
+# Force hermetic toolchain, make sure we don't accidentally used the default one
+common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+common --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
+
 # Make sure we use llvm-ar on macOS for exec config too
 common --experimental_propagate_custom_flag=@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos
 # Always use llvm-ar which works fine for macOS

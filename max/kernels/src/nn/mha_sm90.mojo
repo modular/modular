@@ -24,6 +24,7 @@ from gpu import (
     block_dim,
     lane_id,
     thread_idx,
+    block_idx,
 )
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceContext, FuncAttribute
@@ -1016,7 +1017,6 @@ fn _mha_sm90[
 
     # Coordinates of the current warp.
     var warp_y: UInt32 = warp_id  # // num_warps_n
-    alias warp_x: UInt32 = 0  # warp_id % num_warps_n
 
     alias q_smem_layout_consumer = tile_layout_k_major[
         DType.bfloat16,
@@ -1619,24 +1619,13 @@ fn _mha_sm90[
             named_barrier[num_consumer_threads]()
             accum_smem_tile = output_reg_to_smem[
                 Int(BM),
-                Int(BN),
-                Int(WM),
+                Int(config.depth),
                 Int(config.padded_depth),
-                kv_type,
-                output_type,
-                accum_type,
-                o_reg_tile_layout,
-                o_frag_size,
-                Int(num_consumer_threads),
-                simd_size,
                 swizzle,
-                Int(num_m_mmas),
                 Int(num_consumer),
-                mma_thread_layout,
             ](
                 tid,
                 local_warp_group_idx,
-                warp_x,
                 warp_y,
                 q_smem + q_idx * q_tile_size,
                 output_reg_tile,
@@ -1703,15 +1692,19 @@ fn _mha_sm90[
 
         apply_mask(position, mask_status, kv_tile_start_row)
 
+        var sink_weight: Scalar[accum_type]
+
         # Include sink_weights in rowmax computation if present
         @parameter
         if not SinkType.is_null:
             var head_idx = position.head_idx
-            var sink_weight = sink_weights_ptr[head_idx] * log2e
+            sink_weight = sink_weights_ptr[head_idx].cast[accum_type]() * log2e
 
             @parameter
             for i in range(num_rows_per_warp):
-                rowmax[i] = sink_weight.cast[accum_type]()
+                rowmax[i] = sink_weight
+        else:
+            sink_weight = 0.0  # should b e
 
         # Compute initial rowmax
         var attention_rowmax = _rowmax_online_softmax[
@@ -1731,10 +1724,6 @@ fn _mha_sm90[
         # Add sink weight contribution to rowsum
         @parameter
         if not SinkType.is_null:
-            var head_idx = position.head_idx
-            var sink_weight = (
-                sink_weights_ptr[head_idx].cast[accum_type]() * log2e
-            )
 
             @parameter
             for i in range(num_rows_per_warp):

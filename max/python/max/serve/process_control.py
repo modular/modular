@@ -76,6 +76,7 @@ class ProcessManager:
     See test_process_control.py for more examples.
     """
 
+    name: str
     ctx: IPCContext
     pool: Executor
     group: TaskGroup
@@ -122,7 +123,7 @@ class ProcessManager:
         try:
             return await loop.run_in_executor(None, blocking_cb)
         except (TimeoutError, Empty):
-            raise TimeoutError("ProcessManager.ready") from None
+            raise TimeoutError(f"{self.name} failed to become ready") from None
 
     def watch_heartbeat(self, blocking_cb: Callable[[], Any]) -> Task[None]:
         """Spawns a task in self.group to periodically check blocking_cb
@@ -139,7 +140,7 @@ class ProcessManager:
                     await loop.run_in_executor(None, blocking_cb)
                 except (TimeoutError, Empty):
                     raise TimeoutError(
-                        "ProcessManager.watch_heartbeat"
+                        f"{self.name} failed heartbeat check"
                     ) from None
 
         self.heartbeat = self.group.create_task(run_task())
@@ -153,14 +154,14 @@ def _task_group_shutdown(group: TaskGroup) -> None:
 
 
 @asynccontextmanager
-async def subprocess_manager() -> AsyncGenerator[ProcessManager]:
+async def subprocess_manager(name: str) -> AsyncGenerator[ProcessManager]:
     """Factory for ProcessManager using multiprocessing.spawn"""
     mp = multiprocessing.get_context("spawn")
     with mp.Manager() as ctx:
         with ProcessPoolExecutor(max_workers=1, mp_context=mp) as pool:
             try:
                 async with TaskGroup() as group:
-                    yield ProcessManager(ctx, pool, group)
+                    yield ProcessManager(name, ctx, pool, group)
                     # exit now, don't wait forever
                     _task_group_shutdown(group)
             finally:
@@ -168,13 +169,13 @@ async def subprocess_manager() -> AsyncGenerator[ProcessManager]:
 
 
 @asynccontextmanager
-async def thread_manager() -> AsyncGenerator[ProcessManager]:
+async def thread_manager(name: str) -> AsyncGenerator[ProcessManager]:
     """Factory for ProcessManager using threading"""
     ctx = ThreadingContext()
     with ThreadPoolExecutor(1) as pool:
         try:
             async with TaskGroup() as group:
-                yield ProcessManager(ctx, pool, group)
+                yield ProcessManager(name, ctx, pool, group)
                 # exit now, don't wait forever
                 _task_group_shutdown(group)
         finally:

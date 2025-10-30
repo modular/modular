@@ -252,7 +252,7 @@ async def start_model_worker(
     worker_name = "MODEL_" + str(uuid.uuid4())
     logger.debug("Starting worker: %s", worker_name)
 
-    async with subprocess_manager() as proc:
+    async with subprocess_manager("Model Worker") as proc:
         health = proc.ctx.Queue()
         proc.start(
             ModelWorker(),

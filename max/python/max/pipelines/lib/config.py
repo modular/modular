@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, get_type_hints
 
 from max.driver import DeviceSpec, load_devices
+from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
@@ -152,6 +153,14 @@ class PipelineConfig(MAXConfig):
     use_experimental_kernels: str = os.environ.get(
         "USE_EXPERIMENTAL_KERNELS", "false"
     )
+    """Enables using expiremental mojo kernels with max serve.
+    The kernels could be unstable, incorrect, or otherwise have issues.
+    """
+
+    use_vendor_blas: str = os.environ.get("MAX_SERVE_USE_VENDOR_BLAS", "false")
+    """Enables using the vendor blas libraries (cublas/hipblas/etc) with max serve.
+    Currently, this just replaces matmul calls, but it could replace other numeric functions in the future.
+    """
 
     pdl_level: str = os.environ.get("PDL_LEVEL", "0")
     """Level of overlap of kernel launch via programmatic dependent grid control."""
@@ -197,6 +206,13 @@ class PipelineConfig(MAXConfig):
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
+
+    def configure_session(self, session: InferenceSession) -> None:
+        """Configure an InferenceSession with standard pipeline settings."""
+        session.gpu_profiling(self.profiling_config.gpu_profiling)
+        session._use_experimental_kernels(self.use_experimental_kernels)
+        session._use_vendor_blas(self.use_vendor_blas)
+        session._pdl_level(self.pdl_level)
 
     @staticmethod
     def _extract_kwargs_for_config(

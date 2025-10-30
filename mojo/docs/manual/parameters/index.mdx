@@ -724,7 +724,7 @@ define a `Span` that requires a mutable origin.
 def mutate_span(span: Span[mut=True, Byte]):
     for i in range(0, len(span), 2):
         if i + 1 < len(span):
-            span.swap_elements(UInt(i), UInt(i + 1))
+            span.swap_elements(i, i + 1)
 ```
 
 If the compiler can't infer the value of an infer-only parameter, and it's not

@@ -504,9 +504,9 @@ fn naive_tensor[
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[MMA_M, MMA_N](
-        warp_y, warp_x
-    )
+    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
+        MMA_M, MMA_N
+    ](warp_y, warp_x)
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
@@ -531,8 +531,8 @@ fn naive_tensor[
     # No intermediate tile caching - simpler but less efficient
     for k_i in range(ceildiv(K, BK)):
         # Get the tiles of A and B for the current iteration
-        A_block_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_block_tile = B.tile[BK, BN](k_i, block_idx.x)
+        A_block_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
+        B_block_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
 
         # Get the warp tiles directly from global memory (naive approach)
         A_warp_tile = A_block_tile.tile[MMA_M, MMA_K](warp_y, 0)
@@ -620,9 +620,9 @@ fn basic_shared_mem[
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[MMA_M, MMA_N](
-        warp_y, warp_x
-    )
+    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
+        MMA_M, MMA_N
+    ](warp_y, warp_x)
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
@@ -666,8 +666,8 @@ fn basic_shared_mem[
         alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)  # 8x32
 
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
+        A_dram_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
+        B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
 
         # Load tiles using properly sized thread layouts to avoid out-of-bounds access
         copy_dram_to_sram[thread_layout=load_a_layout](A_sram_tile, A_dram_tile)
@@ -764,9 +764,9 @@ fn multi_block_tiled[
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
-        warp_y, warp_x
-    )
+    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
+        WM, WN
+    ](warp_y, warp_x)
 
     # Ensure warp tile dimensions are multiples of instruction shape
     constrained[
@@ -815,8 +815,8 @@ fn multi_block_tiled[
     # Iterate over tiles of A and B in the K dimension
     for k_i in range(ceildiv(K, BK)):
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
+        A_dram_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
+        B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
 
         # Load tiles using non-vectorized synchronous copy (working version)
         copy_dram_to_sram[thread_layout=load_layout](A_sram_tile, A_dram_tile)
@@ -824,8 +824,8 @@ fn multi_block_tiled[
         barrier()  # Synchronize after loading tiles
 
         # Get the warp tiles of A and B from shared memory
-        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
+        A_warp_tile = A_sram_tile.tile[WM, BK](Int(warp_y), 0)
+        B_warp_tile = B_sram_tile.tile[BK, WN](0, Int(warp_x))
 
         # Iterate over the elements in the K dimension within the tiles
         @parameter
@@ -939,9 +939,9 @@ fn scheduler_hints[
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
-        warp_y, warp_x
-    )
+    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
+        WM, WN
+    ](warp_y, warp_x)
 
     # Ensure warp tile dimensions are multiples of instruction shape
     constrained[
@@ -991,8 +991,8 @@ fn scheduler_hints[
     # Simplified single-buffer pipeline (similar to basic_shared_mem but with AMD scheduling)
     for k_i in range(ceildiv(K, BK)):
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
+        A_dram_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
+        B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
 
         # Load tiles using synchronous copy (single buffering)
         copy_dram_to_sram[thread_layout=load_layout](A_sram_tile, A_dram_tile)
@@ -1005,8 +1005,8 @@ fn scheduler_hints[
             amd_schedule_barrier()
 
         # Get the warp tiles from shared memory
-        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
+        A_warp_tile = A_sram_tile.tile[WM, BK](Int(warp_y), 0)
+        B_warp_tile = B_sram_tile.tile[BK, WN](0, Int(warp_x))
 
         # Perform MMA operations on current tile with AMD scheduling hints
         @parameter
@@ -1138,9 +1138,9 @@ fn double_buffer[
     warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
-        warp_y, warp_x
-    )
+    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
+        WM, WN
+    ](warp_y, warp_x)
 
     # Ensure warp tile dimensions are multiples of instruction shape
     constrained[
@@ -1207,8 +1207,8 @@ fn double_buffer[
     # === PIPELINE STAGE 1: Initial Load ===
     # Load the first tile into buffer 0
     if k_iterations > 0:
-        var A_dram_tile_0 = A.tile[BM, BK](block_idx.y, 0)
-        var B_dram_tile_0 = B.tile[BK, BN](0, block_idx.x)
+        var A_dram_tile_0 = A.tile[BM, BK](Int(block_idx.y), 0)
+        var B_dram_tile_0 = B.tile[BK, BN](0, Int(block_idx.x))
 
         copy_dram_to_sram[thread_layout=load_layout](
             A_sram_buffer_0, A_dram_tile_0
@@ -1237,8 +1237,8 @@ fn double_buffer[
         # === ASYNC LOAD: Start loading NEXT iteration while computing current ===
         var next_k = k_i + 1
         if next_k < k_iterations:
-            var A_dram_tile_next = A.tile[BM, BK](block_idx.y, next_k)
-            var B_dram_tile_next = B.tile[BK, BN](next_k, block_idx.x)
+            var A_dram_tile_next = A.tile[BM, BK](Int(block_idx.y), next_k)
+            var B_dram_tile_next = B.tile[BK, BN](next_k, Int(block_idx.x))
 
             # Start loading next iteration's data into alternate buffers
             # This happens in parallel with computation below
@@ -1632,9 +1632,9 @@ fn mma_tile_buffers[
 
     # --- Write results to output tensor ---
     # Output stage: Transfer results from registers to global memory
-    var c_block_tile = C.tile[BM, BN](block_idx.y, block_idx.x)
+    var c_block_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
     var c_warp_tile = c_block_tile.tile[WM, WN](
-        warp_m, warp_n
+        Int(warp_m), Int(warp_n)
     )  # 128 x 128 -> 128 x (8 x 16)
 
     @parameter

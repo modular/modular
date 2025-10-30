@@ -1403,7 +1403,7 @@ def test_reserve():
 
 def test_uninit_ctor():
     var hello_len = len("hello")
-    var s = String(unsafe_uninit_length=UInt(hello_len))
+    var s = String(unsafe_uninit_length=hello_len)
     memcpy(
         dest=s.unsafe_ptr_mut(),
         src=StaticString("hello").unsafe_ptr(),
@@ -1413,7 +1413,7 @@ def test_uninit_ctor():
 
     # Resize with uninitialized memory.
     var s2 = String()
-    s2.resize(unsafe_uninit_length=UInt(hello_len))
+    s2.resize(unsafe_uninit_length=hello_len)
     memcpy(
         dest=s2.unsafe_ptr_mut(),
         src=StaticString("hello").unsafe_ptr(),
@@ -1533,12 +1533,12 @@ def test_sso():
 
     # The capacity should be 2x the previous amount, rounded up to 8.
     alias expected_capacity = UInt((Int(String.INLINE_CAPACITY) * 2 + 7) & ~7)
-    assert_equal(s.capacity(), expected_capacity)
+    assert_equal(s.capacity(), Int(expected_capacity))
     assert_equal(s._is_inline(), False)
 
     # Shrink down to small, but stays out of line to maintain our malloc.
     s.resize(4)
-    assert_equal(s.capacity(), expected_capacity)
+    assert_equal(s.capacity(), Int(expected_capacity))
     assert_equal(s._is_inline(), False)
     assert_equal(s, "ffff")
 

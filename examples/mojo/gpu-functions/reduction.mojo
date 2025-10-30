@@ -37,7 +37,7 @@ alias TPB: UInt = 512
 alias LOG_TPB = log2_floor(TPB)
 alias BATCH_SIZE = 8  # needs to be power of 2
 alias SIZE = 1 << 12
-alias NUM_BLOCKS: UInt = UInt(ceildiv(SIZE, TPB * BATCH_SIZE))
+alias NUM_BLOCKS = UInt(ceildiv(SIZE, Int(TPB * BATCH_SIZE)))
 alias WARP_SIZE = 32
 alias dtype = DType.int32
 
@@ -47,7 +47,7 @@ fn sum_kernel[
 ](output: UnsafePointer[Int32], a: UnsafePointer[Int32],):
     """Efficient reduction of the vector a."""
     sums = stack_allocation[
-        TPB,
+        Int(TPB),
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
     ]()

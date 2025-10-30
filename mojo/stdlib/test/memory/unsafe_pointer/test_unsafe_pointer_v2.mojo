@@ -216,7 +216,7 @@ def test_bitcast():
 
 
 def test_unsafepointer_string():
-    var nullptr = UnsafePointerV2[Int, MutableOrigin.empty]()
+    var nullptr = UnsafePointerV2[Int, MutableOrigin.external]()
     assert_equal(String(nullptr), "0x0")
 
     var ptr = alloc[Int](1)
@@ -374,7 +374,7 @@ def test_indexing_simd():
 
 
 def test_bool():
-    var nullptr = UnsafePointerV2[Int, MutableOrigin.empty]()
+    var nullptr = UnsafePointerV2[Int, MutableOrigin.external]()
     var ptr = alloc[Int](1)
 
     assert_true(ptr.__bool__())

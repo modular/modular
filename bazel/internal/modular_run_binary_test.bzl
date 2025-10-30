@@ -1,6 +1,6 @@
 """A test rule that runs a given modular_py_binary target."""
 
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load(":binary_test.bzl", "binary_test")
 
 def modular_run_binary_test(
@@ -36,10 +36,8 @@ def modular_run_binary_test(
     binary_test(
         name = name,
         binary = binary,
-        data = data + [
-            "//bazel/internal:lsan-suppressions.txt",
-        ],
-        env = GPU_TEST_ENV | get_default_test_env(exec_properties) | env_for_available_tools() | env,
+        data = RUNTIME_SANITIZER_DATA + data,
+        env = GPU_TEST_ENV | get_default_test_env(exec_properties) | runtime_sanitizer_env(location_specifier = "rootpath") | env_for_available_tools() | env,
         tags = tags,
         target_compatible_with = target_compatible_with + gpu_constraints,
         exec_properties = get_default_exec_properties(tags, gpu_constraints) | exec_properties,

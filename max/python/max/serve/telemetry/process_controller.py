@@ -132,7 +132,7 @@ async def start_process_consumer(
     if handle_fn is None:
         handle_fn = _sync_commit
 
-    async with subprocess_manager() as proc:
+    async with subprocess_manager("Metrics Worker") as proc:
         metrics_q = proc.ctx.Queue()
         health_q = proc.ctx.Queue()
 

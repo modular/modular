@@ -268,7 +268,7 @@ def test_count_utf8_continuation_bytes():
 
     def _test(amnt: Int, items: List[UInt8]):
         var p = items.unsafe_ptr()
-        var span = Span(ptr=p, length=UInt(len(items)))
+        var span = Span(ptr=p, length=len(items))
         assert_equal(amnt, _count_utf8_continuation_bytes(span))
 
     _test(5, List[UInt8](c, c, c, c, c))

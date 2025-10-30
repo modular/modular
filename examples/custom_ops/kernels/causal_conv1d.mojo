@@ -204,7 +204,7 @@ fn causal_conv1d_kernel[
     var output_v = output.reshape[layout_2d]().vectorize[1, elements]()
 
     nChannels = input.shape[1]()
-    n_chunks = seq_length // kChunkSize + 1
+    n_chunks = seq_length // Int(kChunkSize) + 1
 
     if (tidx > 0) or (chunk_id > 0):
         prev_input_chunk = rebind[type_of(prev_input_chunk)](
