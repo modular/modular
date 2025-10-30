@@ -79,7 +79,6 @@ modular_cc_library(
         ":Globals",
         ":SymbolExport",
         "//Config",
-        "//MOTR:API",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",

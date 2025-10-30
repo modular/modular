@@ -14,7 +14,6 @@
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/tools/mojo-lsp-server/LSPTelemetryContext.h"
-#include "MOTR/API/MOTR.h"
 #include "MojoServer.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/ReferenceCounted.h"
@@ -333,29 +332,9 @@ private:
   void startTaskAfterParsing(FnT &&fn) {
     AsyncValueRef<Chain> done = newTaskChain();
 
-#if MOTR_ENABLED
-    motr::EmitSpanPushMessage push{};
-    // Ugly: Push the new span to the stack just so we can use MOTR_TagStr,
-    // because it's non-trivial to reimplement.
-    push.pushOnThreadLocalStack(false);
-    MOTR_TagStr(motr::Constants::TraceName::cstr, "waitForParse");
-    motr::popParentID();
-    uint64_t id = push.msg.id;
-#else
-    uint64_t id = 0;
-#endif
-
     isDocumentParsed.andThenAsync([doc = RCRef<MojoDocument>::copy(this),
                                    fn = std::forward<FnT>(fn),
-                                   done = std::move(done), id]() mutable {
-
-#if MOTR_ENABLED
-      motr::EmitSpanPopMessage pop{id};
-#else
-      // Suppress unused-lambda-capture warnings for id.
-      (void)id;
-#endif
-
+                                   done = std::move(done)]() mutable {
       fn(*doc);
       std::move(done).emplace();
     });
