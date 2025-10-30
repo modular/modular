@@ -421,3 +421,10 @@ what we publish.
 
 - Fixed [PR5479](https://github.com/modular/modular/issues/5479): mojo crashes
   when compiling standalone `__del__` function without struct context.
+
+- [Issue #5500](https://github.com/modular/modular/issues/5500): Added
+  comprehensive documentation to `gpu/host/info.mojo` explaining GPU target
+  configuration and LLVM data layout strings. The documentation now includes
+  detailed explanations of all MLIR target components, vendor-specific patterns
+  for NVIDIA/AMD/Apple GPUs, step-by-step guides for adding new GPU
+  architectures, and practical methods for obtaining data layout strings.
