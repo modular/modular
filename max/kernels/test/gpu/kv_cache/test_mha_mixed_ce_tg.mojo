@@ -108,13 +108,17 @@ def execute_ragged_flash_attention(
     )
     true_ce_q_ragged_host = HostNDBuffer[
         type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](true_ce_total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](true_ce_total_length, num_q_heads, Int(kv_params.head_size)))
     random(true_ce_q_ragged_host.tensor)
     true_ce_q_ragged_device = true_ce_q_ragged_host.copy_to_device(ctx)
 
     mixed_ce_q_ragged_host = HostNDBuffer[
         type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](mixed_ce_total_length, num_q_heads, kv_params.head_size))
+    ](
+        IndexList[3](
+            mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        )
+    )
     for bs_idx in range(batch_size):
         true_ce_prompt_len = true_ce_prompt_lens[bs_idx]
         mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
@@ -134,7 +138,7 @@ def execute_ragged_flash_attention(
         memcpy(
             dest=mixed_ce_offset,
             src=true_ce_offset,
-            count=mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
+            count=mixed_ce_prompt_len * num_q_heads * Int(kv_params.head_size),
         )
 
     mixed_ce_q_ragged_device = mixed_ce_q_ragged_host.copy_to_device(ctx)
@@ -142,11 +146,15 @@ def execute_ragged_flash_attention(
     # initialize reference output
     mixed_ce_output_host = HostNDBuffer[
         type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](mixed_ce_total_length, num_q_heads, kv_params.head_size))
+    ](
+        IndexList[3](
+            mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        )
+    )
     mixed_ce_output_device = mixed_ce_output_host.copy_to_device(ctx)
     true_ce_output_host = HostNDBuffer[
         type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](true_ce_total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](true_ce_total_length, num_q_heads, Int(kv_params.head_size)))
     true_ce_output_device = true_ce_output_host.copy_to_device(ctx)
 
     # initialize our KVCache
@@ -156,8 +164,8 @@ def execute_ragged_flash_attention(
             2,
             num_layers,
             page_size,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         )
     )
     random(kv_block_paged_host.tensor)
@@ -255,9 +263,11 @@ def execute_ragged_flash_attention(
         for s in range(mixed_ce_prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
-                    true_ce_val = true_ce_out[true_ce_ragged_offset + s, h, hd]
+                    true_ce_val = true_ce_out[
+                        true_ce_ragged_offset + s, h, Int(hd)
+                    ]
                     mixed_ce_val = mixed_ce_out[
-                        mixed_ce_ragged_offset + s, h, hd
+                        mixed_ce_ragged_offset + s, h, Int(hd)
                     ]
                     try:
                         assert_almost_equal(

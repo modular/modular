@@ -77,7 +77,7 @@ def execute_flash_attention[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
         )
     )
 
@@ -93,7 +93,7 @@ def execute_flash_attention[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
         ),
         ctx=ctx,
     )
@@ -124,14 +124,14 @@ def execute_flash_attention[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
         ),
     )
     ref_output_device = DeviceNDBuffer[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
         ),
         ctx=ctx,
     )
@@ -141,14 +141,14 @@ def execute_flash_attention[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
         ),
     )
     test_output_device = DeviceNDBuffer[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_len, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
         ),
         ctx=ctx,
     )
@@ -174,8 +174,8 @@ def execute_flash_attention[
             2,
             num_layers,
             max_seq_len,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         ),
     )
     random(kv_block_host.tensor)
@@ -269,8 +269,8 @@ def execute_flash_attention[
             for h in range(Int(num_q_heads)):
                 for hd in range(kv_params.head_size):
                     assert_almost_equal(
-                        ref_out[bs, s, h, hd],
-                        test_out[bs, s, h, hd],
+                        ref_out[bs, s, h, Int(hd)],
+                        test_out[bs, s, h, Int(hd)],
                         atol=1e-5,
                         rtol=8e-3,
                     )

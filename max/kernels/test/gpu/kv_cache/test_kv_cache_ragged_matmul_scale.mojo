@@ -132,7 +132,7 @@ def execute_matmul_k_cache_ragged_scale[
     This test follows the same pattern as execute_matmul_k_cache_ragged but
     includes input_scale and weight_scale parameters for scaled FP8 operations.
     """
-    alias hidden_size = num_q_heads * kv_params.head_size
+    alias hidden_size = num_q_heads * Int(kv_params.head_size)
     alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
 
     alias num_paged_blocks = 32
@@ -155,8 +155,8 @@ def execute_matmul_k_cache_ragged_scale[
             2,
             num_layers,
             page_size,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         )
     )
 
@@ -225,7 +225,7 @@ def execute_matmul_k_cache_ragged_scale[
     # Initialize the weights.
     var weight_host = HostNDBuffer[
         weight_dtype, 2, DimList(kv_hidden_size, hidden_size)
-    ](IndexList[2](kv_hidden_size, hidden_size))
+    ](IndexList[2](Int(kv_hidden_size), hidden_size))
     random(weight_host.tensor)
     var weight_device = weight_host.copy_to_device(ctx)
 
@@ -256,8 +256,12 @@ def execute_matmul_k_cache_ragged_scale[
 
     # Initialize reference output.
     var ref_output_host = HostNDBuffer[
-        dtype, 2, DimList(Dim(), kv_hidden_size)
-    ](IndexList[2](hidden_state_ragged_device.tensor.dim(0), kv_hidden_size))
+        dtype, 2, DimList(Dim(), Int(kv_hidden_size))
+    ](
+        IndexList[2](
+            hidden_state_ragged_device.tensor.dim(0), Int(kv_hidden_size)
+        )
+    )
     var ref_output_device = ref_output_host.copy_to_device(ctx)
 
     # Execute test with scaled implementation.
@@ -278,7 +282,7 @@ def execute_matmul_k_cache_ragged_scale[
     # Convert weight to same dtype as input for reference computation.
     var weight_ref_host = HostNDBuffer[
         weight_dtype, 2, DimList(kv_hidden_size, hidden_size)
-    ](IndexList[2](kv_hidden_size, hidden_size))
+    ](IndexList[2](Int(kv_hidden_size), hidden_size))
     var weight_ref_device = weight_ref_host.copy_to_device(ctx)
 
     # Copy weight data
@@ -332,13 +336,13 @@ def execute_matmul_k_cache_ragged_scale[
                 var head_idx = k_dim // kv_params.head_size
                 var head_dim_idx = k_dim % kv_params.head_size
                 var a = ref_out[
-                    Int(input_row_offsets_host.tensor[bs]) + s, k_dim
+                    Int(input_row_offsets_host.tensor[bs]) + s, Int(k_dim)
                 ]
                 var b = k_cache_host.load[width=1](
                     bs,
-                    head_idx,
+                    Int(head_idx),
                     cache_sizes[bs] + s,
-                    head_dim_idx,
+                    Int(head_dim_idx),
                 )
                 assert_almost_equal(a, b, atol=atol, rtol=rtol)
 

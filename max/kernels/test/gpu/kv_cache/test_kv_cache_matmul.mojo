@@ -45,9 +45,9 @@ def execute_fused_qkv_matmul[
     layer_idx: Int,
     ctx: DeviceContext,
 ):
-    alias hidden_size = num_q_heads * kv_params.head_size
+    alias hidden_size = num_q_heads * Int(kv_params.head_size)
     alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
-    alias fused_hidden_size = (2 * kv_hidden_size) + hidden_size
+    alias fused_hidden_size = (2 * Int(kv_hidden_size)) + hidden_size
     alias num_blocks = 32
     alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
 
@@ -146,8 +146,8 @@ def execute_fused_qkv_matmul[
             2,
             num_layers,
             max_seq_len,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         ),
     )
     kv_block_device = DeviceNDBuffer[dtype, 6](
@@ -156,8 +156,8 @@ def execute_fused_qkv_matmul[
             2,
             num_layers,
             max_seq_len,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         ),
         ctx=ctx,
     )
@@ -244,13 +244,13 @@ def execute_fused_qkv_matmul[
                 assert_almost_equal(
                     ref_out[
                         bs * prompt_len + s,
-                        hidden_size + k_dim,
+                        hidden_size + Int(k_dim),
                     ],
                     k_cache_host.load[width=1](
                         bs,
-                        head_idx,
+                        Int(head_idx),
                         cache_sizes[bs] + s,
-                        head_dim_idx,
+                        Int(head_dim_idx),
                     ),
                 )
 
@@ -260,13 +260,13 @@ def execute_fused_qkv_matmul[
                 assert_almost_equal(
                     ref_out[
                         bs * prompt_len + s,
-                        hidden_size + kv_hidden_size + v_dim,
+                        hidden_size + Int(kv_hidden_size + v_dim),
                     ],
                     v_cache_host.load[width=1](
                         bs,
-                        head_idx,
+                        Int(head_idx),
                         cache_sizes[bs] + s,
-                        head_dim_idx,
+                        Int(head_dim_idx),
                     ),
                 )
 

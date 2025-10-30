@@ -97,13 +97,13 @@ def execute_ragged_flash_attention[
 
     q_ragged_host = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
     random(q_ragged_host.tensor)
     q_padded_host = HostNDBuffer[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_length, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_length, num_q_heads, Int(kv_params.head_size)
         )
     )
 
@@ -119,7 +119,7 @@ def execute_ragged_flash_attention[
         memcpy(
             dest=padded_ptr,
             src=ragged_ptr,
-            count=unpadded_seq_len * num_q_heads * kv_params.head_size,
+            count=unpadded_seq_len * num_q_heads * Int(kv_params.head_size),
         )
 
     q_ragged_device = q_ragged_host.copy_to_device(ctx)
@@ -130,14 +130,14 @@ def execute_ragged_flash_attention[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_length, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_length, num_q_heads, Int(kv_params.head_size)
         ),
     )
     ref_output_device = ref_output_host.copy_to_device(ctx)
 
     test_output_host = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
     test_output_device = test_output_host.copy_to_device(ctx)
 
     # initialize our KVCache
@@ -147,8 +147,8 @@ def execute_ragged_flash_attention[
             2,
             num_layers,
             max_seq_len_cache,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         ),
     )
     random(kv_block_host.tensor)
@@ -256,8 +256,8 @@ def execute_ragged_flash_attention[
         for s in range(prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
-                    var ref_val = ref_out[bs, s, h, hd]
-                    var test_val = test_out[ragged_offset + s, h, hd]
+                    var ref_val = ref_out[bs, s, h, Int(hd)]
+                    var test_val = test_out[ragged_offset + s, h, Int(hd)]
                     try:
                         assert_almost_equal(
                             ref_val,

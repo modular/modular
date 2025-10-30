@@ -79,18 +79,18 @@ def execute_ragged_flash_attention[
 
     q_ragged_host = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
     random(q_ragged_host.tensor)
     q_ragged_device = q_ragged_host.copy_to_device(ctx)
 
     # initialize reference output
     test_output_host = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
     test_output_device = test_output_host.copy_to_device(ctx)
     ref_output_host = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
     ref_output_device = ref_output_host.copy_to_device(ctx)
 
     var num_continuous_blocks = batch_size + 2
@@ -105,8 +105,8 @@ def execute_ragged_flash_attention[
             2,
             num_layers,
             max_full_context_length,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         ),
     )
 
@@ -150,8 +150,8 @@ def execute_ragged_flash_attention[
             2,
             num_layers,
             page_size,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         )
     )
 
@@ -176,7 +176,9 @@ def execute_ragged_flash_attention[
                 paged_ptr = kv_block_paged_host.tensor._offset(
                     IndexList[6](randval, kv_idx, layer_idx, 0, 0, 0)
                 )
-                n_cpy = block_sz * kv_params.num_heads * kv_params.head_size
+                n_cpy = block_sz * Int(
+                    kv_params.num_heads * kv_params.head_size
+                )
                 memcpy(
                     dest=paged_ptr,
                     src=kv_block_continuous_host.tensor._offset(
@@ -195,8 +197,7 @@ def execute_ragged_flash_attention[
                     memset_zero(
                         paged_ptr + n_cpy,
                         (page_size - block_sz)
-                        * kv_params.num_heads
-                        * kv_params.head_size,
+                        * Int(kv_params.num_heads * kv_params.head_size),
                     )
 
     paged_lut_device = paged_lut_host.copy_to_device(ctx)
@@ -258,8 +259,8 @@ def execute_ragged_flash_attention[
                 for hd in range(kv_params.head_size):
                     try:
                         assert_almost_equal(
-                            ref_out[ragged_offset + s, h, hd],
-                            test_out[ragged_offset + s, h, hd],
+                            ref_out[ragged_offset + s, h, Int(hd)],
+                            test_out[ragged_offset + s, h, Int(hd)],
                             atol=1e-2,
                         )
                     except e:
@@ -269,8 +270,8 @@ def execute_ragged_flash_attention[
                             s,
                             h,
                             hd,
-                            ref_out[ragged_offset + s, h, hd],
-                            test_out[ragged_offset + s, h, hd],
+                            ref_out[ragged_offset + s, h, Int(hd)],
+                            test_out[ragged_offset + s, h, Int(hd)],
                         )
                         raise e
 
