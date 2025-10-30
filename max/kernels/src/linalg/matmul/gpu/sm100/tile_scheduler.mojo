@@ -280,36 +280,3 @@ struct TileScheduler[
             )
 
         return clc_state.next()
-
-
-@always_inline
-fn get_num_tiles(
-    problem_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
-    cluster_shape: IndexList[2],
-) -> IndexList[2]:
-    var num_block_m = ceildiv(problem_shape[0], block_tile_shape[0])
-    var num_block_n = ceildiv(problem_shape[1], block_tile_shape[1])
-
-    var problem_blocks_m = align_up(num_block_m, cluster_shape[0])
-    var problem_blocks_n = align_up(num_block_n, cluster_shape[1])
-
-    return Index(problem_blocks_m, problem_blocks_n)
-
-
-@always_inline
-fn get_required_locks_buffer_size_bytes[
-    accum_type: DType, cta_group: UInt32
-](
-    problem_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
-    cluster_shape: IndexList[2],
-) -> Int:
-    var problem_blocks = get_num_tiles(
-        problem_shape, block_tile_shape, cluster_shape
-    )
-    var num_output_tiles = problem_blocks[0] * problem_blocks[1]
-
-    var locks_workspace_bytes = num_output_tiles * size_of[Int32]() * cta_group
-
-    return Int(locks_workspace_bytes)

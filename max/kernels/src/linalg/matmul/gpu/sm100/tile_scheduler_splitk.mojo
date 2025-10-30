@@ -111,14 +111,21 @@ struct TileScheduler[
         self.locks_ptr = locks_ptr.bitcast[Int32]()
 
     @always_inline
-    fn initial_work_info(self) -> WorkInfo:
-        var b200_work_info = self.scheduler.initial_work_info()
+    fn convert_to_splitk_work_info(self, work_info: B200WorkInfo) -> WorkInfo:
+        var current_k_start = work_info.k_start * self.k_tiles_per_split
+        var remaining_k_tiles = self.total_k_tiles - current_k_start
         return WorkInfo(
-            b200_work_info.m,
-            b200_work_info.n,
-            b200_work_info.k_start * self.k_tiles_per_split,
-            self.k_tiles_per_split,
-            b200_work_info.is_valid_tile,
+            work_info.m,
+            work_info.n,
+            current_k_start,
+            min(self.k_tiles_per_split, remaining_k_tiles),
+            work_info.is_valid_tile,
+        )
+
+    @always_inline
+    fn initial_work_info(self) -> WorkInfo:
+        return self.convert_to_splitk_work_info(
+            self.scheduler.initial_work_info()
         )
 
     @always_inline
@@ -137,15 +144,8 @@ struct TileScheduler[
         var underlying_workinfo = B200WorkInfo(
             work_info.m, work_info.n, work_info.k_start, work_info.is_valid_tile
         )
-        var updated_workinfo = self.scheduler.fetch_next_work(
-            underlying_workinfo, consumer_state
-        )
-        return WorkInfo(
-            updated_workinfo.m,
-            updated_workinfo.n,
-            updated_workinfo.k_start * self.k_tiles_per_split,
-            self.k_tiles_per_split,
-            updated_workinfo.is_valid_tile,
+        return self.convert_to_splitk_work_info(
+            self.scheduler.fetch_next_work(underlying_workinfo, consumer_state)
         )
 
     @always_inline
@@ -341,7 +341,6 @@ struct TileScheduler[
                 lock_idx,
                 work_info.k_start,
             )
-
             self.store_to_workspace[
                 repeat=repeat, do_reduction=True, write_back=False
             ](

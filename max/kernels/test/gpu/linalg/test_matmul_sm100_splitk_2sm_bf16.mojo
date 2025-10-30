@@ -246,6 +246,7 @@ def main():
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=8,
+                        num_split_k=2,
                     ](
                         ctx,
                         dynamic(1000),
@@ -271,6 +272,7 @@ def main():
                             b_swizzle=swizzle,
                             block_swizzle_size=4,
                             swapAB=swapAB,
+                            num_split_k=3,
                         ](
                             ctx,
                             dynamic(512),
@@ -289,7 +291,7 @@ def main():
                             b_swizzle=swizzle,
                             block_swizzle_size=0,
                             swapAB=swapAB,
-                            num_split_k=8,
+                            num_split_k=7,
                         ](
                             ctx,
                             dynamic(500),
