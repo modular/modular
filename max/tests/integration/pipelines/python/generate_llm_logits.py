@@ -920,26 +920,26 @@ class LoRAOracle(PipelineOracle):
 
 
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
-    "olmo": GenericOracle(
+    "allenai/OLMo-1B-hf": GenericOracle(
         model_path="allenai/OLMo-1B-hf",
         config_params={"max_length": 1024},
         device_encoding_map={"cpu": ["float32"], "gpu": ["float32"]},
     ),
-    "phi-3.5-mini": GenericOracle(
+    "microsoft/Phi-3.5-mini-instruct": GenericOracle(
         model_path="microsoft/Phi-3.5-mini-instruct",
         device_encoding_map={
             "cpu": ["float32"],
             "gpu": ["float32", "bfloat16"],
         },
     ),
-    "phi-4": GenericOracle(
+    "microsoft/phi-4": GenericOracle(
         model_path="microsoft/phi-4",
         device_encoding_map={
             "cpu": ["float32"],
             "gpu": ["float32", "bfloat16"],
         },
     ),
-    "exaone": GenericOracle(
+    "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct": GenericOracle(
         model_path="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
         config_params={
             "max_length": 1024,
@@ -948,7 +948,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"cpu": ["float32"], "gpu": ["float32"]},
     ),
-    "llama3-8b": GenericOracle(
+    "meta-llama/Meta-Llama-3-8B-Instruct": GenericOracle(
         model_path="meta-llama/Meta-Llama-3-8B-Instruct",
         weight_path_map={
             "q4_k": "bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf",
@@ -960,7 +960,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["float32", "q4_k"],
         },
     ),
-    "llama3.1-8b": GenericOracle(
+    "meta-llama/Llama-3.1-8B-Instruct": GenericOracle(
         model_path="meta-llama/Llama-3.1-8B-Instruct",
         weight_path_map={
             "q4_k": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
@@ -972,7 +972,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["float32", "q4_k"],
         },
     ),
-    "llama3.1-8b-data-parallel": GenericOracle(
+    "meta-llama/Llama-3.1-8B-Instruct-data-parallel": GenericOracle(
         model_path="meta-llama/Llama-3.1-8B-Instruct",
         config_params={
             "max_length": 512,
@@ -986,33 +986,33 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         # Run the 4 text prompts with batch sizes 1, 2, 1.
         batch_size=[1, 2, 1],
     ),
-    "llama3.1-8b-float8-static": GenericOracle(
+    "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-float8-static": GenericOracle(
         model_path="RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8",
         config_params={"max_length": 512},
         device_encoding_map={
             "gpu": ["float8_e4m3fn"],
         },
     ),
-    "llama3.1-8b-float8-dynamic": GenericOracle(
+    "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic": GenericOracle(
         model_path="RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic",
         config_params={"max_length": 512},
         device_encoding_map={
             "gpu": ["float8_e4m3fn"],
         },
     ),
-    "llama3.2-1b": GenericOracle(
+    "meta-llama/Llama-3.2-1B": GenericOracle(
         model_path="meta-llama/Llama-3.2-1B",
         config_params={"max_length": 512},
         device_encoding_map={
             "gpu": ["bfloat16"],
         },
     ),
-    "llama3.3-70b": GenericOracle(
+    "meta-llama/Llama-3.3-70B-Instruct": GenericOracle(
         model_path="meta-llama/Llama-3.3-70B-Instruct",
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "olmo2-1b": GenericOracle(
+    "allenai/OLMo-2-0425-1B": GenericOracle(
         model_path="allenai/OLMo-2-0425-1B",
         config_params={
             "max_length": 4096,
@@ -1022,7 +1022,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["float32"],
         },
     ),
-    "olmo2-1b-instruct": GenericOracle(
+    "allenai/OLMo-2-0425-1B-Instruct": GenericOracle(
         model_path="allenai/OLMo-2-0425-1B-Instruct",
         config_params={
             "max_length": 4096,
@@ -1032,7 +1032,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "olmo2-1b-rvlr1": GenericOracle(
+    "allenai/OLMo-2-0425-1B-RLVR1": GenericOracle(
         model_path="allenai/OLMo-2-0425-1B-RLVR1",
         config_params={
             "max_length": 4096,
@@ -1042,7 +1042,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "olmo2-7b": GenericOracle(
+    "allenai/OLMo-2-1124-7B": GenericOracle(
         model_path="allenai/OLMo-2-1124-7B",
         config_params={
             "max_length": 4096,
@@ -1052,7 +1052,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["float32"],
         },
     ),
-    "olmo2-7b-instruct": GenericOracle(
+    "allenai/OLMo-2-1124-7B-Instruct": GenericOracle(
         model_path="allenai/OLMo-2-1124-7B-Instruct",
         config_params={
             "max_length": 4096,
@@ -1062,7 +1062,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "olmo2-13b": GenericOracle(
+    "allenai/OLMo-2-1124-13B": GenericOracle(
         model_path="allenai/OLMo-2-1124-13B",
         config_params={
             "max_length": 4096,
@@ -1072,7 +1072,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["float32"],
         },
     ),
-    "olmo2-13b-instruct": GenericOracle(
+    "allenai/OLMo-2-1124-13B-Instruct": GenericOracle(
         model_path="allenai/OLMo-2-1124-13B-Instruct",
         config_params={
             "max_length": 4096,
@@ -1082,7 +1082,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "olmo2-13b-instruct-rvlr1": GenericOracle(
+    "allenai/OLMo-2-1124-13B-Instruct-RLVR1": GenericOracle(
         model_path="allenai/OLMo-2-1124-13B-Instruct-RLVR1",
         config_params={
             "max_length": 4096,
@@ -1092,7 +1092,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "olmo2-13b-instruct-rvlr2": GenericOracle(
+    "allenai/OLMo-2-1124-13B-Instruct-RLVR2": GenericOracle(
         model_path="allenai/OLMo-2-1124-13B-Instruct-RLVR2",
         config_params={
             "max_length": 4096,
@@ -1102,7 +1102,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "olmo2-32b-instruct": GenericOracle(
+    "allenai/OLMo-2-0325-32B-Instruct": GenericOracle(
         model_path="allenai/OLMo-2-0325-32B-Instruct",
         config_params={
             "max_length": 4096,
@@ -1112,7 +1112,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "olmo2-32b-math": GenericOracle(
+    "tngtech/OLMo-2-Instruct-Math-32B": GenericOracle(
         model_path="tngtech/OLMo-2-Instruct-Math-32B",
         config_params={
             "max_length": 4096,
@@ -1122,69 +1122,75 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "mistral": GenericOracle(
+    "mistralai/Mistral-Nemo-Instruct-2407": GenericOracle(
         model_path="mistralai/Mistral-Nemo-Instruct-2407",
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "mistral3": GenericOracle(
+    "mistralai/Mistral-Small-3.1-24B-Instruct-2503": GenericOracle(
         model_path="mistralai/Mistral-Small-3.1-24B-Instruct-2503",
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
         auto_model_cls=transformers.AutoModelForImageTextToText,
     ),
-    "internvl3-1b-instruct": InternVLPipelineOracle(
+    "OpenGVLab/InternVL3-1B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3-1B-Instruct"
     ),
-    "internvl3-8b-instruct": InternVLPipelineOracle(
+    "OpenGVLab/InternVL3-8B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3-8B-Instruct"
     ),
-    "internvl3-14b-instruct": InternVLPipelineOracle(
+    "OpenGVLab/InternVL3-14B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3-14B-Instruct"
     ),
-    "internvl3-38b-instruct": InternVLPipelineOracle(
+    "OpenGVLab/InternVL3-38B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3-38B-Instruct"
     ),
-    "internvl3-78b-instruct": InternVLPipelineOracle(
+    "OpenGVLab/InternVL3-78B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3-78B-Instruct"
     ),
-    "internvl3_5-8b-instruct": InternVLPipelineOracle(
+    "OpenGVLab/InternVL3_5-8B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3_5-8B-Instruct"
     ),
-    "idefics3-8b-llama3": Idefics3PipelineOracle(
+    "HuggingFaceM4/Idefics3-8B-Llama3": Idefics3PipelineOracle(
         "HuggingFaceM4/Idefics3-8B-Llama3"
     ),
-    "llama3-vision": LlamaVisionPipelineOracle(),
-    "pixtral": PixtralPipelineOracle(),
-    "qwen": GenericOracle(
+    "meta-llama/Llama-3.2-11B-Vision-Instruct": LlamaVisionPipelineOracle(),
+    "mistral-community/pixtral-12b": PixtralPipelineOracle(),
+    "Qwen/Qwen2.5-7B-Instruct": GenericOracle(
         model_path="Qwen/Qwen2.5-7B-Instruct",
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "gpt-oss": GenericOracle(
+    "unsloth/gpt-oss-20b-BF16": GenericOracle(
         model_path="unsloth/gpt-oss-20b-BF16",
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "qwen2.5-vl-3b": Qwen2_5VLPipelineOracle("Qwen/Qwen2.5-VL-3B-Instruct"),
-    "qwen2.5-vl-7b": Qwen2_5VLPipelineOracle("Qwen/Qwen2.5-VL-7B-Instruct"),
-    "qwen2.5-vl-32b": Qwen2_5VLPipelineOracle("Qwen/Qwen2.5-VL-32B-Instruct"),
-    "qwen3": GenericOracle(
+    "Qwen/Qwen2.5-VL-3B-Instruct": Qwen2_5VLPipelineOracle(
+        "Qwen/Qwen2.5-VL-3B-Instruct"
+    ),
+    "Qwen/Qwen2.5-VL-7B-Instruct": Qwen2_5VLPipelineOracle(
+        "Qwen/Qwen2.5-VL-7B-Instruct"
+    ),
+    "Qwen/Qwen2.5-VL-32B-Instruct": Qwen2_5VLPipelineOracle(
+        "Qwen/Qwen2.5-VL-32B-Instruct"
+    ),
+    "Qwen/Qwen3-8B": GenericOracle(
         model_path="Qwen/Qwen3-8B",
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "qwen3-32b": GenericOracle(
+    "Qwen/Qwen3-32B": GenericOracle(
         model_path="Qwen/Qwen3-32B",
         config_params={"max_length": 512, "max_batch_size": 1},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "qwen3-30b-a3b": GenericOracle(
+    "Qwen/Qwen3-30B-A3B": GenericOracle(
         model_path="Qwen/Qwen3-30B-A3B",
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "smollm": GenericOracle(
+    "HuggingFaceTB/SmolLM2-135M": GenericOracle(
         model_path="HuggingFaceTB/SmolLM2-135M",
         config_params={
             "max_length": 512,
@@ -1196,7 +1202,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16"],
         },
     ),
-    "smollm2-lora": LoRAOracle(
+    "HuggingFaceTB/SmolLM2-135M-Instruct": LoRAOracle(
         hf_repo_id="HuggingFaceTB/SmolLM2-135M-Instruct",
         device_encoding_map={
             "gpu": ["bfloat16"],
@@ -1207,7 +1213,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
         lora_rank=16,
     ),
-    "mpnet": GenericOracle(
+    "sentence-transformers/all-mpnet-base-v2": GenericOracle(
         model_path="sentence-transformers/all-mpnet-base-v2",
         # Maximum length accepted by MPNet tokenizer is 512.
         config_params={"max_length": 512, "pool_embeddings": False},
@@ -1220,7 +1226,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
     ),
     # GPTQ llama with perm_idx
-    "llama-gptq": GenericOracle(
+    "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4": GenericOracle(
         model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
         auto_model_cls=transformers.AutoModelForCausalLM,
         device_encoding_map={
@@ -1229,7 +1235,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
     ),
     # GPTQ llama without perm_idx
-    "llama-gptq-no-perm-idx": GenericOracle(
+    "kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit": GenericOracle(
         model_path="kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit",
         auto_model_cls=transformers.AutoModelForCausalLM,
         device_encoding_map={
@@ -1237,7 +1243,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16", "gptq"],
         },
     ),
-    "llama4-scout": GenericOracle(
+    "meta-llama/Llama-4-Scout-17B-16E-Instruct": GenericOracle(
         model_path="meta-llama/Llama-4-Scout-17B-16E-Instruct",
         # TODO(bduke): test chunked attention with >8192 context length cases.
         config_params={"max_length": 8192},
@@ -1245,27 +1251,27 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         # TODO(bduke): remove this once upstream [issue](https://github.com/huggingface/transformers/issues/37380) is fixed.
         use_cache=False,
     ),
-    "gemma3-1b": GenericOracle(
+    "google/gemma-3-1b-it": GenericOracle(
         model_path="google/gemma-3-1b-it",
         config_params={"max_length": 8192, "trust_remote_code": True},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "gemma3-27b": GenericOracle(
+    "google/gemma-3-27b-it": GenericOracle(
         model_path="google/gemma-3-27b-it",
         config_params={"max_length": 8192, "trust_remote_code": True},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "gemma3-multimodal": GenericOracle(
+    "google/gemma-3-12b-it": GenericOracle(
         model_path="google/gemma-3-12b-it",
         config_params={"max_length": 8192},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "gemma3-27b-float8-dynamic": GenericOracle(
+    "RedHatAI/gemma-3-27b-it-FP8-dynamic": GenericOracle(
         model_path="RedHatAI/gemma-3-27b-it-FP8-dynamic",
         config_params={"max_length": 8192, "trust_remote_code": True},
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
     ),
-    "deepseek-v2-lite": GenericOracle(
+    "deepseek-ai/DeepSeek-V2-Lite-Chat": GenericOracle(
         model_path="deepseek-ai/DeepSeek-V2-Lite-Chat",
         config_params={"max_length": 516, "trust_remote_code": True},
         device_encoding_map={"gpu": ["bfloat16"]},
@@ -1273,7 +1279,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         # upstream modeling_deepsek.py uses a deprecated transformers function
         use_cache=False,
     ),
-    "deepseek-v3-small-random": GenericOracle(
+    "kathywu95/deepseek-v3-small-random": GenericOracle(
         model_path="kathywu95/deepseek-v3-small-random",
         config_params={
             "max_length": 516,
@@ -1281,7 +1287,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "deepseek-v3-small-random-fp8": GenericOracle(
+    "kathywu95/deepseek-v3-small-random-fp8": GenericOracle(
         model_path="kathywu95/deepseek-v3-small-random-fp8",
         config_params={
             "max_length": 516,
@@ -1290,7 +1296,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
     ),
-    "llasa-8b": GenericOracle(
+    "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",
         config_params={
             "max_length": 2048,

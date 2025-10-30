@@ -405,6 +405,8 @@ def run_llm_verification(
     for details on acceptable flags.
     """
 
+    fssafe_pipeline = pipeline.replace("/", "_")
+
     # Run the torch baseline or load it from golden.
     if pregenerated_torch_goldens is not None:
         # This workflow runs on an A10. The Torch reference runs out of memory
@@ -414,7 +416,7 @@ def run_llm_verification(
         torch_golden_path = Path(tar_file, pregenerated_torch_goldens.json_file)
     else:
         torch_golden_path = Path(
-            f"/tmp/goldens_torch_{device_type.value}_{pipeline}_{encoding}.json"
+            f"/tmp/goldens_torch_{device_type.value}_{fssafe_pipeline}_{encoding}.json"
         )
         generate_llm_logits_with_optional_retry(
             framework="torch",
@@ -439,7 +441,7 @@ def run_llm_verification(
         relative_tolerance = 1e-4
 
     max_golden_path = Path(
-        f"/tmp/goldens_max_{device_type.value}_{pipeline}_{encoding}.json"
+        f"/tmp/goldens_max_{device_type.value}_{fssafe_pipeline}_{encoding}.json"
     )
     generate_llm_logits_with_optional_retry(
         framework="max",
@@ -590,7 +592,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],
         run=_make_pipeline_runner(
-            pipeline="llama3-8b",
+            pipeline="meta-llama/Meta-Llama-3-8B-Instruct",
             encoding="float32",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
@@ -606,7 +608,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],
         run=_make_pipeline_runner(
-            pipeline="llama3.1-8b",
+            pipeline="meta-llama/Llama-3.1-8B-Instruct",
             encoding="float32",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
@@ -621,7 +623,7 @@ PIPELINES = {
     "sentence-transformers/all-mpnet-base-v2-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         run=_make_pipeline_runner(
-            pipeline="mpnet",
+            pipeline="sentence-transformers/all-mpnet-base-v2",
             encoding="float32",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_mpnet_golden/1/d93f10114938b5102f529f436170e2eb33a3d2c76889acf3406b54603cc1be97/torch_mpnet_golden.tar.gz",
@@ -640,7 +642,7 @@ PIPELINES = {
             DeviceKind.GPU,
         ],
         run=_make_pipeline_runner(
-            pipeline="gpt-oss",
+            pipeline="unsloth/gpt-oss-20b-BF16",
             encoding="bfloat16",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gpt-oss_golden/3/808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3/torch_gpt-oss_golden.tar.gz",
@@ -653,7 +655,7 @@ PIPELINES = {
     "allenai/OLMo-1B-hf-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         run=_make_pipeline_runner(
-            pipeline="olmo",
+            pipeline="allenai/OLMo-1B-hf",
             encoding="float32",
             # On CPU, olmo passes with atol set to `5e-4`
             # GPU specifically requires these higher tolerances (160x worse).
@@ -673,7 +675,7 @@ PIPELINES = {
     "bartowski/Meta-Llama-3-8B-Instruct-GGUF-q4_k": PipelineDef(
         compatible_with=[DeviceKind.CPU],
         run=_make_pipeline_runner(
-            pipeline="llama3-8b",
+            pipeline="meta-llama/Meta-Llama-3-8B-Instruct",
             encoding="q4_k",
             # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
             # pipeline.  We only pass with these sky-high tolerances --
@@ -686,7 +688,7 @@ PIPELINES = {
     "meta-llama/Meta-Llama-3-8B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=_make_pipeline_runner(
-            pipeline="llama3-8b",
+            pipeline="meta-llama/Meta-Llama-3-8B-Instruct",
             encoding="bfloat16",
             cos_dist_threshold=3.7e-2,
             kl_div_threshold=1.3e-1,
@@ -695,7 +697,7 @@ PIPELINES = {
     "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF-q4_k": PipelineDef(
         compatible_with=[DeviceKind.CPU],
         run=_make_pipeline_runner(
-            pipeline="llama3.1-8b",
+            pipeline="meta-llama/Llama-3.1-8B-Instruct",
             encoding="q4_k",
             # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
             # pipeline.  We only pass with these sky-high tolerances --
@@ -708,7 +710,7 @@ PIPELINES = {
     "meta-llama/Llama-3.1-8B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=_make_pipeline_runner(
-            pipeline="llama3.1-8b",
+            pipeline="meta-llama/Llama-3.1-8B-Instruct",
             encoding="bfloat16",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
@@ -725,7 +727,7 @@ PIPELINES = {
             "no-h100",
         ],  # TODO(MODEL-779): Accuracy issues on H100.
         run=_make_pipeline_runner(
-            pipeline="llama3.1-8b-data-parallel",
+            pipeline="meta-llama/Llama-3.1-8B-Instruct-data-parallel",
             encoding="bfloat16",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
@@ -739,7 +741,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["float8-support"],
         run=_make_pipeline_runner(
-            pipeline="llama3.1-8b-float8-static",
+            pipeline="RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-float8-static",
             encoding="float8_e4m3fn",
             # This model does not run with torch and transformers.
             # It only runs with vllm.
@@ -756,7 +758,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["float8-support"],
         run=_make_pipeline_runner(
-            pipeline="llama3.1-8b-float8-dynamic",
+            pipeline="RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic",
             encoding="float8_e4m3fn",
             # This model does not run with torch and transformers.
             # It only runs with vllm.
@@ -773,7 +775,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-only"],
         run=_make_pipeline_runner(
-            pipeline="llama3.2-1b",
+            pipeline="meta-llama/Llama-3.2-1B",
             encoding="bfloat16",
             cos_dist_threshold=2.1e-03,
             kl_div_threshold=8.0e-03,
@@ -783,7 +785,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-multi"],
         run=_make_pipeline_runner(
-            pipeline="llama3.3-70b",
+            pipeline="meta-llama/Llama-3.3-70B-Instruct",
             encoding="bfloat16",
             # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
             cos_dist_threshold=5.9e-04,
@@ -794,7 +796,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-multi"],
         run=_make_pipeline_runner(
-            pipeline="llama4-scout",
+            pipeline="meta-llama/Llama-4-Scout-17B-16E-Instruct",
             encoding="bfloat16",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama4_golden/2/fbb8ae9654ca68a7066e05944eda991b5365821adabbe9bf210f5cbfaad6512f/torch_llama4_golden.tar.gz",
@@ -809,7 +811,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
         run=_make_pipeline_runner(
-            pipeline="mistral",
+            pipeline="mistralai/Mistral-Nemo-Instruct-2407",
             encoding="bfloat16",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_mistral_golden/1/6f4718625a01e6e8b9f002a0bfdad8098cfe78ce50b9cd4175f27b1f020b405a/torch_mistral_golden.tar.gz",
@@ -824,7 +826,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
         run=_make_pipeline_runner(
-            pipeline="mistral3",
+            pipeline="mistralai/Mistral-Small-3.1-24B-Instruct-2503",
             encoding="bfloat16",
             cos_dist_threshold=3.0e-03,
             kl_div_threshold=5.2e-3,
@@ -834,7 +836,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
         run=_make_pipeline_runner(
-            pipeline="llama3-vision",
+            pipeline="meta-llama/Llama-3.2-11B-Vision-Instruct",
             encoding="bfloat16",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama3-vision_golden/1/80e47cd8ba86f3c0f2c9768eb966136fc3e5974f5dd01177a7464338b85221d2/torch_llama3-vision_golden.tar.gz",
@@ -850,7 +852,7 @@ PIPELINES = {
         # TODO(KERN-1861): MI300x: Memory access fault by GPU node-2.
         tags=["nvidia-only"],
         run=_make_pipeline_runner(
-            pipeline="internvl3-1b-instruct",
+            pipeline="OpenGVLab/InternVL3-1B-Instruct",
             encoding="bfloat16",
             # TODO(MODELS-565): Fix InternVL correctness.
             cos_dist_threshold=3.7e-03,
@@ -861,7 +863,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-multi"],
         run=_make_pipeline_runner(
-            pipeline="internvl3-8b-instruct",
+            pipeline="OpenGVLab/InternVL3-8B-Instruct",
             encoding="bfloat16",
             # TODO(MODELS-565): Fix InternVL correctness.
             cos_dist_threshold=3.0e-1,
@@ -872,7 +874,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-multi"],
         run=_make_pipeline_runner(
-            pipeline="internvl3-14b-instruct",
+            pipeline="OpenGVLab/InternVL3-14B-Instruct",
             encoding="bfloat16",
             cos_dist_threshold=4.4e-03,
             kl_div_threshold=1.5e-02,
@@ -882,7 +884,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-multi"],
         run=_make_pipeline_runner(
-            pipeline="internvl3-38b-instruct",
+            pipeline="OpenGVLab/InternVL3-38B-Instruct",
             encoding="bfloat16",
             cos_dist_threshold=5.5e-03,
             kl_div_threshold=4.8e-02,
@@ -893,7 +895,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-multi"],
         run=_make_pipeline_runner(
-            pipeline="internvl3_5-8b-instruct",
+            pipeline="OpenGVLab/InternVL3_5-8B-Instruct",
             encoding="bfloat16",
             cos_dist_threshold=1.2e-2,
             kl_div_threshold=7.7e-03,
@@ -903,7 +905,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
         run=_make_pipeline_runner(
-            pipeline="pixtral",
+            pipeline="mistral-community/pixtral-12b",
             encoding="bfloat16",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_pixtral_golden/1/e2ec8c3693bf758df21d5673a35847df88307fb6568a851be531c53e6b18f710/torch_pixtral_golden.tar.gz",
@@ -917,7 +919,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-only"],  # TODO: Has much worse accuracy on AMD GPUs.
         run=_make_pipeline_runner(
-            pipeline="qwen",
+            pipeline="Qwen/Qwen2.5-7B-Instruct",
             encoding="bfloat16",
             cos_dist_threshold=2.7e-3,
             kl_div_threshold=1.7e-1,
@@ -927,7 +929,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=[],  # TODO(MODELS-803) Errors on 4x GPU
         run=_make_pipeline_runner(
-            pipeline="qwen2.5-vl-3b",
+            pipeline="Qwen/Qwen2.5-VL-3B-Instruct",
             encoding="bfloat16",
             cos_dist_threshold=1.9e00,
             kl_div_threshold=1.5e01,
@@ -937,7 +939,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-multi"],
         run=_make_pipeline_runner(
-            pipeline="qwen2.5-vl-7b",
+            pipeline="Qwen/Qwen2.5-VL-7B-Instruct",
             encoding="bfloat16",
             cos_dist_threshold=7.0e-2,
             kl_div_threshold=2.5e-1,
@@ -947,7 +949,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-multi"],
         run=_make_pipeline_runner(
-            pipeline="qwen2.5-vl-32b",
+            pipeline="Qwen/Qwen2.5-VL-32B-Instruct",
             encoding="bfloat16",
             cos_dist_threshold=7.0e-2,
             kl_div_threshold=2.6e-1,
@@ -958,7 +960,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["big", "nvidia-only"],  # TODO: Attention is broken on AMD.
         run=_make_pipeline_runner(
-            pipeline="qwen3",
+            pipeline="Qwen/Qwen3-8B",
             encoding="bfloat16",
             cos_dist_threshold=1.1e-3,
             kl_div_threshold=7.1e-3,
@@ -968,7 +970,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],
         run=_make_pipeline_runner(
-            pipeline="olmo2-7b",
+            pipeline="allenai/OLMo-2-1124-7B",
             encoding="float32",
             cos_dist_threshold=2.1e-5,
             kl_div_threshold=4.6e-7,
@@ -978,7 +980,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["big", "nvidia-only"],
         run=_make_pipeline_runner(
-            pipeline="idefics3-8b-llama3",
+            pipeline="HuggingFaceM4/Idefics3-8B-Llama3",
             encoding="bfloat16",
             # TODO: Accuracy is much worse on AMD.
             # so we might have an AMD kernel bug here
@@ -993,7 +995,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],
         run=_make_pipeline_runner(
-            pipeline="exaone",
+            pipeline="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
             encoding="float32",
             # TODO: Accuracy is much better on AMD.
             # so we might have an nvidia kernel bug here
@@ -1004,7 +1006,7 @@ PIPELINES = {
     "microsoft/Phi-3.5-mini-instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=_make_pipeline_runner(
-            pipeline="phi-3.5-mini",
+            pipeline="microsoft/Phi-3.5-mini-instruct",
             encoding="bfloat16",
             # TODO(MODELS-458): This model seems broken based on the thresholds
             cos_dist_threshold=1.6e-2,
@@ -1015,7 +1017,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
         run=_make_pipeline_runner(
-            pipeline="phi-4",
+            pipeline="microsoft/phi-4",
             encoding="bfloat16",
             cos_dist_threshold=9.8e-5,
             kl_div_threshold=6.9e-3,
@@ -1025,7 +1027,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-only"],
         run=_make_pipeline_runner(
-            pipeline="llama-gptq",
+            pipeline="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
             encoding="gptq",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama-gptq_golden/0/7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef/torch_llama-gptq_golden.tar.gz",
@@ -1039,7 +1041,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-only"],
         run=_make_pipeline_runner(
-            pipeline="llama-gptq-no-perm-idx",
+            pipeline="kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit",
             encoding="gptq",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama-gptq_golden/0/7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef/torch_llama-gptq_golden.tar.gz",
@@ -1054,7 +1056,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["big", "nvidia-only"],
         run=_make_pipeline_runner(
-            pipeline="deepseek-v2-lite",
+            pipeline="deepseek-ai/DeepSeek-V2-Lite-Chat",
             encoding="bfloat16",
             # TODO(MODELS-516): Investigate need for high tolerances here.
             # TODO(GENAI-216): Investigate non-deterministic output.
@@ -1067,7 +1069,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-only", "no-b200"],  # Times out on B200
         run=_make_pipeline_runner(
-            pipeline="deepseek-v3-small-random",
+            pipeline="kathywu95/deepseek-v3-small-random",
             encoding="bfloat16",
             cos_dist_threshold=9.4e-03,
             kl_div_threshold=2.7e-2,
@@ -1077,7 +1079,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-only", "no-h100"],  # B200 only
         run=_make_pipeline_runner(
-            pipeline="deepseek-v3-small-random-fp8",
+            pipeline="kathywu95/deepseek-v3-small-random-fp8",
             encoding="float8_e4m3fn",
             # Goldens generated using VLLM.
             # Script: https://gist.github.com/k-w-w/420b2d64283e83c1121f89d35027a1d6
@@ -1092,7 +1094,7 @@ PIPELINES = {
     "google/gemma-3-1b-it-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=_make_pipeline_runner(
-            pipeline="gemma3-1b",
+            pipeline="google/gemma-3-1b-it",
             encoding="bfloat16",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-1b_golden/1/31d4f0ff8f50b9ab0f877d8765114f6bc4ae73677d2cd2d6ce658866fabf15d4/torch_gemma3-1b_golden.tar.gz",
@@ -1106,7 +1108,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
         run=_make_pipeline_runner(
-            pipeline="gemma3-multimodal",
+            pipeline="google/gemma-3-12b-it",
             encoding="bfloat16",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-multimodal_golden/1/06d0fa8ed540ae7141a42c432af1661c85d31f8584d017345992df7a52c21ccb/torch_gemma3-multimodal_golden.tar.gz",
@@ -1122,7 +1124,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-multi"],
         run=_make_pipeline_runner(
-            pipeline="gemma3-27b",
+            pipeline="google/gemma-3-27b-it",
             encoding="bfloat16",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-27b_golden/0/d4747c90804cbfb6ee4ee06ec15c042dd436558354cfae819e0203d1c3610b38/torch_gemma3-27b_golden.tar.gz",
@@ -1136,7 +1138,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["big", "float8-support"],
         run=_make_pipeline_runner(
-            pipeline="gemma3-27b-float8-dynamic",
+            pipeline="RedHatAI/gemma-3-27b-it-FP8-dynamic",
             encoding="float8_e4m3fn",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_gemma3-27b_golden/1/1a619d49187cdce335f4492acab40fd950922748e6631c0478572344ff295efc/vllm_gemma3-27b_golden.tar.gz",
@@ -1151,7 +1153,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["big", "float8-support", "nvidia-multi"],
         run=_make_pipeline_runner(
-            pipeline="gemma3-27b-float8-dynamic",
+            pipeline="RedHatAI/gemma-3-27b-it-FP8-dynamic",
             encoding="float8_e4m3fn",
             pregenerated_torch_goldens=PregeneratedTorchGoldens(
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_gemma3-27b_golden/1/1a619d49187cdce335f4492acab40fd950922748e6631c0478572344ff295efc/vllm_gemma3-27b_golden.tar.gz",
@@ -1165,7 +1167,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         tags=["big", "tts"],  # TTS tag to identify text-to-speech models
         run=_make_pipeline_runner(
-            pipeline="llasa-8b",
+            pipeline="HKUSTAudio/Llasa-8B",
             encoding="bfloat16",
             cos_dist_threshold=1.5e-02,
             kl_div_threshold=7.5e-01,
@@ -1176,7 +1178,7 @@ PIPELINES = {
         # TODO: E2EOPT-698
         tags=["nvidia-only"],  # Small model (<8B params)
         run=_make_pipeline_runner(
-            pipeline="smollm2-lora",
+            pipeline="HuggingFaceTB/SmolLM2-135M-Instruct",
             encoding="bfloat16",
             cos_dist_threshold=2.7e-03,
             kl_div_threshold=7.5e-03,
