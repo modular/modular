@@ -72,6 +72,7 @@ class PrintKVCacheModel:
         if d
         not in [
             # Skip types unsupported on CPU.
+            DType.float4_e2m1fn,
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
             DType.float8_e5m2,
