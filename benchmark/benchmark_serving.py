@@ -1625,6 +1625,8 @@ def main(args: argparse.Namespace) -> None:
     else:
         num_requests = args.num_chat_sessions
 
+    # NOTE: args.output_lengths is a path to a YAML file, while output_lengths
+    # is a list of ints.
     if args.output_lengths is None:
         output_lengths = None
     elif os.path.exists(args.output_lengths):
@@ -1633,12 +1635,14 @@ def main(args: argparse.Namespace) -> None:
     else:
         output_lengths = [int(args.output_lengths)] * num_requests
 
+    # We should not be using / accessing args.output_lengths from here on out.
+
     input_requests: Sequence[SampledRequest] = []
     chat_sessions: Sequence[ChatSession] = []
     if isinstance(benchmark_dataset, CodeDebugBenchmarkDataset):
         # code_debug is a long-context dataset based on InfiniteBench
         if args.num_chat_sessions:
-            if args.output_lengths is not None:
+            if output_lengths is not None:
                 raise NotImplementedError(
                     "TODO: Add support for fixed output lengths with multi-turn"
                     " code-debug"
@@ -1653,8 +1657,7 @@ def main(args: argparse.Namespace) -> None:
                 tokenizer=tokenizer,
                 output_lengths=output_lengths,
                 shuffle=(
-                    args.output_lengths is None
-                    and not args.record_output_lengths
+                    output_lengths is None and not args.record_output_lengths
                 ),
             )
 
@@ -1663,9 +1666,7 @@ def main(args: argparse.Namespace) -> None:
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             output_lengths=output_lengths,
-            shuffle=(
-                args.output_lengths is None and not args.record_output_lengths
-            ),
+            shuffle=(output_lengths is None and not args.record_output_lengths),
         )
 
     elif isinstance(benchmark_dataset, SonnetBenchmarkDataset):
@@ -1732,9 +1733,7 @@ def main(args: argparse.Namespace) -> None:
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             output_lengths=output_lengths,
-            shuffle=(
-                args.output_lengths is None and not args.record_output_lengths
-            ),
+            shuffle=(output_lengths is None and not args.record_output_lengths),
         )
     elif isinstance(benchmark_dataset, ObfuscatedConversationsBenchmarkDataset):
         if output_lengths is None:
@@ -1763,9 +1762,7 @@ def main(args: argparse.Namespace) -> None:
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             output_lengths=output_lengths,
-            shuffle=(
-                args.output_lengths is None and not args.record_output_lengths
-            ),
+            shuffle=(output_lengths is None and not args.record_output_lengths),
             image_dir=args.batch_job_image_dir,
         )
     else:
