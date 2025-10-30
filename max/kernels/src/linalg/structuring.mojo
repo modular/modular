@@ -196,6 +196,11 @@ alias SMemBarrier = UnsafePointer[
 ]
 """Type alias for shared memory barrier pointer."""
 
+alias PipelineBarrier[num_pipeline_stages: Int] = SMemArrayType[
+    SharedMemBarrier, num_pipeline_stages
+]
+"""Type alias for shared memory pipeline barrier array."""
+
 
 @register_passable("trivial")
 struct SMemTileArrayType[
@@ -285,7 +290,7 @@ struct SMemArrayType[type: AnyType, size: Int]:
 
     @always_inline
     fn __getitem__[T: Intable](self, index: T) -> Self.ptr_type:
-        """Get element at index.
+        """Get a pointer to the element at index.
 
         Args:
             index: Element index.
@@ -293,7 +298,7 @@ struct SMemArrayType[type: AnyType, size: Int]:
         Returns:
             Pointer to element.
         """
-        return self.ptr + size_of[type]() * Int(index)
+        return self.ptr.offset(Int(index))
 
     @always_inline
     @staticmethod

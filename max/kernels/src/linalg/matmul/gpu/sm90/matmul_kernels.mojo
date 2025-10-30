@@ -46,7 +46,6 @@ from layout.tensor_core_async import (
     warpgroup_fence,
 )
 from layout.tma_async import (
-    SharedMemBarrier,
     TMATensorTile,
 )
 from memory import stack_allocation
@@ -63,6 +62,7 @@ from ....structuring import NVIDIASharedMemoryManager as SharedMemoryManager
 from ....structuring import (
     SMemTileType,
     RegTileType,
+    PipelineBarrier,
 )
 from .ring_buffer import RingBuffer, RingBufferConsumer, RingBufferProducer
 from .tile_loader import (
@@ -103,9 +103,7 @@ struct HopperMatmulSM90Kernel_SMem[
     alias CTile = Self.SMM.Tile[c_type, c_layout]
 
     # Pipeline barrier types - for producer/consumer synchronization
-    alias PipelineBarrier = Self.SMM.Array[
-        SharedMemBarrier, num_pipeline_stages
-    ]
+    alias PipelineBarrier = PipelineBarrier[num_pipeline_stages]
 
     # Tile iterators - cycle through pipeline stages
     var a_tiles: Self.ATileArray
@@ -412,8 +410,8 @@ struct HopperMatmulSM90Kernel[
     ]:
         """Create ring buffer for producer-consumer synchronization."""
         return Self.RingBuffer[tma_transfer](
-            smem.full_mbar.ptr,
-            smem.empty_mbar.ptr,
+            smem.full_mbar,
+            smem.empty_mbar,
             warp_group_thread_idx,
             smem.a_tiles,
             smem.b_tiles,
