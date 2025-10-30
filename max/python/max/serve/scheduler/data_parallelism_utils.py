@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 from max.interfaces import RequestID, TextGenerationInputs
-from max.nn.kv_cache import PagedKVCacheManager
+from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
 
 

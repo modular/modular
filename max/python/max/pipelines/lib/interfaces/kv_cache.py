@@ -21,10 +21,8 @@ from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import Pipeline
-from max.nn.kv_cache import (
-    KVCacheParams,
-    PagedKVCacheManager,
-)
+from max.kv_cache.paged_cache import PagedKVCacheManager
+from max.nn.kv_cache import KVCacheParams
 from transformers import AutoConfig
 
 if TYPE_CHECKING:

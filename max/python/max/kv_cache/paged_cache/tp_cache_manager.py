@@ -30,14 +30,17 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
     BufferType,
-    BufferValue,
     DeviceRef,
     Graph,
     TensorType,
     TensorValue,
 )
 from max.interfaces import RequestID, TextGenerationContext, get_blocking
-from max.interfaces.nested_iterable import NestedIterableDataclass
+from max.nn.kv_cache.cache_params import KVCacheParams
+from max.nn.kv_cache.manager import RaggedKVCacheInputs
+from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.nested_iterable import NestedIterableDataclass
+from max.nn.kv_cache.utils import build_max_lengths_tensor
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -46,10 +49,6 @@ from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
 
-from ..cache_params import KVCacheParams
-from ..manager import RaggedKVCacheInputs
-from ..metrics import KVCacheMetrics
-from ..utils import build_max_lengths_tensor
 from .block_copy_engine import BlockCopyEngine
 from .block_manager import BlockManager, InsufficientBlocksError
 
@@ -62,14 +61,6 @@ class PagedCacheInputSymbols(NestedIterableDataclass):
     cache_lengths: TensorType
     lookup_table: TensorType
     max_lengths: TensorType
-
-
-@dataclass
-class PagedCacheValues(NestedIterableDataclass):
-    kv_blocks: BufferValue
-    cache_lengths: TensorValue
-    lookup_table: TensorValue
-    max_lengths: TensorValue
 
 
 class _TPPagedKVCacheManager:

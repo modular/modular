@@ -29,7 +29,7 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
-from max.nn.kv_cache import (
+from max.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,

@@ -34,13 +34,13 @@ from max.interfaces import (
     TextGenerationContext,
     VLMTextGenerationContext,
 )
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
 )
 from max.support.math import ceildiv
 
-from .. import KVCacheMetrics
 from .block_copy_engine import BlockCopyEngine
 from .block_pool import BlockPool
 from .block_utils import KVCacheBlock, hash_request_tokens

@@ -27,7 +27,7 @@ from typing import Any
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
-from max.nn.kv_cache.paged_cache import ResetPrefixCacheFrontend
+from max.kv_cache.paged_cache import ResetPrefixCacheFrontend
 from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.pipelines.llm import (

@@ -37,22 +37,24 @@ from max.graph import (
 )
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import TextGenerationContext
-from max.interfaces.nested_iterable import NestedIterableDataclass
 from max.interfaces.request import RequestID
+from max.kv_cache import (
+    PagedCacheInputSymbols,
+    PagedKVCacheManager,
+    estimate_kv_cache_size,
+    infer_optimal_batch_size,
+    load_kv_manager,
+)
 from max.nn import LinearV1, ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheMetrics,
     KVCacheParams,
     KVCacheStrategy,
-    PagedCacheInputSymbols,
+    NestedIterableDataclass,
     PagedCacheValues,
-    PagedKVCacheManager,
     RaggedKVCacheInputs,
     build_max_lengths_tensor,
-    estimate_kv_cache_size,
-    infer_optimal_batch_size,
-    load_kv_manager,
 )
 from max.nn.layer import Layer
 from max.pipelines.core import TextAndVisionContext

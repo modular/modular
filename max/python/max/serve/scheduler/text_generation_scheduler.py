@@ -26,7 +26,7 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
-from max.nn.kv_cache import PagedKVCacheManager
+from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig, get_paged_manager
 from max.profiler import Tracer, traced

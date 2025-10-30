@@ -23,7 +23,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.nn.kv_cache import PagedKVCacheManager
+from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core.context import TextContext
 from max.pipelines.lib import LoRAManager
 from max.profiler import traced

@@ -6,6 +6,7 @@ modular_py_library(
     imports = ["../../.."],
     deps = [
         "//SDK/lib/API/python/max:_core",
+        "//SDK/lib/API/python/max/kv_cache",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/pipelines/core",

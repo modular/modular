@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 
-from max.nn.kv_cache import KVTransferEngineMetadata
+from max.kv_cache import KVTransferEngineMetadata
 from max.serve.kvcache_agent.dispatcher_v2 import (
     DispatcherClientV2,
     DispatcherServerV2,

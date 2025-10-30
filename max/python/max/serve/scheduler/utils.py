@@ -24,7 +24,7 @@ from max.interfaces import (
     TextGenerationInputs,
 )
 from max.interfaces.queue import drain_queue
-from max.nn.kv_cache import PagedKVCacheManager
+from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency

@@ -11,21 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .cache_params import KVCacheParams, KVCacheStrategy
-from .manager import KVCacheInputs, KVCacheInputsSequence, RaggedKVCacheInputs
-from .metrics import KVCacheMetrics
-from .nested_iterable import NestedIterableDataclass
-from .paged_cache import PagedCacheValues
-from .utils import build_max_lengths_tensor
+"""PagedCacheValues"""
 
-__all__ = [
-    "KVCacheInputs",
-    "KVCacheInputsSequence",
-    "KVCacheMetrics",
-    "KVCacheParams",
-    "KVCacheStrategy",
-    "NestedIterableDataclass",
-    "PagedCacheValues",
-    "RaggedKVCacheInputs",
-    "build_max_lengths_tensor",
-]
+from dataclasses import dataclass
+
+from max.graph import (
+    BufferValue,
+    TensorValue,
+)
+from max.nn.kv_cache.nested_iterable import NestedIterableDataclass
+
+
+@dataclass
+class PagedCacheValues(NestedIterableDataclass):
+    kv_blocks: BufferValue
+    cache_lengths: TensorValue
+    lookup_table: TensorValue
+    max_lengths: TensorValue

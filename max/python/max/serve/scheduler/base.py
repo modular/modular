@@ -15,7 +15,7 @@ from enum import Enum
 
 import msgspec
 from max.interfaces import RequestID
-from max.nn.kv_cache import TransferReqData
+from max.kv_cache import TransferReqData
 from max.pipelines.core import TextAndVisionContext, TextContext
 
 

@@ -30,6 +30,7 @@ from max.graph import (
     ops,
 )
 from max.graph.ops.allreduce import matmul_allreduce
+from max.kv_cache import PagedKVCacheManager
 from max.nn import (
     MLP,
     ColumnParallelLinear,
@@ -49,7 +50,7 @@ from max.nn.attention.multi_latent_attention_fp8 import (
 from max.nn.comm.allreduce import Allreduce
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
-from max.nn.kv_cache import PagedCacheValues, PagedKVCacheManager
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.moe import MoE, MoEFp8
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,

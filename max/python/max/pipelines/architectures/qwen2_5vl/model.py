@@ -33,14 +33,16 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
+from max.kv_cache import (
+    PagedKVCacheManager,
+    estimate_kv_cache_size,
+    load_kv_manager,
+)
 from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
 )
 from max.nn.parallel import ParallelArrayOps
 from max.pipelines.core import TextAndVisionContext

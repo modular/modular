@@ -21,6 +21,7 @@ from collections import defaultdict
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
+from max.kv_cache import PagedKVCacheManager
 from max.nn import (
     MLP,
     ColumnParallelLinear,
@@ -32,7 +33,6 @@ from max.nn import (
     TensorParallelAttentionWithRope,
     VocabParallelEmbedding,
 )
-from max.nn.kv_cache import PagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
 from .model_config import Llama3Config, create_rope_embedding

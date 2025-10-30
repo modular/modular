@@ -27,7 +27,7 @@ from max.interfaces import (
     PipelineOutputType,
     PipelinesFactory,
 )
-from max.nn.kv_cache.paged_cache import ResetPrefixCacheBackend
+from max.kv_cache.paged_cache import ResetPrefixCacheBackend
 from max.pipelines.lib import PipelineConfig, PipelineModel, get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings

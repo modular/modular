@@ -10,30 +10,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from __future__ import annotations
 
-from .cache_manager import PagedKVCacheManager
-from .tp_cache_manager import (
-    PagedCacheInputSymbols,
-    PagedCacheValues,
-    ResetPrefixCacheBackend,
-    ResetPrefixCacheFrontend,
-)
-from .transfer_engine import (
+from .paged_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
+    PagedCacheInputSymbols,
+    PagedKVCacheManager,
     TransferReqData,
     available_port,
+)
+from .registry import (
+    estimate_kv_cache_size,
+    infer_optimal_batch_size,
+    load_kv_manager,
 )
 
 __all__ = [
     "KVTransferEngine",
     "KVTransferEngineMetadata",
     "PagedCacheInputSymbols",
-    "PagedCacheValues",
     "PagedKVCacheManager",
-    "ResetPrefixCacheBackend",
-    "ResetPrefixCacheFrontend",
     "TransferReqData",
     "available_port",
+    "estimate_kv_cache_size",
+    "infer_optimal_batch_size",
+    "load_kv_manager",
 ]

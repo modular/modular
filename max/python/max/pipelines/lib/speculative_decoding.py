@@ -42,11 +42,11 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
+from max.kv_cache import PagedKVCacheManager
 from max.nn import ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
-    PagedKVCacheManager,
 )
 from max.pipelines.core import TextContext
 from max.profiler import traced

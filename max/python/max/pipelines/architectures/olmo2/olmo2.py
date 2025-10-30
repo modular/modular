@@ -18,6 +18,7 @@ from collections.abc import Callable
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
+from max.kv_cache import PagedKVCacheManager
 from max.nn import (
     MLP,
     Embedding,
@@ -27,7 +28,6 @@ from max.nn import (
     RMSNorm,
     Transformer,
 )
-from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.architectures.llama3.llama3 import StackedMLP
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.olmo2.layers.attention import Olmo2Attention

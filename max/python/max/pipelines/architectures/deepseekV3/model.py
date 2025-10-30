@@ -25,14 +25,16 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.kv_cache import (
+    PagedKVCacheManager,
+    load_kv_manager,
+)
 from max.nn import ReturnLogits, Signals
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.float8_config import parse_float8_config
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
-    PagedKVCacheManager,
-    load_kv_manager,
 )
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (

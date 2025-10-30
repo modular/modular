@@ -30,10 +30,8 @@ from max.interfaces import (
     BaseContextType,
     LogProbabilities,
 )
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    infer_optimal_batch_size,
-)
+from max.kv_cache import infer_optimal_batch_size
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
 from transformers import AutoConfig
 

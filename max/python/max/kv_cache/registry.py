@@ -17,8 +17,8 @@ from typing import Any
 
 from max.driver import Device
 from max.engine import InferenceSession
+from max.nn.kv_cache.cache_params import KVCacheParams, KVCacheStrategy
 
-from .cache_params import KVCacheParams, KVCacheStrategy
 from .paged_cache import PagedKVCacheManager
 
 CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[PagedKVCacheManager]] = {
