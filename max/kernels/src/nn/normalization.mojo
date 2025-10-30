@@ -2211,7 +2211,7 @@ fn group_norm_gpu_warp_tiling[
 
         if idx + simd_width <= group_size:
             var g = row % UInt(num_groups)
-            var c_base = g * UInt(channels_per_group)
+            var c_base = g * channels_per_group
             var norm_val = SIMD[accum_type, simd_width]()
             for i in range(simd_width):
                 var offset = (idx + i) // spatial

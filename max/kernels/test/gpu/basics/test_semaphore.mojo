@@ -25,7 +25,7 @@ fn test_named_barrier_semaphore_equal_kernel(
     shared_ptr: UnsafePointer[Int32],
 ):
     var sema = NamedBarrierSemaphore[Int32(NUM_THREADS), 4, 1](
-        locks_ptr, thread_idx.x
+        locks_ptr, Int(thread_idx.x)
     )
 
     sema.wait_eq(0, block_idx.x)
@@ -69,7 +69,7 @@ fn test_named_barrier_semaphore_less_than_kernel(
     shared_ptr: UnsafePointer[Int32],
 ):
     var sema = NamedBarrierSemaphore[Int32(NUM_THREADS), 4, 1](
-        locks_ptr, thread_idx.x
+        locks_ptr, Int(thread_idx.x)
     )
 
     sema.wait_lt(0, block_idx.x)

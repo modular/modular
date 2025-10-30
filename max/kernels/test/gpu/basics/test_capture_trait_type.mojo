@@ -40,7 +40,7 @@ def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int):
     @parameter
     @__copy_capture(thing)
     fn kernel_fn():
-        var idx = thread_idx.x
+        var idx = Int(thread_idx.x)
         print(Float32(thing.get_val(idx)) * 2)
 
     alias kernel = kernel_fn
