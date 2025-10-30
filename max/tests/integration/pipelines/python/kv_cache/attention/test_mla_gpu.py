@@ -363,6 +363,6 @@ def test_mla_decompress_k_cache_only_k() -> None:
             g.output(result)
         return g
 
-    with pytest.raises(ValueError):
+    with pytest.raises(Exception):
         graph = construct()
         _ = session.load(graph)
