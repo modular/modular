@@ -15,6 +15,7 @@
 import numpy as np
 import pytest
 from conftest import (
+    constant_float_dtypes,
     float_dtypes,
     int_value_in_range,
     integral_dtypes,
@@ -43,7 +44,7 @@ def test_promote_weak_dtypes__python_float__int_dtype(
             )
 
 
-@given(dtype=float_dtypes(), scalar=...)
+@given(dtype=constant_float_dtypes(), scalar=...)
 def test_promote_weak_dtypes__python_float(dtype: DType, scalar: float) -> None:
     with Graph("promote_weak_dtypes"):
         result = dtype_promotion._promote_to_strong(
@@ -76,7 +77,7 @@ def test_promote_weak_dtypes__python_int__out_of_range(
             )
 
 
-@given(dtype=float_dtypes(), scalar=...)
+@given(dtype=constant_float_dtypes(), scalar=...)
 def test_promote_weak_dtypes__numpy_float(dtype: DType, scalar: float) -> None:
     with Graph("promote_weak_dtypes"):
         np_const = np.array(scalar)

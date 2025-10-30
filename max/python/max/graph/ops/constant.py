@@ -76,6 +76,11 @@ def constant(
         A graph value containing the constant data as an attribute.
     """
 
+    if dtype is not None and dtype.size_in_bits < 8:
+        raise TypeError(
+            f"Cannot create a constant of type '{dtype}' since it is a sub-byte type."
+        )
+
     if not isinstance(value, DLPackArray):
         if dtype is None or device is None:
             raise TypeError(
@@ -150,6 +155,7 @@ _DTYPE_MIN_AND_MAX = {
     DType.uint16: (0, 2**16 - 1),
     DType.uint32: (0, 2**32 - 1),
     DType.uint64: (0, 2**64 - 1),
+    DType.float4_e2m1fn: (-0b0111, 0b0111),
     DType.float8_e5m2: (float("-inf"), float("inf")),
     DType.float8_e5m2fnuz: (-57344, 57344),
     DType.float8_e4m3fn: (-448, 448),

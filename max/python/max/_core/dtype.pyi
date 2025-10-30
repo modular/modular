@@ -69,6 +69,11 @@ class DType(enum.Enum):
     16-bit bfloat16 (Brain Float) format. 1 sign bit, 8 exponent bits, 7 mantissa bits.
     """
 
+    float4_e2m1fn = 64
+    """
+    4-bit floating-point with 2 exponent bits and 1 mantissa bits, finite values only.
+    """
+
     float8_e4m3fn = 75
     """
     8-bit floating-point with 4 exponent bits and 3 mantissa bits, finite values only.
@@ -94,6 +99,15 @@ class DType(enum.Enum):
 
         The alignment specifies the memory boundary that values of this data type
         must be aligned to for optimal performance and correctness.
+        """
+
+    @property
+    def size_in_bits(self) -> int:
+        """
+        Returns the size of the data type in bits.
+
+        This indicates how many bits are required to store a single value
+        of this data type in memory.
         """
 
     @property

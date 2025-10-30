@@ -115,6 +115,7 @@ _DTYPE_TO_MLIR = {
     DType.uint16: "ui16",
     DType.uint32: "ui32",
     DType.uint64: "ui64",
+    DType.float4_e2m1fn: "f4e2m1fn",
     DType.float8_e4m3fn: "f8e4m3fn",
     DType.float8_e4m3fnuz: "f8e4m3fnuz",
     DType.float8_e5m2: "f8e5m2",

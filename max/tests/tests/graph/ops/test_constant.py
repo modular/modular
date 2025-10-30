@@ -15,7 +15,7 @@ import re
 
 import numpy as np
 import pytest
-from conftest import float_dtypes, integral_dtypes
+from conftest import constant_float_dtypes, integral_dtypes
 from hypothesis import given
 from max.driver import Tensor
 from max.dtype import DType
@@ -117,7 +117,7 @@ def test_constant_transpose() -> None:
         assert "0, 3, 1, 4, 2, 5" in str(graph._mlir_op)
 
 
-@given(dtype=float_dtypes())
+@given(dtype=constant_float_dtypes())
 def test_scalar_constant_float(dtype: DType) -> None:
     with Graph("scalar", input_types=()) as graph:
         const = ops.constant(7.2, dtype, device=DeviceRef.CPU())
@@ -130,7 +130,7 @@ def test_scalar_constant_float(dtype: DType) -> None:
         assert match.group(1).lower() == dtype._mlir
 
 
-@given(dtype=float_dtypes())
+@given(dtype=constant_float_dtypes())
 def test_scalar_constant_float_negative(dtype: DType) -> None:
     with Graph("scalar", input_types=()) as graph:
         const = ops.constant(-1.0, dtype, device=DeviceRef.CPU())

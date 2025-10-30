@@ -128,6 +128,15 @@ alias Int256 = Scalar[DType.int256]
 alias UInt256 = Scalar[DType.uint256]
 """Represents a 256-bit unsigned scalar integer."""
 
+alias Float4_e2m1fn = Scalar[DType.float4_e2m1fn]
+"""Represents a 4-bit `e2m1` floating point format, encoded as
+`s.ee.m` and defined by the [Open Compute MX Format Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf):
+
+- (s)ign: 1 bit
+- (e)xponent: 2 bits
+- (m)antissa: 1 bits
+- exponent_bias: 1
+"""
 alias Float8_e5m2 = Scalar[DType.float8_e5m2]
 """Represents the 8-bit E5M2 floating point format from the [OFP8
 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),

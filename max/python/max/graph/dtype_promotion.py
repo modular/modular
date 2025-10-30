@@ -183,6 +183,7 @@ _DTYPE_MIN_AND_MAX_FULL_PRECISION = {
     DType.uint16: (0, 2**16 - 1),
     DType.uint32: (0, 2**32 - 1),
     DType.uint64: (0, 2**64 - 1),
+    DType.float4_e2m1fn: (-(1.5 * 2**2), (1.5 * 2**2)),
     DType.float8_e5m2: (-(1.10 * 2**16), 1.10 * 2**16),
     DType.float8_e5m2fnuz: (-(1.75 * 2**15), 1.75 * 2**15),
     DType.float8_e4m3fn: (-(1.75 * 2**8), 1.75 * 2**8),

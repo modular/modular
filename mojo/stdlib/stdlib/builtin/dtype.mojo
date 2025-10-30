@@ -172,6 +172,18 @@ struct DType(
     )
     """Represents a signed integer type whose bitwidth is 256."""
 
+    alias float4_e2m1fn = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f4e2m1fn> : !kgen.dtype`
+    )
+    """Represents a 4-bit `e2m1` floating point format, encoded as
+    `s.ee.m` and defined by the [Open Compute MX Format Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf):
+
+    - (s)ign: 1 bit
+    - (e)xponent: 2 bits
+    - (m)antissa: 1 bits
+    - exponent_bias: 1
+    """
+
     alias float8_e3m4 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e3m4> : !kgen.dtype`
     )
