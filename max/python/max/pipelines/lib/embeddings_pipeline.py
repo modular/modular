@@ -74,6 +74,7 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         # Initialize Session.
         devices = load_devices(self._pipeline_config.model_config.device_specs)
         session = InferenceSession(devices=devices)
+        self._pipeline_config.configure_session(session)
 
         if not self._pipeline_config.model_config.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
