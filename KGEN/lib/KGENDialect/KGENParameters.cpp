@@ -900,9 +900,9 @@ void ParameterUseDefGraph::calculate(ParameterCollector::Analysis &cache) {
 }
 
 LogicalResult
-ParameterUseDefGraph::verify(SymTabEvaluationContext &evaluationContext,
+ParameterUseDefGraph::verify(SymTabEvaluationContext *evaluationContext,
                              ParameterCollector::Analysis &cache) {
-  return calculateOrVerify(&evaluationContext, cache);
+  return calculateOrVerify(evaluationContext, cache);
 }
 
 ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) const {
