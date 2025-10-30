@@ -212,6 +212,23 @@ kgen.generator @global_alloc() -> !kgen.pointer<i8, 2> {
   kgen.return %0 : !kgen.pointer<i8, 2>
 }
 
+kgen.generator @simd_xor_fold_0() -> !pop.scalar<uindex> {
+  %0 = kgen.param.constant: scalar<uindex> = <0>
+  %2 = kgen.param.constant: scalar<index> = <-1>
+  %3 = pop.cast %2 : !pop.scalar<index> to !pop.scalar<uindex>
+  %4 = pop.simd.xor %3, %0 : !pop.scalar<uindex>
+  kgen.return %4: !pop.scalar<uindex>
+}
+
+kgen.generator @simd_xor_fold_1() -> !pop.scalar<bool> {
+  %0 = kgen.param.constant: scalar<bool> = <true>
+  %1 = kgen.param.constant: scalar<index> = <1>
+  %x = pop.cast %1 : !pop.scalar<index> to !pop.scalar<bool>
+  %2 = pop.simd.xor %x, %0 : !pop.scalar<bool>
+  %3 = pop.simd.xor %2, %0 : !pop.scalar<bool>
+  kgen.return %3: !pop.scalar<bool>
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -374,6 +391,12 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: constant: pointer<i8, 2> = <#interp.memref<{[([[GLOBAL_ALLOC]], persistent, [], [], 2)], []}, 0, 0>>
   kgen.param.constant: pointer<i8, 2> = <apply(:() -> !kgen.pointer<i8, 2> @global_alloc)>
+
+  // CHECK-NEXT: constant: scalar<uindex> = <-1>
+  kgen.param.constant: scalar<uindex> = <apply(:() -> !pop.scalar<uindex> @simd_xor_fold_0)>
+
+  // CHECK-NEXT: constant: scalar<bool> = <true>
+  kgen.param.constant: scalar<bool> = <apply(:() -> !pop.scalar<bool> @simd_xor_fold_1)>
 
   kgen.return
 }

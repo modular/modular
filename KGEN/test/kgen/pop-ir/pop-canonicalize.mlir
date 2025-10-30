@@ -555,6 +555,17 @@ kgen.func @not_not(%arg0: !pop.scalar<bool>) ->!pop.scalar<bool>{
   kgen.return %2 : !pop.scalar<bool>
 }
 
+// CHECK-LABEL: @not_not_const
+kgen.func @not_not_const() ->!pop.scalar<bool>{
+  %arg0 = kgen.param.constant: scalar<bool> = <false>
+  %0 = kgen.param.constant: scalar<bool> = <true>
+  %1 = pop.simd.xor %arg0, %0 : !pop.scalar<bool>
+  %2 = pop.simd.xor %1, %0 : !pop.scalar<bool>
+  // CHECK-NEXT: %simd = kgen.param.constant: scalar<bool> = <false>
+  // CHECK-NEXT: return %simd
+  kgen.return %2 : !pop.scalar<bool>
+}
+
 // CHECK-LABEL: @bool_and
 kgen.func @bool_and() -> i1 {
   // CHECK-NEXT: <1>
