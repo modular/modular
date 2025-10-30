@@ -15,13 +15,15 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import ImageMetadata, RequestID
+from max.kv_cache import (
+    PagedKVCacheManager,
+)
+from max.kv_cache.paged_cache.block_manager import InsufficientBlocksError
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
-    PagedKVCacheManager,
     RaggedKVCacheInputs,
 )
-from max.nn.kv_cache.paged_cache.block_manager import InsufficientBlocksError
 from max.pipelines.core import TextAndVisionContext, TextContext
 from test_common.context_utils import create_text_context
 

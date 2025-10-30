@@ -12,7 +12,7 @@ import pytest
 from max.driver import CPU, Accelerator
 from max.driver.tensor import Tensor
 from max.dtype import DType
-from max.nn.kv_cache import KVTransferEngine
+from max.kv_cache import KVTransferEngine
 
 
 def test_constructor() -> None:

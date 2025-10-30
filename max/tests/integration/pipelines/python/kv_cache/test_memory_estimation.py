@@ -7,7 +7,8 @@
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
+from max.kv_cache import PagedKVCacheManager
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
 from max.support.math import ceildiv
 
 

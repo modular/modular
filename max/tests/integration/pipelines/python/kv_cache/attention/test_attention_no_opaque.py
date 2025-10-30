@@ -23,14 +23,14 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.interfaces.nested_iterable import NestedIterableDataclass
+from max.kv_cache import PagedKVCacheManager
 from max.nn.attention.attention_with_rope import (
     AttentionWithRope,
     AttentionWithRopeNoOpaque,
     Module,
     PagedKVCacheTensorsNoOpaque,
 )
-from max.nn.kv_cache import PagedCacheValues, PagedKVCacheManager
+from max.nn.kv_cache import NestedIterableDataclass, PagedCacheValues
 from max.nn.kv_cache.cache_params import KVCacheParams, KVCacheStrategy
 from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context

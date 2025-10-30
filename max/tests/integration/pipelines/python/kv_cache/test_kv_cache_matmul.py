@@ -17,6 +17,9 @@ from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.kv_cache import (
+    PagedKVCacheManager,
+)
 from max.mlir import StringAttr
 from max.nn.kernels import (
     fused_qkv_ragged_matmul,
@@ -27,7 +30,6 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    PagedKVCacheManager,
 )
 from max.pipelines import TextContext
 from modular_graph_test import modular_graph_test

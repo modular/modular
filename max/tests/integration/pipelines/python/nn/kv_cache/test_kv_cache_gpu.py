@@ -10,11 +10,11 @@ import numpy as np
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.kv_cache import load_kv_manager
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     KVCacheStrategy,
-    load_kv_manager,
 )
 from test_common.context_utils import create_text_context
 

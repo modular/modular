@@ -12,6 +12,9 @@ from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
+from max.kv_cache import (
+    PagedKVCacheManager,
+)
 from max.nn import (
     Float8Config,
     Float8InputScaleSpec,
@@ -24,7 +27,6 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    PagedKVCacheManager,
 )
 from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context

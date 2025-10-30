@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 from max.driver import CPU, Device
 from max.driver.tensor import Tensor
-from max.nn.kv_cache import (
+from max.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     TransferReqData,

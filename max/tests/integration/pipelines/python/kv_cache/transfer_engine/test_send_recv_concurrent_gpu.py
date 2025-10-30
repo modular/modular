@@ -11,7 +11,7 @@ import time
 import numpy as np
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
-from max.nn.kv_cache import KVTransferEngine, TransferReqData
+from max.kv_cache import KVTransferEngine, TransferReqData
 
 """
 This test launches 32 concurrent transfers at once.

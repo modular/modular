@@ -23,12 +23,14 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.graph.weights.weights import _cast_to_dtype
+from max.kv_cache import (
+    PagedKVCacheManager,
+)
 from max.nn import AttentionWithRopeAndLoRA, LinearLoRA, RotaryEmbedding
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    PagedKVCacheManager,
 )
 from test_common.context_utils import create_text_context
 

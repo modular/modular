@@ -15,12 +15,14 @@ from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.kv_cache import (
+    PagedKVCacheManager,
+    load_kv_manager,
+)
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    PagedKVCacheManager,
-    load_kv_manager,
 )
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines import KVCacheConfig

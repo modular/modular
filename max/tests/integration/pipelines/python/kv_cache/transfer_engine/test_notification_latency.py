@@ -16,7 +16,7 @@ from typing import Any
 
 import numpy as np
 from max.driver import CPU, Tensor
-from max.nn.kv_cache import KVTransferEngine
+from max.kv_cache import KVTransferEngine
 
 
 def test_notification_delivery_is_prompt() -> None:

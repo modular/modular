@@ -1,0 +1,95 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+modular_py_test(
+    name = "kvcache_tests",
+    srcs = glob(
+        ["*.py"],
+        exclude = [
+            "*_gpu.py",
+            "test_rotary_embedding.py",
+        ],
+    ),
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/kv_cache",
+        "//SDK/lib/API/python/max/nn",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "embedding",
+    srcs = glob(
+        ["*_rotary_embedding.py"],
+    ) + ["conftest.py"],
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/kv_cache",
+        "//SDK/lib/API/python/max/nn",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "kvcache_gpu_tests",
+    srcs = glob(
+        ["*_gpu.py"],
+        exclude = ["*_distributed_gpu.py"],
+    ) + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1.2",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = ["gpu"],
+    deps = [
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/kv_cache",
+        "//SDK/lib/API/python/max/nn",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "kvcache_distributed_gpu_tests",
+    srcs = glob(["*_distributed_gpu.py"]) + ["conftest.py"],
+    gpu_constraints = ["//:has_4_gpus"],
+    tags = ["gpu"],
+    deps = [
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/kv_cache",
+        "//SDK/lib/API/python/max/nn",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("torch"),
+    ],
+)

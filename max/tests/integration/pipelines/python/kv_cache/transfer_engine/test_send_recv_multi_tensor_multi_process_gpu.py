@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
-from max.nn.kv_cache import KVTransferEngine
+from max.kv_cache import KVTransferEngine
 
 
 def transfer_routine_sender(

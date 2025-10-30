@@ -16,6 +16,10 @@ from max.driver import CPU, Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
+from max.kv_cache import (
+    PagedKVCacheManager,
+    load_kv_manager,
+)
 from max.nn import LinearV1, RMSNormV1
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import (
@@ -27,8 +31,6 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    PagedKVCacheManager,
-    load_kv_manager,
 )
 from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
     CrossSdpaAttention,

@@ -12,7 +12,7 @@ from threading import Thread
 import numpy as np
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
-from max.nn.kv_cache import (
+from max.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     TransferReqData,

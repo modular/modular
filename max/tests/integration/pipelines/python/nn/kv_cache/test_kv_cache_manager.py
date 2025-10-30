@@ -10,7 +10,8 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import RequestID
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, load_kv_manager
+from max.kv_cache import load_kv_manager
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
 from test_common.context_utils import create_text_context
 
 

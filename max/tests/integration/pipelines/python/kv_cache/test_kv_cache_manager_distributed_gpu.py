@@ -11,12 +11,14 @@ import pytest
 from max.driver import Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.kv_cache import (
+    PagedKVCacheManager,
+    load_kv_manager,
+)
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
-    PagedKVCacheManager,
     RaggedKVCacheInputs,
-    load_kv_manager,
 )
 from test_common.context_utils import create_text_context
 

@@ -12,12 +12,14 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights.weights import _cast_to_dtype
+from max.kv_cache import (
+    PagedKVCacheManager,
+)
 from max.nn.kernels import kv_cache_ragged_radd
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    PagedKVCacheManager,
 )
 from test_common.context_utils import create_text_context
 

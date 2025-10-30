@@ -14,13 +14,15 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask, TextGenerationContext
+from max.kv_cache import (
+    PagedKVCacheManager,
+    estimate_kv_cache_size,
+    load_kv_manager,
+)
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     KVCacheStrategy,
-    PagedKVCacheManager,
-    estimate_kv_cache_size,
-    load_kv_manager,
 )
 from max.pipelines import (
     KVCacheConfig,
