@@ -310,26 +310,32 @@ fn choose_config[
     var min_num_waves = Int.MAX
     var swapAB = M <= 128
     var k_group_size = 1
+
     # For M <= 128, swap A and B and use cta_group = 1
-    # The min mma_n we support for cta_group = 1 is 32 for now.
-    # TODO: support mma_n = 8, 16
     if M <= 128:
-        mma_mn[1] = max(next_power_of_two(M), 16)
+        # When using the swapAB kernel with 1SM we can have find-grained (multiple of 8) tiling on the M dimension.
+        # Using any tile size larger than align_up(M, 8) will result in under-utilization of the SMs as tensor cores will work
+        # on zeroed out elements (i.e., m >= M).
+        var max_mma_n = align_up(M, 8)
         for bm in [64, 128]:
-            num_ctas = ceildiv(M, mma_mn[1]) * ceildiv(N, bm)
-            num_waves = ceildiv(num_ctas, num_SMs)
-            if num_waves < min_num_waves or (
-                num_waves == min_num_waves and bm < mma_mn[0]
-            ):
-                min_num_waves = num_waves
-                mma_mn[0] = bm
+            for mma_n in range(8, max_mma_n + 1, 8):
+                num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm)
+                num_waves = ceildiv(num_ctas, num_SMs)
 
-    var BK = 128 // a_type.size_of()
-    if mma_mn[0] == 64 and mma_mn[1] <= 64:
-        if ceildiv(K, BK) % 2 == 0:
-            k_group_size = 2
+                if num_waves < min_num_waves or (
+                    num_waves == min_num_waves
+                    and bm * mma_n < mma_mn[0] * mma_mn[1]
+                ):
+                    min_num_waves = num_waves
+                    mma_mn[0] = bm
+                    mma_mn[1] = mma_n
 
-    # Travers possible combinations of BM x MMA_N to choose the one minizes the
+        var BK = 128 // a_type.size_of()
+        if mma_mn[0] == 64 and mma_mn[1] <= 64:
+            if ceildiv(K, BK) % 2 == 0:
+                k_group_size = 2
+
+    # Travers possible combinations of BM x MMA_N to choose the one minimizes the
     # workload per SM. The computation per SM is the flops (ignoring 2x in 2MNK)
     # timed by max number of ctas per SM i.e. number of waves.
     else:
