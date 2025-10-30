@@ -1,7 +1,7 @@
 """A helper macro for running python tests with pytest"""
 
 load("@rules_python//python:defs.bzl", "py_test")
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", requirement = "pip_requirement")
 load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
@@ -56,22 +56,10 @@ def modular_py_test(
     if not main and not has_test:
         fail("At least 1 file in modular_py_test must start with 'test_' for pytest to discover them")
 
-    extra_env = {
+    extra_env = runtime_sanitizer_env() | {
         "PYTHONUNBUFFERED": "set",
-    } | select({
-        "//:asan_linux_x86_64": {"LD_PRELOAD": "$(location @clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so)"},
-        "//:asan_linux_aarch64": {"LD_PRELOAD": "$(location @clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so)"},
-        "//conditions:default": {},
-    })
-    extra_data = select({
-        "//:asan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so"],
-        "//:asan_linux_aarch64": ["@clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so"],
-        "//conditions:default": [],
-    }) + select({
-        "//:asan": ["@//bazel/internal:lsan-suppressions.txt"],
-        "//conditions:default": [],
-    })
-
+    }
+    extra_data = RUNTIME_SANITIZER_DATA
     transitive_mojo_deps = name + ".mojo_deps"
     collect_transitive_mojoinfo(
         name = transitive_mojo_deps,

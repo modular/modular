@@ -1,6 +1,6 @@
 """A test rule that runs a given modular_py_binary target."""
 
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load(":binary_test.bzl", "binary_test")
 
 def modular_run_binary_test(
@@ -33,32 +33,11 @@ def modular_run_binary_test(
 
     validate_gpu_tags(tags, gpu_constraints)
 
-    extra_env = select({
-        "//:asan_linux_x86_64": {
-            "LD_PRELOAD": "$(rootpath @clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so)",
-        },
-        "//:asan_linux_aarch64": {
-            "LD_PRELOAD": "$(rootpath @clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so)",
-        },
-        "//conditions:default": {},
-    })
-    extra_data = select({
-        "//:asan_linux_x86_64": [
-            "@clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so",
-            "@//bazel/internal:lsan-suppressions.txt",
-        ],
-        "//:asan_linux_aarch64": [
-            "@clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so",
-            "@//bazel/internal:lsan-suppressions.txt",
-        ],
-        "//conditions:default": [],
-    })
-
     binary_test(
         name = name,
         binary = binary,
-        data = extra_data + data,
-        env = GPU_TEST_ENV | get_default_test_env(exec_properties) | env_for_available_tools() | extra_env | env,
+        data = RUNTIME_SANITIZER_DATA + data,
+        env = GPU_TEST_ENV | get_default_test_env(exec_properties) | runtime_sanitizer_env(location_specifier = "rootpath") | env_for_available_tools() | env,
         tags = tags,
         target_compatible_with = target_compatible_with + gpu_constraints,
         exec_properties = get_default_exec_properties(tags, gpu_constraints) | exec_properties,

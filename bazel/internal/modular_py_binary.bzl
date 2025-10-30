@@ -1,7 +1,7 @@
 """A helper macro for python scripts which helps setup various runtime dependencies."""
 
 load("@rules_python//python:defs.bzl", "py_binary")
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "env_for_available_tools")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "runtime_sanitizer_env")  # buildifier: disable=bzl-visibility
 load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
 load(":mojo_test_environment.bzl", "mojo_test_environment")
@@ -44,14 +44,7 @@ def modular_py_binary(
         "@//bazel/internal:lib_toolchain",
         mojo_test_env_name,
     ]
-    extra_data = select({
-        "@//:asan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so"],
-        "@//:asan_linux_aarch64": ["@clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so"],
-        "//conditions:default": [],
-    }) + select({
-        "@//:asan": ["@//bazel/internal:lsan-suppressions.txt"],
-        "//conditions:default": [],
-    }) + [
+    extra_data = RUNTIME_SANITIZER_DATA + [
         mojo_test_env_name,
     ]
     extra_env = {
@@ -62,11 +55,7 @@ def modular_py_binary(
         "MODULAR_MOJO_MAX_LINKER_DRIVER": "$(MOJO_LINKER_DRIVER)",
         "MODULAR_MOJO_MAX_LLD_PATH": "$(LLD_PATH)",
         "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
-    } | select({
-        "@//:asan_linux_x86_64": {"LD_PRELOAD": "$(location @clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so)"},
-        "@//:asan_linux_aarch64": {"LD_PRELOAD": "$(location @clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so)"},
-        "//conditions:default": {},
-    }) | GPU_TEST_ENV
+    } | GPU_TEST_ENV | runtime_sanitizer_env()
 
     transitive_mojo_deps = name + ".mojo_deps"
     collect_transitive_mojoinfo(
