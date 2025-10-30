@@ -358,14 +358,14 @@ fn unpack_device_ctx(
 @no_inline
 fn unpack_buffer_ref(
     async_ptr: OpaquePointer,
-) -> NDBuffer[DType.uint8, 1, MutableAnyOrigin]:
+) -> NDBuffer[DType.int8, 1, MutableAnyOrigin]:
     var size: UInt64 = 0
     var data_ptr = external_call[
         "KGEN_CompilerRT_GetDataFromBuffer",
         OpaquePointer,
     ](async_ptr, UnsafePointer(to=size))
     var shape = IndexList[1](Int(size))
-    return NDBuffer[DType.uint8, 1](data_ptr.bitcast[UInt8](), shape)
+    return NDBuffer[DType.int8, 1](data_ptr.bitcast[Int8](), shape)
 
 
 @register_internal("builtin.unpack_tensor")
@@ -437,8 +437,8 @@ fn unpack_context(
 @register_internal("builtin.get_buffer_data")
 @always_inline
 fn get_buffer_data(
-    buffer: NDBuffer[DType.uint8, 1, MutableAnyOrigin]
-) -> UnsafePointer[UInt8]:
+    buffer: NDBuffer[DType.int8, 1, MutableAnyOrigin]
+) -> UnsafePointer[Int8]:
     return buffer.data
 
 
@@ -454,7 +454,7 @@ fn mgp_tensor_create[
     buffer_rank: Int,
     dtype: DType,
 ](
-    buffer: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
+    buffer: NDBuffer[DType.int8, 1, MutableAnyOrigin],
     spec: IndexList[spec_rank],
 ) -> NDBuffer[dtype, buffer_rank, MutableAnyOrigin]:
     @parameter
@@ -500,11 +500,11 @@ fn mgp_tensor_extract_buffer[
     buffer_rank: Int,
     dtype: DType,
 ](buffer: NDBuffer[dtype, buffer_rank, MutableAnyOrigin]) -> NDBuffer[
-    DType.uint8, 1, MutableAnyOrigin
+    DType.int8, 1, MutableAnyOrigin
 ]:
     # Unwrap the tensor into a size-less buffer pointer.
-    return NDBuffer[DType.uint8, 1](
-        buffer.data.bitcast[UInt8](), buffer.bytecount()
+    return NDBuffer[DType.int8, 1](
+        buffer.data.bitcast[Int8](), buffer.bytecount()
     )
 
 
@@ -570,7 +570,7 @@ fn mgp_buffer_constant_external(
 @no_inline
 fn fill_buffer[
     dtype: DType
-](buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin], vals: VariadicList[Int]):
+](buf: NDBuffer[DType.int8, 1, MutableAnyOrigin], vals: VariadicList[Int]):
     var ptr = buf.data.bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:
@@ -582,7 +582,7 @@ fn fill_buffer[
 @no_inline
 fn mgp_buffer_set_with_index[
     bDevice: StaticString
-](buffer: NDBuffer[DType.uint8, 1, MutableAnyOrigin], *vals: Int) raises:
+](buffer: NDBuffer[DType.int8, 1, MutableAnyOrigin], *vals: Int) raises:
     debug_assert(
         is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
     )
@@ -606,7 +606,7 @@ fn mgp_buffer_set_with_index[
 @no_inline
 fn mgp_buffer_to_bool[
     bDevice: StaticString
-](buffer: NDBuffer[DType.uint8, 1, MutableAnyOrigin]) -> Bool:
+](buffer: NDBuffer[DType.int8, 1, MutableAnyOrigin]) -> Bool:
     debug_assert(is_cpu[bDevice](), "to_bool can only work on cpu buffers")
     var bufSize = buffer.num_elements()
     debug_assert(
@@ -619,7 +619,7 @@ fn mgp_buffer_to_bool[
 @register_internal("mgp.buffer.to_index")
 @no_inline
 fn mgp_buffer_to_index(
-    buffer: NDBuffer[DType.uint8, 1, MutableAnyOrigin]
+    buffer: NDBuffer[DType.int8, 1, MutableAnyOrigin]
 ) raises -> Int:
     var bufSize = buffer.num_elements()
     if bufSize == 4:
@@ -635,9 +635,9 @@ fn mgp_buffer_to_index(
 @register_internal("mgp.buffer.slice")
 @no_inline
 fn mgp_buffer_slice(
-    buffer: NDBuffer[DType.uint8, 1, MutableAnyOrigin], offset: Int, size: Int
-) -> NDBuffer[DType.uint8, 1, MutableAnyOrigin]:
-    return NDBuffer[DType.uint8, 1](buffer.data.offset(offset), Index(size))
+    buffer: NDBuffer[DType.int8, 1, MutableAnyOrigin], offset: Int, size: Int
+) -> NDBuffer[DType.int8, 1, MutableAnyOrigin]:
+    return NDBuffer[DType.int8, 1](buffer.data.offset(offset), Index(size))
 
 
 @register_internal("mgp.buffer.concat")
@@ -645,17 +645,17 @@ fn mgp_buffer_slice(
 fn mgp_buffer_concat[
     bDevice: StaticString
 ](
-    output: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
-    inputs: StaticTuple[NDBuffer[DType.uint8, 1, MutableAnyOrigin], *_],
+    output: NDBuffer[DType.int8, 1, MutableAnyOrigin],
+    inputs: StaticTuple[NDBuffer[DType.int8, 1, MutableAnyOrigin], *_],
     call_ctx: DeviceContextPtr,
 ) raises:
     alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
-    var output_lt = LayoutTensor[DType.uint8, layout_1d](
+    var output_lt = LayoutTensor[DType.int8, layout_1d](
         output.data,
         RuntimeLayout[layout_1d].row_major(IndexList[1](len(output))),
     )
     var input_tensors = StaticTuple[
-        LayoutTensor[DType.uint8, layout_1d, MutableAnyOrigin],
+        LayoutTensor[DType.int8, layout_1d, MutableAnyOrigin],
         inputs.size,
     ]()
     for i in range(len(inputs)):
@@ -664,11 +664,11 @@ fn mgp_buffer_concat[
             RuntimeLayout[layout_1d].row_major(IndexList[1](len(inputs[i]))),
         )
     if len(output) < 4096:
-        concat[inputs_layout=layout_1d, DType.uint8, True, bDevice, None](
+        concat[inputs_layout=layout_1d, DType.int8, True, bDevice, None](
             output_lt, 0, input_tensors, context=call_ctx
         )
     else:
-        concat[DType.uint8, False, bDevice, None](
+        concat[DType.int8, False, bDevice, None](
             output_lt, 0, input_tensors, context=call_ctx
         )
 
@@ -679,15 +679,15 @@ fn mgp_buffer_device_to_host[
     cOtherDevice: StaticString,
     dHostDevice: StaticString,
 ](
-    dev_buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
-    host_buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
+    dev_buf: NDBuffer[DType.int8, 1, MutableAnyOrigin],
+    host_buf: NDBuffer[DType.int8, 1, MutableAnyOrigin],
     dev_ctx: DeviceContextPtr,
 ) raises:
     @parameter
     if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
-        dev_ctx[].enqueue_copy[DType.uint8](
+        dev_ctx[].enqueue_copy[DType.int8](
             host_buf.data,
-            DeviceBuffer[DType.uint8](
+            DeviceBuffer[DType.int8](
                 dev_ctx[],
                 dev_buf.data,
                 dev_buf.size(),
@@ -704,21 +704,21 @@ fn mgp_buffer_device_to_device[
     cSrcDevice: StaticString,
     dDstDevice: StaticString,
 ](
-    src_buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
-    dst_buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
+    src_buf: NDBuffer[DType.int8, 1, MutableAnyOrigin],
+    dst_buf: NDBuffer[DType.int8, 1, MutableAnyOrigin],
     src_dev_ctx: DeviceContextPtr,
     dst_dev_ctx: DeviceContextPtr,
 ) raises:
     @parameter
     if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
-        dst_dev_ctx[].enqueue_copy[DType.uint8](
-            DeviceBuffer[DType.uint8](
+        dst_dev_ctx[].enqueue_copy[DType.int8](
+            DeviceBuffer[DType.int8](
                 dst_dev_ctx[],
                 dst_buf.data,
                 dst_buf.size(),
                 owning=False,
             ),
-            DeviceBuffer[DType.uint8](
+            DeviceBuffer[DType.int8](
                 src_dev_ctx[],
                 src_buf.data,
                 src_buf.size(),
@@ -740,14 +740,14 @@ fn mgp_buffer_host_to_device[
     cHostDevice: StaticString,
     dOtherDevice: StaticString,
 ](
-    host_buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
-    dev_buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
+    host_buf: NDBuffer[DType.int8, 1, MutableAnyOrigin],
+    dev_buf: NDBuffer[DType.int8, 1, MutableAnyOrigin],
     dev_ctx: DeviceContextPtr,
 ) raises:
     @parameter
     if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
-        dev_ctx[].enqueue_copy[DType.uint8](
-            DeviceBuffer[DType.uint8](
+        dev_ctx[].enqueue_copy[DType.int8](
+            DeviceBuffer[DType.int8](
                 dev_ctx[],
                 dev_buf.data,
                 dev_buf.size(),
@@ -765,7 +765,7 @@ fn mgp_buffer_get_cached(
     ctx: StateContext,
     buffer_slot: UInt,
     storage_ref_addr: UnsafePointer[OpaquePointer],
-) raises -> NDBuffer[DType.uint8, 1, MutableAnyOrigin]:
+) raises -> NDBuffer[DType.int8, 1, MutableAnyOrigin]:
     var buffer_size: UInt64 = 0
     var buffer_data: OpaquePointer = external_call[
         "MGP_RT_GetCachedBuffer", OpaquePointer
@@ -776,8 +776,8 @@ fn mgp_buffer_get_cached(
         storage_ref_addr,
     )
 
-    return NDBuffer[DType.uint8, 1](
-        buffer_data.bitcast[UInt8](), Index(buffer_size)
+    return NDBuffer[DType.int8, 1](
+        buffer_data.bitcast[Int8](), Index(buffer_size)
     )
 
 
@@ -791,7 +791,7 @@ fn mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64):
 
 @register_internal("mgp.buffer.get_size")
 @no_inline
-fn mgp_buffer_get_size(buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin]) -> Int:
+fn mgp_buffer_get_size(buf: NDBuffer[DType.int8, 1, MutableAnyOrigin]) -> Int:
     return buf.num_elements()
 
 
@@ -878,7 +878,7 @@ fn mgp_debug_tensor_print[
     spec_rank: Int,
     dtype: DType,
 ](
-    buffer: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
+    buffer: NDBuffer[DType.int8, 1, MutableAnyOrigin],
     shape: IndexList[spec_rank],
     label_ptr: UnsafePointer[Byte],
     label_len: Int,
