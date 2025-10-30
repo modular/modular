@@ -1135,6 +1135,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                         mma_op,
                         elect_one_warp,
                         0,
+                        0,
                     )
                     load_mma_pipeline.consumer_step()
 

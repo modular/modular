@@ -48,6 +48,7 @@ struct MatmulConfig[
 
     # Has default values or derivible from mandatory parameters
     var block_tile_shape: IndexList[3]
+    var num_split_k: Int
     var num_pipeline_stages: UInt
     var num_clc_pipeline_stages: UInt
     var num_accum_pipeline_stages: UInt
@@ -66,6 +67,7 @@ struct MatmulConfig[
         mma_shape: IndexList[3] = get_mma_shape[a_type, Self.accum_type](),
         cluster_shape: IndexList[3] = Index(2, 1, 1),
         AB_swapped: Bool = False,
+        num_split_k: Int = 1,
         block_swizzle_size: Int = 0,
         raster_order: RasterOrder = RasterOrder.AlongM,
         k_group_size: UInt = 1,
@@ -112,6 +114,7 @@ struct MatmulConfig[
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_accum_pipeline_stages = num_accum_pipeline_stages
         self.num_output_stages = 2
+        self.num_split_k = num_split_k
 
         self.a_swizzle = TensorMapSwizzle.SWIZZLE_128B
         self.b_swizzle = TensorMapSwizzle.SWIZZLE_128B

@@ -126,7 +126,7 @@ struct TileScheduler[
     @always_inline
     @staticmethod
     fn work_info_from_clc_response(
-        result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED]
+        result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED],
     ) -> WorkInfo:
         alias asm = """{
             .reg .pred p1;
@@ -162,7 +162,6 @@ struct TileScheduler[
     ) -> WorkInfo:
         var normalized_m = Int(work_info.m) / Self.log_cluster_m
         var normalized_n = Int(work_info.n) / Self.log_cluster_n
-        var normalized_k = Int(work_info.k_start) / Self.log_cluster_k
         alias log_block_swizzle_size = FastDiv[DType.uint32](
             Self.block_swizzle_size
         )
@@ -216,8 +215,7 @@ struct TileScheduler[
             + Int(block_id_in_cluster.x),
             n=Int(new_n_global) * Self.cluster_shape[1]
             + Int(block_id_in_cluster.y),
-            k_start=Int(normalized_k) * Self.cluster_shape[2]
-            + Int(block_id_in_cluster.z),
+            k_start=work_info.k_start,
             is_valid_tile=work_info.is_valid_tile,
         )
 
@@ -282,3 +280,36 @@ struct TileScheduler[
             )
 
         return clc_state.next()
+
+
+@always_inline
+fn get_num_tiles(
+    problem_shape: IndexList[3],
+    block_tile_shape: IndexList[3],
+    cluster_shape: IndexList[2],
+) -> IndexList[2]:
+    var num_block_m = ceildiv(problem_shape[0], block_tile_shape[0])
+    var num_block_n = ceildiv(problem_shape[1], block_tile_shape[1])
+
+    var problem_blocks_m = align_up(num_block_m, cluster_shape[0])
+    var problem_blocks_n = align_up(num_block_n, cluster_shape[1])
+
+    return Index(problem_blocks_m, problem_blocks_n)
+
+
+@always_inline
+fn get_required_locks_buffer_size_bytes[
+    accum_type: DType, cta_group: UInt32
+](
+    problem_shape: IndexList[3],
+    block_tile_shape: IndexList[3],
+    cluster_shape: IndexList[2],
+) -> Int:
+    var problem_blocks = get_num_tiles(
+        problem_shape, block_tile_shape, cluster_shape
+    )
+    var num_output_tiles = problem_blocks[0] * problem_blocks[1]
+
+    var locks_workspace_bytes = num_output_tiles * size_of[Int32]() * cta_group
+
+    return Int(locks_workspace_bytes)
