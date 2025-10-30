@@ -112,17 +112,78 @@ def _default_device() -> Device:
 def defaults(
     dtype: DType | None = None, device: Device | None = None
 ) -> tuple[DType, Device]:
+    """Gets the default dtype and device for tensor creation.
+
+    Returns a tuple containing the dtype and device to use for tensor creation,
+    applying defaults when values are not specified. If no dtype is provided,
+    defaults to :obj:`DType.float32` for CPU and :obj:`DType.bfloat16` for
+    accelerators. If no device is provided, defaults to an accelerator if
+    available, otherwise CPU.
+
+    Args:
+        dtype: The data type to use. If not specified, a default dtype based
+            on the device is returned.
+        device: The device to use. If not specified, defaults to an available
+            accelerator or CPU.
+
+    Returns:
+        tuple[DType, Device]: A tuple containing the resolved dtype and device.
+    """
     device = device or _default_device()
     return (dtype or _default_dtype(device)), device
 
 
 def default_device(device: Device):  # noqa: ANN201
-    """Context manager for setting the default device for tensors."""
+    """Context manager for setting the default device for tensor creation.
+
+    Sets the default device used for tensor creation within the context. All
+    tensors created inside the context block without an explicit device
+    parameter will use this device.
+
+    .. code-block:: python
+
+        from max.experimental import tensor
+        from max.driver import CPU
+
+        # Use CPU as default device in this context
+        with tensor.default_device(CPU()):
+            x = tensor.Tensor.ones((2, 3))  # Created on CPU
+            y = tensor.Tensor.zeros((2, 3))  # Also on CPU
+
+    Args:
+        device: The device to use as the default for tensor creation within
+            the context.
+
+    Returns:
+        A context manager that sets the default device.
+    """
     return contextvar_context(_DEFAULT_DEVICE, device)
 
 
 def default_dtype(dtype: DType):  # noqa: ANN201
-    """Context manager for setting the default dtype for tensors."""
+    """Context manager for setting the default dtype for tensor creation.
+
+    Sets the default data type used for tensor creation within the context. All
+    tensors created inside the context block without an explicit dtype parameter
+    will use this data type.
+
+    .. code-block:: python
+
+        from max.experimental import tensor
+        from max.dtype import DType
+
+        # Use int32 as default dtype in this context
+        with tensor.default_dtype(DType.int32):
+            x = tensor.Tensor.ones((2, 3))  # Created with int32
+            y = tensor.Tensor.zeros((2, 3))  # Also int32
+
+    Args:
+        dtype: The data type to use as the default for tensor creation within
+            the context.
+
+    Returns:
+        A context manager that sets the default dtype.
+    """
     return contextvar_context(_DEFAULT_DTYPE, dtype)
 
 
@@ -150,61 +211,60 @@ def _in_running_loop() -> bool:
 
 
 class Tensor(DLPackArray, HasTensorValue):
-    """A Tensor object with numerics.
+    """A multi-dimensional array with eager execution and automatic compilation.
 
-    A Tensor type that can do the kinds of things people expect
-    tensors to do.
+    The Tensor class provides a high-level interface for numerical computations
+    with automatic compilation and optimization via the MAX runtime. Operations
+    on tensors execute eagerly while benefiting from lazy evaluation and
+    graph-based optimizations behind the scenes.
 
-    Tensor operations should always meet the following criteria:
-    - Any illegal operation on a tensor must fail immediately with
-    a python exception with a clear error message
-    - All operations on tensors that read or write Tensor memory
-    values use our high-performance compiler and Mojo kernel library.
+    **Key Features:**
 
-    The out of the box experience should be the best one available
-    for working with Tensors and numerics, and give seemless access
-    to direct low-level programmability in Mojo.
+    - **Eager execution**: Operations execute immediately with automatic compilation.
+    - **Lazy evaluation**: Computation may be deferred until results are needed.
+    - **High performance**: Uses the Mojo compiler and optimized kernels.
+    - **NumPy-like API**: Supports familiar array operations and indexing.
+    - **Device flexibility**: Works seamlessly across CPU and accelerators.
 
-    Notably Tensor does *not* require that it is backed by memory.
-    If no side-effecting operation has been done on a Tensor object,
-    then there is no guarantee it has been computed yet. Critically
-    a user *should never know or care* whether the tensor is backed
-    by data: the behavior should be exactly as if it were.
+    **Creating Tensors:**
 
-    For discussion purposes, a "realized" tensor is a tensor which
-    references concrete memory, and an "unrealized" one does not.
-    An "unrealized" tensor may still have a driver tensor as storage,
-    but this memory may not be an up-to-date reference of the tensor's
-    data, for instance in the case of mutating ops.
+    Create tensors using factory methods like :meth:`ones`, :meth:`zeros`,
+    :meth:`constant`, :meth:`arange`, or from other array libraries via
+    :meth:`from_dlpack`.
 
-    Tensors unify the graph concepts of TensorValue and BufferValue.
-    Given `x: Tensor`:
+    .. code-block:: python
 
-    - If `x` is realized, it will be backed by a BufferValue input
-      to the graph.
-    - If `x` is unrealized:
+        from max.experimental import tensor
+        from max.dtype import DType
 
-      - It will be backed by a BufferValue if the op that created it
-        returned a buffer _or_ if BufferValue(x) is ever called
-      - Otherwise it will be backed by a TensorValue
+        # Create tensors with factory methods
+        x = tensor.Tensor.ones((2, 3), dtype=DType.float32)
+        y = tensor.Tensor.zeros((2, 3), dtype=DType.float32)
 
-    - `x` may _always_ be loaded into a TensorValue via `TensorValue(x)`:
+        # Perform operations
+        result = x + y  # Eager execution with automatic compilation
 
-      - If `x` is backed by a BufferValue, this will do a "load".
-        The load is for operation ordering and will be optimized away.
+        # Access values
+        print(result.shape)  # (2, 3)
+        print(result.dtype)  # DType.float32
 
-    - `x` may _always_ be loaded into a BufferValue via `BufferValue(x)`:
+    **Implementation Notes:**
 
-      - Afterwards, `x` will always be unrealized, since it may now
-        have been passed into side-effecting ops.
-      - If `x` was backed by a TensorValue, it will now be backed
-        by a new BufferValue from `ops.buffer_create` containing
-        the same data.
+    Tensors use lazy evaluation internally - they don't always hold concrete
+    data in memory. A tensor may be "unrealized" (not yet computed) until its
+    value is actually needed (e.g., when printing, converting to other formats,
+    or calling :meth:`item`). This allows the runtime to optimize sequences of
+    operations efficiently.
 
-    This allows Tensors to be transparently treated as being mutable
-    buffers or immutable tensors while encoding only the necessary
-    semantics into the compilation graph, and mutating computations
-    remain lazy.
+    Operations on tensors build a computation graph behind the scenes, which is
+    compiled and executed when needed. All illegal operations fail immediately
+    with clear error messages, ensuring a smooth development experience.
+
+    **Interoperability:**
+
+    Tensors support the DLPack protocol for zero-copy data exchange with NumPy,
+    PyTorch, JAX, and other array libraries. Use :meth:`from_dlpack` to import
+    arrays and standard DLPack conversion for export.
     """
 
     #: Underlying memory for a realized tensor.
@@ -485,10 +545,70 @@ class Tensor(DLPackArray, HasTensorValue):
         dtype: DType | None = None,
         device: Device | None = None,
     ) -> Tensor:
+        """Creates a tensor filled with ones.
+
+        Returns a new tensor with the specified shape where all elements are
+        initialized to one. The tensor is created with eager execution and
+        automatic compilation.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.driver import CPU
+            from max.dtype import DType
+
+            # Create a 2x3 tensor of ones
+            x = tensor.Tensor.ones((2, 3), dtype=DType.float32, device=CPU())
+            # Result: [[1.0, 1.0, 1.0],
+            #          [1.0, 1.0, 1.0]]
+
+            # Create a 1D tensor using default dtype and device
+            y = tensor.Tensor.ones((5,))
+
+        Args:
+            shape: The shape of the output tensor. Can be a tuple of integers,
+                a list of integers, or any value that can be converted to a shape.
+            dtype: The data type for the tensor elements. If not specified,
+                defaults to :obj:`DType.float32` for CPU devices and
+                :obj:`DType.bfloat16` for accelerator devices.
+            device: The device where the tensor will be allocated. If not
+                specified, defaults to an accelerator if available, otherwise CPU.
+
+        Returns:
+            Tensor: A new tensor with the specified shape filled with ones.
+        """
         return cls.full(shape, value=1, dtype=dtype, device=device)
 
     @classmethod
     def ones_like(cls, type: TensorType) -> Tensor:
+        """Creates a tensor of ones matching a given type's properties.
+
+        Returns a new tensor filled with ones that matches the shape, data type,
+        and device of the specified tensor type. This is useful when you need to
+        create a ones tensor that's compatible with an existing tensor's properties.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.graph import TensorType
+            from max.driver import CPU
+            from max.dtype import DType
+
+            # Create a reference tensor type
+            ref_type = TensorType(DType.float32, (3, 4), device=CPU())
+
+            # Create ones tensor matching the reference type
+            x = tensor.Tensor.ones_like(ref_type)
+            # Result: 3x4 tensor of ones with dtype float32 on CPU
+
+        Args:
+            type: The tensor type to match. The returned tensor will have the
+                same shape, dtype, and device as this type.
+
+        Returns:
+            Tensor: A new tensor filled with ones matching the properties of the
+                input type.
+        """
         return cls.ones(
             type.shape, dtype=type.dtype, device=type.device.to_device()
         )
@@ -503,6 +623,45 @@ class Tensor(DLPackArray, HasTensorValue):
         dtype: DType | None = None,
         device: Device | None = None,
     ) -> Tensor:
+        """Creates a tensor with evenly spaced values within a given interval.
+
+        Returns a new 1D tensor containing a sequence of values starting from
+        ``start`` (inclusive) and ending before ``stop`` (exclusive), with values
+        spaced by `step`. This is similar to Python's built-in ``range()`` function
+        and NumPy's ``arange()``.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.dtype import DType
+
+            # Create a range from 0 to 10 (exclusive)
+            x = tensor.Tensor.arange(10)
+            # Result: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+            # Create a range from 5 to 15 with step 2
+            y = tensor.Tensor.arange(5, 15, 2)
+            # Result: [5, 7, 9, 11, 13]
+
+            # Use a specific dtype
+            z = tensor.Tensor.arange(0, 5, dtype=DType.float32)
+            # Result: [0.0, 1.0, 2.0, 3.0, 4.0]
+
+        Args:
+            start: The starting value of the sequence. If ``stop`` is not provided,
+                this becomes the ``stop`` value and ``start`` defaults to 0.
+            stop: The end value of the sequence (exclusive). If not specified,
+                the sequence ends at ``start`` and begins at 0.
+            step: The spacing between values in the sequence.
+            dtype: The data type for the tensor elements. If not specified,
+                defaults to :obj:`DType.float32` for CPU devices and
+                :obj:`DType.bfloat16` for accelerator devices.
+            device: The device where the tensor will be allocated. If not
+                specified, defaults to an accelerator if available, otherwise CPU.
+
+        Returns:
+            Tensor: A 1D tensor containing the evenly spaced values.
+        """
         dtype, device = defaults(dtype, device)
         if stop is None:
             start, stop = 0, start
@@ -516,6 +675,38 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @classmethod
     def range_like(cls, type: TensorType) -> Tensor:
+        """Creates a range tensor matching a given type's properties.
+
+        Returns a new tensor containing sequential indices along the last
+        dimension, broadcasted to match the shape of the specified tensor type.
+        Each row (along the last dimension) contains values from 0 to the
+        dimension size minus one. This is useful for creating position indices
+        or coordinate tensors.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.graph import TensorType
+            from max.driver import CPU
+            from max.dtype import DType
+
+            # Create a reference tensor type with shape (2, 4)
+            ref_type = TensorType(DType.int32, (2, 4), device=CPU())
+
+            # Create range tensor matching the reference type
+            x = tensor.Tensor.range_like(ref_type)
+            # Result: [[0, 1, 2, 3],
+            #          [0, 1, 2, 3]]
+
+        Args:
+            type: The tensor type to match. The returned tensor will have the
+                same shape, dtype, and device as this type, with values
+                representing indices along the last dimension.
+
+        Returns:
+            Tensor: A new tensor with sequential indices broadcasted to match
+                the input type's shape.
+        """
         dim = type.shape[-1]
         range = F.range(
             start=0,
@@ -528,24 +719,63 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @property
     def type(self) -> graph.TensorType:
+        """Gets the tensor type information.
+
+        Returns the type information for the tensor, including shape, dtype,
+        and device. If the underlying value is a buffer type, it's converted
+        to a tensor type.
+
+        Returns:
+            TensorType: The type information for the tensor.
+        """
         type = self._value.type
         return type.as_tensor() if isinstance(type, graph.BufferType) else type
 
     @property
     def rank(self) -> int:
+        """Gets the number of dimensions in the tensor.
+
+        Returns the rank (number of dimensions) of the tensor. For example,
+        a scalar has rank 0, a vector has rank 1, and a matrix has rank 2.
+
+        Returns:
+            int: The number of dimensions in the tensor.
+        """
         return self._value.rank
 
     @property
     def shape(self) -> graph.Shape:
+        """Gets the shape of the tensor.
+
+        Returns the dimensions of the tensor as a shape object.
+
+        Returns:
+            Shape: The shape of the tensor.
+        """
         return self._value.shape
 
     @property
     def dtype(self) -> DType:
+        """Gets the data type of the tensor elements.
+
+        Returns the data type (dtype) of the elements stored in the tensor,
+        such as ``float32``, ``int32``, or ``bfloat16``.
+
+        Returns:
+            DType: The data type of the tensor elements.
+        """
         return self._value.dtype
 
     @property
     def device(self) -> Device:
-        """The tensor's device."""
+        """Gets the device where the tensor is stored.
+
+        Returns the device (CPU or accelerator) where the tensor's data is
+        located.
+
+        Returns:
+            Device: The device where the tensor is stored.
+        """
         return self._value.device.to_device()
 
     @property
@@ -694,43 +924,268 @@ class Tensor(DLPackArray, HasTensorValue):
         return self
 
     def item(self):  # noqa: ANN201
+        """Gets the scalar value from a single-element tensor.
+
+        Extracts and returns the scalar value from a tensor containing exactly
+        one element. The tensor is realized if needed and transferred to CPU
+        before extracting the value.
+
+        Returns:
+            The scalar value from the tensor. The return type matches the tensor's
+            dtype (e.g., float for float32, int for int32).
+
+        Raises:
+            TypeError: If the tensor contains more than one element.
+        """
         if self.num_elements() != 1:
             raise TypeError()
         self._sync_realize()
         return self.driver_tensor.to(CPU()).item()
 
     def num_elements(self) -> int:
+        """Gets the total number of elements in the tensor.
+
+        Computes the product of all dimensions in the tensor's shape to
+        determine the total number of elements.
+
+        Returns:
+            int: The total number of elements in the tensor.
+        """
         elts = 1
         for dim in self.shape:
             elts *= int(dim)
         return elts
 
     def to(self, device: Device) -> Tensor:
+        """Transfers the tensor to a different device.
+
+        Creates a new tensor with the same data on the specified device. This
+        allows moving tensors between CPU and accelerators or between different
+        accelerator devices.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.driver import CPU, Accelerator
+
+            # Create a tensor on CPU
+            x = tensor.Tensor.ones((2, 3), device=CPU())
+            print(x.device)  # CPU
+
+            # Transfer to accelerator
+            y = x.to(Accelerator())
+            print(y.device)  # Accelerator(0)
+
+        Args:
+            device: The target device for the tensor.
+
+        Returns:
+            Tensor: A new tensor with the same data on the specified device.
+        """
         return F.transfer_to(self, device)
 
     def argmax(self, axis: int = -1) -> Tensor:
+        """Finds the indices of the maximum values along an axis.
+
+        Returns a tensor containing the indices of the maximum values along
+        the specified axis. This is useful for finding the position of the
+        largest element, such as determining predicted classes in classification.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.dtype import DType
+
+            # Create a 2x4 tensor
+            x = tensor.Tensor.constant(
+                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]], dtype=DType.float32
+            )
+
+            # Find argmax along last axis (within each row)
+            indices = x.argmax(axis=-1)
+            # Result: [1, 2] (index 1 in first row, index 2 in second row)
+
+        Args:
+            axis: The axis along which to find the maximum indices. Defaults
+                to -1 (the last axis).
+
+        Returns:
+            Tensor: A tensor containing the indices of the maximum values.
+        """
         return F.argmax(self, axis=axis)
 
     def max(self, axis: int = -1) -> Tensor:
+        """Computes the maximum values along an axis.
+
+        Returns a tensor containing the maximum values along the specified axis.
+        This is useful for reduction operations and finding peak values in data.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.dtype import DType
+
+            # Create a 2x4 tensor
+            x = tensor.Tensor.constant(
+                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]], dtype=DType.float32
+            )
+
+            # Find max along last axis (within each row)
+            row_max = x.max(axis=-1)
+            # Result: [3.5, 4.2]
+
+            # Find max along first axis (within each column)
+            col_max = x.max(axis=0)
+            # Result: [2.3, 3.5, 4.2, 3.1]
+
+        Args:
+            axis: The axis along which to compute the maximum. Defaults to -1
+                (the last axis).
+
+        Returns:
+            Tensor: A tensor containing the maximum values along the specified axis.
+        """
         return F.max(self, axis=axis)
 
     def mean(self, axis: int = -1) -> Tensor:
+        """Computes the mean values along an axis.
+
+        Returns a tensor containing the arithmetic mean of values along the
+        specified axis. This is useful for computing averages, normalizing data,
+        or aggregating statistics.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.dtype import DType
+
+            # Create a 2x4 tensor
+            x = tensor.Tensor.constant(
+                [[2.0, 4.0, 6.0, 8.0], [1.0, 3.0, 5.0, 7.0]], dtype=DType.float32
+            )
+
+            # Compute mean along last axis (within each row)
+            row_mean = x.mean(axis=-1)
+            # Result: [5.0, 4.0] (mean of each row)
+
+            # Compute mean along first axis (within each column)
+            col_mean = x.mean(axis=0)
+            # Result: [1.5, 3.5, 5.5, 7.5] (mean of each column)
+
+        Args:
+            axis: The axis along which to compute the mean. Defaults to -1
+                (the last axis).
+
+        Returns:
+            Tensor: A tensor containing the mean values along the specified axis.
+        """
         return F.mean(self, axis=axis)
 
     def reshape(self, shape: ShapeLike) -> Tensor:
+        """Reshapes the tensor to a new shape.
+
+        Returns a tensor with the same data but a different shape. The total
+        number of elements must remain the same. This is useful for changing
+        tensor dimensions for different operations, such as flattening a
+        multi-dimensional tensor or converting a 1D tensor into a matrix.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.dtype import DType
+
+            # Create a 2x3 tensor
+            x = tensor.Tensor.constant([[1, 2, 3], [4, 5, 6]], dtype=DType.int32)
+            print(x.shape)  # (2, 3)
+
+            # Flatten to 1D
+            y = x.reshape((6,))
+            print(y.shape)  # (6,)
+            # Values: [1, 2, 3, 4, 5, 6]
+
+        Args:
+            shape: The desired output shape. Can be a tuple or list of integers.
+                The total number of elements must equal the original tensor's
+                element count.
+
+        Returns:
+            Tensor: A reshaped tensor with the specified shape.
+        """
         return F.reshape(self, shape)
 
     def cast(self, dtype: DType) -> Tensor:
+        """Casts the tensor to a different data type.
+
+        Returns a new tensor with the same values but a different data type.
+        This is useful for type conversions between different numeric types,
+        such as converting ``float32`` to ``int32`` for indexing operations or
+        ``float32`` to ``bfloat16`` for memory-efficient computations.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.dtype import DType
+
+            # Create a float32 tensor
+            x = tensor.Tensor.constant([1.7, 2.3, 3.9], dtype=DType.float32)
+            print(x.dtype)  # DType.float32
+
+            # Cast to int32 (truncates decimal values)
+            y = x.cast(DType.int32)
+            print(y.dtype)  # DType.int32
+            # Values: [1, 2, 3]
+
+        Args:
+            dtype: The target data type for the tensor.
+
+        Returns:
+            Tensor: A new tensor with the specified data type.
+        """
         return F.cast(self, dtype)
 
     def permute(self, dims: list[int]) -> Tensor:
+        """Permutes the dimensions of the tensor.
+
+        Returns a tensor with its dimensions reordered according to the
+        specified permutation. This is useful for changing the layout of
+        multi-dimensional data.
+
+        Args:
+            dims: A list specifying the new order of dimensions. For example,
+                ``[2, 0, 1]`` moves dimension 2 to position 0, dimension 0 to
+                position 1, and dimension 1 to position 2.
+
+        Returns:
+            Tensor: A tensor with permuted dimensions.
+        """
         return F.permute(self, dims)
 
     def transpose(self, dim1: int, dim2: int) -> Tensor:
+        """Transposes two dimensions of the tensor.
+
+        Returns a tensor with the specified dimensions swapped. This is a
+        special case of permutation that swaps exactly two dimensions.
+
+        Args:
+            dim1: The first dimension to swap.
+            dim2: The second dimension to swap.
+
+        Returns:
+            Tensor: A tensor with the specified dimensions transposed.
+        """
         return F.transpose(self, dim1, dim2)
 
     @property
     def T(self) -> Tensor:
+        """Gets the transposed tensor.
+
+        Returns a tensor with the last two dimensions transposed. This is
+        equivalent to calling ``transpose(-1, -2)`` and is commonly used for
+        matrix operations.
+
+        Returns:
+            Tensor: A tensor with the last two dimensions swapped.
+        """
         return self.transpose(-1, -2)
 
     def __getitem__(self, idx):  # noqa: ANN001
@@ -837,30 +1292,12 @@ class Tensor(DLPackArray, HasTensorValue):
 
 
 class ComputeGraph:
-    """Compute graph storage for unrealized tensors.
+    """Computation graph for managing tensor operations.
 
-    The compute graph is a directed acyclic graph.
-
-    There is a single global compute graph we use for Tensor operations.
-    New tensors are added as nodes to this graph by tensor operations.
-    Once they are realized the graph is simplified and the newly realized
-    tensors become sources of the graph.
-
-    Terminology:
-    - A "source" of the graph is a realized tensor that some unrealized
-    tensor depends on.
-    - "unrealized" refers to a node in the graph which is not a source,
-    or to the tensor object that it backs. There is a 1:1 relationship
-    between the node and the tensor object.
-
-    It is not obvious a priori which unrealized nodes to evaluate at
-    what time. The `evaluate` method of the graph is at its heart a
-    heuristic choosing among various tradeoffs of what to compute.
-
-    The current implementation first prunes the graph of all dead
-    nodes (nodes which no longer have live python references to them)
-    and then realizes all remaining nodes. This is an implementation
-    detail and is subject to change.
+    This class manages the directed acyclic graph (DAG) of tensor operations
+    for lazy evaluation and optimization. It tracks both realized tensors
+    (with concrete data in memory) and unrealized tensors (pending computations)
+    to enable efficient batch compilation and execution.
     """
 
     graph: graph.Graph
@@ -889,16 +1326,16 @@ class ComputeGraph:
             self.add_source(source)
 
     async def evaluate(self, tensor: Tensor) -> None:
-        """Realize the input tensor object.
+        """Evaluates and realizes the specified tensor.
 
-        It is currently undefined to operate on tensors during evaluation.
+        Compiles and executes the computation graph to produce concrete values
+        for the input tensor and any other pending computations. This triggers
+        lazy evaluation, converting unrealized tensors into realized ones with
+        data in memory.
 
-        After execution:
-        - The compute graph object and all tensors realized or otherwise
-        will be in valid states.
-        - The input tensor is guaranteed to be realized.
-        - Some other previously unrealized tensors may be realized
-        - Any realized tensors with live references will not be unrealized.
+        Args:
+            tensor: The tensor to realize. This triggers evaluation of its
+                computation and any dependencies.
         """
         # Single-global-graph is (unsurprisingly) causing the spooky action at a distance :(
         # - Specifically, bad things give a nice compiler error!
@@ -1017,6 +1454,17 @@ def _remove_unused_arguments(graph: graph.Graph) -> None:
 
 
 def driver_tensor_type(t: driver.Tensor) -> TensorType:
+    """Converts a driver tensor to a :obj:TensorType.
+
+    Creates a TensorType instance from a driver-level tensor by extracting
+    its dtype, shape, and device information.
+
+    Args:
+        t: The driver tensor to convert.
+
+    Returns:
+        TensorType: A tensor type representing the driver tensor's properties.
+    """
     return TensorType(t.dtype, t.shape, graph.DeviceRef.from_device(t.device))
 
 
