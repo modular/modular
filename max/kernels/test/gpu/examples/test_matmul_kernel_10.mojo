@@ -205,13 +205,11 @@ fn sgemm_warp_tiling_kernel[
                 @parameter
                 for i in range(0, Int(TM), 4):
                     var vec = a_sram.load[width=4, alignment=16](
-                        Int(
-                            (dot_idx * BM_padded)
-                            + warp_row * UInt(WM)
-                            + w_sub_row_idx * w_sub_m
-                            + thread_row_in_warp * UInt(TM)
-                            + i
-                        )
+                        (dot_idx * BM_padded)
+                        + Int(warp_row) * WM
+                        + w_sub_row_idx * w_sub_m
+                        + Int(thread_row_in_warp) * TM
+                        + i
                     )
                     reg_m.store(Index(w_sub_row_idx, i), vec)
 
@@ -221,12 +219,10 @@ fn sgemm_warp_tiling_kernel[
                 @parameter
                 for i in range(0, Int(TN), 4):
                     var vec = b_sram.load[width=4, alignment=16](
-                        Int(
-                            (dot_idx * BN)
-                            + warp_col * UInt(WN)
-                            + w_sub_col_idx * w_sub_n
-                            + thread_col_in_warp * UInt(TN)
-                        )
+                        (dot_idx * BN)
+                        + Int(warp_col) * WN
+                        + w_sub_col_idx * w_sub_n
+                        + Int(thread_col_in_warp) * TN
                     )
                     reg_n.store(Index(w_sub_col_idx, i), vec)
 
@@ -321,10 +317,10 @@ fn matmul_naive(
     n: Int,
     k: Int,
 ):
-    var x: UInt = global_idx.x
-    var y: UInt = global_idx.y
+    var x = Int(global_idx.x)
+    var y = Int(global_idx.y)
 
-    if x >= UInt(m) or y >= UInt(n):
+    if x >= m or y >= n:
         return
 
     var a = NDBuffer[DType.float32, 2](a_ptr, Index(m, k))

@@ -120,8 +120,8 @@ fn sgemm_double_buffer[
     )
 
     # Global memory tile.
-    var a_gmem_tile = a.tile[BM, BK](block_idx.y, 0)
-    var b_gmem_tile = b.tile[BK, BN](0, block_idx.x)
+    var a_gmem_tile = a.tile[BM, BK](Int(block_idx.y), 0)
+    var b_gmem_tile = b.tile[BK, BN](0, Int(block_idx.x))
 
     # Load A tile from global memory to shared.
     # Row major thread layout for coalesced access.
@@ -149,8 +149,8 @@ fn sgemm_double_buffer[
     barrier()
 
     # Advance A and B to next k tile.
-    a_gmem_tile = a.tile[BM, BK](block_idx.y, 1)
-    b_gmem_tile = b.tile[BK, BN](1, block_idx.x)
+    a_gmem_tile = a.tile[BM, BK](Int(block_idx.y), 1)
+    b_gmem_tile = b.tile[BK, BN](1, Int(block_idx.x))
 
     # Double buffer in registers (fragments in nvidia terms).
     alias layout_a = Layout.row_major(TM)
@@ -209,14 +209,14 @@ fn sgemm_double_buffer[
     )
 
     # Load A fragments to the first buffer.
-    var a_smem_warp_tile = a_smem_tile[0].tile[BK, WM](0, warp_y)
+    var a_smem_warp_tile = a_smem_tile[0].tile[BK, WM](0, Int(warp_y))
     var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](0, 0).coalesce()
     copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
         a_reg[0].vectorize[simd_size](), a_smem_warp_row.vectorize[simd_size]()
     )
 
     # Load B fragments to the first buffer.
-    var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, warp_x)
+    var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, Int(warp_x))
     var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](0, 0).coalesce()
     copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
         b_reg[0].vectorize[simd_size](), b_smem_warp_row.vectorize[simd_size]()
@@ -243,10 +243,10 @@ fn sgemm_double_buffer[
                 barrier()
 
                 a_smem_warp_tile = a_smem_tile[prefetch_id].tile[BK, WM](
-                    0, warp_y
+                    0, Int(warp_y)
                 )
                 b_smem_warp_tile = b_smem_tile[prefetch_id].tile[BK, WN](
-                    0, warp_x
+                    0, Int(warp_x)
                 )
 
             # Fill the other A fragments buffer using the next row in A.
@@ -268,13 +268,13 @@ fn sgemm_double_buffer[
 
             # Load next k tile from global memory to shared memory.
             if k == 0 and k_tile_id < num_k_tiles - 1:
-                a_gmem_tile = a.tile[BM, BK](block_idx.y, k_tile_id + 1)
+                a_gmem_tile = a.tile[BM, BK](Int(block_idx.y), k_tile_id + 1)
                 copy_dram_to_sram_async[
                     src_thread_layout=thread_loada_gmem_layout,
                     dst_thread_layout=thread_storea_smem_layout,
                 ](a_smem_tile[prefetch_id], a_gmem_tile)
 
-                b_gmem_tile = b.tile[BK, BN](k_tile_id + 1, block_idx.x)
+                b_gmem_tile = b.tile[BK, BN](k_tile_id + 1, Int(block_idx.x))
                 copy_dram_to_sram_async[
                     src_thread_layout=thread_layout_loadb,
                     dst_thread_layout=thread_layout_loadb,
@@ -286,8 +286,8 @@ fn sgemm_double_buffer[
             outer_product_acc(c_reg, a_reg[buffer_id], b_reg[buffer_id])
 
     # Map global memory tile down to thread.
-    var c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
-    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
+    var c_gmem_tile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
     # Copy results to global memory.
     # Vectorize by [simd_size, simd_size] because the outer product results are
     # implicitly organized by simd_size x simd_size tiles.
