@@ -2,11 +2,11 @@ load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extensio
 
 modular_nanobind_extension(
     name = "_core.bindings",
-    srcs = ["_core.cpp"],
+    srcs = [":_core/internal/_core.cpp"],
     module_name = "_core",
     new_link_root = "../modular/lib",
     deps = [
-        "//SDK/lib/API/python/max/_core/src:modules",
+        "//SDK/lib/API/python/max/_core/internal/src:modules",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -40,7 +40,7 @@ When you modify a .cpp file in the _core/src directory, you can run
 """,
     imports = [".."],
     include_private = True,
-    pattern_file = ":patterns.nb",
+    pattern_file = ":_core/internal/patterns.nb",
     pyi_srcs = glob(["**/*.pyi"]),
     deps = [
         "//SDK/lib/API/python/max/_core_types",
