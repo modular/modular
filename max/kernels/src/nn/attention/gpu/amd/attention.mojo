@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
-from sys import simd_width_of
+from sys import size_of, simd_width_of
 from sys.info import _cdna_4_or_newer
 
 from algorithm.functional import unswitch
@@ -30,7 +30,7 @@ from layout.layout_tensor import (
     copy_local_to_dram,
 )
 from layout.swizzle import Swizzle
-from layout.tensor_core import TiledTensorCore
+from layout.tensor_core import TiledTensorCore, num_matrix_reg
 from memory.pointer import AddressSpace as BaseAddressSpace
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
@@ -280,7 +280,12 @@ struct Attention[
 
     alias swap_a_b = True
     alias use_exp2 = True
-    alias k_group_size = 16 // Self.mma_shape[2] if not token_gen else 2
+    # we want to load 16B of data for each fragment so k_group_size is set such that
+    # k_group_size * num_matrix_fragments * size_of[Self.q_type]() = 16B
+    alias k_group_size = 16 // (
+        num_matrix_reg[Self.mma_shape[0], Self.mma_shape[2]]()
+        * size_of[Self.q_type]()
+    )
     alias num_k_mmas2 = ceildiv(
         Self.BK, UInt(Self.mma_shape[2] * Self.k_group_size)
     )
@@ -307,7 +312,7 @@ struct Attention[
         Int(Self.num_m_mmas),
         Int(Self.num_n_mmas),
         Self.output_frag_size,
-        Self.token_gen,
+        Self.BN != Self.WN,
         Self.mma_shape,
         Self.k_group_size,
         # use double buffer as proxy for experimental kernel

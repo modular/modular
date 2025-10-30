@@ -964,7 +964,7 @@ struct PRegisterBuffer[
             # just convert the registers to bf16
 
             @parameter
-            for j in range(16):
+            for j in range(output_frag_size):
                 out[0, j] = convert_f32_to_bf16[dtype](
                     self.reg_tile[tile_idx, j]
                 )

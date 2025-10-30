@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from itertools import product
 from math import ceildiv, recip
 from math.constants import log2e
 from sys import align_of, simd_width_of, size_of, llvm_intrinsic
@@ -224,47 +225,58 @@ struct KVCacheIterator[
 fn copy_dram_to_sram_lds[
     swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
 ](dst: LayoutTensor, src: LayoutTensor,) -> Int:
-    alias load_width = 8
     alias thread_layout = Layout.row_major(16, 4)
     var worker_idx = lane_id()
 
     var bc = make_amd_buffer_resource(src)
 
-    alias BN = src.shape[0]()
+    alias M = src.shape[0]()
+    alias N = src.shape[1]()
     var num_loads = 0
+    # we use 16x4 thread layout to load 16x32 tile from dram to sram
+    # but we need to load 32x16 tiles from sram for mma, so swizzle need to be applied to
+    # the whole 32x32 tile.
+    alias BM = 32
+    alias BN = 32
+    alias BM_SUB = thread_layout.shape[0].value()
 
     @parameter
-    for tile in range(BN // 32):
-
-        @parameter
-        for i in range(32 // 16):
-            var dst_partitions = dst.tile[32, 32](tile, 0).tile[16, 32](i, 0)
-            var src_partitions = src.tile[32, 32](tile, 0).tile[16, 32](i, 0)
-            var worker_idx_with_offset = worker_idx + UInt(i * Int(WARP_SIZE))
-            var src_dist = src_partitions.vectorize[1, load_width]().distribute[
-                thread_layout
-            ](
+    for n_tile, m_tile, m_sub_tile in product(
+        range(N // BN), range(M // BM), range(BM // BM_SUB)
+    ):
+        var dst_partitions = dst.tile[BM, BN](m_tile, n_tile).tile[BM_SUB, BN](
+            m_sub_tile, 0
+        )
+        var src_partitions = src.tile[BM, BN](m_tile, n_tile).tile[BM_SUB, BN](
+            m_sub_tile, 0
+        )
+        alias dst_layout = dst_partitions.layout
+        # dst need to be contiguous
+        constrained[dst_layout.stride[1].value() == 1, String(dst_layout)]()
+        constrained[dst_layout.stride[0].value() == 32, String(dst_layout)]()
+        var worker_idx_with_offset = worker_idx + UInt(m_sub_tile * WARP_SIZE)
+        var src_dist = src_partitions.vectorize[
+            1, simd_width_of[src.dtype]()
+        ]().distribute[thread_layout](
+            (
                 UInt(
-                    (
-                        swizzle.value()(
-                            Int(worker_idx_with_offset)
-                        ) if swizzle else Int(worker_idx_with_offset)
-                    )
-                    % Int(WARP_SIZE)
-                )
+                    swizzle.value()(Int(worker_idx_with_offset))
+                ) if swizzle else worker_idx_with_offset
             )
-            alias dtype = src.dtype
-            var src_offset = (Int(src_dist.ptr) - Int(src.ptr)) // size_of[
-                dtype
-            ]()
+            % UInt(WARP_SIZE)
+        )
+        alias dtype = src.dtype
+        var src_offset = (Int(src_dist.ptr) - Int(src.ptr)) // size_of[dtype]()
 
-            alias src_load_offset = src_dist.layout(0)
-            var ptr = dst_partitions.ptr
-            var dst_ptr = ptr.address_space_cast[AddressSpace.SHARED]()
-            bc.load_to_lds[width=load_width](
-                Int32(src_offset + src_load_offset), dst_ptr, scalar_offset=0
-            )
-            num_loads += 1
+        alias src_load_offset = src_dist.layout(0)
+        var ptr = dst_partitions.ptr
+        var dst_ptr = ptr.address_space_cast[AddressSpace.SHARED]()
+        bc.load_to_lds[width = simd_width_of[src.dtype]()](
+            Int32(src_offset + src_load_offset),
+            dst_ptr,
+            scalar_offset=0,
+        )
+        num_loads += 1
     return num_loads
 
 
@@ -307,14 +319,11 @@ fn load_b[
     var output_vectorized = output.vectorize[1, 8]()
 
     @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(N):
-            var out_reg = load_b_[swizzle, j](src.tile[32, 32](i, 0))
-            output_vectorized[i + j * M, 0] = rebind[
-                type_of(output_vectorized[i + j * M, 0])
-            ](out_reg)
+    for i, j in product(range(M), range(N)):
+        var out_reg = load_b_[swizzle, j](src.tile[32, 32](i, 0))
+        output_vectorized[i + j * M, 0] = rebind[
+            type_of(output_vectorized[i + j * M, 0])
+        ](out_reg)
 
     return output
 
@@ -528,26 +537,9 @@ struct KVBuffer[
 
             var wtile_coord0 = Int(warp_col)
             var wtile_coord1 = 0
-            # constrained[False, ]()
             var warp_tile = smem_tile.tile[Self.wtile_dim0, Self.wtile_dim1](
                 wtile_coord0, wtile_coord1
             )
-            # constrained[
-            #     False,
-            #     String(warp_tile.shape[0](), " ", warp_tile.shape[1]())
-            #     + " "
-            #     + String(Self.wtile_dim0, " ", Self.wtile_dim1, " ", BN),
-            # ]()
-
-            # alias tensor_core_mma = TiledTensorCore[
-            #     accum_type,
-            #     mma_input_type,
-            #     mma_shape,
-            #     group_size=k_group_size,
-            #     transpose_b=transpose_b,
-            # ]()
-
-            # constrained[False, String(warp_tile.shape[0](), warp_tile.shape[1]())]()
             var load_b_tile = load_b[swizzle=swizzle](warp_tile)
 
             self.mma_tile.vectorize[1, Self.simd_width]().copy_from(
@@ -555,13 +547,18 @@ struct KVBuffer[
             )
 
         else:
+            alias MMA_M = mma_shape[0]
+            alias MMA_K = mma_shape[2]
+            constrained[
+                MMA_K == 16, "MMA_K must be 16 but got " + String(MMA_K)
+            ]()
 
             @parameter
-            for k in range(BK // 16):
+            for k in range(BK // MMA_K):
                 var smem_tile = (
                     self.smem_iter.next_unsafe(buffer)[]
                     .tile[BK, depth](Int(bk_tile), 0)
-                    .tile[16, depth](k, 0)
+                    .tile[MMA_K, depth](k, 0)
                 )
                 var frags = (
                     type_of(self.mma_tile.split[Self.num_k_mmas2]()[k])
@@ -570,23 +567,16 @@ struct KVBuffer[
                 )
 
                 @parameter
-                for i in range(depth // 32):
+                for i in range(depth // MMA_M):
                     frags[i, 0] = rebind[frags.element_type](
-                        load_16x32(smem_tile.tile[16, 32](0, i), Int(lane_id()))
+                        load_16x32(
+                            smem_tile.tile[MMA_K, MMA_M](0, i), Int(lane_id())
+                        )
                     )
 
                 self.mma_tile.split[Self.num_k_mmas2]()[k].vectorize[
                     1, Self.simd_width
                 ]().copy_from(frags)
-        # @parameter
-        # for k_mma_tile_idx in range(Self.num_k_mmas2):
-        #     tensor_core_mma.mma_op.load_b[swizzle = Self.swizzle](
-        #         warp_tile,
-        #         self.get_mma_tile[k_mma_tile_idx]().vectorize[
-        #             1, Self.simd_width
-        #         ](),
-        #         UInt(k_mma_tile_idx),
-        #     )
 
 
 __extension Attention:

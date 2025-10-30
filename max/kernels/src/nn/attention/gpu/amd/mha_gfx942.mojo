@@ -94,9 +94,9 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     fn get_mma_shape() -> IndexList[3]:
         var mma_shape = (
             IndexList[3](32, 32, 16) if (
-                _cdna_4_or_newer()
-                and config.depth != 64
+                (_cdna_4_or_newer() and config.depth != 64)
                 # will deal with 64 later
+                or Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL
             ) else IndexList[3](32, 32, 8)
         ) if not token_gen else IndexList[3](16, 16, 16)
         return mma_shape
