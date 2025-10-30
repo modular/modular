@@ -54,7 +54,6 @@ from builtin.floatable import Floatable, FloatableRaising
 from builtin.format_int import bin, hex, oct
 from builtin.identifiable import Identifiable
 from builtin.int import (
-    ImplicitlyIntable,
     Indexer,
     Int,
     Intable,

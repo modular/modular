@@ -156,6 +156,14 @@ what we publish.
   and should be updated to explicitly read `Int(uint_val)` or `UInt(int_val)`
   respectively.
 
+- The `ImplicitlyIntable` trait has been removed. Types implementing this trait
+  could be implicitly converted to `Int`.
+
+  `Bool` was the only Mojo standard library type to implement
+  `ImplicitlyIntable`. Conversions from `Bool` to `Int` can now be performed
+  explicitly, using `Int(bool-val)` (via the remaining `Intable` trait, which
+  only supports *explicit* conversions).
+
 - `assert_equal` now displays colored character-by-character diffs when string
   comparisons fail, making it easier to spot differences. Differing characters
   are highlighted in red for the left string and green for the right string.

@@ -1387,7 +1387,7 @@ def test_clamp():
 
 def test_indexing():
     var s = SIMD[DType.int32, 4](1, 2, 3, 4)
-    assert_equal(s[False], 1)
+    assert_equal(s[Int(False)], 1)
     assert_equal(s[Int(2)], 3)
     assert_equal(s[3], 4)
 

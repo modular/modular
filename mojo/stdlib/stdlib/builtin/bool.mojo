@@ -113,7 +113,6 @@ struct Bool(
     Hashable,
     ImplicitlyBoolable,
     ImplicitlyCopyable,
-    ImplicitlyIntable,
     Indexer,
     Intable,
     Movable,

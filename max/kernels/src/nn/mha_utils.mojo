@@ -99,7 +99,7 @@ struct FlashAttentionAlgorithm(
 
             @parameter
             if is_sm90or100:
-                return FlashAttentionAlgorithm(2 + dtype.is_half_float())
+                return FlashAttentionAlgorithm(2 + Int(dtype.is_half_float()))
             else:
                 return FlashAttentionAlgorithm(2)
         else:
@@ -311,10 +311,10 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
                     - Int(
                         self.num_queries_per_block
                         * depth
-                        * UInt(1 + persistent)
+                        * UInt(1 + Int(persistent))
                     )
                     - 8 * Int(num_pipeline_stages)
-                    - 20 * persistent
+                    - 20 * Int(persistent)
                 ) // Int(depth * num_pipeline_stages)
                 # divide and multiply by 16 to get a multiple of MMA_K
                 min_upper_bound = 16 * (

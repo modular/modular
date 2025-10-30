@@ -22,7 +22,6 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     Defaultable,
     Floorable,
     ImplicitlyBoolable,
-    ImplicitlyIntable,
     Indexer,
     Intable,
     Stringable,
@@ -442,15 +441,6 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
             The value as an integer of platform-specific width.
         """
         return Int(mlir_value=self.__mlir_index__())
-
-    @always_inline("builtin")
-    fn __as_int__(self) -> Int:
-        """Implicitly convert to an Int.
-
-        Returns:
-            An integral value that represents this object.
-        """
-        return self.__int__()
 
     @always_inline("builtin")
     fn __uint__(self) -> UInt:

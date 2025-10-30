@@ -731,9 +731,11 @@ struct TMATensorTile[
         alias copy_dim1 = desc_layout.shape[1].value()
         alias copy_size = desc_layout.size()
         alias num_copies_dim0 = product(
-            layout.shape[not is_k_major]
+            layout.shape[Int(not is_k_major)]
         ) // copy_dim0
-        alias num_copies_dim1 = product(layout.shape[is_k_major]) // copy_dim1
+        alias num_copies_dim1 = product(
+            layout.shape[Int(is_k_major)]
+        ) // copy_dim1
 
         @parameter
         for i in range(num_copies_dim0):
@@ -995,9 +997,11 @@ struct TMATensorTile[
         alias copy_dim1 = desc_layout.shape[1].value()
         alias copy_size = desc_layout.size()
         alias num_copies_dim0 = product(
-            layout.shape[not is_k_major]
+            layout.shape[Int(not is_k_major)]
         ) // copy_dim0
-        alias num_copies_dim1 = product(layout.shape[is_k_major]) // copy_dim1
+        alias num_copies_dim1 = product(
+            layout.shape[Int(is_k_major)]
+        ) // copy_dim1
 
         @parameter
         for i in range(num_copies_dim0):

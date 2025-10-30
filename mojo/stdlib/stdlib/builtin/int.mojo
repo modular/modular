@@ -163,45 +163,6 @@ trait IntableRaising:
         ...
 
 
-trait ImplicitlyIntable(Intable):
-    """The `ImplicitlyIntable` trait describes a type that can be converted to
-    an Int implicitly.
-
-    This trait requires the type to implement the `__as_int__()` method. For
-    example:
-
-    ```mojo
-    struct Foo(ImplicitlyIntable):
-        var i: Int
-
-        fn __int__(self) -> Int:
-            return self.i
-
-        fn __as_int__(self) -> Int:
-            return self.__int__()
-
-    ```
-
-    Now you can use `Foo` anywhere that an `Int` is expected, e.g. equality
-    checks:
-
-    ```mojo
-    %# from testing import assert_equal
-    foo = Foo(42)
-    assert_equal(Int(42), foo)
-    ```
-    """
-
-    fn __as_int__(self) -> Int:
-        """Implicitly convert to an integral representation of the value,
-        wherever an `Int` is expected.
-
-        Returns:
-            The integral representation of the value.
-        """
-        ...
-
-
 @lldb_formatter_wrapping_type
 @register_passable("trivial")
 struct Int(
@@ -362,19 +323,6 @@ struct Int(
             If the type does not have an integral representation.
         """
         self = value.__int__()
-
-    @always_inline("nodebug")
-    @implicit
-    fn __init__[I: ImplicitlyIntable](out self, value: I):
-        """Construct Int from implicitly convertible type.
-
-        Parameters:
-            I: The type that is implicitly convertible to an `Int`.
-
-        Args:
-            value: The init value.
-        """
-        self = value.__as_int__()
 
     @always_inline("nodebug")
     fn __init__(out self, value: StringSlice, base: UInt = 10) raises:
