@@ -2580,6 +2580,7 @@ class GeneratorOp(max._core.Operation):
         inline_level: InlineLevelAttr,
         export_kind: ExportKindAttr,
         external: max._core.dialects.builtin.UnitAttr,
+        inlined_form: max._core.dialects.builtin.TypedAttr,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
     ) -> None: ...
@@ -2594,6 +2595,7 @@ class GeneratorOp(max._core.Operation):
         function_type: max._core.dialects.builtin.FunctionType,
         input_params: Sequence[ParamDeclAttr],
         inline_level: InlineLevel = InlineLevel.automatic,
+        inlined_form: max._core.dialects.builtin.TypedAttr = ...,
         llvm_metadata_array: max._core.dialects.builtin.ArrayAttr = ...,
         llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr = ...,
     ) -> None: ...
@@ -2649,6 +2651,12 @@ class GeneratorOp(max._core.Operation):
     def external(self) -> bool: ...
     @external.setter
     def external(self, arg: max._core.dialects.builtin.UnitAttr, /) -> None: ...
+    @property
+    def inlined_form(self) -> max._core.dialects.builtin.TypedAttr | None: ...
+    @inlined_form.setter
+    def inlined_form(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
     @property
     def _llvm_metadata_array(self) -> max._core.dialects.builtin.ArrayAttr: ...
     @_llvm_metadata_array.setter
