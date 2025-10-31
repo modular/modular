@@ -31,6 +31,7 @@ from gpu import warp_id as get_warp_id
 from layout.int_tuple import product as prod
 from layout.tensor_core import num_matrix_reg
 from layout.layout import blocked_product
+from linalg.structuring import SMemArrayType
 
 
 # NOTE: this struct might be a little overkill. may be consider simplifying this
@@ -136,6 +137,43 @@ struct SharedMemoryBuffer[
         return self.buffer.tile[block_rows, block_cols](0, stage)
 
 
+@register_passable("trivial")
+struct AMDSharedMemoryBarrier[size: Int]:
+    var __repr: SIMD[DType.int32, size]
+
+    @always_inline
+    fn initialize(ref [AddressSpace.SHARED, MutableAnyOrigin]self):
+        self.__repr = 0
+
+    @always_inline
+    fn value(ref [AddressSpace.SHARED]self) -> Int32:
+        return self.__repr.reduce_add()
+
+    @always_inline
+    fn increment(ref [AddressSpace.SHARED, MutableAnyOrigin]self, warp_id: Int):
+        # Generate scalar access instructions, self.__repr[warp_id] += 1 is a vector instruction
+        var scalar_elements = rebind[
+            UnsafePointer[
+                Scalar[DType.int32], address_space = AddressSpace.SHARED
+            ]
+        ](Pointer(to=self.__repr))
+        scalar_elements[warp_id] += 1
+
+    @always_inline
+    fn wait_until_equal_to(ref [AddressSpace.SHARED]self, v: Int32):
+        while self.value() != v:
+            inlined_assembly[
+                "s_sleep 0", NoneType, constraints="", has_side_effect=True
+            ]()
+
+    @always_inline
+    fn wait_until_greater_or_equal_to(ref [AddressSpace.SHARED]self, v: Int32):
+        while self.value() < v:
+            inlined_assembly[
+                "s_sleep 0", NoneType, constraints="", has_side_effect=True
+            ]()
+
+
 struct RingBuffer[
     pipeline_stages: Int,
     a_buffer_layout: Layout,
@@ -176,16 +214,13 @@ struct RingBuffer[
     alias warps_per_block_m = BM // WM
     alias warps_per_block_n = BN // WN
 
-    alias BarrierTensorType[warp_tile_count: Int] = LayoutTensor[
-        DType.int32,
-        Layout.row_major(warp_tile_count, consumer_warps * pipeline_stages),
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=32,
+    alias BarrierArray[warp_tile_count: Int] = SMemArrayType[
+        AMDSharedMemoryBarrier[consumer_warps],
+        warp_tile_count * pipeline_stages,
     ]
 
-    var barrier_a: Self.BarrierTensorType[Self.warps_per_block_m]
-    var barrier_b: Self.BarrierTensorType[Self.warps_per_block_n]
+    var barrier_a: Self.BarrierArray[Self.warps_per_block_m]
+    var barrier_b: Self.BarrierArray[Self.warps_per_block_n]
 
     alias SharedMemoryBufferType[is_a: Bool] = SharedMemoryBuffer[
         SmemBufferDataType,
@@ -208,23 +243,28 @@ struct RingBuffer[
         self.smem_buffer_a = smem_buffer_a
         self.smem_buffer_b = smem_buffer_b
 
-        self.barrier_a = (
-            Self.BarrierTensorType[Self.warps_per_block_m]
-            .stack_allocation()
-            .fill(0)
-        )
-        self.barrier_b = (
-            Self.BarrierTensorType[Self.warps_per_block_n]
-            .stack_allocation()
-            .fill(0)
-        )
+        self.barrier_a = Self.BarrierArray[
+            Self.warps_per_block_m
+        ].stack_allocation[alignment=32]()
+
+        @parameter
+        for i in range(type_of(self.barrier_a).size):
+            self.barrier_a[i][].initialize()
+
+        self.barrier_b = Self.BarrierArray[
+            Self.warps_per_block_n
+        ].stack_allocation[alignment=32]()
+
+        @parameter
+        for i in range(type_of(self.barrier_b).size):
+            self.barrier_b[i][].initialize()
 
     @always_inline
     fn _get_barrier[
         is_a: Bool
     ](
         self,
-        out bar: Self.BarrierTensorType[
+        out bar: Self.BarrierArray[
             Self.warps_per_block_m if is_a else Self.warps_per_block_n
         ],
     ):
@@ -235,26 +275,16 @@ struct RingBuffer[
             return rebind[type_of(bar)](self.barrier_b)
 
     @always_inline
-    fn _get_current_barrier_value[
-        is_a: Bool
-    ](self, tile_idx: Int, stage: Int) -> Int:
-        var bar = self._get_barrier[is_a]()
-        var warp_vector = bar.vectorize[1, consumer_warps]()[tile_idx, stage]
-        return Int(warp_vector.reduce_add())
-
-    @always_inline
     fn _producer_wait[is_a: Bool](self, phase: Int, tile_idx: Int, stage: Int):
-        while self._get_current_barrier_value[is_a](tile_idx, stage) != phase:
-            inlined_assembly[
-                "s_sleep 0", NoneType, constraints="", has_side_effect=True
-            ]()
+        var bar = self._get_barrier[is_a]()
+        bar[tile_idx * pipeline_stages + stage][].wait_until_equal_to(phase)
 
     @always_inline
     fn _consumer_wait[is_a: Bool](self, phase: Int, tile_idx: Int, stage: Int):
-        while self._get_current_barrier_value[is_a](tile_idx, stage) < phase:
-            inlined_assembly[
-                "s_sleep 0", NoneType, constraints="", has_side_effect=True
-            ]()
+        var bar = self._get_barrier[is_a]()
+        bar[
+            tile_idx * pipeline_stages + stage
+        ][].wait_until_greater_or_equal_to(phase)
 
     @always_inline
     fn _get_shared_memory_tile[
@@ -318,9 +348,9 @@ struct RingBuffer[
     @always_inline
     fn commit[is_a: Bool](mut self, stage: Int, tile_idx: Int):
         var bar = self._get_barrier[is_a]()
-        var bar_tile = bar.tile[1, consumer_warps](tile_idx, stage)
-        var warp_id = get_warp_id() % UInt(consumer_warps)
-        bar_tile[1, warp_id] = bar_tile[1, warp_id] + 1
+        bar[tile_idx * pipeline_stages + stage][].increment(
+            Int(get_warp_id() % UInt(consumer_warps))
+        )
 
 
 struct AmdWarpBlockScatterGather[

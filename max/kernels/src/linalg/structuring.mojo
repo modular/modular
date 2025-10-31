@@ -32,6 +32,7 @@ from layout.int_tuple import (
 )
 from layout.tma_async import SharedMemBarrier
 from layout.layout import blocked_product, logical_product
+from memory import stack_allocation
 
 
 struct ScatterGatherAmd[
@@ -250,6 +251,7 @@ struct SMemTileArrayType[
 
         self.ptr = unsafe_ptr
 
+    @always_inline
     fn __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at index.
 
@@ -261,9 +263,20 @@ struct SMemTileArrayType[
         """
         return Self.Tile(self.ptr + eval[layout.size()] * Int(index))
 
+    @always_inline
+    @staticmethod
+    fn stack_allocation() -> Self:
+        var ptr = stack_allocation[
+            Self.storage_size,
+            dtype,
+            alignment=alignment,
+            address_space = AddressSpace.SHARED,
+        ]()
+        return Self(ptr)
+
 
 @register_passable("trivial")
-struct SMemArrayType[type: AnyType, size: Int]:
+struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
     """Shared memory array of fixed size.
 
     Parameters:
@@ -310,6 +323,17 @@ struct SMemArrayType[type: AnyType, size: Int]:
         """
         return size * size_of[type]()
 
+    @always_inline
+    @staticmethod
+    fn stack_allocation[alignment: Int = align_of[type]()]() -> Self:
+        var ptr = stack_allocation[
+            Self.len(),
+            type,
+            alignment=alignment,
+            address_space = AddressSpace.SHARED,
+        ]()
+        return Self(ptr)
+
 
 alias eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
@@ -350,7 +374,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
         dtype: DType, layout: Layout, num_tiles: Int
     ] = SMemTileArrayType[dtype, layout, num_tiles, SMBP.alignment]
 
-    alias Array[type: AnyType, size: Int] = SMemArrayType[type, size]
+    alias Array[type: AnyTrivialRegType, size: Int] = SMemArrayType[type, size]
 
     var base_ptr: UnsafePointer[Int8, address_space = AddressSpace.SHARED]
     var offset: Int
@@ -398,7 +422,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
 
     @always_inline
     fn build[
-        type: AnyType,
+        type: AnyTrivialRegType,
         size: Int, //,
         T: type_of(Self.Array[type, size]),
     ](mut self) -> T:
