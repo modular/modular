@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from gpu.memory import AddressSpace
+from layout.layout_tensor import LayoutTensorIter
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
 from ..tile_scheduler import RasterOrder
@@ -21,6 +22,7 @@ from gpu.cluster import elect_one_sync
 from gpu import NamedBarrierSemaphore, WARP_SIZE
 from gpu.globals import WARPGROUP_SIZE
 from gpu.tcgen05 import *
+from gpu.sync import named_barrier
 
 
 @fieldwise_init
@@ -67,7 +69,7 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
 @register_passable("trivial")
 struct TileScheduler[
     num_stages: Int,
-    block_tile_shape: IndexList[3],
+    reduction_tile_shape: IndexList[3],
     cluster_shape: IndexList[3, element_type = DType.uint32] = Index[
         dtype = DType.uint32
     ](1, 1, 1),
@@ -78,9 +80,9 @@ struct TileScheduler[
     alias UnderlyingScheduler = B200TileScheduler[
         num_stages, cluster_shape, rasterize_order, block_swizzle_size
     ]
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
+    alias BM = reduction_tile_shape[0]
+    alias MMA_N = reduction_tile_shape[1]
+    alias BK = reduction_tile_shape[2]
 
     var locks_ptr: UnsafePointer[Int32]
     var scheduler: Self.UnderlyingScheduler
@@ -106,7 +108,7 @@ struct TileScheduler[
         self.scheduler = Self.UnderlyingScheduler(
             cluster_dim, clc_response_ptr, full_mbar_ptr, empty_mbar_ptr
         )
-        self.total_k_tiles = ceildiv(mnk[2], block_tile_shape[2])
+        self.total_k_tiles = ceildiv(mnk[2], reduction_tile_shape[2])
         self.k_tiles_per_split = ceildiv(self.total_k_tiles, num_split_k)
         self.locks_ptr = locks_ptr.bitcast[Int32]()
 
@@ -166,120 +168,159 @@ struct TileScheduler[
         reduction_workspace: LayoutTensor[accum_type, workspace_layout],
         reduction_tile_idx: UInt32,
         out result: LayoutTensor[
-            accum_type, Layout.row_major(Self.BM, Self.BN), MutableAnyOrigin
+            accum_type, Layout.row_major(Self.BM, Self.MMA_N), MutableAnyOrigin
         ],
     ):
         return type_of(result)(
-            reduction_workspace.ptr + (reduction_tile_idx * Self.BM * Self.BN)
+            reduction_workspace.ptr
+            + (reduction_tile_idx * Self.BM * Self.MMA_N)
         )
+
+    @always_inline
+    @staticmethod
+    fn _get_max_width_per_stage[max_width: Int]() -> Int:
+        return min(max_width, Self.MMA_N & -Self.MMA_N)
 
     @always_inline
     fn store_to_workspace[
         accum_type: DType,
-        size: Int,
         workspace_layout: Layout,
         /,
         *,
-        repeat: Int,
         do_reduction: Bool = False,
         write_back: Bool = False,
     ](
         self,
-        mut reg_tile_upper: SIMD[accum_type, size],
-        mut reg_tile_lower: SIMD[accum_type, size],
         tmem_addr: UInt32,
         reduction_workspace: LayoutTensor[accum_type, workspace_layout],
         epilogue_thread_idx: UInt,
         reduction_tile_idx: UInt32,
     ):
+        alias data_paths = 16  # same as lanes
+        alias bits = 256
+        alias row_size = Self.MMA_N
+        # only load from TMEM when not using split-k
+        alias total_rep = row_size // 8
+
+        # 128 is a magic number that is provided by the NVCC backend.
+        # register size that is greater than that will not compile.
+        alias width_per_stage = Self._get_max_width_per_stage[128]()
+        alias stage_rep = width_per_stage // 8
+        alias fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
+        alias stage_frag_size = stage_rep * fragment_size
+
+        var upper_frag = SIMD[accum_type, stage_frag_size]()
+        var lower_frag = SIMD[accum_type, stage_frag_size]()
+
         var local_warp_id = epilogue_thread_idx // UInt(WARP_SIZE)
-        reg_tile_upper = tcgen05_ld[
-            datapaths=16,
-            bits=256,
-            repeat=repeat,
-            dtype=accum_type,
-            pack=False,
-            width=size,
-        ](tmem_addr)
 
-        reg_tile_lower = tcgen05_ld[
-            datapaths=16,
-            bits=256,
-            repeat=repeat,
-            dtype=accum_type,
-            pack=False,
-            width=size,
-        ](tmem_addr + (16 << 16))
-        tcgen05_load_wait()
-
-        # workspace has layout (X, BM, BN)
+        # workspace has layout (X, BM, MMA_N)
         var workspace_tile = self._get_workspace_tile(
             reduction_workspace, reduction_tile_idx
         )
-
-        var reduction_frag = workspace_tile.tile[Self.BM // 4, Self.BN](
+        var reduction_frag = workspace_tile.tile[Self.BM // 4, Self.MMA_N](
             Int(local_warp_id), 0
         )
-
-        var reduction_frag_upper = (
-            reduction_frag.tile[16, Self.BN](0, 0)
-            .vectorize[1, 2]()
-            .distribute[Layout.row_major(8, 4)](lane_id())
-        )
-        var reduction_frag_lower = (
-            reduction_frag.tile[16, Self.BN](1, 0)
-            .vectorize[1, 2]()
-            .distribute[Layout.row_major(8, 4)](lane_id())
-        )
-
-        alias num_m = reduction_frag_upper.layout.shape[0].value()
-        alias num_n = reduction_frag_upper.layout.shape[1].value()
+        var reduction_upper_iter = reduction_frag.tiled_iterator[
+            16, width_per_stage, axis=1
+        ](0, 0)
+        var reduction_lower_iter = reduction_frag.tiled_iterator[
+            16, width_per_stage, axis=1
+        ](1, 0)
 
         @parameter
-        for m in range(num_m):
+        for stage in range(row_size // width_per_stage):
+            var stage_tmem_addr = tmem_addr + (stage * width_per_stage)
+
+            upper_frag = tcgen05_ld[
+                datapaths=data_paths,
+                bits=bits,
+                repeat=stage_rep,
+                dtype=accum_type,
+                pack=False,
+                width = upper_frag.size,
+            ](stage_tmem_addr)
+
+            lower_frag = tcgen05_ld[
+                datapaths=data_paths,
+                bits=bits,
+                repeat=stage_rep,
+                dtype=accum_type,
+                pack=False,
+                width = lower_frag.size,
+            ](stage_tmem_addr + (16 << 16))
+            tcgen05_load_wait()
+
+            var reduction_upper = reduction_upper_iter.next(stage)[]
+            var reduction_lower = reduction_lower_iter.next(stage)[]
+
+            var reduction_frag_upper = reduction_upper.vectorize[
+                1, 2
+            ]().distribute[Layout.row_major(8, 4)](lane_id())
+
+            var reduction_frag_lower = reduction_lower.vectorize[
+                1, 2
+            ]().distribute[Layout.row_major(8, 4)](lane_id())
+
+            alias num_m = reduction_frag_upper.layout.shape[0].value()
+            alias num_n = reduction_frag_upper.layout.shape[1].value()
 
             @parameter
-            for n in range(num_n):
-                alias i = m * num_n + n
-
-                var v2_upper = rebind[reduction_frag_upper.element_type](
-                    SIMD[accum_type, 2](
-                        reg_tile_upper[2 * i], reg_tile_upper[2 * i + 1]
-                    )
-                )
-                var v2_lower = rebind[reduction_frag_lower.element_type](
-                    SIMD[accum_type, 2](
-                        reg_tile_lower[2 * i], reg_tile_lower[2 * i + 1]
-                    )
-                )
+            for m in range(num_m):
 
                 @parameter
-                if do_reduction:
-                    v2_upper += reduction_frag_upper[m, n]
-                    v2_lower += reduction_frag_lower[m, n]
+                for n in range(num_n):
+                    alias i = m * num_n + n
 
-                @parameter
-                if write_back:
-                    reduction_frag_upper[m, n] = v2_upper
-                    reduction_frag_lower[m, n] = v2_lower
-                else:
-                    reg_tile_upper[2 * i] = v2_upper[0]
-                    reg_tile_upper[2 * i + 1] = v2_upper[1]
-                    reg_tile_lower[2 * i] = v2_lower[0]
-                    reg_tile_lower[2 * i + 1] = v2_lower[1]
+                    var v2_upper = rebind[reduction_frag_upper.element_type](
+                        SIMD[accum_type, 2](
+                            upper_frag[2 * i], upper_frag[2 * i + 1]
+                        )
+                    )
+                    var v2_lower = rebind[reduction_frag_lower.element_type](
+                        SIMD[accum_type, 2](
+                            lower_frag[2 * i], lower_frag[2 * i + 1]
+                        )
+                    )
+
+                    @parameter
+                    if do_reduction:
+                        v2_upper += reduction_frag_upper[m, n]
+                        v2_lower += reduction_frag_lower[m, n]
+
+                    @parameter
+                    if write_back:
+                        reduction_frag_upper[m, n] = v2_upper
+                        reduction_frag_lower[m, n] = v2_lower
+                    else:
+                        upper_frag[2 * i] = v2_upper[0]
+                        upper_frag[2 * i + 1] = v2_upper[1]
+                        lower_frag[2 * i] = v2_lower[0]
+                        lower_frag[2 * i + 1] = v2_lower[1]
+
+            # we can't hold all accumulators in registers, so we need to store to TMEM
+            @parameter
+            if not write_back:
+                tcgen05_st[
+                    datapaths=data_paths,
+                    bits=bits,
+                    repeat=stage_rep,
+                    pack=False,
+                ](stage_tmem_addr, upper_frag)
+                tcgen05_st[
+                    datapaths=data_paths,
+                    bits=bits,
+                    repeat=stage_rep,
+                    pack=False,
+                ](stage_tmem_addr + (16 << 16), lower_frag)
+                tcgen05_store_wait()
 
     @always_inline
     fn reduction[
         accum_type: DType,
-        size: Int,
         workspace_layout: Layout,
-        /,
-        *,
-        repeat: Int,
     ](
         self,
-        mut reg_tile_upper: SIMD[accum_type, size],
-        mut reg_tile_lower: SIMD[accum_type, size],
         reduction_workspace: LayoutTensor[accum_type, workspace_layout],
         tmem_addr: UInt32,
         epilogue_thread_idx: UInt,
@@ -292,11 +333,7 @@ struct TileScheduler[
         if not self.is_last_split(work_info):
             if work_info.k_start == 0:
                 # first split don't wait and just write to workspace.
-                self.store_to_workspace[
-                    repeat=repeat, do_reduction=False, write_back=True
-                ](
-                    reg_tile_upper,
-                    reg_tile_lower,
+                self.store_to_workspace[do_reduction=False, write_back=True](
                     tmem_addr,
                     reduction_workspace,
                     epilogue_thread_idx,
@@ -311,11 +348,7 @@ struct TileScheduler[
                     work_info.k_start,
                 )
 
-                self.store_to_workspace[
-                    repeat=repeat, do_reduction=True, write_back=True
-                ](
-                    reg_tile_upper,
-                    reg_tile_lower,
+                self.store_to_workspace[do_reduction=True, write_back=True](
                     tmem_addr,
                     reduction_workspace,
                     epilogue_thread_idx,
@@ -341,11 +374,7 @@ struct TileScheduler[
                 lock_idx,
                 work_info.k_start,
             )
-            self.store_to_workspace[
-                repeat=repeat, do_reduction=True, write_back=False
-            ](
-                reg_tile_upper,
-                reg_tile_lower,
+            self.store_to_workspace[do_reduction=True, write_back=False](
                 tmem_addr,
                 reduction_workspace,
                 epilogue_thread_idx,

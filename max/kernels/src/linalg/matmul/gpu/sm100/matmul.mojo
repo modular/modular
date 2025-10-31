@@ -1080,7 +1080,6 @@ fn copy_accum_to_gmem[
     c_layout: Layout,
     c_smem_layout: Layout,
     c_desc_layout: Layout,
-    frag_size: Int,
     num_accum_pipeline_stages: Int,
     /,
     *,
@@ -1092,15 +1091,12 @@ fn copy_accum_to_gmem[
     mma_shape: IndexList[3],
     num_output_warps: UInt,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    load_from_tmem: Bool = True,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
     transpose_c: Bool = False,
 ](
-    upper_frag: SIMD[accum_type, frag_size],
-    lower_frag: SIMD[accum_type, frag_size],
     c_iter: LayoutTensorIter[
         c_type,
         c_smem_layout,
@@ -1156,42 +1152,28 @@ fn copy_accum_to_gmem[
 
     @parameter
     for stage in range(num_stages):
-        # This only happens when using split-k
+        var stage_tmem_addr = tmem_offset + (stage * stageN)
+        upper_frag_partial = tcgen05_ld[
+            datapaths=data_paths,
+            bits=bits,
+            repeat=repeat,
+            dtype=accum_type,
+            pack=False,
+            width=rep_frag_size,
+        ](stage_tmem_addr)
 
         @parameter
-        if load_from_tmem:
-            var stage_tmem_addr = tmem_offset + (stage * stageN)
-            upper_frag_partial = tcgen05_ld[
+        if is_lower_frag_required:
+            lower_frag_partial = tcgen05_ld[
                 datapaths=data_paths,
                 bits=bits,
                 repeat=repeat,
                 dtype=accum_type,
                 pack=False,
                 width=rep_frag_size,
-            ](stage_tmem_addr)
+            ](stage_tmem_addr + (16 << 16))
 
-            @parameter
-            if is_lower_frag_required:
-                lower_frag_partial = tcgen05_ld[
-                    datapaths=data_paths,
-                    bits=bits,
-                    repeat=repeat,
-                    dtype=accum_type,
-                    pack=False,
-                    width=rep_frag_size,
-                ](stage_tmem_addr + (16 << 16))
-
-            tcgen05_load_wait()
-        else:
-            upper_frag_partial = upper_frag.slice[
-                rep_frag_size, offset = stage * rep_frag_size
-            ]()
-
-            @parameter
-            if is_lower_frag_required:
-                lower_frag_partial = lower_frag.slice[
-                    rep_frag_size, offset = stage * rep_frag_size
-                ]()
+        tcgen05_load_wait()
 
         @parameter
         if stage == num_stages - 1:
@@ -1511,21 +1493,10 @@ fn multi_stage_store_C_split_k[
     # typically repeated 4 times to get the desired 32 elements
     # stageN is how many elements we want to load at once
 
-    alias row_size = BN if MMA_M == 128 else MMA_N
-    # only load from TMEM when not using split-k
-    alias total_rep = row_size // 8
     # repetitions per stage
     alias stage_rep = stageN // (bits // 32)
 
-    alias total_frag_size = total_rep * fragment_size
-
-    var upper_frag = SIMD[accum_type, total_frag_size]()
-    var lower_frag = SIMD[accum_type, total_frag_size]()
-
-    # if work_info.m == 0 and work_info.n == 1:
-    var is_last_split = scheduler.reduction[repeat=total_rep](
-        upper_frag,
-        lower_frag,
+    var is_last_split = scheduler.reduction(
         reduction_tensor,
         tmem_offset,
         epilogue_thread_idx,
@@ -1533,7 +1504,7 @@ fn multi_stage_store_C_split_k[
     )
 
     # Do not copy to c_tile since they are in reduction workspace already.
-    # If it is the last split, accumulators will already be in register.
+    # If it is the last split, accumulators will already be in tmem.
     if not is_last_split:
         # signal accumulator arrival and exit.
         accum_arrive[cta_group](mma_output_pipeline, mma_output_stage)
@@ -1548,13 +1519,10 @@ fn multi_stage_store_C_split_k[
         mma_shape=mma_shape,
         num_output_warps=num_output_warps,
         c_swizzle=c_swizzle,
-        load_from_tmem=False,  # disable for split-k
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
         transpose_c=transpose_c,
     ](
-        upper_frag,
-        lower_frag,
         c_iter,
         c_tma_op,
         mma_output_pipeline,
@@ -1666,8 +1634,6 @@ fn multi_stage_store_C[
 
     alias fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
     alias rep_frag_size = rep * fragment_size
-    var upper_frag = SIMD[accum_type, rep_frag_size]()
-    var lower_frag = SIMD[accum_type, rep_frag_size]()
     var upper_frag_casted = SIMD[epilogue_dtype, rep_frag_size]()
     var lower_frag_casted = SIMD[epilogue_dtype, rep_frag_size]()
 
@@ -1682,13 +1648,10 @@ fn multi_stage_store_C[
         mma_shape=mma_shape,
         num_output_warps=num_output_warps,
         c_swizzle=c_swizzle,
-        load_from_tmem=True,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
         transpose_c=transpose_c,
     ](
-        upper_frag,
-        lower_frag,
         c_iter,
         c_tma_op,
         mma_output_pipeline,
@@ -2458,7 +2421,7 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
 
     var scheduler = TileSchedulerSplitK[
         num_stages = Int(config.num_clc_pipeline_stages),
-        block_tile_shape = Index(BM, MMA_N, BK),
+        reduction_tile_shape = Index(BM, MMA_N, BK),
         cluster_shape = Index[dtype = DType.uint32](
             config.cluster_shape[0],
             config.cluster_shape[1],
@@ -2760,6 +2723,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
             AB_swapped=True,
             block_swizzle_size=config.block_swizzle_size,
             raster_order=config.raster_order,
+            num_split_k=config.num_split_k,
         )
 
         # When both A and B are K-major, then the matrix multiplication math is

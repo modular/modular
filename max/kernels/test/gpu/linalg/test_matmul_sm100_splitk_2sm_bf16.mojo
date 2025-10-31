@@ -95,6 +95,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
                 block_tile_shape,
                 " swapAB=",
                 swapAB,
+                " num_split_k=",
+                num_split_k,
             )
         )
 
@@ -221,7 +223,7 @@ def main():
             for mma_m_scale in range(2, 3):
 
                 @parameter
-                for mma_n_scale in range(1, 14):
+                for mma_n_scale in range(1, 17):
                     # from 16*1 till 16*16 which is 256
                     # basically, if MMA_M is 64, then BN must be multiple of 16 (mma_n_scale must be even)
 
@@ -231,10 +233,6 @@ def main():
                     alias umma_shape = Index(
                         128 * mma_m_scale, 16 * mma_n_scale, MMA_K
                     )
-
-                    @parameter
-                    if not umma_shape[1].is_power_of_two():
-                        continue
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
