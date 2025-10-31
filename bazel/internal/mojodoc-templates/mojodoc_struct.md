@@ -126,9 +126,7 @@ description: {% if decl.summary
 
 {% if decl.deprecated %}
 
-**Deprecated:**
-
-{{ decl.deprecated }}
+**Deprecated:** {{ decl.deprecated }}
 {% endif %}
 
 {% if decl.parameters and not decl.kind == 'function' %}
