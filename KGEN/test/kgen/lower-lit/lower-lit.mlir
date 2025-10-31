@@ -686,3 +686,21 @@ lit.struct.decl @TestStruct2 {
 }
 
 // TODO(MOCO-522): Add tests for aliases in extensions into LowerLIT
+
+// -----
+
+// COM: Origins are pruned correctly from lit closure init ops.
+!Walks = !lit.trait<@Walks>
+#type_value = #kgen.type<array<1, i1>> : !kgen.type
+lit.trait.decl @Walks<?, SELF: !Walks>(!Walks) {}
+
+// CHECK-LABEL: kgen.generator @aThing
+lit.fn @aThing() -> !kgen.none {
+  // CHECK: kgen.closure.init()<T: type>(%arg0: !kgen.pointer<T> read_mem) -> !kgen.none
+  %0 = lit.closure.init[#type_value]()<T: !Walks>[imm O1](%arg0[a]: !lit.ref<:!Walks T, imm O1> read_mem) -> !kgen.none {
+    %none_0 = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none_0 : !kgen.none
+  } : (), !lit.ref<!kgen.closure<@aThing, "aClosure" nonescaping>, mut *"aClosure`1">
+  %none_1 = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none_1 : !kgen.none
+}
