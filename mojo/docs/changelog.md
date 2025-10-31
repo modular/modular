@@ -21,6 +21,19 @@ what we publish.
 
 ### Language enhancements {#25-7-language-enhancements}
 
+- Mojo now supports compile-time trait conformance check (via `conforms_to`) and
+  downcast (via `trait_downcast`). This allows users to implement features like
+  static dispatching based on trait conformance, e.g.,
+
+  ```mojo
+  fn maybe_print[T : AnyType](maybe_printable : T):
+    @parameter
+    if conforms_to(T, Writable):
+      print(trait_downcast[Writable](maybe_printable))
+    else:
+      print("[UNPRINTABLE]")
+  ```
+
 - [Issue #3925](https://github.com/modular/modular/issues/3925): Mojo now allows
   methods to be overloaded based on "owned" vs "by-ref" argument conventions,
   selecting the owned overload when given an owned value, and selecting the
