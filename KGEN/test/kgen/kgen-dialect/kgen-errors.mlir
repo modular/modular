@@ -768,3 +768,17 @@ kgen.generator export @concretize_variadic_splaut(
 "some.op"() {
   a = #pop.cast_from_builtin< 0.0 : woof> : !pop.scalar<si32>
 } : () -> ()
+
+// -----
+
+// expected-error @+2 {{cannot convert from scalar dtype si32 to 'ui32'}}
+"some.op"() {
+  a = #pop.cast_to_builtin< #pop<simd 1> : !pop.simd<1, si32>> : ui32
+} : () -> ()
+
+// -----
+
+// expected-error @+2 {{expected vector<4xT>}}
+"some.op"() {
+  a = #pop.cast_to_builtin< #pop<simd 1> : !pop.simd<4, si32>> : vector<2xsi32>
+} : () -> ()

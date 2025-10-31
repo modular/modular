@@ -15,10 +15,6 @@
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
-#include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/bit.h"
-#include "llvm/Support/Base64.h"
-#include "llvm/Support/Compression.h"
 #include <unistd.h>
 
 using namespace M;
@@ -2875,39 +2871,7 @@ OpFoldResult CastToBuiltinOp::fold(FoldAdaptor adaptor) {
     return {};
   }
 
-  // Conversion to a 1D vector type.
-  std::optional<KGENDType> dtype = simd.getType().getResolvedDType();
-  if (!dtype)
-    return {};
-  if (auto vector = dyn_cast<VectorType>(getType())) {
-    if (dtype->isBool())
-      return convertSIMDToVectorAttr<IntArrayElementsAttr>(
-          simd, vector,
-          [](DTypeValue val) { return APInt(1, val.getBoolVal()); });
-    if (dtype->isIndex() || dtype->isUIndex())
-      return convertSIMDToVectorAttr<IndexArrayElementsAttr>(
-          simd, vector, [](DTypeValue val) { return val.getIndexVal(); });
-    if (dtype->isInt())
-      return convertSIMDToVectorAttr<IntArrayElementsAttr>(
-          simd, vector, [](DTypeValue val) { return val.getIntVal(); });
-    assert(dtype->isFloat() && "unexpected dtype");
-    return convertSIMDToVectorAttr<FloatArrayElementsAttr>(
-        simd, vector, [](DTypeValue val) { return val.getFloatVal(); });
-  }
-
-  assert(simd.getValues().size() == 1 && "expected a scalar constant");
-  const DTypeValue &value = simd.getValues().front();
-
-  // Convert to a scalar attribute.
-  Builder b(simd.getContext());
-  if (dtype->isBool())
-    return b.getBoolAttr(value.getBoolVal());
-  if (dtype->isIndex() || dtype->isUIndex())
-    return b.getIndexAttr(value.getIndexVal());
-  if (dtype->isInt())
-    return b.getIntegerAttr(cast<IntegerType>(getType()), value.getIntVal());
-  assert(dtype->isFloat() && "unexpected dtype");
-  return b.getFloatAttr(cast<FloatType>(getType()), value.getFloatVal());
+  return POP::foldCastToBuiltin(simd, getType());
 }
 
 //===----------------------------------------------------------------------===//

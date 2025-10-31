@@ -253,3 +253,23 @@ kgen.generator @closureSymbol(){
   // CHECK: j = #pop<simd 0> : !pop.scalar<si128>
   j = #pop.cast_from_builtin< 0 : si128> : !pop.scalar<si128>
 } : () -> ()
+
+"some.op"() {
+    // CHECK: a = #kgen.dtype.constant<si32>
+    a = #pop.dtype_from_ui8<139 : ui8> : !dtype.si32,
+    // CHECK: b = #kgen.dtype.constant<si16>
+    b = #pop.dtype_from_ui8<137 : ui8> : !dtype.si16,
+    // CHECK: c = #kgen.dtype.constant<f8e5m2>
+    c = #pop.dtype_from_ui8<68 : ui8> : !dtype.f8e5m2
+} : () -> ()
+
+"some.op"() {
+  // CHECK: a = 1 : si32
+  a = #pop.cast_to_builtin< #pop<simd 1> : !pop.simd<1, si32>> : si32,
+  // CHECK: b = #M.dense_array<1, 1> : vector<2xsi32>,
+  b = #pop.cast_to_builtin< #pop.simd<1, 1> : !pop.simd<2, si32>> : vector<2xsi32>,
+  // CHECK: c = #M.dense_array<1, 2> : vector<2xsi32>,
+  c = #pop.cast_to_builtin< #pop.simd<1, 2> : !pop.simd<2, si32>> : vector<2xsi32>,
+  // CHECK: d = 1.000000e+00 : f16
+  d = #pop.cast_to_builtin< #pop<simd "1.0"> : !pop.simd<1, f16>> : f16
+} : () -> ()

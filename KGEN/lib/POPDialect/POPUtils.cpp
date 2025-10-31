@@ -63,6 +63,46 @@ static ArrayElementsAttr convertSIMDToVectorAttr(SIMDAttr simd, VectorType type,
   return AttrT::get(type, values);
 }
 
+OpFoldResult POP::foldCastToBuiltin(TypedAttr input, Type resultType) {
+  auto simd = dyn_cast_if_present<POP::SIMDAttr>(input);
+  if (!simd)
+    return {};
+  // Conversion to a 1D vector type.
+  std::optional<KGENDType> dtype = simd.getType().getResolvedDType();
+  if (!dtype)
+    return {};
+
+  if (auto vector = dyn_cast<VectorType>(resultType)) {
+    if (dtype->isBool())
+      return convertSIMDToVectorAttr<IntArrayElementsAttr>(
+          simd, vector,
+          [](DTypeValue simd) { return APInt(1, simd.getBoolVal()); });
+    if (dtype->isIndex() || dtype->isUIndex())
+      return convertSIMDToVectorAttr<IndexArrayElementsAttr>(
+          simd, vector, [](DTypeValue simd) { return simd.getIndexVal(); });
+    if (dtype->isInt())
+      return convertSIMDToVectorAttr<IntArrayElementsAttr>(
+          simd, vector, [](DTypeValue simd) { return simd.getIntVal(); });
+    assert(dtype->isFloat() && "unexpected dtype");
+    return convertSIMDToVectorAttr<FloatArrayElementsAttr>(
+        simd, vector, [](DTypeValue simd) { return simd.getFloatVal(); });
+  }
+
+  assert(simd.getValues().size() == 1 && "expected a scalar constant");
+  const DTypeValue &value = simd.getValues().front();
+
+  // Convert to a scalar attribute.
+  Builder b(simd.getContext());
+  if (dtype->isBool())
+    return b.getBoolAttr(value.getBoolVal());
+  if (dtype->isIndex() || dtype->isUIndex())
+    return b.getIndexAttr(value.getIndexVal());
+  if (dtype->isInt())
+    return b.getIntegerAttr(cast<IntegerType>(resultType), value.getIntVal());
+  assert(dtype->isFloat() && "unexpected dtype");
+  return b.getFloatAttr(cast<FloatType>(resultType), value.getFloatVal());
+}
+
 OpFoldResult POP::foldCastFromBuiltin(TypedAttr val, SIMDType resultType) {
   // Ensure the incoming value is an expected constant kind.
   if (!isa<IntArrayElementsAttr, FloatArrayElementsAttr, IndexArrayElementsAttr,
