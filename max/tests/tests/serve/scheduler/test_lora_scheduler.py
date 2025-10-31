@@ -67,6 +67,7 @@ def create_mock_paged_cache() -> Mock:
     cache.prefetch = Mock(return_value=True)
     cache.external_claim = Mock()
     cache.release = Mock()
+    cache.get_or_recommend_replica = Mock(return_value=0)
 
     return cache
 
@@ -142,7 +143,7 @@ def test_single_lora_scheduling() -> None:
     batch_constructor.enqueue_new_request(ctx)
 
     # Construct batch
-    output = batch_constructor._try_create_ce_batch()
+    output = batch_constructor._try_create_ce_batch(replica_idx=0)
 
     # Verify the request was scheduled and LoRA was activated
     assert len(output.batch) == 1
@@ -180,7 +181,7 @@ def test_multi_lora_within_budget() -> None:
     batch_constructor.enqueue_new_request(ctx3)
 
     # Construct batch
-    output = batch_constructor._try_create_ce_batch()
+    output = batch_constructor._try_create_ce_batch(replica_idx=0)
 
     # All should be scheduled since we're within budget
     assert len(output.batch) == 3
@@ -222,7 +223,7 @@ def test_lora_preemption_over_budget() -> None:
     batch_constructor.enqueue_new_request(ctx_base)
 
     # Construct batch
-    output = batch_constructor._try_create_ce_batch()
+    output = batch_constructor._try_create_ce_batch(replica_idx=0)
 
     # Only 2 LoRAs can be activated (max_num_loras=2), plus base
     assert len(output.batch) == 3
@@ -234,7 +235,7 @@ def test_lora_preemption_over_budget() -> None:
     assert ctx_lora3.request_id not in output.batch
 
     # Deferred request should be back in ce_reqs
-    assert ctx_lora3.request_id in batch_constructor.ce_reqs
+    assert ctx_lora3.request_id in batch_constructor.all_ce_reqs
 
 
 def test_age_based_scheduling_with_lora() -> None:
@@ -270,7 +271,7 @@ def test_age_based_scheduling_with_lora() -> None:
     batch_constructor.enqueue_new_request(ctx_active)
 
     # Construct batch
-    output = batch_constructor._try_create_ce_batch()
+    output = batch_constructor._try_create_ce_batch(replica_idx=0)
 
     # Should schedule first two by age: inactive (will activate) and base
     assert len(output.batch) == 2
@@ -312,7 +313,7 @@ def test_tg_batch_with_active_loras() -> None:
     batch_constructor.enqueue_new_request(ctx_base)
 
     # Construct TG batch
-    output = batch_constructor._create_tg_batch()
+    output = batch_constructor._create_tg_batch(replica_idx=0)
 
     # All requests should be in batch (all have active LoRAs or are base)
     assert len(output.batch) == 3
@@ -348,7 +349,7 @@ def test_ce_lora_activation_within_budget() -> None:
     batch_constructor.enqueue_new_request(ctx_lora2)
 
     # Construct CE batch
-    output = batch_constructor._try_create_ce_batch()
+    output = batch_constructor._try_create_ce_batch(replica_idx=0)
 
     # Both should be scheduled since we're within budget (max_num_loras=3)
     assert len(output.batch) == 2
@@ -402,7 +403,7 @@ def test_tg_pure_age_based_preemption() -> None:
     batch_constructor.enqueue_new_request(ctx3)
 
     # Construct TG batch
-    output = batch_constructor._create_tg_batch()
+    output = batch_constructor._create_tg_batch(replica_idx=0)
 
     # Only first request should be scheduled (due to our mock)
     assert len(output.batch) == 1
@@ -434,7 +435,7 @@ def test_lora_swapping_ce_to_tg() -> None:
     ctx = create_lora_context(model_name="lora_model1")
     batch_constructor.enqueue_new_request(ctx)
 
-    batch_constructor._try_create_ce_batch()
+    batch_constructor._try_create_ce_batch(replica_idx=0)
     assert "lora_model1" in lora_manager._active_loras
 
     # Move to TG (simulate completion of CE)
@@ -446,7 +447,7 @@ def test_lora_swapping_ce_to_tg() -> None:
     batch_constructor.enqueue_new_request(ctx2)
 
     # Process CE request first to activate second LoRA
-    batch_constructor._try_create_ce_batch()
+    batch_constructor._try_create_ce_batch(replica_idx=0)
     assert "lora_model2" in lora_manager._active_loras
 
     # Now move second request to TG
@@ -454,7 +455,7 @@ def test_lora_swapping_ce_to_tg() -> None:
     batch_constructor.enqueue_new_request(ctx2)
 
     # Construct TG batch with both active LoRAs
-    tg_output = batch_constructor._create_tg_batch()
+    tg_output = batch_constructor._create_tg_batch(replica_idx=0)
 
     # Both requests should be in batch (both LoRAs are active)
     assert ctx.request_id in tg_output.batch
@@ -492,7 +493,7 @@ def test_mixed_requests_scheduling() -> None:
     batch_constructor.enqueue_new_request(ctx_base2)
 
     # Construct batch
-    output = batch_constructor._try_create_ce_batch()
+    output = batch_constructor._try_create_ce_batch(replica_idx=0)
 
     # One LoRA, both base requests should be scheduled
     # Second LoRA should be preempted due to budget
