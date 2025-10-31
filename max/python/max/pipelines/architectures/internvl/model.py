@@ -45,6 +45,7 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
+    AlwaysSignalBuffersMixin,
     KVCacheConfig,
     KVCacheMixin,
     ModelInputs,
@@ -204,7 +205,9 @@ def assert_image_embeddings_invariant(
         )
 
 
-class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
+class InternVLModel(
+    AlwaysSignalBuffersMixin, PipelineModel[TextAndVisionContext], KVCacheMixin
+):
     """An InternVL pipeline model for multimodal text generation."""
 
     vision_model: Model
@@ -243,15 +246,6 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
         self.vision_model, self.language_model = self.load_model(session)
-
-        # Initialize signal buffers for distributed communication.
-        # InternVL is natively distributed, so we always need these.
-        self.signal_buffers = [
-            Tensor.zeros(
-                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
-            )
-            for dev in self.devices
-        ]
 
         # Initialize vision stacker for optimized parallel stacking.
         self._stacker = _VisionStacker()

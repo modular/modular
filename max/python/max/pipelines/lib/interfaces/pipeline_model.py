@@ -17,6 +17,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, Generic
 
 from max.driver import Device, Tensor
@@ -42,6 +43,44 @@ from ..config_enums import SupportedEncoding
 from ..kv_cache_config import KVCacheConfig
 from ..lora import LoRAManager
 from .kv_cache import KVCacheMixin
+
+
+class AlwaysSignalBuffersMixin:
+    """Mixin for models that always require signal buffers.
+
+    Use this for models that use VocabParallelEmbedding or other distributed
+    components that always perform allreduce, even on single-device setups.
+
+    Models using this mixin build graphs that always include signal buffer
+    inputs, regardless of device count. This is typically because they use
+    distributed embedding layers or other components that call allreduce
+    operations unconditionally.
+    """
+
+    devices: list[Device]
+    """Device list that must be provided by the model class."""
+
+    @cached_property
+    def signal_buffers(self) -> list[Tensor]:
+        """Override to always create signal buffers.
+
+        Models using this mixin have distributed components that always
+        perform allreduce, even for single-device setups. Therefore,
+        signal buffers are always required to match the graph inputs.
+
+        Returns:
+            List of signal buffer tensors, one per device.
+        """
+        from max.nn import Signals
+
+        return [
+            Tensor.zeros(
+                shape=(Signals.NUM_BYTES,),
+                dtype=DType.uint8,
+                device=dev,
+            )
+            for dev in self.devices
+        ]
 
 
 @dataclass(frozen=True)
@@ -155,6 +194,37 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     @property
     def lora_manager(self) -> LoRAManager | None:
         return self._lora_manager
+
+    @cached_property
+    def signal_buffers(self) -> list[Tensor]:
+        """Lazily initialize signal buffers for multi-GPU communication collectives.
+
+        Signal buffers are only needed during model execution, not during compilation.
+        By deferring their allocation, we avoid memory allocation in compile-only mode.
+
+        Returns:
+            List of signal buffer tensors, one per device for multi-device setups,
+            or an empty list for single-device setups.
+        """
+        # Import here to avoid circular dependency
+        from max.nn import Signals
+
+        # Initialize state needed for communication collectives.
+        # Contents of signal buffer should be filled with zeros.
+        return (
+            [
+                Tensor.zeros(
+                    shape=(Signals.NUM_BYTES,),
+                    dtype=DType.uint8,
+                    device=dev,
+                )
+                for dev in self.devices
+            ]
+            if len(self.devices) > 1
+            # Skip creating buffers for single-device, where communication
+            # collectives shouldn't be called.
+            else []
+        )
 
     @property
     def dtype(self) -> DType:

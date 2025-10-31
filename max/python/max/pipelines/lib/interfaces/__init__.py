@@ -14,9 +14,15 @@
 
 from .generate import GenerateMixin
 from .kv_cache import KVCacheMixin, get_paged_manager
-from .pipeline_model import ModelInputs, ModelOutputs, PipelineModel
+from .pipeline_model import (
+    AlwaysSignalBuffersMixin,
+    ModelInputs,
+    ModelOutputs,
+    PipelineModel,
+)
 
 __all__ = [
+    "AlwaysSignalBuffersMixin",
     "GenerateMixin",
     "KVCacheMixin",
     "ModelInputs",

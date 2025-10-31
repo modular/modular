@@ -40,6 +40,7 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
+    AlwaysSignalBuffersMixin,
     KVCacheConfig,
     KVCacheMixin,
     ModelInputs,
@@ -99,7 +100,9 @@ class Llama4Inputs(ModelInputs):
         self.kv_cache_inputs = kv_cache_inputs
 
 
-class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
+class Llama4Model(
+    AlwaysSignalBuffersMixin, PipelineModel[TextContext], KVCacheMixin
+):
     """A Llama 4 pipeline model for text generation.
 
     This class integrates the Llama 4 architecture with the MAX Engine pipeline
@@ -153,14 +156,6 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         )
 
         self.model = self.load_model(session)
-
-        # Contents of signal buffer should be filled with zeros.
-        self.signal_buffers = [
-            Tensor.zeros(
-                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
-            )
-            for dev in self.devices
-        ]
 
     @staticmethod
     def calculate_max_seq_len(

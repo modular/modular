@@ -123,21 +123,6 @@ class MistralModel(PipelineModel[TextContext]):
         )
         self.model = self.load_model(session)
 
-        # Initialize state needed for communication collectives.
-        # Contents of signal buffer should be filled with zeros.
-        self.signal_buffers = (
-            [
-                Tensor.zeros(
-                    shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
-                )
-                for dev in self.devices
-            ]
-            if len(self.devices) > 1
-            # Skip creating buffers for single-device, where communication
-            # collectives shouldn't be called.
-            else []
-        )
-
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Runs the graph."""
         assert isinstance(model_inputs, MistralInputs)

@@ -24,6 +24,7 @@ from .hf_utils import (
     validate_hf_repo_access,
 )
 from .interfaces import (
+    AlwaysSignalBuffersMixin,
     KVCacheMixin,
     ModelInputs,
     ModelOutputs,
@@ -68,6 +69,7 @@ from .weight_path_parser import WeightPathParser
 __all__ = [
     "MEMORY_ESTIMATOR",
     "PIPELINE_REGISTRY",
+    "AlwaysSignalBuffersMixin",
     "AudioGenerationConfig",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",

@@ -39,6 +39,7 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
+    AlwaysSignalBuffersMixin,
     KVCacheConfig,
     KVCacheMixin,
     ModelInputs,
@@ -96,7 +97,9 @@ class GptOssInputs(ModelInputs):
         self.return_n_logits = return_n_logits
 
 
-class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
+class GptOssModel(
+    AlwaysSignalBuffersMixin, PipelineModel[TextContext], KVCacheMixin
+):
     """A GPT OSS pipeline model for text generation.
 
     This class integrates the GPT OSS architecture with the MAX Engine pipeline
@@ -148,14 +151,6 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             adapter,
             return_logits,
         )
-
-        # Initialize signal buffers for distributed execution
-        self.signal_buffers = [
-            Tensor.zeros(
-                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
-            )
-            for dev in self.devices
-        ]
 
         self.model = self.load_model(session)
 

@@ -29,7 +29,7 @@ from max.kv_cache import (
     PagedKVCacheManager,
     load_kv_manager,
 )
-from max.nn import ReturnLogits, Signals
+from max.nn import ReturnLogits
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.float8_config import parse_float8_config
 from max.nn.kv_cache import (
@@ -38,6 +38,7 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
+    AlwaysSignalBuffersMixin,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -100,7 +101,7 @@ def _choose_correct_data_parallel_degree(
     pipeline_config.model_config.data_parallel_degree = len(devices)
 
 
-class DeepseekV3Model(DeepseekV2Model):
+class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
 
     def __init__(
@@ -267,17 +268,6 @@ class DeepseekV3Model(DeepseekV2Model):
         self._input_row_offsets_prealloc_cpu = Tensor.from_numpy(
             np.arange(max_batch_size + 1, dtype=np.uint32)
         )
-
-        # Override signal buffers from DeepSeekV2 model, because this model
-        # always requires the signal buffer input. This can be removed once
-        # we delete non-distributed Deepseek V2 (the distributed version
-        # should already be able to handle a single device).
-        self.signal_buffers = [
-            Tensor.zeros(
-                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
-            )
-            for dev in self.devices
-        ]
 
         logger.info("Building DeepseekV3 model...")
         before = time.perf_counter()

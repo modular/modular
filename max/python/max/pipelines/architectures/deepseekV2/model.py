@@ -125,21 +125,6 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             return_logits,
         )
 
-        # Initialize state needed for communication collectives.
-        # Contents of signal buffer should be filled with zeros.
-        self.signal_buffers = (
-            [
-                Tensor.zeros(
-                    shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
-                )
-                for dev in self.devices
-            ]
-            if len(self.devices) > 1
-            # Skip creating buffers for single-device, where communication
-            # collectives shouldn't be called.
-            else []
-        )
-
         self.model = self.load_model(session)
         self.logprobs_device = devices[0]
         self.logprobs_model = self.load_logprobs_model(session)
