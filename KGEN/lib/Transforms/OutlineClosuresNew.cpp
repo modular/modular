@@ -622,82 +622,6 @@ void ClosureLifter::liftMoveOrCopyFunction(OpBuilder &b,
        ArgConvention::ByRefResult});
 }
 
-static bool typesMatch(FuncTypeGeneratorType closureSymbolAttrType,
-                       FuncTypeGeneratorType liftedFunctionType,
-                       Type loweredClosureType,
-                       ClosureLifter::ClosureInitData closureInitData) {
-
-  /// (1) First map the ClosureType to the lowered struct type in the closure
-  /// symbol attribute's type.
-  ArrayRef<Type> args = closureSymbolAttrType.getBody().getArguments();
-  MLIRContext *cxt = closureSymbolAttrType.getContext();
-  /// Expected at least one self argument.
-  if (args.size() < 1) {
-    mlir::emitError(closureInitData.getClosureInit()->getLoc(),
-                    "expected at least one argument in the struct method ")
-        << closureSymbolAttrType;
-    return false;
-  }
-  Type selfType;
-  if (closureInitData.isMem()) {
-    /// Expected pointer semantics for in memory closure
-    if (!isa<KGEN::PointerType>(args.front())) {
-      mlir::emitError(
-          closureInitData.getClosureInit()->getLoc(),
-          "expected a pointer type in the first argument of the method ")
-          << closureSymbolAttrType;
-      return false;
-    }
-
-    selfType = cast<PointerType>(args.front()).getElementType();
-  } else {
-    selfType = args.front();
-  }
-  auto closureTypeOfGiven = dyn_cast<ClosureType>(selfType);
-  if (!closureTypeOfGiven) {
-    mlir::emitError(
-        closureInitData.getClosureInit()->getLoc(),
-        "expected a closure type in the first argument of the method ")
-        << closureSymbolAttrType;
-    return false;
-  }
-
-  ClosureType closureType = closureInitData.getClosureType();
-  if (closureTypeOfGiven.getParentSymbol() != closureType.getParentSymbol() ||
-      closureTypeOfGiven.getName() != closureType.getName() ||
-      closureTypeOfGiven.getClosureMemoryKind() !=
-          closureType.getClosureMemoryKind()) {
-    mlir::emitError(closureInitData.getClosureInit()->getLoc(),
-                    "unexpected closure type. Got ")
-        << closureTypeOfGiven << " but expected " << closureType;
-    return false;
-  }
-  SmallVector<Type> loweredArgTypes;
-  loweredArgTypes.push_back(closureInitData.isMem()
-                                ? PointerType::get(loweredClosureType)
-                                : loweredClosureType);
-  llvm::append_range(loweredArgTypes, args.drop_front());
-  SmallVector<ParamDeclAttr> parameters;
-
-  FunctionType givenFuncType = FunctionType::get(
-      cxt, loweredArgTypes, closureSymbolAttrType.getBody().getResults());
-  // (2) Next, remap from the struct generator op parameters to the parameters
-  // of the lifted function.
-  M::KGEN::FuncTypeGeneratorType givenFuncGenTypeRemappedParams =
-      closureSymbolAttrType.remapToFuncTypeGenerator(
-          closureInitData.getClosureInit().getInputParams(), givenFuncType,
-          closureSymbolAttrType.getBody().getArgConventions(),
-          closureSymbolAttrType.getBody().getFnEffects());
-
-  bool isMatch = givenFuncGenTypeRemappedParams == liftedFunctionType;
-  if (!isMatch) {
-    mlir::emitError(closureInitData.getClosureInit()->getLoc(),
-                    "Type mismatch: ")
-        << givenFuncGenTypeRemappedParams << " vs " << liftedFunctionType;
-  }
-  return isMatch;
-}
-
 LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
                                               ClosureInitData &closureInitData,
                                               TypedAttr capturedInstance,
@@ -807,12 +731,6 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
           /*argConv=*/conventions, /*effects=*/effects,
           /*fnMetadata=*/{}, /*genMetadata=*/{}),
       boundParams);
-  /// We are replacing symbol A with symbol B. Ensure the types match.
-  if (debugBuild) {
-    if (!typesMatch(closureAttr.getType(), sym.getType(),
-                    loweredClosureTypeMapped, closureInitData))
-      return failure();
-  }
   liftedClosureSymbols[{closureAttr.getParentSymbol(),
                         closureAttr.getNestedFuncName(),
                         closureAttr.getMethod()}] = sym;

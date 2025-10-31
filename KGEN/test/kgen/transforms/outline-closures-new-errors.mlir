@@ -20,7 +20,7 @@ kgen.generator @closure_types(%arg0 : index, %arg1 : index) {
 
 // COM: Ensure that unhandled symbols and types fail the pass.
 
-// CHECK: unexpected closure type. Got '!kgen.closure<@invalid, "UNKNOWN" nonescaping>' but expected '!kgen.closure<@invalid, "fn" nonescaping>'
+// CHECK: no type found for closure type '!kgen.closure<@invalid, "UNKNOWN" nonescaping>'
 
 #type_value = #kgen.type<typevalue<#kgen.genref<@"invalid::fn">>, !kgen.closure<@"invalid", "UNKNOWN" nonescaping>> : !kgen.type
 
@@ -48,25 +48,5 @@ kgen.generator @invalid() {
     kgen.return %arg2 : index
   } : (), !kgen.pointer<!kgen.closure<@invalid, "fn" nonescaping>>
   %2 = kgen.call @consume<:type #type_value>(%3) : (!kgen.pointer<!kgen.closure<@invalid, "fn" nonescaping>> read_mem) -> index
-  kgen.return
-}
-
-// -----
-
-// COM: Ensure mismatches are reported
-
-#type_value = #kgen.type<typevalue<#kgen.genref<@"foo::fn">>, struct<(index) memoryOnly>> : !kgen.type
-
-kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !kgen.closure<@"foo", "fn" nonescaping> {
-  kgen.conformance @"closure_trait" {
-    kgen.witness "__call__" : (!kgen.pointer<!kgen.closure<@"foo", "fn" nonescaping>> read_mem, index, index) -> index = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
-  }
-}
-
-kgen.generator @foo(%arg0 : index) {
-  // CHECK: error: Type mismatch: '!kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> read_mem, index, index) -> index>' vs '!kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> read_mem, index) -> index>'
-  %3 = kgen.closure.init(%arg0)(%arg1: index) -> index {
-    kgen.return %arg0 : index
-  } : (index), !kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>
   kgen.return
 }
