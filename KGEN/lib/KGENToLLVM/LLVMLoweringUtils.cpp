@@ -114,16 +114,6 @@ ArrayAttr KGEN::attachTargetPassthroughAttrs(OpBuilder &b,
   if (!target.getTuneCpu().empty())
     attrs.push_back(b.getArrayAttr(
         {b.getStringAttr("tune-cpu"), b.getStringAttr(target.getTuneCpu())}));
-  // add FTZ for Hopper+ NVPTX (sm_90 and newer), f16 & f32 only.
-  if (KGEN::isNVPTX_HopperAndAbove(target)) {
-    attrs.push_back(
-        b.getArrayAttr({b.getStringAttr("denormal-fp-math-f16"),
-                        b.getStringAttr("preserve-sign,preserve-sign")}));
-    attrs.push_back(
-        b.getArrayAttr({b.getStringAttr("denormal-fp-math-f32"),
-                        b.getStringAttr("preserve-sign,preserve-sign")}));
-  }
-  //
   return b.getArrayAttr(attrs);
 }
 
