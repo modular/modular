@@ -2932,7 +2932,7 @@ struct LayoutTensor[
 
             @parameter
             for i in range(num_tiles):
-                alias stride = Int(_tiled_layout[1].stride[i])
+                alias stride = product(_tiled_layout[1].stride[i])
                 offset += tile_coords[i] * stride
 
             var runtime_layout = tile_type.RuntimeLayoutType(

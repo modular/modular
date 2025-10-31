@@ -1984,6 +1984,19 @@ fn test_vectorized_tile() raises:
     assert_equal(Int(vt.element_layout.shape[1]), 2)
 
 
+fn test_nested_tile() raises:
+    alias base_layout = Layout.row_major(8, 8)
+    alias tiler_layout = Layout.row_major(2, 2)
+    alias layout = blocked_product(base_layout, tiler_layout)
+    var managed_tensor_a = ManagedLayoutTensor[DType.float32, layout]()
+    arange(managed_tensor_a.tensor())
+    var tensor_a = managed_tensor_a.tensor()
+    var vt = tensor_a.tile[4, 4](0, 0)
+    for i in range(4):
+        for j in range(4):
+            assert_equal(vt[i, j], tensor_a[i, j])
+
+
 fn test_tensor_size() raises:
     alias layout = Layout.row_major(4, 4)
     var stack = InlineArray[UInt32, layout.size()](uninitialized=True)
@@ -2039,4 +2052,5 @@ def main():
     # test_copy_from_vectorized_masked_read()
     test_binary_math_ops()
     test_vectorized_tile()
+    test_nested_tile()
     test_tensor_size()
