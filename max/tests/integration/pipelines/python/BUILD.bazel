@@ -202,6 +202,9 @@ modular_py_test(
     srcs = ["test_pipelines_cli_help.py"],
     deps = [
         "//SDK/lib/API/python/max/entrypoints:pipelines",
+        # TODO: Explicitly include benchmark_shared so that max benchmark help subcommand works
+        # This "workaround" shouldn't be necessary but will have to investigate further.
+        "//SDK/lib/API/python/max/benchmark/benchmark_shared",
         requirement("click"),
     ],
 )
