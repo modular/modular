@@ -83,7 +83,7 @@ fn kernel_3[
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     constrained[num_threads == 128 or num_threads == 256]()
     alias BM = block_tile_shape[0]
@@ -421,7 +421,7 @@ fn kernel_2[
         num_threads=block_dim,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c,

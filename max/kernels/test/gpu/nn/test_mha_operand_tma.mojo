@@ -173,7 +173,7 @@ def mha_operand_copy[
     ]
 
     # Launch kernel with block_dim=32
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         src_tma,
         dst_tma,
         src,

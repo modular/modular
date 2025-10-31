@@ -344,7 +344,6 @@ def test_tma_wgmma[
     ]
 
     ctx.enqueue_function_checked[kernel, kernel](
-        # ctx.enqueue_function[kernel, dump_llvm=Path("invalid.ll")](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),

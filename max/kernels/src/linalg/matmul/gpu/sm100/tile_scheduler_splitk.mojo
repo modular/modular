@@ -103,7 +103,7 @@ struct TileScheduler[
         empty_mbar_ptr: UnsafePointer[
             SharedMemBarrier, address_space = AddressSpace.SHARED
         ],
-        locks_ptr: UnsafePointer[Int8],
+        locks_ptr: UnsafePointer[UInt8],
     ):
         self.scheduler = Self.UnderlyingScheduler(
             cluster_dim, clc_response_ptr, full_mbar_ptr, empty_mbar_ptr

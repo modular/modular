@@ -281,21 +281,18 @@ fn topk_mask_logits[
 
     @parameter
     fn launch_kernel[vec_size: Int]() raises:
-        ctx.enqueue_function[
-            TopKMaskLogitsKernel[
-                block_size,
-                vec_size,
-                dtype,
-                out_idx_type,
-                logits.layout,
-                masked_logits.layout,
-            ]
-        ](
+        alias kernel = TopKMaskLogitsKernel[
+            block_size,
+            vec_size,
+            dtype,
+            out_idx_type,
+            logits.layout,
+            masked_logits.layout,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             logits,
             masked_logits,
-            top_k_arr.value().ptr if top_k_arr else UnsafePointer[
-                Scalar[out_idx_type]
-            ](),
+            top_k_arr.value().to_device_buffer(ctx),
             top_k_val,
             d,
             grid_dim=batch_size,

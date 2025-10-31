@@ -33,6 +33,7 @@ from sys import size_of
 from memory.pointer import AddressSpace as _AddressSpace
 from layout.swizzle import Swizzle
 from bit import log2_floor
+from builtin.device_passable import DevicePassable
 
 
 struct TMADescriptor[
@@ -130,6 +131,27 @@ struct TMALoad[
     var descriptor: TMADescriptor[dtype, tile_shape, swizzle_mode]
 
     alias smem_alignment = 128
+
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return String(
+            "TMALoad[dtype = ",
+            dtype,
+            ", tile_shape = ",
+            tile_shape,
+            ", swizzle_mode = ",
+            swizzle_mode,
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     @implicit
@@ -307,7 +329,7 @@ fn copy[
         [M N O P Q R]
         [S T U V W X]]
 
-    Now assume we have this shared memory tensor with this 
+    Now assume we have this shared memory tensor with this
     layout:
 
     ((2, 3), (2, 2)) : ((12, 4), (2, 1))
@@ -328,10 +350,10 @@ fn copy[
     block 2: [[C D] [I J]] and smem offsets [[4 5] [6 7]]
     ...
 
-    Now lets say we want to load block 3 into smem, for smem we would 
-    load from offset 4, but if we start from offset 4 in global memory we would 
+    Now lets say we want to load block 3 into smem, for smem we would
+    load from offset 4, but if we start from offset 4 in global memory we would
     load [E F K L] instead of [C D I J]. So we need a second layout that provides
-    global memory offsets. To get this we just create a layout the same shape as 
+    global memory offsets. To get this we just create a layout the same shape as
     the shared memory layout but in row major order.
     """
 

@@ -537,7 +537,7 @@ fn kernel_8[
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     cluster_dim: StaticTuple[Int32, 3],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     alias num_output_warps = 4
 
@@ -1131,7 +1131,7 @@ fn blackwell_kernel_8[
         grid_dim[0] // cluster_shape[0], grid_dim[1] // cluster_shape[1], 1
     )
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

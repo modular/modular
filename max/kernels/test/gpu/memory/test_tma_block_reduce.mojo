@@ -226,15 +226,15 @@ def test_tma_block_reduce[
             ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
                 return data_buf.load[width=width](rebind[IndexList[2]](idx))
 
-            ctx.enqueue_function[
-                global_reduction_kernel[
-                    dtype,
-                    accum_type,
-                    simd_width,
-                    max_warps_per_block,
-                    input_fn_2d,
-                ]
-            ](
+            alias kernel = global_reduction_kernel[
+                dtype,
+                accum_type,
+                simd_width,
+                max_warps_per_block,
+                input_fn_2d,
+            ]
+
+            ctx.enqueue_function_checked[kernel, kernel](
                 d_out,
                 cols,  # num_cols
                 grid_dim=grid_dim,

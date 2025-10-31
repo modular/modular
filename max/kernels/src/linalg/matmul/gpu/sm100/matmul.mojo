@@ -851,7 +851,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
             ptr=UnsafePointer[UInt64, origin=MutableAnyOrigin](), length=0
         )
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -2201,7 +2201,7 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
     reduction_tensor: LayoutTensor[
         config.accum_type, reduction_layout, MutableAnyOrigin
     ],
-    lock_ptr: UnsafePointer[Int8],
+    lock_ptr: UnsafePointer[UInt8],
     cluster_dim: StaticTuple[Int32, 3],
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutableAnyOrigin],
@@ -3073,11 +3073,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
             max_profiled_tiles
         ].get_workspace(ctx)
     else:
-        workspace = Span[UInt64, MutableAnyOrigin](
-            ptr=UnsafePointer[UInt64, origin=MutableAnyOrigin](), length=0
-        )
+        workspace = Span[UInt64, MutableAnyOrigin]()
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

@@ -28,6 +28,8 @@ from sys.info import simd_width_of
 
 from algorithm import vectorize
 from memory import Pointer
+from builtin.device_passable import DevicePassable
+from compile import get_type_name
 
 
 @fieldwise_init
@@ -83,7 +85,7 @@ struct Span[
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-](Boolable, Defaultable, ImplicitlyCopyable, Movable, Sized):
+](Boolable, Defaultable, DevicePassable, ImplicitlyCopyable, Movable, Sized):
     """A non-owning view of contiguous data.
 
     Parameters:
@@ -108,6 +110,40 @@ struct Span[
     # Fields
     var _data: Self.UnsafePointerType
     var _len: Int
+
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return String(
+            "Span[",
+            get_type_name[T](),
+            ", address_space=",
+            address_space,
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing
+        arguments to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return Self.get_type_name()
 
     # ===------------------------------------------------------------------===#
     # Life cycle methods

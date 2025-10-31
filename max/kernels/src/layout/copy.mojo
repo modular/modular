@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from builtin.device_passable import DevicePassable
 
-trait CopyPolicy:
+
+trait CopyPolicy(DevicePassable, ImplicitlyCopyable):
     """
     The CopyPolicy trait defines requirements needed for a tensor to be copied.
 

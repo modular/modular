@@ -405,7 +405,7 @@ def test_tma_load[
         OOB_access=OOB_access,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         global_buffer_dst_tensor.device_tensor(),
         load_policy,
         grid_dim=(total_tiles),

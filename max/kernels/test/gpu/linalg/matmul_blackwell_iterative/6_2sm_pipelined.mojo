@@ -610,7 +610,7 @@ fn kernel_6[
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -971,7 +971,7 @@ fn blackwell_kernel_6[
         num_pipeline_stages = UInt(max_pipeline_stages),
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

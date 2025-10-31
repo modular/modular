@@ -997,7 +997,7 @@ fn grouped_matmul_amd[
             config,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,
