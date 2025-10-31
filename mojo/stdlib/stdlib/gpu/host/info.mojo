@@ -463,6 +463,9 @@ elif target_arch == "90a":  # Add your mapping here
 Note: The `target_arch` has the "sm_" prefix stripped, so "sm_90a" becomes
 "90a".
 
+Note: GPUs are currently 1:1 with the `target_arch` string. This is going to be 
+changed to support multiple GPUs per target_arch in the future.
+
 ### Step 5: Update `GPUInfo.target` Method
 
 Add the target mapping in the `target()` method of the `GPUInfo` struct:
