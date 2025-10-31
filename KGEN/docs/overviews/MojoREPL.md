@@ -67,7 +67,7 @@ with the REPL in any jupyter environment.
 
 ```shell
 # Ensure the Mojo Jupyter Kernel is installed in the local environment.
-$ install_python_deps
+$ jupyter-init
 
 # Build all of the necessary REPL functionality to run the jupyter kernel.
 $ build MojoJupyter
