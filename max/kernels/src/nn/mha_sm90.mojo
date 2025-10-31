@@ -26,7 +26,7 @@ from gpu import (
     thread_idx,
 )
 from gpu.globals import WARPGROUP_SIZE
-from gpu.host import DeviceContext, FuncAttribute
+from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import H100
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -115,14 +115,14 @@ fn mha_sm90_dispatch[
     sink: Bool,
     _is_cache_length_accurate: Bool,
 ](
-    output: UnsafePointer[Scalar[output_type]],
-    q_arg: UnsafePointer[Scalar[q_type]],
+    output: DeviceBuffer[output_type],
+    q_arg: DeviceBuffer[q_type],
     k: KVType,
     v: KVType,
     num_rows_q: Int,
     mask_functor: MaskType,
     score_mod: ScoreModType,
-    valid_length: UnsafePointer[UInt32],
+    valid_length: DeviceBuffer[DType.uint32],
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
@@ -409,13 +409,13 @@ fn _mha_sm90_sink_dispatch[
         swizzle_mode,
         is_k_major=False,
     ],
-    o_ptr_arg: UnsafePointer[Scalar[output_type]],
+    o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
     scale: Float32,
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: UnsafePointer[UInt32],
+    valid_length: DeviceBuffer[DType.uint32],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
@@ -554,13 +554,13 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
         swizzle_mode,
         is_k_major=False,
     ],
-    o_ptr_arg: UnsafePointer[Scalar[output_type]],
+    o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
     scale: Float32,
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: UnsafePointer[UInt32],
+    valid_length: DeviceBuffer[DType.uint32],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
@@ -693,13 +693,13 @@ fn _mha_sm90_valid_length_dispatch[
         swizzle_mode,
         is_k_major=False,
     ],
-    o_ptr_arg: UnsafePointer[Scalar[output_type]],
+    o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
     scale: Float32,
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: UnsafePointer[UInt32],
+    valid_length: DeviceBuffer[DType.uint32],
     kv_input_row_offsets: KVRowOffsetsType,
     sink_weights: SinkType,
     partition: PartitionType,
@@ -827,7 +827,7 @@ fn _mha_sm90_enqueue[
         swizzle_mode,
         is_k_major=False,
     ],
-    o_ptr_arg: UnsafePointer[Scalar[output_type]],
+    o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
     scale: Float32,
     batch_size: UInt32,
@@ -887,7 +887,7 @@ fn _mha_sm90_enqueue[
 
     alias smem_use = config.shared_mem_bytes[True, sm_90=True]()
     alias num_threads = config.num_threads[True]()
-    ctx.enqueue_function[kernel_sm90](
+    ctx.enqueue_function_checked[kernel_sm90, kernel_sm90](
         q_tma_op,
         k_tma_op,
         v_tma_op,

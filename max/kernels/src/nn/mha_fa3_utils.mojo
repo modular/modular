@@ -22,7 +22,7 @@ from algorithm.functional import unswitch
 from builtin.variadics import VariadicOf
 from gpu import block_idx, thread_idx
 from gpu.globals import WARPGROUP_SIZE
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.mma import st_matrix
 from gpu.sync import async_copy_arrive
@@ -88,6 +88,10 @@ struct NonNullPointer[dtype_: DType](OptionalPointer):
         self.ptr = ptr
 
     @always_inline
+    fn __init__(out self, ptr: DeviceBuffer[Self.dtype]):
+        self.ptr = ptr.unsafe_ptr()
+
+    @always_inline
     fn value(self) -> UnsafePointer[Scalar[Self.dtype]]:
         debug_assert(
             Bool(self.ptr),
@@ -123,7 +127,7 @@ struct Pack[
     KVRowOffsetsType: OptionalPointer,
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
-]:
+](Copyable, DevicePassable):
     var mask: MaskType
     var score_mod: ScoreModType
     var scheduler: SchedulerType
@@ -132,6 +136,19 @@ struct Pack[
     var kv_input_row_offsets: KVRowOffsetsType
     var max_seq_len: MaxSeqLenType
     var partition: PartitionType
+
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "Pack"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn __init__(
