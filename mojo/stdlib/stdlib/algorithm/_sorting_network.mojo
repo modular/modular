@@ -491,7 +491,7 @@ fn _networks(n: Int) -> List[List[Tuple[Int, Int]]]:
 
 
 fn _sort[
-    origin: MutableOrigin, dtype: DType, //, n: Int
+    origin: MutOrigin, dtype: DType, //, n: Int
 ](x: Span[Scalar[dtype], origin]):
     alias network = _networks(n)
 

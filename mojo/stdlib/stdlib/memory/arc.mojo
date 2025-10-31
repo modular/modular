@@ -179,8 +179,8 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
     # to model the mutability and invalidation of the returned reference
     # correctly.
     fn __getitem__[
-        self_life: ImmutableOrigin
-    ](ref [self_life]self) -> ref [MutableOrigin.cast_from[self_life]] T:
+        self_life: ImmutOrigin
+    ](ref [self_life]self) -> ref [MutOrigin.cast_from[self_life]] T:
         """Returns a mutable reference to the managed value.
 
         Parameters:

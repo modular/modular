@@ -370,7 +370,7 @@ fn stack_allocation[
     alignment: Int = align_of[dtype](),
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]() -> UnsafePointer[
-    Scalar[dtype], address_space=address_space, origin = MutableOrigin.external
+    Scalar[dtype], address_space=address_space, origin = MutOrigin.external
 ]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
@@ -399,7 +399,7 @@ fn stack_allocation[
     alignment: Int = align_of[type](),
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]() -> UnsafePointer[
-    type, mut=True, origin = MutableOrigin.external, address_space=address_space
+    type, mut=True, origin = MutOrigin.external, address_space=address_space
 ]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
@@ -485,7 +485,7 @@ fn _malloc[
     out res: UnsafePointer[
         type,
         mut=True,
-        origin = MutableOrigin.external,
+        origin = MutOrigin.external,
         address_space = AddressSpace.GENERIC,
     ],
 ):
@@ -494,7 +494,7 @@ fn _malloc[
         alias U = UnsafePointer[
             NoneType,
             mut=True,
-            origin = MutableOrigin.external,
+            origin = MutOrigin.external,
             address_space = AddressSpace.GENERIC,
         ]
         var ptr = external_call["malloc", U](size)

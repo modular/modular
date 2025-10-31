@@ -32,7 +32,7 @@ struct Color(ImplicitlyCopyable, Movable, Writable):
 
 
 @fieldwise_init
-struct Text[W: Writable, origin: ImmutableOrigin, //, color: Color](Writable):
+struct Text[W: Writable, origin: ImmutOrigin, //, color: Color](Writable):
     """Colors the given writable with the given `Color`."""
 
     var writable: Pointer[W, origin]

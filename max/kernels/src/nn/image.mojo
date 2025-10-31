@@ -59,7 +59,7 @@ struct ImageData[
     layout: Layout,
     dtype: DType,
     static_image_layout: Image2DLayout,
-    origin: MutableOrigin,
+    origin: MutOrigin,
 ]:
     """Utility class that generalizes conv2d data and filter tensor with a given
     data layout."""

@@ -23,7 +23,7 @@ from sys.intrinsics import _type_is_eq
 from sys import argv
 
 
-struct _Indent[W: Writable, origin: ImmutableOrigin](Writable):
+struct _Indent[W: Writable, origin: ImmutOrigin](Writable):
     """Indents the given writable by the given level."""
 
     alias IndentStr = "  "

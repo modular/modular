@@ -18,7 +18,7 @@ from layout.swizzle import Swizzle
 
 
 fn print_svg[
-    tensor_list_origin: ImmutableOrigin,
+    tensor_list_origin: ImmutOrigin,
     dtype: DType,
     layout: Layout,
     layout_int_type: DType,
@@ -52,7 +52,7 @@ fn print_svg[
 
 
 fn _print_svg_impl[
-    tensor_list_origin: ImmutableOrigin,
+    tensor_list_origin: ImmutOrigin,
     dtype: DType,
     layout: Layout,
     layout_int_type: DType,

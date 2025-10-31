@@ -18,10 +18,20 @@ These are Mojo built-ins, so you don't need to import them.
 alias AnyTrivialRegType = __mlir_type.`!kgen.type`
 """Represents any register passable Mojo data type."""
 
-alias ImmutableOrigin = Origin[False]
+
+@deprecated("`ImmutableOrigin` is deprecated, use `ImmutOrigin` instead.")
+alias ImmutableOrigin = ImmutOrigin
 """Immutable origin reference type."""
 
-alias MutableOrigin = Origin[True]
+alias ImmutOrigin = Origin[False]
+"""Immutable origin reference type."""
+
+
+@deprecated("`MutableOrigin` is deprecated, use `MutOrigin` instead.")
+alias MutableOrigin = MutOrigin
+"""Mutable origin reference type."""
+
+alias MutOrigin = Origin[True]
 """Mutable origin reference type."""
 
 alias ImmutableAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
@@ -81,7 +91,7 @@ struct Origin[mut: Bool]:
     struct Container[mut: Bool, //, origin: Origin[mut]]:
         var data: Int
 
-        fn imm_borrow(self) -> Container[ImmutableOrigin.cast_from[origin]]:
+        fn imm_borrow(self) -> Container[ImmutOrigin.cast_from[origin]]:
             pass
     ```
     """

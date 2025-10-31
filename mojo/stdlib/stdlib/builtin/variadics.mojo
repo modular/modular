@@ -208,7 +208,7 @@ struct _VariadicListMemIter[
     elt_is_mutable: Bool, //,
     elt_type: AnyType,
     elt_origin: Origin[elt_is_mutable],
-    list_origin: ImmutableOrigin,
+    list_origin: ImmutOrigin,
     is_owned: Bool,
 ]:
     """Iterator for VariadicListMem.

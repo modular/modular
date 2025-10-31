@@ -74,7 +74,7 @@ trait InnerMatmulKernel(ImplicitlyCopyable):
 fn elementwise_epilogue_c_tile[
     simd_width: Int,
     dtype: DType,
-    origin: MutableOrigin,
+    origin: MutOrigin,
     c_shape: DimList,
     func: fn[dtype: DType, width: Int, *, alignment: Int = 1] (
         IndexList[2], SIMD[dtype, width]
@@ -178,7 +178,7 @@ struct TiledMatmul[
     b_origin: Origin[b_mut],
     c_type: DType,
     c_shape: DimList,
-    c_origin: MutableOrigin,
+    c_origin: MutOrigin,
     algorithm: InnerMatmulKernel,
 ](ImplicitlyCopyable, Movable):
     """Tiled matmul implementation integrating packing, inner loop and tile

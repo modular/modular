@@ -49,7 +49,7 @@ struct PackMatrixRows[
     dtype: DType,
     simd_size: Int,
     row_inner_size: Int,
-    packed_origin: MutableOrigin,
+    packed_origin: MutOrigin,
     original_origin: Origin[original_mut],
 ](ImplicitlyCopyable, Movable):
     """Pack rows from a matrix into the mlas packed layout and
@@ -292,7 +292,7 @@ struct PackMatrixCols[
     column_inner_size: Int,
     use_vnni: Bool,
     use_i8mm: Bool,
-    packed_origin: MutableOrigin,
+    packed_origin: MutOrigin,
     original_origin: Origin[original_mut],
 ](ImplicitlyCopyable, Movable):
     """Pack columns from a matrix into the mlas packed layout and
@@ -748,7 +748,7 @@ fn _pack_b_ndbuffer_impl[
     c_shape: DimList,
     transposed: Bool,
     b_origin: Origin[b_mut],
-    output_origin: MutableOrigin,
+    output_origin: MutOrigin,
 ](
     b_input: NDBuffer[b_type, 2, b_origin, b_shape],
     output_buffer: NDBuffer[b_type, 2, output_origin],
@@ -830,7 +830,7 @@ fn pack_b_ndbuffer[
     c_type: DType,
     c_shape: DimList,
     b_origin: Origin[b_mut],
-    output_origin: MutableOrigin,
+    output_origin: MutOrigin,
 ](
     b_input: NDBuffer[b_type, 2, b_origin, b_shape],
     output_buffer: NDBuffer[b_type, 2, output_origin],

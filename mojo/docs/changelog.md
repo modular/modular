@@ -290,6 +290,8 @@ what we publish.
 
 - The `empty` origin has been renamed to `external`.
 
+- Rename `MutableOrigin` to `MutOrigin` and `ImmutableOrigin` to `ImmutOrigin`.
+
 ### Tooling changes {#25-7-tooling-changes}
 
 - `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)

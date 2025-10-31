@@ -220,7 +220,7 @@ struct _WriteBufferHeap(Writable, Writer):
 
 
 struct _WriteBufferStack[
-    origin: MutableOrigin,
+    origin: MutOrigin,
     W: Writer, //,
     stack_buffer_bytes: UInt = STACK_BUFFER_BYTES,
 ](Writer):
@@ -284,7 +284,7 @@ struct _TotalWritableBytes(Writer):
 
     fn __init__[
         T: Copyable & Movable & Writable, //,
-        origin: ImmutableOrigin = StaticConstantOrigin,
+        origin: ImmutOrigin = StaticConstantOrigin,
     ](
         out self,
         values: List[T, *_],

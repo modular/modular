@@ -394,8 +394,8 @@ fn _copy_column_q_bits_to_block[
 
 fn _pack_block_Q4_K[
     block_n: Int,
-    src_origin: MutableOrigin,
-    dst_origin: MutableOrigin,
+    src_origin: MutOrigin,
+    dst_origin: MutOrigin,
 ](
     var src_ptr: UnsafePointer[_block_Q4_K, origin=src_origin],
     stride: Int,
@@ -515,8 +515,8 @@ fn _pack_block_Q4_K[
 
 fn _pack_block_Q6_K[
     block_n: Int,
-    src_origin: MutableOrigin,
-    dst_origin: MutableOrigin,
+    src_origin: MutOrigin,
+    dst_origin: MutOrigin,
 ](
     var src_ptr: UnsafePointer[_block_Q6_K, origin=src_origin],
     stride: Int,

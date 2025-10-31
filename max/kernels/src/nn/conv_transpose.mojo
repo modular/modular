@@ -388,7 +388,7 @@ struct ConvTransposedPacked[
     output_alignment: Int, //,
     input_origin: Origin[input_mut],
     filter_origin: Origin[filter_mut],
-    output_origin: MutableOrigin,
+    output_origin: MutOrigin,
     input_layout: Layout,
     filter_layout: Layout,
     output_layout: Layout,

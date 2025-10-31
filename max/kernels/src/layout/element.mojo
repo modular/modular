@@ -666,7 +666,7 @@ struct MemoryElement[
     """
 
     alias _AsMut[
-        mut_origin: MutableOrigin,
+        mut_origin: MutOrigin,
     ] = MemoryElement[
         mut=True,
         dtype,

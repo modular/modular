@@ -216,7 +216,7 @@ def test_bitcast():
 
 
 def test_unsafepointer_string():
-    var nullptr = UnsafePointerV2[Int, MutableOrigin.external]()
+    var nullptr = UnsafePointerV2[Int, MutOrigin.external]()
     assert_equal(String(nullptr), "0x0")
 
     var ptr = alloc[Int](1)
@@ -374,7 +374,7 @@ def test_indexing_simd():
 
 
 def test_bool():
-    var nullptr = UnsafePointerV2[Int, MutableOrigin.external]()
+    var nullptr = UnsafePointerV2[Int, MutOrigin.external]()
     var ptr = alloc[Int](1)
 
     assert_true(ptr.__bool__())
@@ -547,7 +547,7 @@ def test_unsafe_mut_cast():
     assert_true(_mutable.mut)
 
 
-fn _ref_to[origin: ImmutableOrigin](ref [origin]to: String):
+fn _ref_to[origin: ImmutOrigin](ref [origin]to: String):
     pass
 
 

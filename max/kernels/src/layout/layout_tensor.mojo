@@ -977,7 +977,7 @@ struct LayoutTensor[
     @always_inline
     fn get_immutable(
         self,
-    ) -> Self.OriginCastType[False, ImmutableOrigin.cast_from[origin]]:
+    ) -> Self.OriginCastType[False, ImmutOrigin.cast_from[origin]]:
         """
         Return an immutable version of this tensor.
 
@@ -2334,7 +2334,7 @@ struct LayoutTensor[
             UnsafePointer[
                 Scalar[dtype],
                 address_space=address_space,
-                origin = MutableOrigin.external,
+                origin = MutOrigin.external,
             ]()
         )
 
@@ -3944,7 +3944,7 @@ struct LayoutTensor[
                 )
 
     alias ShapeVectorizedType[
-        origin: ImmutableOrigin,
+        origin: ImmutOrigin,
         vector_shape: IntTuple,
         linear_vectorize: Bool,
     ] = LayoutTensor[
@@ -3991,7 +3991,7 @@ struct LayoutTensor[
 
     @always_inline
     fn _vectorize_2[
-        _origin: ImmutableOrigin,  # FIXME: MOCO-1912
+        _origin: ImmutOrigin,  # FIXME: MOCO-1912
         vector_shape: IntTuple,
         check_rank: Bool = True,
         linear_vectorize: Bool = vector_shape.is_value(),

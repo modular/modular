@@ -273,7 +273,7 @@ that are not known at compile time or have not been specified.
 
 
 @register_passable("trivial")
-struct _IntTupleIter[origin: ImmutableOrigin](Iterable, Iterator):
+struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
     """Iterator for traversing elements of an IntTuple."""
 
     alias IteratorType[
@@ -338,7 +338,7 @@ struct IntTuple(
 
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _IntTupleIter[ImmutableOrigin.cast_from[iterable_origin]]
+    ]: Iterator = _IntTupleIter[ImmutOrigin.cast_from[iterable_origin]]
 
     var _store: IntArray
     """The underlying storage for the `IntTuple`.
@@ -376,7 +376,7 @@ struct IntTuple(
     @staticmethod
     @always_inline("nodebug")
     fn elements_size[
-        _origin: ImmutableOrigin, n: Int
+        _origin: ImmutOrigin, n: Int
     ](elements: InlineArray[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
         """Calculate the total storage size needed for IntTuples at a specific index.
 

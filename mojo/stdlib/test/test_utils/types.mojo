@@ -60,7 +60,7 @@ struct MoveOnly[T: Movable](Movable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct ObservableMoveOnly[actions_origin: ImmutableOrigin](Movable):
+struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
     """Type for observing move and destruction operations during testing.
 
     Parameters:
@@ -326,9 +326,7 @@ struct TriviallyCopyableMoveCounter(Copyable, Movable):
 
 
 @fieldwise_init
-struct DelRecorder[recorder_origin: ImmutableOrigin](
-    ImplicitlyCopyable, Movable
-):
+struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable, Movable):
     """Records destructor calls for testing.
 
     Parameters:
@@ -361,7 +359,7 @@ struct DelRecorder[recorder_origin: ImmutableOrigin](
 
 
 @fieldwise_init
-struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
+struct ObservableDel[origin: MutOrigin = MutableAnyOrigin](
     ImplicitlyCopyable, Movable
 ):
     """Sets a boolean flag when destroyed.
@@ -384,9 +382,9 @@ struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
 
 
 @fieldwise_init
-struct DelCounter[
-    counter_origin: ImmutableOrigin, *, trivial_del: Bool = False
-](ImplicitlyCopyable, Movable, Writable):
+struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
+    ImplicitlyCopyable, Movable, Writable
+):
     """Counts the number of times instances are destroyed.
 
     Parameters:

@@ -258,7 +258,7 @@ struct UnsafePointer[
         type,
         mut=True,
         address_space = AddressSpace.GENERIC,
-        origin = MutableOrigin.external,
+        origin = MutOrigin.external,
     ]:
         """Allocates contiguous storage for `count` elements of `type`
         with compile-time alignment `alignment`.
@@ -1186,7 +1186,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     fn as_immutable(
         self,
-    ) -> Self._OriginCastType[False, ImmutableOrigin.cast_from[origin]]:
+    ) -> Self._OriginCastType[False, ImmutOrigin.cast_from[origin]]:
         """Changes the mutability of a pointer to immutable.
 
         Unlike `unsafe_mut_cast`, this function is always safe to use as casting

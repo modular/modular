@@ -31,7 +31,7 @@ fn alloc[
     type: AnyType, /
 ](count: Int, *, alignment: Int = align_of[type]()) -> UnsafePointerV2[
     type,
-    MutableOrigin.external,
+    MutOrigin.external,
     address_space = AddressSpace.GENERIC,
 ]:
     """Allocates contiguous storage for `count` elements of `type` with
@@ -78,7 +78,7 @@ fn alloc[
 
 alias UnsafeMutPointer[
     type: AnyType,
-    origin: MutableOrigin,
+    origin: MutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = UnsafePointerV2[mut=True, type, origin, address_space=address_space]
@@ -86,7 +86,7 @@ alias UnsafeMutPointer[
 
 alias UnsafeImmutPointer[
     type: AnyType,
-    origin: ImmutableOrigin,
+    origin: ImmutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = UnsafePointerV2[type, origin, address_space=address_space]
@@ -101,14 +101,14 @@ alias OpaquePointerV2[
 """An opaque pointer, equivalent to the C `(const) void*` type."""
 
 alias OpaqueMutPointer[
-    origin: MutableOrigin,
+    origin: MutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = OpaquePointerV2[origin, address_space=address_space]
 """A mutable opaque pointer, equivalent to the C `void*` type."""
 
 alias OpaqueImmutPointer[
-    origin: ImmutableOrigin,
+    origin: ImmutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = OpaquePointerV2[origin, address_space=address_space]
@@ -499,7 +499,7 @@ struct UnsafePointerV2[
         other: UnsafePointerV2[mut=True, **_],
         out self: UnsafePointerV2[
             other.type,
-            ImmutableOrigin.cast_from[other.origin],
+            ImmutOrigin.cast_from[other.origin],
             address_space = other.address_space,
         ],
     ):
@@ -555,7 +555,7 @@ struct UnsafePointerV2[
     fn __init__(
         other: UnsafePointerV2[mut=False, type, **_],
         out self: UnsafePointerV2[
-            other.type, MutableOrigin.cast_from[MutableAnyOrigin], **_
+            other.type, MutOrigin.cast_from[MutableAnyOrigin], **_
         ],
     ):
         constrained[
@@ -1484,7 +1484,7 @@ struct UnsafePointerV2[
     @always_inline("builtin")
     fn as_immutable(
         self,
-    ) -> Self._OriginCastType[False, ImmutableOrigin.cast_from[origin]]:
+    ) -> Self._OriginCastType[False, ImmutOrigin.cast_from[origin]]:
         """Changes the mutability of a pointer to immutable.
 
         Unlike `unsafe_mut_cast`, this function is always safe to use as casting

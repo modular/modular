@@ -525,7 +525,7 @@ struct _MapIterator[
 
 @always_inline
 fn map[
-    origin: ImmutableOrigin,
+    origin: ImmutOrigin,
     IterableType: Iterable,
     ResultType: Copyable & Movable, //,
     function: fn (var IterableType.IteratorType[origin].Element) -> ResultType,

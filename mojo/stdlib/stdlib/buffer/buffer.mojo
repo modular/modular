@@ -613,7 +613,7 @@ struct NDBuffer[
     @always_inline("nodebug")
     fn get_immutable(
         self,
-    ) -> Self.OriginCastType[False, ImmutableOrigin.cast_from[origin]]:
+    ) -> Self.OriginCastType[False, ImmutOrigin.cast_from[origin]]:
         """Changes the mutability of the `NDBuffer` to immutable.
 
         Returns:

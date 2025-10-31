@@ -93,9 +93,9 @@ struct Span[
     """
 
     # Aliases
-    alias Mutable = Span[T, MutableOrigin.cast_from[origin]]
+    alias Mutable = Span[T, MutOrigin.cast_from[origin]]
     """The mutable version of the `Span`."""
-    alias Immutable = Span[T, ImmutableOrigin.cast_from[origin]]
+    alias Immutable = Span[T, ImmutOrigin.cast_from[origin]]
     """The immutable version of the `Span`."""
     alias UnsafePointerType = UnsafePointer[
         T,
@@ -123,7 +123,7 @@ struct Span[
     @always_inline("nodebug")
     fn __init__(
         other: Span[T, _],
-        out self: Span[T, ImmutableOrigin.cast_from[other.origin]],
+        out self: Span[T, ImmutOrigin.cast_from[other.origin]],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -448,7 +448,7 @@ struct Span[
 
     @always_inline
     fn copy_from[
-        _origin: MutableOrigin, //
+        _origin: MutOrigin, //
     ](self: Span[T, _origin], other: Span[T, _],):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
@@ -525,7 +525,7 @@ struct Span[
         """
         return not self == rhs
 
-    fn fill[_origin: MutableOrigin, //](self: Span[T, _origin], value: T):
+    fn fill[_origin: MutOrigin, //](self: Span[T, _origin], value: T):
         """
         Fill the memory that a span references with a given value.
 
@@ -616,9 +616,7 @@ struct Span[
             length = self._len,
         }
 
-    fn reverse[
-        dtype: DType, O: MutableOrigin, //
-    ](self: Span[Scalar[dtype], O]):
+    fn reverse[dtype: DType, O: MutOrigin, //](self: Span[Scalar[dtype], O]):
         """Reverse the elements of the `Span` inplace.
 
         Parameters:
@@ -655,7 +653,7 @@ struct Span[
 
     fn apply[
         dtype: DType,
-        O: MutableOrigin, //,
+        O: MutOrigin, //,
         func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
     ](self: Span[Scalar[dtype], O]):
         """Apply the function to the `Span` inplace.
@@ -687,7 +685,7 @@ struct Span[
 
     fn apply[
         dtype: DType,
-        O: MutableOrigin, //,
+        O: MutOrigin, //,
         func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
         *,
         cond: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],

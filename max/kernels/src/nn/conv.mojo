@@ -365,7 +365,7 @@ struct ConvDirectNHWC[
     output_layout: Layout,
     input_origin: Origin[input_mut],
     filter_origin: Origin[filter_mut],
-    output_origin: MutableOrigin,
+    output_origin: MutOrigin,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
