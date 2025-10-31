@@ -8,8 +8,8 @@ version = "0.1.0"
 
 [tasks]
 main = "mojo run src/example.mojo"
-test_dec = "mojo run test/my_math/test_dec.mojo"
-test_inc = "mojo run test/my_math/test_inc.mojo"
+test_dec = "mojo run -I src test/my_math/test_dec.mojo"
+test_inc = "mojo run -I src test/my_math/test_inc.mojo"
 test = { depends-on = ["test_dec", "test_inc"] }
 
 [dependencies]
