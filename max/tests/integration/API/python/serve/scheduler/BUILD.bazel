@@ -1,0 +1,26 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+modular_py_test(
+    name = "test_empty_batches",
+    size = "large",
+    srcs = ["test_text_generation_scheduler_empty_batches.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//SDK/integration-test/pipelines/python:hf_repo_lock",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/interfaces",
+        "//SDK/lib/API/python/max/pipelines/lib",
+        "//SDK/lib/API/python/max/serve",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)
