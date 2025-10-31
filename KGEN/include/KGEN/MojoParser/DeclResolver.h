@@ -201,6 +201,7 @@ public:
   /// Given the symbol for a declaration, return the ASTDecl that corresponds to
   /// it.  This doesn't allow null symbols, so it always succeeds.
   ASTDecl &getDeclForTypeSymbol(SymbolRefAttr symbol) const;
+  ASTDecl *getDeclForTypeSymbolIfExists(SymbolRefAttr symbol) const;
   ASTDecl *getDeclForFuncSymbol(SymbolRefAttr attr) const;
 
   /// This registers the finalized function with the DeclResolver after its

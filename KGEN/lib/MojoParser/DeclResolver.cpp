@@ -959,6 +959,12 @@ ASTDecl &DeclResolver::getDeclForTypeSymbol(SymbolRefAttr symbol) const {
   return *it->second;
 }
 
+ASTDecl *
+DeclResolver::getDeclForTypeSymbolIfExists(SymbolRefAttr symbol) const {
+  auto it = declForTypeSymbol.find(symbol);
+  return it != declForTypeSymbol.end() ? it->second : nullptr;
+}
+
 ASTDecl *DeclResolver::getDeclForFuncSymbol(SymbolRefAttr attr) const {
   auto it = declForFuncSymbol.find(attr);
   return it != declForFuncSymbol.end() ? it->second : nullptr;
