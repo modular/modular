@@ -38,12 +38,12 @@ def test_prop_test_runner_propagates_error():
 
 
 @fieldwise_init
-struct RecordingStrategy(Movable, Strategy):
+struct RecordingStrategy[origin: MutableOrigin](Movable, Strategy):
     alias Value = Int
 
-    var list: UnsafePointer[List[Int], mut=True]
+    var list: UnsafePointer[List[Int], mut=True, origin=origin]
 
-    fn value(mut self, mut rng: Rng) raises -> Self.Value:
+    fn value(self, mut rng: Rng) raises -> Self.Value:
         var random = rng.rand_int()
         self.list[].append(random)
         return random
