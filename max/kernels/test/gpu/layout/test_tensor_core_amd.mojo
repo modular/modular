@@ -13,12 +13,12 @@
 
 from gpu import WARP_SIZE, lane_id
 from gpu.host import DeviceContext
-from gpu.host.info import MI300X
+from gpu.host.info import MI300X, MI355X
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
-from layout.tensor_core import TensorCore
+from layout.tensor_core import TensorCore, load_b_tr
 from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
-
+from testing import assert_equal
 from utils.index import Index, IndexList
 
 alias fp8_dtype = DType.float8_e4m3fnuz if DeviceContext.default_device_info <= MI300X else DType.float8_e4m3fn
@@ -2065,6 +2065,50 @@ def test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2(
     ](ctx)
 
 
+fn test_load_b_tr(ctx: DeviceContext) raises:
+    print("== test_load_b_tr")
+
+    fn kernel[mma_shape: IndexList[3]](flag: UnsafePointer[Scalar[DType.bool]]):
+        var smem = LayoutTensor[
+            DType.bfloat16,
+            Layout.row_major(mma_shape[2], mma_shape[1]),
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ].stack_allocation()
+
+        if lane_id() == 0:
+            arange(smem)
+
+        # reference fragments
+        alias warp_layout = Layout.row_major(2, 32) if mma_shape[
+            0
+        ] == 32 else Layout.row_major(4, 16)
+        var frags = smem.vectorize[4, 1]().distribute[warp_layout](lane_id())
+        var frags_simd = frags[0, 0].join(frags[1, 0])
+
+        var frags_tr = load_b_tr[mma_shape](smem)
+
+        flag[lane_id()] = frags_simd == rebind[type_of(frags_simd)](frags_tr)
+
+    var flag = ctx.enqueue_create_buffer[DType.bool](WARP_SIZE)
+
+    ctx.enqueue_function[kernel[IndexList[3](32, 32, 16)]](
+        flag, grid_dim=(1), block_dim=(WARP_SIZE)
+    )
+    with flag.map_to_host() as flag_host:
+        for i in range(WARP_SIZE):
+            if not flag_host[i]:
+                assert_equal(flag_host[i], True, "frags_simd != frags_tr")
+
+    ctx.enqueue_function[kernel[IndexList[3](16, 16, 32)]](
+        flag, grid_dim=(1), block_dim=(WARP_SIZE)
+    )
+    with flag.map_to_host() as flag_host:
+        for i in range(WARP_SIZE):
+            if not flag_host[i]:
+                assert_equal(flag_host[i], True, "frags_simd != frags_tr")
+
+
 def main():
     with DeviceContext() as ctx:
         test_load_and_mma_f32_f32_16x16x4(ctx)
@@ -2085,3 +2129,7 @@ def main():
         test_load_and_mma_f32_bf8_16x16x32(ctx)
         test_load_and_mma_f32_bf8_16x16x32_transpose(ctx)
         test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2(ctx)
+
+        @parameter
+        if DeviceContext.default_device_info >= MI355X:
+            test_load_b_tr(ctx)

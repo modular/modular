@@ -65,9 +65,9 @@ from sys.info import (
 
 
 from gpu import WARP_SIZE, lane_id, thread_idx
-from gpu.intrinsics import lop
+from gpu.intrinsics import lop, ds_read_tr16_b64
 from gpu.mma import get_amd_bf8_dtype, get_amd_fp8_dtype, ld_matrix, mma
-from layout._utils import load_to_simd
+from layout._utils import load_to_simd, idx2crd
 from layout.int_tuple import product
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
@@ -1598,3 +1598,156 @@ struct TiledTensorCore[
                 a_reg_k.vectorize[1, a_frag_size](),
                 c_reg_tile.vectorize[1, c_frag_size](),
             )
+
+
+@always_inline
+fn _load_tr16_b64_row(
+    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
+) -> SIMD[tile.dtype, 4]:
+    # ds_read_tr16_b64 uses a set of 4x4 lanes (amd calls 16 lanes a "row")
+    # to load a 4x16 tile. Each lane loads 4 contiguous elements from the tile.
+    # Then they are exchanged such that at the end of this operation you get a
+    # SIMD[tile.dtype, 4], with each lane containing a column of the 4x16 tile.
+    constrained[
+        size_of[tile.dtype]() == 2,
+        String(
+            "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
+        ),
+    ]()
+    constrained[
+        tile.shape[0]() == 4,
+        String("Expected tile.shape[0]() to be 4, but got ", tile.shape[0]()),
+    ]()
+    constrained[
+        tile.shape[1]() == 16,
+        String("Expected tile.shape[1]() to be 16, but got ", tile.shape[1]()),
+    ]()
+
+    alias thread_layout = Layout.row_major(4, 4)
+    var lane_in_row = lane_id() % 16
+    var dist_result = tile.vectorize[1, 4]().distribute_with_offset[
+        thread_layout
+    ](lane_in_row)
+    var offset = dist_result[2]
+    var ptr = tile.ptr.offset(offset)
+    return ds_read_tr16_b64(ptr)
+
+
+@always_inline
+fn _load_tr16_b64_warp[
+    mma_shape: IndexList[3],
+](
+    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
+) -> SIMD[tile.dtype, 4]:
+    # for 8x32 we need 2x2 distribution of rows (16 lanes), 2x2 x 4x16 = 8x32
+    # for 16x16 we need 4x1 distribution of rows (16 lanes), 4x1 x 4x16 = 16x16
+    alias row_layout = Layout.row_major(2, 2) if mma_shape[
+        0
+    ] == 32 else Layout.row_major(4, 1)
+    constrained[
+        tile.dtype == DType.bfloat16,
+        String(
+            "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
+        ),
+    ]()
+    constrained[
+        tile.shape[0]() == row_layout.shape[0].value() * 4,
+        String(
+            "Expected tile.shape[0]() to be ",
+            row_layout.shape[0].value() * 4,
+            ", but got ",
+            tile.shape[0](),
+        ),
+    ]()
+    constrained[
+        tile.shape[1]() == row_layout.shape[1].value() * 16,
+        String(
+            "Expected tile.shape[1]() to be ",
+            row_layout.shape[1].value() * 16,
+            ", but got ",
+            tile.shape[1](),
+        ),
+    ]()
+
+    var coords = idx2crd[row_layout](Int(lane_id() // 16))
+    var shared_b_tile = tile.tile[4, 16](Int(coords[0]), Int(coords[1]))
+    return _load_tr16_b64_row(shared_b_tile)
+
+
+@always_inline
+fn load_b_tr[
+    mma_shape: IndexList[3]
+](
+    tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
+) -> SIMD[tile.dtype, 8]:
+    """Loads the b operand tile for AMD tensor core MFMA instructions using transposed memory access.
+
+    This function supports double-rate MFMA shapes (32x32x16, 16x16x32) with bfloat16 input.
+    The input tile (shape = (mma_shape[2], mma_shape[1])) is split along the K dimension into
+    two halves of shape (MMA_K//2, MMA_N). Each half is loaded using `_load_tr16_b64_warp`, which
+    performs a transposed (column-major) load from shared memory. The resulting two 4-element SIMD
+    vectors are concatenated into a single `SIMD[tile.dtype, 8]` vector.
+
+    Parameters:
+        mma_shape: The MMA instruction tile shape (only 32x32x16 or 16x16x32 supported).
+
+    Args:
+        tile:      A `LayoutTensor`, residing in shared memory, with shape (mma_shape[2], mma_shape[1])
+                   and dtype `DType.bfloat16`.
+
+    Returns:
+        SIMD[tile.dtype, 8]: Concatenated transposed SIMD loads from both halves of the tile.
+    """
+    # only support double-rate mfma shapes for now
+    constrained[
+        mma_shape in (IndexList[3](32, 32, 16), IndexList[3](16, 16, 32)),
+        String(
+            "Unsupported mma_shape: ",
+            mma_shape[0],
+            "x",
+            mma_shape[1],
+            "x",
+            mma_shape[2],
+            ". Supported shapes: 32x32x16, 16x16x32",
+        ),
+    ]()
+    constrained[
+        tile.dtype == DType.bfloat16,
+        String(
+            "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
+        ),
+    ]()
+    constrained[
+        tile.shape[0]() == mma_shape[2],
+        String(
+            "Expected tile.shape[0]() to be mma_shape[2]=",
+            mma_shape[2],
+            ", but got ",
+            tile.shape[0](),
+        ),
+    ]()
+    constrained[
+        tile.shape[1]() == mma_shape[1],
+        String(
+            "Expected tile.shape[1]() to be mma_shape[1]=",
+            mma_shape[1],
+            ", but got ",
+            tile.shape[1](),
+        ),
+    ]()
+    # Loads the input tile as two halves along the K dimension, each of shape
+    # (MMA_K//2, MMA_N), and concatenates the resulting 4-element vectors.
+    # This is designed for use in multi-head attention (MHA) kernels where
+    # the output fragment of a previous MFMA serves as the input to the next.
+    #
+    # For example, with MMA shape (32, 32, 16), this function splits a tile of
+    # shape (16, 32) into two (8, 32) tiles, loads 4 values from each, and
+    # joins them. This follows the MFMA output pattern on AMD GPUs where output
+    # fragments are organized in 4-element vectors.
+    #
+    # Typical usage: when fusing two MMAs, you can efficiently pass the
+    # accumulator of the first (after downcasting to 2 bytes) as part of the input to the next.
+    var tiles = tile.split[2]()
+    var part_1 = _load_tr16_b64_warp[mma_shape](tiles[0])
+    var part_2 = _load_tr16_b64_warp[mma_shape](tiles[1])
+    return part_1.join(part_2)

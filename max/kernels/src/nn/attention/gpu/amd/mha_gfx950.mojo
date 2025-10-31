@@ -56,6 +56,7 @@ from layout.tensor_core import (
     get_mma_shape,
     num_matrix_reg,
     TiledTensorCore,
+    load_b_tr,
 )
 from memory import bitcast, stack_allocation
 from nn.mha_mask import MHAMask, TileMaskStatus
@@ -266,42 +267,6 @@ fn load_b[
     return output
 
 
-@always_inline
-fn load_4x16(tile: LayoutTensor, var lane_id_16: Int) -> SIMD[tile.dtype, 4]:
-    constrained[tile.dtype == DType.bfloat16, "tile.dtype == DType.bfloat16"]()
-    constrained[tile.shape[0]() == 4, "tile.shape[0]() == 4"]()
-    constrained[tile.shape[1]() == 16, "tile.shape[1]() == 16"]()
-    debug_assert(lane_id_16 < 16, "lane_id_16 < 16")
-    alias thread_layout = Layout.row_major(4, 4)
-    var dist_result = tile.vectorize[1, 4]().distribute_with_offset[
-        thread_layout
-    ](UInt(lane_id_16))
-    var offset = dist_result[2]
-    var ptr = tile.ptr.address_space_cast[AddressSpace.SHARED]() + Int(offset)
-    return ds_read_tr16_b64(ptr)
-
-
-@always_inline
-fn load_8x32(tile: LayoutTensor, var lane_id: Int) -> SIMD[tile.dtype, 4]:
-    constrained[tile.dtype == DType.bfloat16, "tile.dtype == DType.bfloat16"]()
-    constrained[tile.shape[0]() == 8, "tile.shape[0]() == 8"]()
-    constrained[tile.shape[1]() == 32, "tile.shape[1]() == 32"]()
-    var lane_id_32 = lane_id % 32
-    var shared_b_tile = tile.tile[4, 16](lane_id // 32, lane_id_32 // 16)
-    var lane_16 = lane_id % 16
-    return load_4x16(shared_b_tile, lane_16)
-
-
-@always_inline
-fn load_16x32(tile: LayoutTensor, var lane_id: Int) -> SIMD[tile.dtype, 8]:
-    constrained[tile.dtype == DType.bfloat16, "tile.dtype == DType.bfloat16"]()
-    constrained[tile.shape[0]() == 16, "tile.shape[0]() == 16"]()
-    constrained[tile.shape[1]() == 32, "tile.shape[1]() == 32"]()
-    var part_1 = load_8x32(tile.tile[8, 32](0, 0), lane_id)
-    var part_2 = load_8x32(tile.tile[8, 32](1, 0), lane_id)
-    return part_1.join(part_2)
-
-
 struct KVBuffer[
     kv_t: MHAOperand, //,
     mma_shape: IndexList[3],
@@ -507,11 +472,10 @@ struct KVBuffer[
                 @parameter
                 for i in range(depth // MMA_M):
                     frags[i, 0] = rebind[frags.element_type](
-                        load_16x32(
-                            smem_tile.tile[MMA_K, MMA_M](0, i), Int(lane_id())
+                        load_b_tr[Self.mma_shape](
+                            smem_tile.tile[MMA_K, MMA_M](0, i)
                         )
                     )
-
                 self.mma_tile.split[Self.num_k_mmas2]()[k].vectorize[
                     1, Self.simd_width
                 ]().copy_from(frags)
