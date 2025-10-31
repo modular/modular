@@ -130,6 +130,7 @@ PINS = {
     "simpy": "simpy@4.1.1",
     "soundfile": "soundfile@0.12.1",
     "sphinx": "sphinx@7.4.7",
+    "sqlalchemy": "sqlalchemy@2.0.44",
     "sse-starlette": "sse-starlette@2.1.2",
     "sseclient-py": "sseclient-py@1.8.0",
     "stack-pr": "stack-pr@0.1.3",
@@ -5846,6 +5847,61 @@ def targets():
         name = "sphinxcontrib-serializinghtml@2.0.0",
         wheel = ":_wheel_sphinxcontrib-serializinghtml@2.0.0",
         testonly = "sphinxcontrib-serializinghtml" in _TESTONLY_DEPS,
+    )
+
+    _sqlalchemy_2_0_44_deps = [
+        ":typing-extensions@4.12.2",
+    ] + select({
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":greenlet@3.1.1",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":greenlet@3.1.1",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":greenlet@3.1.1",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":greenlet@3.1.1",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":greenlet@3.1.1",
+        ],
+        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":greenlet@3.1.1",
+        ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":greenlet@3.1.1",
+        ],
+        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":greenlet@3.1.1",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_sqlalchemy@2.0.44",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_sqlalchemy_2.0.44_cp310_cp310_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_sqlalchemy_2.0.44_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_sqlalchemy_2.0.44_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_sqlalchemy_2.0.44_cp311_cp311_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_sqlalchemy_2.0.44_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_sqlalchemy_2.0.44_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_sqlalchemy_2.0.44_cp312_cp312_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_sqlalchemy_2.0.44_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_sqlalchemy_2.0.44_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_sqlalchemy_2.0.44_cp313_cp313_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_sqlalchemy_2.0.44_cp313_cp313_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_sqlalchemy_2.0.44_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "sqlalchemy@2.0.44",
+        deps = _sqlalchemy_2_0_44_deps,
+        wheel = ":_wheel_sqlalchemy@2.0.44",
+        testonly = "sqlalchemy" in _TESTONLY_DEPS,
     )
 
     _sqlitedict_2_1_0_build_deps = [
@@ -15891,6 +15947,126 @@ def repositories():
         ],
         sha256 = "6e2cb0eef194e10c27ec0023bfeb25badbbb5868244cf5bc5bdc04e4464bf331",
         downloaded_file_path = "sphinxcontrib_serializinghtml-2.0.0-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_sqlalchemy_2.0.44_cp310_cp310_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/b1/e1/50bc121885bdf10833a4f65ecbe9fe229a3215f4d65a58da8a181734cae3/sqlalchemy-2.0.44-cp310-cp310-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "4c26ef74ba842d61635b0152763d057c8d48215d5be9bb8b7604116a059e9985",
+        downloaded_file_path = "sqlalchemy-2.0.44-cp310-cp310-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_sqlalchemy_2.0.44_cp310_cp310_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/46/f2/a8573b7230a3ce5ee4b961a2d510d71b43872513647398e595b744344664/sqlalchemy-2.0.44-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        ],
+        sha256 = "f4a172b31785e2f00780eccab00bc240ccdbfdb8345f1e6063175b3ff12ad1b0",
+        downloaded_file_path = "sqlalchemy-2.0.44-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_sqlalchemy_2.0.44_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/4a/d8/c63d8adb6a7edaf8dcb6f75a2b1e9f8577960a1e489606859c4d73e7d32b/sqlalchemy-2.0.44-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        ],
+        sha256 = "f9480c0740aabd8cb29c329b422fb65358049840b34aba0adf63162371d2a96e",
+        downloaded_file_path = "sqlalchemy-2.0.44-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_sqlalchemy_2.0.44_cp311_cp311_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/d4/d5/4abd13b245c7d91bdf131d4916fd9e96a584dac74215f8b5bc945206a974/sqlalchemy-2.0.44-cp311-cp311-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "de4387a354ff230bc979b46b2207af841dc8bf29847b6c7dbe60af186d97aefa",
+        downloaded_file_path = "sqlalchemy-2.0.44-cp311-cp311-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_sqlalchemy_2.0.44_cp311_cp311_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/cb/3c/8418969879c26522019c1025171cefbb2a8586b6789ea13254ac602986c0/sqlalchemy-2.0.44-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        ],
+        sha256 = "c3678a0fb72c8a6a29422b2732fe423db3ce119c34421b5f9955873eb9b62c1e",
+        downloaded_file_path = "sqlalchemy-2.0.44-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_sqlalchemy_2.0.44_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/94/2d/fdb9246d9d32518bda5d90f4b65030b9bf403a935cfe4c36a474846517cb/sqlalchemy-2.0.44-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        ],
+        sha256 = "3cf6872a23601672d61a68f390e44703442639a12ee9dd5a88bbce52a695e46e",
+        downloaded_file_path = "sqlalchemy-2.0.44-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_sqlalchemy_2.0.44_cp312_cp312_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/d6/ae/eeb0920537a6f9c5a3708e4a5fc55af25900216bdb4847ec29cfddf3bf3a/sqlalchemy-2.0.44-cp312-cp312-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "585c0c852a891450edbb1eaca8648408a3cc125f18cf433941fa6babcc359e29",
+        downloaded_file_path = "sqlalchemy-2.0.44-cp312-cp312-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_sqlalchemy_2.0.44_cp312_cp312_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/d8/d5/2ebbabe0379418eda8041c06b0b551f213576bfe4c2f09d77c06c07c8cc5/sqlalchemy-2.0.44-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        ],
+        sha256 = "9b94843a102efa9ac68a7a30cd46df3ff1ed9c658100d30a725d10d9c60a2f44",
+        downloaded_file_path = "sqlalchemy-2.0.44-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_sqlalchemy_2.0.44_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/45/e5/5aa65852dadc24b7d8ae75b7efb8d19303ed6ac93482e60c44a585930ea5/sqlalchemy-2.0.44-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        ],
+        sha256 = "119dc41e7a7defcefc57189cfa0e61b1bf9c228211aba432b53fb71ef367fda1",
+        downloaded_file_path = "sqlalchemy-2.0.44-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_sqlalchemy_2.0.44_cp313_cp313_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/2b/91/eabd0688330d6fd114f5f12c4f89b0d02929f525e6bf7ff80aa17ca802af/sqlalchemy-2.0.44-cp313-cp313-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "0b1af8392eb27b372ddb783b317dea0f650241cea5bd29199b22235299ca2e45",
+        downloaded_file_path = "sqlalchemy-2.0.44-cp313-cp313-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_sqlalchemy_2.0.44_cp313_cp313_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/b0/bb/43e246cfe0e81c018076a16036d9b548c4cc649de241fa27d8d9ca6f85ab/sqlalchemy-2.0.44-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        ],
+        sha256 = "2b61188657e3a2b9ac4e8f04d6cf8e51046e28175f79464c67f2fd35bceb0976",
+        downloaded_file_path = "sqlalchemy-2.0.44-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_sqlalchemy_2.0.44_cp313_cp313_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/b9/96/c6105ed9a880abe346b64d3b6ddef269ddfcab04f7f3d90a0bf3c5a88e82/sqlalchemy-2.0.44-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        ],
+        sha256 = "b87e7b91a5d5973dda5f00cd61ef72ad75a1db73a386b62877d4875a8840959c",
+        downloaded_file_path = "sqlalchemy-2.0.44-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(

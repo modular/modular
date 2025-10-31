@@ -106,6 +106,9 @@ dependencies = [
   # benchmarks
   "schema==0.7.5",
 
+  # nsight-sql-tool
+  "sqlalchemy>=2.0.29",
+
   # perfsect_v2
   "responses>=0.23.3",
 
