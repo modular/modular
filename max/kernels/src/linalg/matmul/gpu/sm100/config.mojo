@@ -300,44 +300,40 @@ fn choose_config[
 ](M: Int, N: Int, K: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     constrained[a_type == b_type, "a_type and b_type must be the same"]()
 
-    # Use 1 for small M and 2 for large shapes.
-    var cta_group = 1 if M <= 128 else 2
     alias num_SMs = B200.sm_count
     # Nvidia mma instruction process 32B in K.
     alias Kbytes_per_mma = 32
+    # We use 128B swizzle, tile size in K is 128B over element size.
+    alias BK = 128 // a_type.size_of()
+
+    alias M_pivote = 97
+
+    var cta_group = 1 if M < M_pivote else 2
+    var swapAB = True if M < M_pivote else False
+    var k_group_size = 1  # maybe increased for small M later
 
     var mma_mn = Tuple[Int, Int](64, 128)
     var min_num_waves = Int.MAX
-    var swapAB = M <= 128
-    var k_group_size = 1
-
-    # For M <= 128, swap A and B and use cta_group = 1
-    if M <= 128:
-        # When using the swapAB kernel with 1SM we can have find-grained (multiple of 8) tiling on the M dimension.
-        # Using any tile size larger than align_up(M, 8) will result in under-utilization of the SMs as tensor cores will work
-        # on zeroed out elements (i.e., m >= M).
-        var max_mma_n = align_up(M, 8)
-        for bm in [64, 128]:
-            for mma_n in range(8, max_mma_n + 1, 8):
-                num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm)
-                num_waves = ceildiv(num_ctas, num_SMs)
-
-                if num_waves < min_num_waves or (
-                    num_waves == min_num_waves
-                    and bm * mma_n < mma_mn[0] * mma_mn[1]
-                ):
-                    min_num_waves = num_waves
-                    mma_mn[0] = bm
-                    mma_mn[1] = mma_n
-
-        var BK = 128 // a_type.size_of()
-        if mma_mn[0] == 64 and mma_mn[1] <= 64:
-            if ceildiv(K, BK) % 2 == 0:
-                k_group_size = 2
 
     # Travers possible combinations of BM x MMA_N to choose the one minimizes the
     # workload per SM. The computation per SM is the flops (ignoring 2x in 2MNK)
     # timed by max number of ctas per SM i.e. number of waves.
+    # We first minimize the number of waves, then use the flops to break tie.
+    # For small M, swap A and B so that the small M maps to mma_n since it supports
+    # a larger range than mma_m.
+    if M < M_pivote:
+        for bm, mma_n in product([64, 128], range(8, align_up(M, 8) + 1, 8)):
+            num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm)
+            num_waves = ceildiv(num_ctas, num_SMs)
+            if num_waves < min_num_waves or (
+                num_waves == min_num_waves
+                and bm * mma_n < mma_mn[0] * mma_mn[1]
+            ):
+                min_num_waves = num_waves
+                mma_mn[0] = bm
+                mma_mn[1] = mma_n
+
+    # For large M, use 2xSM mma
     else:
         for bm, mma_n in product([64, 128], range(16, min(257, N), 16)):
             num_ctas = ceildiv(M, bm) * ceildiv(N, mma_n)
@@ -349,6 +345,14 @@ fn choose_config[
                 min_num_waves = num_waves
                 mma_mn[0] = bm * cta_group
                 mma_mn[1] = mma_n
+
+    # For small mmas, we group multiple tiles per tma-mma synchronization.
+    if (
+        mma_mn[0] // cta_group == 64
+        and mma_mn[1] <= 64
+        and ceildiv(K, BK) % 2 == 0
+    ):
+        k_group_size = 2
 
     var min_load_volume = Int.MAX
     var optimal_block_swizzle_size = 0
@@ -382,9 +386,7 @@ fn choose_config[
 
     # TODO: evaluate the comment's perf impact
     # var num_clc_pipeline_stages: UInt = UInt(min(min_num_waves-1, 2))
-    var num_clc_pipeline_stages: UInt = UInt(0) if min_num_waves == 1 else UInt(
-        2
-    )
+    var num_clc_pipeline_stages = 0 if min_num_waves == 1 else 2
 
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
         mma_shape=IndexList[3](
@@ -395,7 +397,7 @@ fn choose_config[
         AB_swapped=swapAB,
         block_swizzle_size=optimal_block_swizzle_size,
         num_accum_pipeline_stages=UInt(min(2, min_num_waves)),
-        num_clc_pipeline_stages=num_clc_pipeline_stages,
+        num_clc_pipeline_stages=UInt(num_clc_pipeline_stages),
         k_group_size=UInt(k_group_size),
     )
 
@@ -412,7 +414,7 @@ fn build_configs[
 
     var set = Set[config_t]()
 
-    for m in range(8, 129, 8):  # [8, 128]
+    for m in range(8, 128, 8):  # [8, 128]
         config = choose_config[a_type, b_type, c_type, transpose_b](m, N, K)
         if config not in set:
             set.add(config)
