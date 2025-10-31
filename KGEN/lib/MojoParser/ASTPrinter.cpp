@@ -1047,7 +1047,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
         // Check to see if we have a Bool with a known constant parameter.
         //   #lit.struct<{value: i1 = 1}>
         if (auto value = getSingleElementStructAttr<BoolAttr>(params[0])) {
-          os << (value.getValue() ? "MutableOrigin" : "ImmutableOrigin");
+          os << (value.getValue() ? "MutOrigin" : "ImmutOrigin");
           return;
         }
       }
@@ -1288,9 +1288,9 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     os << ')';
   } else if (auto originType = dyn_cast<OriginType>(type)) {
     if (originType.isMutableKnown(true))
-      os << "MutableOrigin";
+      os << "MutOrigin";
     else if (originType.isMutableKnown(false))
-      os << "ImmutableOrigin";
+      os << "ImmutOrigin";
     else {
       os << "Origin[";
       printParam(os, originType.isMutable(), diagShared);

@@ -630,9 +630,9 @@ fn fn_with_anon_refs(
 
 
 # CHECK-LABEL: "name": "fn_with_named_refs",
-# CHECK:     "signature": "fn_with_named_refs[life: MutableOrigin](ref [life] ref_arg1: AnyTrivialRegType) -> ref [life] AnyTrivialRegType",
+# CHECK:     "signature": "fn_with_named_refs[life: MutOrigin](ref [life] ref_arg1: AnyTrivialRegType) -> ref [life] AnyTrivialRegType",
 fn fn_with_named_refs[
-    life: MutableOrigin
+    life: MutOrigin
 ](ref [life]ref_arg1: AnyTrivialRegType) -> ref [
     origin_of(ref_arg1)
 ] AnyTrivialRegType:
@@ -641,7 +641,7 @@ fn fn_with_named_refs[
 
 # MOTO-870: Improve doc gen of struct Origin parameters
 # CHECK-LABEL: "name": "fn_with_origins",
-# CHECK:     "signature": "fn_with_origins[o1: Origin[mut], o2: MutableOrigin](ref [o1] arg1: Int, ref [o2] arg2: Int) -> ref [o1] Int",
+# CHECK:     "signature": "fn_with_origins[o1: Origin[mut], o2: MutOrigin](ref [o1] arg1: Int, ref [o2] arg2: Int) -> ref [o1] Int",
 fn fn_with_origins[
     o1: Origin[_], o2: Origin[True]
 ](ref [o1]arg1: Int, ref [o2]arg2: Int) -> ref [arg1] Int:

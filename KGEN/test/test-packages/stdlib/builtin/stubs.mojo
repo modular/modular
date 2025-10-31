@@ -9,8 +9,8 @@ alias string = __mlir_type.`!kgen.string`
 alias float = __mlir_type.`!pop.scalar<f64>`
 
 alias AnyTrivialRegType = __mlir_type.`!kgen.type`
-alias ImmutableOrigin = __mlir_type.`!lit.origin<0>`
-alias MutableOrigin = __mlir_type.`!lit.origin<1>`
+alias ImmutOrigin = __mlir_type.`!lit.origin<0>`
+alias MutOrigin = __mlir_type.`!lit.origin<1>`
 alias ImmutableAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
 alias MutableAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
 alias OriginSet = __mlir_type.`!lit.origin.set`
@@ -419,7 +419,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]]:
 
     @implicit
     fn __init__[
-        _origin: ImmutableOrigin, //
+        _origin: ImmutOrigin, //
     ](out self: StringSlice[_origin], ref [_origin]value: String):
         self._slice = Span[Byte, _origin]()
 
@@ -692,7 +692,7 @@ struct _VariadicListMemIter[
     elt_is_mutable: Bool, //,
     elt_type: AnyType,
     elt_origin: Origin[elt_is_mutable],
-    list_origin: ImmutableOrigin,
+    list_origin: ImmutOrigin,
     is_owned: Bool,
 ]:
     """Iterator for VariadicListMem.
@@ -980,7 +980,7 @@ struct UnsafePointer[
     # unique reference from this pointer.  The returned reference is always
     # mutable.
     fn get_unique_item_ref[
-        self_origin: ImmutableOrigin
+        self_origin: ImmutOrigin
     ](ref [self_origin]self, offset: Int = 0) -> ref [
         Origin[True].cast_from[_lit_indirect_origin[self_origin].result].result,
         address_space,

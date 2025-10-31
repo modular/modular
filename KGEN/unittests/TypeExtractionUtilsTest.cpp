@@ -122,8 +122,8 @@ TEST_F(TypeExtractionUtilsTest, GenerateDocPath_IndexModules) {
 /// Test generateDocPath with alias types.
 /// Should generate paths with a lowercase anchor tag.
 TEST_F(TypeExtractionUtilsTest, GenerateDocPath_Aliases) {
-  EXPECT_EQ(generateDocPath("stdlib.builtin", "MutableOrigin", "", true),
-            "/stdlib/builtin/#mutableorigin");
+  EXPECT_EQ(generateDocPath("stdlib.builtin", "MutOrigin", "", true),
+            "/stdlib/builtin/#mutorigin");
   EXPECT_EQ(generateDocPath("", "MyAlias", "", true), "//#myalias");
   EXPECT_EQ(generateDocPath("mymodule", "SomeAlias", "docs", true),
             "/docs/mymodule/#somealias");
@@ -149,9 +149,8 @@ TEST_F(TypeExtractionUtilsTest, GenerateDocPath_InitModuleRemoval) {
             "/stdlib/collections/Dict");
 
   // __init__ with aliases should work correctly
-  EXPECT_EQ(
-      generateDocPath("stdlib.builtin.__init__", "MutableOrigin", "", true),
-      "/stdlib/builtin/#mutableorigin");
+  EXPECT_EQ(generateDocPath("stdlib.builtin.__init__", "MutOrigin", "", true),
+            "/stdlib/builtin/#mutorigin");
 }
 
 /// Test generateDocPath dot-to-slash conversion for nested modules.

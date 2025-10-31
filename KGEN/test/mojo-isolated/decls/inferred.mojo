@@ -170,7 +170,7 @@ struct DefBoxInference:
 
 @fieldwise_init
 struct DefBoxInferenceIter[
-    origin: ImmutableOrigin,
+    origin: ImmutOrigin,
 ]:
     @implicit
     fn __init__(out self, regex: Pointer[DefBoxInference, origin]):
