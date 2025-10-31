@@ -27,7 +27,14 @@ underlying GPU architecture.
 
 from collections.string.string_slice import get_static_string
 from os.atomic import Consistency
-from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, size_of, _RegisterPackType
+from sys import (
+    is_amd_gpu,
+    is_gpu,
+    is_nvidia_gpu,
+    is_apple_gpu,
+    size_of,
+    _RegisterPackType,
+)
 from sys._assembly import inlined_assembly
 from sys.info import (
     CompilationTarget,
@@ -685,6 +692,22 @@ fn _get_nvtx_pointer_constraint() -> StaticString:
     return _get_nvtx_register_constraint[DType.int]()
 
 
+struct AirMemFlags:
+    alias Device = Int32(1)
+    alias ThreadGroup = Int32(2)
+
+
+struct AirScope:
+    alias Workgroup = Int32(1)
+    alias Device = Int32(2)
+    alias SIMDGroup = Int32(4)
+
+
+struct AirMemOrder:
+    alias Relaxed = Int32(0)
+    alias SeqCst = Int32(5)
+
+
 @always_inline
 fn store_release[
     dtype: DType, //,
@@ -737,6 +760,20 @@ fn store_release[
             alignment = alignment._mlir_value,
             ordering = Consistency.RELEASE.__mlir_attr(),
         ](value, ptr.address)
+    elif is_apple_gpu():
+        alias mem_flags = AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else AirMemFlags.Device
+        alias air_scope = AirScope.Workgroup if scope is Scope.BLOCK else AirScope.Device
+        llvm_intrinsic["llvm.air.atomic.fence", NoneType, has_side_effect=True](
+            mem_flags,
+            AirMemOrder.SeqCst,
+            air_scope,
+        )
+        alias store_intrin = "llvm.air.atomic.local.store" if ptr.address_space == AddressSpace.SHARED else "llvm.air.atomic.global.store"
+        llvm_intrinsic[
+            store_intrin,
+            NoneType,
+            has_side_effect=True,
+        ](ptr, value, AirMemOrder.Relaxed, air_scope, True)
     else:
         return CompilationTarget.unsupported_target_error[
             operation="store_release"
@@ -849,6 +886,21 @@ fn load_acquire[
             alignment = alignment._mlir_value,
             ordering = Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
+    elif is_apple_gpu():
+        alias mem_flags = AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else AirMemFlags.Device
+        alias air_scope = AirScope.Workgroup if scope is Scope.BLOCK else AirScope.Device
+        alias load_intrin = "llvm.air.atomic.local.load" if ptr.address_space == AddressSpace.SHARED else "llvm.air.atomic.global.load"
+        var value = llvm_intrinsic[
+            load_intrin,
+            Scalar[dtype],
+            has_side_effect=True,
+        ](ptr, AirMemOrder.Relaxed, air_scope, True)
+        llvm_intrinsic["llvm.air.atomic.fence", NoneType, has_side_effect=True](
+            mem_flags,
+            AirMemOrder.SeqCst,
+            air_scope,
+        )
+        return value
     else:
         return CompilationTarget.unsupported_target_error[
             Scalar[dtype],
