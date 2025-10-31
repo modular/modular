@@ -69,7 +69,7 @@ support implicit conversions to avoid breaking existing code.
 
 ```mojo
 struct UnsafePointerV2[
-    mut: Bool, # Explicit mutability
+    mut: Bool, //, # Inferred mutability
     type: AnyType,
     origin: Origin[mut], # Non-defaulted origin
     *,
