@@ -490,7 +490,7 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
                      sigAttr, func.getFunctionTypeAttr(), inputParamsArr,
                      func.getDecoratorsAttr(), func.getInlineLevelAttr(),
                      func.getExportKindAttr(), func.getExternalAttr(),
-                     func.getLLVMMetadataArray(),
+                     /*inlinedForm=*/nullptr, func.getLLVMMetadataArray(),
                      func.getLLVMArgMetadataArray());
 
   for (const NamedAttribute &attr : func->getDialectAttrs())

@@ -124,6 +124,9 @@ FailureOr<TypedAttr> SymTabEvaluationContext::evaluateExpression(
       return conformsTo.simplify(SymbolTable(decl));
   }
 
+  if (auto pocAttr = dyn_cast<ParamOperatorAttr>(attr))
+    return inlineApply(pocAttr);
+
   if (auto downcast = dyn_cast<DowncastAttr>(attr)) {
     if (getStructInstIfResolved(downcast.getTypeRefIfResolved())) {
       // FIXME: We should raise an error when the resolved struct type does not
@@ -134,6 +137,48 @@ FailureOr<TypedAttr> SymTabEvaluationContext::evaluateExpression(
       // fold it).
       return downcast.getInputTypeValue();
     }
+  }
+
+  return failure();
+}
+
+FailureOr<TypedAttr>
+SymTabEvaluationContext::inlineApply(ParamOperatorAttr apply) {
+  // if there is any generator that is marked to have an inlined form, we inline
+  // it to reach the canonicalized form.
+  if (apply.getOpcode() != POC::Apply &&
+      apply.getOpcode() != POC::ApplyResultSlot)
+    return failure();
+
+  auto cst = dyn_cast<SymbolConstantAttr>(apply.getOperand(0));
+  if (!cst)
+    return failure();
+
+  Operation *op =
+      symtab.lookupSymbolIn(module, cst.getSymbol().getLeafReference());
+
+  // TODO(MOCO-2656): At the moment, only generator will be annotated by
+  //`ApplyInliner`, this can be generalized to handle indirect calls to
+  //"always_inline("builtin")" (e.g., via trait method) function.
+  if (auto func = dyn_cast_or_null<GeneratorOp>(op);
+      func && func.getInlinedFormAttr()) {
+    TypedAttr inlinedExpr = func.getInlinedFormAttr();
+    // Drop the symbol to get the parameter binding;
+    ArrayRef<TypedAttr> paramBinding = apply.getOperands().drop_front();
+
+    // Rebind first
+    ParameterEvaluator evaluator(func.getInputParams(), cst.getParamValues());
+    evaluator.setEvaluationContext(this);
+    inlinedExpr = cast<TypedAttr>(evaluator.getReboundAttribute(inlinedExpr));
+    if (!paramBinding.empty()) {
+      // If generator takes input, we need to further evaluate the inlined
+      // expression with the parameter binding provided by the apply.
+      inlinedExpr = cast<GeneratorAttr>(inlinedExpr)
+                        .getSpecializedGenerator(paramBinding, this)
+                        .getInstantiatedValue();
+    }
+
+    return inlinedExpr;
   }
 
   return failure();

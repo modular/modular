@@ -182,6 +182,10 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
     UnitAttr:$external,
+    // Annotating a generator as if it is an "always_inline("builtin")", this
+    // means to get a normalized form, the calls (POC::Apply) to the generators
+    // which have the `inlinedForm` must further inlined in the same way.
+    OptionalAttr<TypedAttrInterface>:$inlinedForm,
     // To be able to store pre-elaborated names of the `llvm_metadata`,
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
@@ -217,6 +221,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                    "FunctionType":$functionType,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel,
+                   CArg<"TypedAttr", "{}">:$inlinedForm,
                    CArg<"ArrayAttr", "{}">:$llvmMetadataArray,
                    CArg<"ArrayAttr", "{}">:$llvmArgMetadataArray), [{
       if (!llvmMetadataArray)
@@ -226,7 +231,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
       build($_builder, $_state,
             symName, sourceName, type, functionType, inputParams,
             /*decorators=*/{}, inlineLevel, ExportKind::NotExported,
-            /*external=*/false, llvmMetadataArray, llvmArgMetadataArray);
+            /*external=*/false, inlinedForm, llvmMetadataArray,
+            llvmArgMetadataArray);
     }]>,
     OpBuilder<(ins "StringAttr":$symName, "FuncTypeGeneratorType":$type), [{
       build($_builder, $_state, symName, StringAttr::get(symName.getContext()),

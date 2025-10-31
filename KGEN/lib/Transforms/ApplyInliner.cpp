@@ -9,6 +9,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/Threading.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/Matchers.h"
 
 using namespace M;
@@ -73,11 +74,11 @@ struct FunctionTrait {
   /// This means we can peephole `apply(@constant) -> value`, while substituting
   /// any parameter values.
   struct RegConstant {
-    ArrayRef<ParamDeclAttr> params;
     Attribute value;
   };
 
   SmartVariant<RegForward, RegSlotForward, RegConstant> impl;
+  GeneratorOp generatorOp;
 };
 } // namespace
 
@@ -111,7 +112,7 @@ std::optional<FunctionTrait> FunctionTrait::identify(GeneratorOp func) {
   // follows that the return operand must be the function argument, since there
   // is nothing else it can be.
   if (sig.getNumArguments() == 1 && ret.getNumOperands() == 1 && ret == first)
-    return FunctionTrait{RegForward{}};
+    return FunctionTrait{RegForward{}, func};
 
   // Check zero arguments, one result, the first operation is a constant, return
   // is the only other operation. It follows that the return operand must be the
@@ -119,7 +120,7 @@ std::optional<FunctionTrait> FunctionTrait::identify(GeneratorOp func) {
   auto cst = dyn_cast<ParamConstantOp>(first);
   if (cst && sig.getNumArguments() == 0 && ret.getNumOperands() == 1 &&
       getNextNonDebugNode(cst) == ret)
-    return FunctionTrait{RegConstant{func.getInputParams(), cst.getValue()}};
+    return FunctionTrait{RegConstant{cst.getValue()}, func};
 
   // Check two arguments, one result, the return value is a none constant, and
   // one of the first two ops is a store, and the third op is a return.
@@ -138,7 +139,7 @@ std::optional<FunctionTrait> FunctionTrait::identify(GeneratorOp func) {
     // argument is the dest of the store, and the other argument is the value.
     if (valueIdx != -1 && store.getPtr() == func.getArgument(!valueIdx) &&
         store.getArg() == func.getArgument(valueIdx))
-      return FunctionTrait{RegSlotForward{}};
+      return FunctionTrait{RegSlotForward{}, func};
   }
 
   return {};
@@ -150,8 +151,12 @@ void ApplyInlinerPass::runOnOperation() {
     if (std::optional<FunctionTrait> trait = FunctionTrait::identify(func))
       funcTraits.try_emplace(func.getSymNameAttr(), std::move(*trait));
 
+  mlir::SymbolTableAnalysis symTabAnalysis(getOperation());
+  mlir::LockedSymbolTableCollection symtabs(symTabAnalysis.getSymbolTables());
+  KGEN::SymTabEvaluationContext context(getOperation(), symtabs);
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&funcTraits](ParamOperatorAttr apply) -> TypedAttr {
+  replacer.addReplacement([&funcTraits,
+                           &context](ParamOperatorAttr apply) -> TypedAttr {
     if (apply.getOpcode() != POC::Apply &&
         apply.getOpcode() != POC::ApplyResultSlot)
       return apply;
@@ -162,21 +167,33 @@ void ApplyInlinerPass::runOnOperation() {
         funcTraits.find(cast<FlatSymbolRefAttr>(cst.getSymbol()).getAttr());
     if (it == funcTraits.end())
       return apply;
-    FunctionTrait trait = it->second;
 
-    // Handle RegSlotForward.
-    if (apply.getOpcode() == POC::ApplyResultSlot) {
-      assert(isa<FunctionTrait::RegSlotForward>(trait.impl));
+    FunctionTrait trait = it->second;
+    GeneratorOp func = trait.generatorOp;
+
+    if (isa<FunctionTrait::RegForward, FunctionTrait::RegSlotForward>(
+            trait.impl)) {
+      // Handle RegForward/RegSlotForward.
+      //
+      // In both cases, create an identity GeneratorAttr in the form of
+      // `alias inlinedForm[input0, input1, ...] = input0`
+      //
+      // NOTE: Currently, it is unnecessarily general, but the general form
+      // could be reused to handle general "always_inline("builtin")" cases.
+      auto inputs = func.getFunctionType().getInputs();
+      auto genAttr = GeneratorAttr::get(
+          {inputs}, ParamIndexRefAttr::get(0, 0, inputs.front()));
+      func.setInlinedFormAttr(genAttr);
       return apply.getOperand(1);
     }
 
-    // Handle RegForward.
-    if (isa<FunctionTrait::RegForward>(trait.impl))
-      return apply.getOperand(1);
-
     // Handle RegConstant.
+    assert(func.getFunctionType().getNumInputs() == 0);
     auto regCst = cast<FunctionTrait::RegConstant>(trait.impl);
-    ParameterEvaluator evaluator(regCst.params, cst.getParamValues());
+    func.setInlinedFormAttr(cast<TypedAttr>(regCst.value));
+    ParameterEvaluator evaluator(func.getInputParams(), cst.getParamValues());
+    evaluator.setEvaluationContext(&context);
+
     return cast<TypedAttr>(evaluator.getReboundAttribute(regCst.value));
   });
 
