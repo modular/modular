@@ -36,7 +36,6 @@ from .batch_constructor import (
     TextBatchConstructor,
     TokenGenerationSchedulerConfig,
 )
-from .data_parallelism_utils import split_by_replica_idx
 from .utils import SchedulerLogger, get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
@@ -151,7 +150,7 @@ class TokenGenerationScheduler(Scheduler):
             paged_cache=self.batch_constructor.paged_cache,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
-            num_pending_reqs=len(self.batch_constructor.ce_reqs),
+            num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
@@ -167,15 +166,6 @@ class TokenGenerationScheduler(Scheduler):
 
     def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Returns the number of terminated requests."""
-
-        # TODO(E2EOPT-399): Add proper data parallelism support. Currently
-        # this naively splits the batch onto different devices.
-        if self.batch_constructor.paged_cache is not None:
-            split_by_replica_idx(
-                inputs,
-                self.scheduler_config.data_parallel_degree,
-                self.batch_constructor.paged_cache,
-            )
 
         # execute the batch
         responses = self.pipeline.execute(inputs)

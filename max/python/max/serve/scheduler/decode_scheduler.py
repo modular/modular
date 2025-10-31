@@ -207,7 +207,9 @@ class DecodeScheduler(Scheduler):
 
         while (
             self.pending_reqs
-            and (len(self.batch_constructor.tg_reqs) + len(self.prefill_reqs))
+            and (
+                len(self.batch_constructor.all_tg_reqs) + len(self.prefill_reqs)
+            )
             < self.scheduler_config.max_batch_size_tg
             and (
                 self.paged_manager is None
@@ -241,9 +243,7 @@ class DecodeScheduler(Scheduler):
     def _handle_cancelled_requests(self) -> None:
         for req_id in get_cancelled_reqs(self.cancel_queue):
             # Remove it from the active batch.
-            if req_id in self.batch_constructor.tg_reqs:
-                del self.batch_constructor.tg_reqs[req_id]
-
+            if self.batch_constructor.cancel_request(req_id):
                 # Send the cancelled result back to the response q
                 self.response_queue.put_nowait(
                     {req_id: SchedulerResult.cancelled()}

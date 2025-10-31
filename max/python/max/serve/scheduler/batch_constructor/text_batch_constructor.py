@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import OrderedDict, deque
+from dataclasses import dataclass, field
 
 from max.interfaces import (
     Pipeline,
@@ -39,6 +40,37 @@ from .lora_scheduler_utils import (
 logger = logging.getLogger("max.serve")
 
 
+@dataclass
+class ReplicaRequests:
+    """This class tracks the requests assigned to each replica.
+
+    This class is an implementation detail of TextBatchConstructor and should not be
+    used outside of this file.
+    """
+
+    ce_reqs: OrderedDict[RequestID, TextContext] = field(
+        default_factory=OrderedDict
+    )
+    tg_reqs: OrderedDict[RequestID, TextContext] = field(
+        default_factory=OrderedDict
+    )
+
+
+@dataclass
+class ReplicaBatch:
+    """This class represents a batch of requests for a single replica.
+
+    This class mainly serves as a container for batch and num_steps. This is nicer
+    than passing around Tuple[dict[RequestID, TextContext], int] everywhere.
+
+    This class is an implementation detail of TextBatchConstructor and should not be
+    used outside of this file.
+    """
+
+    batch: dict[RequestID, TextContext] = field(default_factory=dict)
+    num_steps: int = 1
+
+
 class TextBatchConstructor:
     def __init__(
         self,
@@ -56,22 +88,46 @@ class TextBatchConstructor:
             pipeline
         )
 
-        self.ce_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
-        self.tg_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
+        self.num_replicas = self.scheduler_config.data_parallel_degree
+        if self._lora_manager and self.num_replicas > 1:
+            raise ValueError("LoRA does not support data parallelism.")
+
+        self.replicas: list[ReplicaRequests] = [
+            ReplicaRequests() for _ in range(self.num_replicas)
+        ]
+
+        # Round-robin counter to determine which replica to enqueue the new request to.
+        # This is only used when not using paged attention.
+        self._round_robin_counter = 0
 
         self.total_preemption_count = 0
         self.last_preemption_logging_time: float = 0.0
 
     def enqueue_new_request(self, ctx: TextContext) -> None:
-        """Add a new request to the appropriate queue.
+        """Add a new CE request.
+
+        This request is assigned based on recommendation from KVCacheManager or
+        based on round-robin assignment.
 
         Args:
-            ctx: The text context for the new request.
+            ctx: The request to enqueue.
         """
-        if ctx.needs_ce:
-            self.ce_reqs[ctx.request_id] = ctx
+
+        # Pick the replica to enqueue the request to.
+        if self.paged_cache is not None:
+            replica_idx = self.paged_cache.get_or_recommend_replica(ctx)
         else:
-            self.tg_reqs[ctx.request_id] = ctx
+            replica_idx = self._round_robin_counter
+            # Increment the round-robin counter and wrap around if it exceeds the number of replicas.
+            self._round_robin_counter += 1
+            self._round_robin_counter %= self.num_replicas
+        replica = self.replicas[replica_idx]
+
+        # Add the request to the appropriate dict based on whether it needs CE.
+        if ctx.needs_ce:
+            replica.ce_reqs[ctx.request_id] = ctx
+        else:
+            replica.tg_reqs[ctx.request_id] = ctx
 
     def move_completed_ce_requests_to_tg(
         self,
@@ -80,41 +136,37 @@ class TextBatchConstructor:
     ) -> None:
         """Processes completed context encoding (CE) batches and moves requests to appropriate queues.
 
-        This method performs two key operations after CE execution:
-        1. **Moves completed CE requests to the token generation (TG) queue**: Requests that
-           have completed their context encoding phase are added to the TG batch, where they
-           will proceed to generate tokens.
-        2. **Returns chunked requests to the front of the CE queue**: When chunked prefill
-           is enabled, the last request in a CE batch may have been chunked (partially
-           processed). Such requests still need additional context encoding and are returned
-           to the start of the CE queue to ensure they are processed in the next CE batch.
-           The associated response is also removed from the responses dict to ensure that
-           a partial/incomplete response is not returned to the user.
+        This method moves CE requests which have been fully encoded to the TG queue.
+        It handles the case where a request is chunked and needs to be re-enqueued
+        on the CE queue for further processing.
 
         Args:
-            executed_batches: A list of CE batches that were just executed. Each dict maps
-                RequestID to TextContext for requests that were in that CE batch.
-            responses: A dict mapping RequestID to TextGenerationOutput for all requests
-                in the executed batches. This is modified in-place to remove responses for
-                chunked requests that need to be re-queued for further CE processing.
+            executed_batches: A list of batches for each replica.
+            responses: A dict containing the responses for each request.
         """
-        for per_batch in executed_batches:
+
+        for per_replica_batch, replica in zip(
+            executed_batches, self.replicas, strict=True
+        ):
+            # It is possible that the batch is empty for a replica.
+            if len(per_replica_batch) == 0:
+                continue
+
             # Move the requests from CE to TG
-            self.tg_reqs.update(per_batch)
+            replica.tg_reqs.update(per_replica_batch)
 
             # Check if the last request in the batch is chunked.
-            if len(per_batch) > 0:
-                last_req = list(per_batch.values())[-1]
+            last_req = list(per_replica_batch.values())[-1]
 
-                # if we still need Context Encoding, we put it back into the ce requests queue.
-                if last_req.needs_ce:
-                    req_id = last_req.request_id
-                    del self.tg_reqs[req_id]
-                    self.ce_reqs[req_id] = last_req
-                    self.ce_reqs.move_to_end(req_id, last=False)
+            # if we still need Context Encoding, we put it back into the ce requests queue for that replica.
+            if last_req.needs_ce:
+                req_id = last_req.request_id
+                del replica.tg_reqs[req_id]
+                replica.ce_reqs[req_id] = last_req
+                replica.ce_reqs.move_to_end(req_id, last=False)
 
-                    # Remove the request from the responses dictionary.
-                    del responses[req_id]
+                # Remove the request from the responses dictionary.
+                del responses[req_id]
 
     def release_terminated_requests(
         self,
@@ -128,15 +180,18 @@ class TextBatchConstructor:
         Returns:
             The number of terminated requests.
         """
+
         num_terminated_reqs = 0
         for req_id, response in responses.items():
             if not response.is_done:
                 continue
-            if req_id not in self.tg_reqs:
-                continue
-            num_terminated_reqs += 1
-            self.pipeline.release(req_id)
-            del self.tg_reqs[req_id]
+            for replica in self.replicas:
+                if req_id not in replica.tg_reqs:
+                    continue
+                num_terminated_reqs += 1
+                self.pipeline.release(req_id)
+                del replica.tg_reqs[req_id]
+                break
         return num_terminated_reqs
 
     def cancel_request(self, req_id: RequestID) -> bool:
@@ -144,16 +199,39 @@ class TextBatchConstructor:
 
         Args:
             req_id: The request ID to cancel.
-
         Returns:
             True if the request was found and cancelled, False otherwise.
         """
-        if req_id in self.tg_reqs:
-            del self.tg_reqs[req_id]
-            self.pipeline.release(req_id)
-            return True
-        # TODO: Support cancellation of CE requests!
+        for replica in self.replicas:
+            if req_id in replica.tg_reqs:
+                del replica.tg_reqs[req_id]
+                self.pipeline.release(req_id)
+                return True
+            # TODO: Support cancellation of CE requests!
         return False
+
+    def clear_tg_reqs(self) -> None:
+        """Clears all TG requests from all replicas."""
+        for replica in self.replicas:
+            replica.tg_reqs.clear()
+
+    @property
+    def all_ce_reqs(self) -> dict[RequestID, TextContext]:
+        """Returns a dictionary of all CE requests from all replicas."""
+        return {
+            req_id: ctx
+            for replica in self.replicas
+            for req_id, ctx in replica.ce_reqs.items()
+        }
+
+    @property
+    def all_tg_reqs(self) -> dict[RequestID, TextContext]:
+        """Returns a dictionary of all TG requests from all replicas."""
+        return {
+            req_id: ctx
+            for replica in self.replicas
+            for req_id, ctx in replica.tg_reqs.items()
+        }
 
     @traced
     def _maybe_chunk_prefill_request(
@@ -185,18 +263,21 @@ class TextBatchConstructor:
         ctx.bump_token_indices(active_idx=-token_num_diff)
 
     @traced
-    def _return_to_request_queue(self, ctx: TextContext) -> None:
+    def _return_to_request_queue(
+        self, ctx: TextContext, replica_idx: int
+    ) -> None:
         """Resets a request and returns it to the request queue"""
         req_id = ctx.request_id
         self.pipeline.release(req_id)
         ctx.reset()
-        self.ce_reqs[req_id] = ctx
-        self.ce_reqs.move_to_end(req_id, last=False)
+        replica = self.replicas[replica_idx]
+        replica.ce_reqs[req_id] = ctx
+        replica.ce_reqs.move_to_end(req_id, last=False)
 
     @traced
-    def _preempt_request(self, ctx: TextContext) -> None:
+    def _preempt_request(self, ctx: TextContext, replica_idx: int) -> None:
         """Preempts the most recently received request from active batch"""
-        self._return_to_request_queue(ctx)
+        self._return_to_request_queue(ctx, replica_idx)
         # Limit logging about preemptions to at most once per second
         current_time = time.monotonic()
         self.total_preemption_count += 1
@@ -207,19 +288,20 @@ class TextBatchConstructor:
                 f"Preempted a request due to lack of KV pages. This can affect the end-to-end performance. Consider increasing device-memory-utilization to provide more KV cache memory. Total preemption count: {self.total_preemption_count}."
             )
 
-    def _should_schedule_ce(self) -> bool:
+    def _should_schedule_ce(self, replica_idx: int) -> bool:
         """Returns True if the scheduler should schedule a context encoding batch."""
+        replica = self.replicas[replica_idx]
 
         # Cannot schedule CE if there are no requests awaiting CE.
-        if len(self.ce_reqs) == 0:
+        if len(replica.ce_reqs) == 0:
             return False
 
         # Cannot schedule CE if the TG batch is full.
-        if len(self.tg_reqs) >= self.scheduler_config.max_batch_size_tg:
+        if len(replica.tg_reqs) >= self.scheduler_config.max_batch_size_tg:
             return False
 
         # Must schedule CE if the TG batch is empty.
-        if len(self.tg_reqs) == 0:
+        if len(replica.tg_reqs) == 0:
             return True
 
         if self.paged_cache is not None:
@@ -230,14 +312,16 @@ class TextBatchConstructor:
         return True
 
     @traced
-    def _create_tg_batch(self) -> TextGenerationInputs[TextContext]:
+    def _create_tg_batch(self, replica_idx: int) -> ReplicaBatch:
         """Creates a non empty token generation batch"""
+        replica = self.replicas[replica_idx]
 
         # If we are not using paged attention, we can always schedule the active
         # batch since we reserved blocks for all active requests previously
         if self.paged_cache is None:
-            return TextGenerationInputs[TextContext](
-                batches=[dict(self.tg_reqs)],
+            return ReplicaBatch(
+                # This copy is necessary to avoid aliasing of the tg_reqs dict.
+                batch=replica.tg_reqs.copy(),
                 num_steps=self.scheduler_config.max_forward_steps_tg,
             )
 
@@ -246,9 +330,9 @@ class TextBatchConstructor:
 
         # Assume this is sorted by request arrival time where the leftmost request
         # is the oldest and the rightmost request is the newest.
-        candidate_reqs = deque(self.tg_reqs.values())
+        candidate_reqs = deque(replica.tg_reqs.values())
         first_req_ctx = candidate_reqs[0]
-        self.tg_reqs.clear()
+        replica.tg_reqs.clear()
 
         while len(candidate_reqs) > 0:
             # Get the oldest request
@@ -264,7 +348,7 @@ class TextBatchConstructor:
             if is_lora(ctx, self._lora_manager) and not is_active_lora(
                 ctx, self._lora_manager
             ):
-                self._preempt_lora_request(ctx)
+                self._preempt_lora_request(ctx, replica_idx)
                 continue
 
             scheduled = False
@@ -272,7 +356,7 @@ class TextBatchConstructor:
                 # If this is the only request, we should not exceed the max_length
                 # specified in its request parameter.
                 if (
-                    len(self.tg_reqs) == 0
+                    len(replica.tg_reqs) == 0
                     and len(candidate_reqs) == 0
                     and ctx.max_length is not None
                 ):
@@ -296,18 +380,18 @@ class TextBatchConstructor:
                 # We were unable to schedule this request so we will try again
                 # after preempting the newest request
                 ctx_preempt = candidate_reqs.pop()
-                self._preempt_request(ctx_preempt)
+                self._preempt_request(ctx_preempt, replica_idx)
 
             # If we still can't schedule the request, we preempt it
             if not scheduled:
-                self._preempt_request(ctx)
+                self._preempt_request(ctx, replica_idx)
                 break
 
             # Add the request to the batch
-            self.tg_reqs[ctx.request_id] = ctx
+            replica.tg_reqs[ctx.request_id] = ctx
 
         # We successfully created a TG batch
-        if len(self.tg_reqs) > 0:
+        if len(replica.tg_reqs) > 0:
             # Truncate num_steps based on the maximum of num_available_steps
             # calculated using the max_length request parameter. This differs from
             # the max_seq_len of the pipeline model which is a hard limit that
@@ -322,7 +406,7 @@ class TextBatchConstructor:
             # This is intentional in order to prevent a single short request from
             # limiting the num_steps for performance reasons.
             num_available_steps_req: int | None = None
-            for ctx in self.tg_reqs.values():
+            for ctx in replica.tg_reqs.values():
                 # If any request has no max_length, we should not change num_steps
                 if ctx.max_length is None:
                     num_available_steps_req = None
@@ -339,8 +423,10 @@ class TextBatchConstructor:
             ):
                 num_steps = num_available_steps_req
 
-            return TextGenerationInputs[TextContext](
-                batches=[dict(self.tg_reqs)], num_steps=num_steps
+            return ReplicaBatch(
+                # This copy is necessary to avoid aliasing of the tg_reqs dict.
+                batch=replica.tg_reqs.copy(),
+                num_steps=num_steps,
             )
 
         # We have utterly failed to construct a TG batch.
@@ -357,14 +443,15 @@ class TextBatchConstructor:
         )
 
     @traced
-    def _try_create_ce_batch(self) -> TextGenerationInputs[TextContext]:
+    def _try_create_ce_batch(self, replica_idx: int) -> ReplicaBatch:
         """Try to create a context encoding batch"""
+        replica = self.replicas[replica_idx]
 
         ce_batch: dict[RequestID, TextContext] = {}
         input_tokens = 0
 
-        if self.scheduler_config.enable_in_flight_batching and self.tg_reqs:
-            tg_batch = self._create_tg_batch()
+        if self.scheduler_config.enable_in_flight_batching and replica.tg_reqs:
+            tg_batch = self._create_tg_batch(replica_idx)
             ce_batch = tg_batch.batch
             for ctx in ce_batch.values():
                 # active length should be 1 for TG requests
@@ -379,7 +466,7 @@ class TextBatchConstructor:
             active_loras = set()
 
             # Count LoRAs from TG requests (these are "running" and must be maintained)
-            for _, ctx in self.tg_reqs.items():
+            for _, ctx in replica.tg_reqs.items():
                 if self._lora_manager.is_lora(ctx.model_name):
                     active_loras.add(ctx.model_name)
                     # Refresh LRU position for TG LoRAs to protect them from eviction.
@@ -391,12 +478,12 @@ class TextBatchConstructor:
             deferred_lora_requests = {}
 
         while (
-            self.ce_reqs
+            replica.ce_reqs
             and len(ce_batch) < max_batch_size_ce
-            and len(ce_batch) + len(self.tg_reqs) < max_batch_size_tg
+            and len(ce_batch) + len(replica.tg_reqs) < max_batch_size_tg
             and input_tokens < self.scheduler_config.target_tokens_per_batch_ce
         ):
-            req_id, ctx = self.ce_reqs.popitem(last=False)
+            req_id, ctx = replica.ce_reqs.popitem(last=False)
 
             # Check LoRA budget before resource allocation
             if self._lora_manager and not can_allocate_lora_request(
@@ -408,7 +495,6 @@ class TextBatchConstructor:
             # Claim the cache slot for the request if it's a new request.
             if ctx.start_idx == 0:
                 if self.paged_cache is not None:
-                    replica_idx = self.paged_cache.get_or_recommend_replica(ctx)
                     self.paged_cache.external_claim(
                         req_id, replica_idx=replica_idx
                     )
@@ -419,7 +505,7 @@ class TextBatchConstructor:
 
                 # We were able to schedule this request
                 if not scheduled:
-                    self._return_to_request_queue(ctx)
+                    self._return_to_request_queue(ctx, replica_idx)
                     break
 
             # activate the LoRA
@@ -438,33 +524,55 @@ class TextBatchConstructor:
         if self._lora_manager:
             # Return requests back to the queue
             for req_id, ctx in deferred_lora_requests.items():
-                self.ce_reqs[req_id] = ctx
-                self.ce_reqs.move_to_end(req_id, last=False)
+                replica.ce_reqs[req_id] = ctx
+                replica.ce_reqs.move_to_end(req_id, last=False)
 
-        return TextGenerationInputs[TextContext](
-            batches=[ce_batch],
-            num_steps=1,
-        )
+        return ReplicaBatch(batch=ce_batch, num_steps=1)
 
     @traced
-    def construct_batch(self) -> TextGenerationInputs[TextContext]:
-        if self._should_schedule_ce():
-            ce_batch = self._try_create_ce_batch()
-            if ce_batch:
+    def _construct_replica_batch(self, replica_idx: int) -> ReplicaBatch:
+        """Constructs a batch for a single replica."""
+        replica = self.replicas[replica_idx]
+
+        if self._should_schedule_ce(replica_idx):
+            ce_batch = self._try_create_ce_batch(replica_idx)
+            if len(ce_batch.batch) > 0:
                 return ce_batch
             # failed to create a CE batch, try to create a TG batch instead
 
         # if there are no active requests, we can't create a TG batch
-        if not self.tg_reqs:
-            return TextGenerationInputs[TextContext](batches=[], num_steps=1)
+        if not replica.tg_reqs:
+            return ReplicaBatch()
 
-        tg_batch = self._create_tg_batch()
-        return tg_batch
+        return self._create_tg_batch(replica_idx)
+
+    def construct_batch(self) -> TextGenerationInputs[TextContext]:
+        """Constructs Pipeline Inputs which includes a batch for each replica."""
+
+        batches_per_replica = [
+            self._construct_replica_batch(replica_idx)
+            for replica_idx in range(self.num_replicas)
+        ]
+
+        return TextGenerationInputs[TextContext](
+            batches=[batch.batch for batch in batches_per_replica],
+            # Take the min num_steps across all replicas that have a non-empty batch.
+            # This ensures that when there is a single request and DP>1, we run with
+            # the full num_steps and not num_steps=1.
+            num_steps=min(
+                (
+                    batch.num_steps
+                    for batch in batches_per_replica
+                    if len(batch.batch) > 0
+                ),
+                default=0,
+            ),
+        )
 
     @traced
-    def _preempt_lora_request(self, ctx: TextContext) -> None:
+    def _preempt_lora_request(self, ctx: TextContext, replica_idx: int) -> None:
         """Preempts the most recently received request from active batch"""
-        self._return_to_request_queue(ctx)
+        self._return_to_request_queue(ctx, replica_idx)
         # Limit logging about preemptions to at most once per second
         current_time = time.monotonic()
         self.total_preemption_count += 1

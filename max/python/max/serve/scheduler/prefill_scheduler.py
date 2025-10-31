@@ -170,7 +170,7 @@ class PrefillScheduler(Scheduler):
         )
 
         # Send fully encoded requests to decode queue.
-        for req_id, context in self.batch_constructor.tg_reqs.items():
+        for req_id, context in self.batch_constructor.all_tg_reqs.items():
             identity, transfer_engine_name, dst_idxs = (
                 self.request_id_to_reply_context.pop(req_id)
             )
@@ -221,8 +221,8 @@ class PrefillScheduler(Scheduler):
             )
 
         # Remove all TG requests from the batch constructor.
-        num_terminated_reqs = len(self.batch_constructor.tg_reqs)
-        self.batch_constructor.tg_reqs.clear()
+        num_terminated_reqs = len(self.batch_constructor.all_tg_reqs)
+        self.batch_constructor.clear_tg_reqs()
         return num_terminated_reqs
 
     def run_iteration(self) -> SchedulerProgress:
@@ -276,7 +276,7 @@ class PrefillScheduler(Scheduler):
             paged_cache=self.paged_cache,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
-            num_pending_reqs=len(self.batch_constructor.ce_reqs),
+            num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
