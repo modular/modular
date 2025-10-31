@@ -25,11 +25,11 @@ struct MemExample(ImplicitlyCopyable, Movable):
   fn mutate(mut self): pass
 
 # CHECK-LABEL: lit.fn @"borrow{{.*}}"<lt: origin<0>>(%a: !lit.ref<!MemExample, imm lt>
-fn borrow[lt: ImmutableOrigin](a: Pointer[MemExample, lt]._mlir_type):
+fn borrow[lt: ImmutOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.fn @"mutate{{.*}}"<lt: origin<1>>(%a: !lit.ref<!MemExample, mut lt>
-fn mutate[lt: MutableOrigin](a: Pointer[MemExample, lt]._mlir_type):
+fn mutate[lt: MutOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.fn @"implicit_borrow
@@ -256,11 +256,11 @@ fn returnTwoArgLifetimes(a: MemExample, b: MemExample)
   -> TwoLifetimes[origin_of(a), origin_of(b)]:
   return TwoLifetimes[origin_of(a), origin_of(b)]()
 
-struct OneLifetime[a_origin: ImmutableOrigin]:
+struct OneLifetime[a_origin: ImmutOrigin]:
   fn __init__(out self): pass
 
-struct TwoLifetimes[a_origin: ImmutableOrigin,
-                    b_origin: ImmutableOrigin]:
+struct TwoLifetimes[a_origin: ImmutOrigin,
+                    b_origin: ImmutOrigin]:
   fn __init__(out self): pass
 
 # Test that we can infer the type of 'T' in the func param invocation.
@@ -309,7 +309,7 @@ fn ref_copyability[*element_types: ImplicitlyCopyable](*args: *element_types):
 
 # FIXME (Patch #48185): need to support implicit conversions to immutable reference.
 
-#fn thing_taking_immutable_ref[T: AnyType, value_origin: ImmutableOrigin](a: Pointer[T, value_origin]): pass
+#fn thing_taking_immutable_ref[T: AnyType, value_origin: ImmutOrigin](a: Pointer[T, value_origin]): pass
 #fn test_passing_mutable_ref(mut i: String):
 #    thing_taking_immutable_ref(Pointer(to=i))
 

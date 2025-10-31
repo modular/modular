@@ -44,7 +44,7 @@ inline const char *plural(size_t value, const char *one = "",
 /// `OriginSetAttr` consisting of the origin parameters accessible through
 /// the function parameters. For example, a function with the signature
 ///
-///   fn[lt: MutableOrigin, x: WeirdReference[lt]]() -> None
+///   fn[lt: MutOrigin, x: WeirdReference[lt]]() -> None
 ///
 /// May access the origin set `{mut lt}` through its parameters. This function
 /// takes the param decls, which means it returns the named origin parameter

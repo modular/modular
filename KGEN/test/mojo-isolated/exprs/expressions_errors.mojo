@@ -846,7 +846,7 @@ fn bad_union[ao: Origin[True]](ref [ao] a: String, mut b: String) -> ref [a, b] 
     return c
 
 # https://github.com/modular/mojo/issues/3829
-fn apply_in_memory[o: ImmutableOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None, x: SomeNonTrivRegPassable):
+fn apply_in_memory[o: ImmutOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None, x: SomeNonTrivRegPassable):
 # expected-error @below {{argument #0 cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
 # expected-note @below {{operand origin 'x' doesn't match expected origin 'o'}}
     f(x)
@@ -863,12 +863,12 @@ fn test3830():
     # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
     direct3830(getSomeNonTrivRegPassable(), getSomeNonTrivRegPassable())
 
-fn test3830_1[o: ImmutableOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None):
+fn test3830_1[o: ImmutOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None):
     # expected-error @below {{invalid indirect call: argument #0 cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
     f(getSomeNonTrivRegPassable())
 
-fn test3830_2[o: ImmutableOrigin](f: fn(ref[o] x: Int) -> None, x: Int):
+fn test3830_2[o: ImmutOrigin](f: fn(ref[o] x: Int) -> None, x: Int):
     # expected-error @below {{invalid indirect call: argument #0 cannot be converted from 'Int' to ref 'Int'}}
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
     f(x)

@@ -19,7 +19,7 @@ struct ToTypeImm:
 
     @implicit
     fn __init__[
-        O: ImmutableOrigin,
+        O: ImmutOrigin,
     ](out self, ref [O]f: FromType):
         self.n = f.n
 
@@ -29,7 +29,7 @@ struct ToTypeMut:
 
     @implicit
     fn __init__[
-        O: MutableOrigin,
+        O: MutOrigin,
     ](out self, ref [O]f: FromType):
         self.n = f.n
 

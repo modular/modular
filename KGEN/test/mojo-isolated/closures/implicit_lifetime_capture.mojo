@@ -7,7 +7,7 @@
 
 
 @register_passable("trivial")
-struct Thing[a: MutableOrigin]:
+struct Thing[a: MutOrigin]:
     pass
 
 
