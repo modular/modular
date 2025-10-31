@@ -4,61 +4,64 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s --mojo-disable-builtins -split-input-file | FileCheck %s
+# RUN: %parse-mojo-isolated %s -split-input-file | FileCheck %s
 
-alias int = __mlir_type.index
 
 struct Spaceship:
-    var location: int
-    fn set_location(mut self, new_location: int):
+    var location: Int
+
+    fn set_location(mut self, new_location: Int):
         self.location = new_location
+
 
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
 # CHECK-SAME: targetStruct = @struct_extensions::@Spaceship
 __extension Spaceship:
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
-    # CHECK-SAME: %new_location: index
-    fn fly_to(mut self: Spaceship, new_location: int):
+    # CHECK-SAME: %new_location: !Int
+    fn fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
 
 # // -----
 
 
-alias int = __mlir_type.index
-alias `2` = __mlir_attr.`2 : index`
-
 struct Spaceship:
-    var location: int
-    fn set_location(mut self, new_location: int):
+    var location: Int
+
+    fn set_location(mut self, new_location: Int):
         self.location = new_location
+
 
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
 # CHECK-SAME: targetStruct = @struct_extensions::@Spaceship
 __extension Spaceship:
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
-    # CHECK-SAME: %new_location: index
-    fn fly_to(mut self: Spaceship, new_location: int):
+    # CHECK-SAME: %new_location: !Int
+    fn fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
+
 
 # CHECK-LABEL: lit.fn @"do_things
 fn do_things(mut ship: Spaceship):
     # CHECK: lit.call {{.*}}@"fly_to
     # CHECK-SAME: "self": !lit.ref<!Spaceship, mut *[0,0]>
-    ship.fly_to(`2`)
+    ship.fly_to(2)
+
 
 # // -----
 
 # Tests that we handle multiple extensions, and they're uniquely named.
 
-alias int = __mlir_type.index
 
 struct Spaceship:
-    var location: int
-    fn set_location(mut self, new_location: int):
+    var location: Int
+
+    fn set_location(mut self, new_location: Int):
         self.location = new_location
+
 
 # CHECK-LABEL: lit.struct.decl @Spaceship
 # CHECK-NOT: lit.struct.decl @"extension:Spaceship"
@@ -67,8 +70,8 @@ struct Spaceship:
 __extension Spaceship:
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
-    # CHECK-SAME: %new_location: index
-    fn fly_to(mut self: Spaceship, new_location: int):
+    # CHECK-SAME: %new_location: !Int
+    fn fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
 
@@ -81,21 +84,25 @@ __extension Spaceship:
     fn something_else(self: Spaceship):
         pass
 
+
 # // -----
 
 
 # Tests we can call a constructor defined in an extension.
 
+
 # CHECK-LABEL: lit.struct.decl @PlainStruct
 struct PlainStruct:
     pass
 
+
 # CHECK-LABEL: lit.extension.decl @"extension:PlainStruct"
 # CHECK-SAME: targetStruct = @struct_extensions::@PlainStruct
 __extension PlainStruct:
-   # CHECK-LABEL: lit.fn @"__init__
-   fn __init__(out self):
-       pass
+    # CHECK-LABEL: lit.fn @"__init__
+    fn __init__(out self):
+        pass
+
 
 # CHECK-LABEL: lit.fn @"zork
 fn zork():
@@ -107,13 +114,16 @@ fn zork():
 
 # Test we can overload between struct and extension..
 
+
 struct BaseStruct:
     fn same_name(self):
         pass
 
+
 __extension BaseStruct:
     fn same_name(self, i: __mlir_type.index):
         pass
+
 
 fn test_overloads(s: BaseStruct):
     var result = s.same_name()
@@ -123,18 +133,18 @@ fn test_overloads(s: BaseStruct):
 
 # Tests a struct extension with a trait
 
-alias int = __mlir_type.index
-alias `2` = __mlir_attr.`2 : index`
-
 
 struct Spaceship:
-    var location: int
-    fn set_location(mut self, new_location: int):
+    var location: Int
+
+    fn set_location(mut self, new_location: Int):
         self.location = new_location
 
+
 trait Flying:
-    fn fly_to(mut self, new_location: int):
+    fn fly_to(mut self, new_location: Int):
         ...
+
 
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
 # CHECK-SAME: immediateParents = #M<symbols[@struct_extensions::@Flying]>
@@ -142,39 +152,41 @@ trait Flying:
 __extension Spaceship(Flying):
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
-    # CHECK-SAME: %new_location: index
-    fn fly_to(mut self: Spaceship, new_location: int):
+    # CHECK-SAME: %new_location: !Int
+    fn fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
+
 # CHECK: kgen.conformance @"struct_extensions::Flying" {
-# CHECK-NEXT: kgen.witness "fly_to{{.*}}" : {{.*}} = @struct_extensions::@"extension:Spaceship"::@"fly_to{{.*}}"
-# CHECK-NEXT: } attributes {traitRef = @struct_extensions::@Flying}
-# Flying trait has no parents, so ConformanceOp should not have immediateParents
-# CHECK-NOT: } attributes {{{.*}}immediateParents
+# CHECK-NEXT: kgen.witness "fly_to
+# CHECK-SAME: = @struct_extensions::@"extension:Spaceship"::@"fly_to
+# ConformanceOp's immediateParents should match the trait's immediateParents.
+# CHECK-NEXT: } attributes {immediateParents = #M<symbols[@{{.*}}::@AnyType]>, traitRef = @struct_extensions::@Flying}
 
 
 # // -----
 
 
-alias int = __mlir_type.index
-alias `2` = __mlir_attr.`2 : index`
-
 trait Flying:
-    fn fly_to(mut self, new_location: int):
+    fn fly_to(mut self, new_location: Int):
         ...
 
+
 struct Spaceship:
-    var location: int
-    fn set_location(mut self, new_location: int):
+    var location: Int
+
+    fn set_location(mut self, new_location: Int):
         self.location = new_location
 
+
 __extension Spaceship(Flying):
-    fn fly_to(mut self: Spaceship, new_location: int):
+    fn fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
 
 fn launch_flying[F: Flying](mut flying: F):
-    flying.fly_to(`2`)
+    flying.fly_to(2)
+
 
 # CHECK-LABEL: lit.fn @"launch_ship
 fn launch_ship(mut ship: Spaceship):
@@ -209,6 +221,93 @@ __extension StructWithCapturingLambda:
     # CHECK-SAME: ) capturing -> index attributes
     fn user_from_extension(self) -> int:
         return Self.helper_with_capturing_lambda(self)
+
+
+# // -----
+
+
+struct Spaceship:
+    var location: Int
+
+    fn set_location(mut self, new_location: Int):
+        self.location = new_location
+
+
+trait Flying:
+    fn fly_to(mut self, new_location: Int):
+        ...
+
+
+# CHECK-LABEL: lit.trait.decl @Flying
+# All traits implicitly inherit from AnyType (unless builtins are disabled)
+# CHECK-SAME: immediateParents = #M<symbols[@{{.*}}::@AnyType]>
+
+
+# CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
+# CHECK-SAME: immediateParents = #M<symbols[@struct_extensions::@Flying]>
+# CHECK-SAME: targetStruct = @struct_extensions::@Spaceship
+__extension Spaceship(Flying):
+    # CHECK-LABEL: lit.fn @"fly_to
+    # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
+    # CHECK-SAME: %new_location: !Int
+    fn fly_to(mut self: Spaceship, new_location: Int):
+        self.set_location(new_location)
+
+
+# CHECK: kgen.conformance @"struct_extensions::Flying" {
+# CHECK-NEXT: kgen.witness "fly_to($0&,::Int)"
+# CHECK-SAME: = @struct_extensions::@"extension:Spaceship"::@"fly_to
+# ConformanceOp's immediateParents should match the trait's immediateParents.
+# Since Flying inherits from AnyType, the conformance should have AnyType.
+# CHECK-NEXT: } attributes {immediateParents = #M<symbols[@{{.*}}::@AnyType]>, traitRef = @struct_extensions::@Flying}
+
+# // -----
+
+
+struct ZDType:
+    fn __init__(out self):
+        pass
+
+
+alias ZScalar = ZSIMD[ZDType(), size=1]
+
+
+struct ZSIMD[dtype: ZDType, size: Int]:
+    pass
+
+
+trait ZConvertibleToPython:
+    pass
+
+
+__extension ZSIMD(ZConvertibleToPython):
+    pass
+
+
+# // -----
+
+# Tests accessing a struct's generic parameter from an extension.
+# Makes sure that the `.d` correctly grabs the struct's alias, and not
+# the one that's duplicated into the extension.
+# TODO(MOCO-522): Arcana docs here!
+
+
+struct Int:
+    pass
+
+
+struct MyContainer[d: Int]:
+    pass
+
+
+__extension MyContainer:
+    pass
+
+
+fn test_param_access[dtype: Int]():
+    # Note the Int below, thats what makes sure it's working.
+    # CHECK: lit.alias.decl *"element_type`": !Int = <dtype>
+    alias element_type = MyContainer[dtype].d
 
 
 # TODO(MOCO-522): Add tests for aliases in extensions
