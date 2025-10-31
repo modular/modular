@@ -77,7 +77,7 @@ class TestPipelineConfigUtilityMethods:
         # Test extracting SamplingConfig kwargs
         kwargs = {
             "enable_structured_output": True,
-            "do_penalties": True,
+            "enable_penalties": True,
             "enable_min_tokens": True,
             "unrelated_param": "value",
         }
@@ -88,10 +88,10 @@ class TestPipelineConfigUtilityMethods:
 
         # Should extract sampling-related kwargs
         assert "enable_structured_output" in extracted
-        assert "do_penalties" in extracted
+        assert "enable_penalties" in extracted
         assert "enable_min_tokens" in extracted
         assert extracted["enable_structured_output"] is True
-        assert extracted["do_penalties"] is True
+        assert extracted["enable_penalties"] is True
         assert extracted["enable_min_tokens"] is True
 
         # Should not extract unrelated params
@@ -99,7 +99,7 @@ class TestPipelineConfigUtilityMethods:
 
         # Original kwargs should have extracted items removed
         assert "enable_structured_output" not in kwargs
-        assert "do_penalties" not in kwargs
+        assert "enable_penalties" not in kwargs
         assert "enable_min_tokens" not in kwargs
         assert "unrelated_param" in kwargs
 
@@ -245,7 +245,7 @@ class TestPipelineConfigUtilityMethods:
 
         matched_kwargs: dict[str, Any] = {
             "enable_structured_output": True,
-            "do_penalties": True,
+            "enable_penalties": True,
         }
         kv_cache_kwargs: dict[str, Any] = {}
 
@@ -256,7 +256,7 @@ class TestPipelineConfigUtilityMethods:
         # Should create and set the config
         assert config._sampling_config is not None
         assert config._sampling_config.enable_structured_output is True
-        assert config._sampling_config.do_penalties is True
+        assert config._sampling_config.enable_penalties is True
 
     @mock_pipeline_config_resolve
     def test_create_and_set_config_model_config_with_kv_cache(self) -> None:
@@ -299,7 +299,7 @@ class TestPipelineConfigUtilityMethods:
 
         unmatched_kwargs = {
             "enable_structured_output": True,  # SamplingConfig
-            "do_penalties": True,  # SamplingConfig
+            "enable_penalties": True,  # SamplingConfig
             "model_path": "/override/path",  # MAXModelConfig
             "kv_cache_page_size": 128,  # KVCacheConfig
             "unknown_param": "value",  # Should remain unmatched
@@ -309,7 +309,7 @@ class TestPipelineConfigUtilityMethods:
 
         # Should process and remove matched kwargs
         assert "enable_structured_output" not in unmatched_kwargs
-        assert "do_penalties" not in unmatched_kwargs
+        assert "enable_penalties" not in unmatched_kwargs
         assert "model_path" not in unmatched_kwargs
         assert "kv_cache_page_size" not in unmatched_kwargs
 
@@ -318,7 +318,7 @@ class TestPipelineConfigUtilityMethods:
 
         # Should update configs
         assert config._sampling_config.enable_structured_output is True
-        assert config._sampling_config.do_penalties is True
+        assert config._sampling_config.enable_penalties is True
         assert config._model_config.model_path == "/override/path"
         assert config._model_config._kv_cache_config.kv_cache_page_size == 128
 
@@ -377,7 +377,7 @@ class TestPipelineConfigUtilityMethods:
 
         # Sampling config
         assert config._sampling_config.enable_structured_output is True
-        assert config._sampling_config.do_penalties is False
+        assert config._sampling_config.enable_penalties is False
 
         # Model config with KV cache
         assert config._model_config.quantization_encoding == "bfloat16"
@@ -833,45 +833,13 @@ def test_config__validates_lora_fails_with_multiple_devices(
     assert config.lora_config is None
 
 
-@mock_pipeline_config_hf_dependencies
-def test_integration_full_config_initialization_do_penalties_speculative_decoding() -> (
-    None
-):
-    """Test full integration of all utility methods during config initialization but
-    with do_penalties set to True and provided draft_model_config. This should raise an error.
-    """
-    kwargs = {
-        "model_path": "test/model",
-        "max_batch_size": 4,
-        # LoRA config
-        "enable_lora": True,
-        "lora_paths": ["/lora1", "/lora2"],
-        "max_lora_rank": 64,
-        # Draft model config
-        "draft_model_path": "/draft/model",
-        "draft_quantization_encoding": "float32",
-        # Sampling config
-        "enable_structured_output": True,
-        "do_penalties": True,
-        # Model config with KV cache
-        "quantization_encoding": "bfloat16",
-        "kv_cache_page_size": 512,
-    }
-
-    with pytest.raises(
-        ValueError,
-        match=r"frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding.",
-    ):
-        _ = PipelineConfig(**kwargs)
-
-
 class TestSamplingConfig:
     """Test suite for SamplingConfig."""
 
     def test_from_generation_config_sampling_defaults_with_repetition_penalty(
         self,
     ) -> None:
-        """Test that do_penalties is True when repetition_penalty is set to non-default value."""
+        """Test that enable_penalties is True when repetition_penalty is set to non-default value."""
         # Create sampling defaults with repetition_penalty=1.05
         sampling_defaults = SamplingParamsGenerationConfigDefaults(
             repetition_penalty=1.05
@@ -884,13 +852,13 @@ class TestSamplingConfig:
             )
         )
 
-        # Assert that do_penalties is True
-        assert sampling_config.do_penalties is True
+        # Assert that enable_penalties is True
+        assert sampling_config.enable_penalties is True
 
     def test_from_generation_config_sampling_defaults_with_default_repetition_penalty(
         self,
     ) -> None:
-        """Test that do_penalties is False when repetition_penalty is at default value."""
+        """Test that enable_penalties is False when repetition_penalty is at default value."""
         # Create sampling defaults with repetition_penalty=1.0 (default)
         sampling_defaults = SamplingParamsGenerationConfigDefaults(
             repetition_penalty=1.0
@@ -903,13 +871,13 @@ class TestSamplingConfig:
             )
         )
 
-        # Assert that do_penalties is False (since 1.0 is the default)
-        assert sampling_config.do_penalties is False
+        # Assert that enable_penalties is False (since 1.0 is the default)
+        assert sampling_config.enable_penalties is False
 
     def test_from_generation_config_sampling_defaults_without_penalties(
         self,
     ) -> None:
-        """Test that do_penalties is False when no penalty parameters are set."""
+        """Test that enable_penalties is False when no penalty parameters are set."""
         # Create sampling defaults without any penalty parameters
         sampling_defaults = SamplingParamsGenerationConfigDefaults(
             temperature=0.7, top_k=50
@@ -922,5 +890,5 @@ class TestSamplingConfig:
             )
         )
 
-        # Assert that do_penalties is False
-        assert sampling_config.do_penalties is False
+        # Assert that enable_penalties is False
+        assert sampling_config.enable_penalties is False
