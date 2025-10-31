@@ -33,6 +33,7 @@ from gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
     schedule_group_barrier,
+    s_waitcnt_barrier,
 )
 from memory.pointer import AddressSpace as BaseAddressSpace
 from layout import IntTuple, Layout, LayoutTensor
@@ -76,90 +77,27 @@ from .utils import SharedMemoryManager
 
 # Note: this is a experimental implementation of MHA for gfx950.
 
-# reference for waitcnt_arg and related synchronization utilities:
-# https://github.com/ROCm/rocm-libraries/blob/5ba64a9aa8557e465d1a5937609e23f34adb601e/projects/composablekernel/include/ck_tile/core/arch/arch.hpp#L140
-
-
-struct WaitCountArg:
-    """
-    Mojo struct to encapsulate waitcnt argument bitfields and helpers.
-    """
-
-    # bit numbers (hex) -------------------------> FE'DC'BA98'7'654'3210
-    # [V]M [E]XP [L]GKM counters and [U]NUSED ---> VV'UU'LLLL'U'EEE'VVVV
-
-    # Constants
-    alias MAX: UInt32 = 0b1100111101111111
-    alias MAX_VM_CNT: UInt32 = 0b111111
-    alias MAX_EXP_CNT: UInt32 = 0b111
-    alias MAX_LGKM_CNT: UInt32 = 0b1111
-
-    @staticmethod
-    fn from_vmcnt(cnt: UInt32) -> UInt32:
-        debug_assert(cnt >= 0 and (cnt >> 6) == 0, "valid range is [0..63]")
-        return WaitCountArg.MAX & ((cnt & 0b1111) | ((cnt & 0b110000) << 10))
-
-    @staticmethod
-    fn from_expcnt(cnt: UInt32) -> UInt32:
-        debug_assert(cnt >= 0 and (cnt >> 3) == 0, "valid range is [0..7]")
-        return WaitCountArg.MAX & (cnt << 4)
-
-    @staticmethod
-    fn from_lgkmcnt(cnt: UInt32) -> UInt32:
-        debug_assert(cnt >= 0 and (cnt >> 4) == 0, "valid range is [0..15]")
-        return WaitCountArg.MAX & (cnt << 8)
-
 
 @always_inline
-fn s_waitcnt(
-    vmcnt: UInt32 = WaitCountArg.MAX_VM_CNT,
-    expcnt: UInt32 = WaitCountArg.MAX_EXP_CNT,
-    lgkmcnt: UInt32 = WaitCountArg.MAX_LGKM_CNT,
-):
-    """
-    Issues an s_waitcnt with the specified counters.
-    """
-    # Compose the waitcnt argument
-    var waitcnt_val = (
-        WaitCountArg.from_vmcnt(vmcnt)
-        | WaitCountArg.from_expcnt(expcnt)
-        | WaitCountArg.from_lgkmcnt(lgkmcnt)
-    )
-    # Call the intrinsic (assuming a Mojo binding exists)
-    llvm_intrinsic["llvm.amdgcn.s.waitcnt", NoneType](waitcnt_val)
-
-
-@always_inline
-fn s_waitcnt_barrier(
-    vmcnt: UInt32 = WaitCountArg.MAX_VM_CNT,
-    expcnt: UInt32 = WaitCountArg.MAX_EXP_CNT,
-    lgkmcnt: UInt32 = WaitCountArg.MAX_LGKM_CNT,
-):
-    """
-    Issues an s_waitcnt followed by a barrier.
-    """
-    s_waitcnt(vmcnt, expcnt, lgkmcnt)
-    llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
-
-
-@always_inline
-fn block_sync_lds(lgkmcnt: UInt32 = 0):
+fn block_sync_lds[
+    *,
+    lgkmcnt: UInt32 = 0,
+]():
     """
     Synchronize LDS (local data share) with waitcnt barrier.
     """
-    s_waitcnt_barrier(
-        WaitCountArg.MAX_VM_CNT, WaitCountArg.MAX_EXP_CNT, lgkmcnt
-    )
+    s_waitcnt_barrier[lgkmcnt=lgkmcnt]()
 
 
 @always_inline
-fn block_sync_lds_direct_load(vmcnt: UInt32 = 0):
+fn block_sync_lds_direct_load[
+    *,
+    vmcnt: UInt32 = 0,
+]():
     """
     Synchronize LDS for direct load with waitcnt barrier.
     """
-    s_waitcnt_barrier(
-        vmcnt, WaitCountArg.MAX_EXP_CNT, WaitCountArg.MAX_LGKM_CNT
-    )
+    s_waitcnt_barrier[vmcnt=vmcnt]()
 
 
 struct KVCacheIterator[
@@ -635,7 +573,7 @@ __extension Attention:
             _ = k_buffer.load_from_dram()
             _ = v_buffer.load_from_dram()
             _ = k_buffer.load_from_dram()
-            block_sync_lds_direct_load(num_v_loads + num_k_loads)
+            block_sync_lds_direct_load[vmcnt = num_v_loads + num_k_loads]()
             # barrier()
             k_buffer.load_from_shared(0, 0)
 
@@ -651,7 +589,7 @@ __extension Attention:
         fn loop_over_kvcache[
             tile_size: Int
         ](kv_tile_start_row: UInt32, end: UInt32, not_last_iter: Bool):
-            block_sync_lds(k_lds_loads)
+            block_sync_lds[lgkmcnt=k_lds_loads]()
             # barrier()
             if self.mask_skip_and_advance(kv_tile_start_row):
                 k_buffer.kv_cache_iter.increment()
@@ -690,7 +628,7 @@ __extension Attention:
                         q_mma_tile, k_mma_tile, self.p_reg_buffer.reg_tile
                     )
 
-            block_sync_lds_direct_load(num_k_loads + num_v_loads)
+            block_sync_lds_direct_load[vmcnt = num_k_loads + num_v_loads]()
             # barrier()
             v_buffer.load_from_shared(UInt(loop_counter % 2), 0)
 
@@ -708,7 +646,7 @@ __extension Attention:
 
             self.online_softmax()
 
-            block_sync_lds(v_lds_loads)
+            block_sync_lds[lgkmcnt=v_lds_loads]()
             # barrier()
             # calculate v^T p^T
             _ = k_buffer.load_from_dram()
@@ -727,7 +665,7 @@ __extension Attention:
                         v_buffer.get_mma_tile[k_mma](),
                         self.out_reg_buffer.reg_tile,
                     )
-            block_sync_lds_direct_load(num_k_loads + num_v_loads)
+            block_sync_lds_direct_load[vmcnt = num_k_loads + num_v_loads]()
             # barrier()
             loop_counter = loop_counter ^ 1
             k_buffer.load_from_shared(UInt(loop_counter % 2), 0)

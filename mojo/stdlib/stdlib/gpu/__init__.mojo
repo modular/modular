@@ -111,4 +111,6 @@ from .sync import (
     schedule_barrier,
     schedule_group_barrier,
     syncwarp,
+    s_waitcnt,
+    s_waitcnt_barrier,
 )
