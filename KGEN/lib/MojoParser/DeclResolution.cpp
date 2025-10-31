@@ -1091,8 +1091,10 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
 
 /// Given the lexical context of a function, return true if the default bit
 /// for the function is capturing.
-static bool isCapturingByDefault(FnOp funcOp, StructDeclOp parent,
-                                 ArrayRef<ParamDeclAttr> paramDecls) {
+static bool
+isCapturingByDefault(SharedState &shared, FnOp funcOp, TraitType canonicalTrait,
+                     std::optional<ArrayRef<ParamDeclAttr>> parentDecls,
+                     ArrayRef<ParamDeclAttr> paramDecls) {
   // Any function that contains a capturing closure as a parameter is itself
   // capturing, include parent struct parameters.
   mlir::AttrTypeWalker walker;
@@ -1101,11 +1103,29 @@ static bool isCapturingByDefault(FnOp funcOp, StructDeclOp parent,
       return WalkResult::interrupt();
     return WalkResult::advance();
   });
-  return llvm::any_of(
-      llvm::concat<const ParamDeclAttr>(
-          paramDecls,
-          parent ? parent.getParams() : llvm::ArrayRef<ParamDeclAttr>()),
-      [&](ParamDeclAttr decl) { return walker.walk(decl).wasInterrupted(); });
+  // Temporary solution to supporting capturing parametric closures inside
+  // unified closures: propagate capturing effect with unified effect.
+  walker.addWalk([&](SymbolRefAttr symbol) {
+    auto traitDecl = shared.declResolver->getDeclForTypeSymbolIfExists(symbol);
+    if (!traitDecl)
+      return WalkResult::advance();
+    TraitDeclOp traitDeclOp =
+        dyn_cast_if_present<TraitDeclOp>(traitDecl->getIfOperation());
+    if (traitDeclOp && traitDeclOp.getDefinesClosure())
+      return WalkResult::interrupt();
+    return WalkResult::advance();
+  });
+  bool isInterrupted = false;
+  if (canonicalTrait)
+    isInterrupted = walker.walk(canonicalTrait).wasInterrupted();
+  return isInterrupted ||
+         llvm::any_of(llvm::concat<const ParamDeclAttr>(
+                          paramDecls, parentDecls
+                                          ? parentDecls.value()
+                                          : SmallVector<ParamDeclAttr>()),
+                      [&](ParamDeclAttr decl) {
+                        return walker.walk(decl).wasInterrupted();
+                      });
 }
 
 std::pair<SmallVector<ParamDeclRefAttr>, FnTypeGeneratorType>
@@ -1454,11 +1474,21 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
                    [](ParsedArgument &arg) { return arg.isErroneous; }))
     decl.setErroneous();
 
+  TraitType traitType;
+  std::optional<ArrayRef<ParamDeclAttr>> parentParams;
   ASTDecl *structDecl = getStructOrTargetStruct(*decl.getParentDecl(), *this);
   StructDeclOp structOp = nullptr;
   if (structDecl)
     structOp = dyn_cast_or_null<StructDeclOp>(structDecl->getIfOperation());
-  if (isCapturingByDefault(funcOp, structOp, paramList.paramDeclAttrs))
+  if (structOp) {
+    traitType = structOp.getCanonicalTrait();
+    parentParams = structOp.getParams();
+  } else if (auto traitDecl = dyn_cast_or_null<TraitDeclOp>(
+                 decl.getParentDecl()->getIfOperation())) {
+    traitType = traitDecl.getCanonicalTrait();
+  }
+  if (isCapturingByDefault(shared, funcOp, traitType, parentParams,
+                           paramList.paramDeclAttrs))
     fnSignature.effects.setCapturing();
 
   // Now that we have figured out the lexical structure, allow decorators to
@@ -1624,7 +1654,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
       graph.usesFromAbove.takeVector();
 
   // If this is a `@parameter` closure, attach the capture origins.
-  if (signature.isCapturing()) {
+  if (signature.isCapturing() && !signature.isUnified()) {
     SmallVector<Type> captureTypes;
     for (const Capture &cap : captures)
       captureTypes.push_back(cap.getValue().getType());
@@ -3256,9 +3286,20 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
                                    immediateParents))
     return failure();
   SmallVector<SymbolRefAttr> parentTraits;
-  if (auto *inheritedFrom = decl.getTraitConformanceLineage())
-    for (auto [symbol, _] : *inheritedFrom)
+  bool definesClosure = traitOp.getDefinesClosure();
+  if (auto *inheritedFrom = decl.getTraitConformanceLineage()) {
+    for (auto [symbol, _] : *inheritedFrom) {
       parentTraits.push_back(symbol);
+      if (definesClosure)
+        continue;
+      ASTDecl &type = getDeclForTypeSymbol(symbol);
+      if (auto traitDecl =
+              dyn_cast_if_present<TraitDeclOp>(type.getIfOperation()))
+        if (traitDecl.getDefinesClosure())
+          definesClosure = true;
+    }
+  }
+  traitOp.setDefinesClosure(definesClosure);
 
   if (p.parseToken(Token::colon, "expected ':' in trait definition"))
     return failure();

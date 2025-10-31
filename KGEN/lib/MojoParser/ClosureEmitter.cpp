@@ -893,12 +893,16 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
                          return replacer.replace(original);
                        }));
     Type result = replacer.replace(sig.getResults().front());
+    // TODO: remove capturing when legacy closures are removed.
     auto [fnOp, fnDecl] = synthesizeFunction(
         decl, callName, parameters, sig.getParamListAttrs(), argumentTypes,
         sig.getArgConventions(), sig.getArgListAttrs(), result,
         SpecialFunctionKind::kNormal, nestedFunctionOrTypeLocation, builder,
-        sig.getFnEffects().setUnified(false).setRegisterPassable(false), "",
-        true, inlineLevel);
+        sig.getFnEffects()
+            .setUnified(false)
+            .setRegisterPassable(false)
+            .setCapturing(true),
+        "", true, inlineLevel);
     builder.setInsertionPointToEnd(&fnOp.getBodyRegion().front());
     UnreachableOp::create(builder);
     functions.insert({callName, fnOp.getSymNameAttr()});
@@ -1972,10 +1976,14 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       ParamDeclAttr::get(originAttr, OriginType::get(ctx, true));
   auto refType = RefType::get(closureType, ParamDeclRefAttr::get(origin));
   FnTypeGeneratorType original = nestedFn.getFuncTypeGenerator();
+  // TODO: Remove capturing when legacy closures are removed
   FnTypeGeneratorType withoutUnified = FnTypeGeneratorType::get(
       original.getInputParamTypes(), original.getValues(),
       original.getArgConventions(),
-      original.getFnEffects().setUnified(false).setRegisterPassable(false),
+      original.getFnEffects()
+          .setUnified(false)
+          .setRegisterPassable(false)
+          .setCapturing(true),
       original.getFnMetadata(), original.getMetadata());
   auto closure = LIT::ClosureInitOp::create(
       builder, opLoc, refType, withoutUnified, nestedFn.getFunctionType(),
