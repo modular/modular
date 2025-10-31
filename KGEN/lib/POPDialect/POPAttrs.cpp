@@ -1689,6 +1689,43 @@ DTypeToUI8Attr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// DTypeFromUI8Attr
+//===----------------------------------------------------------------------===//
+
+TypedAttr DTypeFromUI8Attr::get(MLIRContext *ctx, TypedAttr value) {
+  // Fold into an DTypeConstantAttr if the ui8 value is known
+  if (auto constInt = dyn_cast<IntLiteralAttr>(value))
+    return DTypeConstantAttr::get(
+        ctx, (KGENDType)constInt.getValue().getAPInt().getSExtValue());
+  if (auto constInt = dyn_cast<IntegerAttr>(value))
+    return DTypeConstantAttr::get(
+        ctx, (KGENDType)constInt.getValue().getSExtValue());
+  return Base::get(ctx, value);
+}
+
+TypedAttr
+DTypeFromUI8Attr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                             MLIRContext *context, TypedAttr value) {
+  if (failed(verify(emitError, value)))
+    return {};
+  return DTypeFromUI8Attr::get(context, value);
+}
+
+bool DTypeFromUI8Attr::isConstant() const { return false; }
+
+Type DTypeFromUI8Attr::getType() const { return DTypeType::get(getContext()); }
+
+LogicalResult
+DTypeFromUI8Attr::verify(function_ref<InFlightDiagnostic()> emitError,
+                         TypedAttr value) {
+  auto intTy = dyn_cast<IntegerType>(value.getType());
+  if (!intTy || !intTy.isUnsignedInteger(8))
+    return emitError() << "Input type " << value.getType()
+                       << " is invalid: must be ui8";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // CastFromBuiltinAttr
 //===----------------------------------------------------------------------===//
 
@@ -1718,6 +1755,42 @@ CastFromBuiltinAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return verifyConversionCast(
       [emitError](StringRef msg) { return emitError() << msg; }, out_type,
       value.getType(), /*fromSimd=*/false);
+}
+
+//===----------------------------------------------------------------------===//
+// CastToBuiltinAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr CastToBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
+                                 Type out_type) {
+  // If this is a known constant SIMD value, fold this directly to its
+  // equivalent MLIR-typed value.
+  if (auto fold = POP::foldCastToBuiltin(arg, out_type))
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+
+  return Base::get(ctx, arg, out_type);
+}
+
+TypedAttr
+CastToBuiltinAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                              MLIRContext *context, TypedAttr value,
+                              Type out_type) {
+  if (failed(verify(emitError, value, out_type)))
+    return {};
+  return CastToBuiltinAttr::get(context, value, out_type);
+}
+
+bool CastToBuiltinAttr::isConstant() const { return false; }
+
+LogicalResult
+CastToBuiltinAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                          TypedAttr value, Type out_type) {
+  if (!isa<SIMDType>(value.getType()))
+    return emitError() << "Invalid operand type: must be SIMDType";
+  return verifyConversionCast(
+      [emitError](StringRef msg) { return emitError() << msg; },
+      cast<SIMDType>(value.getType()), out_type, /*fromSimd=*/true);
 }
 
 //===----------------------------------------------------------------------===//

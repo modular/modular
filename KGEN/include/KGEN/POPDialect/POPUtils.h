@@ -24,6 +24,10 @@ LogicalResult
 verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
                      SIMDType simd, Type builtinType, bool fromSimd);
 
+// Fold a CastToBuiltin operation/attribute from a SIMD-typed value to a MLIR
+// builtin type.
+OpFoldResult foldCastToBuiltin(TypedAttr input, Type resultType);
+
 /// Fold a conversion from a MLIR builtin type to a SIMD type.
 OpFoldResult foldCastFromBuiltin(TypedAttr input, SIMDType resultType);
 

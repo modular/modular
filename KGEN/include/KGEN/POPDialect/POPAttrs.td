@@ -590,6 +590,35 @@ def POP_DTypeToUI8Attr : POP_ExprAttr<"DTypeToUI8", "dtype_to_ui8"> {
   let extraClassDeclaration = [{ Type getType() const; }];
 }
 
+//===----------------------------------------------------------------------===//
+// DTypeFromUI8Attr
+//===----------------------------------------------------------------------===//
+
+def POP_DTypeFromUI8Attr : POP_ExprAttr<"DTypeFromUI8", "dtype_from_ui8"> {
+  let summary = "Convert a UInt8 to DType.";
+  let description = [{
+    The `#pop.dtype_from_ui8` attribute converts a ui8 type to a !kgen.dtype.
+  }];
+
+  let parameters = (ins "TypedAttr":$value);
+
+  let assemblyFormat = "`<` $value `>`";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an DTypeFromUI8Attr.
+    AttrBuilder<(ins "TypedAttr":$value), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$value), [{
+      return get(value.getContext(), value);
+    }], "TypedAttr">
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
 
 //===----------------------------------------------------------------------===//
 // CastFromBuiltin
@@ -615,6 +644,35 @@ def POP_CastFromBuiltinAttr : POP_ExprAttr<"CastFromBuiltin", "cast_from_builtin
     AttrBuilder<(ins "TypedAttr":$arg, "SIMDType":$type), "", "TypedAttr">,
 
     AttrBuilderWithInferredContext<(ins "TypedAttr":$arg, "SIMDType":$type), [{
+      return get(arg.getContext(), arg, type);
+    }], "TypedAttr">
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// CastToBuiltin
+//===----------------------------------------------------------------------===//
+
+def POP_CastToBuiltinAttr : POP_ExprAttr<"CastToBuiltin", "cast_to_builtin"> {
+  let summary = "Convert to a POP type to a builtin MLIR type.";
+  let description = [{
+    The `#pop.cast_to_builtin` attribute converts a POP type to a builtin MLIR
+    type.
+  }];
+
+  let parameters = (ins "TypedAttr":$arg,
+                        AttributeSelfTypeParameter<"", "Type">:$type);
+
+  let assemblyFormat = " `<` $arg `>` ";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an CastToBuiltinAttr.
+    AttrBuilder<(ins "TypedAttr":$arg, "Type":$type), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$arg, "Type":$type), [{
       return get(arg.getContext(), arg, type);
     }], "TypedAttr">
   ];
