@@ -266,11 +266,13 @@ def print_samples(samples: LmEvalSamples, print_cot: bool) -> None:
 
 
 def start_server(cmd: list[str]) -> tuple[Popen, float]:
-    # SGLang depends on ninja which is in the serve environment
     env = os.environ.copy()
-    venv_bin = os.path.abspath(".venv-serve/bin")
-    existing_path = env.get("PATH")
-    env["PATH"] = f"{venv_bin}:{existing_path}" if existing_path else venv_bin
+    if not _inside_bazel():
+        # SGLang depends on ninja which is in the serve environment
+        env["PYTHONSAFEPATH"] = "1"  # Avoids root dir `max` shadowing
+        venv_bin = os.path.abspath(".venv-serve/bin")
+        prev_path = env.get("PATH")
+        env["PATH"] = f"{venv_bin}:{prev_path}" if prev_path else venv_bin
 
     start = time.monotonic()
     proc = Popen(cmd, start_new_session=True, env=env)
