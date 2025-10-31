@@ -193,6 +193,14 @@ class SupportedArchitecture:
         )
     """
 
+    supports_empty_batches: bool = False
+    """Whether the architecture can handle empty batches during inference.
+    
+    When set to True, the pipeline can process requests with zero-sized batches
+    without errors. This is useful for certain execution modes and expert parallelism.
+    Most architectures do not require empty batch support and should leave this as False.
+    """
+
     @property
     def tokenizer_cls(self) -> type[PipelineTokenizer[Any, Any, Any]]:
         if isinstance(self.tokenizer, type):

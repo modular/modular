@@ -95,7 +95,6 @@ class SchedulerLogger:
             self.time_of_last_log = now
 
         batch_size = len(inputs.batch)
-        assert batch_size > 0
         terminated_reqs = num_terminated_reqs
         num_steps = inputs.num_steps
         num_generated_tokens = batch_size * num_steps
@@ -153,9 +152,14 @@ class SchedulerLogger:
 
         used_pct = paged_cache.used_blocks_pct
         # this might differ from cache_metrics.cache_hit_rate due to chunked prefill...
-        cache_hit_rate = cache_metrics.cache_tokens / (
-            cache_metrics.cache_tokens + num_input_tokens
-        )
+
+        # We have to accomodate for the case in which a batch is empty.
+        denominator = cache_metrics.cache_tokens + num_input_tokens
+        if denominator == 0:
+            cache_hit_rate = 0.0
+        else:
+            cache_hit_rate = cache_metrics.cache_tokens / denominator
+
         total_blocks = paged_cache.total_num_pages
 
         host_kvcache_str = ""

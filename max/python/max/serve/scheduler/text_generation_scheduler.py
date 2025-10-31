@@ -57,6 +57,7 @@ class TokenGenerationScheduler(Scheduler):
         cancel_queue: MAXPullQueue[list[RequestID]],
         paged_manager: PagedKVCacheManager | None = None,
         offload_queue_draining: bool = False,
+        support_empty_batches: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -71,6 +72,7 @@ class TokenGenerationScheduler(Scheduler):
             paged_cache=paged_manager,
         )
         self.scheduler_logger = SchedulerLogger()
+        self.support_empty_batches = support_empty_batches
 
         # We are parameterizing the offload of queue draining to allow for
         # the use case where we want to drain the queue in the main thread.
@@ -129,12 +131,15 @@ class TokenGenerationScheduler(Scheduler):
         batch_creation_time_s = t1 - t0
 
         # If the batch is empty, skip
-        if not inputs:
+        if not inputs and not self.support_empty_batches:
             return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch
         t0 = time.monotonic()
-        with Tracer(f"_schedule({inputs})"):
+        if len(inputs.batch) > 0:
+            with Tracer(f"_schedule({inputs})"):
+                num_terminated_reqs = self._schedule(inputs)
+        else:
             num_terminated_reqs = self._schedule(inputs)
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
@@ -162,7 +167,6 @@ class TokenGenerationScheduler(Scheduler):
 
     def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Returns the number of terminated requests."""
-        assert inputs
 
         # TODO(E2EOPT-399): Add proper data parallelism support. Currently
         # this naively splits the batch onto different devices.
@@ -227,4 +231,5 @@ def load_text_generation_scheduler(
         response_queue=response_queue,
         cancel_queue=cancel_queue,
         offload_queue_draining=pipeline_config.experimental_background_queue,
+        support_empty_batches=pipeline_config.execute_empty_batches,
     )

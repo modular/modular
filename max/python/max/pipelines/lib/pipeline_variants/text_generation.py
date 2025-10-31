@@ -600,6 +600,10 @@ class TextGenerationPipeline(
                     )
                     raise  # re-raise the original exception
 
+            # Continue and execute the next step if the batch.
+            if len(flat_batch) == 0:
+                continue
+
             # Sample next token.
             with Tracer("sample_next_token_step_{i}"):
                 apply_logits_processors(
@@ -655,6 +659,10 @@ class TextGenerationPipeline(
             curr_step_inputs = self._pipeline_model.prepare_next_token_inputs(
                 new_tokens, curr_step_inputs
             )
+
+        # Return early if the batch is empty.
+        if len(flat_batch) == 0:
+            return {}
 
         # Do the copy to host for each token generated.
         with Tracer("generated_tokens.to(CPU())") as tracer:
