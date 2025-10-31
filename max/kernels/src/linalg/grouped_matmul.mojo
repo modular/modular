@@ -843,61 +843,88 @@ fn dispatch_amd_matmul_by_block_shape[
         config: MatmulConfig[a_type, b_type, c_type, transpose_b]
     ] () raises capturing -> None,
     default_block_tile_shape: IndexList[3],
+    use_heuristic: Bool = False,
 ](M: Int, ctx: DeviceContext) raises:
     """Dispatches to the best kernel configuration based on runtime M dimension.
     """
-    alias block_shape_list = _amdgpu_matmul_build_block_shape_list[N]()
-
-    # Auto-tune block shape selection: Find the configuration that minimizes
-    # SM idle time by scoring how evenly work distributes across all SMs.
-    # Lower score = better load balance (fewer idle SMs in the last wave).
-    var best_idx = -1
-    var best_score = Int.MAX
-    var sm_count = ctx.default_device_info.sm_count
 
     @parameter
-    for i in range(len(block_shape_list)):
-        alias block_shape = block_shape_list[i]
-        alias block_m = block_shape[0]
-        alias block_n = block_shape[1]
-        alias n_blocks = ceildiv(N, block_n)
+    if use_heuristic:
+        alias block_shape_list = _amdgpu_matmul_build_block_shape_list[N]()
 
-        var m_blocks = ceildiv(M, block_m)
-        var total_blocks = m_blocks * n_blocks
-        var batch, extra = divmod(total_blocks - 1, sm_count)
-        var score = batch * sm_count + (sm_count - extra - 1)
+        # Auto-tune block shape selection: Find the configuration that minimizes
+        # SM idle time by scoring how evenly work distributes across all SMs.
+        # Lower score = better load balance (fewer idle SMs in the last wave).
+        var best_idx = -1
+        var best_score = Int.MAX
+        var sm_count = ctx.default_device_info.sm_count
 
-        if score < best_score:
-            best_idx = i
-            best_score = score
+        @parameter
+        for i in range(len(block_shape_list)):
+            alias block_shape = block_shape_list[i]
+            alias block_m = block_shape[0]
+            alias block_n = block_shape[1]
+            alias n_blocks = ceildiv(N, block_n)
 
-    # Dispatch to the best configuration if found
-    @parameter
-    for i in range(len(block_shape_list)):
-        if best_idx == i:
-            alias config = _amdgpu_matmul_config_from_block_shape[
-                c_type,
-                a_type,
-                b_type,
-                transpose_b,
-                K,
-                pdl_level = PDLLevel(),
-            ](block_shape_list[i])
-            launcher_fn[config]()
-            return
+            var m_blocks = ceildiv(M, block_m)
+            var total_blocks = m_blocks * n_blocks
+            var batch, extra = divmod(total_blocks - 1, sm_count)
+            var score = batch * sm_count + (sm_count - extra - 1)
+
+            if score < best_score:
+                best_idx = i
+                best_score = score
+
+        # Dispatch to the best configuration if found
+        @parameter
+        for i in range(len(block_shape_list)):
+            if best_idx == i:
+                alias config = _amdgpu_matmul_config_from_block_shape[
+                    c_type,
+                    a_type,
+                    b_type,
+                    transpose_b,
+                    K,
+                    pdl_level = PDLLevel(),
+                ](block_shape_list[i])
+                launcher_fn[config]()
+                return
 
     # Fallback to default config
-    alias default_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=default_block_tile_shape,
-        warp_tile_shape=Index(
-            default_block_tile_shape[0] // 2,
-            default_block_tile_shape[1] // 2,
-            default_block_tile_shape[2],
-        ),
-        num_pipeline_stages=1,
-        num_k_partitions=1,
-    )
-    launcher_fn[default_config]()
+    @always_inline
+    @parameter
+    fn default_config_launcher[
+        block_m: Int,
+        block_n: Int,
+        block_k: Int,
+    ]() raises:
+        alias default_config = MatmulConfig[
+            a_type, b_type, c_type, transpose_b
+        ](
+            block_tile_shape=Index(block_m, block_n, block_k),
+            warp_tile_shape=Index(
+                block_m // 2,
+                block_n // 2,
+                block_k,
+            ),
+            num_pipeline_stages=1,
+            num_k_partitions=1,
+        )
+        launcher_fn[default_config]()
+
+    # auto-tuned sizes
+    if M == 128 and N == 256 and K == 256:
+        default_config_launcher[32, 32, 128]()
+    elif M == 256 and N == 512 and K == 1024:
+        default_config_launcher[32, 32, 128]()
+    elif M == 384 and N == 768 and K == 1024:
+        default_config_launcher[32, 64, 128]()
+    elif M == 1977 and N == 192 and K == 1024:
+        default_config_launcher[64, 96, 128]()
+    elif M == 1977 and N == 1280 and K == 1024:
+        default_config_launcher[96, 96, 64]()
+    else:
+        default_config_launcher[64, 64, 64]()
 
 
 fn grouped_matmul_amd[
@@ -924,6 +951,10 @@ fn grouped_matmul_amd[
     alias num_experts = b.shape.get[0]()
     alias N = b.shape.get[1]()
     alias K = b.shape.get[2]()
+
+    var total_M = 0
+    for i in range(num_active_experts):
+        total_M += Int(a_offsets[i + 1] - a_offsets[i])
 
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -991,7 +1022,7 @@ fn grouped_matmul_amd[
         K,
         launch_kernel,
         block_tile_shape,
-    ](max_num_tokens_per_expert, ctx)
+    ](total_M, ctx)
 
 
 # ===----------------------------------------------------------------------=== #
