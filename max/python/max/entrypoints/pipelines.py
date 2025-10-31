@@ -471,6 +471,7 @@ def cli_benchmark(args: Sequence[str]) -> None:
     # and bypass Click's argument processing
     # args = ctx.params.get("args", [])
 
+    # Import lazily to avoid importing benchmark modules at module load time
     from max.benchmark.benchmark_serving import main as benchmark_main
     from max.benchmark.benchmark_serving import (
         parse_args as benchmark_parse_args,

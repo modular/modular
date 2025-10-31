@@ -36,9 +36,8 @@ from urllib.parse import urlparse
 
 import numpy as np
 import yaml
-from safetensors.numpy import save_file
 from tqdm.asyncio import tqdm
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoTokenizer
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
@@ -71,6 +70,12 @@ try:
         SonnetBenchmarkDataset,
         VisionArenaBenchmarkDataset,
     )
+    from max.benchmark.benchmark_shared.lora_driver import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        LoRADriver,
+        LoRAOutputFormat,
+        benchmark_lora_loading,
+        benchmark_lora_unloading,
+    )
     from max.benchmark.benchmark_shared.metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         BenchmarkMetrics,
         LoRAMetrics,
@@ -84,8 +89,6 @@ try:
         RequestDriver,
         RequestFuncInput,
         RequestFuncOutput,
-        async_request_lora_load,
-        async_request_lora_unload,
     )
     from max.benchmark.benchmark_shared.server_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         fetch_and_parse_metrics,
@@ -115,6 +118,12 @@ except ImportError:
         SonnetBenchmarkDataset,
         VisionArenaBenchmarkDataset,
     )
+    from benchmark_shared.lora_driver import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        LoRADriver,
+        LoRAOutputFormat,
+        benchmark_lora_loading,
+        benchmark_lora_unloading,
+    )
     from benchmark_shared.metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         BenchmarkMetrics,
         LoRAMetrics,
@@ -128,8 +137,6 @@ except ImportError:
         RequestDriver,
         RequestFuncInput,
         RequestFuncOutput,
-        async_request_lora_load,
-        async_request_lora_unload,
     )
     from benchmark_shared.server_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         compute_metrics_delta,
@@ -156,228 +163,6 @@ def compute_output_len(
             add_special_tokens=False,
         ).input_ids
     )
-
-
-def generate_lora_adapter(
-    base_model_id: str,
-    output_dir: str,
-    target_modules: list[str],
-    lora_rank: int,
-    adapter_name: str,
-) -> None:
-    """Generate a minimal LoRA adapter for testing.
-
-    Args:
-        base_model_id: HuggingFace model ID to generate adapter for
-        output_dir: Directory to save the adapter files
-        lora_rank: LoRA rank (r parameter)
-        lora_alpha: LoRA alpha parameter for scaling
-        target_modules: List of module names to apply LoRA to (q, k, v, o)
-        adapter_name: Name for the adapter (used in metadata)
-    """
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Load base model config to get dimensions
-    config = AutoConfig.from_pretrained(base_model_id)
-
-    # Create adapter config
-    adapter_config: dict[str, Any] = {
-        "alpha_pattern": {},
-        "auto_mapping": None,
-        "base_model_name_or_path": base_model_id,
-        "bias": "none",
-        "fan_in_fan_out": False,
-        "inference_mode": True,
-        "init_lora_weights": True,
-        "layers_pattern": None,
-        "layers_to_transform": None,
-        "loftq_config": {},
-        "lora_alpha": 16,
-        "lora_dropout": 0.0,
-        "megatron_config": None,
-        "megatron_core": "megatron.core",
-        "modules_to_save": None,
-        "peft_type": "LORA",
-        "r": lora_rank,
-        "rank_pattern": {},
-        "revision": None,
-        "target_modules": target_modules,
-        "task_type": "CAUSAL_LM",
-        "use_dora": False,
-        "use_rslora": False,
-    }
-
-    # Save adapter config
-    with open(os.path.join(output_dir, "adapter_config.json"), "w") as f:
-        json.dump(adapter_config, f, indent=2)
-
-    # Generate minimal LoRA weights
-    lora_weights = {}
-
-    # For each layer and target module, create LoRA A and B matrices
-    num_layers = config.num_hidden_layers
-    hidden_size = config.hidden_size
-
-    # Handle grouped query attention - k_proj and v_proj have different dimensions
-    num_heads = config.num_attention_heads
-    num_kv_heads = getattr(config, "num_key_value_heads", num_heads)
-    head_dim = hidden_size // num_heads
-
-    # Determine output dimensions for attention projection modules
-    attn_module_dims = {
-        "q_proj": hidden_size,  # hidden_size -> hidden_size
-        "k_proj": num_kv_heads * head_dim,  # hidden_size -> kv_hidden_size
-        "v_proj": num_kv_heads * head_dim,  # hidden_size -> kv_hidden_size
-        "o_proj": hidden_size,  # hidden_size -> hidden_size
-    }
-
-    for layer_idx in range(num_layers):
-        for module in target_modules:
-            # Validate that module is supported (attention only for now)
-            if module not in attn_module_dims:
-                raise ValueError(
-                    f"Unsupported target module '{module}'. Only attention"
-                    " modules are currently supported:"
-                    f" {list(attn_module_dims.keys())}"
-                )
-
-            # Get the output dimension for this module type
-            out_dim = attn_module_dims[module]
-            in_dim = (
-                hidden_size  # Input is always hidden_size for attention modules
-            )
-
-            # LoRA A: shape should be (lora_rank, in_dim)
-            lora_a_key = f"base_model.model.layers.{layer_idx}.self_attn.{module}.lora_A.weight"
-            lora_weights[lora_a_key] = (
-                np.random.randn(lora_rank, in_dim).astype(np.float32) * 0.01
-            )
-
-            # LoRA B: shape should be (out_dim, lora_rank)
-            lora_b_key = f"base_model.model.layers.{layer_idx}.self_attn.{module}.lora_B.weight"
-            lora_weights[lora_b_key] = np.zeros(
-                (out_dim, lora_rank), dtype=np.float32
-            )
-
-    # Save weights in safetensors format
-    save_file(
-        lora_weights, os.path.join(output_dir, "adapter_model.safetensors")
-    )
-
-
-def generate_loras(
-    model_id: str,
-    lora_rank: int,
-    num_loras: int,
-    lora_target_modules: list[str],
-    lora_paths: list[str],
-    lora_output_dir: str,
-    lora_server_path: str,
-) -> dict[str, str]:
-    # Generate test LoRA adapters if needed
-    lora_configs: dict[str, str] = {}
-
-    if lora_paths:
-        # Use provided LoRA paths
-        logger.info("Using provided LoRA paths")
-        for i, path in enumerate(lora_paths):
-            abs_path = os.path.abspath(path)
-            lora_configs[f"adapter_{i}"] = abs_path
-    else:
-        # Generate test LoRA adapters
-        logger.info(f"Preparing {num_loras} test LoRA adapters...")
-
-        # Use custom output directory if specified, otherwise use temp directory
-        base_output_dir = os.path.abspath(os.path.expanduser(lora_output_dir))
-        os.makedirs(base_output_dir, exist_ok=True)
-
-        for i in range(num_loras):
-            adapter_name = f"generated_adapter_{i}"
-            adapter_path = os.path.join(base_output_dir, adapter_name)
-
-            generate_lora_adapter(
-                base_model_id=model_id,
-                output_dir=adapter_path,
-                target_modules=lora_target_modules,
-                lora_rank=lora_rank,
-                adapter_name=adapter_name,
-            )
-
-            # Use server path if specified, otherwise use absolute local path
-            if lora_server_path:
-                relative_path = os.path.relpath(adapter_path, base_output_dir)
-                server_path = os.path.join(lora_server_path, relative_path)
-            else:
-                server_path = os.path.abspath(adapter_path)
-
-            lora_configs[adapter_name] = server_path
-    return lora_configs
-
-
-async def benchmark_lora_unloading(
-    api_url: str,
-    lora_configs: dict[str, str],
-    metrics: LoRAMetrics,
-    max_concurrent: int = 1,
-) -> None:
-    """Benchmark LoRA unloading performance.
-
-    Args:
-        api_url: Base API URL
-        lora_names: List of LoRA adapter names to unload
-        max_concurrent_unloads: Maximum concurrent unloading operations
-
-    Returns:
-        LoRAOperationMetrics with unloading performance data
-    """
-    semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def unload_with_semaphore(name: str) -> None:
-        async with semaphore:
-            success, unload_time = await async_request_lora_unload(
-                api_url, name
-            )
-            if success:
-                metrics.unload_times_ms.append(unload_time)
-                metrics.total_unloads += 1
-            else:
-                logger.warning(f"Failed to unload LoRA '{name}'")
-
-    tasks = [unload_with_semaphore(name) for name in lora_configs]
-    await tqdm.gather(*tasks, desc="Unloading LoRAs...")
-
-
-async def benchmark_lora_loading(
-    api_url: str,
-    lora_configs: dict[str, str],  # List of (name, path) tuples
-    metrics: LoRAMetrics,
-    max_concurrent: int = 1,
-) -> None:
-    """Benchmark LoRA loading performance.
-
-    Args:
-        api_url: Base API URL
-        lora_configs: List of (name, path) tuples for LoRA adapters
-        max_concurrent_loads: Maximum concurrent loading operations
-        LoRAMetrics with loading performance data
-    """
-    semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def load_with_semaphore(name: str, path: str) -> None:
-        async with semaphore:
-            success, load_time = await async_request_lora_load(
-                api_url, name, path
-            )
-            if success:
-                metrics.load_times_ms.append(load_time)
-                metrics.total_loads += 1
-            else:
-                logger.warning(f"Failed to load LoRA '{name}'")
-
-    tasks = [
-        load_with_semaphore(name, path) for name, path in lora_configs.items()
-    ]
-    await tqdm.gather(*tasks, desc="Loading LoRAs...")
 
 
 def get_tokenizer(
@@ -1077,12 +862,12 @@ async def benchmark(
     top_p: float,
     top_k: int | None,
     max_benchmark_duration_s: int | None,
-    warmup_delay_ms: float = 0,
-    ignore_first_turn_stats: bool = False,
-    timing_data: dict[str, list[float]] | None = None,
-    lora_request_ratio: float = 0.0,
-    lora_configs: dict[str, str] | None = None,
-    max_concurrent_lora_ops: int = 1,
+    warmup_delay_ms: float,
+    ignore_first_turn_stats: bool,
+    timing_data: dict[str, list[float]] | None,
+    lora_request_ratio: float,
+    lora_configs: dict[str, str] | None,
+    max_concurrent_lora_ops: int,
 ) -> dict[str, Any]:
     if ignore_first_turn_stats and skip_first_n_requests:
         logger.warning(
@@ -1831,17 +1616,20 @@ def main(args: argparse.Namespace) -> None:
         )
 
     # Generate LoRA configurations if needed
+    # TODO: make lora_configs a dataclass type than a dict[str, str]
     lora_configs = None
     if args.num_loras > 0 or args.lora_paths:
-        lora_configs = generate_loras(
-            model_id,
-            args.lora_rank,
-            args.num_loras,
-            args.lora_target_modules,
-            args.lora_paths,
-            args.lora_output_dir,
-            args.lora_server_path,
+        driver = LoRADriver(
+            model_id=model_id,
+            lora_rank=args.lora_rank,
+            num_loras=args.num_loras,
+            lora_target_modules=args.lora_target_modules,
+            lora_output_dir=args.lora_output_dir,
+            lora_paths=args.lora_paths,
+            lora_server_path=args.lora_server_path,
+            output_format=LoRAOutputFormat.PATH,  # benchmark_serving uses path format
         )
+        lora_configs = driver.generate_loras()
 
     if args.max_concurrency is not None:
         try:
@@ -1899,6 +1687,7 @@ def main(args: argparse.Namespace) -> None:
             max_benchmark_duration_s=args.max_benchmark_duration_s,
             warmup_delay_ms=args.chat_warmup_delay_ms,
             ignore_first_turn_stats=args.ignore_first_turn_stats,
+            timing_data=None,
             lora_request_ratio=args.lora_request_ratio,
             lora_configs=lora_configs,
             max_concurrent_lora_ops=args.max_concurrent_lora_ops,

@@ -24,6 +24,7 @@ modular_py_library(
         requirement("psutil"),
         requirement("pyyaml"),
         requirement("requests"),
+        requirement("safetensors"),
         requirement("transformers"),
         requirement("typing-extensions"),
     ],
