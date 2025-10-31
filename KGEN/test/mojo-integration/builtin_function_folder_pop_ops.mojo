@@ -42,8 +42,8 @@ alias MLIR_UI8_139 = __mlir_attr.`139 : ui8`
 alias POP_UI8_139 = __mlir_attr.`#pop.simd<139> : !pop.scalar<ui8>`
 
 
-# 68 = DType.f8e5m2
-alias MLIR_UI8_68 = __mlir_attr.`68 : ui8`
+# 77 = DType.f8e5m2
+alias MLIR_UI8_77 = __mlir_attr.`77 : ui8`
 alias POP_UI8_68 = __mlir_attr.`#pop.simd<68> : !pop.scalar<ui8>`
 
 
@@ -131,4 +131,4 @@ fn fold_pop_dtype_from_ui8() -> DTypeT[DType.int32]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@DTypeT<:!DType {:dtype si32}>, mut *"a`1">
     var a = DTypeT[pop_dtype_from_ui8(MLIR_UI8_139)]()
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<@builtin_function_folder_pop_ops::@DTypeT<:!DType {:dtype f8e5m2}>, mut *"b`2">
-    var b = DTypeT[pop_dtype_from_ui8(MLIR_UI8_68)]()
+    var b = DTypeT[pop_dtype_from_ui8(MLIR_UI8_77)]()

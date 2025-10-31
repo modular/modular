@@ -260,7 +260,7 @@ kgen.generator @closureSymbol(){
     // CHECK: b = #kgen.dtype.constant<si16>
     b = #pop.dtype_from_ui8<137 : ui8> : !dtype.si16,
     // CHECK: c = #kgen.dtype.constant<f8e5m2>
-    c = #pop.dtype_from_ui8<68 : ui8> : !dtype.f8e5m2
+    c = #pop.dtype_from_ui8<77 : ui8> : !dtype.f8e5m2
 } : () -> ()
 
 "some.op"() {
