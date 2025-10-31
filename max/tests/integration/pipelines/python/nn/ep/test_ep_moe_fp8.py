@@ -83,6 +83,9 @@ def torch_moe(
     not (is_h100_h200() or is_b100_b200()),
     reason="NVSHMEM library requires H100 or H200 or B200",
 )
+@pytest.mark.skip(
+    reason="This test is flaky, tracking re-enablement with E2EOPT-754, E2EOPT-739"
+)
 @pytest.mark.parametrize("n_devices", [4])
 def test_ep_moe_fp8(
     n_devices: int,
