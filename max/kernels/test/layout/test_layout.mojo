@@ -12,6 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import Dim, DimList
+from collections import InlineArray
+from layout.layout import Layout
+from layout.layout_tensor import LayoutTensorIter
 from layout import *
 from layout._fillers import arange
 from layout.layout import (
@@ -35,6 +38,7 @@ from layout.layout import (
     upcast,
     zipped_divide,
 )
+from math import ceildiv
 from testing import assert_equal
 
 from utils import IndexList
@@ -934,6 +938,40 @@ def test_arange_nested_layout():
     assert_equal(col_major_tensor[1, 1], 5.0)
 
 
+def test_layout_tensor_iterator_print():
+    """Test case for MSTDL-1984: Tensors generated from LayoutTensorIter won't print.
+    """
+    alias buf_size = 16
+    var storage = InlineArray[Int16, buf_size](uninitialized=True)
+    for i in range(buf_size):
+        storage[i] = i
+    alias tile_layout = Layout.row_major(2, 2)
+    var iter = LayoutTensorIter[
+        DType.int16,
+        tile_layout,
+        MutableAnyOrigin,
+        masked=True,
+    ](storage.unsafe_ptr(), buf_size)
+
+    for i in range(ceildiv(buf_size, tile_layout.size())):
+        var tile = iter[]
+        # CHECK: 0 1
+        # CHECK-NEXT: 2 3
+        print(tile)
+        # CHECK: runtime_layout.size(): 4
+        print("  runtime_layout.size():", tile.runtime_layout.size())
+        iter += 1
+        # CHECK: 4 5
+        # CHECK-NEXT: 6 7
+        # CHECK: runtime_layout.size(): 4
+        # CHECK: 8 9
+        # CHECK-NEXT: 10 11
+        # CHECK: runtime_layout.size(): 4
+        # CHECK: 12 13
+        # CHECK-NEXT: 14 15
+        # CHECK: runtime_layout.size(): 4
+
+
 def main():
     test_layout_basic()
     test_layout_stride_value_access()
@@ -957,3 +995,4 @@ def main():
     test_transpose()
     test_iter()
     test_arange_nested_layout()
+    test_layout_tensor_iterator_print()

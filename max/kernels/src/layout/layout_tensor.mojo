@@ -8053,7 +8053,7 @@ struct LayoutTensorIter[
             self.idx += rhs
 
         @parameter
-        if masked:
+        if masked and axis:
             self.runtime_layout = self._clip_shape()
 
         @parameter
