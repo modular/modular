@@ -35,7 +35,7 @@ sampling_config:
   out_dtype: float32
   enable_structured_output: false
   enable_variable_logits: false
-  do_penalties: false
+  enable_penalties: false
   enable_min_tokens: false
 
 # Profiling Configuration - matches fields in ProfilingConfig

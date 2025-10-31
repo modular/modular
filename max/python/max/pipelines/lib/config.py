@@ -613,10 +613,11 @@ class PipelineConfig(MAXConfig):
                 "enable_structured_output is not currently supported on CPU."
             )
 
-        if self.sampling_config.do_penalties and self.draft_model_config:
-            raise ValueError(
+        if self.sampling_config.enable_penalties and self.draft_model_config:
+            logger.warning(
                 "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
             )
+            self.sampling_config.enable_penalties = False
 
         # Validate LoRA compatibility with model configuration
         if self._lora_config and self._lora_config.enable_lora:

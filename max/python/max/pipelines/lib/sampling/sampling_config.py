@@ -44,7 +44,7 @@ class SamplingConfig(MAXConfig):
     their associated logit_offsets. This is needed to produce additional logits for echo and speculative
     decoding purposes."""
 
-    do_penalties: bool = False
+    enable_penalties: bool = False
     """Whether to apply frequency and presence penalties to the model's output."""
 
     enable_min_tokens: bool = False
@@ -69,7 +69,7 @@ class SamplingConfig(MAXConfig):
 
         This method inspects the provided SamplingParamsGenerationConfigDefaults to determine if penalty-related
         or min-tokens-related fields are set to non-default values. If so, it enables the corresponding flags
-        ('do_penalties' and 'enable_min_tokens') in the resulting SamplingConfig unless they are already set
+        ('enable_penalties' and 'enable_min_tokens') in the resulting SamplingConfig unless they are already set
         in kwargs.
 
         Args:
@@ -83,7 +83,7 @@ class SamplingConfig(MAXConfig):
         config_kwargs = kwargs.copy()
 
         gen_config_explicit = sampling_params_defaults.values_to_update
-        if config_kwargs.get("do_penalties", False) is False:
+        if config_kwargs.get("enable_penalties", False) is False:
             has_penalties = any(
                 field in gen_config_explicit
                 and gen_config_explicit[field] not in (None, 0, 1.0)
@@ -94,7 +94,7 @@ class SamplingConfig(MAXConfig):
                 ]
             )
             if has_penalties:
-                config_kwargs["do_penalties"] = True
+                config_kwargs["enable_penalties"] = True
 
         if config_kwargs.get("enable_min_tokens", False) is False:
             has_min_tokens = any(
@@ -120,7 +120,7 @@ class SamplingConfig(MAXConfig):
             "enable_structured_output": "Whether to enable constrained decoding in the text generation pipeline. This defaults to false.",
             "enable_variable_logits": "Whether to enable the sampling graph to accept a ragged tensor of different sequences as inputs, along with their associated logit_offsets. This is needed to produce additional logits for echo and speculative decoding purposes. This defaults to false.",
             "enable_min_tokens": "Whether to enable min_tokens, which blocks the model from generating stopping tokens before the min_tokens count is reached. This defaults to false.",
-            "do_penalties": "Whether to apply frequency and presence penalties to the model's output. This defaults to false.",
+            "enable_penalties": "Whether to apply frequency and presence penalties to the model's output. This defaults to false.",
             "in_dtype": "The data type of the input tokens. This defaults to float32.",
             "out_dtype": "The data type of the output logits. This defaults to float32.",
         }

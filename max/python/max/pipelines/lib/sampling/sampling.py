@@ -94,7 +94,7 @@ def _sampling_input_types(
         inputs["bitmask"] = bitmask_type
 
     # If we have frequency or presence penalties enabled
-    if sampling_config.do_penalties:
+    if sampling_config.enable_penalties:
         penalty_freq_data_type = BufferType(
             DType.int32, ["unique_tokens", 2], device=device
         )
@@ -142,7 +142,7 @@ def token_sampler(
         # tightly coupling the input order with element indices feels
         # quite brittle.
         logits_buffer = graph.inputs[list(_input_dict).index("logits")].buffer
-        if sampling_config.do_penalties:
+        if sampling_config.enable_penalties:
             penalty_freq_data = graph.inputs[
                 list(_input_dict).index("penalty_freq_data")
             ].buffer
@@ -248,7 +248,7 @@ def token_sampler(
         )
 
         # Update frequency data for penalties that are actually enabled
-        if sampling_config.do_penalties:
+        if sampling_config.enable_penalties:
             update_frequency_data(
                 penalty_freq_data,
                 penalty_freq_offsets,

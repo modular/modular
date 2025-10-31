@@ -136,7 +136,7 @@ class FusedSamplingProcessor:
         self.presence_penalty: Tensor | None = None
         self.repetition_penalty: Tensor | None = None
 
-        if pipeline_config.sampling_config.do_penalties:
+        if pipeline_config.sampling_config.enable_penalties:
             self.frequency_data = [
                 _build_token_frequency_csr(context_batch, num_steps, device),
                 _build_token_frequency_csr(
@@ -229,7 +229,7 @@ class FusedSamplingProcessor:
 
 
 def _check_need_penalties(batch: list[TextGenerationContextType]) -> None:
-    """Check if the batch has penalties, but do_penalties is False."""
+    """Check if the batch has penalties, but enable_penalties is False."""
     for context in batch:
         if (
             context.sampling_params.frequency_penalty != 0.0
@@ -237,7 +237,7 @@ def _check_need_penalties(batch: list[TextGenerationContextType]) -> None:
             or context.sampling_params.repetition_penalty != 1.0
         ):
             logger.warning(
-                "penalties are provided in the request, but the model was not configured with do_penalties=True, ignoring"
+                "penalties are provided in the request, but the model was not configured with enable_penalties=True, ignoring"
             )
             return
 
