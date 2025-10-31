@@ -12,6 +12,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -524,4 +525,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if directory := os.environ.get("BUILD_WORKING_DIRECTORY"):
+        os.chdir(directory)
     main()
