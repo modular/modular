@@ -43,20 +43,20 @@ fn test_stmatrix(
     var d_reg = SIMD[DType.float32, 4](0)
     var tid = thread_idx.x
     var a_shared = stack_allocation[
-        mma_m * mma_k,
+        Int(mma_m * mma_k),
         DType.float32,
         alignment=32,
         address_space = AddressSpace.SHARED,
     ]()
     var b_shared = stack_allocation[
-        mma_n * mma_k,
+        Int(mma_n * mma_k),
         DType.float32,
         alignment=32,
         address_space = AddressSpace.SHARED,
     ]()
 
     var c_shared = stack_allocation[
-        mma_m * mma_n,
+        Int(mma_m * mma_n),
         DType.float32,
         alignment=32,
         address_space = AddressSpace.SHARED,
@@ -67,9 +67,9 @@ fn test_stmatrix(
 
     # Transpose B to fit ld_matrix layout.
     for i in range(tid, mma_k * mma_n, WARP_SIZE):
-        var x = i % mma_n
-        var y = i // mma_n
-        b_shared[x * mma_k + y] = b_ptr[i]
+        var x = i % Int(mma_n)
+        var y = i // Int(mma_n)
+        b_shared[x * Int(mma_k) + y] = b_ptr[i]
 
     barrier()
 

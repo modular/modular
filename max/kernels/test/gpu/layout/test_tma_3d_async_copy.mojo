@@ -108,7 +108,7 @@ fn test_tma_3d_load_kernel[
         smem_tile_i = smem_tile.tile[1, cta_tile_dim1, cta_tile_dim2](i)
 
         dst_tile = dst.tile[cta_tile_dim1, cta_tile_dim2](
-            idx * UInt(cta_tile_dim0) + UInt(i), 0
+            Int(idx * UInt(cta_tile_dim0) + UInt(i)), 0
         )
         if thread_idx.x == 0:
             dst_tile.copy_from(smem_tile_i)

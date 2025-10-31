@@ -72,7 +72,7 @@ fn test_tma_load_kernel[
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
+    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
@@ -127,7 +127,7 @@ fn test_tma_multiple_loads_kernel[
         mbar[0].wait(phase)
         phase ^= 1
 
-        dst_tile = dst.tile[tileM, tileN](block_idx.y, i)
+        dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), i)
         copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
@@ -226,7 +226,7 @@ fn test_tma_async_store_kernel[
         alignment=128,
     ].stack_allocation[]()
 
-    src_tile = src.tile[tileM, tileN](block_idx.y, block_idx.x)
+    src_tile = src.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
     copy_dram_to_sram[thread_layout](tile, src_tile)
 
     barrier()
@@ -262,7 +262,7 @@ fn test_tma_async_multiple_store_kernel[
     alias num_iters = ceildiv(N, tileN)
 
     for i in range(num_iters):
-        src_tile = src.tile[tileM, tileN](block_idx.y, i)
+        src_tile = src.tile[tileM, tileN](Int(block_idx.y), i)
         copy_dram_to_sram[thread_layout](tile, src_tile)
 
         barrier()
@@ -361,7 +361,7 @@ fn test_tma_async_reduce_kernel[
         alignment=128,
     ].stack_allocation[]()
 
-    src_tile = src.tile[tileM, tileN](block_idx.y, block_idx.x)
+    src_tile = src.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
     copy_dram_to_sram[thread_layout](tile, src_tile)
 
     barrier()
@@ -397,7 +397,7 @@ fn test_tma_async_multiple_reduce_kernel[
     alias num_iters = ceildiv(N, tileN)
 
     for i in range(num_iters):
-        src_tile = src.tile[tileM, tileN](block_idx.y, i)
+        src_tile = src.tile[tileM, tileN](Int(block_idx.y), i)
         copy_dram_to_sram[thread_layout](tile, src_tile)
 
         barrier()
@@ -550,8 +550,8 @@ fn test_tma_loads_two_buffers_kernel[
         mbar[0].wait(phase)
         phase ^= 1
 
-        a_dst_tile = a_dst.tile[tileM, tileN](block_idx.y, i)
-        b_dst_tile = b_dst.tile[tileM, tileN](block_idx.y, i)
+        a_dst_tile = a_dst.tile[tileM, tileN](Int(block_idx.y), i)
+        b_dst_tile = b_dst.tile[tileM, tileN](Int(block_idx.y), i)
         copy_sram_to_dram[a_thread_layout](a_dst_tile, a_tile)
         copy_sram_to_dram[b_thread_layout](b_dst_tile, b_tile)
 

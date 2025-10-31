@@ -101,7 +101,7 @@ fn wgmma_kernel[
     # is as follows:
     c0 = bitcast[DType.int32, 4](c_reg)
     var th_local_res = (
-        result_c.tile[16, 8](warp_id, 0)
+        result_c.tile[16, 8](Int(warp_id), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lan_id)
     )
