@@ -586,7 +586,27 @@ struct UnsafePointerV2[
     @always_inline("builtin")
     @implicit
     fn __init__(
-        out self, other: UnsafePointer[type, address_space=address_space, **_]
+        out self,
+        other: UnsafePointer[
+            type, mut=mut, origin=origin, address_space=address_space
+        ],
+    ):
+        """Cast a V1 pointer to a V2 pointer."""
+        self.address = __mlir_op.`pop.pointer.bitcast`[_type = Self._mlir_type](
+            other.address
+        )
+
+    @doc_private
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        other: UnsafePointer[type, address_space=address_space, **_],
+        out self: UnsafePointerV2[
+            mut=mut,
+            type,
+            Origin[mut].cast_from[MutableAnyOrigin],
+            address_space=address_space,
+        ],
     ):
         """Cast a V1 pointer to a V2 pointer."""
         self.address = __mlir_op.`pop.pointer.bitcast`[_type = Self._mlir_type](
