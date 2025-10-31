@@ -1473,6 +1473,17 @@ struct MoggAsyncPackHelper:
         """
         create_tensor_spec_async(data, async_ptr)
 
+    fn __init__(
+        out self,
+        data: NDBuffer[DType.int8, 1, MutableAnyOrigin],
+        device_ctx_ptr: DeviceContextPtr,
+        async_ptr: AnyAsyncValueRefPtr,
+    ):
+        """
+        Packs a buffer reference instance (modeled by NDBuffer[DType.int8, 1, MutableAnyOrigin] for now) into the asynchronous context. Calls create_buffer_ref_async to handle the packing.
+        """
+        create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
+
 
 @register_internal("mogg.async.pack")
 @no_inline
