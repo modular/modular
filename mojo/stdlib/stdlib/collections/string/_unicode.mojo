@@ -43,7 +43,7 @@ fn _to_index[lookup: List[UInt32, **_]](rune: Codepoint) -> Int:
     """Find index of rune in lookup with binary search.
     Returns -1 if not found."""
 
-    var result = materialize[lookup]()._binary_search_index(rune.to_u32())
+    var result = Span(materialize[lookup]())._binary_search_index(rune.to_u32())
 
     if result:
         return Int(result.unsafe_value())
@@ -89,9 +89,9 @@ fn _get_uppercase_mapping(
 
 
 fn _get_lowercase_mapping(char: Codepoint) -> Optional[Codepoint]:
-    var index: Optional[UInt] = materialize[
-        has_lowercase_mapping
-    ]()._binary_search_index(char.to_u32())
+    var index: Optional[UInt] = Span(
+        materialize[has_lowercase_mapping]()
+    )._binary_search_index(char.to_u32())
 
     if index:
         # SAFETY: We just checked that `result` is present.
