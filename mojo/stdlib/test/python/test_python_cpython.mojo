@@ -161,26 +161,43 @@ def _test_integer_object_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(-42)
     assert_true(n)
     assert_equal(cpy.PyLong_AsSsize_t(n), -42)
+    assert_true(cpy.PyLong_Check(n))
+    assert_true(cpy.PyLong_CheckExact(n))
 
     var z = cpy.PyLong_FromSize_t(57)
     assert_true(z)
     assert_equal(cpy.PyLong_AsSsize_t(z), 57)
+
+    var none = cpy.Py_None()
+    assert_false(cpy.PyLong_Check(none))
+    assert_false(cpy.PyLong_CheckExact(none))
 
 
 def _test_boolean_object_api(cpy: CPython):
     var t = cpy.PyBool_FromLong(1)
     assert_true(t)
     assert_equal(cpy.PyObject_IsTrue(t), 1)
+    assert_true(cpy.PyBool_Check(t))
 
     var f = cpy.PyBool_FromLong(0)
     assert_true(f)
     assert_equal(cpy.PyObject_IsTrue(f), 0)
+    assert_true(cpy.PyBool_Check(t))
+
+    var none = cpy.Py_None()
+    assert_false(cpy.PyBool_Check(none))
 
 
 def _test_floating_point_object_api(cpy: CPython):
     var f = cpy.PyFloat_FromDouble(3.14)
     assert_true(f)
     assert_equal(cpy.PyFloat_AsDouble(f), 3.14)
+    assert_true(cpy.PyFloat_Check(f))
+    assert_true(cpy.PyFloat_CheckExact(f))
+
+    var none = cpy.Py_None()
+    assert_false(cpy.PyFloat_Check(none))
+    assert_false(cpy.PyFloat_CheckExact(none))
 
 
 def _test_unicode_object_api(cpy: CPython):
