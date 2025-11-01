@@ -246,7 +246,7 @@ fn _memcpy_impl(
     " keyword-only arguments version instead."
 )
 fn memcpy[
-    T: AnyType,
+    T: UnknownDestructibility,
     __disambiguate: NoneType = None,
 ](
     dest: UnsafePointer[T, mut=True, origin=_],
@@ -258,7 +258,7 @@ fn memcpy[
 
 @always_inline
 fn memcpy[
-    T: AnyType
+    T: UnknownDestructibility
 ](
     *,
     dest: UnsafePointer[T, mut=True, origin=_],
@@ -475,7 +475,7 @@ fn stack_allocation[
 
 @always_inline
 fn _malloc[
-    type: AnyType,
+    type: UnknownDestructibility,
     /,
 ](
     size: Int,

@@ -15,6 +15,7 @@ from sys.ffi import _Global, c_int
 from sys.info import size_of
 
 from builtin._startup import _ensure_current_or_global_runtime_init
+from builtin.rebind import downcast
 from compile.reflection import get_type_name
 from memory import stack_allocation
 from python import Python, PythonObject
@@ -158,7 +159,7 @@ struct PyMojoObject[T: AnyType]:
     """Whether the Mojo value has been initialized."""
 
 
-fn _tp_dealloc_wrapper[T: AnyType](py_self: PyObjectPtr):
+fn _tp_dealloc_wrapper[T: AnyType](py_self: PyObjectPtr) where conforms_to(T, AnyType):
     """Python-compatible wrapper for deallocating a `PyMojoObject`.
 
     This function serves as the tp_dealloc slot for Python type objects that
@@ -179,7 +180,8 @@ fn _tp_dealloc_wrapper[T: AnyType](py_self: PyObjectPtr):
     #   Is this always safe? Wrap in GIL, because this could
     #   evaluate arbitrary code?
     if self.is_initialized:
-        UnsafePointer(to=self.mojo_value).destroy_pointee()
+        var ptr = UnsafePointer[T](to=self.mojo_value)
+        ptr.bitcast[downcast[AnyType, T]]().destroy_pointee()
 
     cpython.PyObject_Free(py_self.bitcast[NoneType]())
 

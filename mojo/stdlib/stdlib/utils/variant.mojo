@@ -20,7 +20,7 @@ from sys.intrinsics import _type_is_eq
 # ===----------------------------------------------------------------------=== #
 
 
-struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
+struct Variant[*Ts: Copyable & Movable & AnyType](ImplicitlyCopyable, Movable):
     """A union that can hold a runtime-variant value from a set of predefined
     types.
 

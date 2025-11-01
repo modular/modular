@@ -29,7 +29,7 @@ from bit import next_power_of_two
 # ===-----------------------------------------------------------------------===#
 
 
-struct Deque[ElementType: Copyable & Movable](
+struct Deque[ElementType: Copyable & Movable & AnyType](
     Boolable, Copyable, Iterable, Movable, Sized
 ):
     """Implements a double-ended queue.

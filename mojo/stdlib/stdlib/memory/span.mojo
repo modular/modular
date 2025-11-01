@@ -81,7 +81,7 @@ struct _SpanIter[
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: Copyable & Movable & AnyType,
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,

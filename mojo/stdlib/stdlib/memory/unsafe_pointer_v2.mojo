@@ -14,6 +14,7 @@ from sys import align_of, is_gpu, is_nvidia_gpu, size_of
 from sys.intrinsics import gather, scatter, strided_load, strided_store
 
 from builtin.simd import _simd_construction_checks
+from builtin.rebind import downcast
 from memory import memcpy
 from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
@@ -378,7 +379,7 @@ should return references or memory safe reference types: e.g. `Pointer[T]` or
 @register_passable("trivial")
 struct UnsafePointerV2[
     mut: Bool, //,
-    type: AnyType,
+    type: UnknownDestructibility,
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -567,7 +568,7 @@ struct UnsafePointerV2[
         out self: UnsafePointerV2[type, origin],
         *,
         ref [origin]unchecked_downcast_value: PythonObject,
-    ):
+    ) where conforms_to(type, AnyType):
         """Downcast a `PythonObject` known to contain a Mojo object to a pointer.
 
         This operation is only valid if the provided Python object contains
@@ -576,7 +577,7 @@ struct UnsafePointerV2[
         Args:
             unchecked_downcast_value: The Python object to downcast from.
         """
-        self = unchecked_downcast_value.unchecked_downcast_value_ptr[type]()
+        self = unchecked_downcast_value.unchecked_downcast_value_ptr[downcast[AnyType, type]]().bitcast[type]()
 
     # ===-------------------------------------------------------------------===#
     # V1 <-> V2 conversion
@@ -1605,7 +1606,7 @@ struct UnsafePointerV2[
         self: UnsafePointerV2[
             mut=True, type, address_space = AddressSpace.GENERIC, **_
         ]
-    ):
+    ) where conforms_to(type, AnyType):
         """Destroy the pointed-to value.
 
         The pointer must not be null, and the pointer memory location is assumed
@@ -1614,7 +1615,7 @@ struct UnsafePointerV2[
         more efficient because it doesn't invoke `__moveinit__`.
 
         """
-        _ = __get_address_as_owned_value(self.address)
+        _ = __get_address_as_owned_value(self.bitcast[downcast[AnyType, type]]().address)
 
     @always_inline
     fn take_pointee[

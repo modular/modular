@@ -179,7 +179,7 @@ compatibility and will be removed in a future release."""
 @register_passable("trivial")
 struct Pointer[
     mut: Bool, //,
-    type: AnyType,
+    type: UnknownDestructibility,
     origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](ImplicitlyCopyable, Movable, Stringable):
