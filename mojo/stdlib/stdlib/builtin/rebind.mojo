@@ -110,7 +110,7 @@ alias downcast[_Trait: type_of(AnyType), T: AnyType] = __mlir_attr[
 
 @always_inline
 fn trait_downcast[
-    T: AnyTrivialRegType, //, Trait: type_of(AnyType)
+    T: AnyTrivialRegType, //, Trait: type_of(UnknownDestructibility)
 ](var src: T) -> downcast[Trait, T]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving
@@ -132,7 +132,7 @@ fn trait_downcast[
 
 @always_inline
 fn trait_downcast[
-    T: AnyType, //, Trait: type_of(AnyType)
+    T: UnknownDestructibility, //, Trait: type_of(UnknownDestructibility)
 ](ref src: T) -> ref [src] downcast[Trait, T]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving
