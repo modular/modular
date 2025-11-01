@@ -2395,8 +2395,13 @@ fn matmul_dispatch_sm90_bf16_fp32[
     # make sure the domain (nk_idx_list) is not empty!
     @parameter
     if tuning_nk_idx_list:
-        if _search[tuning_table, domain=tuning_nk_idx_list]() == DISPATCH_HIT:
-            return DISPATCH_HIT
+        # TODO(GENAI-326): remove this if. Currently, these kernels are hitting accuracy bugs.
+        if not (static_N == 27648 and static_K == 5120 and m <= 8):
+            if (
+                _search[tuning_table, domain=tuning_nk_idx_list]()
+                == DISPATCH_HIT
+            ):
+                return DISPATCH_HIT
 
     @parameter
     if a_is_bfloat16_or_float32 and (
