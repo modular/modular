@@ -93,7 +93,7 @@ struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
         rewriter.replaceOpWithNewOp<UIntOp>(op, type, adaptor.getLhs(),
                                             adaptor.getRhs());
     } else {
-      // Take falgs from a `getFastmathFlags()` accessor if present.
+      // Take flags from a `getFastmathFlags()` accessor if present.
       // Otherwise, default to `contract`.
       LLVM::FastmathFlags fastmathFlags = fastmathFlagsOrDefault(op);
       rewriter.replaceOpWithNewOp<FloatOp>(op, type, adaptor.getLhs(),
