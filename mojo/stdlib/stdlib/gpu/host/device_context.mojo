@@ -1634,6 +1634,10 @@ struct DeviceStream(ImplicitlyCopyable, Movable):
 
     @parameter
     @always_inline
+    @deprecated(
+        "`enqueue_function` is deprecated. Use `enqueue_function_checked`"
+        " instead."
+    )
     fn enqueue_function[
         *Ts: AnyType
     ](
@@ -4045,6 +4049,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
     @parameter
     @always_inline
+    @deprecated(
+        "`enqueue_function` is deprecated. Use `enqueue_function_checked`"
+        " instead."
+    )
     fn enqueue_function[
         func_type: AnyTrivialRegType, //,
         func: func_type,
@@ -4267,6 +4275,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
     @parameter
     @always_inline
+    @deprecated(
+        "`enqueue_function` is deprecated. Use `enqueue_function_checked`"
+        " instead."
+    )
     fn enqueue_function[
         *Ts: AnyType
     ](
@@ -5124,6 +5136,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
     @parameter
     @always_inline
+    @deprecated(
+        "`enqueue_function` is deprecated. Use `enqueue_function_checked`"
+        " instead."
+    )
     fn enqueue_function[
         *Ts: AnyType
     ](
