@@ -5,10 +5,6 @@ _NVIDIA_ONLY_TESTS = [
     "test_irfft.py",
 ]
 
-_GPU_ONLY_TESTS = [
-    "test_fused_multiply_add.py",
-]
-
 _AMD_ONLY_TESTS = [
     "test_fp8_conversion.py",
 ]
@@ -34,7 +30,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
-        exclude = _AMD_ONLY_TESTS + _GPU_ONLY_TESTS + _NVIDIA_ONLY_TESTS + ["modular_graph_test.py"],
+        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + ["modular_graph_test.py"],
     ),
     data = [
         "//SDK/integration-test:compile_config_ops",
@@ -85,27 +81,6 @@ modular_py_test(
     deps = [
         ":modular_graph_test",
         "//SDK/lib/API/python/max",
-    ],
-)
-
-# These tests are marked GPU-only due to their size.
-# That enables setting the test GPU resources to 2GiB.
-modular_py_test(
-    name = "gpu_tests",
-    size = "large",
-    srcs = _GPU_ONLY_TESTS + ["conftest.py"],
-    exec_properties = {
-        "test.resources:gpu-memory": "2",
-    },
-    gpu_constraints = ["//:has_gpu"] + select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2411
-    tags = ["gpu"],
-    deps = [
-        "//SDK/lib/API/python/max",
-        requirement("hypothesis"),
-        requirement("torch"),
     ],
 )
 

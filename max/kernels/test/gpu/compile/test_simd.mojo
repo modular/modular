@@ -107,37 +107,19 @@ def test_fma[dtype: DType]():
     ](x: SIMD[dtype, width], y: type_of(x), z: type_of(x)) -> type_of(x):
         return x.fma(y, z)
 
-    # Ensure `_mul_with_fastmath_none` threads fastmath flags through to
-    # pop.mul.
-    fn _mul_with_fastmath_none[
-        width: Int
-    ](x: SIMD[DType.float32, width], y: type_of(x)) -> type_of(x):
-        return x._mul_with_fastmath_none(y)
-
     @parameter
     if dtype is DType.bfloat16:
         assert_true("fma.rn.bf16 " in _compile_code[fma[width=1]]())
         assert_true("fma.rn.bf16x2 " in _compile_code[fma[width=2]]())
         assert_true("fma.rn.bf16x2 " in _compile_code[fma[width=8]]())
-
-        # Check that `_mul_with_fastmath_none` disables FMA contraction.
-        assert_false(
-            "fma.rn.bf16 " in _compile_code[_mul_with_fastmath_none[width=1]]()
-        )
     elif dtype is DType.float32:
         assert_true("fma.rn.f32 " in _compile_code[fma_manual[width=1]]())
         assert_true("fma.rn.f32x2 " in _compile_code[fma_manual[width=2]]())
         assert_true("fma.rn.f32x2 " in _compile_code[fma_manual[width=8]]())
-        assert_false(
-            "fma.rn.f32 " in _compile_code[_mul_with_fastmath_none[width=1]]()
-        )
     else:
         assert_true("fma.rn.f16 " in _compile_code[fma[width=1]]())
         assert_true("fma.rn.f16x2 " in _compile_code[fma[width=2]]())
         assert_true("fma.rn.f16x2 " in _compile_code[fma[width=8]]())
-        assert_false(
-            "fma.rn.16 " in _compile_code[_mul_with_fastmath_none[width=1]]()
-        )
 
 
 def test_cast():

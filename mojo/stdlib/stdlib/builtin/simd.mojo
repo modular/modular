@@ -950,32 +950,6 @@ struct SIMD[dtype: DType, size: Int](
         )
 
     @always_inline("nodebug")
-    fn _mul_with_fastmath_none(self, rhs: Self) -> Self:
-        """Multiplies with fastmath='none'.
-
-        This is sometimes needed to circumvent the default fastmath='contract',
-        for numerical reasons.
-
-        Args:
-            rhs: The rhs value.
-
-        Returns:
-            A new vector whose element at position `i` is computed as
-            `self[i] * rhs[i]`, with fastmath='none'.
-        """
-
-        constrained[
-            dtype.is_floating_point(),
-            "expected mul {fastmath = none} is only used for float operands",
-        ]()
-
-        return Self(
-            mlir_value=__mlir_op.`pop.mul`[
-                fastmathFlags = __mlir_attr.`#pop<fmf none>`
-            ](self._mlir_value, rhs._mlir_value)
-        )
-
-    @always_inline("nodebug")
     fn __truediv__(self, rhs: Self) -> Self:
         """Computes `self / rhs`.
 

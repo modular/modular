@@ -466,17 +466,6 @@ struct Mul(ElementwiseBinaryOp):
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        @parameter
-        if dtype.is_half_float() or dtype.is_float8():
-            # Multiply with fastmath=none to disable FMA contraction.
-            # Contracting mul+add to FMA differs from PyTorch, which would
-            # launch elementwise multiply and add as separate kernels and never
-            # fuse them.
-            # Such divergence from the model training numerics has been shown
-            # to materially degrade model evaluation results.
-            # xref: KERN-1989.
-            return lhs._mul_with_fastmath_none(rhs)
-
         return lhs * rhs
 
 
