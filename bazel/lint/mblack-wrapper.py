@@ -30,7 +30,8 @@ def get_changed_files() -> list[str]:
     merge_base = merge_base_result.stdout.decode().rstrip("\n")
 
     changed_files_result = subprocess.run(
-        ["git", "diff", "--name-only"] + ([merge_base] if merge_base else []),
+        ["git", "diff", "--diff-filter=d", "--name-only"]
+        + ([merge_base] if merge_base else []),
         capture_output=True,
     )
     changed_files_out = (
