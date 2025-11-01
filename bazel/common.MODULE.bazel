@@ -2,21 +2,23 @@
 
 bazel_dep(name = "abseil-cpp", version = "20250127.1")
 bazel_dep(name = "apple_support", version = "1.22.1", repo_name = "build_bazel_apple_support")
-bazel_dep(name = "gazelle", version = "0.43.0")
-bazel_dep(name = "rules_go", version = "0.55.0", repo_name = "io_bazel_rules_go")
-bazel_dep(name = "rules_java", version = "8.15.2")
 bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
 bazel_dep(name = "aspect_rules_js", version = "2.4.1")
 bazel_dep(name = "bazel_skylib", version = "1.8.1")
 bazel_dep(name = "curl", version = "8.8.0")
+bazel_dep(name = "gazelle", version = "0.43.0")
+bazel_dep(name = "glfw", version = "3.3.9.bcr.1")
 bazel_dep(name = "google_benchmark", version = "1.8.5")
 bazel_dep(name = "grpc", version = "1.73.1", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "grpc-java", version = "1.67.1")
+bazel_dep(name = "imgui", version = "1.91.8")
 bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
 bazel_dep(name = "opentelemetry-proto", version = "1.5.0")
 bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "protobuf", version = "31.1")
 bazel_dep(name = "rules_cc", version = "0.2.8")
+bazel_dep(name = "rules_go", version = "0.55.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_java", version = "8.15.2")
 bazel_dep(name = "rules_mojo", version = "0.5.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
@@ -375,18 +377,18 @@ http_archive(
 bazel_dep(name = "sysroot-jammy-aarch64")
 archive_override(
     module_name = "sysroot-jammy-aarch64",
-    integrity = "sha256-/gPauKjoBn4Wuy7UEYKKAQpqLHjohlf9U5XEH7bNM64=",
+    integrity = "sha256-62kBJgGFqcDoEES1rkFYTaZJ0Zgjz0P8HIls6t5zUKI=",
     urls = [
-        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/5/fe03dab8a8e8067e16bb2ed411828a010a6a2c78e88657fd5395c41fb6cd33ae/sysroot-jammy-aarch64.tar.xz",
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/7/eb6901260185a9c0e81044b5ae41584da649d19823cf43fc1c896ceade7350a2/sysroot-jammy-aarch64.tar.xz",
     ],
 )
 
 bazel_dep(name = "sysroot-jammy-x86_64")
 archive_override(
     module_name = "sysroot-jammy-x86_64",
-    integrity = "sha256-6SU7cW9SeAMp1L2SbyxlUjebYa5nQ2ZwroqTnh5Mb1c=",
+    integrity = "sha256-fVF6U6G1kb7+PM2HS6KM5mKYRF93S6gEg8l7tYIV+nc=",
     urls = [
-        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/5/e9253b716f52780329d4bd926f2c6552379b61ae67436670ae8a939e1e4c6f57/sysroot-jammy-x86_64.tar.xz",
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/7/7d517a53a1b591befe3ccd874ba28ce66298445f774ba80483c97bb58215fa77/sysroot-jammy-x86_64.tar.xz",
     ],
 )
 
