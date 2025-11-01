@@ -158,13 +158,13 @@ struct ClosureLifter {
     bool isCopyable() const { return copySymbolsMaybe.has_value(); }
     ParamDeclAttr getSelfParam() const { return selfParam; }
     ParamClosureType getParamClosureType() const { return paramClosureType; }
-    ClosureSymbolAttr closureSymbolForSourceName(StringRef sourceName) const;
+    ClosureSymbolAttr closureSymbolForSourceName(ClosureMethod method) const;
     Location getLiftedLocation() const { return liftedLocation; }
 
   private:
     llvm::SetVector<ParamDeclAttr> capturedParamDecls;
     /// The map of symbols to replace.
-    DenseMap<StringRef, ClosureSymbolAttr> abstractSymbolMap;
+    DenseMap<ClosureMethod, ClosureSymbolAttr> abstractSymbolMap;
     /// The name of the captures parameter in the corresponding struct generator
     StringRef capturedParametersName;
     ClosureType closureType;
@@ -305,10 +305,7 @@ ClosureLifter::ClosureInitData::ClosureInitData(
                                            StringAttr::get(cxt, regionName()));
   structGeneratorOp->walk([&](WitnessOp witness) {
     if (auto closureSym = dyn_cast<ClosureSymbolAttr>(witness.getValue())) {
-      // TODO(MOCO-2636): Remove dependency on mangled witness name.
-      StringRef witnessName = witness.getName().strref();
-      StringRef baseName = witnessName.split('(').first;
-      abstractSymbolMap[baseName] = closureSym;
+      abstractSymbolMap[closureSym.getMethod().getValue()] = closureSym;
     }
   });
 
@@ -317,8 +314,8 @@ ClosureLifter::ClosureInitData::ClosureInitData(
 }
 
 ClosureSymbolAttr ClosureLifter::ClosureInitData::closureSymbolForSourceName(
-    StringRef sourceName) const {
-  auto sym = abstractSymbolMap.find(sourceName);
+    ClosureMethod method) const {
+  auto sym = abstractSymbolMap.find(method);
   if (sym == abstractSymbolMap.end())
     return {};
   return sym->getSecond();
@@ -454,23 +451,8 @@ void ClosureLifter::createClosureGenerator(
     FunctionType funcType, TypedAttr capturedInstance,
     llvm::function_ref<void(GeneratorOp)> populateBody,
     ArrayRef<ArgConvention> argConventions) {
-  StringRef baseName;
-  switch (method) {
-  case ClosureMethod::MOVE:
-    baseName = "__moveinit__";
-    break;
-  case ClosureMethod::DEL:
-    baseName = "__del__";
-    break;
-  case ClosureMethod::COPY:
-    baseName = "__copyinit__";
-    break;
-  default:
-    llvm_unreachable("Invalid closure method");
-    break;
-  }
   ClosureSymbolAttr closureAttr =
-      closureInitData.closureSymbolForSourceName(baseName);
+      closureInitData.closureSymbolForSourceName(method);
   /// If there is no witness for this method then there is no reference to it
   if (!closureAttr)
     return;
@@ -480,7 +462,9 @@ void ClosureLifter::createClosureGenerator(
   resultTypes.push_back(funcType.getResult(0));
 
   auto uniqueName = b.getStringAttr(getUniqueSymbolName(
-      (generator.getName() + baseName + closureInitData.regionName()).str(),
+      (Twine(generator.getName()) + "__" + stringifyClosureMethod(method) +
+       "__" + closureInitData.regionName())
+          .str(),
       symtab, counter));
   b.setInsertionPoint(generator);
   auto closureGenerator =
@@ -723,7 +707,7 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
                             .getInputParamTypes())
     paramsUnmapped.push_back(paramType);
   ClosureSymbolAttr closureAttr =
-      closureInitData.closureSymbolForSourceName("__call__");
+      closureInitData.closureSymbolForSourceName(ClosureMethod::CALL);
   auto sym = SymbolConstantAttr::get(
       liftedWrapper,
       FuncTypeGeneratorType::remapToFuncTypeGenerator(

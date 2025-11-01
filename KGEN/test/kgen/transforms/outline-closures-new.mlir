@@ -177,6 +177,7 @@ kgen.generator @thin() {
 // CHECK: #type_value = #kgen.type<typevalue<#kgen.genref<@"foo::fn">>, struct<(index)>> : !kgen.type
 #type_value = #kgen.type<typevalue<#kgen.genref<@"foo::fn">>, !kgen.closure<@"foo", "fn" trivial>> : !kgen.type
 
+// CHECK-LABEL: kgen.struct.generator @"foo::fn"
 kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !kgen.closure<@"foo", "fn" trivial> {
   // CHECK: kgen.witness "__call__" : (!kgen.struct<(index)>, index) -> index = @foo_fn<:none CAPTURES>
   kgen.conformance @"closure_trait" {
@@ -190,7 +191,7 @@ kgen.generator @consume<x: type>(%arg0: !kgen.param<x>, %arg1: index) -> index {
   kgen.return %0 : index
 }
 
-// CHECK: kgen.generator @foo_fn<CAPTURES: none>(%arg0: !kgen.struct<(index)>, %arg1: index) -> index {
+// CHECK-LABEL: kgen.generator @foo_fn<CAPTURES: none>(%arg0: !kgen.struct<(index)>, %arg1: index) -> index {
 // CHECK-NEXT: [[V0:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<(index)>
 // CHECK-NEXT: kgen.return [[V0]] : index
 // CHECK-NEXT: }
@@ -274,7 +275,7 @@ kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x>) -> index {
 }
 
 // COM: Verify that single param capture does not result in disassembly
-// CHECK: kgen.generator @foo_fn
+// CHECK-LABEL: kgen.generator @foo_fn
 // CHECK-SAME: <A, CAPTURES>(%arg0: !kgen.pointer<struct<(index) memoryOnly>> read_mem) -> index {
 // CHECK-NEXT: kgen.param.declare C = <CAPTURES>
 // CHECK-NEXT: kgen.struct.gep
@@ -316,7 +317,7 @@ kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x>) -> index {
 }
 
 // COM: Verify that single param capture does not result in disassembly
-// CHECK: kgen.generator @foo_fn
+// CHECK-LABEL: kgen.generator @foo_fn
 // CHECK-SAME: <A, CAPTURES>(%arg0: !kgen.pointer<struct<(index) memoryOnly>> read_mem) -> index {
 // CHECK: kgen.param.declare C = <CAPTURES>
 // CHECK-NEXT: kgen.struct.gep
@@ -339,13 +340,13 @@ kgen.generator @foo<C>(%arg0 : index) {
 
 // CHECK: #type_value = #kgen.type<typevalue<#kgen.genref<@"foo::fn"<C>>>, struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> : !kgen.type
 #type_value = #kgen.type<typevalue<#kgen.genref<@"foo::fn"<:!kgen.param_closure<@"foo" "fn"> #kgen.closure<@"foo" "fn">>>>, !kgen.closure<@"foo", "fn" escaping>> : !kgen.type
-
+// CHECK-LABEL: kgen.struct.generator @"foo::fn"
 kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !kgen.closure<@"foo", "fn" escaping> {
   kgen.conformance @"AnyType" {
     kgen.witness "__del__" : (!kgen.pointer<!kgen.closure<@"foo", "fn" escaping>> owned_in_mem) -> !kgen.none = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<del>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
   }
   kgen.conformance @"Movable" {
-    // CHECK: kgen.witness "__moveinit__" : (!kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> owned_in_mem, !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> byref_result) -> !kgen.none = @foo__moveinit__fn<CAPTURES>
+    // CHECK: kgen.witness "__moveinit__" : (!kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> owned_in_mem, !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> byref_result) -> !kgen.none = @foo__move__fn<CAPTURES>
     kgen.witness "__moveinit__" : (!kgen.pointer<!kgen.closure<@"foo", "fn" escaping>> owned_in_mem, !kgen.pointer<!kgen.closure<@"foo", "fn" escaping>> byref_result) -> !kgen.none = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<move>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
   }
   kgen.conformance @"closure_trait" {
@@ -360,7 +361,7 @@ kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x>) -> index {
   kgen.return %0 : index
 }
 
-  // CHECK: kgen.generator @foo__moveinit__fn<CAPTURES>(%arg0: !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> owned_in_mem, %arg1: !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> byref_result) -> !kgen.none {
+  // CHECK: kgen.generator @foo__move__fn<CAPTURES>(%arg0: !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> owned_in_mem, %arg1: !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> byref_result) -> !kgen.none {
   // CHECK-NEXT: kgen.param.declare C = <CAPTURES>
   // CHECK-NEXT:  [[V0:%.*]] = kgen.struct.gep %arg1[0] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>
   // CHECK-NEXT:  [[V1:%.*]] = kgen.struct.gep %arg0[0] : <struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>
@@ -411,7 +412,7 @@ kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !
 }
 
 // COM: Signature check
-// CHECK:  kgen.generator @foo_fn<CAPTURES: struct<(type, type)>>
+// CHECK-LABEL:  kgen.generator @foo_fn<CAPTURES: struct<(type, type)>>
 // CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<struct<(#kgen.struct.extract<:struct<(type, type)> CAPTURES, 0>,
 // CHECK-SAME: #kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>)>>) memoryOnly>> read_mem)
 
@@ -440,6 +441,7 @@ kgen.return
 // CHECK: #type_value = #kgen.type<typevalue<#kgen.genref<@"foo::fn"<C>>>, struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> : !kgen.type
 #type_value = #kgen.type<typevalue<#kgen.genref<@"foo::fn"<:!kgen.param_closure<@"foo" "fn"> #kgen.closure<@"foo" "fn">>>>, !kgen.closure<@"foo", "fn" escaping>> : !kgen.type
 
+// CHECK-LABEL: kgen.struct.generator @"foo::fn"
 kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !kgen.closure<@"foo", "fn" escaping>{
     kgen.conformance @"AnyType" {
       // CHECK: kgen.witness "__del__" : (!kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> owned_in_mem) -> !kgen.none = @foo__del__fn<CAPTURES>
@@ -494,14 +496,14 @@ kgen.generator @del(%arg0: !kgen.pointer<struct<(index, pointer<index>)>> owned_
 
 #type_value = #kgen.type<typevalue<#kgen.genref<@"foo::fn"<:!kgen.param_closure<@"foo" "fn"> #kgen.closure<@"foo" "fn">>>>, !kgen.closure<@"foo", "fn" escaping>> : !kgen.type
 
-// CHECK: kgen.struct.generator @"foo::fn"<CAPTURES: struct<(index, index)>> = struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>
+// CHECK-LABEL: kgen.struct.generator @"foo::fn"<CAPTURES: struct<(index, index)>> = struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>
 kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !kgen.closure<@"foo", "fn" escaping>{
     kgen.conformance @"AnyType" {
       // CHECK: kgen.witness "__del__" : (!kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> owned_in_mem) -> !kgen.none = @foo__del__fn<:struct<(index, index)> CAPTURES>
       kgen.witness "__del__" : (!kgen.pointer<!kgen.closure<@foo, "fn" escaping>> owned_in_mem) -> !kgen.none = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<del>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
     }
     kgen.conformance @"Movable" {
-      // CHECK: kgen.witness "__moveinit__" : (!kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> owned_in_mem, !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> byref_result) -> !kgen.none = @foo__moveinit__fn<:struct<(index, index)> CAPTURES>
+      // CHECK: kgen.witness "__moveinit__" : (!kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> owned_in_mem, !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> byref_result) -> !kgen.none = @foo__move__fn<:struct<(index, index)> CAPTURES>
       kgen.witness "__moveinit__" : (!kgen.pointer<!kgen.closure<@"foo", "fn" escaping>> owned_in_mem, !kgen.pointer<!kgen.closure<@"foo", "fn" escaping>> byref_result) -> !kgen.none = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<move>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
     }
     kgen.conformance @"closure_trait" {
@@ -553,7 +555,7 @@ kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !
   }
 }
 
-// CHECK: kgen.generator @foo__copyinit__fn<CAPTURES>(%arg0: !kgen.pointer<struct<(struct<(index, pointer<index>)>, index) memoryOnly>> read_mem, %arg1: !kgen.pointer<struct<(struct<(index, pointer<index>)>, index) memoryOnly>> byref_result) -> !kgen.none {
+// CHECK-LABEL: kgen.generator @foo__copy__fn<CAPTURES>(%arg0: !kgen.pointer<struct<(struct<(index, pointer<index>)>, index) memoryOnly>> read_mem, %arg1: !kgen.pointer<struct<(struct<(index, pointer<index>)>, index) memoryOnly>> byref_result) -> !kgen.none {
 // CHECK:   kgen.param.declare C = <CAPTURES>
 // CHECK:   [[V0:%.*]] = kgen.struct.gep %arg1[0] : <struct<(struct<(index, pointer<index>)>, index) memoryOnly>>
 // CHECK:   [[V1:%.*]] = kgen.struct.gep %arg0[0] : <struct<(struct<(index, pointer<index>)>, index) memoryOnly>>
@@ -700,4 +702,51 @@ module {
     }
     kgen.return
   }
+}
+
+// -----
+
+// COM: Rely on structured metadata instead of strings for matching symbol to synthesized function
+
+
+#type_value = #kgen.type<typevalue<#kgen.genref<@"foo::fn"<:!kgen.param_closure<@"foo" "fn"> #kgen.closure<@"foo" "fn">>>>, !kgen.closure<@"foo", "fn" escaping>> : !kgen.type
+// CHECK-LABEL: kgen.struct.generator @"foo::fn"
+kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !kgen.closure<@"foo", "fn" escaping> {
+  kgen.conformance @"AnyType" {
+    // CHECK: @foo__del__fn
+    kgen.witness "weird_mangle__del__[]()" : (!kgen.pointer<!kgen.closure<@"foo", "fn" escaping>> owned_in_mem) -> !kgen.none = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<del>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
+  }
+  kgen.conformance @"Movable" {
+    // CHECK: @foo__move__fn
+    kgen.witness "weird_mangle__moveinit__[]()" : (!kgen.pointer<!kgen.closure<@"foo", "fn" escaping>> owned_in_mem, !kgen.pointer<!kgen.closure<@"foo", "fn" escaping>> byref_result) -> !kgen.none = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<move>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
+  }
+  kgen.conformance @"Copyable" {
+    // CHECK: @foo__copy__fn
+    kgen.witness "weird_mangle__copyinit__[]()" : (!kgen.pointer<!kgen.closure<@"foo", "fn" escaping>> read_mem, !kgen.pointer<!kgen.closure<@"foo", "fn" escaping>> byref_result) -> !kgen.none = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<copy>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
+  }
+  kgen.conformance @"closure_trait" {
+    // CHECK: @foo_fn
+    kgen.witness "weird_mangle__call__[]()" : (!kgen.pointer<!kgen.closure<@"foo", "fn" escaping>> read_mem) -> index = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<call>, <:index ?, :!kgen.param_closure<@"foo" "fn"> CAPTURES>>
+  }
+}
+
+kgen.generator @foo<C>(%arg0 : !kgen.pointer<struct<(index, pointer<index>)>>, %arg1: index) {
+  %3 = kgen.closure.init(%arg0[@copy, @move, @del move], %arg1)<A>() -> index {
+	%0 = kgen.param.constant = <mul(C, A)>
+	kgen.return %0 : index
+  } : (!kgen.pointer<struct<(index, pointer<index>)>>, index), !kgen.pointer<!kgen.closure<@foo, "fn" escaping>>
+  kgen.return
+}
+
+kgen.generator @copy(%arg0:!kgen.pointer<struct<(index, pointer<index>)>> read_mem, %arg1:!kgen.pointer<struct<(index, pointer<index>)>> byref_result) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+kgen.generator @move(%arg0:!kgen.pointer<struct<(index, pointer<index>)>> owned_in_mem, %arg1:!kgen.pointer<struct<(index, pointer<index>)>> byref_result) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+kgen.generator @del(%arg0: !kgen.pointer<struct<(index, pointer<index>)>> owned_in_mem) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
 }
