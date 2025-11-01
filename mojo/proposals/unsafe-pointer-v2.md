@@ -63,15 +63,32 @@ The proposal introduces a new `UnsafePointerV2` type that corrects these issues
 and provides a migration path. During transition, `v1` and `v2` pointers will
 support implicit conversions to avoid breaking existing code.
 
----
+## `UnsafePointer` API (current)
+
+```mojo
+@register_passable("trivial")
+struct UnsafePointer[
+    type: AnyType,
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+    mut: Bool = True,  # ⚠️ Defaulted to mutable
+    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin],  # ⚠️ Defaulted to AnyOrigin
+]:
+    ...
+```
+
+**Issues:**
+- `mut` defaults to `True`, making pointers mutable by default
+- `origin` defaults to `MutableAnyOrigin`, bypassing lifetime tracking
+- Allows unsafe implicit conversions (immutable → mutable, origin casts)
 
 ## `UnsafePointerV2` API
 
 ```mojo
 struct UnsafePointerV2[
-    mut: Bool, //, # Inferred mutability
+    mut: Bool, //, # ✅ Inferred mutability, no default
     type: AnyType,
-    origin: Origin[mut], # Non-defaulted origin
+    origin: Origin[mut], # ✅ Non-defaulted origin, must be explicit
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
@@ -80,6 +97,11 @@ struct UnsafePointerV2[
 alias UnsafeMutPointer[...] = UnsafePointerV2[mut=True, ...]
 alias UnsafeImmutPointer[...] = UnsafePointerV2[mut=False, ...]
 ```
+
+**Improvements:**
+- `mut` is inferred (using `//` marker) and has no default value
+- `origin` must be explicitly specified or parameterized
+- Prevents unsafe implicit conversions (compile-time errors)
 
 ### Cross-language Comparison
 
