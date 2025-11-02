@@ -43,7 +43,13 @@ struct Origin[mut: Bool]:
 
     var _mlir_origin: Self._mlir_type
 
-    alias cast_from = _lit_mut_cast[result_mutable=mut]
+    alias cast_from[o: Origin] = __mlir_attr[
+        `#lit.origin.mutcast<`,
+        o._mlir_origin,
+        `> : !lit.origin<`,
+        mut._mlir_value,
+        `>`,
+    ]
 
     @always_inline("builtin")
     @implicit
@@ -53,20 +59,6 @@ struct Origin[mut: Bool]:
         Args:
             mlir_origin: The raw MLIR origin value."""
         self._mlir_origin = mlir_origin
-
-
-struct _lit_mut_cast[
-    mut: Bool, //,
-    result_mutable: Bool,
-    operand: Origin[mut],
-]:
-    alias result = __mlir_attr[
-        `#lit.origin.mutcast<`,
-        operand._mlir_origin,
-        `> : !lit.origin<`,
-        result_mutable._mlir_value,
-        `>`,
-    ]
 
 
 # Static constants are a named subset of the global origin.
@@ -740,9 +732,7 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[elt_is_mutable]
-        .cast_from[origin_of(origin, self)]
-        .result
+        Origin[elt_is_mutable].cast_from[origin_of(origin, self)]
     ] element_type:
         while True:
             pass
@@ -938,7 +928,7 @@ struct UnsafePointer[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     mut: Bool = True,
-    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
+    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin],
 ]:
     alias _mlir_type = __mlir_type[
         `!kgen.pointer<`, T, `,`, address_space._value._mlir_value, `>`
@@ -982,7 +972,7 @@ struct UnsafePointer[
     fn get_unique_item_ref[
         self_origin: ImmutOrigin
     ](ref [self_origin]self, offset: Int = 0) -> ref [
-        Origin[True].cast_from[_lit_indirect_origin[self_origin].result].result,
+        Origin[True].cast_from[_lit_indirect_origin[self_origin].result],
         address_space,
     ] T:
         while __mlir_attr.true:

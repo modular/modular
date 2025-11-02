@@ -455,7 +455,7 @@ bool LIT::StructType::canElideSugarFor(TypedAttr attr) const {
       auto typeName = getTypeName();
       TypedAttr elt = std::get<1>(structAttr.getValues().front());
       if (typeName == "Int" || typeName == "UInt" || typeName == "Bool" ||
-          typeName == "DType" || typeName == "_AddressSpace") {
+          typeName == "DType") {
         if (isa<IntegerAttr, DTypeConstantAttr>(elt))
           return true;
       }
