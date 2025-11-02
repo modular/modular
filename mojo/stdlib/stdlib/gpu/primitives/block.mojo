@@ -54,8 +54,8 @@ fn _block_reduce_with_padding[
         n_warps + padding, dtype, address_space = AddressSpace.SHARED
     ]()
 
-    var wid = warp_id()
-    var lid = lane_id()
+    var wid = Int(warp_id())
+    var lid = Int(lane_id())
 
     # Step 1: Perform warp-level reduction.
     var warp_result = warp_reduce_fn(val)
@@ -66,7 +66,7 @@ fn _block_reduce_with_padding[
 
         @parameter
         if padding > 0:
-            return offset + (offset // UInt(WARP_SIZE))
+            return offset + Int(UInt(offset) // UInt(WARP_SIZE))
         else:
             return offset
 
@@ -84,7 +84,7 @@ fn _block_reduce_with_padding[
         var block_val = initial_val
         # Load values from the shared memory (ith lane will have ith warp's
         # value). Account for padding when loading.
-        if lid < UInt(n_warps):
+        if lid < n_warps:
             block_val = shared_mem[compute_offset(lid)]
 
         # Reduce across the first warp
