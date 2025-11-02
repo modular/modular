@@ -68,7 +68,8 @@ struct MainImplT(MainTraitT, MainTraitT2):
 
     fn doSomethingNonTraity(self) -> Index:
         # Verify the ImplT type is returned, not a type value of trait metatype.
-        # CHECK: lit.call @{{.*}}::@MainImplT::@"get{{.*}}"(%self) : !lit.generator<("self": !MainImplT) -> !ImplT>
+        # CHECK: lit.call @{{.*}}::@MainImplT::@"get{{.*}}"(%self) : !lit.generator<("self": !MainImplT)
+        # CHECK-SAME: -> !ImplT
         var impl = self.get()
         var a = impl.BAR()
         return a

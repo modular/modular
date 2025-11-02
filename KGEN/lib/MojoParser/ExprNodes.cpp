@@ -1913,6 +1913,24 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // References to an AliasDecl form a PValue.
   if (auto aliasDeclOpParam =
           dyn_cast_or_null<AliasDeclOp>(memberDecl.getIfOperation())) {
+    // Maintain sugar.  The base might be dynamic so we turn it into
+    // "Type.member" from a sugar perspective.
+    auto getParamMemberSugar = [&](PValue value) -> PValue {
+      // Propagate failures.
+      if (!value)
+        return value;
+
+      // FIXME: don't sugar things of GeneratorType because it will annoy
+      // BindParamsAttr canonicalization.  This affects things like
+      // Origin.cast_from.
+      if (sugarIsa<GeneratorType>(value.getType()))
+        return value;
+      auto sugaredMember = StructExtractAttr::get(
+          PValue(baseRVType), StringAttr::get(emitter.getContext(), spelling),
+          value.getType());
+      return SugarAttr::get(SugarKind::Alias, sugaredMember, value);
+    };
+
     // Handle accessing an alias in a struct or an extension.
     if (isa_and_nonnull<StructDeclOp>(typeDeclOp) ||
         isa_and_nonnull<ExtensionDeclOp>(
@@ -1920,7 +1938,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
       PValue result = resolveAliasReference(aliasDeclOpParam, spelling,
                                             baseRVType.getParamBindings(),
                                             getLoc(), emitter);
-      return emitter.emitResult(result, this, dest);
+      return emitter.emitResult(getParamMemberSugar(result), this, dest);
     }
 
     // If we get here, we're accessing an alias in a trait.
@@ -1993,7 +2011,8 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
     auto witnessEntryResult = shared.getEvaluationContext().getGetWitnessAttr(
         basePValue, traitName, witnessEntryName, aliasType);
-    return emitter.emitResult(witnessEntryResult, this, dest);
+    return emitter.emitResult(getParamMemberSugar(witnessEntryResult), this,
+                              dest);
   }
 
   // If the field is a variable, emit a reference to it.

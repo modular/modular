@@ -133,15 +133,15 @@ fn testTestParamStruct(a: TestParamStruct[4]):
 fn testSIMD(a: Scalar[DType.float32],
             b: Scalar[DType.int32],
             mut reff: Scalar[DType.int32]):
-  # CHECK: %field1 = lit.var.decl {{.*}} : !lit.ref<scalar<f32>,
+  # CHECK: %field1 = lit.var.decl {{.*}} : !lit.ref<scalar<{{.*}}f32{{.*}}>,
   var field1 = a.value
-  # CHECK: %field2 = lit.var.decl {{.*}} : !lit.ref<scalar<si32>,
+  # CHECK: %field2 = lit.var.decl {{.*}} : !lit.ref<scalar<{{.*}}si32{{.*}}>,
   var field2 = reff.value
 
   # Test calls to methods and operators on parameterized type.
-  # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!DType {:dtype f32}, :!Int {1}>(%a, %a)
+  # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!DType {{.*}}f32{{.*}}, :!Int {1}>(%a, %a)
   var x = a+a
-  # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!DType {:dtype si32}, :!Int {1}>(%b, %b)
+  # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!DType {{.*}}si32{{.*}}, :!Int {1}>(%b, %b)
   var y = b+b
 
 # Show that forward references of parameter names can be correctly resolved.
@@ -902,7 +902,8 @@ fn dont_interpret():
 
 # CHECK-LABEL: lit.fn @"testParameterEvaluator()"
 fn testParameterEvaluator():
-  # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <1>
+  # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <#kgen<sugar alias, index,
+  # CHECK-SAME: #lit.struct.extract<:meta<!lit.struct<#Abstraction <:!Int {1}>>> @parameters::@Abstraction<:!Int {1}>, "val">, 1>>
   alias x = Abstraction[1].val
   # CHECK-NEXT: %y = lit.var.decl "y"
   # CHECK-NEXT: %0 = lit.call @parameters::@Abstraction::@"push{{.*}}"<:!Int {1}, :!Int {2}>
@@ -1155,7 +1156,9 @@ struct SomeWrapper[t: WithAnAlias, a: AnyType, b: AnyType]:
 
 fn test_param_inference_contextual_fold():
     # CHECK: lit.call @{{.*}}SomeWrapper::@"__init__
-    # CHECK-SAME: <:!WithAnAlias !SomeStruct, :!AnyType !Int, :!AnyType !Int>
+    # CHECK-SAME: <:!WithAnAlias !SomeStruct,
+    # CHECK-SAME: :!AnyType #kgen<sugar alias, !AnyType, #lit.struct.extract<:!WithAnAlias !SomeStruct, "A">, !Int>,
+    # CHECK-SAME: :!AnyType #kgen<sugar alias, !AnyType, #lit.struct.extract<:!WithAnAlias !SomeStruct, "A">, !Int>
     sw = SomeWrapper[SomeStruct]()
 
 
@@ -1259,8 +1262,8 @@ fn inferred_default_param[dt: DType, w: Int = 8](a: SIMD[dt, w]):
 
 
 # CHECK: lit.fn @"test_inferred_default_param{{.*}}"<x: !Int>
-# CHECK: lit.call @{{.*}}@"inferred_default_param{{.*}}"<:!DType {:dtype f32}, :!Int {4}>
-# CHECK: lit.call @{{.*}}@"inferred_default_param{{.*}}"<:!DType {:dtype f32}, :!Int x>
+# CHECK: lit.call @{{.*}}@"inferred_default_param{{.*}}"<:!DType {{.*}}f32{{.*}}, :!Int {4}>
+# CHECK: lit.call @{{.*}}@"inferred_default_param{{.*}}"<:!DType {{.*}}f32{{.*}}, :!Int x>
 fn test_inferred_default_param[
     x: Int
 ](concrete: SIMD[DType.float32, 4], p: SIMD[DType.float32, x]):
