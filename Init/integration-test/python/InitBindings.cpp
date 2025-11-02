@@ -6,9 +6,8 @@
 
 #include "Init/DevelopmentSignalHandler.h"
 #include "Init/Init.h"
-#include "SDK/GraphAPI/python/TypeCasters.h"
-#include "SDK/Support/PythonBacktrace.h"
 #include "nanobind/nanobind.h"
+#include "nanobind/stl/string.h" // IWYU pragma: keep (type casters)
 #include <Python.h>
 #include <csignal>
 #include <sstream>

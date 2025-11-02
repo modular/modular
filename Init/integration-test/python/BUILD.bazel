@@ -6,18 +6,8 @@ modular_nanobind_extension(
     srcs = ["InitBindings.cpp"],
     new_link_root = "lib",
     deps = [
-        "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
         "//Init",
-        "//SDK:GraphPython",
-        "//SDK:Support",
-        "//Support:Configuration",
-        "//Support:Context",
-        "//Support:CrashReporting",
-        "//Support:HTTP",
-        "//Support:MArchTarget",
-        "//Support:Telemetry",
-        "@llvm-project//llvm:Support",
     ],
 )
 
