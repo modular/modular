@@ -45,7 +45,7 @@ fn fully_bound_alias():
     # COM: Test alias to a fully bound parametric type.
     # CHECK: BoundType{{.*}}: meta<!lit.struct<{{.*}}Param <1>>> = <{{.*}}@Param<1>>
     alias BoundType = Param[`1`]
-    # CHECK: alias_value{{.*}} = <1>
+    # CHECK: alias_value{{.*}} = <#kgen<sugar alias, index, #lit.struct.extract<:meta<!lit.struct<#Param <1>>> @metatypes_param::@Param<1>, "value">, 1>>
     alias alias_value = BoundType.value
     # CHECK: call {{.*}}@Param::@"foo()"<1>
     BoundType.foo()
@@ -58,7 +58,7 @@ fn unbound_alias():
     # COM: Test alias to a fully unbound parametric type.
     # CHECK: [[UNBOUND:\*"Unbound.*]]: meta<!lit.struct<{{.*}}Param <?>, <"x": index>>> = <{{.*}}@Param<?>>
     alias Unbound = Param
-    # CHECK: unbound_value{{.*}} = <2>
+    # CHECK: unbound_value{{.*}} = <#kgen<sugar alias, index, #lit.struct.extract<:meta<!lit.struct<#Param <2>>> @metatypes_param::@Param<2>, "value">, 2>>
     alias unbound_value = Unbound[`2`].value
     # CHECK: call {{.*}}@Param::@"foo()"<2>
     Unbound[`2`].foo()
@@ -87,9 +87,9 @@ fn partially_bound_alias():
     # CHECK: *"BoundFromPartial`3": meta<!lit.struct<#TwoParam <1, 2>>> =
     # CHECK-SAME: <@metatypes_param::@TwoParam<1, 2>>
     alias BoundFromPartial = PartiallyBound[`2`]
-    # CHECK: first{{.*}} = <1>
+    # CHECK: first{{.*}} = <#kgen<sugar alias, index, #lit.struct.extract<:meta<!lit.struct<#TwoParam <1, 2>>> @metatypes_param::@TwoParam<1, 2>, "first">, 1>>
     alias first = BoundFromPartial.first
-    # CHECK: second{{.*}} = <2>
+    # CHECK: second{{.*}} = <#kgen<sugar alias, index, #lit.struct.extract<:meta<!lit.struct<#TwoParam <1, 2>>> @metatypes_param::@TwoParam<1, 2>, "second">, 2>>
     alias second = BoundFromPartial.second
     # CHECK: fn_from_bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<1, 2>>
     alias fn_from_bound = BoundFromPartial.foo

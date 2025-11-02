@@ -154,7 +154,8 @@ __extension Container:
 # CHECK-LABEL: lit.fn @"test_self_alias_with_generic_1
 fn test_self_alias_with_generic_1(container: Container[ZInt]):
     # Note how it's ZInt right here, it means the lookup worked.
-    # CHECK: lit.alias.decl *"MyElementType`1": !ImplicitlyCopyable = <!ZInt>
+    # CHECK: lit.alias.decl *"MyElementType`1": !ImplicitlyCopyable =
+    # CHECK-SAME: <#kgen<sugar alias, !ImplicitlyCopyable, #lit.struct.extract<:meta<!lit.struct<#Container <:!ImplicitlyCopyable !ZInt>>> @struct_extensions_aliases::@Container<:!ImplicitlyCopyable !ZInt>, "ElementType">, !ZInt>>
     alias MyElementType = Container[ZInt].ElementType
 
 
