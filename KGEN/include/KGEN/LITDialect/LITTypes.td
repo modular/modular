@@ -361,7 +361,8 @@ def LIT_MetaType : LITType<"Meta", "meta",
 //===----------------------------------------------------------------------===//
 
 def LIT_OriginType : LITType<"Origin", "origin",
-    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+    [DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+     DeclareTypeInterfaceMethods<SugaredTypeInterface>]> {
   let summary = "Origin type";
   let description = [{
     This type is used for origin parameters when tracking accesses in a
@@ -382,7 +383,7 @@ def LIT_OriginType : LITType<"Origin", "origin",
     /// constant.  This returns false if parametric or if the other value.
     bool isMutableKnown(bool value);
 
-    /// Return a (possibly parameteric) specification for whether this reference
+    /// Return a (possibly parametric) specification for whether this reference
     /// is a mutation or a read.
     TypedAttr isMutable() { return getIsMutable(); }
 
@@ -484,7 +485,7 @@ def LIT_RefType : LITType<"Ref", "ref",
     /// constant.  This returns false if parametric or if the other value.
     bool isMutableKnown(bool value);
 
-    /// Return a (possibly parameteric) specification for whether this reference
+    /// Return a (possibly parametric) specification for whether this reference
     /// is a mutation or a read.
     TypedAttr isMutable();
 

@@ -1802,6 +1802,11 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   // errors.
   callEmitter.emitAfterCallActions();
 
+  // TODO(SUGAR): For a call like Int8+Int8 we'll end up calling into a function
+  // that returns SIMD[i8,1] because it is generic.  We should look to see if
+  // the result type matches some sugared argument type, and if so, reapply the
+  // sugared type to the result.
+
   // If there is a memory result slot, the value we filled in is our MRValue
   // result and we've already handled the ValueDest by emitting into it.
   if (calleeSig.hasMemoryOnlyResult() && !calleeSig.isAsync()) {

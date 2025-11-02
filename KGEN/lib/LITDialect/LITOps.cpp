@@ -1150,7 +1150,7 @@ StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     if (fieldDecl.getName() != getFieldAttr())
       continue;
     Type reboundType = evaluator.getReboundType(fieldDecl.getType());
-    if (reboundType != getValue().getType())
+    if (!isEqualCanon(reboundType, getValue().getType()))
       return emitOpError("cannot insert value of type ")
              << getValue().getType() << " into struct field " << getFieldAttr()
              << " which expected " << reboundType;
@@ -1191,7 +1191,7 @@ verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
     if (fieldDecl.getName() != fieldName)
       continue;
     Type reboundType = evaluator.getReboundType(fieldDecl.getType());
-    if (reboundType != type)
+    if (!isEqualCanon(reboundType, type))
       return op->emitOpError("cannot extract value of type ")
              << type << " from struct field " << fieldName << " which has type "
              << reboundType;

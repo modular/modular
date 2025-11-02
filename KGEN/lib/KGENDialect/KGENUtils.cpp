@@ -2048,8 +2048,14 @@ static ParseResult verifyMatchingLists(
   for (size_t itemNum = 0; itemNum != numTarget; ++itemNum) {
     auto targetVal = *targetIt++;
     auto originatorVal = *originatorIt++;
+    // The types or attributes must equal, but can differ on sugar.
     if (originatorVal == targetVal)
       continue;
+    if constexpr (std::is_base_of_v<TypedAttr, decltype(originatorVal)> ||
+                  std::is_base_of_v<Type, decltype(originatorVal)>) {
+      if (isEqualCanon(originatorVal, targetVal))
+        continue;
+    }
 
     auto diag = emitError(originatorLoc, originatorName)
                 << ' ' << itemName << " #" << itemNum << " has " << propertyName

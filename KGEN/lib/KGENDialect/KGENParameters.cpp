@@ -118,6 +118,12 @@ void ParameterCollector::collectUsesFromAttrImpl(
     return;
   }
 
+  // Look through any SugarAttr's we encounter.
+  if (auto sugar = dyn_cast<SugarAttr>(attr)) {
+    collectUsesFromAttrImpl(sugar.getCanonical(), uses, hasConstExpr);
+    return;
+  }
+
   // Collect parameter references.
   if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr)) {
     collectUsesFromType(paramRef.getType(), uses, hasConstExpr);
@@ -802,7 +808,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
 
       // Check that the type of the parameter references matches the type of its
       // declaration.
-      if (evaluationContext && it->second.type != use.getType()) {
+      if (evaluationContext && !isEqualCanon(it->second.type, use.getType())) {
         return (op->emitOpError("reference to parameter ")
                 << use.getName() << " with incorrect type " << use.getType())
                    .attachNote(it->second.declOp->getLoc())

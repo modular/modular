@@ -1657,7 +1657,7 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
   }
 
   // Verify that all of the parameters for this type are bound.  We allow
-  // PValues to refer to parameteric type, but anything calling `emitType`
+  // PValues to refer to parametric type, but anything calling `emitType`
   // can only handle fully bound types.
   auto *decl = type.getDecl(shared);
   if (!decl) // MLIR types are never parameterized.

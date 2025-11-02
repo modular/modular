@@ -799,6 +799,16 @@ TypedAttr OriginType::stripMutCastAndFieldExtract(TypedAttr origin) {
   return origin;
 }
 
+bool OriginType::canElideSugarFor(TypedAttr attr) const {
+  // Sugar for !lit.origin<true> and !lit.origin<false> can be elided, as these
+  // print as MutableOrigin / ImmutableOrigin.  This ends up being a lot nicer
+  // than: "__origin_of(_lit_mut_cast[True, MutableAnyOrigin].result".  We keep
+  // sugar if our mutability so parametric expression.
+  return sugarIsa<IntegerAttr>(getIsMutable());
+}
+
+Type OriginType::getCachedCanonicalType(Type type) const { return {}; }
+
 //===----------------------------------------------------------------------===//
 // OriginSetType
 //===----------------------------------------------------------------------===//
@@ -893,7 +903,7 @@ OriginType::MutabilityClass RefType::getMutabilityClass() {
   return sugarCast<OriginType>(getOrigin().getType()).getMutabilityClass();
 }
 
-/// Return a (possibly parameteric) specification for whether this reference
+/// Return a (possibly parametric) specification for whether this reference
 /// is a mutation or a read.
 TypedAttr RefType::isMutable() {
   return sugarCast<OriginType>(getOrigin().getType()).isMutable();
