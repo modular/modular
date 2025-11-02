@@ -1397,7 +1397,7 @@ verifyApplyLike(ArrayRef<TypedAttr> operands, bool isApplyResult,
   }
   for (auto [i, operand, type] : llvm::enumerate(operands, inputTypes)) {
     Type expected = upbindApplyResult(type);
-    if (operand.getType() != expected) {
+    if (!isEqualCanon(operand.getType(), expected)) {
       return emitError() << "'apply' operand #" << i << " type "
                          << operand.getType()
                          << " does not match expected type " << expected;
@@ -3536,8 +3536,10 @@ static void printSugarAttr(AsmPrinter &p, TypedAttr sugared, TypedAttr original,
 TypedAttr SugarAttr::get(SugarKind kind, TypedAttr sugared,
                          TypedAttr original) {
   // If we shouldn't maintain type sugar for this, then just return the
-  // original.
-  if (canElideSugarFor(original))
+  // original. We strip sugar for always_inline builtin calls that simplify down
+  // to something simple like "42". We don't want to maintain the call sugar
+  // for things like 4+5 because it just gets in the way.
+  if (kind == SugarKind::AlwaysInlineBuiltin && canElideSugarFor(original))
     return original;
 
   auto canonical = getCanonicalAttr(original);

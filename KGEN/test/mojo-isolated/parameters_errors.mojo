@@ -618,6 +618,10 @@ fn test_param_call():
 fn complex(a: Int) -> Int:
   return a*a if a < 42 else a-1
 
+struct StructWithAlias:
+    alias size_lit = 42  # IntLiteral type
+    alias size_int : Int = 42 # Int type
+
 # Make sure error messages include scope for auto parameters.
 # MOCO-970: "can't convert type to type" error stripped off full parameter name.
 struct TestAutoParams[f1: HasSize]:
@@ -632,6 +636,13 @@ struct TestAutoParams[f1: HasSize]:
         takes4(HasSize[f3.size._positive_div(4)]())
         # expected-error @below {{converted from 'HasSize[complex((f3.size * 1234))]' to 'HasSize[4]'}}
         takes4(HasSize[complex(f3.size*1234)]())
+        # expected-error @+1 {{cannot be converted from 'HasSize[StructWithAlias.size_int]' to 'HasSize[4]'}}
+        takes4(HasSize[StructWithAlias.size_int]())
+
+        # TODO(SUGAR): Maintain this sugar too.
+        # expected-error @+1 {{cannot be converted from 'HasSize[42]' to 'HasSize[4]'}}
+        takes4(HasSize[StructWithAlias.size_lit]())
+
 
 struct TakeAnything[T: AnyType, //, a: T]:
     fn __init__(out self): pass

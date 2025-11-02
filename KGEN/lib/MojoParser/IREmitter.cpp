@@ -1842,11 +1842,18 @@ void IREmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
   auto func = getBlockParentOfType<FnOp>(builder.getInsertionBlock());
   assert(func && "Emitting a return in a non-function?");
 
-  // If we're missing a value, then we either have a memory result that has
-  // already been emitted to its slot, or a function that returns None. Either
-  // way, generate a None or i1 to return with lit.return.
   auto signature = func.getFuncTypeGenerator();
-  if (!value) {
+  if (value) {
+    // If we have a value, then make sure any sugar is adjusted.
+
+    // Rebind away any sugar if it exists.
+    if (value.getType() != func.getMLIRResultType())
+      value = RebindOp::create(builder, func.getMLIRResultType(), value);
+  } else {
+    // If we're missing a value, then we either have a memory result that has
+    // already been emitted to its slot, or a function that returns None. Either
+    // way, generate a None or i1 to return with lit.return.
+
     // If the function returns a None type value by-reference, fill it in.  This
     // happens in throwing functions.
     if (signature.hasMemoryOnlyResult() &&

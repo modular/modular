@@ -592,7 +592,7 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond({{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">{{.*}}, {2}, {3})>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl *"j{{.*}}@SIMD<:!DType {:dtype f64}, :!Int {1}> = <cond({{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">
+  # CHECK-NEXT: lit.alias.decl *"j{{.*}}@SIMD<:!DType {{.*}}{:dtype f64}{{.*}}, :!Int {1}> = <cond({{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">
   # CHECK-SAME: :!pop.float_literal #pop.float_literal<2|1>{{.*}}:!pop.int_literal 3>
   alias j = 2.0 if cond else 3
 
