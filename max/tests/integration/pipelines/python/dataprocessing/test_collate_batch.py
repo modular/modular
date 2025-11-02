@@ -105,7 +105,8 @@ def test_collate_batch__no_items(pad_value: int) -> None:
 
 @given(start_pos=start_pos_strategy, tokens=tokens_strategy)
 def test_collate_mask__tokens_and_mask_shapes_match(
-    start_pos: list[int], tokens: list[np.ndarray]
+    start_pos: list[int],
+    tokens: list[np.ndarray],  # type: ignore
 ) -> None:
     assert len(start_pos) == len(tokens), (
         "start_pos and tokens must have the same length"

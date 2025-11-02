@@ -9,12 +9,12 @@ modular_py_test(
         "test_tool_calling.py",
     ],
     data = [
-        "//SDK/integration-test/API:inputs",
-        "//SDK/integration-test/API:pytest_inputs",
-        "//SDK/lib/API/python/tests/graph/testdata",
+        "//max/tests/integration/API:inputs",
+        "//max/tests/integration/API:pytest_inputs",
+        "//max/tests/tests/graph/testdata",
     ],
     env = {
-        "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
+        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
         "MODULAR_PATH": ".",
         "MODULAR_TELEMETRY_ENABLED": "true",
     },
@@ -32,9 +32,9 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/integration-test/pipelines/python:hf_repo_lock",
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max",
+        "//max/python/max",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("pytest-asyncio"),
     ],
 )

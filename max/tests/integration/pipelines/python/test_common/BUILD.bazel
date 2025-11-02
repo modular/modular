@@ -44,7 +44,7 @@ modular_py_library(
     imports = [".."],
     deps = [
         requirement("numpy"),
-        "//SDK/lib/API/python/max/graph",
+        "//max/python/max/graph",
     ],
 )
 
@@ -65,7 +65,7 @@ modular_py_library(
     imports = [".."],
     deps = [
         ":storage",
-        "//SDK/lib/API/python/max/interfaces",
+        "//max/python/max/interfaces",
     ],
 )
 
@@ -89,10 +89,10 @@ modular_py_library(
         ":test_data",
         requirement("numpy"),
         requirement("transformers"),
-        "//SDK/lib/API/python/max/driver",
-        "//SDK/lib/API/python/max/interfaces",
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/pipelines",
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
     ],
 )
 
@@ -102,8 +102,8 @@ modular_py_library(
     srcs = ["evaluate_embeddings.py"],
     imports = [".."],
     deps = [
-        "//SDK/lib/API/python/max/driver",
-        "//SDK/lib/API/python/max/pipelines",
+        "//max/python/max/driver",
+        "//max/python/max/pipelines",
     ],
 )
 
@@ -120,9 +120,9 @@ modular_py_library(
     srcs = ["graph_utils.py"],
     imports = [".."],
     deps = [
-        "//SDK/lib/API/python/max/driver",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/graph",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         requirement("nvitop"),
     ],
 )
@@ -134,7 +134,7 @@ modular_py_library(
     imports = [".."],
     deps = [
         requirement("numpy"),
-        "//SDK/lib/API/python/max/pipelines/core",
+        "//max/python/max/pipelines/core",
     ],
 )
 
@@ -145,8 +145,8 @@ modular_py_library(
     imports = [".."],
     deps = [
         requirement("pytest"),
-        "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures",
         "@rules_python//python/runfiles",
     ],
 )
@@ -157,7 +157,7 @@ modular_py_library(
     srcs = ["pipeline_cli_utils.py"],
     imports = [".."],
     deps = [
-        "//SDK/lib/API/python/max/driver",
+        "//max/python/max/driver",
     ],
 )
 
@@ -167,7 +167,7 @@ modular_py_library(
     srcs = ["pipeline_model_dummy.py"],
     imports = [".."],
     deps = [
-        "//SDK/lib/API/python/max",
+        "//max/python/max",
         requirement("transformers"),
     ],
 )
@@ -212,8 +212,8 @@ modular_py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/integration-test/pipelines/python:hf_repo_lock",
-        "//SDK/lib/API/python/max/pipelines/lib",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
         requirement("transformers"),
         requirement("setuptools"),
     ],
@@ -252,10 +252,10 @@ modular_py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/integration-test/pipelines/python:hf_repo_lock",
-        "//SDK/lib/API/python/max/driver",
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/pipelines",
+        "//max/python/max/driver",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
         requirement("safetensors"),
         requirement("torch"),
         requirement("transformers"),
@@ -269,7 +269,7 @@ modular_py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/lib/API/python/max/nn/hooks:base_print_hook",
+        "//max/python/max/nn/hooks:base_print_hook",
         requirement("torch"),
     ],
 )

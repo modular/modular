@@ -7,9 +7,9 @@ modular_py_test(
         exclude = ["test_dispatcher_v2.py"],
     ),
     deps = [
-        "//SDK/lib/API/python/max/serve:process_control",
-        "//SDK/lib/API/python/max/serve/kvcache_agent",
-        "//SDK/lib/API/python/max/serve/queue",
+        "//max/python/max/serve:process_control",
+        "//max/python/max/serve/kvcache_agent",
+        "//max/python/max/serve/queue",
         requirement("grpcio"),
         requirement("pyzmq"),
         requirement("pytest-asyncio"),
@@ -20,7 +20,7 @@ modular_py_test(
     name = "tests_dispatcher_v2",
     srcs = ["test_dispatcher_v2.py"],
     deps = [
-        "//SDK/lib/API/python/max/serve/kvcache_agent",
-        "//SDK/lib/API/python/max/serve/queue",
+        "//max/python/max/serve/kvcache_agent",
+        "//max/python/max/serve/queue",
     ],
 )

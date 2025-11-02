@@ -20,9 +20,9 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/pipelines",
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
         requirement("pytest-asyncio"),
         requirement("transformers"),
     ],

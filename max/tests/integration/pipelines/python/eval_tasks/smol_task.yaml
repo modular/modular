@@ -9,7 +9,7 @@ dataset_path: json
 dataset_name: null
 dataset_kwargs:
   data_files:
-    test: SDK/integration-test/pipelines/python/eval_tasks/testdata/test_prompts.json
+    test: max/tests/integration/pipelines/python/eval_tasks/testdata/test_prompts.json
 test_split: test
 output_type: generate_until
 generation_kwargs:

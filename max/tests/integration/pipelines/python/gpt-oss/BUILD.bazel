@@ -9,10 +9,10 @@ modular_py_test(
     srcs = glob(["**/test_yarn_rotary_embeddings.py"]) + ["conftest.py"],
     data = [
         "//SDK:max",
-        "//SDK/integration-test/pipelines/python/gpt-oss/testdata",
+        "//max/tests/integration/pipelines/python/gpt-oss/testdata",
     ],
     env = {
-        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/gpt-oss/testdata",
+        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/gpt-oss/testdata",
         "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
     },
     exec_properties = {
@@ -27,12 +27,12 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = [
-        "//SDK/integration-test/API/python/graph:modular_graph_test",
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/serve",
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/serve",
+        "//max/tests/integration/API/python/graph:modular_graph_test",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("torch"),
         requirement("transformers"),
         requirement("hypothesis"),

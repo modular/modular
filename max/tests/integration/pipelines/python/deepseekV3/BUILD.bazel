@@ -18,9 +18,9 @@ modular_py_test(
         "gpu",
     ],
     deps = [
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/graph",
-        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
         requirement("numpy"),
         requirement("transformers"),
     ],

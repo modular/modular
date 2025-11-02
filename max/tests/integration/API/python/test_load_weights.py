@@ -71,7 +71,7 @@ def test_weight_offset(session: InferenceSession) -> None:
         np.testing.assert_array_equal(weight, output0.to_numpy())
 
 
-def _test_data() -> dict[str, torch.Tensor | np.ndarray]:
+def _test_data() -> dict[str, torch.Tensor | np.ndarray]:  # type: ignore
     # supported on all platforms
     data = {
         "a": np.arange(10, dtype=np.int32).reshape(5, 2),

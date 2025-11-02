@@ -39,9 +39,7 @@ def test_help_performance() -> None:
 
     runfiles = python.runfiles.Create()
     assert runfiles is not None, "Unable to find runfiles tree"
-    loc = runfiles.Rlocation(
-        "_main/SDK/lib/API/python/max/entrypoints/pipelines"
-    )
+    loc = runfiles.Rlocation("_main/max/python/max/entrypoints/pipelines")
     assert loc is not None, "Unable to find pipelines entrypoint"
 
     start_time = time.time()

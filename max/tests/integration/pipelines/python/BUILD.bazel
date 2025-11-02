@@ -6,7 +6,7 @@ modular_py_library(
     data = ["hf-repo-lock.tsv"],
     imports = ["."],
     deps = [
-        "//SDK/lib/API/python/max/pipelines",
+        "//max/python/max/pipelines",
         requirement("huggingface-hub"),
     ],
 )
@@ -17,7 +17,7 @@ modular_py_test(
     srcs = ["test_hf_repo_lock.py"],
     deps = [
         ":hf_repo_lock",
-        "//SDK/integration-test/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("pytest-mock"),
     ],
 )
@@ -28,13 +28,13 @@ modular_py_binary(
     srcs = ["verify.py"],
     env = {
         "PIPELINES_TESTDATA": (
-            "SDK/integration-test/pipelines/python/llama3/testdata"
+            "max/tests/integration/pipelines/python/llama3/testdata"
         ),
     },
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("click"),
         requirement("numpy"),
         requirement("rich"),
@@ -47,14 +47,14 @@ modular_py_binary(
     srcs = ["verify_pipelines.py"],
     data = [
         "//Kernels/tools/gpu-query",
-        "//SDK/integration-test/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common",
     ],
     env = {
         # MODULAR_CUDA_QUERY_PATH is required by the Llama3 scripts.
         "MODULAR_CUDA_QUERY_PATH": "$(execpath //Kernels/tools/gpu-query)",
         # PIPELINES_TESTDATA is required by the Llama3 scripts.
         "PIPELINES_TESTDATA": (
-            "SDK/integration-test/pipelines/python/llama3/testdata"
+            "max/tests/integration/pipelines/python/llama3/testdata"
         ),
     },
     visibility = ["//visibility:public"],
@@ -78,7 +78,7 @@ modular_py_binary(
         requirement("click"),
         requirement("requests"),
         requirement("lm-eval"),
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        "//max/python/max/entrypoints:pipelines",
     ],
 )
 
@@ -94,7 +94,7 @@ modular_py_binary(
         "MODULAR_CUDA_QUERY_PATH": "$(execpath //Kernels/tools/gpu-query)",
         # PIPELINES_TESTDATA is required by the model scripts.
         "PIPELINES_TESTDATA": (
-            "SDK/integration-test/pipelines/python/llama3/testdata"
+            "max/tests/integration/pipelines/python/llama3/testdata"
         ),
     },
     main = "verify_layers/cli.py",
@@ -102,7 +102,7 @@ modular_py_binary(
     deps = [
         ":generate_llm_logits",
         ":verify",
-        "//SDK/integration-test/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("click"),
         requirement("numpy"),
         requirement("torch"),
@@ -116,7 +116,7 @@ modular_py_test(
     size = "enormous",
     srcs = ["test_pipelines_cli.py"],
     env = {
-        "PIPELINES_CUSTOM_ARCHITECTURE": "SDK/integration-test/pipelines/python/test_common:pipeline_model_dummy",
+        "PIPELINES_CUSTOM_ARCHITECTURE": "max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
     },
     tags = [
         "no-sandbox",
@@ -128,9 +128,9 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         ":hf_repo_lock",
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
-        "//SDK/lib/API/python/max/pipelines/lib",
+        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("transformers"),
         requirement("gguf"),
     ],
@@ -159,8 +159,8 @@ modular_py_test(
     ],
     deps = [
         ":hf_repo_lock",
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        "//max/python/max/entrypoints:pipelines",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("transformers"),
         requirement("gguf"),
         requirement("safetensors"),
@@ -188,8 +188,8 @@ modular_py_test(
     ],
     deps = [
         ":hf_repo_lock",
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        "//max/python/max/entrypoints:pipelines",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("transformers"),
         requirement("gguf"),
         requirement("safetensors"),
@@ -201,10 +201,10 @@ modular_py_test(
     name = "test_pipelines_cli_help",
     srcs = ["test_pipelines_cli_help.py"],
     deps = [
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        "//max/python/max/entrypoints:pipelines",
         # TODO: Explicitly include benchmark_shared so that max benchmark help subcommand works
         # This "workaround" shouldn't be necessary but will have to investigate further.
-        "//SDK/lib/API/python/max/benchmark/benchmark_shared",
+        "//max/python/max/benchmark/benchmark_shared",
         requirement("click"),
     ],
 )
@@ -213,7 +213,7 @@ modular_py_test(
     name = "test_pipelines_cli_lightweight",
     srcs = ["test_pipelines_cli_lightweight.py"],
     deps = [
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        "//max/python/max/entrypoints:pipelines",
     ],
 )
 
@@ -221,7 +221,7 @@ modular_py_test(
     name = "test_pipelines_cli_json_lightweight",
     srcs = ["test_pipelines_cli_json_lightweight.py"],
     deps = [
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        "//max/python/max/entrypoints:pipelines",
     ],
 )
 
@@ -233,13 +233,13 @@ modular_py_binary(
     ],
     data = [
         "//Kernels/tools/gpu-query",
-        "//SDK/integration-test/pipelines/python/llama3/testdata",
         "//Support/tools/system-info",
+        "//max/tests/integration/pipelines/python/llama3/testdata",
     ],
     env = {
         "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
         "PIPELINES_TESTDATA": (
-            "SDK/integration-test/pipelines/python/llama3/testdata"
+            "max/tests/integration/pipelines/python/llama3/testdata"
         ),
     },
     imports = ["."],
@@ -247,12 +247,12 @@ modular_py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":hf_repo_lock",
-        "//SDK/integration-test/pipelines/python/idefics3:torch_utils",
-        "//SDK/integration-test/pipelines/python/internvl:torch_utils",
-        "//SDK/integration-test/pipelines/python/qwen2_5vl:generate_utils",
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/entrypoints",
-        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//max/python/max/entrypoints",
+        "//max/python/max/pipelines/architectures",
+        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
+        "//max/tests/integration/pipelines/python/internvl:torch_utils",
+        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("click"),
         requirement("einops"),  # Req'd by replit
         requirement("pillow"),
@@ -322,14 +322,14 @@ modular_py_binary(
     srcs = ["pipelines_lm_eval.py"],
     data = [
         "run_lm_eval.py",
-        "//SDK/integration-test/pipelines/python/eval_tasks",
+        "//max/tests/integration/pipelines/python/eval_tasks",
     ],
     main = "pipelines_lm_eval.py",
     deps = [
         ":lm-eval",
         ":mistral-eval",
-        "//SDK/integration-test/pipelines/python/eval_tasks/human_eval",
-        "//SDK/lib/API/python/max/entrypoints:pipelines",  # The transitive mojo deps from this target must be available
+        "//max/python/max/entrypoints:pipelines",  # The transitive mojo deps from this target must be available
+        "//max/tests/integration/pipelines/python/eval_tasks/human_eval",
         "@mistral-evals//:evaluate",
         "@rules_python//python/runfiles",
         requirement("click"),
@@ -352,8 +352,8 @@ modular_py_test(
     }),
     deps = [
         ":pipelines-lm-eval",
-        "//SDK/integration-test/pipelines/python:hf_repo_lock",
-        "//SDK/lib/API/python/max/pipelines/lib",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
         requirement("click"),
     ],
 )
@@ -362,11 +362,11 @@ modular_py_binary(
     name = "pipelines_mteb",
     testonly = True,
     srcs = ["pipelines_mteb.py"],
-    data = ["//SDK/lib/API/python/max/entrypoints:pipelines"],
+    data = ["//max/python/max/entrypoints:pipelines"],
     deps = [
-        "//SDK/lib/API/python/max/entrypoints",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/pipelines/dataprocessing",
+        "//max/python/max/entrypoints",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/dataprocessing",
         requirement("click"),
         requirement("mteb"),
     ],

@@ -10,21 +10,21 @@ modular_py_test(
         "test_stop_cpu.py",
     ],
     data = [
-        "//SDK/integration-test/pipelines/python/llama3/testdata",
+        "//max/tests/integration/pipelines/python/llama3/testdata",
     ],
     env = {
-        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
+        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
     },
     target_compatible_with = select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/pipelines/core",
-        "//SDK/lib/API/python/max/serve",
-        "//SDK/lib/API/python/max/serve/schemas",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/serve",
+        "//max/python/max/serve/schemas",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("async-asgi-testclient"),
         requirement("pytest-asyncio"),
         requirement("sse-starlette"),
@@ -43,10 +43,10 @@ modular_py_test(
         "test_tinyllama_serving_cpu.py",
     ],
     data = [
-        "//SDK/integration-test/pipelines/python/llama3/testdata",
+        "//max/tests/integration/pipelines/python/llama3/testdata",
     ],
     env = {
-        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
+        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
     },
     tags = [
         "AITLIB-293",
@@ -55,11 +55,11 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/pipelines/core",
-        "//SDK/lib/API/python/max/serve",
-        "//SDK/lib/API/python/max/serve/schemas",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/serve",
+        "//max/python/max/serve/schemas",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("async-asgi-testclient"),
         requirement("pytest-asyncio"),
         requirement("sse-starlette"),
@@ -92,9 +92,9 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/serve",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/serve",
         requirement("async-asgi-testclient"),
         requirement("pillow"),
         requirement("sse-starlette"),
@@ -112,10 +112,10 @@ modular_py_test(
     ],
     data = [
         "//Kernels/tools/gpu-query",
-        "//SDK/integration-test/pipelines/python/llama3/testdata",
+        "//max/tests/integration/pipelines/python/llama3/testdata",
     ],
     env = {
-        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
+        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
         "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
     },
     exec_properties = {
@@ -137,11 +137,11 @@ modular_py_test(
         "manual",
     ],
     deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/pipelines/core",
-        "//SDK/lib/API/python/max/serve",
+        "//max/python/max/engine",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/serve",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("async-asgi-testclient"),
         requirement("pytest-asyncio"),
         requirement("sse-starlette"),

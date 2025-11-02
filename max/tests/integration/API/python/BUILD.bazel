@@ -24,12 +24,12 @@ modular_py_test(
         "test_weight_path_parser.py",
     ],
     data = [
-        "//SDK/integration-test/API:inputs",
-        "//SDK/integration-test/API:pytest_inputs",
-        "//SDK/lib/API/python/tests/graph/testdata",
+        "//max/tests/integration/API:inputs",
+        "//max/tests/integration/API:pytest_inputs",
+        "//max/tests/tests/graph/testdata",
     ],
     env = {
-        "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
+        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
         "MODULAR_PATH": ".",
         "MODULAR_TELEMETRY_ENABLED": "true",
     },
@@ -49,9 +49,9 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max",
-        "//SDK/lib/API/python/max/entrypoints",
+        "//max/python/max",
+        "//max/python/max/entrypoints",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("hypothesis"),
     ],
 )
@@ -65,13 +65,13 @@ modular_py_test(
         "test_config_pure.py",
     ],
     data = [
-        "//SDK/integration-test/API:inputs",
-        "//SDK/integration-test/API:pytest_inputs",
-        "//SDK/lib/API/python/tests/graph/testdata",
+        "//max/tests/integration/API:inputs",
+        "//max/tests/integration/API:pytest_inputs",
+        "//max/tests/tests/graph/testdata",
     ],
     env = {
         "MODULAR_PATH": ".",
-        "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
+        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
     },
     env_inherit = ["HF_TOKEN"],
     exec_properties = {
@@ -93,9 +93,9 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max",
-        "//SDK/lib/API/python/max/entrypoints",
+        "//max/tests/integration/pipelines/python/test_common",
+        "//max/python/max",
+        "//max/python/max/entrypoints",
         # Not used directly, needed to load some models
         requirement("sentencepiece"),
     ],
@@ -110,11 +110,11 @@ modular_py_test(
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [
-        "//SDK/integration-test/pipelines/python:hf_repo_lock",
-        "//SDK/lib/API/python/max/driver",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/interfaces",
-        "//SDK/lib/API/python/max/pipelines",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
         requirement("numpy"),
     ],
 )
@@ -128,8 +128,8 @@ modular_py_test(
     ],
     data = [
         # TODO(MAXPLAT-86): Find a shared place for these tools
-        "//SDK/integration-test/API:inputs",
-        "//SDK/integration-test/API:pytest_inputs",
+        "//max/tests/integration/API:inputs",
+        "//max/tests/integration/API:pytest_inputs",
     ],
     env = {"MODULAR_PATH": "."},
     env_inherit = ["HF_TOKEN"],
@@ -144,10 +144,10 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/integration-test/pipelines/python:hf_repo_lock",
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max",
-        "//SDK/lib/API/python/max/entrypoints",
+        "//max/python/max",
+        "//max/python/max/entrypoints",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration/pipelines/python/test_common",
     ],
 )
 
@@ -176,10 +176,10 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/integration-test/pipelines/python:hf_repo_lock",
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max",
-        "//SDK/lib/API/python/max/entrypoints",
+        "//max/python/max",
+        "//max/python/max/entrypoints",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration/pipelines/python/test_common",
     ],
 )
 
@@ -192,8 +192,8 @@ modular_py_test(
     ],
     data = [
         # TODO(MAXPLAT-86): Find a shared place for these tools
-        "//SDK/integration-test/API:inputs",
-        "//SDK/integration-test/API:pytest_inputs",
+        "//max/tests/integration/API:inputs",
+        "//max/tests/integration/API:pytest_inputs",
     ],
     env = {"MODULAR_PATH": "."},
     env_inherit = ["HF_TOKEN"],
@@ -209,9 +209,9 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max",
-        "//SDK/lib/API/python/max/entrypoints",
+        "//max/python/max",
+        "//max/python/max/entrypoints",
+        "//max/tests/integration/pipelines/python/test_common",
     ],
 )
 
@@ -221,15 +221,15 @@ modular_py_test(
     srcs = glob(["multi_gpu_tests/**/*.py"]),
     data = [
         "//SDK:max",
-        "//SDK/integration-test:test_user_op",
-        "//SDK/integration-test/API:inputs",
-        "//SDK/integration-test/API:pytest_inputs",
-        "//SDK/lib/API/python/tests/graph/testdata",
+        "//max/tests/integration:test_user_op",
+        "//max/tests/integration/API:inputs",
+        "//max/tests/integration/API:pytest_inputs",
+        "//max/tests/tests/graph/testdata",
     ],
     env = {
-        "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
+        "CUSTOM_OPS_PATH": "$(rootpath //max/tests/integration:test_user_op)",
         "MODULAR_PATH": ".",
-        "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
+        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
     },
     exec_properties = {
         "test.resources:gpu-memory": "2",
@@ -240,8 +240,8 @@ modular_py_test(
     }),
     tags = ["gpu"],
     deps = [
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/nn",
+        "//max/python/max/engine",
+        "//max/python/max/nn",
         requirement("numpy"),
     ],
 )
@@ -252,14 +252,14 @@ modular_py_test(
         "test_load_weights_no_deps.py",
     ],
     data = [
-        "//SDK/lib/API/python/tests/graph/testdata",
+        "//max/tests/tests/graph/testdata",
     ],
     env = {
-        "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
+        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
     },
     deps = [
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/graph",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
     ],
 )
 
@@ -267,6 +267,6 @@ modular_multi_py_version_test(
     name = "test_load_library",
     srcs = ["test_load_library.py"],
     deps = [
-        "//SDK/lib/API/python/max:_core",
+        "//max/python/max:_core",
     ],
 )

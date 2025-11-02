@@ -46,7 +46,7 @@ class PipelineSitter:
     """Owns the pipelines process and manages its startup/shutdown."""
 
     _args: Sequence[str]
-    _proc: subprocess.Popen | None
+    _proc: subprocess.Popen | None  # type: ignore
 
     def __init__(self, args: Sequence[str]) -> None:
         self._args = args
@@ -216,7 +216,7 @@ def main(
         pipelines_program = [
             _must_rlocation_str(
                 runfiles,
-                "_main/SDK/lib/API/python/max/entrypoints/pipelines",
+                "_main/max/python/max/entrypoints/pipelines",
             )
         ]
     else:
@@ -235,7 +235,7 @@ def main(
             sys.executable,
             _must_rlocation_str(
                 runfiles,
-                "_main/SDK/integration-test/pipelines/python/run_lm_eval.py",
+                "_main/max/tests/integration/pipelines/python/run_lm_eval.py",
             ),
         ]
     else:
@@ -250,7 +250,7 @@ def main(
             sys.executable,
             _must_rlocation_str(
                 runfiles,
-                "_main/SDK/integration-test/pipelines/python/run_mistral_eval.py",
+                "_main/max/tests/integration/pipelines/python/run_mistral_eval.py",
             ),
         ]
     else:
@@ -278,12 +278,12 @@ def main(
             # Bazel mode - use runfiles
             include_path = _must_rlocation(
                 runfiles,
-                "_main/SDK/integration-test/pipelines/python/eval_tasks/BUILD.bazel",
+                "_main/max/tests/integration/pipelines/python/eval_tasks/BUILD.bazel",
             ).parent
         else:
             # Docker mode - use absolute path
             include_path = Path(
-                "/app/SDK/integration-test/pipelines/python/eval_tasks"
+                "/app/max/tests/integration/pipelines/python/eval_tasks"
             )
             if not include_path.exists():
                 logger.error(

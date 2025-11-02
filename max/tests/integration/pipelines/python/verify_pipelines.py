@@ -401,7 +401,7 @@ def run_llm_verification(
     """Run a Llama3 verification with the given model and weights encoding.
 
     extra_verify_flags are passed to
-    SDK/integration-test/pipelines/python/llama3/verify.py -- check that script
+    max/tests/integration/pipelines/python/llama3/verify.py -- check that script
     for details on acceptable flags.
     """
 

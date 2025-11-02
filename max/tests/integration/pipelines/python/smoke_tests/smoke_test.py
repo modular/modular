@@ -180,7 +180,7 @@ def write_github_output(key: str, value: str) -> None:
             f.write(f"{key}={value}\n")
 
 
-def gracefully_stop_process(process: Popen) -> None:
+def gracefully_stop_process(process: Popen) -> None:  # type: ignore
     process.send_signal(signal.SIGINT)  # Sends ctrl-c (usually works)
     try:
         process.wait(5)
@@ -208,7 +208,8 @@ class EvalSummary:
 
 
 def build_eval_summary(
-    results: Sequence[Mapping], startup_time_seconds: float
+    results: Sequence[Mapping],  # type: ignore
+    startup_time_seconds: float,
 ) -> list[EvalSummary]:
     """
     Extract the metrics from the lm-eval results and build a summary for each task.
@@ -265,7 +266,7 @@ def print_samples(samples: LmEvalSamples, print_cot: bool) -> None:
         logger.info(f"{status} {extracted}")
 
 
-def start_server(cmd: list[str]) -> tuple[Popen, float]:
+def start_server(cmd: list[str]) -> tuple[Popen, float]:  # type: ignore
     env = os.environ.copy()
     if not _inside_bazel():
         # SGLang depends on ninja which is in the serve environment

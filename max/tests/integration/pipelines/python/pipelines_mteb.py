@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Runs evaluations for the Massive Text Embedding Benchmark.
 
-./bazelw run SDK/integration-test/pipelines/python:pipelines_mteb --\
+./bazelw run max/tests/integration/pipelines/python:pipelines_mteb --\
     --model-path=sentence-transformers/all-mpnet-base-v2 \
     --max-batch-size=1000 \
     --eval-task="STSBenchmark" \
@@ -52,7 +52,7 @@ class EmbeddingModel:
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        tokenizer: PipelineTokenizer,
+        tokenizer: PipelineTokenizer,  # type: ignore
         pipeline: EmbeddingsPipelineType,
         huggingface_config: AutoConfig,
     ) -> None:
@@ -89,7 +89,7 @@ class EmbeddingModel:
                 training_datasets=None,
             )
 
-    def encode(self, sentences: Sequence[str], **kwargs) -> np.ndarray:
+    def encode(self, sentences: Sequence[str], **kwargs) -> np.ndarray:  # type: ignore
         """Encodes the given sentences using the encoder.
 
         Args:
@@ -116,7 +116,7 @@ class EmbeddingModel:
             start += batch_size
         return np.array(results)
 
-    async def batch_encode(self, sentences: Sequence[str]) -> list[np.ndarray]:
+    async def batch_encode(self, sentences: Sequence[str]) -> list[np.ndarray]:  # type: ignore
         pipeline_request = {}
         for n, sentence in enumerate(sentences):
             pipeline_request[RequestID()] = await self.tokenizer.new_context(

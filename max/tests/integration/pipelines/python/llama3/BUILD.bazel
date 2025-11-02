@@ -21,13 +21,13 @@ load(
         ],
         data = [
             "//SDK:max",
-            "//SDK/integration-test/pipelines/python/llama3/testdata",
             "//Support/tools/system-info",
+            "//max/tests/integration/pipelines/python/llama3/testdata",
         ],
         env = {
             "MODULAR_PATH": ".",
             "PIPELINES_TESTDATA": (
-                "SDK/integration-test/pipelines/python/llama3/testdata"
+                "max/tests/integration/pipelines/python/llama3/testdata"
             ),
             "MODULAR_SYSTEM_INFO_PATH": (
                 "$(location //Support/tools/system-info)"
@@ -44,15 +44,15 @@ load(
             "//conditions:default": [],
         }),  # FIXME: MOCO-2411
         deps = [
-            "//SDK/integration-test/API/python/graph:modular_graph_test",
-            "//SDK/integration-test/pipelines/python:hf_repo_lock",
-            "//SDK/integration-test/pipelines/python/test_common",
-            "//SDK/lib/API/python/max/engine",
-            "//SDK/lib/API/python/max/entrypoints",
-            "//SDK/lib/API/python/max/nn",
-            "//SDK/lib/API/python/max/pipelines/architectures",
-            "//SDK/lib/API/python/max/serve",
-            "//SDK/lib/API/python/max/support",
+            "//max/python/max/engine",
+            "//max/python/max/entrypoints",
+            "//max/python/max/nn",
+            "//max/python/max/pipelines/architectures",
+            "//max/python/max/serve",
+            "//max/python/max/support",
+            "//max/tests/integration/API/python/graph:modular_graph_test",
+            "//max/tests/integration/pipelines/python:hf_repo_lock",
+            "//max/tests/integration/pipelines/python/test_common",
             requirement("click"),
             requirement("huggingface-hub"),
             requirement("hypothesis"),
@@ -82,15 +82,15 @@ modular_py_test(
     data = [
         "//Kernels/tools/gpu-query",
         "//SDK:max",
-        "//SDK/integration-test/pipelines/python/llama3/testdata",
         "//Support/tools/system-info",
+        "//max/tests/integration/pipelines/python/llama3/testdata",
     ],
     env = {
         "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
         "MODULAR_SYSTEM_INFO_PATH": "$(location //Support/tools/system-info)",
         "MODULAR_PATH": ".",
         "PIPELINES_TESTDATA": (
-            "SDK/integration-test/pipelines/python/llama3/testdata"
+            "max/tests/integration/pipelines/python/llama3/testdata"
         ),
     },
     env_inherit = ["HF_TOKEN"],
@@ -108,11 +108,11 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/integration-test/pipelines/python:hf_repo_lock",
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/pipelines/dataprocessing",
+        "//max/python/max/engine",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/dataprocessing",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("hypothesis"),
         requirement("py-cpuinfo"),
         requirement("pytest-asyncio"),

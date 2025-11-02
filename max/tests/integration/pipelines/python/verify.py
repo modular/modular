@@ -10,7 +10,7 @@ with `max`:
 
 ```
 ./bazelw run \
-  //SDK/integration-test/pipelines/python:generate_llm_logits -- \
+  //max/tests/integration/pipelines/python:generate_llm_logits -- \
   --device cpu \
   --framework max \
   --pipeline llama \
@@ -24,7 +24,7 @@ logit files.
 Then, run `verify` with the logit files:
 ```
 ./bazelw run \
-  //SDK/integration-test/pipelines/python:verify -- \
+  //max/tests/integration/pipelines/python:verify -- \
   --eval-metric cos,kl,tol \
   --relative-tolerance 0 \
   --absolute-tolerance 0 \

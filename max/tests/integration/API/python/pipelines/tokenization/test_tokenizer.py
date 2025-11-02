@@ -199,13 +199,13 @@ def test_tokenizer_regression_MODELS_467() -> None:
         trust_remote_code=True,
     )
 
-    def rank1(items: list[int]) -> np.ndarray:
+    def rank1(items: list[int]) -> np.ndarray:  # type: ignore
         return np.array(items, dtype=np.uint32)
 
-    def rank0(item: int) -> np.ndarray:
+    def rank0(item: int) -> np.ndarray:  # type: ignore
         return rank1([item])[0]
 
-    def decode(tokens: np.ndarray) -> str:
+    def decode(tokens: np.ndarray) -> str:  # type: ignore
         return asyncio.run(tokenizer.decode(tokens))
 
     # Single token here needs preceding space, including rank-0.

@@ -7,7 +7,7 @@ modular_py_test(
     size = "large",
     srcs = glob(["**/*.py"]),
     deps = [
-        "//SDK/lib/API/python/max/pipelines/dataprocessing",
+        "//max/python/max/pipelines/dataprocessing",
         requirement("hypothesis"),
         requirement("numpy"),
     ],

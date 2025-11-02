@@ -720,7 +720,7 @@ def test_vision_context_reset() -> None:
     assert context.needs_vision_encoding is True
 
 
-def test_text_context_repr(capsys: pytest.CaptureFixture) -> None:
+def test_text_context_repr(capsys: pytest.CaptureFixture) -> None:  # type: ignore
     context = TextContext(
         request_id=RequestID(),
         tokens=np.array([0, 1, 2, 3, 4]),

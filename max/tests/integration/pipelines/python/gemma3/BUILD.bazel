@@ -12,10 +12,10 @@ modular_py_test(
     srcs = glob(["**/test_*.py"]) + ["conftest.py"],
     data = [
         "//SDK:max",
-        "//SDK/integration-test/pipelines/python/gemma3/testdata",
+        "//max/tests/integration/pipelines/python/gemma3/testdata",
     ],
     env = {
-        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/gemma3/testdata",
+        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/gemma3/testdata",
         "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
     },
     exec_properties = {
@@ -30,12 +30,12 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/entrypoints",
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/serve",
+        "//max/python/max/engine",
+        "//max/python/max/entrypoints",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/serve",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("torch"),
         requirement("transformers"),
     ],

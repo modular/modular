@@ -12,7 +12,7 @@ is included alongside the full weights. To re-generate the tiny llama
 checkpoint, use the `gen_tiny_llama` target:
 
 ```bash
-TESTDATA_DIR="$MODULAR_PATH/SDK/integration-test/pipelines/python/llama3/testdata"
+TESTDATA_DIR="$MODULAR_PATH/max/tests/integration/pipelines/python/llama3/testdata"
 
 # Generate float32 checkpoint
 ./bazelw run //ModularFramework/utils:gen_tiny_llama --\
@@ -43,7 +43,7 @@ points to the modular root so that the CLI can write the golden files for
 each encoding/model pair to the test data folder.
 
 ```bash
-./bazelw run //SDK/integration-test/pipelines/python/llama3:evaluate_llama --\
+./bazelw run //max/tests/integration/pipelines/python/llama3:evaluate_llama --\
     --modular-path /path/to/modular \
     --encoding q4_k \ # float32, q4_k, bfloat16, or all (default)
     --model tinyllama # llama3_1, tinyllama, or all (default)
@@ -60,20 +60,20 @@ HuggingFace model.
 The test target for CPU tests is:
 
 ```bash
-./bazelw test //SDK/integration-test/pipelines/python:tests
+./bazelw test //max/tests/integration/pipelines/python:tests
 ```
 
 For local development, it may be convenient to just run the tiny llama
 tests, which you can select out using a pytest filter:
 
 ```bash
-./bazelw test //SDK/integration-test/pipelines/python:tests --test_arg="-k test_llama[tiny-float32-llama3_1]"
+./bazelw test //max/tests/integration/pipelines/python:tests --test_arg="-k test_llama[tiny-float32-llama3_1]"
 ```
 
 Note that GPU tests have a different target:
 
 ```bash
-./bazelw test //SDK/integration-test/pipelines/python:tests_gpu
+./bazelw test //max/tests/integration/pipelines/python:tests_gpu
 ```
 
 ## Registering new golden test data
@@ -122,7 +122,7 @@ Here are the condensed instructions:
 Currently we only generate goldens for bfloat16 on GPU.
 
 ```bash
-./bazelw run SDK/integration-test/pipelines/python/llama3/testdata:run_torch_llama_gpu \
+./bazelw run max/tests/integration/pipelines/python/llama3/testdata:run_torch_llama_gpu \
     -- --model llama3_1 --encoding bfloat16 --verbose
 ```
 

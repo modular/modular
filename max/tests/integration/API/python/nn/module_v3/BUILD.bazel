@@ -9,7 +9,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//SDK/integration-test/pipelines/python:hf_repo_lock",
-        "//SDK/lib/API/python/max",
+        "//max/python/max",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
     ],
 )

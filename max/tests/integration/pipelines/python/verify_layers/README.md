@@ -70,11 +70,11 @@ export_path/
 
 ```bash
 # Basic usage - runs both scenarios automatically on gpu
-br //SDK/integration-test/pipelines/python:verify_layers_e2e -- \
+br //max/tests/integration/pipelines/python:verify_layers_e2e -- \
   --pipeline qwen3-32b --encoding bfloat16 --devices gpu 
 
 # Custom output directory and save layer dumps
-br //SDK/integration-test/pipelines/python:verify_layers_e2e -- \
+br //max/tests/integration/pipelines/python:verify_layers_e2e -- \
   --pipeline qwen3-32b --encoding bfloat16 --devices gpu --save-layers --export-path /my/custom/output
 ```
 
@@ -147,7 +147,7 @@ systematic patterns in the discrepancies.
 
 ## Supported Pipelines
 
-Most of the pipelines included in SDK/integration-test/pipelines/python/generate_llm_logits.py
+Most of the pipelines included in max/tests/integration/pipelines/python/generate_llm_logits.py
 
 ## Technical Details
 

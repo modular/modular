@@ -101,7 +101,13 @@ def modular_path() -> Path:
 def mo_model_path(modular_path: Path) -> Path:
     """Returns the path to the generated BasicMLP model."""
     return (
-        modular_path / "SDK" / "integration-test" / "API" / "c" / "mo-model.api"
+        modular_path
+        / "max"
+        / "tests"
+        / "integration"
+        / "API"
+        / "c"
+        / "mo-model.api"
     )
 
 
@@ -110,8 +116,9 @@ def dynamic_model_path(modular_path: Path) -> Path:
     """Returns the path to the dynamic shape model."""
     return (
         modular_path
-        / "SDK"
-        / "integration-test"
+        / "max"
+        / "tests"
+        / "integration"
         / "API"
         / "Inputs"
         / "dynamic-model.mlir"
@@ -123,8 +130,9 @@ def no_input_path(modular_path: Path) -> Path:
     """Returns the path to a model spec without inputs."""
     return (
         modular_path
-        / "SDK"
-        / "integration-test"
+        / "max"
+        / "tests"
+        / "integration"
         / "API"
         / "Inputs"
         / "no-inputs.mlir"
@@ -136,8 +144,9 @@ def scalar_input_path(modular_path: Path) -> Path:
     """Returns the path to a model spec with scalar inputs."""
     return (
         modular_path
-        / "SDK"
-        / "integration-test"
+        / "max"
+        / "tests"
+        / "integration"
         / "API"
         / "Inputs"
         / "scalar-input.mlir"
@@ -149,8 +158,9 @@ def aliasing_outputs_path(modular_path: Path) -> Path:
     """Returns the path to a model spec with outputs that alias each other."""
     return (
         modular_path
-        / "SDK"
-        / "integration-test"
+        / "max"
+        / "tests"
+        / "integration"
         / "API"
         / "Inputs"
         / "aliasing-outputs.mlir"
@@ -162,8 +172,9 @@ def named_inputs_path(modular_path: Path) -> Path:
     """Returns the path to a model spec that adds a series of named tensors."""
     return (
         modular_path
-        / "SDK"
-        / "integration-test"
+        / "max"
+        / "tests"
+        / "integration"
         / "API"
         / "Inputs"
         / "named-inputs.mlir"
