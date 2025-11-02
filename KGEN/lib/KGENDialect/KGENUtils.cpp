@@ -2107,7 +2107,9 @@ LogicalResult KGEN::verifyDeclSignaturesMatch(
     return failure();
   }
 
-  if (lhsSig.getMetadata() != rhsSig.getMetadata()) {
+  if (lhsSig.getMetadata() != rhsSig.getMetadata() &&
+      getCanonicalAttr(lhsSig.getMetadata()) !=
+          getCanonicalAttr(rhsSig.getMetadata())) {
     auto diag = emitError(lhsLoc, lhsName)
                 << " metadata is " << lhsSig.getMetadata() << " but @"
                 << rhsName << " expected " << rhsSig.getMetadata();

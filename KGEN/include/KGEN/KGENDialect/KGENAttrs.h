@@ -72,6 +72,7 @@ public:
 
 /// Given an attribute or type, return the "canonical" version of the attribute
 /// with all type sugar removed.
+Attribute getCanonicalAttr(Attribute src);
 TypedAttr getCanonicalAttr(TypedAttr src);
 Type getCanonicalType(Type type);
 

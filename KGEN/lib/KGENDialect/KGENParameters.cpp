@@ -181,7 +181,7 @@ void ParameterCollector::collectUsesFromAttrImpl(
           Type type = types[indexRef.getIndex()];
           IndexDepthAdjuster adjuster(indexRef.getDepth());
           Type expectedType = adjuster.replace(type);
-          if (expectedType != indexRef.getType()) {
+          if (!isEqualCanon(expectedType, indexRef.getType())) {
             return emitError()
                    << "type of index reference " << indexRef
                    << " does not match parameter type " << expectedType;
