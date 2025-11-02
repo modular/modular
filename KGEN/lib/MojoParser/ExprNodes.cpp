@@ -1920,11 +1920,6 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
       if (!value)
         return value;
 
-      // FIXME: don't sugar things of GeneratorType because it will annoy
-      // BindParamsAttr canonicalization.  This affects things like
-      // Origin.cast_from.
-      if (sugarIsa<GeneratorType>(value.getType()))
-        return value;
       auto sugaredMember = StructExtractAttr::get(
           PValue(baseRVType), StringAttr::get(emitter.getContext(), spelling),
           value.getType());

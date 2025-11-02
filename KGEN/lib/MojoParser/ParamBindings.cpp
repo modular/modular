@@ -437,7 +437,7 @@ ParamBindings::verifyBindingsImpl(
 
   auto inferParameter = [&](Type requestedType) {
     PValue value = parameterInferenceHook(newBindings, evaluator);
-    assert(!value || value.getType().mlirType == requestedType &&
+    assert(!value || value.getType().isEqualCanon(requestedType) &&
                          "inferred a parameter value of wrong type");
     return value;
   };

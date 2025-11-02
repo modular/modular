@@ -186,7 +186,8 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
         //   struct UnsafePointer[type: AnyType,
         //                        align: Int = _default_alignment[type]()]:
         def = evaluator.getReboundAttribute(def);
-        if (paramValue == def && passingKind != PassingKind::PosOnly) {
+        if (isEqualCanon(paramValue, def) &&
+            passingKind != PassingKind::PosOnly) {
           // If we skip a posOrKw then include keyword names for any other
           // posOrKw's that come after it.
           skippedPositional |= (passingKind == PassingKind::PosOrKw);
@@ -1004,7 +1005,8 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (isa<StructExtractAttr, ParamIndexRefAttr, ParamOperatorAttr>(param))
+  if (isa<StructExtractAttr, ParamIndexRefAttr, ParamOperatorAttr, UnknownAttr>(
+          param))
     return printParam(os, param, diagShared);
 
   if (auto sugar = dyn_cast<SugarAttr>(param)) {
