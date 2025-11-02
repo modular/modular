@@ -2347,10 +2347,10 @@ struct CPython(Defaultable, Movable):
     # ===-------------------------------------------------------------------===#
 
     fn PyLong_Type(self) -> PyTypeObjectPtr:
-        """The PyLong_Type Object.
+        """The `PyLong_Type` Object.
 
-        This instance of PyTypeObject represents the Python integer type. This is
-        the same object as int in the Python layer.
+        This instance of `PyTypeObject` represents the Python integer type. This is
+        the same object as `int` in the Python layer.
 
         References:
         - https://docs.python.org/3.10/c-api/long.html#c.PyLong_Type
@@ -2358,8 +2358,8 @@ struct CPython(Defaultable, Movable):
         return self._PyLong_Type
 
     fn PyLong_Check(self, obj: PyObjectPtr) -> c_int:
-        """Return true if its argument is a PyLongObject or a subtype of
-        PyLongObject. This function always succeeds.
+        """Return true if its argument is a `PyLongObject` or a subtype of
+        `PyLongObject`. This function always succeeds.
 
         Note: this a C macro in the Python C API.
 
@@ -2372,8 +2372,8 @@ struct CPython(Defaultable, Movable):
         )
 
     fn PyLong_CheckExact(self, obj: PyObjectPtr) -> c_int:
-        """Return true if its argument is a PyLongObject, but not a subtype of
-        PyLongObject. This function always succeeds.
+        """Return true if its argument is a `PyLongObject`, but not a subtype of
+        `PyLongObject`. This function always succeeds.
 
         Note: this a C macro in the Python C API.
 
@@ -2424,10 +2424,10 @@ struct CPython(Defaultable, Movable):
     # ===-------------------------------------------------------------------===#
 
     fn PyBool_Type(self) -> PyTypeObjectPtr:
-        """The PyBool_Type Object.
+        """The `PyBool_Type` Object.
 
-        This instance of PyTypeObject represents the Python boolean type; it
-        is the same object as bool in the Python layer.
+        This instance of `PyTypeObject` represents the Python boolean type; it
+        is the same object as `bool` in the Python layer.
 
         References:
         - https://docs.python.org/3.10/c-api/bool.html#c.PyBool_Type
@@ -2435,7 +2435,7 @@ struct CPython(Defaultable, Movable):
         return self._PyBool_Type
 
     fn PyBool_Check(self, obj: PyObjectPtr) -> c_int:
-        """Return true if o is of type PyBool_Type. This function always
+        """Return true if `obj` is of type `PyBool_Type`. This function always
         succeeds.
 
         Note: this a C macro in the Python C API.
@@ -2463,10 +2463,10 @@ struct CPython(Defaultable, Movable):
     # ===-------------------------------------------------------------------===#
 
     fn PyFloat_Type(self) -> PyTypeObjectPtr:
-        """The PyFloat_Type Object.
+        """The `PyFloat_Type` Object.
 
-        This instance of PyTypeObject represents the Python floating loint
-        type. This is the same object as float in the Python layer.
+        This instance of `PyTypeObject` represents the Python floating point
+        type. This is the same object as `float` in the Python layer.
 
         References:
         - https://docs.python.org/3.10/c-api/float.html#c.PyFloat_Type
@@ -2474,8 +2474,8 @@ struct CPython(Defaultable, Movable):
         return self._PyFloat_Type
 
     fn PyFloat_Check(self, obj: PyObjectPtr) -> c_int:
-        """Return true if its argument is a PyFloatObject or a subtype of
-        PyFloatObject. This function always succeeds.
+        """Return true if its argument is a `PyFloatObject` or a subtype of
+        `PyFloatObject`. This function always succeeds.
 
         Note: this a C macro in the Python C API.
 
@@ -2486,8 +2486,8 @@ struct CPython(Defaultable, Movable):
         return self.PyObject_TypeCheck(obj, self._PyFloat_Type)
 
     fn PyFloat_CheckExact(self, obj: PyObjectPtr) -> c_int:
-        """Return true if its argument is a PyFloatObject, but not a subtype of
-        PyFloatObject. This function always succeeds.
+        """Return true if its argument is a `PyFloatObject`, but not a subtype of
+        `PyFloatObject`. This function always succeeds.
 
         Note: this a C macro in the Python C API.
 

@@ -163,7 +163,7 @@ def _test_type_object_api(cpy: CPython):
 def _helper_instantiate_derived_class(
     base_class: String, cpy: CPython
 ) -> PyObjectPtr:
-    """Create a derived class from one of the basic types and 
+    """Create a derived class from one of the basic types and
     then instantiate it.
     """
     # Setup the environment for PyRun_String.
