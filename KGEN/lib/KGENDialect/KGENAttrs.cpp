@@ -700,7 +700,7 @@ LogicalResult TypeGeneratorRefAttr::verifySymbolUses(
 
   // Check result type. Most likely it's not parameterized.
   Type specializedType = evaluator.getReboundType(structGen.getMetaType());
-  if (getType() != specializedType) {
+  if (!isEqualCanon(getType(), specializedType)) {
     return emitError(loc) << " result type mismatch. Reference has type "
                           << getType() << ", symbol has specialized type "
                           << specializedType;
@@ -2967,9 +2967,10 @@ static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
 
   Type mlirType;
 
-  if (auto paramRef1 = sugarDynCast<ParamDeclRefAttr>(operand)) {
+  if (auto paramRef1 = sugarDynCast<ParamDeclRefAttr>(operand))
     return {};
-  } else if (auto typeConstAttr = sugarDynCast<TypeParamAttr>(operand)) {
+
+  else if (auto typeConstAttr = sugarDynCast<TypeParamAttr>(operand)) {
     mlirType = typeConstAttr.getMlirType();
   } else if (auto paramIndexRef = sugarDynCast<ParamIndexRefAttr>(operand)) {
     mlirType = paramIndexRef.getType();
