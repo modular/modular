@@ -910,10 +910,6 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
                                     func.getMLIRResultType());
     if (!resultVal)
       return {};
-
-    // Rebind away any sugar if it exists.
-    resultVal =
-        emitter.emitRebindOpIfNeeded(resultVal, func.getMLIRResultType(), loc);
   }
 
   // Finally emit the normal result value, handling things like throwing results

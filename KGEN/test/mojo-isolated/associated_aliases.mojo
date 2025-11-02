@@ -48,7 +48,7 @@ trait TraitWithDependentAlias:
 struct StructWithMatchingDependentAlias1(TraitWithDependentAlias):
     # CHECK-NEXT: lit.alias.decl *"N`": !Int = <{1}>
     alias N: Int = 1
-    # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": @{{.*}}::@S<:!Int {1}>
+    # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": @associated_aliases::@S<:!Int {1}> =
     alias depend_on_N = S[1]()
 
 
@@ -56,7 +56,7 @@ struct StructWithMatchingDependentAlias1(TraitWithDependentAlias):
 struct StructWithMatchingDependentAlias2(TraitWithDependentAlias):
     # CHECK-NEXT: lit.alias.decl *"N`": !Int = <{1}>
     alias N: Int = 1
-    # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": @{{.*}}::@S<:!Int {1}>
+    # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": @{{.*}}::@S<:!Int #kgen<sugar alias, !Int, #lit.struct.extract<:!mt_StructWithMatchingDependentAlias2 !StructWithMatchingDependentAlias2, "N">, {1}>> =
     alias depend_on_N = S[Self.N]()
 
 

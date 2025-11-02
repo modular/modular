@@ -269,12 +269,12 @@ static FnType getReducedFnType(FnType sig) {
   SmallVector<StringAttr> names(sig.getNumArguments(), StringAttr::get(ctx));
   SmallVector<SmallVector<ConstraintAttr>> constraints;
   SmallVector<VariadicKind> variadics;
-  for (size_t i = 0; i < sig.getNumArguments(); i++) {
+  for (size_t i = 0, e = sig.getNumArguments(); i != e; ++i) {
     variadics.push_back(origPogListAttr.getVariadicKind(i));
     constraints.emplace_back(pogs[i].getConstraints());
   }
 
-  // The passing kinds for results slots must be implicit;
+  // The passing kinds for results slots must be implicit.
   if (sig.hasMemoryOnlyResult())
     passingKinds.back() = PassingKind::Implicit;
   if (sig.isThrows())
@@ -636,7 +636,8 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   // mentioned parameters can depend on each other, so the list has to have them
   // in an order that keeps the dependencies valid.
   // I *think* we don't need to walk `expected` too... I could be wrong though.
-  actual.walk([&](ParamDeclRefAttr ref) { mentionedParamRefs.insert(ref); });
+  getCanonicalType(actual).walk(
+      [&](ParamDeclRefAttr ref) { mentionedParamRefs.insert(ref); });
   // This replacer will help us figure out the thunk's param types, so the thunk
   // signature has a correct:
   //     mut s: Ship[ship_func_thunk's Z]
@@ -688,11 +689,13 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
       /*fnMetadata=*/thunkMetadata,
       /*genMetadata=*/PogListAttr::get(ctx, thunkParamTypes.size()));
 
-  thunkSignature.walk([&](ParamDeclRefAttr ref) {
-    // There shouldn't be any ParamDeclRefAttr in the thunk signature, because
-    // there's no parent scope param-decls for them to refer to.
+  // There shouldn't be any ParamDeclRefAttr in the thunk signature, because
+  // there's no parent scope param-decls for them to refer to.
+#ifndef NDEBUG
+  getCanonicalType(thunkSignature).walk([&](ParamDeclRefAttr ref) {
     assert(false);
   });
+#endif
 
   // We can attempt to generate the thunk now.
   Attribute key = ArrayAttr::get(ctx, {TypeAttr::get(reparamActualForThunkKey),

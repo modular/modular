@@ -442,15 +442,15 @@ PartiallySpecializedInputParams::from(
 
   evaluator.setEvaluationContext(evaluationContext);
   evaluator.setInputDepth(1);
-  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
   IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
 
   auto remapType = [&](Type type) -> Type {
     return evaluator.getReboundType(type);
   };
 
-  for (auto [paramNo, value, type] :
+  for (auto [paramNo, valueX, type] :
        llvm::enumerate(paramBindings, paramTypes)) {
+    auto value = valueX;
     // Bound parameters are allowed to refine the type of subsequent
     // parameters, e.g. in `<ty: type, fn: () -> !kgen.param<ty>>`, the
     // expected type of the second parameter will be refined when the first
@@ -473,15 +473,21 @@ PartiallySpecializedInputParams::from(
       // We must remap the value type being provided as well, because it may
       // be referring to outer-context indexed parameters, whose depth will be
       // increased when substituted into this signature, per STCHDDDOS.
-      Type reboundType = plusOneAdjuster.replace(value.getType());
-      if (reboundType != remappedDeclType) {
+      auto valueType = value.getType();
+      remappedDeclType = minusOneAdjuster.replace(remappedDeclType);
+      if (valueType != remappedDeclType &&
+          !isEqualCanon(valueType, remappedDeclType)) {
         if (!emitErrorFn)
           return {};
         emitErrorFn() << "caller input parameter #" << paramNo << " has type "
-                      << reboundType << " but callee expected type "
+                      << valueType << " but callee expected type "
                       << remappedDeclType;
         return {};
       }
+
+      // Realign sugar if necessary.
+      if (valueType != remappedDeclType)
+        value = ParamOperatorAttr::getRebind(value, remappedDeclType);
 
       evaluator.appendIndexBinding(value);
       boundParams.set(paramNo);

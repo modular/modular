@@ -1024,9 +1024,9 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
 /// dig out the single element of the struct with the specified type.
 template <typename T>
 static T getSingleElementStructAttr(TypedAttr param) {
-  if (auto strParam = dyn_cast<LITStructAttr>(param)) {
+  if (auto strParam = sugarDynCast<LITStructAttr>(param)) {
     if (strParam.getValues().size() == 1)
-      return dyn_cast<T>(std::get<1>(strParam.getValues()[0]));
+      return sugarDynCast<T>(std::get<1>(strParam.getValues()[0]));
   }
   return {};
 }

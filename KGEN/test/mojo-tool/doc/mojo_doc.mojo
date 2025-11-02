@@ -753,7 +753,7 @@ struct HMyUnsafePointer[
         pass
 
 
-# CHECK:  "signature": "struct HMyUnsafePointer[T: AnyType, address_space: AddressSpace = AddressSpace(0)]",
+# CHECK:  "signature": "struct HMyUnsafePointer[T: AnyType, address_space: AddressSpace = AddressSpace.GENERIC]",
 
 
 struct HList[T: ImplicitlyCopyable & Movable]:
