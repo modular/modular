@@ -9,7 +9,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//SDK/lib/API/python/max/_core_mojo",
+        "//max/python/max/_core_mojo",
         requirement("numpy"),
         requirement("pytest-benchmark"),
     ],

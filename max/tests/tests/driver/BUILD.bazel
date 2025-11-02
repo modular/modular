@@ -8,8 +8,8 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/graph",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
@@ -28,8 +28,8 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/graph",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -44,8 +44,8 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/graph",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         requirement("numpy"),
         requirement("torch"),
     ],

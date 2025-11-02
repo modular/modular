@@ -9,6 +9,6 @@ modular_py_test(
         "MODULAR_ENABLE_PROFILING": "1",
     },
     deps = [
-        "//SDK/lib/API/python/max/profiler",
+        "//max/python/max/profiler",
     ],
 )

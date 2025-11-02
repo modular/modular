@@ -11,7 +11,7 @@ from max.serve.router.openai_routes import openai_parse_chat_completion_request
 """
 It is unclear why the type ignore for CreateChatCompletionRequest is necessary.
 bazel+mypy complain about this import not being available even though it is part of the serving package.
-Explicitly importing //SDK/lib/API/python/max/serve/schemas in the test's BUILD file hasn't worked either.
+Explicitly importing //max/python/max/serve/schemas in the test's BUILD file hasn't worked either.
 """
 from max.serve.schemas.openai import CreateChatCompletionRequest
 from pydantic import AnyUrl

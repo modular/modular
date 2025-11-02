@@ -5,7 +5,7 @@ modular_py_test(
     size = "small",
     srcs = glob(["**/*.py"]),
     deps = [
-        "//SDK/lib/API/python/max/serve/recordreplay",
+        "//max/python/max/serve/recordreplay",
         requirement("fastapi"),
         requirement("httpx"),
         requirement("msgspec"),

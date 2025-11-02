@@ -55,10 +55,11 @@ modular_py_test(
 modular_py_library(
     name = "common",
     srcs = ["common.py"],
+    imports = ["../../.."],
     deps = [
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/serve",
-        "//SDK/lib/API/python/max/serve/scheduler",
+        "//max/python/max/nn",
+        "//max/python/max/serve",
+        "//max/python/max/serve/scheduler",
         requirement("numpy"),
         requirement("pytest-mock"),
         requirement("pytest-asyncio"),

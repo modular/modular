@@ -8,6 +8,6 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//SDK/lib/API/python/max",
+        "//max/python/max",
     ],
 )

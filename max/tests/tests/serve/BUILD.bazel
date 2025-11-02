@@ -9,24 +9,25 @@ modular_py_test(
         ],
     ),
     data = [
-        "//SDK/lib/API/python/tests/serve/testdata",
+        "//max/tests/tests/serve/testdata",
     ],
     env = {
         "MAX_SERVE_DISABLE_TELEMETRY": "True",
-        "MAX_SERVE_TESTDATA": "SDK/lib/API/python/tests/serve/testdata",
+        "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
     },
+    imports = ["../.."],
     target_compatible_with = select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/serve",
-        "//SDK/lib/API/python/max/serve/pipelines",
-        "//SDK/lib/API/python/max/serve/router",
-        "//SDK/lib/API/python/max/serve/scheduler",
-        "//SDK/lib/API/python/max/serve/schemas",
-        "//SDK/lib/API/python/max/serve/telemetry",
+        "//max/python/max/nn",
+        "//max/python/max/serve",
+        "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/router",
+        "//max/python/max/serve/scheduler",
+        "//max/python/max/serve/schemas",
+        "//max/python/max/serve/telemetry",
         requirement("async-asgi-testclient"),
         requirement("fastapi"),
         requirement("gguf"),
@@ -53,9 +54,9 @@ modular_py_test(
     data = [],
     env = {
         "MAX_SERVE_DISABLE_TELEMETRY": "True",
-        "MAX_SERVE_TESTDATA": "SDK/lib/API/python/tests/serve/testdata",
+        "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
     },
     deps = [
-        "//SDK/lib/API/python/max/serve/parser",
+        "//max/python/max/serve/parser",
     ],
 )

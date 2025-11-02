@@ -173,7 +173,7 @@ async def test_model_worker_start_timeout(
     assert str(ex) == "Model Worker failed to become ready"
 
 
-class MockTokenizer(PipelineTokenizer):
+class MockTokenizer(PipelineTokenizer):  # type: ignore
     @property
     def eos(self) -> int:
         return 0

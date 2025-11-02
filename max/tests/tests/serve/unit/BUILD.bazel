@@ -4,7 +4,7 @@ modular_py_test(
     name = "tests",
     srcs = glob(["*.py"]),
     deps = [
-        "//SDK/lib/API/python/max/serve",
+        "//max/python/max/serve",
         requirement("pytest-asyncio"),
     ],
 )

@@ -3,9 +3,9 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 modular_py_test(
     name = "tests",
     srcs = glob(["**/*.py"]),
-    data = ["//SDK/lib/API/python/tests/torch/custom_ops"],
+    data = ["//max/tests/tests/torch/custom_ops"],
     env = {
-        "MODULAR_PYTORCH_CUSTOM_OPS": "$(rootpath //SDK/lib/API/python/tests/torch/custom_ops)",
+        "MODULAR_PYTORCH_CUSTOM_OPS": "$(rootpath //max/tests/tests/torch/custom_ops)",
         "MODULAR_TORCH_MEMORY_PERCENT": "0.9",
     },
     imports = ["pytests"],
@@ -21,10 +21,10 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//SDK/lib/API/python/max/dtype",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/graph",
-        "//SDK/lib/API/python/max/torch",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/torch",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),

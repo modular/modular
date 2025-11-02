@@ -5,6 +5,6 @@ modular_py_test(
     size = "small",
     srcs = glob(["*.py"]),
     deps = [
-        "//SDK/lib/API/python/max",
+        "//max/python/max",
     ],
 )

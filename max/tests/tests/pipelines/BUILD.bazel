@@ -9,7 +9,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//SDK/lib/API/python/max",
+        "//max/python/max",
         requirement("numpy"),
         # TODO(GEX-2238): replace data field in WeightData with driver tensor.
         requirement("torch"),

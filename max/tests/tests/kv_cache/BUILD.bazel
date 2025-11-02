@@ -5,11 +5,11 @@ modular_py_test(
     srcs = glob(["*.py"]),
     imports = ["pytests"],
     deps = [
-        "//SDK/lib/API/python/max/dtype",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/graph",
-        "//SDK/lib/API/python/max/kv_cache",
-        "//SDK/lib/API/python/max/nn",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
         requirement("numpy"),
     ],
 )
