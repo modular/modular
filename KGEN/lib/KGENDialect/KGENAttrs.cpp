@@ -3599,46 +3599,6 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     if (auto can = getLocalCanonical(value))
       return can;
 
-    // Param/Symbol references are handled specially because the decl being
-    // referenced may have a sugared type must always be referred to that
-    // sugared type (they must match up).  Handle this by using a rebind to the
-    // canonical type.
-    if constexpr (std::is_base_of_v<Attribute, T>) {
-      // We can't change the type of a decl reference, because it will cause the
-      // verifier to complain.  Instead, form a canonical form by using the
-      // existing reference and immediately rebinding the sugar away.
-      if (isa<ParamDeclRefAttr, ParamIndexRefAttr, SymbolConstantAttr>(value)) {
-        auto ref = cast<TypedAttr>(value);
-        auto newType = this->replaceImpl(ref.getType(), depth);
-        if (newType == ref.getType())
-          return ref;
-        return ParamOperatorAttr::getRebind(ref, newType);
-      }
-
-      // The values specified for BindParamsAttr must align with the declared
-      // types of the parameters, even if those types are non-canonical.
-      if (auto bind = dyn_cast<BindParamsAttr>(value)) {
-        auto canGenerator =
-            cast<TypedAttr>(this->replaceImpl(bind.getGenerator(), depth));
-        bool changed = canGenerator != bind.getGenerator();
-        SmallVector<TypedAttr> canBindings;
-        for (auto param : bind.getParamValues()) {
-          auto canParam = cast<TypedAttr>(this->replaceImpl(param, depth));
-          // The parameter values must line up with the declared types of the
-          // generator, but need to be canonicalized within themselves.
-          canParam = ParamOperatorAttr::getRebind(canParam, param.getType());
-          canBindings.push_back(canParam);
-          changed |= canParam != param;
-        }
-        auto canType = this->replaceImpl(bind.getType(), depth);
-        changed |= canType != bind.getType();
-        if (!changed)
-          return bind;
-        return BindParamsAttr::get(canGenerator.getContext(), canGenerator,
-                                   canBindings, canType);
-      }
-    }
-
     // Otherwise, recursively walk and rebuild the attribute with
     // canonicalized subelements.
     SmallVector<Attribute, 16> newAttrs;
@@ -3667,6 +3627,13 @@ TypedAttr KGEN::getCanonicalAttr(TypedAttr src) {
   // If this is locally and obviously canonical, then just return it.
   if (auto local = getLocalCanonical(src))
     return cast<TypedAttr>(local);
+  return Canonicalizer().replace(src);
+}
+
+Attribute KGEN::getCanonicalAttr(Attribute src) {
+  // If this is locally and obviously canonical, then just return it.
+  if (auto local = getLocalCanonical(src))
+    return local;
   return Canonicalizer().replace(src);
 }
 
