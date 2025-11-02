@@ -16,9 +16,9 @@ modular_py_library(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/driver",
-        "//SDK/lib/API/python/max/graph",
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+        "//max/tests/integration/pipelines/python/test_common",
         requirement("hypothesis"),
         requirement("torch"),
         requirement("numpy"),
@@ -33,36 +33,36 @@ modular_py_test(
         exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + ["modular_graph_test.py"],
     ),
     data = [
-        "//SDK/integration-test:compile_config_ops",
-        "//SDK/integration-test:counter_ops",
-        "//SDK/integration-test:kernel_verification_ops",
-        "//SDK/integration-test:test_user_op",
-        "//SDK/integration-test/API:inputs",
-        "//SDK/integration-test/API:pytest_inputs",
-        "//SDK/lib/API/python/tests/graph/testdata",
+        "//max/tests/integration:compile_config_ops",
+        "//max/tests/integration:counter_ops",
+        "//max/tests/integration:kernel_verification_ops",
+        "//max/tests/integration:test_user_op",
+        "//max/tests/integration/API:inputs",
+        "//max/tests/integration/API:pytest_inputs",
+        "//max/tests/tests/graph/testdata",
     ],
     env = {
-        "MODULAR_COUNTER_OPS_PATH": "$(rootpath //SDK/integration-test:counter_ops)",
-        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //SDK/integration-test:kernel_verification_ops)",
-        "MODULAR_COMPILE_CONFIG_OPS_PATH": "$(rootpath //SDK/integration-test:compile_config_ops)",
-        "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
+        "MODULAR_COUNTER_OPS_PATH": "$(rootpath //max/tests/integration:counter_ops)",
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration:kernel_verification_ops)",
+        "MODULAR_COMPILE_CONFIG_OPS_PATH": "$(rootpath //max/tests/integration:compile_config_ops)",
+        "CUSTOM_OPS_PATH": "$(rootpath //max/tests/integration:test_user_op)",
         "MODULAR_PATH": ".",
-        "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
+        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
     },
     gpu_constraints = [
         "//:nvidia_gpu",
         "//:amd_gpu",
     ],  # FIXME: Enable Apple GPU MOCO-2411
     mojo_deps = [
-        "//SDK/integration-test:compile_config_ops",
-        "//SDK/integration-test:test_user_op",
+        "//max/tests/integration:compile_config_ops",
+        "//max/tests/integration:test_user_op",
     ],
     tags = [
         "gpu",
     ],
     deps = [
         ":modular_graph_test",
-        "//SDK/lib/API/python/max",
+        "//max/python/max",
         requirement("torch"),
         requirement("torchvision"),
         requirement("hypothesis"),
@@ -80,7 +80,7 @@ modular_py_test(
     tags = ["gpu"],
     deps = [
         ":modular_graph_test",
-        "//SDK/lib/API/python/max",
+        "//max/python/max",
     ],
 )
 
@@ -95,6 +95,6 @@ modular_py_test(
     target_compatible_with = ["//:amd_gpu"],
     deps = [
         ":modular_graph_test",
-        "//SDK/lib/API/python/max",
+        "//max/python/max",
     ],
 )

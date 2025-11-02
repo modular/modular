@@ -16,7 +16,7 @@ These tests require actual kernel verification and use real test kernels from
 kernel_verification_ops. They test scenarios that require kernel execution
 validation beyond API structure validation.
 
-Complements the unit tests in SDK/lib/API/python/tests/graph/ops/test_custom.py
+Complements the unit tests in max/tests/tests/graph/ops/test_custom.py
 which focus on API validation only.
 """
 

@@ -6,14 +6,14 @@ modular_nanobind_extension(
     module_name = "_core",
     new_link_root = "../modular/lib",
     deps = [
-        "//SDK/lib/API/python/max/_core/internal/src:modules",
+        "//max/python/max/_core/internal/src:modules",
         "@llvm-project//llvm:Support",
     ],
 )
 
 modular_generate_stubfiles(
     name = "_core",
-    additional_update_targets = ["//SDK/lib/API/python/max/_mlir/_mlir_libs:_mlir.sync-stubfiles"],
+    additional_update_targets = ["//max/python/max/_mlir/_mlir_libs:_mlir.sync-stubfiles"],
     diff_test_failure_message = """
 A stubfile is out of sync with its generated counterpart.
 If you modified just a .pyi file, you need to modify the corresponding .cpp file instead.
@@ -43,8 +43,8 @@ When you modify a .cpp file in the _core/src directory, you can run
     pattern_file = ":_core/internal/patterns.nb",
     pyi_srcs = glob(["**/*.pyi"]),
     deps = [
-        "//SDK/lib/API/python/max/_core_types",
-        "//SDK/lib/API/python/max/mlir",
+        "//max/python/max/_core_types",
+        "//max/python/max/mlir",
         requirement("numpy"),
     ],
 )
@@ -55,24 +55,24 @@ modular_py_library(
     imports = [".."],
     deps = [
         ":_core",
-        "//SDK/lib/API/python/max/_core_mojo",
-        "//SDK/lib/API/python/max/driver",
-        "//SDK/lib/API/python/max/dtype",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/entrypoints",
-        "//SDK/lib/API/python/max/entrypoints:gpu-query",
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
-        "//SDK/lib/API/python/max/entrypoints:replay_recording",
-        "//SDK/lib/API/python/max/experimental",
-        "//SDK/lib/API/python/max/graph",
-        "//SDK/lib/API/python/max/interfaces",
-        "//SDK/lib/API/python/max/mlir",
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/profiler",
-        "//SDK/lib/API/python/max/serve",
-        "//SDK/lib/API/python/max/support",
-        "//SDK/lib/API/python/max/torch",
+        "//max/python/max/_core_mojo",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/entrypoints",
+        "//max/python/max/entrypoints:gpu-query",
+        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/entrypoints:replay_recording",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/mlir",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/profiler",
+        "//max/python/max/serve",
+        "//max/python/max/support",
+        "//max/python/max/torch",
     ],
 )

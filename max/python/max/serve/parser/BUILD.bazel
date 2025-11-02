@@ -5,8 +5,8 @@ modular_py_library(
     srcs = glob(["*.py"]),
     imports = ["../../.."],
     deps = [
-        "//SDK/lib/API/python/max/serve/schemas",
-        "//SDK/lib/API/python/max/support",
+        "//max/python/max/serve/schemas",
+        "//max/python/max/support",
         requirement("regex"),
     ],
 )

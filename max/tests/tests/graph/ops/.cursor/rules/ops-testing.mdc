@@ -8,7 +8,7 @@ alwaysApply: false
 ## Core Testing Principles
 
 1. **Test Location & Scope:**
-   - All op tests must be placed in `SDK/lib/API/python/tests/graph/ops/`
+   - All op tests must be placed in `max/tests/tests/graph/ops/`
    - Tests should only build graphs, not execute them
    - Graph execution tests belong in `SDK/integration-test/python/graph/`
 

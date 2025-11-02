@@ -5,7 +5,7 @@ modular_py_library(
     srcs = glob(["**/*.py"]),
     imports = ["../../.."],
     deps = [
-        "//SDK/lib/API/python/max/interfaces",
+        "//max/python/max/interfaces",
         requirement("numpy"),
         requirement("msgspec"),
         requirement("llguidance"),

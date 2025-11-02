@@ -23,9 +23,9 @@ def custom_op_example_py_binary(
             "@mojo//:tensor",
         ],
         deps = [
-            "//SDK/lib/API/python/max/driver",
-            "//SDK/lib/API/python/max/engine",
-            "//SDK/lib/API/python/max/graph",
+            "//max/python/max/driver",
+            "//max/python/max/engine",
+            "//max/python/max/graph",
             "//open-source/max/mojo/python/mojo",
             requirement("numpy"),
         ] + extra_deps,

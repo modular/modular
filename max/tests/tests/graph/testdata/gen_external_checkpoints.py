@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Generates external checkpoints for testing weight loading.
 
-br //SDK/lib/API/python/tests/graph/testdata:gen_external_checkpoints -- $(pwd)/SDK/lib/API/python/tests/graph/testdata/
+br //max/tests/tests/graph/testdata:gen_external_checkpoints -- $(pwd)/max/tests/tests/graph/testdata/
 """
 
 from pathlib import Path
@@ -36,7 +36,7 @@ def test_data():  # noqa: ANN201
 def write_gguf(filename: Path) -> None:
     gguf_writer = GGUFWriter(str(filename), "example")
 
-    data: dict[str, np.ndarray] = {
+    data: dict[str, np.ndarray] = {  # type: ignore
         "a": np.arange(10, dtype=np.int32).reshape(5, 2),
         "b": np.full((1, 2, 3), 3.5, dtype=np.float64),
         "c": np.array(5432.1, dtype=np.float32),

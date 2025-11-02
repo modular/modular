@@ -557,7 +557,7 @@ def load_model_config(
 ) -> tuple[PipelinesFactory, PipelineConfig, TextTokenizer]:  # type: ignore[type-arg]  # TODO
     config_kwargs: dict[str, Any] = {}
 
-    # Match what we already do in SDK/lib/API/python/max/entrypoints/cli/config.py
+    # Match what we already do in max/python/max/entrypoints/cli/config.py
     if not devices:
         devices = "cpu"
     elif isinstance(devices, str) and devices.startswith("gpu:"):

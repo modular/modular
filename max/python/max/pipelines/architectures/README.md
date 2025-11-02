@@ -22,7 +22,7 @@ Clone the repository and navigate to this directory:
 
 ```bash
 git clone https://github.com/modular/modular.git
-cd modular/SDK/lib/API/python/max/pipelines/architectures
+cd modular/max/python/max/pipelines/architectures
 ```
 
 ### 2. Create your architecture directory

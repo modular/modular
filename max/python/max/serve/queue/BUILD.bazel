@@ -5,8 +5,8 @@ modular_py_library(
     srcs = glob(["*.py"]),
     imports = ["../../.."],
     deps = [
-        "//SDK/lib/API/python/max/interfaces",
-        "//SDK/lib/API/python/max/profiler",
+        "//max/python/max/interfaces",
+        "//max/python/max/profiler",
         requirement("psutil"),
         requirement("pyzmq"),
     ],

@@ -9,7 +9,7 @@ modular_py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/lib/API/python/max/nn",
+        "//max/python/max/nn",
     ],
 )
 
@@ -20,8 +20,8 @@ modular_py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":base_print_hook",
-        "//SDK/lib/API/python/max/dtype",
-        "//SDK/lib/API/python/max/graph",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
     ],
 )
 

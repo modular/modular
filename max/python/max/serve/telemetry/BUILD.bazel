@@ -5,8 +5,8 @@ modular_py_library(
     srcs = glob(["*.py"]),
     imports = ["../../.."],
     deps = [
-        "//SDK/lib/API/python/max/serve:config",
-        "//SDK/lib/API/python/max/serve:process_control",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve:process_control",
         requirement("opentelemetry-sdk"),
         requirement("opentelemetry-exporter-otlp-proto-http"),
         requirement("opentelemetry-exporter-prometheus"),

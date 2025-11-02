@@ -1,5 +1,5 @@
 // IMPORTANT: File synchronization notice
-// Source of truth: SDK/lib/API/python/max/serve/kvcache_agent/kvcache_agent_service_v1.proto (monorepo)
+// Source of truth: max/python/max/serve/kvcache_agent/kvcache_agent_service_v1.proto (monorepo)
 // Client copy: api/v1/kvcache_agent_service_v1.proto (MAX Cluster repo)
 //
 // When making changes, please update both locations to maintain consistency.

@@ -10,12 +10,12 @@ modular_py_library(
     name = "_mlir",
     srcs = [
         ":ir_py",
-        "//SDK/lib/API/python/max/_mlir/dialects",
+        "//max/python/max/_mlir/dialects",
     ],
     imports = ["../.."],
     tags = ["no-mypy"],  # Upstream files with violations
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/lib/API/python/max/_mlir/_mlir_libs:_mlir",
+        "//max/python/max/_mlir/_mlir_libs:_mlir",
     ],
 )

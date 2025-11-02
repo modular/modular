@@ -22,9 +22,9 @@ def custom_op_example_py_binary(
             "@mojo//:tensor",
         ],
         deps = [
-            "//SDK/lib/API/python/max/driver",
-            "//SDK/lib/API/python/max/engine",
-            "//SDK/lib/API/python/max/graph",
+            "//max/python/max/driver",
+            "//max/python/max/engine",
+            "//max/python/max/graph",
             requirement("numpy"),
         ] + extra_deps,
         visibility = ["//visibility:private"],

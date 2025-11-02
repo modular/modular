@@ -13,8 +13,8 @@ modular_py_library(
     tags = [ALLOW_UNUSED_TAG],
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/lib/API/python/max/pipelines/lib",
-        "//SDK/lib/API/python/max/serve",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/serve",
         requirement("datasets"),
         requirement("huggingface-hub"),
         requirement("msgspec"),
