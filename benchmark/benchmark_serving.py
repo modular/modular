@@ -18,11 +18,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import math
 import os
 import random
+import re
 import resource
 import statistics
 import sys
@@ -260,6 +262,34 @@ def print_section(title: str, char: str = "-") -> None:
     print("{s:{c}^{n}}".format(s=title, n=50, c=char))
 
 
+def hash_string(s: str) -> str:
+    """Hash a string using SHA-256. This is stable and deterministic across runs.
+
+    hexdigest is a 64-character string of hexadecimal digits. We only return the
+    first 8 characters to keep the output concise.
+    """
+    return hashlib.sha256(s.encode()).hexdigest()[:8]
+
+
+def elide_data_uris_in_string(data_uri: str) -> str:
+    """Elides the base64 data URIs parts of the string.
+
+    Eg: elide_data_uris_in_string("'image': 'data:image/jpeg;base64,/9j/4AAQSASDEEAE'")
+                               -> "'image': 'data:image/jpeg;base64,...(hash: 783e7013, 16 bytes)...'"
+    """
+
+    def _match_replacer(m: re.Match[str]) -> str:
+        uri_prefix = m.group(1)
+        uri_data = m.group(2)
+        return f"{uri_prefix}...(hash: {hash_string(uri_data)}, {len(uri_data)} bytes)..."
+
+    return re.sub(
+        r"(data:[a-z/]+;base64,)([A-Za-z0-9+/=]+)",
+        _match_replacer,
+        data_uri,
+    )
+
+
 def print_input_prompts(
     input_requests: Sequence[SampledRequest],
     num_chat_sessions: int | None,
@@ -272,15 +302,18 @@ def print_input_prompts(
 
     print("Input prompts:")
     for req_id, request in enumerate(input_requests):
-        print(
-            {
-                "req_id": req_id,
-                "output_len": request.output_len,
-                "prompt_len": request.prompt_len,
-                "prompt": request.prompt_formatted,
-                "encoded_images": request.encoded_images,
-            }
-        )
+        prompt_info = {
+            "req_id": req_id,
+            "output_len": request.output_len,
+            "prompt_len": request.prompt_len,
+            "prompt": request.prompt_formatted,
+            "encoded_images": request.encoded_images,
+        }
+        # We turn the entire prompt_info dict into a string and then elide the
+        # data URIs. The alternative approach of only applying the transformation
+        # to a stringified version of the `request.prompt_formatted` field will
+        # lead to double-escaping of special characters which is not desirable.
+        print(elide_data_uris_in_string(str(prompt_info)))
 
 
 def calculate_metrics(
