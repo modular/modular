@@ -141,3 +141,110 @@ OpFoldResult POP::foldCastFromBuiltin(TypedAttr val, SIMDType resultType) {
   assert(dtype->isFloat() && "unexpected dtype");
   return SIMDAttr::get({cast<FloatAttr>(val).getValue(), *dtype}, resultType);
 }
+
+/// Fold a cast between two SIMD types.
+OpFoldResult POP::foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
+                           SIMDType inputType, SIMDType outputType) {
+  auto in = dyn_cast_if_present<SIMDAttr>(operands.front());
+  std::optional<KGENDType> dtype = resultType.getResolvedDType();
+
+  if (!in || !dtype) {
+    if (inputType == outputType)
+      return operands.front();
+    return {};
+  }
+
+  std::optional<KGENDType> inType = in.getType().getResolvedDType();
+
+  // Exit early if the input and output dtypes are the same.
+  if (*dtype == *inType)
+    return in;
+
+  if (dtype->isFloat()) {
+    // Cannot fold cast to unsupported float dtype.
+    const llvm::fltSemantics *sem = dtype->getFloatSemantics();
+    if (!sem)
+      return {};
+    return foldSIMDOpResult<kOtherResult>(
+        operands, *dtype,
+        [&](const APSInt &in) -> APFloat {
+          APFloat fp(*sem);
+          fp.convertFromAPInt(in, in.isSigned(), APFloat::rmNearestTiesToEven);
+          return fp;
+        },
+        [&](APFloat in) {
+          bool ignored;
+          in.convert(*sem, APFloat::rmNearestTiesToEven, &ignored);
+          return in;
+        },
+        [&](bool in) { return APFloat(*sem, in); });
+  }
+
+  if (dtype->isInt()) {
+    // Note that float to integer casts are undefined if the float value is
+    // too large to fit in the integer dtype.
+    unsigned width = dtype->getIntegerWidthInBits();
+    return foldSIMDOpResult<kOtherResult>(
+        operands, *dtype,
+        [&](const APSInt &in) -> APSInt { return in.extOrTrunc(width); },
+        [&](const APFloat &in) -> std::optional<APSInt> {
+          APSInt iv(width, /*isUnsigned=*/dtype->isUInt());
+          bool ignored;
+          if (in.convertToInteger(iv, APFloat::rmTowardZero, &ignored) ==
+              APFloat::opInvalidOp)
+            return {};
+          return iv;
+        },
+        [&](bool in) { return APSInt(APInt(width, in), dtype->isUInt()); });
+  }
+
+  if (dtype->isIndex() || dtype->isUIndex() || dtype->isAddress()) {
+    // The folding infra ensures that platform-dependent types are only folded
+    // if the folding result is the same on 32 and 64 bit platforms. This is the
+    // right thing to do for most operations, but casting can be safely allowed
+    // between platform-dependent types.
+    if (inType->isIndex() || inType->isUIndex() || inType->isAddress()) {
+      return Detail::foldSIMDOpImpl(
+          std::make_index_sequence<1>(), operands,
+          [inType](const APSInt &in) -> int64_t {
+            return inType->isSInt() ? in.getSExtValue() : in.getZExtValue();
+          },
+          *dtype,
+          [](DTypeValue val) {
+            return APSInt(APInt(64, val.getIndexVal()),
+                          /*isUnsigned=*/!val.getDType().isIndex());
+          });
+    }
+
+    // Cast to index like it's a 64-bit integer. Address is handled like index.
+    return foldSIMDOpResult<kOtherResult>(
+        operands, *dtype,
+        [inType](const APSInt &in) -> int64_t {
+          if (in.getSignificantBits() > 64) {
+            auto truncated = in.trunc(64);
+            return inType->isSInt() ? truncated.getSExtValue()
+                                    : truncated.getZExtValue();
+          }
+          return inType->isSInt() ? in.getSExtValue() : in.getZExtValue();
+        },
+        [](const APFloat &in) -> std::optional<int64_t> {
+          APSInt iv(64, /*isUnsigned=*/false);
+          bool ignored;
+          if (in.convertToInteger(iv, APFloat::rmTowardZero, &ignored) ==
+              APFloat::opInvalidOp)
+            return {};
+          return iv.getSExtValue();
+        },
+        [](bool in) { return static_cast<int64_t>(in); });
+  }
+
+  if (dtype->isInvalid()) {
+    // Invalid is not inhabitable.
+    return {};
+  }
+
+  assert(dtype->isBool());
+  return foldSIMDOpResult<kOtherResult>(
+      operands, *dtype, [](const APSInt &in) -> bool { return !in.isZero(); },
+      [](const APFloat &in) -> bool { return !in.isZero(); });
+}

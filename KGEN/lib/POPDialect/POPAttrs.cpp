@@ -1655,6 +1655,39 @@ bool StringConcatAttr::isConstant() const { return false; }
 Type StringConcatAttr::getType() const { return StringType::get(getContext()); }
 
 //===----------------------------------------------------------------------===//
+// CastAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr CastAttr::get(MLIRContext *ctx, TypedAttr arg, Type out_type) {
+  // Fold if possible
+  if (auto fold = POP::foldCast({arg}, cast<SIMDType>(out_type),
+                                cast<SIMDType>(arg.getType()),
+                                cast<SIMDType>(out_type))) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, arg, out_type);
+}
+
+TypedAttr CastAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                               MLIRContext *context, TypedAttr value,
+                               Type out_type) {
+  if (failed(verify(emitError, value, out_type)))
+    return {};
+  return CastAttr::get(context, value, out_type);
+}
+
+bool CastAttr::isConstant() const { return false; }
+
+LogicalResult CastAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                               TypedAttr value, Type out_type) {
+  if (!isa<SIMDType>(value.getType()) || !isa<SIMDType>(out_type))
+    return emitError()
+           << "Invalid cast operands: input and output must be SIMD types";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // DTypeToUI8Attr
 //===----------------------------------------------------------------------===//
 

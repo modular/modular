@@ -44,7 +44,7 @@ alias POP_UI8_139 = __mlir_attr.`#pop.simd<139> : !pop.scalar<ui8>`
 
 # 77 = DType.f8e5m2
 alias MLIR_UI8_77 = __mlir_attr.`77 : ui8`
-alias POP_UI8_68 = __mlir_attr.`#pop.simd<68> : !pop.scalar<ui8>`
+alias POP_UI8_77 = __mlir_attr.`#pop.simd<77> : !pop.scalar<ui8>`
 
 
 @always_inline("builtin")
@@ -132,3 +132,34 @@ fn fold_pop_dtype_from_ui8() -> DTypeT[DType.int32]:
     var a = DTypeT[pop_dtype_from_ui8(MLIR_UI8_139)]()
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<@builtin_function_folder_pop_ops::@DTypeT<:!DType {:dtype f8e5m2}>, mut *"b`2">
     var b = DTypeT[pop_dtype_from_ui8(MLIR_UI8_77)]()
+
+
+##===----------------------------------------------------------------------===##
+# Fold pop.cast
+##===----------------------------------------------------------------------===##
+
+
+@always_inline("builtin")
+fn pop_cast(
+    x: __mlir_type.`!pop.scalar<si8>`,
+) -> __mlir_type.`!pop.scalar<ui8>`:
+    return __mlir_op.`pop.cast`[_type = __mlir_type.`!pop.scalar<ui8>`](x)
+
+
+struct POPUInt8T[x: __mlir_type.`!pop.scalar<ui8>`](ImplicitlyCopyable):
+    fn __init__(out self):
+        pass
+
+    fn __copyinit__(out self, existing: Self):
+        pass
+
+
+alias POP_SI8_N1 = __mlir_attr.`#pop.simd<-1> : !pop.scalar<si8>`
+alias POP_UI8_N1 = __mlir_attr.`#pop.simd<255> : !pop.scalar<ui8>`
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_cast
+fn fold_pop_cast() -> POPUInt8T[POP_UI8_N1]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@POPUInt8T<:scalar<ui8> #kgen<sugar aibuiltin, !pop.scalar<ui8>, apply(:!lit.generator<("x": !pop.scalar<si8>) -> !pop.scalar<ui8>> @builtin_function_folder_pop_ops::@"pop_cast(__mlir_type.!pop.scalar<si8>)", -1), 255>>, mut *"a`1">
+    var a = POPUInt8T[pop_cast(POP_SI8_N1)]()
+    return a
