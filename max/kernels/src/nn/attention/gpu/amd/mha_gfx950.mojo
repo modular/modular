@@ -130,7 +130,7 @@ struct KVCacheIterator[
         out result: LayoutTensor[
             cache_t.dtype,
             Self.kv_gmem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             masked=True,
         ],
     ):
@@ -246,7 +246,7 @@ fn load_b[
     out res: LayoutTensor[
         src.dtype,
         Layout.row_major(src.layout.size() // (WARP_SIZE * 8), 8),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ],
 ):
@@ -324,7 +324,7 @@ struct KVBuffer[
     alias MMATileType = LayoutTensor[
         kv_t.dtype,
         Layout.row_major(Self.num_mmas * Self.num_k_mmas2, Self.simd_width),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ]
     var mma_tile: Self.MMATileType
@@ -335,7 +335,7 @@ struct KVBuffer[
     alias SharedIterType = LayoutTensorIter[
         kv_t.dtype,
         Self.smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]

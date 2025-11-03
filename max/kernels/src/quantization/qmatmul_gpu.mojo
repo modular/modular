@@ -268,7 +268,7 @@ fn multistage_mma_q[
         LayoutTensor[
             a_type,
             a_reg_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -279,7 +279,7 @@ fn multistage_mma_q[
         LayoutTensor[
             a_type,
             b_reg_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -291,7 +291,7 @@ fn multistage_mma_q[
         LayoutTensor[
             scales_type,
             Layout.row_major(num_n_mmas, 1),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -485,9 +485,9 @@ fn multistage_qgemm_kernel[
     config: MatmulConfig[a_type, b_packed_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b_packed: LayoutTensor[b_packed_type, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b_packed: LayoutTensor[b_packed_type, b_layout, MutAnyOrigin],
 ):
     constrained[
         is_nvidia_gpu(),
@@ -640,7 +640,7 @@ fn multistage_qgemm_kernel[
         LayoutTensor[
             accum_type,
             c_reg_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -760,7 +760,7 @@ fn multistage_qgemm_kernel[
         var accum_smem_warp_tile = LayoutTensor[
             c_type,
             Layout.row_major(WM, WN),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ](a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * UInt(WM) * UInt(WN)))
 
@@ -846,7 +846,7 @@ fn multistage_qgemm_kernel[
             var c_reg_tile_out = LayoutTensor[
                 c_type,
                 c_reg_tile.layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 address_space = AddressSpace.LOCAL,
             ].stack_allocation()
 
@@ -961,8 +961,8 @@ fn repack_Q4_0_for_sm8x[
     repack_layout: Layout,
     scales_type: DType,
 ](
-    q_weight: LayoutTensor[DType.uint8, q_layout, MutableAnyOrigin],
-    q_packed_weight: LayoutTensor[DType.uint8, repack_layout, MutableAnyOrigin],
+    q_weight: LayoutTensor[DType.uint8, q_layout, MutAnyOrigin],
+    q_packed_weight: LayoutTensor[DType.uint8, repack_layout, MutAnyOrigin],
 ):
     alias group_size = 32
     alias group_bytes = size_of[DType.float16]() + (group_size // 2)
@@ -1151,9 +1151,9 @@ fn repack_GPTQ_for_sm8x[
     *,
     perm_layout: Layout = Layout(),
 ](
-    in_tensor: LayoutTensor[DType.uint8, in_layout, MutableAnyOrigin],
-    out_tensor: LayoutTensor[DType.uint8, out_layout, MutableAnyOrigin],
-    perm_idx: LayoutTensor[DType.int32, perm_layout, MutableAnyOrigin],
+    in_tensor: LayoutTensor[DType.uint8, in_layout, MutAnyOrigin],
+    out_tensor: LayoutTensor[DType.uint8, out_layout, MutAnyOrigin],
+    perm_idx: LayoutTensor[DType.int32, perm_layout, MutAnyOrigin],
 ):
     alias raw_scales_type = DType.float16
     alias weights_bytes_per_group = group_size // 2
@@ -2058,9 +2058,7 @@ fn gpu_qint4_repack_GPTQ[
     b: LayoutTensor[DType.uint8, **_],
     b_packed: LayoutTensor[DType.uint8, **_],
     perm_idx: OptionalReg[
-        LayoutTensor[
-            DType.int32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
-        ]
+        LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:

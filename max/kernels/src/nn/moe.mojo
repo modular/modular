@@ -50,27 +50,27 @@ fn moe_create_indices_kernel[
     topk_ids_layout: Layout,
 ](
     token_expert_order: LayoutTensor[
-        mut=True, DType.uint32, token_expert_order_layout, MutableAnyOrigin
+        mut=True, DType.uint32, token_expert_order_layout, MutAnyOrigin
     ],
     expert_start_indices: LayoutTensor[
-        mut=True, DType.uint32, expert_start_indices_layout, MutableAnyOrigin
+        mut=True, DType.uint32, expert_start_indices_layout, MutAnyOrigin
     ],
     restore_token_order: LayoutTensor[
-        mut=True, DType.uint32, restore_token_order_layout, MutableAnyOrigin
+        mut=True, DType.uint32, restore_token_order_layout, MutAnyOrigin
     ],
     expert_ids: LayoutTensor[
-        mut=True, DType.int32, expert_ids_layout, MutableAnyOrigin
+        mut=True, DType.int32, expert_ids_layout, MutAnyOrigin
     ],
     expert_usage_stats: LayoutTensor[
-        mut=True, DType.uint32, expert_usage_stats_layout, MutableAnyOrigin
+        mut=True, DType.uint32, expert_usage_stats_layout, MutAnyOrigin
     ],
     indices_padded: LayoutTensor[
-        mut=True, DType.uint32, indices_padded_layout, MutableAnyOrigin
+        mut=True, DType.uint32, indices_padded_layout, MutAnyOrigin
     ],
     topk_ids_padded: LayoutTensor[
-        mut=True, input_type, padded_input_layout, MutableAnyOrigin
+        mut=True, input_type, padded_input_layout, MutAnyOrigin
     ],
-    topk_ids: LayoutTensor[input_type, topk_ids_layout, MutableAnyOrigin],
+    topk_ids: LayoutTensor[input_type, topk_ids_layout, MutAnyOrigin],
 ):
     alias indices_type = DType.uint32
     var num_tokens: Int = Int(topk_ids.runtime_layout.shape[0])
@@ -96,11 +96,9 @@ fn moe_create_indices_kernel[
         indices_layout: Layout, input_layout: Layout
     ](
         indices: LayoutTensor[
-            mut=True, DType.uint32, indices_layout, MutableAnyOrigin
+            mut=True, DType.uint32, indices_layout, MutAnyOrigin
         ],
-        input: LayoutTensor[
-            mut=True, input_type, input_layout, MutableAnyOrigin
-        ],
+        input: LayoutTensor[mut=True, input_type, input_layout, MutAnyOrigin],
         n: Int,
         step: Int,
         stage: Int,
@@ -246,22 +244,22 @@ fn moe_create_indices_bucket_sort_kernel[
     expected_count: Int = 8192,  # the max topk_ids size
 ](
     token_expert_order: LayoutTensor[
-        mut=True, DType.uint32, token_expert_order_layout, MutableAnyOrigin
+        mut=True, DType.uint32, token_expert_order_layout, MutAnyOrigin
     ],
-    lock: LayoutTensor[DType.uint32, Layout.row_major(1), MutableAnyOrigin],
+    lock: LayoutTensor[DType.uint32, Layout.row_major(1), MutAnyOrigin],
     expert_start_indices: LayoutTensor[
-        mut=True, DType.uint32, expert_start_indices_layout, MutableAnyOrigin
+        mut=True, DType.uint32, expert_start_indices_layout, MutAnyOrigin
     ],
     restore_token_order: LayoutTensor[
-        mut=True, DType.uint32, restore_token_order_layout, MutableAnyOrigin
+        mut=True, DType.uint32, restore_token_order_layout, MutAnyOrigin
     ],
     expert_ids: LayoutTensor[
-        mut=True, DType.int32, expert_ids_layout, MutableAnyOrigin
+        mut=True, DType.int32, expert_ids_layout, MutAnyOrigin
     ],
     expert_usage_stats: LayoutTensor[
-        mut=True, DType.uint32, expert_usage_stats_layout, MutableAnyOrigin
+        mut=True, DType.uint32, expert_usage_stats_layout, MutAnyOrigin
     ],
-    topk_ids: LayoutTensor[input_type, topk_ids_layout, MutableAnyOrigin],
+    topk_ids: LayoutTensor[input_type, topk_ids_layout, MutAnyOrigin],
 ):
     """Create indices for MoE routing using bucket sort algorithm.
 
@@ -308,7 +306,7 @@ fn moe_create_indices_bucket_sort_kernel[
     alias SmemVectorType = LayoutTensor[
         DType.uint32,
         Layout.row_major(1, expected_count),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
@@ -489,12 +487,12 @@ fn moe_create_indices[
             1
         ).enqueue_fill(0)
         var lock = LayoutTensor[
-            DType.uint32, Layout.row_major(1), MutableAnyOrigin
+            DType.uint32, Layout.row_major(1), MutAnyOrigin
         ](lock_buffer.unsafe_ptr())
 
         alias topk_layout = Layout.row_major(1, UNKNOWN_VALUE)
 
-        var topk_2D = LayoutTensor[input_type, topk_layout, MutableAnyOrigin](
+        var topk_2D = LayoutTensor[input_type, topk_layout, MutAnyOrigin](
             rebind[UnsafePointer[Scalar[input_type]]](topk_ids.ptr),
             RuntimeLayout[topk_layout].row_major(
                 IndexList[2](1, topk_ids.dim(0))

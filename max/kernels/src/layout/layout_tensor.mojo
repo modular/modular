@@ -880,24 +880,24 @@ struct LayoutTensor[
         alignment=alignment,
     ]
 
-    alias MutableAnyType = Self.OriginCastType[True, MutableAnyOrigin]
+    alias MutableAnyType = Self.OriginCastType[True, MutAnyOrigin]
     alias _AsMut = Self.OriginCastType[True, _]
 
     @always_inline("nodebug")
     fn as_any_origin(
         self: Self._AsMut,
-    ) -> type_of(self).OriginCastType[True, MutableAnyOrigin]:
-        """Casts the origin of the mutable `LayoutTensor` to `MutableAnyOrigin`.
+    ) -> type_of(self).OriginCastType[True, MutAnyOrigin]:
+        """Casts the origin of the mutable `LayoutTensor` to `MutAnyOrigin`.
 
         Returns:
-            A pointer with the origin set to `MutableAnyOrigin`.
+            A pointer with the origin set to `MutAnyOrigin`.
 
         This requires the tensor to already be mutable as casting mutability
         is inherently very unsafe.
 
         It is usually preferred to maintain concrete origin values instead of
-        using `MutableAnyOrigin`. However, if it is needed, keep in mind that
-        `MutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        using `MutAnyOrigin`. However, if it is needed, keep in mind that
+        `MutAnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the tensor.
         """
         return {
@@ -909,15 +909,15 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn as_any_origin(
         self: LayoutTensor[mut=False, *_, **_],
-    ) -> type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
-        """Casts the origin of the immutable `LayoutTensor` to `ImmutableAnyOrigin`.
+    ) -> type_of(self).OriginCastType[False, ImmutAnyOrigin]:
+        """Casts the origin of the immutable `LayoutTensor` to `ImmutAnyOrigin`.
 
         Returns:
-            A tensor with the origin set to `ImmutableAnyOrigin`.
+            A tensor with the origin set to `ImmutAnyOrigin`.
 
         It is usually preferred to maintain concrete origin values instead of
-        using `ImmutableAnyOrigin`. However, if it is needed, keep in mind that
-        `ImmutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        using `ImmutAnyOrigin`. However, if it is needed, keep in mind that
+        `ImmutAnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the tensor.
         """
         return {
@@ -929,7 +929,7 @@ struct LayoutTensor[
     @doc_private
     fn as_any_origin(
         self: LayoutTensor[*_, **_],
-        out result: type_of(self).OriginCastType[False, ImmutableAnyOrigin],
+        out result: type_of(self).OriginCastType[False, ImmutAnyOrigin],
     ):
         constrained[
             False,
@@ -1202,7 +1202,7 @@ struct LayoutTensor[
     @always_inline
     fn __add__(
         self, other: Scalar[dtype]
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Add a scalar value to each element of the tensor.
 
         Performs an elementwise addition operation, adding the scalar value to
@@ -1261,7 +1261,7 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout, **_,
         ],
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Add another tensor to this tensor elementwise.
 
         Performs an elementwise addition between this tensor and another tensor.
@@ -1342,7 +1342,7 @@ struct LayoutTensor[
     @always_inline
     fn __mul__(
         self, other: Scalar[dtype]
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Multiply each element of the tensor by a scalar value.
 
         Performs an elementwise multiplication operation, multiplying each
@@ -1380,7 +1380,7 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout, **_,
         ],
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Multiply this tensor with another tensor elementwise.
 
         Performs an elementwise multiplication (Hadamard product) between this tensor
@@ -1489,7 +1489,7 @@ struct LayoutTensor[
     @always_inline
     fn __sub__(
         self, other: Scalar[dtype]
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Subtract a scalar value from each element of the tensor.
 
         Performs an elementwise subtraction operation, subtracting the scalar
@@ -1527,7 +1527,7 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout, **_,
         ],
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Subtract another tensor from this tensor elementwise.
 
         Performs an elementwise subtraction between this tensor and another
@@ -1629,7 +1629,7 @@ struct LayoutTensor[
     @always_inline
     fn __truediv__(
         self, other: Scalar[dtype]
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Divide each element of the tensor by a scalar value.
 
         Performs an elementwise division operation, dividing each element in the
@@ -1673,7 +1673,7 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout, **_,
         ],
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Divide this tensor by another tensor elementwise.
 
         Performs an elementwise division between this tensor and another tensor.
@@ -2341,7 +2341,7 @@ struct LayoutTensor[
     alias StackTensorType = LayoutTensor[
         dtype,
         layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space=address_space,
         element_layout=element_layout,
         layout_int_type=layout_int_type,
@@ -5035,7 +5035,7 @@ struct LayoutTensor[
         num_blocks = in_size // block_size
         alias input_layout = Layout.row_major(in_size, in_size)
 
-        fn kernel(tensor: LayoutTensor[dtype, input_layout, MutableAnyOrigin]):
+        fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
             # extract a tile from the input tensor.
             var global_tile = tensor.tile[block_size, block_size](block_idx.x, block_idx.y)
 
@@ -5044,7 +5044,7 @@ struct LayoutTensor[
             var shared_tile = LayoutTensor[
                 dtype,
                 tile_layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 address_space = AddressSpace.SHARED,
             ].stack_allocation()
 
@@ -5428,7 +5428,7 @@ fn stack_allocation_like[
 ) -> LayoutTensor[
     dtype,
     layout,
-    MutableAnyOrigin,
+    MutAnyOrigin,
     address_space=target_address_space,
     masked = in_tensor.masked,
 ]:
@@ -5463,7 +5463,7 @@ fn stack_allocation_like[
     var global_tensor = LayoutTensor[
         DType.float32,
         Layout([10, 10]),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space=AddressSpace.GLOBAL
     ].stack_allocation()
 
@@ -5492,7 +5492,7 @@ fn stack_allocation_like[
     return LayoutTensor[
         dtype,
         layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space=target_address_space,
         masked = in_tensor.masked,
     ].stack_allocation()
@@ -7619,13 +7619,13 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
         ...
         var src_reg = LayoutTensor[DType.float32,
             Layout.row_major(16, 8),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation().fill(1)
 
         var dst_reg = LayoutTensor[DType.bfloat16,
             Layout.row_major(16, 8),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
 

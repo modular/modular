@@ -128,14 +128,14 @@ fn mha_sm90_dispatch[
     scale: Float32,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ],
 ) raises:
     constrained[
@@ -258,7 +258,7 @@ fn mha_sm90_dispatch[
                     LayoutTensor[
                         KVType.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
+                        MutAnyOrigin,
                     ]
                 ]
             ](sink_weights),
@@ -305,7 +305,7 @@ fn mha_sm90_dispatch[
                     LayoutTensor[
                         KVType.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
+                        MutAnyOrigin,
                     ]
                 ]
             ](sink_weights),
@@ -356,7 +356,7 @@ fn mha_sm90_dispatch[
                     LayoutTensor[
                         KVType.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
+                        MutAnyOrigin,
                     ]
                 ]
             ](sink_weights),
@@ -418,12 +418,12 @@ fn _mha_sm90_sink_dispatch[
     valid_length: DeviceBuffer[DType.uint32],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ],
     sink_weights: OptionalReg[
         LayoutTensor[
-            KVLUTType.dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            KVLUTType.dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ],
     partition: PartitionType,
@@ -563,7 +563,7 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
     valid_length: DeviceBuffer[DType.uint32],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ],
     sink_weights: SinkType,
@@ -1272,7 +1272,7 @@ fn _mha_sm90[
         out k_smem: LayoutTensor[
             kv_type,
             k_smem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             layout_int_type = DType.int32,
             linear_idx_type = DType.int32,
@@ -1289,7 +1289,7 @@ fn _mha_sm90[
         out v_smem: LayoutTensor[
             kv_type,
             v_smem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             layout_int_type = DType.int32,
             linear_idx_type = DType.int32,
@@ -1380,7 +1380,7 @@ fn _mha_sm90[
         ) -> LayoutTensor[
             kv_type,
             q_smem_layout_consumer,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             alignment=128,
         ]:
@@ -1398,14 +1398,14 @@ fn _mha_sm90[
         p_reg_tile = LayoutTensor[
             accum_type,
             s_reg_tile_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
         output_reg_tile = (
             LayoutTensor[
                 accum_type,
                 o_reg_tile_layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 address_space = AddressSpace.LOCAL,
             ]
             .stack_allocation()
@@ -1417,7 +1417,7 @@ fn _mha_sm90[
         p_frag = LayoutTensor[
             kv_type,
             p_reg_tile_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
 
@@ -1427,7 +1427,7 @@ fn _mha_sm90[
             out result: LayoutTensor[
                 accum_type,
                 p_vec_output_layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 address_space = AddressSpace.LOCAL,
                 element_layout=element_layout,
             ],
@@ -1440,7 +1440,7 @@ fn _mha_sm90[
             out result: LayoutTensor[
                 accum_type,
                 o_vec_output_layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 address_space = AddressSpace.LOCAL,
                 element_layout=element_layout,
             ],
@@ -1450,13 +1450,13 @@ fn _mha_sm90[
         rowmax = LayoutTensor[
             accum_type,
             Layout.row_major(num_rows_per_warp),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
         rowsum = LayoutTensor[
             accum_type,
             Layout.row_major(num_rows_per_warp),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
 

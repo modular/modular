@@ -252,7 +252,7 @@ struct TileWriterThreadwise[
     alias DstType = LayoutTensor[
         dtype,
         dst_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space=dst_address_space,
         element_layout=dst_element_layout,
         layout_int_type=dst_layout_int_type,
@@ -606,7 +606,7 @@ struct RegisterToGMemWriter[
     alias DstType = LayoutTensor[
         c_type,
         dst_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space=dst_address_space,
         element_layout=dst_element_layout,
         layout_int_type=dst_layout_int_type,
@@ -773,7 +773,7 @@ struct RegisterToGMemWriter[
     ](
         self,
         gmem_frag: LayoutTensor[
-            c_type, _, MutableAnyOrigin, address_space=_, *_, **_
+            c_type, _, MutAnyOrigin, address_space=_, *_, **_
         ],
         c_reg_frag: RegTileType,
         mma_id: Int,

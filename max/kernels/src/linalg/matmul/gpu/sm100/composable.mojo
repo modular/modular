@@ -551,14 +551,14 @@ struct Pipeline[
         alias a_smem_tile_t = LayoutTensor[
             a_type,
             a_smem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             alignment=128,
         ]
         alias b_smem_tile_t = LayoutTensor[
             b_type,
             b_smem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             alignment=128,
         ]

@@ -129,10 +129,10 @@ fn bench_reduce[
         )
 
     # Create and initialize input and output buffers.
-    var in_bufs = InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
-    ](fill={})
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], num_buffers](
+        fill={}
+    )
+    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
         fill={}
     )
 
@@ -174,8 +174,8 @@ fn bench_reduce[
 
     # Copy-capture in registers since the lambda will be used on GPU.
     var out_bufs_capture = StaticTuple[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
-    ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        NDBuffer[dtype, rank, MutAnyOrigin], ngpus
+    ](NDBuffer[dtype, rank, MutAnyOrigin]())
 
     @parameter
     for i in range(ngpus):

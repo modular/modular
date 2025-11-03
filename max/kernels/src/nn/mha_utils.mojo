@@ -698,10 +698,10 @@ fn dispatch_materialized_mask_and_score_mod[
     callback_fn: callback_fn_type,
     num_heads: Int = -1,
 ](
-    mask_nd: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    mask_nd: LayoutTensor[dtype, layout, MutAnyOrigin],
     start_pos_nd: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
 ) raises -> None:

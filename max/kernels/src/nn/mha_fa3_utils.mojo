@@ -284,7 +284,7 @@ struct MHAPosition[
         out gmem_block: LayoutTensor[
             dtype,
             Self.q_output_gmem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             layout_int_type = DType.int32,
             linear_idx_type = DType.int32,
             masked=True,
@@ -499,7 +499,7 @@ fn q_out_tma[
 
     alias layout = Layout.row_major(UNKNOWN_VALUE, matrix_cols)
     rt_layout = RuntimeLayout[layout].row_major(IndexList[2](rows, matrix_cols))
-    var tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](ptr, rt_layout)
+    var tensor = LayoutTensor[dtype, layout, MutAnyOrigin](ptr, rt_layout)
 
     res = create_nested_tma_tile[
         max(group, 8) if decoding else BM,
@@ -544,7 +544,7 @@ fn _apply_mask[
     p_reg_tile: LayoutTensor[
         accum_type,
         reg_tile_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=element_layout,
     ],
@@ -805,7 +805,7 @@ fn produce[
     ) -> LayoutTensor[
         qkv_type,
         q_smem_layout_producer,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]:
@@ -823,7 +823,7 @@ fn produce[
         out k_smem: LayoutTensor[
             qkv_type,
             k_smem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             layout_int_type = DType.int32,
             linear_idx_type = DType.int32,
@@ -840,7 +840,7 @@ fn produce[
         out v_smem: LayoutTensor[
             qkv_type,
             v_smem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             layout_int_type = DType.int32,
             linear_idx_type = DType.int32,
@@ -1049,13 +1049,13 @@ fn output_reg_to_smem[
     output_reg_tile: LayoutTensor[
         accum_type,
         reg_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ],
 ) -> LayoutTensor[
     output_type,
     Layout.row_major(BM, padded_depth),
-    MutableAnyOrigin,
+    MutAnyOrigin,
     address_space = AddressSpace.SHARED,
 ]:
     accum_smem_tile = LayoutTensor[

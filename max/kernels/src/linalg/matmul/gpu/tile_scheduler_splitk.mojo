@@ -122,7 +122,7 @@ struct SplitKTileScheduler[
     alias log_cluster_size = log2_floor(cluster_shape[0] * cluster_shape[1])
 
     alias WorkTileType[dtype: DType, layout: Layout] = LayoutTensor[
-        dtype, layout, MutableAnyOrigin
+        dtype, layout, MutAnyOrigin
     ]
 
     @always_inline

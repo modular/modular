@@ -159,7 +159,7 @@ alias SMemTileType[
 ] = LayoutTensor[
     _dtype,
     layout,
-    MutableAnyOrigin,
+    MutAnyOrigin,
     address_space = AddressSpace.SHARED,
     element_layout=element_layout,
     layout_int_type=layout_int_type,
@@ -182,7 +182,7 @@ alias RegTileType[
 ] = LayoutTensor[
     _dtype,
     layout,
-    MutableAnyOrigin,
+    MutAnyOrigin,
     address_space = AddressSpace.LOCAL,
     element_layout=element_layout,
     layout_int_type=layout_int_type,

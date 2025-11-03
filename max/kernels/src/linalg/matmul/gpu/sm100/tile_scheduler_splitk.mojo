@@ -168,7 +168,7 @@ struct TileScheduler[
         reduction_workspace: LayoutTensor[accum_type, workspace_layout],
         reduction_tile_idx: UInt32,
         out result: LayoutTensor[
-            accum_type, Layout.row_major(Self.BM, Self.MMA_N), MutableAnyOrigin
+            accum_type, Layout.row_major(Self.BM, Self.MMA_N), MutAnyOrigin
         ],
     ):
         return type_of(result)(

@@ -114,8 +114,8 @@ fn quantize_dynamic_scaled_fp8[
     input_shape: DimList, //,
     group_size_or_per_token: Int,
 ](
-    scaled_output: NDBuffer[mut=True, out_dtype, 2, MutableAnyOrigin],
-    scales: NDBuffer[mut=True, scales_dtype, 2, MutableAnyOrigin],
+    scaled_output: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin],
+    scales: NDBuffer[mut=True, scales_dtype, 2, MutAnyOrigin],
     input: NDBuffer[in_dtype, 2, _, input_shape],
     scale_ub: Float32,
     ctx: DeviceContext,
@@ -155,7 +155,7 @@ fn quantize_dynamic_scaled_fp8[
 
         # TODO: the input to this function should ideally be fixed on the origin type rather than parametric.
         # Additionally, it ought to be immutable over time.  The origins need to be bound/correct/matching the expected `quantize_fp8_kernel` below so that type checking succeeds for `enqueue_function_checked`.
-        var expected_input: NDBuffer[in_dtype, 2, MutableAnyOrigin] = input
+        var expected_input: NDBuffer[in_dtype, 2, MutAnyOrigin] = input
 
         ctx.enqueue_function_checked[kernel, kernel](
             scaled_output,
@@ -175,9 +175,9 @@ fn quantize_fp8_kernel[
     warps_per_block: Int,
     group_size: Int,
 ](
-    output: NDBuffer[mut=True, out_type, 2, MutableAnyOrigin],
-    scales: NDBuffer[mut=True, scales_type, 2, MutableAnyOrigin],
-    input: NDBuffer[in_type, 2, MutableAnyOrigin],
+    output: NDBuffer[mut=True, out_type, 2, MutAnyOrigin],
+    scales: NDBuffer[mut=True, scales_type, 2, MutAnyOrigin],
+    input: NDBuffer[in_type, 2, MutAnyOrigin],
     scale_ub: Scalar[scales_type],
 ):
     alias simd_width = simd_width_of[in_type]()
@@ -237,8 +237,8 @@ fn batched_quantize_dynamic_scaled_fp8[
     scales_dtype: DType, //,
     group_size_or_per_token: Int,
 ](
-    scaled_output: NDBuffer[mut=True, out_dtype, 3, MutableAnyOrigin],
-    scales: NDBuffer[mut=True, scales_dtype, 3, MutableAnyOrigin],
+    scaled_output: NDBuffer[mut=True, out_dtype, 3, MutAnyOrigin],
+    scales: NDBuffer[mut=True, scales_dtype, 3, MutAnyOrigin],
     input: NDBuffer[in_dtype, 3, *_],
     scale_ub: Float32,
     ctx: DeviceContext,
@@ -273,7 +273,7 @@ fn batched_quantize_dynamic_scaled_fp8[
 
     # TODO: the input to this function should ideally be fixed on the origin type rather than parametric.
     # Additionally, it ought to be immutable over time.  The origins need to be bound/correct/matching the expected `quantize_fp8_kernel` below so that type checking succeeds for `enqueue_function_checked`.
-    var expected_input: NDBuffer[in_dtype, 3, MutableAnyOrigin] = input
+    var expected_input: NDBuffer[in_dtype, 3, MutAnyOrigin] = input
 
     ctx.enqueue_function_checked[kernel, kernel](
         scaled_output,
@@ -293,9 +293,9 @@ fn batched_quantize_fp8_kernel[
     warps_per_block: Int,
     group_size: Int,
 ](
-    output: NDBuffer[mut=True, out_type, 3, MutableAnyOrigin],
-    scales: NDBuffer[mut=True, scales_type, 3, MutableAnyOrigin],
-    input: NDBuffer[in_type, 3, MutableAnyOrigin],
+    output: NDBuffer[mut=True, out_type, 3, MutAnyOrigin],
+    scales: NDBuffer[mut=True, scales_type, 3, MutAnyOrigin],
+    input: NDBuffer[in_type, 3, MutAnyOrigin],
     scale_ub: Scalar[scales_type],
 ):
     alias simd_width = simd_width_of[in_type]()
@@ -481,7 +481,7 @@ fn matmul_dynamic_scaled_fp8[
             # create a dummy buffer to instruct the matmul kernel to output values
             # in the correct dtype
             var c_dummy = NDBuffer[
-                DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)
+                DType.float32, 2, MutAnyOrigin, DimList(Dim(), N)
             ](
                 UnsafePointer[Scalar[DType.float32]](),
                 IndexList[2](M, N),
@@ -837,11 +837,11 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutableAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
 ):
     # Note: This is a naive kernel that supports a generalized blockwise scaled
     # fp8 matmul.
@@ -966,15 +966,13 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
     scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutableAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutableAnyOrigin],
-    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, MutableAnyOrigin],
-    expert_ids: LayoutTensor[
-        expert_ids_type, expert_ids_layout, MutableAnyOrigin
-    ],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
+    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, MutAnyOrigin],
+    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, MutAnyOrigin],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -1076,15 +1074,13 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, MutableAnyOrigin],
-    expert_ids: LayoutTensor[
-        expert_ids_type, expert_ids_layout, MutableAnyOrigin
-    ],
-    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutableAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, MutAnyOrigin],
+    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, MutAnyOrigin],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
 ):
     constrained[
         accum_type == DType.float32,

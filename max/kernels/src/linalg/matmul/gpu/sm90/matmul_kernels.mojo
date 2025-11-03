@@ -500,7 +500,7 @@ struct HopperMatmulSM90Kernel[
         ] = elementwise_lambda_fn
     ](
         c_tma_op: TMATensorTile[c_type, _, _],
-        c: LayoutTensor[c_type, _, MutableAnyOrigin, *_, **_],
+        c: LayoutTensor[c_type, _, MutAnyOrigin, *_, **_],
         c_tile: Self.SMem.CTile,
         output_reg_tile: Self.AccumRegTileType,
         warp_group_thread_idx: UInt,
@@ -593,8 +593,8 @@ struct HopperMatmulSM90Kernel[
             WARPGROUP_SIZE // num_threads_per_row, num_threads_per_row
         ),
     ](
-        a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-        b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+        a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+        b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
     ) -> Tuple[
         TileLoaderCPAsync[
             a_type,
@@ -711,9 +711,9 @@ struct HopperMatmulSM90Kernel[
         a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
         c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
-        a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-        b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-        c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+        a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+        b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+        c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
         lut_ptr: UnsafePointer[UInt32],
     ):
         """Main kernel entry point for matrix multiplication.
@@ -836,8 +836,8 @@ struct HopperMatmulSM90Kernel[
         a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
         c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
-        c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-        workspace_buffer: NDBuffer[Self.accum_type, 3, MutableAnyOrigin],
+        c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+        workspace_buffer: NDBuffer[Self.accum_type, 3, MutAnyOrigin],
         locks_ptr: UnsafePointer[UInt8],
         problem_shape: IndexList[3],
     ):
@@ -1008,9 +1008,9 @@ struct HopperMatmulSM90Kernel[
         a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
         c_tma_op: TMATensorTile[c_type, c_tile_layout, c_desc_layout],
-        a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-        expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
-        c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+        a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+        expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
+        c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     ):
         """Grouped matmul variant for MoE (Mixture of Experts) models.
 
@@ -1131,7 +1131,7 @@ struct HopperMatmulSM90Kernel[
             alias c_gmem_type = LayoutTensor[
                 c_type,
                 c_gmem_layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 layout_int_type = DType.int32,
                 address_space = AddressSpace.GENERIC,
             ]

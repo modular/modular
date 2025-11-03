@@ -76,11 +76,11 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, MutableAnyOrigin],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutableAnyOrigin],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, MutableAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutableAnyOrigin],
+    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, MutAnyOrigin],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a_scales: LayoutTensor[a_scales_type, a_scales_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
     constrained[transpose_b, "Only support transposed B"]()
@@ -182,21 +182,21 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     alias a_smem_tile_t = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
     alias b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
     alias a_scales_smem_tile_t = LayoutTensor[
         accum_type,
         a_scales_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
@@ -384,7 +384,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     alias c_gmem_type = LayoutTensor[
         c_type,
         c_gmem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         layout_int_type = DType.int32,
         address_space = AddressSpace.GENERIC,
     ]
@@ -647,13 +647,13 @@ fn grouped_matmul_dynamic_scaled_fp8[
     transpose_b: Bool = False,
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, _],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, _],
-    b: NDBuffer[b_type, 3, MutableAnyOrigin, _],
-    a_scales: NDBuffer[a_scales_type, 2, MutableAnyOrigin, _],
-    b_scales: NDBuffer[b_scales_type, 3, MutableAnyOrigin, _],
-    a_offsets: NDBuffer[a_offsets_type, 1, MutableAnyOrigin, _],
-    expert_ids: NDBuffer[expert_ids_type, 1, MutableAnyOrigin, _],
+    c: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, _],
+    b: NDBuffer[b_type, 3, MutAnyOrigin, _],
+    a_scales: NDBuffer[a_scales_type, 2, MutAnyOrigin, _],
+    b_scales: NDBuffer[b_scales_type, 3, MutAnyOrigin, _],
+    a_offsets: NDBuffer[a_offsets_type, 1, MutAnyOrigin, _],
+    expert_ids: NDBuffer[expert_ids_type, 1, MutAnyOrigin, _],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,

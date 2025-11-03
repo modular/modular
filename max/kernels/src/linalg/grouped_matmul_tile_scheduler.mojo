@@ -102,7 +102,7 @@ struct TileScheduler[
     swizzle: Bool = False,
 ]:
     var num_active_experts: Int
-    var group_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    var group_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin]
     var current_iter: Int32  # Tracks the scheduler's progress across kernel launches
     var current_group_idx: UInt32
     alias tile_n = tile_shape[1] * cta_group
@@ -118,7 +118,7 @@ struct TileScheduler[
     fn __init__(
         out self,
         num_active_experts: Int,
-        group_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+        group_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     ):
         constrained[
             cluster[1] == cluster[2] == 1,

@@ -114,7 +114,7 @@ fn warp_split_k_reduction[
         var red_tb_smem = LayoutTensor[
             c_type,
             Layout.row_major(1, BM * BN),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ](
             smem.bitcast[Scalar[c_type]]()
@@ -225,7 +225,7 @@ fn multistage_mma[
     next_op_b_iter: LayoutTensorIter[
         b_type,
         b_next_gmem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         alignment=next_op_b_iter_alignment,
         layout_int_type=next_op_b_layout_int_type,
         linear_idx_type=next_op_b_linear_idx_type,
@@ -233,7 +233,7 @@ fn multistage_mma[
     ] = LayoutTensorIter[
         b_type,
         b_next_gmem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         alignment=next_op_b_iter_alignment,
         layout_int_type=next_op_b_layout_int_type,
         linear_idx_type=next_op_b_linear_idx_type,
@@ -389,7 +389,7 @@ fn multistage_mma[
         LayoutTensor[
             a_type,
             a_reg_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -403,7 +403,7 @@ fn multistage_mma[
         LayoutTensor[
             b_type,
             b_reg_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -722,21 +722,21 @@ fn multistage_gemm_kernel[
     c: LayoutTensor[
         c_type,
         c_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         layout_int_type=c_layout_int_type,
         linear_idx_type=c_linear_idx_type,
     ],
     a: LayoutTensor[
         a_type,
         a_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         layout_int_type=a_layout_int_type,
         linear_idx_type=a_linear_idx_type,
     ],
     b: LayoutTensor[
         b_type,
         b_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         layout_int_type=b_layout_int_type,
         linear_idx_type=b_linear_idx_type,
     ],
@@ -864,7 +864,7 @@ fn multistage_gemm_kernel[
         LayoutTensor[
             accum_type,
             c_reg_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()  # ALIGN-TODO: pass alignment here?
@@ -980,7 +980,7 @@ fn multistage_gemm_kernel[
         var accum_smem_warp_tile = LayoutTensor[
             c_type,
             Layout.row_major(WM, WN),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ](a_smem.bitcast[Scalar[c_type]]() + warp_id * UInt(WM) * UInt(WN))
 
@@ -1066,7 +1066,7 @@ fn multistage_gemm_kernel[
             var c_reg_tile_out = LayoutTensor[
                 c_type,
                 c_reg_tile.layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 address_space = AddressSpace.LOCAL,
             ].stack_allocation()
 
@@ -1116,10 +1116,10 @@ fn multistage_gemm_split_k_kernel[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    work_space: NDBuffer[work_space_type, 3, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    work_space: NDBuffer[work_space_type, 3, MutAnyOrigin],
     num_partitions: Int,
 ):
     var M = c.dim[0]()
@@ -1137,7 +1137,7 @@ fn multistage_gemm_split_k_kernel[
     )
 
     alias work_space_tensor_type = LayoutTensor[
-        work_space_type, c_layout, MutableAnyOrigin
+        work_space_type, c_layout, MutAnyOrigin
     ]
 
     var work_space_part = work_space_tensor_type(

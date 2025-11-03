@@ -604,7 +604,7 @@ struct Attention[
         mask: mask_t,
         sink_weights: OptionalReg[
             LayoutTensor[
-                Self.q_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+                Self.q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
             ]
         ],
         batch_idx: Int,

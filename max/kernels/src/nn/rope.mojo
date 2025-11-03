@@ -68,7 +68,7 @@ fn apply_rope[
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
 ](
-    x: LayoutTensor[dtype, x_layout, MutableAnyOrigin],
+    x: LayoutTensor[dtype, x_layout, MutAnyOrigin],
     idx: IndexList[rank],
     freq_val: SIMD[freq_dtype, width],
 ):
@@ -118,18 +118,18 @@ fn rope_ragged[
     ) capturing -> None,
     mrope_section: Optional[IntTuple] = None,
 ](
-    x: LayoutTensor[dtype, x_layout, MutableAnyOrigin],
+    x: LayoutTensor[dtype, x_layout, MutAnyOrigin],
     input_row_offsets: LayoutTensor[
-        DType.uint32, input_row_offsets_layout, MutableAnyOrigin
+        DType.uint32, input_row_offsets_layout, MutAnyOrigin
     ],
-    start_pos: LayoutTensor[DType.uint32, start_pos_layout, MutableAnyOrigin],
-    freqs_cis: LayoutTensor[freq_dtype, freqs_cis_layout, MutableAnyOrigin],
+    start_pos: LayoutTensor[DType.uint32, start_pos_layout, MutAnyOrigin],
+    freqs_cis: LayoutTensor[freq_dtype, freqs_cis_layout, MutAnyOrigin],
     context: Optional[DeviceContext],
     position_ids: OptionalReg[
         LayoutTensor[
             DType.uint32,
             Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
-            MutableAnyOrigin,
+            MutAnyOrigin,
         ]
     ] = None,
 ) raises:

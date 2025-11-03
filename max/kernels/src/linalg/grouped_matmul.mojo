@@ -89,11 +89,11 @@ fn naive_grouped_matmul[
     transpose_b: Bool = True,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    c: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -139,11 +139,11 @@ fn naive_grouped_matmul_kernel[
     *,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    c: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
 ):
     # There has to be a better way :(
     var M: UInt = UInt(
@@ -195,10 +195,7 @@ fn naive_epilogue[
     c_shape: DimList,
     *,
     elementwise_lambda_fn: elementwise_epilogue_type,
-](
-    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    ctx: DeviceContext,
-) raises:
+](c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape], ctx: DeviceContext,) raises:
     alias kernel = naive_epilogue_kernel[
         c_type,
         c_shape,
@@ -220,7 +217,7 @@ fn naive_epilogue_kernel[
     c_shape: DimList,
     *,
     elementwise_lambda_fn: elementwise_epilogue_type,
-](c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],):
+](c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],):
     alias simd_size = simd_width_of[c_type]()
     alias alignment = align_of[SIMD[c_type, simd_size]]()
     var n = global_idx.x * UInt(simd_size)
@@ -270,9 +267,9 @@ fn grouped_matmul_kernel_sm100[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: Int,
 ):
     constrained[transpose_b, "Only support transposed B in layout"]()
@@ -334,28 +331,28 @@ fn grouped_matmul_kernel_sm100[
     alias a_smem_tile_t = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
     alias b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
     alias sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
     alias sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
@@ -500,7 +497,7 @@ fn grouped_matmul_kernel_sm100[
     alias c_gmem_type = LayoutTensor[
         c_type,
         c_gmem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         layout_int_type = DType.int32,
         address_space = AddressSpace.GENERIC,
     ]
@@ -592,12 +589,12 @@ fn grouped_matmul_sm100[
     block_tile_shape: IndexList[3] = Index(64, 128, 64),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -624,7 +621,7 @@ fn grouped_matmul_sm100[
     b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ](b.data)
     b_tma_op = create_tma_tile[
@@ -687,11 +684,11 @@ fn grouped_matmul_amd_kernel_launcher[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c_tensor: LayoutTensor[c_type, layout_c, MutableAnyOrigin],
-    a_tensor: LayoutTensor[a_type, layout_a, MutableAnyOrigin],
-    b_tensor: LayoutTensor[b_type, layout_b, MutableAnyOrigin],
-    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    c_tensor: LayoutTensor[c_type, layout_c, MutAnyOrigin],
+    a_tensor: LayoutTensor[a_type, layout_a, MutAnyOrigin],
+    b_tensor: LayoutTensor[b_type, layout_b, MutAnyOrigin],
+    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     num_active_experts: Int,
 ):
     var M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
@@ -715,21 +712,21 @@ fn grouped_matmul_amd_kernel_launcher[
     var c = LayoutTensor[
         c_type,
         c_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = c_ptr.address_space,
     ](c_ptr, RuntimeLayout[c_layout](Index(M, N), Index(N, 1)))
 
     var a = LayoutTensor[
         a_type,
         a_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = a_ptr.address_space,
     ](a_ptr, RuntimeLayout[a_layout](Index(M, K), Index(K, 1)))
 
     var b = LayoutTensor[
         b_type,
         b_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = b_ptr.address_space,
     ](b_ptr, RuntimeLayout[b_layout](Index(N, K), Index(K, 1)))
 
@@ -939,12 +936,12 @@ fn grouped_matmul_amd[
     block_tile_shape: IndexList[3] = Index(128, 128, 64),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -965,7 +962,7 @@ fn grouped_matmul_amd[
     var b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ](b.data)
     var c_tensor = from_ndbuffer_row_major(c)
@@ -1039,11 +1036,11 @@ fn grouped_matmul[
     b_shape: DimList, //,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    c: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -1170,11 +1167,11 @@ fn grouped_matmul_vendor[
     transpose_b: Bool = True,
     use_tf32: Bool = False,
 ](
-    c: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    c: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -1198,7 +1195,7 @@ fn grouped_matmul_vendor[
         # Handle experts with expert_id = -1 by writing zeros
         if expert_id < 0:
             # Create output slice and zero it out
-            var c_slice = NDBuffer[c_type, 2, MutableAnyOrigin](
+            var c_slice = NDBuffer[c_type, 2, MutAnyOrigin](
                 c.data + token_start * c.dim[1](),
                 DimList(num_tokens, c.dim[1]()),
             )
@@ -1209,15 +1206,15 @@ fn grouped_matmul_vendor[
             continue
 
         # Create views into the tensors for this expert
-        var a_slice = NDBuffer[a_type, 2, MutableAnyOrigin](
+        var a_slice = NDBuffer[a_type, 2, MutAnyOrigin](
             a.data + token_start * a.dim[1](),
             DimList(num_tokens, a.dim[1]()),
         )
-        var b_slice = NDBuffer[b_type, 2, MutableAnyOrigin](
+        var b_slice = NDBuffer[b_type, 2, MutAnyOrigin](
             b.data + expert_id * b.dim[1]() * b.dim[2](),
             DimList(b.dim[1](), b.dim[2]()),
         )
-        var c_slice = NDBuffer[c_type, 2, MutableAnyOrigin](
+        var c_slice = NDBuffer[c_type, 2, MutAnyOrigin](
             c.data + token_start * c.dim[1](),
             DimList(num_tokens, c.dim[1]()),
         )

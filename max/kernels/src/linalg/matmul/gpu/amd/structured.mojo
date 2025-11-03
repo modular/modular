@@ -136,7 +136,7 @@ struct AMDSharedMemoryBarrier[size: Int]:
     var __repr: SIMD[DType.int32, size]
 
     @always_inline
-    fn initialize(ref [AddressSpace.SHARED, MutableAnyOrigin]self):
+    fn initialize(ref [AddressSpace.SHARED, MutAnyOrigin]self):
         self.__repr = 0
 
     @always_inline
@@ -144,7 +144,7 @@ struct AMDSharedMemoryBarrier[size: Int]:
         return self.__repr.reduce_add()
 
     @always_inline
-    fn increment(ref [AddressSpace.SHARED, MutableAnyOrigin]self, warp_id: Int):
+    fn increment(ref [AddressSpace.SHARED, MutAnyOrigin]self, warp_id: Int):
         # Generate scalar access instructions, self.__repr[warp_id] += 1 is a vector instruction
         var scalar_elements = rebind[
             UnsafePointer[
@@ -280,7 +280,7 @@ struct AmdWarpBlockScatterGather[
     alias LoadFragmentType = LayoutTensor[
         dtype,
         Layout.row_major(Self.simd_loads_per_thread, Self.simd_width),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ]
 
@@ -302,7 +302,7 @@ struct AmdWarpBlockScatterGather[
         gmem_tile: LayoutTensor[
             dtype,
             _,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.GLOBAL, **_,
         ],
         stage: Int,
@@ -348,13 +348,13 @@ fn load_from_gmem_to_reg[
     dst: LayoutTensor[
         dtype,
         _,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL, **_,
     ],
     src: LayoutTensor[
         dtype,
         _,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.GLOBAL, **_,
     ],
 ):
@@ -456,7 +456,7 @@ struct AmdTileOperator[
     alias InMmaFragmentTypeA = LayoutTensor[
         InType,
         Self.in_layout[Self.num_m_mmas, Self.k_tiles_per_simd_a],
-        MutableAnyOrigin,
+        MutAnyOrigin,
         *_,
         alignment = Self.type_alignment,
         address_space = AddressSpace.LOCAL,
@@ -465,7 +465,7 @@ struct AmdTileOperator[
     alias InMmaFragmentTypeB = LayoutTensor[
         InType,
         Self.in_layout[Self.num_n_mmas, Self.k_tiles_per_simd_b],
-        MutableAnyOrigin,
+        MutAnyOrigin,
         *_,
         alignment = Self.type_alignment,
         address_space = AddressSpace.LOCAL,
@@ -474,7 +474,7 @@ struct AmdTileOperator[
     alias OutMmaFragmentType = LayoutTensor[
         OutType,
         Self.out_mma_fragment_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         *_,
         alignment = Self.type_alignment,
         address_space = AddressSpace.LOCAL,

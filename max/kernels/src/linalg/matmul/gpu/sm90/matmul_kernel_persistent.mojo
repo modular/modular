@@ -49,7 +49,7 @@ __extension HopperMatmulSM90Kernel:
         a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
         c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
-        c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+        c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
         problem_shape: IndexList[3],
     ):
         alias K = b_layout.shape[1].value()
@@ -161,9 +161,9 @@ __extension HopperMatmulSM90Kernel:
         c_tma_layout: Layout,
     ](
         c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
-        a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-        b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-        c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+        a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+        b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+        c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     ):
         """Kernel using cp.async for A/B loading when K alignment doesn't meet TMA requirements.
         """

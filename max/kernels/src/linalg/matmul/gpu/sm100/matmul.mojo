@@ -168,14 +168,14 @@ fn load_AB[
     a_smem: LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     b_smem: LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -275,14 +275,14 @@ fn consumer_main_loop[
     a_smem_iter: LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     b_smem_iter: LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -434,10 +434,10 @@ fn shared_memory_epilogue[
     c_col: UInt,
     c_row: UInt,
     c_smem_warp_tile_upper: LayoutTensor[
-        c_type, c_smem_upper_layout, MutableAnyOrigin, *_, **_
+        c_type, c_smem_upper_layout, MutAnyOrigin, *_, **_
     ],
     c_smem_warp_tile_lower: LayoutTensor[
-        c_type, c_smem_lower_layout, MutableAnyOrigin, *_, **_
+        c_type, c_smem_lower_layout, MutAnyOrigin, *_, **_
     ],
 ):
     # Here we start keeping track of the index / indices this thread is
@@ -856,7 +856,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
 
     var mnk = StaticTuple[UInt32, 3](M, N, K)
 
-    var workspace: Span[UInt64, MutableAnyOrigin]
+    var workspace: Span[UInt64, MutAnyOrigin]
 
     @parameter
     if enable_profiling:
@@ -864,8 +864,8 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
             max_profiled_tiles
         ].get_workspace(ctx)
     else:
-        workspace = Span[UInt64, MutableAnyOrigin](
-            ptr=UnsafePointer[UInt64, origin=MutableAnyOrigin](), length=0
+        workspace = Span[UInt64, MutAnyOrigin](
+            ptr=UnsafePointer[UInt64, origin=MutAnyOrigin](), length=0
         )
 
     ctx.enqueue_function_checked[kernel, kernel](
@@ -1117,7 +1117,7 @@ fn copy_accum_to_gmem[
     c_iter: LayoutTensorIter[
         c_type,
         c_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -1535,13 +1535,11 @@ fn multi_stage_store_C_split_k[
     transpose_c: Bool = False,
 ](
     scheduler: TileSchedulerSplitK,
-    reduction_tensor: LayoutTensor[
-        accum_type, reduction_layout, MutableAnyOrigin
-    ],
+    reduction_tensor: LayoutTensor[accum_type, reduction_layout, MutAnyOrigin],
     c_iter: LayoutTensorIter[
         c_type,
         c_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -1668,7 +1666,7 @@ fn multi_stage_store_C[
     c_iter: LayoutTensorIter[
         c_type,
         c_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -1799,7 +1797,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     cluster_dim: StaticTuple[Int32, 3],
     mnk: StaticTuple[UInt32, 3],
-    workspace: Span[UInt64, MutableAnyOrigin],
+    workspace: Span[UInt64, MutAnyOrigin],
 ):
     constrained[c_type is not DType.float32, "c_type cannot be float32"]()
     constrained[transpose_b, "only support k-major B"]()
@@ -1876,7 +1874,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
@@ -1887,7 +1885,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
@@ -1900,7 +1898,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         Layout.row_major(
             config.output_tile_shape[0], config.output_tile_shape[1]
         ),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](c_smem_base, c_smem_size)
@@ -2307,12 +2305,12 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     reduction_tensor: LayoutTensor[
-        config.accum_type, reduction_layout, MutableAnyOrigin
+        config.accum_type, reduction_layout, MutAnyOrigin
     ],
     lock_ptr: UnsafePointer[UInt8],
     cluster_dim: StaticTuple[Int32, 3],
     mnk: StaticTuple[UInt32, 3],
-    workspace: Span[UInt64, MutableAnyOrigin],
+    workspace: Span[UInt64, MutAnyOrigin],
 ):
     constrained[c_type is not DType.float32, "c_type cannot be float32"]()
     constrained[transpose_b, "only support k-major B"]()
@@ -2390,7 +2388,7 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
@@ -2401,7 +2399,7 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
@@ -2414,7 +2412,7 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
         Layout.row_major(
             config.output_tile_shape[0], config.output_tile_shape[1]
         ),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](c_smem_base, c_smem_size)
@@ -3142,7 +3140,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
 
     var mnk = StaticTuple[UInt32, 3](M, N, K)
 
-    var workspace: Span[UInt64, MutableAnyOrigin]
+    var workspace: Span[UInt64, MutAnyOrigin]
 
     var output_tiles = get_num_tiles(
         Index(M, N, K),
@@ -3180,7 +3178,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
             max_profiled_tiles
         ].get_workspace(ctx)
     else:
-        workspace = Span[UInt64, MutableAnyOrigin]()
+        workspace = Span[UInt64, MutAnyOrigin]()
 
     ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
@@ -3234,7 +3232,7 @@ fn matmul_sm100_fallback_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
     constrained[num_threads == 128 or num_threads == 256]()
@@ -3275,14 +3273,14 @@ fn matmul_sm100_fallback_kernel[
     alias a_smem_tile_t = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
     alias b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]

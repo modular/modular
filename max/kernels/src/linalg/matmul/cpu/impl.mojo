@@ -640,7 +640,7 @@ fn _matmul_cpu_impl[
                 alg,
                 c,
                 a_packed if use_i8mm else type_of(a).OriginCastType[
-                    True, MutableAnyOrigin
+                    True, MutAnyOrigin
                 ](
                     # TODO: This is VERY unsafe. `a` may not be mutable which could
                     # result in undefined behavior. `a` and all dependents of this

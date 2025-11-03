@@ -161,7 +161,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
     """An implementation for NDBuffer arguments to MHA kernels."""
 
     alias dtype = dtype_
-    var buffer: LayoutTensor[Self.dtype, layout, MutableAnyOrigin]
+    var buffer: LayoutTensor[Self.dtype, layout, MutAnyOrigin]
 
     alias device_type: AnyType = Self
 
@@ -178,7 +178,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
 
     fn __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, layout, MutableAnyOrigin],
+        buffer: LayoutTensor[Self.dtype, layout, MutAnyOrigin],
     ):
         self.buffer = buffer
 
@@ -244,7 +244,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
 
         rt_layout = RuntimeLayout[layout_].row_major(IndexList[2](rows, cols))
 
-        var tensor = LayoutTensor[Self.dtype, layout_, MutableAnyOrigin](
+        var tensor = LayoutTensor[Self.dtype, layout_, MutAnyOrigin](
             self.buffer.ptr, rt_layout
         )
 
@@ -260,9 +260,9 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
     """An implementation for ragged NDBuffer arguments to MHA kernels."""
 
     alias dtype = dtype_
-    var buffer: LayoutTensor[Self.dtype, layout, MutableAnyOrigin]
+    var buffer: LayoutTensor[Self.dtype, layout, MutAnyOrigin]
     var cache_row_offsets: LayoutTensor[
-        DType.uint32, cache_layout, MutableAnyOrigin
+        DType.uint32, cache_layout, MutAnyOrigin
     ]
 
     alias device_type: AnyType = Self
@@ -280,9 +280,9 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 
     fn __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, layout, MutableAnyOrigin],
+        buffer: LayoutTensor[Self.dtype, layout, MutAnyOrigin],
         cache_row_offsets: LayoutTensor[
-            DType.uint32, cache_layout, MutableAnyOrigin
+            DType.uint32, cache_layout, MutAnyOrigin
         ],
     ):
         constrained[
@@ -361,7 +361,7 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         alias layout_ = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
         rt_layout = RuntimeLayout[layout_].row_major(IndexList[2](rows, cols))
-        var tensor = LayoutTensor[Self.dtype, layout_, MutableAnyOrigin](
+        var tensor = LayoutTensor[Self.dtype, layout_, MutAnyOrigin](
             self.buffer.ptr, rt_layout
         )
 

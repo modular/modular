@@ -213,7 +213,7 @@ struct TileLoaderCPAsync[
     var src: LayoutTensor[
         dtype,
         src_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ]
 
@@ -223,7 +223,7 @@ struct TileLoaderCPAsync[
         src: LayoutTensor[
             dtype,
             src_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.GENERIC,
         ],
     ):
@@ -283,14 +283,14 @@ fn async_copy_with_bound_check[
     src: LayoutTensor[
         dtype,
         src_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
         *_, **_,
     ],
     dst: LayoutTensor[
         dtype,
         dst_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         *_, **_,
     ],

@@ -391,7 +391,7 @@ def accuracy_test():
     alias delta_range = delta_max - delta_min + 1
 
     var deltas = NDBuffer[
-        DType.int32, 1, MutableAnyOrigin, delta_range
+        DType.int32, 1, MutAnyOrigin, delta_range
     ].stack_allocation()
     deltas.zero()
 
