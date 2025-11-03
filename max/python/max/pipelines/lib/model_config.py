@@ -186,7 +186,7 @@ class MAXModelConfig(MAXModelConfigBase):
         2. Parse the weight path(s) and initialize the _weights_repo_id
         """
 
-        # Validate that --quantzation-encoding is given when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is True
+        # Validate that --quantization-encoding is given when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is True
         if (
             self.allow_safetensors_weights_fp32_bf6_bidirectional_cast
             and self.quantization_encoding is None

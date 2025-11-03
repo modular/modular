@@ -127,7 +127,7 @@ struct MatmulConfig[
             self.c_swizzle = TensorMapSwizzle.SWIZZLE_32B
 
         self.num_pipeline_stages = 4  # Need for compilation
-        self._maximize_pipline_stages_by_default()
+        self._maximize_pipeline_stages_by_default()
 
         if num_pipeline_stages:
             self.num_pipeline_stages = num_pipeline_stages.value()
@@ -137,7 +137,7 @@ struct MatmulConfig[
             self.num_pipeline_stages, self.k_group_size
         )
 
-    fn _maximize_pipline_stages_by_default(mut self):
+    fn _maximize_pipeline_stages_by_default(mut self):
         alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
         var c_smem_bytes = (
@@ -165,12 +165,12 @@ struct MatmulConfig[
             * self.block_tile_shape[2]
             * size_of[b_type]()
         )
-        # Include 16 for comsumer and producer mbar per stage
+        # Include 16 for consumer and producer mbar per stage
         var AB_smem_per_stage = (
             a_smem_bytes_per_stage + b_smem_bytes_per_stage + 16
         )
 
-        # Substract 511B for mbar usage etc
+        # Subtract 511B for mbar usage etc
         self.num_pipeline_stages = UInt(
             (
                 b200_smem

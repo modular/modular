@@ -44,7 +44,7 @@ from testing import assert_equal
 from linalg.arch.sm100.mma import max_contiguous_tile_shape, Major
 
 
-# funtionally equivalent to idx2crd
+# functionally equivalent to idx2crd
 # but avoids runtime_*
 # converts linear index to column-major coordinates
 fn calculate_coordinate[

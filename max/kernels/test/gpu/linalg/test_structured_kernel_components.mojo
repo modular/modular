@@ -31,8 +31,8 @@ def test_warp_specialization_amd[
     WM: Int,
     WN: Int,
     WK: Int,
-    producer_warps_a: Int,
-    producer_warps_b: Int,
+    a_producer_warps: Int,
+    b_producer_warps: Int,
     consumer_warps: Int,
     pipeline_stages: Int = 1,
 ](ctx: DeviceContext):
@@ -89,8 +89,8 @@ def test_warp_specialization_amd[
         WM,
         WN,
         WK,
-        producer_warps_a=producer_warps_a,
-        producer_warps_b=producer_warps_b,
+        a_producer_warps=a_producer_warps,
+        b_producer_warps=b_producer_warps,
         consumer_warps=consumer_warps,
         pipeline_stages=pipeline_stages,
     ]
@@ -101,7 +101,7 @@ def test_warp_specialization_amd[
         global_c_device_tensor,
         grid_dim=(M // BM, N // BN),
         block_dim=(
-            WARP_SIZE * (producer_warps_a + producer_warps_b + consumer_warps)
+            WARP_SIZE * (a_producer_warps + b_producer_warps + consumer_warps)
         ),
     )
 

@@ -85,7 +85,7 @@ struct ErrNo(
         from sys.ffi import get_errno, set_errno, ErrNo
 
         try:
-            _ = os.path.realpath("non-existant-file")
+            _ = os.path.realpath("non-existent-file")
         except:
             var err = get_errno()
             if err == ErrNo.ENOENT:

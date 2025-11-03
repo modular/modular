@@ -114,8 +114,8 @@ def execute_kv_cache_ragged_matmul[
         (Int(total_seq_len), combined_hidden_size),
     )
     random(output_host.tensor)
-    var output_devce_buffer = output_host.copy_to_device(ctx)
-    var output_device = output_devce_buffer.to_layout_tensor()
+    var output_device_buffer = output_host.copy_to_device(ctx)
+    var output_device = output_device_buffer.to_layout_tensor()
 
     var kv_block_host = HostNDBuffer[dtype, 6](
         IndexList[6](

@@ -2705,7 +2705,7 @@ struct DeviceFunction[
         # time.
         @parameter
         fn calculate_args_size() -> Int:
-            var tmp_args_size = 8  # always reserve 8 extra bytes for aligment.
+            var tmp_args_size = 8  # always reserve 8 extra bytes for alignment.
 
             @parameter
             for i in range(num_passed_args):

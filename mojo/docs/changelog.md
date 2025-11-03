@@ -189,7 +189,9 @@ what we publish.
   `test_utils.TestSuite` framework), and run with `mojo run`.
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`
-  functions rather than inlining them into the error message.
+  functions rather than inlining them into the error message. They also maintain
+  alias names when qualified from a base, e.g. `T.someAlias` instead of
+  expanding the alias value inline.
 
 - `SIMD` now implements the `DivModable` trait.
 
@@ -310,6 +312,14 @@ what we publish.
 - The `empty` origin has been renamed to `external`.
 
 - Rename `MutableOrigin` to `MutOrigin` and `ImmutableOrigin` to `ImmutOrigin`.
+
+- Optimized float-to-string formatting performance by eliminating unnecessary
+  stack allocations. Internal lookup tables used for float formatting
+  (`cache_f32` and `cache_f64`) are now stored as global constants instead of
+  being materialized on the stack for each conversion. This reduces stack
+  overhead by ~10KB for `Float64` and ~600 bytes for `Float32` operations, improving
+  performance for all float formatting operations including `print()`, string
+  interpolation, and `str()` conversions.
 
 ### Tooling changes {#25-7-tooling-changes}
 

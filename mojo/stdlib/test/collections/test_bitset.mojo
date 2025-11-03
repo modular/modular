@@ -241,7 +241,7 @@ def test_bitset_consecutive_operations():
 
     # Set multiple bits and check count
     for i in range(0, 10):
-        bs.set(UInt(i))
+        bs.set(i)
     assert_equal(len(bs), 10, msg="Count should be 10 after setting 10 bits")
 
     # Clear all and verify

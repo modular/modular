@@ -50,7 +50,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
 
     Parameters:
         T: The element type of the set. Must implement KeyElement.
-        H: The tpe of the hasher used to hash keys.
+        H: The type of the hasher used to hash keys.
     """
 
     alias IteratorType[

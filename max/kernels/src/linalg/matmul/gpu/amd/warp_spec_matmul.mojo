@@ -15,7 +15,7 @@ from linalg.matmul.gpu.amd.structured import (
     AmdWarpBlockScatterGather,
     ThreadRole,
     RingBuffer,
-    SharedMemoryBuffer,
+    SMemBuffer,
     MMAConfig,
 )
 
@@ -129,7 +129,7 @@ fn get_producer_warp_thread_layout[
 # NOTE: This is a hardcoded pipeline but in reality this should be struct
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-        (producer_warps_a + producer_warps_b + consumer_warps) * WARP_SIZE
+        (a_producer_warps + b_producer_warps + consumer_warps) * WARP_SIZE
     )
 )
 fn warp_specialized_matmul[
@@ -144,8 +144,8 @@ fn warp_specialized_matmul[
     WM: Int,
     WN: Int,
     WK: Int,
-    producer_warps_a: Int = 1,
-    producer_warps_b: Int = 1,
+    a_producer_warps: Int = 1,
+    b_producer_warps: Int = 1,
     consumer_warps: Int = 1,
     pipeline_stages: Int = 1,
 ](
@@ -173,12 +173,12 @@ fn warp_specialized_matmul[
     alias m_warps_per_block = BM // WM
     alias n_warps_per_block = BN // WN
 
-    constrained[m_warps_per_block % producer_warps_a == 0]()
-    constrained[n_warps_per_block % producer_warps_b == 0]()
+    constrained[m_warps_per_block % a_producer_warps == 0]()
+    constrained[n_warps_per_block % b_producer_warps == 0]()
     constrained[m_warps_per_block * n_warps_per_block % consumer_warps == 0]()
     constrained[
-        consumer_warps >= producer_warps_a
-        and consumer_warps >= producer_warps_b
+        consumer_warps >= a_producer_warps
+        and consumer_warps >= b_producer_warps
     ]()
     constrained[
         consumer_warps.is_power_of_two(), "consumer_warps must be a power of 2"
@@ -187,7 +187,7 @@ fn warp_specialized_matmul[
     var role: ThreadRole
     var warp_id = get_warp_id()
     alias producer_thread_count = (
-        producer_warps_a + producer_warps_b
+        a_producer_warps + b_producer_warps
     ) * WARP_SIZE
 
     if thread_idx.x < UInt(producer_thread_count):
@@ -217,45 +217,61 @@ fn warp_specialized_matmul[
         MMAConfigType.adjusted_mma_k_shape_b(), BN, BK
     ]()
 
-    alias SmemBufferTypeA = SharedMemoryBuffer[
+    alias SMemBufferTypeA = SMemBuffer[
         in_type, smem_layout_a, pipeline_stages, BM, BK, WM, WK
     ]
-    alias SmemBufferTypeB = SharedMemoryBuffer[
+    alias SMemBufferTypeB = SMemBuffer[
         in_type, smem_layout_b, pipeline_stages, BN, BK, WN, WK
     ]
 
-    var smem_buffer_a = SmemBufferTypeA()
-    var smem_buffer_b = SmemBufferTypeB()
+    var smem_buffer_a = SMemBufferTypeA()
+    var smem_buffer_b = SMemBufferTypeB()
 
-    # NOTE: Every thread needs access to the ring buffer
-    var ring_buffer = RingBuffer[
-        SmemBufferTypeA,
-        SmemBufferTypeB,
+    # NOTE: Every thread needs access to the ring buffers
+    var ring_buffer_a = RingBuffer[
+        in_type,
+        smem_layout_a,
+        pipeline_stages,
+        BM,
+        BK,
+        WM,
+        WK,
         consumer_warps,
-    ](smem_buffer_a, smem_buffer_b)
+    ](smem_buffer_a)
+
+    var ring_buffer_b = RingBuffer[
+        in_type,
+        smem_layout_b,
+        pipeline_stages,
+        BN,
+        BK,
+        WN,
+        WK,
+        consumer_warps,
+    ](smem_buffer_b)
 
     alias consumer_thread_layout_a = get_producer_warp_thread_layout[
-        MMAConfigType.adjusted_mma_k_shape_a(), MMAConfigType.simd_width, BK, BM
+        MMAConfigType.adjusted_mma_k_shape_a(), MMAConfigType.simd_width, BM, BK
     ]()
 
     alias consumer_thread_layout_b = get_producer_warp_thread_layout[
-        MMAConfigType.adjusted_mma_k_shape_b(), MMAConfigType.simd_width, BK, BN
+        MMAConfigType.adjusted_mma_k_shape_b(), MMAConfigType.simd_width, BN, BK
     ]()
 
-    barrier()  # NOTE: probably not nessecary but I saw it in the HF code around the same point
+    barrier()  # NOTE: probably not necessary but I saw it in the HF code around the same point
 
     alias tile_count = K // BK
     alias warps_processed_per_producer_a = Int(
-        m_warps_per_block // producer_warps_a
+        m_warps_per_block // a_producer_warps
     )
     alias warps_processed_per_producer_b = Int(
-        n_warps_per_block // producer_warps_b
+        n_warps_per_block // b_producer_warps
     )
 
     # NOTE: the 2 producer blocks are almost identical, you can proabbly make this a
     # a function
     if role is ThreadRole.PRODUCER:
-        if warp_id < UInt(producer_warps_a):
+        if warp_id < UInt(a_producer_warps):
             # NOTE: If there is a way to hide the phases that would be great, maybe the ringbuffer
             # handles the thread specific phase, or its encapsulated in the ThreadRole Struct.
 
@@ -286,7 +302,7 @@ fn warp_specialized_matmul[
                 @parameter
                 for local_tile_count in range(warps_processed_per_producer_a):
                     var warp_tile_idx = (
-                        Int(warp_id) + local_tile_count * producer_warps_a
+                        Int(warp_id) + local_tile_count * a_producer_warps
                     )
 
                     # NOTE phase_idx needs to be known at compile time otherwise
@@ -295,26 +311,17 @@ fn warp_specialized_matmul[
 
                     ref phase = phases[phase_idx]
 
-                    scatter_gather_a.load_compute_tile[
-                        a_tile.dtype,
-                        a_tile.layout,
-                    ](
-                        ring_buffer,
+                    # Load A tile from global to shared memory
+                    scatter_gather_a.load_compute_tile(
+                        ring_buffer_a,
                         phase,
-                        rebind[
-                            LayoutTensor[
-                                a_tile.dtype,
-                                a_tile.layout,
-                                MutableAnyOrigin,
-                                address_space = AddressSpace.GLOBAL,
-                            ]
-                        ](a_tile),
+                        a_tile,
                         stage,
                         warp_tile_idx,
                     )
 
         else:
-            var relative_warp_id = warp_id - UInt(producer_warps_a)
+            var relative_warp_id = warp_id - UInt(a_producer_warps)
 
             var phases = InlineArray[
                 Int, pipeline_stages * warps_processed_per_producer_b
@@ -342,26 +349,17 @@ fn warp_specialized_matmul[
                 for local_tile_count in range(warps_processed_per_producer_b):
                     var warp_tile_idx = (
                         Int(relative_warp_id)
-                        + local_tile_count * producer_warps_b
+                        + local_tile_count * b_producer_warps
                     )
                     alias phase_idx = warps_processed_per_producer_b * stage + local_tile_count
 
                     ref phase = phases[phase_idx]
 
-                    scatter_gather_b.load_compute_tile[
-                        b_tile.dtype,
-                        b_tile.layout,
-                    ](
-                        ring_buffer,
+                    # Load B tile from global to shared memory
+                    scatter_gather_b.load_compute_tile(
+                        ring_buffer_b,
                         phase,
-                        rebind[
-                            LayoutTensor[
-                                b_tile.dtype,
-                                b_tile.layout,
-                                MutableAnyOrigin,
-                                address_space = AddressSpace.GLOBAL,
-                            ]
-                        ](b_tile),
+                        b_tile,
                         stage,
                         warp_tile_idx,
                     )
@@ -391,7 +389,7 @@ fn warp_specialized_matmul[
         ]()
 
         var relative_warp_id = warp_id - UInt(
-            producer_warps_a + producer_warps_b
+            a_producer_warps + b_producer_warps
         )
 
         alias warps_computed_per_consumer = total_consumer_operations // consumer_warps
@@ -413,8 +411,10 @@ fn warp_specialized_matmul[
                 ref phase_a = phases_a[phase_idx]
                 ref phase_b = phases_b[phase_idx]
 
+                # Perform matrix multiplication
                 tile_operator.mma(
-                    ring_buffer,
+                    ring_buffer_a,
+                    ring_buffer_b,
                     phase_a,
                     phase_b,
                     stage,

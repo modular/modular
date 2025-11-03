@@ -29,6 +29,7 @@ _FILECHECK_TESTS = [
 ]
 
 _LIT_TESTS = [
+    "test_format_float_lut_optimization.mojo",
     "test_issue_3908.mojo",
     "test_print_long_string.mojo",
     "test_print_stderr.mojo",
