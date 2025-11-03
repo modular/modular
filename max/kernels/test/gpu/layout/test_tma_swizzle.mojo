@@ -69,7 +69,7 @@ fn tma_swizzle_load_kernel[
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
+    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
 
     if thread_idx.x == 0:
         dst_tile.copy_from(tile)

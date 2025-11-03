@@ -2151,7 +2151,7 @@ fn _mha_sm100[
     alias accum_simd_width = simd_width_of[accum_type]()
     alias row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
     # Account for group query.
-    alias kv_num_heads = num_heads // group
+    alias kv_num_heads = num_heads // UInt(group)
 
     # var lane_predicate = elect_one_sync() # not needed with async_copy
 

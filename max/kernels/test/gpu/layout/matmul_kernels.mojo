@@ -157,7 +157,7 @@ fn gemm_kernel_1[
 
     # Get the tile of the output matrix C that this thread is
     # responsible for computing.
-    var dst = c.tile[BM, BN](bidy, bidx)
+    var dst = c.tile[BM, BN](Int(bidy), Int(bidx))
 
     # Initialize a register to accumulate the result for this thread.
     var dst_reg: c.element_type = 0
@@ -165,8 +165,8 @@ fn gemm_kernel_1[
     # Iterate over the K dimension to compute the dot product.
     for k in range(b.dim[0]()):
         # Get the corresponding tiles from matrices A and B.
-        var a_tile = a.tile[BM, 1](bidy, k)
-        var b_tile = b.tile[1, BN](k, bidx)
+        var a_tile = a.tile[BM, 1](Int(bidy), k)
+        var b_tile = b.tile[1, BN](k, Int(bidx))
 
         # Multiply the elements and accumulate the result.
         dst_reg += a_tile[row, 0] * b_tile[0, col]
@@ -278,7 +278,7 @@ fn gemm_kernel_2[
     var bidy = block_idx.y
 
     # Get the tile of the output matrix C
-    var dst = c.tile[BM, BN](bidy, bidx)
+    var dst = c.tile[BM, BN](Int(bidy), Int(bidx))
 
     # Initialize the register to accumulate the result
     var dst_reg: c.element_type = 0
@@ -286,8 +286,8 @@ fn gemm_kernel_2[
     # Iterate over the K dimension
     for k in range(b.dim[0]()):
         # Get the tiles of input matrices A and B
-        var a_tile = a.tile[BM, 1](bidy, k)
-        var b_tile = b.tile[1, BN](k, bidx)
+        var a_tile = a.tile[BM, 1](Int(bidy), k)
+        var b_tile = b.tile[1, BN](k, Int(bidx))
 
         # Compute the partial result and accumulate it in the register
         dst_reg += a_tile[row, 0] * b_tile[0, col]
@@ -564,7 +564,9 @@ fn gemm_kernel_4[
 
     # Get the tile of the output matrix C that this thread is
     # responsible for computing.
-    var dst = c.tile[BM, BN](bidy, bidx).tile[TM, 1](row, col)
+    var dst = c.tile[BM, BN](Int(bidy), Int(bidx)).tile[TM, 1](
+        Int(row), Int(col)
+    )
 
     # Allocate shared memory for tiles of A and B.
     var a_smem = LayoutTensor[
@@ -740,7 +742,7 @@ fn gemm_kernel_5[
     var bidx = block_idx.x
     var bidy = block_idx.y
 
-    var dst = c.tile[BM, BN](bidy, bidx).tile[TM, TN](
+    var dst = c.tile[BM, BN](Int(bidy), Int(bidx)).tile[TM, TN](
         partition_row, partition_col
     )
 
@@ -918,7 +920,7 @@ fn gemm_kernel_6[
 
     # Get the tile of the output matrix C that this thread is responsible
     # for computing.
-    var dst = c.tile[BM, BN](bidy, bidx).tile[TM, TN](
+    var dst = c.tile[BM, BN](Int(bidy), Int(bidx)).tile[TM, TN](
         partition_row, partition_col
     )
     var dst_vec = dst.vectorize[1, simd_width]()
@@ -1119,7 +1121,7 @@ fn matmul_kernel_tc[
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
         WM, WN
-    ](warp_y, warp_x)
+    ](Int(warp_y), Int(warp_x))
 
     # Ensure warp tile dimensions are multiples of instruction shape
     constrained[

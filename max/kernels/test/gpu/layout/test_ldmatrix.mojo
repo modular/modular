@@ -44,13 +44,13 @@ fn test_ldmatrix_fp32(
     var d_reg = SIMD[DType.float32, 4](0)
     var tid = thread_idx.x
     var a_shared = stack_allocation[
-        mma_m * mma_k,
+        Int(mma_m * mma_k),
         DType.float32,
         alignment=32,
         address_space = AddressSpace.SHARED,
     ]()
     var b_shared = stack_allocation[
-        mma_n * mma_k,
+        Int(mma_n * mma_k),
         DType.float32,
         alignment=32,
         address_space = AddressSpace.SHARED,
@@ -61,9 +61,9 @@ fn test_ldmatrix_fp32(
 
     # Transpose B to fit ld_matrix layout.
     for i in range(tid, mma_k * mma_n, WARP_SIZE):
-        var x = i % mma_n
-        var y = i // mma_n
-        b_shared[x * mma_k + y] = b_ptr[i]
+        var x = i % Int(mma_n)
+        var y = i // Int(mma_n)
+        b_shared[x * Int(mma_k) + y] = b_ptr[i]
 
     barrier()
 
@@ -75,7 +75,7 @@ fn test_ldmatrix_fp32(
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
-    store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, 0, 0, n)
+    store_matrix_d[Int(mma_m), Int(mma_n), Int(mma_k)](c_ptr, d_reg, 0, 0, n)
 
 
 fn test_ldmatrix_transposed[

@@ -103,7 +103,7 @@ fn test_tma_mcast_load_kernel[
     # we use another cluster_sync() to ensure that one of the two CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
     cluster_sync()
 
-    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
+    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
@@ -240,7 +240,7 @@ fn test_tma_sliced_multicast_load_kernel[
     # we use another cluster_sync() to ensure that one of the two CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
     cluster_sync()
 
-    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
+    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 

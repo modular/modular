@@ -150,10 +150,10 @@ def mha_operand_copy[
 
     # Create TMA tiles
     src_tma = src.create_tma_tile[
-        tile_m, head_size, swizzle_mode, is_k_major=is_k_major
+        tile_m, Int(head_size), swizzle_mode, is_k_major=is_k_major
     ](ctx)
     dst_tma = dst.create_tma_tile[
-        tile_m, head_size, swizzle_mode, is_k_major=is_k_major
+        tile_m, Int(head_size), swizzle_mode, is_k_major=is_k_major
     ](ctx)
 
     # Calculate grid dimensions
@@ -166,7 +166,7 @@ def mha_operand_copy[
 
     alias kernel = mha_operand_tma_copy_kernel[
         tile_m,
-        head_size,
+        Int(head_size),
         kv_t,
         swizzle_mode,
         is_k_major,

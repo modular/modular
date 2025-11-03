@@ -118,7 +118,7 @@ fn wgmma_kernel_ss[
     var lane_id = thread_idx.x % 32
 
     var th_local_res = (
-        c_gmem.tile[16, WMMA_N](warp_id, 0)
+        c_gmem.tile[16, WMMA_N](Int(warp_id), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id)
     )

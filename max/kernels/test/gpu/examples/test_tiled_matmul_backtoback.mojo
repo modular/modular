@@ -84,9 +84,11 @@ struct BackToBackMatmulConfig[
     fn shared_mem_usage(self, K: Int) -> Int:
         return (
             self.block_tile_shape[0] * K
-            + self.num_pipeline_stages
-            * self.block_tile_shape[1]
-            * self.block_tile_shape[2]
+            + Int(
+                self.num_pipeline_stages
+                * UInt(self.block_tile_shape[1])
+                * UInt(self.block_tile_shape[2])
+            )
         ) * size_of[src_type]()
 
     fn grid_dim(self, M: UInt) -> IndexList[3]:

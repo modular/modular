@@ -38,7 +38,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
         dram_tensor: LayoutTensor[DType.float32, layout, MutAnyOrigin],
         flag: UnsafePointer[Scalar[DType.bool]],
     ):
-        var dram_tile = dram_tensor.tile[4, 4](0, block_idx.x)
+        var dram_tile = dram_tensor.tile[4, 4](0, Int(block_idx.x))
         var sram_tensor = LayoutTensor[
             DType.float32,
             Layout.row_major(4, 4),
@@ -54,7 +54,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
 
         for r in range(4):
             for c in range(4):
-                if sram_tensor[r, c] != r * 16 + col_offset + c:
+                if sram_tensor[r, c] != r * 16 + Int(col_offset) + c:
                     flag[] = False
 
     alias kernel = copy_to_sram_test_kernel[tensor_layout]

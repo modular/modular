@@ -239,7 +239,9 @@ fn winograd_conv2d_gpu_nhwc[
 
             # TODO: Can we do something like this instead?
             # var input_tile = input_tensor.tile[1,1,4,4](c_out, c_in)
-            var input_tile = get_tile[4](input_tensor, n, h_out, w_out, c_in)
+            var input_tile = get_tile[4](
+                input_tensor, Int(n), Int(h_out), Int(w_out), c_in
+            )
 
             # 2. Transform input (B^T * d * B)
             matmul[transpose_b=False](scratch_2, b, input_tile)
