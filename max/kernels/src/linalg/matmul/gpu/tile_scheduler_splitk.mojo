@@ -429,7 +429,7 @@ struct SplitKTileScheduler[
         )
 
         var locks_workspace_bytes = (
-            num_output_tiles * UInt(size_of[Int32]()) * dyn_num_consumer
+            num_output_tiles * size_of[Int32]() * dyn_num_consumer
         )
 
         return Int(locks_workspace_bytes)

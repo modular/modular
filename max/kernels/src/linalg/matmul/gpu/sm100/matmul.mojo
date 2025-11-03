@@ -1144,9 +1144,9 @@ fn copy_accum_to_gmem[
     # every element in tmem is 4 bytes, so bits being 256 means 8 elements stored across N
     # repeated 4 times is 8*4 = 32, enough to move elements into the width of our 128x32 tile
     alias rep_frag_size = repeat * fragment_size
-    var upper_frag_partial = SIMD[accum_type, rep_frag_size]()
+    var upper_frag_partial: SIMD[accum_type, rep_frag_size]
     var lower_frag_partial = SIMD[accum_type, rep_frag_size]()
-    var upper_frag_casted = SIMD[epilogue_dtype, rep_frag_size]()
+    var upper_frag_casted: SIMD[epilogue_dtype, rep_frag_size]
     var lower_frag_casted = SIMD[epilogue_dtype, rep_frag_size]()
 
     alias is_lower_frag_required = not (cta_group == 1 and BM == 64)
