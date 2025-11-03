@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import sys
 import threading
@@ -31,6 +32,7 @@ from tqdm.asyncio import tqdm
 
 from .config import Backend
 from .datasets.types import OpenAIImage
+from .tts_workloads_utils import SampleTTSRequest
 
 # 30 minute timeout per request session
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
@@ -39,31 +41,158 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class RequestFuncInput:
+class BaseRequestFuncInput:
+    """Base class for request function input with common fields."""
+
+    model: str
+    session_id: str | None
+    temperature: float | None
+    top_p: float | None
+    top_k: int | None
+
+
+# TODO: We shouldn't have to maintain two separate RequestFuncInput classes for
+# text generation and TTS benchmarks respectively.
+@dataclass
+class RequestFuncInput(BaseRequestFuncInput):
+    """Request function input for text generation benchmarks."""
+
     prompt: str | list[dict[str, Any]]
     images: list[OpenAIImage]
     api_url: str
     prompt_len: int
     max_tokens: int | None
     ignore_eos: bool
-    model: str
-    session_id: str | None = None
-    temperature: float | None = None
-    top_p: float | None = None
-    top_k: int | None = None
 
 
 @dataclass
-class RequestFuncOutput:
-    cancelled: bool = False
-    generated_text: str = ""
+class TTSRequestFuncInput(BaseRequestFuncInput):
+    """Request function input for TTS (text-to-speech) benchmarks."""
+
+    request_index: int
+    tts_request: SampleTTSRequest
+    is_streaming_mode: bool
+    frequency_penalty: float
+    repetition_penalty: float
+    seed: int = 0
+
+
+@dataclass
+class BaseRequestFuncOutput:
+    """Base class for request function output with common fields."""
+
     success: bool = False
     latency: float = 0.0
-    ttft: float = 0.0  # Time to first token
     # List of inter-token latencies
     itl: list[float] = field(default_factory=list)
-    prompt_len: int = 0
     error: str = ""
+
+
+# TODO: We shouldn't have to maintain two separate RequestFuncOutput classes for
+# text generation and TTS benchmarks respectively.
+@dataclass
+class RequestFuncOutput(BaseRequestFuncOutput):
+    """Request function output for text generation benchmarks."""
+
+    cancelled: bool = False
+    generated_text: str = ""
+    ttft: float = 0.0  # Time to first token
+    prompt_len: int = 0
+
+
+@dataclass
+class TTSRequestFuncOutput(BaseRequestFuncOutput):
+    """Request function output for TTS (text-to-speech) benchmarks."""
+
+    request_index: int = 0
+    # TODO: We have a torch.Tensor dependency here, but our benchmark_shared
+    # package doesn't "require" torch. For better or worse, this is only used
+    # in the TTS benchmarks, so we'll leave it as Any for now.
+    generated_chunk: list[Any] = field(
+        default_factory=list
+    )  # list[torch.Tensor]
+    ttft: float | None = None  # Time to first token (can be None for TTS)
+
+    def get_chunk_lens_in_samples(self) -> list[int]:
+        """Get lengths of audio chunks in samples."""
+        return [x.shape[-1] for x in self.generated_chunk]
+
+    def get_chunk_lens_in_seconds(self, tts_config: Any) -> list[float]:
+        """Get lengths of audio chunks in seconds.
+
+        Args:
+            tts_config: TTS configuration object with decoder_sample_rate attribute.
+        """
+        lens_in_samples = self.get_chunk_lens_in_samples()
+        return [samples_to_seconds(tts_config, x) for x in lens_in_samples]
+
+    def get_chunk_lens_in_tokens(self, tts_config: Any) -> list[int]:
+        """Get lengths of audio chunks in tokens.
+
+        Args:
+            tts_config: TTS configuration object with codec_tokens_per_sec attribute.
+        """
+        lens_in_samples = self.get_chunk_lens_in_samples()
+        return [samples_to_tokens(tts_config, x) for x in lens_in_samples]
+
+    def get_real_time_factors(self, tts_config: Any) -> list[float]:
+        """Calculate real-time factors (RTF).
+
+        RTF is the inter-chunk latency divided by the playback time of the
+        previous chunk. Anything over 100% would lead to a playback error.
+
+        Args:
+            tts_config: TTS configuration object.
+        """
+        lens_in_seconds = self.get_chunk_lens_in_seconds(tts_config)
+        assert len(lens_in_seconds) == len(self.itl) + 1, (
+            "Missing or extra ITLs?"
+        )
+        return [
+            x / y for x, y in zip(self.itl, lens_in_seconds[:-1], strict=True)
+        ]
+
+    def get_output_length_in_samples(self) -> int:
+        """Get total output length in samples."""
+        return sum(self.get_chunk_lens_in_samples())
+
+    def get_output_length_in_seconds(self, tts_config: Any) -> float:
+        """Get total output length in seconds.
+
+        Args:
+            tts_config: TTS configuration object.
+        """
+        return sum(self.get_chunk_lens_in_seconds(tts_config))
+
+    def get_output_length_in_tokens(self, tts_config: Any) -> int:
+        """Get total output length in tokens.
+
+        Args:
+            tts_config: TTS configuration object.
+        """
+        return sum(self.get_chunk_lens_in_tokens(tts_config))
+
+
+def samples_to_seconds(tts_config: Any, num_samples: int) -> float:
+    """Convert number of samples to seconds.
+
+    Args:
+        tts_config: TTS configuration object with decoder_sample_rate attribute.
+        num_samples: Number of audio samples.
+    """
+    return num_samples / tts_config.decoder_sample_rate
+
+
+def samples_to_tokens(tts_config: Any, num_samples: int) -> int:
+    """Convert number of samples to tokens.
+
+    Args:
+        tts_config: TTS configuration object with decoder_sample_rate and
+                   codec_tokens_per_sec attributes.
+        num_samples: Number of audio samples.
+    """
+    playback_time = samples_to_seconds(tts_config, num_samples)
+    return math.ceil(playback_time * tts_config.codec_tokens_per_sec)
 
 
 class RequestDriver(ABC):

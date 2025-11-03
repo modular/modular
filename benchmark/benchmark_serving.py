@@ -501,13 +501,16 @@ async def chat_session_driver(
 ) -> list[RequestFuncOutput]:
     request_func_input = RequestFuncInput(
         model=model_id,
+        session_id=str(chat_session.id),
+        temperature=None,
+        top_p=None,
+        top_k=None,
         prompt=[],
+        images=[],
         api_url=api_url,
         prompt_len=0,
         max_tokens=0,
         ignore_eos=True,
-        images=[],
-        session_id=str(chat_session.id),
     )
     content_idx = 0  # Assume user initiates the conversation
 
@@ -640,15 +643,16 @@ async def run_single_turn_benchmark(
 
         request_func_input = RequestFuncInput(
             model=model_id if lora_id is None else lora_id,
-            prompt=request.prompt_formatted,
-            api_url=api_url,
-            prompt_len=request.prompt_len,
-            max_tokens=max_tokens,
+            session_id=None,
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
-            ignore_eos=ignore_eos,
+            prompt=request.prompt_formatted,
             images=request.encoded_images,
+            api_url=api_url,
+            prompt_len=request.prompt_len,
+            max_tokens=max_tokens,
+            ignore_eos=ignore_eos,
         )
         tasks.append(
             asyncio.create_task(limited_request_func(request_func_input))
@@ -814,6 +818,8 @@ async def run_single_test_prompt(
     request_driver: RequestDriver,
     num_chat_sessions: int | None,
     chat_sessions: Sequence[ChatSession],
+    temperature: float | None,
+    top_p: float | None,
     top_k: int | None,
     max_output_len: int | None,
 ) -> None:
@@ -848,13 +854,16 @@ async def run_single_test_prompt(
 
     test_input = RequestFuncInput(
         model=model_id,
+        session_id=None,
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
         prompt=test_prompt,
+        images=test_images,
         api_url=api_url,
         prompt_len=test_prompt_len,
         max_tokens=test_max_tokens,
         ignore_eos=test_ignore_eos,
-        images=test_images,
-        top_k=top_k,
     )
     test_output = await request_driver.request(test_input)
     if not test_output.success:
@@ -936,6 +945,8 @@ async def benchmark(
             num_chat_sessions=num_chat_sessions,
             chat_sessions=chat_sessions,
             request_driver=test_request_driver,
+            temperature=temperature,
+            top_p=top_p,
             top_k=top_k,
             max_output_len=max_output_len,
         )
