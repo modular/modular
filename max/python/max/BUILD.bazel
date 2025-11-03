@@ -6,6 +6,7 @@ modular_nanobind_extension(
     module_name = "_core",
     new_link_root = "../modular/lib",
     deps = [
+        "//Support:NanobindUtils",
         "//max/python/max/_core/internal/src:modules",
         "@llvm-project//llvm:Support",
     ],
