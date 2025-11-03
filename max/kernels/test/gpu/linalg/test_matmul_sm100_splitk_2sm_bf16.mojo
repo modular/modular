@@ -220,7 +220,7 @@ def main():
             alias MMA_K = 16
 
             @parameter
-            for mma_m_scale in range(2, 3):
+            for mma_m_scale in range(1, 3):
 
                 @parameter
                 for mma_n_scale in range(1, 17):

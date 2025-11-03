@@ -2941,10 +2941,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
             (MMA_M != 256) or (MMA_N % 16 == 0),
             "MMA_N must be a multiple of 16 when MMA_M is 256",
         ]()
-        constrained[
-            (MMA_M != 128) or (MMA_N % 32 == 0),
-            "if MMA_M is 128, then MMA_N must be a multiple of 32",
-        ]()
+
         # transpose_c => MMA_M == 256 is the same as (not transpose_c) or MMA_M == 256
         constrained[
             (not config.AB_swapped) or MMA_M == 256,

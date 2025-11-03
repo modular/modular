@@ -84,6 +84,7 @@ struct TileScheduler[
     alias BM = reduction_tile_shape[0]
     alias MMA_N = reduction_tile_shape[1]
     alias BK = reduction_tile_shape[2]
+    alias ROW_SIZE = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
 
     var locks_ptr: UnsafePointer[Int32]
     var scheduler: Self.UnderlyingScheduler
@@ -180,7 +181,7 @@ struct TileScheduler[
     @always_inline
     @staticmethod
     fn _get_max_width_per_stage[max_width: Int]() -> Int:
-        return min(max_width, Self.MMA_N & -Self.MMA_N)
+        return min(max_width, Self.ROW_SIZE & -Self.ROW_SIZE)
 
     @always_inline
     @staticmethod
@@ -190,7 +191,7 @@ struct TileScheduler[
         """helper functions to decompose MMA_N into widths that are powers of two
         """
         var arr = InlineArray[Int, 4](uninitialized=True)
-        var current_width = Self.MMA_N
+        var current_width = Self.ROW_SIZE
         var first_width: Int
         var second_width: Int
 
@@ -222,11 +223,11 @@ struct TileScheduler[
         widths: InlineArray[Int, 4],
         curr_stage: Int,
     ](
-        tensor: LayoutTensor[accum_type, layout, MutableAnyOrigin, **_],
+        tensor: LayoutTensor[accum_type, layout, MutAnyOrigin, **_],
         out result: LayoutTensor[
             accum_type,
             Self._get_new_layout[layout, widths[curr_stage]](),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = type_of(tensor).address_space,
         ],
     ):
@@ -260,9 +261,8 @@ struct TileScheduler[
     ):
         alias data_paths = 16  # same as lanes
         alias bits = 256
-        alias row_size = Self.MMA_N
         # only load from TMEM when not using split-k
-        alias total_rep = row_size // 8
+        alias total_rep = Self.ROW_SIZE // 8
 
         # 128 is a magic number that is provided by the NVCC backend.
         # register size that is greater than that will not compile.
@@ -284,11 +284,17 @@ struct TileScheduler[
         var workspace_tile = self._get_workspace_tile(
             reduction_workspace, reduction_tile_idx
         )
-        var reduction_frag = workspace_tile.tile[Self.BM // 4, Self.MMA_N](
-            Int(local_warp_id), 0
+
+        alias REDUCTION_BM = Self.BM // 4 if Self.BM == 128 else Self.BM // 2
+        alias REDUCTION_BN = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
+        var warp_id_x = local_warp_id if Self.BM == 128 else local_warp_id % 2
+        var warp_id_y = 0 if Self.BM == 128 else local_warp_id // 2
+
+        var reduction_frag = workspace_tile.tile[REDUCTION_BM, REDUCTION_BN](
+            Int(warp_id_x), Int(warp_id_y)
         )
-        var reduction_upper = reduction_frag.tile[16, Self.MMA_N](0, 0)
-        var reduction_lower = reduction_frag.tile[16, Self.MMA_N](1, 0)
+        var reduction_upper = reduction_frag.tile[16, REDUCTION_BN](0, 0)
+        var reduction_lower = reduction_frag.tile[16, REDUCTION_BN](1, 0)
         var stage_tmem_addr = tmem_addr
 
         @parameter
