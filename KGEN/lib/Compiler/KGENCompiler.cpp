@@ -910,6 +910,9 @@ setEmissionOptions(llvm::StringMap<llvm::cl::Option *> &options,
   if (!emissionOpt.contains("=")) {
     return Error("emission option must be of the form `option=value`");
   }
+
+  static llvm::SmallSet<StringRef, 1> intKeys = {"denormal-fp-math-f32"};
+
   auto [key, value] = emissionOpt.split("=");
   if (value.equals_insensitive("true") || value.equals_insensitive("false")) {
     auto *boolVal = static_cast<llvm::cl::opt<bool> *>(options[key]);
@@ -921,14 +924,15 @@ setEmissionOptions(llvm::StringMap<llvm::cl::Option *> &options,
       boolVal->addOccurrence(0, key,
                              std::to_string(value.equals_insensitive("true")));
     }
-  } else if (llvm::all_of(value, llvm::isDigit)) {
+  } else if (llvm::all_of(value, llvm::isDigit) || intKeys.contains(key)) {
     auto *intVal = static_cast<llvm::cl::opt<int> *>(options[key]);
     if (!intVal)
       return Error("emission option \"" + Twine(key) + "\" is not found");
     if (reset)
       intVal->reset();
-    else
+    else {
       intVal->addOccurrence(0, key, value);
+    }
   } else {
     return Error("invalid emission option \"" + emissionOpt +
                  "\" (only boolean and integer values "
@@ -940,7 +944,7 @@ setEmissionOptions(llvm::StringMap<llvm::cl::Option *> &options,
 ErrorOrSuccess KGEN::parseEmissionOptions(EmissionOptions emissionOptions) {
   // Handle the emission options.
   // Parse the emission options from a comma separated list of values.
-  llvm::StringMap<llvm::cl::Option *> options =
+  llvm::StringMap<llvm::cl::Option *> &options =
       llvm::cl::getRegisteredOptions();
 
   for (StringRef elem : emissionOptions) {
@@ -954,7 +958,7 @@ ErrorOrSuccess KGEN::parseEmissionOptions(EmissionOptions emissionOptions) {
 ErrorOrSuccess KGEN::resetEmissionOptions(EmissionOptions emissionOptions) {
   // Handle the emission options.
   // Parse the emission options from a comma separated list of values.
-  llvm::StringMap<llvm::cl::Option *> options =
+  llvm::StringMap<llvm::cl::Option *> &options =
       llvm::cl::getRegisteredOptions();
 
   for (StringRef elem : emissionOptions) {
