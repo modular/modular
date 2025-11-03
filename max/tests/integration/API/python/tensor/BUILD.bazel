@@ -6,9 +6,12 @@ modular_py_test(
     srcs = glob(["*.py"]),
     imports = ["."],
     target_compatible_with = select({
+        # Takes too long, this is mostly just testing plumbing into other code so low value.
+        "//:asan": ["@platforms//:incompatible"],
+        # FIXME: MOCO-2411
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
-    }),  # FIXME: MOCO-2411
+    }),
     deps = [
         "//max/python/max/experimental",
         "//max/python/max/nn",
