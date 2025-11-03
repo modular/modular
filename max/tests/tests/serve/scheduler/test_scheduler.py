@@ -19,7 +19,7 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.serve.scheduler.batch_constructor import TokenGenerationSchedulerConfig
+from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
 )
