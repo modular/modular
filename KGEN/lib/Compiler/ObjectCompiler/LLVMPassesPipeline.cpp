@@ -11,6 +11,7 @@
 #include "MCLinker.h"
 #include "LLVM/Transforms/MetalAIRPass.h"
 #include "LLVM/Transforms/PointerRewriter.h"
+#include "LLVM/Transforms/SetFunctionAttributes.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/ProfileSummaryInfo.h"
@@ -386,6 +387,10 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
     // Then run PointerRewriter to add bitcasts for typed IR
     mpm.addPass(PointerRewriter());
     return mpm;
+  }
+
+  if (isNVPTXBackend(options)) {
+    mpm.addPass(SetFunctionAttributes());
   }
 
   // Do basic inference of function attributes from known properties of system
