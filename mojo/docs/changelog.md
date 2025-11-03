@@ -469,3 +469,10 @@ what we publish.
   detailed explanations of all MLIR target components, vendor-specific patterns
   for NVIDIA/AMD/Apple GPUs, step-by-step guides for adding new GPU
   architectures, and practical methods for obtaining data layout strings.
+
+- [Issue #5492](https://github.com/modular/modular/issues/5492): Fixed
+  `FileHandle` "rw" mode unexpectedly truncating file contents. Opening a file
+  with `open(path, "rw")` now correctly preserves existing file content and
+  allows both reading and writing, similar to Python's "r+" mode. Previously,
+  "rw" mode would immediately truncate the file, making it impossible to read
+  existing content and causing potential data loss.
