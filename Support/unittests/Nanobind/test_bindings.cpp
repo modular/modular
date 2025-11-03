@@ -4,9 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "SDK/GraphAPI/python/TypeCasters.h" // IWYU pragma: keep (type casters)
 #include "Support/Error.h"
 #include "Support/ErrorOr.h"
+#include "Support/Nanobind/TypeCasters.h" // IWYU pragma: keep (type casters)
 #include "nanobind/nanobind.h"
 #include "llvm/Support/LogicalResult.h"
 

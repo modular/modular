@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SDK_SUPPORT_PYTHONBACKTRACE_H
-#define SDK_SUPPORT_PYTHONBACKTRACE_H
+#ifndef SUPPORT_NANOBIND_PYTHONBACKTRACE_H
+#define SUPPORT_NANOBIND_PYTHONBACKTRACE_H
 
 #include "nanobind/nanobind.h"
 
@@ -30,4 +30,4 @@ inline void printPythonBacktrace() {
 
 } // namespace M
 
-#endif // SDK_SUPPORT_PYTHONBACKTRACE_H
+#endif // SUPPORT_NANOBIND_PYTHONBACKTRACE_H

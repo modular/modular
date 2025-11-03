@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SDK_GRAPHAPI_PYTHON_SEQUENCEVIEW_H
-#define SDK_GRAPHAPI_PYTHON_SEQUENCEVIEW_H
+#ifndef SUPPORT_NANOBIND_SEQUENCEVIEW_H
+#define SUPPORT_NANOBIND_SEQUENCEVIEW_H
 
 #include "nanobind/nanobind.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -75,4 +75,4 @@ struct SequenceView {
 
 } // namespace M::Graph::Python
 
-#endif // SDK_GRAPHAPI_PYTHON_SEQUENCEVIEW_H
+#endif // SUPPORT_NANOBIND_SEQUENCEVIEW_H
