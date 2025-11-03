@@ -107,7 +107,7 @@ private:
 ///
 /// - Rules for ParamIndexRefAttr:
 /// The attr/type initially passed to the evaluator is considered to be at
-/// depth `inputDepth` (0 for most cases, but can be overriden by the user).
+/// depth `inputDepth` (0 for most cases, but can be overridden by the user).
 /// Only index references that point back to index bindings at this depth are
 /// candidates for substitution (see IRAIDAI and PSTIAIRAID for details).
 ///

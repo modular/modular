@@ -736,7 +736,7 @@ def LIT_TryOp : LITOp<"try",
 
     Example:
     ```mlir
-    lit.try "OUTTER" {
+    lit.try "OUTER" {
       lit.try "INNER" {
         lit.if ... {
           ...
@@ -745,7 +745,7 @@ def LIT_TryOp : LITOp<"try",
 
         # finally block pasted before `return`
         ...
-        lit.try.raise "OUTTER" # transfer control flow to outter scope.
+        lit.try.raise "OUTER" # transfer control flow to outer scope.
         return
       } except {
         ...
@@ -1021,7 +1021,7 @@ def LIT_EndFnOp : LITOp<"end_fn", [Terminator]> {
 
   // The `unresolved` attribute helps keep track whether the containing lit.fn
   // op is body resolved or not. This is necessary as the Mojo language server
-  // will run some of the intial LIT lowering passes and may be passed along
+  // will run some of the initial LIT lowering passes and may be passed along
   // lit.fn ops that are not body resolved yet.
   let arguments = (ins UnitAttr:$unresolved);
   let assemblyFormat = "(`unresolved` $unresolved^)? attr-dict";

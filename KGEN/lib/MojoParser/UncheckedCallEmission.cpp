@@ -117,7 +117,7 @@ public:
                          size_t sequenceIndex = 0);
 
   /// Emit all arguments and return their values in a vector. The associated bit
-  /// vector indicates whether the argment value is emitted via default value.
+  /// vector indicates whether the argument value is emitted via default value.
   /// This function iterates by expected arguments since we're building the
   /// argument list of the call. Default arguments are applied (if available and
   /// an operand isn't provided for the arg), and variadics (including packs)

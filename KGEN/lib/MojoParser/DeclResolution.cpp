@@ -3659,7 +3659,7 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
     }
   }
 
-  // We need to make sure that the decl for the function we're inherting is now
+  // We need to make sure that the decl for the function we're inheriting is now
   // fully resolved.
   if (failed(resolveBody(*inheritedFnDecl, inheritedFnDecl->getLoc())))
     return failure();
@@ -3742,7 +3742,7 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
 /// Handles signature resolving inherited alias decls in traits. In such cases
 /// the passed in ASTDecl will be a child of the actual trait we're working on,
 /// while the alias.decl op it contains is actually from the parent trait we're
-/// inherting from.
+/// inheriting from.
 ///
 /// This logic was originally invoked during trait body resolution -- in an
 /// effort to make the resolution of child declarations of traits lazier we've

@@ -267,7 +267,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
       continue;
 
     // Indicates we've already signature resolved this decl, should actually
-    // be able to assume this given the decl is signature resovled, but
+    // be able to assume this given the decl is signature resolved, but
     // double check this.
     if (!fnOp.isDefaultedTraitFn())
       continue;

@@ -297,7 +297,7 @@ static bool bitcastGlobals(Module &module) {
   return true;
 }
 
-// bitcast operands to instructions, by infering the element type by inspecting
+// bitcast operands to instructions, by inferring the element type by inspecting
 // the instruction
 static bool bitcastInstructionOperands(Module &module) {
   // Find all instructions with pointer inputs or outputs
