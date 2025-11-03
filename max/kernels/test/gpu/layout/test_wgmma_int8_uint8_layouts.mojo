@@ -41,23 +41,21 @@ fn wgmma_kernel[
     a_type: DType,
     b_type: DType,
 ](
-    operand_a: LayoutTensor[a_type, Layout.row_major(M, K), MutableAnyOrigin],
-    operand_b: LayoutTensor[b_type, Layout.row_major(K, N), MutableAnyOrigin],
-    result_c: LayoutTensor[
-        DType.int32, Layout.row_major(M, N), MutableAnyOrigin
-    ],
+    operand_a: LayoutTensor[a_type, Layout.row_major(M, K), MutAnyOrigin],
+    operand_b: LayoutTensor[b_type, Layout.row_major(K, N), MutAnyOrigin],
+    result_c: LayoutTensor[DType.int32, Layout.row_major(M, N), MutAnyOrigin],
 ):
     var smem_operand_a = LayoutTensor[
         a_type,
         smem_operand_a_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var smem_operand_b = LayoutTensor[
         b_type,
         smem_operand_b_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 

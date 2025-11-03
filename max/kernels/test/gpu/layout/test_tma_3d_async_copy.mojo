@@ -37,7 +37,7 @@ fn test_tma_3d_load_kernel[
     desc_layout: Layout,
     smem_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, dst_layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, cta_tile_layout, desc_layout],
 ):
     constrained[
@@ -65,7 +65,7 @@ fn test_tma_3d_load_kernel[
     smem_tile = LayoutTensor[
         dtype,
         smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -186,7 +186,7 @@ def test_tma_3d_load_row_major[
     desc_tile = LayoutTensor[
         dtype,
         Layout.row_major(desc_tile_dim1, desc_tile_dim2),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ].stack_allocation()
 
     var dest_ptr = dst_host.ptr

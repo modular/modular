@@ -57,9 +57,9 @@ fn sgemm_double_buffer[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
 ):
     alias _uint = Scalar[itype]
 
@@ -98,7 +98,7 @@ fn sgemm_double_buffer[
         LayoutTensor[
             a_type,
             Layout.row_major(2 * BK, BM_padded),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ]
         .stack_allocation()
@@ -112,7 +112,7 @@ fn sgemm_double_buffer[
         LayoutTensor[
             b_type,
             Layout.row_major(2 * BK, BN),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ]
         .stack_allocation()
@@ -158,13 +158,13 @@ fn sgemm_double_buffer[
         LayoutTensor[
             a_type,
             layout_a,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation(),
         LayoutTensor[
             a_type,
             layout_a,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation(),
     )
@@ -173,13 +173,13 @@ fn sgemm_double_buffer[
         LayoutTensor[
             b_type,
             layout_b,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation(),
         LayoutTensor[
             b_type,
             layout_b,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation(),
     )
@@ -188,7 +188,7 @@ fn sgemm_double_buffer[
         LayoutTensor[
             c_type,
             layout_c,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()

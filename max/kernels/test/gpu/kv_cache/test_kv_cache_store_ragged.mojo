@@ -133,13 +133,13 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     var kv_collection_paged_device = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        rebind[NDBuffer[dtype, 6, MutableAnyOrigin]](
+        rebind[NDBuffer[dtype, 6, MutAnyOrigin]](
             kv_block_managed.device_buffer()
         ),
-        rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+        rebind[NDBuffer[DType.uint32, 1, MutAnyOrigin]](
             cache_lengths_managed.device_buffer()
         ),
-        rebind[NDBuffer[DType.uint32, 2, MutableAnyOrigin]](
+        rebind[NDBuffer[DType.uint32, 2, MutAnyOrigin]](
             paged_lut_managed.device_buffer()
         ),
         max_prompt_length,
@@ -199,11 +199,11 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     var kv_collection_paged_host = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        rebind[NDBuffer[dtype, 6, MutableAnyOrigin]](kv_block_managed.buffer()),
-        rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+        rebind[NDBuffer[dtype, 6, MutAnyOrigin]](kv_block_managed.buffer()),
+        rebind[NDBuffer[DType.uint32, 1, MutAnyOrigin]](
             cache_lengths_managed.buffer()
         ),
-        rebind[NDBuffer[DType.uint32, 2, MutableAnyOrigin]](
+        rebind[NDBuffer[DType.uint32, 2, MutAnyOrigin]](
             paged_lut_managed.buffer()
         ),
         max_prompt_length,

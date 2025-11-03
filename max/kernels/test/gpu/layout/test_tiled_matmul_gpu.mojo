@@ -34,9 +34,9 @@ fn naive_matmul[
     BM: Int,
     BN: Int,
 ](
-    dst: LayoutTensor[DType.float32, layout_dst, MutableAnyOrigin],
-    lhs: LayoutTensor[DType.float32, layout_dst, MutableAnyOrigin],
-    rhs: LayoutTensor[DType.float32, layout_dst, MutableAnyOrigin],
+    dst: LayoutTensor[DType.float32, layout_dst, MutAnyOrigin],
+    lhs: LayoutTensor[DType.float32, layout_dst, MutAnyOrigin],
+    rhs: LayoutTensor[DType.float32, layout_dst, MutAnyOrigin],
 ):
     var dst_tile = dst.tile[BM, BN](block_idx.y, block_idx.x)
     dst_tile[thread_idx.y, thread_idx.x] = 0
@@ -96,15 +96,15 @@ fn sram_blocked_matmul[
     BN: Int,
     BK: Int,
 ](
-    dst: LayoutTensor[DType.float32, layout_dst, MutableAnyOrigin],
-    lhs: LayoutTensor[DType.float32, layout_lhs, MutableAnyOrigin],
-    rhs: LayoutTensor[DType.float32, layout_rhs, MutableAnyOrigin],
+    dst: LayoutTensor[DType.float32, layout_dst, MutAnyOrigin],
+    lhs: LayoutTensor[DType.float32, layout_lhs, MutAnyOrigin],
+    rhs: LayoutTensor[DType.float32, layout_rhs, MutAnyOrigin],
 ):
     # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
     var lhs_sram_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(BM, BK)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -113,7 +113,7 @@ fn sram_blocked_matmul[
     var rhs_sram_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(BK, BN)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -235,9 +235,9 @@ fn single_warp_mma_sync_m16n8k8[
     layout_a_mma: Layout,
     layout_b_mma: Layout,
 ](
-    mat_c: LayoutTensor[DType.float32, layout_c, MutableAnyOrigin],
-    mat_a: LayoutTensor[DType.float32, layout_a, MutableAnyOrigin],
-    mat_b: LayoutTensor[DType.float32, layout_b, MutableAnyOrigin],
+    mat_c: LayoutTensor[DType.float32, layout_c, MutAnyOrigin],
+    mat_a: LayoutTensor[DType.float32, layout_a, MutAnyOrigin],
+    mat_b: LayoutTensor[DType.float32, layout_b, MutAnyOrigin],
 ):
     var mat_a_mma = mat_a.composition[layout_a_mma]()
     # Note: CUTLASS layout above assumes the same layout as the instruction itself, l.h.s row-major and r.h.s col-major.
@@ -339,15 +339,15 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     BN: Int,
     BK: Int,
 ](
-    dst: NDBuffer[DType.float32, 2, MutableAnyOrigin, dst_shape],
-    lhs: NDBuffer[DType.float32, 2, MutableAnyOrigin, lhs_shape],
-    rhs: NDBuffer[DType.float32, 2, MutableAnyOrigin, rhs_shape],
+    dst: NDBuffer[DType.float32, 2, MutAnyOrigin, dst_shape],
+    lhs: NDBuffer[DType.float32, 2, MutAnyOrigin, lhs_shape],
+    rhs: NDBuffer[DType.float32, 2, MutAnyOrigin, rhs_shape],
 ):
     # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
     var lhs_sram_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(BM, BK)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -356,7 +356,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     var rhs_sram_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(BK, BN)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -380,7 +380,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     # Allocate a register tile for the dst matrix with the same layout.
     # TODO: Is it useful to have stack_allocation_like[thread_layout](nd_buffer) ? We can do this if needed.
     var dst_register_tile = (
-        LayoutTensor[DType.float32, Layout.row_major(2, 2), MutableAnyOrigin]
+        LayoutTensor[DType.float32, Layout.row_major(2, 2), MutAnyOrigin]
         .stack_allocation()
         .fill(0)
     )

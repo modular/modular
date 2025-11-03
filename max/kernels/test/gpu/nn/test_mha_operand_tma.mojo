@@ -78,7 +78,7 @@ fn mha_operand_tma_copy_kernel[
     smem_tile = LayoutTensor[
         kv_t.dtype,
         type_of(src_tma_tile).layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()

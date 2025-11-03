@@ -56,13 +56,13 @@ fn async_copy_kernel[
     input_layout: Layout,
     BM: Int,
     BN: Int,
-](input: LayoutTensor[DType.float32, input_layout, MutableAnyOrigin]):
+](input: LayoutTensor[DType.float32, input_layout, MutAnyOrigin]):
     var input_tile = input.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
     var smem_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(BM, BN)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -152,8 +152,8 @@ fn swizzle_copy[
     BK: Int,
     num_threads: Int,
 ](
-    a: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
     alias simd_size = simd_width_of[dtype]()
 
@@ -162,7 +162,7 @@ fn swizzle_copy[
         LayoutTensor[
             dtype,
             Layout.row_major(BM, BK),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ]
         .stack_allocation()
@@ -320,14 +320,14 @@ fn partial_copy_dram_to_sram_async_kernel[
     num_threads: Int,
     block_dim_count: Int,
 ](
-    input: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
-    output: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
+    input: LayoutTensor[DType.float32, layout, MutAnyOrigin],
+    output: LayoutTensor[DType.float32, layout, MutAnyOrigin],
 ):
     var smem_tile = (
         LayoutTensor[
             DType.float32,
             layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ]
         .stack_allocation()
@@ -429,14 +429,14 @@ fn copy_dram_to_sram_kernel[
     num_threads: Int,
     block_dim_count: Int,
 ](
-    input: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
-    output: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
+    input: LayoutTensor[DType.float32, layout, MutAnyOrigin],
+    output: LayoutTensor[DType.float32, layout, MutAnyOrigin],
 ):
     var smem_tile = (
         LayoutTensor[
             DType.float32,
             layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ]
         .stack_allocation()
@@ -537,7 +537,7 @@ fn copy_sram_to_dram_kernel[
     num_threads: Int,
     block_dim_count: Int,
     binary_op: OptionalReg[binary_op_type] = None,
-](input: LayoutTensor[dtype, layout, MutableAnyOrigin]):
+](input: LayoutTensor[dtype, layout, MutAnyOrigin]):
     alias simd_size = simd_width_of[dtype]()
 
     alias thread_layout = Layout.row_major(
@@ -549,7 +549,7 @@ fn copy_sram_to_dram_kernel[
     var smem_tile = LayoutTensor[
         DType.float32,
         Layout.row_major(M, N),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     arange(smem_tile)
@@ -710,13 +710,13 @@ fn copy_local_to_local_kernel[
     MMA_N: Int,
     num_threads: Int,
     block_dim_count: Int,
-](output: LayoutTensor[dtype, layout, MutableAnyOrigin]):
+](output: LayoutTensor[dtype, layout, MutAnyOrigin]):
     alias simd_size = 2
 
     var reg_tile0 = LayoutTensor[
         DType.float32,
         Layout.row_major(MMA_M, MMA_N * simd_size),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     arange(reg_tile0)
@@ -725,7 +725,7 @@ fn copy_local_to_local_kernel[
         LayoutTensor[
             DType.bfloat16,
             Layout.row_major(MMA_M, MMA_N * simd_size),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -849,8 +849,8 @@ def run_copy_local_to_local_tests(ctx: DeviceContext):
 fn copy_dram_to_local_kernel[
     layout: Layout, num_threads: Int, block_dim_count: Int
 ](
-    input: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
-    output: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
+    input: LayoutTensor[DType.float32, layout, MutAnyOrigin],
+    output: LayoutTensor[DType.float32, layout, MutAnyOrigin],
 ):
     alias thread_layout = Layout.row_major(4, 2)
     alias num_active_threads = thread_layout.size()
@@ -862,7 +862,7 @@ fn copy_dram_to_local_kernel[
             Layout.row_major(
                 layout.size() // num_active_threads // simd_width, simd_width
             ),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -974,11 +974,11 @@ fn copy_local_to_sram_kernel[
     simd_size_col: Int,
     num_threads: Int,
     block_dim_count: Int = 1,
-](output: LayoutTensor[dtype, layout, MutableAnyOrigin]):
+](output: LayoutTensor[dtype, layout, MutAnyOrigin]):
     var reg_tile0 = LayoutTensor[
         DType.float32,
         Layout.row_major(MMA_M * simd_size_row, MMA_N * simd_size_col),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     arange(reg_tile0)
@@ -987,7 +987,7 @@ fn copy_local_to_sram_kernel[
         LayoutTensor[
             dtype,
             Layout.row_major(WM, WN),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ]
         .stack_allocation()

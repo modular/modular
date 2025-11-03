@@ -52,10 +52,10 @@ def run_elementwise[type: DType](ctx: DeviceContext):
     alias length = 256
 
     var divisors = NDBuffer[
-        type, 1, MutableAnyOrigin, DimList(length)
+        type, 1, MutAnyOrigin, DimList(length)
     ].stack_allocation()
     var remainders = NDBuffer[
-        type, 1, MutableAnyOrigin, DimList(length)
+        type, 1, MutAnyOrigin, DimList(length)
     ].stack_allocation()
 
     var out_divisors = ctx.enqueue_create_buffer[type](length)

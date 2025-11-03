@@ -148,10 +148,10 @@ fn b2b_gemm[
     config: BackToBackMatmulConfig[d_type, in_type, transpose_b, transpose_c],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    D: LayoutTensor[d_type, d_layout, MutableAnyOrigin],
-    A: LayoutTensor[in_type, a_layout, MutableAnyOrigin],
-    B: LayoutTensor[in_type, b_layout, MutableAnyOrigin],
-    C: LayoutTensor[in_type, c_layout, MutableAnyOrigin],
+    D: LayoutTensor[d_type, d_layout, MutAnyOrigin],
+    A: LayoutTensor[in_type, a_layout, MutAnyOrigin],
+    B: LayoutTensor[in_type, b_layout, MutAnyOrigin],
+    C: LayoutTensor[in_type, c_layout, MutAnyOrigin],
 ):
     constrained[
         A.dtype in (DType.float32, DType.bfloat16)
@@ -294,7 +294,7 @@ fn b2b_gemm[
         LayoutTensor[
             accum_type,
             layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -304,7 +304,7 @@ fn b2b_gemm[
     var ab_reg_tile = LayoutTensor[
         accum_type,
         layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     for l in range(num_l_iter):
@@ -450,7 +450,7 @@ fn b2b_gemm[
         var accum_smem_warp_tile = LayoutTensor[
             accum_type,
             Layout.row_major(WM, WN),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ](a_smem.bitcast[Scalar[accum_type]]() + warp_id * UInt(WM) * UInt(WN))
 

@@ -899,7 +899,7 @@ def test_arange_nested_layout():
             IntTuple(IntTuple(16, 8), IntTuple(32, 2)),
             IntTuple(IntTuple(32, 1024), IntTuple(1, 512)),
         ),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         alignment=16,
     ].stack_allocation()
     arange(nested_tensor)
@@ -908,7 +908,7 @@ def test_arange_nested_layout():
     var simple_tensor = LayoutTensor[
         DType.float32,
         Layout.row_major(4, 4),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ].stack_allocation()
     arange(simple_tensor)
 
@@ -926,7 +926,7 @@ def test_arange_nested_layout():
     var col_major_tensor = LayoutTensor[
         DType.float32,
         Layout.col_major(4, 4),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ].stack_allocation()
     arange(col_major_tensor)
 
@@ -949,7 +949,7 @@ def test_layout_tensor_iterator_print():
     var iter = LayoutTensorIter[
         DType.int16,
         tile_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         masked=True,
     ](storage.unsafe_ptr(), buf_size)
 

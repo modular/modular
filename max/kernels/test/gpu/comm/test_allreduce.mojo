@@ -123,10 +123,10 @@ fn allreduce_test[
             list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create and initialize input and output buffers.
-    var in_bufs = InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
-    ](fill={})
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], num_buffers](
+        fill={}
+    )
+    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
         fill={}
     )
 
@@ -158,8 +158,8 @@ fn allreduce_test[
 
     # Copy-capture in registers since the lambda will be used on GPU.
     var out_bufs_capture = StaticTuple[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
-    ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        NDBuffer[dtype, rank, MutAnyOrigin], ngpus
+    ](NDBuffer[dtype, rank, MutAnyOrigin]())
 
     for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, rank](
@@ -288,12 +288,12 @@ def allreduce_naive_test() -> None:
         ctxs[i].enqueue_copy(in_dev[i], host_ptrs[i])
 
     # Wrap as NDBuffers for the kernel API
-    var in_bufs = InlineArray[
-        NDBuffer[DType.float32, 1, MutableAnyOrigin], ngpus
-    ](fill={})
-    var out_bufs = InlineArray[
-        NDBuffer[DType.float32, 1, MutableAnyOrigin], ngpus
-    ](fill={})
+    var in_bufs = InlineArray[NDBuffer[DType.float32, 1, MutAnyOrigin], ngpus](
+        fill={}
+    )
+    var out_bufs = InlineArray[NDBuffer[DType.float32, 1, MutAnyOrigin], ngpus](
+        fill={}
+    )
 
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[DType.float32, 1](
@@ -305,8 +305,8 @@ def allreduce_naive_test() -> None:
 
     # Prepare an output lambda that writes into the correct device's out buffer.
     var out_bufs_capture = StaticTuple[
-        NDBuffer[DType.float32, 1, MutableAnyOrigin], ngpus
-    ](NDBuffer[DType.float32, 1, MutableAnyOrigin]())
+        NDBuffer[DType.float32, 1, MutAnyOrigin], ngpus
+    ](NDBuffer[DType.float32, 1, MutAnyOrigin]())
     for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[DType.float32, 1](
             out_dev[i].unsafe_ptr(), DimList(length)

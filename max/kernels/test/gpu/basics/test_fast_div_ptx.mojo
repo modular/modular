@@ -52,7 +52,7 @@ fn fast_div_kernel[
     dtype: DType,
     layout: Layout,
     divisor: Int,
-](input: LayoutTensor[dtype, layout, MutableAnyOrigin],):
+](input: LayoutTensor[dtype, layout, MutAnyOrigin],):
     alias fast_div = FastDiv[dtype](divisor)
     var x = input[0]
     var result = rebind[Scalar[fast_div.uint_type]](x) / fast_div

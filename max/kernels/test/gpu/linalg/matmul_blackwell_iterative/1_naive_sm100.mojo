@@ -40,9 +40,9 @@ fn kernel_1[
     transpose_b: Bool = True,
     BLOCKSIZE: Int = 32,
 ](
-    c: LayoutTensor[DType.bfloat16, Layout.row_major(M, N), MutableAnyOrigin],
-    a: LayoutTensor[DType.bfloat16, Layout.row_major(M, K), MutableAnyOrigin],
-    b: LayoutTensor[DType.bfloat16, Layout.row_major(K, N), MutableAnyOrigin],
+    c: LayoutTensor[DType.bfloat16, Layout.row_major(M, N), MutAnyOrigin],
+    a: LayoutTensor[DType.bfloat16, Layout.row_major(M, K), MutAnyOrigin],
+    b: LayoutTensor[DType.bfloat16, Layout.row_major(K, N), MutAnyOrigin],
 ):
     var row = block_dim.y * block_idx.y + (thread_idx.y)
     var col = block_dim.x * block_idx.x + (thread_idx.x)

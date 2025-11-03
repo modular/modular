@@ -149,7 +149,7 @@ fn cp_test_fn():
     var smem_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(32, 32)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()

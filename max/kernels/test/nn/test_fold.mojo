@@ -79,7 +79,7 @@ fn test[
     )
     var input_layout = RuntimeLayout[unknown_layout_3d].row_major(input_shape)
     var input_data = UnsafePointer[Scalar[dtype]].alloc(input_layout.size())
-    var input = LayoutTensor[dtype, unknown_layout_3d, MutableAnyOrigin](
+    var input = LayoutTensor[dtype, unknown_layout_3d, MutAnyOrigin](
         input_data,
         input_layout,
     )
@@ -94,7 +94,7 @@ fn test[
     var expected_data = UnsafePointer[Scalar[dtype]].alloc(
         runtime_layout_4d.size()
     )
-    var expected = LayoutTensor[dtype, unknown_layout_4d, MutableAnyOrigin](
+    var expected = LayoutTensor[dtype, unknown_layout_4d, MutAnyOrigin](
         expected_data,
         runtime_layout_4d,
     )
@@ -103,7 +103,7 @@ fn test[
     var output_data = UnsafePointer[Scalar[dtype]].alloc(
         runtime_layout_4d.size()
     )
-    var output = LayoutTensor[dtype, unknown_layout_4d, MutableAnyOrigin](
+    var output = LayoutTensor[dtype, unknown_layout_4d, MutAnyOrigin](
         output_data,
         runtime_layout_4d,
     )
@@ -160,7 +160,7 @@ fn _copy_values_to_layout_tensor[
     dtype: DType,
     layout: Layout,
 ](
-    tensor: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    tensor: LayoutTensor[dtype, layout, MutAnyOrigin],
     values: List[Scalar[dtype]],
 ) raises:
     var num_elements = tensor.size()

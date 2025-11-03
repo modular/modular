@@ -41,13 +41,13 @@ fn clear_c(buf: NDBuffer[mut=True, *_, **_]):
 
 def test_dot_at_b[dtype: DType, shape: DimList]():
     var a_matrix = NDBuffer[
-        dtype, 2, MutableAnyOrigin, shape=shape
+        dtype, 2, MutAnyOrigin, shape=shape
     ].stack_allocation()
     var b_matrix = NDBuffer[
-        dtype, 2, MutableAnyOrigin, shape=shape
+        dtype, 2, MutAnyOrigin, shape=shape
     ].stack_allocation()
     var c_matrix = NDBuffer[
-        dtype, 2, MutableAnyOrigin, shape=shape
+        dtype, 2, MutAnyOrigin, shape=shape
     ].stack_allocation()
 
     fill_a(a_matrix)

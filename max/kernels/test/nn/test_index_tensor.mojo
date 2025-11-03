@@ -521,17 +521,17 @@ fn test_advanced_indexing_getitem() raises:
         Scalar[index_type], Int(index_shape.flattened_length())
     ](uninitialized=True)
     alias index_layout = Layout.row_major[index_rank]()
-    var index_a = LayoutTensor[index_type, index_layout, MutableAnyOrigin](
+    var index_a = LayoutTensor[index_type, index_layout, MutAnyOrigin](
         a_stack, RuntimeLayout[index_layout].row_major(index_shape)
     )
-    var index_b = LayoutTensor[index_type, index_layout, MutableAnyOrigin](
+    var index_b = LayoutTensor[index_type, index_layout, MutAnyOrigin](
         b_stack, RuntimeLayout[index_layout].row_major(index_shape)
     )
     for i in range(index_shape.flattened_length()):
         index_a.ptr[i] = i % 5
         index_b.ptr[i] = (i + 1) % 5
     var indices = StaticTuple[
-        LayoutTensor[index_type, index_layout, MutableAnyOrigin], 2
+        LayoutTensor[index_type, index_layout, MutAnyOrigin], 2
     ](index_a, index_b)
 
     # Create output tensor
@@ -667,17 +667,17 @@ fn test_advanced_indexing_setitem_inplace() raises:
         Scalar[index_type], Int(index_shape.flattened_length())
     ](uninitialized=True)
     alias index_layout = Layout.row_major[index_rank]()
-    var index_a = LayoutTensor[index_type, index_layout, MutableAnyOrigin](
+    var index_a = LayoutTensor[index_type, index_layout, MutAnyOrigin](
         a_stack, RuntimeLayout[index_layout].row_major(index_shape)
     )
-    var index_b = LayoutTensor[index_type, index_layout, MutableAnyOrigin](
+    var index_b = LayoutTensor[index_type, index_layout, MutAnyOrigin](
         b_stack, RuntimeLayout[index_layout].row_major(index_shape)
     )
     for i in range(index_shape.flattened_length()):
         index_a.ptr[i] = i % 4
         index_b.ptr[i] = (i + 1) % 4
     var indices = StaticTuple[
-        LayoutTensor[index_type, index_layout, MutableAnyOrigin], 2
+        LayoutTensor[index_type, index_layout, MutAnyOrigin], 2
     ](index_a, index_b)
 
     # Create the updates list and set it sequential data to make it easy to read

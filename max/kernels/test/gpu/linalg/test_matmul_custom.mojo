@@ -70,17 +70,17 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     # Create layout tensors for bf16 kernel
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var c_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutableAnyOrigin](
+    var c_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutAnyOrigin](
         c_device,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    var a_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutableAnyOrigin](
+    var a_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutAnyOrigin](
         a_device,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutableAnyOrigin](
+    var b_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutAnyOrigin](
         b_device,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
@@ -117,17 +117,17 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     ctx.enqueue_copy(b_device_n, b_host_n)
 
     # Create layout tensors for fp32 kernel
-    var c_tensor_fp32 = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+    var c_tensor_fp32 = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         c_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    var a_tensor_fp32 = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+    var a_tensor_fp32 = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         a_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor_fp32 = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+    var b_tensor_fp32 = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         b_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
@@ -257,17 +257,17 @@ fn run_matmul[
     # Create layout tensors for naive kernel
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var c_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var c_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         c_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    var a_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var a_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         a_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var b_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         b_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
@@ -413,17 +413,17 @@ fn run_matmul_split_k[
     # Create layout tensors for naive kernel
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var c_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var c_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         c_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    var a_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var a_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         a_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var b_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         b_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
@@ -552,17 +552,17 @@ fn run_matmul_transpose[
     # Create layout tensors for naive kernel
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var c_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var c_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         c_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    var a_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var a_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         a_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var b_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         b_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](N, K)),
     )

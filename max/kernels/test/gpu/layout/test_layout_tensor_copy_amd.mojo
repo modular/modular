@@ -54,7 +54,7 @@ fn copy_dram_to_sram_buffer_load_kernel[
     )
     alias layout_bmn = Layout.row_major(BM, BN)
     var smem = LayoutTensor[
-        dtype, layout_bmn, MutableAnyOrigin, address_space = AddressSpace.SHARED
+        dtype, layout_bmn, MutAnyOrigin, address_space = AddressSpace.SHARED
     ].stack_allocation()
     if thread_idx.x == 0:
         _ = smem.fill(-1)
@@ -142,7 +142,7 @@ fn copy_dram_to_local_buffer_load_kernel[
     var a_reg_tile = LayoutTensor[
         dtype,
         a_reg_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -215,7 +215,7 @@ fn test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
         var local_tensor = LayoutTensor[
             DType.bfloat16,
             Layout.row_major(16, 8),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
 

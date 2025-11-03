@@ -57,9 +57,9 @@ fn gemm_kernel[
     TM: Int,
     TN: Int,
 ](
-    mat_c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    mat_a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    mat_b: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    mat_c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
+    mat_a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    mat_b: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
 ):
     var M = mat_c.dim(0)
     var N = mat_c.dim(1)
@@ -68,14 +68,14 @@ fn gemm_kernel[
     var a_tile_sram = LayoutTensor[
         a_type,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_tile_sram = LayoutTensor[
         b_type,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -89,20 +89,20 @@ fn gemm_kernel[
     var a_reg = LayoutTensor[
         a_type,
         Layout.row_major(TN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     var b_reg = LayoutTensor[
         b_type,
         Layout.row_major(TN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     var c_reg = (
         LayoutTensor[
             c_type,
             Layout.row_major(TM, TN),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -195,13 +195,13 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_device, b_host)
 
     var mat_a = NDBuffer[
-        DType.float32, 2, MutableAnyOrigin, DimList.create_unknown[2]()
+        DType.float32, 2, MutAnyOrigin, DimList.create_unknown[2]()
     ](a_device.unsafe_ptr(), dynamic_shape=Index(M, K))
     var mat_b = NDBuffer[
-        DType.float32, 2, MutableAnyOrigin, DimList.create_unknown[2]()
+        DType.float32, 2, MutAnyOrigin, DimList.create_unknown[2]()
     ](b_device.unsafe_ptr(), dynamic_shape=Index(K, M))
     var mat_c = NDBuffer[
-        DType.float32, 2, MutableAnyOrigin, DimList.create_unknown[2]()
+        DType.float32, 2, MutAnyOrigin, DimList.create_unknown[2]()
     ](c_device.unsafe_ptr(), dynamic_shape=Index(N, M))
 
     alias kernel = gemm_kernel[
@@ -231,9 +231,9 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(c_host, c_device)
 
-    var c_buffer_ref = NDBuffer[
-        DType.float32, 2, MutableAnyOrigin, DimList(M, N)
-    ](c_device_ref.unsafe_ptr())
+    var c_buffer_ref = NDBuffer[DType.float32, 2, MutAnyOrigin, DimList(M, N)](
+        c_device_ref.unsafe_ptr()
+    )
 
     var c_tensor_ref = from_ndbuffer_row_major(c_buffer_ref)
     var a_tensor = from_ndbuffer_row_major(mat_a)

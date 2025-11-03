@@ -195,13 +195,13 @@ def execute_ragged_flash_attention[
     sink_weights_device = sink_weights_host.copy_to_device(ctx)
 
     var sink_weights_device_tensor: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None
 
     @parameter
     if sink:
         sink_weights_device_tensor = LayoutTensor[
-            dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ](
             sink_weights_device.to_layout_tensor().ptr,
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(

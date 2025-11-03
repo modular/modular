@@ -46,8 +46,8 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     desc_layout: Layout,
     thread_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, dst_layout, MutableAnyOrigin],
-    new_src: LayoutTensor[dtype, src_layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
+    new_src: LayoutTensor[dtype, src_layout, MutAnyOrigin],
     template_tma_tensormap: TMATensorTile[dtype, cta_tile_layout, desc_layout],
     device_tma_tile: TMATensorTileArray[
         num_of_tensormaps, dtype, cta_tile_layout, desc_layout
@@ -60,7 +60,7 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     tile = LayoutTensor[
         dtype,
         cta_tile_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -183,8 +183,8 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
     desc_layout: Layout,
     thread_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, dst_layout, MutableAnyOrigin],
-    new_src: LayoutTensor[dtype, src_layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
+    new_src: LayoutTensor[dtype, src_layout, MutAnyOrigin],
     template_tma_tensormap: TMATensorTile[dtype, cta_tile_layout, desc_layout],
     device_tma_tile: TMATensorTileArray[
         num_of_tensormaps, dtype, cta_tile_layout, desc_layout
@@ -197,7 +197,7 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
     tile = LayoutTensor[
         dtype,
         cta_tile_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -337,8 +337,8 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
     cta_tile_layout: Layout,
     desc_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, dst_layout, MutableAnyOrigin],
-    src: LayoutTensor[dtype, src_layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
+    src: LayoutTensor[dtype, src_layout, MutAnyOrigin],
     template_tma_tensormap: TMATensorTile[dtype, cta_tile_layout, desc_layout],
     subtensors_m: IndexList[num_of_subtensors + 1],
     device_tma_tile: TMATensorTileArray[
@@ -352,7 +352,7 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
     tile = LayoutTensor[
         dtype,
         cta_tile_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -514,7 +514,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     alias swizzle = make_swizzle[dtype, swizzle_mode]()
 
     dest_tile = LayoutTensor[
-        dtype, Layout.row_major(cta_tile_M, cta_tile_N), MutableAnyOrigin
+        dtype, Layout.row_major(cta_tile_M, cta_tile_N), MutAnyOrigin
     ].stack_allocation()
 
     new_src_host = new_src.tensor()

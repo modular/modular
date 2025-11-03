@@ -41,7 +41,7 @@ fn tma_swizzle_multicast_load_kernel[
     CLUSTER_M: UInt,
     CLUSTER_N: UInt,
 ](
-    dst: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, subcluster_tile_layout, desc_layout],
 ):
     alias cluster_tileM = cluster_tile_layout.shape[0].value()
@@ -61,7 +61,7 @@ fn tma_swizzle_multicast_load_kernel[
     tile = LayoutTensor[
         dtype,
         cluster_tile_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -179,7 +179,7 @@ def test_tma_multicast_swizzle[
     alias desc_tile_size = descM * descN
 
     desc_tile = LayoutTensor[
-        dtype, type_of(tma_tensor).desc_layout, MutableAnyOrigin
+        dtype, type_of(tma_tensor).desc_layout, MutAnyOrigin
     ].stack_allocation()
 
     src_host = src.tensor()
@@ -188,10 +188,10 @@ def test_tma_multicast_swizzle[
     alias swizzle = make_swizzle[dtype, swizzle_mode]()
 
     dest_tile = LayoutTensor[
-        dtype, Layout.row_major(tileM, tileN), MutableAnyOrigin
+        dtype, Layout.row_major(tileM, tileN), MutAnyOrigin
     ].stack_allocation()
     src_tile = LayoutTensor[
-        dtype, Layout.row_major(tileM, tileN), MutableAnyOrigin
+        dtype, Layout.row_major(tileM, tileN), MutAnyOrigin
     ].stack_allocation()
 
     for dest_tile_m in range(shape[0] // tileM):

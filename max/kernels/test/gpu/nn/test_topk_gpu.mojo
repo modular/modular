@@ -134,7 +134,7 @@ fn test_case_batched[
                     LayoutTensor[
                         K_device_buffer.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
+                        MutAnyOrigin,
                     ](
                         k_lt.ptr,
                         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -165,7 +165,7 @@ fn test_case_batched[
             LayoutTensor[
                 K_device_buffer.dtype,
                 Layout.row_major(UNKNOWN_VALUE),
-                MutableAnyOrigin,
+                MutAnyOrigin,
             ](
                 k_lt.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -228,7 +228,7 @@ fn test_case_batched[
                         LayoutTensor[
                             K_host_buffer.dtype,
                             Layout.row_major(UNKNOWN_VALUE),
-                            MutableAnyOrigin,
+                            MutAnyOrigin,
                         ](
                             k_lt.ptr,
                             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -253,7 +253,7 @@ fn test_case_batched[
                 LayoutTensor[
                     K_device_buffer.dtype,
                     Layout.row_major(UNKNOWN_VALUE),
-                    MutableAnyOrigin,
+                    MutAnyOrigin,
                 ](
                     k_lt.ptr,
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -362,7 +362,7 @@ fn test_case_multi_rank[
             LayoutTensor[
                 K_device_buffer.dtype,
                 Layout.row_major(UNKNOWN_VALUE),
-                MutableAnyOrigin,
+                MutAnyOrigin,
             ](
                 k_lt.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -399,7 +399,7 @@ fn test_case_multi_rank[
                 LayoutTensor[
                     K_host_buffer.dtype,
                     Layout.row_major(UNKNOWN_VALUE),
-                    MutableAnyOrigin,
+                    MutAnyOrigin,
                 ](
                     k_lt.ptr,
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](

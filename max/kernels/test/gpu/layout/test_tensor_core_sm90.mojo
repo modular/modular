@@ -36,9 +36,9 @@ fn load_and_mma_16x8x32[
     layout_a: Layout,
     layout_b: Layout,
 ](
-    mat_c: LayoutTensor[out_type, layout_c, MutableAnyOrigin],
-    mat_a: LayoutTensor[in_type, layout_a, MutableAnyOrigin],
-    mat_b: LayoutTensor[in_type, layout_b, MutableAnyOrigin],
+    mat_c: LayoutTensor[out_type, layout_c, MutAnyOrigin],
+    mat_a: LayoutTensor[in_type, layout_a, MutAnyOrigin],
+    mat_b: LayoutTensor[in_type, layout_b, MutAnyOrigin],
 ):
     constrained[
         in_type is DType.float8_e4m3fn or in_type is DType.float8_e5m2,

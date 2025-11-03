@@ -159,10 +159,10 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
 
     kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block_dev.tensor,
-        cache_lengths=rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+        cache_lengths=rebind[NDBuffer[DType.uint32, 1, MutAnyOrigin]](
             cache_lengths.tensor
         ),
-        lookup_table=rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+        lookup_table=rebind[NDBuffer[DType.uint32, 1, MutAnyOrigin]](
             lookup_table_dev.tensor
         ),
         max_seq_length=seq_len,

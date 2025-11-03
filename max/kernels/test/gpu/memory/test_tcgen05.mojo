@@ -26,7 +26,7 @@ from testing import assert_almost_equal
 
 fn tcgen05_st_ld_roundtrip_kernel[
     M: Int, N: Int
-](data: LayoutTensor[DType.float32, Layout.row_major(M, N), MutableAnyOrigin]):
+](data: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin]):
     var elect_one_warp = thread_idx.x // WARP_SIZE == 0
     var elect_one_thread = thread_idx.x == 0
 
@@ -105,7 +105,7 @@ def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext):
 
 fn tcgen05_cp_ld_roundtrip_kernel[
     M: Int, N: Int
-](data: LayoutTensor[DType.float32, Layout.row_major(M, N), MutableAnyOrigin]):
+](data: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin]):
     alias M_smem = 128
     alias N_smem = 8
     alias SBO = 256
@@ -115,7 +115,7 @@ fn tcgen05_cp_ld_roundtrip_kernel[
     var smem_tile = LayoutTensor[
         DType.float32,
         smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()

@@ -30,8 +30,8 @@ fn test_load_a[
     layout: Layout,
     inst_shape: IndexList[3],
 ](
-    a: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    a_lane: LayoutTensor[dtype, Layout(WARP_SIZE), MutableAnyOrigin],
+    a: LayoutTensor[dtype, layout, MutAnyOrigin],
+    a_lane: LayoutTensor[dtype, Layout(WARP_SIZE), MutAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
     var a_reg_tile = mma.load_a(a)
@@ -46,8 +46,8 @@ fn test_load_b[
     inst_shape: IndexList[3],
     transpose_b: Bool,
 ](
-    b: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    b_lane: LayoutTensor[dtype, Layout(WARP_SIZE), MutableAnyOrigin],
+    b: LayoutTensor[dtype, layout, MutAnyOrigin],
+    b_lane: LayoutTensor[dtype, Layout(WARP_SIZE), MutAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var b_reg_tile = mma.load_b(b)
@@ -62,8 +62,8 @@ fn test_load_c[
     c_lane_layout: Layout,
     inst_shape: IndexList[3],
 ](
-    c: LayoutTensor[dst_dtype, layout, MutableAnyOrigin],
-    c_lane: LayoutTensor[dst_dtype, c_lane_layout, MutableAnyOrigin],
+    c: LayoutTensor[dst_dtype, layout, MutAnyOrigin],
+    c_lane: LayoutTensor[dst_dtype, c_lane_layout, MutAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
     var c_reg_tile = mma.load_c(c)
@@ -76,7 +76,7 @@ fn test_store_d[
     dtype: DType,
     layout: Layout,
     inst_shape: IndexList[3],
-](d: LayoutTensor[dst_dtype, layout, MutableAnyOrigin]):
+](d: LayoutTensor[dst_dtype, layout, MutAnyOrigin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
     var src = type_of(mma).c_reg_tile_type.stack_allocation().fill(lane_id())
     mma.store_d(d, src)
@@ -91,10 +91,10 @@ fn test_mma_op[
     inst_shape: IndexList[3],
     transpose_b: Bool,
 ](
-    a: LayoutTensor[dtype, layout_a, MutableAnyOrigin],
-    b: LayoutTensor[dtype, layout_b, MutableAnyOrigin],
-    c: LayoutTensor[dst_dtype, layout_c, MutableAnyOrigin],
-    d: LayoutTensor[dst_dtype, layout_c, MutableAnyOrigin],
+    a: LayoutTensor[dtype, layout_a, MutAnyOrigin],
+    b: LayoutTensor[dtype, layout_b, MutAnyOrigin],
+    c: LayoutTensor[dst_dtype, layout_c, MutAnyOrigin],
+    d: LayoutTensor[dst_dtype, layout_c, MutAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     alias k_group_size = a.layout.shape[1].value() // inst_shape[2]

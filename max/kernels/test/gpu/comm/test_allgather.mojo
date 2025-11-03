@@ -87,7 +87,7 @@ def all_gather_test[
         out_bufs_list.append(device_outputs^)
 
     # Create input NDBuffers.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
         fill={}
     )
 
@@ -98,7 +98,7 @@ def all_gather_test[
 
     # Create flat output buffer array (ngpus * ngpus).
     var out_bufs = InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus * ngpus
+        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ](fill={})
 
     for device_idx in range(ngpus):

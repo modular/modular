@@ -55,27 +55,21 @@ fn wgmma_tf32_tf32_f32_kernel[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
 ](
-    a_gmem: LayoutTensor[
-        DType.float32, Layout.row_major(M, K), MutableAnyOrigin
-    ],
-    b_gmem: LayoutTensor[
-        DType.float32, Layout.row_major(K, N), MutableAnyOrigin
-    ],
-    result_c: LayoutTensor[
-        DType.float32, Layout.row_major(M, N), MutableAnyOrigin
-    ],
+    a_gmem: LayoutTensor[DType.float32, Layout.row_major(M, K), MutAnyOrigin],
+    b_gmem: LayoutTensor[DType.float32, Layout.row_major(K, N), MutAnyOrigin],
+    result_c: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.float32,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float32,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -362,27 +356,21 @@ fn wgmma_bf16_bf16_f32_kernel[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
 ](
-    a_gmem: LayoutTensor[
-        DType.bfloat16, Layout.row_major(M, K), MutableAnyOrigin
-    ],
-    b_gmem: LayoutTensor[
-        DType.bfloat16, Layout.col_major(N, K), MutableAnyOrigin
-    ],
-    result_c: LayoutTensor[
-        DType.float32, Layout.row_major(M, N), MutableAnyOrigin
-    ],
+    a_gmem: LayoutTensor[DType.bfloat16, Layout.row_major(M, K), MutAnyOrigin],
+    b_gmem: LayoutTensor[DType.bfloat16, Layout.col_major(N, K), MutAnyOrigin],
+    result_c: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.bfloat16,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -662,27 +650,21 @@ fn wgmma_f16_f16_f32_kernel[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
 ](
-    a_gmem: LayoutTensor[
-        DType.float16, Layout.row_major(M, K), MutableAnyOrigin
-    ],
-    b_gmem: LayoutTensor[
-        DType.float16, Layout.col_major(N, K), MutableAnyOrigin
-    ],
-    result_c: LayoutTensor[
-        DType.float32, Layout.row_major(M, N), MutableAnyOrigin
-    ],
+    a_gmem: LayoutTensor[DType.float16, Layout.row_major(M, K), MutAnyOrigin],
+    b_gmem: LayoutTensor[DType.float16, Layout.col_major(N, K), MutAnyOrigin],
+    result_c: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.float16,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float16,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -962,27 +944,21 @@ fn wgmma_f16_f16_f16_kernel[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
 ](
-    a_gmem: LayoutTensor[
-        DType.float16, Layout.row_major(M, K), MutableAnyOrigin
-    ],
-    b_gmem: LayoutTensor[
-        DType.float16, Layout.row_major(K, N), MutableAnyOrigin
-    ],
-    result_c: LayoutTensor[
-        DType.float16, Layout.row_major(M, N), MutableAnyOrigin
-    ],
+    a_gmem: LayoutTensor[DType.float16, Layout.row_major(M, K), MutAnyOrigin],
+    b_gmem: LayoutTensor[DType.float16, Layout.row_major(K, N), MutAnyOrigin],
+    result_c: LayoutTensor[DType.float16, Layout.row_major(M, N), MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.float16,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float16,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -1270,21 +1246,21 @@ fn wgmma_kernel[
     b_smem_layout: Layout,
     transpose_b: Bool = False,
 ](
-    a_gmem: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b_gmem: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    c_gmem: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a_gmem: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b_gmem: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c_gmem: LayoutTensor[c_type, c_layout, MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.bfloat16,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 

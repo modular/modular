@@ -310,7 +310,7 @@ def execute_flash_attention[
             LayoutTensor[
                 mask_device_mod.dtype,
                 type_of(mask_device_mod.to_layout_tensor()).layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
             ](
                 mask_device_mod.to_layout_tensor().ptr,
                 RuntimeLayout[

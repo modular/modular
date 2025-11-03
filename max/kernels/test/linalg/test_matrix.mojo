@@ -55,7 +55,7 @@ fn test_dynamic_shape(
 
 fn test_matrix_static():
     print("== test_matrix_static")
-    var a = NDBuffer[DType.int32, 1, MutableAnyOrigin, 16].stack_allocation()
+    var a = NDBuffer[DType.int32, 1, MutAnyOrigin, 16].stack_allocation()
     var m = NDBuffer[DType.int32, 2, _, DimList(4, 4)](a.data)
     for i in range(16):
         a[i] = i
@@ -64,7 +64,7 @@ fn test_matrix_static():
 
 fn test_matrix_dynamic():
     print("== test_matrix_dynamic")
-    var a = NDBuffer[DType.int32, 1, MutableAnyOrigin, 16].stack_allocation()
+    var a = NDBuffer[DType.int32, 1, MutAnyOrigin, 16].stack_allocation()
     var m = NDBuffer[DType.int32, 2, _, DimList(4, 4)](a.data)
     for i in range(16):
         a[i] = i
@@ -73,7 +73,7 @@ fn test_matrix_dynamic():
 
 fn test_matrix_dynamic_shape():
     print("== test_matrix_dynamic_shape")
-    var a = NDBuffer[DType.int32, 1, MutableAnyOrigin, 16].stack_allocation()
+    var a = NDBuffer[DType.int32, 1, MutAnyOrigin, 16].stack_allocation()
     # var m = Matrix[DimList(4, 4), DType.int32, False](a.data, Index(4,4), DType.int32)
     var m = NDBuffer[DType.int32, 2, _, DimList.create_unknown[2]()](
         a.data, Index(4, 4)

@@ -49,13 +49,13 @@ fn async_dynamic_copy_kernel[
     BN: Int,
     num_rows: Int,
 ](
-    input: LayoutTensor[DType.float32, input_layout, MutableAnyOrigin],
-    output: LayoutTensor[DType.float32, output_layout, MutableAnyOrigin],
+    input: LayoutTensor[DType.float32, input_layout, MutAnyOrigin],
+    output: LayoutTensor[DType.float32, output_layout, MutAnyOrigin],
 ):
     var masked_input = LayoutTensor[
         DType.float32,
         input_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         masked=True,
     ](
         input.ptr,
@@ -71,7 +71,7 @@ fn async_dynamic_copy_kernel[
     var smem_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(BM, BN)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -162,8 +162,8 @@ fn swizzle_copy[
     BK: Int,
     num_threads: Int,
 ](
-    a: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
     alias simd_size = simd_width_of[dtype]()
 
@@ -172,7 +172,7 @@ fn swizzle_copy[
         LayoutTensor[
             dtype,
             Layout.row_major(BM, BK),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ]
         .stack_allocation()
@@ -291,13 +291,13 @@ def run_swizzle_copy_tests(ctx: DeviceContext):
 @always_inline
 fn masked_async_copy_kernel[
     layout: Layout, num_rows: Int
-](input: LayoutTensor[DType.float32, layout, MutableAnyOrigin]):
+](input: LayoutTensor[DType.float32, layout, MutAnyOrigin]):
     alias thread_layout = Layout.row_major(4, 2)
 
     var masked_input = LayoutTensor[
         DType.float32,
         layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         masked=True,
     ](
         input.ptr,
@@ -311,7 +311,7 @@ fn masked_async_copy_kernel[
         LayoutTensor[
             DType.float32,
             layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ]
         .stack_allocation()
@@ -358,7 +358,7 @@ fn test_masked_async_copy[
     var input_tensor = LayoutTensor[
         DType.float32,
         Layout.row_major(M, N),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ](input.device_tensor().ptr)
 
     alias kernel_type = masked_async_copy_kernel[
@@ -420,13 +420,13 @@ def run_masked_async_copy_tests(ctx: DeviceContext):
 @always_inline
 fn masked_copy_kernel[
     layout: Layout, num_rows: Int
-](input: LayoutTensor[DType.float32, layout, MutableAnyOrigin]):
+](input: LayoutTensor[DType.float32, layout, MutAnyOrigin]):
     alias thread_layout = Layout.row_major(4, 2)
 
     var masked_input = LayoutTensor[
         DType.float32,
         layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         masked=True,
     ](
         input.ptr,
@@ -440,7 +440,7 @@ fn masked_copy_kernel[
         LayoutTensor[
             DType.float32,
             layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ]
         .stack_allocation()
@@ -486,7 +486,7 @@ fn test_masked_copy[
     var input_tensor = LayoutTensor[
         DType.float32,
         Layout.row_major(M, N),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ](input.device_tensor().ptr)
 
     alias kernel_type = masked_copy_kernel[input_tensor.layout, M - skew_rows]
@@ -539,8 +539,8 @@ def run_masked_copy_tests(ctx: DeviceContext):
 fn masked_copy_dram_to_local_kernel[
     layout: Layout, num_rows: Int
 ](
-    input: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
-    output: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
+    input: LayoutTensor[DType.float32, layout, MutAnyOrigin],
+    output: LayoutTensor[DType.float32, layout, MutAnyOrigin],
 ):
     alias thread_layout = Layout.row_major(4, 2)
     alias num_threads = thread_layout.size()
@@ -549,7 +549,7 @@ fn masked_copy_dram_to_local_kernel[
     var masked_input = LayoutTensor[
         DType.float32,
         layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         masked=True,
     ](
         input.ptr,
@@ -565,7 +565,7 @@ fn masked_copy_dram_to_local_kernel[
             Layout.row_major(
                 layout.size() // num_threads // simd_width, simd_width
             ),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
