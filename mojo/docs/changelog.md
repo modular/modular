@@ -307,6 +307,14 @@ what we publish.
 
 - Rename `MutableOrigin` to `MutOrigin` and `ImmutableOrigin` to `ImmutOrigin`.
 
+- Optimized float-to-string formatting performance by eliminating unnecessary
+  stack allocations. Internal lookup tables used for float formatting
+  (`cache_f32` and `cache_f64`) are now stored as global constants instead of
+  being materialized on the stack for each conversion. This reduces stack
+  overhead by ~10KB for `Float64` and ~600 bytes for `Float32` operations, improving
+  performance for all float formatting operations including `print()`, string
+  interpolation, and `str()` conversions.
+
 ### Tooling changes {#25-7-tooling-changes}
 
 - `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)
