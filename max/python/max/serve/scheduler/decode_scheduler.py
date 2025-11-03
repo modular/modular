@@ -47,10 +47,8 @@ from max.serve.scheduler.base import (
 from max.serve.scheduler.di_dispatchers import DecodeDispatcherClientV2
 
 from .base import SchedulerProgress
-from .batch_constructor import (
-    TextBatchConstructor,
-    TokenGenerationSchedulerConfig,
-)
+from .config import TokenGenerationSchedulerConfig
+from .text_batch_constructor import TextBatchConstructor
 from .utils import SchedulerLogger, get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")

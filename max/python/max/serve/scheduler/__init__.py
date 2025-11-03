@@ -42,7 +42,7 @@ from .audio_generation_scheduler import (
     AudioGenerationSchedulerConfig,
 )
 from .base import CancelRequest, PrefillRequest, PrefillResponse
-from .batch_constructor import TokenGenerationSchedulerConfig
+from .config import TokenGenerationSchedulerConfig
 from .decode_scheduler import load_decode_scheduler
 from .embeddings_scheduler import EmbeddingsScheduler, EmbeddingsSchedulerConfig
 from .prefill_scheduler import load_prefill_scheduler

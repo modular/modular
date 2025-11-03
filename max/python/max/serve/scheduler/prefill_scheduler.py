@@ -40,13 +40,11 @@ from max.serve.scheduler.base import (
     PrefillRequest,
     PrefillResponse,
 )
-from max.serve.scheduler.batch_constructor import (
-    TextBatchConstructor,
-    TokenGenerationSchedulerConfig,
-)
-from max.serve.scheduler.di_dispatchers import PrefillDispatcherServerV2
 
 from .base import SchedulerProgress
+from .config import TokenGenerationSchedulerConfig
+from .di_dispatchers import PrefillDispatcherServerV2
+from .text_batch_constructor import TextBatchConstructor
 from .utils import SchedulerLogger
 
 logger = logging.getLogger("max.serve")

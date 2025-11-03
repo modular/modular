@@ -44,12 +44,12 @@ from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import SchedulerProgress
-from .batch_constructor import TokenGenerationSchedulerConfig
-from .batch_constructor.lora_scheduler_utils import (
+from .lora_scheduler_utils import (
     can_allocate_lora_request,
     is_active_lora,
     is_lora,
 )
+from .text_batch_constructor import TokenGenerationSchedulerConfig
 from .utils import get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
