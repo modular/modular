@@ -2822,15 +2822,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     if config.AB_swapped:
         # Swap the a_type, b_type in signature
         # TODO: Do this without creating a new instance.
-        alias new_config = MatmulConfig[b_type, a_type, c_type, transpose_b](
-            cta_group=config.cta_group,
-            mma_shape=config.mma_shape,
-            cluster_shape=config.cluster_shape,
-            AB_swapped=True,
-            block_swizzle_size=config.block_swizzle_size,
-            raster_order=config.raster_order,
-            num_split_k=config.num_split_k,
-        )
+        alias new_config = config.swap_AB_type()
 
         # When both A and B are K-major, then the matrix multiplication math is
         # C = A @ B'
