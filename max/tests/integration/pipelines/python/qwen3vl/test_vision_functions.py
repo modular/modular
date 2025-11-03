@@ -36,7 +36,7 @@ def get_rope_index_torch(
     https://github.com/huggingface/transformers/blob/71db0d49e99884566026c140f8b12b61056fa8dc/src/transformers/models/qwen3_vl_moe/modeling_qwen3_vl_moe.py#L1080
     """
 
-    # Since we use timestamps to seperate videos, like <t1> <vision_start> <frame1> <vision_end> <t2> <vision_start> <frame2> <vision_end>, the video_grid_thw should also be split
+    # Since we use timestamps to separate videos, like <t1> <vision_start> <frame1> <vision_end> <t2> <vision_start> <frame2> <vision_end>, the video_grid_thw should also be split
     if video_grid_thw is not None:
         video_grid_thw = torch.repeat_interleave(
             video_grid_thw, video_grid_thw[:, 0], dim=0
