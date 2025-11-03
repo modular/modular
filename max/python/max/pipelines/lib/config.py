@@ -643,21 +643,10 @@ class PipelineConfig(MAXConfig):
         Validate and resolve the max_num_steps field. These are platform-specific.
         """
         if self.max_num_steps < 0:
-            if (
-                self.sampling_config.enable_structured_output
-                or self.model_config.default_device_spec == DeviceSpec.cpu()
-            ):
+            if self.model_config.default_device_spec == DeviceSpec.cpu():
                 self.max_num_steps = 1
             else:
                 self.max_num_steps = 10
-
-        if (
-            self.max_num_steps > 1
-            and self.sampling_config.enable_structured_output
-        ):
-            raise ValueError(
-                "max_num_steps > 1 not supported when enable_structured_output = True"
-            )
 
     def _validate_pipeline_config_for_speculative_decoding(self) -> None:
         """

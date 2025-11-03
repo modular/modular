@@ -300,7 +300,7 @@ class TextGenerationPipeline(
     def update_for_structured_output(
         self,
         context: TextGenerationContextType,
-        bitmask: npt.NDArray[np.int32] | None,
+        bitmask: npt.NDArray[np.int32],
         index: int,
     ) -> None:
         """Update context and logits bitmask for structured output.
@@ -344,13 +344,12 @@ class TextGenerationPipeline(
                 context.jump_ahead(token)
 
             # Update the bitmask for the context.
-            if bitmask is not None:
-                llguidance.numpy.fill_next_token_bitmask(
-                    context.matcher, bitmask, index=index
-                )
+            llguidance.numpy.fill_next_token_bitmask(
+                context.matcher, bitmask, index=index
+            )
 
     def initialize_bitmask(
-        self, batch_size: int
+        self, batch: list[TextGenerationContextType]
     ) -> npt.NDArray[np.int32] | None:
         """Allocate a per-request token bitmask for structured decoding.
 
@@ -368,7 +367,7 @@ class TextGenerationPipeline(
             raise ValueError("vocab_size must be set to use structured output")
 
         return llguidance.numpy.allocate_token_bitmask(
-            batch_size, self.vocab_size
+            len(batch), self.vocab_size
         )
 
     @traced
@@ -411,11 +410,12 @@ class TextGenerationPipeline(
             for context in self._maybe_sort_loras(batch).values()
         ]
 
-        # Optionally, initialize a bitmask for structured output.
-        bitmask = self.initialize_bitmask(len(flat_batch))
+        # Initialize a bitmask for structured output.
+        bitmask = self.initialize_bitmask(flat_batch)
 
         # Keep a global index for bitmask indexing.
         i = 0
+        has_structured_output = False
         for i, (replica_idx, context) in enumerate(
             zip(replica_ids, flat_batch, strict=False)
         ):
@@ -423,7 +423,11 @@ class TextGenerationPipeline(
             # - Initializing a matcher if needed [once per request]
             # - Jumping ahead in generation if possible
             # - Updating the bitmask for the context.
-            self.update_for_structured_output(context, bitmask, i)
+            if bitmask is not None:
+                self.update_for_structured_output(context, bitmask, i)
+
+            if context.json_schema is not None:
+                has_structured_output = True
 
             if not self._pipeline_model.kv_manager.contains(context.request_id):
                 self._pipeline_model.kv_manager.external_claim(
@@ -432,6 +436,11 @@ class TextGenerationPipeline(
 
             # Update num_steps.
             num_steps = self.calculate_num_steps(num_steps, context)
+
+        # If structured output is enabled for a specific request, we only need to run for a single step.
+        # This is the only check to ensure that we do not apply an outdated bitmask to new inputs, during the next step.
+        if has_structured_output:
+            num_steps = 1
 
         # Retrieve the KV Cache Inputs.
         kv_cache_inputs = self._pipeline_model.kv_manager.fetch(
@@ -442,14 +451,10 @@ class TextGenerationPipeline(
         if self.batch_info_output_fname is not None:
             self._record_batch_info(flat_batch, num_steps)
 
-        from max.nn.kv_cache import (
-            KVCacheInputsSequence as _KVCacheInputsSequence,
-        )
-
         return (
             self._pipeline_model.prepare_initial_token_inputs(
                 context_batch=flat_batch,
-                kv_cache_inputs=_KVCacheInputsSequence(
+                kv_cache_inputs=KVCacheInputsSequence(
                     kv_cache_inputs=kv_cache_inputs
                 ),
             ),

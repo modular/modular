@@ -78,6 +78,7 @@ class FusedSamplingProcessor:
         self.vocab_size = vocab_size
 
         # If a structured decoding bitmask was provided, unpack packed-int masks once.
+        self.tensor_bitmask: Tensor | None
         if (
             self.bitmask is not None
             and self.vocab_size is not None
@@ -88,6 +89,11 @@ class FusedSamplingProcessor:
             self.bitmask = self.bitmask.reshape(self.batch_size, -1).astype(
                 np.bool_
             )
+            self.tensor_bitmask = Tensor.from_numpy(self.bitmask).to(
+                self.device
+            )
+        else:
+            self.tensor_bitmask = None
 
         self.generated_tokens = Tensor(
             shape=(len(context_batch), 0),
@@ -187,14 +193,6 @@ class FusedSamplingProcessor:
     def __call__(self, inputs: BatchProcessorInputs) -> None:
         logits = inputs.logits
         logit_offsets = inputs.logit_offsets
-        tensor_bitmask = None
-        if self.bitmask is not None:
-            if self.step_counter > 0:
-                raise ValueError(
-                    "A new bitmask must be provided for each step."
-                )
-
-            tensor_bitmask = Tensor.from_numpy(self.bitmask).to(self.device)
 
         new_tokens, new_generated_tokens, new_seed = _sample_logits(
             self.sampler,
@@ -207,7 +205,7 @@ class FusedSamplingProcessor:
             self.min_top_p,
             self.seed,
             logit_offsets=logit_offsets,
-            bitmask=tensor_bitmask,
+            bitmask=self.tensor_bitmask,
             frequency_data=self.frequency_data,
             min_tokens_mask=self.min_tokens_masks[self.step_counter]
             if self.min_tokens_masks
