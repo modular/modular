@@ -33,31 +33,54 @@ struct FileHandle {
                          llvm::StringRef *errMsg) {
     std::filesystem::path fsPath(path.str());
     llvm::sys::fs::FileAccess fileAccess = getFileAccess(mode);
+
     if (fileAccess & llvm::sys::fs::FileAccess::FA_Write) {
+      if (fileAccess & llvm::sys::fs::FileAccess::FA_Read) {
+        // Read-write mode: create parent directories but don't truncate
+        if (!fsPath.parent_path().empty()) {
+          std::error_code err;
+          std::filesystem::create_directories(fsPath.parent_path(), err);
+          if (err) {
+            *errMsg =
+                copyString((llvm::Twine("unable to create directories '") +
+                            fsPath.parent_path().string() + "' for read-write")
+                               .str());
+            return nullptr;
+          }
+        }
+      } else {
+        // Write-only mode: truncate the file
+        // TODO: When `append` mode is supported account for that.
+        std::error_code err;
+        if (std::filesystem::exists(fsPath)) {
+          err = llvm::sys::fs::remove(fsPath.string());
+          if (err) {
+            *errMsg =
+                copyString((llvm::Twine("unable to remove existing file ") +
+                            fsPath.string())
+                               .str());
+            return nullptr;
+          }
+        }
 
-      // TODO: When `append` mode is supported account for that.
-      std::error_code err = llvm::sys::fs::remove(fsPath.string());
-      if (err) {
-        *errMsg = copyString(
-            (llvm::Twine("unable to remove existing file ") + fsPath.string())
-                .str());
-        return nullptr;
-      }
-
-      if (!fsPath.parent_path().empty()) {
-        std::filesystem::create_directories(fsPath.parent_path(), err);
-        if (err) {
-          *errMsg = copyString((llvm::Twine("unable to create directories '") +
-                                fsPath.parent_path().string() + "' for write")
-                                   .str());
-          return nullptr;
+        if (!fsPath.parent_path().empty()) {
+          std::filesystem::create_directories(fsPath.parent_path(), err);
+          if (err) {
+            *errMsg =
+                copyString((llvm::Twine("unable to create directories '") +
+                            fsPath.parent_path().string() + "' for write")
+                               .str());
+            return nullptr;
+          }
         }
       }
-    } else if (fileAccess & llvm::sys::fs::FileAccess::FA_Read &&
-               !std::filesystem::exists(fsPath)) {
-      *errMsg = copyString(
-          (llvm::Twine("file path '") + path + "' not found for read").str());
-      return nullptr;
+    } else if (fileAccess & llvm::sys::fs::FileAccess::FA_Read) {
+      // Read-only mode: error if file doesn't exist
+      if (!std::filesystem::exists(fsPath)) {
+        *errMsg = copyString(
+            (llvm::Twine("file path '") + path + "' not found for read").str());
+        return nullptr;
+      }
     }
 
     int handle;
