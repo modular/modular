@@ -870,6 +870,6 @@ modular_nanobind_library(
     deps = [
         ":Base",
         ":ML",
-        "//:MLIRBindingsPythonHeaders",
+        "@llvm-project//mlir:MLIRBindingsPythonNanobindHeaders",
     ],
 )
