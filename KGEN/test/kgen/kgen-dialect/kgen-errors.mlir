@@ -782,3 +782,10 @@ kgen.generator export @concretize_variadic_splaut(
 "some.op"() {
   a = #pop.cast_to_builtin< #pop<simd 1> : !pop.simd<4, si32>> : vector<2xsi32>
 } : () -> ()
+
+// -----
+
+// expected-error @+2 {{mismatch between value type 'si32' and splat element type 'f16'}}
+"some.op"() {
+  a = #pop.simd_splat< #pop<simd 1> : !pop.scalar<si32>> : !pop.simd<3, f16>
+} : () -> ()

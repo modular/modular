@@ -163,3 +163,35 @@ fn fold_pop_cast() -> POPUInt8T[POP_UI8_N1]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@POPUInt8T<:scalar<ui8> #kgen<sugar aibuiltin, !pop.scalar<ui8>, apply(:!lit.generator<("x": !pop.scalar<si8>) -> !pop.scalar<ui8>> @builtin_function_folder_pop_ops::@"pop_cast(__mlir_type.!pop.scalar<si8>)", -1), 255>>, mut *"a`1">
     var a = POPUInt8T[pop_cast(POP_SI8_N1)]()
     return a
+
+
+##===----------------------------------------------------------------------===##
+# Fold pop.simd_splat
+##===----------------------------------------------------------------------===##
+
+
+struct POPUInt8x4T[x: __mlir_type.`!pop.simd<4, ui8>`](ImplicitlyCopyable):
+    fn __init__(out self):
+        pass
+
+    fn __copyinit__(out self, existing: Self):
+        pass
+
+
+alias POP_UI8x4_N1 = __mlir_attr.`#pop.simd<255, 255, 255, 255> : !pop.simd<4, ui8>`
+
+
+@always_inline("builtin")
+fn pop_simd_splat(
+    x: __mlir_type.`!pop.scalar<ui8>`,
+) -> __mlir_type.`!pop.simd<4, ui8>`:
+    return __mlir_op.`pop.simd.splat`[_type = __mlir_type.`!pop.simd<4, ui8>`](
+        x
+    )
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_splat
+fn fold_pop_simd_splat() -> POPUInt8x4T[POP_UI8x4_N1]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@POPUInt8x4T<:simd<4, ui8> #kgen<sugar aibuiltin, !pop.simd<4, ui8>, apply(:!lit.generator<("x": !pop.scalar<ui8>) -> !pop.simd<4, ui8>> @builtin_function_folder_pop_ops::@"pop_simd_splat(__mlir_type.!pop.scalar<ui8>)", 255), 255>>, mut *"a`1">
+    var a = POPUInt8x4T[pop_simd_splat(POP_UI8_N1)]()
+    return a

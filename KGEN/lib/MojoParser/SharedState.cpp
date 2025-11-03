@@ -2475,6 +2475,12 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
           evaluator.getReboundType(extract.getType()));
   }
 
+  if (auto splatOp = dyn_cast<POP::SIMDSplatOp>(op)) {
+    auto type = evaluator.getReboundType(splatOp.getType());
+    if (auto op = findValue(splatOp.getScalar()))
+      return POP::SIMDSplatAttr::get(op, cast<POP::SIMDType>(type));
+  }
+
   // Handle a simple binary operation that folds to a POC binary op.
   auto foldBinOp = [&](POC opc) -> FailureOr<TypedAttr> {
     if (auto lhs = findValue(op.getOperand(0)))
