@@ -148,7 +148,7 @@ buildPipeline(PassBuilder &pb, const CLOptions &clOptions, Triple triple) {
   if (options.optimizationLevel == -1U) {
     llvm_unreachable(
         "Specify optimization level. Support of running individual passes or "
-        "custom pipline is not implemented yet.");
+        "custom pipeline is not implemented yet.");
   }
   return M::KGEN::buildLLVMOptimizationPipeline(pb, options);
 }

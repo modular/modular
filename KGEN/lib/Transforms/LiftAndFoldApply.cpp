@@ -178,7 +178,7 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
   } else if (auto parent = body->getParentOfType<DeclInterface>()) {
     for (Region &region : parent->getRegions()) {
       if (region.isAncestor(body)) {
-        // Find the parent DeclInferface's region and set the insertion point
+        // Find the parent DeclInterface's region and set the insertion point
         // at the beginning of the region.
         b.setLoc(parent.getLoc());
         b.setInsertionPointToStart(&region.getBlocks().front());

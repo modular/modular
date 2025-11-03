@@ -24,13 +24,13 @@ std::string humanMemorySize(size_t size);
 /// Checks if the string represents something like True. For example, the
 // strings "On" and "1" are considered true. The use case here is to have
 // a utility function so that we are forgiving in the input that cannot
-// be easily check (e.g. when specifying behavior via an environemnt variable)
+// be easily check (e.g. when specifying behavior via an environment variable)
 bool isTrueLike(StringRef str);
 
 /// Checks if the string represents something like False. For example, the
 // strings "Off" and "0" are considered false. The use case here is to have
 // a utility function so that we are forgiving in the input that cannot
-// be easily check (e.g. when specifying behavior via an environemnt variable)
+// be easily check (e.g. when specifying behavior via an environment variable)
 bool isFalseLike(StringRef str);
 
 } // namespace M

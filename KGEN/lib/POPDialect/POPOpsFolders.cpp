@@ -3467,7 +3467,7 @@ static ErrorTreeOrSuccess interpreterWrite(ExternalCallOp op,
 static ErrorTreeOrSuccess interpretGetStackTrace(ExternalCallOp op,
                                                  ArrayRef<Attribute> operands,
                                                  InterpreterState &state) {
-  // TODO: Support printing stack trace in interpeter
+  // TODO: Support printing stack trace in interpreter
   state.mapResults(IntegerAttr::get(op.getResultTypes().front(), 0));
   return success();
 }

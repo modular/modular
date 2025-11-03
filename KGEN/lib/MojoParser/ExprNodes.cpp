@@ -2169,7 +2169,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   // expected it's used in struct type and operation is expecting fully valid
   // struct type.
   auto useDeferredOp = [&]() {
-    // If any attribute of the operation is deferred, the operaiton is deferred
+    // If any attribute of the operation is deferred, the operation is deferred
     // too.
     if (llvm::any_of(unboundOp.getAttrs(), [](NamedAttribute attr) {
           if (auto typedAttr = dyn_cast<TypedAttr>(attr.getValue()))
@@ -3524,7 +3524,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // If both results were M values and both sides agree with the result type,
   // then we can propagate the result as an MValue that has a merged lifetime.
   auto handleTwoMValues = [&]() -> AnyValue {
-    // This only applies to things thare are already memory references.
+    // This only applies to things that are already memory references.
     if (!falseVal.isMValue() || !trueVal.isMValue())
       return {};
 

@@ -19,7 +19,7 @@ struct ErrorLimit {
 void emitLimitedError(function_ref<InFlightDiagnostic()> emitError,
                       ErrorLimit &limit);
 
-/// Helper function to check if a location is from teh mojo startup module or
+/// Helper function to check if a location is from the mojo startup module or
 /// not.
 bool isLocationInPrelude(const Location &loc);
 
