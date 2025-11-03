@@ -508,10 +508,14 @@ MojoTypeSystem::GetTypeBitAlign(lldb::opaque_compiler_type_t type,
   return {};
 }
 
-lldb::Encoding MojoTypeSystem::GetEncoding(lldb::opaque_compiler_type_t type) {
+lldb::Encoding MojoTypeSystem::GetEncoding(lldb::opaque_compiler_type_t type,
+                                           uint64_t &count) {
   MojoASTTypeRef astType(type);
   if (!astType)
     return lldb::eEncodingInvalid;
+
+  // Count is the number of elements encoded in the type.
+  count = 1;
 
   auto flags = GetTypeInfo(type);
   if (flags & lldb::eTypeIsInteger) {
@@ -526,6 +530,7 @@ lldb::Encoding MojoTypeSystem::GetEncoding(lldb::opaque_compiler_type_t type) {
   if (flags & lldb::eTypeIsPointer)
     return lldb::eEncodingUint;
 
+  count = 0;
   return lldb::eEncodingInvalid;
 }
 
@@ -583,9 +588,11 @@ MojoTypeSystem::GetDisplayTypeName(lldb::opaque_compiler_type_t type) {
 //===----------------------------------------------------------------------===//
 
 bool MojoTypeSystem::IsFloatingPointType(lldb::opaque_compiler_type_t type,
-                                         bool &isComplex) {
+                                         uint32_t &count, bool &isComplex) {
+  count = 0;
   isComplex = false;
   if (GetTypeInfo(type) & lldb::eTypeIsFloat) {
+    count = 1;
     return true;
   }
   return false;
