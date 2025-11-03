@@ -13,6 +13,8 @@
 
 from collections import InlineArray
 
+from builtin.globals import global_constant
+
 # TODO: Generate those at compile-time when the interpreter
 # is able to do so.
 
@@ -702,5 +704,5 @@ fn get_power_of_5(index: Int) -> UInt64:
         0xe3d8f9e563a198e5,0x58180fddd97723a6,
         0x8e679c2f5e44ff8f,0x570f09eaa7ea7648,
     )
-    return powers_of_5_table.unsafe_get(index)
+    return global_constant[powers_of_5_table]().unsafe_get(index)
 # fmt: on

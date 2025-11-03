@@ -323,6 +323,14 @@ what we publish.
   performance for all float formatting operations including `print()`, string
   interpolation, and `str()` conversions.
 
+- Optimized number parsing performance by eliminating stack allocations for
+  large lookup tables. Internal lookup tables used for number parsing
+  (`powers_of_5_table` and `POWERS_OF_10`) are now stored as global constants
+  using the `global_constant` function instead of being materialized on the
+  stack for each parsing operation. This reduces stack overhead by ~10.6KB for
+  number parsing operations, improving performance for string-to-number
+  conversions including `atof()` and related float parsing operations.
+
 ### Tooling changes {#25-7-tooling-changes}
 
 - `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)

@@ -27,6 +27,8 @@ from collections import InlineArray
 import bit
 import memory
 
+from builtin.globals import global_constant
+
 from .constants import (
     CONTAINER_SIZE,
     MANTISSA_EXPLICIT_BITS,
@@ -170,9 +172,9 @@ fn can_use_clinger_fast_path(w: UInt64, q: Int64) -> Bool:
 
 fn clinger_fast_path(w: UInt64, q: Int64) -> Float64:
     if q >= 0:
-        return Float64(w) * POWERS_OF_10[q]
+        return Float64(w) * global_constant[POWERS_OF_10]()[q]
     else:
-        return Float64(w) / POWERS_OF_10[-q]
+        return Float64(w) / global_constant[POWERS_OF_10]()[-q]
 
 
 fn full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
