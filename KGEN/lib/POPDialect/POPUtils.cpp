@@ -248,3 +248,20 @@ OpFoldResult POP::foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
       operands, *dtype, [](const APSInt &in) -> bool { return !in.isZero(); },
       [](const APFloat &in) -> bool { return !in.isZero(); });
 }
+
+OpFoldResult POP::foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
+                                SIMDType resultType) {
+  std::optional<int64_t> size = resultType.getResolvedSize();
+
+  if (size == 1) {
+    if (scalarAttr)
+      return scalarAttr;
+    return scalarVal;
+  }
+
+  auto scalarSIMD = dyn_cast_if_present<SIMDAttr>(scalarAttr);
+  if (!size || !scalarSIMD)
+    return {};
+  SmallVector<DTypeValue> values(*size, scalarSIMD.getValues().front());
+  return SIMDAttr::get(values, resultType);
+}

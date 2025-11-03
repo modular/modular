@@ -36,6 +36,10 @@ OpFoldResult foldCastFromBuiltin(TypedAttr input, SIMDType resultType);
 OpFoldResult foldCast(ArrayRef<Attribute> operands, SIMDType resultType,
                       SIMDType inputType, SIMDType outputType);
 
+/// Fold a SIMD splat operation.
+OpFoldResult foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
+                           SIMDType resultType);
+
 //===----------------------------------------------------------------------===//
 // SIMD Folder Helpers
 //===----------------------------------------------------------------------===//

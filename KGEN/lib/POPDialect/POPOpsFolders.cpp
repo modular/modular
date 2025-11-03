@@ -1607,19 +1607,7 @@ SIMDShuffleOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 OpFoldResult SIMDSplatOp::fold(FoldAdaptor adaptor) {
-  std::optional<int64_t> size = getType().getResolvedSize();
-
-  if (size == 1) {
-    if (Attribute scalar = adaptor.getScalar())
-      return scalar;
-    return getScalar();
-  }
-
-  auto scalar = dyn_cast_if_present<SIMDAttr>(adaptor.getScalar());
-  if (!size || !scalar)
-    return {};
-  SmallVector<DTypeValue> values(*size, scalar.getValues().front());
-  return SIMDAttr::get(values, getType());
+  return POP::foldSIMDSplat(getScalar(), adaptor.getScalar(), getType());
 }
 
 ErrorTreeOrSuccess SIMDSplatOp::interpret(ArrayRef<Attribute> operands,

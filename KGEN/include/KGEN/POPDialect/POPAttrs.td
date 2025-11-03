@@ -706,4 +706,33 @@ def POP_CastToBuiltinAttr : POP_ExprAttr<"CastToBuiltin", "cast_to_builtin"> {
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// SIMDSplat
+//===----------------------------------------------------------------------===//
+
+def POP_SIMDSplatAttr : POP_ExprAttr<"SIMDSplat", "simd_splat"> {
+  let summary = "SIMD splat.";
+  let description = [{
+    The `#pop.simd_splat` attribute takes a scalar value and replicates it
+    across a SIMD vector.
+  }];
+
+  let parameters = (ins "TypedAttr":$arg,
+                        AttributeSelfTypeParameter<"", "SIMDType">:$type);
+
+  let assemblyFormat = " `<` $arg `>` ";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return a SIMDSplatAttr.
+    AttrBuilder<(ins "TypedAttr":$arg, "SIMDType":$type), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$arg, "SIMDType":$type), [{
+      return get(arg.getContext(), arg, type);
+    }], "TypedAttr">
+  ];
+}
+
 #endif // KGEN_POPDIALECT_POPATTRS_TD
