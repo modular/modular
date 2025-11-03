@@ -27,7 +27,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
-struct Tuple[*element_types: Copyable & Movable](
+struct Tuple[*element_types: Copyable & Movable & AnyType](
     ImplicitlyCopyable, Movable, Sized
 ):
     """The type of a literal tuple expression.
@@ -40,7 +40,7 @@ struct Tuple[*element_types: Copyable & Movable](
 
     alias _mlir_type = __mlir_type[
         `!kgen.pack<:`,
-        VariadicOf[Copyable & Movable],
+        VariadicOf[Copyable & Movable & AnyType],
         element_types,
         `>`,
     ]

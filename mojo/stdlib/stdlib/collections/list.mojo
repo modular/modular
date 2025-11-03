@@ -33,7 +33,7 @@ from .optional import Optional
 @fieldwise_init
 struct _ListIter[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: Copyable & Movable & AnyType,
     origin: Origin[mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator, Movable):
@@ -93,7 +93,7 @@ struct _ListIter[
         return (iter_len, {iter_len})
 
 
-struct List[T: Copyable & Movable](
+struct List[T: Copyable & Movable & AnyType](
     Boolable, Copyable, Defaultable, Iterable, Movable, Sized
 ):
     """A dynamically-allocated and resizable list.

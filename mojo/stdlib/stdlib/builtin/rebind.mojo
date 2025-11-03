@@ -44,8 +44,8 @@ fn rebind[
 
 @always_inline("nodebug")
 fn rebind[
-    src_type: AnyType, //,
-    dest_type: AnyType,
+    src_type: UnknownDestructibility, //,
+    dest_type: UnknownDestructibility,
 ](ref src: src_type) -> ref [src] dest_type:
     """Statically assert that a parameter input type `src_type` resolves to the
     same type as a parameter result type `dest_type` after function
@@ -103,14 +103,14 @@ fn rebind_var[
     __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(src))
 
 
-alias downcast[_Trait: type_of(AnyType), T: AnyType] = __mlir_attr[
+alias downcast[_Trait: type_of(UnknownDestructibility), T: UnknownDestructibility] = __mlir_attr[
     `#kgen.downcast<`, T, `> : `, _Trait
 ]
 
 
 @always_inline
 fn trait_downcast[
-    T: AnyTrivialRegType, //, Trait: type_of(AnyType)
+    T: AnyTrivialRegType, //, Trait: type_of(UnknownDestructibility)
 ](var src: T) -> downcast[Trait, T]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving
@@ -132,7 +132,7 @@ fn trait_downcast[
 
 @always_inline
 fn trait_downcast[
-    T: AnyType, //, Trait: type_of(AnyType)
+    T: UnknownDestructibility, //, Trait: type_of(UnknownDestructibility)
 ](ref src: T) -> ref [src] downcast[Trait, T]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving

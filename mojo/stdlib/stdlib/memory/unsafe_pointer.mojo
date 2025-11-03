@@ -19,6 +19,7 @@ from sys import align_of, is_gpu, is_nvidia_gpu, size_of
 from sys.intrinsics import gather, scatter, strided_load, strided_store
 
 from builtin.simd import _simd_construction_checks
+from builtin.rebind import downcast
 from memory import memcpy
 from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
@@ -38,7 +39,7 @@ fn _default_invariant[mut: Bool]() -> Bool:
 
 @register_passable("trivial")
 struct UnsafePointer[
-    type: AnyType,
+    type: UnknownDestructibility,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     mut: Bool = True,
@@ -234,7 +235,7 @@ struct UnsafePointer[
         out self: UnsafePointer[type, mut=mut, origin=origin],
         *,
         ref [origin]unchecked_downcast_value: PythonObject,
-    ):
+    ) where conforms_to(type, AnyType):
         """Downcast a `PythonObject` known to contain a Mojo object to a pointer.
 
         This operation is only valid if the provided Python object contains
@@ -243,8 +244,7 @@ struct UnsafePointer[
         Args:
             unchecked_downcast_value: The Python object to downcast from.
         """
-
-        self = unchecked_downcast_value.unchecked_downcast_value_ptr[type]()
+        self = unchecked_downcast_value.unchecked_downcast_value_ptr[downcast[AnyType, type]]().bitcast[type]()
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -1067,7 +1067,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     fn bitcast[
-        T: AnyType = Self.type,
+        T: UnknownDestructibility = Self.type,
     ](self) -> UnsafePointer[
         T,
         address_space=address_space,
@@ -1303,7 +1303,7 @@ struct UnsafePointer[
         self: UnsafePointer[
             type, mut=True, address_space = AddressSpace.GENERIC, **_
         ]
-    ):
+    ) where conforms_to(type, AnyType):
         """Destroy the pointed-to value.
 
         The pointer must not be null, and the pointer memory location is assumed
@@ -1312,7 +1312,7 @@ struct UnsafePointer[
         more efficient because it doesn't invoke `__moveinit__`.
 
         """
-        _ = __get_address_as_owned_value(self.address)
+        _ = __get_address_as_owned_value(self.bitcast[downcast[AnyType, type]]().address)
 
     @always_inline
     fn take_pointee[
