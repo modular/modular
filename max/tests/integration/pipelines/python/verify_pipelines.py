@@ -37,6 +37,18 @@ from verify import ModelModality as Modality
 EX_TEMPFAIL = 75
 
 
+def validate_hf_token() -> None:
+    """
+    It's a regular occurence that people are asked to run logit verification
+    locally, and not everyone has an HF_TOKEN set. Let's help them out
+    """
+    if os.getenv("HF_TOKEN") is None:
+        raise ValueError(
+            "Environment variable `HF_TOKEN` must be set. "
+            "See https://www.notion.so/modularai/HuggingFace-Access-Token-29d1044d37bb809fbe70e37428faf9da"
+        )
+
+
 class DeviceKind(enum.Enum):
     CPU = "cpu"
     GPU = "gpu"
@@ -1332,6 +1344,8 @@ def main(
 
 
 if __name__ == "__main__":
+    validate_hf_token()
+
     if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(directory)
 

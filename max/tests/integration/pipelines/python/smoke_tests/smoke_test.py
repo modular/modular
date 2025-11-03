@@ -60,6 +60,14 @@ LmEvalResults = dict[str, Any]
 LmEvalSamples = list[dict[str, Any]]
 
 
+def validate_hf_token() -> None:
+    if os.getenv("HF_TOKEN") is None:
+        raise ValueError(
+            "Environment variable `HF_TOKEN` must be set. "
+            "See https://www.notion.so/modularai/HuggingFace-Access-Token-29d1044d37bb809fbe70e37428faf9da"
+        )
+
+
 def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
 
@@ -364,6 +372,7 @@ def smoke_test(
     A 1.0 value means 100% accuracy.
 
     """
+    validate_hf_token()
 
     if print_cot and not print_responses:
         raise ValueError("--print-cot must be used with --print-responses")
