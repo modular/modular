@@ -15,6 +15,7 @@
 #include "KGEN/ExecutionEngine/JIT/StaticArchiveLayer.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/MojoParser/EntryPoint.h"
+#include "KGEN/Support/CLOptionUtils.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/Support/ForceLinkMLIRC.h"
@@ -30,6 +31,7 @@
 #include "mlir/Parser/Parser.h"
 #include "mlir/Support/Timing.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
@@ -611,6 +613,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
 int main(int argc, char **argv) {
   KGEN::forceLinkMLIRC();
+  M::registerCommandFlags();
 
   CLOptions clOptions(argc, argv);
 
