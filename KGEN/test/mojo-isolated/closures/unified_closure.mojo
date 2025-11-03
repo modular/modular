@@ -387,6 +387,91 @@ fn bindIt(z: Int):
 
 # // -----
 
+# COM: Verify that closures can be rebound even when traits are combined
+
+# CHECK-DAG: [[TRAIT1:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK-DAG: [[TRAIT:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable_Int.*]] = !lit.trait<@"fn(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable,
+# CHECK-DAG: [[INT:!Int.*]] = !lit.struct<{{.*}}::@Int>
+
+# CHECK: lit.struct.decl @"fn(x: Int) -> Int_wrapper_copyable"<impl: [[TRAIT1]], origin_set: origin.set, |>([[TRAIT]])
+# CHECK: kgen.witness "__call__{{.*}}" : !lit.generator<[1](!lit.ref<@{{.*}}::@"fn(x: Int) -> Int_wrapper_copyable"<:[[TRAIT1]] impl, :origin.set origin_set>, mut *[0,0]> read_mem, |, "y": [[INT]]) capturing -> [[INT]]> =
+# CHECK-SAME: rebind(:!lit.generator<[1](!lit.ref<@{{.*}}::@"fn(x: Int) -> Int_wrapper_copyable"<:[[TRAIT1]] impl, :origin.set origin_set>, mut *[0,0]> read_mem, |, "x": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn(x: Int) -> Int_wrapper_copyable"::@"__call__{{.*}}"<:[[TRAIT1]] impl, :origin.set origin_set>)
+
+
+fn takeIt[C: Copyable & fn (y: Int) unified -> Int](closure: C):
+    _ = closure(3)
+
+
+fn bindIt(z: Int):
+    fn myclosure(x: Int) unified {var} -> Int:
+        return z
+
+    takeIt[type_of(myclosure)](myclosure)
+
+
+# // -----
+
+# COM: Verify that all closures are rebound when closure traits are combined or inherited
+
+fn takeIt[C: (fn (Bool) unified -> Int) & fn (Int) unified -> Int](closure: C):
+    _ = closure(3)
+
+
+trait BoolWrapper(fn(Bool) unified -> Int):
+    pass
+
+
+# CHECK: lit.struct.decl @MultipleClosure
+
+# CHECK: kgen.conformance @"fn(Bool) -> Int"
+# CHECK: kgen.witness "__call__($0,::Bool)" : !lit.generator<[1](!lit.ref<!MultipleClosure, mut *[0,0]> read_mem, !Bool, |) capturing -> !Int1> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> read_mem, "x": !Bool) capturing -> !Int1> @{{.*}}::@MultipleClosure::@"__call__({{.*}}::MultipleClosure,::Bool)")
+
+# CHECK: kgen.conformance @"fn(Int) -> Int"
+# CHECK:kgen.witness "__call__($0,::Int)" : !lit.generator<[1](!lit.ref<!MultipleClosure, mut *[0,0]> read_mem, !Int1, |) capturing -> !Int1> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> read_mem, "x": !Int1) capturing -> !Int1> @{{.*}}::@MultipleClosure::@"__call__({{.*}}::MultipleClosure,::Int)")
+struct MultipleClosure(Movable, BoolWrapper, fn (Int) unified -> Int):
+    fn __init__(out self):
+        pass
+
+    fn __call__(self, x: Bool) -> Int:
+        return 1
+
+    fn __call__(self, x: Int) -> Int:
+        return 2
+
+
+fn bindIt(z: Int):
+    var fakeclosure = MultipleClosure()
+
+    takeIt[type_of(fakeclosure)](fakeclosure)
+
+
+# // -----
+
+# COM: Verify that closures can be rebound with differing parameter names
+
+# CHECK-DAG: [[TRAIT1:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn[a: Int](b: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK-DAG: [[TRAIT:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable_Int.*]] = !lit.trait<@"fn[a: Int](b: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable,
+# CHECK-DAG: [[INT:!Int.*]] = !lit.struct<{{.*}}::@Int>
+
+# CHECK: lit.struct.decl @"fn[a: Int](b: Int) -> Int_wrapper_copyable"<impl: [[TRAIT1]], origin_set: origin.set, |>([[TRAIT]])
+# CHECK: kgen.conformance @"fn[x: Int](y: Int) -> Int"
+# CHECK: kgen.witness "__call__{{.*}}" : !lit.generator<<"x": [[INT]]>[1](!lit.ref<@{{.*}}::@"fn[a: Int](b: Int) -> Int_wrapper_copyable"<:[[TRAIT1]] impl, :origin.set origin_set>, mut *[0,0]> read_mem, |, "y": [[INT]]) capturing -> [[INT]]> =
+# CHECK-SAME: rebind(:!lit.generator<<"a": [[INT]]>[1](!lit.ref<@{{.*}}::@"fn[a: Int](b: Int) -> Int_wrapper_copyable"<:[[TRAIT1]] impl, :origin.set origin_set>, mut *[0,0]> read_mem, |, "b": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn[a: Int](b: Int) -> Int_wrapper_copyable"::@"__call__[::Int]({{.*}}::fn[a: Int](b: Int) -> Int_wrapper_copyable[$0, $1],::Int)"<:[[TRAIT1]] impl, :origin.set origin_set, :[[INT]] ?>)
+
+fn takeIt[C: fn[x: Int](y: Int) unified -> Int](closure: C):
+    # see MOCO-2606
+    _ = closure.__call__[2](3)
+
+
+fn bindIt(z: Int):
+    fn myclosure[a: Int](b: Int) unified {var} -> Int:
+        return z
+
+    takeIt[type_of(myclosure)](myclosure)
+
+
+# // -----
+
 # COM: Ensure that structs can conform to the closure trait
 
 

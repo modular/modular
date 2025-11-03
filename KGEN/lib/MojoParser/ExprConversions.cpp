@@ -1504,13 +1504,17 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
     } else if (isa<StructMetaType>(rvType) ||
                isa_and_nonnull<AnyTraitType>(rvType.getMetaType())) {
       // augment the witness table of closure wrapper with rebind if necessary.
-      ASTDecl *traitDecl = shared.declResolver->getTraitDecl(trait);
-      if (auto traitDeclOp =
-              dyn_cast_if_present<TraitDeclOp>(traitDecl->getIfOperation())) {
-        if (traitDeclOp.getDefinesClosure())
+      // We do this for every closure trait in the type.
+      for (const auto &symbol : trait.getSymbols()) {
+        auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+        if (auto traitDeclOp =
+                dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
+            traitDeclOp && traitDeclOp.getDefinesClosure()) {
           (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
-              rvType, traitDecl);
+              rvType, &symbolDecl);
+        }
       }
+
       // Conversions from structs or traits.
       PValue result = emitMetaTypeToTraitConversion(valueExpr, trait);
       return emitCResult(result, expr, dest);
