@@ -1771,6 +1771,17 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
       return emitter.emitResult(result, this, dest);
     }
 
+    // Diagnose use of not-fully-bound generators with a specific error message.
+    if (auto paramType = sugarDynCast<ParamType>(baseMLIRType)) {
+      if (isa<GeneratorAttr>(paramType.getParam())) {
+        emitter.emitError(getLoc())
+            << baseRVType
+            << " needs more parameters bound before accessing attributes"
+            << base->getRange();
+        return {};
+      }
+    }
+
     emitter.emitError(getLoc(), "MLIR type ")
         << baseRVType << " has no attributes" << base->getRange();
     return {};

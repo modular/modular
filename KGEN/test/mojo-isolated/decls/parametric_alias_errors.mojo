@@ -40,10 +40,10 @@ struct Dep[T: AnyType, v: T]:
 
 alias MyDep[T: AnyType, v: T] = Dep[T, v]
 
-# expected-error @below {{MLIR type 'alias[T: AnyType, v: T] Dep[T, v]' has no attributes}}
+# expected-error @below {{'alias[T: AnyType, v: T] Dep[T, v]' needs more parameters bound before accessing attributes}}
 alias MyDepGetAlias0 = MyDep.hello
 
-# expected-error @below {{MLIR type 'alias[v: Int] Dep[Int, v]' has no attributes}}
+# expected-error @below {{'alias[v: Int] Dep[Int, v]' needs more parameters bound before accessing attributes}}
 alias MyDepGetAlias1 = MyDep[Int].hello
 
 # expected-error @below {{'Dep[Int, 2]' value has no attribute 'hello'}}
