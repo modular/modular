@@ -34,7 +34,7 @@ from .config_enums import PipelineRole
 from .kv_cache_config import KVCacheConfig
 from .lora_config import LoRAConfig
 from .max_config import MAXConfig
-from .memory_estimation import MEMORY_ESTIMATOR, to_human_readable_bytes
+from .memory_estimation import MemoryEstimator, to_human_readable_bytes
 from .model_config import MAXModelConfig
 from .profiling_config import ProfilingConfig
 from .registry import (
@@ -813,7 +813,7 @@ class PipelineConfig(MAXConfig):
             default_weights_format=arch.default_weights_format,
         )
 
-        MEMORY_ESTIMATOR.estimate_memory_footprint(
+        MemoryEstimator.estimate_memory_footprint(
             self, arch.pipeline_model, model_config, devices
         )
 

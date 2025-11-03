@@ -42,7 +42,7 @@ from .max_config import (
     get_default_max_config_file_section_name,
     resolve_max_config_inheritance,
 )
-from .memory_estimation import MEMORY_ESTIMATOR
+from .memory_estimation import MemoryEstimator
 from .model_config import MAXModelConfig, MAXModelConfigBase
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .profiling_config import ProfilingConfig
@@ -67,7 +67,6 @@ from .utils import upper_bounded_default
 from .weight_path_parser import WeightPathParser
 
 __all__ = [
-    "MEMORY_ESTIMATOR",
     "PIPELINE_REGISTRY",
     "AlwaysSignalBuffersMixin",
     "AudioGenerationConfig",
@@ -83,6 +82,7 @@ __all__ = [
     "MAXConfig",
     "MAXModelConfig",
     "MAXModelConfigBase",
+    "MemoryEstimator",
     "ModelInputs",
     "ModelOutputs",
     "PipelineConfig",

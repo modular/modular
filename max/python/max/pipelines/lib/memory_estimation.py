@@ -35,8 +35,102 @@ logger = logging.getLogger("max.pipelines")
 
 
 class MemoryEstimator:
+    @classmethod
+    def free_memory(cls, devices: list[Device]) -> int:
+        """Return the total free memory available across all provided devices."""
+        try:
+            return int(sum(d.stats["free_memory"] for d in devices))
+        except Exception as e:
+            logger.warning(
+                "Unable to estimate memory footprint of model, can't query device stats: "
+                + str(e)
+            )
+            raise
+
+    @classmethod
+    def model_weights_size(cls, model_config: MAXModelConfig) -> int:
+        """Return the size of the model weights in bytes."""
+        return model_config.weights_size()
+
+    @classmethod
+    def activation_memory_size(
+        cls,
+        pipeline_model: type[PipelineModel[Any]],
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig,
+    ) -> int:
+        """
+        Estimate the activation memory requirement for the model.
+
+        Args:
+            pipeline_model: The model class.
+            pipeline_config: The pipeline configuration.
+            model_config: The model configuration.
+
+        Returns:
+            Activation memory size in bytes.
+        """
+        return pipeline_model.estimate_activation_memory(
+            pipeline_config, model_config.huggingface_config
+        )
+
+    @classmethod
+    def static_memory_size(
+        cls,
+        pipeline_model: type[PipelineModel[Any]],
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig,
+    ) -> int:
+        """
+        Calculate the static memory usage: model weights plus activations.
+
+        Args:
+            pipeline_model: The model class.
+            pipeline_config: The pipeline configuration.
+            model_config: The model configuration.
+
+        Returns:
+            Total static memory usage in bytes.
+        """
+        return cls.model_weights_size(
+            model_config
+        ) + cls.activation_memory_size(
+            pipeline_model, pipeline_config, model_config
+        )
+
+    @classmethod
+    def available_kv_cache_memory(
+        cls,
+        pipeline_model: type[PipelineModel[Any]],
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig,
+        devices: list[Device],
+    ) -> int:
+        """
+        Estimate the available KV cache memory after accounting for model weights and activations.
+
+        Args:
+            pipeline_model: The model class.
+            pipeline_config: The pipeline configuration.
+            model_config: The model configuration.
+            devices: The list of devices on which the model will run.
+
+        Returns:
+            Available KV cache memory in bytes.
+        """
+        return int(
+            (
+                cls.free_memory(devices)
+                * model_config.kv_cache_config.device_memory_utilization
+            )
+            - cls.static_memory_size(
+                pipeline_model, pipeline_config, model_config
+            )
+        )
+
+    @classmethod
     def estimate_memory_footprint(
-        self,
+        cls,
         pipeline_config: PipelineConfig,
         pipeline_model: type[PipelineModel[Any]],
         model_config: MAXModelConfig,
@@ -49,12 +143,8 @@ class MemoryEstimator:
         )
 
         try:
-            free_memory = int(sum(d.stats["free_memory"] for d in devices))
+            free_memory = cls.free_memory(devices)
         except Exception as e:
-            logger.warning(
-                "Unable to estimate memory footprint of model, can't query device stats: "
-                + str(e)
-            )
             if is_draft_model:
                 # Early return for draft model - we don't modify the original config
                 return
@@ -68,16 +158,11 @@ class MemoryEstimator:
                 )
             return
 
-        if is_draft_model:
-            model_weights_size = model_config.weights_size()
-        else:
-            model_weights_size = pipeline_model.estimate_weights_size(
-                pipeline_config
-            )
+        model_weights_size = cls.model_weights_size(model_config)
 
         # Get activation memory estimate from the model
-        activation_memory_size = pipeline_model.estimate_activation_memory(
-            pipeline_config, huggingface_config
+        activation_memory_size = cls.activation_memory_size(
+            pipeline_model, pipeline_config, model_config
         )
 
         # Total static memory requirement (weights + activations)
@@ -117,7 +202,7 @@ class MemoryEstimator:
                     "quantization_encoding must be provided for draft model"
                 )
 
-            kv_cache_size = self._calculate_kv_cache_size(
+            kv_cache_size = cls._calculate_kv_cache_size(
                 pipeline_model,
                 pipeline_config,
                 available_kv_cache_memory,
@@ -142,7 +227,7 @@ class MemoryEstimator:
             )
 
         if not user_provided_max_batch_size:
-            pipeline_config.max_batch_size = self._infer_optimal_batch_size(
+            pipeline_config.max_batch_size = cls._infer_optimal_batch_size(
                 pipeline_config,
                 pipeline_model,
                 available_kv_cache_memory,
@@ -152,7 +237,7 @@ class MemoryEstimator:
                 cache_dtype=model_config.quantization_encoding.cache_dtype,
             )
 
-        actual_kv_cache_size = self._calculate_kv_cache_size(
+        actual_kv_cache_size = cls._calculate_kv_cache_size(
             pipeline_model,
             pipeline_config,
             available_kv_cache_memory,
@@ -175,7 +260,7 @@ class MemoryEstimator:
                 found_valid_max_length,
                 inferred_max_length,
                 _,
-            ) = self._find_valid_max_length(
+            ) = cls._find_valid_max_length(
                 pipeline_config,
                 pipeline_model,
                 available_kv_cache_memory,
@@ -192,7 +277,7 @@ class MemoryEstimator:
             else:
                 pipeline_config.max_length = 1
 
-            actual_kv_cache_size = self._calculate_kv_cache_size(
+            actual_kv_cache_size = cls._calculate_kv_cache_size(
                 pipeline_model,
                 pipeline_config,
                 available_kv_cache_memory,
@@ -207,7 +292,7 @@ class MemoryEstimator:
 
         if isinstance(free_memory, int | float):
             if int(total_size) > int(free_memory):
-                self._raise_oom_error(
+                cls._raise_oom_error(
                     pipeline_config,
                     user_provided_max_length,
                     user_provided_max_batch_size,
@@ -225,8 +310,9 @@ class MemoryEstimator:
                     "Estimated model and kv cache memory use nears available memory. You may experience errors."
                 )
 
+    @classmethod
     def _find_valid_max_length(
-        self,
+        cls,
         pipeline_config: PipelineConfig,
         pipeline_model: type[PipelineModel[Any]],
         available_kv_cache_memory: int,
@@ -261,7 +347,7 @@ class MemoryEstimator:
             pipeline_config.max_length = inferred_max_length
 
             if not user_provided_max_batch_size:
-                pipeline_config.max_batch_size = self._infer_optimal_batch_size(
+                pipeline_config.max_batch_size = cls._infer_optimal_batch_size(
                     pipeline_config,
                     pipeline_model,
                     available_kv_cache_memory,
@@ -271,7 +357,7 @@ class MemoryEstimator:
                     cache_dtype=model_config.quantization_encoding.cache_dtype,
                 )
 
-            kv_cache_size = self._calculate_kv_cache_size(
+            kv_cache_size = cls._calculate_kv_cache_size(
                 pipeline_model,
                 pipeline_config,
                 available_kv_cache_memory,
@@ -298,8 +384,9 @@ class MemoryEstimator:
             pipeline_config.max_batch_size,
         )
 
+    @classmethod
     def _find_valid_batch_size(
-        self,
+        cls,
         pipeline_config: PipelineConfig,
         pipeline_model: type[PipelineModel[Any]],
         available_kv_cache_memory: int,
@@ -335,7 +422,7 @@ class MemoryEstimator:
                     "quantization_encoding must be provided in pipeline_config"
                 )
 
-            kv_cache_size = self._calculate_kv_cache_size(
+            kv_cache_size = cls._calculate_kv_cache_size(
                 pipeline_model,
                 pipeline_config,
                 available_kv_cache_memory,
@@ -359,8 +446,9 @@ class MemoryEstimator:
 
         return found_valid_max_batch_size, inferred_max_batch_size
 
+    @classmethod
     def _calculate_kv_cache_size(
-        self,
+        cls,
         pipeline_model: type[PipelineModel[Any]],
         pipeline_config: PipelineConfig,
         available_kv_cache_memory: int,
@@ -381,8 +469,9 @@ class MemoryEstimator:
             )
         return 0
 
+    @classmethod
     def _raise_oom_error(
-        self,
+        cls,
         pipeline_config: PipelineConfig,
         user_provided_max_length: bool,
         user_provided_max_batch_size: bool,
@@ -419,7 +508,7 @@ class MemoryEstimator:
             found_valid_max_length,
             inferred_max_length,
             inferred_max_length_compatible_batch_size,
-        ) = self._find_valid_max_length(
+        ) = cls._find_valid_max_length(
             pipeline_config,
             pipeline_model,
             available_kv_cache_memory,
@@ -431,7 +520,7 @@ class MemoryEstimator:
         pipeline_config.max_batch_size = original_max_batch_size
 
         found_valid_max_batch_size, inferred_max_batch_size = (
-            self._find_valid_batch_size(
+            cls._find_valid_batch_size(
                 pipeline_config,
                 pipeline_model,
                 available_kv_cache_memory,
@@ -443,7 +532,7 @@ class MemoryEstimator:
         )
 
         # Generate error message with suggestions
-        error_msg = self._generate_oom_error_message(
+        error_msg = cls._generate_oom_error_message(
             total_size=total_size,
             original_free_memory=original_free_memory,
             user_provided_max_length=user_provided_max_length,
@@ -458,8 +547,9 @@ class MemoryEstimator:
 
         raise RuntimeError(error_msg)
 
+    @classmethod
     def _generate_oom_error_message(
-        self,
+        cls,
         total_size: int,
         original_free_memory: int,
         user_provided_max_length: bool,
@@ -489,7 +579,7 @@ class MemoryEstimator:
             )
 
         elif user_provided_max_length:
-            self._add_user_provided_max_length_suggestions(
+            cls._add_user_provided_max_length_suggestions(
                 msg,
                 user_provided_max_batch_size,
                 found_valid_max_length,
@@ -499,7 +589,7 @@ class MemoryEstimator:
                 inferred_max_length_compatible_batch_size,
             )
         else:
-            self._add_default_max_length_suggestions(
+            cls._add_default_max_length_suggestions(
                 msg,
                 user_provided_max_batch_size,
                 found_valid_max_length,
@@ -513,8 +603,9 @@ class MemoryEstimator:
         msg.write(".")
         return msg.getvalue()
 
+    @classmethod
     def _add_user_provided_max_length_suggestions(
-        self,
+        cls,
         msg: StringIO,
         user_provided_max_batch_size: bool,
         found_valid_max_length: bool,
@@ -558,8 +649,9 @@ class MemoryEstimator:
                     f"reducing --max-batch-size to {inferred_max_batch_size}"
                 )
 
+    @classmethod
     def _add_default_max_length_suggestions(
-        self,
+        cls,
         msg: StringIO,
         user_provided_max_batch_size: bool,
         found_valid_max_length: bool,
@@ -610,8 +702,9 @@ class MemoryEstimator:
                     f"(currently defaulted to {original_max_length})"
                 )
 
+    @classmethod
     def _infer_optimal_batch_size(
-        self,
+        cls,
         pipeline_config: PipelineConfig,
         pipeline_model: type[PipelineModel[Any]],
         available_kv_cache_memory: int,
@@ -628,6 +721,3 @@ class MemoryEstimator:
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
-
-
-MEMORY_ESTIMATOR = MemoryEstimator()

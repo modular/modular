@@ -37,7 +37,7 @@ from .lib.interfaces import (
 )
 from .lib.kv_cache_config import KVCacheConfig
 from .lib.lora import ADAPTER_CONFIG_FILE
-from .lib.memory_estimation import MEMORY_ESTIMATOR
+from .lib.memory_estimation import MemoryEstimator
 from .lib.model_config import MAXModelConfig
 from .lib.pipeline_variants.text_generation import TextGenerationPipeline
 from .lib.profiling_config import ProfilingConfig
@@ -58,7 +58,6 @@ register_all_models()
 
 __all__ = [
     "ADAPTER_CONFIG_FILE",
-    "MEMORY_ESTIMATOR",
     "PIPELINE_REGISTRY",
     "AudioGenerationConfig",
     "EmbeddingsPipeline",
@@ -67,6 +66,7 @@ __all__ = [
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
     "MAXModelConfig",
+    "MemoryEstimator",
     "ModelInputs",
     "ModelOutputs",
     "PipelineConfig",
