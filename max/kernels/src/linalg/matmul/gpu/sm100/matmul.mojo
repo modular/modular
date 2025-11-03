@@ -664,10 +664,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
                 " == 128 and MMA_N is not a multiple of 32"
             ),
         ]()
-        # transpose_c => MMA_M == 256 is the same as (not transpose_c) or MMA_M == 256
         constrained[
-            (not config.AB_swapped) or MMA_M == 256,
-            "swapAB is only supported for MMA_M == 256",
+            not config.AB_swapped
+            or register_based_epilogue
+            or elementwise_compute_lambda_fn is None,
+            "2SM swapAB with shared memory based epilogue is not supported",
         ]()
 
     else:
@@ -1452,31 +1453,51 @@ fn copy_accum_to_gmem[
         var cg2_coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
         var cg1_coord_n = coord_n_mma_m256
         var coord_n = cg2_coord_n if cta_group == 2 else cg1_coord_n
+        var coord_m = c_coord[0] * UInt(BM)
 
         if elect_one_warp and lane == 0:
             fence_async_view_proxy()
 
             @parameter
             if transpose_c:
-                alias num_c_smem_tiles = 128 // swizzle_width // (
-                    1 if is_lower_frag_required else 2
-                )
 
                 @parameter
-                for i in range(num_c_smem_tiles):
-                    var c_smem_warp_tile = c_smem_tile.tile[
-                        stageN * swizzle_width // stage_contiguous_size,
-                        stage_contiguous_size,
-                    ](i, 0).reshape[Layout.row_major(stageN, swizzle_width)]()
+                if cta_group == 2 and MMA_M == 128:
+                    var c_smem_reshaped = c_smem_tile.reshape[
+                        Layout.row_major(2 * stageN, stage_contiguous_size // 2)
+                    ]()
+                    var c_smem_split = c_smem_reshaped.tile[
+                        stageN, stage_contiguous_size // 2
+                    ](Int(warp_id // 2), 0)
+
                     c_tma_op.async_store(
-                        c_smem_warp_tile,
+                        c_smem_split,
                         (
-                            UInt(
-                                c_coord[0] * UInt(BM) + UInt(i * swizzle_width)
-                            ),
+                            UInt(coord_m),
                             UInt(coord_n),
                         ),
                     )
+
+                else:
+                    alias num_c_smem_tiles = 128 // swizzle_width // (
+                        1 if is_lower_frag_required else 2
+                    )
+
+                    @parameter
+                    for i in range(num_c_smem_tiles):
+                        var c_smem_warp_tile = c_smem_tile.tile[
+                            stageN * swizzle_width // stage_contiguous_size,
+                            stage_contiguous_size,
+                        ](i, 0).reshape[
+                            Layout.row_major(stageN, swizzle_width)
+                        ]()
+                        c_tma_op.async_store(
+                            c_smem_warp_tile,
+                            (
+                                UInt(coord_m + UInt(i * swizzle_width)),
+                                UInt(coord_n),
+                            ),
+                        )
             else:
                 var cg2_c_smem_coord_m = 0 if MMA_M == 256 else (warp_id // 2)
                 var cg1_c_smem_coord_m = UInt(0)
@@ -1490,7 +1511,7 @@ fn copy_accum_to_gmem[
                     c_smem_split,
                     (
                         UInt(coord_n),
-                        UInt(c_coord[0] * UInt(BM)),
+                        UInt(coord_m),
                     ),
                 )
             c_tma_op.commit_group()

@@ -219,17 +219,26 @@ def main():
             alias BK = (swizzle.bytes() // size_of[dtype]())
             alias MMA_K = 32
 
+            # we support all range of bn in range(8, 128+1, 8) but the test will time out so we only test a subset
             @parameter
-            for mma_m_scale in range(1, 3):
+            for bm in [64, 128]:
 
                 @parameter
-                for mma_n_scale in range(1, 17):
-                    alias block_tile_shape = Index(
-                        64 * mma_m_scale, 8 * mma_n_scale, BK
-                    )
-                    alias umma_shape = Index(
-                        128 * mma_m_scale, 16 * mma_n_scale, MMA_K
-                    )
+                for bn in [
+                    8,
+                    24,
+                    32,
+                    40,
+                    64,
+                    72,
+                    80,
+                    88,
+                    104,
+                    112,
+                    128,
+                ]:
+                    alias block_tile_shape = Index(bm, bn, BK)
+                    alias umma_shape = Index(2 * bm, 2 * bn, MMA_K)
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
@@ -250,11 +259,6 @@ def main():
 
                     @parameter
                     for swapAB in [False, True]:
-
-                        @parameter
-                        if swapAB and mma_m_scale != 2:
-                            continue
-
                         test_blackwell_matmul_tma_umma_warp_specialized[
                             dtype,
                             dtype,
