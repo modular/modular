@@ -14,10 +14,10 @@ bazel_dep(name = "grpc-java", version = "1.67.1")
 bazel_dep(name = "imgui", version = "1.91.8")
 bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
 bazel_dep(name = "opentelemetry-proto", version = "1.5.0")
-bazel_dep(name = "platforms", version = "0.0.11")
+bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "31.1")
 bazel_dep(name = "rules_cc", version = "0.2.8")
-bazel_dep(name = "rules_go", version = "0.55.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_java", version = "8.15.2")
 bazel_dep(name = "rules_mojo", version = "0.5.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
@@ -123,15 +123,6 @@ single_version_override(
     patch_strip = 1,
     patches = [
         "//bazel/public-patches:opentelemetry.patch",
-    ],
-)
-
-single_version_override(
-    module_name = "rules_go",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/bazel-contrib/rules_go/pull/4368
-        "//bazel/public-patches:rules_go.patch",
     ],
 )
 
