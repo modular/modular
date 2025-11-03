@@ -120,7 +120,7 @@ struct MatmulConfig[
         self.b_swizzle = TensorMapSwizzle.SWIZZLE_128B
         self.c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
         if self.AB_swapped:
-            self.c_swizzle = TensorMapSwizzle.SWIZZLE_32B
+            self.c_swizzle = TensorMapSwizzle.SWIZZLE_128B
         elif output_tile_n == 32:
             self.c_swizzle = TensorMapSwizzle.SWIZZLE_64B
         elif output_tile_n == 16:
