@@ -1630,6 +1630,12 @@ fn tmp_mgp_buffer_get_cached(
     )
 
 
+@register_internal("tmp.mgp.buffer.remove_cached")
+@no_inline
+fn tmp_mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: UInt64):
+    external_call["TMP_MGP_RT_RemoveCachedBuffer", NoneType](buffer_slot, ctx)
+
+
 @register_internal("mgp.assert")
 @no_inline
 fn mgp_assert(cond: Bool, msg_ptr: UnsafePointer[Byte], msg_len: Int) raises:
