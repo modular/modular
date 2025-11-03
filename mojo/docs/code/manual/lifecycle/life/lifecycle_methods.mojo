@@ -13,7 +13,7 @@
 
 # ===----------------------------------------------------------------------=== #
 # This example shows the hand-written equivalents of the lifecycle methods
-# that Mojo synthesizes for the struct in lifecycle_methods_sythensized
+# that Mojo synthesizes for the struct in lifecycle_methods_sythesized
 # ===----------------------------------------------------------------------=== #
 
 

@@ -1644,7 +1644,7 @@ fn _elementwise_impl_gpu[
 
     alias block_size_unrounded = registers_per_block // registers_per_thread
 
-    # when testing other elementwise kernels, they appear to also use 128 as the block size on blackwell specifcally
+    # when testing other elementwise kernels, they appear to also use 128 as the block size on blackwell specifically
     alias block_size = 128 if ctx.default_device_info is B200 else block_size_unrounded - (
         block_size_unrounded % 2
     )

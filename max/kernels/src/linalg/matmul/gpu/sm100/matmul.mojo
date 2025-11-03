@@ -690,7 +690,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         swizzle_mode = config.b_swizzle,
     ](ctx, b_device)
 
-    # For MMA_M=128, otuput tile has 128 rows and each 64 rows belongs to one c tile.
+    # For MMA_M=128, output tile has 128 rows and each 64 rows belongs to one c tile.
     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-b
     alias c_tma_tile_shape_mma128 = Index(
         64, config.output_tile_shape[1]
@@ -2010,7 +2010,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     if WarpRole.is_scheduler() and is_first_cta_in_cluster:
         # Implies each SM will only process initial work, there is no
-        # mroe work to schedule.
+        # more work to schedule.
         @parameter
         if config.num_clc_pipeline_stages == 0:
             return
@@ -2525,7 +2525,7 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
 
     if WarpRole.is_scheduler() and is_first_cta_in_cluster:
         # Implies each SM will only process initial work, there is no
-        # mroe work to schedule.
+        # more work to schedule.
         @parameter
         if config.num_clc_pipeline_stages == 0:
             return
@@ -2885,7 +2885,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         swizzle_mode = config.b_swizzle,
     ](ctx, b_device)
 
-    # For MMA_M=128, otuput tile has 128 rows and each 64 rows belongs to one c tile.
+    # For MMA_M=128, output tile has 128 rows and each 64 rows belongs to one c tile.
     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-b
     alias c_tma_tile_shape_mma128 = Index(
         64, config.output_tile_shape[1]

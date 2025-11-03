@@ -597,7 +597,7 @@ struct String(
     # Capacity Field Helpers
     # ===------------------------------------------------------------------=== #
 
-    # This includes getting and setting flags from the capcity field such as
+    # This includes getting and setting flags from the capacity field such as
     # null terminator, inline, and indirect. If indirect the length is also
     # stored in the capacity field.
 

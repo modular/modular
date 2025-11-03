@@ -153,7 +153,7 @@ class PipelineConfig(MAXConfig):
     use_experimental_kernels: str = os.environ.get(
         "USE_EXPERIMENTAL_KERNELS", "false"
     )
-    """Enables using expiremental mojo kernels with max serve.
+    """Enables using experimental mojo kernels with max serve.
     The kernels could be unstable, incorrect, or otherwise have issues.
     """
 

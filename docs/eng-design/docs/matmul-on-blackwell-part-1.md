@@ -95,7 +95,7 @@ simplicity, let’s assume both A and B matrices are square, such that:
 
 ![image.png](./img/matmul-on-blackwell-part-1/img02-matmul.jpeg)
 ///caption
-Simplfied illustration of matrix multiplication
+Simplified illustration of matrix multiplication
 ///
 
 If we want to do the matmul on a CPU, then here’s pseudocode code we’ll have to

@@ -265,7 +265,7 @@ fn copy[
     # Loads data from global memory to shared memory using the TMA operation. Works for dimensions of any size.
     # `policy` contains the descriptor. `coords` tells us the starting coordinate in the global memory tensor.
 
-    # The TMA Operation can load data seperated by strides but will always write that data
+    # The TMA Operation can load data separated by strides but will always write that data
     # to shared memory in a contiguous block.
 
     # For example assume we have this matrix in global memory,

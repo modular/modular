@@ -25,7 +25,7 @@ from click import shell_completion
 from typing_extensions import ParamSpec
 
 # Please keep all max imports inside their respective functions.
-# This is best practive to keep the CLI invocation fast
+# This is best practice to keep the CLI invocation fast
 
 
 logger = logging.getLogger("max.entrypoints")

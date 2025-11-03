@@ -34,7 +34,7 @@ DiagnosticHandler = Callable
 class GreedySimplifyRegionLevel(enum.Enum):
     normal = 1
 
-    disabed = 0
+    disabled = 0
 
     aggressive = 2
 

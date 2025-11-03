@@ -258,7 +258,7 @@ fn warp_specialized_matmul[
         MMAConfigType.adjusted_mma_k_shape_b(), MMAConfigType.simd_width, BN, BK
     ]()
 
-    barrier()  # NOTE: probably not nessecary but I saw it in the HF code around the same point
+    barrier()  # NOTE: probably not necessary but I saw it in the HF code around the same point
 
     alias tile_count = K // BK
     alias warps_processed_per_producer_a = Int(

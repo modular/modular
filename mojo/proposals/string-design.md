@@ -126,7 +126,7 @@ field can be one of two bitpatterns: 0 with no flags set, or 0 with
 `FLAG_HAS_NULL_TERMINATOR` set. When attempting to get a mutable pointer to
 static constant memory the implementation will decide wether to inline the
 string, or reallocate it to the heap based on the requested capacity. This
-avoids having to alloacte when iniitializing from a `StringLiteral` or
+avoids having to allocate when initializing from a `StringLiteral` or
 `StaticString`.
 
 ### Mutable Indirect String Representation
@@ -161,7 +161,7 @@ have to worry about use of `String` vs `StaticString` for optimization purposes:
 most APIs should just take `String` for consistency and generality.
 
 The capacity is the length of the constant string, when requesting a mutable
-pointer it will reallocate the string with a capcity based on that length.
+pointer it will reallocate the string with a capacity based on that length.
 
 Construction from short constant strings (like "foo") loads the string data at
 `String` construction time, which keeps usage of the string direct where

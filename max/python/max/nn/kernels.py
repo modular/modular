@@ -1666,7 +1666,7 @@ def kv_cache_ragged_radd(
     if kv_params.page_size is None:
         raise ValueError("Expected kv_params.page_size to be set")
 
-    # slice input_row_offests to the batch offset
+    # slice input_row_offsets to the batch offset
     input_row_offsets = ops.slice_tensor(
         input_row_offsets,
         [(slice(batch_offset, None), Dim("input_row_offsets_slice_len"))],

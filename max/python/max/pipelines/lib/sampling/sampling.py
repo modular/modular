@@ -86,7 +86,7 @@ def _sampling_input_types(
 
     # If we have structured_outputs enabled
     if sampling_config.enable_structured_output:
-        # Use seperate symbolic dimension to avoid conflicts with logits' vocab_size
+        # Use separate symbolic dimension to avoid conflicts with logits' vocab_size
         # since llguidance creates 32-bit aligned bitmasks.
         bitmask_type = TensorType(
             DType.bool, ["batch", "vocab_size_structured"], device=device
