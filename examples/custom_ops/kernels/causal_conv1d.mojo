@@ -170,10 +170,10 @@ fn causal_conv1d_kernel[
     elements: Int,
     width: Int,
 ](
-    input: LayoutTensor[dtype, i_layout, MutableAnyOrigin],
-    weight: LayoutTensor[dtype, w_layout, MutableAnyOrigin],
-    bias: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    output: LayoutTensor[dtype, i_layout, MutableAnyOrigin],
+    input: LayoutTensor[dtype, i_layout, MutAnyOrigin],
+    weight: LayoutTensor[dtype, w_layout, MutAnyOrigin],
+    bias: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    output: LayoutTensor[dtype, i_layout, MutAnyOrigin],
 ):
     var seq_length = input.shape[2]()
 

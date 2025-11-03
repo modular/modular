@@ -57,9 +57,7 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     alias n = 1024
     alias F32 = DType.float32
 
-    var vec_host = NDBuffer[
-        F32, 1, MutableAnyOrigin, DimList(n)
-    ].stack_allocation()
+    var vec_host = NDBuffer[F32, 1, MutAnyOrigin, DimList(n)].stack_allocation()
 
     if fill_strategy is FillStrategy.LINSPACE:
         for i in range(n):

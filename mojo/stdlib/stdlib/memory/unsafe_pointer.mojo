@@ -42,7 +42,7 @@ struct UnsafePointer[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     mut: Bool = True,
-    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin],
+    origin: Origin[mut] = Origin[mut].cast_from[MutAnyOrigin],
 ](
     Comparable,
     Defaultable,
@@ -1200,7 +1200,7 @@ struct UnsafePointer[
     @doc_private
     fn as_any_origin(
         self: UnsafePointer[type, **_],
-        out result: Self._OriginCastType[False, ImmutableAnyOrigin],
+        out result: Self._OriginCastType[False, ImmutAnyOrigin],
     ):
         constrained[
             False,
@@ -1219,16 +1219,16 @@ struct UnsafePointer[
         type,
         address_space=address_space,
         mut=False,
-        origin=ImmutableAnyOrigin,
+        origin=ImmutAnyOrigin,
     ]:
-        """Casts the origin of an immutable pointer to `ImmutableAnyOrigin`.
+        """Casts the origin of an immutable pointer to `ImmutAnyOrigin`.
 
         Returns:
-            A pointer with the origin set to `ImmutableAnyOrigin`.
+            A pointer with the origin set to `ImmutAnyOrigin`.
 
         It is usually preferred to maintain concrete origin values instead of
-        using `ImmutableAnyOrigin`. However, if it is needed, keep in mind that
-        `ImmutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        using `ImmutAnyOrigin`. However, if it is needed, keep in mind that
+        `ImmutAnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the pointer.
         """
         # TODO: compiler error if using self.unsafe_origin_cast
@@ -1237,7 +1237,7 @@ struct UnsafePointer[
                 type,
                 address_space=address_space,
                 mut=False,
-                origin=ImmutableAnyOrigin,
+                origin=ImmutAnyOrigin,
             ]._mlir_type,
         ](self.address)
 
@@ -1248,19 +1248,19 @@ struct UnsafePointer[
         type,
         address_space=address_space,
         mut=True,
-        origin=MutableAnyOrigin,
+        origin=MutAnyOrigin,
     ]:
-        """Casts the origin of a mutable pointer to `MutableAnyOrigin`.
+        """Casts the origin of a mutable pointer to `MutAnyOrigin`.
 
         Returns:
-            A pointer with the origin set to `MutableAnyOrigin`.
+            A pointer with the origin set to `MutAnyOrigin`.
 
         This requires the pointer to already be mutable as casting mutability
         is inherently very unsafe.
 
         It is usually preferred to maintain concrete origin values instead of
-        using `MutableAnyOrigin`. However, if it is needed, keep in mind that
-        `MutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        using `MutAnyOrigin`. However, if it is needed, keep in mind that
+        `MutAnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the pointer.
         """
         # TODO: compiler error if using self.unsafe_origin_cast
@@ -1269,7 +1269,7 @@ struct UnsafePointer[
                 type,
                 address_space=address_space,
                 mut=True,
-                origin=MutableAnyOrigin,
+                origin=MutAnyOrigin,
             ]._mlir_type,
         ](self.address)
 

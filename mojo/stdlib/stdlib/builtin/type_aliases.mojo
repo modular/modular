@@ -34,10 +34,16 @@ alias MutableOrigin = MutOrigin
 alias MutOrigin = Origin[True]
 """Mutable origin reference type."""
 
-alias ImmutableAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
+alias ImmutableAnyOrigin = ImmutAnyOrigin
 """The immutable origin that might access any memory value."""
 
-alias MutableAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<1>`
+alias ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
+"""The immutable origin that might access any memory value."""
+
+alias MutableAnyOrigin = MutAnyOrigin
+"""The mutable origin that might access any memory value."""
+
+alias MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
 """The mutable origin that might access any memory value."""
 
 # Static constants are a named subset of the global origin.

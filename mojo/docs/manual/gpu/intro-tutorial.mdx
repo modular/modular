@@ -705,9 +705,9 @@ alias num_blocks = ceildiv(vector_size, block_size)
 
 
 fn vector_addition(
-    lhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
-    rhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
-    out_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
+    lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
 ):
     """Calculate the element-wise sum of two vectors on the GPU."""
 
@@ -809,9 +809,9 @@ alias num_blocks = ceildiv(vector_size, block_size)
 
 
 fn vector_addition(
-    lhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
-    rhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
-    out_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
+    lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
 ):
     """Calculate the element-wise sum of two vectors on the GPU."""
 

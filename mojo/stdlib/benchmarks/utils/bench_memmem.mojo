@@ -158,7 +158,7 @@ fn _memmem_baseline[
         return UnsafePointer[Scalar[dtype]]()
     if needle_len == 1:
         return _memchr(
-            Span[Scalar[dtype], ImmutableAnyOrigin](
+            Span[Scalar[dtype], ImmutAnyOrigin](
                 ptr=haystack.as_immutable(), length=haystack_len
             ),
             needle[0],

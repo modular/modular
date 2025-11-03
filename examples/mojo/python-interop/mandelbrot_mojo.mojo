@@ -86,7 +86,7 @@ fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
 
 
 fn mandelbrot(
-    tensor: LayoutTensor[int_dtype, layout, MutableAnyOrigin], iterations: Int32
+    tensor: LayoutTensor[int_dtype, layout, MutAnyOrigin], iterations: Int32
 ):
     """The per-element calculation of iterations to escape in the Mandelbrot set.
     """

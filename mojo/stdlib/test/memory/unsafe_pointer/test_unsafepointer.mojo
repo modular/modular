@@ -203,17 +203,17 @@ def test_unsafepointer_aligned_alloc():
 # of every local variable in methods where its used.
 def test_unsafepointer_alloc_origin():
     # -----------------------------------------
-    # Test with MutableAnyOrigin alloc() origin
+    # Test with MutAnyOrigin alloc() origin
     # -----------------------------------------
 
     var did_del_1 = False
 
-    # Allocate pointer with MutableAnyOrigin.
+    # Allocate pointer with MutAnyOrigin.
     var ptr_1 = UnsafePointer[Int].alloc(1).as_any_origin()
 
     var obj_1 = ObservableDel(UnsafePointer(to=did_del_1))
 
-    # Object has not been deleted, because MutableAnyOrigin is keeping it alive.
+    # Object has not been deleted, because MutAnyOrigin is keeping it alive.
     assert_false(did_del_1)
 
     ptr_1.free()
@@ -231,7 +231,7 @@ def test_unsafepointer_alloc_origin():
     var ptr_2 = UnsafePointer[Int].alloc(1)
 
     # Note: Set ObservableDel origin explicitly since it otherwise contains a
-    #   MutableAnyOrigin pointer that interferes with this test.
+    #   MutAnyOrigin pointer that interferes with this test.
     _ = ObservableDel[origin_of(did_del_2)](UnsafePointer(to=did_del_2))
 
     # `obj_2` is ASAP destroyed, since `ptr_2` origin does not keep it alive.

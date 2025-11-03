@@ -307,6 +307,8 @@ what we publish.
 
 - Rename `MutableOrigin` to `MutOrigin` and `ImmutableOrigin` to `ImmutOrigin`.
 
+- Rename `(Imm/M)utableAnyOrigin` to `(Imm/M)utAnyOrigin`.
+
 - Optimized float-to-string formatting performance by eliminating unnecessary
   stack allocations. Internal lookup tables used for float formatting
   (`cache_f32` and `cache_f64`) are now stored as global constants instead of
