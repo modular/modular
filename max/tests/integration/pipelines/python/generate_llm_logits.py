@@ -273,10 +273,6 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
 
         revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
 
-        # Compute the max sequence length for InternVL
-        hf_config = transformers.AutoConfig.from_pretrained(
-            self.hf_repo_id, revision=revision, trust_remote_code=True
-        )
         # InternVL uses dynamic image sizing, so use a reasonable default
         max_length = 8192
 
@@ -371,11 +367,6 @@ class Idefics3PipelineOracle(MultiModalPipelineOracle):
 
         revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
 
-        # Compute the max sequence length for Idefics3
-        hf_config = transformers.AutoConfig.from_pretrained(
-            self.hf_repo_id, revision=revision, trust_remote_code=True
-        )
-
         max_length = 8192
 
         config = pipelines.PipelineConfig(
@@ -398,12 +389,6 @@ class Idefics3PipelineOracle(MultiModalPipelineOracle):
         self, *, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
         revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            self.hf_repo_id,
-            revision=revision,
-            trust_remote_code=True,
-            use_fast=False,
-        )
         config = transformers.AutoConfig.from_pretrained(
             self.hf_repo_id, revision=revision, trust_remote_code=True
         )
