@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SDK_GRAPHAPI_PYTHON_DISCARDABLEATTRIBUTES_H
-#define SDK_GRAPHAPI_PYTHON_DISCARDABLEATTRIBUTES_H
+#ifndef SUPPORT_NANOBIND_DISCARDABLEATTRIBUTES_H
+#define SUPPORT_NANOBIND_DISCARDABLEATTRIBUTES_H
 
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Operation.h"
@@ -19,4 +19,4 @@ struct DiscardableAttributes {
 
 } // namespace M::Graph::Python
 
-#endif // SDK_GRAPHAPI_PYTHON_DISCARDABLEATTRIBUTES_H
+#endif // SUPPORT_NANOBIND_DISCARDABLEATTRIBUTES_H

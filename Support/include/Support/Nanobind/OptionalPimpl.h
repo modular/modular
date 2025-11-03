@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SDK_GRAPHAPI_PYTHON_OPTIONALPIMPL_H
-#define SDK_GRAPHAPI_PYTHON_OPTIONALPIMPL_H
+#ifndef SUPPORT_NANOBIND_OPTIONALPIMPL_H
+#define SUPPORT_NANOBIND_OPTIONALPIMPL_H
 
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Types.h"
@@ -87,4 +87,4 @@ auto optional_pimpl(Return (Class::*func)(Args...)) {
 
 } // namespace M::Graph::Python
 
-#endif // SDK_GRAPHAPI_PYTHON_OPTIONALPIMPL_H
+#endif // SUPPORT_NANOBIND_OPTIONALPIMPL_H

@@ -6,7 +6,7 @@ modular_nanobind_extension(
     srcs = ["test_bindings.cpp"],
     new_link_root = "lib",  # Not needed here
     deps = [
-        "//SDK:GraphPython",
+        "//Support:NanobindUtils",
     ],
 )
 

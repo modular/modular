@@ -4,14 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SDK_GRAPHAPI_PYTHON_TYPECASTERS_H
-#define SDK_GRAPHAPI_PYTHON_TYPECASTERS_H
+#ifndef SUPPORT_NANOBIND_TYPECASTERS_H
+#define SUPPORT_NANOBIND_TYPECASTERS_H
 
-#include "KGEN/KGENDialect/KGENEnums.h"
-#include "SDK/GraphAPI/python/SequenceView.h"
 #include "Support/AssertStream.h"
 #include "Support/ErrorOr.h"
 #include "Support/ML/DType.h"
+#include "Support/Nanobind/SequenceView.h"
 #include "mlir/Bindings/Python/NanobindAdaptors.h"
 #include "mlir/CAPI/IR.h"
 #include "mlir/IR/Builders.h"
@@ -739,29 +738,7 @@ struct type_caster<::llvm::function_ref<mlir::InFlightDiagnostic()>> {
   }
 };
 
-/// Casts object <-> M::KGEN::FnEffects.
-/// - C++ has M::KGEN::impl::FnEffects and M::KGEN::FnEffects
-/// - We just use one for simplicity, and standardize on the generated one.
-template <>
-struct type_caster<M::KGEN::FnEffects> {
-  using Caster = make_caster<M::KGEN::impl::FnEffects>;
-  NB_TYPE_CASTER(M::KGEN::FnEffects, Caster::Name)
-  Caster caster;
-
-  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
-    if (caster.from_python(src, flags, cleanup)) {
-      value = caster.value;
-      return true;
-    }
-    return false;
-  }
-  static handle from_cpp(M::KGEN::FnEffects t, rv_policy policy,
-                         cleanup_list *cleanup) noexcept {
-    return Caster::from_cpp(t.getImpl(), policy, cleanup);
-  }
-};
-
 } // namespace detail
 } // namespace NB_NAMESPACE
 
-#endif // SDK_GRAPHAPI_PYTHON_TYPECASTERS_H
+#endif // SUPPORT_NANOBIND_TYPECASTERS_H
