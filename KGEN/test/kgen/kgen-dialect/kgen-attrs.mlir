@@ -273,3 +273,14 @@ kgen.generator @closureSymbol(){
   // CHECK: d = 1.000000e+00 : f16
   d = #pop.cast_to_builtin< #pop<simd "1.0"> : !pop.simd<1, f16>> : f16
 } : () -> ()
+
+"some.op"() {
+  // CHECK: a = #pop<simd 1> : !pop.scalar<ui32>
+  a = #pop.cast< #pop<simd 1> : !pop.simd<1, si32>> : !pop.simd<1, ui32>,
+  // CHECK: b = #pop<simd 4294967295> : !pop.scalar<ui32>
+  b = #pop.cast< #pop<simd -1> : !pop.simd<1, si32>> : !pop.simd<1, ui32>,
+  // CHECK: c = #pop.simd<65534, 65535, 0, 1>
+  c = #pop.cast< #pop.simd<-2, -1, 0, 1> : !pop.simd<4, si8>> : !pop.simd<4, ui16>,
+  // CHECK: d = #pop.simd<"2.5", "1.29980469", "0">
+  d = #pop.cast< #pop.simd<"2.5", "1.3", "0.0"> : !pop.simd<3, f16>> : !pop.simd<3, f32>
+} : () -> ()

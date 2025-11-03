@@ -2533,6 +2533,10 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   if (auto divOp = dyn_cast<POP::DivOp>(op))
     return foldBinOp(POC::Div);
 
+  if (auto castOp = dyn_cast<POP::CastOp>(op))
+    if (auto op = findValue(castOp.getOperand()))
+      return POP::CastAttr::get(op, evaluator.getReboundType(castOp.getType()));
+
   if (auto toUI8Op = dyn_cast<POP::DTypeToUI8>(op))
     if (auto dtype = findValue(toUI8Op.getDType()))
       return POP::DTypeToUI8Attr::get(dtype);

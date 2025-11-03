@@ -562,6 +562,34 @@ def POP_StringConcatAttr : POP_ExprAttr<"StringConcat", "string_concat"> {
 }
 
 //===----------------------------------------------------------------------===//
+// Cast
+//===----------------------------------------------------------------------===//
+
+def POP_CastAttr : POP_ExprAttr<"Cast", "cast"> {
+  let summary = "Convert between POP types.";
+  let description = [{
+    The `#pop.cast` attribute converts a POP type to another POP type.
+  }];
+
+  let parameters = (ins "TypedAttr":$arg,
+                        AttributeSelfTypeParameter<"", "Type">:$type);
+
+  let assemblyFormat = " `<` $arg `>` ";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return a CastAttr.
+    AttrBuilder<(ins "TypedAttr":$arg, "Type":$type), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$arg, "Type":$type), [{
+      return get(arg.getContext(), arg, type);
+    }], "TypedAttr">
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // DTypeToUI8Attr
 //===----------------------------------------------------------------------===//
 
