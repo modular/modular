@@ -566,6 +566,10 @@ static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
     return mpm;
   }
 
+  if (isNVPTXBackend(options)) {
+    mpm.addPass(SetFunctionAttributes());
+  }
+
   passBuilder.invokePipelineStartEPCallbacks(mpm, OptimizationLevel::O0);
 
   passBuilder.invokePipelineEarlySimplificationEPCallbacks(
