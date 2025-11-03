@@ -874,9 +874,9 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   // These are origins but don't need `origin_of(...)` around them.
   if (auto anyOrig = dyn_cast<AnyOriginAttr>(param)) {
     if (anyOrig.getType().isMutableKnown(true))
-      os << "MutableAnyOrigin";
+      os << "MutAnyOrigin";
     else if (anyOrig.getType().isMutableKnown(false))
-      os << "ImmutableAnyOrigin";
+      os << "ImmutAnyOrigin";
     else
       os << "SomeAnyOrigin";
     return;
@@ -972,9 +972,9 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
 
   if (auto anyOrig = dyn_cast<AnyOriginAttr>(param)) {
     if (anyOrig.getType().isMutableKnown(true))
-      os << "MutableAnyOrigin";
+      os << "MutAnyOrigin";
     else if (anyOrig.getType().isMutableKnown(false))
-      os << "ImmutableAnyOrigin";
+      os << "ImmutAnyOrigin";
     else
       os << "SomeAnyOrigin";
     return;

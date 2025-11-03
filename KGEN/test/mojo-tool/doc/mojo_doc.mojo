@@ -537,7 +537,7 @@ fn variadic_pack[*Ts: AnyType](*vals: *Ts):
 # CHECK:         "path": "/stdlib/builtin/anytype/AnyType",
 # CHECK:         "type": "AnyType"
 
-# CHECK:     "signature": "variadic_arg_hack[element_type: AnyType](vals: Variadic[ref [ImmutableAnyOrigin] element_type])",
+# CHECK:     "signature": "variadic_arg_hack[element_type: AnyType](vals: Variadic[ref [ImmutAnyOrigin] element_type])",
 
 
 fn variadic_arg_hack[
@@ -741,10 +741,10 @@ struct HMyUnsafePointer[
     T: AnyType,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
-    # CHECK: "signature": "__getitem__(self) -> ref [MutableAnyOrigin, address_space] T",
+    # CHECK: "signature": "__getitem__(self) -> ref [MutAnyOrigin, address_space] T",
     fn __getitem__(
         self,
-    ) -> ref [MutableAnyOrigin, address_space] T:
+    ) -> ref [MutAnyOrigin, address_space] T:
         pass
 
     # CHECK: "signature": "address_of(ref [address_space] arg: T) -> Self",

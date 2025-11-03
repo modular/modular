@@ -802,7 +802,7 @@ TypedAttr OriginType::stripMutCastAndFieldExtract(TypedAttr origin) {
 bool OriginType::canElideSugarFor(TypedAttr attr) const {
   // Sugar for !lit.origin<true> and !lit.origin<false> can be elided, as these
   // print as MutableOrigin / ImmutableOrigin.  This ends up being a lot nicer
-  // than: "__origin_of(_lit_mut_cast[True, MutableAnyOrigin].result".  We keep
+  // than: "__origin_of(_lit_mut_cast[True, MutAnyOrigin].result".  We keep
   // sugar if our mutability so parametric expression.
   return sugarIsa<IntegerAttr>(getIsMutable());
 }

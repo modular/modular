@@ -730,7 +730,7 @@ fn test_bad_ref_errors[T: AnyType](a: Pointer[T, _], b: Pointer[T, _]):
   # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, b.origin]'}}
   var x : Pointer[T, b.origin] = a[]
 
-  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, MutableAnyOrigin]'}}
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, MutAnyOrigin]'}}
   var y : Pointer[T,  __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`, a.address_space] = a[]
 
 fn test_subscript_conflict(a: Int):
@@ -786,7 +786,7 @@ fn unbound_function_type():
 struct SomeStruct:
   fn refBindingToImmortal(mut self, ptr: UnsafePointer[Int])
       -> Pointer[Int, origin_of(self)]:
-    # expected-error @below {{cannot implicitly convert 'Pointer[Int, MutableAnyOrigin]' value to 'Pointer[Int, origin_of(self)]'}}
+    # expected-error @below {{cannot implicitly convert 'Pointer[Int, MutAnyOrigin]' value to 'Pointer[Int, origin_of(self)]'}}
     return Pointer(to=ptr[])
 
 # Various type printing cases.

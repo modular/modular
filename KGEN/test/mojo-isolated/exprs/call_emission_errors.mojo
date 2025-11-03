@@ -249,7 +249,7 @@ fn mutate_one_read_one[A: AnyType, B: AnyType](mut a: A, b: B):
 
 
 fn mutate_two_AnyLifetime(
-    ref [MutableAnyOrigin]a: Int, ref [MutableAnyOrigin]b: Int
+    ref [MutAnyOrigin]a: Int, ref [MutAnyOrigin]b: Int
 ):
     pass
 
