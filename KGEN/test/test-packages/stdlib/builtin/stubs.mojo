@@ -11,8 +11,8 @@ alias float = __mlir_type.`!pop.scalar<f64>`
 alias AnyTrivialRegType = __mlir_type.`!kgen.type`
 alias ImmutOrigin = __mlir_type.`!lit.origin<0>`
 alias MutOrigin = __mlir_type.`!lit.origin<1>`
-alias ImmutableAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
-alias MutableAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
+alias ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
+alias MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
 alias OriginSet = __mlir_type.`!lit.origin.set`
 
 
@@ -928,7 +928,7 @@ struct UnsafePointer[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     mut: Bool = True,
-    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin],
+    origin: Origin[mut] = Origin[mut].cast_from[MutAnyOrigin],
 ]:
     alias _mlir_type = __mlir_type[
         `!kgen.pointer<`, T, `,`, address_space._value._mlir_value, `>`
