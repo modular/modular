@@ -236,7 +236,7 @@ kgen.generator @will_pass<a, b>() -> (index, index) {
 kgen.generator export @main() {
   // expected-note @+1  {{failed to run the pass manager}}
   %0 = kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> () @will_fail>>
-  %1 = kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> (index, index) @will_pass<1, 2>>>
+  %1 = kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> (index, index) @will_pass<2, 3>>>
   kgen.return
 }
 
