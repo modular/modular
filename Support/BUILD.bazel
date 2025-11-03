@@ -4,6 +4,19 @@ load("//SDK/lib/API/python/bindings:tblgen.bzl", "mlir_nanobind")
 
 exports_files(["include/Support/Driver/DriverCommand.td"])
 
+# Build Tracy client into its own shared library to ensure there is exactly one
+# copy of Tracy's runtime (rpmalloc, profiler) per process. All users that need
+# Tracy at runtime should link against this DSO instead of the static client.
+modular_shared_library(
+    name = "Tracy",
+    srcs = [],
+    output_name = "Tracy",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@tracy//:tracy_client",
+    ],
+)
+
 pkg_files(
     name = "docs",
     srcs = [
