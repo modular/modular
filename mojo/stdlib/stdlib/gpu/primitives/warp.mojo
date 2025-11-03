@@ -35,6 +35,7 @@ from sys import (
     CompilationTarget,
     bit_width_of,
     is_amd_gpu,
+    is_apple_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
     size_of,
@@ -163,6 +164,76 @@ fn _shuffle_amd_helper[
             return 0
 
 
+@always_inline
+fn _shuffle_apple_helper[
+    op: StringSlice, dtype: DType, simd_width: Int
+](
+    mask: UInt,  # Ignored, for API parity
+    val: SIMD[dtype, simd_width],
+    offset: UInt32,
+) -> SIMD[dtype, simd_width]:
+    """
+    Mapping from Metal stdlib to AIR (LLVM) intrinsics:
+      Metal                         → AIR intrinsic stem
+      ----------------------------------------------------------
+      simd_shuffle                  → llvm.air.simd_shuffle
+      simd_shuffle_down             → llvm.air.simd_shuffle_down
+      simd_shuffle_up               → llvm.air.simd_shuffle_up
+      simd_shuffle_xor              → llvm.air.simd_shuffle_xor
+    """
+
+    constrained[
+        dtype.is_half_float() or simd_width == 1,
+        "Unsupported simd_width",
+    ]()
+
+    var arg = UInt16(offset)  # AIR intrinsics use 16-bit offsets
+
+    @parameter
+    if dtype in (DType.int64, DType.uint64):
+        var bits = bitcast[DType.uint32, simd_width * 2](val)
+        var half1, half2 = bits.deinterleave()
+
+        var half1_n = rebind[SIMD[DType.uint32, simd_width]](half1)
+        var half2_n = rebind[SIMD[DType.uint32, simd_width]](half2)
+        var s1 = _shuffle_apple_helper[op, DType.uint32, simd_width](
+            mask, half1_n, offset
+        )
+        var s2 = _shuffle_apple_helper[op, DType.uint32, simd_width](
+            mask, half2_n, offset
+        )
+
+        var merged = s1.interleave(s2)
+        return bitcast[dtype, simd_width](merged)
+    elif dtype is DType.bool:
+        var val1 = rebind[SIMD[DType.int32, 1]](val.cast[DType.int32]())
+        var tmp = _shuffle_apple_helper[op, DType.int32, 1](mask, val1, offset)
+        return tmp.cast[dtype]()
+    elif (
+        dtype is DType.bfloat16
+    ):  # bfloat16 is declared in MSL but actually causes a backend error.
+
+        @parameter
+        if simd_width == 1:
+            var pair = SIMD[dtype, 2](val._refine[new_size=1]())
+            var pair_i32 = bitcast[DType.int32, 1](pair)
+            var y_i32 = _shuffle_apple_helper[op, DType.int32, 1](
+                mask, pair_i32, offset
+            )
+            return bitcast[dtype, 2](y_i32)[0]
+        else:
+            var packed = bitcast[DType.int32, simd_width // 2](val)
+            var packed_shuf = _shuffle_apple_helper[
+                op, DType.int32, simd_width // 2
+            ](mask, packed, offset)
+            return bitcast[dtype, simd_width](packed_shuf)
+    else:
+        alias name = "llvm.air.simd_shuffle" + (
+            "" if op == "indexed" else "_" + op
+        )
+        return llvm_intrinsic[name, SIMD[dtype, simd_width]](val, arg)
+
+
 # ===-----------------------------------------------------------------------===#
 # shuffle_idx
 # ===-----------------------------------------------------------------------===#
@@ -268,6 +339,10 @@ fn shuffle_idx[
         ](mask, val, offset)
     elif is_amd_gpu():
         return _shuffle_idx_amd(mask, val, offset)
+    elif is_apple_gpu():
+        return _shuffle_apple_helper["indexed", dtype, simd_width](
+            mask, val, offset
+        )
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
@@ -363,6 +438,8 @@ fn shuffle_up[
         )
     elif is_amd_gpu():
         return _shuffle_up_amd(mask, val, offset)
+    elif is_apple_gpu():
+        return _shuffle_apple_helper["up", dtype, simd_width](mask, val, offset)
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
@@ -457,6 +534,10 @@ fn shuffle_down[
         return _shuffle["down", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
     elif is_amd_gpu():
         return _shuffle_down_amd(mask, val, offset)
+    elif is_apple_gpu():
+        return _shuffle_apple_helper["down", dtype, simd_width](
+            mask, val, offset
+        )
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
@@ -554,6 +635,10 @@ fn shuffle_xor[
         return _shuffle["bfly", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
     elif is_amd_gpu():
         return _shuffle_xor_amd(mask, val, offset)
+    elif is_apple_gpu():
+        return _shuffle_apple_helper["xor", dtype, simd_width](
+            mask, val, offset
+        )
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],

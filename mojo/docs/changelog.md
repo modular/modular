@@ -255,6 +255,12 @@ what we publish.
   threadgroup memory ordering, use `barrier()` instead. Note that lane masks
   are not supported on Apple GPUs, so the mask argument is ignored.
 
+- `gpu.warp` now supports Apple GPUs with native SIMD-group shuffle operations.
+  This enables `shuffle_idx`, `shuffle_up`, `shuffle_down`, and `shuffle_xor`
+  on Apple hardware by mapping Metal `simd_shuffle*` intrinsics to AIR
+  (`llvm.air.simd_shuffle[_up/_down/_xor]`) instructions, achieving feature
+  parity with NVIDIA and AMD backends.
+
 - The `gpu` package has been reorganized into logical subdirectories for better
   code organization:
   - `gpu/primitives/` - Low-level GPU execution primitives (warp, block,
