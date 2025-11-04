@@ -65,6 +65,43 @@ static Value allocateHeapMemory(PointerType ptrType, OpBuilder &b,
                                      ValueRange{alignOf, sizeOf});
 }
 
+/// Given a location, erase any parameter references by inserting unresolved
+/// type for every input type. TODO: recreate a resolved version. This change
+/// unblocks using synthesized code from parametric blocks in debug builds
+/// because the synthesized code does not depend on the parameters but the
+/// parameters are embedded in the locations, resulting in dangling parameter
+/// references.
+static Location stripParameterRefsFromLoc(Location loc) {
+  auto fusedLoc = dyn_cast<FusedLoc>(loc);
+  if (!fusedLoc)
+    return loc;
+
+  auto subprogram =
+      dyn_cast_if_present<DebugInfo::DISubprogramAttr>(fusedLoc.getMetadata());
+  if (!subprogram)
+    return loc;
+
+  // Create an empty function type (no inputs, no outputs)
+  auto strippedType = DebugInfo::DISubroutineType::get(
+      loc.getContext(), SmallVector<DebugInfo::DIType>(),
+      SmallVector<DebugInfo::DIType>());
+  if (!strippedType)
+    return loc;
+
+  auto newSubprogram = DebugInfo::DISubprogramAttr::get(
+      subprogram.getCompileUnit(), subprogram.getScope(),
+      subprogram.getSourceName(),
+      StringAttr::get(
+          subprogram.getContext(),
+          llvm::Twine(subprogram.getLinkageName().getValue(), "_auxilliary")),
+      subprogram.getFile(), subprogram.getLine(), subprogram.getScopeLine(),
+      subprogram.getSubprogramFlags(),
+      cast<DebugInfo::DISubroutineType>(strippedType));
+
+  return FusedLoc::get(fusedLoc.getContext(), fusedLoc.getLocations(),
+                       newSubprogram);
+}
+
 namespace {
 /// The ClosureLifter is responsible for
 /// (a) lifting a closure init into a top level function + capture struct and
@@ -203,19 +240,19 @@ private:
   LogicalResult liftCallFunction(OpBuilder &b, ClosureInitData &data,
                                  TypedAttr capturedInstance,
                                  Type loweredClosureType);
-  void liftMoveOrCopyFunction(OpBuilder &b, ClosureInitData &data,
+  void liftMoveOrCopyFunction(OpBuilder &b, Location loc, ClosureInitData &data,
                               Type loweredClosureType,
                               ArrayRef<Capture> captureMechanisms,
                               TypedAttr capturedInstance, bool isMove);
-  void liftDelFunction(OpBuilder &b, ClosureInitData &data,
+  void liftDelFunction(OpBuilder &b, Location loc, ClosureInitData &data,
                        Type loweredClosureType,
                        ArrayRef<Capture> captureMechanisms,
                        TypedAttr capturedInstance);
 
   void
-  createClosureGenerator(OpBuilder &b, ClosureInitData &closureInitData,
-                         ClosureMethod method, FunctionType funcType,
-                         TypedAttr capturedInstance,
+  createClosureGenerator(OpBuilder &b, Location location,
+                         ClosureInitData &closureInitData, ClosureMethod method,
+                         FunctionType funcType, TypedAttr capturedInstance,
                          llvm::function_ref<void(GeneratorOp)> populateBody,
                          ArrayRef<ArgConvention> argConventions);
 
@@ -342,7 +379,8 @@ ClosureSymbolAttr ClosureLifter::ClosureInitData::closureSymbolForSourceName(
 /// expression so that the mapping can be reused in the signature remapping.
 static DenseMap<StringAttr, TypedAttr>
 unpackCapturesInto(OpBuilder &b, Region &region,
-                   ClosureLifter::ClosureInitData &closureInitData) {
+                   ClosureLifter::ClosureInitData &closureInitData,
+                   Location location) {
   DenseMap<StringAttr, TypedAttr> fromRefToExtract;
   // Only structs need unpacking
   if (closureInitData.getCapturedParamDecls().empty())
@@ -355,7 +393,7 @@ unpackCapturesInto(OpBuilder &b, Region &region,
     ParamDeclAttr paramCapture =
         closureInitData.getCapturedParamDecls().front();
     ParamDeclareOp::create(
-        b, closureInitData.getLiftedLocation(),
+        b, location,
         ParamDeclAttr::get(paramCapture.getName(), paramCapture.getType()),
         selfParamRef);
     fromRefToExtract[paramCapture.getName()] = selfParamRef;
@@ -367,7 +405,7 @@ unpackCapturesInto(OpBuilder &b, Region &region,
     TypedAttr extractedMember = StructExtractAttr::get(
         b.getContext(), selfParamRef, index, paramCapture.getType());
     ParamDeclareOp::create(
-        b, closureInitData.getLiftedLocation(),
+        b, location,
         ParamDeclAttr::get(paramCapture.getName(), paramCapture.getType()),
         extractedMember);
     fromRefToExtract[paramCapture.getName()] = extractedMember;
@@ -447,8 +485,8 @@ static ClosureType getClosureType(ClosureInitOp closureInit) {
 }
 
 void ClosureLifter::createClosureGenerator(
-    OpBuilder &b, ClosureInitData &closureInitData, ClosureMethod method,
-    FunctionType funcType, TypedAttr capturedInstance,
+    OpBuilder &b, Location location, ClosureInitData &closureInitData,
+    ClosureMethod method, FunctionType funcType, TypedAttr capturedInstance,
     llvm::function_ref<void(GeneratorOp)> populateBody,
     ArrayRef<ArgConvention> argConventions) {
   ClosureSymbolAttr closureAttr =
@@ -468,16 +506,15 @@ void ClosureLifter::createClosureGenerator(
       symtab, counter));
   b.setInsertionPoint(generator);
   auto closureGenerator =
-      GeneratorOp::create(b, closureInitData.getLiftedLocation(), uniqueName,
+      GeneratorOp::create(b, location, uniqueName,
                           FuncTypeGeneratorType::get(
                               {}, FunctionType::get(b.getContext(), {}, {})));
   closureGenerator.setSourceNameAttr(generator.getSourceNameAttr());
   populateBody(closureGenerator);
-  auto fromParamToExtractExpr =
-      unpackCapturesInto(b, closureGenerator.getBodyRegion(), closureInitData);
+  auto fromParamToExtractExpr = unpackCapturesInto(
+      b, closureGenerator.getBodyRegion(), closureInitData, location);
   auto newFuncType = remapFuncType(b, closureGenerator.getBodyRegion(),
-                                   funcType, fromParamToExtractExpr,
-                                   closureInitData.getLiftedLocation());
+                                   funcType, fromParamToExtractExpr, location);
   closureGenerator.setFuncTypeGenerator(
       FuncTypeGeneratorType::remapToFuncTypeGenerator(
           closureInitData.getSelfParam(), newFuncType,
@@ -503,12 +540,11 @@ void ClosureLifter::createClosureGenerator(
   symtab.insert(closureGenerator);
 }
 
-void ClosureLifter::liftDelFunction(OpBuilder &b,
+void ClosureLifter::liftDelFunction(OpBuilder &b, Location loc,
                                     ClosureInitData &closureInitData,
                                     Type loweredClosureType,
                                     ArrayRef<Capture> captureMechanisms,
                                     TypedAttr capturedInstance) {
-  Location loc = closureInitData.getLiftedLocation();
   Type selfType = closureInitData.selfType(loweredClosureType);
   SmallVector<Type> argTypes;
   argTypes.push_back(selfType);
@@ -531,7 +567,7 @@ void ClosureLifter::liftDelFunction(OpBuilder &b,
         b, loc, KGEN::NoneAttr::get(b.getContext()));
     KGEN::ReturnOp::create(b, loc, noneAttr->getResults().front());
   };
-  createClosureGenerator(b, closureInitData, ClosureMethod::DEL, funcType,
+  createClosureGenerator(b, loc, closureInitData, ClosureMethod::DEL, funcType,
                          capturedInstance, populateBody,
                          {ArgConvention::OwnedMem});
 }
@@ -558,13 +594,12 @@ static void emitCopyMoveCall(mlir::OpBuilder &b, Location location,
   }
 }
 
-void ClosureLifter::liftMoveOrCopyFunction(OpBuilder &b,
+void ClosureLifter::liftMoveOrCopyFunction(OpBuilder &b, Location loc,
                                            ClosureInitData &closureInitData,
                                            Type loweredClosureType,
                                            ArrayRef<Capture> captureMechanisms,
                                            TypedAttr capturedInstance,
                                            bool isMove) {
-  Location loc = closureInitData.getLiftedLocation();
   Type selfType = closureInitData.selfType(loweredClosureType);
   SmallVector<Type> argTypes{selfType, selfType};
   FunctionType funcType = FunctionType::get(
@@ -600,8 +635,9 @@ void ClosureLifter::liftMoveOrCopyFunction(OpBuilder &b,
     KGEN::ReturnOp::create(b, loc, noneAttr->getResults().front());
   };
   createClosureGenerator(
-      b, closureInitData, isMove ? ClosureMethod::MOVE : ClosureMethod::COPY,
-      funcType, capturedInstance, populateBody,
+      b, loc, closureInitData,
+      isMove ? ClosureMethod::MOVE : ClosureMethod::COPY, funcType,
+      capturedInstance, populateBody,
       {isMove ? ArgConvention::OwnedMem : ArgConvention::ReadMem,
        ArgConvention::ByRefResult});
 }
@@ -671,7 +707,8 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
 
   /// Get a map from a captured parameter "T" to the expression with respect to
   /// the packed parameter value, i.e. "struct.extract<CAPTURES, 0>"
-  auto fromParamToExtractExpr = unpackCapturesInto(b, body, closureInitData);
+  auto fromParamToExtractExpr =
+      unpackCapturesInto(b, body, closureInitData, loc);
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](ParamDeclRefAttr paramDeclRefAttr) -> TypedAttr {
     auto ptr = fromParamToExtractExpr.find(paramDeclRefAttr.getName());
@@ -800,27 +837,28 @@ Value ClosureLifter::liftRegPassableClosure(OpBuilder &b,
 Value ClosureLifter::liftNonRegPassableClosure(
     OpBuilder &b, ClosureInitData &closureInitData, TypedAttr capturedInstance,
     ArrayRef<Capture> captureMechanisms, Type loweredClosureType) {
-  Location loc = closureInitData.getLiftedLocation();
   auto replacementFn = [&](Capture capture, int index, Value captureStructArg) {
-    Value replacement =
-        KGEN::StructGEPOp::create(b, loc, captureStructArg, index);
+    Value replacement = KGEN::StructGEPOp::create(
+        b, closureInitData.getLiftedLocation(), captureStructArg, index);
     if (!capture.moveOrCopySym.has_value())
-      replacement = POP::LoadOp::create(b, loc, replacement);
+      replacement = POP::LoadOp::create(b, closureInitData.getLiftedLocation(),
+                                        replacement);
     return replacement;
   };
   Value captureStruct =
       liftClosure(b, closureInitData, capturedInstance, captureMechanisms,
                   loweredClosureType, replacementFn);
+  Location loc = stripParameterRefsFromLoc(closureInitData.getLiftedLocation());
   if (!captureStruct)
     return {};
-  liftMoveOrCopyFunction(b, closureInitData, loweredClosureType,
+  liftMoveOrCopyFunction(b, loc, closureInitData, loweredClosureType,
                          captureMechanisms, capturedInstance, /*isMove=*/true);
   if (closureInitData.isCopyable())
-    liftMoveOrCopyFunction(b, closureInitData, loweredClosureType,
+    liftMoveOrCopyFunction(b, loc, closureInitData, loweredClosureType,
                            captureMechanisms, capturedInstance,
                            /*isMove=*/false);
-  liftDelFunction(b, closureInitData, loweredClosureType, captureMechanisms,
-                  capturedInstance);
+  liftDelFunction(b, loc, closureInitData, loweredClosureType,
+                  captureMechanisms, capturedInstance);
   return captureStruct;
 }
 
@@ -839,12 +877,14 @@ Value ClosureLifter::liftThinClosure(OpBuilder &b,
     return {};
   // TODO: create thunks for register passable closures (MOCO-2242).
   if (!isRegisterPassable) {
-    liftMoveOrCopyFunction(b, closureInitData, loweredClosureType, {},
-                           capturedInstance, /*isMove=*/true);
+    Location liftedLoc =
+        stripParameterRefsFromLoc(closureInitData.getLiftedLocation());
+    liftMoveOrCopyFunction(b, liftedLoc, closureInitData, loweredClosureType,
+                           {}, capturedInstance, /*isMove=*/true);
     if (closureInitData.isCopyable())
-      liftMoveOrCopyFunction(b, closureInitData, loweredClosureType, {},
-                             capturedInstance, /*isMove=*/false);
-    liftDelFunction(b, closureInitData, loweredClosureType, {},
+      liftMoveOrCopyFunction(b, liftedLoc, closureInitData, loweredClosureType,
+                             {}, capturedInstance, /*isMove=*/false);
+    liftDelFunction(b, liftedLoc, closureInitData, loweredClosureType, {},
                     capturedInstance);
   }
 
