@@ -154,3 +154,20 @@ fn testFieldwiseInitExample2(a: Int):
 @register_passable
 struct FieldwiseInitExample3:
     var x: Int
+
+
+# ===----------------------------------------------------------------------=== #
+# Shadow auto-parameterized parameters
+# ===----------------------------------------------------------------------=== #
+
+struct MyParam[p: Int]:
+    pass
+
+
+# CHECK-LABEL: lit.struct.decl @MyStruct
+# CHECK-SAME: <[{{.*}}]*"[[P2:.*]]": !Int, [{{.*}}]*"[[P1:.*]]": !Int, +, p: !Int,
+# CHECK-SAME: m1: {{.*}}@MyParam<:!Int *"[[P1]]">, m2: {{.*}}@MyParam<:!Int *"[[P2]]">>
+struct MyStruct[p: Int, m1: MyParam[_], m2: MyParam[_]]:
+    # CHECK: lit.fn @"__init__()"[
+    fn __init__(out self):
+        pass

@@ -1143,6 +1143,14 @@ struct S[param: Int]: #expected-note {{previous definition here}}
   fn method[param: Int](self): # expected-error {{invalid redefinition of 'param'}}
     pass
 
+struct MyParam[p: Int]:
+  pass
+
+#expected-note @below {{previous definition here}}
+struct MyStruct[p: Int, m1: MyParam[_], m2: MyParam[_]]:
+  fn method[p: Int](self): # expected-error {{invalid redefinition of 'p'}}
+    pass
+
 # https://github.com/modular/modular/issues/5479
 fn __del__(): # expected-error {{'__del__' must be a method, not a global function}}
   pass
