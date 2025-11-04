@@ -1988,9 +1988,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   auto closure = LIT::ClosureInitOp::create(
       builder, opLoc, refType, withoutUnified, nestedFn.getFunctionType(),
       ValueRange(captureValues), ArrayAttr::get(ctx, captureInfo),
-      OriginSetAttr::get(ctx, origins), nestedFn.getInputParams(),
-      nestedFn.getInlineLevel(), origin, witnessTable,
-      nestedFn.getSubprogramScope());
+      nestedFn.getInputParams(), nestedFn.getInlineLevel(), origin,
+      witnessTable, nestedFn.getSubprogramScope());
 
   closure.getBodyRegion().takeBody(nestedFn.getBodyRegion());
 
@@ -2002,8 +2001,9 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
 
   // Create the wrapper instance by emitting a call to the Wrapper
   // constructor.
+  auto originSet = OriginSetAttr::get(ctx, origins);
   LIT::StructType closureWrapperType =
-      wrapper.bindReference({witnessTable, closure.getCaptureOrigins()});
+      wrapper.bindReference({witnessTable, originSet});
   VarDeclOp var = VarDeclOp::create(
       builder, location, closureWrapperType, fnName.getValue(),
       nestedFnDecl.getParentDecl()->mangleParamName(fnName.getValue()),
@@ -2026,7 +2026,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   SmallVector<TypedAttr> paramArgs;
   paramArgs.reserve(2);
   paramArgs.push_back(closure.getTypeValue());
-  paramArgs.push_back(closure.getCaptureOrigins());
+  paramArgs.push_back(originSet);
   auto boundSig = fullSig.getSpecializedGenerator(
       paramArgs, /*evaluationContext=*/nullptr, location);
   TypedAttr symbol = SymbolConstantAttr::get(symbolRef, boundSig, paramArgs);
