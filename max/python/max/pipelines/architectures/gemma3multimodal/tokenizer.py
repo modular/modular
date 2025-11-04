@@ -1,9 +1,27 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
 from __future__ import annotations
+
+import functools
+import io
+import json
+import logging
+from collections.abc import Sequence
 
 # image config
 #  config for processing and mem estimation that are specific to the model
 #  (may not be necessary?)
-
 # visual processor
 #    text tokenization and image token insertion
 #    mimics the interface expected by TextAndVisionTokenizer
@@ -12,25 +30,12 @@ from __future__ import annotations
 #    seem to handle the actual API request
 #  __call__ converts images to raw pixel vals (no processing) and arranges the
 #  text input with the image tokens.  also sorts out image indices etc
-
 # tokenizer
 #  extends TextAndVisionTokenizer
 #  overrides `__init__` to create a custom processor
 #  we will make use of `new_context` etc from the parent class
-
 # InternVL does stuff like selecting what the EOS, EOI, BOI tokens look like
-
 # from max.pipelines.lib import TextAndVisionTokenizer
-from dataclasses import dataclass
-from transformers import PreTrainedTokenizer
-from max.pipelines.lib import TextAndVisionTokenizer
-
-
-import functools
-import io
-import json
-import logging
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -45,7 +50,11 @@ from max.pipelines.lib import TextAndVisionTokenizer
 from max.support.image import find_contiguous_ranges
 from PIL import Image
 from PIL.Image import Image as ImageType
-from transformers import AutoConfig, AutoProcessor, AutoTokenizer
+from transformers import (
+    AutoConfig,
+    AutoProcessor,
+    AutoTokenizer,
+)
 
 if TYPE_CHECKING:
     from max.pipelines.lib import PipelineConfig
@@ -56,7 +65,8 @@ logger = logging.getLogger("max-pipelines")
 
 
 # TODO ✅ this is a cut down tokenizer
-from transformers import AutoTokenizer, AutoProcessor, Gemma3ForConditionalGeneration
+
+
 class Gemma3MMSimpleTokenizer(TextAndVisionTokenizer):
     def __init__(
         self,
@@ -80,7 +90,7 @@ class Gemma3MMSimpleTokenizer(TextAndVisionTokenizer):
 
     async def decode(self, encoded: npt.NDArray[np.integer[Any]]) -> str:
         return self.delegate.decode(encoded)
-    
+
     # borrowed from idefics3
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]
@@ -121,7 +131,9 @@ class Gemma3MMSimpleTokenizer(TextAndVisionTokenizer):
         return templated_prompt
 
     # borroed from idefics3, dropped some stuff
-    async def new_context(self, request: TextGenerationRequest) -> TextAndVisionContext:
+    async def new_context(
+        self, request: TextGenerationRequest
+    ) -> TextAndVisionContext:
         # check that the images are valid and convert them to RGB if necessary
         # then add to a list of images
         if request.images is not None and len(request.images) > 0:
@@ -277,7 +289,9 @@ class Gemma3MultiModalTokenizer(TextAndVisionTokenizer):
         self.image_token_id = config.image_token_index
         self.vision_token_ids = [self.image_token_id]
 
-        self.processor = AutoProcessor.from_pretrained(model_path, revision=revision)
+        self.processor = AutoProcessor.from_pretrained(
+            model_path, revision=revision
+        )
         # self.image_processor = Gemma3ImageProcessor() # TODO implement
 
         # Initialize default EOS token IDs (required by parent class new_context method)
@@ -346,7 +360,7 @@ class Gemma3MultiModalTokenizer(TextAndVisionTokenizer):
     def _extract_patches(self, pixel_values: np.ndarray) -> np.ndarray:
         """
         Extract patches from pixel values.
-        
+
         Input: [C, H, W] where H=W=224 (from image processor)
         Output: [height_patches, width_patches, C, patch_h, patch_w]
                 where patch_h = patch_w = 16 (from config)
@@ -354,7 +368,7 @@ class Gemma3MultiModalTokenizer(TextAndVisionTokenizer):
         # Implementation depends on your patch size from vision_config
         C, H, W = pixel_values.shape
         patch_size = 16  # From config
-        
+
         # Reshape into patches
         # TODO: Implement patchification
         # Result should be shape: [14, 14, 3, 16, 16] for 224x224 images

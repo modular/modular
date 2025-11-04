@@ -12,11 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from __future__ import annotations
-from typing import Any, cast
+
+import logging
+import math
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, cast
 
-from max.driver import Device, Tensor, DLPackArray
+import numpy as np
+import numpy.typing as npt
+from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -24,9 +29,8 @@ from max.graph import (
     Graph,
     TensorType,
     Value,
-    DeviceRef,
 )
-from max.graph.weights import Weights, WeightsAdapter, WeightData
+from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -35,63 +39,59 @@ from max.nn.kv_cache import (
     PagedCacheValues,
     PagedKVCacheManager,
     estimate_kv_cache_size,
-    load_kv_manager
+    load_kv_manager,
 )
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
-    ModelInputs,
-    ModelOutputs,
     KVCacheConfig,
     KVCacheMixin,
+    ModelInputs,
+    ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding
+    SupportedEncoding,
 )
 from transformers import AutoConfig
 
-from .model_config import Gemma3ForConditionalGenerationConfig
 from .gemma3multimodal import Gemma3LanguageModel, Gemma3VisionModel
+from .model_config import Gemma3ForConditionalGenerationConfig
 from .weight_adapters import (
     convert_safetensor_language_state_dict,
     convert_safetensor_vision_state_dict,
 )
-
-import logging
-import math
-import numpy as np
-import numpy.typing as npt
 
 logger = logging.getLogger("max.pipelines")
 
 
 # borrowed from idefics3
 def _cast_to_dtype(
-        raw_tensor: DLPackArray, old_dtype: DType, new_dtype: DType, device: Device
-    ) -> Tensor:
-        tensor = Tensor.from_dlpack(raw_tensor)
+    raw_tensor: DLPackArray, old_dtype: DType, new_dtype: DType, device: Device
+) -> Tensor:
+    tensor = Tensor.from_dlpack(raw_tensor)
 
-        original_shape = tensor.shape
-        session = InferenceSession(devices=[device])
+    original_shape = tensor.shape
+    session = InferenceSession(devices=[device])
 
-        with Graph(
-            "cast",
-            input_types=[
-                TensorType(
-                    dtype=old_dtype,
-                    shape=["dim"],
-                    device=DeviceRef.from_device(device),
-                )
-            ],
-        ) as graph:
-            graph.output(graph.inputs[0].tensor.cast(new_dtype))
+    with Graph(
+        "cast",
+        input_types=[
+            TensorType(
+                dtype=old_dtype,
+                shape=["dim"],
+                device=DeviceRef.from_device(device),
+            )
+        ],
+    ) as graph:
+        graph.output(graph.inputs[0].tensor.cast(new_dtype))
 
-        cast_model = session.load(graph)
+    cast_model = session.load(graph)
 
-        result = cast_model(
-            tensor.view(old_dtype, [tensor.num_elements]).to(device)
-        )[0]
-        assert isinstance(result, Tensor)
-        return result.view(new_dtype, original_shape)
+    result = cast_model(
+        tensor.view(old_dtype, [tensor.num_elements]).to(device)
+    )[0]
+    assert isinstance(result, Tensor)
+    return result.view(new_dtype, original_shape)
+
 
 class _VisionStacker:
     """Helper class for efficient parallel stacking of vision patches.
@@ -312,7 +312,9 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
-        return Gemma3ForConditionalGenerationConfig.get_num_layers(huggingface_config)
+        return Gemma3ForConditionalGenerationConfig.get_num_layers(
+            huggingface_config
+        )
 
     @staticmethod
     def estimate_kv_cache_size(
@@ -359,11 +361,11 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
     def prepare_initial_token_inputs(
-            self,
-            context_batch: Sequence[TextAndVisionContext],
-            kv_cache_inputs: KVCacheInputs | None = None,
-            return_n_logits: int = 1,
-        ) -> ModelInputs:
+        self,
+        context_batch: Sequence[TextAndVisionContext],
+        kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
+    ) -> ModelInputs:
         assert kv_cache_inputs is not None
         kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
         input_row_offsets = np.cumsum(
@@ -415,7 +417,9 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        model_inputs = cast(Gemma3MultiModalModelInputs, model_inputs) # TODO do we want this?
+        model_inputs = cast(
+            Gemma3MultiModalModelInputs, model_inputs
+        )  # TODO do we want this?
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
 
         # Check if input_row_offsets is a list or a single tensor
@@ -493,7 +497,9 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Get processed state dict for language and vision models
         weights_dict = dict(self.weights.items())
-        language_weights_dict = convert_safetensor_language_state_dict(weights_dict)
+        language_weights_dict = convert_safetensor_language_state_dict(
+            weights_dict
+        )
         vision_weights_dict = convert_safetensor_vision_state_dict(weights_dict)
         state_dict = language_weights_dict | vision_weights_dict
         print(vision_weights_dict)
@@ -512,20 +518,28 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         self._input_row_offsets_prealloc = Tensor.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
-        language_graph, language_weight_dict = self._build_language_graph(model_config, language_weights_dict)
-        language_model = session.load(language_graph, weights_registry=language_weight_dict)
+        language_graph, language_weight_dict = self._build_language_graph(
+            model_config, language_weights_dict
+        )
+        language_model = session.load(
+            language_graph, weights_registry=language_weight_dict
+        )
 
         # Build and compile vision model
-        vision_graph, vision_model_state_dict = self._build_vision_graph(model_config, vision_weights_dict)        
-        vision_model = session.load(vision_graph, weights_registry=vision_weights_dict)
+        vision_graph, vision_model_state_dict = self._build_vision_graph(
+            model_config, vision_weights_dict
+        )
+        vision_model = session.load(
+            vision_graph, weights_registry=vision_weights_dict
+        )
 
         return vision_model, language_model
 
     def _build_language_graph(
         self,
         config: Gemma3ForConditionalGenerationConfig,
-        state_dict: dict[str, WeightData]
-        ) -> tuple[Graph, dict[str, DLPackArray]]:
+        state_dict: dict[str, WeightData],
+    ) -> tuple[Graph, dict[str, DLPackArray]]:
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
@@ -572,7 +586,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         flattened_kv_types = [
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]
-        
+
         image_token_indices_types = [
             TensorType(
                 DType.int64,
@@ -634,9 +648,11 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             )
             graph.output(*outputs)
         return graph, language_model.state_dict()
-    
+
     def _build_vision_graph(
-        self, config: Gemma3ForConditionalGenerationConfig, state_dict: dict[str, WeightData]
+        self,
+        config: Gemma3ForConditionalGenerationConfig,
+        state_dict: dict[str, WeightData],
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the vision model graph for processing images."""
         # Define input types for the vision model
@@ -670,7 +686,9 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Initialize graph with input types
         with Graph(
-            getattr(self.huggingface_config, "model_type", "Gemma3"), # TODO should it be siglip_vision_model?  HF uses Gemma3
+            getattr(
+                self.huggingface_config, "model_type", "Gemma3"
+            ),  # TODO should it be siglip_vision_model?  HF uses Gemma3
             input_types=[*pixel_values_types, *signals.input_types()],
         ) as graph:
             # Build vision model architecture.
@@ -693,7 +711,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
             # Execute vision model: pixel_values -> image_embeddings.
             image_embeddings = vision_model(pixel_values, signal_buffers)
-            
+
             graph.output(*image_embeddings)
 
             return graph, vision_model.state_dict()
@@ -757,7 +775,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 )
             )
         return kv_caches_per_dev
-    
+
     def _prepare_vision_inputs(
         self, context_batch: Sequence[TextAndVisionContext]
     ) -> list[Tensor] | None:
@@ -767,7 +785,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # for ctx in context_batch:
         #     next_images = ctx.next_images
         #     image = next_images[0].pixel_values
-            
+
         #     # preprocess wants an np.ndarray or PIL.Image.Image (or list of these)
         #     # it returns a dict containing `pixel_values` and a num of crops (should be zero)
         #     processed_image = image_processor.preprocess(image, do_rescale=False, do_resize=False)
@@ -788,7 +806,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             return None
 
         final_images = _VisionStacker().stack(images)
-        
+
         tensor = Tensor.from_numpy(final_images)
 
         tensor = _cast_to_dtype(
