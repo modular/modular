@@ -315,7 +315,7 @@ fn choose_config[
     var swapAB = True if M < M_pivote else False
     var k_group_size = 1  # maybe increased for small M later
 
-    var mma_mn = Tuple[Int, Int](64, 128)
+    var mma_mn = Tuple[Int, Int](256, 256)
     var min_num_waves = Int.MAX
 
     # Travers possible combinations of BM x MMA_N to choose the one minimizes the
@@ -338,16 +338,31 @@ fn choose_config[
 
     # For large M, use 2xSM mma
     else:
-        for bm, mma_n in product([64, 128], range(16, min(257, N), 16)):
-            num_ctas = ceildiv(M, bm) * ceildiv(N, mma_n)
-            num_waves = ceildiv(num_ctas, num_SMs)
-            if num_waves < min_num_waves or (
-                num_waves == min_num_waves
-                and bm * cta_group * mma_n < mma_mn[0] * mma_mn[1]
-            ):
-                min_num_waves = num_waves
-                mma_mn[0] = bm * cta_group
-                mma_mn[1] = mma_n
+
+        @parameter
+        @always_inline
+        fn select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+            max_mma_n = min(align_up(N, 16), 256)
+            for bm in [64, 128]:
+                for mma_n in range(max_mma_n, 15, -16):
+                    var mma_m = bm * cta_group
+                    var num_clusters = ceildiv(M, mma_m) * ceildiv(N, mma_n)
+                    var num_waves = ceildiv(num_clusters, num_SMs // cta_group)
+                    if num_waves > min_num_waves:
+                        break
+                    elif num_waves < min_num_waves or (
+                        num_waves == min_num_waves
+                        and mma_m * mma_n < mma_mn[0] * mma_mn[1]
+                    ):
+                        min_num_waves = num_waves
+                        mma_mn[0] = mma_m
+                        mma_mn[1] = mma_n
+                        swapAB = _swapAB
+
+        # Swap AB may work better for M = 192 and not-multiple-of-128 values.
+        # Capture and update min_num_waves, mma_mn
+        select_mma_mn(M, N)
+        select_mma_mn(N, M, True)
 
     # For small mmas, we group multiple tiles per tma-mma synchronization.
     if (
