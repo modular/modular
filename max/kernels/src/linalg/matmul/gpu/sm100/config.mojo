@@ -309,7 +309,7 @@ fn choose_config[
     # We use 128B swizzle, tile size in K is 128B over element size.
     alias BK = 128 // a_type.size_of()
 
-    alias M_pivote = 97
+    alias M_pivote = 32
 
     var cta_group = 1 if M < M_pivote else 2
     var swapAB = True if M < M_pivote else False
@@ -365,11 +365,9 @@ fn choose_config[
         select_mma_mn(N, M, True)
 
     # For small mmas, we group multiple tiles per tma-mma synchronization.
-    if (
-        mma_mn[0] // cta_group == 64
-        and mma_mn[1] <= 64
-        and ceildiv(K, BK) % 2 == 0
-    ):
+    if ((mma_mn[0] // cta_group) * mma_mn[1]) <= 64 * 64 and ceildiv(
+        K, BK
+    ) % 2 == 0:
         k_group_size = 2
 
     var min_load_volume = Int.MAX
