@@ -250,8 +250,7 @@ public:
   GetTypeBitAlign(lldb::opaque_compiler_type_t type,
                   lldb_private::ExecutionContextScope *exeScope) override;
 
-  lldb::Encoding GetEncoding(lldb::opaque_compiler_type_t type,
-                             uint64_t &count) override;
+  lldb::Encoding GetEncoding(lldb::opaque_compiler_type_t type) override;
 
   int GetFunctionArgumentCount(lldb::opaque_compiler_type_t type) override {
     // Unimplemented.
@@ -359,7 +358,7 @@ public:
     return false;
   }
 
-  bool IsFloatingPointType(lldb::opaque_compiler_type_t type, uint32_t &count,
+  bool IsFloatingPointType(lldb::opaque_compiler_type_t type,
                            bool &isComplex) override;
 
   bool IsIntegerType(lldb::opaque_compiler_type_t type,
