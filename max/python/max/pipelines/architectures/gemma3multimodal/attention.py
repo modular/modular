@@ -22,7 +22,7 @@ from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 from .model_config import Gemma3ForConditionalGenerationConfig
 
 
-# from Huggingface Transformers
+# ⚠️ from Huggingface Transformers, almost there?
 class Gemma3VisionAttention(Module):
     """Standard self-attention for SigLIP vision encoder.
 
@@ -66,14 +66,14 @@ class Gemma3VisionAttention(Module):
         )
         self.k_proj = Linear(
             vision_config.hidden_size,
-            vision_config.num_attention_heads * self.head_dim,
+            config.num_key_value_heads * self.head_dim,
             has_bias=config.attention_bias,
             dtype=config.dtype,
             device=config.devices[0],
         )
         self.v_proj = Linear(
             vision_config.hidden_size,
-            vision_config.num_attention_heads * self.head_dim,
+            config.num_key_value_heads * self.head_dim,
             has_bias=config.attention_bias,
             dtype=config.dtype,
             device=config.devices[0],

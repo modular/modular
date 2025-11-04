@@ -535,27 +535,31 @@ class Gemma3VisionMLP(Module):
         self.config = config
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
+
+        # TODO should be GELUTanh activation, not sure if this works
         self.gate_proj = Linear(
             self.hidden_size,
             self.intermediate_size,
             dtype=config.dtype,
             device=config.devices[0],
             has_bias=False,
-        )  # TODO should be GELUTanh activation, not sure if this works
+        )
+        # TODO should be fc1 Linear
         self.up_proj = Linear(
             self.hidden_size,
             self.intermediate_size,
             dtype=config.dtype,
             device=config.devices[0],
             has_bias=False,
-        )  # TODO should be fc1 Linear
+        )
+        # TODO should be fc2 Linear
         self.down_proj = Linear(
             self.intermediate_size,
             self.hidden_size,
             dtype=config.dtype,
             device=config.devices[0],
             has_bias=False,
-        )  # TODO should be fc2 Linear
+        )
         self.act_fn = config.hidden_activation
 
     def __call__(self, x):
@@ -567,7 +571,7 @@ class Gemma3VisionMLP(Module):
 
 # ✅ based on HF
 class Gemma3VisionEncoderLayer(Module):
-    def __init__(self, config: Gemma3ForConditionalGenerationConfig):
+    def __init__(self, config: Gemma3ForConditionalGenerationConfig, layer_idx:int):
         vision_config = config.vision_config
 
         self.embed_dim = vision_config.hidden_size
@@ -583,10 +587,10 @@ class Gemma3VisionEncoderLayer(Module):
         # Self-attention
         self.self_attn = Gemma3VisionAttention(
             config=config,
-            layer_idx=None,  # TODO assuming None is correct
+            layer_idx=layer_idx,
         )
 
-        # Pre-MLP layer norm ((1152,), eps=1e-06)
+        # post-attention layer norm ((1152,), eps=1e-06)
         self.layer_norm2 = LayerNorm(
             self.embed_dim,
             eps=vision_config.layer_norm_eps,
@@ -616,15 +620,16 @@ class Gemma3VisionEncoderLayer(Module):
         return hidden_states
 
 
-# ✅ construct lots of EncoderLayers
+# ✅ construct lots of EncoderLayers/run through them
 class Gemma3VisionEncoder(Module):
     """SigLIP vision encoder with 27 transformer layers."""
 
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
+        super().__init__()
         self.layers = LayerList(
             [
-                Gemma3VisionEncoderLayer(config)
-                for _ in range(config.vision_config.num_hidden_layers)
+                Gemma3VisionEncoderLayer(config, layer_idx)
+                for layer_idx, _ in enumerate(range(config.vision_config.num_hidden_layers))
             ]
         )
 
