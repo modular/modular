@@ -223,8 +223,12 @@ for key in sorted(os.environ.keys()):
             new_options = []
             for option in value.split(","):
                 option_key, option_value = option.split("=", 1)
-                if os.path.exists(option_value):
+                if option_key == "suppressions":
                     option_value = os.path.abspath(option_value)
+                    if not os.path.exists(option_value):
+                        raise FileNotFoundError(
+                            f"ASAN/LSAN suppressions file not found: {option_value}"
+                        )
                 new_options.append(f"{option_key}={option_value}")
             value = ",".join(new_options)
         elif os.path.exists(value):
