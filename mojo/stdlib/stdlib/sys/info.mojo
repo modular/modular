@@ -171,6 +171,12 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
         if is_triple["nvptx64-nvidia-cuda", Self.value]():
             # TODO: use `is_nvidia_gpu` when moved to into this struct.
             return "nvptx-short-ptr=true"
+        elif is_triple["amdgcn-amd-amdhsa", Self.value]() and (
+            Self._is_arch["gfx942"]() or Self._is_arch["gfx950"]()
+        ):
+            # TODO(MOCO-2748): work around incorrect code generation due to the
+            # AMDGPUUniformIntrinsicCombine pass.
+            return "amdgpu-enable-uniform-intrinsic-combine=false"
         else:
             return ""
 
