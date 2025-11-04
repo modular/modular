@@ -877,6 +877,11 @@ ErrorOrSuccess KGENCompiler::runElaborationPipeline(
     std::optional<AnyAsyncValueRef> chain,
     std::function<void(Operation *)> moreOnMiss,
     std::function<void(Operation *)> moreOnHit) {
+
+  // Set the target now, so it's included in the cache key.
+  if (!getTargetInfo(module))
+    setTargetInfo(module, target);
+
   mlir::PassManager pm =
       createPassManager(pmConfigOptions.operationName, &context);
 
