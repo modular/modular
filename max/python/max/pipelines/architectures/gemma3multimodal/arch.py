@@ -25,6 +25,8 @@ from max.pipelines.lib import (
 from . import weight_adapters
 from .model import Gemma3_MultiModalModel
 
+from .tokenizer import Gemma3MMSimpleTokenizer
+
 gemma3_multimodal_arch = SupportedArchitecture(
     name="Gemma3ForConditionalGeneration",
     example_repo_ids=[
@@ -46,7 +48,7 @@ gemma3_multimodal_arch = SupportedArchitecture(
     },
     pipeline_model=Gemma3_MultiModalModel,
     task=PipelineTask.TEXT_GENERATION,
-    tokenizer=TextAndVisionTokenizer, # TODO will we need our own?
+    tokenizer=Gemma3MMSimpleTokenizer,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     rope_type=RopeType.normal,
