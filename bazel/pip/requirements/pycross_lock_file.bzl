@@ -6356,7 +6356,7 @@ def targets():
         tags = ["no-remote"],
         exec_compatible_with = HOST_CONSTRAINTS,
         testonly = "torch" in _TESTONLY_DEPS,
-        patches = ["@@//bazel/public-patches:torch-cuda-deps.patch"],
+        post_install_patches = ["@@//bazel/public-patches:torch-cuda-deps.patch"],
     )
 
     _torch_2_8_0_cpu_deps = [
@@ -6453,7 +6453,7 @@ def targets():
         tags = ["no-remote"],
         exec_compatible_with = HOST_CONSTRAINTS,
         testonly = "torch" in _TESTONLY_DEPS,
-        patches = ["@@//bazel/public-patches:torch-cuda-deps.patch"],
+        post_install_patches = ["@@//bazel/public-patches:torch-cuda-deps.patch"],
     )
 
     _torch_2_8_0_cu128_deps = [
@@ -6571,7 +6571,7 @@ def targets():
         tags = ["no-remote"],
         exec_compatible_with = HOST_CONSTRAINTS,
         testonly = "torch" in _TESTONLY_DEPS,
-        patches = ["@@//bazel/public-patches:torch-cuda-deps.patch"],
+        post_install_patches = ["@@//bazel/public-patches:torch-cuda-deps.patch"],
     )
 
     _torch_2_8_0_rocm7_0_0_git64359f59_deps = [
@@ -6628,7 +6628,7 @@ def targets():
         tags = ["no-remote"],
         exec_compatible_with = HOST_CONSTRAINTS,
         testonly = "torch" in _TESTONLY_DEPS,
-        patches = ["@@//bazel/public-patches:torch-cuda-deps.patch"],
+        post_install_patches = ["@@//bazel/public-patches:torch-cuda-deps.patch"],
     )
 
     _torchaudio_2_8_0_deps = [
