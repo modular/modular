@@ -2,17 +2,21 @@ from __future__ import annotations
 from typing import Iterable
 from collections.abc import Sequence
 import functools
+import logging
 
 from .model_config import Gemma3ForConditionalGenerationConfig
 
 from max.dtype import DType
+from max.driver import Tensor
 
-from max.graph import BufferValue, ShardingStrategy, TensorValue, ops, DeviceRef, Weight, Dim, StaticDim
-from max.graph.ops.resize import InterpolationMode
+from max.experimental.functional import matmul
 
-from max.nn import MLP, LayerList, LayerNorm, Linear
+from max.graph import BufferValue, ShardingStrategy, TensorValue, ops, DeviceRef
+from max.graph.ops import avg_pool2d
+
+from max.nn import MLP, LayerList, LayerNorm, Linear, ColumnParallelLinear, MLP, LayerList, Module, ReturnLogits, Linear, Conv2d
+from max.nn.embedding import Embedding
 from max.nn.kv_cache import PagedCacheValues
-from max.nn import ColumnParallelLinear, MLP, LayerList, Module, ReturnLogits, Linear
 from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
@@ -25,7 +29,9 @@ from max.pipelines.architectures.internvl.embedding_utils import merge_multimoda
 
 from .attention import Gemma3VisionAttention
 
-# taken from gemma3
+logger = logging.getLogger("max.pipelines")
+
+# ✅ taken from gemma3
 class Gemma3LanguageModel(Module):
     """The Gemma3 Multi-Modal model's text component"""
 
@@ -264,30 +270,57 @@ class Gemma3LanguageModel(Module):
 
         return (last_logits,)
 
-# class Gemma3MLP1/projector:
-#   https://entron.github.io/posts/Try-Gemma3-using-Hugging-Face-Part-1/#multi_modal_projector
-#   may be useful.  uses a Gemma3RMSNorm layer and more
-#   can be seen in transformers/modeling_gemma3.py too
-#   def __init__(Module):
-#        super.__init__()
-#        mm_input_projection_weight (nn.Paramter)
-#        mm_soft_emb_norm = Gemma3RMSNorm(...)
-#        patches_per_image
-#        tokens_per_side
-#        kernel_size
-#        avg_pool
 
-#   def forward(vision_outputs):
-#       get shape of vision_outputs
-#       reshape them with transpose() and reshape() and contiguous()
-#       pool the outputs with avg_pool, then flatten() and transpose()
-#       run through mm_soft_emb_norm
-#       use matmul(normed_vision_outputs, self.mm_input_projection_weight)
-#       return
-#        return projected_vision_outputs.type_as(vision_outputs)
+# ⚠️ from HF, nearly there
+class Gemma3MultiModalProjector(Module):
+    def __init__(self, config: Gemma3ForConditionalGenerationConfig):
+        super().__init__()
+
+        self.mm_input_projection_weight = Tensor.zeros(
+            shape=(config.vision_config.hidden_size, config.text_config.hidden_size),
+            dtype=config.dtype,
+        )
+
+        self.mm_soft_emb_norm = Gemma3RMSNorm(
+            config.vision_config.hidden_size,
+            eps=config.vision_config.layer_norm_eps,
+            dtype=config.dtype
+        )
+
+        self.patches_per_image = int(config.vision_config.image_size // config.vision_config.patch_size)
+        self.tokens_per_side = int(config.mm_tokens_per_image**0.5)
+        self.kernel_size = self.patches_per_image // self.tokens_per_side
+
+    # TODO are these in the right order?  pool -> mm_soft_emb_norm?? i think should be other way based on the vision tower
+    def __call__(self, vision_outputs: Tensor):
+        batch_size, _, seq_length = vision_outputs.shape
+
+        reshaped_vision_outputs = vision_outputs.transpose(1, 2)
+        # TODO is the shape right?
+        reshaped_vision_outputs = reshaped_vision_outputs.reshape(
+            (
+                batch_size,
+                seq_length,
+                self.patches_per_image,
+                self.patches_per_image
+            )
+        )
+        reshaped_vision_outputs = reshaped_vision_outputs.contiguous()
+        pooled_vision_outputs = avg_pool2d(
+            input=reshaped_vision_outputs,
+            kernel_size=self.kernel_size,
+            stride=self.kernel_size
+        )
+        pooled_vision_outputs = pooled_vision_outputs.flatten(2)
+        pooled_vision_outputs = vision_outputs.transpose(1, 2)
+
+        normed_vision_outputs = self.mm_soft_emb_norm(pooled_vision_outputs)
+
+        projected_vision_outputs = matmul(normed_vision_outputs, self.mm_input_projection_weight)
+        return projected_vision_outputs.type_as(vision_outputs)
 
 
-# borrowed from InternVL
+# ⚠️ borrowed from InternVL/Idefics
 class Gemma3VisionEmbeddings(Module):
     """Implements patch embeddings for SigLIP vision model."""
     def __init__(self, config: Gemma3ForConditionalGenerationConfig, device: DeviceRef | None = None) -> None:
@@ -295,6 +328,7 @@ class Gemma3VisionEmbeddings(Module):
         super().__init__()
         self.config = config
         self.devices = config.devices
+        self.num_channels = config.vision_config.num_channels           # 3
         self.embed_dim = config.vision_config.hidden_size               # 1152
         self.image_size = config.vision_config.image_size               # 896
         self.patch_size = config.vision_config.patch_size               # 14
@@ -302,22 +336,32 @@ class Gemma3VisionEmbeddings(Module):
 
         # Calculate patch dimensions
         # Note: in_dim matches Conv2d flattening order (C*H*W)
-        self.patch_embedding = Linear(
-            in_dim=3 * self.patch_size * self.patch_size,
-            out_dim=self.embed_dim,
-            dtype=self.dtype,
-            device=device if device else DeviceRef.CPU(),
+        # self.patch_embedding = Linear(
+        #     in_dim=3 * self.patch_size * self.patch_size,
+        #     out_dim=self.embed_dim,
+        #     dtype=self.dtype,
+        #     device=device,
+        #     has_bias=True,
+        # )
+        # TODO above is internvl, below is idefics
+        self.patch_embedding = Conv2d(
+            in_channels=self.num_channels,                              # 3?
+            out_channels=self.embed_dim,                                # 1152
+            kernel_size=self.patch_size,                                # 14
+            stride=self.patch_size,                                     # 14
+            padding=0,  # "valid" padding
             has_bias=True,
+            dtype=self.dtype,
+            device=device,
         )
 
         self.num_patches = (self.image_size // self.patch_size) ** 2    # 4096 = (896 // 14)^2
-        self.num_positions = self.num_patches
 
-        self.position_embedding = Weight(
-            "position_embedding",
+        self.position_embedding = Embedding(
+            vocab_size=self.num_patches,
+            hidden_dim=self.embed_dim,
             dtype=self.dtype,
-            shape=(1, self.num_positions, self.embed_dim),              # [1, 4096, 1152]
-            device=device if device else DeviceRef.CPU(),
+            device=device,
         )
         
     @property
@@ -378,152 +422,96 @@ class Gemma3VisionEmbeddings(Module):
 
         return shards
 
-    def _get_position_embedding(self, H: Dim, W: Dim) -> TensorValue:
-        """Gets position embeddings, interpolating if needed for different resolutions.
-
-        Args:
-            H: Height in patches (can be int or symbolic Dim).
-            W: Width in patches (can be int or symbolic Dim).
-
-        Returns:
-            Position embeddings tensor of shape [1, H*W+1, embed_dim].
-        """
-        # For static dimensions, check if we need interpolation.
-        if isinstance(H, StaticDim) and isinstance(W, StaticDim):
-            h_int = int(H)
-            w_int = int(W)
-            if self.num_patches == h_int * w_int:
-                return self.position_embedding
-
-        # Otherwise, interpolate position embeddings.
-        patch_pos_embed = self.position_embedding[:, 1:, :]
-
-        # Reshape patch position embeddings to spatial layout.
-        orig_size = int(self.num_patches**0.5)
-        patch_pos_embed = ops.reshape(
-            patch_pos_embed, [1, orig_size, orig_size, self.embed_dim]
-        )
-
-        # Permute to NCHW format for interpolation.
-        patch_pos_embed = ops.permute(patch_pos_embed, [0, 3, 1, 2])
-
-        # Interpolate using bicubic.
-        # resize expects full shape (N, C, H, W).
-        patch_pos_embed = ops.resize(
-            patch_pos_embed,
-            shape=[1, self.embed_dim, H, W],
-            interpolation=InterpolationMode.BICUBIC,
-        )
-
-        # Permute back to NHWC and reshape.
-        patch_pos_embed = ops.permute(patch_pos_embed, [0, 2, 3, 1])
-        patch_pos_embed = ops.reshape(
-            patch_pos_embed, [1, H * W, self.embed_dim]
-        )
-
-        # Concatenate class token and interpolated patch embeddings
-        return patch_pos_embed
-
     def __call__(self, pixel_values: TensorValue, patch_attention_mask=None) -> TensorValue:
         """Computes embeddings for input pixel values.
 
         Args:
-            pixel_values: Input tensor of pre-extracted patches of shape
-                         (batch_size, num_patches_h, num_patches_w, channels, patch_size, patch_size).
+            pixel_values: Input tensor of shape (batch_size, channels, height, width).
 
         Returns:
             Embeddings tensor of shape (batch_size, num_positions, embed_dim).
         """
-        # Extract dimensions from input shape.
-        (
-            batch_size,         # Dim('batch_size')
-            num_patches_h,      # Dim(64)
-            num_patches_w,      # Dim(64)
-            channels,           # Dim(3)
-            patch_size_h,       # Dim(14)
-            patch_size_w,       # Dim(14)
-        ) = pixel_values.shape
-        assert channels == 3
-        assert patch_size_h == self.patch_size
-        assert patch_size_w == self.patch_size
+        logger.info(f"*** PV shape: {pixel_values.shape}")
+        batch_size = pixel_values.shape[0]
+        max_im_h = pixel_values.shape[2]
+        max_im_w = pixel_values.shape[3]
 
-        # Check that we have static dimensions for height and width.
-        if not isinstance(num_patches_h, StaticDim) or not isinstance(
-            num_patches_w, StaticDim
-        ):
-            raise ValueError(
-                f"Gemma3VisionEmbeddings requires static image dimensions, "
-                f"got {num_patches_h=}, {num_patches_w=}"
-            )
+        # Convert input from NCHW to NHWC format for MAX Conv2d
+        # pixel_values: [batch_size, channels, height, width] -> [batch_size, height, width, channels]
+        pixel_values_nhwc = ops.permute(pixel_values, [0, 2, 3, 1])
 
-        # Reshape pre-extracted patches to (batch_size, num_patches, channels * patch_size * patch_size).
-        # The patches are already extracted by the tokenizer, so we just need to reshape them.
-        pixel_values = ops.reshape(
-            pixel_values,
-            [
-                batch_size,
-                num_patches_h * num_patches_w,
-                channels * self.patch_size * self.patch_size,
-            ],
-        )
+        # Apply patch embedding (Conv2d with stride=patch_size extracts patches)
+        # Output will be in NHWC format: [batch_size, out_height, out_width, out_channels]
+        patch_embeds_nhwc = self.patch_embedding(pixel_values_nhwc)
 
-        # Apply linear transformation directly
-        pixel_values = pixel_values.cast(self.patch_embedding.weight.dtype)
-        patch_embeds = self.patch_embedding(pixel_values)
+        # Convert output back to NCHW format: [batch_size, out_channels, out_height, out_width]
+        patch_embeds = ops.permute(patch_embeds_nhwc, [0, 3, 1, 2])
 
-        # Add position embeddings.
-        position_embedding = self._get_position_embedding(
-            num_patches_h, num_patches_w
-        )
-        patch_embeds = patch_embeds + position_embedding
+        # Flatten spatial dimensions and transpose to [batch_size, num_patches, embed_dim]
+        # patch_embeds shape: [batch_size, embed_dim, num_patches_h, num_patches_w]
+        embeddings = ops.flatten(
+            patch_embeds, start_dim=2
+        )  # [batch_size, embed_dim, num_patches]
+        embeddings = ops.transpose(
+            embeddings, 1, 2
+        )  # [batch_size, num_patches, embed_dim]
 
-        return patch_embeds
+        max_nb_patches_h = max_im_h // self.patch_size
+        max_nb_patches_w = max_im_w // self.patch_size
+        total_patches = max_nb_patches_h * max_nb_patches_w
+
+        # Create position IDs: [0, 1, 2, ..., total_patches-1] for each batch
+        # Generate 2D tensor with shape [batch_size, total_patches]
+        position_ids = ops.range(
+            start=0,
+            stop=self.num_patches,
+            step=1,
+            out_dim=total_patches,
+            device=DeviceRef.GPU(),
+            dtype=DType.int32,
+        )  # [total_patches]
+        position_ids = ops.unsqueeze(position_ids, 0)  # [1, total_patches]
+        position_ids = ops.tile(
+            position_ids, [batch_size, 1]
+        )  # [batch_size, total_patches]
+
+        # Get position embeddings for the position IDs
+        position_embeds = self.position_embedding(
+            position_ids
+        )  # [batch_size, total_patches, embed_dim]
+
+        # Add position embeddings to patch embeddings
+        embeddings = embeddings + position_embeds
+
+        return embeddings
 
 
+# ✅ from HF
 class Gemma3VisionMLP(Module):
-    """Simple 2-layer MLP for SigLIP vision encoder.
-
-    Unlike the gated MLP used in language models (gate_proj, up_proj, down_proj),
-    vision transformers use a simple fc1 -> activation -> fc2 structure.
-    """
-
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
         super().__init__()
-        vision_config = config.vision_config
+        config = config.text_config
+        self.config = config
+        self.hidden_size = config.hidden_size
+        self.intermediate_size = config.intermediate_size
+        self.gate_proj = Linear(self.hidden_size, self.intermediate_size, dtype=config.dtype, device=config.devices[0], has_bias=False) # TODO should be GELUTanh activation, not sure if this works
+        self.up_proj =   Linear(self.hidden_size, self.intermediate_size, dtype=config.dtype, device=config.devices[0], has_bias=False) # TODO should be fc1 Linear
+        self.down_proj = Linear(self.intermediate_size, self.hidden_size, dtype=config.dtype, device=config.devices[0], has_bias=False) # TODO should be fc2 Linear
+        self.act_fn = config.hidden_activation
 
-        self.fc1 = Linear(
-            in_dim=vision_config.hidden_size,
-            out_dim=vision_config.intermediate_size,
-            dtype=config.dtype,
-            device=config.devices[0],
-            has_bias=True,
-        )
-
-        self.fc2 = Linear(
-            in_dim=vision_config.intermediate_size,
-            out_dim=vision_config.hidden_size,
-            dtype=config.dtype,
-            device=config.devices[0],
-            has_bias=True,
-        )
-
-    def __call__(self, hidden_states: TensorValue) -> TensorValue:
-        """fc1 -> GELU -> fc2"""
-        hidden_states = self.fc1(hidden_states)
-        hidden_states = ops.gelu(hidden_states)
-        hidden_states = self.fc2(hidden_states)
-        return hidden_states
+    def __call__(self, x):
+        down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+        return down_proj
 
 
+# ✅ based on HF
 class Gemma3VisionEncoderLayer(Module):
-    """Single transformer layer in the SigLIP vision encoder."""
-
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
         vision_config = config.vision_config
 
         self.embed_dim = vision_config.hidden_size
 
-        # Pre-attention layer norm
+        # Pre-attention layer norm ((1152,), eps=1e-06)
         self.layer_norm1 = LayerNorm(
             self.embed_dim,
             eps=vision_config.layer_norm_eps,
@@ -533,14 +521,11 @@ class Gemma3VisionEncoderLayer(Module):
 
         # Self-attention
         self.self_attn = Gemma3VisionAttention(
-            n_heads=vision_config.num_attention_heads,
-            device=config.devices[0],
-            dtype=config.dtype,
-            dim=vision_config.hidden_size,
-            head_dim=vision_config.hidden_size // vision_config.num_attention_heads,
+            config=config,
+            layer_idx=None # TODO assuming None is correct
         )
 
-        # Pre-MLP layer norm
+        # Pre-MLP layer norm ((1152,), eps=1e-06)
         self.layer_norm2 = LayerNorm(
             self.embed_dim,
             eps=vision_config.layer_norm_eps,
@@ -548,9 +533,9 @@ class Gemma3VisionEncoderLayer(Module):
             dtype=config.dtype
         )
 
-        # MLP (Feed-Forward Network) - simple fc1/fc2 style
+        # MLP (Feed-Forward Network) - simple GELUTanhfc1/fc2 style
         self.mlp = Gemma3VisionMLP(config)
-    
+
     def __call__(
         self,
         hidden_states: TensorValue,
@@ -560,25 +545,25 @@ class Gemma3VisionEncoderLayer(Module):
         hidden_states = self.layer_norm1(hidden_states)
         hidden_states = self.self_attn(hidden_states)
         hidden_states = residual + hidden_states
-        
+
         # MLP with residual
         residual = hidden_states
         hidden_states = self.layer_norm2(hidden_states)
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
-        
+
         return hidden_states
 
-
+# ✅ construct lots of EncoderLayers
 class Gemma3VisionEncoder(Module):
     """SigLIP vision encoder with 27 transformer layers."""
-    
+
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
         self.layers = LayerList([
             Gemma3VisionEncoderLayer(config)
             for _ in range(config.vision_config.num_hidden_layers)
         ])
-    
+
     def __call__(
         self,
         hidden_states: TensorValue,
@@ -588,20 +573,19 @@ class Gemma3VisionEncoder(Module):
             hidden_states = layer(hidden_states)
         return hidden_states
 
-
+# ⚠️ not sure if `prepare_inputs_for_generation` is required
 class Gemma3VisionModel(Module):
     def __init__(self, config: Gemma3ForConditionalGenerationConfig) -> None:
         super().__init__()
         self.config = config
         vision_config = config.vision_config
-        text_config = config.text_config
-        
-        # Vision embeddings (you already have this)
+
+        # Vision embeddings
         self.embeddings = Gemma3VisionEmbeddings(config, device=config.devices[0])
-        
-        # Vision encoder (NEW - need to implement)
+
+        # Vision encoder (27 transformer layers)
         self.encoder = Gemma3VisionEncoder(config)
-        
+
         # Post-encoder layer norm
         self.post_layernorm = LayerNorm(
             vision_config.hidden_size,
@@ -610,47 +594,38 @@ class Gemma3VisionModel(Module):
             dtype=config.dtype
         )
 
+        # Multimodal projector to bridge vision and text spaces
+        self.projector = Gemma3MultiModalProjector(config)
+
     # from huggingface/gemma3/modeling_gemma3.py
+    # TODO this seems important!?
     def prepare_inputs_for_generation(
         self,
-        input_ids,
-        past_key_values=None,
-        inputs_embeds=None,
-        cache_position=None,
-        position_ids=None,
-        pixel_values=None,
-        attention_mask=None,
-        token_type_ids=None,
-        use_cache=True,
-        logits_to_keep=None,
-        labels=None,
-        **kwargs,
     ):
-        pass
+        print("*** CALL PREPARE INPUTS FOR GENERATION ***")
 
     def __call__(
         self,
         pixel_values: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> Sequence[TensorValue]:
-        """Process pixel values to image embeddings"""
-        # 1. Convert patches to embeddings
-        hidden_states = self.embeddings(pixel_values[0]) # TODO using index cos its internVL on the other end.  remove `[0]`
-        # Shape: [batch, num_patches, vision_hidden_size]
+        """Process pixel values to image embeddings.
 
-        # 2. Pass through vision encoder (27 transformer layers)
+        Args:
+            pixel_values: List of image tensors [batch, channels, height, width] (one per device)
+            signal_buffers: Communication buffers for distributed execution
+
+        Returns:
+            List of projected image embeddings [pooled_tokens, text_hidden_size] (one per device)
+        """
+        # convert to patches, run through the encoder layers, then normalize and project into multimodal space
+        hidden_states = self.embeddings(pixel_values[0])
+
         hidden_states = self.encoder(hidden_states)
-        # Shape: [batch, num_patches, vision_hidden_size]
 
-        # 3. Post-encoder normalization
         hidden_states = self.post_layernorm(hidden_states)
-        # Shape: [batch, num_patches, vision_hidden_size]
+        
+        image_embeddings = self.projector(hidden_states)
 
-        # hidden_states = self.connector(hidden_states)
-
-        # Reshape to flatten spatial dimensions, keeping the last dimension (feature dimension)
-        image_hidden_states = ops.reshape(
-            hidden_states, (-1, hidden_states.shape[-1])
-        )
-
-        return [image_hidden_states for _ in range(len(self.config.devices))]
+        # Replicate to all devices
+        return [image_embeddings for _ in range(len(self.config.devices))]

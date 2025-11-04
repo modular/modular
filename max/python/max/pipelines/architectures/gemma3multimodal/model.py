@@ -178,8 +178,8 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     """Device buffers used for synchronization in communication collectives."""
 
     # Vision inputs.
-    pixel_values: list[Tensor] | None = None
-    """Pixel values for vision inputs."""
+    pixel_values: Tensor | None = None
+    """Raw pixel values for vision inputs: [batch, channels, height, width]."""
 
     image_token_indices: Tensor | None = None
     """Pre-computed indices of image tokens in the input sequence."""
@@ -194,7 +194,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         return_n_logits: Tensor,
         signal_buffers: list[Tensor],
         kv_cache_inputs: KVCacheInputs | None = None,
-        pixel_values: list[Tensor] | None = None,
+        pixel_values: Tensor | None = None,
         image_token_indices: Tensor | None = None,
     ) -> None:
         """
@@ -236,7 +236,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     # The vision and text towers are in the same weights file, but are in
     # separate models, so load_state_dict will naturally be loading subsets in
     # each case.
-    _strict_state_dict_loading = False
+    _strict_state_dict_loading = True
 
     def __init__(
         self,
@@ -281,23 +281,20 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             return_logits,
         )
 
+        self.vision_model, self.language_model = self.load_model(session)
+
         # Initialize signal buffers for distributed execution
         self.signal_buffers = [
             Tensor.zeros(
-                shape=(Signals.NUM_BYTES,), dtype=DType.bfloat16, device=dev
+                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
             )
             for dev in self.devices
         ]
-
-        self.vision_model, self.language_model = self.load_model(session)
 
     @classmethod
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
-        # huggingface_config = getattr(
-        #     huggingface_config, "text_config", huggingface_config
-        # )
         return Gemma3ForConditionalGenerationConfig.calculate_max_seq_len(
             pipeline_config, huggingface_config
         )
@@ -309,42 +306,12 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        """Gets the parameters required to configure the KV cache for Gemma 3.
-
-        Delegates to the :obj:`Gemma3ForConditionalGenerationConfig.get_kv_params` static method.
-
-        Args:
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-            n_devices: The number of devices the model will run on.
-            kv_cache_config: The MAX Engine KV cache configuration settings
-                (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            cache_dtype: The desired data type for the KV cache
-                (:obj:`max.dtype.DType`).
-
-        Returns:
-            The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
-        """
-        # huggingface_config = getattr(
-        #     huggingface_config, "text_config", huggingface_config
-        # )
         return Gemma3ForConditionalGenerationConfig.get_kv_params(
             huggingface_config, n_devices, kv_cache_config, cache_dtype
         )
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
-        """Gets the number of hidden layers from the HuggingFace configuration.
-
-        Delegates to the :obj:`Gemma3ForConditionalGenerationConfig.get_num_layers` static method.
-
-        Args:
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The number of hidden layers.
-        """
         return Gemma3ForConditionalGenerationConfig.get_num_layers(huggingface_config)
 
     @staticmethod
@@ -474,13 +441,9 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         if model_inputs.has_vision_inputs:
             assert model_inputs.pixel_values is not None
 
-            patched_images = self._extract_patches_from_images(
-                model_inputs.pixel_values
-            )
-
             # Execute vision model: patched pixel_values -> image_embeddings.
             vision_outputs = self.vision_model.execute(
-                *patched_images, *model_inputs.signal_buffers
+                *model_inputs.pixel_values, *model_inputs.signal_buffers
             )
             assert len(vision_outputs) == len(self.devices)
 
@@ -533,6 +496,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         language_weights_dict = convert_safetensor_language_state_dict(weights_dict)
         vision_weights_dict = convert_safetensor_vision_state_dict(weights_dict)
         state_dict = language_weights_dict | vision_weights_dict
+        print(vision_weights_dict)
 
         model_config = Gemma3ForConditionalGenerationConfig.generate(
             pipeline_config=self.pipeline_config,
@@ -553,7 +517,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Build and compile vision model
         vision_graph, vision_model_state_dict = self._build_vision_graph(model_config, vision_weights_dict)        
-        vision_model = session.load(vision_graph, weights_registry=vision_model_state_dict)
+        vision_model = session.load(vision_graph, weights_registry=vision_weights_dict)
 
         return vision_model, language_model
 
@@ -671,15 +635,14 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             graph.output(*outputs)
         return graph, language_model.state_dict()
     
-    # copied from InternVL, replace with siglip
     def _build_vision_graph(
         self, config: Gemma3ForConditionalGenerationConfig, state_dict: dict[str, WeightData]
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the vision model graph for processing images."""
         # Define input types for the vision model
         # Use static dimensions from the vision config
-        image_size = self.huggingface_config.vision_config.image_size
-        patch_size = self.huggingface_config.vision_config.patch_size
+        image_size = config.vision_config.image_size
+        patch_size = config.vision_config.patch_size
         # Calculate number of patches in each dimension
         height_patches = image_size // patch_size
         width_patches = image_size // patch_size
@@ -688,14 +651,12 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Use bfloat16 to match the tokenizer's output.
         pixel_values_types = [
             TensorType(
-                DType.bfloat16,
+                config.dtype,
                 shape=[
                     "batch_size",
-                    height_patches,
-                    width_patches,
                     3,
-                    patch_size,
-                    patch_size,
+                    image_size,
+                    image_size,
                 ],
                 device=DeviceRef.from_device(dev),
             )
@@ -709,7 +670,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Initialize graph with input types
         with Graph(
-            getattr(self.huggingface_config, "model_type", "Gemma3"), # TODO should be siglip_vision_model?
+            getattr(self.huggingface_config, "model_type", "Gemma3"), # TODO should it be siglip_vision_model?  HF uses Gemma3
             input_types=[*pixel_values_types, *signals.input_types()],
         ) as graph:
             # Build vision model architecture.
@@ -718,24 +679,22 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 state_dict=state_dict,
                 override_quantization_encoding=True,
                 weight_alignment=1,
-                strict=True,
+                strict=self._strict_state_dict_loading,
             )
 
-            # Unpack inputs (one per device).
             pixel_values = [
                 inp.tensor for inp in graph.inputs[: len(self.devices)]
             ]
+            print(pixel_values)
 
-            # Extract signal buffers (one per device).
             signal_buffers = [
                 inp.buffer for inp in graph.inputs[len(self.devices) :]
             ]
 
             # Execute vision model: pixel_values -> image_embeddings.
             image_embeddings = vision_model(pixel_values, signal_buffers)
-
-            # Set graph outputs.
-            graph.output(*image_embeddings) # type: ignore
+            
+            graph.output(*image_embeddings)
 
             return graph, vision_model.state_dict()
 
@@ -829,69 +788,14 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             return None
 
         final_images = _VisionStacker().stack(images)
+        
+        tensor = Tensor.from_numpy(final_images)
 
-        return _cast_to_dtype(
+        tensor = _cast_to_dtype(
             final_images, DType.float32, DType.bfloat16, self.devices[0]
         )
 
-    def _extract_patches_from_images(
-        self, pixel_values: tuple[Tensor, ...]
-    ) -> list[Tensor]:
-        """Extract patches from raw images for vision model input.
-
-        Converts from [batch, channels, height, width] format
-        to [batch, height_patches, width_patches, channels, patch_h, patch_w] format.
-
-        Args:
-            pixel_values: Tuple of tensors with shape [batch, channels, height, width]
-                         (one tensor per device)
-
-        Returns:
-            List of tensors (one per device) with extracted patches
-        """
-        patch_size = self.huggingface_config.vision_config.patch_size
-
-        patched_images = []
-
-        # pixel_values is a tuple of tensors, one per device
-        # Don't iterate - just process each tensor in the tuple
-        if not pixel_values:
-            return patched_images
-        
-        logger.info(f"*** type: {type(pixel_values)}")
-        logger.info(f"*** shape: {pixel_values.shape}")
-
-        for i, pixel_tensor in enumerate(pixel_values):
-            # pixel_tensor shape: [batch, channels, height, width]
-            # e.g., [1, 3, 896, 896]
-
-            # Get shape info
-            shape = pixel_tensor.shape
-            batch, channels, height, width = shape[0], shape[1], shape[2], shape[3]
-
-            # Calculate number of patches
-            height_patches = int(height) // patch_size
-            width_patches = int(width) // patch_size
-
-            # Convert to numpy for reshaping
-            img_np = np.asarray(pixel_tensor)
-
-            # Reshape to extract patches
-            # [B, C, H, W] -> [B, C, H_patches, patch_h, W_patches, patch_w]
-            img_np = img_np.reshape(
-                int(batch), int(channels),
-                height_patches, patch_size,
-                width_patches, patch_size
-            )
-
-            # Transpose to [B, H_patches, W_patches, C, patch_h, patch_w]
-            img_np = img_np.transpose(0, 2, 4, 1, 3, 5)
-
-            # Convert back to tensor on the appropriate device
-            patched_tensor = Tensor.from_numpy(img_np).to(pixel_tensor.device)
-            patched_images.append(patched_tensor)
-
-        return patched_images
+        return [tensor.to(dev) for dev in self.devices]
 
     def _batch_image_token_indices(
         self, context_batch: Sequence[TextAndVisionContext]
