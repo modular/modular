@@ -1281,6 +1281,17 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
     ),
+    "deepseek-ai/DeepSeek-R1": GenericOracle(
+        model_path="deepseek-ai/DeepSeek-R1",
+        config_params={
+            "max_length": 516,
+            "trust_remote_code": False,
+            "prefill_chunk_size": 128,
+            # TODO(MODELS-832): MPI issues when running with EP.
+            # "ep_size": 8,
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",
         config_params={
@@ -1453,6 +1464,14 @@ def _add_max_hooks() -> Any:
     help="Path to output resulting goldens JSON to",
 )
 @click.option(
+    "-r",
+    "--reference",
+    "reference_path",
+    type=click.Path(path_type=Path),
+    required=False,
+    help="Path to reference golden JSON to compare to",
+)
+@click.option(
     "--print/--no-print",
     "print_output",
     type=bool,
@@ -1493,6 +1512,7 @@ def main(
     pipeline_name: str,
     encoding_name: str,
     output_path: Path,
+    reference_path: Path | None,
     print_output: bool,
     max_batch_size: int | None,
     log_hf_downloads: bool,
@@ -1509,6 +1529,13 @@ def main(
         # https://huggingface.co/google/gemma-3-4b-it/discussions/51
         torch._dynamo.config.disable = True
 
+    if reference_path is not None:
+        reference_logits = numpy_encoder.NumpyDecoder().decode(
+            reference_path.read_text()
+        )
+    else:
+        reference_logits = None
+
     try:
         generate_llm_logits(
             device_specs=DevicesOptionType.device_specs(device_type),
@@ -1516,6 +1543,7 @@ def main(
             pipeline_name=pipeline_name,
             encoding_name=encoding_name,
             output_path=output_path,
+            reference=reference_logits,
             print_output=print_output,
             max_batch_size=max_batch_size,
             log_hf_downloads=log_hf_downloads,

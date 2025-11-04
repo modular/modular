@@ -39,6 +39,7 @@ allenai/OLMo-2-1124-7B	7df9a82518afdecae4e8c026b27adccc8c1f0032
 allenai/OLMo-2-1124-7B-Instruct	470b1fba1ae01581f270116362ee4aa1b97f4c84
 bartowski/Meta-Llama-3-8B-Instruct-GGUF	4ebc4aa83d60a5d6f9e1e1e9272a4d6306d770c1
 bartowski/Meta-Llama-3.1-8B-Instruct-GGUF	bf5b95e96dac0462e2a09145ec66cae9a3f12067
+deepseek-ai/DeepSeek-R1	56d4cbbb4d29f4355bab4b9a39ccb717a14ad5ad
 deepseek-ai/DeepSeek-R1-Distill-Llama-8B	6a6f4aa4197940add57724a7707d069478df56b1
 deepseek-ai/DeepSeek-V2-Lite-Chat	85864749cd611b4353ce1decdb286193298f64c7
 google/gemma-3-12b-it	96b6f1eccf38110c56df3a15bffe176da04bfd80

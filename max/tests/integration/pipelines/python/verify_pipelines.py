@@ -1109,6 +1109,23 @@ PIPELINES = {
             kl_div_threshold=1.1e-2,
         ),
     ),
+    # TODO(MODELS-832): Enable when we have a workflow with 8 B200 runners.
+    "deepseek-ai/DeepSeek-R1": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["manual", "8xb200"],  # Requires 8 B200s to run
+        run=_make_pipeline_runner(
+            pipeline="deepseek-ai/DeepSeek-R1",
+            encoding="float8_e4m3fn",
+            # Goldens generated using VLLM.
+            # Script: https://gist.github.com/k-w-w/1dc387dc41f11789e464d4a9267a8d20
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz",
+                json_file="vllm_deepseek-r1_float8_golden.json",
+            ),
+            cos_dist_threshold=2.8e-02,
+            kl_div_threshold=1.1e-1,
+        ),
+    ),
     "google/gemma-3-1b-it-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=_make_pipeline_runner(
