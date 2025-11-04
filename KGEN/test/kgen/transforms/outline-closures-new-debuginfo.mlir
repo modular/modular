@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -outline-closures-new=debug-build=true -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -outline-closures-new=debug-build=true -mlir-print-debuginfo -verify-parameters | FileCheck %s
 
 // COM: Use of 'C' appears only in a location inside the closure.
 

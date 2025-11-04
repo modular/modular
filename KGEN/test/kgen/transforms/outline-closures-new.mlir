@@ -413,15 +413,15 @@ kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !
 
 // COM: Signature check
 // CHECK-LABEL:  kgen.generator @foo_fn<CAPTURES: struct<(type, type)>>
-// CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<struct<(#kgen.struct.extract<:struct<(type, type)> CAPTURES, 0>,
-// CHECK-SAME: #kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>)>>) memoryOnly>> read_mem)
+// CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<struct<(#kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>,
+// CHECK-SAME: #kgen.struct.extract<:struct<(type, type)> CAPTURES, 0>)>>) memoryOnly>> read_mem)
 
 // COM: Unpack check (adds declarations for all references to captured params in stolen body from original nested)
-// CHECK-NEXT:  kgen.param.declare E: type = <#kgen.struct.extract<:struct<(type, type)> CAPTURES, 0>>
-// CHECK-NEXT:  kgen.param.declare D: type = <#kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>>
+// CHECK-NEXT:  kgen.param.declare D: type = <#kgen.struct.extract<:struct<(type, type)> CAPTURES, 0>>
+// CHECK-NEXT:  kgen.param.declare E: type = <#kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>>
 
 // COM: Argument Rebind checks (if extractions were used in the signature, these rebinds prevent type mismatch errors)
-// CHECK:  kgen.rebind %arg0 : !kgen.pointer<struct<(pointer<struct<(#kgen.struct.extract<:struct<(type, type)> CAPTURES, 0>, #kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>)>>) memoryOnly>> to !kgen.pointer<struct<(pointer<struct<(E, D)>>) memoryOnly>>
+// CHECK:  kgen.rebind %arg0 : !kgen.pointer<struct<(pointer<struct<(#kgen.struct.extract<:struct<(type, type)> CAPTURES, 1>, #kgen.struct.extract<:struct<(type, type)> CAPTURES, 0>)>>) memoryOnly>> to !kgen.pointer<struct<(pointer<struct<(E, D)>>) memoryOnly>>
 
 
 kgen.generator @foo<D: type, E: type>(%arg0 : !kgen.pointer<struct<(E, D)>>) {
