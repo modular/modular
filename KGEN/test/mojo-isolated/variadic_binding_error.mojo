@@ -1,0 +1,43 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+
+# RUN: %parse-mojo-isolated -verify-diagnostics %s
+
+
+@fieldwise_init
+struct SomeNonCopyable:
+    pass
+
+
+@fieldwise_init
+struct SomeCopyable(Copyable):
+    pass
+
+
+@fieldwise_init
+struct SomeVA[*elt_types: AnyType]:
+    pass
+
+
+# @expected-note @below{{function declared here}}
+fn all_copyable[*elt_type: Copyable](t: SomeVA[*elt_type]):
+    pass
+
+
+# @expected-note @below{{function declared here}}
+fn all_int[*elt_type: type_of(Int)](t: SomeVA[*elt_type]):
+    pass
+
+
+fn foo():
+    # TODO: better error msg here?
+
+    # @expected-error @below{{invalid call to 'all_copyable': failed to infer parameter 'elt_type'}}
+    all_copyable(SomeVA[SomeCopyable, SomeNonCopyable]())
+
+    # @expected-error @below{{invalid call to 'all_int': failed to infer parameter 'elt_type'}}
+    all_int(SomeVA[Int, SomeNonCopyable]())

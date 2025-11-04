@@ -416,8 +416,8 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
 def KGEN_UpcastAttr : KGEN_ExprAttr<"Upcast", "upcast"> {
   let summary = "Rebind a type with metatype information to base trait.";
   let description = [{
-    The `#kgen.upcast` attribute is used to convert from a typeValue to a
-    typeValue of a less-derived trait.
+    The `#kgen.upcast` attribute is used to convert from a (variadic of) typeValue
+    to a (variadic of) typeValue of a less-derived trait.
     For example, this can represent a cast from Movable to AnyType, handling the
     rebind of the `__del__` member.
 
@@ -465,9 +465,9 @@ def KGEN_DowncastAttr : KGEN_ExprAttr<"Downcast", "downcast",
   [ContextuallyEvaluatedAttrInterface]> {
   let summary = "Rebind a type with metatype information to a new trait.";
   let description = [{
-    The `#kgen.downcast` attribute is used to convert from a typeValue to a
-    typeValue of a more-derived trait. For example, this can represent a cast
-    from AnyType to Movable.
+    The `#kgen.upcast` attribute is used to convert from a (variadic of) typeValue
+    to a (variadic of) typeValue of a more-derived trait.
+    For example, this can represent a cast from AnyType to Movable.
 
     Note that parser does not (also can not) verify whether the downcast is
     legal and a illegal downcast can lead to elaboration time error.

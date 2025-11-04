@@ -308,6 +308,18 @@ static TypedAttr getCastAttr(Type type, TypedAttr inputTypeValue) {
     }
   }
 
+  // This is a constant variadic of type value, fold each elements.
+  if (auto variadicAttr = sugarDynCast<VariadicAttr>(inputTypeValue)) {
+    auto dstVATp = cast<VariadicType>(type);
+    Type elemTp = dstVATp.getElementType();
+
+    SmallVector<TypedAttr> converted;
+    for (auto typeValue : variadicAttr.getValues())
+      converted.push_back(getCastAttr<CastAttr>(elemTp, typeValue));
+
+    return VariadicAttr::get(converted, dstVATp);
+  }
+
   // cast(upcast(x)) = cast(x)
   // cast(downcast(x)) = cast(x)
   if (auto upcast = sugarDynCast<UpcastAttr>(inputTypeValue))
