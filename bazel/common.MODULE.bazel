@@ -36,7 +36,7 @@ bazel_dep(name = "rules_nodejs", version = "6.5.0")
 bazel_dep(name = "rules_swift", version = "2.8.2")
 bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
 
-bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = True)
+bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True)
 
 archive_override(
     module_name = "rules_mojo",
