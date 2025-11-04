@@ -10,33 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The memory package provides several pointer types, as well
-as utility functions for dealing with memory."""
-
-from .arc import ArcPointer
-from .memory import memcmp, memcpy, memset, memset_zero, stack_allocation
-from .owned_pointer import OwnedPointer
-from .pointer import (
-    AddressSpace,
-    _GPUAddressSpace,
-    GPUAddressSpace,
-    Pointer,
+from ._legacy_unsafe_pointer import (
+    LegacyOpaquePointer,
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer,
+    LegacyUnsafePointer as UnsafePointer,
 )
-from .span import Span
-from .unsafe import bitcast, pack_bits
-from .unsafe_pointer import (
+from ._unsafe_pointer_v2 import (
     alloc,
     ExternalImmutPointer,
     ExternalMutPointer,
     ExternalPointer,
-    LegacyOpaquePointer,
-    LegacyUnsafePointer,
     OpaqueImmutPointer,
     OpaqueMutPointer,
-    OpaquePointer,
     OpaquePointerV2,
     UnsafeImmutPointer,
     UnsafeMutPointer,
-    UnsafePointer,
     UnsafePointerV2,
 )

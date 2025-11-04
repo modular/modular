@@ -17,9 +17,12 @@ from builtin.simd import _simd_construction_checks
 from memory import memcpy
 from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
-from memory.unsafe_pointer import UnsafePointer, _default_invariant
+from memory.unsafe_pointer import UnsafePointer
 from os import abort
 from python import PythonObject
+
+from ._legacy_unsafe_pointer import _default_invariant
+
 
 # ===----------------------------------------------------------------------=== #
 # alloc

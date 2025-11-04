@@ -19,7 +19,6 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from itertools.itertools import product
 from layout.tensor_core import get_mma_shape
-from memory.unsafe_pointer import UnsafePointer
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.math import align_down

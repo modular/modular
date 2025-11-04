@@ -139,6 +139,8 @@ from memory import (
     ExternalImmutPointer,
     ExternalMutPointer,
     ExternalPointer,
+    LegacyOpaquePointer,
+    LegacyUnsafePointer,
     OpaqueImmutPointer,
     OpaqueMutPointer,
     OpaquePointer,

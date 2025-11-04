@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory.unsafe_pointer import UnsafePointer as UnsafePointerV1
-from memory.unsafe_pointer_v2 import UnsafePointerV2
+from memory.unsafe_pointer import (
+    UnsafePointer as UnsafePointerV1,
+    UnsafePointerV2,
+)
 
 from testing import TestSuite
 
