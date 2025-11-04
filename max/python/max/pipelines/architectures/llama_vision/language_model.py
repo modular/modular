@@ -23,7 +23,7 @@ from max.graph import DeviceRef, TensorValue, ops
 from max.graph.weights import Weights
 from max.nn import (
     MLPV1,
-    AttentionWithRopeQKV,
+    AttentionWithRope,
     EmbeddingV1,
     LinearV1,
     RMSNormV1,
@@ -308,24 +308,31 @@ def self_attention_decoder_layer(
         shape=[num_key_value_heads * head_dim, hidden_size],
         device=device,
     )
-    o_proj = LinearV1(
-        weight=weights.self_attn.o_proj.weight.allocate(
-            dtype,
-            shape=[hidden_size, num_attention_heads * head_dim],
-            device=device,
-        )
+    wo = weights.self_attn.o_proj.weight.allocate(
+        dtype,
+        shape=[hidden_size, num_attention_heads * head_dim],
+        device=device,
     )
 
-    attention = AttentionWithRopeQKV(
-        n_heads=num_attention_heads,
-        kv_params=kv_params,
-        wq=wq,
-        wk=wk,
-        wv=wv,
-        wo=o_proj,
+    attention = AttentionWithRope(
         rope=rotary_embedding,
+        num_attention_heads=num_attention_heads,
+        num_key_value_heads=num_key_value_heads,
+        hidden_size=hidden_size,
+        kv_params=kv_params,
+        devices=[device],
+        dtype=dtype,
+        stacked_qkv=False,
+        has_bias=False,
         scale=math.sqrt(1.0 / head_dim),
     )
+
+    # (TODO) LLama vision uses legacy APIs, and does not use load_state_dict.
+    # Thus, we set the weights manually.
+    attention.q_proj.weight = wq
+    attention.k_proj.weight = wk
+    attention.v_proj.weight = wv
+    attention.o_proj.weight = wo
 
     return SelfAttentionDecoderLayer(
         layer_idx=layer_idx,

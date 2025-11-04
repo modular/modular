@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import (
@@ -59,7 +58,7 @@ from ..no_opaque_kernels import (
     store_v_cache,
 )
 from ..rotary_embedding import RotaryEmbedding
-from .interfaces import AttentionImplQKV, DistributedAttentionImpl
+from .interfaces import DistributedAttentionImpl
 from .mask_config import MHAMaskVariant
 
 
@@ -513,7 +512,6 @@ class AttentionWithRope(Module, Shardable):
         if not self.float8_config or self.float8_config.is_dynamic:
             return None
 
-        # TODO(MODELS-595): Reuse AttentionWithRopeQKV for this.
         if self.stacked_qkv:
             raise NotImplementedError(
                 "QKV input scale not implemented for stacked_qkv=True"
@@ -538,7 +536,6 @@ class AttentionWithRope(Module, Shardable):
         """The max of q, k, and v scale weight vectors."""
         assert self.float8_config is not None
 
-        # TODO(MODELS-595): Reuse AttentionWithRopeQKV for this.
         if self.stacked_qkv:
             # TODO: Handle stacked QKV weight scale when implemented
             raise NotImplementedError(
@@ -1331,65 +1328,6 @@ class DataParallelAttentionWithRope(AttentionWithRope):
                 )
             )
         return outs
-
-
-@dataclass
-class AttentionWithRopeQKV(AttentionImplQKV):
-    # This class will not use the RotaryEmbedding to calculate rope, but it
-    # already includes a freqs_cis calculation, which we will borrow.
-    rope: RotaryEmbedding
-
-    def __call__(
-        self,
-        layer_idx: TensorValue,
-        x: TensorValue,
-        kv_collection: PagedCacheValues,
-        freqs_cis: TensorValue,
-        input_row_offsets: TensorValue,
-    ) -> TensorValue:
-        total_seq_len = x.shape[0]
-
-        wqkv = ops.concat((self.wq, self.wk, self.wv))
-
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x,
-            wqkv=wqkv,
-            input_row_offsets=input_row_offsets,
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            n_heads=self.n_heads,
-        )
-
-        # Apply RoPE.
-        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-
-        # Cast freqs_cis to xq's dtype to match the fused_qk_ragged_rope kernel.
-        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-
-        xq = fused_qk_ragged_rope(
-            self.kv_params,
-            xq,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis=freqs_cis,
-            layer_idx=layer_idx,
-            interleaved=self.rope.interleaved,
-        )
-
-        attn_out = flash_attention_ragged(
-            self.kv_params,
-            input=xq,
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            input_row_offsets=input_row_offsets,
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
-            scale=self.scale,
-        )
-
-        attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
-
-        return self.wo(attn_out)
 
 
 class AttentionWithRopeNoOpaque(Module):
