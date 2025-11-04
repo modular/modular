@@ -26,7 +26,7 @@ def test_compile_function():
     print("== test_compile_function")
 
     fn kernel(x: UnsafePointer[Int]):
-        x[0] = thread_idx.x
+        x[0] = Int(thread_idx.x)
 
     # CHECK: tid.x
 
