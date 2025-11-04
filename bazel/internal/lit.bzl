@@ -1,7 +1,7 @@
 """Helpers for running lit tests in bazel"""
 
 load("@rules_python//python/private:py_test_rule.bzl", upstream_py_test = "py_test")  # buildifier: disable=bzl-visibility
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load(":mojo_test_environment.bzl", "mojo_test_environment")  # buildifier: disable=bzl-visibility
 
 _HEADER_PATH_ADDITIONS = """
@@ -283,12 +283,9 @@ EOF
         "LIT_PRESERVES_TMP": "1",
         "MODULAR_LIT_TEST": "1",
         "ZERO_AR_DATE": "1",
-    } | GPU_TEST_ENV | get_default_test_env(exec_properties)
+    } | GPU_TEST_ENV | runtime_sanitizer_env(preload = False) | get_default_test_env(exec_properties)
 
-    extra_data = select({
-        "//:asan": ["@//bazel/internal:lsan-suppressions.txt"],
-        "//conditions:default": [],
-    })
+    extra_data = RUNTIME_SANITIZER_DATA
     default_args = ["--config-prefix=" + name]
     kwargs = {
         "deps": deps + mojo_test_deps + [

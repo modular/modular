@@ -2,7 +2,7 @@
 
 load("@rules_mojo//mojo:mojo_binary.bzl", "mojo_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "get_default_exec_properties", "get_default_test_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 
 def mojo_filecheck_test(
         name,
@@ -49,10 +49,7 @@ def mojo_filecheck_test(
             fail("If multiple source files are passed, a main file must be specified.")
         filecheck_src = main
 
-    extra_data = select({
-        "//:asan": ["@//bazel/internal:lsan-suppressions.txt"],
-        "//conditions:default": [],
-    })
+    extra_data = RUNTIME_SANITIZER_DATA
 
     mojo_binary(
         name = name + ".binary",
@@ -61,7 +58,7 @@ def mojo_filecheck_test(
         main = main,
         deps = deps,
         data = data + extra_data,
-        env = env | GPU_TEST_ENV,
+        env = env | runtime_sanitizer_env(),
         testonly = True,
         enable_assertions = enable_assertions,
         tags = tags,
@@ -83,7 +80,7 @@ def mojo_filecheck_test(
             "@llvm-project//llvm:FileCheck",
             "@llvm-project//llvm:not",
         ],
-        env = env | GPU_TEST_ENV | get_default_test_env(exec_properties) | {
+        env = env | GPU_TEST_ENV | runtime_sanitizer_env() | get_default_test_env(exec_properties) | {
             "BINARY": "$(location :{}.binary)".format(name),
             "EXPECT_CRASH": "1" if expect_crash else "0",
             "EXPECT_FAIL": "1" if expect_fail else "0",

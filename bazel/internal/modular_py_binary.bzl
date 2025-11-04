@@ -1,7 +1,7 @@
 """A helper macro for python scripts which helps setup various runtime dependencies."""
 
 load("@rules_python//python:defs.bzl", "py_binary")
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "runtime_sanitizer_env")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "runtime_sanitizer_env")  # buildifier: disable=bzl-visibility
 load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
 load(":mojo_test_environment.bzl", "mojo_test_environment")
@@ -55,7 +55,7 @@ def modular_py_binary(
         "MODULAR_MOJO_MAX_LINKER_DRIVER": "$(MOJO_LINKER_DRIVER)",
         "MODULAR_MOJO_MAX_LLD_PATH": "$(LLD_PATH)",
         "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
-    } | GPU_TEST_ENV | runtime_sanitizer_env()
+    } | runtime_sanitizer_env()
 
     transitive_mojo_deps = name + ".mojo_deps"
     collect_transitive_mojoinfo(
