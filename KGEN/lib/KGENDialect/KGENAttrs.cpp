@@ -333,9 +333,48 @@ static TypedAttr getCastAttr(Type type, TypedAttr inputTypeValue) {
 TypedAttr UpcastAttr::get(Type type, TypedAttr inputTypeValue) {
   return getCastAttr<UpcastAttr>(type, inputTypeValue);
 }
-
 TypedAttr DowncastAttr::get(Type type, TypedAttr inputTypeValue) {
   return getCastAttr<DowncastAttr>(type, inputTypeValue);
+}
+
+template <typename CastAttr>
+static LogicalResult
+verifyCastAttr(function_ref<mlir::InFlightDiagnostic()> emitError, Type type,
+               TypedAttr inputTypeValue) {
+  bool isInputVA = isa<VariadicType>(inputTypeValue.getType());
+  bool isResultVA = isa<VariadicType>(type);
+  if (isInputVA != isResultVA)
+    return emitError()
+           << "must be casting from a variadic type to a variadic type";
+  // NOTE: we should also verify that the output type must be a trait type, but
+  // we don't have access to LIT::TraitType here due to build dependency.
+  return success();
+}
+
+LogicalResult
+UpcastAttr::verify(function_ref<mlir::InFlightDiagnostic()> emitError,
+                   Type type, TypedAttr inputTypeValue) {
+  return verifyCastAttr<UpcastAttr>(emitError, type, inputTypeValue);
+}
+LogicalResult
+DowncastAttr::verify(function_ref<mlir::InFlightDiagnostic()> emitError,
+                     Type type, TypedAttr inputTypeValue) {
+  return verifyCastAttr<DowncastAttr>(emitError, type, inputTypeValue);
+}
+
+TypedAttr
+UpcastAttr::getChecked(function_ref<::mlir::InFlightDiagnostic()> emitError,
+                       Type type, TypedAttr inputTypeValue) {
+  if (failed(verify(emitError, type, inputTypeValue)))
+    return {};
+  return get(type, inputTypeValue);
+}
+TypedAttr
+DowncastAttr::getChecked(function_ref<::mlir::InFlightDiagnostic()> emitError,
+                         Type type, TypedAttr inputTypeValue) {
+  if (failed(verify(emitError, type, inputTypeValue)))
+    return {};
+  return get(type, inputTypeValue);
 }
 
 bool UpcastAttr::isConstant() const { return false; }
@@ -2764,8 +2803,25 @@ static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
 
   // Attempt to simplify variadic get when the first operand is a known array.
   auto variadic = sugarDynCast<VariadicAttr>(operands.front());
-  if (!variadic)
+  if (!variadic) {
+    if (auto upcast = sugarDynCast<UpcastAttr>(operands.front())) {
+      // This is something like:
+      // variadic_get<upcast<!Copyable> : !AnyType> : !AnyType
+      // Turn it into
+      // upcast<variadic_get<Copyable> : !Copyable> : !AnyType
+      TypedAttr originalVA = upcast.getInputTypeValue();
+      assert(isa<VariadicType>(originalVA.getType()) &&
+             "must casted from a variadic type to a variadic type");
+
+      auto beforeCastTps = cast<VariadicType>(originalVA.getType());
+      auto beforeCast =
+          ParamOperatorAttr::get(upcast.getContext(), POC::VariadicGet,
+                                 ArrayRef{originalVA, operands.back()},
+                                 beforeCastTps.getElementType());
+      return UpcastAttr::get(resultType, beforeCast);
+    }
     return {};
+  }
 
   // If the index is known-constant and in-range, we can simplify it.
   if (auto index = sugarDynCast<IntegerAttr>(operands.back());

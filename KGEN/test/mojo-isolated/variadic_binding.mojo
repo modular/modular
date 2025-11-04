@@ -14,11 +14,20 @@ struct SomeCopyable(Copyable):
 
 @fieldwise_init
 struct SomeVA[*elt_types: AnyType]:
+    fn __getitem__[idx: Int](ref self) -> ref [self] elt_types[idx]:
+        pass
+
+
+fn only_copyable[T: Copyable](t: T):
     pass
 
 
 # CHECK: @"f0{{.*}}"<elt_type: variadic<!Copyable>{{.*}}(%t: !lit.ref<@{{.*}}::@SomeVA<:variadic<!AnyType> upcast(:variadic<!Copyable> elt_type)>
 fn f0[*elt_type: Copyable](t: SomeVA[*elt_type]):
+    # Should be able to call only_copyable without an downcast.
+
+    # CHECK lit.call @variadic_binding::@"only_copyable
+    only_copyable(t[0])
     pass
 
 
