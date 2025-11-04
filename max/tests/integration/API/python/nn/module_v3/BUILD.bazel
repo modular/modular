@@ -3,7 +3,6 @@ load("//bazel:api.bzl", "modular_py_test")
 modular_py_test(
     name = "module_v3",
     srcs = glob(["*.py"]),
-    imports = ["pytests"],
     target_compatible_with = select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
