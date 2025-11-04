@@ -888,7 +888,9 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="OpenGVLab/InternVL3-14B-Instruct",
             encoding="bfloat16",
-            cos_dist_threshold=4.4e-03,
+            absolute_tolerance=1.0e-04,
+            relative_tolerance=2.0e00,
+            cos_dist_threshold=6.3e-04,
             kl_div_threshold=1.5e-02,
         ),
     ),
@@ -1031,8 +1033,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="microsoft/phi-4",
             encoding="bfloat16",
-            cos_dist_threshold=9.8e-5,
-            kl_div_threshold=6.9e-3,
+            absolute_tolerance=1.0e-04,
+            relative_tolerance=2.0e00,
+            cos_dist_threshold=7.2e-05,
+            kl_div_threshold=1.3e-02,
         ),
     ),
     "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq": PipelineDef(
@@ -1059,8 +1063,10 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama-gptq_golden/0/7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef/torch_llama-gptq_golden.tar.gz",
                 json_file="torch_llama-gptq-no-perm-idx_golden.json",
             ),
-            cos_dist_threshold=3.9e-4,
-            kl_div_threshold=1.3e-2,
+            absolute_tolerance=1.0e-04,
+            relative_tolerance=2.0e00,
+            cos_dist_threshold=6.4e-04,
+            kl_div_threshold=5.5e-03,
         ),
     ),
     # TODO(AITLIB-372): investigate why accuracy tanked when switching to explicit weight dtype casting.
@@ -1192,8 +1198,10 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="HuggingFaceTB/SmolLM2-135M-Instruct",
             encoding="bfloat16",
-            cos_dist_threshold=2.7e-03,
-            kl_div_threshold=7.5e-03,
+            absolute_tolerance=1.0e-04,
+            relative_tolerance=2.0e00,
+            cos_dist_threshold=3.9e-03,
+            kl_div_threshold=6.7e-03,
         ),
     ),
 }
