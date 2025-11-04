@@ -14,14 +14,13 @@
 
 import math
 
-from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import TensorValue, ops
 from max.nn import Linear
 from max.nn.layer import Module
+from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
 from .model_config import Gemma3ForConditionalGenerationConfig
 
-from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
 # from Huggingface Transformers
 class Gemma3VisionAttention(Module):
@@ -32,19 +31,28 @@ class Gemma3VisionAttention(Module):
     - No attention masking
     - Absolute position embeddings (added in embedding layer)
     """
+
     def __init__(
-        self,
-        config: Gemma3ForConditionalGenerationConfig,
-        layer_idx: int
+        self, config: Gemma3ForConditionalGenerationConfig, layer_idx: int
     ) -> None:
         super().__init__()
         vision_config = config.vision_config
 
-        self.layer_type = config.layer_types[layer_idx] if hasattr(config, "layer_types") else None
+        self.layer_type = (
+            config.layer_types[layer_idx]
+            if hasattr(config, "layer_types")
+            else None
+        )
         self.config = config
         self.layer_idx = layer_idx
-        self.head_dim = getattr(config, "head_dim", vision_config.hidden_size // vision_config.num_attention_heads)
-        self.num_key_value_groups = vision_config.num_attention_heads // config.num_key_value_heads
+        self.head_dim = getattr(
+            config,
+            "head_dim",
+            vision_config.hidden_size // vision_config.num_attention_heads,
+        )
+        self.num_key_value_groups = (
+            vision_config.num_attention_heads // config.num_key_value_heads
+        )
         self.attention_dropout = vision_config.attention_dropout
         # self.scaling = config.query_pre_attn_scalar**-0.5
         # self.is_causal = not config.use_bidirectional_attention
@@ -54,36 +62,48 @@ class Gemma3VisionAttention(Module):
             vision_config.num_attention_heads * self.head_dim,
             has_bias=config.attention_bias,
             dtype=config.dtype,
-            device=config.devices[0]
+            device=config.devices[0],
         )
         self.k_proj = Linear(
             vision_config.hidden_size,
             vision_config.num_attention_heads * self.head_dim,
             has_bias=config.attention_bias,
             dtype=config.dtype,
-            device=config.devices[0]
+            device=config.devices[0],
         )
         self.v_proj = Linear(
             vision_config.hidden_size,
             vision_config.num_attention_heads * self.head_dim,
             has_bias=config.attention_bias,
             dtype=config.dtype,
-            device=config.devices[0]
+            device=config.devices[0],
         )
         self.out_proj = Linear(
             vision_config.num_attention_heads * self.head_dim,
             vision_config.hidden_size,
             has_bias=config.attention_bias,
             dtype=config.dtype,
-            device=config.devices[0]
+            device=config.devices[0],
         )
-        
+
         self.attn_logit_softcapping = config.attn_logit_softcapping
-        self.sliding_window = config.sliding_window if self.layer_type == "sliding_attention" else None
+        self.sliding_window = (
+            config.sliding_window
+            if self.layer_type == "sliding_attention"
+            else None
+        )
         self.is_sliding = self.layer_type == "sliding_attention"
 
-        self.q_norm = Gemma3RMSNorm(dim=config.head_dim, dtype=config.dtype, eps=vision_config.layer_norm_eps)
-        self.k_norm = Gemma3RMSNorm(dim=config.head_dim, dtype=config.dtype, eps=vision_config.layer_norm_eps)
+        self.q_norm = Gemma3RMSNorm(
+            dim=config.head_dim,
+            dtype=config.dtype,
+            eps=vision_config.layer_norm_eps,
+        )
+        self.k_norm = Gemma3RMSNorm(
+            dim=config.head_dim,
+            dtype=config.dtype,
+            eps=vision_config.layer_norm_eps,
+        )
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Standard self-attention.
@@ -102,9 +122,15 @@ class Gemma3VisionAttention(Module):
         xv = self.v_proj(x)
 
         # Reshape to multi-head format
-        xq = ops.reshape(xq, [batch_size, n_patches, self.n_heads, self.head_dim])
-        xk = ops.reshape(xk, [batch_size, n_patches, self.n_heads, self.head_dim])
-        xv = ops.reshape(xv, [batch_size, n_patches, self.n_heads, self.head_dim])
+        xq = ops.reshape(
+            xq, [batch_size, n_patches, self.n_heads, self.head_dim]
+        )
+        xk = ops.reshape(
+            xk, [batch_size, n_patches, self.n_heads, self.head_dim]
+        )
+        xv = ops.reshape(
+            xv, [batch_size, n_patches, self.n_heads, self.head_dim]
+        )
 
         # Transpose to [batch, n_heads, n_patches, head_dim]
         xq = xq.transpose(1, 2)

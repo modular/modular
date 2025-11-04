@@ -1,25 +1,39 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal
-from transformers import AutoConfig
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn import LinearScalingParams, ReturnLogits
+from max.nn import ReturnLogits
 from max.nn.float8_config import Float8Config, parse_float8_config
 from max.nn.kv_cache import KVCacheParams
+from max.pipelines.architectures.gemma3.model_config import Gemma3Config
 from max.pipelines.lib import (
+    KVCacheConfig,
     MAXModelConfig,
     MAXModelConfigBase,
-    KVCacheConfig,
     PipelineConfig,
     RopeType,
 )
-from max.pipelines.architectures.gemma3.model_config import Gemma3Config
+from transformers import AutoConfig
 
 # handy https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/gemma3/configuration_gemma3.py
+
 
 @dataclass
 class Gemma3VisionConfig:
@@ -32,7 +46,7 @@ class Gemma3VisionConfig:
     hidden_act: str | None
     """The non-linear activation function (function or string) in the encoder and pooler. If string, `"gelu"`,
     `"relu"`, `"selu"` and `"gelu_new"` `"quick_gelu"` are supported."""
-    
+
     hidden_size: int
     """Dimensionality of the encoder layers and the pooler layer.  default 1152"""
 
@@ -60,7 +74,7 @@ class Gemma3VisionConfig:
     attention_dropout: float = 0.0
     """The dropout ratio for the attention probabilities"""
 
-    model_type: str = "Gemma3" # "siglip_vision_model" (HF)
+    model_type: str = "Gemma3"  # "siglip_vision_model" (HF)
     """model type for AutoConfig"""
 
     vision_use_head: bool = False
@@ -68,9 +82,7 @@ class Gemma3VisionConfig:
     Dimensionality of the "intermediate" (i.e., feed-forward) layer in the Transformer encoder"""
 
     @staticmethod
-    def generate(
-        vision_config: AutoConfig
-    ) -> Gemma3VisionConfig:
+    def generate(vision_config: AutoConfig) -> Gemma3VisionConfig:
         return Gemma3VisionConfig(
             hidden_size=vision_config.hidden_size,
             image_size=vision_config.image_size,
@@ -82,7 +94,8 @@ class Gemma3VisionConfig:
             hidden_act=vision_config.hidden_act,
             layer_norm_eps=vision_config.layer_norm_eps,
         )
-    
+
+
 @dataclass
 class Gemma3MultiModalConfigBase(MAXModelConfigBase):
     """Base configuration for Gemma 3 models.
@@ -109,7 +122,7 @@ class Gemma3MultiModalConfigBase(MAXModelConfigBase):
     image_token_index: int
     """The image token index to encode the image prompt"""
 
-    initializer_range: float # TODO figure out.  in Text and overall config??
+    initializer_range: float  # TODO figure out.  in Text and overall config??
 
     interleaved_rope_weights: bool
     """True if the rope weights are in interleaved complex format."""
@@ -127,14 +140,14 @@ class Gemma3MultiModalConfigBase(MAXModelConfigBase):
 
     text_config: Gemma3Config
     """The config object of the text backbone"""
-    
+
     # https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/gemma3/configuration_gemma3.py
     vision_config: Gemma3VisionConfig
     """Custom vision config or dict"""
 
     attention_bias: bool = False
     """Whether to use a bias in the query, key, value and output projection layers during self-attention."""
-    
+
     attn_logit_softcapping: float = None
     """Scaling factor when applying tanh softcapping on the attention scores."""
 
@@ -155,8 +168,11 @@ class Gemma3MultiModalConfigBase(MAXModelConfigBase):
     converting a multi-head checkpoint to a GQA checkpoint, each group key and value head should be constructed"
     """
 
+
 @dataclass
-class Gemma3ForConditionalGenerationConfig(MAXModelConfig, Gemma3MultiModalConfigBase):
+class Gemma3ForConditionalGenerationConfig(
+    MAXModelConfig, Gemma3MultiModalConfigBase
+):
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
@@ -178,7 +194,9 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfig, Gemma3MultiModalConfi
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
-        return huggingface_config.text_config.num_hidden_layers # TODO text?  vision?  who can tell
+        return (
+            huggingface_config.text_config.num_hidden_layers
+        )  # TODO text?  vision?  who can tell
 
     @staticmethod
     def calculate_max_seq_len(
@@ -243,14 +261,14 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfig, Gemma3MultiModalConfi
         text_config = Gemma3Config.generate(
             pipeline_config=pipeline_config,
             huggingface_config=hf_text_config,
-            state_dict = state_dict,
-            dtype = dtype,
-            n_devices = n_devices,
-            cache_dtype = cache_dtype,
-            kv_cache_config = kv_cache_config,
-            return_logits = return_logits,
-            norm_method = norm_method,
-            attention_bias = attention_bias,
+            state_dict=state_dict,
+            dtype=dtype,
+            n_devices=n_devices,
+            cache_dtype=cache_dtype,
+            kv_cache_config=kv_cache_config,
+            return_logits=return_logits,
+            norm_method=norm_method,
+            attention_bias=attention_bias,
         )
 
         kv_params = Gemma3ForConditionalGenerationConfig.get_kv_params(
@@ -267,7 +285,7 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfig, Gemma3MultiModalConfi
             interleaved_rope_weights=interleaved_rope_weights,
             return_logits=return_logits,
             kv_params=kv_params,
-            float8_config=float8_config,            
+            float8_config=float8_config,
             vision_config=vision_config,
             text_config=text_config,
             mm_tokens_per_image=huggingface_config.mm_tokens_per_image,
@@ -278,6 +296,7 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfig, Gemma3MultiModalConfi
         )
 
         return gemma3_config
+
 
 _HIDDEN_ACTIVATION_MAP = {
     "gelu_pytorch_tanh": "gelu_tanh",
