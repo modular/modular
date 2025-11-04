@@ -788,7 +788,8 @@ Value ClosureLifter::liftClosure(
   // Outline Closure.
   Type selfType = closureInitData.selfType(loweredClosureType);
   Value captureStructArg = region.insertArgument(
-      (unsigned)0, selfType, closureInitData.getLiftedLocation());
+      (unsigned)0, selfType,
+      DebugInfo::extractSourceLoc(closureInitData.getLiftedLocation()));
   b.setInsertionPointToStart(&region.front());
   for (auto [index, capture] : llvm::enumerate(captureMechanisms))
     replaceAllUsesInRegionWith(capture.origin,
@@ -914,6 +915,10 @@ ClosureLifter::collectCapturedParams(llvm::SetVector<Value> const &captures,
   // Scan the captured values for captured parameters.
   ParameterCollector collector(paramCache);
   SmallVector<ParamDeclRefAttr, 16> capturedUses;
+
+  // Because the parameter use-def graph does not consider operands, only
+  // results and regions, explicitly collect parameter usages from the captured
+  // values.
   for (Value capture : captures) {
     bool unused = false;
     collector.collectUsesFromType(capture.getType(), capturedUses, unused);
@@ -927,8 +932,20 @@ ClosureLifter::collectCapturedParams(llvm::SetVector<Value> const &captures,
     });
   }
 
-  for (auto use : capturedUses)
-    capturedParamDecls.insert(ParamDeclAttr::get(use.getName(), use.getType()));
+  Operation *regionDecl = region.getParentOp();
+  // For each use detected, identify if the definition was from an ancestor
+  // (captured param).
+  for (ParamDeclRefAttr use : capturedUses) {
+    auto declOpIter = regionalUseDefGraph->second.decls.find(use.getName());
+    // If a parameter was defined in a nested scope like kgen.param.for,
+    // it is not at or above the current region scope.
+    // Hence, parameter will not be in the map, and it is safe to ignore it.
+    if (declOpIter == regionalUseDefGraph->second.decls.end())
+      continue;
+    Operation *declOp = declOpIter->second.declOp;
+    if (!regionDecl->isAncestor(declOp))
+      regionalUseDefGraph->second.usesFromAbove.insert(use);
+  }
 
   // Add all parameter uses that were defined above to the capture set.
   for (ParamDeclRefAttr paramCapture :
