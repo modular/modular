@@ -201,6 +201,7 @@ struct MatmulConfig[
             and self.block_swizzle_size == other.block_swizzle_size
             and self.raster_order == other.raster_order
             and self.k_group_size == other.k_group_size
+            and self.num_split_k == other.num_split_k
         )
 
     fn swap_AB_type(self) -> MatmulConfig[b_type, a_type, c_type, transpose_b]:
@@ -215,6 +216,7 @@ struct MatmulConfig[
             block_swizzle_size=self.block_swizzle_size,
             raster_order=self.raster_order,
             k_group_size=self.k_group_size,
+            num_split_k=self.num_split_k,
         )
 
     fn __str__(self) -> String:
@@ -258,6 +260,7 @@ struct MatmulConfig[
         writer.write("bsz", self.b_swizzle.bytes(), "_")
         writer.write("csz", self.c_swizzle.bytes(), "_")
         writer.write("bz", self.block_swizzle_size, "_", self.raster_order)
+        writer.write("splitk", self.num_split_k, "_")
 
     fn __repr__(self) -> String:
         return String.write(self)
@@ -290,6 +293,7 @@ struct MatmulConfig[
         hasher.update(Int(self.c_swizzle))
         hasher.update(self.raster_order)
         hasher.update(self.k_group_size)
+        hasher.update(self.num_split_k)
 
 
 fn choose_config[
