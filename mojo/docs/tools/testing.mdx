@@ -5,10 +5,26 @@ description: Testing Mojo programs.
 github_url: https://github.com/modular/modular/tree/main/examples/mojo/testing
 ---
 
+:::caution The `mojo test` command has been removed
+
+The `mojo test` command was removed as of October 31, 2025. For more
+information, see the
+[deprecation proposal](https://github.com/modular/modular/blob/main/mojo/proposals/mojo-test-deprecation.md)
+and
+[forum announcement](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371).
+
+The recommended approach for testing is now to use the
+[`TestSuite`](/mojo/stdlib/testing/suite/TestSuite) struct from the standard
+library, which provides automatic test discovery and execution. Continue reading
+for current testing instructions using `TestSuite`.
+
+:::
+
 Mojo includes a framework for developing and executing unit tests. The Mojo
 testing framework consists of a set of assertions defined as part of the [Mojo
-standard library](/mojo/lib) and the [`mojo test`](/mojo/cli/test) command line
-tool.
+standard library](/mojo/lib) and the
+[`TestSuite`](/mojo/stdlib/testing/suite/TestSuite) struct for automatic test
+discovery and execution.
 
 ## Get started
 
@@ -21,7 +37,7 @@ For your first example of using the Mojo testing framework, create a file named
 
 ```mojo
 # Content of test_quickstart.mojo
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 def inc(n: Int) -> Int:
     return n + 1
@@ -33,6 +49,9 @@ def test_inc_zero():
 
 def test_inc_one():
     assert_equal(inc(1), 2)
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()
 ```
 
 In this file, the `inc()` function is the test *target*. The functions whose
@@ -58,50 +77,43 @@ Then in the directory containing the file, execute the following command in your
 shell:
 
 ```bash
-mojo test test_quickstart.mojo
+mojo run test_quickstart.mojo
 ```
 
 You should see output similar to this (note that this example elides the full
 filesystem paths from the output shown):
 
 ```output
-Testing Time: 1.193s
+Unhandled exception caught during execution:
+Running 2 tests for ROOT_DIR/test_quickstart.mojo
+    FAIL [ 0.009 ] test_inc_zero
+      At ROOT_DIR/test_quickstart.mojo:40:5: AssertionError: `left == right` comparison failed:
+         left: 1
+        right: 0
+    PASS [ 0.001 ] test_inc_one
+--------
+Summary [ 0.009 ] 2 tests run: 1 passed , 1 failed , 0 skipped
+Test suite 'ROOT_DIR/test_quickstart.mojo' failed!
 
-Total Discovered Tests: 2
-
-Passed : 1 (50.00%)
-Failed : 1 (50.00%)
-Skipped: 0 (0.00%)
-
-******************** Failure: 'ROOT_DIR/test_quickstart.mojo::test_inc_zero()' ********************
-
-Unhandled exception caught during execution
-
-Error: At ROOT_DIR/test_quickstart.mojo:8:17: AssertionError: `left == right` comparison failed:
-   left: 1
-  right: 0
-
-********************
+mojo: error: execution exited with a non-zero result: 1
 ```
 
-The output starts with a summary of the number of tests discovered, passed,
-failed, and skipped. Following that, each failed test is reported along with
-its error message.
+The output shows each test as it runs with PASS or FAIL status and execution
+time, followed by a summary of tests run, passed, failed, and skipped. Failed
+tests display their error messages inline.
 
 ### Next steps
 
-- [The `testing` module](#the-testing-module) describes the assertion
-  functions available to help implement tests.
+- [Using Mojo assertion functions](#using-mojo-assertion-functions) describes
+  the assertion functions available to help implement tests.
 - [Writing unit tests](#writing-unit-tests) shows how to write unit tests and
   organize them into test files.
-- [The `mojo test` command](#the-mojo-test-command) describes how to execute
-  and collect lists of tests.
 - Our GitHub repo contains an [example
-  project](https://github.com/modular/modular/tree/main/examples/mojo/testing) to
-  demonstrate unit testing. Several of the examples shown later are based on
+  project](https://github.com/modular/modular/tree/main/examples/mojo/testing)
+  to demonstrate unit testing. Several of the examples shown later are based on
   this project.
 
-## The `testing` module
+## Using Mojo assertion functions
 
 The Mojo standard library includes a [`testing`](/mojo/stdlib/testing/testing/)
 module that defines several assertion functions for implementing tests. Each
@@ -220,7 +232,7 @@ Error: invalid value
 
 A Mojo unit test is simply a function that fulfills all of these requirements:
 
-- Has a name that starts with `test_`.
+- Has a name that starts with `test_` for automatic discovery.
 - Accepts no arguments.
 - Returns `None`.
 - Raises an error to indicate test failure.
@@ -236,10 +248,14 @@ You can include multiple related assertions in the same test function. However,
 if an assertion raises an error during execution, then the test function returns
 immediately, skipping any subsequent assertions.
 
-You must define your Mojo unit tests in Mojo source files named with a `test`
-prefix or suffix. You can organize your test files within a directory hierarchy,
-but the test files must not be part of a Mojo package (that is, the test
-directories should not contain `__init__.mojo` files).
+## Running tests with TestSuite
+
+To run your tests, each test file must include a `main()` function that uses
+[`TestSuite.discover_tests()`](/mojo/stdlib/testing/suite/TestSuite#discover_tests)
+to automatically discover and execute all test functions in the module. The
+`__functions_in_module()` compiler intrinsic provides a list of all functions
+defined in the current module, which `discover_tests()` filters to find those
+with the `test_` prefix.
 
 Here is an example of a test file containing three tests for functions defined
 in a source module named `my_target_module` (which is not shown here).
@@ -248,7 +264,7 @@ in a source module named `my_target_module` (which is not shown here).
 # File: test_my_target_module.mojo
 
 from my_target_module import convert_input, validate_input
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import assert_equal, assert_false, assert_raises, assert_true, TestSuite
 
 def test_validate_input():
 	assert_true(validate_input("good"), msg="'good' should be valid input")
@@ -261,248 +277,10 @@ def test_convert_input():
 def test_convert_input_error():
 	with assert_raises():
 		_ = convert_input("garbage")
+
+def main():
+	TestSuite.discover_tests[__functions_in_module()]().run()
 ```
 
-The unique identity of a unit test consists of the path of the test file and the
-name of the test function, separated by `::`. So the test IDs from the example
-above are:
-
-- `test_my_target_module.mojo::test_validate_input()`
-- `test_my_target_module.mojo::test_convert_input()`
-- `test_my_target_module.mojo::test_convert_input_error()`
-
-## The `mojo test` command
-
-The `mojo` command line interface includes the [`mojo test`](/mojo/cli/test)
-command for running tests or collecting a list of tests.
-
-### Running tests
-
-By default, the `mojo test` command runs the tests that you specify using one of
-the following:
-
-- A single test ID with either an absolute or relative file path, to run only
-  that test.
-- A single absolute or relative file path, to run all tests in that file.
-- A single absolute or relative directory path, to recurse through that
-  directory hierarchy and run all tests found.
-
-:::note
-
-When recursing through directories, `mojo test` automatically ignores any
-directories whose names begin with a dot (such as `.git`, `.vscode`, or
-`.pytest_cache`).
-
-:::
-
-If needed, you can optionally use the `-I` option one or more times to append
-additional paths to the list of directories searched to import Mojo modules and
-packages. Consider the [example testing
-project](https://github.com/modular/modular/tree/main/examples/mojo/testing) in
-GitHub, which has the following directory structure:
-
-```output
-.
-├── src
-│   ├── example.mojo
-│   └── my_math
-│       ├── __init__.mojo
-│       └── utils.mojo
-└── test
-    └── my_math
-        ├── test_dec.mojo
-        └── test_inc.mojo
-```
-
-From the project root directory, you can execute all of the tests in the `test`
-directory like this:
-
-```bash
-mojo test -I src test
-```
-
-```output
-Testing Time: 3.433s
-
-Total Discovered Tests: 4
-
-Passed : 4 (100.00%)
-Failed : 0 (0.00%)
-Skipped: 0 (0.00%)
-```
-
-You can run the tests contained in only the `test_dec.mojo` file like this:
-
-```bash
-mojo test -I src test/my_math/test_dec.mojo
-```
-
-```output
-Testing Time: 1.175s
-
-Total Discovered Tests: 2
-
-Passed : 2 (100.00%)
-Failed : 0 (0.00%)
-Skipped: 0 (0.00%)
-```
-
-And you can run a single test from a file by providing its fully qualified
-ID like this:
-
-```bash
-mojo test -I src 'test/my_math/test_dec.mojo::test_dec_valid()'
-```
-
-```output
-Testing Time: 0.66s
-
-Total Discovered Tests: 1
-
-Passed : 1 (100.00%)
-Failed : 0 (0.00%)
-Skipped: 0 (0.00%)
-```
-
-### Collecting a list of tests
-
-By including the `--collect-only` or `--co` option, you can use `mojo test` to
-discover and print a list of tests.
-
-Consider the [example testing
-project](https://github.com/modular/modular/tree/main/examples/mojo/testing)
-directory structure shown in the [Running tests](#running-tests) section. The
-following command produces a list of all of the tests defined in the `test`
-directory hierarchy.
-
-```bash
-mojo test --co test
-```
-
-The output shows the hierarchy of directories, test files, and individual tests
-(note that this example elides the full filesystem paths from the output shown):
-
-```output
-<ROOT_DIR/test/my_math>
-  <ROOT_DIR/test/my_math/test_dec.mojo>
-    <ROOT_DIR/test/my_math/test_dec.mojo::test_dec_valid()>
-    <ROOT_DIR/test/my_math/test_dec.mojo::test_dec_min()>
-  <ROOT_DIR/test/my_math/test_inc.mojo>
-    <ROOT_DIR/test/my_math/test_inc.mojo::test_inc_valid()>
-    <ROOT_DIR/test/my_math/test_inc.mojo::test_inc_max()>
-```
-
-### Producing JSON formatted output
-
-By default, `mojo test` produces concise, human-readable output. Alternatively,
-you can produce JSON-formatted output more suitable for input to other tools by
-including the `--diagnostic-format json` option.
-
-For example, you can run the tests in the `test_quickstart.mojo` file shown
-in the [Get started](#get-started) section with JSON formatted output using this
-command:
-
-```bash
-mojo test --diagnostic-format json test_quickstart.mojo
-```
-
-The output shows the detailed results for each individual test and summary
-results (note that this example elides the full filesystem paths from the
-output shown):
-
-```json
-{
-  "children": [
-    {
-      "duration_ms": 60,
-      "error": "Unhandled exception caught during execution",
-      "kind": "executionError",
-      "stdErr": "",
-      "stdOut": "Error: At ROOT_DIR/test_quickstart.mojo:8:17: AssertionError: `left == right` comparison failed:\r\n   left: 1\r\n  right: 0\r\n",
-      "testID": "ROOT_DIR/test_quickstart.mojo::test_inc_zero()"
-    },
-    {
-      "duration_ms": 51,
-      "error": "",
-      "kind": "success",
-      "stdErr": "",
-      "stdOut": "",
-      "testID": "ROOT_DIR/test_quickstart.mojo::test_inc_one()"
-    }
-  ],
-  "duration_ms": 1171,
-  "error": "",
-  "kind": "executionError",
-  "stdErr": "",
-  "stdOut": "",
-  "testID": "ROOT_DIR/test_quickstart.mojo"
-}
-```
-
-You can also produce JSON output for test collection. Consider the [example
-testing
-project](https://github.com/modular/modular/tree/main/examples/mojo/testing)
-directory structure shown in the [Running tests](#running-tests) section. The
-following command collects a list in JSON format of all of the tests defined in
-the `test` directory hierarchy:
-
-```bash
-mojo test --diagnostic-format json --co test
-```
-
-The output will appear as follows (note that this example elides the full
-filesystem paths from the output shown):
-
-```json
-{
-  "children": [
-    {
-      "children": [
-        {
-          "id": "ROOT_DIR/test/my_math/test_dec.mojo::test_dec_valid()",
-          "location": {
-            "endColumn": 5,
-            "endLine": 19,
-            "startColumn": 5,
-            "startLine": 19
-          }
-        },
-        {
-          "id": "ROOT_DIR/test/my_math/test_dec.mojo::test_dec_min()",
-          "location": {
-            "endColumn": 5,
-            "endLine": 24,
-            "startColumn": 5,
-            "startLine": 24
-          }
-        }
-      ],
-      "id": "ROOT_DIR/test/my_math/test_dec.mojo"
-    },
-    {
-      "children": [
-        {
-          "id": "ROOT_DIR/test/my_math/test_inc.mojo::test_inc_valid()",
-          "location": {
-            "endColumn": 5,
-            "endLine": 19,
-            "startColumn": 5,
-            "startLine": 19
-          }
-        },
-        {
-          "id": "ROOT_DIR/test/my_math/test_inc.mojo::test_inc_max()",
-          "location": {
-            "endColumn": 5,
-            "endLine": 24,
-            "startColumn": 5,
-            "startLine": 24
-          }
-        }
-      ],
-      "id": "ROOT_DIR/test/my_math/test_inc.mojo"
-    }
-  ],
-  "id": "ROOT_DIR/test/my_math"
-}
-```
+You can then use `mojo run test_my_target_module.mojo` to run the tests and
+report the results.
