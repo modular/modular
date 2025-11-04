@@ -8,7 +8,6 @@ modular_py_test(
         "MODULAR_PYTORCH_CUSTOM_OPS": "$(rootpath //max/tests/tests/torch/custom_ops)",
         "MODULAR_TORCH_MEMORY_PERCENT": "0.9",
     },
-    imports = ["pytests"],
     mojo_deps = [
         "@mojo//:MOGGPrimitives",
         "@mojo//:compiler_internal",
