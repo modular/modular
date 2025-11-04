@@ -25,6 +25,7 @@ from gpu import (
     block_dim,
     lane_id,
     thread_idx,
+    block_idx,
 )
 from gpu.cluster import elect_one_sync
 from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
@@ -1931,15 +1932,16 @@ fn _mha_sm100[
     alias BM: Int = Int(config.block_m())
     alias BN: Int = Int(config.block_n())
     alias BK: Int = Int(config.padded_depth)
-    alias depth = config.depth
+    alias depth: Int = Int(config.depth)
+    alias padded_depth: Int = Int(config.padded_depth)
     # alias mma_shape = Index(64, depth, 16)
     # alias mma_shape = Index(128 if (BM % 128) == 0 else 64, depth, 16)
     # MMA_M here is defined as per-warp
     # alias MMA_M = 64
-    alias MMA_M = 128 if (BM % 128) == 0 else 64
-    alias MMA_N0 = BN
-    alias MMA_N1 = config.padded_depth
-    alias MMA_K = 16
+    alias MMA_M: Int = 128 if (BM % 128) == 0 else 64
+    alias MMA_N0: Int = BN
+    alias MMA_N1: Int = Int(config.padded_depth)
+    alias MMA_K: Int = 16
     # alias WM = BM // num_softmax_warps
     # alias WN = BN
     # alias num_m_mmas = BM // MMA_M  # WM // MMA_M
@@ -1983,7 +1985,7 @@ fn _mha_sm100[
     alias num_k_mmas = BK // MMA_K
     # alias num_warps_m = BM // WM  # 4 * num_softmax
     # alias num_warps_n = BN // WN  # 1
-    alias num_heads = config.num_heads
+    alias num_heads: Int = Int(config.num_heads)
     # num_softmax_threads ignores the producers
     # actual number of threads is num_softmax_threads + 128
     alias pipeline_stages = Int(config.num_pipeline_stages)
@@ -1995,7 +1997,7 @@ fn _mha_sm100[
     # warp_group_tid = tid % 128
     alias accum_type = get_accum_type[kv_type]()
     alias max_tmem_cols = 512
-    alias num_s = (max_tmem_cols - (MMA_N0 // 2) - Int(MMA_N1)) // MMA_N0
+    alias num_s = (max_tmem_cols - (MMA_N0 // 2) - MMA_N1) // MMA_N0
     alias UMMA0Type = SM100TensorAccumulatorSS[
         kv_type,
         accum_type,
@@ -2004,7 +2006,7 @@ fn _mha_sm100[
         BM=BM,  # 128
         BN=BN,  # BN
         BK=BK,  # depth
-        compute_BK = Int(config.depth),
+        compute_BK=depth,
         num_softmax_threads=num_softmax_threads,
         swizzle_a=swizzle_mode,
         swizzle_b=swizzle_mode,
@@ -2017,9 +2019,9 @@ fn _mha_sm100[
         kv_type,
         accum_type,
         MMA_M=MMA_M,
-        MMA_N = Int(MMA_N1),  # depth
+        MMA_N=MMA_N1,  # depth
         BM=BM,
-        BN = Int(MMA_N1),  # depth
+        BN=MMA_N1,  # depth
         BK=BN,  # BN
         num_softmax_threads=num_softmax_threads,
         swizzle_b=swizzle_mode,
@@ -2038,7 +2040,7 @@ fn _mha_sm100[
 
     # first umma is BM x BK @ BK x BN
     # The entire query block (BM x depth) is tiled in shared memory.
-    alias q_smem_size = BM * Int(config.padded_depth)
+    alias q_smem_size = BM * padded_depth
     q_smem = external_memory[
         Scalar[kv_type],
         address_space = AddressSpace.SHARED,
@@ -2062,11 +2064,11 @@ fn _mha_sm100[
     alias p_frag_size = BM * MMA_N0 // (
         num_softmax_threads * num_m_blocks_per_warp
     )
-    alias o_frag_size = BM * Int(MMA_N1) // (
+    alias o_frag_size = BM * MMA_N1 // (
         num_softmax_threads * num_m_blocks_per_warp
     )
     constrained[p_frag_size == 2 * (WM // 8) * (MMA_N0 // 8)]()
-    constrained[o_frag_size == 2 * (WM // 8) * (Int(MMA_N1) // 8)]()
+    constrained[o_frag_size == 2 * (WM // 8) * (MMA_N1 // 8)]()
     alias frag_simdwidth = 2
     constrained[
         BN * num_k_mmas * BM * MMA_K
@@ -2221,9 +2223,9 @@ fn _mha_sm100[
     alias PositionType = MHAPosition[
         BM,
         BN,
-        Int(depth),
-        Int(config.padded_depth),
-        Int(num_heads),
+        depth,
+        padded_depth,
+        num_heads,
         group,
         decoding,
     ]
@@ -2234,9 +2236,9 @@ fn _mha_sm100[
         return _get_position[
             BM,
             BN,
-            Int(depth),
-            Int(config.padded_depth),
-            Int(num_heads),
+            depth,
+            padded_depth,
+            num_heads,
             group,
             ragged,
             _is_cache_length_accurate,
@@ -2301,7 +2303,7 @@ fn _mha_sm100[
                 if kv_tile_start_row >= end:
                     return
 
-            alias tmem_cols = num_s * MMA_N0 + (MMA_N0 // 2) + Int(MMA_N1)
+            alias tmem_cols = num_s * MMA_N0 + (MMA_N0 // 2) + MMA_N1
             constrained[tmem_cols <= max_tmem_cols]()
             tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
 
@@ -2654,7 +2656,7 @@ fn _mha_sm100[
             copy_sram_to_dram[
                 thread_layout = Layout.row_major(
                     num_softmax_threads * simd_size // Int(depth),
-                    Int(depth // UInt(simd_size)),
+                    Int(depth // simd_size),
                 ),
                 swizzle=swizzle,
             ](

@@ -28,6 +28,7 @@ trait MHAOperand(DevicePassable):
     """This serves as the trait to support arguments to our MHA kernel."""
 
     alias dtype: DType
+    alias page_size: Int
 
     # TODO: change this to return a LayoutTensor once MOCO-1471 is fixed
     @always_inline
@@ -77,7 +78,9 @@ trait MHAOperand(DevicePassable):
 
 
 @register_passable("trivial")
-struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
+struct KVCacheMHAOperand[
+    cache_t: KVCacheT,
+](MHAOperand):
     """An implementation for `mo.opaque` KVCacheT arguments to MHA kernels.
 
     We can eventually remove this trait and just add it as a sub-trait in the
@@ -85,6 +88,7 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
     """
 
     alias dtype = cache_t.dtype
+    alias page_size = cache_t.page_size_
     var cache: cache_t
 
     alias device_type: AnyType = Self
@@ -161,6 +165,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
     """An implementation for NDBuffer arguments to MHA kernels."""
 
     alias dtype = dtype_
+    alias page_size = 0
     var buffer: LayoutTensor[Self.dtype, layout, MutAnyOrigin]
 
     alias device_type: AnyType = Self
@@ -260,6 +265,7 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
     """An implementation for ragged NDBuffer arguments to MHA kernels."""
 
     alias dtype = dtype_
+    alias page_size = 0
     var buffer: LayoutTensor[Self.dtype, layout, MutAnyOrigin]
     var cache_row_offsets: LayoutTensor[
         DType.uint32, cache_layout, MutAnyOrigin
