@@ -42,9 +42,9 @@ GEMMA3_VISION_SAFETENSOR_MAP: dict[str, str] = {
 # "^multi_modal_projector": "model.multi_modal_projector",
 # "^language_model.lm_head": "lm_head",
 
+
 def convert_safetensor_language_state_dict(
-    state_dict: dict[str, Weights],
-    **unused_kwargs
+    state_dict: dict[str, Weights], **unused_kwargs
 ) -> dict[str, WeightData]:
     """Convert safetensor state dict to MAX format for the language model."""
     new_state_dict: dict[str, WeightData] = {}
@@ -57,6 +57,7 @@ def convert_safetensor_language_state_dict(
             new_state_dict[max_name] = value.data()
 
     return new_state_dict
+
 
 def convert_safetensor_vision_state_dict(
     state_dict: dict[str, Weights],
@@ -75,7 +76,7 @@ def convert_safetensor_vision_state_dict(
                 max_name = max_name.replace(before, after)
 
             weight_data = value.data()
-            
+
             # the patch embedding weight is wonky
             if weight_name.endswith("embeddings.patch_embedding.weight"):
                 assert isinstance(weight_data.data, Tensor)
@@ -93,13 +94,17 @@ def convert_safetensor_vision_state_dict(
                     shape=Shape(transposed_data.shape),
                     quantization_encoding=weight_data.quantization_encoding,
                 )
-            
+
             # the *_proj self attn weights seem wonky
             # expecting 4096, 1152
             # but getting 1152, 1152
             # the former seems to only match the position_embedding weight
             import re
-            match = re.search(r"encoder\.layers\.[0-9*]\.self_attn\..*_proj\.weight", weight_name)
+
+            match = re.search(
+                r"encoder\.layers\.[0-9*]\.self_attn\..*_proj\.weight",
+                weight_name,
+            )
             if match:
                 max_name = max_name.replace("encoder.", "")
 

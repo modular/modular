@@ -19,12 +19,9 @@ from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
     SupportedEncoding,
-    TextAndVisionTokenizer
 )
 
-from . import weight_adapters
 from .model import Gemma3_MultiModalModel
-
 from .tokenizer import Gemma3MMSimpleTokenizer
 
 gemma3_multimodal_arch = SupportedArchitecture(
