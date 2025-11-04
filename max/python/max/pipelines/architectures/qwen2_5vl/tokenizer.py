@@ -297,7 +297,6 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
 
         # Initialize EOS token IDs
         self._default_eos_token_ids = set([self.eos])
-        self._default_eos_token_ids = set([self.eos])
 
         if pipeline_config:
             huggingface_config = pipeline_config.model_config.huggingface_config
