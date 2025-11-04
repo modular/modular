@@ -1980,9 +1980,9 @@ static ParseResult parseMemSymbolTripleAttr(OpAsmParser &p,
 static ParseResult parseClosureInitOpValue(
     OpAsmParser &p, TypeAttr &funcTypeGenerator, TypeAttr &functionType,
     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &captures,
-    ArrayAttr &captureConventions, TypedAttr &captureOrigins,
-    KGEN::ParamDeclArrayAttr &inputParams, KGEN::InlineLevelAttr &inlineLevel,
-    Region &bodyRegion, SmallVectorImpl<Type> &captureTypes, Type &resultType,
+    ArrayAttr &captureConventions, KGEN::ParamDeclArrayAttr &inputParams,
+    KGEN::InlineLevelAttr &inlineLevel, Region &bodyRegion,
+    SmallVectorImpl<Type> &captureTypes, Type &resultType,
     KGEN::ParamDeclAttr &paramDecl, TypedAttr &vtable, Attribute &scope) {
   if (p.parseLSquare() || p.parseAttribute(vtable) || p.parseRSquare())
     return failure();
@@ -2055,7 +2055,6 @@ static ParseResult parseClosureInitOpValue(
     return p.emitError(p.getCurrentLocation(),
                        "expected symbols to match number of capture types");
   captureConventions = ArrayAttr::get(p.getContext(), captureConvs);
-  captureOrigins = OriginSetAttr::get(p.getContext(), origins);
   if (succeeded(p.parseOptionalComma())) {
     if (p.parseAttribute(scope))
       return failure();
@@ -2066,10 +2065,9 @@ static ParseResult parseClosureInitOpValue(
 static void printClosureInitOpValue(
     OpAsmPrinter &p, Operation *op, TypeAttr funcTypeGenerator,
     TypeAttr functionType, ValueRange captures, ArrayAttr captureConventions,
-    TypedAttr captureOrigins, KGEN::ParamDeclArrayAttr inputParams,
-    KGEN::InlineLevelAttr inlineLevel, Region &bodyRegion,
-    TypeRange captureTypes, Type resultType, KGEN::ParamDeclAttr paramDecl,
-    TypedAttr vtable, Attribute scope) {
+    KGEN::ParamDeclArrayAttr inputParams, KGEN::InlineLevelAttr inlineLevel,
+    Region &bodyRegion, TypeRange captureTypes, Type resultType,
+    KGEN::ParamDeclAttr paramDecl, TypedAttr vtable, Attribute scope) {
   auto paramPrinter = [](AsmPrinter &p, FuncTypeGeneratorType calleeType,
                          ArrayRef<TypedAttr> params) {
     LIT::FnTypeGeneratorType fnTypeGen =
