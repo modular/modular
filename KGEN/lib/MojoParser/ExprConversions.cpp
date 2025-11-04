@@ -1383,44 +1383,115 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (cache.has_value())
     return cache.value();
 
-  auto cacheAndReturnVal = [&](bool isConvertible) -> bool {
+  auto cacheAndReturnVal = [&shared](ASTType from, ASTType to,
+                                     bool isConvertible) -> bool {
     // Cache the result of this convertibility check.
-    shared.cacheImplicitConvertibility(rvType, requiredType, isConvertible);
+    shared.cacheImplicitConvertibility(from, to, isConvertible);
     return isConvertible;
   };
 
-  // Values of known {struct/trait/mlir} type can convert to any trait type they
-  // implement.
-  if (auto anyTrait =
-          sugarDynCastIfPresent<AnyTraitType>(requiredType.getMetaType())) {
-    TraitType trait = anyTrait.getTraitType();
-    bool result = false;
+  auto canTypeValueUpCastToTrait = [&](ASTExprAnd<CValue> valueExpr,
+                                       ASTType fromType,
+                                       ASTType toType) -> FailureOr<bool> {
+    // Values of known {struct/trait/mlir} type can convert to any trait type
+    // they implement.
+    if (auto anyTrait =
+            sugarDynCastIfPresent<AnyTraitType>(toType.getMetaType())) {
+      TraitType trait = anyTrait.getTraitType();
+      bool result = false;
 
-    if (sugarIsa<TypeType>(rvType)) {
-      // MLIR types can conform to traits that have limited requirements.
-      // AnyTraitType (the type of all traits) conforms to traits with only a
-      // destructor (e.g. AnyType) since all traits have that.
-      result = checkMLIRTypeConformance(shared, value.expr->getLoc(), trait);
-    } else if (sugarIsa<StructMetaType>(rvType) ||
-               sugarIsaAndNonNull<AnyTraitType>(rvType.getMetaType())) {
-      // Only a struct or a trait instance can be converted to a trait.
-      if (auto pval = value.ir.getIfPValue(); pval && LIT::isTypeExpr(pval)) {
-        // Can only convert static types to traits, not existentials.
-        if (ASTDecl *decl = ASTType(pval).getDecl(shared))
-          return cacheAndReturnVal(decl->doesNominalTypeConformTo(trait));
+      if (sugarIsa<TypeType>(fromType)) {
+        // MLIR types can conform to traits that have limited requirements.
+        // AnyTraitType (the type of all traits) conforms to traits with only a
+        // destructor (e.g. AnyType) since all traits have that.
+        result =
+            checkMLIRTypeConformance(shared, valueExpr.expr->getLoc(), trait);
+      } else if (sugarIsa<StructMetaType>(fromType) ||
+                 sugarIsaAndNonNull<AnyTraitType>(fromType.getMetaType())) {
+        // Only a struct or a trait instance can be converted to a trait.
+        if (auto pval = valueExpr.ir.getIfPValue();
+            pval && LIT::isTypeExpr(pval)) {
+          // Can only convert static types to traits, not existentials.
+          if (ASTDecl *decl = ASTType(pval).getDecl(shared))
+            return cacheAndReturnVal(fromType, toType,
+                                     decl->doesNominalTypeConformTo(trait));
+        }
       }
+      return cacheAndReturnVal(fromType, toType, result);
     }
-    return cacheAndReturnVal(result);
-  }
 
-  // We can convert from AnyTraitType[Derived] to AnyTraitType[Base].
-  // This is a conversion of things like "the Movable type" (which has type
-  // "AnyTraitType[Movable]") to "AnyTraitType[AnyType]".
-  if (auto anyTrait = sugarDynCast<AnyTraitType>(requiredType)) {
-    if (auto fromAnyTrait = sugarDynCast<AnyTraitType>(rvType))
-      if (auto *fromDecl = ASTType(fromAnyTrait.getTraitType()).getDecl(shared))
-        return cacheAndReturnVal(
-            fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType()));
+    // We can convert from AnyTraitType[Derived] to AnyTraitType[Base].
+    // This is a conversion of things like "the Movable type" (which has type
+    // "AnyTraitType[Movable]") to "AnyTraitType[AnyType]".
+    if (auto anyTrait = sugarDynCast<AnyTraitType>(toType)) {
+      if (auto fromAnyTrait = sugarDynCast<AnyTraitType>(rvType))
+        if (auto *fromDecl =
+                ASTType(fromAnyTrait.getTraitType()).getDecl(shared))
+          return cacheAndReturnVal(
+              fromType, toType,
+              fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType()));
+    }
+
+    // Not applicable.
+    return failure();
+  };
+
+  FailureOr<bool> canUpCast =
+      canTypeValueUpCastToTrait(value, rvType, requiredType);
+  if (succeeded(canUpCast))
+    return canUpCast.value();
+
+  if (sugarIsa<VariadicType>(rvType) && sugarIsa<VariadicType>(requiredType)) {
+    // If the element types of the variadic is meta type (AnyStruct/AnyTrait),
+    // we allow them to be implicitly converted.
+    //
+    // That is, we allow `VariadicOf[Copyable]       -> VariadicOf[AnyType]`
+    // and,              `VariadicOf[AnyStruct[xxx]] -> VariadicOf[AnyType]`
+    //
+    // Notably, this does NOT support implicit conversion between from
+    // `Variadic[Int]` to `Variadic[UInt]`
+
+    ASTType toEltTp = sugarCast<VariadicType>(requiredType).getElementType();
+    TypedAttr val = value.ir.getIfPValue().get();
+    if (auto vVal = sugarDynCastIfPresent<VariadicAttr>(val)) {
+      // This is a concrete variadic of type value to convert, check every type
+      // value to sure it is convertible.
+      for (auto elt : vVal.getValues()) {
+        if (!LIT::isTypeExpr(elt))
+          return false;
+
+        // Get the tightest metatype for the element type value, so that
+        // `#kgen.type<!Int> : !AnyType` will be converted to
+        // `#kgen.type<!Int> : !mt_Int`, so that
+        // `#kgen.type<!Int> : !AnyType` is convertible to `!Copyable`
+        ASTType fromEltTp = ASTType(elt).getMetaType();
+        if (fromEltTp.mlirType != toEltTp.mlirType) {
+          FailureOr<bool> canUpCast =
+              canTypeValueUpCastToTrait({elt, value.expr}, fromEltTp, toEltTp);
+          // If there is one element that we can not convert, return false. Note
+          // that We also only to handle conversions between type value at the
+          // moment and would return false when `canTypeValueUpCastToTrait`
+          // returns failure (meaning case not handled).
+          if (failed(canUpCast) || !canUpCast.value())
+            return cacheAndReturnVal(rvType, requiredType, false);
+        }
+      }
+      // Every element is convertible, return true;
+      return cacheAndReturnVal(rvType, requiredType, true);
+    } else {
+      ASTType fromEltTp = sugarCast<VariadicType>(rvType).getElementType();
+      // In this case, we do not have a concrete IR in `valueExpr.ir` for each
+      // individual type value in the variadic, strip the meta type to get the
+      // actual type that the type value stands for.
+      CValue ir = fromEltTp;
+      if (auto meta = sugarDynCast<StructMetaType>(fromEltTp))
+        ir = meta.getType();
+
+      FailureOr<bool> canUpCast =
+          canTypeValueUpCastToTrait({ir, value.expr}, fromEltTp, toEltTp);
+      if (succeeded(canUpCast))
+        return cacheAndReturnVal(rvType, requiredType, canUpCast.value());
+    }
   }
 
   // Support implicit conversions of generator types (incl. non-trivial function
@@ -1431,7 +1502,7 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
       result =
           canConvertGeneratorTypes(declScope, value.expr->getLoc(), value.ir,
                                    rvGeneratorType, requiredGenerator);
-    return cacheAndReturnVal(result);
+    return cacheAndReturnVal(rvType, requiredType, result);
   }
 
   // We can implicitly convert to the specified type if we can construct it with
@@ -1492,51 +1563,92 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
     }
   }
 
-  // Emit metatype conversions to trait types if the metatype implements the
-  // specified trait.
-  if (auto anyTrait =
-          sugarDynCastIfPresent<AnyTraitType>(requiredType.getMetaType())) {
-    TraitType trait = anyTrait.getTraitType();
-    if (isa<TypeType>(rvType)) {
-      // Conversions from MLIR types.
-      PValue result = bindMLIRTypeToTrait(valueExpr, trait, *this);
-      return emitCResult(result, expr, dest);
-    } else if (isa<StructMetaType>(rvType) ||
-               isa_and_nonnull<AnyTraitType>(rvType.getMetaType())) {
-      // augment the witness table of closure wrapper with rebind if necessary.
-      // We do this for every closure trait in the type.
-      for (const auto &symbol : trait.getSymbols()) {
-        auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
-        if (auto traitDeclOp =
-                dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
-            traitDeclOp && traitDeclOp.getDefinesClosure()) {
-          (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
-              rvType, &symbolDecl);
+  auto emitTypeValueUpCastToTrait =
+      [this](ASTExprAnd<CValue> valueExpr, ASTType fromType,
+             ASTType toType) -> FailureOr<PValue> {
+    // Emit metatype conversions to trait types if the metatype implements
+    // the specified trait.
+    if (auto anyTrait =
+            sugarDynCastIfPresent<AnyTraitType>(toType.getMetaType())) {
+      TraitType trait = anyTrait.getTraitType();
+      if (isa<TypeType>(fromType)) {
+        // Conversions from MLIR types.
+        return bindMLIRTypeToTrait(valueExpr, trait, *this);
+      } else if (isa<StructMetaType>(fromType) ||
+                 isa_and_nonnull<AnyTraitType>(fromType.getMetaType())) {
+        // Augment the witness table of closure wrapper with rebind if
+        // necessary. We do this for every closure trait in the type.
+        for (const auto &symbol : trait.getSymbols()) {
+          auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+          if (auto traitDeclOp =
+                  dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
+              traitDeclOp && traitDeclOp.getDefinesClosure()) {
+            (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
+                fromType, &symbolDecl);
+          }
+        }
+        // Conversions from structs or traits.
+        return emitMetaTypeToTraitConversion(valueExpr, trait);
+      }
+    }
+
+    // We can convert from AnyTraitType[Derived] to AnyTraitType[Base].
+    // This is a conversion of things like "the Movable type" (which has
+    // type "AnyTraitType[Movable]") to "AnyTraitType[AnyType]".
+    if (auto anyTrait = sugarDynCast<AnyTraitType>(toType)) {
+      PValue typePValue = valueExpr.ir.getIfPValue();
+      if (!typePValue) {
+        emitError(valueExpr.expr->getLoc(),
+                  "existentials are not supported yet!");
+        return PValue();
+      }
+
+      if (auto rvAnyTrait = sugarDynCast<AnyTraitType>(fromType)) {
+        auto *fromDecl = ASTType(rvAnyTrait.getTraitType()).getDecl(shared);
+        if (fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType())) {
+          // This is just the trait itself, not a conformance, just upcast.
+          return PValue(TypeParamAttr::get(ASTType(typePValue), anyTrait));
         }
       }
-
-      // Conversions from structs or traits.
-      PValue result = emitMetaTypeToTraitConversion(valueExpr, trait);
-      return emitCResult(result, expr, dest);
-    }
-  }
-
-  // We can convert from AnyTraitType[Derived] to AnyTraitType[Base].
-  // This is a conversion of things like "the Movable type" (which has type
-  // "AnyTraitType[Movable]") to "AnyTraitType[AnyType]".
-  if (auto anyTrait = sugarDynCast<AnyTraitType>(requiredType)) {
-    PValue typePValue = value.getIfPValue();
-    if (!typePValue) {
-      emitError(expr->getLoc(), "existentials are not supported yet!");
-      return {};
     }
 
-    if (auto rvAnyTrait = sugarDynCast<AnyTraitType>(rvType)) {
-      auto *fromDecl = ASTType(rvAnyTrait.getTraitType()).getDecl(shared);
-      if (fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType())) {
-        // This is just the trait itself, not a conformance, just upcast.
-        return TypeParamAttr::get(ASTType(typePValue), anyTrait);
+    // Not applicable
+    return failure();
+  };
+
+  FailureOr<PValue> typeValueCast =
+      emitTypeValueUpCastToTrait(valueExpr, rvType, requiredType);
+  // This handles nullptr case too.
+  if (succeeded(typeValueCast))
+    return emitCResult(*typeValueCast, expr, dest);
+
+  if (sugarIsa<VariadicType>(rvType) && sugarIsa<VariadicType>(requiredType)) {
+    auto dstVATp = sugarCast<VariadicType>(requiredType);
+
+    ASTType toEltTp = dstVATp.getElementType();
+    TypedAttr srcVal = valueExpr.ir.getIfPValue().get();
+    if (auto vVal = sugarDynCast<VariadicAttr>(srcVal)) {
+      SmallVector<TypedAttr> converted;
+
+      for (auto elt : vVal.getValues()) {
+        ASTType fromEltTp = ASTType(elt).getMetaType();
+        if (fromEltTp.mlirType != toEltTp.mlirType) {
+          FailureOr<PValue> castToOr = emitTypeValueUpCastToTrait(
+              {elt, valueExpr.expr}, fromEltTp, toEltTp);
+          if (failed(castToOr) || castToOr->isNull())
+            return {};
+          converted.push_back(*castToOr);
+        } else {
+          // Simple case such as: !Int : !AnyType -> !Int: !mt_Int
+          converted.push_back(TypeParamAttr::get(ASTType(elt), fromEltTp));
+        }
       }
+      return emitCResult(VariadicAttr::get(converted, dstVATp), expr, dest);
+    } else {
+      // The source is not resolved yet, this is a simple upcast.
+      // For example, we upcast a variadic of `Copyable`s to `AnyTypes` by
+      // `#upcast<:variadic<!Copyable> T> :!variadic<!AnyType>`
+      return emitCResult(UpcastAttr::get(requiredType, srcVal), expr, dest);
     }
   }
 
