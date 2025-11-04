@@ -5,7 +5,6 @@ modular_py_test(
     size = "large",
     srcs = glob(["**/test_*.py"]) + ["conftest.py"],
     data = [
-        "//SDK:max",
         "//max/tests/integration/pipelines/python/olmo2/testdata",
     ],
     env = {

@@ -36,7 +36,6 @@ modular_py_test(
         ],
     ) + ["conftest.py"],
     data = [
-        "//SDK:max",
         "//max/tests/integration/pipelines/python/deepseekV2/testdata",
     ],
     env = {
@@ -73,7 +72,6 @@ modular_py_test(
     size = "large",
     srcs = glob(["*_distributed.py"]) + ["conftest.py"],
     data = [
-        "//SDK:max",
         "//max/tests/integration/pipelines/python/deepseekV2/testdata",
     ],
     env = {

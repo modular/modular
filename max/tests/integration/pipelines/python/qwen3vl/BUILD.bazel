@@ -15,9 +15,6 @@ modular_py_test(
             "tests/test_*.py",
         ],
     ) + ["tests/__init__.py"],
-    data = [
-        "//SDK:max",
-    ],
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },

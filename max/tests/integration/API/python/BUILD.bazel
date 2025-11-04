@@ -220,7 +220,6 @@ modular_py_test(
     size = "large",
     srcs = glob(["multi_gpu_tests/**/*.py"]),
     data = [
-        "//SDK:max",
         "//max/tests/integration:test_user_op",
         "//max/tests/integration/API:inputs",
         "//max/tests/integration/API:pytest_inputs",

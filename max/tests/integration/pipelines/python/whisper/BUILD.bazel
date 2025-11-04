@@ -12,7 +12,6 @@ modular_py_test(
     srcs = glob(
         ["**/test_*.py"],
     ),
-    data = ["//SDK:max"],
     tags = [
         "no-sandbox",
         "requires-network",

@@ -35,7 +35,6 @@ modular_py_library(
             "configs/internvl-2B.json",
             "configs/internvl-38B.json",
             "configs/internvl-8B.json",
-            "//SDK:max",
         ],
         env = {
             "MODULAR_TORCH_MEMORY_PERCENT": "0.5",

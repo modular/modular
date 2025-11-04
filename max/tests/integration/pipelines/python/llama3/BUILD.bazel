@@ -20,7 +20,6 @@ load(
             "auto",
         ],
         data = [
-            "//SDK:max",
             "//max/tests/integration/pipelines/python/llama3/testdata",
         ],
         env = {
@@ -76,7 +75,6 @@ modular_py_test(
         "conftest.py",
     ],
     data = [
-        "//SDK:max",
         "//max/tests/integration/pipelines/python/llama3/testdata",
     ],
     env = {
