@@ -206,3 +206,22 @@ struct Tuple[*element_types: Copyable & Movable](
                     return True
 
         return False
+
+    @always_inline("nodebug")
+    fn __init__[
+        *elt_types: Copyable & Movable & Defaultable
+    ](out self: Tuple[*elt_types]):
+        """Construct a tuple with default-initialized elements.
+
+        Parameters:
+            elt_types: The types of the elements contained in the Tuple.
+        """
+
+        # Mark 'self.storage' as being initialized so we can work on it.
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(self.storage)
+        )
+
+        @parameter
+        for i in range(len(VariadicList(elt_types))):
+            UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())

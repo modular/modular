@@ -116,5 +116,12 @@ def test_tuple_unpack():
     assert_equal(list2, [3, 7])
 
 
+def test_tuple_default():
+    var t: Tuple[Int, String, Float32] = {}
+    assert_equal(t[0], 0)
+    assert_equal(t[1], "")
+    assert_equal(t[2], 0.0)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
