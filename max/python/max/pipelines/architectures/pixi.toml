@@ -39,8 +39,8 @@ generate_text = { cmd = [
 ] }
 
 # keep it clean
-linter = { cmd = ["../../../bazelw", "run", "//:lint"] }
-formatter = { cmd = ["../../../bazelw", "run", "//:format"] }
+linter = { cmd = ["../../../../../bazelw", "run", "//:lint"] }
+formatter = { cmd = ["../../../../../bazelw", "run", "//:format"] }
 lint = [{ task = "linter" }, { task = "formatter" }]
 
 # the py script uses OpenAI API to prompt the model with text and/or an image

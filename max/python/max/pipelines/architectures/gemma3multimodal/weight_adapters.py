@@ -25,15 +25,15 @@ GEMMA3_LANGUAGE_SAFETENSOR_MAP: dict[str, str] = {
 # For the vision model
 GEMMA3_VISION_SAFETENSOR_MAP: dict[str, str] = {
     "vision_tower.vision_model.": "",
-    # ".self_attn.out_proj.": ".self_attn.o_proj.",
-    # # Map attention weight names: checkpoint has "qkv" but model expects "qkv_proj"
-    # ".attn.qkv.": ".attn.qkv_proj.",
-    # ".attn.qkv_bias.": ".attn.qkv_proj_bias.",
-    # ".attn.proj.": ".attn.o_proj.",
-    # # Map mlp1 numbered layers to descriptive names
-    # "mlp1.0.": "mlp1.layer_norm.",  # Layer normalization
-    # "mlp1.1.": "mlp1.fc1.",  # First linear layer
-    # "mlp1.3.": "mlp1.fc2.",  # Second linear layer (note: it's 3, not 2)
+    ".self_attn.out_proj.": ".self_attn.o_proj.",
+    # Map attention weight names: checkpoint has "qkv" but model expects "qkv_proj"
+    ".attn.qkv.": ".attn.qkv_proj.",
+    ".attn.qkv_bias.": ".attn.qkv_proj_bias.",
+    ".attn.proj.": ".attn.o_proj.",
+    # Map mlp1 numbered layers to descriptive names
+    "mlp1.0.": "mlp1.layer_norm.",  # Layer normalization
+    "mlp1.1.": "mlp1.fc1.",  # First linear layer
+    "mlp1.3.": "mlp1.fc2.",  # Second linear layer (note: it's 3, not 2)
 }
 
 # NOTE: Huggingface implementation seems to have quite different checkpoint name conversions:
@@ -59,6 +59,8 @@ def convert_safetensor_language_state_dict(
     return new_state_dict
 
 
+# ⚠️ almost there, but some of the projection checkpoint weights aren't fitting
+# ⚠️ potential confusing with the naming of some weights (eg encoder.layers, or just layers?)
 def convert_safetensor_vision_state_dict(
     state_dict: dict[str, Weights],
     **unused_kwargs,
@@ -66,9 +68,6 @@ def convert_safetensor_vision_state_dict(
     new_state_dict: dict[str, WeightData] = {}
 
     for weight_name, value in state_dict.items():
-        # if weight_name.startswith("language_model.model.layers"):
-        #     new_state_dict[weight_name.replace("language_model.model.", "encoder.")] = value.data()
-
         if weight_name.startswith("vision_tower.vision_model."):
             max_name = weight_name
 
@@ -99,14 +98,14 @@ def convert_safetensor_vision_state_dict(
             # expecting 4096, 1152
             # but getting 1152, 1152
             # the former seems to only match the position_embedding weight
-            import re
+            # import re
 
-            match = re.search(
-                r"encoder\.layers\.[0-9*]\.self_attn\..*_proj\.weight",
-                weight_name,
-            )
-            if match:
-                max_name = max_name.replace("encoder.", "")
+            # match = re.search(
+            #     r"encoder\.layers\.[0-9*]\.self_attn\..*_proj\.weight",
+            #     weight_name,
+            # )
+            # if match:
+            #     max_name = max_name.replace("encoder.", "")
 
             new_state_dict[max_name] = weight_data
 

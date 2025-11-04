@@ -93,6 +93,7 @@ def _cast_to_dtype(
     return result.view(new_dtype, original_shape)
 
 
+# ✅ borrowed from internVL but should be fine
 class _VisionStacker:
     """Helper class for efficient parallel stacking of vision patches.
 
@@ -159,6 +160,7 @@ class _VisionStacker:
         np.copyto(out[sl], np.asarray(images[sl], dtype=images[0].dtype))
 
 
+# ✅ should be good to go
 class Gemma3MultiModalModelInputs(ModelInputs):
     """A class representing inputs for the Gemma3 multi modal model.
 
@@ -219,6 +221,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         return self.pixel_values is not None
 
 
+# ⚠️ some parts are finished, some are possibly not (prepare vision inputs for example)
 class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     """Gemma 3 multimodal pipeline model for text generation.
 
@@ -502,7 +505,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
         vision_weights_dict = convert_safetensor_vision_state_dict(weights_dict)
         state_dict = language_weights_dict | vision_weights_dict
-        print(vision_weights_dict)
 
         model_config = Gemma3ForConditionalGenerationConfig.generate(
             pipeline_config=self.pipeline_config,
@@ -530,7 +532,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             model_config, vision_weights_dict
         )
         vision_model = session.load(
-            vision_graph, weights_registry=vision_weights_dict
+            vision_graph, weights_registry=vision_model_state_dict
         )
 
         return vision_model, language_model
@@ -703,7 +705,8 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             pixel_values = [
                 inp.tensor for inp in graph.inputs[: len(self.devices)]
             ]
-            print(pixel_values)
+            
+            logger.info(f"LOOKS LIKE WE MADE IIIIIT\n{pixel_values}")
 
             signal_buffers = [
                 inp.buffer for inp in graph.inputs[len(self.devices) :]
@@ -716,66 +719,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
             return graph, vision_model.state_dict()
 
-    def load_kv_manager(
-        self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager:
-        """Loads and initializes the KVCacheManager for the Gemma 3 model.
-
-        Configures the KV cache manager based on model parameters, pipeline settings,
-        and available memory.
-
-        Args:
-            session: The MAX Engine inference session.
-            available_cache_memory: The amount of memory available for the KV cache in bytes.
-
-        Returns:
-            An initialized :obj:`KVCacheManager` instance.
-        """
-        return load_kv_manager(
-            params=Gemma3ForConditionalGenerationConfig.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-            ),
-            max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            num_layers=Gemma3ForConditionalGenerationConfig.get_num_layers(
-                huggingface_config=self.huggingface_config
-            ),
-            devices=self.devices,
-            available_cache_memory=available_cache_memory,
-            page_size=self.kv_cache_config.kv_cache_page_size,
-            session=session,
-        )
-
-    def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
-    ) -> list[PagedCacheValues]:
-        kv_params = Gemma3ForConditionalGenerationConfig.get_kv_params(
-            huggingface_config=self.huggingface_config,
-            n_devices=len(self.devices),
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
-        )
-        n_devices = kv_params.n_devices
-        fetch_types = self.kv_manager.input_symbols()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
-
+    # ⚠️ borrowed from idefics3 and claude
     def _prepare_vision_inputs(
         self, context_batch: Sequence[TextAndVisionContext]
     ) -> list[Tensor] | None:
@@ -863,6 +807,66 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Create tensor and distribute to device
         return Tensor.from_numpy(np_indices).to(self.devices[0])
+
+    def load_kv_manager(
+        self, session: InferenceSession, available_cache_memory: int | None
+    ) -> PagedKVCacheManager:
+        """Loads and initializes the KVCacheManager for the Gemma 3 model.
+
+        Configures the KV cache manager based on model parameters, pipeline settings,
+        and available memory.
+
+        Args:
+            session: The MAX Engine inference session.
+            available_cache_memory: The amount of memory available for the KV cache in bytes.
+
+        Returns:
+            An initialized :obj:`KVCacheManager` instance.
+        """
+        return load_kv_manager(
+            params=Gemma3ForConditionalGenerationConfig.get_kv_params(
+                huggingface_config=self.huggingface_config,
+                n_devices=len(self.devices),
+                kv_cache_config=self.kv_cache_config,
+                cache_dtype=self.encoding.cache_dtype,
+            ),
+            max_batch_size=self.pipeline_config.max_batch_size,
+            max_seq_len=self.calculate_max_seq_len(
+                self.pipeline_config, huggingface_config=self.huggingface_config
+            ),
+            num_layers=Gemma3ForConditionalGenerationConfig.get_num_layers(
+                huggingface_config=self.huggingface_config
+            ),
+            devices=self.devices,
+            available_cache_memory=available_cache_memory,
+            page_size=self.kv_cache_config.kv_cache_page_size,
+            session=session,
+        )
+
+    def _unflatten_kv_inputs(
+        self, kv_inputs_flat: Sequence[Value[Any]]
+    ) -> list[PagedCacheValues]:
+        kv_params = Gemma3ForConditionalGenerationConfig.get_kv_params(
+            huggingface_config=self.huggingface_config,
+            n_devices=len(self.devices),
+            kv_cache_config=self.kv_cache_config,
+            cache_dtype=self.encoding.cache_dtype,
+        )
+        n_devices = kv_params.n_devices
+        fetch_types = self.kv_manager.input_symbols()[0]
+        len_of_kv_tuple_per_dev = len(list(fetch_types))
+        kv_caches_per_dev: list[PagedCacheValues] = []
+        for i in range(n_devices):
+            start_idx = i * len_of_kv_tuple_per_dev
+            kv_caches_per_dev.append(
+                PagedCacheValues(
+                    kv_blocks=kv_inputs_flat[start_idx].buffer,
+                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
+                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
+                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
+                )
+            )
+        return kv_caches_per_dev
 
     # borrowed from InternVL
     def _create_empty_image_embeddings(self) -> list[Tensor]:
