@@ -1331,7 +1331,10 @@ Special thanks to our community contributors:
     new [`variadics`](/mojo/stdlib/builtin/variadics/) module.
 
   - The `CollectionElement` trait has been removed. You can replace any use of
-    it with `Copyable & Movable`.
+    it with the [`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
+    [`Movable`](/mojo/stdlib/builtin/value/Movable) traits, or the
+    `Copyable & Movable`
+    [trait composition](/mojo/manual/traits#trait-compositions).
 
 Python-Mojo interoperability enhancements and changes:
 
