@@ -437,7 +437,6 @@ def KGEN_UpcastAttr : KGEN_ExprAttr<"Upcast", "upcast"> {
   );
   let assemblyFormat = "`<` $inputTypeValue `>`";
 
-  let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser because this
     // may not return an UpcastAttr.
@@ -458,6 +457,9 @@ def KGEN_UpcastAttr : KGEN_ExprAttr<"Upcast", "upcast"> {
       return value;
     }
   }];
+
+  let skipDefaultBuilders = 1;
+  let genVerifyDecl = 1;
 }
 
 
@@ -486,7 +488,6 @@ def KGEN_DowncastAttr : KGEN_ExprAttr<"Downcast", "downcast",
   );
   let assemblyFormat = "`<` custom<TypeParamValue>($inputTypeValue) `>`";
 
-  let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser because this
     // may not return an DowncastAttr.
@@ -512,6 +513,9 @@ def KGEN_DowncastAttr : KGEN_ExprAttr<"Downcast", "downcast",
     /// or a null attribute if the type value is not resolved.
     TypedAttr getTypeRefIfResolved();
   }];
+
+  let skipDefaultBuilders = 1;
+  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//
