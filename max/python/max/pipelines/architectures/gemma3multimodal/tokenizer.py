@@ -29,6 +29,7 @@ from max.pipelines.lib import TextAndVisionTokenizer
 import functools
 import io
 import json
+import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -49,7 +50,179 @@ from transformers import AutoConfig, AutoProcessor, AutoTokenizer
 if TYPE_CHECKING:
     from max.pipelines.lib import PipelineConfig
 
-from .image_processing import Gemma3ImageProcessor
+# from .image_processing import Gemma3ImageProcessor
+
+logger = logging.getLogger("max-pipelines")
+
+
+# TODO ✅ this is a cut down tokenizer
+from transformers import AutoTokenizer, AutoProcessor, Gemma3ForConditionalGeneration
+class Gemma3MMSimpleTokenizer(TextAndVisionTokenizer):
+    def __init__(
+        self,
+        model_path: str,
+        *,
+        revision: str,
+        max_length: int | None = None,
+        max_new_tokens: int | None = None,
+        trust_remote_code: bool = False,
+        pipeline_config: PipelineConfig | None = None,
+        **unused_kwargs,
+    ):
+        self.delegate = AutoTokenizer.from_pretrained(
+            model_path,
+            revision=revision,
+            trust_remote_code=trust_remote_code,
+            model_max_length=max_length,
+        )
+        self.processor = AutoProcessor.from_pretrained("google/gemma-3-4b-it")
+        self._default_eos_token_ids = set([self.eos])
+
+    async def decode(self, encoded: npt.NDArray[np.integer[Any]]) -> str:
+        return self.delegate.decode(encoded)
+    
+    # borrowed from idefics3
+    def apply_chat_template(
+        self, messages: list[TextGenerationRequestMessage]
+    ) -> str:
+        text_messages: list[dict[str, Any]] = []
+        for message in messages:
+            logger.info(f"*** MESSAGE: {message}")
+            text_message: dict[str, Any] = {"role": message.get("role")}
+            content = message.get("content")
+
+            if isinstance(content, str):
+                text_message["content"] = content
+            elif isinstance(content, list):
+                text_parts = []
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        # Handle both "content" and "text" keys
+                        text_content = item.get("content") or item.get(
+                            "text", ""
+                        )
+                        if text_content:
+                            text_parts.append(text_content)
+                    elif isinstance(item, dict) and item.get("type") == "image":
+                        # Add image placeholder
+                        text_parts.append("<image>")
+                text_message["content"] = " ".join(text_parts)
+            else:
+                text_message["content"] = ""
+
+            text_messages.append(text_message)
+
+        templated_prompt = self.delegate.apply_chat_template(
+            text_messages, tokenize=False, add_generation_prompt=True
+        )
+
+        logger.info(f"*** APPLIED CHAT TEMPLATE: {templated_prompt}")
+
+        return templated_prompt
+
+    # borroed from idefics3, dropped some stuff
+    async def new_context(self, request: TextGenerationRequest) -> TextAndVisionContext:
+        # check that the images are valid and convert them to RGB if necessary
+        # then add to a list of images
+        if request.images is not None and len(request.images) > 0:
+            images = []
+            for image_bytes in request.images:
+                try:
+                    img: ImageType = Image.open(io.BytesIO(image_bytes))
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                    if img.size[0] == 0 or img.size[1] == 0:
+                        raise ValueError(
+                            f"Invalid image dimensions: {img.size}"
+                        )
+                    images.append(img)
+                except Exception as e:
+                    raise ValueError(f"Failed to process image: {e}") from e
+        else:
+            images = None
+
+        # run the text and images through the Auto-generated processor
+        processed_inputs = self.processor(
+            text=request.prompt,
+            images=request.images,
+            add_special_tokens=True,
+            return_tensors="np",
+        )
+        logger.info(f"*** Processed inputs: {processed_inputs}")
+
+        # find the chat prompt in the processed inputs retval
+        if isinstance(processed_inputs["input_ids"][0], int):
+            encoded_prompt = np.array(processed_inputs["input_ids"])
+        else:
+            encoded_prompt = np.array(processed_inputs["input_ids"][0])
+
+        # if there are images in our request, check the pixel_values are in the processed inputs
+        # squeeze out the batch dim if necessary, and convert to a list of (C, H, W) images
+        if request.images is not None:
+            if "pixel_values" not in processed_inputs:
+                raise ValueError(
+                    "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
+                )
+            pixel_values = processed_inputs["pixel_values"]
+
+            if isinstance(pixel_values, np.ndarray):
+                # Handle the extra batch dimension that return_tensors="np" adds
+                if pixel_values.ndim == 5:
+                    # Remove the extra batch dimension (1, N, C, H, W) -> (N, C, H, W)
+                    pixel_values = pixel_values.squeeze(0)
+                # Convert from (N, C, H, W) -> [(C, H, W), ...] with len(N)
+                pixel_values = list(pixel_values)
+
+            if not isinstance(pixel_values, list):
+                raise ValueError(
+                    f"pixel_values is not a list but it is {type(pixel_values)}"
+                )
+        else:
+            pixel_values = []
+
+        extra_model_args = dict()
+        if "image_token_indices" in processed_inputs:
+            extra_model_args["image_token_indices"] = processed_inputs[
+                "image_token_indices"
+            ]
+
+        json_schema = (
+            json.dumps(request.response_format.get("json_schema", None))
+            if request.response_format
+            else None
+        )
+
+        if request.sampling_params.ignore_eos:
+            eos_token_ids = set()
+        else:
+            eos_token_ids = self._default_eos_token_ids
+
+        # gets the start and end index of ranges of <image> tokens in the chat prompt
+        start_and_end_idxs = find_contiguous_ranges(
+            encoded_prompt, self.vision_token_ids
+        )
+
+        context = TextAndVisionContext(
+            request_id=request.request_id,
+            eos_token_ids=eos_token_ids,
+            extra_model_args=extra_model_args,
+            tokens=encoded_prompt,
+            max_length=self.max_length,
+            json_schema=json_schema,
+            sampling_params=request.sampling_params,
+            images=[
+                ImageMetadata(
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                    pixel_values=pixels,
+                )
+                for (start_idx, end_idx), pixels in zip(
+                    start_and_end_idxs, pixel_values, strict=True
+                )
+            ],
+            vision_token_ids=self.vision_token_ids,
+        )
+        return context
 
 
 # MIGHT NOT NEED ANY OF THIS because AutoConfig and TextAndVisionTokenizer are
@@ -105,7 +278,7 @@ class Gemma3MultiModalTokenizer(TextAndVisionTokenizer):
         self.vision_token_ids = [self.image_token_id]
 
         self.processor = AutoProcessor.from_pretrained(model_path, revision=revision)
-        self.image_processor = Gemma3ImageProcessor() # TODO implement
+        # self.image_processor = Gemma3ImageProcessor() # TODO implement
 
         # Initialize default EOS token IDs (required by parent class new_context method)
         self._default_eos_token_ids = set([self.eos])
@@ -118,6 +291,8 @@ class Gemma3MultiModalTokenizer(TextAndVisionTokenizer):
         kwargs_with_special_filter = kwargs.copy()
         kwargs_with_special_filter["skip_special_tokens"] = True
         return self.delegate.decode(encoded, **kwargs_with_special_filter)
+
+    # def encode() ? for text only?
 
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]
@@ -185,7 +360,6 @@ class Gemma3MultiModalTokenizer(TextAndVisionTokenizer):
         # Result should be shape: [14, 14, 3, 16, 16] for 224x224 images
         pass
 
-
     async def new_context(
         self, request: TextGenerationRequest
     ) -> TextAndVisionContext:
@@ -221,42 +395,6 @@ class Gemma3MultiModalTokenizer(TextAndVisionTokenizer):
         else:
             images = None
 
-        if images:
-            processed = self.image_processor.preprocess(
-                images=images,
-                return_tensors="np",
-            )
-            pixel_values_list = processed["pixel_values"]  # List of [C, H, W]
-            num_crops = processed["num_crops"]  # For pan-and-scan
-        else:
-            pixel_values_list = []
-            num_crops = []
-
-        # 5. Patchify the pixel values (if needed)
-        # Your vision model expects patches, so convert here:
-        # [C, H, W] -> [height_patches, width_patches, C, patch_h, patch_w]
-        patchified_images = []
-        for pixel_values in pixel_values_list:
-            patches = self._extract_patches(pixel_values)
-            patchified_images.append(patches)
-
-        # 6. Create ImageMetadata for each image
-        image_metadata = []
-        for i, patches in enumerate(patchified_images):
-            # Find where this image's tokens are in the sequence
-            start_idx, end_idx = find_image_token_positions(tokens, i)
-            image_metadata.append(
-                ImageMetadata(
-                    start_idx=start_idx,
-                    end_idx=end_idx,
-                    pixel_values=patches,  # Pre-patchified!
-                )
-            )
-
-
-
-
-
         # TODO not sure if this idefics stuff is required (text only?)
         processed_inputs = self.processor(
             text=prompt,
@@ -289,28 +427,27 @@ class Gemma3MultiModalTokenizer(TextAndVisionTokenizer):
 
         extra_model_args = dict()
 
-        # TODO the idefics implementation
-        # if images is not None:
-        #     if "pixel_values" not in processed_inputs:
-        #         raise ValueError(
-        #             "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
-        #         )
-        #     pixel_values = processed_inputs["pixel_values"]
+        if images is not None:
+            if "pixel_values" not in processed_inputs:
+                raise ValueError(
+                    "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
+                )
+            pixel_values = processed_inputs["pixel_values"]
 
-        #     if isinstance(pixel_values, np.ndarray):
-        #         # Handle the extra batch dimension that return_tensors="np" adds
-        #         if pixel_values.ndim == 5:
-        #             # Remove the extra batch dimension (1, N, C, H, W) -> (N, C, H, W)
-        #             pixel_values = pixel_values.squeeze(0)
-        #         # Convert from (N, C, H, W) -> [(C, H, W), ...] with len(N)
-        #         pixel_values = list(pixel_values)
+            if isinstance(pixel_values, np.ndarray):
+                # Handle the extra batch dimension that return_tensors="np" adds
+                if pixel_values.ndim == 5:
+                    # Remove the extra batch dimension (1, N, C, H, W) -> (N, C, H, W)
+                    pixel_values = pixel_values.squeeze(0)
+                # Convert from (N, C, H, W) -> [(C, H, W), ...] with len(N)
+                pixel_values = list(pixel_values)
 
-        #     if not isinstance(pixel_values, list):
-        #         raise ValueError(
-        #             f"pixel_values is not a list but it is {type(pixel_values)}"
-        #         )
-        # else:
-        #     pixel_values = []
+            if not isinstance(pixel_values, list):
+                raise ValueError(
+                    f"pixel_values is not a list but it is {type(pixel_values)}"
+                )
+        else:
+            pixel_values = []
 
         # Pass through image token indices if present
         if "image_token_indices" in processed_inputs:
@@ -351,7 +488,16 @@ class Gemma3MultiModalTokenizer(TextAndVisionTokenizer):
             else self.max_length,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
-            images=image_metadata,
+            images=[
+                ImageMetadata(
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                    pixel_values=pixels,
+                )
+                for (start_idx, end_idx), pixels in zip(
+                    start_and_end_idxs, pixel_values, strict=True
+                )
+            ],
             vision_token_ids=self.vision_token_ids,
         )
         return context
@@ -369,200 +515,3 @@ def max_tokens_to_generate(
     if max_new_tokens is None:
         return _difference_between_max_and_prompt
     return min(max_new_tokens, _difference_between_max_and_prompt)
-
-
-
-
-
-
-
-
-
-
-#####################
-# according to Claude, we don't need this at all because the Siglip Tokenizer
-# this is based off is only for text.  it's the image processor we want
-
-# @dataclass(frozen=False, eq=True)
-# class AddedToken:
-#     """
-#     AddedToken represents a token to be added to a Tokenizer An AddedToken can have special options defining the
-#     way it should behave.
-
-#     The `normalized` will default to `not special` if it is not specified, similarly to the definition in
-#     `tokenizers`.
-
-#     TODO: this was added manually because in HF transformers it's imported from tokenization_utils_base
-#     """
-
-#     def __init__(
-#         self, content: str, single_word=False, lstrip=False, rstrip=False, special=False, normalized=None
-#     ):
-#         self.content = content
-#         self.single_word = single_word
-#         self.lstrip = lstrip
-#         self.rstrip = rstrip
-#         self.special = special
-#         self.normalized = normalized if normalized is not None else not special
-
-#     def __getstate__(self):
-#         return self.__dict__
-
-#     def __str__(self):
-#         return self.content
-
-# # https://docs.modular.com/max/api/python/pipelines/tokenizer/#max.pipelines.lib.tokenizer.TextAndVisionTokenizer
-# # needs to implement SiglipTokenizer https://huggingface.co/docs/transformers/en/model_doc/siglip#transformers.SiglipTokenizer
-# # TODO not sure if it should be extending PreTrainedTokenizer/TextAndVisionTokenizer... internvl TextAndVisionTokenizer
-# # this may be relevant? https://github.com/google/sentencepiece/blob/master/python/src/sentencepiece/sentencepiece.i#L781
-# class Gemma3VisionTokenizer(PreTrainedTokenizer):
-#     def __init__(
-#         self,
-#         vocab_file: str,
-#         eos_token: str = "</s>",
-#         unk_token: str = "<unk>",
-#         pad_token: str = "</s>",
-#         additional_special_tokens: list[str] | None = None,
-#         sp_model_kwargs: dict | None = None,
-#         model_max_length: int = 64,
-#         do_lower_case: bool = False,
-#         **kwargs,
-#     ) -> None:
-#         # TODO tbh looks overkill
-#         pad_token = (
-#             str(AddedToken(pad_token, rstrip=True, lstrip=True, normalized=False, special=True))
-#             if isinstance(pad_token, str)
-#             else pad_token
-#         )
-#         unk_token = (
-#             str(AddedToken(unk_token, rstrip=True, lstrip=True, normalized=False, special=True))
-#             if isinstance(unk_token, str)
-#             else unk_token
-#         )
-#         eos_token = (
-#             str(AddedToken(eos_token, rstrip=True, lstrip=True, normalized=False, special=True))
-#             if isinstance(eos_token, str)
-#             else eos_token
-#         )
-
-#         self.sp_model_kwargs = {} if sp_model_kwargs is None else sp_model_kwargs
-
-#         self.do_lower_case = do_lower_case
-#         self.vocab_file = vocab_file
-        
-#         # TODO no doubt this needs replacing with our own SiglipImageProcessor Gemma3SiglipProcessor
-#         # doesn't even seem to be doing anything
-#         # self.sp_model = self.get_spm_processor()
-#         self.vocab_file = vocab_file
-
-#         super().__init__(
-#             eos_token=eos_token,
-#             unk_token=unk_token,
-#             pad_token=pad_token,
-#             additional_special_tokens=additional_special_tokens,
-#             model_max_length=model_max_length,
-#             do_lower_case=do_lower_case,
-#             **kwargs,
-#         )
-    
-#     def _add_eos_if_not_present(self, token_ids: list[int]) -> list[int]:
-#         """Do not add eos again if user already added it.
-#         NOTE:  this wasn't mentioned on huggingface's description of Siglip, but the build inputs func needs it
-        
-#         https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/siglip/tokenization_siglip.py#L193
-#         """
-#         if len(token_ids) > 0 and token_ids[-1] == self.eos_token_id:
-#             return token_ids
-#         else:
-#             return token_ids + [self.eos_token_id]
-    
-#     def build_inputs_with_special_tokens(
-#         self,
-#         token_ids_0: list[int],
-#         token_ids_1: list[int] | None = None
-#     ) -> list[int]:
-#         # TODO ai generated all this :D
-#         """Builds model inputs from a sequence or a pair of sequence for sequence classification tasks
-#         by concatenating and adding special tokens.
-#         A Siglip sequence has the following format:
-#         - single sequence: ``<s> X </s>``
-#         - pair of sequences: ``<s> A </s></s> B </s>``
-
-#         Args:
-#             token_ids_0 (`List[int]`): List of IDs to which the special tokens will be added.
-#             token_ids_1 (`List[int]`, *optional*): Optional second list of IDs for sequence pairs.
-#         Returns:
-#             `List[int]`: List of input IDs with the appropriate special tokens.
-
-#         https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/siglip/tokenization_siglip.py#L228
-#         """
-#         token_ids_0 = self._add_eos_if_not_present(token_ids_0)
-#         if token_ids_1 is None:
-#             return token_ids_0
-#         else:
-#             token_ids_1 = self._add_eos_if_not_present(token_ids_1)
-#             return token_ids_0 + token_ids_1
-    
-#     def get_special_tokens_mask(
-#         self,
-#         token_ids_0: list[int],
-#         token_ids_1: list[int] | None = None,
-#         already_has_special_tokens: bool = False
-#     ) -> list[int]:
-#         # TODO ai generated all this :D
-#         """Retrieves sequence ids from a token list that has no special tokens added.
-
-#         Args:
-#             token_ids_0 (`List[int]`): List of IDs.
-#             token_ids_1 (`List[int]`, *optional*):
-#                 Optional second list of IDs for sequence pairs. 
-#             already_has_special_tokens (`bool`, *optional*, defaults to `False`):
-#                 Whether or not the token list is already formatted with special tokens.
-#         Returns:
-#             `List[int]`: A list of integers in the range [0, 1]:
-#             1 for a special token, 0 for a sequence token.
-
-#         https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/siglip/tokenization_siglip.py#L164
-#         """
-#         if already_has_special_tokens:
-#             return super().get_special_tokens_mask(
-#                 token_ids_0=token_ids_0, token_ids_1=token_ids_1, already_has_special_tokens=True
-#             )
-
-#         # normal case: some special tokens
-#         if token_ids_1 is None:
-#             return ([0] * len(token_ids_0)) + [1]
-#         return ([0] * len(token_ids_0)) + [1] + ([0] * len(token_ids_1)) + [1]
-    
-#     def create_token_type_ids_from_sequences(
-#         self,
-#         token_ids_0: list[int],
-#         token_ids_1: list[int] | None = None
-#     ) -> list[int]:
-#         # TODO ai generated all this :D
-#         """Create a mask from the two sequences passed to be used in a sequence-pair 
-#         classification task. T5 does not make use of token type ids, therefore a
-#         list of zeros is returned.
-
-#         Args:
-#             token_ids_0 (`List[int]`): List of IDs.
-#             token_ids_1 (`List[int]`, *optional*):
-#                 Optional second list of IDs for sequence pairs.
-#         Returns:
-#             `List[int]`: List of token type IDs according to the given sequence(s).
-
-#         https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/siglip/tokenization_siglip.py#L205
-#         """
-#         eos = [self.eos_token_id]
-
-#         if token_ids_1 is None:
-#             return len(token_ids_0 + eos) * [0]
-#         return len(token_ids_0 + eos + token_ids_1 + eos) * [0]
-    
-#     def save_vocabulary(
-#         self,
-#         save_directory: str,
-#         filename_prefix: str | None = None,
-#     ) -> tuple[str]:
-#         """https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/siglip/tokenization_siglip.py#L362"""
-#         return ("",)

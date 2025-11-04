@@ -19,8 +19,10 @@ from max.pipelines.lib import (
 )
 from max.pipelines.architectures.gemma3.model_config import Gemma3Config
 
+# handy https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/gemma3/configuration_gemma3.py
+
 @dataclass
-class SiglipVisionConfig:
+class Gemma3VisionConfig:
     """
     The vision-specific config for Gemma3
     fields and defaults taken from below link - unsure if they are valid
@@ -32,33 +34,33 @@ class SiglipVisionConfig:
     `"relu"`, `"selu"` and `"gelu_new"` `"quick_gelu"` are supported."""
     
     hidden_size: int
-    """Dimensionality of the encoder layers and the pooler layer"""
+    """Dimensionality of the encoder layers and the pooler layer.  default 1152"""
 
     image_size: int
-    """The size (resolution) of each image"""
+    """The size (resolution) of each image.  default 896"""
 
     intermediate_size: int
-    """maybe not required?"""
+    """maybe not required? default 4304"""
 
     layer_norm_eps: float | None
     """The epsilon used by the layer normalization layers."""
 
     num_attention_heads: int
-    """Number of attention heads for each attention layer in the Transformer encoder"""
+    """Number of attention heads for each attention layer in the Transformer encoder.  default 16"""
 
     num_hidden_layers: int
-    """Number of hidden layers in the Transformer encoder"""
+    """Number of hidden layers in the Transformer encoder.  default 27"""
 
     num_channels: int | None
     """Number of channels in the input images."""
 
     patch_size: int
-    """The size (resolution) of each patch"""
+    """The size (resolution) of each patch.  default 14"""
 
     attention_dropout: float = 0.0
     """The dropout ratio for the attention probabilities"""
 
-    model_type: str = "siglip_vision_model"
+    model_type: str = "Gemma3" # "siglip_vision_model" (HF)
     """model type for AutoConfig"""
 
     vision_use_head: bool = False
@@ -68,8 +70,8 @@ class SiglipVisionConfig:
     @staticmethod
     def generate(
         vision_config: AutoConfig
-    ) -> SiglipVisionConfig:
-        return SiglipVisionConfig(
+    ) -> Gemma3VisionConfig:
+        return Gemma3VisionConfig(
             hidden_size=vision_config.hidden_size,
             image_size=vision_config.image_size,
             intermediate_size=vision_config.intermediate_size,
@@ -127,8 +129,17 @@ class Gemma3MultiModalConfigBase(MAXModelConfigBase):
     """The config object of the text backbone"""
     
     # https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/models/gemma3/configuration_gemma3.py
-    vision_config: SiglipVisionConfig
+    vision_config: Gemma3VisionConfig
     """Custom vision config or dict"""
+
+    attention_bias: bool = False
+    """Whether to use a bias in the query, key, value and output projection layers during self-attention."""
+    
+    attn_logit_softcapping: float = None
+    """Scaling factor when applying tanh softcapping on the attention scores."""
+
+    float8_config: Float8Config | None = None
+    """Float8 quantization configuration."""
 
     head_dim: int = 256
     """The attention head dimension."""
@@ -136,8 +147,13 @@ class Gemma3MultiModalConfigBase(MAXModelConfigBase):
     model_type: str = "Gemma3ForConditionalGeneration"
     """the name of the model type for auto config"""
 
-    float8_config: Float8Config | None = None
-    """Float8 quantization configuration."""
+    num_key_value_heads: int = 4
+    """
+    This is the number of key_value heads that should be used to implement Grouped Query Attention. If
+    `num_key_value_heads=num_attention_heads`, the model will use Multi Head Attention (MHA), if
+    `num_key_value_heads=1` the model will use Multi Query Attention (MQA) otherwise GQA is used. When
+    converting a multi-head checkpoint to a GQA checkpoint, each group key and value head should be constructed"
+    """
 
 @dataclass
 class Gemma3ForConditionalGenerationConfig(MAXModelConfig, Gemma3MultiModalConfigBase):
@@ -219,7 +235,7 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfig, Gemma3MultiModalConfi
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
-        vision_config = SiglipVisionConfig.generate(hf_vision_config)
+        vision_config = Gemma3VisionConfig.generate(hf_vision_config)
 
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
