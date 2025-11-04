@@ -343,25 +343,25 @@ use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")
 http_archive(
     name = "uv_linux_aarch64",
     build_file_content = 'exports_files(["uv"])',
-    sha256 = "4351c1e2ec13f5eb4da058ac1c39f00ae3042de9d6fdb6480e0170f32813210f",
+    sha256 = "f177397625eb7ca184a01a954c7d487d1cafee68e53cc8f2789a02f75c347a68",
     strip_prefix = "uv-aarch64-unknown-linux-musl",
-    url = "https://github.com/astral-sh/uv/releases/download/0.7.15/uv-aarch64-unknown-linux-musl.tar.gz",
+    url = "https://github.com/astral-sh/uv/releases/download/0.9.7/uv-aarch64-unknown-linux-musl.tar.gz",
 )
 
 http_archive(
     name = "uv_linux_x86_64",
     build_file_content = 'exports_files(["uv"])',
-    sha256 = "b1dc0892749e93382decbd894755be0ba1535587f0bb8333572b072d1b0f652a",
+    sha256 = "b26fcc8dfa1c39b5a5613445af3be3eefda45d9a39359bee271eafe34913583e",
     strip_prefix = "uv-x86_64-unknown-linux-gnu",
-    url = "https://github.com/astral-sh/uv/releases/download/0.7.15/uv-x86_64-unknown-linux-gnu.tar.gz",
+    url = "https://github.com/astral-sh/uv/releases/download/0.9.7/uv-x86_64-unknown-linux-gnu.tar.gz",
 )
 
 http_archive(
     name = "uv_darwin_aarch64",
     build_file_content = 'exports_files(["uv"])',
-    sha256 = "7a20f3d33cbbc75683d66e0562d4bdbd702ca656d7dc1b7be3c592de6a6517b9",
+    sha256 = "35572b9619fc14d67fc1cd72582c3cfc5c9c66d97f310192e04f26fb3fe96005",
     strip_prefix = "uv-aarch64-apple-darwin",
-    url = "https://github.com/astral-sh/uv/releases/download/0.7.15/uv-aarch64-apple-darwin.tar.gz",
+    url = "https://github.com/astral-sh/uv/releases/download/0.9.7/uv-aarch64-apple-darwin.tar.gz",
 )
 
 bazel_dep(name = "sysroot-jammy-aarch64")
