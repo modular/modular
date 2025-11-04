@@ -381,5 +381,34 @@ def test_binary_search():
     _test[DType.int16]()
 
 
+def test_binary_sarch_by():
+    var data = List[Int](1, 3, 5, 7, 9, 11, 13)
+    var span = Span(data)
+
+    fn cmp_7(x: Int) -> Int:
+        return x - 7
+
+    var result = span.binary_search_by[cmp_7]()
+    assert_equal(3, result.value())
+
+    fn cmp_6(x: Int) -> Int:
+        return x - 6
+
+    var result2 = span.binary_search_by[cmp_6]()
+    assert_true(not result2)
+
+    fn cmp_1(x: Int) -> Int:
+        return x - 1
+
+    var result3 = span.binary_search_by[cmp_1]()
+    assert_equal(0, result3.value())
+
+    fn cmp_13(x: Int) -> Int:
+        return x - 13
+
+    var result4 = span.binary_search_by[cmp_13]()
+    assert_equal(6, result4.value())
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

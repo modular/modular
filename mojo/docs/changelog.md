@@ -118,6 +118,9 @@ what we publish.
 
 #### Libraries
 
+- Added `Span.binary_search_by()` which allows binary searching with a custom
+  comparator function.
+
 - `Codepoint` now conforms to `Writable`.
 
 - Added `os.isatty()` function to check whether a file descriptor refers to a
