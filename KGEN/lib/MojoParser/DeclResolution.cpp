@@ -1383,16 +1383,27 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
           dyn_cast_or_null<StructDeclOp>(parentDecl->getIfOperation())) {
     for (auto param : structOp.getParamsAttr()) {
       StringRef paramName = demangleParameterName(param.getName());
-      ArrayRef paramDecls = parentDecl->lookupInCurrentScope(paramName);
+      ArrayRef<ASTDecl *> paramDecls =
+          parentDecl->lookupInCurrentScope(paramName);
       // Must be autoparams, they aren't explicitly declared by the user so
       // can't be looked up by their names, nor should they lead to name
       // conflict.
       if (paramDecls.empty())
         continue;
 
+      // If we found it, it must be a parameter declaration. Check the mangled
+      // name, though, to make sure it's the right one, since auto-parameterized
+      // parameters are also added to the parent decl list and may have the same
+      // name as a user-declared one.
       assert(paramDecls.size() == 1);
-      addFullyResolvedDecl(PValue(ParamDeclRefAttr::get(param)), paramName,
-                           paramDecls.front()->getLoc(), &sigDecl);
+      ASTDecl *paramDecl = paramDecls.front();
+      auto expectedParam =
+          cast<ParamDeclRefAttr>(paramDecl->getIfIRValue().getIfPValue().get());
+      if (expectedParam.getName() != param.getName())
+        continue;
+
+      addFullyResolvedDecl(expectedParam, paramName, paramDecl->getLoc(),
+                           &sigDecl);
     }
   }
 
