@@ -118,6 +118,8 @@ what we publish.
 
 #### Libraries
 
+- `Codepoint` now conforms to `Writable`.
+
 - Added `os.isatty()` function to check whether a file descriptor refers to a
   terminal. This function accepts an `Int` file descriptor. If you have a
   `FileDescriptor` object, use its `isatty()` method instead.

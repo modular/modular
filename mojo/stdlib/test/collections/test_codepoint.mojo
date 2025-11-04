@@ -79,6 +79,13 @@ def test_char_formatting():
     assert_equal(String(Codepoint.from_u32(0x1F642).value()), "🙂")
 
 
+def test_char_writable():
+    var c1 = Codepoint(97)  # 'a'
+    var buffer = String()
+    buffer.write(c1)
+    assert_equal(buffer, String("a"))
+
+
 def test_char_properties():
     assert_true(Codepoint.from_u32(0).value().is_ascii())
     # Last ASCII codepoint.
