@@ -111,12 +111,10 @@ modular_py_test(
         "test_smollm_serving_gpu.py",
     ],
     data = [
-        "//Kernels/tools/gpu-query",
         "//max/tests/integration/pipelines/python/llama3/testdata",
     ],
     env = {
         "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
-        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
     },
     exec_properties = {
         # Ensure the test has at least 23GB of GPU memory available.

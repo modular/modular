@@ -21,16 +21,12 @@ load(
         ],
         data = [
             "//SDK:max",
-            "//Support/tools/system-info",
             "//max/tests/integration/pipelines/python/llama3/testdata",
         ],
         env = {
             "MODULAR_PATH": ".",
             "PIPELINES_TESTDATA": (
                 "max/tests/integration/pipelines/python/llama3/testdata"
-            ),
-            "MODULAR_SYSTEM_INFO_PATH": (
-                "$(location //Support/tools/system-info)"
             ),
         },
         env_inherit = ["HF_TOKEN"],
@@ -80,14 +76,10 @@ modular_py_test(
         "conftest.py",
     ],
     data = [
-        "//Kernels/tools/gpu-query",
         "//SDK:max",
-        "//Support/tools/system-info",
         "//max/tests/integration/pipelines/python/llama3/testdata",
     ],
     env = {
-        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
-        "MODULAR_SYSTEM_INFO_PATH": "$(location //Support/tools/system-info)",
         "MODULAR_PATH": ".",
         "PIPELINES_TESTDATA": (
             "max/tests/integration/pipelines/python/llama3/testdata"

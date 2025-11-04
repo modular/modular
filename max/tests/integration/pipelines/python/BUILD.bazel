@@ -46,12 +46,9 @@ modular_py_binary(
     testonly = True,
     srcs = ["verify_pipelines.py"],
     data = [
-        "//Kernels/tools/gpu-query",
         "//max/tests/integration/pipelines/python/test_common",
     ],
     env = {
-        # MODULAR_CUDA_QUERY_PATH is required by the Llama3 scripts.
-        "MODULAR_CUDA_QUERY_PATH": "$(execpath //Kernels/tools/gpu-query)",
         # PIPELINES_TESTDATA is required by the Llama3 scripts.
         "PIPELINES_TESTDATA": (
             "max/tests/integration/pipelines/python/llama3/testdata"
@@ -86,12 +83,7 @@ modular_py_binary(
     name = "verify_layers_e2e",
     testonly = True,
     srcs = glob(["verify_layers/*.py"]),
-    data = [
-        "//Kernels/tools/gpu-query",
-    ],
     env = {
-        # MODULAR_CUDA_QUERY_PATH is required by the model scripts.
-        "MODULAR_CUDA_QUERY_PATH": "$(execpath //Kernels/tools/gpu-query)",
         # PIPELINES_TESTDATA is required by the model scripts.
         "PIPELINES_TESTDATA": (
             "max/tests/integration/pipelines/python/llama3/testdata"
@@ -232,12 +224,9 @@ modular_py_binary(
         "generate_llm_logits.py",
     ],
     data = [
-        "//Kernels/tools/gpu-query",
-        "//Support/tools/system-info",
         "//max/tests/integration/pipelines/python/llama3/testdata",
     ],
     env = {
-        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
         "PIPELINES_TESTDATA": (
             "max/tests/integration/pipelines/python/llama3/testdata"
         ),
