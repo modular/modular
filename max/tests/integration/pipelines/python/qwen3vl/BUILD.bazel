@@ -85,3 +85,32 @@ modular_py_library(
         requirement("transformers"),
     ],
 )
+
+modular_py_test(
+    name = "test_image_processor",
+    srcs = ["test_image_processor.py"],
+    tags = [
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("transformers"),
+        requirement("torchvision"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tokenizer",
+    srcs = ["test_tokenizer.py"],
+    tags = [
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        ":utils",
+        "//max/python/max/pipelines/architectures",
+        requirement("transformers"),
+        requirement("torchvision"),
+    ],
+)

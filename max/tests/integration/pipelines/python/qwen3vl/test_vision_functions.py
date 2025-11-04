@@ -9,13 +9,13 @@ import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
-from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
-    get_rope_index as get_rope_index_qwen25vl,
-)
 from max.pipelines.architectures.qwen3vl.nn.data_processing import (
     get_bilinear_interpolation_weights_and_indices,
     get_seqlens,
     mrope_pos_ids_3d,
+)
+from max.pipelines.architectures.qwen3vl.nn.data_processing import (
+    get_rope_index as get_rope_index_qwen3vl_np,
 )
 from utils.config_loader import ConfigNames, get_config_loader
 
@@ -446,7 +446,7 @@ def test_mrope_pos_ids_3d() -> None:
 
 
 def test_get_rope_index() -> None:
-    """Test get_rope_index implementation comparing torch and Qwen2.5VL numpy versions."""
+    """Test get_rope_index comparing torch (HF behavior) and Qwen3VL NumPy version."""
     # Load configuration
     loader = get_config_loader()
     qwen3vl_config = loader.load_config(ConfigNames.QWEN3VL_30B)
@@ -464,7 +464,6 @@ def test_get_rope_index() -> None:
             "image_token_id": qwen3vl_config["image_token_id"],
             "video_token_id": qwen3vl_config["video_token_id"],
             "vision_start_token_id": qwen3vl_config["vision_start_token_id"],
-            "tokens_per_second": 1,
             "second_per_grid_ts": None,
         },
         {
@@ -479,7 +478,6 @@ def test_get_rope_index() -> None:
             "image_token_id": qwen3vl_config["image_token_id"],
             "video_token_id": qwen3vl_config["video_token_id"],
             "vision_start_token_id": qwen3vl_config["vision_start_token_id"],
-            "tokens_per_second": 2,
             "second_per_grid_ts": torch.tensor([0.5], dtype=torch.float32),
         },
         {
@@ -496,7 +494,6 @@ def test_get_rope_index() -> None:
             "image_token_id": qwen3vl_config["image_token_id"],
             "video_token_id": qwen3vl_config["video_token_id"],
             "vision_start_token_id": qwen3vl_config["vision_start_token_id"],
-            "tokens_per_second": 1,
             "second_per_grid_ts": None,
         },
     ]
@@ -522,13 +519,12 @@ def test_get_rope_index() -> None:
         )
 
         # Get results from both implementations
-        # Qwen2.5VL numpy implementation
-        pos_ids_qwen25vl, mrope_deltas_qwen25vl = get_rope_index_qwen25vl(
+        # Qwen3VL NumPy implementation (timestamp semantics)
+        pos_ids_np, mrope_deltas_np = get_rope_index_qwen3vl_np(
             spatial_merge_size=test_case["spatial_merge_size"],
             image_token_id=test_case["image_token_id"],
             video_token_id=test_case["video_token_id"],
             vision_start_token_id=test_case["vision_start_token_id"],
-            tokens_per_second=test_case["tokens_per_second"],
             input_ids=input_ids_numpy,
             image_grid_thw=image_grid_thw_numpy,
             video_grid_thw=video_grid_thw_numpy,
@@ -553,43 +549,39 @@ def test_get_rope_index() -> None:
         mrope_deltas_torch_np = mrope_deltas_torch.numpy()
 
         # Verify shapes match
-        assert pos_ids_qwen25vl.shape == pos_ids_torch_np.shape, (
-            f"Position IDs shape mismatch: Qwen2.5VL {pos_ids_qwen25vl.shape} vs Torch {pos_ids_torch_np.shape}"
+        assert pos_ids_np.shape == pos_ids_torch_np.shape, (
+            f"Position IDs shape mismatch: NumPy {pos_ids_np.shape} vs Torch {pos_ids_torch_np.shape}"
         )
-        assert mrope_deltas_qwen25vl.shape == mrope_deltas_torch_np.shape, (
-            f"MRoPE deltas shape mismatch: Qwen2.5VL {mrope_deltas_qwen25vl.shape} vs Torch {mrope_deltas_torch_np.shape}"
+        assert mrope_deltas_np.shape == mrope_deltas_torch_np.shape, (
+            f"MRoPE deltas shape mismatch: NumPy {mrope_deltas_np.shape} vs Torch {mrope_deltas_torch_np.shape}"
         )
 
         # Verify values match (allowing for small numerical differences)
         assert np.allclose(
-            pos_ids_qwen25vl, pos_ids_torch_np, rtol=1e-5, atol=1e-5
-        ), (
-            "Position IDs values differ between Qwen2.5VL and Torch implementations"
-        )
+            pos_ids_np, pos_ids_torch_np, rtol=1e-5, atol=1e-5
+        ), "Position IDs values differ between NumPy and Torch implementations"
         assert np.allclose(
-            mrope_deltas_qwen25vl, mrope_deltas_torch_np, rtol=1e-5, atol=1e-5
-        ), (
-            "MRoPE deltas values differ between Qwen2.5VL and Torch implementations"
-        )
+            mrope_deltas_np, mrope_deltas_torch_np, rtol=1e-5, atol=1e-5
+        ), "MRoPE deltas values differ between NumPy and Torch implementations"
         # Verify the structure of the results
         # Position IDs should have shape (3, batch_size, seq_len) for 3D RoPE
-        assert pos_ids_qwen25vl.shape[0] == 3, (
-            f"Expected 3 dimensions for RoPE, got {pos_ids_qwen25vl.shape[0]}"
+        assert pos_ids_np.shape[0] == 3, (
+            f"Expected 3 dimensions for RoPE, got {pos_ids_np.shape[0]}"
         )
-        assert pos_ids_qwen25vl.shape[1] == test_case["input_ids"].shape[0], (
+        assert pos_ids_np.shape[1] == test_case["input_ids"].shape[0], (
             "Batch size mismatch"
         )
-        assert pos_ids_qwen25vl.shape[2] == test_case["input_ids"].shape[1], (
+        assert pos_ids_np.shape[2] == test_case["input_ids"].shape[1], (
             "Sequence length mismatch"
         )
 
         # MRoPE deltas should have shape (batch_size, 1)
-        assert mrope_deltas_qwen25vl.shape[1] == 1, (
-            f"Expected 1 column for MRoPE deltas, got {mrope_deltas_qwen25vl.shape[1]}"
+        assert mrope_deltas_np.shape[1] == 1, (
+            f"Expected 1 column for MRoPE deltas, got {mrope_deltas_np.shape[1]}"
         )
-        assert (
-            mrope_deltas_qwen25vl.shape[0] == test_case["input_ids"].shape[0]
-        ), "Batch size mismatch in MRoPE deltas"
+        assert mrope_deltas_np.shape[0] == test_case["input_ids"].shape[0], (
+            "Batch size mismatch in MRoPE deltas"
+        )
 
 
 def test_get_bilinear_interpolation_weights_and_indices() -> None:
@@ -636,19 +628,19 @@ def test_get_seqlens() -> None:
     # Test cases with different grid configurations
     test_cases = [
         # Single frame, small grid
-        np.array([[1, 4, 4]], dtype=np.int64),
+        np.array([[1, 4, 4]], dtype=np.int32),
         # Single frame, larger grid
-        np.array([[1, 8, 8]], dtype=np.int64),
+        np.array([[1, 8, 8]], dtype=np.int32),
         # Multiple frames
-        np.array([[2, 4, 4], [1, 6, 6]], dtype=np.int64),
+        np.array([[2, 4, 4], [1, 6, 6]], dtype=np.int32),
         # Real-world example
-        np.array([[1, 98, 146], [1, 76, 114]], dtype=np.int64),
+        np.array([[1, 98, 146], [1, 76, 114]], dtype=np.int32),
         # Multiple videos with different frame counts
-        np.array([[3, 4, 4], [2, 6, 6], [1, 8, 8]], dtype=np.int64),
+        np.array([[3, 4, 4], [2, 6, 6], [1, 8, 8]], dtype=np.int32),
         # Edge case: single pixel
-        np.array([[1, 1, 1]], dtype=np.int64),
+        np.array([[1, 1, 1]], dtype=np.int32),
         # Edge case: very large grid
-        np.array([[1, 256, 256]], dtype=np.int64),
+        np.array([[1, 256, 256]], dtype=np.int32),
     ]
 
     for grid_thw in test_cases:
