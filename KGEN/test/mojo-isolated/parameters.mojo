@@ -26,7 +26,7 @@ struct DType:
         self._mlir_value = value
 
 # CHECK-LABEL: lit.struct.decl @SIMD
-# CHECK-SAMEL <[[SIMDDT:.*]]: !DType, [[SIMDSIZE:.*]]: !Int>
+# CHECK-SAME: <[[SIMDDT:.*]]: !DType, [[SIMDSIZE:.*]]: !Int>
 # CHECK-SAME: register_passable
 @register_passable("trivial")
 struct SIMD[dt: DType, size: Int]:
@@ -365,7 +365,7 @@ fn autoparam_param_vararg[f: fn () [_] -> None, *x: Index]():
     pass
 
 
-# CHECK-LABEL: lit.fn @"auto_kw_default{{.*}}"<u = 3, |, v = 3, ?, {{.*}}, {{.*}}>(%a
+# CHECK-LABEL: lit.fn @"auto_kw_default{{.*}}"<u = {{.*}}3{{.*}}, |, v = {{.*}}3{{.*}}, ?, {{.*}}, {{.*}}>(%a
 fn auto_kw_default[u: Index = `3`, /, v: Index = `3`](a: IndexParam, b: IndexParam):
   pass
 
@@ -373,13 +373,13 @@ fn auto_kw_default[u: Index = `3`, /, v: Index = `3`](a: IndexParam, b: IndexPar
 # CHECK-LABEL: lit.fn @"test_auto_kw_default
 # CHECK-SAME: <?, [[A:.*]], [[B:.*]]>(%a
 fn test_auto_kw_default(a: IndexParam, b: IndexParam):
-  # CHECK-NEXT: <3, 3, [[A]], [[B]]>
+  # CHECK-NEXT: <{{.*}}3{{.*}}, {{.*}}3{{.*}}, [[A]], [[B]]>
   auto_kw_default(a, b)
-  # CHECK-NEXT: <1, 3, [[A]], [[B]]>
+  # CHECK-NEXT: <{{.*}}1{{.*}}, {{.*}}3{{.*}}, [[A]], [[B]]>
   auto_kw_default[`1`](a, b)
-  # CHECK-NEXT: <3, 2, [[A]], [[B]]>
+  # CHECK-NEXT: <{{.*}}3{{.*}}, {{.*}}2{{.*}}, [[A]], [[B]]>
   auto_kw_default[v=`2`](a, b)
-  # CHECK-NEXT: <1, 2, [[A]], [[B]]>
+  # CHECK-NEXT: <{{.*}}1{{.*}}, {{.*}}2{{.*}}, [[A]], [[B]]>
   auto_kw_default[`1`, v=`2`](a, b)
 
 
@@ -497,12 +497,12 @@ fn intbox_memory_result(x: Int) -> IntBox:
 
 
 # CHECK-LABEL: lit.fn @"interpret_initself_ctor
-# CHECK-SAME: %arg: !lit.struct<#InitSelfParam <:!InitSelfCtor {{.*}}{x: !Int = {42}}>>
+# CHECK-SAME: %arg: !lit.struct<#InitSelfParam <:!InitSelfCtor {{.*}}{x: !Int = {42}})>
 fn interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
     # CHECK-NEXT: !lit.generator<() -> !lit.struct<#InitSelfParam <:!InitSelfCtor
     alias refined_fn = refine_memory_only_results[1, 2]
 
-    # CHECK: [[CST:%.*]] = kgen.param.constant: !InitSelfCtor = <{{.*}}{x: !Int = {42}}>
+    # CHECK: [[CST:%.*]] = kgen.param.constant: !InitSelfCtor = <{{.*}}{x: !Int = {42}})>
     # CHECK-NEXT: store [[CST]], %inlined_initself_call
     var inlined_initself_call = InitSelfCtor(42)
 
@@ -902,8 +902,8 @@ fn dont_interpret():
 
 # CHECK-LABEL: lit.fn @"testParameterEvaluator()"
 fn testParameterEvaluator():
-  # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <#kgen<sugar alias, index,
-  # CHECK-SAME: #lit.struct.extract<:meta<!lit.struct<#Abstraction <:!Int {1}>>> @parameters::@Abstraction<:!Int {1}>, "val">, 1>>
+  # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <sugar_alias
+  # CHECK-SAME: #lit.struct.extract<:meta<!lit.struct<#Abstraction <:!Int {1}>>> @parameters::@Abstraction<:!Int {1}>, "val">, 1)>
   alias x = Abstraction[1].val
   # CHECK-NEXT: %y = lit.var.decl "y"
   # CHECK-NEXT: %0 = lit.call @parameters::@Abstraction::@"push{{.*}}"<:!Int {1}, :!Int {2}>
@@ -997,7 +997,7 @@ fn deduce_kw_only[*Ts: Int, x: Int](y: Abstraction[x]):
 
 # CHECK-LABEL: lit.fn @"out_of_order_kw
 fn out_of_order_kw[x: Index, y: IndexParam[x]]():
-    # CHECK-NEXT: out_of_order_kw{{.*}}<0, :{{.*}}IndexParam<0> {{.*}}IndexParam::@"__init__{{.*}}<0>, #kgen.none)>>
+    # CHECK-NEXT: out_of_order_kw{{.*}}<{{.*}}0{{.*}}, :{{.*}}IndexParam<{{.*}}0{{.*}}> {{.*}}IndexParam::@"__init__{{.*}}<{{.*}}0{{.*}}>, #kgen.none)>>
     alias bound = out_of_order_kw[y=None, x=`0`]
 
 
@@ -1157,8 +1157,8 @@ struct SomeWrapper[t: WithAnAlias, a: AnyType, b: AnyType]:
 fn test_param_inference_contextual_fold():
     # CHECK: lit.call @{{.*}}SomeWrapper::@"__init__
     # CHECK-SAME: <:!WithAnAlias !SomeStruct,
-    # CHECK-SAME: :!AnyType #kgen<sugar alias, !AnyType, #lit.struct.extract<:!WithAnAlias !SomeStruct, "A">, !Int>,
-    # CHECK-SAME: :!AnyType #kgen<sugar alias, !AnyType, #lit.struct.extract<:!WithAnAlias !SomeStruct, "A">, !Int>
+    # CHECK-SAME: :!AnyType sugar_alias(#lit.struct.extract<:!WithAnAlias !SomeStruct, "A">, !Int),
+    # CHECK-SAME: :!AnyType sugar_alias(#lit.struct.extract<:!WithAnAlias !SomeStruct, "A">, !Int)
     sw = SomeWrapper[SomeStruct]()
 
 
@@ -1314,15 +1314,15 @@ fn default_on_infer_failure[p: Index = `0`](a: Optional[ParamType[p]] = None):
 
 # CHECK-LABEL: lit.fn @"test_optional_inference
 fn test_optional_inference(value: ParamType[`3`]):
-    # CHECK-NEXT: [[NONE:%.*]] = lit.var.decl {{.*}}ParamType<0>
+    # CHECK-NEXT: [[NONE:%.*]] = lit.var.decl {{.*}}ParamType<{{.*}}0{{.*}}>
     # CHECK: [[IMMUT:%.*]] = lit.ref.immut [[NONE]]
-    # CHECK-NEXT: call {{.*}}default_on_infer_failure{{.*}}<0>([[IMMUT]])
+    # CHECK-NEXT: call {{.*}}default_on_infer_failure{{.*}}<{{.*}}0{{.*}}>([[IMMUT]])
     default_on_infer_failure()
 
-    # CHECK: call {{.*}}default_on_infer_failure{{.*}}<0>
+    # CHECK: call {{.*}}default_on_infer_failure{{.*}}<{{.*}}0{{.*}}>
     default_on_infer_failure(None)
 
-    # CHECK: call {{.*}}default_on_infer_failure{{.*}}<3>
+    # CHECK: call {{.*}}default_on_infer_failure{{.*}}<{{.*}}3{{.*}}>
     default_on_infer_failure(value)
 
 ##===----------------------------------------------------------------------===##

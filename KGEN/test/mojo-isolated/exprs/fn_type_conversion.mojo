@@ -32,5 +32,5 @@ fn test_passing_funcs():
     take_func_without_arg_name[func_with_arg_name]()
 
     # CHECK: lit.call @{{.*}}::@"take_func_without_default{{.*}}"<
-    # CHECK-SAME: :!lit.generator<("a": index) -> !kgen.none> rebind(:!lit.generator<("a": index = 0) -> !kgen.none>
+    # CHECK-SAME: :!lit.generator<("a": index) -> !kgen.none> rebind(:!lit.generator<("a": index = {{.*}}0{{.*}}) -> !kgen.none>
     take_func_without_default[func_with_default]()

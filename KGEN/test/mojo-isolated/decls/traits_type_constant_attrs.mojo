@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # Verify that untyped mlir typed trait defined aliases get type annotations generated for them.
-# CHECK-DAG: #type_value = #kgen.type<{{.*}}@__MLIRType<:type index>, index> : !AnyType
+# CHECK-DAG: #type_value = #kgen.type<{{.*}}@__MLIRType<:type {{.*}}index{{.*}}>, index> : !AnyType
 
 
 @register_passable("trivial")
@@ -57,7 +57,7 @@ struct ImplT(SubTraitT, SubTraitT2):
 struct MainImplT(MainTraitT, MainTraitT2):
     # CHECK: lit.alias.decl *"ret_type{{.*}}": !mt_ImplT = <!ImplT>
     alias ret_type = ImplT
-    # CHECK: lit.alias.decl *"anything{{.*}}": type = <index>
+    # CHECK: lit.alias.decl *"anything{{.*}}": type = <{{.*}}index{{.*}}>
     alias anything = Index
 
     fn get(self) -> Self.ret_type:

@@ -222,7 +222,7 @@ fn testSelfRef(a: SelfRefTest, mut b: SelfRefTest):
 
 # CHECK-LABEL: lit.fn @"testLifetimeOf1
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
-# CHECK-SAME: !lit.struct<#Pointer <{{.*}}origin<0> = *"a`"}>, :!AddressSpace{{.*}}{_value: !Int = {0}}>
+# CHECK-SAME: !lit.struct<#Pointer <{{.*}}origin<0> = *"a`"}), :!AddressSpace{{.*}}{_value: !Int = {0}})
 fn testLifetimeOf1(a: MemExample) -> Pointer[MemExample, origin_of(a)]:
   return Pointer(to=a)
 
@@ -290,7 +290,7 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
   # CHECK-NEXT: [[ARGREF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}(%arg)
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}([[ARGREF]])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
-  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.origin> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"mut`", "_mlir_value">,
+  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut {{.*}}#lit.any.origin{{.*}}> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"mut`", "_mlir_value">,
   # CHECK-NEXT: [[RES:%.*]] = lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}([[ADJREFVAL]])
   # CHECK-NEXT: kgen.return [[RES]]
   return Pointer[Int, arg.origin](to=UnsafePointer(to=arg[])[])

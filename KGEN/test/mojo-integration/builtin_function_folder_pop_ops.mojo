@@ -60,9 +60,9 @@ fn pop_cast_from_builtin_bool(
 fn fold_pop_cast_from_builtin_bool() -> (
     BuiltinBoolT[__mlir_attr.`#pop.simd<true> : !pop.scalar<bool>`]
 ):
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@BuiltinBoolT<:scalar<bool> #kgen<sugar aibuiltin, !pop.scalar<bool>, apply(:!lit.generator<("x": i1) -> !pop.scalar<bool>> @builtin_function_folder_pop_ops::@"pop_cast_from_builtin_bool(__mlir_type.i1)", 1), true>>, mut *"a`1">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@BuiltinBoolT<:scalar<bool> sugar_builtin(apply(:!lit.generator<("x": i1) -> !pop.scalar<bool>> @builtin_function_folder_pop_ops::@"pop_cast_from_builtin_bool(__mlir_type.i1)", 1), true)>, mut *"a`1">
     var a = BuiltinBoolT[pop_cast_from_builtin_bool(__mlir_attr.`true : i1`)]()
-    # CHECK: %b = lit.var.decl "b" var : !lit.ref<@builtin_function_folder_pop_ops::@BuiltinBoolT<:scalar<bool> #kgen<sugar aibuiltin, !pop.scalar<bool>, apply(:!lit.generator<("x": i1) -> !pop.scalar<bool>> @builtin_function_folder_pop_ops::@"pop_cast_from_builtin_bool(__mlir_type.i1)", 0), false>>, mut *"b`2">
+    # CHECK: %b = lit.var.decl "b" var : !lit.ref<@builtin_function_folder_pop_ops::@BuiltinBoolT<:scalar<bool> sugar_builtin(apply(:!lit.generator<("x": i1) -> !pop.scalar<bool>> @builtin_function_folder_pop_ops::@"pop_cast_from_builtin_bool(__mlir_type.i1)", 0), false)>, mut *"b`2">
     var b = BuiltinBoolT[pop_cast_from_builtin_bool(__mlir_attr.`false : i1`)]()
     return a
 
@@ -87,7 +87,7 @@ fn pop_cast_to_builtin_ui8(x: UInt8._mlir_type) -> __mlir_type.ui8:
 
 # CHECK-LABEL: lit.fn @"fold_pop_cast_to_builtin_ui8
 fn fold_pop_cast_to_builtin_ui8() -> UInt8T[MLIR_UI8_139]:
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@UInt8T<:ui8 #kgen<sugar aibuiltin, ui8, apply(:!lit.generator<("x": !pop.scalar<ui8>) -> ui8> @builtin_function_folder_pop_ops::@"pop_cast_to_builtin_ui8(__mlir_type.!pop.scalar<ui8>)", 139), 139>>, mut *"a`1">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@UInt8T<:ui8 sugar_builtin(apply(:!lit.generator<("x": !pop.scalar<ui8>) -> ui8> @builtin_function_folder_pop_ops::@"pop_cast_to_builtin_ui8(__mlir_type.!pop.scalar<ui8>)", 139), 139)>, mut *"a`1">
     var a = UInt8T[pop_cast_to_builtin_ui8(POP_UI8_139)]()
     return a
 
@@ -101,13 +101,13 @@ fn pop_cast_to_builtin_bool(
 
 # CHECK-LABEL: lit.fn @"fold_pop_cast_to_builtin_bool
 fn fold_pop_cast_to_builtin_bool() -> BoolT[True]:
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@BoolT<:!Bool #kgen<sugar aibuiltin, !Bool, apply(:!lit.generator<("value": i1) -> !Bool> @stdlib::@builtin::@bool::@Bool::@"__init__(__mlir_type.i1)", #kgen<sugar aibuiltin, i1, apply(:!lit.generator<("x": !pop.scalar<bool>) -> i1> @builtin_function_folder_pop_ops::@"pop_cast_to_builtin_bool(__mlir_type.!pop.scalar<bool>)", true), 1>), {:i1 #kgen<sugar aibuiltin, i1, apply(:!lit.generator<("x": !pop.scalar<bool>) -> i1> @builtin_function_folder_pop_ops::@"pop_cast_to_builtin_bool(__mlir_type.!pop.scalar<bool>)", true), 1>}>>, mut *"a`{{.*}}">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@BoolT<:!Bool sugar_builtin(apply(:!lit.generator<("value": i1) -> !Bool> @stdlib::@builtin::@bool::@Bool::@"__init__(__mlir_type.i1)", sugar_builtin(apply(:!lit.generator<("x": !pop.scalar<bool>) -> i1> @builtin_function_folder_pop_ops::@"pop_cast_to_builtin_bool(__mlir_type.!pop.scalar<bool>)", true), 1)), {:i1 sugar_builtin(apply(:!lit.generator<("x": !pop.scalar<bool>) -> i1> @builtin_function_folder_pop_ops::@"pop_cast_to_builtin_bool(__mlir_type.!pop.scalar<bool>)", true), 1)})>, mut *"a`{{.*}}">
     var a = BoolT[
         pop_cast_to_builtin_bool(
             __mlir_attr.`#pop.simd<true> : !pop.scalar<bool>`
         )
     ]()
-    # CHECK:  %b = lit.var.decl "b" var : !lit.ref<@builtin_function_folder_pop_ops::@BoolT<:!Bool #kgen<sugar aibuiltin, !Bool, apply(:!lit.generator<("value": i1) -> !Bool> @stdlib::@builtin::@bool::@Bool::@"__init__(__mlir_type.i1)", #kgen<sugar aibuiltin, i1, apply(:!lit.generator<("x": !pop.scalar<bool>) -> i1> @builtin_function_folder_pop_ops::@"pop_cast_to_builtin_bool(__mlir_type.!pop.scalar<bool>)", false), 0>), {:i1 #kgen<sugar aibuiltin, i1, apply(:!lit.generator<("x": !pop.scalar<bool>) -> i1> @builtin_function_folder_pop_ops::@"pop_cast_to_builtin_bool(__mlir_type.!pop.scalar<bool>)", false), 0>}>>, mut *"b`{{.*}}">
+    # CHECK:  %b = lit.var.decl "b" var : !lit.ref<@builtin_function_folder_pop_ops::@BoolT<:!Bool sugar_builtin(apply(:!lit.generator<("value": i1) -> !Bool> @stdlib::@builtin::@bool::@Bool::@"__init__(__mlir_type.i1)", sugar_builtin(apply(:!lit.generator<("x": !pop.scalar<bool>) -> i1> @builtin_function_folder_pop_ops::@"pop_cast_to_builtin_bool(__mlir_type.!pop.scalar<bool>)", false), 0)), {:i1 sugar_builtin(apply(:!lit.generator<("x": !pop.scalar<bool>) -> i1> @builtin_function_folder_pop_ops::@"pop_cast_to_builtin_bool(__mlir_type.!pop.scalar<bool>)", false), 0)})>, mut *"b`{{.*}}">
     var b = BoolT[
         pop_cast_to_builtin_bool(
             __mlir_attr.`#pop.simd<false> : !pop.scalar<bool>`
@@ -128,9 +128,9 @@ fn pop_dtype_from_ui8(ui8: __mlir_type.ui8) -> DType:
 
 # CHECK-LABEL: lit.fn @"fold_pop_dtype_from_ui8
 fn fold_pop_dtype_from_ui8() -> DTypeT[DType.int32]:
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@DTypeT<:!DType {:dtype si32}>, mut *"a`1">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@DTypeT<:!DType {{.*}}{:dtype {{.*}}si32{{.*}}>, mut *"a`1">
     var a = DTypeT[pop_dtype_from_ui8(MLIR_UI8_139)]()
-    # CHECK: %b = lit.var.decl "b" var : !lit.ref<@builtin_function_folder_pop_ops::@DTypeT<:!DType {:dtype f8e5m2}>, mut *"b`2">
+    # CHECK: %b = lit.var.decl "b" var : !lit.ref<@builtin_function_folder_pop_ops::@DTypeT<:!DType {{.*}}{:dtype {{.*}}f8e5m2{{.*}}>, mut *"b`2">
     var b = DTypeT[pop_dtype_from_ui8(MLIR_UI8_77)]()
 
 
@@ -160,7 +160,7 @@ alias POP_UI8_N1 = __mlir_attr.`#pop.simd<255> : !pop.scalar<ui8>`
 
 # CHECK-LABEL: lit.fn @"fold_pop_cast
 fn fold_pop_cast() -> POPUInt8T[POP_UI8_N1]:
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@POPUInt8T<:scalar<ui8> #kgen<sugar aibuiltin, !pop.scalar<ui8>, apply(:!lit.generator<("x": !pop.scalar<si8>) -> !pop.scalar<ui8>> @builtin_function_folder_pop_ops::@"pop_cast(__mlir_type.!pop.scalar<si8>)", -1), 255>>, mut *"a`1">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@POPUInt8T<:scalar<ui8> sugar_builtin(apply(:!lit.generator<("x": !pop.scalar<si8>) -> !pop.scalar<ui8>> @builtin_function_folder_pop_ops::@"pop_cast(__mlir_type.!pop.scalar<si8>)", -1), 255)>, mut *"a`1">
     var a = POPUInt8T[pop_cast(POP_SI8_N1)]()
     return a
 
@@ -192,6 +192,6 @@ fn pop_simd_splat(
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_splat
 fn fold_pop_simd_splat() -> POPUInt8x4T[POP_UI8x4_N1]:
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@POPUInt8x4T<:simd<4, ui8> #kgen<sugar aibuiltin, !pop.simd<4, ui8>, apply(:!lit.generator<("x": !pop.scalar<ui8>) -> !pop.simd<4, ui8>> @builtin_function_folder_pop_ops::@"pop_simd_splat(__mlir_type.!pop.scalar<ui8>)", 255), 255>>, mut *"a`1">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@POPUInt8x4T<:simd<4, ui8> sugar_builtin(apply(:!lit.generator<("x": !pop.scalar<ui8>) -> !pop.simd<4, ui8>> @builtin_function_folder_pop_ops::@"pop_simd_splat(__mlir_type.!pop.scalar<ui8>)", 255), 255)>, mut *"a`1">
     var a = POPUInt8x4T[pop_simd_splat(POP_UI8_N1)]()
     return a

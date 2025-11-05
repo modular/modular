@@ -201,7 +201,7 @@ fn testCondAsArg(exit_early: __mlir_type.i1):
 # CHECK-LABEL: lit.fn @"constantTrue
 fn constantTrue(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK-NEXT: hlcf.elif {
-    # CHECK-NEXT:  %0 = kgen.param.constant: i1 = <1>
+    # CHECK-NEXT:  %0 = kgen.param.constant: i1 = <{{.*}}1{{.*}}>
     # CHECK-NEXT:  hlcf.elif.yield %0
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   lit.return %x : !Int
@@ -222,7 +222,7 @@ fn constantFalse(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK-NEXT:   lit.return %x : !Int
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: } {
-    # CHECK-NEXT:   %0 = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT:   %0 = kgen.param.constant: i1 = <{{.*}}0{{.*}}>
     # CHECK-NEXT:   hlcf.elif.yield %0
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   kgen.unreachable

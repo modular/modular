@@ -731,7 +731,8 @@ private:
   SmallVector<ValueInfo> valueInfos;
   /// This is a lookup from SSA values to the thing they are referencing.
   DenseMap<Value, unsigned> valueInfoIndex;
-  /// This is a mapping of origin attrs to the value index that defines them.
+  /// This is a mapping of origin attrs to the value index that defines them,
+  /// these origins have sugar canonicalized away.
   DenseMap<TypedAttr, unsigned> originToValueIndex;
 
   /// Add a value to the set that we are tracking.  This includes:
@@ -837,8 +838,9 @@ void ValueSet::addValue(Value val, const OriginTrackable &trackable,
     numValueBits = typeDeclInfo.getNumFieldsInType(valType);
 
     // Remember the origin if not unknown.
-    if (!isa<AnyOriginAttr>(refType.getOrigin()))
-      valueOrigin = refType.getOrigin();
+    auto origin = getCanonicalAttr(refType.getOrigin());
+    if (!isa<AnyOriginAttr>(origin))
+      valueOrigin = origin;
   } else {
     // We don't track trivial values of register type.
     if (typeDeclInfo.isRegisterPassableTrivial(val.getType()))
@@ -949,7 +951,7 @@ std::pair<ValueRef, Type>
 ValueSet::getValueRefAndTypeForOrigin(TypedAttr origin) const {
   // The mutability of the origin access doesn't affect what ValueRef is
   // accessed.
-  origin = OriginMutCastAttr::strip(origin);
+  origin = OriginMutCastAttr::strip(getCanonicalAttr(origin));
 
   // If the origin has one or more field specifiers like 'a.x.y.z', find
   // the ValueRef for the base and then refine it.
@@ -1456,7 +1458,7 @@ void UninitializedValueScan::handleAnyOriginUse(
   SmallPtrSet<Attribute, 8> definedOriginSet;
   for (auto elt : definedOrigins) {
     // Look through imm cast and unions to find the underlying attrs.
-    processRawOrigin(elt, [&](TypedAttr raw) {
+    processRawOrigin(getCanonicalAttr(elt), [&](TypedAttr raw) {
       // Ignore field sensitivity of the use: if we have a def of a subfield of
       // the value then we treat it as defining the value.
       while (auto field = dyn_cast<OriginFieldAttr>(raw))
@@ -1483,7 +1485,7 @@ void UninitializedValueScan::handleAnyOriginUse(
     // (e.g. by initializing it). If so, we don't want to treat this as a
     // generalized use.
     auto valueOrigin = cast<RefType>(valueInfo.value.getType()).getOrigin();
-    if (definedOriginSet.count(valueOrigin))
+    if (definedOriginSet.count(getCanonicalAttr(valueOrigin)))
       continue;
 
     // Check to see if the value is dominated by this op.  It is possible for
@@ -1565,8 +1567,8 @@ void UninitializedValueScan::scanBlock(Block &block) {
         checkConsume(operand, op, /*isDeref=*/false);
         break;
       case OperandEffect::memLoad:
-        hasAnyOrigin |=
-            isa<AnyOriginAttr>(cast<RefType>(operand.getType()).getOrigin());
+        hasAnyOrigin |= sugarIsa<AnyOriginAttr>(
+            cast<RefType>(operand.getType()).getOrigin());
         checkUse(operand, op, /*isDeref=*/true);
         break;
       case OperandEffect::memStoreOwned:
@@ -1574,14 +1576,14 @@ void UninitializedValueScan::scanBlock(Block &block) {
         definedOrigins.push_back(cast<RefType>(operand.getType()).getOrigin());
         break;
       case OperandEffect::memMut:
-        hasAnyOrigin |=
-            isa<AnyOriginAttr>(cast<RefType>(operand.getType()).getOrigin());
+        hasAnyOrigin |= sugarIsa<AnyOriginAttr>(
+            cast<RefType>(operand.getType()).getOrigin());
         checkUse(operand, op, /*isDeref=*/true);
         checkDef(operand, op, /*isDeref=*/true);
         break;
       case OperandEffect::memConsume:
-        hasAnyOrigin |=
-            isa<AnyOriginAttr>(cast<RefType>(operand.getType()).getOrigin());
+        hasAnyOrigin |= sugarIsa<AnyOriginAttr>(
+            cast<RefType>(operand.getType()).getOrigin());
         checkConsume(operand, op, /*isDeref=*/true);
         break;
       case OperandEffect::memMarkDestroyed:
@@ -1655,7 +1657,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
     // Process any indirect origins accessed.
     for (auto origin : originEffects) {
       checkOriginEffect(origin, op);
-      hasAnyOrigin |= isa<AnyOriginAttr>(origin);
+      hasAnyOrigin |= sugarIsa<AnyOriginAttr>(origin);
     }
 
     // If the operation used a #lit.any.origin value, then we treat it as an

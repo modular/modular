@@ -755,7 +755,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   processRawOrigin(getCanonicalAttr(refOrigin), [&](TypedAttr origin) {
     // AnyOrigin is assumed to be ok since it is used for
     // UnsafePointer etc.  We don't want to track it.
-    if (isa<AnyOriginAttr>(origin))
+    if (sugarIsa<AnyOriginAttr>(origin))
       return;
     // We want to track the fully field sensitive origin, and
     // the containing origins.
@@ -1295,7 +1295,7 @@ void ExclusivityChecker::checkOriginAccess(
   TypedAttr origin = OriginMutCastAttr::strip(rawOrigin);
 
   // Accesses to the global origin never conflict.
-  if (isa<AnyOriginAttr>(origin))
+  if (sugarIsa<AnyOriginAttr>(origin))
     return;
 
   // Determine whether we've seen this leaf origin before.

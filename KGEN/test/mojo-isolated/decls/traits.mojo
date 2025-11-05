@@ -139,7 +139,7 @@ fn generic_trait_fn[T: Trait](x: T):
 
     # CHECK: lit.call[!lit.generator<[1]("self": {{[^)]*}} read_mem)
     # CHECK-SAME: bind_params(:!lit.generator<<"x": index>[1](
-    # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "parametric{{.*}}">, 1)
+    # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "parametric{{.*}}">, {{.*}}1{{.*}})
     x.parametric[`1`]()
 
 

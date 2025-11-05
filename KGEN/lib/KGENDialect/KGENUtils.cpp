@@ -1095,6 +1095,16 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
         return success();
       }
 
+      if (keyword == "sugar_alias" || keyword == "sugar_builtin") {
+        TypedAttr sugared, original;
+        if (parseParamValue(p, sugared, type) || p.parseComma() ||
+            parseParamValue(p, original, type) || p.parseRParen())
+          return failure();
+        auto kind = keyword == "sugar_alias" ? SugarKind::Alias
+                                             : SugarKind::AlwaysInlineBuiltin;
+        value = SugarAttr::get(kind, sugared, original);
+        return success();
+      }
       return p.emitError(loc, "unknown expression ") << keyword;
     }
 
@@ -1442,6 +1452,23 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
       p << (intAttr.getValue().isZero() ? 0 : 1);
       return;
     }
+  }
+
+  if (auto sugar = dyn_cast<SugarAttr>(value)) {
+    p << "sugar";
+    switch (sugar.getKind()) {
+    case SugarKind::Alias:
+      p << "_alias(";
+      break;
+    case SugarKind::AlwaysInlineBuiltin:
+      p << "_builtin(";
+      break;
+    }
+    printParamValue(p, sugar.getSugared());
+    p << ", ";
+    printParamValue(p, sugar.getOriginal());
+    p << ")";
+    return;
   }
 
   p.printAttributeWithoutType(value);

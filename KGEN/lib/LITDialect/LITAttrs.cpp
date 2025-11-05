@@ -632,7 +632,7 @@ TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
            "all members of a origin union must have matching type");
     // Union{a, b, #lit.any.origin} => #lit.any.origin since #lit.origin
     // represents "possibly anything".
-    if (::isa<AnyOriginAttr>(operand))
+    if (sugarIsa<AnyOriginAttr>(operand))
       return operand;
 
     // Flatten any of the same operation into the operand list:
@@ -723,7 +723,7 @@ TypedAttr OriginMutCastAttr::get(TypedAttr operand, TypedAttr isMutable) {
     return get(mutCast.getOperand(), isMutable);
 
   // Singletons don't need a cast, just form one with the new mutability.
-  if (::isa<AnyOriginAttr>(operand))
+  if (sugarIsa<AnyOriginAttr>(operand))
     return AnyOriginAttr::get(isMutable);
 
   // Push into union so it cancels out.
@@ -770,7 +770,7 @@ TypedAttr OriginFieldAttr::get(TypedAttr structOrigin, StringAttr field) {
   // If we have the global mutable origin, treat it conservatively by
   // returning the global mutable origin.  It isn't wise to try to derive
   // information from something where origins have been casted away.
-  if (::isa<AnyOriginAttr>(structOrigin))
+  if (sugarIsa<AnyOriginAttr>(structOrigin))
     return structOrigin;
 
   // We push any mutability casts outside of ourselves.
@@ -824,7 +824,7 @@ TypedAttr IndirectOriginAttr::get(TypedAttr baseOrigin) {
   // If we have the global mutable origin, treat it conservatively by
   // returning the global mutable origin.  It isn't wise to try to derive
   // information from something where origins have been casted away.
-  if (::isa<AnyOriginAttr>(baseOrigin))
+  if (sugarIsa<AnyOriginAttr>(baseOrigin))
     return baseOrigin;
 
   // We push any mutability casts outside of ourselves.
@@ -902,7 +902,7 @@ TypedAttr OriginSetAttr::get(ArrayRef<TypedAttr> operands, OriginSetType type) {
     // If we have the global mutable origin, treat it conservatively by
     // returning the global mutable origin.  It isn't wise to try to derive
     // information from something where origins have been casted away.
-    if (::isa<AnyOriginAttr>(operand)) {
+    if (sugarIsa<AnyOriginAttr>(operand)) {
       newOperands.push_back(operand);
       continue;
     }

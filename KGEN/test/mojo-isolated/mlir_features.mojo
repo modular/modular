@@ -14,7 +14,7 @@ alias `42` = __mlir_attr.`42 : index`
 fn mlirMagicTest(
     x: __mlir_type.bf16, y: __mlir_type.f8E5M2
 ) -> __mlir_type.index:
-    # CHECK: lit.alias.decl [[A:.*]] = <1>
+    # CHECK: lit.alias.decl [[A:.*]] = <{{.*}}1{{.*}}>
     alias a: __mlir_type.index = `1`
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<f64, mut
     var b: __mlir_type.f64
@@ -76,7 +76,7 @@ fn fancierSubstitutions():
     # CHECK: = lit.var.decl {{.*}} : !lit.ref<complex<i32>,
     var complexInt: __mlir_type[`complex<`, __mlir_type.i32, `>`]
 
-    # CHECK: lit.alias.decl [[A:.*]] = <1>
+    # CHECK: lit.alias.decl [[A:.*]] = <{{.*}}1{{.*}}>
     alias a: __mlir_type.index = `1`
     # CHECK: lit.alias.decl *"new_lower{{.*}}" = <42>
     alias new_lower = __mlir_attr[

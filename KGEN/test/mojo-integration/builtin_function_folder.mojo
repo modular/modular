@@ -71,6 +71,6 @@ alias UI8_139 = __mlir_attr.`#pop.simd<139> : !pop.scalar<ui8>`
 # CHECK-LABEL: lit.fn @"fold_dtype_as_ui8
 fn fold_dtype_as_ui8() -> UInt8T[UI8_139]:
     alias A: DType = DType.int32
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@UInt8T<{{.*}}, 139>>
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@UInt8T<{{.*}}, 139)>
     var a = UInt8T[A._as_ui8()]()
     return a

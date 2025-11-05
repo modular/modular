@@ -2221,7 +2221,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
     std::optional<bool> knownConditionForWarning = {};
     if (PValue condI1PVal = condI1RVal.getIfPValue();
         IntegerAttr asIntAttr =
-            dyn_cast_or_null<IntegerAttr>(condI1PVal.get())) {
+            sugarDynCastIfPresent<IntegerAttr>(condI1PVal.get())) {
       knownConditionForWarning = !asIntAttr.getValue().isZero();
     }
     SRValue condRVal =
