@@ -17,6 +17,7 @@ import math
 from max.graph import TensorValue, ops
 from max.nn import Linear
 from max.nn.layer import Module
+from max.nn.norm import RMSNorm
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
 from .model_config import Gemma3ForConditionalGenerationConfig
@@ -60,7 +61,7 @@ class Gemma3VisionAttention(Module):
             has_bias=config.attention_bias,
             dtype=config.dtype,
             device=config.devices[0],
-        )
+        )        
         self.k_proj = Linear(
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
@@ -91,16 +92,17 @@ class Gemma3VisionAttention(Module):
         )
         self.is_sliding = self.layer_type == "sliding_attention"
 
-        self.q_norm = Gemma3RMSNorm(
-            dim=self.head_dim,
-            dtype=config.dtype,
-            eps=vision_config.layer_norm_eps,
-        )
-        self.k_norm = Gemma3RMSNorm(
-            dim=self.head_dim,
-            dtype=config.dtype,
-            eps=vision_config.layer_norm_eps,
-        )
+        # these appear to be part of language model, not vision
+        # self.q_norm = Gemma3RMSNorm(
+        #     dim=self.head_dim,
+        #     dtype=config.dtype,
+        #     eps=vision_config.layer_norm_eps,
+        # )
+        # self.k_norm = Gemma3RMSNorm(
+        #     dim=self.head_dim,
+        #     dtype=config.dtype,
+        #     eps=vision_config.layer_norm_eps,
+        # )
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Standard self-attention.
@@ -130,8 +132,9 @@ class Gemma3VisionAttention(Module):
         )
 
         # Apply per-head QK normalization (Gemma3-specific)
-        xq = self.q_norm(xq)
-        xk = self.k_norm(xk)
+        # appear to be part of language model
+        # xq = self.q_norm(xq)
+        # xk = self.k_norm(xk)
 
         # Transpose to [batch, n_heads, n_patches, head_dim]
         xq = xq.transpose(1, 2)

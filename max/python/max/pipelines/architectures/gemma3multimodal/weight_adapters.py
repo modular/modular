@@ -25,6 +25,7 @@ GEMMA3_LANGUAGE_SAFETENSOR_MAP: dict[str, str] = {
 # For the vision model
 GEMMA3_VISION_SAFETENSOR_MAP: dict[str, str] = {
     "vision_tower.vision_model.": "",
+    "multi_modal_": ""
 }
 
 # NOTE: Huggingface implementation seems to have quite different checkpoint name conversions:
@@ -63,7 +64,8 @@ def convert_safetensor_vision_state_dict(
 
     for weight_name, value in state_dict.items():
         if not weight_name.startswith("vision_tower.vision_model."):
-            continue
+            if not weight_name.startswith("multi_modal_"):
+                continue
 
         max_name = weight_name
 
