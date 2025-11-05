@@ -4768,9 +4768,7 @@ struct Conv:
                 )
 
     @staticmethod
-    fn shape[
-        dtype: DType
-    ](
+    fn shape(
         input: InputTensor,
         filter: InputTensor,
         strides: InputTensor[rank=1],
