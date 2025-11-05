@@ -123,5 +123,24 @@ def test_tuple_default():
     assert_equal(t[2], 0.0)
 
 
+def test_tuple_logic_dunders():
+    assert_true(Tuple(1, 2, 3) == Tuple(1, 2, 3))
+    assert_true(Tuple(1, 2, 3) != Tuple(2, 3, 4))
+
+    assert_true(Tuple(1, 2, 3) < Tuple(4, 5, 6))
+    assert_false(Tuple(1, 2, 3) < Tuple(1, 2, 3))
+
+    assert_true(Tuple(1, 2, 3) <= Tuple(3, 4, 5))
+    assert_true(Tuple(1, 2, 3) <= Tuple(1, 2, 3))
+    assert_false(Tuple(1, 2, 3) <= Tuple(1, 2, 2))
+
+    assert_true(Tuple(4, 5, 6) > Tuple(1, 2, 3))
+    assert_false(Tuple(1, 5, 6) > Tuple(1, 2, 3))
+
+    assert_true(Tuple(3, 4, 5) >= Tuple(1, 2, 3))
+    assert_true(Tuple(1, 2, 3) >= Tuple(1, 2, 3))
+    assert_false(Tuple(3, 4, 0) >= Tuple(1, 2, 3))
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -198,7 +198,7 @@ struct Tuple[*element_types: Copyable & Movable](
         """
 
         @parameter
-        for i in range(len(VariadicList(element_types))):
+        for i in range(Self.__len__()):
 
             @parameter
             if _type_is_eq[element_types[i], T]():
@@ -208,13 +208,11 @@ struct Tuple[*element_types: Copyable & Movable](
         return False
 
     @always_inline("nodebug")
-    fn __init__[
-        *elt_types: Copyable & Movable & Defaultable
-    ](out self: Tuple[*elt_types]):
+    fn __init__[*U: Copyable & Movable & Defaultable](out self: Tuple[*U]):
         """Construct a tuple with default-initialized elements.
 
         Parameters:
-            elt_types: The types of the elements contained in the Tuple.
+            U: The types of the elements contained in the Tuple.
         """
 
         # Mark 'self.storage' as being initialized so we can work on it.
@@ -223,5 +221,131 @@ struct Tuple[*element_types: Copyable & Movable](
         )
 
         @parameter
-        for i in range(len(VariadicList(elt_types))):
-            UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
+        for i in range(type_of(self).__len__()):
+            UnsafePointer(to=self[i]).init_pointee_move(U[i]())
+
+    fn __eq__[
+        *U: EqualityComparable & Copyable & Movable
+    ](self: Tuple[*U], other: Tuple[*U]) -> Bool:
+        """Compares two tuples elementwise.
+
+        Parameters:
+            U: The element types.
+
+        Args:
+            other: The other tuple to compare with.
+
+        Returns:
+            True if all `self[i] == other[i]`, False otherwise.
+        """
+
+        @parameter
+        for i in range(type_of(self).__len__()):
+            if not (self[i] == other[i]):
+                return False
+        return True
+
+    fn __ne__[
+        *U: EqualityComparable & Copyable & Movable
+    ](self: Tuple[*U], other: Tuple[*U]) -> Bool:
+        """Compares two tuples elementwise.
+
+        Parameters:
+            U: The element types.
+
+        Args:
+            other: The other tuple to compare with.
+
+        Returns:
+            True if all `self[i] != other[i]`, False otherwise.
+        """
+
+        @parameter
+        for i in range(type_of(self).__len__()):
+            if not (self[i] != other[i]):
+                return False
+        return True
+
+    fn __gt__[
+        *U: GreaterThanComparable & Copyable & Movable
+    ](self: Tuple[*U], other: Tuple[*U]) -> Bool:
+        """Compares two tuples elementwise.
+
+        Parameters:
+            U: The element types.
+
+        Args:
+            other: The other tuple to compare with.
+
+        Returns:
+            True if all `self[i] > other[i]`, False otherwise.
+        """
+
+        @parameter
+        for i in range(type_of(self).__len__()):
+            if not (self[i] > other[i]):
+                return False
+        return True
+
+    fn __ge__[
+        *U: GreaterThanOrEqualComparable & Copyable & Movable
+    ](self: Tuple[*U], other: Tuple[*U]) -> Bool:
+        """Compares two tuples elementwise.
+
+        Parameters:
+            U: The element types.
+
+        Args:
+            other: The other tuple to compare with.
+
+        Returns:
+            True if all `self[i] >= other[i]`, False otherwise.
+        """
+
+        @parameter
+        for i in range(type_of(self).__len__()):
+            if not (self[i] >= other[i]):
+                return False
+        return True
+
+    fn __lt__[
+        *U: LessThanComparable & Copyable & Movable
+    ](self: Tuple[*U], other: Tuple[*U]) -> Bool:
+        """Compares two tuples elementwise.
+
+        Parameters:
+            U: The element types.
+
+        Args:
+            other: The other tuple to compare with.
+
+        Returns:
+            True if all `self[i] < other[i]`, False otherwise.
+        """
+
+        @parameter
+        for i in range(type_of(self).__len__()):
+            if not (self[i] < other[i]):
+                return False
+        return True
+
+    fn __le__[
+        *U: LessThanOrEqualComparable & Copyable & Movable
+    ](self: Tuple[*U], other: Tuple[*U]) -> Bool:
+        """Compares two tuples elementwise.
+
+        Parameters:
+            U: The element types.
+
+        Args:
+            other: The other tuple to compare with.
+
+        Returns:
+            True if all `self[i] <= other[i]`, False otherwise.
+        """
+
+        @parameter
+        for i in range(type_of(self).__len__()):
+            if not (self[i] <= other[i]):
+                return False
+        return True
