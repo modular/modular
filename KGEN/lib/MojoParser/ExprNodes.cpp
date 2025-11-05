@@ -530,7 +530,12 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
       emitter.emitError(getLoc(), "cannot read from discard pattern '_'");
       return {};
     }
-    DLValue result(RCRef<DiscardDLValue>::create(initializerType, this));
+    // If this is a pvalue destructuring, the result is the PValue itself, we
+    // avoid reference to it by not inserting a ASTDecl into the scope.
+    AnyValue result = dest.getIfPValueInitializer();
+    // Otherwise the result is an DLValue.
+    if (!result)
+      result = DLValue(RCRef<DiscardDLValue>::create(initializerType, this));
     return emitter.emitResult(result, this, dest);
   }
 
@@ -4310,9 +4315,9 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // definition.
   SmallVector<ASTType> eltTypes;
   bool isLValueType = false;
+  TypedAttr tuplePVal = dest.getIfPValueInitializer();
   if (auto expectedType = dest.getExpectedTypeIfSpecified()) {
-    isLValueType =
-        dest.getIfInitializerType() && !dest.getIfPValueInitializer();
+    isLValueType = dest.getIfInitializerType() && !tuplePVal;
 
     // Special case the element type of Tuple.  We could be more general than
     // this when there was a reason to, e.g. looking up a __getitem__
@@ -4326,6 +4331,13 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
         if (variadicAttr.getValues().size() == exprs.size()) {
           for (auto typeElt : variadicAttr.getValues())
             eltTypes.push_back(ASTType(typeElt));
+        } else if (tuplePVal) {
+          // Make sure lhs matches with rhs in order to destructure.
+          emitter.emitError(getLoc(), "cannot unpack value of ")
+              << expectedType << " of " << variadicAttr.getValues().size()
+              << " element" << plural(exprs.size()) << " into " << exprs.size()
+              << " value" << plural(exprs.size()) << getRange();
+          return {};
         }
       }
     } else if (isLValueType) {
@@ -4338,7 +4350,6 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   }
 
   bool allEltsLValue = true;
-  TypedAttr tuplePVal = dest.getIfPValueInitializer();
   SmallVector<ASTExprAnd<AnyValue>> elements;
   for (auto [i, expr] : llvm::enumerate(exprs)) {
     // Use an inferred element type if we have one.

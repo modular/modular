@@ -79,7 +79,7 @@ struct StructWithUninitializedAlias:
 
 struct StructWithTypelessUninitializedAlias:
     # This makes sure we print out this error, rather than the also-relevant "alias without initial value must have a type" error
-    # expected-error @below {{only traits may contain an alias without an initializer}}
+    # expected-error @below {{expected '=' after alias targets}}
     alias N
 
 

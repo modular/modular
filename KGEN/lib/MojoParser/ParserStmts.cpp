@@ -2868,13 +2868,76 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
   return success();
 }
 
+// Parse the targets for an alias declaration stmt, if this is a single target
+// alias declaration (either a parametric alias or a single identifier), return
+// the name for the target, else return a ExprNode* for the target expression.
+static ParseResult
+parseAliasDeclTargetsExpr(ParserBase &p,
+                          SmartVariant<StringRef, ExprNode *> &result,
+                          size_t stmtIndent) {
+
+  if (p.getLexer().getToken().isIdentifier()) {
+    LexerCursor cursor(p.getLexer());
+    result = p.consumeIdentifier().getSpelling();
+    // One of three cases below:
+    // 1. alias P[a: Int, //, ..]
+    // 2. alias P = ...
+    // 2. alias P : Bool ...
+    if (p.getLexer().getToken().is(Token::l_square) ||
+        p.getLexer().getToken().is(Token::equal) ||
+        p.getLexer().getToken().is(Token::colon))
+      return success();
+
+    // Not a parametric alias, restored the consumed token and parse a target
+    // list as usual.
+    cursor.restore(p.getLexer());
+  }
+
+  ExprNode *targetList;
+  LogicalResult ret = p.parseTargetListExpr(targetList, stmtIndent);
+  result = targetList;
+  return ret;
+}
+
 ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
                                            size_t stmtIndent) {
   SMLoc smLoc = consumeToken(Token::kw_alias).getLoc();
   Location loc = translateLocation(smLoc);
-  StringAttr name;
-  if (parseIdentifier(name, "expected name for 'alias' declaration"))
+
+  SmartVariant<StringRef, ExprNode *> parseResult;
+  if (failed(parseAliasDeclTargetsExpr(*this, parseResult, stmtIndent)))
     return failure();
+
+  if (auto targetExpr = dyn_cast<ExprNode *>(parseResult)) {
+    if (!consumeIf(Token::equal)) {
+      emitError(smLoc, "expected '=' after alias targets");
+      return failure();
+    }
+
+    // Reject the stmt if it is in a struct/trait, resolving them eagerly can
+    // easily lead to parser cycles.
+    if (isa_and_nonnull<StructDeclOp, TraitDeclOp>(
+            parentDecl.getIfOperation())) {
+      emitError(smLoc, "does not support alias destructuring in ")
+          << (isa<StructDeclOp>(parentDecl.getIfOperation()) ? "struct"
+                                                             : "trait");
+      return failure();
+    }
+
+    // Parser the initializer pvalue and destructuring it eagerly.
+    ExprNode *initExpr;
+    if (parseVarInitExpression(initExpr, stmtIndent))
+      return failure();
+    IREmitter emitter = getParamEmitter(EC_AliasValue);
+    PValue initPVal = emitter.emitExprPValue(initExpr, EC_AliasValue);
+    if (!initPVal)
+      return failure();
+
+    return emitter.emitDestructuringPValue(initPVal, targetExpr, EC_AliasValue);
+  };
+
+  // Else, do lazy resolution for a single target alias declaration.
+  StringAttr name = builder.getStringAttr(cast<StringRef>(parseResult));
 
   // Before parsing the rest of the alias, the type is unresolved and value is
   // UnresolvedAliasValueAttr.
