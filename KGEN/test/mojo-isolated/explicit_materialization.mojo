@@ -34,5 +34,5 @@ fn main():
     # This should.
     alias x = NonEM()
     # expected-error@+2 {{cannot implicitly materialize compile-time value of type 'NonEM' to runtime because it is not 'ImplicitlyCopyable'}}
-    # expected-note@+1 {{use 'materialize' to explicitly materialize the value.}}
+    # expected-note@+1 {{use 'materialize' to explicitly materialize the value}}
     func(x)

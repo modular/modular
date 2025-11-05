@@ -839,6 +839,12 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       valueType.isImplicitlyCopyable(value.expr->getLoc(), shared))
     return SRValue(ParamMaterializeOp::create(*builder, location, value.ir));
 
+  if (isa<ModuleType>(valueType)) {
+    emitError(expr->getLoc(), "cannot use package name ")
+        << valueType << " as a runtime value" << expr->getRange();
+    return {};
+  }
+
   auto diag =
       emitError(expr->getLoc(),
                 "cannot implicitly materialize compile-time value of type ")
@@ -846,16 +852,11 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       << " to runtime because it is not 'ImplicitlyCopyable'"
       << expr->getRange();
 
-  // Attach the fix it by wrapping materialize[]() around the (simple)
-  // expression. Using two `FixIt` before/after the range will leads to two
-  // separate (also incomplete) fixes, which is useless. We might want a
-  // `FixIt::wrapAroundRange()`.
-  if (auto declRef = dyn_cast<DeclRefNode>(expr))
-    diag << FixIt(expr->getRange(), "materialize[" + declRef->spelling + "]()");
-
+  // Attach the fix it by wrapping materialize[]() around the expression.
   diag.attachNote(expr->getLoc())
-      << "use 'materialize' to explicitly materialize the value.";
-
+      << "use 'materialize' to explicitly materialize the value"
+      << FixIt::insertBeforeToken(expr->getRangeStart(), "materialize[")
+      << FixIt::insertAfterToken(expr->getRangeEnd(), "]()", shared.diags);
   return {};
 }
 
