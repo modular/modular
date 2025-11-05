@@ -19,6 +19,7 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from gpu.host import DeviceContext
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils import IndexList
 
 

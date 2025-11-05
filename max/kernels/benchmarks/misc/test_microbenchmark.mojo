@@ -17,6 +17,7 @@ import microbenchmark
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul
+from memory import LegacyUnsafePointer as UnsafePointer
 from microbenchmark import Benchmarkable
 
 from utils.index import Index
