@@ -495,9 +495,6 @@ class Gemma3VisionEmbeddings(Module):
         Returns:
             Embeddings tensor of shape (batch_size, num_positions, embed_dim).
         """
-        logger.info(
-            f"*** Gemma3VisionEmbeddings PV shape: {pixel_values.shape}"
-        )
         batch_size = pixel_values.shape[0]
         max_im_h = pixel_values.shape[2]
         max_im_w = pixel_values.shape[3]
@@ -534,7 +531,7 @@ class Gemma3VisionEmbeddings(Module):
             step=1,
             out_dim=total_patches,
             device=self.config.devices[0],
-            dtype=self.config.dtype,
+            dtype=DType.int32, # must remain as this, don't change to config.dtype
         )  # [total_patches]
         position_ids = ops.unsqueeze(position_ids, 0)  # [1, total_patches]
         position_ids = ops.tile(
