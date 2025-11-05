@@ -126,6 +126,7 @@ def create_paged_scheduler(
     enable_in_flight_batching: bool = False,
     enable_chunked_prefill: bool = True,
     enable_kvcache_swapping_to_host: bool = False,
+    max_batch_context_length: int | None = None,
     device: Device = CPU(),
 ) -> tuple[
     TokenGenerationScheduler,
@@ -148,8 +149,10 @@ def create_paged_scheduler(
         max_forward_steps_tg=max_forward_steps_tg,
         max_batch_size_ce=max_batch_size,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
+        max_seq_len=max_seq_len,
         enable_chunked_prefill=enable_chunked_prefill,
         enable_in_flight_batching=enable_in_flight_batching,
+        max_batch_context_length=max_batch_context_length,
     )
     token_pipeline = FakeTokenGeneratorPipeline(paged_manager)
     request_queue: queue.Queue[TextContext] = queue.Queue()

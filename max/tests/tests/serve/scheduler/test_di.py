@@ -101,6 +101,7 @@ def create_di_scheduler(
         max_forward_steps_tg=max_forward_steps_tg,
         max_batch_size_ce=max_batch_size,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
+        max_seq_len=max_seq_len,
         enable_chunked_prefill=enable_chunked_prefill,
         enable_in_flight_batching=enable_in_flight_batching,
     )

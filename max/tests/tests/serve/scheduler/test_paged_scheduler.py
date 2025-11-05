@@ -693,6 +693,46 @@ def test_paged_scheduler_oom_tg() -> None:
     assert_batch_info_equal(actual, expected)
 
 
+def test_paged_scheduler_max_batch_context_length() -> None:
+    max_batch_context_length = 1000
+    scheduler, request_queue = create_paged_scheduler(
+        max_seq_len=max_batch_context_length,
+        max_batch_context_length=max_batch_context_length,
+        target_tokens_per_batch_ce=max_batch_context_length,
+        enable_chunked_prefill=True,
+    )
+
+    for _ in range(20):
+        enqueue_request(request_queue, prompt_len=30, max_seq_len=67)
+
+    actual = run_until_completion(scheduler)
+    # fmt: off
+    expected = [
+        BatchInfo(CE, batch_size=20, terminated=0, steps=1, preempted=0, input_toks=600, cached_toks=0),
+        BatchInfo(TG, batch_size=20, terminated=0, steps=10, preempted=0, input_toks=20, cached_toks=600),
+        BatchInfo(TG, batch_size=20, terminated=0, steps=10, preempted=0, input_toks=20, cached_toks=800),
+        # num_steps is limited to 2 here to ensure that
+        # cached_toks + batch_size * num_steps <= max_batch_context_length.
+        # - 950 + 19 * 2 = 988 <= 1000 (good)
+        # - 950 + 19 * 3 = 1007 > 1000 (bad)
+        BatchInfo(TG, batch_size=19, terminated=0, steps=2, preempted=0, input_toks=19, cached_toks=950),
+        BatchInfo(TG, batch_size=18, terminated=0, steps=3, preempted=0, input_toks=18, cached_toks=936),
+        BatchInfo(TG, batch_size=17, terminated=0, steps=3, preempted=0, input_toks=17, cached_toks=935),
+        BatchInfo(TG, batch_size=16, terminated=0, steps=4, preempted=0, input_toks=16, cached_toks=928),
+        BatchInfo(TG, batch_size=15, terminated=15, steps=4, preempted=0, input_toks=15, cached_toks=930),
+        BatchInfo(TG, batch_size=5, terminated=2, steps=10, preempted=0, input_toks=5, cached_toks=277),
+        BatchInfo(TG, batch_size=3, terminated=3, steps=7, preempted=0, input_toks=3, cached_toks=187),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
+    ]
+    # fmt: on
+    assert_batch_info_equal(actual, expected)
+    for batch in actual:
+        cached_toks = batch.cached_toks
+        steps = batch.steps
+        batch_size = batch.batch_size
+        assert cached_toks + batch_size * steps <= max_batch_context_length
+
+
 def test_paged_scheduler_paging_to_host_on_cpu_raises() -> None:
     with pytest.raises(ValueError) as e:
         create_paged_scheduler(
