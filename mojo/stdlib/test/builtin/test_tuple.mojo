@@ -123,5 +123,22 @@ def test_tuple_default():
     assert_equal(t[2], 0.0)
 
 
+def test_tuple_comparison():
+    assert_true((1, 2, 3) == (1, 2, 3))
+    assert_false((1, 2, 3) != (1, 2, 3))
+    assert_false((1, 2, 3) < (1, 2, 3))
+    assert_false((1, 2, 3) > (1, 2, 3))
+    assert_true((1, 2, 3) <= (1, 2, 3))
+    assert_true((1, 2, 3) >= (1, 2, 3))
+    assert_true((1, 2, 3) < (1, 2, 4))
+    assert_true((1, 2, 3) > (1, 2, 2))
+    assert_true((1, 2, 3) <= (1, 2, 4))
+    assert_true((1, 2, 3) >= (1, 2, 2))
+    assert_false((1, 2, 3) < (1, 2, 2))
+    assert_false((1, 2, 3) > (1, 2, 4))
+    assert_true((1, 2, 3) <= (1, 2, 4))
+    assert_true((1, 2, 3) >= (1, 2, 2))
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

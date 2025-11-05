@@ -225,3 +225,151 @@ struct Tuple[*element_types: Copyable & Movable](
         @parameter
         for i in range(len(VariadicList(elt_types))):
             UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
+
+    @always_inline
+    fn __eq__[
+        *elt_types: Copyable & Movable & EqualityComparable
+    ](self: Tuple[*elt_types], other: Tuple[*elt_types]) -> Bool:
+        """Compare this tuple to another tuple using equality comparison.
+
+        Parameters:
+            elt_types: The types of the elements contained in the Tuple.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is equal to the other tuple, False otherwise.
+        """
+
+        @parameter
+        for i in range(len(VariadicList(elt_types))):
+            if self[i] != other[i]:
+                return False
+        return True
+
+    @always_inline
+    fn __ne__[
+        *elt_types: Copyable & Movable & EqualityComparable
+    ](self: Tuple[*elt_types], other: Tuple[*elt_types]) -> Bool:
+        """Compare this tuple to another tuple using inequality comparison.
+
+        Parameters:
+            elt_types: The types of the elements contained in the Tuple.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is not equal to the other tuple, False otherwise.
+        """
+
+        return not self == other
+
+    @always_inline
+    fn __lt__[
+        *elt_types: Copyable
+        & Movable
+        & LessThanComparable
+        & GreaterThanComparable
+    ](self: Tuple[*elt_types], other: Tuple[*elt_types]) -> Bool:
+        """Compare this tuple to another tuple using less than comparison.
+
+        Parameters:
+            elt_types: The types of the elements contained in the Tuple.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is less than the other tuple, False otherwise.
+        """
+
+        @parameter
+        for i in range(len(VariadicList(elt_types))):
+            if self[i] < other[i]:
+                return True
+            if self[i] > other[i]:
+                return False
+        return False
+
+    @always_inline
+    fn __le__[
+        *elt_types: Copyable
+        & Movable
+        & LessThanComparable
+        & GreaterThanComparable
+    ](self: Tuple[*elt_types], other: Tuple[*elt_types]) -> Bool:
+        """Compare this tuple to another tuple using less than or equal to comparison.
+
+        Parameters:
+            elt_types: The types of the elements contained in the Tuple.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is less than or equal to the other tuple, False otherwise.
+        """
+
+        @parameter
+        for i in range(len(VariadicList(elt_types))):
+            if self[i] < other[i]:
+                return True
+            if self[i] > other[i]:
+                return False
+        return True
+
+    @always_inline
+    fn __gt__[
+        *elt_types: Copyable
+        & Movable
+        & LessThanComparable
+        & GreaterThanComparable
+    ](self: Tuple[*elt_types], other: Tuple[*elt_types]) -> Bool:
+        """Compare this tuple to another tuple using greater than comparison.
+
+        Parameters:
+            elt_types: The types of the elements contained in the Tuple.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is greater than the other tuple, False otherwise.
+        """
+
+        @parameter
+        for i in range(len(VariadicList(elt_types))):
+            if self[i] > other[i]:
+                return True
+            if self[i] < other[i]:
+                return False
+        return False
+
+    @always_inline
+    fn __ge__[
+        *elt_types: Copyable
+        & Movable
+        & LessThanComparable
+        & GreaterThanComparable
+    ](self: Tuple[*elt_types], other: Tuple[*elt_types]) -> Bool:
+        """Compare this tuple to another tuple using greater than or equal to comparison.
+
+        Parameters:
+            elt_types: The types of the elements contained in the Tuple.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is greater than or equal to the other tuple, False otherwise.
+        """
+
+        @parameter
+        for i in range(len(VariadicList(elt_types))):
+            if self[i] > other[i]:
+                return True
+            if self[i] < other[i]:
+                return False
+        return True
