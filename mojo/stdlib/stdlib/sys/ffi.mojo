@@ -152,6 +152,8 @@ struct RTLD:
     alias GLOBAL = 256 if CompilationTarget.is_linux() else 8
     """Make symbols available for symbol resolution of subsequently loaded
     libraries."""
+    alias NODELETE = 4096 if CompilationTarget.is_linux() else 128
+    """Do not delete the library when the process exits."""
 
 
 alias DEFAULT_RTLD = RTLD.NOW | RTLD.GLOBAL

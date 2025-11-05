@@ -89,6 +89,7 @@ from ._mpi import (
     MPI_Comm_size,
     MPI_Finalize,
     MPI_Init,
+    MPI_Init_thread,
     get_mpi_comm_world,
 )
 from .shmem_buffer import SHMEMBuffer
