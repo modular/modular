@@ -573,10 +573,8 @@ fn TopKSamplingFromProbKernel[
     output_layout: Layout,
     deterministic: Bool,
 ](
-    probs: LayoutTensor[dtype, probs_layout, MutableAnyOrigin],
-    output: LayoutTensor[
-        mut=True, out_idx_type, output_layout, MutableAnyOrigin
-    ],
+    probs: LayoutTensor[dtype, probs_layout, MutAnyOrigin],
+    output: LayoutTensor[mut=True, out_idx_type, output_layout, MutAnyOrigin],
     indices: UnsafePointer[Scalar[out_idx_type]],
     top_k_arr: UnsafePointer[Scalar[out_idx_type]],
     top_k_val: Int,
@@ -621,7 +619,7 @@ fn TopKSamplingFromProbKernel[
 
     alias row_layout = Layout.row_major(1, UNKNOWN_VALUE)
     var probs_ptr = probs.ptr + row_idx * d
-    var probs_row = LayoutTensor[dtype, row_layout, MutableAnyOrigin](
+    var probs_row = LayoutTensor[dtype, row_layout, MutAnyOrigin](
         probs_ptr, RuntimeLayout[row_layout]({1, d}, {d, 1})
     )
 
@@ -770,12 +768,12 @@ fn topk_sampling_from_prob[
     rng_offset: UInt64 = 0,
     indices: OptionalReg[
         LayoutTensor[
-            out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     top_k_arr: OptionalReg[
         LayoutTensor[
-            out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
 ) raises:

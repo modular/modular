@@ -123,14 +123,14 @@ alias LocalTensor[
 ] = LayoutTensor[
     dtype,
     layout,
-    MutableAnyOrigin,
+    MutAnyOrigin,
     address_space = AddressSpace.LOCAL,
     element_layout=element_layout,
 ]
 alias SharedMemTensor[dtype: DType, layout: Layout] = LayoutTensor[
     dtype,
     layout,
-    MutableAnyOrigin,
+    MutAnyOrigin,
     address_space = AddressSpace.SHARED,
     layout_int_type = DType.int32,
     linear_idx_type = DType.int32,
@@ -1078,14 +1078,14 @@ fn mha_sm100_dispatch[
     scale: Float32,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ],
 ) raises:
     constrained[
@@ -1266,7 +1266,7 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
     valid_length: UnsafePointer[UInt32],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ],
     sink_weights: SinkType,
@@ -2323,7 +2323,7 @@ fn scale_write_output[
                 LayoutTensor[
                     output_type,
                     Layout.row_major(16, padded_depth),
-                    MutableAnyOrigin,
+                    MutAnyOrigin,
                     address_space = AddressSpace.SHARED,
                 ]
             ](accum_smem_warp_tile),

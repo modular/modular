@@ -72,7 +72,7 @@ struct UnsafePointer[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     mut: Bool = True,  # ⚠️ Defaulted to mutable
-    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin],  # ⚠️ Defaulted to AnyOrigin
+    origin: Origin[mut] = Origin[mut].cast_from[MutAnyOrigin],  # ⚠️ Defaulted to AnyOrigin
 ]:
     ...
 ```
@@ -80,7 +80,7 @@ struct UnsafePointer[
 **Issues:**
 
 - `mut` defaults to `True`, making pointers mutable by default
-- `origin` defaults to `MutableAnyOrigin`, bypassing lifetime tracking
+- `origin` defaults to `MutAnyOrigin`, bypassing lifetime tracking
 - Allows unsafe implicit conversions (immutable → mutable, origin casts)
 
 ## `UnsafePointerV2` API
@@ -128,19 +128,17 @@ entirely.
 
 ### **Nightly (current)**
 
-- Introduce `UnsafePointerV2`.
-- Begin migrating `stdlib` and kernel code.
+- Rename `UnsafePointer` to `LegacyUnsafePointer`.
+- Introduce `UnsafePointerV2` and eventually rename to `UnsafePointer`.
 
 ### **25.7 (late November 2025)**
 
-- Mark `UnsafePointer` as deprecated.
-- Promote `UnsafePointerV2` for general use.
+- Rename `UnsafePointer` to `LegacyUnsafePointer`.
+- Introduce the new `UnsafePointer` for general use.
 
 ### **26.1 (Jan 2026)**
 
-- Remove old `UnsafePointer`.
-- Rename `UnsafePointerV2` -> `UnsafePointer`.
-- Deprecate the temporary `UnsafePointerV2` name.
+- Deprecate `LegacyUnsafePointer` (and then eventually remove).
 
 ---
 

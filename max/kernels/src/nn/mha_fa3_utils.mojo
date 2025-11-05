@@ -288,7 +288,7 @@ struct MHAPosition[
         out gmem_block: LayoutTensor[
             dtype,
             Self.split_gmem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             layout_int_type = DType.int32,
             linear_idx_type = DType.int32,
             masked=True,
@@ -1075,13 +1075,13 @@ fn output_gmem_to_smem_STMatrix[
     output_reg_tile: LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas, o_frag_size),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ],
     accum_smem_tile: LayoutTensor[
         output_type,
         Layout.row_major(BM, padded_depth),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ],
 ):

@@ -235,7 +235,7 @@ fn allreduce_test[
             # Prepare distinct outputs for vendor path to avoid aliasing.
             var out_dev_vendor = List[DeviceBuffer[dtype]](capacity=ngpus)
             var out_bufs_vendor = InlineArray[
-                NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
+                NDBuffer[dtype, rank, MutAnyOrigin], ngpus
             ](fill={})
             for i in range(ngpus):
                 out_dev_vendor.append(
@@ -249,9 +249,7 @@ fn allreduce_test[
             for _ in range(num_warmups):
                 vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
                     rebind[
-                        InlineArray[
-                            NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
-                        ]
+                        InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]
                     ](in_bufs),
                     out_bufs_vendor,
                     list_of_ctx,
@@ -265,9 +263,7 @@ fn allreduce_test[
             for _ in range(num_iters):
                 vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
                     rebind[
-                        InlineArray[
-                            NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
-                        ]
+                        InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]
                     ](in_bufs),
                     out_bufs_vendor,
                     list_of_ctx,

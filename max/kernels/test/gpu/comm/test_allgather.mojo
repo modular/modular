@@ -127,7 +127,7 @@ def all_gather_test[
                 )
 
         var flat_out = InlineArray[
-            NDBuffer[dtype, rank, MutableAnyOrigin], ngpus * ngpus
+            NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
         ](fill={})
         for device_idx in range(ngpus):
             for input_idx in range(ngpus):
