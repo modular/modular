@@ -29,6 +29,22 @@ from testing import assert_almost_equal, assert_true
 from utils.index import IndexList, StaticTuple
 
 
+@always_inline
+fn _pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
+    # Returns (rtol, atol) modeled after PyTorch defaults.
+    @parameter
+    if dtype is DType.float16:
+        return (1e-3, 1e-5)
+    elif dtype is DType.bfloat16:
+        return (1.6e-2, 1e-5)
+    elif dtype is DType.float32:
+        return (1.3e-6, 1e-5)
+    elif dtype is DType.float64:
+        return (1e-7, 1e-7)
+    else:
+        return (0.0, 0.0)
+
+
 fn _pretty_print_float(val: Float64) -> String:
     """This converts the float value to a string, but omits the fractional part
     if not needed (e.g. prints 2 instead of 2.0).
@@ -283,16 +299,10 @@ fn bench_reduce[
                 accum += Scalar[accum_t](term_dtype)
             var expected_sum = Scalar[dtype](accum)
             try:
-
-                @parameter
-                if dtype in (DType.bfloat16, DType.float16):
-                    assert_almost_equal(
-                        host_buffers[i][j], expected_sum, atol=1e-2, rtol=1e-2
-                    )
-                else:
-                    assert_almost_equal(
-                        host_buffers[i][j], expected_sum, atol=1e-3, rtol=1e-3
-                    )
+                var rtol, atol = _pytorch_like_tolerances_for[dtype]()
+                assert_almost_equal(
+                    host_buffers[i][j], expected_sum, atol=atol, rtol=rtol
+                )
             except e:
                 print("Verification failed at GPU", i, "index", j)
                 print("Value:", host_buffers[i][j])
