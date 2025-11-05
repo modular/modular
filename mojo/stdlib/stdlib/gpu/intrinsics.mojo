@@ -34,6 +34,7 @@ from sys import (
     is_apple_gpu,
     size_of,
     _RegisterPackType,
+    external_call,
 )
 from sys._assembly import inlined_assembly
 from sys.info import (
@@ -653,6 +654,17 @@ fn _get_type_suffix[dtype: DType]() -> StaticString:
     return str
 
 
+fn _get_air_atomic_suffix[dtype: DType]() -> StaticString:
+    @parameter
+    if dtype is DType.float32:
+        return "f32"
+    elif dtype in (DType.int32, DType.uint32):
+        return "i32"
+    else:
+        constrained[False, "unsupported dtype for air atomic intrinsics"]()
+        return ""
+
+
 fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
     constrained[
         is_nvidia_gpu(),
@@ -763,16 +775,18 @@ fn store_release[
     elif is_apple_gpu():
         alias mem_flags = AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else AirMemFlags.Device
         alias air_scope = AirScope.Workgroup if scope is Scope.BLOCK else AirScope.Device
-        llvm_intrinsic["llvm.air.atomic.fence", NoneType, has_side_effect=True](
+        external_call["air.atomic.fence", NoneType](
             mem_flags,
             AirMemOrder.SeqCst,
             air_scope,
         )
-        alias store_intrin = "llvm.air.atomic.local.store" if ptr.address_space == AddressSpace.SHARED else "llvm.air.atomic.global.store"
-        llvm_intrinsic[
+        alias store_intrin_base = "air.atomic.local.store" if ptr.address_space == AddressSpace.SHARED else "air.atomic.global.store"
+        alias store_intrin = store_intrin_base + "." + _get_air_atomic_suffix[
+            dtype
+        ]()
+        external_call[
             store_intrin,
             NoneType,
-            has_side_effect=True,
         ](ptr, value, AirMemOrder.Relaxed, air_scope, True)
     else:
         return CompilationTarget.unsupported_target_error[
@@ -889,13 +903,15 @@ fn load_acquire[
     elif is_apple_gpu():
         alias mem_flags = AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else AirMemFlags.Device
         alias air_scope = AirScope.Workgroup if scope is Scope.BLOCK else AirScope.Device
-        alias load_intrin = "llvm.air.atomic.local.load" if ptr.address_space == AddressSpace.SHARED else "llvm.air.atomic.global.load"
-        var value = llvm_intrinsic[
+        alias load_intrin_base = "air.atomic.local.load" if ptr.address_space == AddressSpace.SHARED else "air.atomic.global.load"
+        alias load_intrin = load_intrin_base + "." + _get_air_atomic_suffix[
+            dtype
+        ]()
+        var value = external_call[
             load_intrin,
             Scalar[dtype],
-            has_side_effect=True,
         ](ptr, AirMemOrder.Relaxed, air_scope, True)
-        llvm_intrinsic["llvm.air.atomic.fence", NoneType, has_side_effect=True](
+        external_call["air.atomic.fence", NoneType](
             mem_flags,
             AirMemOrder.SeqCst,
             air_scope,
