@@ -72,9 +72,7 @@ from test_package.unknown_nested_module import bar
 import test_package
 
 fn assignPackageModule():
-  # FIXME: This error isn't great.
-  # expected-error @below {{cannot implicitly materialize compile-time value of type 'test_package' to runtime because it is not 'ImplicitlyCopyable'}}
-  # expected-note @below {{use 'materialize' to explicitly materialize the value.}}
+  # expected-error @below {{cannot use package name 'test_package' as a runtime value}}
   test_package = test_package
 
 # // -----
