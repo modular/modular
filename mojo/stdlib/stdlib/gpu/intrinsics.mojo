@@ -705,17 +705,28 @@ fn _get_nvtx_pointer_constraint() -> StaticString:
 
 
 struct AirMemFlags:
+    """AIR memory domain flags used by Apple/Metal intrinsics.
+    These values select **which address space's visibility** a fence operates on.
+    """
+
     alias Device = Int32(1)
     alias ThreadGroup = Int32(2)
 
 
 struct AirScope:
+    """AIR synchronization scope for ordering and visibility.
+    The scope determines **which set of threads** participates in the ordering
+    established by a fence or an atomic op with scope.
+    """
+
     alias Workgroup = Int32(1)
     alias Device = Int32(2)
     alias SIMDGroup = Int32(4)
 
 
 struct AirMemOrder:
+    """AIR memory ordering semantics for atomic operations and fences."""
+
     alias Relaxed = Int32(0)
     alias SeqCst = Int32(5)
 
