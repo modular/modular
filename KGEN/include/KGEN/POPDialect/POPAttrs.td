@@ -735,4 +735,38 @@ def POP_SIMDSplatAttr : POP_ExprAttr<"SIMDSplat", "simd_splat"> {
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// SIMD Binary Operation Attributes
+//===----------------------------------------------------------------------===//
+
+class POP_SIMDBinaryAttr<string name>
+      : POP_ExprAttr<"SIMD" # name, "simd_" # !tolower(name)> {
+  let summary = !strconcat("SIMD ", name, ".");
+  let description = !strconcat(
+    "The `#pop.simd_", !tolower(name), "` attribute performs a SIMD ", name,
+    " operation between two SIMD vectors.");
+
+  let parameters = (ins "TypedAttr":$lhs, "TypedAttr":$rhs);
+
+  let assemblyFormat = " `<` $lhs `,` $rhs `>` ";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return the same attribute type due to folding on construction.
+    AttrBuilder<(ins "TypedAttr":$lhs, "TypedAttr":$rhs), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$lhs, "TypedAttr":$rhs), [{
+      return get(lhs.getContext(), lhs, rhs);
+    }], "TypedAttr">
+  ];
+
+  let extraClassDeclaration = [{
+    Type getType() const;
+  }];
+}
+
+def POP_SIMDAndAttr : POP_SIMDBinaryAttr<"And">;
+
 #endif // KGEN_POPDIALECT_POPATTRS_TD

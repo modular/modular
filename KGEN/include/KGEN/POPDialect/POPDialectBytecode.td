@@ -123,6 +123,8 @@ def FloatLiteralCmpPredAttr : DialectAttribute<(attr
   EnumAttr<"FloatLiteralCmpPred">:$value
 )>;
 
+def SIMDAndAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
+
 def POPDialectAttributes : DialectAttributes<"pop"> {
   let elems = [
     CmpPredicateAttr,
@@ -141,6 +143,8 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
 
     IntLiteralAttr,
     FloatLiteralAttr,
+
+    SIMDAndAttr,
   ];
 }
 
