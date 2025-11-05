@@ -60,15 +60,13 @@ static Type getBoolOfSameParentType(Type type) {
 
 LogicalResult CmpOp::inferReturnTypes(MLIRContext *ctx,
                                       std::optional<Location> loc,
-                                      ValueRange operands, DictionaryAttr attrs,
-                                      mlir::OpaqueProperties properties,
-                                      RegionRange regions,
+                                      Adaptor adaptor,
                                       SmallVectorImpl<Type> &types) {
-  Type argType = operands[0].getType();
+  Type argType = adaptor.getLhs().getType();
   types.push_back(getBoolOfSameParentType(argType));
   if (types.back())
     return success();
-  return mlir::emitError(loc.value_or(operands[0].getLoc()),
+  return mlir::emitError(loc.value_or(adaptor.getLhs().getLoc()),
                          "expected a scalar or simd operand type");
 }
 
@@ -599,9 +597,9 @@ LogicalResult ExternalCallOp::verify() {
 // GlobalConstantOp
 //===----------------------------------------------------------------------===//
 
-void GlobalConstantOp::build(OpBuilder &b, OperationState &state, Type result,
+void GlobalConstantOp::build(OpBuilder &b, OperationState &state,
                              TypedAttr value) {
-  build(b, state, result, value, TypedAttr{});
+  build(b, state, value, TypedAttr());
 }
 
 static ParseResult parseGlobalConstantOpValue(OpAsmParser &p, TypedAttr &value,
@@ -621,6 +619,15 @@ static void printGlobalConstantOpValue(OpAsmPrinter &p, Operation *,
   p << " = <";
   printParamValue(p, value);
   p << ">";
+}
+
+LogicalResult
+GlobalConstantOp::inferReturnTypes(MLIRContext *ctx,
+                                   std::optional<Location> loc, Adaptor adaptor,
+                                   SmallVectorImpl<Type> &inferredReturnTypes) {
+  inferredReturnTypes.push_back(
+      PointerType::get(adaptor.getValueAttr().getType()));
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
