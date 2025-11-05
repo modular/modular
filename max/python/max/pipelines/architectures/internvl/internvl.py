@@ -1416,7 +1416,6 @@ class InternVLVisionModel(Module):
         Returns:
             Image embeddings tensor, one per device, flattened for language model.
         """
-        print("*** EXECUTE THE VISION MODEL ***")
         # Get vision embeddings from each device
         vit_embeds = [
             embed(pixels)
