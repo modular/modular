@@ -187,6 +187,12 @@ class PipelineConfig(MAXConfig):
     execute_empty_batches: bool = False
     """Whether the scheduler should execute empty batches."""
 
+    max_batch_context_length: int | None = None
+    """Ensures that the sum of the context length in a batch does not exceed max_batch_context_length.
+
+    If None, the sum of the context length in batch is not limited.
+    """
+
     force: bool = field(default=False)
     """Skip validation of user provided flags against the architecture's required arguments."""
 
@@ -1052,6 +1058,7 @@ class PipelineConfig(MAXConfig):
             "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
             "pool_embeddings": "Whether to pool embedding outputs. Default is true.",
             "use_experimental_kernels": "Whether to use experimental kernels. Default is false.",
+            "max_batch_context_length": "Ensures that the sum of the context length in a batch does not exceed max_batch_context_length. If None, the sum of the context length in batch is not limited.",
             "pdl_level": "Level of overlap of kernel launch via programmatic dependent grid control. Default is 0.",
             "custom_architectures": "A list of custom architecture implementations to register. Each input can either be a raw module name or an import path followed by a colon and the module name.",
         }
