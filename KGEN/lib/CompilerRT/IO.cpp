@@ -33,6 +33,7 @@ struct FileHandle {
                          llvm::StringRef *errMsg) {
     std::filesystem::path fsPath(path.str());
     llvm::sys::fs::FileAccess fileAccess = getFileAccess(mode);
+    bool isAppendMode = mode == "a";
 
     if (fileAccess & llvm::sys::fs::FileAccess::FA_Write) {
       if (fileAccess & llvm::sys::fs::FileAccess::FA_Read) {
@@ -48,9 +49,8 @@ struct FileHandle {
             return nullptr;
           }
         }
-      } else {
-        // Write-only mode: truncate the file
-        // TODO: When `append` mode is supported account for that.
+      } else if (!isAppendMode) {
+        // Write-only mode (not append): truncate the file
         std::error_code err;
         if (std::filesystem::exists(fsPath)) {
           err = llvm::sys::fs::remove(fsPath.string());
@@ -69,6 +69,19 @@ struct FileHandle {
             *errMsg =
                 copyString((llvm::Twine("unable to create directories '") +
                             fsPath.parent_path().string() + "' for write")
+                               .str());
+            return nullptr;
+          }
+        }
+      } else {
+        // Append mode: create parent directories but don't truncate
+        if (!fsPath.parent_path().empty()) {
+          std::error_code err;
+          std::filesystem::create_directories(fsPath.parent_path(), err);
+          if (err) {
+            *errMsg =
+                copyString((llvm::Twine("unable to create directories '") +
+                            fsPath.parent_path().string() + "' for append")
                                .str());
             return nullptr;
           }
@@ -93,7 +106,14 @@ struct FileHandle {
       return nullptr;
     }
 
-    return new FileHandle(handle);
+    auto fileHandle = std::make_unique<FileHandle>(handle);
+    // If in append mode, seek to the end of the file
+    if (isAppendMode) {
+      fileHandle->seek(0, SEEK_END, errMsg);
+      if (!errMsg->empty())
+        return nullptr;
+    }
+    return fileHandle.release();
   }
 
   uint64_t size(llvm::StringRef *errMsg) {
@@ -154,8 +174,9 @@ struct FileHandle {
 
   int getHandle() { return handle; }
 
-private:
   FileHandle(int handle) : handle(handle) {}
+
+private:
   FileHandle(const FileHandle &other) = delete;
   void operator=(const FileHandle &other) = delete;
 
@@ -165,7 +186,7 @@ private:
     if (mode.contains("r"))
       res |= llvm::sys::fs::FileAccess::FA_Read;
 
-    if (mode.contains("w"))
+    if (mode.contains("w") || mode.contains("a"))
       res |= llvm::sys::fs::FileAccess::FA_Write;
 
     return res;
