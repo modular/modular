@@ -23,11 +23,81 @@ from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tma_tile,
+    TensorMapArray,
+)
 from memory import stack_allocation
 from testing import assert_equal
 
-from utils.index import Index
+from utils.index import Index, IndexList
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from layout.swizzle import make_swizzle
+from layout.int_tuple import product
+
+
+@__llvm_arg_metadata(desc_array, `nvvm.grid_constant`)
+fn tma_ragged_store_kernel[
+    rank: Int,
+    dtype: DType,
+    remaining_desc_dims: IndexList[rank],
+    swizzle_mode: TensorMapSwizzle,
+    smem_size: Int,
+    number_of_offsets: Int,
+    max_descriptor_length: Int,
+](
+    desc_array: TensorMapArray[
+        dtype,
+        remaining_desc_dims,
+        swizzle_mode,
+        max_descriptor_length=max_descriptor_length,
+    ],
+    sequence_offsets: InlineArray[Int, number_of_offsets],
+):
+    var shared_ptr = stack_allocation[
+        smem_size,
+        Scalar[dtype],
+        address_space = AddressSpace.SHARED,
+    ]()
+
+    if thread_idx.x == 0:
+        for i in range(smem_size):
+            shared_ptr[i] = i
+
+    fence_async_view_proxy()
+
+    if thread_idx.x == 0:
+        var current_row = 0
+        var sequence_length = 0
+
+        @parameter
+        for offset_idx in range(number_of_offsets - 1):
+            shared_ptr += sequence_length
+
+            var current_offset = sequence_offsets[offset_idx]
+            var next_offset = sequence_offsets[offset_idx + 1]
+            sequence_length = next_offset - current_offset
+
+            var copy_length = desc_array.calculate_dim_repeat(sequence_length)
+
+            @parameter
+            if rank == 1:
+                desc_array.store_ragged_tile(
+                    copy_length, (0, current_row), shared_ptr
+                )
+            else:
+                desc_array.store_ragged_tile(
+                    copy_length,
+                    IndexList[rank + 1](0, 0, current_row),
+                    shared_ptr,
+                )
+
+            cp_async_bulk_commit_group()
+            current_row += copy_length
+
+    cp_async_bulk_wait_group[0]()
 
 
 # Test loading a single 2d tile.
@@ -129,6 +199,77 @@ fn test_tma_multiple_loads_kernel[
 
         dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), i)
         copy_sram_to_dram[thread_layout](dst_tile, tile)
+
+
+def test_tma_ragged_store[
+    rank: Int,
+    number_of_sequences: Int, //,
+    smem_layout: Layout,
+    remaining_dims: IndexList[rank],
+    dtype: DType,
+    sequence_lengths: InlineArray[Int, number_of_sequences],
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    max_descriptor_length: Int = 256,
+](ctx: DeviceContext):
+    alias total_size = smem_layout.size()
+    var device_buffer = ctx.enqueue_create_buffer[dtype](total_size)
+
+    var global_tensor = LayoutTensor[
+        dtype,
+        smem_layout,
+        MutAnyOrigin,
+        alignment=128,
+    ](device_buffer)
+
+    var desc_array = TensorMapArray[
+        dtype,
+        remaining_dims,
+        swizzle_mode=swizzle_mode,
+        max_descriptor_length=max_descriptor_length,
+    ](
+        ctx,
+        global_tensor,
+    )
+
+    alias desc_size_1 = product(desc_array._descriptor_shape[1]())
+
+    var sequence_offsets = InlineArray[Int, number_of_sequences + 1](fill=0)
+
+    var offset = 0
+
+    for i in range(number_of_sequences):
+        var sequence_length = sequence_lengths[i]
+        offset += sequence_length * desc_size_1
+        sequence_offsets[i + 1] = offset
+
+    alias kernel = tma_ragged_store_kernel[
+        rank,
+        dtype,
+        remaining_dims,
+        swizzle_mode,
+        smem_layout.size(),
+        number_of_sequences + 1,
+        max_descriptor_length,
+    ]
+
+    ctx.enqueue_function_checked[kernel, kernel](
+        desc_array,
+        sequence_offsets,
+        grid_dim=(1),
+        block_dim=(32),
+    )
+
+    with device_buffer.map_to_host() as host_buffer:
+
+        @parameter
+        if swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE:
+            for i in range(total_size):
+                assert_equal(host_buffer[i], Scalar[dtype](i))
+        else:
+            alias swizzle = make_swizzle[dtype, swizzle_mode]()
+            for i in range(total_size):
+                var swz_offset = swizzle(i)
+                assert_equal(host_buffer[swz_offset], Scalar[dtype](i))
 
 
 def test_tma_load_row_major[
@@ -1039,4 +1180,93 @@ def main():
             src_layout = Layout.row_major(32, 64),
             tile_layout = Layout.row_major(16, 16),
             dst_layout = Layout.row_major(40, 64),
+        ](ctx)
+
+        print("test_2D_TMA_ragged_store")
+
+        test_tma_ragged_store[
+            Layout.row_major(384, 64),
+            IndexList[1](64),
+            DType.bfloat16,
+            InlineArray[Int, 4](256, 124, 3, 1),
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(384, 64),
+            IndexList[1](64),
+            DType.bfloat16,
+            InlineArray[Int, 4](256, 124, 3, 1),
+            max_descriptor_length=32,
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(384, 64),
+            IndexList[1](64),
+            DType.bfloat16,
+            InlineArray[Int, 2](256, 128),
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(384, 64),
+            IndexList[1](64),
+            DType.bfloat16,
+            InlineArray[Int, 4](256, 124, 3, 1),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(64, 32),
+            IndexList[1](32),
+            DType.bfloat16,
+            InlineArray[Int, 5](32, 16, 8, 4, 4),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(64, 16),
+            IndexList[1](16),
+            DType.bfloat16,
+            InlineArray[Int, 1](64),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+        ](ctx)
+
+        print("test_3D_TMA_ragged_store")
+
+        test_tma_ragged_store[
+            Layout.row_major(192, 2, 64),
+            IndexList[2](2, 64),
+            DType.bfloat16,
+            InlineArray[Int, 4](127, 1, 62, 2),
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(192, 2, 64),
+            IndexList[2](2, 64),
+            DType.bfloat16,
+            InlineArray[Int, 4](127, 1, 62, 2),
+            max_descriptor_length=32,
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(192, 2, 64),
+            IndexList[2](2, 64),
+            DType.bfloat16,
+            InlineArray[Int, 4](127, 1, 62, 2),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(192, 4, 32),
+            IndexList[2](4, 32),
+            DType.bfloat16,
+            InlineArray[Int, 4](64, 32, 64, 32),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+        ](ctx)
+
+        test_tma_ragged_store[
+            Layout.row_major(192, 8, 16),
+            IndexList[2](8, 16),
+            DType.bfloat16,
+            InlineArray[Int, 4](64, 32, 64, 32),
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
