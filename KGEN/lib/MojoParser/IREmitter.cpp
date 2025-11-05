@@ -182,9 +182,9 @@ void ValueDest::dump() const { llvm::errs() << *this; }
     os << "Operation*: " << *op;
   } else if (auto type = dyn_cast<ASTType>(representation)) {
     os << "ASTType: " << type;
-  } else if (isa<LPValueInitializerType>(representation)) {
-    os << "LPValueInitializerType: "
-       << cast<LPValueInitializerType>(representation).getInitializerType();
+  } else if (isa<LValueInitializerType>(representation)) {
+    os << "LValueInitializerType: "
+       << cast<LValueInitializerType>(representation).type;
   } else {
     os << "UNKNOWN VALUE DEST!";
   }
@@ -202,8 +202,8 @@ ASTType ValueDest::getExpectedTypeIfSpecified() const {
   // If we just have a contextual type, return it.
   if (ASTType type = dyn_cast<ASTType>(representation))
     return type;
-  if (isa<LPValueInitializerType>(representation))
-    return cast<LPValueInitializerType>(representation).getInitializerType();
+  if (isa<LValueInitializerType>(representation))
+    return cast<LValueInitializerType>(representation).type;
   return cast<LValue>(representation).getRValueType();
 }
 
@@ -229,7 +229,7 @@ void ValueDest::resetForError(IREmitter &emitter) {
     //     var x = <bad>
     //     use(x)  # Don't warn here.
     ValueDest dest(
-        LPValueInitializerType{emitter.shared.getTypeCheckErrorType()},
+        LValueInitializerType{emitter.shared.getTypeCheckErrorType()},
         getContext());
     (void)emitter.emitExprLValue(target, dest);
   }
@@ -258,7 +258,7 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   if (ASTType type = dyn_cast<ASTType>(representation))
     return type;
 
-  assert(!isa<LPValueInitializerType>(representation) &&
+  assert(!isa<LValueInitializerType>(representation) &&
          "LValueInitializerType should be resolved before this");
 
   // If we have an un-emitted expression, emit it using our existingValueType to
@@ -273,7 +273,7 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
       existingValueType = nmTarget;
 
     // Propagate var/ref context (if any) into the generated declarations.
-    ValueDest dest(LPValueInitializerType{existingValueType}, context);
+    ValueDest dest(LValueInitializerType{existingValueType}, context);
     dest.patternDeclKind = patternDeclKind;
 
     // Emit the target as an LValue to understand what we're assigning into.
@@ -328,7 +328,7 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
 
   // If we have an uncollapsed expression, emit it to learn more about it.
   if (const ExprNode *target = dyn_cast<const ExprNode *>(representation)) {
-    ValueDest dest(LPValueInitializerType{resultType}, getContext());
+    ValueDest dest(LValueInitializerType{resultType}, getContext());
     dest.patternDeclKind = patternDeclKind;
     if (LValue lValue = emitter.emitExprLValue(target, dest)) {
       representation = lValue;
@@ -405,7 +405,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // If we have an expression node destination, then we need to bind this
   // value to a pattern (aka "target" in Python internals nomenclature).
   if (const ExprNode *target = dyn_cast<const ExprNode *>(representation)) {
-    ValueDest dest(LPValueInitializerType{resultType}, getContext());
+    ValueDest dest(LValueInitializerType{resultType}, getContext());
     if (LValue lValue = emitter.emitExprLValue(target, dest)) {
       representation = lValue;
     } else {
@@ -1097,16 +1097,7 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
 
   // If no destination is specified or it is just a contextual type hint or this
   // is a parameter to be destructed, then we can propagate the value directly.
-  if (!dest.isSpecified() || isa<LPValueInitializerType>(dest.representation)) {
-    if (TypedAttr init = dest.getIfPValueInitializer();
-        init && init != value.getIfPValue()) {
-      // When we are destructuring a pvalue expression, the result must be a
-      // PValue, and it should equal to the target in dest.
-      emitError(expr->getLoc(),
-                "invalid alias target: expected an identifier or '_' ");
-      dest.resetForError(*this);
-      return {};
-    }
+  if (!dest.isSpecified() || isa<LValueInitializerType>(dest.representation)) {
     dest.representation = NullRepresentation();
     return value;
   }
@@ -1199,21 +1190,10 @@ CValue IREmitter::emitCResult(CValue value, const ExprNode *expr,
 /// Destructuring the specific PValue against the provided target expr
 /// (which specifies the pattern).
 LogicalResult IREmitter::emitDestructuringPValue(PValue value,
-                                                 const ExprNode *targetExpr,
-                                                 ExprContext context) {
+                                                 const ExprNode *targetExpr) {
   // Clear the builder to indicate that an PValue must be emitted.
   llvm::SaveAndRestore savedBuilder(builder, {});
-  llvm::SaveAndRestore savedContext(paramContext, context);
-
-  ValueDest dest(LPValueInitializerType{value}, context);
-  dest.patternDeclKind = PatternDeclKind::kParamBind;
-
-  AnyValue ret = targetExpr->emitIR(dest, *this);
-  if (ret.isNull()) {
-    dest.resetForError(*this);
-    return failure();
-  }
-  return success();
+  return targetExpr->emitDestructuringPValue(value, *this);
 }
 
 /// Emit the specified expression into the specified destination.

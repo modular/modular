@@ -38,7 +38,6 @@ enum class PatternDeclKind {
   kVar,  // Make a scoped vardecl in this context. "var x = ..."
   kRef,  // Bind a scoped reference in this context. "ref x = ..."
   kBind, // Bind a scoped variable in this context like a 'read' arg convention.
-  kParamBind, // Bind a scoped parameter in this context. "alias x, y = ..."
 };
 
 //===----------------------------------------------------------------------===//
@@ -194,6 +193,9 @@ public:
 
   /// Return true if this is a TupleNode with no subexpressions.
   bool isEmptyTuple() const;
+
+  virtual llvm::LogicalResult emitDestructuringPValue(PValue value,
+                                                      IREmitter &emitter) const;
 
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
   /// ValueDest indicates information about where to emit the expression result

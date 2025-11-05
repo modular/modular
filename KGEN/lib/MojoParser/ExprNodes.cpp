@@ -51,6 +51,13 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+LogicalResult ExprNode::emitDestructuringPValue(PValue value,
+                                                IREmitter &emitter) const {
+  emitter.emitError(getLoc(),
+                    "invalid alias target: expected an identifier or '_'");
+  return failure();
+}
+
 ExprNode::ELVIITResult
 LValueCapableExprNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
                                                    PatternDeclKind kind) const {
@@ -521,6 +528,16 @@ AnyValue BoolLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   return emitter.emitBool({boolAttr, this}, dest);
 }
 
+LogicalResult
+SimpleLiteralNode::emitDestructuringPValue(PValue value,
+                                           IREmitter &emitter) const {
+  // Simply discard the value.
+  if (kind == kDiscardLiteral)
+    return success();
+
+  return ExprNode::emitDestructuringPValue(value, emitter);
+}
+
 AnyValue SimpleLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   if (kind == kNoneLiteral)
     return emitter.emitResult(emitter.shared.getNoneAttr(), this, dest);
@@ -533,12 +550,9 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
       emitter.emitError(getLoc(), "cannot read from discard pattern '_'");
       return {};
     }
-    // If this is a pvalue destructuring, the result is the PValue itself, we
-    // avoid reference to it by not inserting a ASTDecl into the scope.
-    AnyValue result = dest.getIfPValueInitializer();
-    // Otherwise the result is an DLValue.
-    if (!result)
-      result = DLValue(RCRef<DiscardDLValue>::create(initializerType, this));
+
+    AnyValue result =
+        DLValue(RCRef<DiscardDLValue>::create(initializerType, this));
     return emitter.emitResult(result, this, dest);
   }
 
@@ -671,6 +685,15 @@ static bool isImmutableValuesInOtherScope(const LookupResult &lookup,
   return true;
 }
 
+LogicalResult DeclRefNode::emitDestructuringPValue(PValue toBind,
+                                                   IREmitter &emitter) const {
+  assert(toBind && "No PValue provided when binding a parameter?");
+  ASTDecl &paramASTDecl = emitter.getDeclResolver().addFullyResolvedDecl(
+      toBind, spelling, getLoc(), &emitter.getDeclScope());
+  emitter.shared.notifyListenerOnVariableDecl(paramASTDecl, getLoc());
+  return success();
+}
+
 ExprNode::ELVIITResult DeclRefNode::emitLCVIR(ValueDest &dest,
                                               IREmitter &emitter,
                                               bool isSpeculative) const {
@@ -719,25 +742,6 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     // have the contextual type available yet.
     if (isSpeculative)
       return expr;
-
-    if (dest.patternDeclKind == PatternDeclKind::kParamBind) {
-      TypedAttr toBind = dest.getIfPValueInitializer();
-      assert(toBind && "No PValue provided when binding a parameter?");
-
-      ASTDecl &paramASTDecl = emitter.getDeclResolver().addFullyResolvedDecl(
-          toBind, spelling, loc, &lookupScope);
-      emitter.shared.notifyListenerOnVariableDecl(paramASTDecl, loc);
-      return emitter.emitResult(toBind, expr, dest);
-    }
-
-    if (dest.getIfPValueInitializer()) {
-      // This can not be a val/ref bind, it must be a param bind
-      emitter.emitError(loc, "cannot bind a parameter '")
-          << spelling << "' to a "
-          << (dest.patternDeclKind == PatternDeclKind::kRef ? "'ref'" : "'var'")
-          << " pattern" << expr->getRange();
-      return {};
-    }
 
     // Fail in cases like "var x = []" which is ambiguous.
     ASTType varType = dest.getIfInitializerType();
@@ -2721,6 +2725,11 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
                                 emitter);
 }
 
+LogicalResult ParenNode::emitDestructuringPValue(PValue value,
+                                                 IREmitter &emitter) const {
+  return subExpr->emitDestructuringPValue(value, emitter);
+}
+
 AnyValue ParenNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   return emitter.emitExpr(subExpr, dest);
 }
@@ -3016,7 +3025,7 @@ BinOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
 
   // Handle type patterns like "(xyz) : Type": "xyz" must be an lvalue that has
   // the specified type, so we can direct emit it now.
-  ValueDest dest(LPValueInitializerType{type}, EC_TypePattern);
+  ValueDest dest(LValueInitializerType{type}, EC_TypePattern);
   dest.patternDeclKind = patKind;
   if (auto lv = emitter.emitExprLValue(lhs, dest))
     return AnyValue(lv);
@@ -4201,31 +4210,9 @@ AnyValue MagicFunctionNode::emitFunctionsInModule(ValueDest &dest,
   return tupleCallNode.emitIR(dest, emitter);
 }
 
-// There are two options. We are either emitting a type or an instance of Tuple.
-// That is, either
-//      (T1,T2) is sugar for Tuple[T1,T2]
-// and we want to reuse 'substituteParametersIntoUserDefinedType' so
-// that bindings are verified and parameter evaluation is used or
-//      (exp, exp) is sugar for Tuple[typeof(expr), typeof(expr)](exp, exp)
-// and we want to emit a constructor call and infer the parameter types
-// of Tuple.
-auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
-                          bool isSpeculative) const -> ELVIITResult {
-  auto formTupleDLValue =
-      [&](ArrayRef<ASTExprAnd<AnyValue>> elements) -> AnyValue {
-    SmallVector<Type> typeElts;
-    for (ASTExprAnd<AnyValue> elt : elements)
-      typeElts.push_back(elt.ir.getIfLValue().getRValueType());
-    ASTType concretizedTupleType =
-        emitter.getBuiltinTupleInstantiation(getLoc(), typeElts);
-    if (!concretizedTupleType || concretizedTupleType.isTypeCheckErrorType())
-      return {};
-    DLValue result(
-        RCRef<TupleDLValue>::create(elements, concretizedTupleType, this));
-    return emitter.emitResult(result, this, dest);
-  };
-
-  auto getTupleItem = [&](Type eltType, unsigned index, PValue tuplePVal) {
+LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
+                                                 IREmitter &emitter) const {
+  auto getTupleItem = [&](Type eltType, unsigned index) {
     // Get the item from the tuple into the corresponding LValue.
     ValueDest eltDest(eltType, EC_TupleElement);
 
@@ -4245,7 +4232,7 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
     // Emit the extraction from the tuple as a synthesized subscript with
     // this value as an index.
-    auto elem = emitGetterSetterAccess(&subscript, {tuplePVal, this},
+    auto elem = emitGetterSetterAccess(&subscript, {toUnpack, this},
                                        exprOperand, eltDest, emitter);
     if (!elem) {
       eltDest.resetForError(emitter);
@@ -4254,6 +4241,61 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     assert(elem.getIfPValue() &&
            "expect PValue result when unpacking a PValue tuple");
     return elem.getIfPValue();
+  };
+
+  SmallVector<ASTType> eltTypes;
+
+  ASTType expectedType = toUnpack.getType();
+  ASTType tupleType =
+      emitter.shared.getBuiltinTupleType(emitter.getDeclScope(), getLoc());
+
+  if (!tupleType.isEqualCanon(
+          expectedType.getWithoutParameters(emitter.shared))) {
+    emitter.emitError(getLoc(), "expected a tuple type to destructure, got ")
+        << expectedType << getRange();
+    return failure();
+  }
+
+  assert(expectedType.getParamBindings().size() == 1 &&
+         "Tuple has one variadic parameter");
+  // This must be a fully resolved tuple type.
+  auto vaAttr = sugarCast<VariadicAttr>(expectedType.getParamBindings()[0]);
+  if (vaAttr.getValues().size() == exprs.size()) {
+    for (auto [i, typeElt] : llvm::enumerate(vaAttr.getValues())) {
+      PValue eltPVal = getTupleItem(ASTType(typeElt), i);
+      if (failed(exprs[i]->emitDestructuringPValue(eltPVal, emitter)))
+        return failure();
+    }
+  } else {
+    // Make sure lhs matches with rhs in order to destructure.
+    emitter.emitError(getLoc(), "cannot unpack value of ")
+        << expectedType << " of " << vaAttr.getValues().size() << " element"
+        << plural(exprs.size()) << " into " << exprs.size() << " value"
+        << plural(exprs.size()) << getRange();
+    return failure();
+  }
+
+  return success();
+}
+
+// There are two options. We are emitting an instance of Tuple.
+// That is, (exp, exp) is sugar for Tuple[typeof(expr), typeof(expr)](exp, exp)
+// and we want to emit a constructor call and infer the parameter types
+// of Tuple.
+auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
+                          bool isSpeculative) const -> ELVIITResult {
+  auto formTupleDLValue =
+      [&](ArrayRef<ASTExprAnd<AnyValue>> elements) -> AnyValue {
+    SmallVector<Type> typeElts;
+    for (ASTExprAnd<AnyValue> elt : elements)
+      typeElts.push_back(elt.ir.getIfLValue().getRValueType());
+    ASTType concretizedTupleType =
+        emitter.getBuiltinTupleInstantiation(getLoc(), typeElts);
+    if (!concretizedTupleType || concretizedTupleType.isTypeCheckErrorType())
+      return {};
+    DLValue result(
+        RCRef<TupleDLValue>::create(elements, concretizedTupleType, this));
+    return emitter.emitResult(result, this, dest);
   };
 
   // If this tuple is being speculatively emitted on the LHS of an assignment,
@@ -4325,10 +4367,8 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // definition.
   SmallVector<ASTType> eltTypes;
   bool isLValueType = false;
-  TypedAttr tuplePVal = dest.getIfPValueInitializer();
   if (auto expectedType = dest.getExpectedTypeIfSpecified()) {
-    isLValueType = dest.getIfInitializerType() && !tuplePVal;
-
+    isLValueType = !dest.getIfInitializerType().isNull(); //&& !tuplePVal;
     // Special case the element type of Tuple.  We could be more general than
     // this when there was a reason to, e.g. looking up a __getitem__
     // implementation.
@@ -4341,13 +4381,6 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
         if (variadicAttr.getValues().size() == exprs.size()) {
           for (auto typeElt : variadicAttr.getValues())
             eltTypes.push_back(ASTType(typeElt));
-        } else if (tuplePVal) {
-          // Make sure lhs matches with rhs in order to destructure.
-          emitter.emitError(getLoc(), "cannot unpack value of ")
-              << expectedType << " of " << variadicAttr.getValues().size()
-              << " element" << plural(exprs.size()) << " into " << exprs.size()
-              << " value" << plural(exprs.size()) << getRange();
-          return {};
         }
       }
     } else if (isLValueType) {
@@ -4367,14 +4400,7 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     if (!eltTypes.empty()) {
       if (isLValueType) {
         eltDest =
-            ValueDest(LPValueInitializerType{eltTypes[i]}, EC_TupleElement);
-      } else if (tuplePVal) {
-        PValue eltPVal = getTupleItem(eltTypes[i], i, tuplePVal);
-        if (!eltPVal) {
-          dest.resetForError(emitter);
-          return {};
-        }
-        eltDest = ValueDest(LPValueInitializerType{eltPVal}, EC_TupleElement);
+            ValueDest(LValueInitializerType{eltTypes[i]}, EC_TupleElement);
       } else {
         eltDest = ValueDest(eltTypes[i], EC_TupleElement);
       }
@@ -4389,12 +4415,6 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     elements.push_back({std::move(exprVal), expr});
   }
   assert(allEltsLValue || !elements.empty());
-
-  // If we are destructing a tuple parameter, the result after emitting the
-  // TupleNode is the same as the tuple we are destructing and we do not need to
-  // construct another tuple.
-  if (tuplePVal)
-    return emitter.emitResult(tuplePVal, this, dest);
 
   // If this is a tuple with all LValue elements, return a DLValue since we
   // can assign into this expression.

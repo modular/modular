@@ -129,6 +129,8 @@ struct SimpleLiteralNode final : public ExprNode {
   SMLoc getLoc() const override { return loc; }
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  LogicalResult emitDestructuringPValue(PValue value,
+                                        IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -200,7 +202,8 @@ struct DeclRefNode final : public LValueCapableExprNode, Identifier {
   static ELVIITResult emitUnqualLookup(StringRef spelling, const ExprNode *expr,
                                        ASTDecl &lookupScope, ValueDest &dest,
                                        IREmitter &emitter, bool isSpeculative);
-
+  LogicalResult emitDestructuringPValue(PValue value,
+                                        IREmitter &emitter) const override;
   ELVIITResult emitLCVIR(ValueDest &dest, IREmitter &emitter,
                          bool isSpeculative) const override;
   void print(mlir::raw_indented_ostream &os) const override;
@@ -387,7 +390,8 @@ struct ParenNode final : public ExprNode {
   SMLoc getLoc() const override { return lparenLoc; }
   SourceRange getRange() const override { return {lparenLoc, rparenLoc}; }
   AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
-
+  LogicalResult emitDestructuringPValue(PValue value,
+                                        IREmitter &emitter) const override;
   ELVIITResult
   emitLValueIfImplicitlyTyped(IREmitter &emitter,
                               PatternDeclKind kind) const override {
@@ -419,6 +423,8 @@ struct TupleNode final : public LValueCapableExprNode {
   }
   ELVIITResult emitLCVIR(ValueDest &dest, IREmitter &emitter,
                          bool isSpeculative) const override;
+  LogicalResult emitDestructuringPValue(PValue value,
+                                        IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
