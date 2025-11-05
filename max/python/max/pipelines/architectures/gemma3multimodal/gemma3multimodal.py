@@ -301,6 +301,8 @@ class Gemma3MultiModalProjector(Module):
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
         super().__init__()
 
+        self.devices = config.devices
+
         self.mm_input_projection_weight = Tensor.zeros(
             shape=(
                 config.vision_config.hidden_size,
@@ -317,38 +319,46 @@ class Gemma3MultiModalProjector(Module):
 
         self.patches_per_image = int(
             config.vision_config.image_size // config.vision_config.patch_size
-        )
-        self.tokens_per_side = int(config.mm_tokens_per_image**0.5)
-        self.kernel_size = self.patches_per_image // self.tokens_per_side
+        ) # 64
+        
+        self.tokens_per_side = int(config.mm_tokens_per_image**0.5) # 256 ** 05 = 16
+        self.kernel_size = self.patches_per_image // self.tokens_per_side # 64 / 16 = 4
 
-    # TODO are these in the right order?  pool -> mm_soft_emb_norm?? i think should be other way based on the vision tower
+    # TODO | are these in the right order?  pool -> mm_soft_emb_norm??
+    # TODO | i think should be other way based on the vision tower
     def __call__(self, vision_outputs: Tensor):
-        batch_size, _, seq_length = vision_outputs.shape
+        batch_size, _, seq_length = vision_outputs.shape # TensorValue shape: ['batch_size', 4096, 1152]
 
-        reshaped_vision_outputs = vision_outputs.transpose(1, 2)
-        # TODO is the shape right?
+        reshaped_vision_outputs = vision_outputs.transpose(1, 2) # TensorValue shape: ['batch_size', 1152, 4096]
+
+        # TODO not sure if shape is correct.
         reshaped_vision_outputs = reshaped_vision_outputs.reshape(
             (
                 batch_size,
+                self.patches_per_image,
+                self.patches_per_image,
                 seq_length,
-                self.patches_per_image,
-                self.patches_per_image,
             )
-        )
-        reshaped_vision_outputs = reshaped_vision_outputs.contiguous()
+        ) # TensorValue shape: ['batch_size', 64, 64, 1152]
+
+        normed_vision_outputs = self.mm_soft_emb_norm(reshaped_vision_outputs) # TensorValue shape: ['batch_size', 64, 64, 1152]
+
+        # [N, H, W, C]
         pooled_vision_outputs = avg_pool2d(
-            input=reshaped_vision_outputs,
-            kernel_size=self.kernel_size,
-            stride=self.kernel_size,
+            input=normed_vision_outputs,
+            kernel_size=(self.kernel_size,), # (4,)
+            stride=self.kernel_size,         # 4
+            dilation=self.kernel_size
         )
         pooled_vision_outputs = pooled_vision_outputs.flatten(2)
+        logger.info(f"6. PVO: {pooled_vision_outputs} - {type(pooled_vision_outputs)}")
         pooled_vision_outputs = vision_outputs.transpose(1, 2)
-
-        normed_vision_outputs = self.mm_soft_emb_norm(pooled_vision_outputs)
+        logger.info(f"7. PVO: {pooled_vision_outputs} - {type(pooled_vision_outputs)}")
 
         projected_vision_outputs = matmul(
             normed_vision_outputs, self.mm_input_projection_weight
         )
+        logger.info(f"8. PVO: {pooled_vision_outputs} - {type(pooled_vision_outputs)}")
         return projected_vision_outputs.type_as(vision_outputs)
 
 
@@ -472,7 +482,7 @@ class Gemma3VisionEmbeddings(Module):
         Returns:
             Embeddings tensor of shape (batch_size, num_positions, embed_dim).
         """
-        logger.info(f"*** PV shape: {pixel_values.shape}")
+        logger.info(f"*** Gemma3VisionEmbeddings PV shape: {pixel_values.shape}")
         batch_size = pixel_values.shape[0]
         max_im_h = pixel_values.shape[2]
         max_im_w = pixel_values.shape[3]
@@ -531,42 +541,41 @@ class Gemma3VisionEmbeddings(Module):
 class Gemma3VisionMLP(Module):
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
         super().__init__()
-        config = config.text_config
-        self.config = config
-        self.hidden_size = config.hidden_size
-        self.intermediate_size = config.intermediate_size
+        self.hidden_size = config.vision_config.hidden_size
+        self.intermediate_size = config.vision_config.intermediate_size
 
-        # TODO should be GELUTanh activation, not sure if this works
-        self.gate_proj = Linear(
+        # TODO | required this to prevent "missing weights" errors
+        # TODO | but can we instead use `ops.gelu()`?
+        # self.gelu_tanh = Linear(
+        #     self.hidden_size,
+        #     self.intermediate_size,
+        #     dtype=config.dtype,
+        #     device=config.devices[0],
+        #     has_bias=False,
+        # )
+        
+        self.fc1 = Linear(
             self.hidden_size,
             self.intermediate_size,
             dtype=config.dtype,
             device=config.devices[0],
             has_bias=False,
         )
-        # TODO should be fc1 Linear
-        self.up_proj = Linear(
-            self.hidden_size,
-            self.intermediate_size,
-            dtype=config.dtype,
-            device=config.devices[0],
-            has_bias=False,
-        )
-        # TODO should be fc2 Linear
-        self.down_proj = Linear(
+        
+        self.fc2 = Linear(
             self.intermediate_size,
             self.hidden_size,
             dtype=config.dtype,
             device=config.devices[0],
             has_bias=False,
         )
-        self.act_fn = config.hidden_activation
 
     def __call__(self, x):
-        down_proj = self.down_proj(
-            self.act_fn(self.gate_proj(x)) * self.up_proj(x)
-        )
-        return down_proj
+        x = self.fc1(x)
+        x = ops.gelu(x)
+        # x = self.gelu_tanh(x)
+        x = self.fc2(x)
+        return x
 
 
 # ✅ based on HF
@@ -670,11 +679,11 @@ class Gemma3VisionModel(Module):
         self.projector = Gemma3MultiModalProjector(config)
 
     # from huggingface/gemma3/modeling_gemma3.py
-    # TODO this seems important!?
-    def prepare_inputs_for_generation(
-        self,
-    ):
-        print("*** CALL PREPARE INPUTS FOR GENERATION ***")
+    # TODO is this required?
+    # def prepare_inputs_for_generation(
+    #     self,
+    # ):
+    #     print("*** CALL PREPARE INPUTS FOR GENERATION ***")
 
     def __call__(
         self,
