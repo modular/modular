@@ -322,6 +322,7 @@ fn choose_config[
     # workload per SM. The computation per SM is the flops (ignoring 2x in 2MNK)
     # timed by max number of ctas per SM i.e. number of waves.
     # We first minimize the number of waves, then use the flops to break tie.
+
     # For small M, swap A and B so that the small M maps to mma_n since it supports
     # a larger range than mma_m.
     if M < M_pivote:
@@ -342,9 +343,13 @@ fn choose_config[
         @parameter
         @always_inline
         fn select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
-            max_mma_n = min(align_up(N, 16), 256)
+            N_alignby16 = align_up(N, 16)
+            max_mma_n = min(N_alignby16, 256)
+            # In pratice 64x16 mma creates too many ctas and increase L2
+            # load volume, ends up hurting performance.
+            min_mma_n = min(N_alignby16, 32)
             for bm in [64, 128]:
-                for mma_n in range(max_mma_n, 15, -16):
+                for mma_n in range(max_mma_n, min_mma_n - 1, -16):
                     var mma_m = bm * cta_group
                     var num_clusters = ceildiv(M, mma_m) * ceildiv(N, mma_n)
                     var num_waves = ceildiv(num_clusters, num_SMs // cta_group)
@@ -365,7 +370,7 @@ fn choose_config[
         select_mma_mn(N, M, True)
 
     # For small mmas, we group multiple tiles per tma-mma synchronization.
-    if ((mma_mn[0] // cta_group) * mma_mn[1]) <= 64 * 64 and ceildiv(
+    if ((mma_mn[0] // cta_group) * mma_mn[1]) <= 64 * 96 and ceildiv(
         K, BK
     ) % 2 == 0:
         k_group_size = 2
