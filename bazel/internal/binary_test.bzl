@@ -8,7 +8,7 @@ def _binary_test_impl(ctx):
     )
 
     processed_env = {}
-    for key, value in ctx.attr.env.items():
+    for key, value in (ctx.attr.env | ctx.attr.binary[RunEnvironmentInfo].environment).items():
         processed_env[key] = ctx.expand_make_variables(
             "env",
             ctx.expand_location(value, targets = ctx.attr.data),

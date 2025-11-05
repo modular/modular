@@ -114,7 +114,7 @@ def modular_py_test(
                 "@rules_python//python/runfiles",
             ],
             direct = False,
-            env = extra_env | env_for_available_tools() | env | {
+            env = env_for_available_tools() | extra_env | env | {
                 "DEBUG_SRCS": ":".join(["$(location {})".format(src) for src in srcs]),
                 # TODO: This should be PYTHONINSPECT but that doesn't work. We're avoiding args so lldb works without --
                 "PYTHONSTARTUP": "$(location //bazel/internal:test_debug_shim.py)",
@@ -145,7 +145,7 @@ def modular_py_test(
                 name = test_name,
                 data = data + extra_data,
                 toolchains = toolchains,
-                env = extra_env | env_for_available_tools() | env,
+                env = env_for_available_tools() | extra_env | env,
                 deps = deps + [
                     requirement("pytest"),
                     "@rules_python//python/runfiles",
@@ -167,7 +167,7 @@ def modular_py_test(
             name = name,
             data = data + extra_data,
             toolchains = toolchains,
-            env = extra_env | env_for_available_tools() | env,
+            env = env_for_available_tools() | extra_env | env,
             deps = deps + [
                 requirement("pytest"),
                 "@rules_python//python/runfiles",
