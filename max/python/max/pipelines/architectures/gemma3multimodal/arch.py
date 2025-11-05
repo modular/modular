@@ -23,6 +23,7 @@ from max.pipelines.lib import (
 
 from .model import Gemma3_MultiModalModel
 from .tokenizer import Gemma3MMSimpleTokenizer
+from . import weight_adapters
 
 gemma3_multimodal_arch = SupportedArchitecture(
     name="Gemma3ForConditionalGeneration",
@@ -41,7 +42,7 @@ gemma3_multimodal_arch = SupportedArchitecture(
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
+        # SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
     },
     pipeline_model=Gemma3_MultiModalModel,
     task=PipelineTask.TEXT_GENERATION,
@@ -49,7 +50,8 @@ gemma3_multimodal_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     rope_type=RopeType.normal,
-    # weight_adapters={
-    #     WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-    # },
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_language_state_dict,
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_vision_state_dict,
+    },
 )
