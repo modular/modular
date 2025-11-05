@@ -6,7 +6,6 @@
 # Unit tests for model_worker
 from __future__ import annotations
 
-import sys
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -33,9 +32,6 @@ from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.scheduler.queues import SchedulerZmqConfigs
 from max.serve.telemetry.metrics import NoopClient
-
-if sys.version_info < (3, 11):
-    from exceptiongroup import ExceptionGroup
 
 
 class MockModelConfig(MAXModelConfig):
@@ -74,7 +70,7 @@ async def test_model_worker_propagates_exception(
     """Tests raising in the model worker context manager."""
     settings = Settings()
 
-    with pytest.raises(ExceptionGroup) as exg:
+    with pytest.raises(ValueError, match="kaboom"):
         async with start_model_worker(
             EchoTokenGenerator,
             mock_pipeline_config,
@@ -85,10 +81,6 @@ async def test_model_worker_propagates_exception(
             ),
         ):
             raise ValueError("kaboom")
-
-    ex = exg.value.exceptions[0]
-    assert isinstance(ex, ValueError)
-    assert str(ex) == "kaboom"
 
 
 class MockInvalidTokenGenerator(
@@ -117,7 +109,9 @@ async def test_model_worker_propagates_construction_exception(
 
     # The MockTokenGenerator crashes the remote subprocess
     # then ProcessMonitor checks throw TimeoutError here
-    with pytest.raises(ExceptionGroup) as exg:
+    with pytest.raises(
+        ValueError, match=MockInvalidTokenGenerator.ERROR_MESSAGE
+    ):
         async with start_model_worker(
             MockInvalidTokenGenerator,
             mock_pipeline_config,
@@ -128,10 +122,6 @@ async def test_model_worker_propagates_construction_exception(
             metric_client=NoopClient(),
         ):
             pass
-
-    ex = exg.value.exceptions[0]
-    assert isinstance(ex, ValueError)
-    assert str(ex) == MockInvalidTokenGenerator.ERROR_MESSAGE
 
 
 class MockSlowTokenGenerator(
@@ -156,7 +146,9 @@ async def test_model_worker_start_timeout(
     """Tests raising in the model worker task."""
     settings = Settings(MAX_SERVE_MW_TIMEOUT=0.1)
 
-    with pytest.raises(ExceptionGroup) as exg:
+    with pytest.raises(
+        TimeoutError, match="Model Worker failed to become ready"
+    ):
         async with start_model_worker(
             MockSlowTokenGenerator,
             mock_pipeline_config,
@@ -167,10 +159,6 @@ async def test_model_worker_start_timeout(
             ),
         ):
             pass
-
-    ex = exg.value.exceptions[0]
-    assert isinstance(ex, TimeoutError)
-    assert str(ex) == "Model Worker failed to become ready"
 
 
 class MockTokenizer(PipelineTokenizer):  # type: ignore
@@ -206,18 +194,10 @@ async def test_lifespan_propagates_worker_exception(
 
     # The MockTokenGenerator crashes the remote subprocess
     # then ProcessMonitor checks throw TimeoutError here
-    with pytest.raises(ExceptionGroup) as ex_info:
+    with pytest.raises(ValueError, match="CRASH TEST DUMMY"):
         async with api_server.lifespan(
             FastAPI(),
             settings,
             serving_settings,
         ):
             pass
-
-    # This is why python 3.11 has "except*"
-    ex = ex_info.value
-    while isinstance(ex, ExceptionGroup):
-        (ex,) = ex.exceptions
-
-    assert isinstance(ex, ValueError)
-    assert str(ex) == "CRASH TEST DUMMY"
