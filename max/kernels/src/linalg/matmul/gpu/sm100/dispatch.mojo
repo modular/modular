@@ -496,6 +496,7 @@ fn matmul_dispatch_sm100[
     if (
         c_type == DType.bfloat16
         and static_N * size_of[c_type]() % 16 == 0
+        and static_K * size_of[a_type]() % 16 == 0
         and transpose_b
     ):
         var status = DISPATCH_MISS
