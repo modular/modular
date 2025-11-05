@@ -18,7 +18,7 @@ import queue
 import sys
 from asyncio import Task
 from collections.abc import AsyncGenerator, Callable
-from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import Executor, ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -28,6 +28,7 @@ from typing import Any, ParamSpec, Protocol, TypeVar
 logger = logging.getLogger("max.serve.process_control")
 
 if sys.version_info < (3, 11):
+    from exceptiongroup import BaseExceptionGroup
     from taskgroup import TaskGroup
 else:
     from asyncio import TaskGroup
@@ -146,11 +147,11 @@ class ProcessManager:
         self.heartbeat = self.group.create_task(run_task())
         return self.heartbeat
 
-
-def _task_group_shutdown(group: TaskGroup) -> None:
-    for t in group._tasks:
-        if not t.done():
-            t.cancel()
+    def cancel(self) -> None:
+        if self.heartbeat and not self.heartbeat.done():
+            self.heartbeat.cancel()
+        if self.task and not self.task.done():
+            self.task.cancel()
 
 
 @asynccontextmanager
@@ -161,22 +162,21 @@ async def subprocess_manager(name: str) -> AsyncGenerator[ProcessManager]:
         with ProcessPoolExecutor(max_workers=1, mp_context=mp) as pool:
             try:
                 async with TaskGroup() as group:
-                    yield ProcessManager(name, ctx, pool, group)
-                    # exit now, don't wait forever
-                    _task_group_shutdown(group)
+                    proc = ProcessManager(name, ctx, pool, group)
+                    yield proc
+                    proc.cancel()
+            except BaseExceptionGroup as e:
+                # declutter logs by unpacking groups of 1
+                if len(e.exceptions) == 1:
+                    # preserve the "direct cause" chain for remote tracebacks
+                    raise e.exceptions[0] from e.exceptions[0].__cause__
+                raise
             finally:
                 pool.shutdown(wait=False, cancel_futures=True)
-
-
-@asynccontextmanager
-async def thread_manager(name: str) -> AsyncGenerator[ProcessManager]:
-    """Factory for ProcessManager using threading"""
-    ctx = ThreadingContext()
-    with ThreadPoolExecutor(1) as pool:
-        try:
-            async with TaskGroup() as group:
-                yield ProcessManager(name, ctx, pool, group)
-                # exit now, don't wait forever
-                _task_group_shutdown(group)
-        finally:
-            pool.shutdown(wait=False, cancel_futures=True)
+                # TODO: refactor ProcessPoolExecutor away for a few reasons
+                # - couple worker health (exit code) to task completion
+                # - remove life-cycle checks attempting to communicate via queues
+                # - use plain Task instead of context-manager nesting
+                # - send fd pipes without mp.Manager and resource_tracker warnings
+                # - add shutdown grace-period before sigkill
+                logger.info(f"Subprocess completed: {name}")

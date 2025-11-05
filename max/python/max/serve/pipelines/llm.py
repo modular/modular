@@ -116,6 +116,7 @@ class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
             if not t.done():
                 t.cancel()
         self.tasks.clear()
+        self.logger.info("Pipeline completed: %s", self.model_name)
         return await super().__aexit__(et, exc, tb)
 
     def create_background_task(
@@ -130,7 +131,7 @@ class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
         return task
 
     def log_task_done(self, task: asyncio.Task[Any]) -> None:
-        self.logger.info(
+        self.logger.debug(
             "%s: Task completed: %s", self.model_name, task.get_name()
         )
 
