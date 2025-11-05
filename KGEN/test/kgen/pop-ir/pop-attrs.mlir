@@ -71,3 +71,6 @@ kgen.func @union_constants() {
   f2 = #pop<fmf reassoc|ninf|nnan>,
   f3 = #pop<fmf fast>
 } : () -> ()
+
+// CHECK: f0 = #pop.simd_and<#kgen.unknown : !pop.simd<4, si32>, #pop<simd -1> : !pop.simd<4, si32>> : !pop.simd<4, si32>
+"simd_and.attr"() { f0 = #pop.simd_and<#kgen.unknown : !pop.simd<4, si32>, #pop<simd -1> : !pop.simd<4, si32>> } : () -> ()

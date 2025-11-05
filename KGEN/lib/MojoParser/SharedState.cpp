@@ -2594,6 +2594,13 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
       }
   }
 
+  if (auto andOp = dyn_cast<POP::SIMDAndOp>(op)) {
+    if (auto lhsOp = findValue(andOp.getLhs())) {
+      if (auto rhsOp = findValue(andOp.getRhs()))
+        return POP::SIMDAndAttr::get(lhsOp, rhsOp);
+    }
+  }
+
   if (auto bitcast = dyn_cast<POP::PointerBitcastOp>(op)) {
     if (auto src = findValue(bitcast.getInput()))
       return ParamOperatorAttr::get(

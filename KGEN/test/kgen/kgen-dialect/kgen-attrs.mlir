@@ -291,3 +291,13 @@ kgen.generator @closureSymbol(){
   // CHECK: b = #pop<simd "1"> : !pop.simd<3, f16>
   b = #pop.simd_splat< #pop<simd "1.0"> : !pop.scalar<f16>> : !pop.simd<3, f16>
 } : () -> ()
+
+"some.op"() {
+  // CHECK: a = #pop<simd 0> : !pop.scalar<si32>
+  a = #pop.simd_and< #pop<simd 1> : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<si32>,
+  // CHECK: b = #pop.simd<2, 42, 1024, 0>
+  b = #pop.simd_and< #pop.simd<7, 42, -1, 0> : !pop.simd<4, si32>,
+                     #pop.simd<2, -1, 1024, -1> : !pop.simd<4, si32>> : !pop.simd<4, si32>,
+  // CHECK: c = #pop.simd_and<#kgen.unknown : !pop.simd<4, si32>, #kgen.unknown : !pop.simd<4, si32>> : !pop.simd<4, si32>
+  c = #pop.simd_and< #kgen.unknown : !pop.simd<4, si32>, #kgen.unknown : !pop.simd<4, si32>>
+} : () -> ()

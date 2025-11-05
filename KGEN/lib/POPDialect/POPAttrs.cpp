@@ -1877,6 +1877,54 @@ SIMDSplatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// SIMD Binary Operation Attrs
+//===----------------------------------------------------------------------===//
+
+static LogicalResult
+verifySIMDBinaryOp(function_ref<InFlightDiagnostic()> emitError, TypedAttr lhs,
+                   TypedAttr rhs, bool allowFP) {
+  if (lhs.getType() != rhs.getType() || !isa<SIMDType>(lhs.getType()))
+    return emitError() << "requires two equally-typed SIMD operands";
+
+  if (!allowFP) {
+    auto simdType = cast<SIMDType>(lhs.getType());
+    auto dtype = simdType.getResolvedDType();
+    if (!dtype.has_value() || !dtype->isIntLike())
+      return emitError() << "requires two equally-typed integer SIMD operands";
+  }
+
+  return success();
+}
+
+TypedAttr SIMDAndAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
+  // Fold if possible
+  if (auto fold = foldSIMDOp(
+          {lhs, rhs}, [](APSInt lhs, APSInt rhs) { return lhs & rhs; },
+          [](bool lhs, bool rhs) { return lhs && rhs; })) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, lhs, rhs);
+}
+
+TypedAttr SIMDAndAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  MLIRContext *context, TypedAttr lhs,
+                                  TypedAttr rhs) {
+  if (failed(verify(emitError, lhs, rhs)))
+    return {};
+  return SIMDAndAttr::get(context, lhs, rhs);
+}
+
+bool SIMDAndAttr::isConstant() const { return false; }
+
+Type SIMDAndAttr::getType() const { return getLhs().getType(); }
+
+LogicalResult SIMDAndAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  TypedAttr lhs, TypedAttr rhs) {
+  return verifySIMDBinaryOp(emitError, lhs, rhs, /*allowFP=*/false);
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
