@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 modular_py_test(
     name = "tests",
@@ -10,5 +10,6 @@ modular_py_test(
     },
     deps = [
         "//max/python/max/profiler",
+        requirement("pytest-asyncio"),
     ],
 )
