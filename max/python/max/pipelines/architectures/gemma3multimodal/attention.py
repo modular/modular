@@ -17,8 +17,6 @@ import math
 from max.graph import TensorValue, ops
 from max.nn import Linear
 from max.nn.layer import Module
-from max.nn.norm import RMSNorm
-from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
 from .model_config import Gemma3ForConditionalGenerationConfig
 
@@ -56,12 +54,12 @@ class Gemma3VisionAttention(Module):
         # self.is_causal = not config.use_bidirectional_attention
 
         self.q_proj = Linear(
-            vision_config.hidden_size,          # 1152
-            self.num_heads * self.head_dim,     # 16 * 72 = 1152
+            vision_config.hidden_size,  # 1152
+            self.num_heads * self.head_dim,  # 16 * 72 = 1152
             has_bias=config.attention_bias,
             dtype=config.dtype,
             device=config.devices[0],
-        )        
+        )
         self.k_proj = Linear(
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
