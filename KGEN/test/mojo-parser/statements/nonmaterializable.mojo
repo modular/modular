@@ -42,7 +42,7 @@ struct NmStruct:
 
 # CHECK: lit.alias.decl{{.*}}notMaterializedAlias{{.*}}NmStruct{{.*}}77
 alias notMaterializedAlias = NmStruct(77)
-# CHECK: lit.alias.decl{{.*}}notMaterializedButConverted{{.*}}: !NmTarget = {{.*}}{:i1 0}}>>
+# CHECK: lit.alias.decl{{.*}}notMaterializedButConverted{{.*}}: !NmTarget = {{.*}}{:i1 0}})>
 alias notMaterializedButConverted: NmTarget = NmStruct(76)
 
 

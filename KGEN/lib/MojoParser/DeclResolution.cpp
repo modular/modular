@@ -1133,7 +1133,8 @@ DeclResolver::createSelfContainedSignature(FnTypeGeneratorType original) {
   // Collect the subset of referenced parameters. Use a set vector to keep the
   // order deterministic.
   llvm::SmallSetVector<ParamDeclRefAttr, 4> capturedRefs;
-  original.walk([&](ParamDeclRefAttr ref) { capturedRefs.insert(ref); });
+  getCanonicalType(original).walk(
+      [&](ParamDeclRefAttr ref) { capturedRefs.insert(ref); });
 
   SmallVector<ParamDeclRefAttr> captured = capturedRefs.takeVector();
   // Unbind the N capture parameters, creating a FuncType with N new input

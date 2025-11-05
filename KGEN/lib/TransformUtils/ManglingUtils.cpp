@@ -67,7 +67,7 @@ void KGEN::prettyPrintParameter(TypedAttr value, raw_ostream &os) {
 /// Return a string that is a unique specification of the specified parameter.
 static void printParameterMangling(TypedAttr value, raw_ostream &os) {
   // TODO: Don't print #lit.any.origin, they are singletons!
-  // if (isa<AnyOriginAttr>(value))
+  // if (sugarIsa<AnyOriginAttr>(value))
   //  return;
 
   // Handle VariadicAttr of types as well, which are common for variadic packs.

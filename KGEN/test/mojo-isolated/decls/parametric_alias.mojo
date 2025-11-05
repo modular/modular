@@ -85,7 +85,7 @@ fn expect_two_ints[binop: type_of(myIntAdd)]():
 
 # CHECK-LABEL: fn @"implicit_conversions()"
 fn implicit_conversions():
-    # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> #kgen.gen<
+    # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> {{.*}}#kgen.gen<
     expect_two_ints[myIntAdd]()
     # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> rebind(
     expect_two_ints[myDefaultAdd]()

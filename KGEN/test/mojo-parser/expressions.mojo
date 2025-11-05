@@ -589,7 +589,7 @@ fn test_if_cond(var cond: Bool, memCond: MemBoolish):
 
 # CHECK-LABEL: lit.fn @"test_param_if_cond{{.*}}"<cond: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond({{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">{{.*}}, {2}, {3})>
+  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, {2}, {3})>
   alias i = 2 if cond else 3
 
   # CHECK-NEXT: lit.alias.decl *"j{{.*}}@SIMD<:!DType {{.*}}{:dtype f64}{{.*}}, :!Int {1}> = <cond({{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">

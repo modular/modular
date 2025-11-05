@@ -720,8 +720,6 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return printParam(os, memAttr.getValue(), diagShared);
 
   if (auto dtypeAttr = dyn_cast<DTypeConstantAttr>(param)) {
-    if (diagShared)
-      os << "DType.";
     os << dtypeAttr.getDType().getAsString(/*libForm=*/true);
     return;
   }
@@ -872,7 +870,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   }
 
   // These are origins but don't need `origin_of(...)` around them.
-  if (auto anyOrig = dyn_cast<AnyOriginAttr>(param)) {
+  if (auto anyOrig = sugarDynCast<AnyOriginAttr>(param)) {
     if (anyOrig.getType().isMutableKnown(true))
       os << "MutAnyOrigin";
     else if (anyOrig.getType().isMutableKnown(false))
@@ -881,11 +879,11 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       os << "SomeAnyOrigin";
     return;
   }
-  if (auto comptimeOrig = dyn_cast<ComptimeOriginAttr>(param)) {
+  if (auto comptimeOrig = sugarDynCast<ComptimeOriginAttr>(param)) {
     os << "ComptimeOrigin";
     return;
   }
-  if (auto originField = dyn_cast<OriginFieldAttr>(param)) {
+  if (auto originField = sugarDynCast<OriginFieldAttr>(param)) {
     if (isa<StaticOriginAttr>(originField.getBase())) {
       if (originField.getField().str() == "__constants__" &&
           originField.getType().isMutableKnown(false)) {

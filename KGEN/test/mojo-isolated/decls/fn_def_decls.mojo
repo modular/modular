@@ -64,8 +64,8 @@ fn variadic_and_kw_only(
 
 
 # CHECK-LABEL: lit.fn @"variadic_arg_after_default
-# CHECK-SAME: (%a: index, %b: index = 0, %args: !kgen.variadic<index> pos_vararg = *?,
-# CHECK-SAME:  *, %c: index, %d: index = 1, %kwargs: {{.*}}|kw_vararg = *?)
+# CHECK-SAME: (%a: index, %b: index = {{.*}}0{{.*}}, %args: !kgen.variadic<index> pos_vararg = *?,
+# CHECK-SAME:  *, %c: index, %d: index = {{.*}}1{{.*}}, %kwargs: {{.*}}|kw_vararg = *?)
 fn variadic_arg_after_default(
     a: Index,
     b: Index = `0`,
@@ -78,7 +78,7 @@ fn variadic_arg_after_default(
 
 
 # CHECK-LABEL: lit.fn @"variadic_param_after_default
-# CHECK-SAME: <a, b = 0, args: {{.*}} pos_vararg = *?, *, c, d = 1>()
+# CHECK-SAME: <a, b = {{.*}}0{{.*}}, args: {{.*}} pos_vararg = *?, *, c, d = {{.*}}1{{.*}}>()
 fn variadic_param_after_default[
     a: Index, b: Index = `0`, *args: Index, c: Index, d: Index = `1`
 ]():
@@ -102,7 +102,7 @@ fn inferred_params_regular[x: Index, //, y: Index]():
 
 
 # CHECK-LABEL: lit.fn @"inferred_params_pos_only
-# CHECK-SAME: <x, +, y = 1, |>
+# CHECK-SAME: <x, +, y = {{.*}}1{{.*}}, |>
 fn inferred_params_pos_only[x: Index, //, y: Index = `1`, /]():
     pass
 

@@ -48,13 +48,13 @@ fn test_variadic_kwargs():
 
     # CHECK: %[[X_KEY:.*]] = kgen.param.constant: {{.*}}StringLiteral<:string "x">
     # CHECK: %[[X_VAL:.*]] = lit.var.decl {{.*}}index,
-    # CHECK: %[[IDX9:.*]] = kgen.param.constant = <9>
+    # CHECK: %[[IDX9:.*]] = kgen.param.constant = <{{.*}}9{{.*}}>
     # CHECK: lit.ref.store %[[IDX9]], %[[X_VAL]]
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"_insert{{.*}}(%[[DICT_VAR]], %[[X_KEY]], %[[X_VAL]])
 
     # CHECK: %[[S_KEY:.*]] = kgen.param.constant: {{.*}}StringLiteral<:string "stuff">
     # CHECK: %[[S_VAL:.*]] = lit.var.decl {{.*}}index,
-    # CHECK: %[[IDX8:.*]] = kgen.param.constant = <8>
+    # CHECK: %[[IDX8:.*]] = kgen.param.constant = <{{.*}}8{{.*}}>
     # CHECK: lit.ref.store %[[IDX8]], %[[S_VAL]]
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"_insert{{.*}}(%[[DICT_VAR]], %[[S_KEY]], %[[S_VAL]])
 

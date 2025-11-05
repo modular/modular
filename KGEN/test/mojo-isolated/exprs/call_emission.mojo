@@ -13,14 +13,14 @@ fn has_default_args(a: Index, b: Index = `1`, c: Index = `2`):
 
 # CHECK-LABEL: lit.fn @"test_kw_arg_passing
 fn test_kw_arg_passing(x: Index, y: Index, z: Index):
-    # CHECK: %[[C2:.*]] = kgen.param.constant = <2>
+    # CHECK: %[[C2:.*]] = kgen.param.constant = <{{.*}}2{{.*}}>
     # CHECK: call {{.*}}@"has_default_args{{.*}}"(%x, %y, %[[C2]])
     has_default_args(x, b=y)
 
     # CHECK: call {{.*}}@"has_default_args{{.*}}"(%x, %y, %z)
     has_default_args(x, b=y, c=z)
 
-    # CHECK: %[[C1:.*]] = kgen.param.constant = <1>
+    # CHECK: %[[C1:.*]] = kgen.param.constant = <{{.*}}1{{.*}}>
     # CHECK: call {{.*}}@"has_default_args{{.*}}"(%x, %[[C1]], %z)
     has_default_args(x, c=z)
 
@@ -36,7 +36,7 @@ fn test_kw_arg_passing(x: Index, y: Index, z: Index):
 
 # CHECK-LABEL: lit.fn @"test_kw_arg_passing_indirect
 fn test_kw_arg_passing_indirect[callee: fn(a: Index, b: Index=`1`, c: Index=`2`)->None](x: Index, y: Index, z: Index):
-    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
+    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <{{.*}}1{{.*}}>
     # CHECK-NEXT: lit.call[{{.*}}](%x, %[[C1]], %z)
     callee(x, c=z)
 
@@ -49,13 +49,13 @@ fn has_default_params[a: Index, b: Index = `1`, c: Index = `2`]():
 
 # CHECK-LABEL: lit.fn @"test_kw_param_passing
 fn test_kw_param_passing[x: Index, y: Index, z: Index]():
-    # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<x, y, 2>
+    # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<x, y, {{.*}}2{{.*}}>
     has_default_params[x, b=y]()
 
     # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<x, y, z>
     has_default_params[x, b=y, c=z]()
 
-    # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<x, 1, z>
+    # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<x, {{.*}}1{{.*}}, z>
     has_default_params[x, c=z]()
 
     # CHECK: lit.call @{{.*}}@"has_default_params{{.*}}"<x, y, z>
@@ -91,7 +91,7 @@ fn test_callable_object(x: Index, y: Index):
     var callable = MyCallable()
 
     # CHECK-DAG: %[[IMMREF:.*]] = lit.ref.immut %[[CALLABLE]]
-    # CHECK-DAG: %[[C2:.*]] = kgen.param.constant = <2>
+    # CHECK-DAG: %[[C2:.*]] = kgen.param.constant = <{{.*}}2{{.*}}>
     # CHECK-NEXT: call {{.*}}@MyCallable::@"__call__{{.*}}(%[[IMMREF]], %x, %[[C2]])
     callable(x)
 
@@ -106,21 +106,21 @@ fn takes_kw_only_args(a: Index, b: Index = `1`, *, c: Index, d: Index = `2`):
 
 # CHECK-LABEL: lit.fn @"test_kw_only_args
 fn test_kw_only_args(x: Index):
-    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
-    # CHECK-DAG: %[[C2:.*]] = kgen.param.constant = <2>
+    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <{{.*}}1{{.*}}>
+    # CHECK-DAG: %[[C2:.*]] = kgen.param.constant = <{{.*}}2{{.*}}>
     # CHECK-NEXT: lit.call {{.*}}@"takes_kw_only_args{{.*}}"(%x, %[[C1]], %x, %[[C2]])
     takes_kw_only_args(x, c=x)
 
-    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
-    # CHECK-DAG: %[[C2:.*]] = kgen.param.constant = <2>
+    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <{{.*}}1{{.*}}>
+    # CHECK-DAG: %[[C2:.*]] = kgen.param.constant = <{{.*}}2{{.*}}>
     # CHECK-NEXT: lit.call {{.*}}@"takes_kw_only_args{{.*}}"(%x, %[[C1]], %x, %[[C2]])
     takes_kw_only_args(c=x, a=x)
 
-    # CHECK: %[[C2:.*]] = kgen.param.constant = <2>
+    # CHECK: %[[C2:.*]] = kgen.param.constant = <{{.*}}2{{.*}}>
     # CHECK-NEXT: lit.call {{.*}}@"takes_kw_only_args{{.*}}"(%x, %x, %x, %[[C2]])
     takes_kw_only_args(x, c=x, b=x)
 
-    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
+    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <{{.*}}1{{.*}}>
     # CHECK-NEXT: lit.call {{.*}}@"takes_kw_only_args{{.*}}"(%x, %[[C1]], %x, %x)
     takes_kw_only_args(x, d=x, c=x)
 
@@ -147,16 +147,16 @@ fn takes_kw_only_params[a: Index, b: Index = `1`, *, c: Index, d: Index = `2`]()
 
 # CHECK-LABEL: lit.fn @"test_kw_only_params
 fn test_kw_only_params[x: Index]():
-    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<x, 1, x, 2>()
+    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<x, {{.*}}1{{.*}}, x, {{.*}}2{{.*}}>()
     takes_kw_only_params[x, c=x]()
 
-    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<x, 1, x, 2>()
+    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<x, {{.*}}1{{.*}}, x, {{.*}}2{{.*}}>()
     takes_kw_only_params[c=x, a=x]()
 
-    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<x, x, x, 2>()
+    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<x, x, x, {{.*}}2{{.*}}>()
     takes_kw_only_params[x, c=x, b=x]()
 
-    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<x, 1, x, x>()
+    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<x, {{.*}}1{{.*}}, x, x>()
     takes_kw_only_params[x, d=x, c=x]()
 
     # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<x, x, x, x>()
@@ -166,10 +166,10 @@ fn test_kw_only_params[x: Index]():
 # CHECK-LABEL: lit.fn @"test_kw_only_params_indirect
 fn test_kw_only_params_indirect[x: Index, callee: fn[a: Index, b: Index = `1`, *, c: Index, d: Index = `2`]()->None]():
 
-    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, 1, x, 2)]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, {{.*}}1{{.*}}, x, {{.*}}2{{.*}})]()
     callee[x, c=x]()
 
-    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, 1, x, x)]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, {{.*}}1{{.*}}, x, x)]()
     callee[x, d=x, c=x]()
 
 
@@ -182,7 +182,7 @@ fn takes_variadic_and_kw_only_args(
 # CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_args
 fn test_variadic_and_kw_only_args(x: Index):
     # CHECK-DAG: %[[VAR:.*]] = kgen.param.constant: variadic<index> = <[]>
-    # CHECK-DAG: %[[ZERO:.*]] = kgen.param.constant = <0>
+    # CHECK-DAG: %[[ZERO:.*]] = kgen.param.constant = <{{.*}}0{{.*}}>
     # CHECK-NEXT: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"(%x, %x, %[[VAR]], %x, %[[ZERO]])
     takes_variadic_and_kw_only_args(x, x, c=x)
 
@@ -191,7 +191,7 @@ fn test_variadic_and_kw_only_args(x: Index):
     takes_variadic_and_kw_only_args(x, x, d=x, c=x)
 
     # CHECK-DAG: %[[VAR:.*]] = pop.variadic.splat  2, %x : !kgen.variadic<index>
-    # CHECK-DAG: %[[ZERO:.*]] = kgen.param.constant = <0>
+    # CHECK-DAG: %[[ZERO:.*]] = kgen.param.constant = <{{.*}}0{{.*}}>
     # CHECK-NEXT: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"(%x, %x, %[[VAR]], %x, %[[ZERO]])
     takes_variadic_and_kw_only_args(x, x, x, x, c=x)
 
@@ -204,13 +204,13 @@ fn takes_variadic_and_kw_only_params[
 
 # CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_params
 fn test_variadic_and_kw_only_params[x: Index]():
-    # CHECK: call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<x, x, :variadic<index> [], x, 0>()
+    # CHECK: call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<x, x, :variadic<index> [], x, {{.*}}0{{.*}}>()
     takes_variadic_and_kw_only_params[x, x, c=x]()
 
     # CHECK: call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<x, x, :variadic<index> [], x, x>()
     takes_variadic_and_kw_only_params[x, x, d=x, c=x]()
 
-    # CHECK: call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<x, x, :variadic<index> [x, x], x, 0>()
+    # CHECK: call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<x, x, :variadic<index> [x, x], x, {{.*}}0{{.*}}>()
     takes_variadic_and_kw_only_params[x, x, x, x, c=x]()
 
 
@@ -218,10 +218,10 @@ fn test_variadic_and_kw_only_params[x: Index]():
 fn test_variadic_and_kw_only_params_indirect[x: Index,
     callee: fn [a: Index, b: Index, *args: Index, c: Index, d: Index = `0`]()->None]():
 
-    # CHECK: lit.call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, x, [], x, 0)]()
+    # CHECK: lit.call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, x, [], x, {{.*}}0{{.*}})]()
     callee[x, x, c=x]()
 
-    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, x, [x, x], x, 0)]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, x, [x, x], x, {{.*}}0{{.*}})]()
     callee[x, x, x, x, c=x]()
 
 
@@ -311,7 +311,7 @@ fn partialBind(mut C: Matrix[`1`, `2`]) raises:
     # CHECK-NEXT: lit.call @{{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
     # CHECK-SAME: <:!lit.generator<<?, "rows`": index, "cols`1": index>[1](!lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> mut, |) -> !kgen.none>
     # CHECK-SAME: rebind(:!lit.generator<<?, "rows`": index, "cols`1": index>[1]("C": !lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> mut) -> !kgen.none>
-    # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<0, ?, ?>), 1, 2>(%C, %__error__, %exp)
+    # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<{{.*}}0{{.*}}, ?, ?>), {{.*}}1{{.*}}, {{.*}}2{{.*}}>(%C, %__error__, %exp)
     var exp = test_matrix_equal[matmul_unrolled[`0`]](C)
 
 
