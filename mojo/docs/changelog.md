@@ -389,6 +389,8 @@ what we publish.
 
 - `--help-hidden` option is added to all mojo tools to show hidden options.
 
+- The Mojo language server will now report more coherent code actions.
+
 ### ❌ Removed {#25-7-removed}
 
 - `LayoutTensorBuild` type has been removed.  Use `LayoutTensor` with parameters
