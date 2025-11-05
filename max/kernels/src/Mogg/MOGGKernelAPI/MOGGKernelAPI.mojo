@@ -4193,6 +4193,7 @@ struct Softmax:
     ](
         output: OutputTensor,
         input: FusedInputTensor[dtype = output.dtype, rank = output.rank],
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
         # For adapting input fusion lambda required by call
@@ -4214,7 +4215,7 @@ struct Softmax:
         ](
             output.shape(),
             output.to_layout_tensor(),
-            output.rank - 1,
+            Int(axis),
             context=ctx,
         )
 
@@ -4227,6 +4228,7 @@ struct LogSoftmax:
     ](
         output: OutputTensor,
         input: FusedInputTensor[dtype = output.dtype, rank = output.rank],
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
         # shape should be the same between the two inputs
@@ -4251,7 +4253,7 @@ struct LogSoftmax:
         ](
             output.shape(),
             output.to_layout_tensor(),
-            output.rank - 1,
+            Int(axis),
             context=ctx,
         )
 
