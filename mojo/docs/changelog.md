@@ -21,6 +21,14 @@ what we publish.
 
 ### Language enhancements {#25-7-language-enhancements}
 
+- Mojo now supports unpacking an alias tuple with a single statement when it is
+  not inside a `struct` or `trait`. For example:
+
+  ```mojo
+  alias i, f = (1, 3.0)
+  alias q, v = divmod(4, 5)
+  ```
+
 - Mojo now supports compile-time trait conformance check (via `conforms_to`) and
   downcast (via `trait_downcast`). This allows users to implement features like
   static dispatching based on trait conformance, e.g.,
