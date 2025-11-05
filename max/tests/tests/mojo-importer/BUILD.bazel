@@ -3,13 +3,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 modular_py_test(
     name = "mojo-importer",
     srcs = glob(["*.py"]),
-    data = glob(["*.mojo"]) + ["//KGEN/tools/mojo"],
-    env = {
-        # HACK: This test invokes "mojo build" in a subprocess, but it can't
-        # see modular.cfg, so we need to provide the run path here to
-        # find CompilerRT.
-        "MODULAR_MOJO_MAX_SHARED_LIBS": "-Xlinker,-rpath,-Xlinker,KGEN",
-    },
+    data = glob(["*.mojo"]),
     mojo_deps = [
         "@mojo//:stdlib",
     ],
