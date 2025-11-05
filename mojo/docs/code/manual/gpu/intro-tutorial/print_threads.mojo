@@ -35,8 +35,13 @@ fn print_threads():
 
 def main():
     @parameter
-    if not has_accelerator() or has_apple_gpu_accelerator():
+    if not has_accelerator():
         print("No compatible GPU found")
+    elif has_apple_gpu_accelerator():
+        print(
+            "Printing from a kernel is not currently supported on Apple silicon"
+            " GPUs"
+        )
     else:
         ctx = DeviceContext()
         ctx.enqueue_function_checked[print_threads, print_threads](

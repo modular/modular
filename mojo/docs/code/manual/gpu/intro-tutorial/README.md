@@ -12,11 +12,6 @@ Contents:
     extension).
   - A `modular_run_binary_test` target for each binary (with a `_test` suffix).
 
-**Note:** `vector_addition_checked.mojo` is a version of the fully completed
-reference solution that uses `enqueue_function_checked()`. After kernel
-typechecking becomes the default behavior, this file will be no longer needed
-and can be deleted.
-
 **Note:** These examples require a [supported
 GPU](https://docs.modular.com/max/faq/#gpu-requirements) to compile and run the
 kernels. If your system doesn't have a supported GPU, you can compile the
@@ -24,4 +19,12 @@ programs but the only output you'll see when you run them is the message:
 
 ```output
 No compatible GPU found
+```
+
+Additionally, printing from a kernel is not currently supported for Apple
+silicon GPUs. If you compile and run `print_threads.mojo` on an Apple system,
+you'll see this message:
+
+```output
+Printing from a kernel is not currently supported on Apple silicon GPUs
 ```
