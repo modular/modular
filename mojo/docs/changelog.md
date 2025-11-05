@@ -202,9 +202,10 @@ what we publish.
   `test_utils.TestSuite` framework), and run with `mojo run`.
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`
-  functions rather than inlining them into the error message. They also maintain
-  alias names when qualified from a base, e.g. `T.someAlias` instead of
-  expanding the alias value inline.
+  functions rather than inlining them into the error message.
+
+- Error messages now preserve alias names in error messages in many cases,
+  rather than expanding the value inline.
 
 - `SIMD` now implements the `DivModable` trait.
 
