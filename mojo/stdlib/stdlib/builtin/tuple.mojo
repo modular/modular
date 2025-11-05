@@ -198,7 +198,7 @@ struct Tuple[*element_types: Copyable & Movable](
         """
 
         @parameter
-        for i in range(len(VariadicList(element_types))):
+        for i in range(type_of(self).__len__()):
 
             @parameter
             if _type_is_eq[element_types[i], T]():
@@ -223,7 +223,7 @@ struct Tuple[*element_types: Copyable & Movable](
         )
 
         @parameter
-        for i in range(len(VariadicList(elt_types))):
+        for i in range(type_of(self).__len__()):
             UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
 
     @always_inline
@@ -243,7 +243,7 @@ struct Tuple[*element_types: Copyable & Movable](
         """
 
         @parameter
-        for i in range(len(VariadicList(elt_types))):
+        for i in range(type_of(self).__len__()):
             if self[i] != other[i]:
                 return False
         return True
@@ -286,7 +286,7 @@ struct Tuple[*element_types: Copyable & Movable](
         """
 
         @parameter
-        for i in range(len(VariadicList(elt_types))):
+        for i in range(type_of(self).__len__()):
             if self[i] < other[i]:
                 return True
             if self[i] > other[i]:
@@ -313,7 +313,7 @@ struct Tuple[*element_types: Copyable & Movable](
         """
 
         @parameter
-        for i in range(len(VariadicList(elt_types))):
+        for i in range(type_of(self).__len__()):
             if self[i] < other[i]:
                 return True
             if self[i] > other[i]:
@@ -340,7 +340,7 @@ struct Tuple[*element_types: Copyable & Movable](
         """
 
         @parameter
-        for i in range(len(VariadicList(elt_types))):
+        for i in range(type_of(self).__len__()):
             if self[i] > other[i]:
                 return True
             if self[i] < other[i]:
@@ -367,7 +367,7 @@ struct Tuple[*element_types: Copyable & Movable](
         """
 
         @parameter
-        for i in range(len(VariadicList(elt_types))):
+        for i in range(type_of(self).__len__()):
             if self[i] > other[i]:
                 return True
             if self[i] < other[i]:
