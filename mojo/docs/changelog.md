@@ -345,6 +345,10 @@ what we publish.
   number parsing operations, improving performance for string-to-number
   conversions including `atof()` and related float parsing operations.
 
+- Tuples now support comparison operations if the element types are also
+  comparable. For example, one can now write `(1, "a") == (1, "a")` or
+  `(1, "a") < (1, "b")`.
+
 ### Tooling changes {#25-7-tooling-changes}
 
 - `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)
