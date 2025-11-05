@@ -64,7 +64,7 @@ def create_paged_manager(
     enable_prefix_caching: bool = False,
     enable_kvcache_swapping_to_host: bool = False,
 ) -> PagedKVCacheManager:
-    NUM_KV_HEADS = 1
+    NUM_KV_HEADS = 4
     HEAD_DIM = 1
     NUM_LAYERS = 1
 
@@ -80,7 +80,6 @@ def create_paged_manager(
         * page_size
         * num_blocks
         * dtype.size_in_bytes
-        * len(devices)
     )
 
     # CPU swap space is 100x the device cache memory
@@ -96,6 +95,8 @@ def create_paged_manager(
         enable_prefix_caching=enable_prefix_caching,
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
         host_kvcache_swap_space_gb=host_kvcache_swap_space_gb,
+        n_devices=len(devices),
+        data_parallel_degree=1,
     )
 
     session = InferenceSession(devices=devices)
