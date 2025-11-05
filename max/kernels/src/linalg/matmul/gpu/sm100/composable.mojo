@@ -13,6 +13,10 @@
 
 from hashlib import default_comp_time_hasher
 from math import ceildiv
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from sys import size_of
 
 from buffer.buffer import NDBuffer

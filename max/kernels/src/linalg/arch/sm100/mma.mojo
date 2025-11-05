@@ -27,6 +27,7 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
 )
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import Index, IndexList, product
 
 

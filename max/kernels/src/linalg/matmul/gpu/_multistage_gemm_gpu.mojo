@@ -13,6 +13,7 @@
 
 from collections import OptionalReg
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import (
     align_of,
     has_amd_gpu_accelerator,

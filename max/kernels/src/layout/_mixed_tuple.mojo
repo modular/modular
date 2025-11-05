@@ -16,7 +16,7 @@ from os import abort
 from sys.intrinsics import _type_is_eq
 
 from builtin.variadics import VariadicOf, VariadicPack
-from memory import UnsafePointer
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 trait MixedTupleLike(ImplicitlyCopyable, Movable, Representable):

@@ -60,7 +60,7 @@ from os import abort
 
 from buffer import DimList
 from builtin.range import _StridedRange
-from memory import memcpy
+from memory import LegacyUnsafePointer as UnsafePointer, memcpy
 from sys.intrinsics import _type_is_eq_parse_time
 
 from utils.numerics import max_finite

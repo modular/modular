@@ -19,6 +19,10 @@ from sys.ffi import _Global, _OwnedDLHandle
 
 from gpu.host._amdgpu_hip import hipStream_t
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from utils import StaticTuple
 
 alias hipblasLtHandle_t = OpaquePointer

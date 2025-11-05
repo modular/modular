@@ -15,6 +15,7 @@
 from sys import size_of
 
 from layout.tma_async import SharedMemBarrier
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 alias MbarPtr = UnsafePointer[

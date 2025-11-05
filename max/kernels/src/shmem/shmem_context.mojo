@@ -13,6 +13,7 @@
 
 from algorithm import parallelize
 from collections.optional import OptionalReg
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort, getenv, setenv
 from sys import (
     CompilationTarget,

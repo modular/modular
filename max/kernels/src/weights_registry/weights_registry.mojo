@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyOpaquePointer as OpaquePointer
+
 
 @fieldwise_init
 struct WeightsRegistry(ImplicitlyCopyable, Movable):

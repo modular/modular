@@ -12,6 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Inverse real FFT kernel using cuFFT."""
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from sys.ffi import external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 

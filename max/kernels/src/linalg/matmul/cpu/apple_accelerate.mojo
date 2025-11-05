@@ -13,6 +13,7 @@
 
 from collections import OptionalReg
 from math import fma
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys import CompilationTarget, simd_width_of
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function

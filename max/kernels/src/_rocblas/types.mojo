@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyOpaquePointer as OpaquePointer
 from os import abort
 
 

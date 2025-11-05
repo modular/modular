@@ -16,6 +16,10 @@ This module provides TMA descriptor creation and management for efficient memory
 transfers on NVIDIA Blackwell (SM100) GPUs using the Tensor Memory Accelerator.
 """
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from utils.index import IndexList
 from gpu.host._tensormap import TensorMap, SwizzleMode, create_tensormap
 from gpu.memory import (

@@ -22,6 +22,7 @@ from buffer.dimlist import DimList
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import Index, IndexList
 
 alias elementwise_epilogue_type = fn[

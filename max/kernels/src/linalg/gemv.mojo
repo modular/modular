@@ -54,7 +54,7 @@ from layout import (
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 
 from utils import IndexList
 from utils.index import Index

@@ -15,6 +15,10 @@ import time
 from collections import OptionalReg
 from io.io import _snprintf
 from math import ceildiv
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from random import rand, random_float64
 from sys import argv, env_get_string
 from builtin.device_passable import DevicePassable

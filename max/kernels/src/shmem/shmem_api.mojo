@@ -20,6 +20,7 @@ The headings below corrosspond to section 9: OpenSHMEM Library API.
 """
 
 from collections.optional import OptionalReg
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import getenv, setenv
 from sys import (
     CompilationTarget,

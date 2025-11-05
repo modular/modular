@@ -14,7 +14,11 @@
 from collections import OptionalReg
 from math import ceildiv
 from math.constants import log2e
-from memory import bitcast
+from memory import (
+    bitcast,
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from sys import size_of
 
 import gpu.warp as warp

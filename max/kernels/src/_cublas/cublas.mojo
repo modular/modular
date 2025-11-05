@@ -21,6 +21,10 @@ from gpu.host._nvidia_cuda import CUstream
 
 from .dtype import DataType, Property
 from .result import Result
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 
 alias cublasContext = NoneType
 

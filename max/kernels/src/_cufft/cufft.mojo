@@ -19,6 +19,10 @@ from gpu.host._nvidia_cuda import CUstream
 
 from .types import LibraryProperty, Property, Status, Type
 from .utils import _get_dylib_function
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 
 alias cufftHandle = ffi.c_uint
 

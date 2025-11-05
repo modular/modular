@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import prefetch
 from sys.info import align_of
 from sys.intrinsics import PrefetchOptions

@@ -19,6 +19,7 @@ from gpu.host import DeviceContext, HostBuffer
 from gpu.host.device_context import _checked, _DeviceContextPtr
 
 from .shmem_api import shmem_free, shmem_malloc
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 struct SHMEMBuffer[dtype: DType](Sized):

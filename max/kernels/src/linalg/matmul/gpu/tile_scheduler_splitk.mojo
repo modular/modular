@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up, ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from os.atomic import Atomic
 from sys import size_of
 

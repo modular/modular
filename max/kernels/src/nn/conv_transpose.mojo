@@ -13,6 +13,10 @@
 
 from collections import OptionalReg
 from math import align_down, ceildiv
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from sys import align_of, simd_width_of
 
 from _cudnn.cnn_infer import (
