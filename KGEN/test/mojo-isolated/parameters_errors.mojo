@@ -254,14 +254,14 @@ fn form_reference_to_overloaded[value: NotConvertible]():
 
 
 fn testAliases(variable: Int):
-    # expected-error @+1 {{only traits may contain an alias without an initializer}}
-    alias MissingTypeAndInit
-
     # expected-error @below {{only traits may contain an alias without an initializer}}
     alias MissingInit: Int
 
     # expected-error @+1 {{cannot use a dynamic value in alias initializer}}
     alias NotConstant = variable + 2
+
+    # expected-error @+1 {{expected '=' after alias targets}}
+    alias MissingTypeAndInit
 
 
 fn testConversionQoI():

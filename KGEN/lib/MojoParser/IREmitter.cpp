@@ -1098,6 +1098,15 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
   // If no destination is specified or it is just a contextual type hint or this
   // is a parameter to be destructed, then we can propagate the value directly.
   if (!dest.isSpecified() || isa<LPValueInitializerType>(dest.representation)) {
+    if (TypedAttr init = dest.getIfPValueInitializer();
+        init && init != value.getIfPValue()) {
+      // When we are destructuring a pvalue expression, the result must be a
+      // PValue, and it should equal to the target in dest.
+      emitError(expr->getLoc(),
+                "invalid alias target: expected an identifier or '_' ");
+      dest.resetForError(*this);
+      return {};
+    }
     dest.representation = NullRepresentation();
     return value;
   }

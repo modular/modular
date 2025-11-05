@@ -63,6 +63,5 @@ fn test_indentation2(p: Bool):
 fn m # expected-error {{expected '(' for argument list}}
 
 # Issue #6909
-# expected-error @below {{expected name for 'alias' declaration}}
-# expected-note @below {{escape keyword 'True' with backticks to use it as an identifier}}
+# expected-error @below {{invalid alias target: expected an identifier or '_'}}
 alias True = 42
