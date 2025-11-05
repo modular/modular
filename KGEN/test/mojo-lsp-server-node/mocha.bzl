@@ -19,7 +19,7 @@ def mocha_test(name, srcs, args = [], data = [], env = {}, **kwargs):
             "--reporter",
             native.package_name() + "/src/reporter.js",
             "--config=$(location //KGEN/test/mojo-lsp-server-node:.mocharc.json)",
-            native.package_name() + "/src/definitions.spec.js",
+            native.package_name() + "/src/**/*.spec.js",
         ] + args,
         data = data + srcs + [
             "//KGEN/test/mojo-lsp-server-node:.mocharc.json",

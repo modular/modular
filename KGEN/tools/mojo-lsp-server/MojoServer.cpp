@@ -995,73 +995,32 @@ MojoDocument::getLocationFromDiag(const llvm::SMDiagnostic &diag) {
 // MojoDocument: Diagnostics
 //===----------------------------------------------------------------------===//
 
-/// Sanitizes a piece for presenting it in a synthesized fix message. Ensures
-/// the result is not too large and does not contain newlines.
-static void writeCodeToFixMessage(raw_ostream &os, StringRef code) {
-  constexpr unsigned kMaxLen = 50;
-  if (code == "\n") {
-    os << "\\n";
-    return;
-  }
-
-  // Only show the first line if there are many.
-  StringRef result = code.ltrim().split('\n').first;
-
-  // Shorten the message if it's too long.
-  result = result.take_front(kMaxLen);
-
-  os << result;
-  if (result.size() != result.size())
-    os << "…";
-}
-
 static std::optional<lsp::CodeAction>
-buildCodeActionFromSMFixit(const llvm::SMFixIt &fixit, MojoDocument &doc,
-                           const lsp::URIForFile &mainFileURI) {
-  llvm::SMRange range = fixit.getRange();
-  if (!range.isValid())
+buildCodeActionFromSMDiag(const llvm::SMDiagnostic &diag, MojoDocument &doc,
+                          const lsp::URIForFile &mainFileURI) {
+  if (diag.getFixIts().empty())
     return std::nullopt;
 
-  // Get the file this fixit is in.
-  auto uri = doc.getURIFromLoc(range.Start);
-  if (!uri)
-    return std::nullopt;
-
-  // Build the code action.
   lsp::CodeAction action;
   action.kind = lsp::CodeAction::kQuickFix.str();
+  action.title = diag.getMessage();
+  action.edit.emplace();
 
-  // Construct a title based on what the fixit is doing.
-  {
-    llvm::raw_string_ostream titleOS(action.title);
+  for (const llvm::SMFixIt &fixit : diag.getFixIts()) {
+    llvm::SMRange range = fixit.getRange();
+    if (!range.isValid())
+      return std::nullopt;
 
-    StringRef removedText(range.Start.getPointer(),
-                          range.End.getPointer() - range.Start.getPointer());
-    StringRef insertedText = fixit.getText();
-    if (!removedText.empty() && !insertedText.empty()) {
-      titleOS << "change '";
-      writeCodeToFixMessage(titleOS, removedText);
-      titleOS << "' to '";
-      writeCodeToFixMessage(titleOS, insertedText);
-      titleOS << "'";
-    } else if (!removedText.empty()) {
-      titleOS << "remove '";
-      writeCodeToFixMessage(titleOS, removedText);
-      titleOS << "'";
-    } else if (!insertedText.empty()) {
-      titleOS << "insert '";
-      writeCodeToFixMessage(titleOS, insertedText);
-      titleOS << "'";
-    }
+    auto uri = doc.getURIFromLoc(range.Start);
+    if (!uri)
+      return std::nullopt;
 
-    // Don't allow source code to inject newlines into diagnostics.
-    std::replace(action.title.begin(), action.title.end(), '\n', ' ');
+    action.edit->changes[uri->uri().str()].push_back(lsp::TextEdit{
+        .range = lsp::Range(doc.getSourceMgr(), range),
+        .newText = fixit.getText().str(),
+    });
   }
 
-  // Build the edit.
-  action.edit.emplace();
-  action.edit->changes[uri->uri().str()].push_back(
-      {lsp::Range(doc.getSourceMgr(), range), fixit.getText().str()});
   return action;
 }
 
@@ -1105,17 +1064,16 @@ std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnosticFromSMDiagnostic(
 
   // Collect fixits for the diagnostic.
   std::vector<lsp::CodeAction> diagFixits;
-  for (const llvm::SMFixIt &fixit : mainDiag.getFixIts())
-    if (auto action = buildCodeActionFromSMFixit(fixit, *this, uri))
-      diagFixits.push_back(*action);
-  if (!diagFixits.empty()) {
-    // If there is only one fixit, mark it as preferred.
-    if (diagFixits.size() == 1)
-      diagFixits[0].isPreferred = true;
+  for (const llvm::SMDiagnostic &diag : diags) {
+    if (auto action = buildCodeActionFromSMDiag(diag, *this, uri)) {
+      if (&diag == &mainDiag)
+        action->isPreferred = true;
 
-    fixits[lspDiag.message].emplace(lspDiag.range, std::move(diagFixits));
+      diagFixits.push_back(*action);
+    }
   }
 
+  fixits[lspDiag.message].emplace(lspDiag.range, std::move(diagFixits));
   return lspDiag;
 }
 

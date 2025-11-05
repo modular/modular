@@ -606,7 +606,7 @@ Load library lazily (defer function resolution until needed).
       {
         contents: {
           kind: "markdown",
-          value: "```mojo\nalias ExternalAlias = 1\n```",
+          value: "```mojo\nalias ExternalAlias = RTLD.LAZY\n```",
         },
         range: doc.findFirstRange("ExternalAlias"),
       }

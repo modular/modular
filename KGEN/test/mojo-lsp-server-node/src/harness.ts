@@ -6,6 +6,9 @@ import { readFile } from "fs/promises";
 import { setTimeout } from "timers/promises";
 import {
   ClientCapabilities,
+  CodeAction,
+  CodeActionRequest,
+  Command,
   CompletionItem,
   CompletionList,
   CompletionParams,
@@ -317,5 +320,19 @@ export class Document {
 
       return result as Location[];
     }
+  }
+
+  public async codeActions(
+    diagnostic: Diagnostic
+  ): Promise<(Command | CodeAction)[] | null> {
+    return await this.server.connection.sendRequest(CodeActionRequest.type, {
+      textDocument: {
+        uri: this.uri,
+      },
+      range: Range.create(0, 0, 99999, 99999),
+      context: {
+        diagnostics: [diagnostic],
+      },
+    });
   }
 }

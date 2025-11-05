@@ -51,7 +51,7 @@ trait trait_name:
       {
         name: "foo",
         kind: SymbolKind.Function,
-        detail: "foo(a: UnsafePointer[Float32]) -> Float32",
+        detail: "foo(a: LegacyUnsafePointer[Float32]) -> Float32",
         children: [
           { name: "inner_fn", kind: SymbolKind.Function, detail: "inner_fn()" },
         ],
