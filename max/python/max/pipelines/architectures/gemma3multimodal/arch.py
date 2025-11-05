@@ -19,7 +19,7 @@ from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
     SupportedEncoding,
-    TextTokenizer,
+    TextAndVisionTokenizer,
 )
 
 from . import weight_adapters
@@ -34,8 +34,6 @@ gemma3_multimodal_arch = SupportedArchitecture(
         "google/gemma-3-12b-pt",
         "google/gemma-3-4b-it",
         "google/gemma-3-4b-pt",
-        "google/gemma-3-12b-it",
-        "google/gemma-3-12b-pt",
         "google/gemma-3-27b-it",
         "google/gemma-3-27b-pt",
     ],
@@ -46,7 +44,7 @@ gemma3_multimodal_arch = SupportedArchitecture(
     },
     pipeline_model=Gemma3_MultiModalModel,
     task=PipelineTask.TEXT_GENERATION,
-    tokenizer=TextTokenizer,
+    tokenizer=TextAndVisionTokenizer,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     rope_type=RopeType.normal,

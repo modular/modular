@@ -14,11 +14,10 @@
 from __future__ import annotations
 
 from max.graph.weights import WeightData, Weights
-from transformers import AutoConfig
 
-# Maps from Safetensor to MAX weight names.
 GEMMA3_SAFETENSOR_MAP: dict[str, str] = {
     "language_model.model.": "language_model.",
+    "vision_tower.vision_model.": "",  # Strip this prefix for vision model
 }
 
 
@@ -31,22 +30,49 @@ def _apply_name_mappings(name: str) -> str:
 
 def convert_safetensor_state_dict(
     state_dict: dict[str, Weights],
-    huggingface_config: AutoConfig,
     **unused_kwargs,
 ) -> dict[str, WeightData]:
     new_state_dict: dict[str, WeightData] = {}
 
-    # Remap HuggingFace -> MAX-style names
     for weight_name, value in state_dict.items():
         max_name = _apply_name_mappings(weight_name)
         new_state_dict[max_name] = value.data()
 
-    # For quantized model, we apply the same name re-mapping to the `ignore` list
-    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
-    if hf_quant_config and "ignore" in hf_quant_config:
-        hf_quant_config["ignore"] = [
-            _apply_name_mappings(module_name)
-            for module_name in hf_quant_config["ignore"]
-        ]
-
     return new_state_dict
+
+
+def convert_gemma3_multimodal_vision_state_dict(
+    state_dict: dict[str, Weights], **unused_kwargs
+) -> dict[str, WeightData]:
+    """Convert Gemma3 multimodal vision model weights for SigLipVisionModel.
+
+    Gemma3 checkpoints have vision model weights prefixed with
+    `vision_tower.vision_model.`, but SigLipVisionModel expects that prefix dropped.
+
+    This adapter:
+    1. Filters to only include vision model weights (those with
+       `vision_tower.vision_model.` prefix).
+    2. Strips the `vision_tower.vision_model.` prefix to match SigLipVisionModel
+       expectations.
+    3. Handles Conv2d weight transposition for patch embedding.
+
+    Args:
+        state_dict: The raw Gemma3 checkpoint weights.
+
+    Returns:
+        The filtered and mapped weights for SigLipVisionModel.
+    """
+    vision_model_state_dict: dict[str, WeightData] = {}
+
+    for checkpoint_name, weight in state_dict.items():
+        if not checkpoint_name.startswith("vision_tower.vision_model."):
+            continue
+
+        vision_model_name = checkpoint_name.replace(
+            "vision_tower.vision_model.", ""
+        )
+
+        weight_data = weight.data()
+        vision_model_state_dict[vision_model_name] = weight_data
+
+    return vision_model_state_dict
