@@ -368,7 +368,7 @@ def KGEN_StructInstanceOp : KGENOp<"struct.instance", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_ConformanceOp : KGENOp<"conformance", [
-    Symbol, SingleBlock, NoTerminator]> {
+    Symbol, SymbolTable, SingleBlock, NoTerminator]> {
   let summary = "Conformance table of a struct type.";
   let description = [{
     The `kgen.conformance` operation defines the conformance table of a struct
@@ -417,15 +417,12 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_WitnessOp : KGENOp<"witness", [
-    HasParent<"ConformanceOp">]> {
+    Symbol, HasParent<"ConformanceOp">]> {
   let summary = "Witness table entry of a struct type.";
   let description = [{
     The `kgen.witness` operation defines a witness table entry in a
     conformance table. It represents a single requirement satisfied by a struct
     type for the trait being conformed to.
-
-    TODO: Make this a Symbol by using the mangled name from the trait. At the
-    same time, get_witness should also be emitted with the mangled name.
 
     Example:
 
@@ -440,11 +437,11 @@ def KGEN_WitnessOp : KGENOp<"witness", [
     ```
   }];
 
-  let arguments = (ins Builtin_StringAttr:$name,
+  let arguments = (ins SymbolNameAttr:$sym_name,
                        TypedAttrInterface:$value);
 
   let assemblyFormat = [{
-    custom<WitnessEntry>($name, $value) attr-dict-with-keyword
+    custom<WitnessEntry>($sym_name, $value) attr-dict-with-keyword
   }];
 }
 

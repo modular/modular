@@ -430,7 +430,7 @@ TypedAttr GetWitnessAttr::getTypeRefIfResolved() {
 FailureOr<TypedAttr> GetWitnessAttr::simplify(ConformanceOp witnessTable,
                                               ParameterEvaluator *evaluator) {
   for (WitnessOp entry : witnessTable.getOps<WitnessOp>()) {
-    if (entry.getName().getValue() != getWitnessName().getValue())
+    if (entry.getName() != getWitnessName().getValue())
       continue;
 
     Type entryType = entry.getValue().getType();
@@ -443,14 +443,15 @@ FailureOr<TypedAttr> GetWitnessAttr::simplify(ConformanceOp witnessTable,
         return TypedAttr();
     }
 
-    if (isEqualCanon(entryType, getType())) {
-      auto value = evaluator ? evaluator->getReboundAttribute(entry.getValue())
-                             : entry.getValue();
-      if (!value)
-        return TypedAttr();
-      // Realign sugar if needed.
-      return ParamOperatorAttr::getRebind(value, getType());
-    }
+    if (!isEqualCanon(entryType, getType()))
+      return failure();
+
+    auto value = evaluator ? evaluator->getReboundAttribute(entry.getValue())
+                           : entry.getValue();
+    if (!value)
+      return TypedAttr();
+    // Realign sugar if needed.
+    return ParamOperatorAttr::getRebind(value, getType());
   }
   return failure();
 }
