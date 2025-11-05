@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory.unsafe_pointer import (
-    UnsafePointer as UnsafePointerV1,
+from memory import (
+    LegacyUnsafePointer as UnsafePointerV1,
     UnsafePointerV2,
 )
 
