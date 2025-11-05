@@ -14,6 +14,7 @@ from tests.serve.scheduler.common import (
     CE,
     TG,
     BatchInfo,
+    assert_batch_info_equal,
     create_paged_scheduler,
     enqueue_request,
     rand,
@@ -48,15 +49,28 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
     for _ in range(num_reqs):
         enqueue_request(request_queue, prompt_len, max_seq_len=max_seq_len)
 
-    expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, num_reqs, 0, 1, num_reqs * prompt_len),
-        BatchInfo(TG, num_reqs, num_reqs, 8, num_reqs * 1),
-        BatchInfo.empty(),
-    ]
+    # fmt: off
+    if num_reqs == 1:
+        expected = [
+            BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=2040, cached_toks=0),
+            BatchInfo(TG, batch_size=1, terminated=1, steps=8, preempted=0, input_toks=1, cached_toks=2040),
+            BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
+        ]
+    elif num_reqs == 2:
+        expected = [
+            BatchInfo(CE, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=4080, cached_toks=0),
+            BatchInfo(TG, batch_size=2, terminated=2, steps=8, preempted=0, input_toks=2, cached_toks=4080),
+            BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
+        ]
+    else:
+        expected = [
+            BatchInfo(CE, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=6120, cached_toks=0),
+            BatchInfo(TG, batch_size=3, terminated=3, steps=8, preempted=0, input_toks=3, cached_toks=6120),
+            BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
+        ]
+    # fmt: on
     actual = run_until_completion(scheduler)
-    assert len(actual) == len(expected) and actual == expected
-    del request_queue
+    assert_batch_info_equal(actual, expected)
 
 
 def test_paged_scheduler_basic_chunked_prefill() -> None:
@@ -82,27 +96,28 @@ def test_paged_scheduler_basic_chunked_prefill() -> None:
         max_seq_len=prompt_len + output_tokens,
     )
 
+    # fmt: off
     expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 1, 0, 1, 1000),
-        BatchInfo(CE, 1, 0, 1, 1000),
-        BatchInfo(CE, 1, 0, 1, 1000),
-        BatchInfo(CE, 1, 0, 1, 1000),
-        BatchInfo(CE, 1, 0, 1, 1000),
-        BatchInfo(CE, 1, 0, 1, 1000),
-        BatchInfo(CE, 1, 0, 1, 1000),
-        BatchInfo(CE, 1, 0, 1, 1000),
-        BatchInfo(CE, 1, 0, 1, 1000),
-        BatchInfo(CE, 1, 0, 1, 123),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 1, 3, 1),
-        BatchInfo.empty(),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1000, cached_toks=0),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1000, cached_toks=1000),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1000, cached_toks=2000),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1000, cached_toks=3000),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1000, cached_toks=4000),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1000, cached_toks=5000),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1000, cached_toks=6000),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1000, cached_toks=7000),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1000, cached_toks=8000),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=123, cached_toks=9000),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=9123),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=9133),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=9143),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=9153),
+        BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=9163),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
     ]
+    # fmt: on
     actual = run_until_completion(scheduler)
-    assert len(actual) == len(expected) and actual == expected
+    assert_batch_info_equal(actual, expected)
 
 
 def test_paged_scheduler_basic_small_batch_size() -> None:
@@ -121,24 +136,25 @@ def test_paged_scheduler_basic_small_batch_size() -> None:
             max_seq_len=prompt_len + output_tokens,
         )
 
+    # fmt: off
     expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 13, 0, 1, 1300),
-        BatchInfo(TG, 13, 0, 10, 13),
-        BatchInfo(TG, 13, 13, 3, 13),
-        BatchInfo(CE, 13, 0, 1, 1300),
-        BatchInfo(TG, 13, 0, 10, 13),
-        BatchInfo(TG, 13, 13, 3, 13),
-        BatchInfo(CE, 13, 0, 1, 1300),
-        BatchInfo(TG, 13, 0, 10, 13),
-        BatchInfo(TG, 13, 13, 3, 13),
-        BatchInfo(CE, 1, 0, 1, 100),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 1, 3, 1),
-        BatchInfo(TG, 0, 0, 0, 0),
+        BatchInfo(CE, batch_size=13, terminated=0, steps=1, preempted=0, input_toks=1300, cached_toks=0),
+        BatchInfo(TG, batch_size=13, terminated=0, steps=10, preempted=0, input_toks=13, cached_toks=1300),
+        BatchInfo(TG, batch_size=13, terminated=13, steps=3, preempted=0, input_toks=13, cached_toks=1430),
+        BatchInfo(CE, batch_size=13, terminated=0, steps=1, preempted=0, input_toks=1300, cached_toks=0),
+        BatchInfo(TG, batch_size=13, terminated=0, steps=10, preempted=0, input_toks=13, cached_toks=1300),
+        BatchInfo(TG, batch_size=13, terminated=13, steps=3, preempted=0, input_toks=13, cached_toks=1430),
+        BatchInfo(CE, batch_size=13, terminated=0, steps=1, preempted=0, input_toks=1300, cached_toks=0),
+        BatchInfo(TG, batch_size=13, terminated=0, steps=10, preempted=0, input_toks=13, cached_toks=1300),
+        BatchInfo(TG, batch_size=13, terminated=13, steps=3, preempted=0, input_toks=13, cached_toks=1430),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=100, cached_toks=0),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=100),
+        BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=110),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
     ]
+    # fmt: on
     actual = run_until_completion(scheduler)
-    assert len(actual) == len(expected) and actual == expected
+    assert_batch_info_equal(actual, expected)
 
 
 def test_paged_scheduler_basic_small_batch_size_with_chunked_prefill() -> None:
@@ -158,30 +174,31 @@ def test_paged_scheduler_basic_small_batch_size_with_chunked_prefill() -> None:
             max_seq_len=prompt_len + output_tokens,
         )
 
+    # fmt: off
     expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 6, 0, 1, 8192),
-        BatchInfo(CE, 6, 0, 1, 8192),
-        BatchInfo(CE, 3, 0, 1, 3116),
-        BatchInfo(TG, 13, 0, 10, 13),
-        BatchInfo(TG, 13, 13, 3, 13),
-        BatchInfo(CE, 6, 0, 1, 8192),
-        BatchInfo(CE, 6, 0, 1, 8192),
-        BatchInfo(CE, 3, 0, 1, 3116),
-        BatchInfo(TG, 13, 0, 10, 13),
-        BatchInfo(TG, 13, 13, 3, 13),
-        BatchInfo(CE, 6, 0, 1, 8192),
-        BatchInfo(CE, 6, 0, 1, 8192),
-        BatchInfo(CE, 3, 0, 1, 3116),
-        BatchInfo(TG, 13, 0, 10, 13),
-        BatchInfo(TG, 13, 13, 3, 13),
-        BatchInfo(CE, 1, 0, 1, 1500),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 1, 3, 1),
-        BatchInfo(TG, 0, 0, 0, 0),
+        BatchInfo(CE, batch_size=6, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=0),
+        BatchInfo(CE, batch_size=6, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=692),
+        BatchInfo(CE, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=3116, cached_toks=1384),
+        BatchInfo(TG, batch_size=13, terminated=0, steps=10, preempted=0, input_toks=13, cached_toks=19500),
+        BatchInfo(TG, batch_size=13, terminated=13, steps=3, preempted=0, input_toks=13, cached_toks=19630),
+        BatchInfo(CE, batch_size=6, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=0),
+        BatchInfo(CE, batch_size=6, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=692),
+        BatchInfo(CE, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=3116, cached_toks=1384),
+        BatchInfo(TG, batch_size=13, terminated=0, steps=10, preempted=0, input_toks=13, cached_toks=19500),
+        BatchInfo(TG, batch_size=13, terminated=13, steps=3, preempted=0, input_toks=13, cached_toks=19630),
+        BatchInfo(CE, batch_size=6, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=0),
+        BatchInfo(CE, batch_size=6, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=692),
+        BatchInfo(CE, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=3116, cached_toks=1384),
+        BatchInfo(TG, batch_size=13, terminated=0, steps=10, preempted=0, input_toks=13, cached_toks=19500),
+        BatchInfo(TG, batch_size=13, terminated=13, steps=3, preempted=0, input_toks=13, cached_toks=19630),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1500, cached_toks=0),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=1500),
+        BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=1510),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
     ]
+    # fmt: on
     actual = run_until_completion(scheduler)
-    assert len(actual) == len(expected) and actual == expected
+    assert_batch_info_equal(actual, expected)
 
 
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16() -> (
@@ -205,21 +222,22 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16() -> (
 
     # We will schedule 8192 / 500 = 16.38 CE req per batch due to target_tokens_per_batch_ce.
     # This is rounded up to 17 due to chunked prefill.
+    # fmt: off
     expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 17, 0, 1, 8192),
-        BatchInfo(CE, 17, 0, 1, 8192),
-        BatchInfo(CE, 18, 0, 1, 8192),
-        BatchInfo(CE, 17, 0, 1, 8192),
-        BatchInfo(CE, 17, 0, 1, 8192),
-        BatchInfo(CE, 18, 0, 1, 8192),
-        BatchInfo(CE, 2, 0, 1, 848),
-        BatchInfo(TG, 100, 0, 10, 100),
-        BatchInfo(TG, 100, 100, 6, 100),
-        BatchInfo(TG, 0, 0, 0, 0),
+        BatchInfo(CE, batch_size=17, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=0),
+        BatchInfo(CE, batch_size=17, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=192),
+        BatchInfo(CE, batch_size=18, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=384),
+        BatchInfo(CE, batch_size=17, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=76),
+        BatchInfo(CE, batch_size=17, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=268),
+        BatchInfo(CE, batch_size=18, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=460),
+        BatchInfo(CE, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=848, cached_toks=152),
+        BatchInfo(TG, batch_size=100, terminated=0, steps=10, preempted=0, input_toks=100, cached_toks=50000),
+        BatchInfo(TG, batch_size=100, terminated=100, steps=6, preempted=0, input_toks=100, cached_toks=51000),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
     ]
+    # fmt: on
     actual = run_until_completion(scheduler)
-    assert len(actual) == len(expected) and actual == expected
+    assert_batch_info_equal(actual, expected)
 
 
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384() -> (
@@ -252,17 +270,18 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     # This means we encode 500 - 384 = 116 tokens per CE batch.
     # Hence, we will schedule approx 8192 / 116 = 70.62 CE req per batch.
     # This is rounded up to 71 due to chunked prefill.
+    # fmt: off
     expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 17, 0, 1, 8192),
-        BatchInfo(CE, 71, 0, 1, 8192),
-        BatchInfo(CE, 14, 0, 1, 1552),
-        BatchInfo(TG, 100, 0, 10, 100),
-        BatchInfo(TG, 100, 100, 6, 100),
-        BatchInfo(TG, 0, 0, 0, 0),
+        BatchInfo(CE, batch_size=17, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=0),
+        BatchInfo(CE, batch_size=71, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=27264),
+        BatchInfo(CE, batch_size=14, terminated=0, steps=1, preempted=0, input_toks=1552, cached_toks=5448),
+        BatchInfo(TG, batch_size=100, terminated=0, steps=10, preempted=0, input_toks=100, cached_toks=50000),
+        BatchInfo(TG, batch_size=100, terminated=100, steps=6, preempted=0, input_toks=100, cached_toks=51000),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
     ]
+    # fmt: on
     actual = run_until_completion(scheduler)
-    assert len(actual) == len(expected) and actual == expected
+    assert_batch_info_equal(actual, expected)
 
 
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_200() -> (
@@ -296,19 +315,20 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     # Hence, we will schedule approx 8192 / 300 = 27.31 CE req per batch.
     # This is rounded up to 28 due to chunked prefill.
     # The first batch doesn't get cache hits so it is smaller.
+    # fmt: off
     expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 17, 0, 1, 8192),
-        BatchInfo(CE, 23, 0, 1, 8192),
-        BatchInfo(CE, 23, 0, 1, 8192),
-        BatchInfo(CE, 23, 0, 1, 8192),
-        BatchInfo(CE, 18, 0, 1, 6608),
-        BatchInfo(TG, 100, 0, 10, 100),
-        BatchInfo(TG, 100, 100, 6, 100),
-        BatchInfo(TG, 0, 0, 0, 0),
+        BatchInfo(CE, batch_size=17, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=0),
+        BatchInfo(CE, batch_size=23, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=3008),
+        BatchInfo(CE, batch_size=23, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=3016),
+        BatchInfo(CE, batch_size=23, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=3024),
+        BatchInfo(CE, batch_size=18, terminated=0, steps=1, preempted=0, input_toks=6608, cached_toks=2392),
+        BatchInfo(TG, batch_size=100, terminated=0, steps=10, preempted=0, input_toks=100, cached_toks=50000),
+        BatchInfo(TG, batch_size=100, terminated=100, steps=6, preempted=0, input_toks=100, cached_toks=51000),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
     ]
+    # fmt: on
     actual = run_until_completion(scheduler)
-    assert len(actual) == len(expected) and actual == expected
+    assert_batch_info_equal(actual, expected)
 
 
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_64() -> (
@@ -341,21 +361,22 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     # This means we encode 500 - 64 = 436 tokens per CE request.
     # Hence, we will schedule approx 8192 / 436 = 18.79 CE req per batch.
     # This is rounded up to 19 due to chunked prefill.
+    # fmt: off
     expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 17, 0, 1, 8192),
-        BatchInfo(CE, 17, 0, 1, 8192),
-        BatchInfo(CE, 18, 0, 1, 8192),
-        BatchInfo(CE, 17, 0, 1, 8192),
-        BatchInfo(CE, 17, 0, 1, 8192),
-        BatchInfo(CE, 18, 0, 1, 8192),
-        BatchInfo(CE, 2, 0, 1, 848),
-        BatchInfo(TG, 100, 0, 10, 100),
-        BatchInfo(TG, 100, 100, 6, 100),
-        BatchInfo(TG, 0, 0, 0, 0),
+        BatchInfo(CE, batch_size=17, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=0),
+        BatchInfo(CE, batch_size=17, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=192),
+        BatchInfo(CE, batch_size=18, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=384),
+        BatchInfo(CE, batch_size=17, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=76),
+        BatchInfo(CE, batch_size=17, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=268),
+        BatchInfo(CE, batch_size=18, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=460),
+        BatchInfo(CE, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=848, cached_toks=152),
+        BatchInfo(TG, batch_size=100, terminated=0, steps=10, preempted=0, input_toks=100, cached_toks=50000),
+        BatchInfo(TG, batch_size=100, terminated=100, steps=6, preempted=0, input_toks=100, cached_toks=51000),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
     ]
+    # fmt: on
     actual = run_until_completion(scheduler)
-    assert len(actual) == len(expected) and actual == expected
+    assert_batch_info_equal(actual, expected)
 
 
 def test_paged_scheduler__num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_basic() -> (
@@ -390,30 +411,30 @@ def test_paged_scheduler__num_prompts_10_prompt_len_100_output_tokens_100_prefix
             shared_prefix=shared_prefix,
         )
 
+    # fmt: off
     expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        #
         # Can only schedule 5 of 10 reqs bc of 500 token limit due to limited blocks.
-        BatchInfo(CE, 5, 0, 1, 500),
+        BatchInfo(CE, batch_size=5, terminated=0, steps=1, preempted=0, input_toks=500, cached_toks=0),
         # To schedule a tg iteration, we need to preempt a request (bs 5->4)
-        BatchInfo(TG, 4, 0, 10, 4),
-        BatchInfo(TG, 4, 0, 10, 4),
-        BatchInfo(TG, 3, 0, 10, 3),
-        BatchInfo(TG, 3, 0, 10, 3),
-        BatchInfo(TG, 3, 0, 10, 3),
-        BatchInfo(TG, 3, 0, 10, 3),
-        BatchInfo(TG, 2, 0, 10, 2),
-        BatchInfo(TG, 2, 0, 10, 2),
-        BatchInfo(TG, 2, 0, 10, 2),
-        BatchInfo(TG, 2, 2, 10, 2),
+        BatchInfo(TG, batch_size=4, terminated=0, steps=10, preempted=1, input_toks=4, cached_toks=400),
+        BatchInfo(TG, batch_size=4, terminated=0, steps=10, preempted=0, input_toks=4, cached_toks=440),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=1, input_toks=3, cached_toks=360),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=0, input_toks=3, cached_toks=390),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=0, input_toks=3, cached_toks=420),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=0, input_toks=3, cached_toks=450),
+        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=1, input_toks=2, cached_toks=320),
+        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=340),
+        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=360),
+        BatchInfo(TG, batch_size=2, terminated=2, steps=10, preempted=0, input_toks=2, cached_toks=380),
         # This encodes more than 3*100 tokens since we are re-encoding some previously
         # preempted requests that have already generated some tokens.
-        BatchInfo(CE, 3, 0, 1, 383),
-        BatchInfo(TG, 3, 0, 10, 3),
+        BatchInfo(CE, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=383, cached_toks=0),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=0, input_toks=3, cached_toks=383),
         # ...
     ]
+    # fmt: on
     actual = run_until_completion(scheduler, max_num_iters=len(expected))
-    assert len(actual) == len(expected) and actual == expected
+    assert_batch_info_equal(actual, expected)
 
 
 def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_prefix_caching() -> (
@@ -447,56 +468,55 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
             max_seq_len=prompt_len + output_tokens,
             shared_prefix=shared_prefix,
         )
-
+    # fmt: off
     expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        #
-        # Can only schedule 5 of 10 reqs bc of 500 token limit due to limited blocks
-        BatchInfo(CE, 5, 0, 1, 500),
+        # Can only schedule 5 of 10 reqs bc of 500 token limit due to limited blocks.
+        BatchInfo(CE, batch_size=5, terminated=0, steps=1, preempted=0, input_toks=500, cached_toks=0),
         # Due to shared prefix, we can use same first 6 blocks for all 10 reqs!
         # This means we use 6 blocks + 4 * n_req == 100 blocks.
         # This means we can schedule the remaining 5 reqs :D.
-        BatchInfo(CE, 5, 0, 1, 200),
+        BatchInfo(CE, batch_size=5, terminated=0, steps=1, preempted=0, input_toks=200, cached_toks=300),
         # Because we are so constrained on memory, we see many preemptions :(.
         # To run TG on 8 reqs, we need 8 blocks. To free up 8 blocks, we preempt
         # 2 reqs since each req has 4 uncommitted blocks to release.
-        BatchInfo(TG, 8, 0, 10, 8),
-        BatchInfo(TG, 7, 0, 10, 7),
-        BatchInfo(TG, 6, 0, 10, 6),
-        BatchInfo(TG, 5, 0, 10, 5),
-        BatchInfo(TG, 4, 0, 10, 4),
-        BatchInfo(TG, 4, 0, 10, 4),
-        BatchInfo(TG, 4, 0, 10, 4),
-        BatchInfo(TG, 3, 0, 10, 3),
-        BatchInfo(TG, 3, 0, 10, 3),
-        BatchInfo(TG, 3, 3, 10, 3),
-        BatchInfo(CE, 5, 0, 1, 355),
-        BatchInfo(TG, 4, 0, 10, 4),
-        BatchInfo(TG, 4, 0, 10, 4),
-        BatchInfo(TG, 3, 1, 10, 3),
-        BatchInfo(CE, 3, 0, 1, 115),
-        BatchInfo(TG, 4, 0, 10, 4),
-        BatchInfo(TG, 3, 0, 10, 3),
-        BatchInfo(TG, 3, 1, 10, 3),
-        BatchInfo(CE, 3, 0, 1, 116),
-        BatchInfo(TG, 4, 1, 10, 4),
+        BatchInfo(TG, batch_size=8, terminated=0, steps=10, preempted=2, input_toks=8, cached_toks=800),
+        BatchInfo(TG, batch_size=7, terminated=0, steps=10, preempted=1, input_toks=7, cached_toks=770),
+        BatchInfo(TG, batch_size=6, terminated=0, steps=10, preempted=1, input_toks=6, cached_toks=720),
+        BatchInfo(TG, batch_size=5, terminated=0, steps=10, preempted=1, input_toks=5, cached_toks=650),
+        BatchInfo(TG, batch_size=4, terminated=0, steps=10, preempted=1, input_toks=4, cached_toks=560),
+        BatchInfo(TG, batch_size=4, terminated=0, steps=10, preempted=0, input_toks=4, cached_toks=600),
+        BatchInfo(TG, batch_size=4, terminated=0, steps=10, preempted=0, input_toks=4, cached_toks=640),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=1, input_toks=3, cached_toks=510),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=0, input_toks=3, cached_toks=540),
+        BatchInfo(TG, batch_size=3, terminated=3, steps=10, preempted=0, input_toks=3, cached_toks=570),
+        BatchInfo(CE, batch_size=5, terminated=0, steps=1, preempted=0, input_toks=355, cached_toks=320),
+        BatchInfo(TG, batch_size=4, terminated=0, steps=10, preempted=1, input_toks=4, cached_toks=564),
+        BatchInfo(TG, batch_size=4, terminated=0, steps=10, preempted=0, input_toks=4, cached_toks=604),
+        BatchInfo(TG, batch_size=3, terminated=1, steps=10, preempted=1, input_toks=3, cached_toks=503),
+        BatchInfo(CE, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=115, cached_toks=240),
+        BatchInfo(TG, batch_size=4, terminated=0, steps=10, preempted=1, input_toks=4, cached_toks=586),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=1, input_toks=3, cached_toks=504),
+        BatchInfo(TG, batch_size=3, terminated=1, steps=10, preempted=0, input_toks=3, cached_toks=534),
+        BatchInfo(CE, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=116, cached_toks=210),
+        BatchInfo(TG, batch_size=4, terminated=1, steps=10, preempted=1, input_toks=4, cached_toks=588),
         # Notice how 22 << 100 tokens of original prompt.
         # Prefix caching allows us to encode fewer number of tokens after preemption.
-        BatchInfo(CE, 1, 0, 1, 22),
-        BatchInfo(TG, 4, 0, 10, 4),
-        BatchInfo(TG, 4, 1, 10, 4),
-        BatchInfo(TG, 3, 0, 10, 3),
-        BatchInfo(TG, 3, 0, 10, 3),
-        BatchInfo(TG, 3, 0, 10, 3),
-        BatchInfo(TG, 3, 0, 10, 3),
-        BatchInfo(TG, 3, 1, 10, 3),
-        BatchInfo(TG, 2, 0, 10, 2),
-        BatchInfo(TG, 2, 1, 10, 2),
-        BatchInfo(TG, 1, 1, 8, 1),
-        BatchInfo(TG, 0, 0, 0, 0),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=22, cached_toks=80),
+        BatchInfo(TG, batch_size=4, terminated=0, steps=10, preempted=0, input_toks=4, cached_toks=529),
+        BatchInfo(TG, batch_size=4, terminated=1, steps=10, preempted=0, input_toks=4, cached_toks=569),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=0, input_toks=3, cached_toks=407),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=0, input_toks=3, cached_toks=437),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=0, input_toks=3, cached_toks=467),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=10, preempted=0, input_toks=3, cached_toks=497),
+        BatchInfo(TG, batch_size=3, terminated=1, steps=10, preempted=0, input_toks=3, cached_toks=527),
+        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=354),
+        BatchInfo(TG, batch_size=2, terminated=1, steps=10, preempted=0, input_toks=2, cached_toks=374),
+        BatchInfo(TG, batch_size=1, terminated=1, steps=8, preempted=0, input_toks=1, cached_toks=192),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
     ]
+    # fmt: on
     actual = run_until_completion(scheduler)
-    assert len(actual) == len(expected) and actual == expected
+    assert_batch_info_equal(actual, expected)
 
 
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching() -> (
@@ -519,21 +539,22 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_in_flig
 
     # With inflight batching, the CE batches become bigger and bigger since they
     # now include TG requests.
+    # fmt: off
     expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 17, 0, 1, 8192),
-        BatchInfo(CE, 33, 0, 1, 8192),
-        BatchInfo(CE, 50, 0, 1, 8192),
-        BatchInfo(CE, 66, 0, 1, 8192),
-        BatchInfo(CE, 82, 0, 1, 8192),
-        BatchInfo(CE, 98, 0, 1, 8192),
-        BatchInfo(CE, 100, 0, 1, 1188),
-        BatchInfo(TG, 100, 32, 10, 100),
-        BatchInfo(TG, 68, 68, 6, 68),
-        BatchInfo(TG, 0, 0, 0, 0),
+        BatchInfo(CE, batch_size=17, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=0),
+        BatchInfo(CE, batch_size=33, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=8192),
+        BatchInfo(CE, batch_size=50, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=16384),
+        BatchInfo(CE, batch_size=66, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=24576),
+        BatchInfo(CE, batch_size=82, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=32768),
+        BatchInfo(CE, batch_size=98, terminated=0, steps=1, preempted=0, input_toks=8192, cached_toks=40960),
+        BatchInfo(CE, batch_size=100, terminated=0, steps=1, preempted=0, input_toks=1188, cached_toks=49152),
+        BatchInfo(TG, batch_size=100, terminated=32, steps=10, preempted=0, input_toks=100, cached_toks=50340),
+        BatchInfo(TG, batch_size=68, terminated=68, steps=6, preempted=0, input_toks=68, cached_toks=34844),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0)
     ]
+    # fmt: on
     actual = run_until_completion(scheduler)
-    assert len(actual) == len(expected) and actual == expected
+    assert_batch_info_equal(actual, expected)
 
 
 def test_paged_scheduler_tg_preemption_basic() -> None:
@@ -557,31 +578,36 @@ def test_paged_scheduler_tg_preemption_basic() -> None:
             max_seq_len=prompt_len + output_tokens,
         )
 
+    # fmt: off
     expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 2, 0, 1, 20),  # Schedule req 0 and 1
-        BatchInfo(TG, 2, 0, 10, 2),
-        BatchInfo(TG, 2, 0, 10, 2),
-        BatchInfo(TG, 2, 0, 10, 2),
-        BatchInfo(TG, 2, 0, 10, 2),
-        BatchInfo(TG, 1, 0, 10, 1),  # Run out of blocks so we preempt req 1
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 1, 10, 1),  # Req 0 finishes
+        # Schedule req 0 and 1 again
+        BatchInfo(CE, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=20, cached_toks=0),
+        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=20),
+        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=40),
+        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=60),
+        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=80),
+        # Run out of blocks so we preempt req 1
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=1, input_toks=1, cached_toks=50),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=60),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=70),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=80),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=90),
+        # Req 0 finishes
+        BatchInfo(TG, batch_size=1, terminated=1, steps=10, preempted=0, input_toks=1, cached_toks=100),
         # Req 1 begins again. We run CE on all orig prompt tokens and newly generated tokens.
-        BatchInfo(CE, 1, 0, 1, 51),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 1, 9, 1),
-        BatchInfo(TG, 0, 0, 0, 0),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=51, cached_toks=0),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=51),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=61),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=71),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=81),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=91),
+        # Req 1 finishes
+        BatchInfo(TG, batch_size=1, terminated=1, steps=9, preempted=0, input_toks=1, cached_toks=101),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
     ]
+    # fmt: on
     actual = run_until_completion(scheduler)
-    assert len(actual) == len(expected) and actual == expected
+    assert_batch_info_equal(actual, expected)
 
 
 def test_paged_scheduler_oom_ce() -> None:
@@ -640,20 +666,23 @@ def test_paged_scheduler_oom_tg() -> None:
     with pytest.raises(RuntimeError) as e:
         run_until_completion(scheduler, output_list=actual)
 
+    # fmt: off
     expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 2, 0, 1, 20),  # Schedule req 0 and 1
-        BatchInfo(TG, 2, 0, 10, 2),
-        BatchInfo(TG, 2, 0, 10, 2),
-        BatchInfo(TG, 2, 0, 10, 2),
-        BatchInfo(TG, 2, 0, 10, 2),
-        BatchInfo(TG, 1, 0, 10, 1),  # Preempt req 1 (bs 2->1)
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 0, 10, 1),
+        # Schedule req 0 and 1
+        BatchInfo(CE, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=20, cached_toks=0),
+        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=20),
+        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=40),
+        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=60),
+        BatchInfo(TG, batch_size=2, terminated=0, steps=10, preempted=0, input_toks=2, cached_toks=80),
+        # Preempt req 1 (bs 2->1)
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=1, input_toks=1, cached_toks=50),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=60),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=70),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=80),
+        BatchInfo(TG, batch_size=1, terminated=0, steps=10, preempted=0, input_toks=1, cached_toks=90),
         # Can't schedule req 1 and there are no other reqs to preempt, give up!
     ]
+    # fmt: on
     # The error message should be informative:
     assert (
         "Insufficient KV pages for a single request with 101 tokens.\n"
@@ -661,7 +690,7 @@ def test_paged_scheduler_oom_tg() -> None:
         "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
         in str(e.value)
     )
-    assert len(actual) == len(expected) and actual == expected
+    assert_batch_info_equal(actual, expected)
 
 
 def test_paged_scheduler_paging_to_host_on_cpu_raises() -> None:

@@ -227,33 +227,106 @@ class FakeTokenGeneratorPipeline(
 @dataclass(eq=True)
 class BatchInfo:
     batch_type: BatchType
+    """Type of the batch, either CE or TG"""
+
     batch_size: int
+    """Batch size. This is the number of requests in the batch."""
+
     terminated: int
-    num_steps: int
-    input_tokens: int
+    """Number of requests that were terminated after this iteration in the batch."""
+
+    steps: int
+    """Number of steps to execute for."""
+
+    preempted: int = -1
+    """Number of requests that were preempted while scheduling this batch."""
+
+    input_toks: int = -1
+    """Total number of input tokens across all requests in the batch."""
+
+    cached_toks: int = -1
+    """Total number of cached context tokens across all requests in the batch."""
 
     @classmethod
     def empty(cls) -> BatchInfo:
-        return BatchInfo(BatchType.TG, 0, 0, 0, 0)
+        return BatchInfo(
+            BatchType.TG,
+            batch_size=0,
+            terminated=0,
+            steps=0,
+            preempted=0,
+            input_toks=0,
+            cached_toks=0,
+        )
 
     def __repr__(self) -> str:
         return (
             f"BatchInfo("
             f"{self.batch_type.value}, "
-            f"{self.batch_size}, "
-            f"{self.terminated}, "
-            f"{self.num_steps}, "
-            f"{self.input_tokens})"
+            f"batch_size={self.batch_size}, "
+            f"terminated={self.terminated}, "
+            f"steps={self.steps}, "
+            f"preempted={self.preempted}, "
+            f"input_toks={self.input_toks}, "
+            f"cached_toks={self.cached_toks}"
+            f")"
         )
+
+
+def pretty_format_batch_info_list(batch_info_list: list[BatchInfo]) -> str:
+    """Pretty format a list of BatchInfo for printing to the console."""
+    return "[\n\t" + "\n\t".join([f"{x}," for x in batch_info_list]) + "\n]"
+
+
+def assert_batch_info_equal(
+    actual: list[BatchInfo], expected: list[BatchInfo]
+) -> None:
+    """Assert that two lists of BatchInfo are equal.
+
+    When the lists are unequal, this method ensures that the output dumped to the
+    console is easily copy-pastable into the test code.
+
+    This method is preferred over `assert actual == expected`.
+
+    If we naively compare the lists via above method, the output is very
+    verbose and cluttered. The assert dumps the contents of `expected` which is
+    unnecessary since it is present in the code. Pytest also often elides some
+    elements of the list, preventing us from copy-pasting the list into the test code.
+    """
+
+    if len(actual) != len(expected):
+        # Save lengths to local variable so pytest does not try to print `actual` / `expected`.
+        len_actual = len(actual)
+        len_expected = len(expected)
+        raise AssertionError(
+            f"Lengths of actual and expected batch infos do not match: {len_actual} != {len_expected}. Actual:\n"
+            f"{pretty_format_batch_info_list(actual)}"
+        )
+    for i in range(len(actual)):
+        if actual[i] != expected[i]:
+            raise AssertionError(
+                f"Batch info at index {i} does not match: {actual[i]} != {expected[i]}. Actual:\n"
+                f"{pretty_format_batch_info_list(actual)}"
+            )
 
 
 def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
     scheduler._retrieve_pending_requests()
-    inputs = scheduler.batch_constructor.construct_batch()
+    batch_constructor = scheduler.batch_constructor
+
+    num_preempted_before = scheduler.batch_constructor.total_preemption_count
+    inputs = batch_constructor.construct_batch()
+    num_preempted_after = scheduler.batch_constructor.total_preemption_count
+
+    num_preempted = num_preempted_after - num_preempted_before
     batch_size = len(inputs.batch)
     batch_type = inputs.batch_type
     input_tokens = inputs.input_tokens
     num_steps = inputs.num_steps
+    batch_context_length = sum(
+        context.start_idx for context in inputs.batch.values()
+    )
+
     if batch_size == 0:
         return BatchInfo.empty()
 
@@ -264,8 +337,10 @@ def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
         batch_type=batch_type,
         batch_size=batch_size,
         terminated=num_terminated_reqs,
-        num_steps=num_steps,
-        input_tokens=input_tokens,
+        steps=num_steps,
+        preempted=num_preempted,
+        input_toks=input_tokens,
+        cached_toks=batch_context_length,
     )
 
 
