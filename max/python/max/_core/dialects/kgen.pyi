@@ -3771,9 +3771,6 @@ class WitnessOp(max._core.Operation):
     conformance table. It represents a single requirement satisfied by a struct
     type for the trait being conformed to.
 
-    TODO: Make this a Symbol by using the mangled name from the trait. At the
-    same time, get_witness should also be emitted with the mangled name.
-
     Example:
 
     ```mlir
@@ -3791,13 +3788,15 @@ class WitnessOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        name: max._core.dialects.builtin.StringAttr,
+        sym_name: max._core.dialects.builtin.StringAttr,
         value: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
-    def name(self) -> max._core.dialects.builtin.StringAttr: ...
-    @name.setter
-    def name(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
+    def sym_name(self) -> str: ...
+    @sym_name.setter
+    def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
     @property
     def value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @value.setter
