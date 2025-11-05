@@ -496,3 +496,9 @@ what we publish.
   allows both reading and writing, similar to Python's "r+" mode. Previously,
   "rw" mode would immediately truncate the file, making it impossible to read
   existing content and causing potential data loss.
+
+- [Issue #3849](https://github.com/modular/mojo/issues/3849): Added support
+  for append mode ("a") when opening files. The `open()` function now accepts
+  "a" as a valid mode, which opens a file for appending. Content written to a
+  file opened in append mode is added to the end of the file without truncating
+  existing content. If the file doesn't exist, it will be created.

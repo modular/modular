@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from os import remove
 from pathlib import Path, _dir_of_current_file
 from tempfile import gettempdir
 
@@ -361,6 +362,88 @@ def test_file_get_raw_fd():
     f1.close()
     f2.close()
     f3.close()
+
+
+def test_file_append_mode():
+    """Test that opening a file in 'a' mode appends to existing content."""
+    var temp_file = Path(gettempdir().value()) / "test_file_append_mode"
+
+    # Create a file with initial content
+    var initial_content = "initial content"
+    with open(temp_file, "w") as f:
+        f.write(initial_content)
+
+    # Open in append mode and add more content
+    var appended_text = " appended"
+    with open(temp_file, "a") as f:
+        f.write(appended_text)
+
+    # Verify the content was appended, not overwritten
+    with open(temp_file, "r") as f:
+        var content = f.read()
+        assert_equal(
+            content,
+            initial_content + appended_text,
+            "append mode should add to existing content",
+        )
+
+    # Test multiple append operations
+    with open(temp_file, "a") as f:
+        f.write(" more")
+    with open(temp_file, "a") as f:
+        f.write(" text")
+
+    with open(temp_file, "r") as f:
+        var final_content = f.read()
+        assert_equal(
+            final_content,
+            initial_content + appended_text + " more text",
+            "multiple appends should accumulate",
+        )
+
+
+def test_file_append_mode_creates_file():
+    """Test that append mode creates a new file if it doesn't exist."""
+    var temp_file = Path(gettempdir().value()) / "test_file_append_new"
+
+    # Delete the file if it exists
+    try:
+        remove(temp_file)
+    except:
+        pass
+
+    # Open in append mode (should create the file)
+    var content = "new file content"
+    with open(temp_file, "a") as f:
+        f.write(content)
+
+    # Verify the file was created with the content
+    with open(temp_file, "r") as f:
+        assert_equal(
+            f.read(), content, "append mode should create new file if missing"
+        )
+
+
+def test_file_append_mode_with_unicode():
+    """Test that append mode works correctly with Unicode characters."""
+    var temp_file = Path(gettempdir().value()) / "test_file_append_unicode"
+
+    # Create a file with Unicode content
+    with open(temp_file, "w") as f:
+        f.write("Hello 🔥")
+
+    # Append more Unicode content
+    with open(temp_file, "a") as f:
+        f.write(" World 🚀")
+
+    # Verify both parts are present
+    with open(temp_file, "r") as f:
+        var content = f.read()
+        assert_equal(
+            content,
+            "Hello 🔥 World 🚀",
+            "append mode should handle Unicode correctly",
+        )
 
 
 def main():
