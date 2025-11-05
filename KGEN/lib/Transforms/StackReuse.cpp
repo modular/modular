@@ -669,8 +669,7 @@ static void optimizeReadOnlyMemory(Region &funcBody, PassInfo &pass) {
 
     ImplicitLocOpBuilder b(constant.getLoc(), OpBuilder(constant));
     b.setInsertionPointAfter(constant);
-    auto ptr = GlobalConstantOp::create(
-        b, KGEN::PointerType::get(constant.getType(), 0), constant.getValue());
+    auto ptr = GlobalConstantOp::create(b, constant.getValue());
 
     for (StackAllocationOp alloc : allocs) {
       for (Operation *user : alloc->getUsers()) {

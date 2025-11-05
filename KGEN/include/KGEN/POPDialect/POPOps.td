@@ -362,8 +362,7 @@ def POP_FMAOp : POP_ArithmeticTernaryOp<"fma",
 // CmpOp
 //===----------------------------------------------------------------------===//
 
-def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands,
-    DeclareOpInterfaceMethods<InferTypeOpInterface>,
+def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands, InferTypeOpAdaptor,
     DeclareOpInterfaceMethods<InterpreterOpInterface>,
     DeclareOpInterfaceMethods<ComputeOpInterface>]>, Comparison {
   let summary = "comparison";
@@ -1576,7 +1575,8 @@ def POP_GlobalAllocOp : POPOp<"global_alloc", [Pure,
 // GlobalConstantOp
 //===----------------------------------------------------------------------===//
 
-def POP_GlobalConstantOp : POPOp<"global_constant", [Pure]> {
+def POP_GlobalConstantOp : POPOp<"global_constant",
+   [Pure, PointerElementType<"result", "value">, InferTypeOpAdaptor]> {
   let summary = "create a global constant";
   let description = [{
     The `pop.global_constant` operation creates and returns a pointer to a
@@ -1604,7 +1604,7 @@ def POP_GlobalConstantOp : POPOp<"global_constant", [Pure]> {
   }];
 
   let builders = [
-    OpBuilder<(ins "Type":$result, "TypedAttr":$value)>
+    OpBuilder<(ins "TypedAttr":$value)>
   ];
 }
 
