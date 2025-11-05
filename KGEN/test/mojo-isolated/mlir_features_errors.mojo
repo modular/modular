@@ -6,7 +6,7 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
-alias `42` = __mlir_attr.`42 : index`
+alias index42 = __mlir_attr.`42 : index`
 
 fn test_mlir():
   var x: __mlir_type.index
@@ -19,11 +19,11 @@ fn test_mlir():
   __mlir_op.`index.add`(x, x).x
 
   # expected-error @+1 {{operation already has attributes}}
-  __mlir_op.`op`[value1=`42`][value2=`42`]
+  __mlir_op.`op`[value1=index42][value2=index42]
 
   __mlir_op.`op`[
-    value=`42`,  # expected-note {{previously specified here}}
-    value=`42`,  # expected-error {{duplicate keyword parameter 'value'}}
+    value=index42,  # expected-note {{previously specified here}}
+    value=index42,  # expected-error {{duplicate keyword parameter 'value'}}
   ]
 
 fn test_mlir2():
@@ -44,7 +44,7 @@ fn test_mlir2():
   # expected-error @below {{failed properties conversion while building index.constant with `{value = 4.200000e+01 : f32}`: Invalid attribute `value` in property conversion: 4.200000e+01 : f32}}
   # expected-error @below {{unable to infer result type from MLIR operation 'index.constant'}}
   var c42e = __mlir_op.`index.constant`[value=__mlir_attr.`42.0 : f32`]()
-  var c42 = __mlir_op.`index.constant`[value=`42`]() # Good
+  var c42 = __mlir_op.`index.constant`[value=index42]() # Good
 
   # expected-error @below {{invalid MLIR attribute:}}
   # expected-note @below {{attempting to parse: '#index<cmp_predicate xeq>'}}
@@ -61,11 +61,11 @@ fn test_mlir2():
   _ = __mlir_op.`test.op`[__mlir_attr.]
 
   # expected-error @+1 {{cannot use initializer syntax on MLIR type 'index'}}
-  _ = __mlir_type.index(`42`)
+  _ = __mlir_type.index(index42)
 
 fn colon_instead_of_equal():
   # expected-error @below {{attribute spec requires a keyword parameter; did you mean 'value=...'?}}
-  _ = __mlir_op.`lit.crazy`[value:`42`]()
+  _ = __mlir_op.`lit.crazy`[value:index42]()
 
 @register_passable("trivial")
 struct Int:
@@ -75,7 +75,7 @@ struct Int:
 fn equal_instead_of_colon():
   var someInt : Int
   # expected-error @+1 {{unable to infer result type from MLIR operation 'pop.array.gep'}}
-  var ptr = __mlir_op.`pop.array.gep`((((someInt))), `42`)
+  var ptr = __mlir_op.`pop.array.gep`((((someInt))), index42)
 
 fn crash_on_invalid():
   # expected-error @+1 {{use of unregistered MLIR operation 'invalid_op'}}

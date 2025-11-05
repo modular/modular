@@ -11,31 +11,28 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# CHECK-DAG: #[[INDEX_TYPE:.*]] = #kgen.type<{{.*}}@__MLIRType<:type index>, index>
-
-
 # CHECK-LABEL: lit.fn @"variadic_kwargs
 # CHECK-SAME: "[mut [[LT:.*]]](
-# CHECK-SAME: %a: index, %b: index, %args: !kgen.variadic<index> pos_vararg, *, %c: index, %d: index,
-# CHECK-SAME: %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!ImplicitlyCopyable_Movable #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|kw_vararg)
+# CHECK-SAME: %a: !Int, %b: !Int, %args: !kgen.variadic<!Int> pos_vararg, *, %c: !Int, %d: !Int,
+# CHECK-SAME: %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!ImplicitlyCopyable_Movable !Int>, mut [[LT]]> owned_in_mem|kw_vararg)
 fn variadic_kwargs(
-    a: Index, b: Index, *args: Index, c: Index, d: Index, **kwargs: Index
+    a: Int, b: Int, *args: Int, c: Int, d: Int, **kwargs: Int
 ):
     pass
 
 
 # CHECK-LABEL: lit.fn @"variadic_kwargs_def_with_type
-def variadic_kwargs_def_with_type(**kwargs: Index):
+def variadic_kwargs_def_with_type(**kwargs: Int):
     pass
 
 
-# CHECK-SAME: "[mut [[LT:.*]], {{.*}}](*, %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!ImplicitlyCopyable_Movable #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|kw_vararg,
-fn takes_int_variadic_kwargs(**kwargs: Index):
+# CHECK-SAME: "[mut [[LT:.*]], {{.*}}](*, %kwargs: !lit.ref<{{.*}}@OwnedKwargsDict<:!ImplicitlyCopyable_Movable !Int>, mut [[LT]]> owned_in_mem|kw_vararg,
+fn takes_int_variadic_kwargs(**kwargs: Int):
     pass
 
 
 fn takes_int_variadic_kwargs_multiline(
-    **kwargs: Index,
+    **kwargs: Int,
 ):
     pass
 
@@ -43,23 +40,23 @@ fn takes_int_variadic_kwargs_multiline(
 # CHECK-LABEL: lit.fn @"test_variadic_kwargs
 fn test_variadic_kwargs():
     # CHECK: %[[DICT_VAR:.*]] = lit.var.decl
-    # CHECK-SAME: @OwnedKwargsDict<:!ImplicitlyCopyable_Movable #[[INDEX_TYPE]]>
+    # CHECK-SAME: @OwnedKwargsDict<:!ImplicitlyCopyable_Movable !Int>
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"__init__{{.*}}(%[[DICT_VAR]])
 
     # CHECK: %[[X_KEY:.*]] = kgen.param.constant: {{.*}}StringLiteral<:string "x">
-    # CHECK: %[[X_VAL:.*]] = lit.var.decl {{.*}}index,
-    # CHECK: %[[IDX9:.*]] = kgen.param.constant = <{{.*}}9{{.*}}>
+    # CHECK: %[[X_VAL:.*]] = lit.var.decl {{.*}}!Int,
+    # CHECK: %[[IDX9:.*]] = kgen.param.constant: !Int = <{9}>
     # CHECK: lit.ref.store %[[IDX9]], %[[X_VAL]]
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"_insert{{.*}}(%[[DICT_VAR]], %[[X_KEY]], %[[X_VAL]])
 
     # CHECK: %[[S_KEY:.*]] = kgen.param.constant: {{.*}}StringLiteral<:string "stuff">
-    # CHECK: %[[S_VAL:.*]] = lit.var.decl {{.*}}index,
-    # CHECK: %[[IDX8:.*]] = kgen.param.constant = <{{.*}}8{{.*}}>
+    # CHECK: %[[S_VAL:.*]] = lit.var.decl {{.*}}!Int,
+    # CHECK: %[[IDX8:.*]] = kgen.param.constant: !Int = <{8}>
     # CHECK: lit.ref.store %[[IDX8]], %[[S_VAL]]
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"_insert{{.*}}(%[[DICT_VAR]], %[[S_KEY]], %[[S_VAL]])
 
     # CHECK lit.call {{.*}}@"takes_int_variadic_kwargs{{.*}}(%[[DICT_VAR]])
-    takes_int_variadic_kwargs(x=`9`, stuff=`8`)
+    takes_int_variadic_kwargs(x=9, stuff=8)
 
 
 trait SomeTrait(ImplicitlyCopyable, Movable):
@@ -101,14 +98,14 @@ fn test_variadic_kwargs_param_inference():
 # COM: test that the inferred type of variables is correct when the initializer
 # COM: expression has variadic keyword arguments.
 # COM: Issue https://github.com/modularml/modular/issues/35215
-fn takes_kw(**kwargs: MemOnly) -> Index:
-    return `0`
+fn takes_kw(**kwargs: MemOnly) -> Int:
+    return 0
 
 
 # CHECK-LABEL: lit.fn @"test_takes_kw_in_assignment
 fn test_takes_kw_in_assignment(x: MemOnly):
     # CHECK: %[[DICT_VAR:.*]] = lit.var.decl{{.*}}@OwnedKwargsDict<:!ImplicitlyCopyable_Movable !MemOnly>
     # CHECK: %[[RES:.*]] = lit.call {{.*}}@"takes_kw{{.*}}(%[[DICT_VAR]])
-    # CHECK: %b = lit.var.decl "b" var : !lit.ref<index,
+    # CHECK: %b = lit.var.decl "b" var : !lit.ref<!Int,
     # CHECK: lit.ref.store %[[RES]], %b
     var b = takes_kw(y=x, z=x)
