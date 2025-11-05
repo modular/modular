@@ -27,7 +27,9 @@ generate = { cmd = [
 	"--model", "google/gemma-3-4B-it",
 	"--custom-architectures", "gemma3multimodal",
 	"--prompt", "<start_of_image><end_of_image>What is the password?",
-    "--image_url", "https://huggingface.co/spaces/big-vision/paligemma-hf/resolve/main/examples/password.jpg"
+    "--image_url", "https://huggingface.co/spaces/big-vision/paligemma-hf/resolve/main/examples/password.jpg",
+    "--max-batch-size", "1",
+    "--max-length", "5000"
 ] }
 
 generate_text = { cmd = [

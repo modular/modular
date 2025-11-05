@@ -380,8 +380,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             for device in self.devices
         ]
 
-        # considered usng our own Gemma3ImageProcessor but according to Claude,
-        # the TextAndVisionTokenizer does basically everything we need
+        # considered usng our own Gemma3ImageProcessor...
         pixel_values = self._prepare_vision_inputs(context_batch)
 
         # Batch image token indices, offsetting for position in the batch.
@@ -758,16 +757,17 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         final_images = _VisionStacker().stack(images)
 
         tensor = Tensor.from_numpy(final_images)
-
         tensor = _cast_to_dtype(
             final_images, DType.float32, DType.bfloat16, self.devices[0]
         )
+        # if final_images.dtype == np.uint16 or final_images.dtype == np.float32:
+        #     tensor = tensor.view(DType.bfloat16, tensor.shape)
 
         return [tensor.to(dev) for dev in self.devices]
 
     def _batch_image_token_indices(
         self, context_batch: Sequence[TextAndVisionContext]
-    ) -> Tensor | None:
+    ) -> list[Tensor] | None:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
 
@@ -812,7 +812,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
         # Create tensor and distribute to device
-        return Tensor.from_numpy(np_indices).to(self.devices[0])
+        return [Tensor.from_numpy(np_indices).to(dev) for dev in self.devices]
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
