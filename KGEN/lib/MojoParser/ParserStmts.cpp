@@ -1480,12 +1480,10 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
     llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
     // Push a new local variable scope for the subsequent suite.
     pushChildScope(scopeGuard, keepDecl);
-    LogicalResult res =
-        getParamEmitter(EC_ForIterator)
-            .emitDestructuringPValue(nextValue.getIfPValue(), targetExpr,
-                                     EC_ForIterator);
-    // Failed to destructure the parameter tuple.
-    if (failed(res))
+
+    IREmitter emitter = getParamEmitter(EC_ForIterator);
+    if (failed(emitter.emitDestructuringPValue(nextValue.getIfPValue(),
+                                               targetExpr)))
       return failure();
 
     //  Parse into the 'then' region of the parameter if.
@@ -2933,7 +2931,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
     if (!initPVal)
       return failure();
 
-    return emitter.emitDestructuringPValue(initPVal, targetExpr, EC_AliasValue);
+    return emitter.emitDestructuringPValue(initPVal, targetExpr);
   };
 
   // Else, do lazy resolution for a single target alias declaration.
