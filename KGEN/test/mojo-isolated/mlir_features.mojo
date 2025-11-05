@@ -6,8 +6,7 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-alias `1` = __mlir_attr.`1 : index`
-alias `42` = __mlir_attr.`42 : index`
+alias one = __mlir_attr.`1 : index`
 
 
 # CHECK: lit.fn @"mlirMagicTest{{.*}}(%x: bf16, %y: f8E5M2)
@@ -15,7 +14,7 @@ fn mlirMagicTest(
     x: __mlir_type.bf16, y: __mlir_type.f8E5M2
 ) -> __mlir_type.index:
     # CHECK: lit.alias.decl [[A:.*]] = <{{.*}}1{{.*}}>
-    alias a: __mlir_type.index = `1`
+    alias a: __mlir_type.index = one
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<f64, mut
     var b: __mlir_type.f64
     # CHECK: %c = lit.var.decl "c" var : !lit.ref<pointer<pointer<f32>>, mut
@@ -33,7 +32,7 @@ fn mlirMagicTest(
 
     # CHECK-NEXT: %idxConstant = lit.var.decl
     # CHECK: kgen.param.constant = <42>
-    var idxConstant = __mlir_op.`index.constant`[value=`42`]()
+    var idxConstant = __mlir_op.`index.constant`[value=Int(42)._mlir_value]()
 
     # CHECK: [[TMP:%.*]] = lit.ref.load %idxConstant
     # CHECK: [[TMP2:%.*]] = index.castu [[TMP:%.*]] : index to i1
@@ -41,14 +40,14 @@ fn mlirMagicTest(
 
     # CHECK: lit.alias.decl *"new_lower{{.*}} = <42>
     alias new_lower = __mlir_attr[
-        `#kgen.param.expr<max, `, a, `, `, (`42`), `> : index`
+        `#kgen.param.expr<max, `, a, `, `, Int(42)._mlir_value, `> : index`
     ]
 
     # CHECK: kgen.param.constant = <sugar_alias(*"new_lower`7", 42)>
-    # CHECK-NEXT: kgen.param.constant = <sugar_alias(*"1`0x", 1)>
+    # CHECK-NEXT: kgen.param.constant = <sugar_alias(*"one`0x", 1)>
     # CHECK-NEXT: index.shru
     # CHECK-NEXT: lit.return
-    return __mlir_op.`index.shru`(new_lower, `1`)
+    return __mlir_op.`index.shru`(new_lower, one)
 
 
 # CHECK-LABEL: lit.fn @"mlirTypesAndAttrs{{.*}}()"<dtype: dtype>()
@@ -79,10 +78,10 @@ fn fancierSubstitutions():
     var complexInt: __mlir_type[`complex<`, __mlir_type.i32, `>`]
 
     # CHECK: lit.alias.decl [[A:.*]] = <{{.*}}1{{.*}}>
-    alias a: __mlir_type.index = `1`
+    alias a: __mlir_type.index = one
     # CHECK: lit.alias.decl *"new_lower{{.*}}" = <42>
     alias new_lower = __mlir_attr[
-        `#kgen.param.expr<max,`, a, `, `, (`42`), `> : index`
+        `#kgen.param.expr<max,`, a, `, `, Int(42)._mlir_value, `> : index`
     ]
 
 
@@ -94,7 +93,7 @@ fn testAttrConcatWithoutType[
 ]():
     # CHECK: lit.alias.decl *"x{{.*}}": variadic<index> = <[1, length]>
     alias x = __mlir_attr[
-        `#kgen.variadic<`, +`1`, `,`, length, `> : !kgen.variadic<index>`
+        `#kgen.variadic<`, +one, `,`, length, `> : !kgen.variadic<index>`
     ]
 
 
@@ -121,7 +120,7 @@ fn structured_for_loop() -> __mlir_type.index:
         # CHECK-NEXT: %index = kgen.param.constant = <{{.*}}1{{.*}}>
         # CHECK-NEXT: %1 = index.add %arg0, %index
         # CHECK-NEXT: hlcf.continue %1 : index
-        __mlir_op.`hlcf.continue`(__mlir_op.`index.add`(i, `1`))
+        __mlir_op.`hlcf.continue`(__mlir_op.`index.add`(i, one))
 
     # CHECK: lit.return %0 : index
     return __mlir_op.`hlcf.loop`[

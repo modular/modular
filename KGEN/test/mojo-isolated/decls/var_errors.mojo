@@ -25,12 +25,12 @@ fn var_decl_without_type():
 fn fudge_int(x: Int): pass
 
 fn var_decl():
-    var x = `42`  # expected-note {{previous definition here}}
+    var x = "x"  # expected-note {{previous definition here}}
     var x : Int   # expected-error {{invalid redefinition of 'x'}}
     fudge_int(x)  # No follow-on error.
 
 fn bad_type_error_message():
-    var localVar = `42`
+    var localVar = 42
     var y : localVar  # expected-error {{cannot use a dynamic value in type specification}}
 
     var x: Int
@@ -43,20 +43,20 @@ fn missing_type_on_var_decl():
 
 fn bad_stmt_list(cond: Bool):
     # expected-error @+1 {{'if' statement must be on its own line}}
-    var abc = `42`; if cond: pass
+    var abc = 42; if cond: pass
 
 fn cannot_fwd_declare_plus_equal():
     # expected-error @+1 {{use of unknown declaration 'x'}}
-    x += `42`
+    x += 42
 
 fn test_var_let_type_literal_value():
     # expected-error @below {{expected a type, not a value}}
-    var c: `42`
+    var c: 42
 
 fn use_before_def():
     # expected-error @below {{use of unknown declaration 'x'}}
     var y = x
-    var x = `42`
+    var x = 42
 
 # Issue #18150: https://github.com/modularml/modular/issues/18150
 fn self_reference():
@@ -67,7 +67,7 @@ fn self_reference():
 # https://github.com/modular/mojo/issues/1232
 fn empty_name():
   # expected-error @+1 {{empty backtick identifier isn't allowed}}
-  var `` = `42`
+  var `` = 42
 
 # COM: Issue #957 https://github.com/modular/mojo/issues/957
 struct MemoryStruct:

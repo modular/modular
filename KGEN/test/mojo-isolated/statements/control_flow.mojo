@@ -208,7 +208,7 @@ fn constantTrue(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   kgen.unreachable
-    if `True`:
+    if True:
         return x
     return y
 
@@ -231,7 +231,7 @@ fn constantFalse(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK-NEXT:   hlcf.yield
     if cond:
         return x
-    elif `False`:
+    elif False:
         return y
     else:
         return x

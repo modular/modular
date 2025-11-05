@@ -11,19 +11,16 @@
 # This test verifies that extensions with trait conformances survive DCE and
 # are properly processed during LowerLIT when imported from a package.
 
-alias int = __mlir_type.index
-alias `42` = __mlir_attr.`42 : index`
-
 from struct_and_conforming_extension_package import MyStruct, Convertible
 
 
-fn use_convertible[T: Convertible](x: T) -> int:
+fn use_convertible[T: Convertible](x: T) -> Int:
     return x.convert()
 
 
 # CHECK-LABEL: kgen.generator @"extension_conformance_dce::test
-fn test() -> int:
-    var s = MyStruct(`42`)
+fn test() -> Int:
+    var s = MyStruct(42)
 
     # This uses the alias defined in the extension, which requires the
     # extension to survive DCE during importing.

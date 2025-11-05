@@ -26,11 +26,6 @@ alias `6` = __mlir_attr.`6 : index`
 alias `7` = __mlir_attr.`7 : index`
 alias `8` = __mlir_attr.`8 : index`
 alias `9` = __mlir_attr.`9 : index`
-alias `10` = __mlir_attr.`10 : index`
-alias `42` = __mlir_attr.`42 : index`
-alias `123` = __mlir_attr.`123 : index`
-alias `True` = __mlir_attr.`1 : i1`
-alias `False` = __mlir_attr.`0 : i1`
 
 
 @register_passable("trivial")
