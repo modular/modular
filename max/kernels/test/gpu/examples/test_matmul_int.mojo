@@ -23,7 +23,11 @@ from gpu import (
     thread_idx,
 )
 from gpu.host import DeviceContext
-from memory import memset_zero, stack_allocation
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    memset_zero,
+    stack_allocation,
+)
 
 from utils.index import Index
 

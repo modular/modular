@@ -26,6 +26,7 @@ from utils import IndexList
 from utils.index import Index
 from utils.numerics import isnan
 from internal_utils import assert_almost_equal
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):

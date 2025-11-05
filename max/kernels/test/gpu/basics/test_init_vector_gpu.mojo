@@ -24,6 +24,7 @@ from internal_utils import (
     init_vector_launch,
     initialize,
 )
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 

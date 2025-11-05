@@ -20,6 +20,7 @@
 
 from gpu import thread_idx
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 def test_compile_function():

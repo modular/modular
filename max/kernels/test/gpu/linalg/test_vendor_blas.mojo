@@ -20,6 +20,7 @@ from gpu import block_dim
 from gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import matmul_kernel_naive
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 

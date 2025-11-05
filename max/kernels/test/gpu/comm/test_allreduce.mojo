@@ -19,6 +19,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allreduce import MAX_GPUS, Signal, _allreduce_naive_single, allreduce
 from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal, assert_true
 
 from utils import IndexList, StaticTuple

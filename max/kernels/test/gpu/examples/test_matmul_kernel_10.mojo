@@ -31,7 +31,7 @@ from gpu import (
 from gpu.host import DeviceContext
 from gpu.intrinsics import ldg
 from linalg.utils import elementwise_epilogue_type
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 
 from utils import StaticTuple
 from utils.index import Index

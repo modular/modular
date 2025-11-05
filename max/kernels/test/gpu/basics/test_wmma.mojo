@@ -21,6 +21,7 @@ from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from linalg.matmul.gpu import matmul_kernel_naive
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_false
 
 from utils.index import IndexList

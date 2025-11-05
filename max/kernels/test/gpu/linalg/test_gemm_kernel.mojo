@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv, isclose
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import argv
 
 from buffer import DimList, NDBuffer

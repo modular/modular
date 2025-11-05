@@ -16,6 +16,7 @@
 from algorithm import parallelize
 from gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
 from math import iota
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from shmem import *
 from sys.ffi import c_int

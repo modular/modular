@@ -21,7 +21,7 @@ from gpu.memory import async_copy
 from gpu.sync import async_copy_arrive
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout.tma_async import PipelineState, SharedMemBarrier
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_equal
 
 

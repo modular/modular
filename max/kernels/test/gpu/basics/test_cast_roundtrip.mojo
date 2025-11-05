@@ -13,6 +13,7 @@
 
 from gpu import *
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, assert_true
 
 from utils.numerics import inf, isnan, nan, neg_inf

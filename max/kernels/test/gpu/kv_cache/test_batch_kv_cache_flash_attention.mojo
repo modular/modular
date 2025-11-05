@@ -13,6 +13,7 @@
 
 from collections import Set
 from math import rsqrt
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import random_ui64, seed
 
 from buffer import Dim, DimList, NDBuffer

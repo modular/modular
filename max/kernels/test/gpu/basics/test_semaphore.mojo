@@ -14,6 +14,7 @@
 from gpu import NamedBarrierSemaphore
 from gpu.host import DeviceContext
 from gpu import block_idx, grid_dim, thread_idx
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 alias NUM_BLOCKS = 32

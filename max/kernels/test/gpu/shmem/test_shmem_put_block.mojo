@@ -16,6 +16,7 @@
 from os import abort
 
 from gpu import block_dim, block_idx, global_idx
+from memory import LegacyUnsafePointer as UnsafePointer
 from shmem import *
 from testing import assert_equal
 

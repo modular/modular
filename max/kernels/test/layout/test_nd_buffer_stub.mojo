@@ -35,6 +35,7 @@ from layout._ndbuffer_stub import (
     vectorize,
 )
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils import Index, IndexList, StaticTuple
 
 

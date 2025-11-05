@@ -16,6 +16,7 @@ from sys import env_get_int
 
 from gpu import block_dim, global_idx, grid_dim
 from gpu.host import DeviceBuffer, DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal, assert_true
 
 

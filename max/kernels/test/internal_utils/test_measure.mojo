@@ -14,6 +14,7 @@
 from buffer import DimList
 from internal_utils import TestTensor, assert_with_measure, correlation, kl_div
 from itertools import product
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 

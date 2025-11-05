@@ -15,6 +15,7 @@ import gpu.warp as warp
 from gpu import barrier, global_idx
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 

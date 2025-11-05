@@ -16,7 +16,7 @@ from math import ceildiv
 from buffer import NDBuffer
 from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.host import DeviceContext
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 
 from utils.index import Index
 

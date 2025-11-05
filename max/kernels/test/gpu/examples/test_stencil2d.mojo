@@ -18,6 +18,7 @@ from buffer.dimlist import DimList
 from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.host import DeviceContext
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import Index
 
 alias BLOCK_DIM = 4

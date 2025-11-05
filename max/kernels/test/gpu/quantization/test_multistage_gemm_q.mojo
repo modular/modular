@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from pathlib import Path
 from random import rand, randint, random_float64
 from sys import align_of, argv, size_of

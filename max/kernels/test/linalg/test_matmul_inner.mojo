@@ -31,6 +31,7 @@ from linalg.utils import (
     use_i8mm_fn,
     use_vnni_fn,
 )
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 from utils import IndexList

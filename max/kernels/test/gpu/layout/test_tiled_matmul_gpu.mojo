@@ -23,6 +23,7 @@ from layout._ndbuffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from layout._utils import ManagedLayoutTensor
 from layout.math import outer_product_acc
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils import IndexList
 from utils.index import Index
 
