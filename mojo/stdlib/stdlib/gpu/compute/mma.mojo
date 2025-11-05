@@ -35,7 +35,7 @@ from gpu._utils import (
 )
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
-from memory import bitcast
+from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 
 from utils import StaticTuple
 from utils.index import Index

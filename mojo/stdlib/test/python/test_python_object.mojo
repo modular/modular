@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from python import Python, PythonObject
 from python._cpython import Py_ssize_t, PyObjectPtr
 from python.bindings import PythonModuleBuilder

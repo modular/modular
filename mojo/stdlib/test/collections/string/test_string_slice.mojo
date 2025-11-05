@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string.string_slice import _to_string_list, get_static_string
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys.info import size_of
 
 from testing import assert_equal, assert_false, assert_true

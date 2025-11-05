@@ -33,7 +33,11 @@ from sys.ffi import c_char
 from sys.info import CompilationTarget
 from sys.intrinsics import _type_is_eq
 
-from memory import bitcast
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    bitcast,
+)
 
 from .file_descriptor import FileDescriptor
 

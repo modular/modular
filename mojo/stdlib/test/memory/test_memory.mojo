@@ -13,7 +13,13 @@
 
 from sys import simd_width_of, size_of
 
-from memory import memcmp, memcpy, memset, memset_zero
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    memcmp,
+    memcpy,
+    memset,
+    memset_zero,
+)
 from testing import TestSuite
 from testing import (
     assert_almost_equal,

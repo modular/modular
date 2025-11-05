@@ -27,7 +27,7 @@ https://arxiv.org/abs/1704.00605
 from math import iota
 from sys import llvm_intrinsic
 
-from memory import Span, bitcast, memcpy
+from memory import LegacyUnsafePointer as UnsafePointer, Span, bitcast, memcpy
 
 from utils import IndexList
 

@@ -27,7 +27,11 @@ from sys import align_of
 from sys.info import simd_width_of
 
 from algorithm import vectorize
-from memory import Pointer
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    Pointer,
+)
 from builtin.device_passable import DevicePassable
 from compile import get_type_name
 

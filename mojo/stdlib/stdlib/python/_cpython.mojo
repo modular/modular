@@ -18,6 +18,10 @@ Documentation for these functions can be found online at:
 """
 
 from collections import InlineArray
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from os import abort, getenv, setenv
 from os.path import dirname
 from pathlib import Path

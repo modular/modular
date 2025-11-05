@@ -29,6 +29,7 @@ achieve optimal memory access patterns and cache utilization.
 from collections.optional import OptionalReg
 from collections.string import StaticString
 from collections.string.string_slice import _get_kgen_string, get_static_string
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import (
     align_of,
     bit_width_of,

@@ -39,6 +39,10 @@ print(info)
 """
 
 from collections.string.string_slice import _get_kgen_string
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from os import PathLike
 from pathlib import Path
 from sys.info import CompilationTarget, _current_target, _TargetType

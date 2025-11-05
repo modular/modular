@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import OwnedPointer
+from memory import LegacyUnsafePointer as UnsafePointer, OwnedPointer
 from test_utils import (
     ExplicitCopyOnly,
     ImplicitCopyOnly,

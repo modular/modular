@@ -14,6 +14,7 @@
 from math import recip
 
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal, TestSuite
 
 

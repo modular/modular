@@ -21,6 +21,10 @@ from utils import StaticTuple
 
 from builtin.device_passable import DevicePassable
 from compile import get_type_name
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple

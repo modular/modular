@@ -18,7 +18,7 @@ These are Mojo built-ins, so you don't need to import them.
 from math import ceil
 
 from bit import count_leading_zeros
-from memory import Span
+from memory import LegacyUnsafePointer as UnsafePointer, Span
 
 # ===-----------------------------------------------------------------------===#
 # sort

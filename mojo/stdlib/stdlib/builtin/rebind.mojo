@@ -15,6 +15,8 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from memory import LegacyUnsafePointer as UnsafePointer
+
 
 @always_inline("nodebug")
 fn rebind[

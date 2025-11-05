@@ -20,6 +20,10 @@ from utils import IndexList
 ```
 """
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from hashlib.hasher import Hasher
 
 from builtin.device_passable import DevicePassable

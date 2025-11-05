@@ -20,6 +20,7 @@ from math import CeilDivable
 
 from builtin.math import Absable, DivModable
 from builtin.device_passable import DevicePassable
+from memory import LegacyOpaquePointer as OpaquePointer
 
 from utils._visualizers import lldb_formatter_wrapping_type
 

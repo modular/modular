@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys.ffi import c_int, external_call
 from sys.info import CompilationTarget, platform_map
 

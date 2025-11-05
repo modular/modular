@@ -29,7 +29,11 @@ from gpu.host.device_context import (
     _checked,
     _DeviceBufferPtr,
 )
-from memory import stack_allocation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    stack_allocation,
+)
 
 from utils import IndexList, StaticTuple
 from builtin.device_passable import DevicePassable

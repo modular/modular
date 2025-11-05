@@ -16,6 +16,7 @@ from sys.info import simd_width_of
 
 from algorithm import elementwise
 from buffer import NDBuffer
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 from testing import TestSuite
 

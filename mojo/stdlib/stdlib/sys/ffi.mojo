@@ -18,7 +18,11 @@ from pathlib import Path
 from sys._libc import dlclose, dlerror, dlopen, dlsym
 from sys._libc_errno import ErrNo, get_errno, set_errno
 
-from memory import OwnedPointer
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    OwnedPointer,
+)
 
 from .info import CompilationTarget, is_64bit
 from .intrinsics import _mlirtype_is_eq

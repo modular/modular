@@ -25,7 +25,7 @@ There are a few main tools in this module:
     These are useful helpers to specialize for the general bytes implementation.
 """
 
-from memory import UnsafePointer, Span
+from memory import LegacyUnsafePointer as UnsafePointer, Span
 
 from .hasher import Hasher, default_hasher
 

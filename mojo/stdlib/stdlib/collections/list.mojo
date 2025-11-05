@@ -24,7 +24,7 @@ from os import abort
 from sys import size_of
 from sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
-from memory import Pointer, memcpy
+from memory import LegacyUnsafePointer as UnsafePointer, Pointer, memcpy
 
 from .optional import Optional
 

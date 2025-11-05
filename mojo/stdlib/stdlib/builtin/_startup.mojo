@@ -16,6 +16,8 @@ from sys import external_call
 from sys.ffi import _get_global
 from sys.compile import SanitizeAddress
 
+from memory import LegacyOpaquePointer as OpaquePointer
+
 
 fn _init_global_runtime() -> OpaquePointer:
     return external_call[

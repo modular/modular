@@ -20,7 +20,7 @@ Reference: https://gpuopen.com/learn/wmma_on_rdna3/
 
 from sys import llvm_intrinsic
 from sys.info import _is_amd_rdna3, _is_amd_rdna4
-from memory import bitcast
+from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 from gpu import lane_id
 
 # Import helper functions from parent module

@@ -18,7 +18,7 @@ from sys import is_compile_time, simd_width_of
 from sys.intrinsics import likely
 
 from bit import count_leading_zeros
-from memory import Span
+from memory import LegacyUnsafePointer as UnsafePointer, Span
 
 # ===-----------------------------------------------------------------------===#
 # Validate UTF-8

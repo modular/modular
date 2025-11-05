@@ -33,6 +33,7 @@ from sys.param_env import env_get_bool
 from gpu.intrinsics import Scope
 
 from .._utils import to_i32, to_llvm_shared_mem_ptr
+from memory import LegacyUnsafePointer as UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # barrier

@@ -40,7 +40,12 @@ See the `Dict` docs for more details.
 from hashlib import Hasher, default_comp_time_hasher, default_hasher
 from sys.intrinsics import likely
 
-from memory import bitcast, memcpy
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    bitcast,
+    memcpy,
+)
 
 alias KeyElement = Copyable & Movable & Hashable & EqualityComparable
 """A trait composition for types which implement all requirements of

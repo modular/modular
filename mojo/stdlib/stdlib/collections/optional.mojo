@@ -38,6 +38,7 @@ from utils import Variant
 
 from builtin.device_passable import DevicePassable
 from compile import get_type_name
+from memory import LegacyOpaquePointer as OpaquePointer
 
 
 # TODO(27780): NoneType can't currently conform to traits

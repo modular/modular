@@ -72,6 +72,7 @@ methods.
 
 from collections.string.string import _chr_ascii
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils import Variant
 
 # TODO: _FormatCurlyEntry and _FormatSpec should be public in the future for

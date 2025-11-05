@@ -19,6 +19,7 @@ from memory import ArcPointer
 ```
 """
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from os.atomic import Atomic, Consistency, fence
 from sys.info import size_of
 

@@ -31,7 +31,7 @@ from sys.info import (
     is_gpu,
     is_nvidia_gpu,
 )
-from memory import AddressSpace
+from memory import AddressSpace, LegacyUnsafePointer as UnsafePointer
 
 from ..globals import WARP_SIZE
 from .warp import broadcast

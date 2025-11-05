@@ -26,6 +26,7 @@ from sys.intrinsics import assume
 from sys.param_env import env_get_string
 
 from builtin._location import __call_location, _SourceLocation
+from memory import LegacyUnsafePointer as UnsafePointer
 
 alias ASSERT_MODE = env_get_string["ASSERT", "safe"]()
 

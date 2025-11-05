@@ -13,6 +13,7 @@
 
 from sys import external_call
 from gpu.host.device_context import _ConstCharPtr, _checked, _DeviceContextPtr
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 struct _MTLDevice:

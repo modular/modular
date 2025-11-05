@@ -22,7 +22,7 @@ from sys.intrinsics import (
 from time import sleep
 
 from gpu.primitives.id import lane_id
-from memory import Span
+from memory import LegacyUnsafePointer as UnsafePointer, Span
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.

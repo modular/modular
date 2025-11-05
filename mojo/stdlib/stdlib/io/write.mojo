@@ -19,7 +19,7 @@ from sys.info import is_gpu
 from sys.param_env import env_get_int
 
 from bit import byte_swap
-from memory import Span, bitcast, memcpy
+from memory import LegacyUnsafePointer as UnsafePointer, Span, bitcast, memcpy
 
 # ===-----------------------------------------------------------------------===#
 

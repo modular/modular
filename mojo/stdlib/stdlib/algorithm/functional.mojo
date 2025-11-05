@@ -23,6 +23,7 @@ import sys
 from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv, clamp
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from pathlib import Path
 

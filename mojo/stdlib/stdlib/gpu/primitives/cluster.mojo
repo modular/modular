@@ -20,6 +20,8 @@ All functions are constrained to NVIDIA SM90+ GPUs and will raise an error if us
 Note: These are low-level primitives that correspond directly to PTX/NVVM instructions and should be used
 with careful consideration of the underlying hardware synchronization mechanisms.
 """
+
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import _RegisterPackType, llvm_intrinsic
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer

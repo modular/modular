@@ -31,6 +31,7 @@ NVIDIA PTX: https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#wa
 AMD Matrix Cores: https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-cores-readme/
 """
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import CompilationTarget, is_amd_gpu, is_nvidia_gpu
 
 

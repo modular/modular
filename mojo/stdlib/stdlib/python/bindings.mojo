@@ -16,7 +16,11 @@ from sys.info import size_of
 
 from builtin._startup import _ensure_current_or_global_runtime_init
 from compile.reflection import get_type_name
-from memory import stack_allocation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    stack_allocation,
+)
 from python import Python, PythonObject
 from python._cpython import (
     GILAcquired,

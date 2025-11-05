@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Defines a Variant type."""
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys.intrinsics import _type_is_eq
 

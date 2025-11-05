@@ -56,7 +56,11 @@ from gpu.host.compile import (
     _to_sass,
     get_gpu_target,
 )
-from memory import stack_allocation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    stack_allocation,
+)
 from memory.unsafe import bitcast
 
 from utils import Variant

@@ -37,6 +37,7 @@ from sys import is_nvidia_gpu, llvm_intrinsic
 
 from ..intrinsics import Scope, load_acquire, store_release
 from .sync import MaxHardwareBarriers, barrier, named_barrier
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 @always_inline
