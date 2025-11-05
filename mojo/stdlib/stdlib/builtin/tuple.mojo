@@ -288,12 +288,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
     @always_inline
     fn _compare[
-        self_elt_types: VariadicOf[
-            Copyable & Movable & LessThanComparable & GreaterThanComparable
-        ],
-        other_elt_types: VariadicOf[
-            Copyable & Movable & LessThanComparable & GreaterThanComparable
-        ],
+        self_elt_types: VariadicOf[Copyable & Movable & LessThanComparable],
+        other_elt_types: VariadicOf[Copyable & Movable & LessThanComparable],
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Int:
         alias self_len = type_of(self).__len__()
         alias other_len = type_of(other).__len__()
@@ -318,7 +314,7 @@ struct Tuple[*element_types: Copyable & Movable](
             ]()
             if self[i] < rebind[self_type](other[i]):
                 return -1
-            if self[i] > rebind[self_type](other[i]):
+            if rebind[self_type](other[i]) < self[i]:
                 return 1
 
         @parameter
