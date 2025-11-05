@@ -68,7 +68,6 @@ struct ScatterGatherAmd[
             mut=True, *_, address_space = AddressSpace.LOCAL, **_
         ],
         src_gmem_tile: LayoutTensor,
-        src_tensor: LayoutTensor,
         offset: OptionalReg[UInt] = None,
     ):
         """Copy DRAM to registers.
@@ -76,7 +75,6 @@ struct ScatterGatherAmd[
         Args:
             dst_reg_tile: Destination register tile.
             src_gmem_tile: Source global memory tile.
-            src_tensor: Source tensor.
             offset: Optional copy offset.
         """
         _copy_dram_to_local[
