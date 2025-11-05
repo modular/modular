@@ -373,6 +373,9 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
     auto value = getAttrFromExpr(operand.name, valueExpr, emitter);
     if (!value)
       return {};
+    // Remove any sugar from attribute passed to mlir operators, the sugar may
+    // break invariants of the op.
+    value = getCanonicalAttr(value);
     attrValues.push_back({operand.name, value});
   }
 
@@ -990,6 +993,13 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   if (auto param = dyn_cast_or_null<AliasDeclOp>(decl->getIfOperation())) {
     PValue result =
         resolveAliasReference(param, spelling, /*bindings=*/{}, loc, emitter);
+
+    // Maintain alias sugar, e.g. print "UInt8" as UInt8 instead of SIMD[..].
+    if (result) {
+      auto sugared = ParamDeclRefAttr::get(param.getParamDecl());
+      result = SugarAttr::get(SugarKind::Alias, sugared, result);
+    }
+
     return emitter.emitCResult(result.get(), expr, dest);
   }
 

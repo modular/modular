@@ -34,7 +34,7 @@ fn var_decls():
     # CHECK-NEXT: lit.ref.store [[TMP]], %z
     var z = y
     z = `42`
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant = <42>
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant = <sugar_alias(*"42`0x20", 42)>
     # CHECK-NEXT: lit.ref.store [[TMP]], %z
 
 
@@ -96,7 +96,8 @@ def var_decls_implicit() -> None:
     # CHECK: %x = lit.var.decl "x" imp
     x = `123`
 
-    # CHECK: %[[F:.*]] = lit.call {{.*}}::@"fudge_int{{.*}}(%index42)
+    # CHECK: %index_0 = kgen.param.constant = <sugar_alias(*"42`0x20", 42)>
+    # CHECK: %[[F:.*]] = lit.call {{.*}}::@"fudge_int{{.*}}(%index_0)
     # CHECK: lit.ref.store %[[F]], %x
     x = fudge_int(`42`)
 

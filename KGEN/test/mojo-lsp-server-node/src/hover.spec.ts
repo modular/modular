@@ -305,7 +305,7 @@ Int alias description.
       {
         contents: {
           kind: "markdown",
-          value: "```mojo\nalias AliasToAlias = 12\n```",
+          value: "```mojo\nalias AliasToAlias = IntAlias\n```",
         },
         range: doc.findFirstRange("AliasToAlias"),
       }
@@ -772,7 +772,7 @@ fn baz():
     assert.ok(MarkupContent.is(hover!.contents));
     // The hover info must not contain __getitem__; it should instead
     // pretty-print the indexing expression.
-    assertExtras.contains(hover!.contents.value, "Foo().t[0]");
+    assertExtras.contains(hover!.contents.value, "f.t[0]");
     assertExtras.doesNotContain(hover!.contents.value, "__getitem__");
   });
 });

@@ -40,5 +40,5 @@ fn param_func[T: Trait](value: T) -> Int:
 fn top[pvalue: SomeStruct[`2`]]():
     # CHECK: alias.decl [[alias_decl:.*]]: @{{.*}} = <pvalue>
     alias alias_decl = pvalue
-    # CHECK: result{{.*}} = <apply{{.*}}store_to_mem(pvalue))
+    # CHECK: result{{.*}} = <apply{{.*}} store_to_mem(sugar_alias(*"alias_decl`", pvalue)))>
     alias result = param_func(alias_decl)
