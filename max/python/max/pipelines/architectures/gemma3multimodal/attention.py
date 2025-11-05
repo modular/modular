@@ -22,7 +22,7 @@ from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 from .model_config import Gemma3ForConditionalGenerationConfig
 
 
-# ⚠️ from Huggingface Transformers, almost there?
+# from Huggingface Transformers
 class Gemma3VisionAttention(Module):
     """Standard self-attention for SigLIP vision encoder.
 
@@ -45,41 +45,38 @@ class Gemma3VisionAttention(Module):
         )
         self.config = config
         self.layer_idx = layer_idx
-        self.head_dim = getattr(
-            config,
-            "head_dim",
-            vision_config.hidden_size // vision_config.num_attention_heads,
+        # Vision encoder uses its own head_dim, not the text model's
+        self.head_dim = (
+            vision_config.hidden_size // vision_config.num_attention_heads
         )
-        self.num_key_value_groups = (
-            vision_config.num_attention_heads // config.num_key_value_heads
-        )
+        self.num_heads = vision_config.num_attention_heads
         self.attention_dropout = vision_config.attention_dropout
         # self.scaling = config.query_pre_attn_scalar**-0.5
         # self.is_causal = not config.use_bidirectional_attention
 
         self.q_proj = Linear(
-            vision_config.hidden_size,
-            vision_config.num_attention_heads * self.head_dim,
+            vision_config.hidden_size,          # 1152
+            self.num_heads * self.head_dim,     # 16 * 72 = 1152
             has_bias=config.attention_bias,
             dtype=config.dtype,
             device=config.devices[0],
         )
         self.k_proj = Linear(
             vision_config.hidden_size,
-            config.num_key_value_heads * self.head_dim,
+            self.num_heads * self.head_dim,
             has_bias=config.attention_bias,
             dtype=config.dtype,
             device=config.devices[0],
         )
         self.v_proj = Linear(
             vision_config.hidden_size,
-            config.num_key_value_heads * self.head_dim,
+            self.num_heads * self.head_dim,
             has_bias=config.attention_bias,
             dtype=config.dtype,
             device=config.devices[0],
         )
         self.out_proj = Linear(
-            vision_config.num_attention_heads * self.head_dim,
+            self.num_heads * self.head_dim,
             vision_config.hidden_size,
             has_bias=config.attention_bias,
             dtype=config.dtype,
@@ -95,12 +92,12 @@ class Gemma3VisionAttention(Module):
         self.is_sliding = self.layer_type == "sliding_attention"
 
         self.q_norm = Gemma3RMSNorm(
-            dim=config.head_dim,
+            dim=self.head_dim,
             dtype=config.dtype,
             eps=vision_config.layer_norm_eps,
         )
         self.k_norm = Gemma3RMSNorm(
-            dim=config.head_dim,
+            dim=self.head_dim,
             dtype=config.dtype,
             eps=vision_config.layer_norm_eps,
         )
@@ -121,16 +118,20 @@ class Gemma3VisionAttention(Module):
         xk = self.k_proj(x)
         xv = self.v_proj(x)
 
-        # Reshape to multi-head format
+        # Reshape to multi-head format [batch, n_patches, n_heads, head_dim]
         xq = ops.reshape(
-            xq, [batch_size, n_patches, self.n_heads, self.head_dim]
+            xq, [batch_size, n_patches, self.num_heads, self.head_dim]
         )
         xk = ops.reshape(
-            xk, [batch_size, n_patches, self.n_heads, self.head_dim]
+            xk, [batch_size, n_patches, self.num_heads, self.head_dim]
         )
         xv = ops.reshape(
-            xv, [batch_size, n_patches, self.n_heads, self.head_dim]
+            xv, [batch_size, n_patches, self.num_heads, self.head_dim]
         )
+
+        # Apply per-head QK normalization (Gemma3-specific)
+        xq = self.q_norm(xq)
+        xk = self.k_norm(xk)
 
         # Transpose to [batch, n_heads, n_patches, head_dim]
         xq = xq.transpose(1, 2)

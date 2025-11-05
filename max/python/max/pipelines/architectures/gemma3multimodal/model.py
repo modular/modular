@@ -520,6 +520,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         self._input_row_offsets_prealloc = Tensor.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
+        
         language_graph, language_weight_dict = self._build_language_graph(
             model_config, language_weights_dict
         )
@@ -582,7 +583,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             weight_alignment=1,
             strict=self._strict_state_dict_loading,
         )
-        self.state_dict = language_model.state_dict(auto_initialize=False)
+        # self.state_dict = language_model.state_dict(auto_initialize=False)
 
         kv_inputs = self.kv_manager.input_symbols()
         flattened_kv_types = [
@@ -695,6 +696,11 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         ) as graph:
             # Build vision model architecture.
             vision_model = Gemma3VisionModel(config)
+            
+            # TODO shouldn't this be unnecessary??
+            for w8 in list(state_dict.keys() - vision_model.raw_state_dict().keys()):
+                del state_dict[w8]
+                
             vision_model.load_state_dict(
                 state_dict=state_dict,
                 override_quantization_encoding=True,
@@ -705,8 +711,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             pixel_values = [
                 inp.tensor for inp in graph.inputs[: len(self.devices)]
             ]
-            
-            logger.info(f"LOOKS LIKE WE MADE IIIIIT\n{pixel_values}")
 
             signal_buffers = [
                 inp.buffer for inp in graph.inputs[len(self.devices) :]
