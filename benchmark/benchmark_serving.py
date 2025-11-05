@@ -84,7 +84,7 @@ try:
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
-    from max.benchmark.benchmark_shared.requests import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from max.benchmark.benchmark_shared.request import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         REQUEST_DRIVER_CLASSES,
         ProgressBarRequestDriver,
         RequestCounter,
@@ -132,7 +132,7 @@ except ImportError:
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
-    from benchmark_shared.requests import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from benchmark_shared.request import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         REQUEST_DRIVER_CLASSES,
         ProgressBarRequestDriver,
         RequestCounter,
