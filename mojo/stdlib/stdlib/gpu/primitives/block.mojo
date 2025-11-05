@@ -74,7 +74,7 @@ fn _block_reduce_with_padding[
     # Each leader thread (lane 0) is responsible for its warp.
     # Account for padding when storing to avoid bank conflicts
     if lid == 0:
-        shared_mem[compute_offset(wid)] = warp_result
+        shared_mem[compute_offset(Int(wid))] = warp_result
 
     barrier()
 

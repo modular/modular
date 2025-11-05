@@ -291,7 +291,7 @@ struct Error(
         """
         return self.data.bitcast[c_char]()
 
-    fn as_string_slice(self) -> StringSlice[ImmutableAnyOrigin]:
+    fn as_string_slice(self) -> StringSlice[ImmutAnyOrigin]:
         """Returns a string slice of the data maybe owned by the Error.
 
         Returns:
@@ -299,9 +299,9 @@ struct Error(
 
         Notes:
             Since the data is not guaranteed to be owned by the Error, the
-            resulting StringSlice is given an ImmutableAnyOrigin.
+            resulting StringSlice is given an ImmutAnyOrigin.
         """
-        return StringSlice[ImmutableAnyOrigin](
+        return StringSlice[ImmutAnyOrigin](
             ptr=self.data, length=self.byte_length()
         )
 

@@ -26,7 +26,7 @@ from utils import IndexList
 fn test_element_load():
     print("== test_element_load")
     var tensor_8x8 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
+        DType.float32, Layout.row_major(8, 8), MutAnyOrigin
     ].stack_allocation[stack_alignment = align_of[SIMD[DType.float32, 4]]()]()
     arange(tensor_8x8)
 
@@ -83,7 +83,7 @@ fn test_element_load():
 fn test_element_store():
     print("== test_element_store")
     var tensor_8x8 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
+        DType.float32, Layout.row_major(8, 8), MutAnyOrigin
     ].stack_allocation[stack_alignment = align_of[SIMD[DType.float32, 4]]()]()
     arange(tensor_8x8)
 

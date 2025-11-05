@@ -2072,7 +2072,7 @@ fn test_load_b_tr(ctx: DeviceContext) raises:
         var smem = LayoutTensor[
             DType.bfloat16,
             Layout.row_major(mma_shape[2], mma_shape[1]),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ].stack_allocation()
 

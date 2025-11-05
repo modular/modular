@@ -6,6 +6,7 @@ modular_nanobind_extension(
     module_name = "_core",
     new_link_root = "../modular/lib",
     deps = [
+        "//Support:NanobindUtils",
         "//max/python/max/_core/internal/src:modules",
         "@llvm-project//llvm:Support",
     ],
@@ -18,7 +19,7 @@ modular_generate_stubfiles(
 A stubfile is out of sync with its generated counterpart.
 If you modified just a .pyi file, you need to modify the corresponding .cpp file instead.
 When you modify a .cpp file in the _core/src directory, you can run
-'./utils/sync-stubfiles.py' and commit the results.
+'./utils/sync-stubfiles.sh' and commit the results.
 """,
     extension = ":_core.bindings",
     full_name = "max._core",

@@ -216,7 +216,7 @@ struct AMD_MMA[
     alias SharedMemTileType[smem_layout: Layout] = LayoutTensor[
         in_type,
         smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment = Self.type_alignment,
     ]
@@ -224,7 +224,7 @@ struct AMD_MMA[
     alias MMARegTileType[num_mmas: Int] = LayoutTensor[
         in_type,
         Layout.row_major(num_mmas * num_k_tiles, simd_width),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         alignment = Self.type_alignment,
     ]
@@ -422,9 +422,9 @@ fn compute_relative_error_kernel[
     dtype: DType,
     layout: Layout,
 ](
-    reference: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    computed: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    output: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    reference: LayoutTensor[dtype, layout, MutAnyOrigin],
+    computed: LayoutTensor[dtype, layout, MutAnyOrigin],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
     """
     GPU kernel that computes element-wise relative error between two LayoutTensors.
@@ -478,7 +478,7 @@ fn max_reduce_kernel[
     dtype: DType,
     layout: Layout,
 ](
-    relative_error: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    relative_error: LayoutTensor[dtype, layout, MutAnyOrigin],
     elements: Int,
     offset: Int,
     max_idx: Int,
@@ -526,8 +526,8 @@ fn compare_equal[
     dtype: DType,
     layout: Layout,
 ](
-    reference: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    computed: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    reference: LayoutTensor[dtype, layout, MutAnyOrigin],
+    computed: LayoutTensor[dtype, layout, MutAnyOrigin],
     print_results: Bool,
 ) raises:
     """
@@ -551,7 +551,7 @@ fn compare_equal[
     # Allocate a new LayoutTensor on device with same dtype and shape as reference
     var max_relative_error_buf = gpu_ctx.enqueue_create_buffer[dtype](m * n)
     var max_relative_error = LayoutTensor[
-        dtype, reference.layout, MutableAnyOrigin
+        dtype, reference.layout, MutAnyOrigin
     ](max_relative_error_buf.unsafe_ptr())
 
     # Zero out the memory in the max relative error tensor.
@@ -636,7 +636,7 @@ fn compare_equal[
         )
 
         var diff_buf = gpu_ctx.enqueue_create_host_buffer[dtype](m * n)
-        var diff = LayoutTensor[dtype, layout, MutableAnyOrigin](
+        var diff = LayoutTensor[dtype, layout, MutAnyOrigin](
             diff_buf.unsafe_ptr()
         )
         var max_diff: Float64 = 0.0

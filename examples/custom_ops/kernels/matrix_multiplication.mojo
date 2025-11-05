@@ -83,9 +83,9 @@ fn naive_matrix_multiplication[
     BM: Int,
     BN: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
     GEMM kernel that performs matrix multiplication C = A * B.
@@ -151,9 +151,9 @@ fn coalescing_matrix_multiplication[
     BM: Int,
     BN: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
     GEMM kernel that performs matrix multiplication C = A * B with
@@ -221,9 +221,9 @@ fn tiled_matrix_multiplication[
     BK: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -264,13 +264,13 @@ fn tiled_matrix_multiplication[
     var a_smem = LayoutTensor[
         dtype,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -327,9 +327,9 @@ fn tiled_register_matrix_multiplication[
     TM: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -375,13 +375,13 @@ fn tiled_register_matrix_multiplication[
     var a_smem = LayoutTensor[
         dtype,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -389,7 +389,7 @@ fn tiled_register_matrix_multiplication[
     var dst_reg = LayoutTensor[
         dtype,
         Layout(TM),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     dst_reg.copy_from(dst)
@@ -452,9 +452,9 @@ fn block_tiled_matrix_multiplication[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B.
@@ -499,33 +499,33 @@ fn block_tiled_matrix_multiplication[
     var a_smem = LayoutTensor[
         dtype,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var dst_reg = LayoutTensor[
         dtype,
         Layout.row_major(TM, TN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     dst_reg.copy_from(dst)
     var a_reg = LayoutTensor[
         dtype,
         Layout(TM),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     var b_reg = LayoutTensor[
         dtype,
         Layout(TN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -573,9 +573,9 @@ fn block_tiled_vectorized_matrix_multiplication[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B with
@@ -629,13 +629,13 @@ fn block_tiled_vectorized_matrix_multiplication[
     var a_smem = LayoutTensor[
         dtype,
         Layout.col_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -643,7 +643,7 @@ fn block_tiled_vectorized_matrix_multiplication[
     var dst_reg = LayoutTensor[
         dtype,
         Layout.row_major(TM, TN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     var dst_reg_vec = dst_reg.vectorize[1, simd_width]()
@@ -652,13 +652,13 @@ fn block_tiled_vectorized_matrix_multiplication[
     var a_reg = LayoutTensor[
         dtype,
         Layout(TM),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     var b_reg = LayoutTensor[
         dtype,
         Layout(TN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -722,9 +722,9 @@ fn tensor_core_matrix_multiplication[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[dtype, layout_a, MutableAnyOrigin],
-    B: LayoutTensor[dtype, layout_b, MutableAnyOrigin],
-    C: LayoutTensor[dtype, layout_c, MutableAnyOrigin],
+    A: LayoutTensor[dtype, layout_a, MutAnyOrigin],
+    B: LayoutTensor[dtype, layout_b, MutAnyOrigin],
+    C: LayoutTensor[dtype, layout_c, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -785,13 +785,13 @@ fn tensor_core_matrix_multiplication[
     A_sram_tile = LayoutTensor[
         A.dtype,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_tile = LayoutTensor[
         B.dtype,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -800,7 +800,7 @@ fn tensor_core_matrix_multiplication[
         LayoutTensor[
             C.dtype,
             Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()

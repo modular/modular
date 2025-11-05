@@ -62,7 +62,9 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
     )
 
 
-struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Stringable):
+struct Codepoint(
+    Comparable, ImplicitlyCopyable, Intable, Movable, Stringable, Writable
+):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
 
@@ -367,6 +369,15 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Stringable):
         var result = String(unsafe_uninit_length=char_len)
         _ = self.unsafe_write_utf8(result.unsafe_ptr_mut())
         return result
+
+    fn write_to(self, mut w: Some[Writer]):
+        """
+        Write a string representation of this `Codepoint` to the given writer.
+
+        Args:
+            w: The object to write to.
+        """
+        w.write(self.__str__())
 
     # ===-------------------------------------------------------------------===#
     # Methods

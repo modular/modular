@@ -208,7 +208,7 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
     @parameter
     fn calc_row(m_1: Int):
         var rhs_cache = LayoutTensor[
-            dtype, Layout.row_major(tile_k, tile_n), MutableAnyOrigin
+            dtype, Layout.row_major(tile_k, tile_n), MutAnyOrigin
         ].stack_allocation()
 
         for k_1 in range(K // tile_k):
@@ -274,10 +274,10 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
     @parameter
     fn calc_row(m_1: Int):
         var rhs_cache = LayoutTensor[
-            dtype, Layout.row_major(tile_n, tile_k), MutableAnyOrigin
+            dtype, Layout.row_major(tile_n, tile_k), MutAnyOrigin
         ].stack_allocation()
         var lhs_cache = LayoutTensor[
-            dtype, Layout.row_major(tile_m, tile_k), MutableAnyOrigin
+            dtype, Layout.row_major(tile_m, tile_k), MutAnyOrigin
         ].stack_allocation()
 
         for k_1 in range(K // tile_k):

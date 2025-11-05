@@ -150,15 +150,15 @@ fn warp_specialized_matmul[
     pipeline_stages: Int = 1,
 ](
     a: LayoutTensor[
-        in_type, a_layout, MutableAnyOrigin, address_space = AddressSpace.GLOBAL
+        in_type, a_layout, MutAnyOrigin, address_space = AddressSpace.GLOBAL
     ],
     b: LayoutTensor[
-        in_type, b_layout, MutableAnyOrigin, address_space = AddressSpace.GLOBAL
+        in_type, b_layout, MutAnyOrigin, address_space = AddressSpace.GLOBAL
     ],
     c: LayoutTensor[
         out_type,
         c_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.GLOBAL,
     ],
 ):
@@ -458,8 +458,8 @@ fn store_c[
     WN: Int,
     static_N: Int,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin, *_, **_],
-    c_reg_tile: LayoutTensor[c_type, c_reg_layout, MutableAnyOrigin, *_, **_],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin, *_, **_],
+    c_reg_tile: LayoutTensor[c_type, c_reg_layout, MutAnyOrigin, *_, **_],
     warp_m: Int,
     warp_n: Int,
 ):

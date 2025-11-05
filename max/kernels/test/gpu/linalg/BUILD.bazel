@@ -136,6 +136,7 @@ _GPU_MEMORY = {
     "test_matmul_sm100_bf16.mojo": "3",
     "test_matmul_sm100_fp8.mojo": "3",
     "test_matmul_sm100_epilogue.mojo": "3",
+    "test_overlap_matmul_allreduce.mojo": "1.5",
 }
 
 [

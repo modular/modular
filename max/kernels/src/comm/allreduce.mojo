@@ -285,7 +285,7 @@ fn _naive_reduce_kernel_with_lambda[
     alignment: Int,
     output_lambda: elementwise_epilogue_type,
 ](
-    dst_buf: NDBuffer[dtype, rank, MutableAnyOrigin],
+    dst_buf: NDBuffer[dtype, rank, MutAnyOrigin],
     src_buf: UnsafePointer[Scalar[dtype]],
     num_elements: Int,
 ):
@@ -311,9 +311,9 @@ fn _allreduce_naive_single[
     num_buffers: Int = ngpus,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
+        NDBuffer[dtype, rank, MutAnyOrigin], num_buffers
     ],
-    out_buf: NDBuffer[dtype, rank, MutableAnyOrigin],
+    out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
     max_num_blocks: Int,
     ctx: DeviceContext,
 ) raises:
@@ -596,7 +596,7 @@ fn _allreduce_2stage_kernel[
     pdl_level: PDLLevel = PDLLevel(),
     num_buffers: Int = ngpus,
 ](
-    result: NDBuffer[dtype, rank, MutableAnyOrigin],
+    result: NDBuffer[dtype, rank, MutAnyOrigin],
     src_ptrs: InlineArray[UnsafePointer[Scalar[dtype]], num_buffers],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
@@ -756,7 +756,7 @@ fn _allreduce_1stage_kernel[
     output_lambda: elementwise_epilogue_type,
     num_buffers: Int = ngpus,
 ](
-    result: NDBuffer[dtype, rank, MutableAnyOrigin],
+    result: NDBuffer[dtype, rank, MutAnyOrigin],
     src_ptrs: InlineArray[UnsafePointer[Scalar[dtype]], num_buffers],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
@@ -837,9 +837,9 @@ fn _allreduce_p2p[
     num_buffers: Int = ngpus,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
+        NDBuffer[dtype, rank, MutAnyOrigin], num_buffers
     ],
-    out_buf: NDBuffer[dtype, rank, MutableAnyOrigin],
+    out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     max_num_blocks: Int,
     ctx: DeviceContext,
@@ -1141,9 +1141,9 @@ fn allreduce[
     use_quickreduce: Bool = False,
 ](
     input_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], 1 if use_multimem else ngpus
+        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
     ],
-    output_buffer: NDBuffer[dtype, rank, MutableAnyOrigin],
+    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
@@ -1232,7 +1232,7 @@ fn allreduce[
             output_lambda=output_lambda,
             num_buffers=ngpus,
         ](
-            rebind[InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus]](
+            rebind[InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]](
                 input_buffers
             ),
             output_buffer,
@@ -1519,7 +1519,7 @@ fn allreduce_2stage_quickreduce[
     output_lambda: elementwise_epilogue_type,
     atom_size: Int,
 ](
-    result: NDBuffer[dtype, rank, MutableAnyOrigin],
+    result: NDBuffer[dtype, rank, MutAnyOrigin],
     local_src: UnsafePointer[Scalar[dtype]],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,

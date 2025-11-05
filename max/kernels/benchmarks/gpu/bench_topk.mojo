@@ -111,7 +111,7 @@ fn bench_topk_batched[
                     LayoutTensor[
                         K_device_buffer.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
+                        MutAnyOrigin,
                     ](
                         k_lt.ptr,
                         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -162,7 +162,7 @@ fn bench_topk_batched[
                 LayoutTensor[
                     K_device_buffer.dtype,  # or K_host_buffer?
                     Layout.row_major(UNKNOWN_VALUE),
-                    MutableAnyOrigin,
+                    MutAnyOrigin,
                 ](
                     k_lt.ptr,
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -280,7 +280,7 @@ fn bench_topk_multi_rank[
                     LayoutTensor[
                         K_device_buffer.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
+                        MutAnyOrigin,
                     ](
                         k_lt.ptr,
                         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -325,7 +325,7 @@ fn bench_topk_multi_rank[
                 LayoutTensor[
                     K_host_buffer.dtype,
                     Layout.row_major(UNKNOWN_VALUE),
-                    MutableAnyOrigin,
+                    MutAnyOrigin,
                 ](
                     k_lt.ptr,
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](

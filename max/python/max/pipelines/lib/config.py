@@ -34,7 +34,7 @@ from .config_enums import PipelineRole
 from .kv_cache_config import KVCacheConfig
 from .lora_config import LoRAConfig
 from .max_config import MAXConfig
-from .memory_estimation import MEMORY_ESTIMATOR, to_human_readable_bytes
+from .memory_estimation import MemoryEstimator, to_human_readable_bytes
 from .model_config import MAXModelConfig
 from .profiling_config import ProfilingConfig
 from .registry import (
@@ -643,21 +643,10 @@ class PipelineConfig(MAXConfig):
         Validate and resolve the max_num_steps field. These are platform-specific.
         """
         if self.max_num_steps < 0:
-            if (
-                self.sampling_config.enable_structured_output
-                or self.model_config.default_device_spec == DeviceSpec.cpu()
-            ):
+            if self.model_config.default_device_spec == DeviceSpec.cpu():
                 self.max_num_steps = 1
             else:
                 self.max_num_steps = 10
-
-        if (
-            self.max_num_steps > 1
-            and self.sampling_config.enable_structured_output
-        ):
-            raise ValueError(
-                "max_num_steps > 1 not supported when enable_structured_output = True"
-            )
 
     def _validate_pipeline_config_for_speculative_decoding(self) -> None:
         """
@@ -824,7 +813,7 @@ class PipelineConfig(MAXConfig):
             default_weights_format=arch.default_weights_format,
         )
 
-        MEMORY_ESTIMATOR.estimate_memory_footprint(
+        MemoryEstimator.estimate_memory_footprint(
             self, arch.pipeline_model, model_config, devices
         )
 

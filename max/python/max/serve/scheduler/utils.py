@@ -29,7 +29,7 @@ from max.pipelines.core import TextContext
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
-from .batch_constructor import TokenGenerationSchedulerConfig
+from .config import TokenGenerationSchedulerConfig
 
 logger = logging.getLogger("max.serve")
 

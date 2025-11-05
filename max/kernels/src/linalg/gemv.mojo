@@ -181,9 +181,9 @@ fn gemv_kernel_vector[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],  # m
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],  # m * k
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],  # 1 * k
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],  # m
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],  # m * k
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],  # 1 * k
     m: Int,
     n: Int,
     k: Int,
@@ -255,9 +255,9 @@ fn gemv_split_k[
     s_type: DType = get_accum_type[c_type](),
     check_bounds: Bool = True,
 ](
-    output: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    act: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    weight: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    output: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    act: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    weight: LayoutTensor[b_type, b_layout, MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -280,7 +280,7 @@ fn gemv_split_k[
     var tile_w = LayoutTensor[
         b_type,
         Layout.row_major(Int(tile_n), Int(simd_width)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     # these are the partial accumlations for each thread this a matrix of values
@@ -289,7 +289,7 @@ fn gemv_split_k[
         LayoutTensor[
             s_type,
             Layout.row_major(Int(tile_m), Int(tile_n)),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -364,7 +364,7 @@ fn gemv_split_k[
     var shmem = LayoutTensor[
         s_type,
         Layout.row_major(1, Int(tile_m * tile_n * k_warp_num)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -595,7 +595,7 @@ fn gemv_gpu_dispatch[
                 var b_tensor_n_major = LayoutTensor[
                     b.type,
                     b_layout_template,
-                    MutableAnyOrigin,
+                    MutAnyOrigin,
                     address_space = aligned_b.address_space,
                 ](aligned_b, b_runtime_layout)
 

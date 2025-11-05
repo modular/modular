@@ -182,7 +182,7 @@ __extension Attention:
             var k_rope_tile = LayoutTensor[
                 k_rope_t.dtype,
                 k_rope_gmem_layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 masked=True,
             ](
                 k_rope.block_paged_ptr[Int(Self.BN)](

@@ -281,7 +281,7 @@ fn _matmul_common[
     var hidden_state_2d = LayoutTensor[
         dtype,
         hidden_state_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ](
         hidden_state.ptr,
         RuntimeLayout[hidden_state_layout].row_major(
@@ -290,18 +290,18 @@ fn _matmul_common[
     )
 
     alias c_layout = Layout.row_major(UNKNOWN_VALUE, N)
-    var c_nd: LayoutTensor[dtype, c_layout, MutableAnyOrigin]
+    var c_nd: LayoutTensor[dtype, c_layout, MutAnyOrigin]
 
     @parameter
     if is_cpu[target]():
         var c_ptr = UnsafePointer[Scalar[dtype]].alloc(BS * SEQ_LEN * N)
 
-        c_nd = LayoutTensor[dtype, c_layout, MutableAnyOrigin](
+        c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
             c_ptr,
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
     else:
-        c_nd = LayoutTensor[dtype, c_layout, MutableAnyOrigin](
+        c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
             UnsafePointer[Scalar[dtype]](),
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
@@ -411,7 +411,7 @@ fn generic_flash_attention_kv_cache_padded[
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     @always_inline
@@ -478,7 +478,7 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     @always_inline
@@ -539,7 +539,7 @@ fn _flash_attention_dispatch[
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
@@ -595,7 +595,7 @@ fn _flash_attention_dispatch_materialized_mask[
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
@@ -643,7 +643,7 @@ fn _flash_attention_dispatch_materialized_mask[
         _dispatch_flash_attention,
         Int(collection_t.kv_params.num_heads),
     ](
-        LayoutTensor[mask_nd.dtype, mask_nd.layout, MutableAnyOrigin](
+        LayoutTensor[mask_nd.dtype, mask_nd.layout, MutAnyOrigin](
             mask_nd.ptr,
             RuntimeLayout[mask_nd.layout].row_major(
                 mask_nd.runtime_layout.shape.value.canonicalize()
@@ -1389,7 +1389,7 @@ fn managed_tensor_slice_to_ndbuffer[
 ](tensor: ManagedTensorSlice[static_spec=spec]) -> NDBuffer[
     spec.dtype,
     spec.rank,
-    MutableAnyOrigin,
+    MutAnyOrigin,
     spec.shape,
     spec.strides,
     alignment2 = spec.alignment,

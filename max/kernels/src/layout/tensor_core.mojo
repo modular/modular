@@ -213,7 +213,7 @@ struct TensorCore[
     alias c_reg_tile_type = LayoutTensor[
         out_type,
         Layout.col_major(1, Self.c_reg_type.size),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ]
 
@@ -268,7 +268,7 @@ struct TensorCore[
         out res: LayoutTensor[
             in_type,
             _get_a_reg_tile_layout[a.layout, shape](),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ],
     ):
@@ -303,7 +303,7 @@ struct TensorCore[
         out res: LayoutTensor[
             in_type,
             _get_a_reg_tile_layout[a.layout, shape](),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ],
     ):
@@ -368,7 +368,7 @@ struct TensorCore[
         out res: LayoutTensor[
             in_type,
             _get_a_reg_tile_layout[a.layout, shape](),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ],
     ):
@@ -434,7 +434,7 @@ struct TensorCore[
         out res: LayoutTensor[
             in_type,
             _get_b_reg_tile_layout[b.layout, shape, transpose_b](),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ],
     ):
@@ -476,7 +476,7 @@ struct TensorCore[
         out res: LayoutTensor[
             in_type,
             _get_b_reg_tile_layout[b.layout, shape, transpose_b](),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ],
     ):
@@ -549,7 +549,7 @@ struct TensorCore[
         out res: LayoutTensor[
             in_type,
             _get_b_reg_tile_layout[b.layout, shape, transpose_b](),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ],
     ):

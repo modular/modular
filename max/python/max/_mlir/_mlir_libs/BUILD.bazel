@@ -35,8 +35,8 @@ modular_nanobind_extension(
     # Don't lint these files, they're from LLVM.
     tags = ["no-clang-tidy"],
     deps = [
-        "//:MLIRBindingsPythonHeaders",
         "//SDK:max",
+        "@llvm-project//mlir:MLIRBindingsPythonNanobindHeaders",
     ],
 )
 
@@ -46,7 +46,7 @@ modular_generate_stubfiles(
     diff_test_failure_message = """
 A stubfile is out of sync with its generated counterpart.
 This is likely to occur when bumping LLVM, you can run
-'./utils/sync-stubfiles.py' and commit the results.
+'./utils/sync-stubfiles.sh' and commit the results.
 """,
     extension = ":_mlir.bindings",
     full_name = "max._mlir._mlir_libs._mlir",

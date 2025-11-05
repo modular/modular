@@ -87,9 +87,9 @@ def main():
 
 
 fn naive_matrix_multiplication(
-    m: LayoutTensor[float_dtype, m_layout, MutableAnyOrigin],
-    n: LayoutTensor[float_dtype, n_layout, MutableAnyOrigin],
-    p: LayoutTensor[float_dtype, p_layout, MutableAnyOrigin],
+    m: LayoutTensor[float_dtype, m_layout, MutAnyOrigin],
+    n: LayoutTensor[float_dtype, n_layout, MutAnyOrigin],
+    p: LayoutTensor[float_dtype, p_layout, MutAnyOrigin],
 ):
     """Naive matrix multiplication of M_ij x N_jk = P_ik."""
     var row = global_idx.y

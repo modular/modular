@@ -136,7 +136,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     # Total sequence length across all batches
     position_ids_input_buffer = position_ids_input[DType.uint32]()
     position_ids = LayoutTensor[
-        DType.uint32, Layout.row_major[2](), MutableAnyOrigin
+        DType.uint32, Layout.row_major[2](), MutAnyOrigin
     ](
         position_ids_input_buffer.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[2]()].row_major(

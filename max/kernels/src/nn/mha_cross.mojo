@@ -39,10 +39,8 @@ fn _bmm0_bs[
     p_ptr: UnsafePointer[Scalar[p_type]],
     q_ptr: UnsafePointer[Scalar[q_type]],
     k_cache: cache_t,
-    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutableAnyOrigin],
-    kv_input_row_offsets: LayoutTensor[
-        DType.uint32, kv_layout, MutableAnyOrigin
-    ],
+    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutAnyOrigin],
+    kv_input_row_offsets: LayoutTensor[DType.uint32, kv_layout, MutAnyOrigin],
     scale: Float32,
     batch_size: Int,
     q_max_seq_len: Int,
@@ -146,10 +144,8 @@ fn _bmm1_bs[
     output_ptr: UnsafePointer[Scalar[output_type]],
     p_ptr: UnsafePointer[Scalar[p_type]],
     v_cache: cache_t,
-    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutableAnyOrigin],
-    kv_input_row_offsets: LayoutTensor[
-        DType.uint32, kv_layout, MutableAnyOrigin
-    ],
+    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutAnyOrigin],
+    kv_input_row_offsets: LayoutTensor[DType.uint32, kv_layout, MutAnyOrigin],
     q_max_seq_len: Int,
     kv_max_seq_len: Int,
     max_cache_size: Int,

@@ -110,9 +110,11 @@ from builtin.swap import swap
 from builtin.tuple import Tuple
 from builtin.type_aliases import (
     AnyTrivialRegType,
+    ImmutAnyOrigin,
     ImmutableAnyOrigin,
     ImmutableOrigin,
     ImmutOrigin,
+    MutAnyOrigin,
     MutableAnyOrigin,
     MutableOrigin,
     MutOrigin,
@@ -137,6 +139,8 @@ from memory import (
     ExternalImmutPointer,
     ExternalMutPointer,
     ExternalPointer,
+    LegacyOpaquePointer,
+    LegacyUnsafePointer,
     OpaqueImmutPointer,
     OpaqueMutPointer,
     OpaquePointer,

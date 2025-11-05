@@ -465,7 +465,7 @@ def execute_matmul_k_cache_ragged[
                     ref_out[bs * max_seq_length_batch + s, Int(k_dim)],
                     k_cache_host.load[width=1](
                         bs,
-                        head_idx,
+                        Int(head_idx),
                         cache_sizes[bs] + s,
                         Int(head_dim_idx),
                     ),

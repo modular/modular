@@ -252,12 +252,76 @@ def test_file_write_again():
         assert_equal(read_file.read(), expected_content)
 
 
+def test_file_rw_mode_preserves_content():
+    """Test that opening a file in 'rw' mode does not truncate existing content.
+
+    The FileHandle "rw" mode should not truncate file contents before reading,
+    unlike "w" mode which should truncate.
+    """
+    var temp_file = Path(gettempdir().value()) / "test_file_rw_mode"
+
+    # First, create a file with some content using write mode
+    var expected_content = "hello\nworld"
+    with open(temp_file, "w") as f:
+        f.write(expected_content)
+
+    # Now open it in "rw" mode and verify we can read the existing content
+    with open(temp_file, "rw") as f:
+        _ = f.seek(0)
+        var content = f.read()
+        assert_equal(
+            content,
+            expected_content,
+            "rw mode should preserve existing file content",
+        )
+
+        # Also verify we can write to it
+        _ = f.seek(0)
+        f.write("new content")
+
+    # Verify the write succeeded
+    with open(temp_file, "r") as f:
+        assert_equal(f.read(), "new content")
+
+
+def test_file_write_mode_truncates():
+    """Test that opening a file in 'w' mode truncates existing content."""
+    var temp_file = Path(gettempdir().value()) / "test_file_write_mode"
+
+    # Create a file with some content
+    with open(temp_file, "w") as f:
+        f.write("initial content")
+
+    # Open in write mode and write less content
+    with open(temp_file, "w") as f:
+        f.write("new")
+
+    # Verify the file was truncated
+    with open(temp_file, "r") as f:
+        assert_equal(
+            f.read(), "new", "w mode should truncate existing file content"
+        )
+
+
 def test_file_get_raw_fd():
     # since JIT and build give different file descriptors, we test by checking
     # if we printed to the right file.
-    var f1 = open(Path(gettempdir().value()) / "test_file_dummy_1", "rw")
-    var f2 = open(Path(gettempdir().value()) / "test_file_dummy_2", "rw")
-    var f3 = open(Path(gettempdir().value()) / "test_file_dummy_3", "rw")
+    # First, ensure the test files are empty by opening in write mode
+    var temp1 = Path(gettempdir().value()) / "test_file_dummy_1"
+    var temp2 = Path(gettempdir().value()) / "test_file_dummy_2"
+    var temp3 = Path(gettempdir().value()) / "test_file_dummy_3"
+    # Ensure the files are empty by doing this cleanup at the beginning of the
+    # test
+    with open(temp1, "w"):
+        pass
+    with open(temp2, "w"):
+        pass
+    with open(temp3, "w"):
+        pass
+
+    var f1 = open(temp1, "rw")
+    var f2 = open(temp2, "rw")
+    var f3 = open(temp3, "rw")
 
     print(
         "test from file 1",

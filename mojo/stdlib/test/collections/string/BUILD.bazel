@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "mojo_test")
+load("//bazel:api.bzl", "lit_tests", "mojo_test")
 
 _NO_ASAN = [
     "test_string.mojo",
@@ -13,6 +13,10 @@ _PLATFORM_CONSTRAINTS = {
     })
     for src in _NO_ASAN
 }
+
+_LIT_TESTS = [
+    "test_number_parsing_lut_optimization.mojo",
+]
 
 [
     mojo_test(
@@ -29,5 +33,22 @@ _PLATFORM_CONSTRAINTS = {
             "@mojo//:test_utils",
         ],
     )
-    for src in glob(["**/*.mojo"])
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _LIT_TESTS,
+    )
 ]
+
+lit_tests(
+    name = "lit_tests",
+    size = "large",
+    srcs = _LIT_TESTS,
+    mojo_deps = [
+        "@mojo//:stdlib",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)

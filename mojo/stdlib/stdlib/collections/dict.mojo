@@ -27,12 +27,13 @@ Its implementation closely mirrors Python's `dict` implementation:
   Python dictionaries from Mojo, see
   [Python types in Mojo](/mojo/manual/python/types/#python-types-in-mojo).
 
-Key elements must implement the `KeyElement` trait, which encompasses
-Movable, Hashable, and EqualityComparable. It also includes Copyable and Movable
+Key elements must implement the `KeyElement` trait, which encompasses `Movable`,
+`Hashable`, and `EqualityComparable`. It also includes `Copyable` and `Movable`
 until we push references through the standard library types.
 
-Value elements must be CollectionElements for a similar reason. Both key and
-value types must always be Movable so we can resize the dictionary as it grows.
+Value elements must be `Copyable` and `Movable` for a similar reason. Both key
+and value types must always be Movable so we can resize the dictionary as it
+grows.
 
 See the `Dict` docs for more details.
 """
@@ -461,12 +462,15 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
       a discriminated union type, meaning it can store any number of different
       types that can vary at runtime.
 
-    - **Value semantics**: A `Dict` is value semantic by default,
-      so assignment creates a deep copy of all key-value pairs:
+    - **Value semantics**: A `Dict` is value semantic by default. Copying a
+      `Dict` creates a deep copy of all key-value pairs. To avoid accidental
+      copies, `Dict` is not implicitly copyable—you must explicitly copy it
+      using the `.copy()` method.
 
       ```mojo
       var dict1 = {"a": 1, "b": 2}
-      var dict2 = dict1        # Deep copy
+      # var dict2 = dict1  # Error: Dict is not implicitly copyable
+      var dict2 = dict1.copy()  # Deep copy
       dict2["c"] = 3
       print(dict1.__str__())   # => {"a": 1, "b": 2}
       print(dict2.__str__())   # => {"a": 1, "b": 2, "c": 3}
@@ -477,7 +481,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
       semantics](/mojo/manual/values/value-semantics).
 
     - **Iteration uses immutable references**: When iterating over keys, values,
-      or items, you get immutable references unless you specify `ref`:
+      or items, you get immutable references unless you specify `ref` or `var`:
 
       ```mojo
       var inventory = {"apples": 10, "bananas": 5}
@@ -490,7 +494,18 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
       for ref value in inventory.values():
           value += 1  # Modify inventory values in-place
       print(inventory.__str__())  # => {"apples": 11, "bananas": 6}
+
+      # Using `var` gets an owned copy of the value
+      for var key in inventory.keys():
+          inventory[key] += 1  # Modify inventory values in-place
+      print(inventory.__str__())  # => {"apples": 12, "bananas": 7}
       ```
+
+      Note that indexing into a `Dict` with a key that's a reference to the
+      key owned by the `Dict` produces a confusing error related to
+      [argument exclusivity](/mojo/manual/values/ownership#argument-exclusivity).
+      Using `var key` in the previous example creates an owned copy of the key,
+      avoiding the error.
 
     - **KeyError handling**: Directly accessing values with the `[]` operator
       will raise `KeyError` if the key is not found:
@@ -547,7 +562,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
     for item in phonebook.items():
         print(item.key, "=>", item.value)
 
-    for key in phonebook:
+    for var key in phonebook:
         print(key, "=>", phonebook[key])
 
     # Number of key-value pairs

@@ -128,8 +128,8 @@ fn _argsort_gpu_impl[
         indices_layout: Layout,
         input_layout: Layout,
     ](
-        indices: LayoutTensor[indices_dtype, indices_layout, MutableAnyOrigin],
-        input: LayoutTensor[input_dtype, input_layout, MutableAnyOrigin],
+        indices: LayoutTensor[indices_dtype, indices_layout, MutAnyOrigin],
+        input: LayoutTensor[input_dtype, input_layout, MutAnyOrigin],
         n: Int,
         step: Int,
         stage: Int,

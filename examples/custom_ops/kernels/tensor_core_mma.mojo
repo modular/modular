@@ -123,7 +123,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                 b_ptr_to_use = b.unsafe_ptr()
 
             var b_layout_transposed = LayoutTensor[
-                b.dtype, Layout.row_major(N, K), MutableAnyOrigin
+                b.dtype, Layout.row_major(N, K), MutAnyOrigin
             ](b_ptr_to_use)
 
             out_layout = output.to_layout_tensor()
@@ -394,7 +394,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     M * N
                 )
                 var reference = LayoutTensor[
-                    output.dtype, out_layout.layout, MutableAnyOrigin
+                    output.dtype, out_layout.layout, MutAnyOrigin
                 ](reference_buf.unsafe_ptr())
 
                 gpu_ctx.synchronize()
@@ -457,9 +457,9 @@ fn naive_tensor[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[input_type, layout_a, MutableAnyOrigin],
-    B: LayoutTensor[input_type, layout_b, MutableAnyOrigin],
-    C: LayoutTensor[output_type, layout_c, MutableAnyOrigin],
+    A: LayoutTensor[input_type, layout_a, MutAnyOrigin],
+    B: LayoutTensor[input_type, layout_b, MutAnyOrigin],
+    C: LayoutTensor[output_type, layout_c, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -520,7 +520,7 @@ fn naive_tensor[
         LayoutTensor[
             output_type,
             Layout.row_major(1, frag_size),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -571,9 +571,9 @@ fn basic_shared_mem[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[input_type, layout_a, MutableAnyOrigin],
-    B: LayoutTensor[input_type, layout_b, MutableAnyOrigin],
-    C: LayoutTensor[output_type, layout_c, MutableAnyOrigin],
+    A: LayoutTensor[input_type, layout_a, MutAnyOrigin],
+    B: LayoutTensor[input_type, layout_b, MutAnyOrigin],
+    C: LayoutTensor[output_type, layout_c, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -631,13 +631,13 @@ fn basic_shared_mem[
     A_sram_tile = LayoutTensor[
         input_type,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_tile = LayoutTensor[
         input_type,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -650,7 +650,7 @@ fn basic_shared_mem[
         LayoutTensor[
             output_type,
             Layout.row_major(1, frag_size),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -713,9 +713,9 @@ fn multi_block_tiled[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[input_type, layout_a, MutableAnyOrigin],
-    B: LayoutTensor[input_type, layout_b, MutableAnyOrigin],
-    C: LayoutTensor[output_type, layout_c, MutableAnyOrigin],
+    A: LayoutTensor[input_type, layout_a, MutAnyOrigin],
+    B: LayoutTensor[input_type, layout_b, MutAnyOrigin],
+    C: LayoutTensor[output_type, layout_c, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -781,13 +781,13 @@ fn multi_block_tiled[
     A_sram_tile = LayoutTensor[
         input_type,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_tile = LayoutTensor[
         input_type,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -800,7 +800,7 @@ fn multi_block_tiled[
         LayoutTensor[
             output_type,
             Layout.row_major(WM // MMA_M, (WN * frag_size) // MMA_N),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -888,9 +888,9 @@ fn scheduler_hints[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[input_type, layout_a, MutableAnyOrigin],
-    B: LayoutTensor[input_type, layout_b, MutableAnyOrigin],
-    C: LayoutTensor[output_type, layout_c, MutableAnyOrigin],
+    A: LayoutTensor[input_type, layout_a, MutAnyOrigin],
+    B: LayoutTensor[input_type, layout_b, MutAnyOrigin],
+    C: LayoutTensor[output_type, layout_c, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -956,13 +956,13 @@ fn scheduler_hints[
     A_sram_tile = LayoutTensor[
         input_type,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_tile = LayoutTensor[
         input_type,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -976,7 +976,7 @@ fn scheduler_hints[
         LayoutTensor[
             output_type,
             Layout.row_major(WM // MMA_M, (WN * frag_size) // MMA_N),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -1087,9 +1087,9 @@ fn double_buffer[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[input_type, layout_a, MutableAnyOrigin],
-    B: LayoutTensor[input_type, layout_b, MutableAnyOrigin],
-    C: LayoutTensor[output_type, layout_c, MutableAnyOrigin],
+    A: LayoutTensor[input_type, layout_a, MutAnyOrigin],
+    B: LayoutTensor[input_type, layout_b, MutAnyOrigin],
+    C: LayoutTensor[output_type, layout_c, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -1155,25 +1155,25 @@ fn double_buffer[
     A_sram_buffer_0 = LayoutTensor[
         input_type,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     A_sram_buffer_1 = LayoutTensor[
         input_type,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_buffer_0 = LayoutTensor[
         input_type,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_buffer_1 = LayoutTensor[
         input_type,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -1187,7 +1187,7 @@ fn double_buffer[
         LayoutTensor[
             output_type,
             Layout.row_major(WM // MMA_M, (WN * frag_size) // MMA_N),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -1331,9 +1331,9 @@ fn mma_tile_buffers[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[input_type, layout_a, MutableAnyOrigin],
-    B: LayoutTensor[input_type, layout_b, MutableAnyOrigin],
-    C: LayoutTensor[output_type, layout_c, MutableAnyOrigin],
+    A: LayoutTensor[input_type, layout_a, MutAnyOrigin],
+    B: LayoutTensor[input_type, layout_b, MutAnyOrigin],
+    C: LayoutTensor[output_type, layout_c, MutAnyOrigin],
 ):
     """
     AMD-style tiled GEMM kernel with sophisticated scheduling hints.
@@ -1519,7 +1519,7 @@ fn mma_tile_buffers[
     alias c_reg_tile_type = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ]
     var c_reg_tile = c_reg_tile_type.stack_allocation().fill(0)

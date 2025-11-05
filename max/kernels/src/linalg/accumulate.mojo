@@ -48,7 +48,7 @@ struct _Accumulator[
 
     # The output buffer, should have num_rows x num_cols x simd_width.
     var _storage: NDBuffer[
-        dtype, 1, MutableAnyOrigin, num_rows * num_cols * simd_width
+        dtype, 1, MutAnyOrigin, num_rows * num_cols * simd_width
     ]
 
     @always_inline
@@ -56,7 +56,7 @@ struct _Accumulator[
         constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
         alias alignment = align_of[SIMD[dtype, simd_width]]()
         self._storage = NDBuffer[
-            dtype, 1, MutableAnyOrigin, num_rows * num_cols * simd_width
+            dtype, 1, MutAnyOrigin, num_rows * num_cols * simd_width
         ].stack_allocation[alignment=alignment]()
 
     @always_inline

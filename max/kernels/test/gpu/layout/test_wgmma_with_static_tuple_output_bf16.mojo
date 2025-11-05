@@ -49,21 +49,21 @@ fn wgmma_kernel_ss[
     b_smem_layout: Layout,
     transpose_b: Bool = False,
 ](
-    a_gmem: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b_gmem: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    c_gmem: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a_gmem: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b_gmem: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c_gmem: LayoutTensor[c_type, c_layout, MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.bfloat16,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 

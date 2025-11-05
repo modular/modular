@@ -71,9 +71,9 @@ fn sgemm_warp_tiling_kernel[
     NUM_THREADS: Int,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    mat_c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    mat_a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    mat_b: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    mat_c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
+    mat_a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    mat_b: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ):
@@ -107,14 +107,14 @@ fn sgemm_warp_tiling_kernel[
     var a_sram = NDBuffer[
         a_type,
         1,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         DimList(Int(BK * BM_padded)),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_sram = NDBuffer[
         b_type,
         1,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         DimList(Int(BK * BN)),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
@@ -141,19 +141,19 @@ fn sgemm_warp_tiling_kernel[
     var thread_results = NDBuffer[
         c_type,
         4,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         DimList(Int(WMITER), Int(WNITER), Int(TM), Int(TN)),
     ]().stack_allocation()
     thread_results.zero()
 
     # We cache into registers on the warptile level.
     var reg_m = NDBuffer[
-        a_type, 2, MutableAnyOrigin, DimList(Int(WMITER), Int(TM))
+        a_type, 2, MutAnyOrigin, DimList(Int(WMITER), Int(TM))
     ]().stack_allocation()
     reg_m.zero()
 
     var reg_n = NDBuffer[
-        b_type, 2, MutableAnyOrigin, DimList(Int(WNITER), Int(TN))
+        b_type, 2, MutAnyOrigin, DimList(Int(WNITER), Int(TN))
     ]().stack_allocation()
     reg_n.zero()
 

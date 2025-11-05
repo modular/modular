@@ -35,7 +35,7 @@ fn tma_swizzle_load_kernel[
     tile_layout: Layout,
     desc_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_layout, desc_layout],
 ):
     alias tileM = tile_layout.shape[0].value()
@@ -45,7 +45,7 @@ fn tma_swizzle_load_kernel[
     tile = LayoutTensor[
         dtype,
         tile_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -69,7 +69,7 @@ fn tma_swizzle_load_kernel[
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
+    dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
 
     if thread_idx.x == 0:
         dst_tile.copy_from(tile)
@@ -118,7 +118,7 @@ def test_tma_swizzle[
     alias descN = type_of(tma_tensor).desc_layout.shape[1].value()
     alias desc_tile_size = descM * descN
     desc_tile = LayoutTensor[
-        dtype, type_of(tma_tensor).desc_layout, MutableAnyOrigin
+        dtype, type_of(tma_tensor).desc_layout, MutAnyOrigin
     ].stack_allocation()
 
     alias kernel = tma_swizzle_load_kernel[

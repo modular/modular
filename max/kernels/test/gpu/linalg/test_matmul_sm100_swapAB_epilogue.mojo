@@ -249,51 +249,57 @@ def main():
     alias MMA_K = 16
 
     with DeviceContext() as ctx:
-        # swapAB with register based epilogue tests
-        # swapAB only supports MMA_M == 256
+        # swapAB with register based epilogue tests (2SM)
         @parameter
-        for mma_n_scale in range(1, 17):
-            alias block_tile_shape = Index(128, 8 * mma_n_scale, BK)
+        for mma_m_scale in range(1, 3):
 
-            alias umma_shape = Index(256, 16 * mma_n_scale, MMA_K)
+            @parameter
+            for mma_n_scale in range(1, 17):
+                alias block_tile_shape = Index(
+                    64 * mma_m_scale, 8 * mma_n_scale, BK
+                )
+                alias umma_shape = Index(
+                    128 * mma_m_scale, 16 * mma_n_scale, MMA_K
+                )
 
-            test_matmul_sm100_epilogue[
-                dtype,
-                dtype,
-                DType.bfloat16,
-                block_tile_shape,
-                umma_shape,
-                cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                cta_group=2,
-                test_lambda_fn=True,
-                register_based_epilogue=True,
-                swapAB=True,
-                k_group_size=2,
-            ](
-                ctx,
-                dynamic(17),
-                static[2560](),
-                static[8192](),
-            )
+                test_matmul_sm100_epilogue[
+                    dtype,
+                    dtype,
+                    DType.bfloat16,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cta_group=2,
+                    test_lambda_fn=True,
+                    register_based_epilogue=True,
+                    swapAB=True,
+                    k_group_size=2,
+                ](
+                    ctx,
+                    dynamic(100),
+                    static[2560](),
+                    static[8192](),
+                )
 
-            test_matmul_sm100_epilogue[
-                dtype,
-                dtype,
-                DType.bfloat16,
-                block_tile_shape,
-                umma_shape,
-                cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                cta_group=2,
-                test_lambda_fn=True,
-                register_based_epilogue=True,
-                swapAB=True,
-            ](
-                ctx,
-                dynamic(17),
-                static[1024](),
-                static[1024](),
-            )
+                test_matmul_sm100_epilogue[
+                    dtype,
+                    dtype,
+                    DType.bfloat16,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cta_group=2,
+                    test_lambda_fn=True,
+                    register_based_epilogue=True,
+                    swapAB=True,
+                ](
+                    ctx,
+                    dynamic(17),
+                    static[1024](),
+                    static[1024](),
+                )
 
+        # swapAB with register based epilogue tests (1SM)
         # we support all range of mma_n_scales in range(1, 33) but the test will time out so we only test a subset
         @parameter
         for mma_m in [64, 128]:

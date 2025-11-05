@@ -331,7 +331,7 @@ s_ptr = UnsafePointer(to=s)
 ```
 
 When initializing an `UnsafePointer` in other ways, the `origin` defaults to
-`MutableAnyOrigin`—indicating a pointer that could reference anything in the
+`MutAnyOrigin`—indicating a pointer that could reference anything in the
 current scope.
 
 If you're using a pointer in the implementation of a struct, you usually don't

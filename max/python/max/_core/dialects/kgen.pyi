@@ -446,9 +446,9 @@ class DeferredAttr(max._core.Attribute):
 
 class DowncastAttr(max._core.Attribute):
     """
-    The `#kgen.downcast` attribute is used to convert from a typeValue to a
-    typeValue of a more-derived trait. For example, this can represent a cast
-    from AnyType to Movable.
+    The `#kgen.upcast` attribute is used to convert from a (variadic of) typeValue
+    to a (variadic of) typeValue of a more-derived trait.
+    For example, this can represent a cast from AnyType to Movable.
 
     Note that parser does not (also can not) verify whether the downcast is
     legal and a illegal downcast can lead to elaboration time error.
@@ -1493,8 +1493,8 @@ class UnknownAttr(max._core.Attribute):
 
 class UpcastAttr(max._core.Attribute):
     """
-    The `#kgen.upcast` attribute is used to convert from a typeValue to a
-    typeValue of a less-derived trait.
+    The `#kgen.upcast` attribute is used to convert from a (variadic of) typeValue
+    to a (variadic of) typeValue of a less-derived trait.
     For example, this can represent a cast from Movable to AnyType, handling the
     rebind of the `__del__` member.
 

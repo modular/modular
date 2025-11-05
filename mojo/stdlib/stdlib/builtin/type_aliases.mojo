@@ -19,7 +19,7 @@ alias AnyTrivialRegType = __mlir_type.`!kgen.type`
 """Represents any register passable Mojo data type."""
 
 
-@deprecated("`ImmutableOrigin` is deprecated, use `ImmutOrigin` instead.")
+@deprecated(use=ImmutOrigin)
 alias ImmutableOrigin = ImmutOrigin
 """Immutable origin reference type."""
 
@@ -27,17 +27,27 @@ alias ImmutOrigin = Origin[False]
 """Immutable origin reference type."""
 
 
-@deprecated("`MutableOrigin` is deprecated, use `MutOrigin` instead.")
+@deprecated(use=MutOrigin)
 alias MutableOrigin = MutOrigin
 """Mutable origin reference type."""
 
 alias MutOrigin = Origin[True]
 """Mutable origin reference type."""
 
-alias ImmutableAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
+
+@deprecated(use=ImmutAnyOrigin)
+alias ImmutableAnyOrigin = ImmutAnyOrigin
 """The immutable origin that might access any memory value."""
 
-alias MutableAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<1>`
+alias ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
+"""The immutable origin that might access any memory value."""
+
+
+@deprecated(use=MutAnyOrigin)
+alias MutableAnyOrigin = MutAnyOrigin
+"""The mutable origin that might access any memory value."""
+
+alias MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
 """The mutable origin that might access any memory value."""
 
 # Static constants are a named subset of the global origin.

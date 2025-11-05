@@ -14,10 +14,10 @@ bazel_dep(name = "grpc-java", version = "1.67.1")
 bazel_dep(name = "imgui", version = "1.91.8")
 bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
 bazel_dep(name = "opentelemetry-proto", version = "1.5.0")
-bazel_dep(name = "platforms", version = "0.0.11")
+bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "31.1")
 bazel_dep(name = "rules_cc", version = "0.2.8")
-bazel_dep(name = "rules_go", version = "0.55.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_java", version = "8.15.2")
 bazel_dep(name = "rules_mojo", version = "0.5.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
@@ -36,7 +36,7 @@ bazel_dep(name = "rules_nodejs", version = "6.5.0")
 bazel_dep(name = "rules_swift", version = "2.8.2")
 bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
 
-bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = True)
+bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True)
 
 archive_override(
     module_name = "rules_mojo",
@@ -85,18 +85,17 @@ single_version_override(
     ],
 )
 
-# TODO: Remove once >0.8.0 is out
 archive_override(
     module_name = "rules_pycross",
-    integrity = "sha256-80I/HQ37qIGF7o632GMRKV7PK4/wpEvBGQyXJsnKkPo=",
+    integrity = "sha256-7/agf6tZxG7jwBjJwhGcQZPJwXC1SdFiY8WS4s4o1Pw=",
     patch_strip = 1,
     patches = [
-        # https://github.com/jvolkman/rules_pycross/pull/199
-        "//bazel/public-patches:rules_pycross_patch.patch",
+        "//bazel/public-patches:rules_pycross_uv_revert.patch",
     ],
-    strip_prefix = "rules_pycross-1d8bdc0e0a48ce338c0de8122c952af841d40d2d",
+    strip_prefix = "rules_pycross-26ddc1499eea2fb5a399c6190733a17a40e8276c",
     urls = [
-        "https://github.com/jvolkman/rules_pycross/archive/1d8bdc0e0a48ce338c0de8122c952af841d40d2d.tar.gz",
+        # https://github.com/jvolkman/rules_pycross/issues/201
+        "https://github.com/jvolkman/rules_pycross/archive/26ddc1499eea2fb5a399c6190733a17a40e8276c.tar.gz",
     ],
 )
 
@@ -123,15 +122,6 @@ single_version_override(
     patch_strip = 1,
     patches = [
         "//bazel/public-patches:opentelemetry.patch",
-    ],
-)
-
-single_version_override(
-    module_name = "rules_go",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/bazel-contrib/rules_go/pull/4368
-        "//bazel/public-patches:rules_go.patch",
     ],
 )
 

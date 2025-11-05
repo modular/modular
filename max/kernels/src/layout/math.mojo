@@ -250,7 +250,7 @@ fn max[
     out res: LayoutTensor[
         inp.dtype,
         _reduce_res_row_major_shape(axis, inp.layout),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = inp.address_space,
         element_layout = inp.element_layout,
         layout_int_type = inp.layout_int_type,
@@ -329,7 +329,7 @@ fn sum[
     out res: LayoutTensor[
         inp.dtype,
         _reduce_res_row_major_shape(axis, inp.layout),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = inp.address_space,
         element_layout = inp.element_layout,
         layout_int_type = inp.layout_int_type,

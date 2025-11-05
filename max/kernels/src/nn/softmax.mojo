@@ -363,7 +363,7 @@ fn _softmax_3_pass_base[
     # STEP 1 - Calculate max
     # Allocate buffer for max_val
     var max_buff = LayoutTensor[
-        dtype, Layout.row_major(1), MutableAnyOrigin
+        dtype, Layout.row_major(1), MutAnyOrigin
     ].stack_allocation()
 
     # Use _reduce_generator to fuse input lambda with max-reduction
@@ -662,9 +662,9 @@ fn softmax_kernel[
     logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
-    output: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
     sink_weights: LayoutTensor[
-        sink_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        sink_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
 ):
     alias axis = rank - 1
@@ -675,13 +675,13 @@ fn softmax_kernel[
     var max_buf = LayoutTensor[
         accum_type,
         Layout.row_major(1),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var exp_sum_buf = LayoutTensor[
         accum_type,
         Layout.row_major(1),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -796,9 +796,7 @@ fn _softmax_gpu[
     axis: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[
-            sink_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
-        ]
+        LayoutTensor[sink_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     if axis != rank - 1:
@@ -898,8 +896,8 @@ fn _online_softmax_kernel[
     layout: Layout,
     fragment_transpose: Bool = False,
 ](
-    input: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    output: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    input: LayoutTensor[dtype, layout, MutAnyOrigin],
+    output: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
     """This is only for online softmax validation, NOT a general kernel."""
 
@@ -961,7 +959,7 @@ fn _online_softmax_kernel[
     var p = LayoutTensor[
         dtype,
         Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -991,7 +989,7 @@ fn _online_softmax_kernel[
         LayoutTensor[
             dtype,
             Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -1015,7 +1013,7 @@ fn _online_softmax_kernel[
     var warp_scratch = LayoutTensor[
         dtype,
         Layout.row_major(2 * num_rowwise_warps, WM),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -1154,19 +1152,19 @@ fn _online_softmax_iter_for_mma_output[
     var score_frag_rowmax = LayoutTensor[
         dtype,
         Layout.row_major(num_colwise_tiles, frag_num_rows),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     var score_frag_rowsum = LayoutTensor[
         dtype,
         Layout.row_major(num_colwise_tiles, frag_num_rows),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     var correction = LayoutTensor[
         dtype,
         Layout.row_major(num_colwise_tiles, frag_num_rows),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -1620,7 +1618,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
     alias layout = Layout.row_major(num_m_mmas, frag_num_rows)
     alias TensorType = LayoutTensor[
-        dtype, layout, MutableAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, layout, MutAnyOrigin, address_space = AddressSpace.LOCAL
     ]
     var interwarp_frag_rowmax = TensorType.stack_allocation()
     var interwarp_frag_rowsum = TensorType.stack_allocation()
@@ -1881,21 +1879,21 @@ fn _rowmax_online_softmax[
     out score_frag_rowmax: LayoutTensor[
         dtype,
         row_accum_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=accum_frag_layout,
     ],
     score_reg_tile: LayoutTensor[
         dtype,
         reg_tile_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=fragment_layout,
     ],
     rowmax_tensor: LayoutTensor[
         dtype,
         row_accum_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=accum_frag_layout,
     ],
@@ -1992,14 +1990,14 @@ fn _rowsum[
     score_reg_tile: LayoutTensor[
         dtype,
         reg_tile_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=fragment_layout,
     ],
     out score_frag_rowsum: LayoutTensor[
         dtype,
         Layout.row_major(reg_tile_layout[0].size()),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout = Layout.row_major(fragment_layout.shape[0].value()),
     ],
@@ -2053,14 +2051,14 @@ fn _online_softmax_correction[
     rowmax_tensor: LayoutTensor[
         dtype,
         row_accum_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=accum_frag_layout,
     ],
     score_frag_rowmax: LayoutTensor[
         dtype,
         row_accum_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=accum_frag_layout,
     ],

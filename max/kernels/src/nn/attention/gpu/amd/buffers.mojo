@@ -254,7 +254,7 @@ struct KVBufferImpl[
     alias SharedIterType = LayoutTensorIter[
         dtype,
         Self.smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -519,7 +519,7 @@ struct VBufferTransposeLoads[
     alias SharedIterType = LayoutTensorIter[
         dtype,
         Self.smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]

@@ -98,17 +98,17 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     # Create layout tensors for the naive kernel
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var c_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+    var c_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         c_device_n.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    var a_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+    var a_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         a_device_n.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+    var b_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         b_device_n.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )

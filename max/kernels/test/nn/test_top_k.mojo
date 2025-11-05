@@ -35,7 +35,7 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
 
     fn __init__(out self, shape: IndexList[rank]):
         self.storage = List[Scalar[dtype]](
-            length=UInt(shape.flattened_length()), fill=0
+            length=shape.flattened_length(), fill=0
         )
         self.shape = shape
 
@@ -112,7 +112,7 @@ fn test_case_sampling[
 
     alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var temperature_buf = OptionalReg(
-        LayoutTensor[DType.float32, layout_1d, MutableAnyOrigin](
+        LayoutTensor[DType.float32, layout_1d, MutAnyOrigin](
             temperature_ptr,
             RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
         )
@@ -122,7 +122,7 @@ fn test_case_sampling[
     for i in range(batch_size):
         seed_ptr[i] = 12
     var seed_buf = OptionalReg(
-        LayoutTensor[DType.uint64, layout_1d, MutableAnyOrigin](
+        LayoutTensor[DType.uint64, layout_1d, MutAnyOrigin](
             seed_ptr,
             RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
         )

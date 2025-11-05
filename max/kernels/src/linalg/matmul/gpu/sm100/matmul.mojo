@@ -55,7 +55,7 @@ from layout import (
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
-from layout.layout import blocked_product
+from layout.layout import blocked_product, make_layout, flatten, coalesce
 from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_tuple import idx2crd, crd2idx
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
@@ -168,14 +168,14 @@ fn load_AB[
     a_smem: LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     b_smem: LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -275,14 +275,14 @@ fn consumer_main_loop[
     a_smem_iter: LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     b_smem_iter: LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -326,6 +326,11 @@ fn consumer_main_loop[
         mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
 
 
+alias RLayout32Bits[layout: Layout] = RuntimeLayout[
+    layout, element_type = DType.uint32, linear_idx_type = DType.uint32
+]
+
+
 @always_inline
 fn stsm_helper[
     swizzle: Swizzle,
@@ -334,6 +339,7 @@ fn stsm_helper[
 ](
     vec: SIMD[_, _],
     dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
+    warp_offset: UInt32 = 0,
 ):
     # Number of elements in one row is 32B and 16B per stsmx4 and stmtx2 tile, respectively.
     alias stsmx_row_size = 32 // size_of[
@@ -347,7 +353,13 @@ fn stsm_helper[
     # the dst row offset.
     alias stride0 = dst.layout.stride[0].value()
     alias stride1 = dst.layout.stride[1].value()
-    constrained[stride1 == 1, "stride1 must be 1. Got: " + String(stride1)]()
+    constrained[
+        stride1 == 1,
+        "stride1 must be 1. Got: "
+        + String(stride1)
+        + " for layout: "
+        + String(dst.layout),
+    ]()
     alias shape0 = dst.layout.shape[
         1
     ].value() if not transpose_c else dst.layout.shape[0].value()
@@ -362,9 +374,6 @@ fn stsm_helper[
     ) * stsmx_row_size
 
     var lane = lane_id()
-    alias RLayout32Bits[layout: Layout] = RuntimeLayout[
-        layout, element_type = DType.uint32, linear_idx_type = DType.uint32
-    ]
     var stsm_lane_offset: UInt32 = (lane & 15) * UInt(stride0) + (
         lane >> 4
     ) * 8 if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(
@@ -386,7 +395,15 @@ fn stsm_helper[
     @parameter
     for i in range(shape0 // stsmx_row_size):
         alias n_offset = i * stsmx_tile_offset
-        var offset = swizzle(stsm_lane_offset + n_offset)
+        var offset: UInt32
+
+        @parameter
+        if transpose_c:
+            offset = (
+                swizzle(stsm_lane_offset + n_offset + warp_offset) - warp_offset
+            )
+        else:
+            offset = swizzle(stsm_lane_offset + n_offset)
         alias stmtx_simd_width = 4 if stageN % 16 == 0 else 2
         var v = slice[i * stsmx_lane_size, 2 * stmtx_simd_width](vec).cast[
             dst.dtype
@@ -417,10 +434,10 @@ fn shared_memory_epilogue[
     c_col: UInt,
     c_row: UInt,
     c_smem_warp_tile_upper: LayoutTensor[
-        c_type, c_smem_upper_layout, MutableAnyOrigin, *_, **_
+        c_type, c_smem_upper_layout, MutAnyOrigin, *_, **_
     ],
     c_smem_warp_tile_lower: LayoutTensor[
-        c_type, c_smem_lower_layout, MutableAnyOrigin, *_, **_
+        c_type, c_smem_lower_layout, MutAnyOrigin, *_, **_
     ],
 ):
     # Here we start keeping track of the index / indices this thread is
@@ -647,10 +664,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
                 " == 128 and MMA_N is not a multiple of 32"
             ),
         ]()
-        # transpose_c => MMA_M == 256 is the same as (not transpose_c) or MMA_M == 256
         constrained[
-            (not config.AB_swapped) or MMA_M == 256,
-            "swapAB is only supported for MMA_M == 256",
+            not config.AB_swapped
+            or register_based_epilogue
+            or elementwise_compute_lambda_fn is None,
+            "2SM swapAB with shared memory based epilogue is not supported",
         ]()
 
     else:
@@ -699,11 +717,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    # c_swizzle is set to 32B mode when swapAB is enabled so we need to adjust the tile shape
-    # with 32B swizzle mode, there should always be 16 bfloat16 elements on the contiguous dim.
-    alias c_tma_tile_shape_1 = c_tma_tile_shape[1] // 4 if (
-        config.cta_group == 1 and MMA_M == 64
-    ) else c_tma_tile_shape[1] // 8
+    constrained[
+        (not config.AB_swapped) or config.c_swizzle.bytes() == 128,
+        "Only support 128B swizzle mode when AB_swapped is True",
+    ]()
+    alias c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
     var c_tma_op = create_tma_tile[
         c_tma_tile_shape if not config.AB_swapped else Index(
             c_tma_tile_shape[0], c_tma_tile_shape_1
@@ -839,7 +857,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
 
     var mnk = StaticTuple[UInt32, 3](M, N, K)
 
-    var workspace: Span[UInt64, MutableAnyOrigin]
+    var workspace: Span[UInt64, MutAnyOrigin]
 
     @parameter
     if enable_profiling:
@@ -847,8 +865,8 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
             max_profiled_tiles
         ].get_workspace(ctx)
     else:
-        workspace = Span[UInt64, MutableAnyOrigin](
-            ptr=UnsafePointer[UInt64, origin=MutableAnyOrigin](), length=0
+        workspace = Span[UInt64, MutAnyOrigin](
+            ptr=UnsafePointer[UInt64, origin=MutAnyOrigin](), length=0
         )
 
     ctx.enqueue_function_checked[kernel, kernel](
@@ -1100,7 +1118,7 @@ fn copy_accum_to_gmem[
     c_iter: LayoutTensorIter[
         c_type,
         c_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -1127,9 +1145,9 @@ fn copy_accum_to_gmem[
     # every element in tmem is 4 bytes, so bits being 256 means 8 elements stored across N
     # repeated 4 times is 8*4 = 32, enough to move elements into the width of our 128x32 tile
     alias rep_frag_size = repeat * fragment_size
-    var upper_frag_partial = SIMD[accum_type, rep_frag_size]()
+    var upper_frag_partial: SIMD[accum_type, rep_frag_size]
     var lower_frag_partial = SIMD[accum_type, rep_frag_size]()
-    var upper_frag_casted = SIMD[epilogue_dtype, rep_frag_size]()
+    var upper_frag_casted: SIMD[epilogue_dtype, rep_frag_size]
     var lower_frag_casted = SIMD[epilogue_dtype, rep_frag_size]()
 
     alias is_lower_frag_required = not (cta_group == 1 and BM == 64)
@@ -1142,6 +1160,7 @@ fn copy_accum_to_gmem[
 
     # stmatrix related
     alias st_matrix_swizzle = c_swizzle
+    alias swizzle_width = c_swizzle.bytes() // size_of[c_type]()
     alias swizzle = make_swizzle[c_type, st_matrix_swizzle]()
 
     var warp_id = get_warp_id()
@@ -1212,60 +1231,146 @@ fn copy_accum_to_gmem[
 
         @parameter
         if transpose_c:
-            # if stage_contiguous_size is 128, we need to split the shared memory
-            # into two stageNx64 row-major tiles due to the limitation of 128B TMA
-            # swizzle. However, for easier programming, we reshape the tile
-            # contiguous row_major(stageN, 16) chunks.
-            var tile_idx = Int(warp_id) if not is_lower_frag_required else Int(
-                2 * Int(warp_id)
-            )
-            var c_smem_warp_tile_upper = c_smem_tile.tile[
-                stageN * 16 // stage_contiguous_size, stage_contiguous_size
-            ](tile_idx, 0).reshape[Layout.row_major(stageN, 16)]()
-            stsm_helper[swizzle, UInt(stageN), transpose_c](
-                upper_frag_casted, c_smem_warp_tile_upper
-            )
-
-            var c_smem_warp_tile_lower = c_smem_tile.tile[
-                stageN * 16 // stage_contiguous_size, stage_contiguous_size
-            ](tile_idx + 1, 0).reshape[Layout.row_major(stageN, 16)]()
+            # if stage_contiguous_size is 128, we need to split the shared
+            # memory into two stageNxswizzle_width row-major tiles due to the
+            # limitation of 128B TMA swizzle. However, for easier programming,
+            # we reshape the tile contiguous row_major(stageN, swizzle_width)
+            # chunks.
+            alias naive_layout = c_smem_tile.layout
 
             @parameter
             if is_lower_frag_required:
-                stsm_helper[swizzle, UInt(stageN), transpose_c](
-                    lower_frag_casted, c_smem_warp_tile_lower
+                alias tile_width = 32
+                alias smem_swblock_layout = Layout.row_major(
+                    stageN, 2, tile_width
+                )
+                alias num_swblocks = stage_contiguous_size // swizzle_width
+                alias smem_logical_layout = Layout(
+                    flatten([num_swblocks, smem_swblock_layout.shape]),
+                    flatten(
+                        [stageN * swizzle_width, smem_swblock_layout.stride]
+                    ),
                 )
 
-            # Guard the write to shared memory is done.
-            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+                var new_smem = LayoutTensor[
+                    c_type,
+                    smem_logical_layout,
+                    c_smem_tile.origin,
+                    address_space = AddressSpace.SHARED,
+                    alignment = c_smem_tile.alignment,
+                ](c_smem_tile.ptr)
+                warp_j, warp_i = divmod(Int(warp_id), 2)
+                var _c_smem_warp_tile = new_smem.tile[1, stageN, 1, tile_width](
+                    warp_j, 0, warp_i, 0
+                )
+                var c_smem_warp_tile = _c_smem_warp_tile.reshape[
+                    coalesce(_c_smem_warp_tile.layout)
+                ]()
 
-            @parameter
-            if elementwise_compute_lambda_fn:
+                var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
+                    stageN, data_paths
+                ](0, 0)
+                var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
+                    stageN, data_paths
+                ](0, 1)
+
+                warp_offset = warp_i * tile_width
+                stsm_helper[swizzle, UInt(stageN), transpose_c](
+                    upper_frag_casted, c_smem_warp_tile_upper, warp_offset
+                )
+
+                warp_offset += tile_width // 2
+                stsm_helper[swizzle, UInt(stageN), transpose_c](
+                    lower_frag_casted, c_smem_warp_tile_lower, warp_offset
+                )
+
+                # Guard the write to shared memory is done.
+                named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
                 @parameter
-                if not register_based_epilogue:
-                    shared_memory_epilogue[
-                        UInt(MMA_M),
-                        data_paths,
-                        UInt(num_stages),
-                        UInt(stage),
-                        UInt(stageN),
-                        c_smem_warp_tile_upper.dtype,
-                        UInt(c_smem_tile.shape[1]()),
-                        UInt(simd_size),
-                        c_smem_warp_tile_upper.layout,
-                        c_smem_warp_tile_lower.layout,
-                        swizzle,
-                        elementwise_compute_lambda_fn.value(),
-                        UInt(num_output_warps),
-                    ](
-                        M,
-                        N,
-                        UInt(c_col),
-                        UInt(c_row),
-                        c_smem_warp_tile_upper,
-                        c_smem_warp_tile_lower,
-                    )
+                if elementwise_compute_lambda_fn:
+
+                    @parameter
+                    if not register_based_epilogue:
+                        shared_memory_epilogue[
+                            UInt(MMA_M),
+                            data_paths,
+                            UInt(num_stages),
+                            UInt(stage),
+                            UInt(stageN),
+                            c_smem_warp_tile_upper.dtype,
+                            UInt(c_smem_tile.shape[1]()),
+                            UInt(simd_size),
+                            c_smem_warp_tile_upper.layout,
+                            c_smem_warp_tile_lower.layout,
+                            swizzle,
+                            elementwise_compute_lambda_fn.value(),
+                            UInt(num_output_warps),
+                        ](
+                            M,
+                            N,
+                            UInt(c_col),
+                            UInt(c_row),
+                            c_smem_warp_tile_upper,
+                            c_smem_warp_tile_lower,
+                        )
+            else:
+                alias tile_width = 16
+                alias smem_logical_layout = Layout.row_major(
+                    stageN, 4, tile_width
+                )
+
+                var new_smem = LayoutTensor[
+                    c_type,
+                    smem_logical_layout,
+                    c_smem_tile.origin,
+                    address_space = AddressSpace.SHARED,
+                    alignment = c_smem_tile.alignment,
+                ](c_smem_tile.ptr)
+                var _c_smem_warp_tile = new_smem.tile[stageN, 1, tile_width](
+                    0, Int(warp_id), 0
+                )
+                var c_smem_warp_tile = _c_smem_warp_tile.reshape[
+                    coalesce(_c_smem_warp_tile.layout)
+                ]()
+
+                var c_smem_warp_tile_upper = c_smem_warp_tile
+                var c_smem_warp_tile_lower = c_smem_warp_tile
+                warp_offset = Int(warp_id) * tile_width
+                stsm_helper[swizzle, UInt(stageN), transpose_c](
+                    upper_frag_casted, c_smem_warp_tile_upper, warp_offset
+                )
+
+                # Guard the write to shared memory is done.
+                named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+
+                @parameter
+                if elementwise_compute_lambda_fn:
+
+                    @parameter
+                    if not register_based_epilogue:
+                        shared_memory_epilogue[
+                            UInt(MMA_M),
+                            data_paths,
+                            UInt(num_stages),
+                            UInt(stage),
+                            UInt(stageN),
+                            c_smem_warp_tile_upper.dtype,
+                            UInt(c_smem_tile.shape[1]()),
+                            UInt(simd_size),
+                            c_smem_warp_tile_upper.layout,
+                            c_smem_warp_tile_lower.layout,
+                            swizzle,
+                            elementwise_compute_lambda_fn.value(),
+                            UInt(num_output_warps),
+                        ](
+                            M,
+                            N,
+                            UInt(c_col),
+                            UInt(c_row),
+                            c_smem_warp_tile_upper,
+                            c_smem_warp_tile_lower,
+                        )
         else:
             alias c_smem_tile_m = 32 if cta_group == 2 else BM // Int(
                 num_output_warps
@@ -1348,27 +1453,51 @@ fn copy_accum_to_gmem[
         var cg2_coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
         var cg1_coord_n = coord_n_mma_m256
         var coord_n = cg2_coord_n if cta_group == 2 else cg1_coord_n
+        var coord_m = c_coord[0] * UInt(BM)
 
         if elect_one_warp and lane == 0:
             fence_async_view_proxy()
 
             @parameter
             if transpose_c:
-                alias num_c_smem_tiles = 4 if not is_lower_frag_required else 8
 
                 @parameter
-                for i in range(num_c_smem_tiles):
-                    var c_smem_warp_tile = c_smem_tile.tile[
-                        stageN * 16 // stage_contiguous_size,
-                        stage_contiguous_size,
-                    ](i, 0).reshape[Layout.row_major(stageN, 16)]()
+                if cta_group == 2 and MMA_M == 128:
+                    var c_smem_reshaped = c_smem_tile.reshape[
+                        Layout.row_major(2 * stageN, stage_contiguous_size // 2)
+                    ]()
+                    var c_smem_split = c_smem_reshaped.tile[
+                        stageN, stage_contiguous_size // 2
+                    ](Int(warp_id // 2), 0)
+
                     c_tma_op.async_store(
-                        c_smem_warp_tile,
+                        c_smem_split,
                         (
-                            UInt(c_coord[0] * UInt(BM) + UInt(i * 16)),
+                            UInt(coord_m),
                             UInt(coord_n),
                         ),
                     )
+
+                else:
+                    alias num_c_smem_tiles = 128 // swizzle_width // (
+                        1 if is_lower_frag_required else 2
+                    )
+
+                    @parameter
+                    for i in range(num_c_smem_tiles):
+                        var c_smem_warp_tile = c_smem_tile.tile[
+                            stageN * swizzle_width // stage_contiguous_size,
+                            stage_contiguous_size,
+                        ](i, 0).reshape[
+                            Layout.row_major(stageN, swizzle_width)
+                        ]()
+                        c_tma_op.async_store(
+                            c_smem_warp_tile,
+                            (
+                                UInt(coord_m + UInt(i * swizzle_width)),
+                                UInt(coord_n),
+                            ),
+                        )
             else:
                 var cg2_c_smem_coord_m = 0 if MMA_M == 256 else (warp_id // 2)
                 var cg1_c_smem_coord_m = UInt(0)
@@ -1382,7 +1511,7 @@ fn copy_accum_to_gmem[
                     c_smem_split,
                     (
                         UInt(coord_n),
-                        UInt(c_coord[0] * UInt(BM)),
+                        UInt(coord_m),
                     ),
                 )
             c_tma_op.commit_group()
@@ -1427,13 +1556,11 @@ fn multi_stage_store_C_split_k[
     transpose_c: Bool = False,
 ](
     scheduler: TileSchedulerSplitK,
-    reduction_tensor: LayoutTensor[
-        accum_type, reduction_layout, MutableAnyOrigin
-    ],
+    reduction_tensor: LayoutTensor[accum_type, reduction_layout, MutAnyOrigin],
     c_iter: LayoutTensorIter[
         c_type,
         c_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -1560,7 +1687,7 @@ fn multi_stage_store_C[
     c_iter: LayoutTensorIter[
         c_type,
         c_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -1691,7 +1818,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     cluster_dim: StaticTuple[Int32, 3],
     mnk: StaticTuple[UInt32, 3],
-    workspace: Span[UInt64, MutableAnyOrigin],
+    workspace: Span[UInt64, MutAnyOrigin],
 ):
     constrained[c_type is not DType.float32, "c_type cannot be float32"]()
     constrained[transpose_b, "only support k-major B"]()
@@ -1768,7 +1895,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
@@ -1779,7 +1906,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
@@ -1792,7 +1919,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         Layout.row_major(
             config.output_tile_shape[0], config.output_tile_shape[1]
         ),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](c_smem_base, c_smem_size)
@@ -2199,12 +2326,12 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     reduction_tensor: LayoutTensor[
-        config.accum_type, reduction_layout, MutableAnyOrigin
+        config.accum_type, reduction_layout, MutAnyOrigin
     ],
     lock_ptr: UnsafePointer[UInt8],
     cluster_dim: StaticTuple[Int32, 3],
     mnk: StaticTuple[UInt32, 3],
-    workspace: Span[UInt64, MutableAnyOrigin],
+    workspace: Span[UInt64, MutAnyOrigin],
 ):
     constrained[c_type is not DType.float32, "c_type cannot be float32"]()
     constrained[transpose_b, "only support k-major B"]()
@@ -2282,7 +2409,7 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
@@ -2293,7 +2420,7 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
@@ -2306,7 +2433,7 @@ fn blackwell_tma_umma_warp_specialized_split_k_kernel[
         Layout.row_major(
             config.output_tile_shape[0], config.output_tile_shape[1]
         ),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](c_smem_base, c_smem_size)
@@ -2716,15 +2843,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     if config.AB_swapped:
         # Swap the a_type, b_type in signature
         # TODO: Do this without creating a new instance.
-        alias new_config = MatmulConfig[b_type, a_type, c_type, transpose_b](
-            cta_group=config.cta_group,
-            mma_shape=config.mma_shape,
-            cluster_shape=config.cluster_shape,
-            AB_swapped=True,
-            block_swizzle_size=config.block_swizzle_size,
-            raster_order=config.raster_order,
-            num_split_k=config.num_split_k,
-        )
+        alias new_config = config.swap_AB_type()
 
         # When both A and B are K-major, then the matrix multiplication math is
         # C = A @ B'
@@ -2843,10 +2962,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
             (MMA_M != 256) or (MMA_N % 16 == 0),
             "MMA_N must be a multiple of 16 when MMA_M is 256",
         ]()
-        constrained[
-            (MMA_M != 128) or (MMA_N % 32 == 0),
-            "if MMA_M is 128, then MMA_N must be a multiple of 32",
-        ]()
+
         # transpose_c => MMA_M == 256 is the same as (not transpose_c) or MMA_M == 256
         constrained[
             (not config.AB_swapped) or MMA_M == 256,
@@ -2894,11 +3010,10 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    # c_swizzle is set to 32B mode when swapAB is enabled so we need to adjust the tile shape
-    # with 32B swizzle mode, there should always be 16 bfloat16 elements on the contiguous dim.
-    alias c_tma_tile_shape_1 = c_tma_tile_shape[1] // 4 if (
-        config.cta_group == 1 and MMA_M == 64
-    ) else c_tma_tile_shape[1] // 8
+    # c_swizzle is set to 32B mode when swapAB is enabled so we need to adjust
+    # the tile shape with 128B swizzle mode, there should always be 64 elements
+    # on the contiguous dim.
+    alias c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
     var c_tma_op = create_tma_tile[
         c_tma_tile_shape if not config.AB_swapped else Index(
             c_tma_tile_shape[0], c_tma_tile_shape_1
@@ -3035,7 +3150,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
 
     var mnk = StaticTuple[UInt32, 3](M, N, K)
 
-    var workspace: Span[UInt64, MutableAnyOrigin]
+    var workspace: Span[UInt64, MutAnyOrigin]
 
     var output_tiles = get_num_tiles(
         Index(M, N, K),
@@ -3073,7 +3188,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
             max_profiled_tiles
         ].get_workspace(ctx)
     else:
-        workspace = Span[UInt64, MutableAnyOrigin]()
+        workspace = Span[UInt64, MutAnyOrigin]()
 
     ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
@@ -3127,7 +3242,7 @@ fn matmul_sm100_fallback_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
     constrained[num_threads == 128 or num_threads == 256]()
@@ -3168,14 +3283,14 @@ fn matmul_sm100_fallback_kernel[
     alias a_smem_tile_t = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
     alias b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]

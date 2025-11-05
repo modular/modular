@@ -210,7 +210,7 @@ def test_aligned_load_store():
     var matrix = NDBuffer[
         DType.int,
         2,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         DimList(4, 4),
     ].stack_allocation[alignment=128]()
 

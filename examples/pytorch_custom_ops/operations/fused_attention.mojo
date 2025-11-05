@@ -141,7 +141,7 @@ fn matmul_b_transpose(
     out res: LayoutTensor[
         lhs.dtype,
         Layout.row_major(lhs.shape[0](), rhs.shape[0]()),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ],
 ):
     res = type_of(res).stack_allocation()
@@ -197,20 +197,20 @@ fn fused_attention_cpu[
         @parameter
         for tile_d in range(D // BD):
             m_1 = (
-                LayoutTensor[Q_tile.dtype, Layout(BN, 1), MutableAnyOrigin]
+                LayoutTensor[Q_tile.dtype, Layout(BN, 1), MutAnyOrigin]
                 .stack_allocation()
                 .fill(Scalar[Q_tile.dtype].MIN)
             )
 
             l_1 = (
-                LayoutTensor[Q_tile.dtype, Layout(BN, 1), MutableAnyOrigin]
+                LayoutTensor[Q_tile.dtype, Layout(BN, 1), MutAnyOrigin]
                 .stack_allocation()
                 .fill(0)
             )
 
             O_i = (
                 LayoutTensor[
-                    Q_tile.dtype, Layout.row_major(BN, BD), MutableAnyOrigin
+                    Q_tile.dtype, Layout.row_major(BN, BD), MutAnyOrigin
                 ]
                 .stack_allocation()
                 .fill(0)
@@ -245,7 +245,7 @@ fn matmul[
     out res: LayoutTensor[
         lhs.dtype,
         Layout.row_major(lhs.shape[0](), rhs.shape[0]()),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = lhs.address_space,
         element_layout = lhs.element_layout,
         layout_int_type = lhs.layout_int_type,
@@ -277,7 +277,7 @@ fn matmul[
         out_sram = LayoutTensor[
             res.dtype,
             Layout.row_major(M, N),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ].stack_allocation()
 
@@ -323,10 +323,10 @@ fn fused_attention_kernel[
     BN: Int,
     BD: Int,
 ](
-    Q: LayoutTensor[q_dtype, q_layout, MutableAnyOrigin],
-    K: LayoutTensor[k_dtype, k_layout, MutableAnyOrigin],
-    V: LayoutTensor[v_dtype, v_layout, MutableAnyOrigin],
-    O: LayoutTensor[o_dtype, o_layout, MutableAnyOrigin],
+    Q: LayoutTensor[q_dtype, q_layout, MutAnyOrigin],
+    K: LayoutTensor[k_dtype, k_layout, MutAnyOrigin],
+    V: LayoutTensor[v_dtype, v_layout, MutAnyOrigin],
+    O: LayoutTensor[o_dtype, o_layout, MutAnyOrigin],
 ):
     alias N = Q.shape[0]()
     alias D = Q.shape[1]()
@@ -334,17 +334,17 @@ fn fused_attention_kernel[
     Q_tile = Q.tile[BN, D](Int(block_idx.y), 0)
 
     m_1 = (
-        LayoutTensor[q_dtype, Layout(BN, 1), MutableAnyOrigin]
+        LayoutTensor[q_dtype, Layout(BN, 1), MutAnyOrigin]
         .stack_allocation()
         .fill(Scalar[q_dtype].MIN)
     )
     l_1 = (
-        LayoutTensor[q_dtype, Layout(BN, 1), MutableAnyOrigin]
+        LayoutTensor[q_dtype, Layout(BN, 1), MutAnyOrigin]
         .stack_allocation()
         .fill(0)
     )
     O_i = (
-        LayoutTensor[q_dtype, Layout.row_major(BN, BD), MutableAnyOrigin]
+        LayoutTensor[q_dtype, Layout.row_major(BN, BD), MutAnyOrigin]
         .stack_allocation()
         .fill(0)
     )

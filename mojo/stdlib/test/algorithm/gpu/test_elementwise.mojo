@@ -26,10 +26,10 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     var in_host = NDBuffer[
-        dtype, 2, MutableAnyOrigin, DimList(2, 8)
+        dtype, 2, MutAnyOrigin, DimList(2, 8)
     ].stack_allocation()
     var out_host = NDBuffer[
-        dtype, 2, MutableAnyOrigin, DimList(2, 8)
+        dtype, 2, MutAnyOrigin, DimList(2, 8)
     ].stack_allocation()
 
     var flattened_length = in_host.num_elements()
@@ -98,10 +98,10 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
     var in_host = NDBuffer[
-        dtype, 2, MutableAnyOrigin, DimList(3, 3)
+        dtype, 2, MutAnyOrigin, DimList(3, 3)
     ].stack_allocation()
     var out_host = NDBuffer[
-        dtype, 2, MutableAnyOrigin, DimList(3, 3)
+        dtype, 2, MutAnyOrigin, DimList(3, 3)
     ].stack_allocation()
 
     var flattened_length = in_host.num_elements()
@@ -154,10 +154,10 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
 fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
     var in_host = NDBuffer[
-        dtype, 3, MutableAnyOrigin, DimList(2, 4, 5)
+        dtype, 3, MutAnyOrigin, DimList(2, 4, 5)
     ].stack_allocation()
     var out_host = NDBuffer[
-        dtype, 3, MutableAnyOrigin, DimList(4, 2, 5)
+        dtype, 3, MutAnyOrigin, DimList(4, 2, 5)
     ].stack_allocation()
 
     var flattened_length = in_host.num_elements()

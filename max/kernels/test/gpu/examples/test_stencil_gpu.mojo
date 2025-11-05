@@ -72,13 +72,13 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     alias output_shape = DimList(1, output_height, output_width, 1)
 
     var h_input = NDBuffer[
-        dtype, rank, MutableAnyOrigin, input_shape
+        dtype, rank, MutAnyOrigin, input_shape
     ].stack_allocation()
     var h_output = NDBuffer[
-        dtype, rank, MutableAnyOrigin, output_shape
+        dtype, rank, MutAnyOrigin, output_shape
     ].stack_allocation()
     var h_output_ref = NDBuffer[
-        dtype, rank, MutableAnyOrigin, output_shape
+        dtype, rank, MutAnyOrigin, output_shape
     ].stack_allocation()
 
     fill_buffer(h_input)
@@ -241,13 +241,13 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     alias output_shape = DimList(1, output_height, output_width, 1)
 
     var h_input = NDBuffer[
-        dtype, rank, MutableAnyOrigin, input_shape
+        dtype, rank, MutAnyOrigin, input_shape
     ].stack_allocation()
     var h_output = NDBuffer[
-        dtype, rank, MutableAnyOrigin, output_shape
+        dtype, rank, MutAnyOrigin, output_shape
     ].stack_allocation()
     var h_output_ref = NDBuffer[
-        dtype, rank, MutableAnyOrigin, output_shape
+        dtype, rank, MutAnyOrigin, output_shape
     ].stack_allocation()
     h_output_ref.fill(0)
 
@@ -411,13 +411,13 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     alias output_shape = DimList(1, output_height, output_width, 1)
 
     var h_input = NDBuffer[
-        dtype, rank, MutableAnyOrigin, input_shape
+        dtype, rank, MutAnyOrigin, input_shape
     ].stack_allocation()
     var h_output = NDBuffer[
-        dtype, rank, MutableAnyOrigin, output_shape
+        dtype, rank, MutAnyOrigin, output_shape
     ].stack_allocation()
     var h_output_ref = NDBuffer[
-        dtype, rank, MutableAnyOrigin, output_shape
+        dtype, rank, MutAnyOrigin, output_shape
     ].stack_allocation()
     h_output_ref.fill(0)
 
@@ -590,13 +590,13 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     var pad_value = 0
 
     var h_input = NDBuffer[
-        dtype, rank, MutableAnyOrigin, input_shape
+        dtype, rank, MutAnyOrigin, input_shape
     ].stack_allocation()
     var h_output = NDBuffer[
-        dtype, rank, MutableAnyOrigin, output_shape
+        dtype, rank, MutAnyOrigin, output_shape
     ].stack_allocation()
     var h_output_ref = NDBuffer[
-        dtype, rank, MutableAnyOrigin, output_shape
+        dtype, rank, MutAnyOrigin, output_shape
     ].stack_allocation()
     h_output_ref.fill(0)
 

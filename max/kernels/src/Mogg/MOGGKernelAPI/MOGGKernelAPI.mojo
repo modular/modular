@@ -4458,12 +4458,12 @@ struct ConcatFromList:
 
         # TODO: convert underlying kernel to accept lists of ManagedTensorSlice
         var input_as_layout_tensor = List[
-            LayoutTensor[dtype, inputs_layout, MutableAnyOrigin]
+            LayoutTensor[dtype, inputs_layout, MutAnyOrigin]
         ](capacity=len(inputs))
         for i in range(len(inputs)):
             var lt = inputs[i].to_layout_tensor()
             input_as_layout_tensor.append(
-                LayoutTensor[dtype, inputs_layout, MutableAnyOrigin](
+                LayoutTensor[dtype, inputs_layout, MutAnyOrigin](
                     lt.ptr,
                     RuntimeLayout[inputs_layout].row_major(
                         lt.runtime_layout.shape.value.canonicalize()
@@ -4515,7 +4515,7 @@ struct Split:
         ctx: DeviceContextPtr,
     ) raises:
         var output_bufs = StaticTuple[
-            LayoutTensor[dtype, Layout.row_major[rank](), MutableAnyOrigin],
+            LayoutTensor[dtype, Layout.row_major[rank](), MutAnyOrigin],
             output.size,
         ]()
 
@@ -6767,7 +6767,7 @@ struct Struct_mla_prefill_ragged_paged:
             softmax_info.to_layout_tensor(),
             context,
             LayoutTensor[
-                prev_output_nd.dtype, Layout.row_major[3](), MutableAnyOrigin
+                prev_output_nd.dtype, Layout.row_major[3](), MutAnyOrigin
             ](
                 prev_output_nd.ptr,
                 RuntimeLayout[Layout.row_major[3]()].row_major(
@@ -6777,7 +6777,7 @@ struct Struct_mla_prefill_ragged_paged:
             LayoutTensor[
                 prev_softmax_info_nd.dtype,
                 Layout.row_major[3](),
-                MutableAnyOrigin,
+                MutAnyOrigin,
             ](
                 prev_softmax_info_nd.ptr,
                 RuntimeLayout[Layout.row_major[3]()].row_major(
@@ -8141,7 +8141,7 @@ struct DistributedAllReduceSum:
 
         # Marshal input tensors into the expected format.
         var in_bufs = InlineArray[
-            NDBuffer[dtype, rank, MutableAnyOrigin], inputs.size
+            NDBuffer[dtype, rank, MutAnyOrigin], inputs.size
         ](fill={})
 
         @parameter
@@ -8222,7 +8222,7 @@ struct DistributedAllGather:
 
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
-            NDBuffer[dtype, rank, MutableAnyOrigin], inputs.size
+            NDBuffer[dtype, rank, MutAnyOrigin], inputs.size
         ](fill={})
 
         @parameter
@@ -8230,7 +8230,7 @@ struct DistributedAllGather:
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
         var out_bufs = InlineArray[
-            NDBuffer[dtype, rank, MutableAnyOrigin], num_devices * num_devices
+            NDBuffer[dtype, rank, MutAnyOrigin], num_devices * num_devices
         ](fill={})
 
         @parameter
@@ -8316,27 +8316,27 @@ struct DistributedMatmulAllReduce:
 
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
-            NDBuffer[a_type, 2, MutableAnyOrigin, A_static_shape], num_devices
+            NDBuffer[a_type, 2, MutAnyOrigin, A_static_shape], num_devices
         ](fill={})
         var weight_bufs = InlineArray[
-            NDBuffer[b_type, 2, MutableAnyOrigin, B_static_shape], num_devices
+            NDBuffer[b_type, 2, MutAnyOrigin, B_static_shape], num_devices
         ](fill={})
 
         @parameter
         for i in range(num_devices):
             in_bufs[i] = rebind[
-                NDBuffer[a_type, 2, MutableAnyOrigin, A_static_shape]
+                NDBuffer[a_type, 2, MutAnyOrigin, A_static_shape]
             ](managed_tensor_slice_to_ndbuffer(inputs[i]))
             weight_bufs[i] = managed_tensor_slice_to_ndbuffer(weights[i])
 
         var out_bufs = InlineArray[
-            NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape], num_devices
+            NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape], num_devices
         ](fill={})
 
         @parameter
         for i in range(num_devices):
             out_bufs[i] = rebind[
-                NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape]
+                NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape]
             ](managed_tensor_slice_to_ndbuffer(outputs[i]))
 
         var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
@@ -8364,7 +8364,7 @@ struct DistributedMatmulAllReduce:
 
         # Allocate temporarie buffers to store the matmul outputs
         var c_temp_bufs = InlineArray[
-            NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape], num_devices
+            NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape], num_devices
         ](uninitialized=True)
 
         @parameter
@@ -8372,9 +8372,9 @@ struct DistributedMatmulAllReduce:
             var device_buffer = dev_ctxs[i].enqueue_create_buffer[c_type](
                 out_bufs[i].num_elements()
             )
-            c_temp_bufs[i] = NDBuffer[
-                c_type, 2, MutableAnyOrigin, C_static_shape
-            ](device_buffer.unsafe_ptr(), out_bufs[i].dynamic_shape)
+            c_temp_bufs[i] = NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape](
+                device_buffer.unsafe_ptr(), out_bufs[i].dynamic_shape
+            )
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             matmul_allreduce[
@@ -8806,7 +8806,7 @@ struct MatmulStaticScaledFloat8:
         alias N = weight.shape.get[0]()
         var M = input.dim[0]()
         var output_dummy = NDBuffer[
-            DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)
+            DType.float32, 2, MutAnyOrigin, DimList(Dim(), N)
         ](
             UnsafePointer[Scalar[DType.float32]](),
             IndexList[2](M, N),

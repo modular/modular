@@ -682,9 +682,7 @@ struct _FlashAttention[
         max_seq_len: Int,
         scale: Float32,
         sink_weights: OptionalReg[
-            LayoutTensor[
-                dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
-            ]
+            LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
         ] = None,
     ):
         var kv_group_count = num_heads // num_kv_heads
@@ -935,7 +933,7 @@ fn _flash_attention[
     ],
     scale: Float32,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ):
     var num_batches = output.dim[0]()
@@ -1030,7 +1028,7 @@ fn flash_attention[
     ],
     scale: Float32,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ):
     _flash_attention[input_k_fn, input_v_fn, input_mask_fn](
@@ -1206,7 +1204,7 @@ fn _flash_attention_kv_cache[
         mut=True, dtype, address_space = AddressSpace.GENERIC, **_
     ],
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ):
     alias kv_params = cache_t.kv_params
@@ -1272,7 +1270,7 @@ fn _flash_attention_kv_cache[
     max_seq_len: Int,
     scale: Float32,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ):
     alias num_kv_heads = cache_t.kv_params.num_heads
@@ -1345,7 +1343,7 @@ fn flash_attention_kv_cache[
         mut=True, dtype, address_space = AddressSpace.GENERIC, **_
     ],
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ):
     @always_inline
@@ -1378,7 +1376,7 @@ fn flash_attention_kv_cache[
         mut=True, dtype, address_space = AddressSpace.GENERIC, **_
     ],
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ):
     @always_inline
@@ -1419,7 +1417,7 @@ fn flash_attention_kv_cache[
         mut=True, dtype, address_space = AddressSpace.GENERIC, **_
     ],
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ):
     """Entrypoint for ragged tensors."""

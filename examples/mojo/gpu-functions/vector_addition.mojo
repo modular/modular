@@ -64,9 +64,9 @@ def main():
 
 
 fn vector_addition(
-    lhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
-    rhs_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
-    out_tensor: LayoutTensor[float_dtype, layout, MutableAnyOrigin],
+    lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     size: Int,
 ):
     """The calculation to perform across the vector on the GPU."""

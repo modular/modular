@@ -68,14 +68,14 @@ fn pad[dtype: DType, depth: Int, size: Int]() -> Int:
 alias LocalLayoutTensor[dtype: DType, layout: Layout] = LayoutTensor[
     dtype,
     layout,
-    MutableAnyOrigin,
+    MutAnyOrigin,
     address_space = AddressSpace.LOCAL,
 ]
 
 alias SharedLayoutTensor[dtype: DType, layout: Layout] = LayoutTensor[
     dtype,
     layout,
-    MutableAnyOrigin,
+    MutAnyOrigin,
     address_space = AddressSpace.SHARED,
 ]
 
@@ -345,7 +345,7 @@ struct GlobalMemoryManager[
         out result: LayoutTensor[
             qtype,
             Self.q_gmem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             layout_int_type = DType.int32,
             linear_idx_type = DType.int32,
             masked=True,
@@ -362,7 +362,7 @@ struct GlobalMemoryManager[
         out result: LayoutTensor[
             out_type,
             Self.output_gmem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             layout_int_type = DType.int32,
             linear_idx_type = DType.int32,
             masked=True,

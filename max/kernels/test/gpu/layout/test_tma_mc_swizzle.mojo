@@ -41,7 +41,7 @@ fn tma_swizzle_multicast_load_kernel[
     CLUSTER_M: UInt,
     CLUSTER_N: UInt,
 ](
-    dst: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, subcluster_tile_layout, desc_layout],
 ):
     alias cluster_tileM = cluster_tile_layout.shape[0].value()
@@ -56,12 +56,12 @@ fn tma_swizzle_multicast_load_kernel[
     var rank_n = Int(block_rank % CLUSTER_N)
 
     alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
-    var tma_multicast_mask = (1 << CLUSTER_SIZE) - 1
+    var tma_multicast_mask = (1 << Int(CLUSTER_SIZE)) - 1
 
     tile = LayoutTensor[
         dtype,
         cluster_tile_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -110,7 +110,7 @@ fn tma_swizzle_multicast_load_kernel[
 
     if block_rank == 0 and thread_idx.x == 0:
         dst_tile = dst.tile[cluster_tileM, cluster_tileN](
-            cluster_idx.y, cluster_idx.x
+            Int(cluster_idx.y), Int(cluster_idx.x)
         )
         dst_tile.copy_from(tile)
 
@@ -125,7 +125,9 @@ def test_tma_multicast_swizzle[
 ](ctx: DeviceContext):
     alias tileM = cluster_tile_shape[0]
     alias tileN = cluster_tile_shape[1]
-    alias subcluster_tile_shape = Index(tileM // CLUSTER_M, tileN // CLUSTER_N)
+    alias subcluster_tile_shape = Index(
+        tileM // Int(CLUSTER_M), tileN // Int(CLUSTER_N)
+    )
 
     alias layout = Layout.row_major(shape[0], shape[1])
     var src = ManagedLayoutTensor[dtype, layout](ctx)
@@ -165,8 +167,8 @@ def test_tma_multicast_swizzle[
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(
-            (shape[1] // cluster_tile_shape[1]) * CLUSTER_N,
-            (shape[0] // cluster_tile_shape[0]) * CLUSTER_M,
+            (shape[1] // cluster_tile_shape[1]) * Int(CLUSTER_N),
+            (shape[0] // cluster_tile_shape[0]) * Int(CLUSTER_M),
         ),
         block_dim=(1),
         cluster_dim=Dim(CLUSTER_N, CLUSTER_M, 1),
@@ -179,7 +181,7 @@ def test_tma_multicast_swizzle[
     alias desc_tile_size = descM * descN
 
     desc_tile = LayoutTensor[
-        dtype, type_of(tma_tensor).desc_layout, MutableAnyOrigin
+        dtype, type_of(tma_tensor).desc_layout, MutAnyOrigin
     ].stack_allocation()
 
     src_host = src.tensor()
@@ -188,10 +190,10 @@ def test_tma_multicast_swizzle[
     alias swizzle = make_swizzle[dtype, swizzle_mode]()
 
     dest_tile = LayoutTensor[
-        dtype, Layout.row_major(tileM, tileN), MutableAnyOrigin
+        dtype, Layout.row_major(tileM, tileN), MutAnyOrigin
     ].stack_allocation()
     src_tile = LayoutTensor[
-        dtype, Layout.row_major(tileM, tileN), MutableAnyOrigin
+        dtype, Layout.row_major(tileM, tileN), MutAnyOrigin
     ].stack_allocation()
 
     for dest_tile_m in range(shape[0] // tileM):

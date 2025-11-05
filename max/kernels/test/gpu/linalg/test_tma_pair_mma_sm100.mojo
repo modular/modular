@@ -65,7 +65,7 @@ fn tma_umma_kernel_pair_cta[
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
     constrained[
@@ -116,7 +116,7 @@ fn tma_umma_kernel_pair_cta[
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](a_smem)
@@ -124,7 +124,7 @@ fn tma_umma_kernel_pair_cta[
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](b_smem)

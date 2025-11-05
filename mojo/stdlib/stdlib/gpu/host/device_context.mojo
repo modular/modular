@@ -4603,9 +4603,9 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         from layout import Layout, LayoutTensor
 
         fn vector_add(
-            a: LayoutTensor[DType.float32, Layout.row_major(1000), MutableAnyOrigin],
-            b: LayoutTensor[DType.float32, Layout.row_major(1000), MutableAnyOrigin],
-            c: LayoutTensor[DType.float32, Layout.row_major(1000), MutableAnyOrigin],
+            a: LayoutTensor[DType.float32, Layout.row_major(1000), MutAnyOrigin],
+            b: LayoutTensor[DType.float32, Layout.row_major(1000), MutAnyOrigin],
+            c: LayoutTensor[DType.float32, Layout.row_major(1000), MutAnyOrigin],
         ):
             # ... kernel implementation ...
             pass
@@ -4831,7 +4831,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
                 var scale_factor = 2.0
 
                 # This kernel captures 'scale_factor' from the enclosing scope
-                fn scale_kernel(data: LayoutTensor[DType.float32, Layout.row_major(100), MutableAnyOrigin]):
+                fn scale_kernel(data: LayoutTensor[DType.float32, Layout.row_major(100), MutAnyOrigin]):
                     # Uses captured scale_factor variable
                     pass
 

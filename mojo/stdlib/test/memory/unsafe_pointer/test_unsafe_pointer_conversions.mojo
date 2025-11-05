@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory.unsafe_pointer import UnsafePointer as UnsafePointerV1
-from memory.unsafe_pointer_v2 import UnsafePointerV2
+from memory.unsafe_pointer import (
+    UnsafePointer as UnsafePointerV1,
+    UnsafePointerV2,
+)
 
 from testing import TestSuite
 
@@ -28,13 +30,11 @@ fn v1_immutable(_p: UnsafePointerV1[Int, mut=False, origin=_]):
     pass
 
 
-fn v1_mutable_any(_p: UnsafePointerV1[Int, mut=True, origin=MutableAnyOrigin]):
+fn v1_mutable_any(_p: UnsafePointerV1[Int, mut=True, origin=MutAnyOrigin]):
     pass
 
 
-fn v1_immutable_any(
-    _p: UnsafePointerV1[Int, mut=False, origin=ImmutableAnyOrigin]
-):
+fn v1_immutable_any(_p: UnsafePointerV1[Int, mut=False, origin=ImmutAnyOrigin]):
     pass
 
 
@@ -97,11 +97,11 @@ fn v2_immutable(_p: UnsafeImmutPointer[Int]):
     pass
 
 
-fn v2_mutable_any(_p: UnsafePointerV2[Int, MutableAnyOrigin]):
+fn v2_mutable_any(_p: UnsafePointerV2[Int, MutAnyOrigin]):
     pass
 
 
-fn v2_immutable_any(_p: UnsafePointerV2[Int, ImmutableAnyOrigin]):
+fn v2_immutable_any(_p: UnsafePointerV2[Int, ImmutAnyOrigin]):
     pass
 
 

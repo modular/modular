@@ -33,7 +33,7 @@ fn gemm_naive[
 ](
     c: NDBuffer[dtype, 2],  # M x N
     a: NDBuffer[dtype, 2],  # M x K
-    b: LayoutTensor[dtype, layout_b, MutableAnyOrigin],  # N x K
+    b: LayoutTensor[dtype, layout_b, MutAnyOrigin],  # N x K
 ):
     var M = c.dim(0)
     var N = b.dim(1)

@@ -63,7 +63,7 @@ fn tma_umma_kernel_ss[
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
     constrained[num_threads == 128 or num_threads == 256]()
@@ -107,14 +107,14 @@ fn tma_umma_kernel_ss[
     alias a_smem_tile_t = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
     alias b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
@@ -319,9 +319,9 @@ fn tma_umma_kernel_ts[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: UInt = 128,
 ](
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
     constrained[num_threads == 128 or num_threads == 256]()
@@ -361,7 +361,7 @@ fn tma_umma_kernel_ts[
     alias b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]

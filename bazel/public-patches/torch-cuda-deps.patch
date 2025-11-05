@@ -1,7 +1,7 @@
-diff --git a/site-packages/torch/__init__.py b/site-packages/torch/__init__.py
+diff --git a/torch/__init__.py b/torch/__init__.py
 index fae804c8160..3d5616cf35a 100644
---- a/site-packages/torch/__init__.py
-+++ b/site-packages/torch/__init__.py
+--- a/torch/__init__.py
++++ b/torch/__init__.py
 @@ -289,7 +289,7 @@ def _get_cuda_dep_paths(path: str, lib_folder: str, lib_name: str) -> list[str]:
      return nvidia_lib_paths + lib_paths
  

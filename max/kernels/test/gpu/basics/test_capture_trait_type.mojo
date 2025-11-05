@@ -27,7 +27,7 @@ trait BaseT:
 @register_passable("trivial")
 struct ImplT(BaseT, ImplicitlyCopyable, Movable):
     alias rank = 1
-    var values: NDBuffer[DType.float32, Self.rank, MutableAnyOrigin]
+    var values: NDBuffer[DType.float32, Self.rank, MutAnyOrigin]
 
     def __init__(out self, buf: NDBuffer[DType.float32, Self.rank]):
         self.values = buf

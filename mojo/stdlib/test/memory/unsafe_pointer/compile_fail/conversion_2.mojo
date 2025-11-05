@@ -18,7 +18,7 @@ from memory import UnsafePointerV2
 
 fn test_cannot_cast_immutable_to_mutable_any[
     T: AnyType
-](p: UnsafePointerV2[T, MutableAnyOrigin, **_]):
+](p: UnsafePointerV2[T, MutAnyOrigin, **_]):
     pass
 
 

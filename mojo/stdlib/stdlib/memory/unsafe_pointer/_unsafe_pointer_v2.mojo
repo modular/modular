@@ -17,9 +17,12 @@ from builtin.simd import _simd_construction_checks
 from memory import memcpy
 from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
-from memory.unsafe_pointer import UnsafePointer, _default_invariant
+from memory.unsafe_pointer import UnsafePointer
 from os import abort
 from python import PythonObject
+
+from ._legacy_unsafe_pointer import _default_invariant
+
 
 # ===----------------------------------------------------------------------=== #
 # alloc
@@ -518,11 +521,11 @@ struct UnsafePointerV2[
         other: UnsafePointerV2[mut=True, type, **_],
         out self: UnsafePointerV2[
             other.type,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = other.address_space,
         ],
     ):
-        """Implicitly casts a mutable pointer to `MutableAnyOrigin`.
+        """Implicitly casts a mutable pointer to `MutAnyOrigin`.
 
         Args:
             other: The mutable pointer to cast from.
@@ -537,11 +540,11 @@ struct UnsafePointerV2[
         other: UnsafePointerV2[**_],
         out self: UnsafePointerV2[
             other.type,
-            ImmutableAnyOrigin,
+            ImmutAnyOrigin,
             address_space = other.address_space,
         ],
     ):
-        """Implicitly casts a pointer to `ImmutableAnyOrigin`.
+        """Implicitly casts a pointer to `ImmutAnyOrigin`.
 
         Args:
             other: The pointer to cast from.
@@ -555,7 +558,7 @@ struct UnsafePointerV2[
     fn __init__(
         other: UnsafePointerV2[mut=False, type, **_],
         out self: UnsafePointerV2[
-            other.type, MutOrigin.cast_from[MutableAnyOrigin], **_
+            other.type, MutOrigin.cast_from[MutAnyOrigin], **_
         ],
     ):
         constrained[
@@ -604,7 +607,7 @@ struct UnsafePointerV2[
         out self: UnsafePointerV2[
             mut=mut,
             type,
-            Origin[mut].cast_from[MutableAnyOrigin],
+            Origin[mut].cast_from[MutAnyOrigin],
             address_space=address_space,
         ],
     ):
@@ -1518,7 +1521,7 @@ struct UnsafePointerV2[
     @doc_private
     fn as_any_origin(
         self: UnsafePointerV2[type, **_],
-        out result: type_of(self)._OriginCastType[False, ImmutableAnyOrigin],
+        out result: type_of(self)._OriginCastType[False, ImmutAnyOrigin],
     ):
         constrained[
             False,
@@ -1533,25 +1536,21 @@ struct UnsafePointerV2[
     @always_inline("builtin")
     fn as_any_origin(
         self: UnsafePointerV2[mut=False, type, **_],
-    ) -> UnsafePointerV2[
-        type,
-        ImmutableAnyOrigin,
-        address_space=address_space,
-    ]:
-        """Casts the origin of an immutable pointer to `ImmutableAnyOrigin`.
+    ) -> UnsafePointerV2[type, ImmutAnyOrigin, address_space=address_space,]:
+        """Casts the origin of an immutable pointer to `ImmutAnyOrigin`.
 
         Returns:
-            A pointer with the origin set to `ImmutableAnyOrigin`.
+            A pointer with the origin set to `ImmutAnyOrigin`.
 
         It is usually preferred to maintain concrete origin values instead of
-        using `ImmutableAnyOrigin`. However, if it is needed, keep in mind that
-        `ImmutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        using `ImmutAnyOrigin`. However, if it is needed, keep in mind that
+        `ImmutAnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the pointer.
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointerV2[
                 type,
-                ImmutableAnyOrigin,
+                ImmutAnyOrigin,
                 address_space=address_space,
             ]._mlir_type,
         ](self.address)
@@ -1559,24 +1558,24 @@ struct UnsafePointerV2[
     @always_inline("builtin")
     fn as_any_origin(
         self: UnsafePointerV2[mut=True, type, **_],
-    ) -> UnsafePointerV2[type, MutableAnyOrigin, address_space=address_space,]:
-        """Casts the origin of a mutable pointer to `MutableAnyOrigin`.
+    ) -> UnsafePointerV2[type, MutAnyOrigin, address_space=address_space,]:
+        """Casts the origin of a mutable pointer to `MutAnyOrigin`.
 
         Returns:
-            A pointer with the origin set to `MutableAnyOrigin`.
+            A pointer with the origin set to `MutAnyOrigin`.
 
         This requires the pointer to already be mutable as casting mutability
         is inherently very unsafe.
 
         It is usually preferred to maintain concrete origin values instead of
-        using `MutableAnyOrigin`. However, if it is needed, keep in mind that
-        `MutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        using `MutAnyOrigin`. However, if it is needed, keep in mind that
+        `MutAnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the pointer.
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointerV2[
                 type,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 address_space=address_space,
             ]._mlir_type,
         ](self.address)

@@ -143,21 +143,21 @@ fn load_AB[
     a_smem: LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     b_smem: LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     a_scales_smem: LayoutTensorIter[
         a_scales_type,
         a_scales_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -262,21 +262,21 @@ fn multi_stage_reg_epilogue[
     c_upper_main_tile: LayoutTensor[
         accum_type,
         accum_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         *_, **_,
     ],
     c_lower_main_tile: LayoutTensor[
         accum_type,
         accum_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         *_, **_,
     ],
     c_iter: LayoutTensorIter[
         c_type,
         c_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
@@ -403,25 +403,25 @@ fn promote_accumulators[
     CLUSTER_SIZE: Int32,
     num_output_warps: UInt = 4,
 ](
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutableAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     a_scales_smem_iter: LayoutTensorIter[
         a_scales_type,
         a_scales_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
     c_upper_main_tile: LayoutTensor[
         accum_type,
         accum_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         *_, **_,
     ],
     c_lower_main_tile: LayoutTensor[
         accum_type,
         accum_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         *_, **_,
     ],
@@ -724,7 +724,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     ],
     cluster_dim: StaticTuple[Int32, 3],
     num_iters: UInt,
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutableAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     problem_shape: StaticTuple[Int32, 3],
 ):
     alias num_output_warps = 4
@@ -824,7 +824,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
@@ -835,7 +835,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
@@ -846,7 +846,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     var c_smem_iter = LayoutTensorIter[
         c_type,
         Layout.row_major(output_tile_shape[0], output_tile_shape[1]),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](c_smem_base, c_smem_size)
@@ -854,7 +854,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     var a_scales_smem = LayoutTensorIter[
         a_scales_type,
         a_scales_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
@@ -1171,14 +1171,14 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             var c_upper_main_tile = LayoutTensor[
                 accum_type,
                 Layout.row_major(reg_info[0], reg_info[1]),
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 address_space = AddressSpace.LOCAL,
             ].stack_allocation()
 
             var c_lower_main_tile = LayoutTensor[
                 accum_type,
                 Layout.row_major(reg_info[0], reg_info[1]),
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 address_space = AddressSpace.LOCAL,
             ].stack_allocation()
 

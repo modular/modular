@@ -21,6 +21,9 @@ common --incompatible_avoid_hardcoded_objc_compilation_flags
 # https://github.com/aspect-build/tools_telemetry
 common --repo_env=ASPECT_TOOLS_TELEMETRY=-all
 
+# Prevent .pyc files from being generated for repository_rules, nice when debugging hermiticity
+common --repo_env=PYTHONDONTWRITEBYTECODE=true
+
 # Retry dependency download flakes
 common --experimental_repository_downloader_retries=5
 

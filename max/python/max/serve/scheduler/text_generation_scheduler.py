@@ -32,10 +32,8 @@ from max.pipelines.lib import PipelineConfig, get_paged_manager
 from max.profiler import Tracer, traced
 
 from .base import SchedulerProgress
-from .batch_constructor import (
-    TextBatchConstructor,
-    TokenGenerationSchedulerConfig,
-)
+from .config import TokenGenerationSchedulerConfig
+from .text_batch_constructor import TextBatchConstructor
 from .utils import SchedulerLogger, get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")

@@ -122,7 +122,7 @@ struct SplitKTileScheduler[
     alias log_cluster_size = log2_floor(cluster_shape[0] * cluster_shape[1])
 
     alias WorkTileType[dtype: DType, layout: Layout] = LayoutTensor[
-        dtype, layout, MutableAnyOrigin
+        dtype, layout, MutAnyOrigin
     ]
 
     @always_inline
@@ -429,7 +429,7 @@ struct SplitKTileScheduler[
         )
 
         var locks_workspace_bytes = (
-            num_output_tiles * UInt(size_of[Int32]()) * dyn_num_consumer
+            num_output_tiles * size_of[Int32]() * dyn_num_consumer
         )
 
         return Int(locks_workspace_bytes)

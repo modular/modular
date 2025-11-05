@@ -47,21 +47,21 @@ fn wgmma_kernel_rs[
     b_smem_layout: Layout,
     transpose_b: Bool = False,
 ](
-    a_gmem: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b_gmem: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    c_gmem: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a_gmem: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b_gmem: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c_gmem: LayoutTensor[c_type, c_layout, MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.bfloat16,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -135,7 +135,7 @@ fn wgmma_kernel_rs[
         wgmma_wait_group_sync()
 
     var th_local_res = (
-        c_gmem.tile[16, WMMA_N](warp_id, 0)
+        c_gmem.tile[16, WMMA_N](Int(warp_id), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id)
     )
@@ -160,21 +160,21 @@ fn wgmma_kernel_ss[
     b_smem_layout: Layout,
     transpose_b: Bool = False,
 ](
-    a_gmem: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b_gmem: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    c_gmem: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a_gmem: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b_gmem: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c_gmem: LayoutTensor[c_type, c_layout, MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.bfloat16,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -222,7 +222,7 @@ fn wgmma_kernel_ss[
     var lane_id = thread_idx.x % 32
 
     var th_local_res = (
-        c_gmem.tile[16, WMMA_N](warp_id, 0)
+        c_gmem.tile[16, WMMA_N](Int(warp_id), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id)
     )

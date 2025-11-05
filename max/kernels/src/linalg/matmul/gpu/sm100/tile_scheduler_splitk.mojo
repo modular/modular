@@ -23,6 +23,7 @@ from gpu import NamedBarrierSemaphore, WARP_SIZE
 from gpu.globals import WARPGROUP_SIZE
 from gpu.tcgen05 import *
 from gpu.sync import named_barrier
+from stdlib.bit import prev_power_of_two
 
 
 @fieldwise_init
@@ -83,6 +84,7 @@ struct TileScheduler[
     alias BM = reduction_tile_shape[0]
     alias MMA_N = reduction_tile_shape[1]
     alias BK = reduction_tile_shape[2]
+    alias ROW_SIZE = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
 
     var locks_ptr: UnsafePointer[Int32]
     var scheduler: Self.UnderlyingScheduler
@@ -168,7 +170,7 @@ struct TileScheduler[
         reduction_workspace: LayoutTensor[accum_type, workspace_layout],
         reduction_tile_idx: UInt32,
         out result: LayoutTensor[
-            accum_type, Layout.row_major(Self.BM, Self.MMA_N), MutableAnyOrigin
+            accum_type, Layout.row_major(Self.BM, Self.MMA_N), MutAnyOrigin
         ],
     ):
         return type_of(result)(
@@ -179,7 +181,68 @@ struct TileScheduler[
     @always_inline
     @staticmethod
     fn _get_max_width_per_stage[max_width: Int]() -> Int:
-        return min(max_width, Self.MMA_N & -Self.MMA_N)
+        return min(max_width, Self.ROW_SIZE & -Self.ROW_SIZE)
+
+    @always_inline
+    @staticmethod
+    fn _get_widths_per_stage[
+        max_width: Int
+    ]() -> Tuple[InlineArray[Int, 4], Int]:
+        """helper functions to decompose MMA_N into widths that are powers of two
+        """
+        var arr = InlineArray[Int, 4](uninitialized=True)
+        var current_width = Self.ROW_SIZE
+        var first_width: Int
+        var second_width: Int
+
+        var i = 0
+        while current_width > 0:
+            first_width = min(max_width, prev_power_of_two(current_width))
+            second_width = current_width - first_width
+            arr[i] = first_width
+            i += 1
+            current_width = second_width
+
+        return (arr, i)
+
+    @staticmethod
+    fn _get_new_layout[
+        layout: Layout,
+        width: Int,
+    ]() -> Layout:
+        alias new_shape = IntTuple(layout.shape[0].value(), width)
+        return Layout(new_shape, layout.stride)
+
+    @always_inline
+    @staticmethod
+    fn _to_next_subtile[
+        accum_type: DType,
+        layout: Layout,
+        /,
+        *,
+        widths: InlineArray[Int, 4],
+        curr_stage: Int,
+    ](
+        tensor: LayoutTensor[accum_type, layout, MutAnyOrigin, **_],
+        out result: LayoutTensor[
+            accum_type,
+            Self._get_new_layout[layout, widths[curr_stage]](),
+            MutAnyOrigin,
+            address_space = type_of(tensor).address_space,
+        ],
+    ):
+        @parameter
+        fn _get_current_width(
+            widths: InlineArray[Int, 4], curr_stage: Int
+        ) -> Int:
+            var width = 0
+            for i in range(curr_stage):
+                width += widths[i]
+            return width
+
+        alias current_width = _get_current_width(widths, curr_stage)
+
+        return type_of(result)(tensor.ptr + current_width)
 
     @always_inline
     fn store_to_workspace[
@@ -198,19 +261,22 @@ struct TileScheduler[
     ):
         alias data_paths = 16  # same as lanes
         alias bits = 256
-        alias row_size = Self.MMA_N
         # only load from TMEM when not using split-k
-        alias total_rep = row_size // 8
+        alias total_rep = Self.ROW_SIZE // 8
 
         # 128 is a magic number that is provided by the NVCC backend.
         # register size that is greater than that will not compile.
-        alias width_per_stage = Self._get_max_width_per_stage[128]()
-        alias stage_rep = width_per_stage // 8
-        alias fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
-        alias stage_frag_size = stage_rep * fragment_size
+        alias widths_per_stage = Self._get_widths_per_stage[128]()
+        alias widths = widths_per_stage[0]
+        alias num_widths = widths_per_stage[1]
 
-        var upper_frag = SIMD[accum_type, stage_frag_size]()
-        var lower_frag = SIMD[accum_type, stage_frag_size]()
+        # alias stage_rep = width_per_stage // 8
+        alias fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
+        # alias stage_frag_size = stage_rep * fragment_size
+
+        # first width is the largest width that is a power of two
+        var upper_frag = SIMD[accum_type, widths[0]]()
+        var lower_frag = SIMD[accum_type, widths[0]]()
 
         var local_warp_id = epilogue_thread_idx // UInt(WARP_SIZE)
 
@@ -218,47 +284,58 @@ struct TileScheduler[
         var workspace_tile = self._get_workspace_tile(
             reduction_workspace, reduction_tile_idx
         )
-        var reduction_frag = workspace_tile.tile[Self.BM // 4, Self.MMA_N](
-            Int(local_warp_id), 0
+
+        alias REDUCTION_BM = Self.BM // 4 if Self.BM == 128 else Self.BM // 2
+        alias REDUCTION_BN = Self.MMA_N if Self.BM == 128 else Self.MMA_N // 2
+        var warp_id_x = local_warp_id if Self.BM == 128 else local_warp_id % 2
+        var warp_id_y = 0 if Self.BM == 128 else local_warp_id // 2
+
+        var reduction_frag = workspace_tile.tile[REDUCTION_BM, REDUCTION_BN](
+            Int(warp_id_x), Int(warp_id_y)
         )
-        var reduction_upper_iter = reduction_frag.tiled_iterator[
-            16, width_per_stage, axis=1
-        ](0, 0)
-        var reduction_lower_iter = reduction_frag.tiled_iterator[
-            16, width_per_stage, axis=1
-        ](1, 0)
+        var reduction_upper = reduction_frag.tile[16, REDUCTION_BN](0, 0)
+        var reduction_lower = reduction_frag.tile[16, REDUCTION_BN](1, 0)
+        var stage_tmem_addr = tmem_addr
 
         @parameter
-        for stage in range(row_size // width_per_stage):
-            var stage_tmem_addr = tmem_addr + (stage * width_per_stage)
+        for stage in range(num_widths):
+            alias stage_width = widths[stage]
+            alias stage_rep = stage_width // 8
+            alias stage_frag_size = stage_rep * fragment_size
+            var stage_frag_upper = upper_frag.slice[stage_frag_size]()
+            var stage_frag_lower = lower_frag.slice[stage_frag_size]()
 
-            upper_frag = tcgen05_ld[
+            stage_frag_upper = tcgen05_ld[
                 datapaths=data_paths,
                 bits=bits,
                 repeat=stage_rep,
                 dtype=accum_type,
                 pack=False,
-                width = upper_frag.size,
+                width=stage_frag_size,
             ](stage_tmem_addr)
 
-            lower_frag = tcgen05_ld[
+            stage_frag_lower = tcgen05_ld[
                 datapaths=data_paths,
                 bits=bits,
                 repeat=stage_rep,
                 dtype=accum_type,
                 pack=False,
-                width = lower_frag.size,
+                width=stage_frag_size,
             ](stage_tmem_addr + (16 << 16))
             tcgen05_load_wait()
 
-            var reduction_upper = reduction_upper_iter.next(stage)[]
-            var reduction_lower = reduction_lower_iter.next(stage)[]
+            var reduction_upper_subtile = Self._to_next_subtile[
+                widths=widths, curr_stage=stage
+            ](reduction_upper)
+            var reduction_lower_subtile = Self._to_next_subtile[
+                widths=widths, curr_stage=stage
+            ](reduction_lower)
 
-            var reduction_frag_upper = reduction_upper.vectorize[
+            var reduction_frag_upper = reduction_upper_subtile.vectorize[
                 1, 2
             ]().distribute[Layout.row_major(8, 4)](lane_id())
 
-            var reduction_frag_lower = reduction_lower.vectorize[
+            var reduction_frag_lower = reduction_lower_subtile.vectorize[
                 1, 2
             ]().distribute[Layout.row_major(8, 4)](lane_id())
 
@@ -274,12 +351,12 @@ struct TileScheduler[
 
                     var v2_upper = rebind[reduction_frag_upper.element_type](
                         SIMD[accum_type, 2](
-                            upper_frag[2 * i], upper_frag[2 * i + 1]
+                            stage_frag_upper[2 * i], stage_frag_upper[2 * i + 1]
                         )
                     )
                     var v2_lower = rebind[reduction_frag_lower.element_type](
                         SIMD[accum_type, 2](
-                            lower_frag[2 * i], lower_frag[2 * i + 1]
+                            stage_frag_lower[2 * i], stage_frag_lower[2 * i + 1]
                         )
                     )
 
@@ -293,10 +370,10 @@ struct TileScheduler[
                         reduction_frag_upper[m, n] = v2_upper
                         reduction_frag_lower[m, n] = v2_lower
                     else:
-                        upper_frag[2 * i] = v2_upper[0]
-                        upper_frag[2 * i + 1] = v2_upper[1]
-                        lower_frag[2 * i] = v2_lower[0]
-                        lower_frag[2 * i + 1] = v2_lower[1]
+                        stage_frag_upper[2 * i] = v2_upper[0]
+                        stage_frag_upper[2 * i + 1] = v2_upper[1]
+                        stage_frag_lower[2 * i] = v2_lower[0]
+                        stage_frag_lower[2 * i + 1] = v2_lower[1]
 
             # we can't hold all accumulators in registers, so we need to store to TMEM
             @parameter
@@ -306,14 +383,16 @@ struct TileScheduler[
                     bits=bits,
                     repeat=stage_rep,
                     pack=False,
-                ](stage_tmem_addr, upper_frag)
+                ](stage_tmem_addr, stage_frag_upper)
                 tcgen05_st[
                     datapaths=data_paths,
                     bits=bits,
                     repeat=stage_rep,
                     pack=False,
-                ](stage_tmem_addr + (16 << 16), lower_frag)
+                ](stage_tmem_addr + (16 << 16), stage_frag_lower)
                 tcgen05_store_wait()
+
+            stage_tmem_addr += stage_width
 
     @always_inline
     fn reduction[

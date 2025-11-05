@@ -230,7 +230,7 @@ trait WriteableMMAOperandDescriptor:
         src: LayoutTensor[
             src_type,
             src_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
             element_layout=src_element_layout,
         ],
@@ -258,7 +258,7 @@ fn local_tensor_type[
     out dummy_arg: LayoutTensor[
         dtype,
         layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=element_layout,
     ]
@@ -293,7 +293,7 @@ trait AccumulatorTile(ImplicitlyCopyable, Movable):
         out res: LayoutTensor[
             Self.dtype,
             Self.rows_of_frags_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ],
     ):
@@ -486,7 +486,7 @@ struct TMemAccumulator[
         out res: LayoutTensor[
             Self.dtype,
             Self.rows_of_frags_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ],
     ):
@@ -637,7 +637,7 @@ struct TMemOperand[
         src: LayoutTensor[
             src_type,
             src_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
             element_layout=src_element_layout,
         ],
@@ -675,7 +675,7 @@ struct TMemOperand[
         frags = LayoutTensor[
             src_type,
             Layout(IntTuple(num_m_mmas * num_n_mmas), IntTuple(Self.frag_size)),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
             element_layout = Layout.row_major(Self.frag_size),
         ](src.ptr)
@@ -712,7 +712,7 @@ struct TMemOperand[
         dst: LayoutTensor[
             dst_type,
             dst_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
             element_layout=dst_element_layout,
         ],
@@ -1269,14 +1269,14 @@ fn mha_sm100_dispatch[
     scale: Float32,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ],
 ) raises:
     alias decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
@@ -1493,7 +1493,7 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
     valid_length: DeviceBuffer[DType.uint32],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ],
     sink_weights: SinkType,
@@ -2151,7 +2151,7 @@ fn _mha_sm100[
     alias accum_simd_width = simd_width_of[accum_type]()
     alias row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
     # Account for group query.
-    alias kv_num_heads = num_heads // group
+    alias kv_num_heads = num_heads // UInt(group)
 
     # var lane_predicate = elect_one_sync() # not needed with async_copy
 
@@ -2499,26 +2499,26 @@ fn _mha_sm100[
         rowmax = LayoutTensor[
             UMMA0Type.accum_t,
             Layout.row_major(num_rows_per_warp),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
         rowsum = LayoutTensor[
             UMMA0Type.accum_t,
             Layout.row_major(num_rows_per_warp),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
         alias VecPType = LayoutTensor[
             accum_type,
             p_vec_output_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
             element_layout=element_layout,
         ]
         alias VecOType = LayoutTensor[
             accum_type,
             o_vec_output_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
             element_layout=element_layout,
         ]

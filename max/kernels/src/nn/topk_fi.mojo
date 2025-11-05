@@ -107,9 +107,9 @@ fn TopKMaskLogitsKernel[
     logits_layout: Layout,
     masked_logits_layout: Layout,
 ](
-    logits: LayoutTensor[dtype, logits_layout, MutableAnyOrigin],
+    logits: LayoutTensor[dtype, logits_layout, MutAnyOrigin],
     masked_logits: LayoutTensor[
-        mut=True, dtype, masked_logits_layout, MutableAnyOrigin
+        mut=True, dtype, masked_logits_layout, MutAnyOrigin
     ],
     top_k_arr: UnsafePointer[Scalar[out_idx_type]],
     top_k_val: Int,
@@ -123,11 +123,11 @@ fn TopKMaskLogitsKernel[
     var masked_logits_ptr = masked_logits.ptr + bx * UInt(d)
 
     alias row_layout = Layout.row_major(1, UNKNOWN_VALUE)
-    var logits_row = LayoutTensor[dtype, row_layout, MutableAnyOrigin](
+    var logits_row = LayoutTensor[dtype, row_layout, MutAnyOrigin](
         logits_ptr, RuntimeLayout[row_layout]({1, d}, {d, 1})
     )
     var masked_logits_row = LayoutTensor[
-        mut=True, dtype, row_layout, MutableAnyOrigin
+        mut=True, dtype, row_layout, MutAnyOrigin
     ](masked_logits_ptr, RuntimeLayout[row_layout]({1, d}, {d, 1}))
 
     var k = top_k_val
@@ -257,7 +257,7 @@ fn topk_mask_logits[
     top_k_val: Int,
     top_k_arr: OptionalReg[
         LayoutTensor[
-            out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
 ) raises:

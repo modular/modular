@@ -259,7 +259,7 @@ fn apple_gemv[
     var K = a.dim[1]() if b_packed else b.dim[0]()
     var N = b.dim[0]() if transpose_b or b_packed else b.dim[1]()
 
-    var transposed_b = NDBuffer[b.type, 2, MutableAnyOrigin]()
+    var transposed_b = NDBuffer[b.type, 2, MutAnyOrigin]()
     var transposed_b_ptr = UnsafePointer[Scalar[b.type]]()
 
     # If both b_packed and transpose_b are False, we need to transpose B at

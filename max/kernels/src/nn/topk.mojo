@@ -140,9 +140,7 @@ fn top_k[
     sorted: Bool,
     ctx: DeviceContextPtr,
     k: OptionalReg[
-        LayoutTensor[
-            DType.int64, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
-        ]
+        LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     """
@@ -227,9 +225,7 @@ fn _top_k_cpu[
     parallelism_grain_size: Int,  # impl detail, exposed for testing
     sorted: Bool,
     k: OptionalReg[
-        LayoutTensor[
-            DType.int64, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
-        ]
+        LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ):
     constrained[
@@ -367,23 +363,21 @@ fn fused_token_sampling_cpu[
     input: LayoutTensor[dtype, **_],
     out_idxs: LayoutTensor[mut=True, out_idx_type, **_],
     k: OptionalReg[
-        LayoutTensor[
-            DType.int64, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
-        ]
+        LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
     temperature: OptionalReg[
         LayoutTensor[
-            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     top_p: OptionalReg[
         LayoutTensor[
-            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     seed: OptionalReg[
         LayoutTensor[
-            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
 ) raises:
@@ -456,23 +450,21 @@ fn _top_k_sampling[
     out_vals: LayoutTensor[mut=True, dtype, **_],
     out_idxs: LayoutTensor[mut=True, DType.int64, **_],
     k: OptionalReg[
-        LayoutTensor[
-            DType.int64, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
-        ]
+        LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
     temperature: OptionalReg[
         LayoutTensor[
-            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     top_p: OptionalReg[
         LayoutTensor[
-            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     seed: OptionalReg[
         LayoutTensor[
-            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
 ) raises:
@@ -1260,25 +1252,23 @@ fn _topk_gpu[
     out_vals: LayoutTensor[mut=True, dtype, **_],
     out_idxs: LayoutTensor[mut=True, out_idx_type, **_],
     k: OptionalReg[
-        LayoutTensor[
-            DType.int64, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
-        ]
+        LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
     temperature: OptionalReg[
         LayoutTensor[
-            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     block_size: Int = 256,
     num_blocks_per_input: OptionalReg[Int] = None,
     top_p: OptionalReg[
         LayoutTensor[
-            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     seed: OptionalReg[
         LayoutTensor[
-            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
 ) raises:
@@ -1512,23 +1502,21 @@ fn topk_gpu[
     block_size: OptionalReg[Int] = None,
     num_blocks_per_input: OptionalReg[Int] = None,
     k: OptionalReg[
-        LayoutTensor[
-            DType.int64, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
-        ]
+        LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
     temperature: OptionalReg[
         LayoutTensor[
-            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     top_p: OptionalReg[
         LayoutTensor[
-            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     seed: OptionalReg[
         LayoutTensor[
-            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
 ) raises:
@@ -1562,7 +1550,7 @@ fn topk_gpu[
             Number of blocks per input (default computed from input size and block size).
             This is the equivalent of "BLOCKS_PER_BEAM" in TRT-LLM kernel allowing for much larger
             batch sizes through packing several elements per thread in the first stage.
-        k: Optional NDBuffer[DType.int64, 1, MutableAnyOrigin]
+        k: Optional NDBuffer[DType.int64, 1, MutAnyOrigin]
             Device buffer of top elements to keep for each batch element.
         temperature: The temperature based scaling.
         top_p: Only use the tokens whose cumulative probability exceeds this threshold.
@@ -1747,23 +1735,21 @@ fn fused_token_sampling_gpu[
     block_size: OptionalReg[Int] = None,
     num_blocks_per_input: OptionalReg[Int] = None,
     k: OptionalReg[
-        LayoutTensor[
-            DType.int64, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
-        ]
+        LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
     temperature: OptionalReg[
         LayoutTensor[
-            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     top_p: OptionalReg[
         LayoutTensor[
-            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     seed: OptionalReg[
         LayoutTensor[
-            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
 ) raises:
@@ -1829,8 +1815,8 @@ fn apply_gumbel_noise_kernel[
     num_sms: Int,
     num_threads: Int,
 ](
-    output: LayoutTensor[dtype, input_layout, MutableAnyOrigin],
-    input: LayoutTensor[dtype, input_layout, MutableAnyOrigin],
+    output: LayoutTensor[dtype, input_layout, MutAnyOrigin],
+    input: LayoutTensor[dtype, input_layout, MutAnyOrigin],
     temperature: UnsafePointer[Float32],
     seed: UnsafePointer[UInt64],
 ):
@@ -1935,12 +1921,12 @@ fn gumbel_sampling_gpu[
     out_idxs: LayoutTensor[mut=True, out_idx_type, **_],
     temperature: OptionalReg[
         LayoutTensor[
-            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     seed: OptionalReg[
         LayoutTensor[
-            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
 ) raises:
@@ -1961,7 +1947,7 @@ fn gumbel_sampling_gpu[
 
     # create a buffer to hold the Gumbel noise applied input
     var noised_input_buf = ctx.enqueue_create_buffer[dtype](input.size())
-    var noised_input = LayoutTensor[dtype, input_layout, MutableAnyOrigin](
+    var noised_input = LayoutTensor[dtype, input_layout, MutAnyOrigin](
         noised_input_buf, input.runtime_layout
     )
 

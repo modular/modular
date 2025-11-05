@@ -101,7 +101,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         var a_local = NDBuffer[
             a.type,
             1,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             4 * kernel_rows,
             address_space = a.address_space,
         ].stack_allocation()

@@ -191,7 +191,7 @@ fn scatter_nd[
     # e.g., for a shape of 2, 3, 4, 5
     #       input_strides --> [3*4*5, 4*5, 5, 1]
     var input_strides = NDBuffer[
-        DType.int64, 1, MutableAnyOrigin, DimList(data_rank)
+        DType.int64, 1, MutAnyOrigin, DimList(data_rank)
     ]().stack_allocation()
     for i in range(data_rank):
         var total_stride = 1
@@ -258,7 +258,7 @@ fn scatter_nd[
 fn linear_fill[
     dtype: DType
 ](
-    buf: NDBuffer[dtype, _, MutableAnyOrigin, *_],
+    buf: NDBuffer[dtype, _, MutAnyOrigin, *_],
     elems: VariadicList[Scalar[dtype]],
 ):
     debug_assert(
@@ -280,20 +280,18 @@ fn test_case[
     updates_vals: VariadicList[Scalar[dtype]],
     output_ref_vals: VariadicList[Scalar[dtype]],
 ) raises:
-    var data = NDBuffer[
-        dtype, 3, MutableAnyOrigin, input_shape
-    ].stack_allocation()
+    var data = NDBuffer[dtype, 3, MutAnyOrigin, input_shape].stack_allocation()
     linear_fill(data, data_vals)
     var indices = NDBuffer[
-        DType.int64, 2, MutableAnyOrigin, indices_shape
+        DType.int64, 2, MutAnyOrigin, indices_shape
     ].stack_allocation()
     linear_fill(indices, indices_vals)
     var updates = NDBuffer[
-        dtype, 3, MutableAnyOrigin, updates_shape
+        dtype, 3, MutAnyOrigin, updates_shape
     ].stack_allocation()
     linear_fill(updates, updates_vals)
     var output = NDBuffer[
-        dtype, 3, MutableAnyOrigin, input_shape
+        dtype, 3, MutAnyOrigin, input_shape
     ].stack_allocation()
 
     # Note: This is for the specific set of examples
@@ -306,7 +304,7 @@ fn test_case[
     _ = updates
 
     var output_ref = NDBuffer[
-        dtype, 3, MutableAnyOrigin, input_shape
+        dtype, 3, MutAnyOrigin, input_shape
     ].stack_allocation()
     linear_fill(output_ref, output_ref_vals)
 
