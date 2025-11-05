@@ -44,8 +44,10 @@ fn mlirMagicTest(
         `#kgen.param.expr<max, `, a, `, `, (`42`), `> : index`
     ]
 
-    # CHECK: %index21 = kgen.param.constant = <21>
-    # CHECK: lit.return %index21 : index
+    # CHECK: kgen.param.constant = <sugar_alias(*"new_lower`7", 42)>
+    # CHECK-NEXT: kgen.param.constant = <sugar_alias(*"1`0x", 1)>
+    # CHECK-NEXT: index.shru
+    # CHECK-NEXT: lit.return
     return __mlir_op.`index.shru`(new_lower, `1`)
 
 
@@ -116,8 +118,8 @@ struct MyPointer[elType: __mlir_type.`!kgen.type`]:
 fn structured_for_loop() -> __mlir_type.index:
     # CHECK: %0 = hlcf.loop (%arg0 = %index0 : index) -> index {
     __mlir_region loop_body(i: __mlir_type.index):
-        # CHECK-NEXT: %index1 = kgen.param.constant = <1>
-        # CHECK-NEXT: %1 = index.add %arg0, %index1
+        # CHECK-NEXT: %index = kgen.param.constant = <{{.*}}1{{.*}}>
+        # CHECK-NEXT: %1 = index.add %arg0, %index
         # CHECK-NEXT: hlcf.continue %1 : index
         __mlir_op.`hlcf.continue`(__mlir_op.`index.add`(i, `1`))
 

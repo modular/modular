@@ -50,13 +50,13 @@ fn star_and_slash_2(a: Index, /, b: Index, *, c: Index):
 
 
 # CHECK-LABEL: lit.fn @"default_args
-# CHECK-SAME: (%a: index, %b: index = 8, *, %c: index, %d: index = 9)
+# CHECK-SAME: (%a: index, %b: index = sugar_alias(*"8`0x17", 8), *, %c: index, %d: index = sugar_alias(*"9`0x18", 9))
 fn default_args(a: Index, b: Index = `8`, *, c: Index, d: Index = `9`):
     pass
 
 
 # CHECK-LABEL: lit.fn @"variadic_and_kw_only
-# CHECK-SAME: (%a: index, %b: index, %args: !kgen.variadic<index> pos_vararg, *, %c: index, %d: index = 9)
+# CHECK-SAME: (%a: index, %b: index, %args: !kgen.variadic<index> pos_vararg, *, %c: index, %d: index = sugar_alias(*"9`0x18", 9))
 fn variadic_and_kw_only(
     a: Index, b: Index, *args: Index, c: Index, d: Index = `9`
 ):

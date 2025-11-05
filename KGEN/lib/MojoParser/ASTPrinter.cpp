@@ -913,10 +913,12 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     // Sugared parameters print as their sugar when always_inline("builtin")
     // even for mangled names because the arguments should be unique.  We don't
     // sugar other things though because the identifiers may not be fully
-    // qualified. (TODO: it would be great to do this!)
-    if (diagShared || sugar.getKind() == SugarKind::AlwaysInlineBuiltin)
-      return printParam(os, sugar.getSugared(), diagShared);
-    return printParam(os, sugar.getOriginal(), diagShared);
+    // qualified.
+    if (diagShared)
+      param = sugar.getSugared();
+    else
+      param = sugar.getOriginal();
+    return printParam(os, param, diagShared);
   }
 
   // Handle other KGEN parameters that it knows about with an ugly fallback.
@@ -1008,9 +1010,13 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
     return printParam(os, param, diagShared);
 
   if (auto sugar = dyn_cast<SugarAttr>(param)) {
-    param = sugar.getSugared();
-    // Remove implicit Origin ctor calls to reduce noise since they're implicit.
-    removeImplicitCtorCall(param, diagShared);
+    if (diagShared) {
+      param = sugar.getSugared();
+      // Remove implicit Origin ctor calls to reduce noise since they're
+      // implicit.
+      removeImplicitCtorCall(param, diagShared);
+    } else
+      param = sugar.getOriginal();
     return printOriginParam(os, param, diagShared);
   }
 

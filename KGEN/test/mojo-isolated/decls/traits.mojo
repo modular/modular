@@ -774,13 +774,13 @@ struct KeysContainer[end: Index](KeysBuilder):
 
 # CHECK-LABEL: lit.fn @"param_trait
 fn param_trait[T: SimpleTrait, value: T]():
-    # CHECK-NEXT: apply({{.*}} #kgen.get_witness<:!SimpleTrait T, "traits::SimpleTrait", "method{{.*}}">{{.*}} store_to_mem(value), 1)
+    # CHECK-NEXT: apply({{.*}} #kgen.get_witness<:!SimpleTrait T, "traits::SimpleTrait", "method{{.*}}">{{.*}} store_to_mem(value), {{.*}}1{{.*}})
     alias param = value.method(`1`)
     # CHECK-NEXT: [[VAR:%.*]] = lit.var.decl
     # CHECK-NEXT: [[VALUE:%.*]] = kgen.param.materialize
     # CHECK-NEXT: store [[VALUE]], [[VAR]]
     # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[VAR]]
-    # CHECK: call[{{.*}}#kgen.get_witness<:!SimpleTrait T, "traits::SimpleTrait", "method{{.*}}">{{.*}}([[IMM]], %index2)
+    # CHECK: call[{{.*}}#kgen.get_witness<:!SimpleTrait T, "traits::SimpleTrait", "method{{.*}}">{{.*}}([[IMM]], %index)
     value.method(`2`)
 
 

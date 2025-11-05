@@ -16,7 +16,7 @@ fn pass_param_closure():
     fn closure(x: Thing[`2`]) escaping:
         pass
 
-    # CHECK: rebind %{{.*}} : !lit.ref<!None, mut {{.*}}> to !lit.ref<{{.*}}<2>
+    # CHECK: rebind %{{.*}} : !lit.ref<!None, mut {{.*}}> to !lit.ref<{{.*}}<sugar_alias(*"2`0x11", 2)>
     take_param_closure[`2`](closure)
 
 
