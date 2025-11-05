@@ -20,7 +20,14 @@ from collections.abc import Iterable, Sequence
 from max.driver import Tensor
 from max.dtype import DType
 from max.experimental.functional import matmul
-from max.graph import BufferValue, DeviceRef, ShardingStrategy, TensorValue, ops
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorValue,
+    Weight,
+    ops,
+)
 from max.graph.ops import avg_pool2d
 from max.nn import (
     MLP,
@@ -296,19 +303,21 @@ class Gemma3LanguageModel(Module):
         return (last_logits,)
 
 
-# ⚠️ from HF, nearly there
+# ✅ working, based on HF
 class Gemma3MultiModalProjector(Module):
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
         super().__init__()
 
         self.devices = config.devices
 
-        self.mm_input_projection_weight = Tensor.zeros(
+        self.mm_input_projection_weight = Weight(
+            "mm_input_projection_weight",
+            dtype=config.dtype,
             shape=(
                 config.vision_config.hidden_size,
                 config.text_config.hidden_size,
             ),
-            dtype=config.dtype,
+            device=self.devices[0],
         )
 
         self.mm_soft_emb_norm = Gemma3RMSNorm(
@@ -319,17 +328,25 @@ class Gemma3MultiModalProjector(Module):
 
         self.patches_per_image = int(
             config.vision_config.image_size // config.vision_config.patch_size
-        ) # 64
-        
-        self.tokens_per_side = int(config.mm_tokens_per_image**0.5) # 256 ** 05 = 16
-        self.kernel_size = self.patches_per_image // self.tokens_per_side # 64 / 16 = 4
+        )  # 64
+
+        self.tokens_per_side = int(
+            config.mm_tokens_per_image**0.5
+        )  # 256 ** 05 = 16
+        self.kernel_size = (
+            self.patches_per_image // self.tokens_per_side
+        )  # 64 / 16 = 4
 
     # TODO | are these in the right order?  pool -> mm_soft_emb_norm??
     # TODO | i think should be other way based on the vision tower
     def __call__(self, vision_outputs: Tensor):
-        batch_size, _, seq_length = vision_outputs.shape # TensorValue shape: ['batch_size', 4096, 1152]
+        batch_size, _, seq_length = (
+            vision_outputs.shape
+        )  # TensorValue shape: ['batch_size', 4096, 1152]
 
-        reshaped_vision_outputs = vision_outputs.transpose(1, 2) # TensorValue shape: ['batch_size', 1152, 4096]
+        reshaped_vision_outputs = vision_outputs.transpose(
+            1, 2
+        )  # TensorValue shape: ['batch_size', 1152, 4096]
 
         # TODO not sure if shape is correct.
         reshaped_vision_outputs = reshaped_vision_outputs.reshape(
@@ -339,27 +356,25 @@ class Gemma3MultiModalProjector(Module):
                 self.patches_per_image,
                 seq_length,
             )
-        ) # TensorValue shape: ['batch_size', 64, 64, 1152]
+        )  # TensorValue shape: ['batch_size', 64, 64, 1152]
 
-        normed_vision_outputs = self.mm_soft_emb_norm(reshaped_vision_outputs) # TensorValue shape: ['batch_size', 64, 64, 1152]
+        normed_vision_outputs = self.mm_soft_emb_norm(
+            reshaped_vision_outputs
+        )  # TensorValue shape: ['batch_size', 64, 64, 1152]
 
         # [N, H, W, C]
         pooled_vision_outputs = avg_pool2d(
             input=normed_vision_outputs,
-            kernel_size=(self.kernel_size,), # (4,)
-            stride=self.kernel_size,         # 4
-            dilation=self.kernel_size
+            kernel_size=(self.kernel_size, self.kernel_size),  # (4,4)
+            stride=self.kernel_size,  # 4
         )
         pooled_vision_outputs = pooled_vision_outputs.flatten(2)
-        logger.info(f"6. PVO: {pooled_vision_outputs} - {type(pooled_vision_outputs)}")
         pooled_vision_outputs = vision_outputs.transpose(1, 2)
-        logger.info(f"7. PVO: {pooled_vision_outputs} - {type(pooled_vision_outputs)}")
 
         projected_vision_outputs = matmul(
             normed_vision_outputs, self.mm_input_projection_weight
-        )
-        logger.info(f"8. PVO: {pooled_vision_outputs} - {type(pooled_vision_outputs)}")
-        return projected_vision_outputs.type_as(vision_outputs)
+        )  # ['batch_size', 1152, 4096]
+        return projected_vision_outputs  # .type_as(vision_outputs)
 
 
 # ⚠️ borrowed from InternVL/Idefics
@@ -392,7 +407,7 @@ class Gemma3VisionEmbeddings(Module):
         # )
         # TODO above is internvl, below is idefics
         self.patch_embedding = Conv2d(
-            in_channels=self.num_channels,  # 3?
+            in_channels=self.num_channels,
             out_channels=self.embed_dim,  # 1152
             kernel_size=self.patch_size,  # 14
             stride=self.patch_size,  # 14
@@ -471,9 +486,7 @@ class Gemma3VisionEmbeddings(Module):
 
         return shards
 
-    def __call__(
-        self, pixel_values: TensorValue, patch_attention_mask=None
-    ) -> TensorValue:
+    def __call__(self, pixel_values: TensorValue) -> TensorValue:
         """Computes embeddings for input pixel values.
 
         Args:
@@ -482,7 +495,9 @@ class Gemma3VisionEmbeddings(Module):
         Returns:
             Embeddings tensor of shape (batch_size, num_positions, embed_dim).
         """
-        logger.info(f"*** Gemma3VisionEmbeddings PV shape: {pixel_values.shape}")
+        logger.info(
+            f"*** Gemma3VisionEmbeddings PV shape: {pixel_values.shape}"
+        )
         batch_size = pixel_values.shape[0]
         max_im_h = pixel_values.shape[2]
         max_im_w = pixel_values.shape[3]
@@ -518,8 +533,8 @@ class Gemma3VisionEmbeddings(Module):
             stop=self.num_patches,
             step=1,
             out_dim=total_patches,
-            device=DeviceRef.GPU(),
-            dtype=DType.int32,
+            device=self.config.devices[0],
+            dtype=self.config.dtype,
         )  # [total_patches]
         position_ids = ops.unsqueeze(position_ids, 0)  # [1, total_patches]
         position_ids = ops.tile(
@@ -537,23 +552,13 @@ class Gemma3VisionEmbeddings(Module):
         return embeddings
 
 
-# ✅ from HF
+# ✅ working, based on HF
 class Gemma3VisionMLP(Module):
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
         super().__init__()
         self.hidden_size = config.vision_config.hidden_size
         self.intermediate_size = config.vision_config.intermediate_size
 
-        # TODO | required this to prevent "missing weights" errors
-        # TODO | but can we instead use `ops.gelu()`?
-        # self.gelu_tanh = Linear(
-        #     self.hidden_size,
-        #     self.intermediate_size,
-        #     dtype=config.dtype,
-        #     device=config.devices[0],
-        #     has_bias=False,
-        # )
-        
         self.fc1 = Linear(
             self.hidden_size,
             self.intermediate_size,
@@ -561,7 +566,7 @@ class Gemma3VisionMLP(Module):
             device=config.devices[0],
             has_bias=False,
         )
-        
+
         self.fc2 = Linear(
             self.intermediate_size,
             self.hidden_size,
@@ -570,17 +575,18 @@ class Gemma3VisionMLP(Module):
             has_bias=False,
         )
 
-    def __call__(self, x):
+    def __call__(self, x: TensorValue):
         x = self.fc1(x)
         x = ops.gelu(x)
-        # x = self.gelu_tanh(x)
         x = self.fc2(x)
         return x
 
 
 # ✅ based on HF
 class Gemma3VisionEncoderLayer(Module):
-    def __init__(self, config: Gemma3ForConditionalGenerationConfig, layer_idx:int):
+    def __init__(
+        self, config: Gemma3ForConditionalGenerationConfig, layer_idx: int
+    ):
         vision_config = config.vision_config
 
         self.embed_dim = vision_config.hidden_size
@@ -638,7 +644,9 @@ class Gemma3VisionEncoder(Module):
         self.layers = LayerList(
             [
                 Gemma3VisionEncoderLayer(config, layer_idx)
-                for layer_idx, _ in enumerate(range(config.vision_config.num_hidden_layers))
+                for layer_idx, _ in enumerate(
+                    range(config.vision_config.num_hidden_layers)
+                )
             ]
         )
 

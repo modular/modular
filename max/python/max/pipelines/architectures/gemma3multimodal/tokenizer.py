@@ -13,11 +13,9 @@
 
 from __future__ import annotations
 
-import functools
 import io
 import json
 import logging
-from collections.abc import Sequence
 
 # image config
 #  config for processing and mem estimation that are specific to the model
@@ -51,7 +49,6 @@ from max.support.image import find_contiguous_ranges
 from PIL import Image
 from PIL.Image import Image as ImageType
 from transformers import (
-    AutoConfig,
     AutoProcessor,
     AutoTokenizer,
 )
@@ -62,7 +59,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("max-pipelines")
 
 
-# TODO ✅ this is a cut down tokenizer
+# TODO ⚠️ this is a cut down tokenizer
 class Gemma3MMSimpleTokenizer(TextAndVisionTokenizer):
     def __init__(
         self,
