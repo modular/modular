@@ -75,8 +75,13 @@ class _TPPagedKVCacheManager:
     page_size: int
     """Number of tokens stored per block."""
 
-    _total_num_pages: int
-    """Total number of blocks allocated per device."""
+    total_num_pages: int
+    """Total number of logical pages (complete token slots) available.
+    
+    In tensor parallelism, each page's KV data is sharded across all devices,
+    but this count represents complete logical pages (where all shards together
+    form one complete page of `page_size` tokens).
+    """
 
     device_tensors: list[Tensor]
     """List of tensors holding the KV cache blocks, one per device."""
@@ -113,7 +118,8 @@ class _TPPagedKVCacheManager:
         page_size: int = 128,
         enable_runtime_checks: bool = False,
     ) -> None:
-        """
+        """Initialize the tensor-parallel paged KV cache manager.
+
         Args:
             params: The KVCacheParams for the given pipeline.
             max_batch_size: The maximum number of active requests that the
@@ -121,22 +127,32 @@ class _TPPagedKVCacheManager:
             max_seq_len: The maximum sequence length we will generate.
             num_layers: The number of layers in the model.
             devices: The devices on which the manager will allocate memory.
+                For tensor parallelism, KV cache data is sharded across these devices.
             session: The inference session to load ops from.
-            available_cache_memory: The total amount of memory available for caching.
-                This is aggregated across all devices.
-            page_size: The number of tokens that will be stored in a single block.
+            available_cache_memory: The total amount of memory available for caching,
+                summed across all devices. For example, if each of 4 devices has 1GB
+                available, pass 4GB here. The memory calculation accounts for the fact
+                that each page's data is sharded across devices in tensor parallelism.
+            page_size: The number of tokens that will be stored in a single logical page.
             enable_runtime_checks: Whether to enable runtime correctness checks.
         """
         self.params = params
         self.max_batch_size = max_batch_size
         self.max_seq_len = max_seq_len
         self.num_layers = num_layers
+
+        # Validate devices aligns with the n_devices in params
+        if len(devices) != params.n_devices:
+            raise ValueError(
+                "n_devices provided in KVCacheParams, does not match number of devices initialized in the _TPPagedKVCacheManager"
+            )
+
         self.devices = devices
         self.session = session
 
         if params.data_parallel_degree > 1:
             raise ValueError(
-                "PagedKVCacheManager does not support data parallelism."
+                "_TPPagedKVCacheManager does not support data parallelism."
             )
 
         # Attributes for managing available slots.
@@ -148,26 +164,19 @@ class _TPPagedKVCacheManager:
         # The number of tokens in a single block.
         self.page_size = page_size
 
-        # The number of bytes that a single page will occupy.
-        single_page_size_per_device_bytes = (
-            (2 if not params.is_mla else 1)
-            * num_layers
-            * params.n_kv_heads_per_device
-            * params.head_dim
-            * page_size
-            * params.dtype.size_in_bytes
+        # The number of bytes that a single page will occupy across all devices.
+        # In tensor parallelism, each token's KV data is sharded across devices,
+        # so bytes_required_per_token includes storage on all devices.
+        single_page_size_bytes = (
+            self.bytes_required_per_token(params, num_layers) * page_size
         )
 
-        single_page_size_bytes = single_page_size_per_device_bytes * len(
-            devices
-        )
-
-        # Normalize cache_memory across all devices.
-        cache_memory_per_device = available_cache_memory // len(devices)
-
-        # The total number of blocks we'll have per-device.
+        # Calculate the total number of logical pages available.
+        # Since both available_cache_memory and single_page_size_bytes account
+        # for all devices (total memory across devices / bytes per page across devices),
+        # this gives us the number of complete logical pages we can store.
         self.total_num_pages = int(
-            cache_memory_per_device // single_page_size_per_device_bytes
+            available_cache_memory // single_page_size_bytes
         )
 
         increment_cache_lengths_graph = (
@@ -329,13 +338,120 @@ class _TPPagedKVCacheManager:
         )
 
     @classmethod
-    def _block_size_per_token(
+    def bytes_required_per_token(
         cls, params: KVCacheParams, num_layers: int
     ) -> int:
-        return (
+        """Compute total bytes required to store one token in the KV cache.
+
+        In tensor parallelism (TP), a token's KV cache is sharded across devices.
+        For example, with 32 KV heads and 4 devices, each device stores 8 heads.
+        This method computes the total bytes needed across all devices to store
+        one complete token.
+
+        The calculation:
+        1. Computes bytes per device: (2 * num_layers * n_kv_heads_per_device *
+           head_dim * dtype_size)
+        2. Multiplies by n_devices to get total bytes across all shards
+
+        This total is used with total available memory (summed across devices) to
+        determine how many logical pages can fit.
+
+        Args:
+            params: KV cache configuration (dtype, heads, devices, MLA, etc.).
+                Assumes data_parallel_degree == 1 (no data parallelism).
+            num_layers: Number of transformer layers contributing KV per token.
+
+        Returns:
+            Total bytes per token across all tensor-parallel devices.
+
+        Example:
+            With 4 devices, 32 KV heads, 128 head_dim, 32 layers, float16:
+            - Per-device: 2 * 32 * 8 * 128 * 2 = 131,072 bytes
+            - Total: 131,072 * 4 = 524,288 bytes per token across all devices
+        """
+        # Per-device bytes required for one token
+        per_device_bytes = (
             reduce(mul, cls._block_shape(params, 1, 1, num_layers), 1)
             * params.dtype.size_in_bytes
         )
+        # Total across all devices (assumes data_parallel_degree == 1)
+        return per_device_bytes * params.n_devices
+
+    @classmethod
+    def page_size_adjusted_max_seq_len(
+        cls, max_seq_len: int, page_size: int
+    ) -> int:
+        """
+        Round up max_seq_len to the nearest multiple of page_size.
+
+        The paged KV cache allocates memory in fixed-size pages, where each
+        page stores ``page_size`` tokens. Even if a sequence only partially
+        fills the last page, the full page must be allocated. Rounding up
+        ensures our memory estimates account for whole-page allocation
+        granularity, preventing underestimation and subsequent OOMs or
+        insufficient page counts during scheduling.
+
+        Args:
+            max_seq_len: The original maximum sequence length.
+            page_size: The page size in tokens.
+
+        Returns:
+            The smallest multiple of page_size greater than or equal to max_seq_len.
+        """
+        return math.ceil(max_seq_len / page_size) * page_size
+
+    @classmethod
+    def bytes_required_to_support_single_sequence(
+        cls, params: KVCacheParams, num_layers: int, max_seq_len: int
+    ) -> int:
+        """
+        Calculate the total bytes required to support a single sequence of length `max_seq_len`.
+
+        This takes into account tensor parallelism (number of devices), number of heads,
+        layers, and memory granularity due to page size.
+
+        Args:
+            params: KV cache configuration parameters.
+            num_layers: Number of transformer layers.
+            max_seq_len: Desired maximum sequence length.
+
+        Returns:
+            Total bytes required to store the KV cache for a single sequence of given length.
+        """
+        if params.page_size is None:
+            raise ValueError(
+                "page_size cannot be done when working with the Paged KV Cache"
+            )
+
+        return cls.bytes_required_per_token(
+            params, num_layers
+        ) * cls.page_size_adjusted_max_seq_len(max_seq_len, params.page_size)
+
+    @classmethod
+    def max_supported_sequence_length(
+        cls, params: KVCacheParams, num_layers: int, memory_available: int
+    ) -> int:
+        """Return the maximum sequence length supported given available memory.
+
+        The result is rounded down to the nearest multiple of ``params.page_size``
+        because the paged KV cache allocates memory in whole pages. We compute
+        how many full pages can be supported by the available memory and then
+        convert back to tokens.
+
+        Args:
+            params: KV cache configuration parameters (must have a non-None page_size).
+            num_layers: Number of transformer layers.
+            memory_available: Total bytes available for KV cache across all devices.
+
+        Returns:
+            The maximum supported sequence length in tokens (multiple of page_size).
+        """
+        assert params.page_size is not None
+        bytes_per_page = (
+            cls.bytes_required_per_token(params, num_layers) * params.page_size
+        )
+        max_pages = memory_available // bytes_per_page
+        return max_pages * params.page_size
 
     @classmethod
     def estimated_memory_size(
@@ -348,24 +464,41 @@ class _TPPagedKVCacheManager:
         devices: Sequence[Device],
         **kwargs: Any,
     ) -> int:
-        # Determine how much size is necessary to store the full cache based on max_batch_size and max_seq_len.
-        # If that's less than available_cache_memory, return that.
-        # Otherwise, return available_cache_memory.
-        # This is to prevent over-allocation on devices with a large amount of free memory (e.g. CPUs).
-        assert params.page_size is not None
-        block_size_per_token = cls._block_size_per_token(
-            params, num_layers
-        ) * len(devices)
+        """
+        Estimate the usable KV cache memory given hardware limits and configuration.
 
-        # round up our max_seq_len to the nearest page_size
-        max_seq_len_round_up = (
-            math.ceil(max_seq_len / params.page_size) * params.page_size
-        )
+        This function calculates how much memory can be used for caching by considering:
+        1. The theoretical size required to accommodate a maximum work scenario, i.e., storing the KV cache
+           for `max_batch_size` sequences, each up to `max_seq_len` tokens.
+           - The memory per sequence is calculated via `cls.bytes_required_to_support_single_sequence`, which
+             adjusts the sequence length to respect the page size allocation granularity and considers num_layers, heads, etc.
+           - This value is then multiplied by the number of concurrent sequences (`max_batch_size`).
+        2. The available KV cache memory on the system/hardware (`available_cache_memory`), as determined by unrelated
+           components accounting for other usages (weights, activations, kernel buffers, etc.)
+
+        The function guarantees that the actual allocated cache will not exceed the physical available memory,
+        even if the configuration requests more (e.g., a large batch, large max_seq_len).
+
+        Args:
+            params: The KVCacheParams for the model and device configuration.
+            max_batch_size: The maximum number of concurrent sequences supported.
+            max_seq_len: The maximum sequence length to support.
+            num_layers: The number of transformer layers.
+            available_cache_memory: The maximum cache memory (in bytes) available, after other usages are subtracted.
+            devices: List of devices participating in caching (unused here but included for API completeness).
+            **kwargs: Additional parameters for extensibility.
+
+        Returns:
+            The minimum of (1) the memory required to support the configuration, and (2) memory available for caching.
+            This is a safe, conservative estimate to avoid OOM and ensure configuration compliance.
+        """
         size_to_support_full_cache = (
-            block_size_per_token * max_batch_size * max_seq_len_round_up
+            cls.bytes_required_to_support_single_sequence(
+                params, num_layers, max_seq_len
+            )
+            * max_batch_size
         )
 
-        # return the minimum of the two
         return min(available_cache_memory, size_to_support_full_cache)
 
     def block_shape(
