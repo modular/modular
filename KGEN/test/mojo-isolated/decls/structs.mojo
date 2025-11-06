@@ -164,10 +164,61 @@ struct MyParam[p: Int]:
     pass
 
 
+trait TraitWithPAlias:
+    alias p: Int = 42
+
+
 # CHECK-LABEL: lit.struct.decl @MyStruct
 # CHECK-SAME: <[{{.*}}]*"[[P2:.*]]": !Int, [{{.*}}]*"[[P1:.*]]": !Int, +, p: !Int,
 # CHECK-SAME: m1: {{.*}}@MyParam<:!Int *"[[P1]]">, m2: {{.*}}@MyParam<:!Int *"[[P2]]">>
 struct MyStruct[p: Int, m1: MyParam[_], m2: MyParam[_]]:
     # CHECK: lit.fn @"__init__()"[
     fn __init__(out self):
+        pass
+
+
+# CHECK-LABEL: lit.struct.decl @MyStructWithPVar
+struct MyStructWithPVar[m1: MyParam[_]]:
+    fn __init__(out self):
+        pass
+
+    # COM: Ensure there's no conflict with this var.
+    var p: Int
+
+
+# CHECK-LABEL: lit.struct.decl @MyStructWithPAlias
+struct MyStructWithPAlias[m1: MyParam[_]]:
+    fn __init__(out self):
+        pass
+
+    # COM: Ensure there's no conflict with this alias.
+    alias p: Int = 2
+
+
+# CHECK-LABEL: lit.struct.decl @MyStructWithTraitWithPAlias
+struct MyStructWithTraitWithPAlias[m1: MyParam[_]](TraitWithPAlias):
+    # COM: Ensure there's no conflict with the inherited alias.
+    fn __init__(out self):
+        pass
+
+# CHECK-LABEL: lit.struct.decl @MyStructWithPFunc
+struct MyStructWithPFunc[m1: MyParam[_]]:
+    fn __init__(out self):
+        pass
+
+    # COM: Ensure there's no conflict with this method (single definition).
+    fn p(self, x: Int):
+        pass
+
+
+# CHECK-LABEL: lit.struct.decl @MyStructWith2PFuncs
+struct MyStructWith2PFuncs[m1: MyParam[_]]:
+    fn __init__(out self):
+        pass
+
+    # COM: Ensure there's no conflict with this method (multiple definitions).
+    fn p(self):
+        pass
+
+    fn p(self, x: Int):
         pass
