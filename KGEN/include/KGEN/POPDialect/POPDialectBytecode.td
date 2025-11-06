@@ -125,6 +125,24 @@ def FloatLiteralCmpPredAttr : DialectAttribute<(attr
 
 def SIMDAndAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
 
+def CastAttr : DialectAttribute<(attr
+  TypedAttr:$arg, Type:$type
+)>;
+
+def DTypeToUI8Attr : DialectAttribute<(attr TypedAttr:$value)>;
+def DTypeFromUI8Attr : DialectAttribute<(attr TypedAttr:$value)>;
+
+def CastFromBuiltinAttr : DialectAttribute<(attr
+  TypedAttr:$arg, ConcreteType<"SIMDType">:$type
+)>;
+def CastToBuiltinAttr : DialectAttribute<(attr
+  TypedAttr:$arg, Type:$type
+)>;
+
+def SIMDSplatAttr : DialectAttribute<(attr
+  TypedAttr:$arg, ConcreteType<"SIMDType">:$type
+)>;
+
 def POPDialectAttributes : DialectAttributes<"pop"> {
   let elems = [
     CmpPredicateAttr,
@@ -145,6 +163,13 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     FloatLiteralAttr,
 
     SIMDAndAttr,
+
+    CastAttr,
+    DTypeToUI8Attr,
+    DTypeFromUI8Attr,
+    CastFromBuiltinAttr,
+    CastToBuiltinAttr,
+    SIMDSplatAttr,
   ];
 }
 

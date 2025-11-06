@@ -74,3 +74,21 @@ kgen.func @union_constants() {
 
 // CHECK: f0 = #pop.simd_and<#kgen.unknown : !pop.simd<4, si32>, #pop<simd -1> : !pop.simd<4, si32>> : !pop.simd<4, si32>
 "simd_and.attr"() { f0 = #pop.simd_and<#kgen.unknown : !pop.simd<4, si32>, #pop<simd -1> : !pop.simd<4, si32>> } : () -> ()
+
+// CHECK: f0 = #pop.cast<#kgen.unknown : !pop.scalar<si32>> : !pop.scalar<ui32>
+"pop_cast.op"() { f0 = #pop.cast< #kgen.unknown : !pop.scalar<si32>> : !pop.scalar<ui32> } : () -> ()
+
+// CHECK: f0 = #pop.cast_from_builtin<#kgen.unknown : si64> : !pop.scalar<si64>
+"pop_cast_from_builtin.op"() { f0 = #pop.cast_from_builtin<#kgen.unknown : si64> : !pop.scalar<si64> } : () -> ()
+
+// CHECK: f0 = #pop.cast_to_builtin<#kgen.unknown : !pop.scalar<f16>> : f16
+"pop_cast_to_builtin.op"() { f0 = #pop.cast_to_builtin<#kgen.unknown: !pop.scalar<f16>> : f16 } : () -> ()
+
+// CHECK: f0 = #pop.simd_splat<#kgen.unknown : !pop.scalar<f16>> : !pop.simd<4, f16>
+"pop_simd_splat.op"() { f0 = #pop.simd_splat<#kgen.unknown : !pop.scalar<f16>> : !pop.simd<4, f16> } : () -> ()
+
+// CHECK: f0 = #pop.dtype_to_ui8<*?> : ui8
+"pop_dtype_to_ui8.op"() { f0 = #pop.dtype_to_ui8<*?> : ui8 } : () -> ()
+
+// CHECK: f0 = #pop.dtype_from_ui8<#kgen.unknown : ui8> : !kgen.dtype
+"pop_dtype_from_ui8.op"() { f0 = #pop.dtype_from_ui8<#kgen.unknown : ui8> : !kgen.dtype } : () -> ()
