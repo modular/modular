@@ -733,6 +733,27 @@ def test_paged_scheduler_max_batch_context_length() -> None:
         assert cached_toks + batch_size * steps <= max_batch_context_length
 
 
+def test_paged_scheduler_dp8() -> None:
+    scheduler, request_queue = create_paged_scheduler(dp=8, max_batch_size=32)
+
+    for _ in range(50):
+        enqueue_request(request_queue, prompt_len=12, max_seq_len=24)
+
+    actual = run_until_completion(scheduler)
+    # fmt: off
+    expected = [
+        BatchInfo(CE, batch_size=32, terminated=0, steps=1, preempted=0, input_toks=384, cached_toks=0),
+        BatchInfo(TG, batch_size=32, terminated=0, steps=10, preempted=0, input_toks=32, cached_toks=384),
+        BatchInfo(TG, batch_size=32, terminated=32, steps=2, preempted=0, input_toks=32, cached_toks=704),
+        BatchInfo(CE, batch_size=18, terminated=0, steps=1, preempted=0, input_toks=216, cached_toks=0),
+        BatchInfo(TG, batch_size=18, terminated=0, steps=10, preempted=0, input_toks=18, cached_toks=216),
+        BatchInfo(TG, batch_size=18, terminated=18, steps=2, preempted=0, input_toks=18, cached_toks=396),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
+    ]
+    # fmt: on
+    assert_batch_info_equal(actual, expected)
+
+
 def test_paged_scheduler_paging_to_host_on_cpu_raises() -> None:
     with pytest.raises(ValueError) as e:
         create_paged_scheduler(

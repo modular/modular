@@ -62,6 +62,7 @@ def create_paged_manager(
     page_size: int,
     enable_prefix_caching: bool = False,
     enable_kvcache_swapping_to_host: bool = False,
+    dp: int = 1,
     device: Device = CPU(),
 ) -> PagedKVCacheManager:
     # Setting kv_heads, head_dim, and num_layers to 1 so it is easy to compute
@@ -80,7 +81,7 @@ def create_paged_manager(
         * page_size
         * num_blocks
         * dtype.size_in_bytes
-    )
+    ) * dp
 
     # CPU swap space is 100x the device cache memory
     GiB = 1024 * 1024 * 1024
@@ -95,6 +96,8 @@ def create_paged_manager(
         enable_prefix_caching=enable_prefix_caching,
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
         host_kvcache_swap_space_gb=host_kvcache_swap_space_gb,
+        data_parallel_degree=dp,
+        n_devices=dp,
     )
 
     session = InferenceSession(devices=[device])
@@ -104,14 +107,14 @@ def create_paged_manager(
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
         num_layers=NUM_LAYERS,
-        devices=[device],
+        devices=[device] * dp,
         session=session,
         available_cache_memory=cache_memory,
         page_size=page_size,
         enable_runtime_checks=True,
     )
 
-    assert kv_manager.total_num_pages == num_blocks
+    assert kv_manager.total_num_pages == num_blocks * dp
     return kv_manager
 
 
@@ -127,6 +130,7 @@ def create_paged_scheduler(
     enable_chunked_prefill: bool = True,
     enable_kvcache_swapping_to_host: bool = False,
     max_batch_context_length: int | None = None,
+    dp: int = 1,
     device: Device = CPU(),
 ) -> tuple[
     TokenGenerationScheduler,
@@ -140,6 +144,7 @@ def create_paged_scheduler(
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+        dp=dp,
         device=device,
     )
 
@@ -153,6 +158,7 @@ def create_paged_scheduler(
         enable_chunked_prefill=enable_chunked_prefill,
         enable_in_flight_batching=enable_in_flight_batching,
         max_batch_context_length=max_batch_context_length,
+        data_parallel_degree=dp,
     )
     token_pipeline = FakeTokenGeneratorPipeline(paged_manager)
     request_queue: queue.Queue[TextContext] = queue.Queue()
