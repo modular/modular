@@ -917,7 +917,7 @@ fn load_acquire[
             ordering = Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
     elif is_apple_gpu():
-        alias addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GLOBAL else ptr.address_space
+        alias addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
         alias mem_flags = _AirMemFlags.ThreadGroup if addr_space == AddressSpace.SHARED else _AirMemFlags.Device
         alias air_scope = _AirScope.Workgroup if scope is Scope.BLOCK else _AirScope.Device
         alias load_intrin_base = "air.atomic.local.load" if addr_space == AddressSpace.SHARED else "air.atomic.global.load"
