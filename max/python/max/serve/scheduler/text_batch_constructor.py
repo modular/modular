@@ -114,13 +114,15 @@ class TextBatchConstructor:
         """
 
         # Pick the replica to enqueue the request to.
-        if self.paged_cache is not None:
-            replica_idx = self.paged_cache.get_or_recommend_replica(ctx)
-        else:
-            replica_idx = self._round_robin_counter
-            # Increment the round-robin counter and wrap around if it exceeds the number of replicas.
-            self._round_robin_counter += 1
-            self._round_robin_counter %= self.num_replicas
+
+        # TODO: Make this decision based on KVCache state.
+        # if self.paged_cache is not None:
+        #     replica_idx = self.paged_cache.get_or_recommend_replica(ctx)
+
+        replica_idx = self._round_robin_counter
+        # Increment the round-robin counter and wrap around if it exceeds the number of replicas.
+        self._round_robin_counter += 1
+        self._round_robin_counter %= self.num_replicas
         replica = self.replicas[replica_idx]
 
         # Add the request to the appropriate dict based on whether it needs CE.
@@ -299,7 +301,10 @@ class TextBatchConstructor:
             return False
 
         # Cannot schedule CE if the TG batch is full.
-        if len(replica.tg_reqs) >= self.scheduler_config.max_batch_size_tg:
+        if (
+            len(replica.tg_reqs)
+            >= self.scheduler_config.max_batch_size_tg_per_replica
+        ):
             return False
 
         # Must schedule CE if the TG batch is empty.
@@ -490,8 +495,8 @@ class TextBatchConstructor:
                 assert ctx.active_length == 1
                 input_tokens += ctx.active_length
 
-        max_batch_size_tg = self.scheduler_config.max_batch_size_tg
-        max_batch_size_ce = self.scheduler_config.max_batch_size_ce
+        max_batch_size_tg = self.scheduler_config.max_batch_size_tg_per_replica
+        max_batch_size_ce = self.scheduler_config.max_batch_size_ce_per_replica
 
         if self._lora_manager:
             # Track which LoRAs are currently active from running (TG) requests
