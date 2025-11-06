@@ -823,6 +823,17 @@ class PipelineConfig(MAXConfig):
             self, arch.pipeline_model, model_config, devices
         )
 
+        clamped_max_seq_len = MemoryEstimator.max_supported_sequence_length(
+            arch.pipeline_model, self, model_config, devices
+        )
+        if self.max_length is None:
+            self.max_length = clamped_max_seq_len
+        elif self.max_length > clamped_max_seq_len:
+            logging.warning(
+                f"Clamping max_length from {self.max_length} to {clamped_max_seq_len} due to capacity of KV Cache"
+            )
+            self.max_length = clamped_max_seq_len
+
     def __getstate__(self) -> dict[str, Any]:
         """Override `__getstate__` to exclude the Hugging Face config."""
         state = self.__dict__.copy()

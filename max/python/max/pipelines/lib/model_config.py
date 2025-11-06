@@ -167,6 +167,29 @@ class MAXModelConfig(MAXModelConfigBase):
         # We use self.model_path from here on out.
         self.model = ""
 
+    def __getstate__(self) -> dict[str, Any]:
+        """Customize pickling to avoid serializing non-picklable HF config.
+
+        Drops `_huggingface_config` from the serialized state to ensure
+        the object remains pickleable across processes; it will be
+        lazily re-initialized on access via the `huggingface_config` property.
+        """
+        state = self.__dict__.copy()
+        # Do not serialize potentially non-picklable HF configs
+        if "_huggingface_config" in state:
+            state["_huggingface_config"] = None
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore state while ensuring `_huggingface_config` is reset.
+
+        `_huggingface_config` is restored as None to preserve the lazy
+        loading behavior defined in `huggingface_config`.
+        """
+        self.__dict__.update(state)
+        if "_huggingface_config" not in self.__dict__:
+            self._huggingface_config = None
+
     # TODO(zheng): This can't just be a __post_init__ method, because we need to
     # it also sets and updates other fields which may not be determined /
     # initialized in the default factory.
