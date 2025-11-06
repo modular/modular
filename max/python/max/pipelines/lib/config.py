@@ -25,6 +25,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, get_type_hints
 
+from max.config import MAXConfig
 from max.driver import DeviceSpec, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
@@ -33,7 +34,6 @@ from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from .config_enums import PipelineRole
 from .kv_cache_config import KVCacheConfig
 from .lora_config import LoRAConfig
-from .max_config import MAXConfig
 from .memory_estimation import MemoryEstimator, to_human_readable_bytes
 from .model_config import MAXModelConfig
 from .profiling_config import ProfilingConfig

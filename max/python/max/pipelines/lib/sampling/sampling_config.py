@@ -19,10 +19,9 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from max.config import MAXConfig
 from max.dtype import DType
 from max.interfaces import SamplingParamsGenerationConfigDefaults
-
-from ..max_config import MAXConfig
 
 logger = logging.getLogger("max.pipelines")
 
