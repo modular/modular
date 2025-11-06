@@ -478,13 +478,16 @@ struct DType(
         )
 
     @doc_private
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn _match(self, mask: UInt8) -> Bool:
-        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
-            __mlir_op.`pop.simd.and`(self._as_ui8(), mask._mlir_value),
-            __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
+        return Bool(
+            mlir_value=__mlir_op.`pop.cmp`[
+                pred = __mlir_attr.`#pop<cmp_pred ne>`
+            ](
+                __mlir_op.`pop.simd.and`(self._as_ui8(), mask._mlir_value),
+                __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
+            )
         )
-        return Bool(mlir_value=res)
 
     @always_inline("nodebug")
     fn __is__(self, rhs: DType) -> Bool:
