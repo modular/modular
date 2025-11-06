@@ -200,18 +200,22 @@ $L__BB0_6:
 	selp.b32 	%r1031, %r54, %r1031, %p8;
 	@%p52 bra 	$L__BB0_13;
 	shl.b32 	%r51, %r1041, 8;
-	or.b32 	%r67, %r51, %r6;
+	or.b32 	%r65, %r51, %r6;
 	add.s32 	%r52, %r1040, %r4;
-	shl.b32 	%r65, %r52, 7;
+	shl.b32 	%r63, %r52, 7;
 	mov.b32 	%r1032, 0;
 	mov.b32 	%r1033, %r8;
 	bra.uni 	$L__BB0_8;
 $L__BB0_11:
+	shl.b32 	%r66, %r1034, 14;
+	add.s32 	%r67, %r35, %r66;
+	add.s32 	%r64, %r67, 98304;
+	add.s32 	%r61, %r9, %r66;
 	// begin inline asm
-	cp.async.bulk.tensor.2d.cta_group::2.shared::cluster.global.mbarrier::complete_tx::bytes.multicast::cluster [%r63], [%rd6, {%r1032, %r65}], [%r64], %rs9;
+	cp.async.bulk.tensor.2d.cta_group::2.shared::cluster.global.mbarrier::complete_tx::bytes.multicast::cluster [%r61], [%rd6, {%r1032, %r63}], [%r62], %rs9;
 	// end inline asm
 	// begin inline asm
-	cp.async.bulk.tensor.2d.cta_group::2.shared::cluster.global.mbarrier::complete_tx::bytes.multicast::cluster [%r66], [%rd7, {%r1032, %r67}], [%r64], %rs10;
+	cp.async.bulk.tensor.2d.cta_group::2.shared::cluster.global.mbarrier::complete_tx::bytes.multicast::cluster [%r64], [%rd7, {%r1032, %r65}], [%r62], %rs10;
 	// end inline asm
 $L__BB0_12:
 	add.s32 	%r1033, %r1033, -1;
@@ -225,9 +229,9 @@ $L__BB0_12:
 	@%p14 bra 	$L__BB0_8;
 	bra.uni 	$L__BB0_13;
 $L__BB0_8:
-	shl.b32 	%r59, %r1034, 3;
-	add.s32 	%r60, %r35, %r59;
-	add.s32 	%r56, %r60, 213040;
+	shl.b32 	%r57, %r1034, 3;
+	add.s32 	%r58, %r35, %r57;
+	add.s32 	%r56, %r58, 213040;
 	// begin inline asm
 	{
             .reg .pred P1;
@@ -238,18 +242,14 @@ $L__BB0_8:
             DONE:
         }
 	// end inline asm
-	elect.sync 	%r61|%p11, -1;
+	elect.sync 	%r59|%p11, -1;
 	not.pred 	%p12, %p11;
 	@%p12 bra 	$L__BB0_12;
-	shl.b32 	%r57, %r1034, 14;
-	add.s32 	%r58, %r35, %r57;
-	add.s32 	%r66, %r58, 98304;
-	add.s32 	%r63, %r9, %r57;
-	add.s32 	%r62, %r60, 212992;
-	and.b32 	%r64, %r62, -16777224;
+	add.s32 	%r60, %r58, 212992;
+	and.b32 	%r62, %r60, -16777224;
 	@%p51 bra 	$L__BB0_11;
 	// begin inline asm
-	mbarrier.arrive.expect_tx.shared.b64 _, [%r62], 65536;
+	mbarrier.arrive.expect_tx.shared.b64 _, [%r60], 65536;
 	// end inline asm
 	bra.uni 	$L__BB0_11;
 $L__BB0_14:
@@ -658,22 +658,16 @@ $L__BB0_27:
 	add.s32 	%r193, %r10, 213040;
 	shl.b32 	%r194, %r1050, 14;
 	add.s32 	%r195, %r35, %r194;
-	shr.u32 	%r196, %r195, 4;
-	and.b32 	%r197, %r196, 16376;
-	cvt.u64.u32 	%rd17, %r197;
+	add.s32 	%r196, %r195, 98304;
+	setp.ne.b32 	%p39, %r1049, 0;
+	shr.u32 	%r197, %r195, 4;
+	and.b32 	%r198, %r197, 16376;
+	cvt.u64.u32 	%rd17, %r198;
 	or.b64 	%rd9, %rd17, 4611756662049538048;
-	or.b64 	%rd11, %rd17, 4611756662049538050;
-	or.b64 	%rd13, %rd17, 4611756662049538052;
-	or.b64 	%rd15, %rd17, 4611756662049538054;
-	add.s32 	%r198, %r195, 98304;
-	shr.u32 	%r199, %r198, 4;
+	shr.u32 	%r199, %r196, 4;
 	and.b32 	%r200, %r199, 16376;
 	cvt.u64.u32 	%rd18, %r200;
 	or.b64 	%rd10, %rd18, 4611756662049538048;
-	or.b64 	%rd12, %rd18, 4611756662049538050;
-	or.b64 	%rd14, %rd18, 4611756662049538052;
-	or.b64 	%rd16, %rd18, 4611756662049538054;
-	setp.ne.b32 	%p39, %r1049, 0;
 	selp.b32 	%r190, 1, 0, %p39;
 	mov.b32 	%r189, 272630928;
 	mov.b32 	%r191, 0;
@@ -684,6 +678,8 @@ $L__BB0_27:
                 tcgen05.mma.cta_group::2.kind::f16 [%r1046], %rd9, %rd10, %r189, {%r191, %r191, %r191, %r191, %r191, %r191, %r191, %r191}, p;
             }
 	// end inline asm
+	or.b64 	%rd11, %rd17, 4611756662049538050;
+	or.b64 	%rd12, %rd18, 4611756662049538050;
 	mov.b32 	%r192, 1;
 	// begin inline asm
 	{
@@ -692,6 +688,8 @@ $L__BB0_27:
                 tcgen05.mma.cta_group::2.kind::f16 [%r1046], %rd11, %rd12, %r189, {%r191, %r191, %r191, %r191, %r191, %r191, %r191, %r191}, p;
             }
 	// end inline asm
+	or.b64 	%rd13, %rd17, 4611756662049538052;
+	or.b64 	%rd14, %rd18, 4611756662049538052;
 	// begin inline asm
 	{
                 .reg .pred p;
@@ -699,6 +697,8 @@ $L__BB0_27:
                 tcgen05.mma.cta_group::2.kind::f16 [%r1046], %rd13, %rd14, %r189, {%r191, %r191, %r191, %r191, %r191, %r191, %r191, %r191}, p;
             }
 	// end inline asm
+	or.b64 	%rd15, %rd17, 4611756662049538054;
+	or.b64 	%rd16, %rd18, 4611756662049538054;
 	// begin inline asm
 	{
                 .reg .pred p;

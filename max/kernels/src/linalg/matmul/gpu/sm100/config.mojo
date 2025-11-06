@@ -370,10 +370,12 @@ fn choose_config[
         select_mma_mn(N, M, True)
 
     # For small mmas, we group multiple tiles per tma-mma synchronization.
-    if ((mma_mn[0] // cta_group) * mma_mn[1]) <= 64 * 96 and ceildiv(
-        K, BK
-    ) % 2 == 0:
+    var output_block_size = (mma_mn[0] // cta_group) * mma_mn[1]
+    if output_block_size <= 64 * 96 and ceildiv(K, BK) % 2 == 0:
         k_group_size = 2
+    # For very small mmas we can group more aggressively.
+    if output_block_size <= 64 * 16 and ceildiv(K, BK) % 4 == 0:
+        k_group_size = 4
 
     var min_load_volume = Int.MAX
     var optimal_block_swizzle_size = 0
