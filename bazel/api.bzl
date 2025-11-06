@@ -49,13 +49,7 @@ def _remove_internal_data(data):
 
 def _rewrite_deps(deps):
     """Rewrite dependencies to use the open-source package names."""
-    new_deps = []
-    for dep in deps:
-        replaced_dep = dep
-        if dep.startswith("//open-source/max/"):
-            replaced_dep = dep.replace("//open-source/max/", "//")
-        new_deps.append(replaced_dep)
-    return new_deps
+    return deps
 
 # buildifier: disable=function-docstring
 def modular_py_library(
