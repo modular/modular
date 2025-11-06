@@ -53,17 +53,32 @@ struct FileHandle {
         // Write-only mode (not append): truncate the file
         std::error_code err;
         if (std::filesystem::exists(fsPath)) {
-          err = llvm::sys::fs::remove(fsPath.string());
+          // Check if the file is a special file (FIFO, device, socket, etc.)
+          // Special files should not be removed, only regular files
+          auto status = std::filesystem::status(fsPath, err);
           if (err) {
-            *errMsg =
-                copyString((llvm::Twine("unable to remove existing file ") +
-                            fsPath.string())
-                               .str());
+            *errMsg = copyString(
+                (llvm::Twine("unable to get status of file ") + fsPath.string())
+                    .str());
             return nullptr;
+          }
+
+          // Only remove regular files; special files (FIFOs, devices, sockets)
+          // should be opened directly
+          if (std::filesystem::is_regular_file(status)) {
+            err = llvm::sys::fs::remove(fsPath.string());
+            if (err) {
+              *errMsg =
+                  copyString((llvm::Twine("unable to remove existing file ") +
+                              fsPath.string())
+                                 .str());
+              return nullptr;
+            }
           }
         }
 
         if (!fsPath.parent_path().empty()) {
+          std::error_code err;
           std::filesystem::create_directories(fsPath.parent_path(), err);
           if (err) {
             *errMsg =
