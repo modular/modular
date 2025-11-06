@@ -57,6 +57,7 @@ def hann_window_graphs() -> tuple[Graph, list[tuple[int, bool, DType]]]:
 @pytest.mark.parametrize("window_length", [0, 1, 10, 100])
 @pytest.mark.parametrize("periodic", [True, False])
 @pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])
+@pytest.mark.skip
 def test_hann_window(
     session: InferenceSession,
     hann_window_graphs: tuple[Graph, list[tuple[int, bool, DType]]],

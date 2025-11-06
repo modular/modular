@@ -49,10 +49,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
     },
-    gpu_constraints = [
-        "//:nvidia_gpu",
-        "//:amd_gpu",
-    ],  # FIXME: Enable Apple GPU MOCO-2411
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
     mojo_deps = [
         "//max/tests/integration:compile_config_ops",
         "//max/tests/integration:test_user_op",

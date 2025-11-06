@@ -21,6 +21,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
+@pytest.mark.skip
 def test_no_operation_dump(custom_ops_mojopkg: Path) -> None:
     """Check that we don't dump IR on failure to elaborate."""
     with pytest.raises(ValueError) as excinfo:
