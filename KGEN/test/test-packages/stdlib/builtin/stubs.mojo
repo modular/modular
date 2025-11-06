@@ -208,6 +208,20 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     ]:
         return {}
 
+    @always_inline("builtin")
+    fn __xor__(
+        self, rhs: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<xor `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
+        return {}
+
 
 @nonmaterializable(FloatDyn)
 @register_passable("trivial")
@@ -252,19 +266,17 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
 
     @always_inline("builtin")
     fn __truediv__(
-        self,
-        rhs: FloatLiteral,
-        out result: FloatLiteral[
-            __mlir_attr[
-                `#pop<float_literal_bin<truediv `,
-                value,
-                `,`,
-                rhs.value,
-                `>> : !pop.float_literal`,
-            ]
-        ],
-    ):
-        result = type_of(result)()
+        self, rhs: FloatLiteral
+    ) -> FloatLiteral[
+        __mlir_attr[
+            `#pop<float_literal_bin<truediv `,
+            value,
+            `,`,
+            rhs.value,
+            `>> : !pop.float_literal`,
+        ]
+    ]:
+        return {}
 
 
 @register_passable("trivial")
@@ -351,9 +363,21 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable, Intable):
         ](rhs._mlir_value, lhs._mlir_value)
 
     @always_inline("builtin")
+    fn __le__(lhs, rhs: Int) -> Bool:
+        return __mlir_op.`index.cmp`[
+            pred = __mlir_attr.`#index<cmp_predicate sle>`
+        ](lhs._mlir_value, rhs._mlir_value)
+
+    @always_inline("builtin")
     fn __gt__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate sgt>`
+        ](lhs._mlir_value, rhs._mlir_value)
+
+    @always_inline("builtin")
+    fn __ge__(lhs, rhs: Int) -> Bool:
+        return __mlir_op.`index.cmp`[
+            pred = __mlir_attr.`#index<cmp_predicate sge>`
         ](lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
@@ -396,9 +420,21 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable, Intable):
     fn __irshift__(mut self, rhs: Int):
         self = self >> rhs
 
-    @always_inline("builtin")
+    @always_inline("nodebug")
     fn __rshift__(self, rhs: Int) -> Int:
         pass
+
+    @always_inline("builtin")
+    fn __or__(self, rhs: Int) -> Int:
+        return Int(
+            mlir_value=__mlir_op.`index.or`(self._mlir_value, rhs._mlir_value)
+        )
+
+    @always_inline("builtin")
+    fn __xor__(self, rhs: Int) -> Int:
+        return Int(
+            mlir_value=__mlir_op.`index.xor`(self._mlir_value, rhs._mlir_value)
+        )
 
 
 @register_passable("trivial")
