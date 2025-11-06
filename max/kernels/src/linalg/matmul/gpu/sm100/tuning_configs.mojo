@@ -31,6 +31,10 @@ struct TuningConfigSM100(TuningConfig):
     var rasterize_order: RasterOrder
     var num_pipeline_stages: UInt
     var cta_group: Int
+    var swapAB: Bool
+    var k_group_size: UInt
+    var num_accum_pipeline_stages: UInt
+    var num_clc_pipeline_stages: UInt
 
     fn __init__(
         out self,
@@ -55,6 +59,10 @@ struct TuningConfigSM100(TuningConfig):
         self.rasterize_order = rasterize_order
         self.num_pipeline_stages = num_pipeline_stages
         self.cta_group = 2
+        self.swapAB = False
+        self.k_group_size = 1
+        self.num_accum_pipeline_stages = 2
+        self.num_clc_pipeline_stages = 2
 
     fn __str__(self) -> String:
         return String("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
@@ -71,6 +79,10 @@ struct TuningConfigSM100(TuningConfig):
         block_swizzle_size: UInt,
         rasterize_order: RasterOrder,
         num_pipeline_stages: UInt = 1,
+        swapAB: Bool = False,
+        k_group_size: UInt = 1,
+        num_accum_pipeline_stages: UInt = 2,
+        num_clc_pipeline_stages: UInt = 2,
     ):
         self.M = M
         self.M_end = M_end
@@ -87,6 +99,10 @@ struct TuningConfigSM100(TuningConfig):
         self.block_swizzle_size = block_swizzle_size
         self.rasterize_order = rasterize_order
         self.num_pipeline_stages = num_pipeline_stages
+        self.swapAB = swapAB
+        self.k_group_size = k_group_size
+        self.num_accum_pipeline_stages = num_accum_pipeline_stages
+        self.num_clc_pipeline_stages = num_clc_pipeline_stages
 
 
 # codegen template
@@ -131,6 +147,70 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=4,
             rasterize_order=RasterOrder(1),
             num_pipeline_stages=6,
+        ),
+        # ------------ llama3-8b-tp2 ------------#
+        TuningConfigSM100(
+            M=449,
+            M_end=513,
+            N=3072,
+            K=4096,
+            mma_shape=Index(128, 192, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            num_pipeline_stages=10,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+            k_group_size=1,
+        ),
+        # ------------ llama3-8b-tp1 ------------#
+        TuningConfigSM100(
+            M=72,
+            M_end=81,
+            N=6144,
+            K=4096,
+            mma_shape=Index(128, 80, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_pipeline_stages=16,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+            k_group_size=2,
+        ),
+        TuningConfigSM100(
+            M=81,
+            M_end=97,
+            N=6144,
+            K=4096,
+            mma_shape=Index(128, 96, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            num_pipeline_stages=16,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+            k_group_size=2,
+        ),
+        TuningConfigSM100(
+            M=20,
+            M_end=32,
+            N=4096,
+            K=4096,
+            mma_shape=Index(128, 16, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_pipeline_stages=22,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+            k_group_size=2,
         ),
     )
 
