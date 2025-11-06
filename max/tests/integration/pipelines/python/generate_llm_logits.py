@@ -1430,6 +1430,7 @@ def _add_max_hooks() -> Any:
 @click.command()
 @click.option(
     "--device",
+    "--devices",
     "device_type",
     type=DevicesOptionType(),
     required=True,
@@ -1452,8 +1453,8 @@ def _add_max_hooks() -> Any:
 @click.option(
     "--encoding",
     "encoding_name",
-    required=True,
-    help="Quantization encoding to run pipeline with",
+    required=False,
+    help="Quantization encoding to run pipeline with.",
 )
 @click.option(
     "-o",
@@ -1510,7 +1511,7 @@ def main(
     device_type: str | list[int],
     framework_name: str,
     pipeline_name: str,
-    encoding_name: str,
+    encoding_name: str | None,
     output_path: Path,
     reference_path: Path | None,
     print_output: bool,
@@ -1535,6 +1536,25 @@ def main(
         )
     else:
         reference_logits = None
+
+    device_specs = DevicesOptionType.device_specs(device_type)
+
+    if encoding_name is None:
+        device_name = device_specs[0].device_type
+        device_encoding_map = PIPELINE_ORACLES[
+            pipeline_name
+        ].device_encoding_map
+        if device_name not in device_encoding_map:
+            raise ValueError(
+                f"Device type {device_name} not supported for pipeline {pipeline_name}. "
+                f"Supported device types are: {device_encoding_map.keys()}"
+            )
+        if len(device_encoding_map[device_name]) > 1:
+            raise ValueError(
+                f"Multiple encodings supported for device type {device_name}: "
+                f"{device_encoding_map[device_name]}. Please specify an encoding."
+            )
+        encoding_name = device_encoding_map[device_name][0]
 
     try:
         generate_llm_logits(
