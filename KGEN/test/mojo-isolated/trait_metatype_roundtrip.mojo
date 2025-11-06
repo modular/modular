@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # COM: Validate parameters on a cache miss and check cache hit as well.
-# RUN: kgen-translate -import-mojo --mojo-disable-builtins %s | FileCheck %s
-# RUN: kgen-translate -import-mojo --mojo-disable-builtins %s -o /dev/null -bytecode-output - | kgen-opt | FileCheck %s
+# RUN: %parse-mojo-isolated %s --mojo-disable-builtins | FileCheck %s
+# RUN: %parse-mojo-isolated %s --mojo-disable-builtins -o /dev/null -bytecode-output - | kgen-opt | FileCheck %s
 
 # ===----------------------------------------------------------------------=== #
 # Stubs to allow testing without builtins

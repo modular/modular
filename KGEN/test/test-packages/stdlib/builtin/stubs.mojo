@@ -272,7 +272,7 @@ struct FloatDyn:
 
 
 @register_passable("trivial")
-struct Int(AnyRPTrivialType, ImplicitlyCopyable):
+struct Int(AnyRPTrivialType, ImplicitlyCopyable, Intable):
     var _mlir_value: Index
 
     @always_inline("builtin")
@@ -345,6 +345,10 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable):
         return Int(
             mlir_value=__mlir_op.`index.divs`(self._mlir_value, rhs._mlir_value)
         )
+
+    @always_inline("builtin")
+    fn __int__(self) -> Int:
+        return self
 
 
 @register_passable("trivial")
@@ -1114,3 +1118,13 @@ fn trait_downcast[
     T: AnyType, //, Trait: AnyTrait
 ](ref x: T) -> ref [x] downcast[Trait, T]:
     return rebind[downcast[Trait, T]](x)
+
+
+# ===----------------------------------------------------------------------=== #
+#  Intable
+# ===----------------------------------------------------------------------=== #
+
+
+trait Intable:
+    fn __int__(self) -> Int:
+        ...
