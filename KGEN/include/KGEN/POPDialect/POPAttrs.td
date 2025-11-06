@@ -768,5 +768,40 @@ class POP_SIMDBinaryAttr<string name>
 }
 
 def POP_SIMDAndAttr : POP_SIMDBinaryAttr<"And">;
+def POP_SIMDXorAttr : POP_SIMDBinaryAttr<"Xor">;
+
+//===----------------------------------------------------------------------===//
+// SIMDCmp
+//===----------------------------------------------------------------------===//
+
+def POP_SIMDCmpAttr : POP_ExprAttr<"SIMDCmp", "simd_cmp"> {
+  let summary = "SIMD cmp.";
+  let description = [{
+    The `#pop.simd_cmp` attribute performs a comparison between two SIMD
+    vectors.
+  }];
+
+  let parameters = (ins "NormalizedCmpPredicate":$cc,
+                        "TypedAttr":$lhs, "TypedAttr":$rhs,
+                        AttributeSelfTypeParameter<"", "Type">:$type);
+
+  let assemblyFormat = " `<` $cc `,` $lhs `,` $rhs `>` ";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return a SIMDAndAttr.
+    AttrBuilder<(ins "NormalizedCmpPredicate":$cc, "TypedAttr":$lhs, "TypedAttr":$rhs,
+                     "Type":$type),
+                "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(
+        ins "NormalizedCmpPredicate":$cc, "TypedAttr":$lhs, "TypedAttr":$rhs,
+            "Type":$type), [{
+      return get(lhs.getContext(), cc, lhs, rhs, type);
+    }], "TypedAttr">
+  ];
+}
 
 #endif // KGEN_POPDIALECT_POPATTRS_TD

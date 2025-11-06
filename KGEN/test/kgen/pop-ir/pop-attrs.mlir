@@ -92,3 +92,9 @@ kgen.func @union_constants() {
 
 // CHECK: f0 = #pop.dtype_from_ui8<#kgen.unknown : ui8> : !kgen.dtype
 "pop_dtype_from_ui8.op"() { f0 = #pop.dtype_from_ui8<#kgen.unknown : ui8> : !kgen.dtype } : () -> ()
+
+// CHECK: f0 = #pop.simd_xor<#kgen.unknown : !pop.simd<4, si32>, #pop<simd -1> : !pop.simd<4, si32>> : !pop.simd<4, si32>
+"simd_xor.attr"() { f0 = #pop.simd_xor<#kgen.unknown : !pop.simd<4, si32>, #pop<simd -1> : !pop.simd<4, si32>> } : () -> ()
+
+// CHECK: f0 = #pop.simd_cmp<eq, #kgen.unknown : !pop.simd<4, si32>, #pop<simd -1> : !pop.simd<4, si32>> : !pop.simd<4, bool>
+"simd_cmp.attr"() { f0 = #pop.simd_cmp<eq, #kgen.unknown : !pop.simd<4, si32>, #pop<simd -1> : !pop.simd<4, si32>> : !pop.simd<4, bool> } : () -> ()

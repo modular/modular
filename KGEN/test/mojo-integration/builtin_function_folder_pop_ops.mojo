@@ -219,3 +219,202 @@ fn fold_pop_simd_and() -> POPUInt8x4T[POP_UI8x4_Fold]:
     alias y = __mlir_attr.`#pop.simd<43, 255, 1, 1> : !pop.simd<4, ui8>`
     var a = POPUInt8x4T[pop_simd_and(x, y)]()
     return a
+
+
+##===----------------------------------------------------------------------===##
+# Fold pop.simd_cmp
+##===----------------------------------------------------------------------===##
+
+
+struct POPBoolx4T[x: __mlir_type.`!pop.simd<4, bool>`](ImplicitlyCopyable):
+    fn __init__(out self):
+        pass
+
+    fn __copyinit__(out self, existing: Self):
+        pass
+
+
+alias POP_Boolx4_EQ_Fold = __mlir_attr.`#pop.simd<false, true, true, false> : !pop.simd<4, bool>`
+
+
+@always_inline("builtin")
+fn pop_simd_cmp_eq(
+    x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
+) -> __mlir_type.`!pop.simd<4, bool>`:
+    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](x, y)
+
+
+@always_inline("builtin")
+fn pop_simd_cmp_eq(
+    x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
+) -> __mlir_type.`!pop.simd<4, bool>`:
+    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](x, y)
+
+
+@always_inline("builtin")
+fn pop_simd_cmp_ne(
+    x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
+) -> __mlir_type.`!pop.simd<4, bool>`:
+    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](x, y)
+
+
+@always_inline("builtin")
+fn pop_simd_cmp_ne(
+    x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
+) -> __mlir_type.`!pop.simd<4, bool>`:
+    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](x, y)
+
+
+@always_inline("builtin")
+fn pop_simd_cmp_ult(
+    x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
+) -> __mlir_type.`!pop.simd<4, bool>`:
+    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred lt>`](x, y)
+
+
+@always_inline("builtin")
+fn pop_simd_cmp_slt(
+    x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
+) -> __mlir_type.`!pop.simd<4, bool>`:
+    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred lt>`](x, y)
+
+
+@always_inline("builtin")
+fn pop_simd_cmp_ule(
+    x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
+) -> __mlir_type.`!pop.simd<4, bool>`:
+    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred le>`](x, y)
+
+
+@always_inline("builtin")
+fn pop_simd_cmp_sle(
+    x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
+) -> __mlir_type.`!pop.simd<4, bool>`:
+    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred le>`](x, y)
+
+
+@always_inline("builtin")
+fn pop_simd_cmp_ugt(
+    x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
+) -> __mlir_type.`!pop.simd<4, bool>`:
+    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred gt>`](x, y)
+
+
+@always_inline("builtin")
+fn pop_simd_cmp_sgt(
+    x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
+) -> __mlir_type.`!pop.simd<4, bool>`:
+    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred gt>`](x, y)
+
+
+@always_inline("builtin")
+fn pop_simd_cmp_uge(
+    x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
+) -> __mlir_type.`!pop.simd<4, bool>`:
+    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ge>`](x, y)
+
+
+@always_inline("builtin")
+fn pop_simd_cmp_sge(
+    x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
+) -> __mlir_type.`!pop.simd<4, bool>`:
+    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ge>`](x, y)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_cmp
+fn fold_pop_simd_cmp() -> POPBoolx4T[POP_Boolx4_EQ_Fold]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@POPBoolx4T<:simd<4, bool> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, si8>, "y": !pop.simd<4, si8>) -> !pop.simd<4, bool>> @builtin_function_folder_pop_ops::@"pop_simd_cmp_eq(__mlir_type.!pop.simd<4, si8>,__mlir_type.!pop.simd<4, si8>)", <46, -128, 1, 0>, <46, 127, -1, 1>), <true, false, false, false>)>, mut *"a`1">
+    var a = POPBoolx4T[
+        pop_simd_cmp_eq(
+            __mlir_attr.`#pop.simd<46, -128, 1, 0> : !pop.simd<4, si8>`,
+            __mlir_attr.`#pop.simd<46, 127, -1, 1> : !pop.simd<4, si8>`,
+        )
+    ]()
+    # CHECK: %b = lit.var.decl "b" var : !lit.ref<@builtin_function_folder_pop_ops::@POPBoolx4T<:simd<4, bool> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, ui8>, "y": !pop.simd<4, ui8>) -> !pop.simd<4, bool>> @builtin_function_folder_pop_ops::@"pop_simd_cmp_eq(__mlir_type.!pop.simd<4, ui8>,__mlir_type.!pop.simd<4, ui8>)", <46, 255, 1, 0>, <43, 255, 1, 1>), <false, true, true, false>)>, mut *"b`2">
+    var b = POPBoolx4T[
+        pop_simd_cmp_eq(
+            __mlir_attr.`#pop.simd<46, 255, 1, 0> : !pop.simd<4, ui8>`,
+            __mlir_attr.`#pop.simd<43, 255, 1, 1> : !pop.simd<4, ui8>`,
+        )
+    ]()
+    # CHECK: %c = lit.var.decl "c" var : !lit.ref<@builtin_function_folder_pop_ops::@POPBoolx4T<:simd<4, bool> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, si8>, "y": !pop.simd<4, si8>) -> !pop.simd<4, bool>> @builtin_function_folder_pop_ops::@"pop_simd_cmp_ne(__mlir_type.!pop.simd<4, si8>,__mlir_type.!pop.simd<4, si8>)", <46, -128, 1, 0>, <46, 127, -1, 1>), <false, true, true, true>)>, mut *"c`3">
+    var c = POPBoolx4T[
+        pop_simd_cmp_ne(
+            __mlir_attr.`#pop.simd<46, -128, 1, 0> : !pop.simd<4, si8>`,
+            __mlir_attr.`#pop.simd<46, 127, -1, 1> : !pop.simd<4, si8>`,
+        )
+    ]()
+    # CHECK: %d = lit.var.decl "d" var : !lit.ref<@builtin_function_folder_pop_ops::@POPBoolx4T<:simd<4, bool> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, ui8>, "y": !pop.simd<4, ui8>) -> !pop.simd<4, bool>> @builtin_function_folder_pop_ops::@"pop_simd_cmp_ne(__mlir_type.!pop.simd<4, ui8>,__mlir_type.!pop.simd<4, ui8>)", <46, 255, 1, 0>, <43, 255, 1, 1>), <true, false, false, true>)>, mut *"d`4">
+    var d = POPBoolx4T[
+        pop_simd_cmp_ne(
+            __mlir_attr.`#pop.simd<46, 255, 1, 0> : !pop.simd<4, ui8>`,
+            __mlir_attr.`#pop.simd<43, 255, 1, 1> : !pop.simd<4, ui8>`,
+        )
+    ]()
+    # CHECK: %e = lit.var.decl "e" var : !lit.ref<@builtin_function_folder_pop_ops::@POPBoolx4T<:simd<4, bool> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, si8>, "y": !pop.simd<4, si8>) -> !pop.simd<4, bool>> @builtin_function_folder_pop_ops::@"pop_simd_cmp_slt(__mlir_type.!pop.simd<4, si8>,__mlir_type.!pop.simd<4, si8>)", <46, -128, 1, 0>, <46, 127, -1, 1>), <false, true, false, true>)>, mut *"e`5">
+    var e = POPBoolx4T[
+        pop_simd_cmp_slt(
+            __mlir_attr.`#pop.simd<46, -128, 1, 0> : !pop.simd<4, si8>`,
+            __mlir_attr.`#pop.simd<46, 127, -1, 1> : !pop.simd<4, si8>`,
+        )
+    ]()
+    # CHECK: %f = lit.var.decl "f" var : !lit.ref<@builtin_function_folder_pop_ops::@POPBoolx4T<:simd<4, bool> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, ui8>, "y": !pop.simd<4, ui8>) -> !pop.simd<4, bool>> @builtin_function_folder_pop_ops::@"pop_simd_cmp_ult(__mlir_type.!pop.simd<4, ui8>,__mlir_type.!pop.simd<4, ui8>)", <46, 255, 1, 0>, <43, 255, 1, 1>), <false, false, false, true>)>, mut *"f`6">
+    var f = POPBoolx4T[
+        pop_simd_cmp_ult(
+            __mlir_attr.`#pop.simd<46, 255, 1, 0> : !pop.simd<4, ui8>`,
+            __mlir_attr.`#pop.simd<43, 255, 1, 1> : !pop.simd<4, ui8>`,
+        )
+    ]()
+    # CHECK: %g = lit.var.decl "g" var : !lit.ref<@builtin_function_folder_pop_ops::@POPBoolx4T<:simd<4, bool> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, si8>, "y": !pop.simd<4, si8>) -> !pop.simd<4, bool>> @builtin_function_folder_pop_ops::@"pop_simd_cmp_sle(__mlir_type.!pop.simd<4, si8>,__mlir_type.!pop.simd<4, si8>)", <46, -128, 1, 0>, <46, 127, -1, 1>), <true, true, false, true>)>, mut *"g`7">
+    var g = POPBoolx4T[
+        pop_simd_cmp_sle(
+            __mlir_attr.`#pop.simd<46, -128, 1, 0> : !pop.simd<4, si8>`,
+            __mlir_attr.`#pop.simd<46, 127, -1, 1> : !pop.simd<4, si8>`,
+        )
+    ]()
+    # CHECK: %h = lit.var.decl "h" var : !lit.ref<@builtin_function_folder_pop_ops::@POPBoolx4T<:simd<4, bool> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, ui8>, "y": !pop.simd<4, ui8>) -> !pop.simd<4, bool>> @builtin_function_folder_pop_ops::@"pop_simd_cmp_ule(__mlir_type.!pop.simd<4, ui8>,__mlir_type.!pop.simd<4, ui8>)", <46, 255, 1, 0>, <43, 255, 1, 1>), <false, true, true, true>)>, mut *"h`8">
+    var h = POPBoolx4T[
+        pop_simd_cmp_ule(
+            __mlir_attr.`#pop.simd<46, 255, 1, 0> : !pop.simd<4, ui8>`,
+            __mlir_attr.`#pop.simd<43, 255, 1, 1> : !pop.simd<4, ui8>`,
+        )
+    ]()
+    # CHECK: %i = lit.var.decl "i" var : !lit.ref<@builtin_function_folder_pop_ops::@POPBoolx4T<:simd<4, bool> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, si8>, "y": !pop.simd<4, si8>) -> !pop.simd<4, bool>> @builtin_function_folder_pop_ops::@"pop_simd_cmp_sgt(__mlir_type.!pop.simd<4, si8>,__mlir_type.!pop.simd<4, si8>)", <46, -128, 1, 0>, <46, 127, -1, 1>), <false, false, true, false>)>, mut *"i`9">
+    var i = POPBoolx4T[
+        pop_simd_cmp_sgt(
+            __mlir_attr.`#pop.simd<46, -128, 1, 0> : !pop.simd<4, si8>`,
+            __mlir_attr.`#pop.simd<46, 127, -1, 1> : !pop.simd<4, si8>`,
+        )
+    ]()
+    # CHECK: %j = lit.var.decl "j" var : !lit.ref<@builtin_function_folder_pop_ops::@POPBoolx4T<:simd<4, bool> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, ui8>, "y": !pop.simd<4, ui8>) -> !pop.simd<4, bool>> @builtin_function_folder_pop_ops::@"pop_simd_cmp_ugt(__mlir_type.!pop.simd<4, ui8>,__mlir_type.!pop.simd<4, ui8>)", <46, 255, 1, 0>, <43, 255, 1, 1>), <true, false, false, false>)>, mut *"j`10">
+    var j = POPBoolx4T[
+        pop_simd_cmp_ugt(
+            __mlir_attr.`#pop.simd<46, 255, 1, 0> : !pop.simd<4, ui8>`,
+            __mlir_attr.`#pop.simd<43, 255, 1, 1> : !pop.simd<4, ui8>`,
+        )
+    ]()
+    # CHECK: %k = lit.var.decl "k" var : !lit.ref<@builtin_function_folder_pop_ops::@POPBoolx4T<:simd<4, bool> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, si8>, "y": !pop.simd<4, si8>) -> !pop.simd<4, bool>> @builtin_function_folder_pop_ops::@"pop_simd_cmp_sge(__mlir_type.!pop.simd<4, si8>,__mlir_type.!pop.simd<4, si8>)", <46, -128, 1, 0>, <46, 127, -1, 1>), <true, false, true, false>)>, mut *"k`11">
+    var k = POPBoolx4T[
+        pop_simd_cmp_sge(
+            __mlir_attr.`#pop.simd<46, -128, 1, 0> : !pop.simd<4, si8>`,
+            __mlir_attr.`#pop.simd<46, 127, -1, 1> : !pop.simd<4, si8>`,
+        )
+    ]()
+    # CHECK: %l = lit.var.decl "l" var : !lit.ref<@builtin_function_folder_pop_ops::@POPBoolx4T<:simd<4, bool> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, ui8>, "y": !pop.simd<4, ui8>) -> !pop.simd<4, bool>> @builtin_function_folder_pop_ops::@"pop_simd_cmp_uge(__mlir_type.!pop.simd<4, ui8>,__mlir_type.!pop.simd<4, ui8>)", <46, 255, 1, 0>, <43, 255, 1, 1>), <true, true, true, false>)>, mut *"l`12">
+    var l = POPBoolx4T[
+        pop_simd_cmp_uge(
+            __mlir_attr.`#pop.simd<46, 255, 1, 0> : !pop.simd<4, ui8>`,
+            __mlir_attr.`#pop.simd<43, 255, 1, 1> : !pop.simd<4, ui8>`,
+        )
+    ]()
+    return b
+
+
+# CHECK-LABEL: lit.fn @"pop_unresolved_simd_cmp_sge
+@always_inline("builtin")
+fn pop_unresolved_simd_cmp_sge[
+    dt: DType, n: Int, m: Int
+](x: SIMD[dt, n + m], y: SIMD[dt, n + m]) -> SIMD[DType.bool, n + m]._mlir_type:
+    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ge>`](
+        x._mlir_value, y._mlir_value
+    )

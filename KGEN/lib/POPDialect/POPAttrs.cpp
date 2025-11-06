@@ -1896,6 +1896,10 @@ verifySIMDBinaryOp(function_ref<InFlightDiagnostic()> emitError, TypedAttr lhs,
   return success();
 }
 
+//===----------------------------------------------------------------------===//
+// SIMDAndAttr
+//===----------------------------------------------------------------------===//
+
 TypedAttr SIMDAndAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
   // Fold if possible
   if (auto fold = foldSIMDOp(
@@ -1922,6 +1926,106 @@ Type SIMDAndAttr::getType() const { return getLhs().getType(); }
 LogicalResult SIMDAndAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   TypedAttr lhs, TypedAttr rhs) {
   return verifySIMDBinaryOp(emitError, lhs, rhs, /*allowFP=*/false);
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDXorAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr SIMDXorAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
+  // Fold if possible
+  if (auto fold = foldSIMDOp(
+          {lhs, rhs}, [](APSInt lhs, APSInt rhs) { return lhs ^ rhs; },
+          [](bool lhs, bool rhs) { return (bool)(lhs ^ rhs); })) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, lhs, rhs);
+}
+
+TypedAttr SIMDXorAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  MLIRContext *context, TypedAttr lhs,
+                                  TypedAttr rhs) {
+  if (failed(verify(emitError, lhs, rhs)))
+    return {};
+  return SIMDXorAttr::get(context, lhs, rhs);
+}
+
+bool SIMDXorAttr::isConstant() const { return false; }
+
+Type SIMDXorAttr::getType() const { return getLhs().getType(); }
+
+LogicalResult SIMDXorAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  TypedAttr lhs, TypedAttr rhs) {
+  return verifySIMDBinaryOp(emitError, lhs, rhs, /*allowFP=*/false);
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDCmpAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
+                           TypedAttr lhs, TypedAttr rhs, Type outType) {
+  // Fold if possible; we must know the DTypes to do this.
+  if (auto outDType = cast<SIMDType>(outType).getResolvedDType(),
+      inDType = cast<SIMDType>(lhs.getType()).getResolvedDType();
+      outDType && inDType && outDType->isBool()) {
+    bool isSignedCompare = inDType->isSInt();
+    std::function<bool(APSInt, APSInt)> intCompare;
+    std::function<bool(bool, bool)> boolCompare;
+    switch (cc) {
+    case NormalizedCmpPredicate::EQ:
+      intCompare = [](APSInt lhs, APSInt rhs) { return lhs.eq(rhs); };
+      boolCompare = [](bool lhs, bool rhs) { return lhs == rhs; };
+      break;
+    case NormalizedCmpPredicate::LT:
+      intCompare = [isSignedCompare](APSInt lhs, APSInt rhs) {
+        return isSignedCompare ? lhs.slt(rhs) : lhs.ult(rhs);
+      };
+      boolCompare = [](bool lhs, bool rhs) { return lhs < rhs; };
+      break;
+    case NormalizedCmpPredicate::LE:
+      intCompare = [isSignedCompare](APSInt lhs, APSInt rhs) {
+        return isSignedCompare ? lhs.sle(rhs) : lhs.ule(rhs);
+      };
+      boolCompare = [](bool lhs, bool rhs) { return lhs <= rhs; };
+      break;
+    }
+    if (auto fold = foldSIMDOpResult<kOtherResult>({lhs, rhs}, *outDType,
+                                                   intCompare, boolCompare)) {
+      if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+        return ret;
+    }
+  }
+  return Base::get(ctx, cc, lhs, rhs, outType);
+}
+
+TypedAttr SIMDCmpAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  MLIRContext *context,
+                                  NormalizedCmpPredicate cc, TypedAttr lhs,
+                                  TypedAttr rhs, Type outType) {
+  if (failed(verify(emitError, cc, lhs, rhs, outType)))
+    return {};
+  return SIMDCmpAttr::get(context, cc, lhs, rhs, outType);
+}
+
+bool SIMDCmpAttr::isConstant() const { return false; }
+
+LogicalResult SIMDCmpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  NormalizedCmpPredicate cc, TypedAttr lhs,
+                                  TypedAttr rhs, Type outType) {
+  if (lhs.getType() != rhs.getType())
+    return emitError() << "requires two equally-typed SIMD operands";
+
+  auto outSIMDType = dyn_cast<SIMDType>(outType);
+  auto inSIMDType = dyn_cast<SIMDType>(lhs.getType());
+  if (!inSIMDType || !outSIMDType)
+    return emitError() << "requires two equally-typed SIMD operands";
+
+  if (inSIMDType.getSize() != outSIMDType.getSize())
+    return emitError() << "mismatched size between operands and result";
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
