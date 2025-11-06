@@ -26,6 +26,14 @@ struct UIntT[x: UInt](ImplicitlyCopyable):
         pass
 
 
+struct BoolT[x: Bool](ImplicitlyCopyable):
+    fn __init__(out self):
+        pass
+
+    fn __copyinit__(out self, existing: Self):
+        pass
+
+
 ##===----------------------------------------------------------------------===##
 # Fold select op
 ##===----------------------------------------------------------------------===##
@@ -49,6 +57,24 @@ fn fold_index_ceildiv() -> UIntT[2]:
     alias B: UInt = 3
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@UIntT<:!UInt {2}>, mut *"a`3">
     var a = UIntT[A.__ceildiv__(B)]()
+    return a
+
+
+##===----------------------------------------------------------------------===##
+# Fold Bool ops
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: lit.fn @"fold_bool_init
+fn fold_bool_init() -> BoolT[True]:
+    alias T = Bool(mlir_value=__mlir_attr.`#pop.simd<true> : !pop.scalar<bool>`)
+    alias F = Bool(
+        mlir_value=__mlir_attr.`#pop.simd<false> : !pop.scalar<bool>`
+    )
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@BoolT<:!Bool sugar_alias(*"T`1", {:i1 1})>, mut *"a`3">
+    var a = BoolT[T]()
+    # CHECK: %b = lit.var.decl "b" var : !lit.ref<@builtin_function_folder::@BoolT<:!Bool sugar_alias(*"F`2", {:i1 0})>, mut *"b`4">
+    var b = BoolT[F]()
     return a
 
 
