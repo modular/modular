@@ -792,7 +792,7 @@ fn store_release[
             _AirMemOrder.SeqCst,
             air_scope,
         )
-        alias addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GLOBAL else ptr.address_space
+        alias addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
         alias store_intrin_base = "air.atomic.local.store" if addr_space == AddressSpace.SHARED else "air.atomic.global.store"
         alias store_intrin = store_intrin_base + "." + _get_air_atomic_suffix[
             dtype
