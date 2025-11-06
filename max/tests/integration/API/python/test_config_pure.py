@@ -619,6 +619,8 @@ def test_config_is_picklable(
         quantization_encoding=SupportedEncoding.bfloat16,
     )
 
+    config.model_config._huggingface_config = None
+
     pickle_path = tmp_path / "config.pkl"
     with open(pickle_path, "wb") as f:
         pickle.dump(config, f)

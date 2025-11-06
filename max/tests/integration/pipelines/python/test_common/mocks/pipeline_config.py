@@ -130,6 +130,54 @@ def mock_huggingface_config(func: Callable[_P, _R]) -> Callable[_P, _R]:
                 mock_config.architectures = model_architectures.get(
                     str(model_name_or_path), []
                 )
+
+            # Provide concrete numeric attributes expected by MAX model configs
+            repo_str = str(model_name_or_path)
+
+            def _populate_llama_like_cfg(cfg: Any) -> None:
+                # Use small, consistent integers that satisfy head_dim divisibility
+                cfg.hidden_size = 4096
+                cfg.num_attention_heads = 32
+                cfg.num_key_value_heads = 32
+                cfg.num_hidden_layers = 2
+                cfg.rope_theta = 10000.0
+                cfg.max_position_embeddings = 2048
+                cfg.intermediate_size = 11008
+                cfg.vocab_size = 32000
+                cfg.rms_norm_eps = 1e-5
+                cfg.model_type = "llama"
+                # Optional fields used in some paths
+                cfg.rope_scaling = None
+
+            if any(
+                x in repo_str
+                for x in [
+                    "Llama-3.1-8B-Instruct",
+                    "HuggingFaceTB/SmolLM-135M",
+                    "trl-internal-testing/tiny-random-LlamaForCausalLM",
+                ]
+            ):
+                _populate_llama_like_cfg(mock_config)
+
+            if "OpenGVLab/InternVL2-8B" in repo_str:
+                # For InternVL, we need both llm_config and vision_config
+                llm_cfg = MagicMock()
+                _populate_llama_like_cfg(llm_cfg)
+                mock_config.llm_config = llm_cfg
+
+                vision_cfg = MagicMock()
+                # Minimal set used by VisionConfig.generate()
+                vision_cfg.hidden_size = 1024
+                vision_cfg.num_attention_heads = 16
+                vision_cfg.intermediate_size = 4096
+                vision_cfg.image_size = 448
+                vision_cfg.patch_size = 14
+                vision_cfg.layer_norm_eps = 1e-6
+                vision_cfg.qk_normalization = True
+                vision_cfg.qkv_bias = False
+                vision_cfg.num_hidden_layers = 32
+                mock_config.vision_config = vision_cfg
+
             return mock_config
 
         with patch.object(

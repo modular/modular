@@ -91,12 +91,6 @@ TEST_COMMANDS = [
         args=[
             "--model-path",
             "modularai/Llama-3.1-8B-Instruct-GGUF",
-            "--weight-path",
-            "model1.safetensors",
-            "--weight-path",
-            "model2.safetensors",
-            "--weight-path",
-            "model3.safetensors",
             "--devices",
             "gpu",
         ],
@@ -104,11 +98,6 @@ TEST_COMMANDS = [
             "model_config": {
                 "model_path": "modularai/Llama-3.1-8B-Instruct-GGUF",
                 "trust_remote_code": False,
-                "weight_path": [
-                    Path("model1.safetensors"),
-                    Path("model2.safetensors"),
-                    Path("model3.safetensors"),
-                ],
                 "kv_cache_config": {
                     "cache_strategy": KVCacheStrategy.PAGED,
                 },
