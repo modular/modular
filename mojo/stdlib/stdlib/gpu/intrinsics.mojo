@@ -704,7 +704,7 @@ fn _get_nvtx_pointer_constraint() -> StaticString:
     return _get_nvtx_register_constraint[DType.int]()
 
 
-struct AirMemFlags:
+struct _AirMemFlags:
     """AIR memory domain flags used by Apple/Metal intrinsics.
     These values select **which address space's visibility** a fence operates on.
     """
@@ -713,7 +713,7 @@ struct AirMemFlags:
     alias ThreadGroup = Int32(2)
 
 
-struct AirScope:
+struct _AirScope:
     """AIR synchronization scope for ordering and visibility.
     The scope determines **which set of threads** participates in the ordering
     established by a fence or an atomic op with scope.
@@ -724,7 +724,7 @@ struct AirScope:
     alias SIMDGroup = Int32(4)
 
 
-struct AirMemOrder:
+struct _AirMemOrder:
     """AIR memory ordering semantics for atomic operations and fences."""
 
     alias Relaxed = Int32(0)
@@ -784,11 +784,11 @@ fn store_release[
             ordering = Consistency.RELEASE.__mlir_attr(),
         ](value, ptr.address)
     elif is_apple_gpu():
-        alias mem_flags = AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else AirMemFlags.Device
-        alias air_scope = AirScope.Workgroup if scope is Scope.BLOCK else AirScope.Device
+        alias mem_flags = _AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else _AirMemFlags.Device
+        alias air_scope = _AirScope.Workgroup if scope is Scope.BLOCK else _AirScope.Device
         external_call["air.atomic.fence", NoneType](
             mem_flags,
-            AirMemOrder.SeqCst,
+            _AirMemOrder.SeqCst,
             air_scope,
         )
         alias addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GLOBAL else ptr.address_space
@@ -799,7 +799,7 @@ fn store_release[
         external_call[
             store_intrin,
             NoneType,
-        ](ptr.address_space_cast[addr_space](), value, AirMemOrder.Relaxed, air_scope, True)
+        ](ptr.address_space_cast[addr_space](), value, _AirMemOrder.Relaxed, air_scope, True)
     else:
         return CompilationTarget.unsupported_target_error[
             operation="store_release"
@@ -914,8 +914,8 @@ fn load_acquire[
         ](ptr.address)
     elif is_apple_gpu():
         alias addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GLOBAL else ptr.address_space
-        alias mem_flags = AirMemFlags.ThreadGroup if addr_space == AddressSpace.SHARED else AirMemFlags.Device
-        alias air_scope = AirScope.Workgroup if scope is Scope.BLOCK else AirScope.Device
+        alias mem_flags = _AirMemFlags.ThreadGroup if addr_space == AddressSpace.SHARED else _AirMemFlags.Device
+        alias air_scope = _AirScope.Workgroup if scope is Scope.BLOCK else _AirScope.Device
         alias load_intrin_base = "air.atomic.local.load" if addr_space == AddressSpace.SHARED else "air.atomic.global.load"
         alias load_intrin = load_intrin_base + "." + _get_air_atomic_suffix[
             dtype
@@ -923,10 +923,10 @@ fn load_acquire[
         var value = external_call[
             load_intrin,
             Scalar[dtype],
-        ](ptr.address_space_cast[addr_space](), AirMemOrder.Relaxed, air_scope, True)
+        ](ptr.address_space_cast[addr_space](), _AirMemOrder.Relaxed, air_scope, True)
         external_call["air.atomic.fence", NoneType](
             mem_flags,
-            AirMemOrder.SeqCst,
+            _AirMemOrder.SeqCst,
             air_scope,
         )
         return value
