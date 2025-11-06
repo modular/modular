@@ -100,3 +100,18 @@ fn fold_dtype_as_ui8() -> UInt8T[UI8_139]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@UInt8T<{{.*}}, 139)>
     var a = UInt8T[A._as_ui8()]()
     return a
+
+
+struct DTypeT[x: DType](ImplicitlyCopyable):
+    fn __init__(out self):
+        pass
+
+    fn __copyinit__(out self, existing: Self):
+        pass
+
+
+# CHECK-LABEL: lit.fn @"fold_dtype_from_ui8
+fn fold_dtype_from_ui8() -> DTypeT[DType.int32]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@DTypeT<:!DType sugar_builtin(apply(:!lit.generator<("ui8": !pop.scalar<ui8>) -> !DType> @stdlib::@builtin::@dtype::@DType::@"_from_ui8(__mlir_type.!pop.scalar<ui8>)", sugar_alias(*"UI8_139`0x", 139)), {:dtype #pop.dtype_from_ui8<#pop.cast_to_builtin<#kgen<sugar alias, !pop.scalar<ui8>, *"UI8_139`0x", 139> : !pop.scalar<ui8>> : ui8>})>, mut *"a`1">
+    var a = DTypeT[DType._from_ui8(UI8_139)]()
+    return a
