@@ -349,6 +349,15 @@ what we publish.
   comparable. For example, one can now write `(1, "a") == (1, "a")` or
   `(1, "a") < (1, "b")`.
 
+- Added support for `DType` expressions in `where` clauses:
+
+  ```mojo
+  fn foo[dt: DType]() -> Int where dt is DType.int32:
+      return 42
+  ```
+
+  Currently only equality and inequality are supported.
+
 ### Tooling changes {#25-7-tooling-changes}
 
 - `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)

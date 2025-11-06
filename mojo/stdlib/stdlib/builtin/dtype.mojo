@@ -490,7 +490,7 @@ struct DType(
             )
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __is__(self, rhs: DType) -> Bool:
         """Compares one DType to another for equality.
 
@@ -502,7 +502,19 @@ struct DType(
         """
         return self == rhs
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
+    fn __isnot__(self, rhs: DType) -> Bool:
+        """Compares one DType to another for inequality.
+
+        Args:
+            rhs: The DType to compare against.
+
+        Returns:
+            True if the DTypes are the different and False otherwise.
+        """
+        return not (self == rhs)
+
+    @always_inline("builtin")
     fn __eq__(self, rhs: DType) -> Bool:
         """Compares one DType to another for equality.
 
@@ -512,12 +524,13 @@ struct DType(
         Returns:
             True if the DTypes are the same and False otherwise.
         """
-        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
-            self._as_ui8(), rhs._as_ui8()
+        return Bool(
+            mlir_value=__mlir_op.`pop.cmp`[
+                pred = __mlir_attr.`#pop<cmp_pred eq>`
+            ](self._as_ui8(), rhs._as_ui8())
         )
-        return Bool(mlir_value=res)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ne__(self, rhs: DType) -> Bool:
         """Compares one DType to another for inequality.
 
@@ -527,10 +540,11 @@ struct DType(
         Returns:
             False if the DTypes are the same and True otherwise.
         """
-        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
-            self._as_ui8(), rhs._as_ui8()
+        return Bool(
+            mlir_value=__mlir_op.`pop.cmp`[
+                pred = __mlir_attr.`#pop<cmp_pred ne>`
+            ](self._as_ui8(), rhs._as_ui8())
         )
-        return Bool(mlir_value=res)
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this `DType` value.
