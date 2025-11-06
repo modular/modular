@@ -37,8 +37,8 @@ struct Impl2(Trait):
 
 
 # COM: Ensure parametric closures are supported
-fn captureParams[X: Trait, Y: Trait](mut impl2: X, mut impl3: Y):
-    fn hasParams[U: Trait](impl: U) unified {var} -> Int:
+fn captureParams[X: Trait, Y: Trait](impl2: X, mut impl3: Y):
+    fn hasParams[U: Trait](impl: U) unified {read} -> Int:
         return impl.get() + impl2.get() + impl3.get()
 
     takeItParams(hasParams, impl2)

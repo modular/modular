@@ -2180,7 +2180,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
       OriginType originType = refType.getOriginType();
       if (originType.isMutableKnown(true)) {
         auto refImmutOp = LIT::RefImmutOp::create(
-            *emitter.builder, funcOp.getLoc(), valueInParent.getMlirValue());
+            *emitter.builder, parentFn.getLoc(), valueInParent.getMlirValue());
         captureValue = MBValue(refImmutOp->getResult(0));
       } else {
         captureValue = valueInParent;
