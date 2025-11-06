@@ -88,7 +88,7 @@ def KGEN_FuncOp : KGENOp<"func", [
     UnitAttr:$external, UnitAttr:$convergent,
     DefaultValuedAttr<DictionaryAttr, "{}">:$LLVMMetadata,
     DefaultValuedAttr<DictArrayAttr, "{}">:$LLVMArgMetadata,
-    DefaultValuedAttr<StringArrayAttr, "std::nullopt">:$crossDeviceCaptures,
+    DefaultValuedAttr<StringArrayAttr, "ArrayRef<StringAttr>{}">:$crossDeviceCaptures,
     OptionalAttr<TypeAttr>:$coroutineType
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
