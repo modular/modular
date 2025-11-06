@@ -82,8 +82,10 @@ _EXPECT_CRASH = [
         ],
         # mojo build flags specified in RUN lines.
         # Asan has different exit codes due to signal handling.
+        # Macos also has different exit codes due to signal handling.
         target_compatible_with = select({
             "//:asan": ["@platforms//:incompatible"],
+            "@platforms//os:macos": ["@platforms//:incompatible"],
             "//conditions:default": [],
         }),
     )
