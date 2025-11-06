@@ -53,8 +53,8 @@ from max.pipelines.lib import (
 )
 from transformers import AutoConfig
 
-from .gemma3multimodal import Gemma3LanguageModel, Gemma3VisionModel
 from .model_config import Gemma3ForConditionalGenerationConfig
+from .vision_model.gemma3vision import Gemma3LanguageModel, Gemma3VisionModel
 from .weight_adapters import (
     convert_safetensor_language_state_dict,
     convert_safetensor_vision_state_dict,
