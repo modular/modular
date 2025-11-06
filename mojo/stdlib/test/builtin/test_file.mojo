@@ -13,7 +13,10 @@
 
 from os import remove
 from pathlib import Path, _dir_of_current_file
+from stat import S_ISFIFO
+from subprocess import run
 from tempfile import gettempdir
+from time import sleep
 
 from testing import assert_equal, assert_true, TestSuite
 
@@ -444,6 +447,69 @@ def test_file_append_mode_with_unicode():
             "Hello 🔥 World 🚀",
             "append mode should handle Unicode correctly",
         )
+
+
+def test_file_open_fifo():
+    """Test that opening a FIFO in write mode doesn't attempt to remove it.
+
+    Regression test for bug where `FileHandle` should not try to remove
+    special files (FIFOs, devices, sockets) when opening in write mode.
+    Only regular files should be removed/truncated in write mode.
+
+    This test creates a FIFO and verifies that attempting to open it doesn't
+    raise the "unable to remove existing file" error. We use a background
+    reader process to avoid blocking.
+    """
+    var fifo_path = Path(gettempdir().value()) / "test_file_fifo"
+
+    # Clean up any existing FIFO from previous test runs
+    try:
+        remove(fifo_path)
+    except:
+        pass
+
+    # Create a FIFO using mkfifo command. In the future, we should add a
+    # `mkfifo` function in the stdlib itself.
+    # Note that `mkfifo` is mandatory in POSIX which is all we currently
+    # support, so no need to guard against availability.
+    _ = run("mkfifo " + String(fifo_path))
+
+    # Verify the FIFO was created
+    assert_true(fifo_path.exists())
+
+    # Start a background reader using nohup to prevent blocking
+    # The reader will consume data from the FIFO
+    var start_reader = (
+        "nohup sh -c 'cat "
+        + String(fifo_path)
+        + " > /dev/null' >/dev/null 2>&1 &"
+    )
+    try:
+        _ = run(start_reader)
+    except:
+        print("Warning: Could not start background reader, skipping test")
+        try:
+            remove(fifo_path)
+        except:
+            pass
+        return
+
+    # Give the reader time to start and open the FIFO
+    sleep(0.3)
+
+    # The key test: opening a FIFO in write mode should NOT raise
+    # "unable to remove existing file" error. The bug was that `FileHandle`
+    # tried to remove the FIFO before opening it, which failed.
+    # If this raises an error, the test will fail.
+    var f = open(fifo_path, "w")
+    f.write("test data\n")
+    f.close()
+
+    # Clean up the FIFO
+    try:
+        remove(fifo_path)
+    except:
+        pass
 
 
 def main():

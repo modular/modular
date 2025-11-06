@@ -502,3 +502,10 @@ what we publish.
   "a" as a valid mode, which opens a file for appending. Content written to a
   file opened in append mode is added to the end of the file without truncating
   existing content. If the file doesn't exist, it will be created.
+
+- [Issue #3208](https://github.com/modular/mojo/issues/3208): Fixed
+  `FileHandle` raising "unable to remove existing file" error when opening a
+  FIFO (named pipe) in write mode. Opening special files like FIFOs, devices,
+  and sockets with `open(path, "w")` now works correctly. Previously, write
+  mode would attempt to remove the existing file before opening it, which
+  failed for special files that should not be removed.
