@@ -16,7 +16,7 @@ modular_py_test(
         "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
     },
     target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [

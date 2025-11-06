@@ -4,7 +4,7 @@ modular_py_test(
     name = "module_v3",
     srcs = glob(["*.py"]),
     target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [

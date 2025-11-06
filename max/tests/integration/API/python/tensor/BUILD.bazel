@@ -9,7 +9,7 @@ modular_py_test(
         # Takes too long, this is mostly just testing plumbing into other code so low value.
         "//:asan": ["@platforms//:incompatible"],
         # FIXME: MOCO-2411
-        "//:apple_gpu": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [

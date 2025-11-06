@@ -35,7 +35,7 @@ load(
             "requires-network",
         ] if src == "test_pipeline_batching.py" else [],
         target_compatible_with = select({
-            "//:apple_gpu": ["@platforms//:incompatible"],
+            "@platforms//os:macos": ["@platforms//:incompatible"],
             "//conditions:default": [],
         }),  # FIXME: MOCO-2411
         deps = [

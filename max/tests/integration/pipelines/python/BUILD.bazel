@@ -115,7 +115,7 @@ modular_py_test(
         "requires-network",
     ],
     target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
@@ -335,7 +335,7 @@ modular_py_test(
         "requires-network",
     ],
     target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//:asan": ["@platforms//:incompatible"],  # Too slow with ASAN
         "//conditions:default": [],
     }),
