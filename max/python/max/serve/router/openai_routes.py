@@ -17,7 +17,6 @@ import asyncio
 import base64
 import json
 import logging
-import os
 import queue
 import uuid
 from abc import ABC, abstractmethod
@@ -27,7 +26,6 @@ from datetime import datetime
 from json.decoder import JSONDecodeError
 from pathlib import Path
 from random import randint
-from time import perf_counter_ns
 from typing import (
     Any,
     Generic,
@@ -114,16 +112,6 @@ _T = TypeVar("_T")
 
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger("max.serve")
-
-# limits the number of concurrent tasks parsing incoming requests
-# TODO(AITLIB-368): remove this after taking action mentioned in the ticket
-MAX_SERVE_NUM_CONCURRENT_PARSING_TASKS = (
-    "MAX_SERVE_NUM_CONCURRENT_PARSING_TASKS"
-)
-_NUM_CONCURRENT_PARSING_TASKS = int(
-    os.environ.get(MAX_SERVE_NUM_CONCURRENT_PARSING_TASKS, 25)
-)
-_request_parsing_semaphore = asyncio.Semaphore(_NUM_CONCURRENT_PARSING_TASKS)
 
 
 def record_request_start() -> None:
@@ -736,10 +724,8 @@ async def openai_create_chat_completion(
 ) -> CreateChatCompletionResponse | EventSourceResponse:
     request_id = request.state.request_id
     try:
-        async with _request_parsing_semaphore:
-            request_json = await request.json()
-        completion_request = CreateChatCompletionRequest.model_validate(
-            request_json
+        completion_request = CreateChatCompletionRequest.model_validate_json(
+            await request.body()
         )
         pipeline: (
             TokenGeneratorPipeline | AudioGeneratorPipeline
@@ -914,9 +900,9 @@ async def openai_create_embeddings(
     request_id = request.state.request_id
 
     try:
-        async with _request_parsing_semaphore:
-            request_json = await request.json()
-        embeddings_request = CreateEmbeddingRequest.model_validate(request_json)
+        embeddings_request = CreateEmbeddingRequest.model_validate_json(
+            await request.body()
+        )
         pipeline: (
             TokenGeneratorPipeline | AudioGeneratorPipeline
         ) = await get_pipeline(request, embeddings_request.model)
@@ -1226,28 +1212,11 @@ async def openai_create_completion(
     https://platform.openai.com/docs/api-reference/completions
     Public benchmarking such as vLLM use this endpoint.
     """
-    request_handler_ns = perf_counter_ns()
     http_req_id = request.state.request_id
     try:
-        async with _request_parsing_semaphore:
-            request_json = await request.json()
-        request_json_ns = perf_counter_ns()
-        completion_request = CreateCompletionRequest.model_validate(
-            request_json
+        completion_request = CreateCompletionRequest.model_validate_json(
+            await request.body()
         )
-
-        request_timers = {}
-        request_timestamp_ns = request_json.get("timestamp", None)
-        if request_timestamp_ns:
-            request_timers["0_middleware"] = (
-                request.state.request_timer.start_ns - request_timestamp_ns
-            ) / 1e6
-            request_timers["1_handler"] = (
-                request_handler_ns - request_timestamp_ns
-            ) / 1e6
-            request_timers["2_json"] = (
-                request_json_ns - request_timestamp_ns
-            ) / 1e6
 
         pipeline: (
             TokenGeneratorPipeline | AudioGeneratorPipeline
@@ -1255,12 +1224,11 @@ async def openai_create_completion(
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
         logger.debug(
-            "Path: %s, Request: %s%s, Model: %s%s",
+            "Path: %s, Request: %s%s, Model: %s",
             request.url.path,
             http_req_id,
             " (streaming) " if completion_request.stream else "",
             completion_request.model,
-            f", Timers: {request_timers}" if request_timers else "",
         )
 
         response_generator = OpenAICompletionResponseGenerator(pipeline)
@@ -1390,11 +1358,10 @@ async def create_streaming_audio_speech(
     """Audio generation endpoint that streams audio data."""
     try:
         request_id = request.state.request_id
-        async with _request_parsing_semaphore:
-            request_json = await request.json()
-
-        audio_generation_request = CreateAudioGenerationRequest.model_validate(
-            request_json
+        audio_generation_request = (
+            CreateAudioGenerationRequest.model_validate_json(
+                await request.body()
+            )
         )
         pipeline: (
             TokenGeneratorPipeline | AudioGeneratorPipeline
@@ -1449,9 +1416,7 @@ async def load_lora_adapter(
     """Load a LoRA adapter into the pipeline."""
     request_id = request.state.request_id
     try:
-        async with _request_parsing_semaphore:
-            request_json = await request.json()
-        load_request = LoadLoraRequest.model_validate(request_json)
+        load_request = LoadLoraRequest.model_validate_json(await request.body())
 
         app_state: State = request.app.state
 
@@ -1522,9 +1487,9 @@ async def unload_lora_adapter(
     """Unload a LoRA adapter from the pipeline."""
     request_id = request.state.request_id
     try:
-        async with _request_parsing_semaphore:
-            request_json = await request.json()
-        unload_request = UnloadLoraRequest.model_validate(request_json)
+        unload_request = UnloadLoraRequest.model_validate_json(
+            await request.body()
+        )
 
         app_state: State = request.app.state
 
