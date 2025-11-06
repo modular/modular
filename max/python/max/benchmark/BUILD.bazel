@@ -54,9 +54,6 @@ modular_py_binary(
     srcs = ["benchmark_throughput.py"],
     data = [
         ":yaml_files",
-        # TODO: Why do we need these?
-        "//KGEN/tools/mojo",
-        "//SDK:max",
     ],
     imports = ["../.."],
     visibility = ["//visibility:public"],
