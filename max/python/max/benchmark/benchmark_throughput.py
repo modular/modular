@@ -32,22 +32,12 @@ from pathlib import Path
 from typing import Any
 
 import pyarrow.parquet
-
-try:
-    from max.benchmark.benchmark_shared.config import BaseBenchmarkConfig
-    from max.benchmark.benchmark_shared.datasets import (
-        BenchmarkDataset,
-        CodeDebugBenchmarkDataset,
-    )
-except ImportError:
-    from benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        BaseBenchmarkConfig,
-    )
-    from benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        BenchmarkDataset,
-        CodeDebugBenchmarkDataset,
-    )
 from huggingface_hub import hf_hub_download
+from max.benchmark.benchmark_shared.config import BaseBenchmarkConfig
+from max.benchmark.benchmark_shared.datasets import (
+    BenchmarkDataset,
+    CodeDebugBenchmarkDataset,
+)
 from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import (
     PipelinesFactory,

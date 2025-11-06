@@ -48,13 +48,11 @@ def _remove_internal_data(data):
     return [d for d in data if not _is_internal_reference(d)]
 
 def _rewrite_deps(deps):
-    """Rewrite dependencies to use the open-source package names, or to come from the wheel."""
+    """Rewrite dependencies to use the open-source package names."""
     new_deps = []
     for dep in deps:
         replaced_dep = dep
-        if dep.startswith("//max/python/max/benchmark"):
-            replaced_dep = dep.replace("//max/python/max/benchmark", "//benchmark")
-        elif dep.startswith("//open-source/max/"):
+        if dep.startswith("//open-source/max/"):
             replaced_dep = dep.replace("//open-source/max/", "//")
         new_deps.append(replaced_dep)
     return new_deps
