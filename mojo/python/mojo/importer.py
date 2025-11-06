@@ -16,9 +16,13 @@ import logging
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Sequence
 from importlib.util import spec_from_file_location
 from pathlib import Path
+from uuid import uuid4
+
+from filelock import FileLock, Timeout
 
 from .paths import MojoCompilationError, MojoModulePath, find_mojo_module_in_dir
 from .run import subprocess_run_mojo
@@ -94,17 +98,28 @@ def _compile_mojo_to_so(root_mojo_path: Path, output_so_path: Path) -> None:
         ) from None
 
 
-# TODO: Instead of being careful about only deleting old files, we could just
-#   delete all files in the cache directory?
-def _delete_matching_cached_files(
-    cache_dir: Path, *, stem: str, ext: str
+def _cleanup_stale_cache_files(
+    cache_dir: Path, *, stem: str, current_hash: str
 ) -> None:
-    """Removes outdated cache files for a given Mojo module."""
+    """Removes outdated cache files for a given Mojo module.
+
+    This function is tolerant to failures. The stale file may
+    be cleaned up on a subsequent run.
+    """
     if not cache_dir.is_dir():
         return
 
-    for old_cache_file in cache_dir.glob(f"{stem}.*.{ext}"):
-        os.remove(old_cache_file)
+    current_cache_filename = f"{stem}.hash-{current_hash}.so"
+    for old_cache_file in cache_dir.glob(f"{stem}.hash-*.so"):
+        if old_cache_file.name == current_cache_filename:
+            continue
+
+        try:
+            os.remove(old_cache_file)
+        except (OSError, PermissionError) as e:
+            logging.debug(
+                f"Could not remove stale cache file '{old_cache_file}': {e}"
+            )
 
 
 # ---------------------------------------
@@ -152,6 +167,9 @@ class MojoImporter:
         # Determine cache location and directory to hash
         cache_dir = mojo_dir / "__mojocache__"
 
+        # Ensure cache directory exists.
+        os.makedirs(cache_dir, exist_ok=True)
+
         # Calculate hash.
         current_hash = _calculate_mojo_source_hash(mojo_dir)
 
@@ -161,17 +179,59 @@ class MojoImporter:
 
         # Compile if cache doesn't exist or is invalid
         if not expected_cache_file.is_file():
+            lock_path = cache_dir / f".{root_mojo_path.stem}.lock"
             # No matching cached file exists, so compile the Mojo source file.
-            os.makedirs(cache_dir, exist_ok=True)
-            # Delete any non-matching cached .so's, to prevent the number of
-            # stale cached files from growing without bound.
-            _delete_matching_cached_files(
-                cache_dir, stem=root_mojo_path.stem, ext="so"
-            )
-            _compile_mojo_to_so(root_mojo_path, expected_cache_file)
+            try:
+                # Acquire a file lock to prevent concurrent compilations.
+                with FileLock(lock_path, timeout=60):
+                    # Double-check if file exists after acquiring lock.
+                    if not expected_cache_file.is_file():
+                        # Atomic write with temp file to prevent partial reads
+                        tmp_so_path = (
+                            cache_dir
+                            / f"{root_mojo_path.stem}.hash-{current_hash}.{os.getpid()}.{uuid4().hex}.tmp"
+                        )
 
-        # If we reach here, expected_cache_file should exist (either pre-existing or just compiled)
-        assert expected_cache_file.is_file()
+                        try:
+                            _compile_mojo_to_so(root_mojo_path, tmp_so_path)
+
+                            # Move temp file to expected cache file atomically.
+                            tmp_so_path.replace(expected_cache_file)
+                        finally:
+                            # Ensure the temporary file is cleaned up, even on failure.
+                            if tmp_so_path.is_file():
+                                os.remove(tmp_so_path)
+
+                        # Safely clean up stale cache files.
+                        # Only after the new cache file is successfully in place, remove
+                        # ant outdated cache files for this module to prevent cache bloat.
+                        _cleanup_stale_cache_files(
+                            cache_dir,
+                            stem=root_mojo_path.stem,
+                            current_hash=current_hash,
+                        )
+            except Timeout:
+                # briefly wait to see if the expected cache file appears
+                time.sleep(0.2)
+                if not expected_cache_file.is_file():
+                    raise ImportError(
+                        f"Could not acquire lock for compiling Mojo module '{name}' "
+                        f"at '{lock_path}'. Another process may be holding it."
+                    ) from None
+
+        # A file may not be immediately visible or accessible to all processes after creation.
+        # This short retry loop handles that transition inconsistency.
+        for _ in range(3):
+            if expected_cache_file.is_file() and os.access(
+                expected_cache_file, os.R_OK
+            ):
+                break
+            time.sleep(0.1)
+        else:
+            raise ImportError(
+                f"Compiled Mojo module '{expected_cache_file}' not found or "
+                "inaccessible after compilation."
+            )
 
         # Constructs an ExtensionFileLoader automatically based on the .so
         # file extension.
