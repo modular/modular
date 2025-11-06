@@ -40,7 +40,7 @@ def modular_py_test(
         **kwargs: Extra arguments passed through to py_test
     """
 
-    validate_gpu_tags(tags, gpu_constraints)
+    validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
     toolchains = [
         "//bazel/internal:current_gpu_toolchain",
         "//bazel/internal:lib_toolchain",

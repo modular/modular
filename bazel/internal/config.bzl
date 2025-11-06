@@ -82,6 +82,12 @@ def validate_gpu_tags(tags, target_compatible_with):
         target_compatible_with: The target's 'target_compatible_with'
     """
     has_tag = "gpu" in tags
+
+    if type(target_compatible_with) == type([]):
+        normalized_values = set([x.strip("@") for x in target_compatible_with])
+        if normalized_values == set(["//:amd_gpu", "//:nvidia_gpu"]):
+            fail("tests cannot require both 'amd_gpu' and 'nvidia_gpu' constraints")
+
     if has_tag:
         return
 
