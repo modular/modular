@@ -20,6 +20,7 @@ import contextlib
 import io
 import os
 import select
+import selectors
 import subprocess
 import sys
 import tempfile
@@ -99,9 +100,15 @@ class _InputChannel(Generic[_T]):
     def read_sync(self, *, timeout: float | None = None) -> _T | None:
         if b"\n" not in self._buffer:
             if timeout is not None:
-                readable, _, _ = select.select([self._file], [], [], timeout)
-                if not readable:
-                    raise TimeoutError
+                # Use selectors instead of select() to avoid FD_SETSIZE (1024) limit
+                sel = selectors.DefaultSelector()
+                try:
+                    sel.register(self._file, selectors.EVENT_READ)
+                    events = sel.select(timeout)
+                    if not events:
+                        raise TimeoutError
+                finally:
+                    sel.close()
             self._buffer.extend(self._file.read(select.PIPE_BUF))
         if not self._buffer:
             return None
