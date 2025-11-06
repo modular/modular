@@ -59,7 +59,9 @@ cmd = "./test_model.py --text --model google/gemma-3-4B-it"
 cmd = "./test_model.py --vision --model google/gemma-3-4B-it"
 
 [dependencies]
-modular = "25.7.0.dev2025101518"
+modular = "==25.7.0.dev2025101518"
 # modular = ">=25.7.0.dev2025101518,<26"
 # modular = "==25.6"
-openai = ">=2.3.0,<3"
+# openai = ">=2.3.0,<3"
+# CUDA dependencies for NVIDIA GPU support
+cuda-toolkit = "12.*"
