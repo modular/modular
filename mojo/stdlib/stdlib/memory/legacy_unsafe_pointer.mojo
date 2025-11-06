@@ -53,102 +53,17 @@ struct LegacyUnsafePointer[
     Stringable,
     Writable,
 ):
-    """`UnsafePointer[T]` represents an indirect reference to one or more values
-    of type `T` consecutively in memory, and can refer to uninitialized memory.
+    """`LegacyUnsafePointer` is a deprecated pointer type that is replaced by
+    the new `UnsafePointerV2`. It is kept for backwards compatibility and will
+    be removed in a future version of Mojo.
 
-    Because it supports referring to uninitialized memory, it provides unsafe
-    methods for initializing and destroying instances of `T`, as well as methods
-    for accessing the values once they are initialized. You should instead use
-    safer pointers when possible.
-
-    Important things to know:
-
-    - This pointer is unsafe and nullable. No bounds checks; reading before
-      writing is undefined.
-    - It does not own existing memory. When memory is heap-allocated with
-      `alloc()`, you must call `free()`.
-    - For simple read/write access, use `(ptr + i)[]` or `ptr[i]` where `i`
-      is the offset size.
-    - For SIMD operations on numeric data, use `UnsafePointer[Scalar[DType.xxx]]`
-      with `load[dtype=DType.xxx]()` and `store[dtype=DType.xxx]()`.
-
-    Key APIs:
-
-    - `alloc()`: Allocates heap space for the specified number of
-      elements (contiguous). Must be paired with `free()`.
-    - `free()`: Frees memory previously allocated by `alloc()`. Do not call on
-      pointers that were not allocated by `alloc()`.
-    - `offset(i)` / `+ i` / `- i`: Pointer arithmetic. Returns a new pointer
-      shifted by `i` elements. No bounds checking.
-    - `[]` or `[i]`: Dereference to a reference of the pointee (or at
-      offset `i`). Only valid if the memory at that location is initialized.
-    - `load()`: Loads `width` elements starting at `offset` (default 0) as
-      `SIMD[dtype, width]` from `UnsafePointer[Scalar[dtype]]`. Pass
-      `alignment` when data is not naturally aligned.
-    - `store()`: Stores `val: SIMD[dtype, width]` at `offset` into
-      `UnsafePointer[Scalar[dtype]]`. Requires a mutable pointer.
-    - `destroy_pointee()` / `take_pointee()`:
-      Explicitly end the lifetime of the current pointee, or move it out, taking
-      ownership.
-    - `init_pointee_move()` / `init_pointee_move_from()` / `init_pointee_copy()`
-      Initialize a pointee that is currently uninitialized, by moving an existing
-      value, moving from another pointee, or by copying an existing value.
-      Use these to manage lifecycles when working with uninitialized memory.
-
-    For more information see [Unsafe
-    pointers](/mojo/manual/pointers/unsafe-pointers) in the Mojo Manual. For a
-    comparison with other pointer types, see [Intro to
-    pointers](/mojo/manual/pointers/).
-
-    Examples:
-
-    Element-wise store and load (width = 1):
-
-    ```mojo
-    var p = UnsafePointer[Float32].alloc(4)
-    for i in range(4):
-        p.store(i, Float32(i))
-    var v = p.load(2)
-    print(v[0])  # => 2.0
-    p.free()
-    ```
-
-    Vectorized store and load (width = 4):
-
-    ```mojo
-    var p = UnsafePointer[Int32].alloc(8)
-    var vec = SIMD[DType.int32, 4](1, 2, 3, 4)
-    p.store(0, vec)
-    var out = p.load[width=4](0)
-    print(out)  # => [1, 2, 3, 4]
-    p.free()
-    ```
-
-    Pointer arithmetic and dereference:
-
-    ```mojo
-    var p = UnsafePointer[Int32].alloc(3)
-    (p + 0)[] = 10  # offset by 0 elements, then dereference to write
-    (p + 1)[] = 20  # offset +1 element, then dereference to write
-    p[2] = 30  # equivalent offset/dereference with brackets (via __getitem__)
-    var second = p[1]  # reads the element at index 1
-    print(second, p[2])  # => 20 30
-    p.free()
-    ```
-
-    Point to a value on the stack:
-
-    ```mojo
-    var foo: Int = 123
-    var p = UnsafePointer(to=foo)
-    print(p[])  # => 123
-    # Don't call `free()` because the value was not heap-allocated
-    # Mojo will destroy it when the `foo` lifetime ends
-    ```
+    In the interim, you can implicitly convert between a `LegacyUnsafePointer`
+    and an `UnsafePointerV2`. This will allow you to pass a legacy pointer to an
+    `UnsafePointerV2` function, and vice versa.
 
     Parameters:
         type: The type the pointer points to.
-        address_space: The address space associated with the UnsafePointer allocated memory.
+        address_space: The address space associated with the pointer's allocated memory.
         mut: Whether the origin is mutable.
         origin: The origin of the memory being addressed.
     """
@@ -220,13 +135,20 @@ struct LegacyUnsafePointer[
             other.address
         )
 
-    @doc_private
     @always_inline("builtin")
     @implicit
     fn __init__(
         out self, other: UnsafePointerV2[type, address_space=address_space, **_]
     ):
-        """Cast a V2 pointer to a V1 pointer."""
+        """Implicitly cast an `UnsafePointerV2` to a `LegacyUnsafePointer`.
+
+        Args:
+            other: The `UnsafePointerV2` to cast from.
+
+        Returns:
+            A `LegacyUnsafePointer` with the same type, mutability, origin and
+            address space as the `UnsafePointerV2`.
+        """
         self.address = __mlir_op.`pop.pointer.bitcast`[_type = Self._mlir_type](
             other.address
         )
@@ -272,7 +194,7 @@ struct LegacyUnsafePointer[
         Example:
 
         ```mojo
-        var p = UnsafePointer[Int32].alloc(4)
+        var p = LegacyUnsafePointer[Int32].alloc(4)
         p.store(0, Int32(42))
         p.store(1, Int32(7))
         p.store(2, Int32(9))
@@ -323,7 +245,7 @@ struct LegacyUnsafePointer[
             idx: The offset of the new pointer.
 
         Returns:
-            The new constructed UnsafePointer.
+            The new constructed LegacyUnsafePointer.
         """
         return __mlir_op.`pop.offset`(self.address, index(idx)._mlir_value)
 
@@ -644,7 +566,7 @@ struct LegacyUnsafePointer[
         Example:
 
         ```mojo
-        var p = UnsafePointer[Int32].alloc(8)
+        var p = LegacyUnsafePointer[Int32].alloc(8)
         p.store(0, SIMD[DType.int32, 4](1, 2, 3, 4))
         var v = p.load[width=4]()
         print(v)  # => [1, 2, 3, 4]
@@ -861,7 +783,7 @@ struct LegacyUnsafePointer[
         Example:
 
         ```mojo
-        var p = UnsafePointer[Float32].alloc(4)
+        var p = LegacyUnsafePointer[Float32].alloc(4)
         var vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
         p.store(vec)
         var out = p.load[width=4]()
@@ -1079,14 +1001,14 @@ struct LegacyUnsafePointer[
         mut=mut,
         origin=origin,
     ]:
-        """Bitcasts a UnsafePointer to a different type.
+        """Bitcasts a LegacyUnsafePointer to a different type.
 
         Parameters:
             T: The target type.
 
         Returns:
-            A new UnsafePointer object with the specified type and the same address,
-            as the original UnsafePointer.
+            A new LegacyUnsafePointer object with the specified type and the same address,
+            as the original LegacyUnsafePointer.
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = LegacyUnsafePointer[
@@ -1153,8 +1075,8 @@ struct LegacyUnsafePointer[
             Casting the mutability of a pointer is inherently very unsafe.
             Improper usage can lead to undefined behavior. Consider restricting
             types to their proper mutability at the function signature level.
-            For example, taking an `UnsafePointer[T, mut=True, **_]` as an
-            argument over an unbound `UnsafePointer[T, **_]` is preferred.
+            For example, taking an `LegacyUnsafePointer[T, mut=True, **_]` as an
+            argument over an unbound `LegacyUnsafePointer[T, **_]` is preferred.
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = Self._OriginCastType[
@@ -1210,9 +1132,10 @@ struct LegacyUnsafePointer[
         constrained[
             False,
             (
-                "An UnsafePointer with unbound mutability cannot be cast to"
-                " 'AnyOrigin'. Consider using `as_immutable` first, or binding"
-                " the mutability explicitly before calling this function."
+                "An LegacyUnsafePointer with unbound mutability cannot be cast"
+                " to 'AnyOrigin'. Consider using `as_immutable` first, or"
+                " binding the mutability explicitly before calling this"
+                " function."
             ),
         ]()
         result = abort[type_of(result)]()
@@ -1287,14 +1210,14 @@ struct LegacyUnsafePointer[
         mut=mut,
         origin=origin,
     ]:
-        """Casts an UnsafePointer to a different address space.
+        """Casts an LegacyUnsafePointer to a different address space.
 
         Parameters:
             target_address_space: The address space of the result.
 
         Returns:
-            A new UnsafePointer object with the same type and the same address,
-            as the original UnsafePointer and the new address space.
+            A new LegacyUnsafePointer object with the same type and the same address,
+            as the original LegacyUnsafePointer and the new address space.
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = LegacyUnsafePointer[
@@ -1434,8 +1357,8 @@ struct LegacyUnsafePointer[
         ### Example
 
         ```mojo
-        var a_ptr = UnsafePointer.alloc[String](1)
-        var b_ptr = UnsafePointer.alloc[String](2)
+        var a_ptr = LegacyUnsafePointer.alloc[String](1)
+        var b_ptr = LegacyUnsafePointer.alloc[String](2)
 
         # Initialize A pointee
         a_ptr.init_pointee_move("foo")
