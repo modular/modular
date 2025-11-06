@@ -463,12 +463,13 @@ struct DType(
 
     @doc_private
     @staticmethod
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn _from_ui8(ui8: UInt8._mlir_type) -> DType:
-        var res = __mlir_op.`pop.dtype.from_ui8`(
-            __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.ui8](ui8)
+        return DType(
+            mlir_value=__mlir_op.`pop.dtype.from_ui8`(
+                __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.ui8](ui8)
+            )
         )
-        return DType(mlir_value=res)
 
     @doc_private
     @always_inline("builtin")
