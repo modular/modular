@@ -190,6 +190,24 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     fn __neg__(self) -> type_of(0 - self):
         return 0 - self
 
+    @always_inline("builtin")
+    fn __pos__(self) -> Self:
+        return self
+
+    @always_inline("builtin")
+    fn __floordiv__(
+        self, rhs: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<floordiv `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
+        return {}
+
 
 @nonmaterializable(FloatDyn)
 @register_passable("trivial")
@@ -321,6 +339,12 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable, Intable):
         ](lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
+    fn __ne__(self, rhs: Int) -> Bool:
+        return __mlir_op.`index.cmp`[
+            pred = __mlir_attr.`#index<cmp_predicate ne>`
+        ](self._mlir_value, rhs._mlir_value)
+
+    @always_inline("builtin")
     fn __lt__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate sgt>`
@@ -349,6 +373,32 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable, Intable):
     @always_inline("builtin")
     fn __int__(self) -> Int:
         return self
+
+    @always_inline("nodebug")
+    fn __pow__(self, exp: Self) -> Self:
+        pass
+
+    @always_inline("builtin")
+    fn __neg__(self) -> Int:
+        return self * -1
+
+    @always_inline("builtin")
+    fn __and__(self, rhs: Int) -> Int:
+        return Int(
+            mlir_value=__mlir_op.`index.and`(self._mlir_value, rhs._mlir_value)
+        )
+
+    @always_inline("nodebug")
+    fn __imul__(mut self, rhs: Int):
+        self = self * rhs
+
+    @always_inline("nodebug")
+    fn __irshift__(mut self, rhs: Int):
+        self = self >> rhs
+
+    @always_inline("builtin")
+    fn __rshift__(self, rhs: Int) -> Int:
+        pass
 
 
 @register_passable("trivial")
