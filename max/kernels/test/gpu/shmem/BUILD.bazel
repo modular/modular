@@ -61,7 +61,6 @@ lit_tests(
         "gpu",
     ],
     tools = [
-        "//KGEN/tools/mojo",
         "@rocshmem//:bin/mpirun",
         "@rocshmem//:bin/prterun",
     ],
