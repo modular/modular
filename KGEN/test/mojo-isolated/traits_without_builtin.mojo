@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo --mojo-disable-builtins %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s --mojo-disable-builtins | FileCheck %s
 
 
 struct Int:
