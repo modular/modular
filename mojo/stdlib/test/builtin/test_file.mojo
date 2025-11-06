@@ -477,12 +477,24 @@ def test_file_open_fifo():
     # Verify the FIFO was created
     assert_true(fifo_path.exists())
 
-    # Start a background reader using nohup to prevent blocking
-    # The reader will consume data from the FIFO
+    # Start a background reader with explicit synchronization
+    # Create a flag file that signals when the reader is ready
+    var ready_flag = Path(gettempdir().value()) / "test_file_fifo_ready"
+    try:
+        remove(ready_flag)
+    except:
+        pass
+
+    # Start the reader and signal when it's ready
+    # The reader opens the FIFO first, then creates the ready flag
     var start_reader = (
-        "nohup sh -c 'cat "
+        "sh -c '(cat "
         + String(fifo_path)
-        + " > /dev/null' >/dev/null 2>&1 &"
+        + " > /dev/null & echo $! > "
+        + String(gettempdir().value())
+        + "/fifo_reader_pid; sleep 0.1; touch "
+        + String(ready_flag)
+        + ") &' >/dev/null 2>&1"
     )
     try:
         _ = run(start_reader)
@@ -494,8 +506,23 @@ def test_file_open_fifo():
             pass
         return
 
-    # Give the reader time to start and open the FIFO
-    sleep(0.3)
+    # Wait for reader to signal it's ready (with timeout)
+    var max_wait = 20  # 20 iterations * 0.1s = 2 seconds max
+    var reader_ready = False
+    for _ in range(max_wait):
+        if ready_flag.exists():
+            reader_ready = True
+            break
+        sleep(0.1)
+
+    if not reader_ready:
+        print("Warning: Reader not ready after timeout, skipping test")
+        try:
+            remove(fifo_path)
+            remove(ready_flag)
+        except:
+            pass
+        return
 
     # The key test: opening a FIFO in write mode should NOT raise
     # "unable to remove existing file" error. The bug was that `FileHandle`
@@ -505,9 +532,10 @@ def test_file_open_fifo():
     f.write("test data\n")
     f.close()
 
-    # Clean up the FIFO
+    # Clean up the FIFO and ready flag
     try:
         remove(fifo_path)
+        remove(ready_flag)
     except:
         pass
 
