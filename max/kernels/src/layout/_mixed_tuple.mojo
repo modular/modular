@@ -22,6 +22,8 @@ from memory import LegacyUnsafePointer as UnsafePointer
 trait MixedTupleLike(ImplicitlyCopyable, Movable, Representable):
     """Trait for unified layout handling of compile-time and runtime indices."""
 
+    alias VariadicType: VariadicOf[MixedTupleLike]
+
     # Note that unlike the __len__() from Sized, this is a static method.
     @staticmethod
     fn __len__() -> Int:
@@ -52,6 +54,12 @@ trait MixedTupleLike(ImplicitlyCopyable, Movable, Representable):
         """
         ...
 
+    fn tuple(self) -> MixedTuple[*Self.VariadicType]:
+        """Get the value of this type.
+        Only valid for tuple types.
+        """
+        ...
+
     fn product(self) -> Int:
         """Calculate the product of all elements.
 
@@ -68,13 +76,6 @@ trait MixedTupleLike(ImplicitlyCopyable, Movable, Representable):
         """
         ...
 
-    # TODO(MOCO-2274): This method allows rebinding from MixedTupleLike to a
-    # MixedTuple by retrieving the variadic pack. It is a workaround for
-    # rebind causing variadic parameters to be erased.
-    @staticmethod
-    fn _get_variadic_pack() -> VariadicOf[MixedTupleLike]:
-        ...
-
 
 @register_passable("trivial")
 struct ComptimeInt[val: Int](MixedTupleLike):
@@ -83,6 +84,8 @@ struct ComptimeInt[val: Int](MixedTupleLike):
     Parameters:
         val: The compile-time integer value.
     """
+
+    alias VariadicType: VariadicOf[MixedTupleLike] = Tuple[Self].element_types
 
     fn __init__(out self):
         """Initialize a compile-time integer with the specified value."""
@@ -118,10 +121,10 @@ struct ComptimeInt[val: Int](MixedTupleLike):
     fn value(self) -> Int:
         return val
 
-    @staticmethod
-    fn _get_variadic_pack() -> VariadicOf[MixedTupleLike]:
-        constrained[False, "ComptimeInt does not have a variadic pack"]()
-        return abort[VariadicOf[MixedTupleLike]]()
+    @always_inline("nodebug")
+    fn tuple(self) -> MixedTuple[*Self.VariadicType]:
+        constrained[False, "ComptimeInt is not a tuple type"]()
+        return rebind[MixedTuple[*Self.VariadicType]](self)
 
 
 @register_passable("trivial")
@@ -131,6 +134,8 @@ struct RuntimeInt[dtype: DType = DType.int](MixedTupleLike):
     Parameters:
         dtype: The data type for the runtime integer value. Defaults to `DType.int`.
     """
+
+    alias VariadicType: VariadicOf[MixedTupleLike] = Tuple[Self].element_types
 
     var val: Scalar[dtype]
     """The runtime scalar value."""
@@ -174,36 +179,10 @@ struct RuntimeInt[dtype: DType = DType.int](MixedTupleLike):
     fn value(self) -> Int:
         return Int(self.val)
 
-    @staticmethod
-    fn _get_variadic_pack() -> VariadicOf[MixedTupleLike]:
-        constrained[False, "RuntimeInt does not have a variadic pack"]()
-        return abort[VariadicOf[MixedTupleLike]]()
-
-
-# Note that `to_mixed_int_tuple` isn't a method on MixedTupleLike because it
-# calls T._get_variadic_pack(). Putting this in the return type for Compile and
-# RuntimeInt be illegal, since the function is constrained False for those types.
-
-
-@always_inline("nodebug")
-fn to_mixed_int_tuple[
-    T: MixedTupleLike
-](value: T) -> MixedTuple[*T._get_variadic_pack()]:
-    """Convert a MixedTupleLike value to its corresponding MixedTuple type.
-
-    This is a convenience function that performs rebind internally, making the code cleaner
-    when working with nested MixedTuple types.
-
-    Parameters:
-        T: The MixedTupleLike type to convert.
-
-    Args:
-        value: The value to convert.
-
-    Returns:
-        The value rebound as a MixedTuple with the appropriate variadic pack.
-    """
-    return rebind[MixedTuple[*T._get_variadic_pack()]](value)
+    @always_inline("nodebug")
+    fn tuple(self) -> MixedTuple[*Self.VariadicType]:
+        constrained[False, "RuntimeInt is not a tuple type"]()
+        return rebind[MixedTuple[*Self.VariadicType]](self)
 
 
 fn Idx(value: Int) -> RuntimeInt[DType.int]:
@@ -241,22 +220,10 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         element_types: The variadic pack of element types that implement `MixedTupleLike`.
     """
 
-    # TODO(MOCO-1565): Use a Tuple[*element_types] instead of directly using a variadic pack,
-    # therefore eliminating most of the code below.
+    alias VariadicType: VariadicOf[MixedTupleLike] = element_types
 
-    alias _mlir_type = __mlir_type[
-        `!kgen.pack<:`,
-        VariadicOf[MixedTupleLike],
-        element_types,
-        `>`,
-    ]
-
-    var storage: Self._mlir_type
+    var _storage: Tuple[*element_types]
     """The underlying MLIR storage for the tuple elements."""
-
-    @staticmethod
-    fn _get_variadic_pack() -> VariadicOf[MixedTupleLike]:
-        return element_types
 
     @staticmethod
     @always_inline("nodebug")
@@ -326,17 +293,18 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         Args:
             storage: The variadic pack storage to construct from.
         """
-        # Mark our storage as initialized
-        __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self.storage)
+        var t = Tuple(
+            storage=rebind_var[
+                VariadicPack[
+                    type_of(storage).is_owned,
+                    type_of(storage).origin,
+                    Copyable & Movable,
+                    *element_types,
+                ]
+            ](storage^)
         )
 
-        # Move each element into the tuple storage.
-        @parameter
-        fn init_elt[idx: Int](var elt: element_types[idx]):
-            UnsafePointer(to=self[idx]).init_pointee_move(elt^)
-
-        storage^.consume_elements[init_elt]()
+        self._storage = rebind[Tuple[*element_types]](t^)
 
     fn __del__(deinit self):
         """Destructor that destroys all elements."""
@@ -346,7 +314,9 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
             UnsafePointer(to=self[i]).destroy_pointee()
 
     @always_inline("nodebug")
-    fn __getitem__[idx: Int](ref self) -> ref [self] element_types[idx]:
+    fn __getitem__[
+        idx: Int
+    ](ref self) -> ref [self._storage] element_types[idx]:
         """Get a reference to an element in the tuple.
 
         Parameters:
@@ -355,14 +325,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         Returns:
             A reference to the specified element.
         """
-        var storage_ptr = UnsafePointer(to=self.storage).address
-
-        # Get pointer to the element
-        var elt_ptr = __mlir_op.`kgen.pack.gep`[index = idx.__mlir_index__()](
-            storage_ptr
-        )
-        # Return as reference, propagating mutability
-        return UnsafePointer(elt_ptr)[]
+        return self._storage[idx]
 
     @always_inline("nodebug")
     fn product(self) -> Int:
@@ -433,7 +396,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
                     i,
                     "] but got value",
                 )
-                result += to_mixed_int_tuple(self[i]).inner_product(t_elem)
+                result += MixedTuple(self[i]).inner_product(t_elem)
             else:
                 debug_assert(
                     not t_elem.is_tuple(),
@@ -476,8 +439,8 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
             @parameter
             if T.is_tuple() and U.is_tuple():
-                result += to_mixed_int_tuple(self[i]).inner_product(
-                    to_mixed_int_tuple(other[i])
+                result += MixedTuple(self[i]).inner_product(
+                    MixedTuple(other[i])
                 )
             elif T.is_value() and U.is_value():
                 result += self[i].value() * other[i].value()
@@ -519,7 +482,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
             @parameter
             if T.is_tuple() and U.is_tuple():
-                if to_mixed_int_tuple(self[i]) != to_mixed_int_tuple(other[i]):
+                if MixedTuple(self[i]) != MixedTuple(other[i]):
                     return False
             elif T.is_value() and U.is_value():
                 if self[i].value() != other[i].value():
@@ -543,6 +506,10 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     ](self, other: MixedTuple[*other_types]) -> Bool:
         return not self == other
 
+    @always_inline("nodebug")
+    fn tuple(self) -> MixedTuple[*Self.VariadicType]:
+        return rebind[MixedTuple[*Self.VariadicType]](self)
+
 
 # Implementation based off runtime_tuple.mojo's crd2idx.
 fn crd2idx[
@@ -558,14 +525,14 @@ fn crd2idx[
 
     @parameter
     if Shape.is_tuple() and Stride.is_tuple() and shape_len == stride_len:
-        var shape_t = to_mixed_int_tuple(shape)
-        var stride_t = to_mixed_int_tuple(stride)
+        var shape_t = shape.tuple()
+        var stride_t = stride.tuple()
 
         var result: Scalar[out_type] = 0
 
         @parameter
         if crd_len > 1:  # tuple tuple tuple
-            var crd_t = to_mixed_int_tuple(crd)
+            var crd_t = crd.tuple()
 
             @parameter
             for i in range(shape_len):
@@ -626,9 +593,7 @@ fn mixed_int_tuple_to_int_tuple[
         @parameter
         if T.is_tuple():
             # Recursively convert nested tuples
-            result.append(
-                mixed_int_tuple_to_int_tuple(to_mixed_int_tuple(value[i]))
-            )
+            result.append(mixed_int_tuple_to_int_tuple(value[i].tuple()))
         else:
             # Convert value elements to integers
             result.append(IntTuple(value[i].value()))

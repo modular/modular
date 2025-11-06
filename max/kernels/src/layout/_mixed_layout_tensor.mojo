@@ -63,22 +63,22 @@ fn distribute[
     data_stride_1: Int, //,
     dtype: DType,
     thread_layout: MixedLayout[
-        MixedTuple[
+        Tuple[
             ComptimeInt[thread_shape_0], ComptimeInt[thread_shape_1]
-        ]._get_variadic_pack(),
-        MixedTuple[
+        ].element_types,
+        Tuple[
             ComptimeInt[thread_stride_0], ComptimeInt[thread_stride_1]
-        ]._get_variadic_pack(),
+        ].element_types,
     ],
 ](
     data_layout_tensor: MixedLayoutTensor[
         dtype=dtype,
-        shape_types = MixedTuple[
+        shape_types = Tuple[
             ComptimeInt[data_shape_0], ComptimeInt[data_shape_1]
-        ]._get_variadic_pack(),
-        stride_types = MixedTuple[
+        ].element_types,
+        stride_types = Tuple[
             ComptimeInt[data_stride_0], ComptimeInt[data_stride_1]
-        ]._get_variadic_pack(),
+        ].element_types,
     ],
     thread_id: Int,
 ) -> MixedLayoutTensor[
@@ -86,11 +86,11 @@ fn distribute[
     shape_types = MixedTuple[
         ComptimeInt[data_shape_0 // thread_shape_0],
         ComptimeInt[data_shape_1 // thread_shape_1],
-    ]._get_variadic_pack(),
-    stride_types = MixedTuple[
+    ].element_types,
+    stride_types = Tuple[
         ComptimeInt[data_stride_0 * thread_shape_0],
         ComptimeInt[data_stride_1 * thread_shape_1],
-    ]._get_variadic_pack(),
+    ].element_types,
 ]:
     """A simplified implementation of LayoutTensor.distribute on MixedLayoutTensor.
     """
@@ -125,8 +125,8 @@ fn distribute[
         UnsafePointer(to=data_layout_tensor.ptr[offset]),
         rebind[
             MixedLayout[
-                shape_types = type_of(shape)._get_variadic_pack(),
-                stride_types = type_of(stride)._get_variadic_pack(),
+                shape_types = type_of(shape._storage).element_types,
+                stride_types = type_of(stride._storage).element_types,
             ]
         ](frag_layout),
     )

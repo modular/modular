@@ -25,7 +25,6 @@ from ._mixed_tuple import (
     RuntimeInt,
     crd2idx,
     mixed_int_tuple_to_int_tuple,
-    to_mixed_int_tuple,
 )
 from .int_tuple import IntTuple
 from .layout import LayoutTrait
