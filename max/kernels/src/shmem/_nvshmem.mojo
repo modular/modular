@@ -19,7 +19,7 @@ from sys.ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,
-    _OwnedDLHandle,
+    OwnedDLHandle,
     c_int,
     c_uint,
     c_size_t,
@@ -53,7 +53,7 @@ struct NVSHMEMIVersion:
 alias NVSHMEM_LIBRARY = _Global["NVSHMEM_LIBRARY", _init_nvshmem_dylib]
 
 
-fn _init_nvshmem_dylib() -> _OwnedDLHandle:
+fn _init_nvshmem_dylib() -> OwnedDLHandle:
     var lib = "libnvshmem_host.so.3"
     # If provided, allow an override directory for nvshmem bootstrap libs.
     # Example:
@@ -63,10 +63,10 @@ fn _init_nvshmem_dylib() -> _OwnedDLHandle:
     if dir_name := getenv("MODULAR_SHMEM_LIB_DIR"):
         lib = String(Path(dir_name) / lib)
     try:
-        return _OwnedDLHandle(path=lib)
+        return OwnedDLHandle(path=lib)
     except e:
-        abort(String("failed to load ROCSHMEM library: ", e))
-        return _OwnedDLHandle(unsafe_uninitialized=True)
+        abort(String("failed to load NVSHMEM library: ", e))
+        return OwnedDLHandle(unsafe_uninitialized=True)
 
 
 @always_inline

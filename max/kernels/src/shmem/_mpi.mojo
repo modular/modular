@@ -21,7 +21,7 @@ from sys.ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,
-    _OwnedDLHandle,
+    OwnedDLHandle,
     c_int,
     RTLD,
 )
@@ -42,7 +42,7 @@ fn mpi_lib_name() -> String:
         return "libmpi.so"
 
 
-fn _init_mpi_dylib() -> _OwnedDLHandle:
+fn _init_mpi_dylib() -> OwnedDLHandle:
     var lib = mpi_lib_name()
     # If provided, allow an override directory for nvshmem bootstrap libs.
     # Example:
@@ -60,10 +60,10 @@ fn _init_mpi_dylib() -> _OwnedDLHandle:
         flags = flags | RTLD.NODELETE
 
     try:
-        return _OwnedDLHandle(path=lib, flags=flags)
+        return OwnedDLHandle(path=lib, flags=flags)
     except e:
         abort(String("failed to load MPI library: ", e))
-        return _OwnedDLHandle(unsafe_uninitialized=True)
+        return OwnedDLHandle(unsafe_uninitialized=True)
 
 
 @always_inline

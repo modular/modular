@@ -16,7 +16,7 @@ from pathlib import Path
 from sys.ffi import _get_global_or_null, external_call
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _OwnedDLHandle, _Global
+from sys.ffi import OwnedDLHandle, _Global
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext, DeviceBuffer
@@ -82,7 +82,7 @@ alias NCCL_LIBRARY_PATHS = List[Path](
 
 
 # Unified CCL loader (selects RCCL/NCCL at compile time)
-fn _init_ccl_dylib() -> _OwnedDLHandle:
+fn _init_ccl_dylib() -> OwnedDLHandle:
     @parameter
     if has_amd_gpu_accelerator():
         return _find_dylib["RCCL"](materialize[RCCL_LIBRARY_PATHS]())
