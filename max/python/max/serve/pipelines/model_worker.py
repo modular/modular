@@ -159,31 +159,24 @@ class ModelWorker:
             count_no_progress = 0
             while True:
                 health.put(True)
-                try:
-                    # Checks for new LoRA requests and processes them.
-                    if lora_manager is not None:
-                        lora_manager.process_lora_requests()
-                    # Check for request to reset prefix cache.
-                    if (
-                        reset_prefix_cache_backend is not None
-                        and reset_prefix_cache_backend.should_reset_prefix_cache()
-                    ):
-                        assert paged_cache is not None
-                        paged_cache.reset_prefix_cache()
-                    # This method must terminate in a reasonable amount of time
-                    # so that the ProcessMonitor heartbeat is periodically run.
-                    progress = scheduler.run_iteration()
-                    if progress == SchedulerProgress.NO_PROGRESS:
-                        await sleep_with_backoff(count_no_progress)
-                        count_no_progress += 1
-                    else:
-                        count_no_progress = 0
-                except Exception as e:
-                    wrapped_error = detect_and_wrap_oom(e)
-                    if wrapped_error is not e:
-                        # It was a OOM error, raise the wrapped version with helpful message
-                        raise wrapped_error from e
-                    raise e
+                # Checks for new LoRA requests and processes them.
+                if lora_manager is not None:
+                    lora_manager.process_lora_requests()
+                # Check for request to reset prefix cache.
+                if (
+                    reset_prefix_cache_backend is not None
+                    and reset_prefix_cache_backend.should_reset_prefix_cache()
+                ):
+                    assert paged_cache is not None
+                    paged_cache.reset_prefix_cache()
+                # This method must terminate in a reasonable amount of time
+                # so that the ProcessMonitor heartbeat is periodically run.
+                progress = scheduler.run_iteration()
+                if progress == SchedulerProgress.NO_PROGRESS:
+                    await sleep_with_backoff(count_no_progress)
+                    count_no_progress += 1
+                else:
+                    count_no_progress = 0
 
         logger.debug("Stopped model worker!")
 
@@ -225,6 +218,9 @@ class ModelWorker:
             )
         except KeyboardInterrupt:
             pass  # suppress noisy stack traces for user abort
+        except Exception as e:
+            detect_and_wrap_oom(e)
+            raise
 
 
 @asynccontextmanager

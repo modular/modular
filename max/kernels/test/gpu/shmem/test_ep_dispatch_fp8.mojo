@@ -28,6 +28,7 @@ from sys.param_env import env_get_string
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
+from memory import LegacyUnsafePointer as UnsafePointer
 from shmem import *
 from shmem.ep_comm import (
     BlockwiseFP8TokenFormat,
@@ -135,11 +136,13 @@ fn test_dispatch[
             n_tokens_per_rank,
         )
 
-    var send_buf = shmem_malloc[DType.uint8](n_tokens_per_rank * msg_bytes)
-    var recv_buf = shmem_malloc[DType.uint8](
-        n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes
+    var send_buf = shmem_malloc[DType.uint8](
+        UInt(n_tokens_per_rank * msg_bytes)
     )
-    var recv_count = shmem_malloc[DType.uint64](n_local_experts * n_ranks)
+    var recv_buf = shmem_malloc[DType.uint8](
+        UInt(n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes)
+    )
+    var recv_count = shmem_malloc[DType.uint64](UInt(n_local_experts * n_ranks))
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )

@@ -76,7 +76,7 @@ modular_py_binary(
     ],
     env = {
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
-        "MODULAR_NVSHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     deps = [
         ":_pipelines",
@@ -99,5 +99,5 @@ modular_py_library(
     srcs = ["gpu_query.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
-    deps = ["//open-source/max/mojo/python/mojo"],
+    deps = ["@mojo//:python"],
 )

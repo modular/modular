@@ -20,6 +20,7 @@ from sys import CompilationTarget, external_call
 from sys.ffi import c_char
 
 from builtin._location import __call_location
+from memory import LegacyUnsafePointer as UnsafePointer
 
 alias DIR_SEPARATOR = "/"
 

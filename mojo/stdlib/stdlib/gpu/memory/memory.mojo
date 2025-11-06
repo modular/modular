@@ -29,6 +29,7 @@ achieve optimal memory access patterns and cache utilization.
 from collections.optional import OptionalReg
 from collections.string import StaticString
 from collections.string.string_slice import _get_kgen_string, get_static_string
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import (
     align_of,
     bit_width_of,
@@ -1307,12 +1308,12 @@ fn cp_async_bulk_tensor_global_shared_cta[
     memory to global memory using NVIDIA's Tensor Memory Access (TMA) mechanism.
 
     This function provides an efficient way to write data back from shared memory to global
-    memory using TMA. It supports both rank-1 and rank-2 tensors and allows control over
+    memory using TMA. It supports both rank-1, rank-2, and rank-3 tensors and allows control over
     cache eviction policy.
 
     Parameters:
         src_type: The data type of the source tensor elements.
-        rank: The dimensionality of the tensor (must be 1 or 2).
+        rank: The dimensionality of the tensor (must be 1, 2, or 3).
         eviction_policy: Optional cache eviction policy that controls how the data is handled
                         in the cache hierarchy. Defaults to EVICT_NORMAL.
 
@@ -1323,7 +1324,7 @@ fn cp_async_bulk_tensor_global_shared_cta[
                        and memory access patterns.
         coords: Coordinates specifying which tile of the tensor to copy. For rank-1 tensors,
                this is a single coordinate. For rank-2 tensors, this contains both row and
-               column coordinates.
+               column coordinates. For rank-3 tensors, this contains both row, column, and depth coordinates.
 
     Notes:
 
@@ -1333,12 +1334,22 @@ fn cp_async_bulk_tensor_global_shared_cta[
     - The source memory must be properly aligned for TMA operations.
     - The TMA descriptor must be properly initialized before use.
     """
-    constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
+    constrained[rank in (1, 2, 3), "Expecting rank-1, 2, or 3 tensors"]()
 
     alias cache_hint: Bool = eviction_policy is not CacheEviction.EVICT_NORMAL
 
     @parameter
-    if rank == 2:
+    if rank == 3:
+        llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.3d", NoneType](
+            src_mem,
+            tma_descriptor,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            Int32(coords[2]),
+            eviction_policy._value,
+            cache_hint,
+        )
+    elif rank == 2:
         llvm_intrinsic["llvm.nvvm.cp.async.bulk.tensor.s2g.tile.2d", NoneType](
             src_mem,
             tma_descriptor,

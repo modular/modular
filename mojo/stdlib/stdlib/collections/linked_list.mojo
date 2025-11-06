@@ -13,6 +13,7 @@
 
 
 from collections._index_normalization import normalize_index
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 
 

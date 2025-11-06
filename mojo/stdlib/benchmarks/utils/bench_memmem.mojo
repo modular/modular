@@ -17,7 +17,7 @@ from sys import simd_width_of
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId
 from bit import count_trailing_zeros
-from memory import memcmp, pack_bits
+from memory import LegacyUnsafePointer as UnsafePointer, memcmp, pack_bits
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data

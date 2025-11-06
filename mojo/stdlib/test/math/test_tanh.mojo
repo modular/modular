@@ -15,6 +15,7 @@ from math import tanh
 from random import randn, seed
 
 from buffer import NDBuffer
+from memory import LegacyUnsafePointer as UnsafePointer
 from test_utils import compare, libm_call
 from testing import assert_almost_equal, TestSuite
 

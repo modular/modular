@@ -39,7 +39,11 @@ from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
-from memory import stack_allocation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    stack_allocation,
+)
 
 from utils import IndexList, StaticTuple
 from utils.index import Index

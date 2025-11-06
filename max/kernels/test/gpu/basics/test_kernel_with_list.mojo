@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 fn kernel_with_list(res: UnsafePointer[Float32]):

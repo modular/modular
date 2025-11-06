@@ -35,7 +35,11 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
 from logger import Logger
-from memory import bitcast, stack_allocation
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    bitcast,
+    stack_allocation,
+)
 
 from utils import Index, IndexList
 from utils.numerics import get_accum_type

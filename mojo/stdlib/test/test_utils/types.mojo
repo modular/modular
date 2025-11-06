@@ -28,6 +28,7 @@
 * `AbortOnCopy`
 """
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 
 # ===----------------------------------------------------------------------=== #

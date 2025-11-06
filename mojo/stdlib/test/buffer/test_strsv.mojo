@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 alias simd_width = 8

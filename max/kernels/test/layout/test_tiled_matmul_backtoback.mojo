@@ -22,7 +22,7 @@ from layout import Layout, RuntimeLayout
 from layout.int_tuple import IntTuple, size
 from layout.layout import expand_modes_alike, flatten
 from layout.layout_tensor import LayoutTensor
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_false
 
 from utils import StaticTuple

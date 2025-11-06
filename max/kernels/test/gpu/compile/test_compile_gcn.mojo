@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import exp
+from memory import LegacyUnsafePointer as UnsafePointer
 
 from gpu import (
     AMDScheduleBarrierMask,

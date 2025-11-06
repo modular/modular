@@ -52,6 +52,7 @@ query interval data, particularly for finding overlaps.
 from builtin.string_literal import StaticString
 
 from .deque import Deque
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 trait IntervalElement(Comparable, Copyable, Intable, Movable, Writable):

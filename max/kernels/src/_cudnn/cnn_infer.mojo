@@ -11,11 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, OwnedDLHandle
 
 from utils import StaticTuple
 
@@ -64,7 +68,7 @@ alias CUDA_CUDNN_CNN_INFER_LIBRARY = _Global[
 ]
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[CUDA_CUDNN_CNN_INFER_LIBRARY_PATHS]()
     )

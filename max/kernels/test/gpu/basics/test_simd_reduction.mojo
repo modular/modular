@@ -16,6 +16,7 @@
 
 from gpu import global_idx
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 alias buffer_size = 1024

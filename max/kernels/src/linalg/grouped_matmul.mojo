@@ -17,6 +17,7 @@ from sys.info import has_amd_gpu_accelerator
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
+from memory import LegacyUnsafePointer as UnsafePointer
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
 from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
 from gpu.globals import WARPGROUP_SIZE

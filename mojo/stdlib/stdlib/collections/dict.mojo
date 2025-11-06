@@ -27,13 +27,12 @@ Its implementation closely mirrors Python's `dict` implementation:
   Python dictionaries from Mojo, see
   [Python types in Mojo](/mojo/manual/python/types/#python-types-in-mojo).
 
-Key elements must implement the `KeyElement` trait, which encompasses `Movable`,
-`Hashable`, and `EqualityComparable`. It also includes `Copyable` and `Movable`
-until we push references through the standard library types.
+Key elements must implement the `KeyElement` trait composition, which includes
+`Movable`, `Hashable`, `EqualityComparable`, and `Copyable`. The `Copyable`
+requirement will eventually be removed.
 
-Value elements must be `Copyable` and `Movable` for a similar reason. Both key
-and value types must always be Movable so we can resize the dictionary as it
-grows.
+Value elements must be `Copyable` and `Movable`. As with `KeyElement`, the
+`Copyable` requirement for value elements will eventually be removed.
 
 See the `Dict` docs for more details.
 """
@@ -41,13 +40,17 @@ See the `Dict` docs for more details.
 from hashlib import Hasher, default_comp_time_hasher, default_hasher
 from sys.intrinsics import likely
 
-from memory import bitcast, memcpy
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    bitcast,
+    memcpy,
+)
 
 alias KeyElement = Copyable & Movable & Hashable & EqualityComparable
 """A trait composition for types which implement all requirements of
-dictionary keys. Dict keys must minimally be Copyable, Movable, Hashable,
-and EqualityComparable for a hash map. Until we have references
-they must also be copyable."""
+dictionary keys. Dict keys must minimally be `Copyable`, `Movable`, `Hashable`,
+and `EqualityComparable`."""
 
 
 @fieldwise_init
@@ -622,16 +625,12 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
     #     we will eventually "compact" the dictionary and shift entries towards
     #     the beginning to free new space while retaining insertion order.
     #
-    # Key elements must implement the `KeyElement` trait, which encompasses
-    # Movable, Hashable, and EqualityComparable. It also includes Copyable
-    # and Movable until we have references.
+    # Key elements must implement the `KeyElement` trait composition, which
+    # includes Copyable, Movable, Hashable, and EqualityComparable.
+    # Some of these requirements will be relaxed when we have more robust
+    # support for conditional trait conformance.
     #
-    # Value elements must be CollectionElements for a similar reason. Both key and
-    # value types must always be Movable so we can resize the dictionary as it grows.
-    #
-    # Without conditional trait conformance, making a `__str__` representation for
-    # Dict is tricky. We'd need to add `Stringable` to the requirements for keys
-    # and values. This may be worth it.
+    # Value elements must be Movable and Copyable for a similar reason.
     #
     # Invariants:
     #

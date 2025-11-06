@@ -13,6 +13,10 @@
 
 from hashlib.hasher import Hasher
 from math import ceildiv
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from sys import env_get_int, has_nvidia_gpu_accelerator, size_of
 from sys.ffi import external_call
 

@@ -3873,15 +3873,15 @@ class LogOp(max._core.Operation):
 
 class LogsoftmaxOp(max._core.Operation):
     """
-    Returns `log(softmax(x))`, where `x` is input tensor.
-
-    The softmax is applied along the last axis.
+    Returns `log(softmax(x, axis))`, where `x` is input tensor, and `axis` is
+    the axis along which `softmax` is applied.
 
     Example:
 
     ```mlir
       %arg: !mo.tensor<[2, 3], f32>
-      %res = mo.logsoftmax(%arg) : !mo.tensor<[2, 3], f32>
+      %axis: !mo.tensor<[], si64>
+      %res = mo.logsoftmax(%arg, %axis) : !mo.tensor<[2, 3], f32>
     ```
     """
 
@@ -3891,9 +3891,12 @@ class LogsoftmaxOp(max._core.Operation):
         location: Location,
         result: TensorType,
         input: max._core.Value[TensorType],
+        axis: max._core.Value[TensorType],
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def axis(self) -> max._core.Value[TensorType]: ...
 
 class DistributedMatmulAllreduceOp(max._core.Operation):
     """
@@ -6428,13 +6431,14 @@ class SoftmaxOp(max._core.Operation):
     """
     Returns `exp(input) / sum(exp(input))`, where `x` is input tensor.
 
-    The `sum` reduction is applieed along the last axis.
+    The `sum` reduction is applied along `axis`.
 
     Example:
 
     ```mlir
       %arg: !mo.tensor<[2, 3], f32>
-      %res = mo.softmax(%arg) : !mo.tensor<[2, 3], f32>
+      %axis: !mo.tensor<[], si64>
+      %res = mo.softmax(%arg, %axis) : (!mo.tensor<[2, 3], f32>, !mo.tensor<[], si64>) -> !mo.tensor<[2, 3], f32>
     ```
     """
 
@@ -6444,9 +6448,12 @@ class SoftmaxOp(max._core.Operation):
         location: Location,
         result: TensorType,
         input: max._core.Value[TensorType],
+        axis: max._core.Value[TensorType],
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def axis(self) -> max._core.Value[TensorType]: ...
 
 class SplitDimOp(max._core.Operation):
     """

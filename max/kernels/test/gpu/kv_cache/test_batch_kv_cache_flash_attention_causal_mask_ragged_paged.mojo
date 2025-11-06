@@ -34,6 +34,7 @@ from testing import assert_almost_equal
 from utils import IndexList
 
 alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
+alias kv_params_llama3_1b = KVCacheStaticParams(num_heads=8, head_size=64)
 alias llama_num_q_heads = 32
 
 
@@ -314,6 +315,9 @@ def execute_flash_attention_suite(ctx: DeviceContext):
             print("CE", bs, type)
             execute_ragged_flash_attention[
                 llama_num_q_heads, type, kv_params_llama3
+            ](ce_seq_lens, ce_cache_sizes, 2, 1, ctx)
+            execute_ragged_flash_attention[
+                llama_num_q_heads, type, kv_params_llama3_1b
             ](ce_seq_lens, ce_cache_sizes, 2, 1, ctx)
 
             print("TG", bs, type)

@@ -14,6 +14,7 @@
 from sys.ffi import c_char, external_call
 
 from .pwd import Passwd
+from memory import LegacyUnsafePointer as UnsafePointer
 
 alias uid_t = Int32
 alias gid_t = Int32

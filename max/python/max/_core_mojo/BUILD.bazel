@@ -3,10 +3,12 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 modular_py_library(
     name = "_core_mojo",
     srcs = glob(["**/*.py"]),
-    data = glob(["**/*.mojo"]) + ["//KGEN/tools/mojo"],
+    data = glob(["**/*.mojo"]) + [
+        "@mojo//:stdlib",
+    ],
     imports = ["../.."],
     deps = [
         requirement("numpy"),
-        "//open-source/max/mojo/python/mojo",
+        "@mojo//:python",
     ],
 )

@@ -17,6 +17,10 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceContext
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from testing import TestSuite
 
 alias T = DType.float64

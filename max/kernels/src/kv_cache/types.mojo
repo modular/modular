@@ -28,6 +28,10 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 
 from utils import Index, IndexList
 from builtin.device_passable import DevicePassable
@@ -138,6 +142,7 @@ trait KVCacheT(DevicePassable, ImplicitlyCopyable, Movable):
 
     alias dtype: DType
     alias kv_params: KVCacheStaticParams
+    alias page_size_: Int
 
     fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1, MutAnyOrigin]:
         """Returns the cache lengths as a NDBuffer."""
@@ -253,7 +258,7 @@ struct ContinuousBatchingKVCache[
 
     alias dtype = dtype_
     alias kv_params = kv_params_
-
+    alias page_size_ = 0
     # Shape is [num_blocks, max_seq_len, num_heads, head_size].
     alias blocks_shape = DimList(
         Dim(),
@@ -498,6 +503,7 @@ struct PagedKVCache[
 
     alias dtype = dtype_
     alias kv_params = kv_params_
+    alias page_size_ = page_size
 
     # Shape is [total_num_blocks, page_size, num_heads, head_size].
     alias blocks_shape = DimList(

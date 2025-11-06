@@ -14,7 +14,11 @@
 from sys import external_call, size_of
 from gpu.host import DeviceBuffer
 from gpu.host.device_context import _checked, _ConstCharPtr, _DeviceBufferPtr
-from memory import stack_allocation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    stack_allocation,
+)
 from utils import IndexList, StaticTuple
 
 

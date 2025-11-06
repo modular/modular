@@ -2,6 +2,7 @@
 
 _STDLIB_PACKAGES = {
     "stdlib": "mojo/stdlib/stdlib",
+    "python": "mojo/python/mojo",
     "test_utils": "mojo/stdlib/test/test_utils",
 }
 

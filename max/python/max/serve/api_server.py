@@ -201,8 +201,8 @@ def fastapi_app(
         try:
             async with lifespan(app, settings, serving_settings):
                 yield
-        except BaseException as e:
-            logger.exception("Worker exception, Shutting down. %s", e)
+        except BaseException:
+            logger.exception("Worker exception, Shutting down...")
             # Caught by uvicorn to shutdown the server
             os.kill(os.getpid(), signal.SIGINT)
             # After first SIGINT uvicorn waits for pending requests to complete

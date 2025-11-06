@@ -27,7 +27,11 @@ from sys import align_of
 from sys.info import simd_width_of
 
 from algorithm import vectorize
-from memory import Pointer
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    Pointer,
+)
 from builtin.device_passable import DevicePassable
 from compile import get_type_name
 
@@ -842,3 +846,61 @@ struct Span[
             cursor += UInt(splat(value < needle)) & half
 
         return Optional(cursor) if value == needle else None
+
+    fn binary_search_by[
+        func: fn (T) -> Int,
+    ](self: Span[T, origin]) -> Optional[Int]:
+        """Finds an element using binary search with a custom comparison function.
+
+        The comparison function should return:
+        - A negative value if the element is less than the target
+        - Zero if the element matches the target
+        - A positive value if the element is greater than the target
+
+        Parameters:
+            func: A function that takes an element and returns an Int representing
+                  the comparison result.
+
+        Returns:
+            Returns the index of the matching element if found, None otherwise.
+
+        Notes:
+            This function assumes that `self` is sorted according to the ordering
+            defined by `func`. If not sorted, the result is unspecified.
+
+        Example:
+            ```mojo
+            var data: List[String] = ["a", "bb", "ccc"]
+            var span = Span(data)
+
+            # Search for "bb"
+            fn cmp(elem: String) -> Int:
+                if elem < "bb":
+                    return -1
+                elif elem > "bb":
+                    return 1
+                else:
+                    return 0
+
+            var index = span.binary_search_by[cmp]()
+            if index:
+                print("Found at index: ", index.value())
+            else:
+                print("Not found")
+            ```
+        """
+
+        var cursor = 0
+        var length = len(self)
+        var cmp_result = 1  # Initialize to non-zero value
+
+        while length > 0:
+            var half = length >> Int(length > 1)
+            length -= half
+            var mid_idx = cursor + half - 1
+            cmp_result = func(self.unsafe_get(mid_idx))
+
+            # If cmp_result < 0, search in the right half
+            cursor += splat(cmp_result < 0) & half
+
+        return Optional(cursor) if cmp_result == 0 else None

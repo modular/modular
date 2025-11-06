@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import bitcast
+from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 from sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas

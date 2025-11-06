@@ -16,6 +16,7 @@
 from os import abort
 
 from gpu import block_dim, block_idx, global_idx
+from memory import LegacyUnsafePointer as UnsafePointer
 from shmem import *
 from testing import assert_equal
 
@@ -69,8 +70,8 @@ fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
 
-    var send_data = ctx.enqueue_create_buffer[DType.float32](num_elems)
-    var recv_data = ctx.enqueue_create_buffer[DType.float32](num_elems)
+    var send_data = ctx.enqueue_create_buffer[DType.float32](Int(num_elems))
+    var recv_data = ctx.enqueue_create_buffer[DType.float32](Int(num_elems))
 
     ctx.barrier_all()
 
@@ -85,7 +86,7 @@ fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
         block_dim=threads_per_block,
     )
 
-    var host = ctx.enqueue_create_host_buffer[DType.float32](num_elems)
+    var host = ctx.enqueue_create_host_buffer[DType.float32](Int(num_elems))
     recv_data.enqueue_copy_to(host)
 
     # The completion of the non-blocking version of `shmem_put` is
@@ -98,7 +99,7 @@ fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
 
     for i in range(num_elems):
         assert_equal(
-            host[i],
+            host[Int(i)],
             expected,
             String("unexpected value on PE: ", mype, " at idx: ", i),
         )

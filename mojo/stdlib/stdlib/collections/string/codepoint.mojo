@@ -45,6 +45,7 @@ from sys.intrinsics import likely
 
 from bit import count_leading_zeros
 from bit._mask import splat
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 @always_inline

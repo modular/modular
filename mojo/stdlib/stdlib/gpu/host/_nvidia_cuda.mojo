@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import external_call
 from gpu.host import DeviceContext, DeviceFunction, DeviceStream
 from gpu.host.device_context import (

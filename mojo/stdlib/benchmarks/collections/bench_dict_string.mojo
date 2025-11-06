@@ -27,7 +27,7 @@ from benchmark import (
     keep,
     run,
 )
-from memory import memcpy, memset_zero
+from memory import LegacyUnsafePointer as UnsafePointer, memcpy, memset_zero
 from testing import assert_equal
 
 

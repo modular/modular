@@ -770,7 +770,7 @@ fn tensor_core_matrix_multiplication[
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
         WM, WN
-    ](warp_y, warp_x)
+    ](Int(warp_y), Int(warp_x))
 
     # Ensure warp tile dimensions are multiples of instruction shape
     constrained[

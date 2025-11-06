@@ -20,9 +20,8 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from max.config import MAXConfig
 from max.engine import GPUProfilingMode
-
-from .max_config import MAXConfig
 
 logger = logging.getLogger("max.pipelines")
 

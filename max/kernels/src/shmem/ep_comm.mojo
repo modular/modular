@@ -34,7 +34,11 @@ from layout.int_tuple import (
     _get_index_type,
     _get_layout_type,
 )
-from memory import stack_allocation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    stack_allocation,
+)
 from memory.unsafe import bitcast
 from shmem import SHMEM_SIGNAL_SET, SHMEMScope, shmem_put_nbi, shmem_signal_op
 

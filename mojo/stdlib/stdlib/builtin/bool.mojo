@@ -168,7 +168,7 @@ struct Bool(
         self._mlir_value = value
 
     @doc_private
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __init__(out self, *, mlir_value: __mlir_type.`!pop.scalar<bool>`):
         """Construct a Bool value given a `!pop.scalar<bool>` value.
 

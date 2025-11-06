@@ -238,7 +238,7 @@ fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
         IntTuple(2, 3, 4, 5),
         IntTuple(1, 4, 3, 2)
     )
-    # Result: Layout with shape (2,3,4,5) and stride (1,24,6,2)
+    # Result: Layout with shape (2,3,4,5) and stride (1,40,10,2)
     ```
     """
     var stride = compact_order(shape, order)

@@ -21,6 +21,7 @@ from sys.info import CompilationTarget, is_amd_gpu, is_apple_gpu
 from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.intrinsics import lop
+from memory import LegacyUnsafePointer as UnsafePointer
 from memory.unsafe import bitcast
 from testing import assert_equal
 

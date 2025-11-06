@@ -79,7 +79,14 @@ class KVCacheParams:
     """Strategy to use for managing the KV cache."""
 
     page_size: int | None = None
-    """Size of each page in the paged cache strategy. Required for paged caching."""
+    """Number of tokens per page (block) when using the paged cache strategy.
+
+    This value is expressed in tokens, not bytes. The byte footprint of a page is
+    derived from pipeline configuration.
+
+    Current constraints: the page size must be a multiple of 128 and at least 128.
+    Required when ``cache_strategy`` is ``KVCacheStrategy.PAGED``.
+    """
 
     n_devices: int = 1
     """Total number of devices (GPUs/accelerators) available for inference."""

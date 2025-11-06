@@ -309,19 +309,20 @@ fn choose_config[
     # We use 128B swizzle, tile size in K is 128B over element size.
     alias BK = 128 // a_type.size_of()
 
-    alias M_pivote = 97
+    alias M_pivote = 32
 
     var cta_group = 1 if M < M_pivote else 2
     var swapAB = True if M < M_pivote else False
     var k_group_size = 1  # maybe increased for small M later
 
-    var mma_mn = Tuple[Int, Int](64, 128)
+    var mma_mn = Tuple[Int, Int](256, 256)
     var min_num_waves = Int.MAX
 
     # Travers possible combinations of BM x MMA_N to choose the one minimizes the
     # workload per SM. The computation per SM is the flops (ignoring 2x in 2MNK)
     # timed by max number of ctas per SM i.e. number of waves.
     # We first minimize the number of waves, then use the flops to break tie.
+
     # For small M, swap A and B so that the small M maps to mma_n since it supports
     # a larger range than mma_m.
     if M < M_pivote:
@@ -338,23 +339,40 @@ fn choose_config[
 
     # For large M, use 2xSM mma
     else:
-        for bm, mma_n in product([64, 128], range(16, min(257, N), 16)):
-            num_ctas = ceildiv(M, bm) * ceildiv(N, mma_n)
-            num_waves = ceildiv(num_ctas, num_SMs)
-            if num_waves < min_num_waves or (
-                num_waves == min_num_waves
-                and bm * cta_group * mma_n < mma_mn[0] * mma_mn[1]
-            ):
-                min_num_waves = num_waves
-                mma_mn[0] = bm * cta_group
-                mma_mn[1] = mma_n
+
+        @parameter
+        @always_inline
+        fn select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+            N_alignby16 = align_up(N, 16)
+            max_mma_n = min(N_alignby16, 256)
+            # In pratice 64x16 mma creates too many ctas and increase L2
+            # load volume, ends up hurting performance.
+            min_mma_n = min(N_alignby16, 32)
+            for bm in [64, 128]:
+                for mma_n in range(max_mma_n, min_mma_n - 1, -16):
+                    var mma_m = bm * cta_group
+                    var num_clusters = ceildiv(M, mma_m) * ceildiv(N, mma_n)
+                    var num_waves = ceildiv(num_clusters, num_SMs // cta_group)
+                    if num_waves > min_num_waves:
+                        break
+                    elif num_waves < min_num_waves or (
+                        num_waves == min_num_waves
+                        and mma_m * mma_n < mma_mn[0] * mma_mn[1]
+                    ):
+                        min_num_waves = num_waves
+                        mma_mn[0] = mma_m
+                        mma_mn[1] = mma_n
+                        swapAB = _swapAB
+
+        # Swap AB may work better for M = 192 and not-multiple-of-128 values.
+        # Capture and update min_num_waves, mma_mn
+        select_mma_mn(M, N)
+        select_mma_mn(N, M, True)
 
     # For small mmas, we group multiple tiles per tma-mma synchronization.
-    if (
-        mma_mn[0] // cta_group == 64
-        and mma_mn[1] <= 64
-        and ceildiv(K, BK) % 2 == 0
-    ):
+    if ((mma_mn[0] // cta_group) * mma_mn[1]) <= 64 * 96 and ceildiv(
+        K, BK
+    ) % 2 == 0:
         k_group_size = 2
 
     var min_load_volume = Int.MAX

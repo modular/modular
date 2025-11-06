@@ -19,6 +19,7 @@ from layout._utils import ManagedLayoutTensor
 from layout.element import Element
 from layout.int_tuple import UNKNOWN_VALUE
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils import IndexList
 
 

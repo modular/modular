@@ -17,6 +17,7 @@ from random import rand
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul.gpu import split_k_reduce
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList

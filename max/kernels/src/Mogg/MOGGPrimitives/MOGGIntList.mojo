@@ -14,7 +14,7 @@
 
 
 from buffer.dimlist import DimList, _make_tuple
-from memory import memset_zero
+from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
 
 from utils.index import IndexList
 

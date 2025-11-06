@@ -42,7 +42,7 @@ Suggested solutions:
 _oom_message_pattern = re.compile(".*OUT_OF_MEMORY.*")
 
 
-def detect_and_wrap_oom(exception: Exception) -> Exception:
+def detect_and_wrap_oom(exception: Exception) -> None:
     """
     Detect  OOM errors and wrap them in a more helpful exception.
 
@@ -60,6 +60,4 @@ def detect_and_wrap_oom(exception: Exception) -> Exception:
     if isinstance(exception, ValueError) and _oom_message_pattern.match(
         error_message
     ):
-        return OOMError()
-
-    return exception
+        raise OOMError() from exception

@@ -13,6 +13,7 @@
 
 
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import rand
 from sys import argv, size_of
 

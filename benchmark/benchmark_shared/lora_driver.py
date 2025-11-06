@@ -27,7 +27,7 @@ from tqdm.asyncio import tqdm
 from transformers import AutoConfig
 
 from .metrics import LoRAMetrics
-from .requests import async_request_lora_load, async_request_lora_unload
+from .request import async_request_lora_load, async_request_lora_unload
 
 logger = logging.getLogger(__name__)
 

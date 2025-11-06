@@ -18,6 +18,7 @@ from math import exp2
 import testing
 from buffer import NDBuffer
 from builtin._location import __call_location, _SourceLocation
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing.testing import _assert_cmp_error
 
 from utils.numerics import FPUtils

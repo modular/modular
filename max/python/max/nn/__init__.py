@@ -12,9 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .attention import (
-    AttentionImplQKV,
     AttentionWithRope,
-    AttentionWithRopeQKV,
     DistributedAttentionImpl,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
@@ -77,10 +75,8 @@ __all__ = [
     "MLP",
     "MLPV1",
     "Allreduce",
-    "AttentionImplQKV",
     "AttentionWithRope",
     "AttentionWithRopeAndLoRA",
-    "AttentionWithRopeQKV",
     "ColumnParallelLinear",
     "ConstantLayerNorm",
     "Conv1D",

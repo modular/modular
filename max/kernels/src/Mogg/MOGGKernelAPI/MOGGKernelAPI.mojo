@@ -33,6 +33,7 @@ from math import (
     sqrt,
     tanh,
 )
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import randn, seed
 from sys import align_of, external_call, llvm_intrinsic
 from sys.info import simd_width_of, size_of
@@ -4193,6 +4194,7 @@ struct Softmax:
     ](
         output: OutputTensor,
         input: FusedInputTensor[dtype = output.dtype, rank = output.rank],
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
         # For adapting input fusion lambda required by call
@@ -4214,7 +4216,7 @@ struct Softmax:
         ](
             output.shape(),
             output.to_layout_tensor(),
-            output.rank - 1,
+            Int(axis),
             context=ctx,
         )
 
@@ -4227,6 +4229,7 @@ struct LogSoftmax:
     ](
         output: OutputTensor,
         input: FusedInputTensor[dtype = output.dtype, rank = output.rank],
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
         # shape should be the same between the two inputs
@@ -4251,7 +4254,7 @@ struct LogSoftmax:
         ](
             output.shape(),
             output.to_layout_tensor(),
-            output.rank - 1,
+            Int(axis),
             context=ctx,
         )
 
@@ -4766,9 +4769,7 @@ struct Conv:
                 )
 
     @staticmethod
-    fn shape[
-        dtype: DType
-    ](
+    fn shape(
         input: InputTensor,
         filter: InputTensor,
         strides: InputTensor[rank=1],

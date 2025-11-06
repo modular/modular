@@ -17,11 +17,14 @@ These APIs are imported automatically, just like builtins.
 
 
 from collections._index_normalization import normalize_index
+from collections._asan_annotations import (
+    __sanitizer_annotate_contiguous_container,
+)
 from os import abort
 from sys import size_of
 from sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
-from memory import Pointer, memcpy
+from memory import LegacyUnsafePointer as UnsafePointer, Pointer, memcpy
 
 from .optional import Optional
 
@@ -256,6 +259,39 @@ struct List[T: Copyable & Movable](
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = _ListIter[T, iterable_origin, True]
 
+    # asan annotation methods
+    fn _annotate_new(self):
+        __sanitizer_annotate_contiguous_container(
+            beg=self._data.bitcast[NoneType](),
+            end=(self._data + self.capacity).bitcast[NoneType](),
+            old_mid=(self._data + self.capacity).bitcast[NoneType](),
+            new_mid=(self._data + self._len).bitcast[NoneType](),
+        )
+
+    fn _annotate_delete(self):
+        __sanitizer_annotate_contiguous_container(
+            beg=self._data.bitcast[NoneType](),
+            end=(self._data + self.capacity).bitcast[NoneType](),
+            old_mid=(self._data + self._len).bitcast[NoneType](),
+            new_mid=(self._data + self.capacity).bitcast[NoneType](),
+        )
+
+    fn _annotate_increase(self, n: Int = 1):
+        __sanitizer_annotate_contiguous_container(
+            beg=self._data.bitcast[NoneType](),
+            end=(self._data + self.capacity).bitcast[NoneType](),
+            old_mid=(self._data + self._len).bitcast[NoneType](),
+            new_mid=(self._data + self._len + n).bitcast[NoneType](),
+        )
+
+    fn _annotate_shrink(self, old_size: Int):
+        __sanitizer_annotate_contiguous_container(
+            beg=self._data.bitcast[NoneType](),
+            end=(self._data + self.capacity).bitcast[NoneType](),
+            old_mid=(self._data + old_size).bitcast[NoneType](),
+            new_mid=(self._data + self._len).bitcast[NoneType](),
+        )
+
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
@@ -278,6 +314,7 @@ struct List[T: Copyable & Movable](
             self._data = UnsafePointer[T]()
         self._len = 0
         self.capacity = capacity
+        self._annotate_new()
 
     fn __init__(out self, *, length: Int, fill: T):
         """Constructs a list with the given capacity.
@@ -308,6 +345,8 @@ struct List[T: Copyable & Movable](
         var length = len(elements)
 
         self = Self(capacity=length)
+
+        self._annotate_increase(length)
 
         # Transfer all of the elements into the List.
         @parameter
@@ -358,6 +397,7 @@ struct List[T: Copyable & Movable](
             unsafe_uninit_length: The number of elements to allocate.
         """
         self = Self(capacity=unsafe_uninit_length)
+        self._annotate_increase(unsafe_uninit_length)
         self._len = unsafe_uninit_length
 
     fn __copyinit__(out self, existing: Self):
@@ -376,6 +416,7 @@ struct List[T: Copyable & Movable](
         if not T.__del__is_trivial:
             for i in range(len(self)):
                 (self._data + i).destroy_pointee()
+        self._annotate_delete()
         self._data.free()
 
     # ===-------------------------------------------------------------------===#
@@ -669,9 +710,11 @@ struct List[T: Copyable & Movable](
                 (new_data + i).init_pointee_move_from(self._data + i)
 
         if self._data:
+            self._annotate_delete()
             self._data.free()
         self._data = new_data
         self.capacity = new_capacity
+        self._annotate_new()
 
     fn append(mut self, var value: T):
         """Appends a value to this list.
@@ -685,6 +728,7 @@ struct List[T: Copyable & Movable](
         """
         if self._len >= self.capacity:
             self._realloc(self.capacity * 2 | Int(self.capacity == 0))
+        self._annotate_increase()
         self._unsafe_next_uninit_ptr().init_pointee_move(value^)
         self._len += 1
 
@@ -731,6 +775,7 @@ struct List[T: Copyable & Movable](
 
         var dest_ptr = self._data + self._len
         var src_ptr = other.unsafe_ptr()
+        self._annotate_increase(other_len)
 
         @parameter
         if T.__moveinit__is_trivial:
@@ -761,6 +806,7 @@ struct List[T: Copyable & Movable](
             # Make sure our capacity at least doubles to avoid O(n^2) behavior.
             self._realloc(max(self.capacity * 2, new_num_elts))
 
+        self._annotate_increase(elements_len)
         var i = self._len
         self._len = new_num_elts
 
@@ -791,6 +837,7 @@ struct List[T: Copyable & Movable](
             If there is no capacity left, resizes to `len(self) + value.size`.
         """
         self.reserve(self._len + value.size)
+        self._annotate_increase(value.size)
         self._unsafe_next_uninit_ptr().store(value)
         self._len += value.size
 
@@ -817,6 +864,7 @@ struct List[T: Copyable & Movable](
         """
         debug_assert(count <= value.size, "count must be <= value.size")
         self.reserve(self._len + count)
+        self._annotate_increase(count)
         var v_ptr = UnsafePointer(to=value).bitcast[Scalar[dtype]]()
         memcpy(dest=self._unsafe_next_uninit_ptr(), src=v_ptr, count=count)
         self._len += count
@@ -836,6 +884,7 @@ struct List[T: Copyable & Movable](
             If there is no capacity left, resizes to `len(self) + len(value)`.
         """
         self.reserve(self._len + len(value))
+        self._annotate_increase(len(value))
         memcpy(
             dest=self._unsafe_next_uninit_ptr(),
             src=value.unsafe_ptr(),
@@ -862,7 +911,7 @@ struct List[T: Copyable & Movable](
         for j in range(normalized_idx + 1, self._len):
             (self._data + j - 1).init_pointee_move_from(self._data + j)
         self._len -= 1
-
+        self._annotate_shrink(self._len + 1)
         return ret_val^
 
     fn reserve(mut self, new_capacity: Int):
@@ -895,6 +944,7 @@ struct List[T: Copyable & Movable](
             self.shrink(new_size)
         else:
             self.reserve(new_size)
+            self._annotate_increase(new_size - self._len)
             for i in range(self._len, new_size):
                 (self._data + i).init_pointee_copy(value)
             self._len = new_size
@@ -914,6 +964,7 @@ struct List[T: Copyable & Movable](
             self.shrink(unsafe_uninit_length)
         else:
             self.reserve(unsafe_uninit_length)
+            self._annotate_increase(unsafe_uninit_length - self._len)
             self._len = unsafe_uninit_length
 
     fn shrink(mut self, new_size: Int):
@@ -938,7 +989,9 @@ struct List[T: Copyable & Movable](
         if not T.__del__is_trivial:
             for i in range(new_size, len(self)):
                 (self._data + i).destroy_pointee()
+        var old_size: Int = self._len
         self._len = new_size
+        self._annotate_shrink(old_size)
         self.reserve(new_size)
 
     fn reverse(mut self):
@@ -1023,7 +1076,9 @@ struct List[T: Copyable & Movable](
         """Clears the elements in the list."""
         for i in range(self._len):
             (self._data + i).destroy_pointee()
+        var old_size: Int = self._len
         self._len = 0
+        self._annotate_shrink(old_size)
 
     fn steal_data(mut self) -> UnsafePointer[T]:
         """Take ownership of the underlying pointer from the list.
@@ -1031,6 +1086,7 @@ struct List[T: Copyable & Movable](
         Returns:
             The underlying data.
         """
+        self._annotate_delete()
         var ptr = self._data
         self._data = UnsafePointer[T]()
         self._len = 0

@@ -20,6 +20,7 @@ from sys import PrefetchLocality
 """
 
 import math
+from memory import LegacyUnsafePointer as UnsafePointer
 from collections.string.string_slice import _get_kgen_string
 from sys import is_compile_time
 from sys.info import _is_sm_9x_or_newer, is_gpu

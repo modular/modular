@@ -435,6 +435,31 @@ class PagedKVCacheManager:
             manager.reset_prefix_cache()
 
     @classmethod
+    def max_supported_sequence_length(
+        cls, params: KVCacheParams, num_layers: int, memory_available: int
+    ) -> int:
+        """Return the maximum sequence length supported across all replicas.
+
+        This queries each data-parallel replica's tensor-parallel cache manager
+        for its per-replica maximum supported sequence length under the provided
+        memory budget, then returns the minimum of those values. Each per-replica
+        value is already rounded down to the nearest multiple of ``params.page_size``,
+        so the result is likewise page-aligned and safe for all replicas.
+
+        Args:
+            params: KV cache configuration parameters.
+            num_layers: Number of transformer layers contributing KV per token.
+            memory_available: Total cache memory budget in bytes.
+
+        Returns:
+            The maximum supported sequence length in tokens (multiple of
+            ``params.page_size``) that all replicas can support.
+        """
+        return _TPPagedKVCacheManager.max_supported_sequence_length(
+            params, num_layers, memory_available
+        )
+
+    @classmethod
     def estimated_memory_size(
         cls,
         params: KVCacheParams,

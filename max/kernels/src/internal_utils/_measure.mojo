@@ -19,6 +19,7 @@ from algorithm import elementwise, mean, sum, vectorize
 from algorithm.functional import unswitch
 from buffer import NDBuffer
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils import IndexList
 
 # ===----------------------------------------------------------------------=== #

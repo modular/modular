@@ -18,6 +18,7 @@ from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout.tensor_core import TensorCore
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import Index, IndexList
 
 alias fp8_dtype = DType.float8_e4m3fnuz if DeviceContext.default_device_info <= MI300X else DType.float8_e4m3fn

@@ -19,9 +19,10 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..type import TensorType
+from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 from .cast import cast
+from .constant import constant
 from .validation import assert_same_device
 
 # ===----------------------------------------------------------------------=== #
@@ -854,7 +855,25 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-logsoftmax = _elementwise_unary(rmo.mo_logsoftmax)
+
+def _softmax_like(op):  # noqa: ANN001, ANN202
+    def softmax_like_op(value: TensorValueLike, axis: int = -1) -> TensorValue:
+        value = TensorValue(value)
+
+        axis = value.rank - 1 if axis == -1 else axis
+        value = dtype_promotion._restrict_to_strong_dtypes(value)
+        return Graph.current._add_op(
+            op,
+            value._mlir_value.type,
+            value,
+            constant(axis, DType.int64, DeviceRef.CPU()),
+        )[0].tensor
+
+    softmax_like_op.__name__ = op.__name__
+    return softmax_like_op
+
+
+logsoftmax = _softmax_like(rmo.mo_logsoftmax)
 """
 Computes the elementwise logsoftmax of a symbolic tensor.
 
@@ -864,7 +883,8 @@ symbolic tensor and adds it to the graph, returning the symbolic result.
 Args:
     value: The symbolic tensor to use as the input to the logsoftmax
         computation.
-
+    axis: The axis along which to compute the softmax, by default
+        the final axis is used.
 Returns:
     A new symbolic tensor value representing the output of the logsoftmax
         value computation.
@@ -939,7 +959,7 @@ def silu(x: TensorValue):  # noqa: ANN201
     return mul(x_cast, sigmoid(x_cast)).cast(x.dtype)
 
 
-softmax = _elementwise_unary(rmo.mo_softmax)
+softmax = _softmax_like(rmo.mo_softmax)
 """
 Computes the elementwise softmax of a symbolic tensor.
 
@@ -949,6 +969,8 @@ symbolic tensor and adds it to the graph, returning the symbolic result.
 Args:
     value: The symbolic tensor to use as the input to the softmax
         computation.
+    axis: The axis along which to compute the softmax, by default
+        the final axis is used.
 
 Returns:
     A new symbolic tensor value representing the output of the softmax

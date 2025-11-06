@@ -16,9 +16,8 @@ import enum
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from max.config import MAXConfig
 from max.nn.kv_cache import KVCacheStrategy
-
-from .max_config import MAXConfig
 
 
 # frozen is False (for now) because of _available_cache_memory being set by

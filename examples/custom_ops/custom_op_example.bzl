@@ -26,7 +26,7 @@ def custom_op_example_py_binary(
             "//max/python/max/driver",
             "//max/python/max/engine",
             "//max/python/max/graph",
-            "//open-source/max/mojo/python/mojo",
+            "@mojo//:python",
             requirement("numpy"),
         ] + extra_deps,
         target_compatible_with = target_compatible_with,

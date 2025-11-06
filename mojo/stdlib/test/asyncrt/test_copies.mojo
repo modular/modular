@@ -13,6 +13,7 @@
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import DeviceBuffer, DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 

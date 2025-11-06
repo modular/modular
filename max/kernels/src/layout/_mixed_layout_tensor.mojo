@@ -14,6 +14,7 @@
 from sys import align_of
 
 from builtin.variadics import VariadicOf
+from memory import LegacyUnsafePointer as UnsafePointer
 
 from ._mixed_layout import MixedLayout
 from ._mixed_tuple import ComptimeInt, Idx, MixedTuple, MixedTupleLike

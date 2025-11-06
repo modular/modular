@@ -11,6 +11,7 @@ modular_py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//max/python/max/config",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

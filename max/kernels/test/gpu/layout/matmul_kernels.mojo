@@ -25,6 +25,7 @@ from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import Index
 
 alias NWARMUP = 1

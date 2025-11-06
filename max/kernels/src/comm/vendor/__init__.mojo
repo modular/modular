@@ -10,21 +10,3 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from ._legacy_unsafe_pointer import (
-    LegacyOpaquePointer,
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
-from ._unsafe_pointer_v2 import (
-    alloc,
-    ExternalImmutPointer,
-    ExternalMutPointer,
-    ExternalPointer,
-    OpaqueImmutPointer,
-    OpaqueMutPointer,
-    OpaquePointerV2,
-    UnsafeImmutPointer,
-    UnsafeMutPointer,
-    UnsafePointerV2,
-)

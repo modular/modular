@@ -19,6 +19,7 @@ import compiler_internal as compiler
 from gpu.host import DeviceBuffer, get_gpu_target
 from gpu.host.info import is_gpu
 from layout import Layout
+from memory import LegacyOpaquePointer as OpaquePointer
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from sys.info import align_of, simd_width_of, size_of

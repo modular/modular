@@ -114,13 +114,15 @@ class TextBatchConstructor:
         """
 
         # Pick the replica to enqueue the request to.
-        if self.paged_cache is not None:
-            replica_idx = self.paged_cache.get_or_recommend_replica(ctx)
-        else:
-            replica_idx = self._round_robin_counter
-            # Increment the round-robin counter and wrap around if it exceeds the number of replicas.
-            self._round_robin_counter += 1
-            self._round_robin_counter %= self.num_replicas
+
+        # TODO: Make this decision based on KVCache state.
+        # if self.paged_cache is not None:
+        #     replica_idx = self.paged_cache.get_or_recommend_replica(ctx)
+
+        replica_idx = self._round_robin_counter
+        # Increment the round-robin counter and wrap around if it exceeds the number of replicas.
+        self._round_robin_counter += 1
+        self._round_robin_counter %= self.num_replicas
         replica = self.replicas[replica_idx]
 
         # Add the request to the appropriate dict based on whether it needs CE.
@@ -271,6 +273,8 @@ class TextBatchConstructor:
         self.pipeline.release(req_id)
         ctx.reset()
         replica = self.replicas[replica_idx]
+        if req_id in replica.tg_reqs:
+            del replica.tg_reqs[req_id]
         replica.ce_reqs[req_id] = ctx
         replica.ce_reqs.move_to_end(req_id, last=False)
 
@@ -297,7 +301,10 @@ class TextBatchConstructor:
             return False
 
         # Cannot schedule CE if the TG batch is full.
-        if len(replica.tg_reqs) >= self.scheduler_config.max_batch_size_tg:
+        if (
+            len(replica.tg_reqs)
+            >= self.scheduler_config.max_batch_size_tg_per_replica
+        ):
             return False
 
         # Must schedule CE if the TG batch is empty.
@@ -326,22 +333,38 @@ class TextBatchConstructor:
             )
 
         num_steps = self.scheduler_config.max_forward_steps_tg
-        max_seq_len = self.paged_cache.max_seq_len
+        max_seq_len = self.scheduler_config.max_seq_len
+        max_batch_context_length = (
+            self.scheduler_config.max_batch_context_length
+        )
+        batch_context_length = 0
 
         # Assume this is sorted by request arrival time where the leftmost request
         # is the oldest and the rightmost request is the newest.
         candidate_reqs = deque(replica.tg_reqs.values())
         first_req_ctx = candidate_reqs[0]
-        replica.tg_reqs.clear()
+        scheduled: dict[RequestID, TextContext] = {}
 
         while len(candidate_reqs) > 0:
             # Get the oldest request
             ctx = candidate_reqs.popleft()
 
+            # Check if adding this request would violate the max_batch_context_length
+            # limit assuming we run for num_steps=1.
+            if (
+                max_batch_context_length is not None
+                and batch_context_length + ctx.start_idx + len(scheduled) + 1
+                > max_batch_context_length
+            ):
+                break
+
             # Determine the number of steps to schedule based on the max_seq_len
             # of the pipeline model.
-            num_available_steps = ctx.compute_num_available_steps(max_seq_len)
-            num_steps = min(num_steps, num_available_steps)
+            if max_seq_len is not None:
+                num_available_steps = ctx.compute_num_available_steps(
+                    max_seq_len
+                )
+                num_steps = min(num_steps, num_available_steps)
 
             # Verify LoRA is active for TG requests
             # LoRA requests should have been activated during CE
@@ -351,12 +374,12 @@ class TextBatchConstructor:
                 self._preempt_lora_request(ctx, replica_idx)
                 continue
 
-            scheduled = False
-            while not scheduled:
+            is_scheduled = False
+            while not is_scheduled:
                 # If this is the only request, we should not exceed the max_length
                 # specified in its request parameter.
                 if (
-                    len(replica.tg_reqs) == 0
+                    len(scheduled) == 0
                     and len(candidate_reqs) == 0
                     and ctx.max_length is not None
                 ):
@@ -366,10 +389,10 @@ class TextBatchConstructor:
                     num_steps = min(num_steps, num_available_steps)
 
                 # Attempt to schedule the request.
-                scheduled = self.paged_cache.maybe_reserve(ctx, num_steps)
+                is_scheduled = self.paged_cache.maybe_reserve(ctx, num_steps)
 
                 # We were able to schedule this request
-                if scheduled:
+                if is_scheduled:
                     break
 
                 # We were not able to schedule this request but there is nothing
@@ -383,15 +406,16 @@ class TextBatchConstructor:
                 self._preempt_request(ctx_preempt, replica_idx)
 
             # If we still can't schedule the request, we preempt it
-            if not scheduled:
+            if not is_scheduled:
                 self._preempt_request(ctx, replica_idx)
                 break
 
             # Add the request to the batch
-            replica.tg_reqs[ctx.request_id] = ctx
+            scheduled[ctx.request_id] = ctx
+            batch_context_length += ctx.start_idx
 
         # We successfully created a TG batch
-        if len(replica.tg_reqs) > 0:
+        if len(scheduled) > 0:
             # Truncate num_steps based on the maximum of num_available_steps
             # calculated using the max_length request parameter. This differs from
             # the max_seq_len of the pipeline model which is a hard limit that
@@ -406,7 +430,7 @@ class TextBatchConstructor:
             # This is intentional in order to prevent a single short request from
             # limiting the num_steps for performance reasons.
             num_available_steps_req: int | None = None
-            for ctx in replica.tg_reqs.values():
+            for ctx in scheduled.values():
                 # If any request has no max_length, we should not change num_steps
                 if ctx.max_length is None:
                     num_available_steps_req = None
@@ -423,9 +447,22 @@ class TextBatchConstructor:
             ):
                 num_steps = num_available_steps_req
 
+            # If running for num_steps would exceed the max_batch_context_length
+            # limit, we need to reduce the number of steps we are running for.
+            if (
+                max_batch_context_length is not None
+                and batch_context_length + len(scheduled) * num_steps
+                > max_batch_context_length
+            ):
+                num_steps = (
+                    max_batch_context_length - batch_context_length
+                ) // len(scheduled)
+                # Based on construction of batch, we know that we can at least
+                # run for 1 step without exceeding max_batch_context_length.
+                assert num_steps >= 1
+
             return ReplicaBatch(
-                # This copy is necessary to avoid aliasing of the tg_reqs dict.
-                batch=replica.tg_reqs.copy(),
+                batch=scheduled,
                 num_steps=num_steps,
             )
 
@@ -458,8 +495,8 @@ class TextBatchConstructor:
                 assert ctx.active_length == 1
                 input_tokens += ctx.active_length
 
-        max_batch_size_tg = self.scheduler_config.max_batch_size_tg
-        max_batch_size_ce = self.scheduler_config.max_batch_size_ce
+        max_batch_size_tg = self.scheduler_config.max_batch_size_tg_per_replica
+        max_batch_size_ce = self.scheduler_config.max_batch_size_ce_per_replica
 
         if self._lora_manager:
             # Track which LoRAs are currently active from running (TG) requests

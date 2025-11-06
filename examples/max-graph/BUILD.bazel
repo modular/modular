@@ -8,7 +8,7 @@ modular_py_binary(
         "//max/python/max/graph",
         "//max/python/max/engine",
         # FIXME: Hack, not used directly. Nightly tests fail without this dep.
-        "//open-source/max/mojo/python/mojo",
+        "@mojo//:python",
         requirement("numpy"),
     ],
 )

@@ -20,6 +20,7 @@ from sys.info import _has_blackwell_tcgen05
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import IndexList
 
 # ===----------------------------------------------------------------------=== #

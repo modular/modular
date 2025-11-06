@@ -108,8 +108,6 @@ modular_py_test(
     data = glob(["tests/*.csv"]) + [
         "sample.mojo",
         "test.yaml",
-        "//KGEN:CompilerRT",
-        "//KGEN/tools/mojo",
     ],
     mojo_deps = [
         "@mojo//:internal_utils",

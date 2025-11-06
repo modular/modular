@@ -29,7 +29,11 @@ from gpu.host.device_context import (
     _checked,
     _DeviceBufferPtr,
 )
-from memory import stack_allocation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    stack_allocation,
+)
 
 from utils import IndexList, StaticTuple
 from builtin.device_passable import DevicePassable
@@ -259,7 +263,7 @@ struct TensorMapFloatOOBFill:
 
 # The TMA descriptor is a 128-byte opaque object filled by the driver API.
 # It should be 64-byte aligned both on the host and the device (if passed to constant memory).
-struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
+struct TMADescriptor(DevicePassable, ImplicitlyCopyable, Movable):
     """TMA tensor map descriptor.
 
     An opaque 128-byte descriptor that encodes all parameters for a TMA operation,

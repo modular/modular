@@ -19,6 +19,7 @@ from sys.intrinsics import _type_is_eq
 
 from builtin.variadics import VariadicOf
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils._visualizers import lldb_formatter_wrapping_type
 
 # ===-----------------------------------------------------------------------===#
@@ -198,7 +199,7 @@ struct Tuple[*element_types: Copyable & Movable](
         """
 
         @parameter
-        for i in range(len(VariadicList(element_types))):
+        for i in range(type_of(self).__len__()):
 
             @parameter
             if _type_is_eq[element_types[i], T]():
@@ -206,3 +207,218 @@ struct Tuple[*element_types: Copyable & Movable](
                     return True
 
         return False
+
+    @always_inline("nodebug")
+    fn __init__[
+        *elt_types: Copyable & Movable & Defaultable
+    ](out self: Tuple[*elt_types]):
+        """Construct a tuple with default-initialized elements.
+
+        Parameters:
+            elt_types: The types of the elements contained in the Tuple.
+        """
+
+        # Mark 'self.storage' as being initialized so we can work on it.
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(self.storage)
+        )
+
+        @parameter
+        for i in range(type_of(self).__len__()):
+            UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
+
+    @always_inline
+    fn __eq__[
+        self_elt_types: VariadicOf[Copyable & Movable & EqualityComparable],
+        other_elt_types: VariadicOf[Copyable & Movable & EqualityComparable],
+    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+        """Compare this tuple to another tuple using equality comparison.
+
+        Parameters:
+            self_elt_types: The types of the elements contained in the Tuple.
+            other_elt_types: The types of the elements contained in the other Tuple.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is equal to the other tuple, False otherwise.
+        """
+
+        # We do not use self._compare here because we only want
+        # EqualityComparable conformance for the method.
+        alias self_len = type_of(self).__len__()
+        alias other_len = type_of(other).__len__()
+
+        @parameter
+        if self_len != other_len:
+            return False
+
+        @parameter
+        for i in range(type_of(self).__len__()):
+            alias self_type = type_of(self[i])
+            alias other_type = type_of(other[i])
+            constrained[
+                _type_is_eq[self_type, other_type](),
+                "Tuple elements must be of the same type to compare.",
+            ]()
+            if self[i] != rebind[self_type](other[i]):
+                return False
+        return True
+
+    @always_inline
+    fn __ne__[
+        self_elt_types: VariadicOf[Copyable & Movable & EqualityComparable],
+        other_elt_types: VariadicOf[Copyable & Movable & EqualityComparable],
+    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+        """Compare this tuple to another tuple using inequality comparison.
+
+        Parameters:
+            self_elt_types: The types of the elements contained in the Tuple.
+            other_elt_types: The types of the elements contained in the other Tuple.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is not equal to the other tuple, False otherwise.
+        """
+
+        return not self == other
+
+    @always_inline
+    fn _compare[
+        self_elt_types: VariadicOf[Copyable & Movable & LessThanComparable],
+        other_elt_types: VariadicOf[Copyable & Movable & LessThanComparable],
+    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Int:
+        alias self_len = type_of(self).__len__()
+        alias other_len = type_of(other).__len__()
+
+        @parameter
+        if other_len == 0:
+            return 1 if self_len > 0 else 0
+
+        alias min_length = min(self_len, other_len)
+
+        @parameter
+        for i in range(min_length):
+            alias self_type = type_of(self[i])
+            alias other_type = type_of(other[i])
+            constrained[
+                _type_is_eq[self_type, other_type](),
+                String(
+                    "Mismatch between tuple elements at index ",
+                    i,
+                    " must be of the same type to compare.",
+                ),
+            ]()
+            if self[i] < rebind[self_type](other[i]):
+                return -1
+            if rebind[self_type](other[i]) < self[i]:
+                return 1
+
+        @parameter
+        if self_len < other_len:
+            return -1
+        elif self_len > other_len:
+            return 1
+        else:
+            return 0
+
+    @always_inline
+    fn __lt__[
+        self_elt_types: VariadicOf[
+            Copyable & Movable & LessThanComparable & GreaterThanComparable
+        ],
+        other_elt_types: VariadicOf[
+            Copyable & Movable & LessThanComparable & GreaterThanComparable
+        ],
+        //,
+    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+        """Compare this tuple to another tuple using less than comparison.
+
+        Parameters:
+            self_elt_types: The types of the elements contained in the Tuple.
+            other_elt_types: The types of the elements contained in the other Tuple.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is less than the other tuple, False otherwise.
+        """
+        return self._compare(other) < 0
+
+    @always_inline
+    fn __le__[
+        self_elt_types: VariadicOf[
+            Copyable & Movable & LessThanComparable & GreaterThanComparable
+        ],
+        other_elt_types: VariadicOf[
+            Copyable & Movable & LessThanComparable & GreaterThanComparable
+        ],
+        //,
+    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+        """Compare this tuple to another tuple using less than or equal to comparison.
+
+        Parameters:
+            self_elt_types: The types of the elements contained in the Tuple.
+            other_elt_types: The types of the elements contained in the other Tuple.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is less than or equal to the other tuple, False otherwise.
+        """
+        return self._compare(other) <= 0
+
+    @always_inline
+    fn __gt__[
+        self_elt_types: VariadicOf[
+            Copyable & Movable & LessThanComparable & GreaterThanComparable
+        ],
+        other_elt_types: VariadicOf[
+            Copyable & Movable & LessThanComparable & GreaterThanComparable
+        ],
+        //,
+    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+        """Compare this tuple to another tuple using greater than comparison.
+
+        Parameters:
+            self_elt_types: The types of the elements contained in the Tuple.
+            other_elt_types: The types of the elements contained in the other Tuple.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is greater than the other tuple, False otherwise.
+        """
+
+        return self._compare(other) > 0
+
+    @always_inline
+    fn __ge__[
+        self_elt_types: VariadicOf[
+            Copyable & Movable & LessThanComparable & GreaterThanComparable
+        ],
+        other_elt_types: VariadicOf[
+            Copyable & Movable & LessThanComparable & GreaterThanComparable
+        ],
+        //,
+    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+        """Compare this tuple to another tuple using greater than or equal to comparison.
+
+        Parameters:
+            self_elt_types: The types of the elements contained in the Tuple.
+            other_elt_types: The types of the elements contained in the other Tuple.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is greater than or equal to the other tuple, False otherwise.
+        """
+
+        return self._compare(other) >= 0

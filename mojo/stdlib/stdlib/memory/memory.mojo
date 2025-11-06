@@ -22,6 +22,7 @@ from memory import memcmp
 
 from collections.string.string_slice import _get_kgen_string
 from math import iota
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import _libc as libc
 from sys import (
     align_of,

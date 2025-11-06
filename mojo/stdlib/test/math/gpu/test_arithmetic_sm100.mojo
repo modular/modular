@@ -16,6 +16,7 @@ from random import random_float64
 
 from gpu import block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext, HostBuffer
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, TestSuite
 
 

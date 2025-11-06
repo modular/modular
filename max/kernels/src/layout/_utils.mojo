@@ -22,6 +22,7 @@ from gpu.compute.mma import mma
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from memory.unsafe import bitcast
+from memory import LegacyUnsafePointer as UnsafePointer
 
 from utils import IndexList
 

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from huggingface_hub import constants as hf_hub_constants
+from max.config import MAXConfig
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
@@ -37,7 +38,6 @@ from .hf_utils import (
     validate_hf_repo_access,
 )
 from .kv_cache_config import KVCacheConfig
-from .max_config import MAXConfig
 from .registry import PIPELINE_REGISTRY
 from .weight_path_parser import WeightPathParser
 

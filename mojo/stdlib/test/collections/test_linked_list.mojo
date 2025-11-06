@@ -13,6 +13,7 @@
 
 from collections import LinkedList
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from test_utils import (
     CopyCountedStruct,
     CopyCounter,

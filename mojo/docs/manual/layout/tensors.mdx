@@ -251,7 +251,7 @@ fn initialize_tensor_from_cpu_example():
     alias rows = 32
     alias cols = 8
     alias block_size = 8
-    num_blocks = rows * cols // (block_size * block_size)
+    num_blocks = rows // block_size
     alias input_layout = Layout.row_major(rows, cols)
 
     fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
@@ -276,7 +276,7 @@ fn initialize_tensor_from_cpu_example():
 
         ctx.enqueue_function_checked[kernel, kernel](
             tensor,
-            grid_dim=(num_blocks, num_blocks),
+            grid_dim=(num_blocks, 1),
             block_dim=(block_size, block_size),
         )
         ctx.enqueue_copy(host_buf, dev_buf)
@@ -564,7 +564,7 @@ var fragment = tile.vectorize[1, simd_size]().distribute[thread_layout](lane_id(
 
 
 Given a 16x16 tile size, a warp size of 32 and a `simd_size` of 4, this code
-produces a 4x16 tensor of 1x4 vectors. The thread layout is an 8x4 row major
+produces a 16x4 tensor of 1x4 vectors. The thread layout is an 8x4 row major
 layout.
 
 

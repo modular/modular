@@ -48,7 +48,7 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     TMATensorTile,
 )
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type

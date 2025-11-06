@@ -2134,6 +2134,7 @@ class MoLogsoftmaxOp(max._core.Operation):
         location: Location,
         result: max._core.dialects.mo.TensorType,
         input: max._core.Value[max._core.dialects.mo.TensorType],
+        axis: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @overload
@@ -2146,6 +2147,8 @@ class MoLogsoftmaxOp(max._core.Operation):
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
+    @property
+    def axis(self) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
     @property
     def output_param_decls(
         self,
@@ -4700,6 +4703,7 @@ class MoSoftmaxOp(max._core.Operation):
         location: Location,
         result: max._core.dialects.mo.TensorType,
         input: max._core.Value[max._core.dialects.mo.TensorType],
+        axis: max._core.Value[max._core.dialects.mo.TensorType],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @overload
@@ -4712,6 +4716,8 @@ class MoSoftmaxOp(max._core.Operation):
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
+    @property
+    def axis(self) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
     @property
     def output_param_decls(
         self,

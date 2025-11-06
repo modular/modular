@@ -33,6 +33,7 @@ from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from logger import Logger
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple

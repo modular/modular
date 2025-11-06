@@ -6,14 +6,7 @@ load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "DEFAULT_GPU_MEMORY")
 
 GPU_TEST_ENV = {
     "GPU_ENV_DO_NOT_USE": "$(GPU_CACHE_ENV)",
-} | select({
-    "@//:asan": {
-        # TODO: SDLC-2566 Remove need for alloc_dealloc_mismatch=0 once python extensions are fixed
-        "ASAN_OPTIONS": "$(GPU_ASAN_OPTIONS),alloc_dealloc_mismatch=0",
-        "LSAN_OPTIONS": "suppressions=$(execpath @//bazel/internal:lsan-suppressions.txt)",
-    },
-    "//conditions:default": {},
-})
+}
 
 RUNTIME_SANITIZER_DATA = select({
     "@//:asan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so"],
@@ -24,16 +17,26 @@ RUNTIME_SANITIZER_DATA = select({
     "//conditions:default": [],
 })
 
-def runtime_sanitizer_env(*, location_specifier = "location"):
-    return select({
-        "@//:asan_linux_x86_64": {
-            "LD_PRELOAD": "$({} @clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
-        },
-        "@//:asan_linux_aarch64": {
-            "LD_PRELOAD": "$({} @clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
+def runtime_sanitizer_env(*, preload = True, location_specifier = "location"):
+    env = select({
+        "@//:asan": {
+            # TODO: SDLC-2566 Remove need for alloc_dealloc_mismatch=0 once python extensions are fixed
+            "ASAN_OPTIONS": "$(GPU_ASAN_OPTIONS),alloc_dealloc_mismatch=0",
+            "LSAN_OPTIONS": "suppressions=$({} @//bazel/internal:lsan-suppressions.txt)".format(location_specifier),
         },
         "//conditions:default": {},
     })
+    if preload:
+        env |= select({
+            "@//:asan_linux_x86_64": {
+                "LD_PRELOAD": "$({} @clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
+            },
+            "@//:asan_linux_aarch64": {
+                "LD_PRELOAD": "$({} @clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
+            },
+            "//conditions:default": {},
+        })
+    return env
 
 def python_version_name(name, python_version):
     if python_version in (DEFAULT_PYTHON_VERSION_UNDERBAR, DEFAULT_PYTHON_VERSION):

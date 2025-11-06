@@ -14,7 +14,7 @@
 from compile import compile_info
 from gpu import *
 from gpu.host import *
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import *
 from testing import TestSuite
 from sys.info import _cdna_4_or_newer, _is_amd_cdna, CompilationTarget

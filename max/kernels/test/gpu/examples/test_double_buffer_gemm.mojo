@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv, isclose
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import argv, simd_width_of
 from sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 

@@ -13,10 +13,11 @@
 
 from collections import OptionalReg
 from math import fma
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys import CompilationTarget, simd_width_of
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from sys.ffi import _Global, OwnedDLHandle
 
 from algorithm import elementwise, vectorize
 from algorithm.functional import (
@@ -83,13 +84,13 @@ alias APPLE_ACCELERATE = _Global[
 ]
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     # Note: we can't use _find_dylib here because this is not a real path
     # (it's a framework path).
     try:
-        return _OwnedDLHandle(LIB_ACC_PATH)
+        return OwnedDLHandle(LIB_ACC_PATH)
     except:
-        return _OwnedDLHandle(unsafe_uninitialized=True)
+        return OwnedDLHandle(unsafe_uninitialized=True)
 
 
 @always_inline

@@ -26,6 +26,7 @@ from sys.info import is_32bit
 
 from builtin.device_passable import DevicePassable
 from builtin.math import Absable, DivModable, Powable
+from memory import LegacyOpaquePointer as OpaquePointer
 from python import (
     ConvertibleFromPython,
     ConvertibleToPython,

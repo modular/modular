@@ -496,6 +496,7 @@ fn matmul_dispatch_sm100[
     if (
         c_type == DType.bfloat16
         and static_N * size_of[c_type]() % 16 == 0
+        and static_K * size_of[a_type]() % 16 == 0
         and transpose_b
     ):
         var status = DISPATCH_MISS
@@ -1723,6 +1724,10 @@ fn _bf16_experimental[
                 block_swizzle_size=Int(tuning_config.block_swizzle_size),
                 raster_order=tuning_config.rasterize_order,
                 num_pipeline_stages=tuning_config.num_pipeline_stages,
+                AB_swapped=tuning_config.swapAB,
+                num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                k_group_size=tuning_config.k_group_size,
             )
             _matmul_dispatch_sm100[
                 transpose_b=transpose_b,

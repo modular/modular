@@ -13,6 +13,7 @@
 
 from gpu import global_idx
 from gpu.host import DeviceBuffer, DeviceContext, DeviceStream
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import (
     assert_equal,
     assert_false,

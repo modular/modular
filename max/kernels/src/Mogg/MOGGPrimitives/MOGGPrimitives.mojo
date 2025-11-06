@@ -20,7 +20,11 @@ from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from memory import memcpy
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    memcpy,
+)
 from nn.concat import concat
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
@@ -1507,6 +1511,23 @@ fn mogg_async_pack_borrow(
     value to the given async value in that it's a simple refcount increment.
     """
     external_call["MGP_RT_BufferBorrow", NoneType](borrower, borrowee)
+
+
+@register_internal("mogg.async.pack.untracked")
+@no_inline
+fn mogg_async_pack_untracked(
+    borrower: AnyAsyncValueRefPtr,
+    buffer: NDBuffer[DType.int8, 1, MutAnyOrigin],
+):
+    """
+    Borrows an async value. This differs from `mogg.async.pack.borrow` in that
+    it does not actually borrow anything. Instead, it assumes the input data is
+    managed externally. This is used for constants which must stay alive across
+    iterations and destroyed at the very end only.
+    """
+    external_call["MGP_RT_BufferUntracked", NoneType](
+        borrower, buffer.data, len(buffer)
+    )
 
 
 @register_internal("mogg.tensor.__init__")

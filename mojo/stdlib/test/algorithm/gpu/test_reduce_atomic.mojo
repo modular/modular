@@ -17,6 +17,7 @@ from os.atomic import Atomic
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, TestSuite
 
 

@@ -21,7 +21,12 @@ from io.write import _WriteBufferStack
 from sys import _libc, external_call, is_gpu
 from sys.ffi import c_char
 
-from memory import ArcPointer, memcpy, OwnedPointer
+from memory import (
+    ArcPointer,
+    LegacyUnsafePointer as UnsafePointer,
+    OwnedPointer,
+    memcpy,
+)
 from io.write import _WriteBufferStack, _TotalWritableBytes
 
 

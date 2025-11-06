@@ -11,13 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from python import Python
 from python._cpython import (
     CPython,
     Py_eval_input,
+    Py_file_input,
     Py_ssize_t,
     PyMethodDef,
     PyObjectPtr,
+    Py_TPFLAGS_LONG_SUBCLASS,
+    Py_TPFLAGS_LIST_SUBCLASS,
 )
 from testing import (
     assert_equal,
@@ -157,30 +161,87 @@ def _test_type_object_api(cpy: CPython):
     assert_true(cpy.PyType_GetName(dict_type))
 
 
+def _helper_instantiate_derived_class(
+    base_class: String, cpy: CPython
+) -> PyObjectPtr:
+    """Create a derived class from one of the basic types and
+    then instantiate it.
+    """
+    # Setup the environment for PyRun_String.
+    var test_mod = cpy.PyModule_Create("test_mod")
+    var globals = cpy.PyDict_New()
+    var locals = cpy.PyModule_GetDict(test_mod)
+    # Create a derived class.
+    #
+    # Note: the second argument must be Py_file_input otherwise the
+    # result is NULL.
+    _ = cpy.PyRun_String(
+        "class D({}):\n    pass\n\n".format(base_class),
+        Py_file_input,
+        globals,
+        locals,
+    )
+    # Get a handle to the constructor we have just created.
+    var constructor = cpy.PyObject_GetAttrString(test_mod, "D")
+    # We need to pass in some arguments from the newly defined constructor.
+    var args = cpy.PyTuple_New(0)
+    return cpy.PyObject_CallObject(constructor, args)
+
+
 def _test_integer_object_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(-42)
     assert_true(n)
     assert_equal(cpy.PyLong_AsSsize_t(n), -42)
+    assert_true(cpy.PyLong_Check(n))
+    assert_true(cpy.PyLong_CheckExact(n))
+    assert_true(cpy.PyObject_TypeCheck(n, cpy.PyLong_Type()))
 
     var z = cpy.PyLong_FromSize_t(57)
     assert_true(z)
     assert_equal(cpy.PyLong_AsSsize_t(z), 57)
+
+    var none = cpy.Py_None()
+    assert_false(cpy.PyLong_Check(none))
+    assert_false(cpy.PyLong_CheckExact(none))
+
+    # Derive a class from int to be able to test some more the Check* API.
+    var instantiated = _helper_instantiate_derived_class("int", cpy)
+    assert_true(cpy.PyLong_Check(instantiated))
+    assert_false(cpy.PyLong_CheckExact(instantiated))
 
 
 def _test_boolean_object_api(cpy: CPython):
     var t = cpy.PyBool_FromLong(1)
     assert_true(t)
     assert_equal(cpy.PyObject_IsTrue(t), 1)
+    assert_true(cpy.PyBool_Check(t))
+    assert_true(cpy.PyObject_TypeCheck(t, cpy.PyBool_Type()))
 
     var f = cpy.PyBool_FromLong(0)
     assert_true(f)
     assert_equal(cpy.PyObject_IsTrue(f), 0)
+    assert_true(cpy.PyBool_Check(t))
+    assert_true(cpy.PyObject_TypeCheck(t, cpy.PyBool_Type()))
+
+    var none = cpy.Py_None()
+    assert_false(cpy.PyBool_Check(none))
 
 
 def _test_floating_point_object_api(cpy: CPython):
     var f = cpy.PyFloat_FromDouble(3.14)
     assert_true(f)
     assert_equal(cpy.PyFloat_AsDouble(f), 3.14)
+    assert_true(cpy.PyFloat_Check(f))
+    assert_true(cpy.PyFloat_CheckExact(f))
+    assert_true(cpy.PyObject_TypeCheck(f, cpy.PyFloat_Type()))
+
+    var none = cpy.Py_None()
+    assert_false(cpy.PyFloat_Check(none))
+    assert_false(cpy.PyFloat_CheckExact(none))
+    # Derive a class from float to be able to test some more the Check* API.
+    var instantiated = _helper_instantiate_derived_class("float", cpy)
+    assert_true(cpy.PyFloat_Check(instantiated))
+    assert_false(cpy.PyFloat_CheckExact(instantiated))
 
 
 def _test_unicode_object_api(cpy: CPython):

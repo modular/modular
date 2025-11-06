@@ -22,6 +22,10 @@ from os import listdir
 
 from collections import InlineArray, List
 from collections.string.string_slice import _unsafe_strlen
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from io import FileDescriptor
 from sys import CompilationTarget, external_call, is_gpu
 from sys.ffi import c_char, c_int

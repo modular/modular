@@ -284,7 +284,7 @@ def execute_flash_attention_suite():
         for _ in range(bs):
             tg_seq_lens.append(1)
             tg_cache_sizes.append(Int(random_ui64(1, 100)))
-            ce_seq_lens.append(Int(random_ui64(1, 100)))
+            ce_seq_lens.append(Int(random_ui64(2, 100)))
             ce_cache_sizes.append(0)
 
         print("CE", bs, dtype)

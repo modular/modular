@@ -125,7 +125,11 @@ from gpu.intrinsics import (
 )
 from gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
 from gpu.memory import CacheOperation
-from memory import stack_allocation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    stack_allocation,
+)
 
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type

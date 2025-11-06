@@ -75,7 +75,12 @@ from builtin.device_passable import DevicePassable
 from builtin.format_int import _try_write_int
 from builtin.math import DivModable, Powable
 from documentation import doc_private
-from memory import bitcast, memcpy
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    bitcast,
+    memcpy,
+)
 from python import ConvertibleToPython, Python, PythonObject
 
 from utils import IndexList, StaticTuple

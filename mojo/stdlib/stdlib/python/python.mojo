@@ -20,6 +20,7 @@ from python import Python
 """
 
 from collections.dict import OwnedKwargsDict
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys.ffi import _Global
 

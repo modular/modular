@@ -19,6 +19,7 @@ from python import PythonObject
 ```
 """
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys.ffi import c_double, c_long, c_size_t, c_ssize_t
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer

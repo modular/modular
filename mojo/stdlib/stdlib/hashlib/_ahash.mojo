@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from bit import rotate_bits_left
-from memory import bitcast, Span
+from memory import LegacyUnsafePointer as UnsafePointer, Span, bitcast
 
 from .hasher import Hasher
 

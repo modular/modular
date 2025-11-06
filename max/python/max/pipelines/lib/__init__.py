@@ -13,6 +13,14 @@
 
 """Types to interface with ML pipelines such as text/token generation."""
 
+from max.config import (
+    MAXConfig,
+    convert_max_config_value,
+    deep_merge_max_configs,
+    get_default_max_config_file_section_name,
+    resolve_max_config_inheritance,
+)
+
 from .config import AudioGenerationConfig, PipelineConfig
 from .config_enums import PipelineRole, RepoType, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
@@ -35,13 +43,6 @@ from .kv_cache_config import KVCacheConfig
 from .lora import LoRAManager
 from .lora_config import LoRAConfig
 from .lora_request_processor import LoRARequestProcessor
-from .max_config import (
-    MAXConfig,
-    convert_max_config_value,
-    deep_merge_max_configs,
-    get_default_max_config_file_section_name,
-    resolve_max_config_inheritance,
-)
 from .memory_estimation import MemoryEstimator
 from .model_config import MAXModelConfig, MAXModelConfigBase
 from .pipeline_variants.text_generation import TextGenerationPipeline

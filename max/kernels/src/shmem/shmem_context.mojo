@@ -13,10 +13,12 @@
 
 from algorithm import parallelize
 from collections.optional import OptionalReg
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort, getenv, setenv
 from sys import (
     CompilationTarget,
     argv,
+    has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
@@ -171,8 +173,8 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
             If initialization fails.
         """
         constrained[
-            has_nvidia_gpu_accelerator(),
-            "SHMEMContext is currently only available on NVIDIA GPUs",
+            has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
+            "SHMEMContext is currently only available on NVIDIA and AMD GPUs",
         ]()
         shmem_init()
         var mype = shmem_team_my_pe(team)

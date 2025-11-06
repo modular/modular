@@ -19,7 +19,7 @@ from sys._libc import FILE_ptr, pclose, popen
 from sys.ffi import c_char
 from sys.info import CompilationTarget
 
-from memory import Span
+from memory import LegacyUnsafePointer as UnsafePointer, Span
 
 
 struct _POpenHandle:

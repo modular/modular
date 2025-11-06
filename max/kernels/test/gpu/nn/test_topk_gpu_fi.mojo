@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, iota
+from math import ceildiv, iota, exp, log
 from random import random_float64, seed
-from nn.topk_fi import topk_mask_logits
+from nn.topk_fi import topk_mask_logits, topk_sampling_from_prob
 from utils.numerics import max_or_inf, min_or_neg_inf
 
 from algorithm.reduction import max as reduce_max
@@ -32,6 +32,258 @@ from utils import IndexList
 
 alias DEBUG_BENCH = False
 alias PRINT_OUTPUT = False
+alias NUM_VALIDATION_TRIALS = 50
+
+
+@parameter
+fn fill_random_normalized[
+    rank: Int, dtype: DType
+](mut buffer: NDBuffer[mut=True, dtype, rank]):
+    """Fill buffer with random values and normalize to valid probabilities.
+
+    Each row will sum to 1.0, creating valid probability distributions.
+    """
+    var shape = buffer.get_shape()
+    var batch_size = shape[0]
+    var vocab_size = shape[1]
+
+    for b in range(batch_size):
+        var row_sum = Scalar[dtype](0.0)
+
+        for i in range(vocab_size):
+            var random_value = random_float64(0.01, 10.0)
+            buffer.data[b * vocab_size + i] = random_value.cast[dtype]()
+            row_sum += buffer.data[b * vocab_size + i]
+
+        # Normalize to sum to 1.0.
+        for i in range(vocab_size):
+            buffer.data[b * vocab_size + i] = (
+                buffer.data[b * vocab_size + i] / row_sum
+            )
+
+
+fn compute_topk_mask_from_probs[
+    dtype: DType,
+    rank: Int,
+](
+    probs: HostNDBuffer[dtype, rank],
+    K: Int,
+    batch_size: Int,
+    N: Int,
+) raises -> HostNDBuffer[DType.bool, rank]:
+    """
+    Compute a boolean mask indicating which tokens are in the top-K.
+    Marks all tokens whose probability is >= K-th largest value.
+    """
+    var mask = HostNDBuffer[DType.bool, rank](DimList(batch_size, N))
+
+    for b in range(batch_size):
+        var values = List[Scalar[dtype]]()
+        for i in range(N):
+            values.append(probs.tensor.data[b * N + i])
+
+        @parameter
+        fn _greater_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
+            return lhs > rhs
+
+        sort[_greater_than](values)
+
+        # K-th largest value.
+        var kth_value = values[K - 1]
+
+        # Mark all tokens >= kth_value.
+        for i in range(N):
+            mask.tensor.data[b * N + i] = (
+                probs.tensor.data[b * N + i] >= kth_value
+            )
+
+    return mask
+
+
+fn validate_sampling_results_from_probs[
+    out_idx_type: DType,
+    rank: Int,
+](
+    sampled_idxs: HostNDBuffer[out_idx_type, 1],
+    mask: HostNDBuffer[DType.bool, rank],
+    batch_size: Int,
+    N: Int,
+    trial_num: Int,
+) raises:
+    """
+    Validate that all sampled indices are within the valid top-K set.
+
+    Args:
+        sampled_idxs: Sampled token indices [batch_size].
+        mask: Boolean mask indicating valid top-K tokens [batch_size, N].
+        batch_size: Batch size.
+        N: Vocabulary size.
+        trial_num: Current trial number (for error messages).
+    """
+    for b in range(batch_size):
+        var idx = Int(sampled_idxs.tensor.data[b])
+
+        # Check 1: Index is within valid range.
+        if idx < 0 or idx >= N:
+            raise Error(
+                "Trial "
+                + String(trial_num)
+                + ", Batch "
+                + String(b)
+                + ": Sampled index "
+                + String(idx)
+                + " is out of range [0, "
+                + String(N)
+                + ")"
+            )
+
+        # Check 2: Index is in the top-K set.
+        var is_valid = mask.tensor.data[b * N + idx]
+        if not is_valid:
+            raise Error(
+                "Trial "
+                + String(trial_num)
+                + ", Batch "
+                + String(b)
+                + ": Sampled index "
+                + String(idx)
+                + " is NOT in the top-K set! This indicates a bug in the"
+                " sampling kernel."
+            )
+
+
+fn test_topk_sampling_from_prob[
+    dtype: DType,
+    out_idx_type: DType = DType.int32,
+    rank: Int = 2,
+    block_size: Int = 1024,
+](ctx: DeviceContext, test_case: TestCase) raises:
+    """
+    Test topk_sampling_from_prob kernel with property-based validation.
+
+    This test validates that the sampling kernel correctly samples from the
+    top-K probability distribution by:
+    1. Computing the ground truth top-K set
+    2. Running sampling multiple times
+    3. Verifying each sample is from the valid top-K set
+    """
+
+    var m = Bench()
+    var batch_size = test_case.batch_size
+    var N = test_case.N
+    var K = test_case.K
+    alias largest = test_case.largest
+    alias sampling = test_case.sampling
+
+    constrained[sampling, "topk_sampling_from_prob requires sampling=True"]()
+
+    # Create probability distributions (normalized).
+    var probs_host = HostNDBuffer[dtype, rank](DimList(batch_size, N))
+    fill_random_normalized[rank, dtype](probs_host.tensor)
+
+    @parameter
+    if PRINT_OUTPUT:
+        print("Sample probabilities (first batch):")
+        for i in range(min(10, N)):
+            print("  Token", i, ":", probs_host.tensor.data[i])
+
+    var device_probs = DeviceNDBuffer[dtype, rank](
+        DimList(batch_size, N), ctx=ctx
+    )
+    var device_output = DeviceNDBuffer[out_idx_type, 1](
+        DimList(batch_size), ctx=ctx
+    )
+
+    ctx.enqueue_copy(device_probs.buffer, probs_host.tensor.data)
+    ctx.synchronize()
+
+    # STEP 1: Compute ground truth mask.
+    var mask = compute_topk_mask_from_probs[dtype, rank](
+        probs_host, K, batch_size, N
+    )
+
+    @parameter
+    if PRINT_OUTPUT:
+        print("  Valid top-K indices for first batch:")
+        for i in range(N):
+            if mask.tensor.data[i]:
+                print("    Token", i, "with prob", probs_host.tensor.data[i])
+
+    # STEP 2: Run sampling validation.
+    @parameter
+    if PRINT_OUTPUT:
+        print(
+            "  [Validation] Running",
+            NUM_VALIDATION_TRIALS,
+            "sampling trials...",
+        )
+
+    var sampled_idxs = HostNDBuffer[out_idx_type, 1](DimList(batch_size))
+    var num_passed = 0
+    var num_failed = 0
+
+    for trial in range(NUM_VALIDATION_TRIALS):
+        var trial_seed = UInt64(42 + trial)
+
+        topk_sampling_from_prob[dtype, out_idx_type, block_size](
+            ctx,
+            device_probs.to_layout_tensor(),
+            device_output.to_layout_tensor(),
+            K,
+            deterministic=False,
+            rng_seed=trial_seed,
+            rng_offset=0,
+        )
+
+        ctx.enqueue_copy(sampled_idxs.tensor.data, device_output.buffer)
+        ctx.synchronize()
+
+        try:
+            validate_sampling_results_from_probs[out_idx_type, rank](
+                sampled_idxs, mask, batch_size, N, trial
+            )
+            num_passed += 1
+        except e:
+            print("  [ERROR] Trial", trial, "failed:", e)
+            raise Error("Sampling validation failed. Kernel is incorrect.")
+
+    @parameter
+    if PRINT_OUTPUT:
+        print(
+            "  [Validation] ✓ All",
+            num_passed,
+            "/",
+            NUM_VALIDATION_TRIALS,
+            "trials passed!",
+        )
+
+    # STEP 3: Benchmark the kernel (separate from validation)
+    @parameter
+    if DEBUG_BENCH:
+
+        @always_inline
+        @parameter
+        fn run_func(ctx: DeviceContext) raises:
+            topk_sampling_from_prob[dtype, out_idx_type, block_size](
+                ctx,
+                device_probs.to_layout_tensor(),
+                device_output.to_layout_tensor(),
+                K,
+                deterministic=False,
+                rng_seed=UInt64(42),
+                rng_offset=0,
+            )
+            ctx.enqueue_copy(sampled_idxs.tensor.data, device_output.buffer)
+            ctx.synchronize()
+
+        time_kernel[run_func](m, ctx, "topk-sampling-from-prob")
+        m.dump_report()
+
+    _ = probs_host
+    _ = device_probs
+    _ = device_output
+    _ = sampled_idxs
+    _ = mask
 
 
 fn extract_topk_from_masked[
@@ -332,7 +584,7 @@ def main():
     """
     alias llama3_vocab_size = 128256
     with DeviceContext() as ctx:
-        alias dtype = DType.float32
+        alias float32_dtype = DType.float32
         alias bf16_type = DType.bfloat16
 
         print("\n" + "=" * 80)
@@ -350,7 +602,7 @@ def main():
         )
         print_test_case(test_case0)
         test_case_batched[
-            dtype,
+            float32_dtype,
             fill_random,
             out_idx_type = DType.uint64,
         ](ctx, test_case0)
@@ -364,7 +616,7 @@ def main():
         )
         print_test_case(test_case1)
         test_case_batched[
-            dtype,
+            float32_dtype,
             fill_random,
             out_idx_type = DType.uint64,
         ](ctx, test_case1)
@@ -377,7 +629,7 @@ def main():
             batch_size=16,
         )
         print_test_case(test_case2)
-        test_case_batched[dtype, fill_random](ctx, test_case2)
+        test_case_batched[float32_dtype, fill_random](ctx, test_case2)
 
         alias test_case3 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -387,7 +639,7 @@ def main():
             batch_size=64,
         )
         print_test_case(test_case3)
-        test_case_batched[dtype, fill_random](ctx, test_case3)
+        test_case_batched[float32_dtype, fill_random](ctx, test_case3)
 
         alias test_case4 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -397,7 +649,7 @@ def main():
             batch_size=16,
         )
         print_test_case(test_case4)
-        test_case_batched[dtype, fill_random](ctx, test_case4)
+        test_case_batched[float32_dtype, fill_random](ctx, test_case4)
 
         alias test_case5 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -407,7 +659,7 @@ def main():
             batch_size=64,
         )
         print_test_case(test_case5)
-        test_case_batched[dtype, fill_random](ctx, test_case5)
+        test_case_batched[float32_dtype, fill_random](ctx, test_case5)
 
         alias test_case6 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -417,7 +669,7 @@ def main():
             batch_size=256,
         )
         print_test_case(test_case6)
-        test_case_batched[dtype, fill_random](ctx, test_case6)
+        test_case_batched[float32_dtype, fill_random](ctx, test_case6)
 
         alias test_case7 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -481,7 +733,7 @@ def main():
             batch_size=2,
         )
         print_test_case(test_case12)
-        test_case_batched[dtype, fill_random](ctx, test_case12)
+        test_case_batched[float32_dtype, fill_random](ctx, test_case12)
 
         alias test_case13 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -491,7 +743,7 @@ def main():
             batch_size=2,
         )
         print_test_case(test_case13)
-        test_case_batched[DType.float32, fill_random](ctx, test_case13)
+        test_case_batched[float32_dtype, fill_random](ctx, test_case13)
 
         alias test_case14 = TestCase[
             _sampling=False, _block_size=default_block_size
@@ -501,8 +753,92 @@ def main():
             batch_size=1,
         )
         print_test_case(test_case14)
-        test_case_batched[DType.float32, fill_random](ctx, test_case14)
+        test_case_batched[float32_dtype, fill_random](ctx, test_case14)
 
         print("\n" + "=" * 80)
         print("All topk_mask_logits tests passed! ✓")
+        print("=" * 80 + "\n")
+
+        print("\n" + "=" * 80)
+        print("Testing topk_sampling_from_prob kernel")
+        print("=" * 80 + "\n")
+
+        alias sampling_test_case1 = TestCase[
+            _sampling=True, _block_size=default_block_size
+        ](
+            N=100,
+            K=10,
+            batch_size=1,
+        )
+        print_test_case(sampling_test_case1)
+        test_topk_sampling_from_prob[
+            float32_dtype, DType.int32, 2, default_block_size
+        ](ctx, sampling_test_case1)
+
+        alias sampling_test_case2 = TestCase[
+            _sampling=True, _block_size=default_block_size
+        ](
+            N=1024,
+            K=50,
+            batch_size=16,
+        )
+        print_test_case(sampling_test_case2)
+        test_topk_sampling_from_prob[
+            float32_dtype, DType.int32, 2, default_block_size
+        ](ctx, sampling_test_case2)
+
+        alias sampling_test_case3 = TestCase[
+            _sampling=True, _block_size=default_block_size
+        ](
+            N=32000,
+            K=100,
+            batch_size=8,
+        )
+        print_test_case(sampling_test_case3)
+        test_topk_sampling_from_prob[
+            float32_dtype, DType.int32, 2, default_block_size
+        ](ctx, sampling_test_case3)
+
+        alias sampling_test_case4 = TestCase[
+            _sampling=True, _block_size=default_block_size
+        ](
+            N=32000,
+            K=5,
+            batch_size=32,
+        )
+        print_test_case(sampling_test_case4)
+        test_topk_sampling_from_prob[
+            float32_dtype, DType.int32, 2, default_block_size
+        ](ctx, sampling_test_case4)
+
+        alias sampling_test_case5 = TestCase[
+            _sampling=True, _block_size=default_block_size
+        ](
+            N=1024,
+            K=20,
+            batch_size=256,
+        )
+        print_test_case(sampling_test_case5)
+        test_topk_sampling_from_prob[
+            float32_dtype, DType.int32, 2, default_block_size
+        ](ctx, sampling_test_case5)
+
+        alias sampling_test_case6 = TestCase[
+            _sampling=True, _block_size=default_block_size
+        ](
+            N=llama3_vocab_size,
+            K=50,
+            batch_size=4,
+        )
+        print_test_case(sampling_test_case6)
+        test_topk_sampling_from_prob[
+            bf16_type, DType.int32, 2, default_block_size
+        ](ctx, sampling_test_case6)
+
+        print("\n" + "=" * 80)
+        print("All topk_sampling_from_prob tests passed! ✓")
+        print("=" * 80 + "\n")
+
+        print("\n" + "=" * 80)
+        print("🎉 ALL TESTS PASSED! 🎉")
         print("=" * 80 + "\n")

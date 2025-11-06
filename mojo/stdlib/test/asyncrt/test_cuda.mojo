@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
+from memory import LegacyUnsafePointer as UnsafePointer
 from gpu.host import DeviceContext, Dim
 from gpu.host._nvidia_cuda import (
     CUDA,

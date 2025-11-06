@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import _RegisterPackType, size_of
 from sys._assembly import inlined_assembly
 

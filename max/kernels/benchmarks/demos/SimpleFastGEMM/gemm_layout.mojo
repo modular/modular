@@ -19,6 +19,7 @@ from sys import align_of, simd_width_of
 import benchmark
 from buffer import NDBuffer
 from layout import *
+from memory import LegacyUnsafePointer as UnsafePointer
 
 alias MR = 6
 alias NR = 64

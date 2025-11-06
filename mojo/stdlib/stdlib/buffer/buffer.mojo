@@ -26,7 +26,12 @@ from sys.intrinsics import PrefetchOptions, masked_load, masked_store, prefetch
 
 from buffer.dimlist import Dim, DimList, _make_tuple
 from builtin.device_passable import DevicePassable
-from memory import memset_zero, stack_allocation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    memset_zero,
+    stack_allocation,
+)
 
 from utils._serialize import _serialize
 from utils.index import IndexList

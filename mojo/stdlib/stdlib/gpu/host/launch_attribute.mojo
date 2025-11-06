@@ -29,6 +29,10 @@ These structures enable optimizing GPU kernel performance by controlling executi
 at a granular level, similar to CUDA's native launch attribute system.
 """
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from sys import size_of
 
 from utils import StaticTuple

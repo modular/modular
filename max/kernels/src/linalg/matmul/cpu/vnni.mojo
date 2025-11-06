@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import prefetch
 from sys.info import CompilationTarget, align_of
 from sys.intrinsics import PrefetchOptions

@@ -28,7 +28,7 @@ from layout import (
 )
 from layout.int_tuple import fill_like
 from layout.layout import is_row_major
-from memory import memcpy
+from memory import LegacyUnsafePointer as UnsafePointer, memcpy
 from runtime.asyncrt import parallelism_level
 
 from utils.index import IndexList, StaticTuple

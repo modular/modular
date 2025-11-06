@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements functions that return compile-time information.
 """
-from .param_env import env_get_int, env_get_string
+from .param_env import env_get_int, env_get_string, is_defined
 
 # ===----------------------------------------------------------------------=== #
 # is_compile_time
@@ -114,5 +114,7 @@ alias DebugLevel = _DebugLevel()
 # SanitizeAddress
 # ===----------------------------------------------------------------------=== #
 
-alias SanitizeAddress = env_get_int["__SANITIZE_ADDRESS"]() == 1
+alias SanitizeAddress = is_defined["__SANITIZE_ADDRESS"]() and env_get_int[
+    "__SANITIZE_ADDRESS"
+]() == 1
 """True if address sanitizer is enabled at compile-time"""

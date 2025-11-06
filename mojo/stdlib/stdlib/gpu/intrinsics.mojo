@@ -26,6 +26,7 @@ underlying GPU architecture.
 """
 
 from collections.string.string_slice import get_static_string
+from memory import LegacyUnsafePointer as UnsafePointer
 from os.atomic import Consistency
 from sys import (
     is_amd_gpu,

@@ -35,7 +35,7 @@ from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tma_async import TMATensorTile, create_tma_tile
 from logger import Logger
-from memory import memset_zero
+from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from gpu.host.info import B200, H100

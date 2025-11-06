@@ -17,19 +17,10 @@ from enum import Enum
 from typing import TypeVar
 
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    TensorValue,
-    TensorValueLike,
-    ops,
-)
+from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
 
-from ..attention.interfaces import AttentionImplQKV
 from ..embedding import Embedding, EmbeddingV1
-from ..kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Layer, LayerList, Module
 from ..linear import Linear, LinearV1
 from ..rotary_embedding import RotaryEmbedding
@@ -40,7 +31,7 @@ class TransformerBlock(Module):
 
     def __init__(
         self,
-        attention: AttentionImplQKV | Module,
+        attention: Module,
         mlp: Layer,
         attention_norm: Layer,
         mlp_norm: Layer,

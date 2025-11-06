@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from test_utils import (
     AbortOnDel,

@@ -22,6 +22,7 @@ from sys.param_env import env_get_string
 
 from gpu.host.device_attribute import DeviceAttribute
 from gpu.host.dim import Dim
+from memory import LegacyUnsafePointer as UnsafePointer
 from python import Python
 from shmem import *
 from testing import assert_equal

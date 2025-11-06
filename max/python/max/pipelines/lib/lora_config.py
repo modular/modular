@@ -19,7 +19,7 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from .max_config import MAXConfig
+from max.config import MAXConfig
 
 logger = logging.getLogger("max.pipelines")
 

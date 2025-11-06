@@ -22,7 +22,7 @@ from algorithm import parallel_memcpy
 
 from math import ceildiv
 
-from memory import memcpy
+from memory import LegacyUnsafePointer as UnsafePointer, memcpy
 from runtime.asyncrt import parallelism_level
 
 

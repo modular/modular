@@ -21,6 +21,14 @@ what we publish.
 
 ### Language enhancements {#25-7-language-enhancements}
 
+- Mojo now supports unpacking an alias tuple with a single statement when it is
+  not inside a `struct` or `trait`. For example:
+
+  ```mojo
+  alias i, f = (1, 3.0)
+  alias q, v = divmod(4, 5)
+  ```
+
 - Mojo now supports compile-time trait conformance check (via `conforms_to`) and
   downcast (via `trait_downcast`). This allows users to implement features like
   static dispatching based on trait conformance, e.g.,
@@ -118,6 +126,9 @@ what we publish.
 
 #### Libraries
 
+- Added `Span.binary_search_by()` which allows binary searching with a custom
+  comparator function.
+
 - `Codepoint` now conforms to `Writable`.
 
 - Added `os.isatty()` function to check whether a file descriptor refers to a
@@ -191,9 +202,10 @@ what we publish.
   `test_utils.TestSuite` framework), and run with `mojo run`.
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`
-  functions rather than inlining them into the error message. They also maintain
-  alias names when qualified from a base, e.g. `T.someAlias` instead of
-  expanding the alias value inline.
+  functions rather than inlining them into the error message.
+
+- Error messages now preserve alias names in error messages in many cases,
+  rather than expanding the value inline.
 
 - `SIMD` now implements the `DivModable` trait.
 
@@ -333,6 +345,10 @@ what we publish.
   number parsing operations, improving performance for string-to-number
   conversions including `atof()` and related float parsing operations.
 
+- Tuples now support comparison operations if the element types are also
+  comparable. For example, one can now write `(1, "a") == (1, "a")` or
+  `(1, "a") < (1, "b")`.
+
 ### Tooling changes {#25-7-tooling-changes}
 
 - `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)
@@ -385,6 +401,8 @@ what we publish.
    `0` means unlimited.
 
 - `--help-hidden` option is added to all mojo tools to show hidden options.
+
+- The Mojo language server will now report more coherent code actions.
 
 ### ❌ Removed {#25-7-removed}
 
@@ -478,3 +496,16 @@ what we publish.
   allows both reading and writing, similar to Python's "r+" mode. Previously,
   "rw" mode would immediately truncate the file, making it impossible to read
   existing content and causing potential data loss.
+
+- [Issue #3849](https://github.com/modular/mojo/issues/3849): Added support
+  for append mode ("a") when opening files. The `open()` function now accepts
+  "a" as a valid mode, which opens a file for appending. Content written to a
+  file opened in append mode is added to the end of the file without truncating
+  existing content. If the file doesn't exist, it will be created.
+
+- [Issue #3208](https://github.com/modular/mojo/issues/3208): Fixed
+  `FileHandle` raising "unable to remove existing file" error when opening a
+  FIFO (named pipe) in write mode. Opening special files like FIFOs, devices,
+  and sockets with `open(path, "w")` now works correctly. Previously, write
+  mode would attempt to remove the existing file before opening it, which
+  failed for special files that should not be removed.

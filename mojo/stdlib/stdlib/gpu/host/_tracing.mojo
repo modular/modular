@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from pathlib import Path
 from sys import (
@@ -20,7 +21,7 @@ from sys import (
     size_of,
 )
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle, _try_find_dylib
+from sys.ffi import _Global, OwnedDLHandle, _try_find_dylib
 from sys.param_env import env_get_int
 
 from utils.variant import Variant
@@ -87,10 +88,10 @@ alias GPU_TRACING_LIBRARY = _Global[
 ]()
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     @parameter
     if _is_disabled():
-        return abort[_OwnedDLHandle]("cannot load dylib when disabled")
+        return abort[OwnedDLHandle]("cannot load dylib when disabled")
 
     try:
         var dylib = _try_find_dylib["GPU tracing library"](
@@ -107,7 +108,7 @@ fn _init_dylib() -> _OwnedDLHandle:
 
         return dylib^
     except e:
-        return _OwnedDLHandle(unsafe_uninitialized=True)
+        return OwnedDLHandle(unsafe_uninitialized=True)
 
 
 @always_inline

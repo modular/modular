@@ -25,6 +25,7 @@ from internal_utils import (
     int_list_to_tuple,
     update_bench_config_args,
 )
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 from utils import IndexList, StaticTuple

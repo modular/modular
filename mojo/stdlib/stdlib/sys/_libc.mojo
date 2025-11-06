@@ -17,6 +17,10 @@ C standard library counterparts. These are used to implement higher level
 functionality in the rest of the Mojo standard library.
 """
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from sys import CompilationTarget
 from sys.ffi import c_char, c_int, c_size_t, get_errno
 
