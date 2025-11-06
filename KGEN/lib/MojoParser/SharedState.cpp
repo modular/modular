@@ -2594,6 +2594,54 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
       }
   }
 
+  if (auto cmpOp = dyn_cast<POP::CmpOp>(op)) {
+    if (auto lhs = findValue(cmpOp.getLhs())) {
+      if (auto rhs = findValue(cmpOp.getRhs())) {
+        POP::NormalizedCmpPredicate cc;
+        switch (cmpOp.getPred()) {
+        case POP::CmpPredicate::EQ:
+          cc = POP::NormalizedCmpPredicate::EQ;
+          break;
+        case POP::CmpPredicate::NE:
+          cc = POP::NormalizedCmpPredicate::EQ;
+          break;
+        case POP::CmpPredicate::LT:
+          cc = POP::NormalizedCmpPredicate::LT;
+          break;
+        case POP::CmpPredicate::LE:
+          cc = POP::NormalizedCmpPredicate::LE;
+          break;
+        case POP::CmpPredicate::GT:
+          cc = POP::NormalizedCmpPredicate::LT;
+          std::swap(lhs, rhs);
+          break;
+        case POP::CmpPredicate::GE:
+          cc = POP::NormalizedCmpPredicate::LE;
+          std::swap(lhs, rhs);
+          break;
+        }
+        auto resultType = evaluator.getReboundType(cmpOp.getType());
+        auto cmp = POP::SIMDCmpAttr::get(cc, lhs, rhs, resultType);
+
+        // For NE comparisons, negate the EQ result with an XOR
+        if (cmpOp.getPred() == POP::CmpPredicate::NE) {
+          // Splat a boolean 'true' value to the same width as the comparison.
+          // This avoids us having to introspect the return type.
+          POP::SIMDAttr oneVal = POP::SIMDAttr::get(
+              POP::DTypeValue(true, DType::kBool),
+              POP::SIMDType::get(
+                  /*size=*/1,
+                  DTypeConstantAttr::get(cmpOp.getContext(), DType::kBool)));
+          auto oneVecVal =
+              POP::SIMDSplatAttr::get(oneVal, cast<POP::SIMDType>(resultType));
+          cmp = POP::SIMDXorAttr::get(cmp, oneVecVal);
+        }
+
+        return cmp;
+      }
+    }
+  }
+
   if (auto andOp = dyn_cast<POP::SIMDAndOp>(op)) {
     if (auto lhsOp = findValue(andOp.getLhs())) {
       if (auto rhsOp = findValue(andOp.getRhs()))

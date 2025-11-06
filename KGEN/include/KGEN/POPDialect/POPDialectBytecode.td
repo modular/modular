@@ -49,6 +49,10 @@ def CmpPredicateAttr : DialectAttribute<(attr
   EnumAttr<"CmpPredicate">:$value
 )>;
 
+def NormalizedCmpPredicateAttr : DialectAttribute<(attr
+  EnumAttr<"NormalizedCmpPredicate">:$value
+)>;
+
 def AtomicOrderingAttr : DialectAttribute<(attr
   EnumAttr<"AtomicOrdering">:$value
 )>;
@@ -124,6 +128,10 @@ def FloatLiteralCmpPredAttr : DialectAttribute<(attr
 )>;
 
 def SIMDAndAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
+def SIMDXorAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
+
+def SIMDCmpAttr : DialectAttribute<(attr
+  EnumAttr<"NormalizedCmpPredicate">:$cc, TypedAttr:$lhs, TypedAttr:$rhs, Type:$type)>;
 
 def CastAttr : DialectAttribute<(attr
   TypedAttr:$arg, Type:$type
@@ -163,6 +171,7 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     FloatLiteralAttr,
 
     SIMDAndAttr,
+    SIMDXorAttr,
 
     CastAttr,
     DTypeToUI8Attr,
@@ -170,6 +179,8 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     CastFromBuiltinAttr,
     CastToBuiltinAttr,
     SIMDSplatAttr,
+
+    SIMDCmpAttr,
   ];
 }
 

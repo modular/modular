@@ -301,3 +301,26 @@ kgen.generator @closureSymbol(){
   // CHECK: c = #pop.simd_and<#kgen.unknown : !pop.simd<4, si32>, #kgen.unknown : !pop.simd<4, si32>> : !pop.simd<4, si32>
   c = #pop.simd_and< #kgen.unknown : !pop.simd<4, si32>, #kgen.unknown : !pop.simd<4, si32>>
 } : () -> ()
+
+"some.op"() {
+  // CHECK: a = #pop<simd 3> : !pop.scalar<si32>
+  a = #pop.simd_xor< #pop<simd 1> : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<si32>,
+  // CHECK: b = #pop.simd<5, -43, -1025, -1>
+  b = #pop.simd_xor< #pop.simd<7, 42, -1, 0> : !pop.simd<4, si32>,
+                     #pop.simd<2, -1, 1024, -1> : !pop.simd<4, si32>> : !pop.simd<4, si32>,
+  // CHECK: c = #pop.simd_xor<#kgen.unknown : !pop.simd<4, si32>, #kgen.unknown : !pop.simd<4, si32>> : !pop.simd<4, si32>
+  c = #pop.simd_xor< #kgen.unknown : !pop.simd<4, si32>, #kgen.unknown : !pop.simd<4, si32>>
+} : () -> ()
+
+"some.op"() {
+  // CHECK: a = #pop.simd_cmp<eq, #kgen.unknown : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<bool>
+  a = #pop.simd_cmp<eq, #kgen.unknown : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<bool>,
+  // CHECK: b = #pop<simd false> : !pop.scalar<bool>
+  b = #pop.simd_cmp<eq, #pop<simd 1> : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<bool>,
+  // CHECK: c = #pop<simd true> : !pop.scalar<bool>
+  c = #pop.simd_cmp<eq, #pop<simd 42> : !pop.scalar<si32>, #pop<simd 42> : !pop.scalar<si32>> : !pop.scalar<bool>,
+  // CHECK: d = #pop<simd false> : !pop.scalar<bool>
+  d = #pop.simd_cmp<lt, #pop<simd 42> : !pop.scalar<si32>, #pop<simd 42> : !pop.scalar<si32>> : !pop.scalar<bool>,
+  // CHECK: e = #pop<simd true> : !pop.scalar<bool>
+  e = #pop.simd_cmp<le, #pop<simd 42> : !pop.scalar<si32>, #pop<simd 42> : !pop.scalar<si32>> : !pop.scalar<bool>
+} : () -> ()

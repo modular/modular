@@ -795,11 +795,25 @@ kgen.generator export @concretize_variadic_splaut(
 // expected-error @+2 {{requires two equally-typed SIMD operands}}
 "some.op"() {
   a = #pop.simd_and< #pop<simd 1> : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<ui32>> : !pop.scalar<si32>
-}
+} : () -> ()
 
 // -----
 
 // expected-error @+2 {{requires two equally-typed integer SIMD operands}}
 "some.op"() {
   b = #pop.simd_and< #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "2.0"> : !pop.scalar<f32>> : !pop.scalar<f32>
-}
+} : () -> ()
+
+// -----
+
+// expected-error @+2 {{requires two equally-typed SIMD operands}}
+"some.op"() {
+  b = #pop.simd_cmp<eq, #pop<simd "1.0"> : !pop.scalar<f64>, #pop<simd "2.0"> : !pop.scalar<f32>> : !pop.scalar<bool>
+} : () -> ()
+
+// -----
+
+// expected-error @+2 {{mismatched size between operands and result}}
+"some.op"() {
+  b = #pop.simd_cmp<eq, #pop<simd 1> : !pop.scalar<ui8>, #pop<simd 2> : !pop.scalar<ui8>> : !pop.simd<3, ui8>
+} : () -> ()

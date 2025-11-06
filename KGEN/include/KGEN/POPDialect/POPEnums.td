@@ -90,6 +90,19 @@ def POP_CmpPredicate : POP_Enum<
 def POP_CmpPredicateAttr : EnumAttr<POPDialect, POP_CmpPredicate, "cmp_pred">;
 
 //===----------------------------------------------------------------------===//
+// NormalizedCmpPredicate
+//===----------------------------------------------------------------------===//
+
+// A reduced set of condition codes, mirroring the POC opcodes, to improve
+// canonicalization. Used by the #pop.simd_cmp attribute.
+def POP_NormalizedCmpPredicate : POP_Enum<
+    "NormalizedCmpPredicate", "pop.simd_cmp comparison predicate", [
+      I32EnumAttrCase<"EQ", 0, "eq">,
+      I32EnumAttrCase<"LT", 1, "lt">,
+      I32EnumAttrCase<"LE", 2, "le">,
+    ]>;
+
+//===----------------------------------------------------------------------===//
 // AtomicOrdering
 //===----------------------------------------------------------------------===//
 
