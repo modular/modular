@@ -534,12 +534,17 @@ struct PipelineState[num_stages: Int](Defaultable, ImplicitlyCopyable, Movable):
         """
 
         @parameter
-        if num_stages > 0:
+        if num_stages > 1:
             self._index += 1
             self._count += 1
             if self._index == num_stages:
                 self._index = 0
                 self._phase ^= 1
+
+        @parameter
+        if num_stages == 1:
+            self._count += 1
+            self._phase ^= 1
 
     @always_inline
     fn next(mut self) -> Self:

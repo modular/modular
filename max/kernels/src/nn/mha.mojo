@@ -571,16 +571,16 @@ fn flash_attention_dispatch[
                             sink=sink,
                             _is_cache_length_accurate=_is_cache_length_accurate,
                         ](
-                            output.ptr,
-                            q.ptr,
+                            output.to_device_buffer(ctx),
+                            q.to_device_buffer(ctx).unsafe_ptr(),
                             k,
                             rebind[k_t](v),
                             num_rows_q,
                             mask_functor,
                             score_mod_functor,
-                            valid_length._ptr.address_space_cast[
-                                AddressSpace.GENERIC
-                            ](),
+                            valid_length.to_layout_tensor()
+                            .to_device_buffer(ctx)
+                            .unsafe_ptr(),
                             DynamicInt(max_prompt_len),
                             max_cache_valid_length,
                             scale,

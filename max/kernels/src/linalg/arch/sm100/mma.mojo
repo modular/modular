@@ -19,6 +19,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_id_in_cluster
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
+from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import coalesce
 from layout.tensor_core_async import (
@@ -104,6 +105,25 @@ fn _create_mma_desc[
     return MMASmemDescriptor.create[SBO, LBO, swizzle_mode](ptr)
 
 
+fn _create_mma_desc_pair[
+    dtype: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
+](
+    ptr: UnsafePointer[
+        Scalar[dtype], address_space = AddressSpace.SHARED, *_, **_
+    ]
+) -> MMASmemDescriptorPair:
+    # Extract the stride values from the canonical layout
+    # The canonical layout is expected to have at least 2 dimensions
+    alias stride01 = canonical_layout[0].stride[1].value()
+    alias stride11 = canonical_layout[1].stride[1].value()
+    alias SBO = stride01 * size_of[dtype]()
+    alias LBO = stride11 * size_of[dtype]()
+
+    # Create and return the MMA shared memory descriptor
+    # This will be used by the SM100 MMA operations to access shared memory
+    return MMASmemDescriptorPair.create[SBO, LBO, swizzle_mode](ptr)
+
+
 @always_inline
 fn smem_descriptor[
     dtype: DType, //,
@@ -116,7 +136,7 @@ fn smem_descriptor[
     ptr: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.SHARED, *_, **_
     ]
-) -> MMASmemDescriptor:
+) -> MMASmemDescriptorPair:
     alias smem_layout = tile_layout_k_major[
         dtype, BMN, BK, swizzle_mode
     ]() if is_k_major else tile_layout_mn_major[dtype, BMN, BK, swizzle_mode]()
@@ -124,7 +144,9 @@ fn smem_descriptor[
         dtype, smem_layout, is_k_major=is_k_major
     ]()
     alias cl = canonical_layout if is_k_major else canonical_layout.transpose()
-    return _create_mma_desc[canonical_layout=cl, swizzle_mode=swizzle_mode](ptr)
+    return _create_mma_desc_pair[
+        canonical_layout=cl, swizzle_mode=swizzle_mode
+    ](ptr)
 
 
 @register_passable("trivial")
