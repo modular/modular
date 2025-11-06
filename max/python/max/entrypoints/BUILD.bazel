@@ -99,5 +99,5 @@ modular_py_library(
     srcs = ["gpu_query.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
-    deps = ["//open-source/max/mojo/python/mojo"],
+    deps = ["@mojo//:python"],
 )
