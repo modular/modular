@@ -791,14 +791,15 @@ fn store_release[
             AirMemOrder.SeqCst,
             air_scope,
         )
-        alias store_intrin_base = "air.atomic.local.store" if ptr.address_space == AddressSpace.SHARED else "air.atomic.global.store"
+        alias addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GLOBAL else ptr.address_space
+        alias store_intrin_base = "air.atomic.local.store" if addr_space == AddressSpace.SHARED else "air.atomic.global.store"
         alias store_intrin = store_intrin_base + "." + _get_air_atomic_suffix[
             dtype
         ]()
         external_call[
             store_intrin,
             NoneType,
-        ](ptr, value, AirMemOrder.Relaxed, air_scope, True)
+        ](ptr.address_space_cast[addr_space](), value, AirMemOrder.Relaxed, air_scope, True)
     else:
         return CompilationTarget.unsupported_target_error[
             operation="store_release"
@@ -912,16 +913,17 @@ fn load_acquire[
             ordering = Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
     elif is_apple_gpu():
-        alias mem_flags = AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else AirMemFlags.Device
+        alias addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GLOBAL else ptr.address_space
+        alias mem_flags = AirMemFlags.ThreadGroup if addr_space == AddressSpace.SHARED else AirMemFlags.Device
         alias air_scope = AirScope.Workgroup if scope is Scope.BLOCK else AirScope.Device
-        alias load_intrin_base = "air.atomic.local.load" if ptr.address_space == AddressSpace.SHARED else "air.atomic.global.load"
+        alias load_intrin_base = "air.atomic.local.load" if addr_space == AddressSpace.SHARED else "air.atomic.global.load"
         alias load_intrin = load_intrin_base + "." + _get_air_atomic_suffix[
             dtype
         ]()
         var value = external_call[
             load_intrin,
             Scalar[dtype],
-        ](ptr, AirMemOrder.Relaxed, air_scope, True)
+        ](ptr.address_space_cast[addr_space](), AirMemOrder.Relaxed, air_scope, True)
         external_call["air.atomic.fence", NoneType](
             mem_flags,
             AirMemOrder.SeqCst,

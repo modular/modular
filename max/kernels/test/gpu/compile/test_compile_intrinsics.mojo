@@ -14,7 +14,7 @@
 from math import exp2
 
 from gpu.host.compile import _compile_code
-from gpu.host.info import A100
+from gpu.host.info import A100, MetalM4
 from gpu.intrinsics import *
 
 
@@ -101,7 +101,28 @@ def test_compile_code():
             compile_options="nvptx-short-ptr=true,denormal-fp-math-f32=preserve-sign",
         ]()
     )
+from gpu.host import DeviceContext
 
 
 def main():
-    test_compile_code()
+    #test_compile_code()
+    print(_compile_code[kernel[DType.int32], target = MetalM4.target(), emission_kind="llvm-opt"]())
+    """
+    alias dtype = DType.int32
+    with DeviceContext() as ctx:
+        a = ctx.enqueue_create_buffer[dtype](1)
+        a = a.enqueue_fill(0)
+
+        b = ctx.enqueue_create_buffer[dtype](1)
+        b = b.enqueue_fill(0)
+        ctx.enqueue_function[
+            kernel[dtype]
+        ](a.unsafe_ptr(), b.unsafe_ptr(), Scalar[dtype](42), grid_dim=(1,), block_dim=(1,))
+        ctx.synchronize()
+
+        with a.map_to_host() as a_host:
+            print("Result:", a_host[0])  # Should print 42
+        
+        with b.map_to_host() as b_host:
+            print("Intermediate:", b_host[0])  # Should print 42
+    """
