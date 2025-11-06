@@ -414,7 +414,7 @@ class DeepseekV3(Module):
             ]
         else:
             self.subgraph_layer_groups = []
-        self.return_logits = ReturnLogits.LAST_TOKEN
+        self.return_logits = config.return_logits
         self.logits_scaling = 1.0
 
     def __call__(
@@ -606,7 +606,7 @@ class DeepseekV3(Module):
                 )[0],
                 DType.float32,
             )
-            offsets = input_row_offsets
+            offsets = input_row_offsets_[0]
 
         if self.logits_scaling != 1.0:
             last_logits = last_logits / self.logits_scaling

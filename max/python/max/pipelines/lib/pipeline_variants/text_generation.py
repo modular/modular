@@ -605,6 +605,16 @@ class TextGenerationPipeline(
                     )
                     raise  # re-raise the original exception
 
+            # Validate output. This is more of an internal check that the model
+            # is implemented correctly.
+            if (
+                self._pipeline_config.sampling_config.enable_variable_logits
+                and model_outputs.logit_offsets is None
+            ):
+                raise ValueError(
+                    "Model must return logit_offsets when enable_variable_logits is True."
+                )
+
             # Continue and execute the next step if the batch.
             if len(flat_batch) == 0:
                 continue
