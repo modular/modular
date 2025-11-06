@@ -5,8 +5,6 @@ modular_py_test(
     size = "enormous",
     srcs = glob(
         ["test_*.py"],
-        # TODO(E2EOPT-739): Fix intermittent segfault on ep.init and re-enable.
-        exclude = ["test_ep_comm.py"],
     ) + ["conftest.py"],
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.2",  # reserve memory for NVSHMEM
