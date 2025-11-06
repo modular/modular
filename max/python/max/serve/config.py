@@ -168,8 +168,10 @@ class Settings(BaseSettings):
         description="When True, uses a periodic heart beat to confirm model worker liveness. This can result in false negatives if a single batch takes longer than the heartbeat interval to process (as may be the case for large context prefill)",
         alias="MAX_SERVE_USE_HEARTBEAT",
     )
-    mw_timeout_s: float = Field(
-        default=20 * 60.0, description="", alias="MAX_SERVE_MW_TIMEOUT"
+    mw_timeout_s: float | None = Field(
+        default=None,
+        description="Amount of time in seconds to wait for the model worker to warm up and become ready to serve",
+        alias="MAX_SERVE_MW_TIMEOUT",
     )
     mw_health_fail_s: float = Field(
         # TODO: we temporarily set it to 1 minute to handle long context input
@@ -178,8 +180,8 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_MW_HEALTH_FAIL",
     )
 
-    telemetry_worker_spawn_timeout: float = Field(
-        default=60.0,
+    telemetry_worker_spawn_timeout: float | None = Field(
+        default=None,
         description="Amount of time in seconds to wait for the telemetry worker to spawn and turn healthy",
         alias="MAX_SERVE_TELEMETRY_WORKER_SPAWN_TIMEOUT",
     )
