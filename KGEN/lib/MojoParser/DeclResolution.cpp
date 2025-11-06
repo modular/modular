@@ -1382,8 +1382,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   //     fn method[param: Int](self): pass
   if (auto structOp =
           dyn_cast_or_null<StructDeclOp>(parentDecl->getIfOperation())) {
-    for (auto param : structOp.getParamsAttr()) {
-      StringRef paramName = demangleParameterName(param.getName());
+    for (auto pog : structOp.getSignature().getParamListAttrs().getPogs()) {
+      StringRef paramName = pog.getName().getValue();
       ArrayRef<ASTDecl *> paramDecls =
           parentDecl->lookupInCurrentScope(paramName);
       // Must be autoparams, they aren't explicitly declared by the user so
@@ -1392,18 +1392,11 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
       if (paramDecls.empty())
         continue;
 
-      // If we found it, it must be a parameter declaration. Check the mangled
-      // name, though, to make sure it's the right one, since auto-parameterized
-      // parameters are also added to the parent decl list and may have the same
-      // name as a user-declared one.
-      assert(paramDecls.size() == 1);
+      // If we found it, it must be a parameter declaration.
+      assert(paramDecls.size() == 1 &&
+             "expected exactly one parameter declaration");
       ASTDecl *paramDecl = paramDecls.front();
-      auto expectedParam =
-          cast<ParamDeclRefAttr>(paramDecl->getIfIRValue().getIfPValue().get());
-      if (expectedParam.getName() != param.getName())
-        continue;
-
-      addFullyResolvedDecl(expectedParam, paramName, paramDecl->getLoc(),
+      addFullyResolvedDecl(paramDecl->irValue, paramName, paramDecl->getLoc(),
                            &sigDecl);
     }
   }
