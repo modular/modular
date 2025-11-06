@@ -101,12 +101,20 @@ def test_compile_code():
             compile_options="nvptx-short-ptr=true,denormal-fp-math-f32=preserve-sign",
         ]()
     )
+
+
 from gpu.host import DeviceContext
 
 
 def main():
-    #test_compile_code()
-    print(_compile_code[kernel[DType.int32], target = MetalM4.target(), emission_kind="llvm-opt"]())
+    # test_compile_code()
+    print(
+        _compile_code[
+            kernel[DType.int32],
+            target = MetalM4.target(),
+            emission_kind="llvm-opt",
+        ]()
+    )
     """
     alias dtype = DType.int32
     with DeviceContext() as ctx:

@@ -796,10 +796,13 @@ fn store_release[
         alias store_intrin = store_intrin_base + "." + _get_air_atomic_suffix[
             dtype
         ]()
-        external_call[
-            store_intrin,
-            NoneType,
-        ](ptr.address_space_cast[addr_space](), value, _AirMemOrder.Relaxed, air_scope, True)
+        external_call[store_intrin, NoneType,](
+            ptr.address_space_cast[addr_space](),
+            value,
+            _AirMemOrder.Relaxed,
+            air_scope,
+            True,
+        )
     else:
         return CompilationTarget.unsupported_target_error[
             operation="store_release"
@@ -920,10 +923,12 @@ fn load_acquire[
         alias load_intrin = load_intrin_base + "." + _get_air_atomic_suffix[
             dtype
         ]()
-        var value = external_call[
-            load_intrin,
-            Scalar[dtype],
-        ](ptr.address_space_cast[addr_space](), _AirMemOrder.Relaxed, air_scope, True)
+        var value = external_call[load_intrin, Scalar[dtype],](
+            ptr.address_space_cast[addr_space](),
+            _AirMemOrder.Relaxed,
+            air_scope,
+            True,
+        )
         external_call["air.atomic.fence", NoneType](
             mem_flags,
             _AirMemOrder.SeqCst,
