@@ -314,8 +314,8 @@ genrule(
     ''',
 )
 """,
-    sha256 = "8f74673b958e8c3b2e5c2cacfa48aa90139d36377317f48cbd1851f993789655",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/8f74673b958e8c3b2e5c2cacfa48aa90139d36377317f48cbd1851f993789655/nvshmem.tar.gz",
+    sha256 = "1f9ae02d6e90b7248adb3399397229abb85517e5c8e8b62181a08730bb2f616a",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/1f9ae02d6e90b7248adb3399397229abb85517e5c8e8b62181a08730bb2f616a/nvshmem.tar.gz",
 )
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
