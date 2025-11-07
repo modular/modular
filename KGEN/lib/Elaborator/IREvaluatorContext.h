@@ -179,6 +179,8 @@ public:
   IREvaluatorContext(EnvAttr env, MLIRContext *mlirCtx,
                      InterpreterState *state);
 
+  virtual ~IREvaluatorContext() = default;
+
 protected:
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
@@ -187,6 +189,11 @@ protected:
   FailureOr<TypedAttr> evaluateDataToStr(ParamOperatorAttr op, bool reset);
 
   FailureOr<StringAttr> evaluateStringPart(TypedAttr part, bool reset);
+
+  std::string stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef,
+                                       bool qualifiedBuiltins);
+  void printParamValue(raw_ostream &os, ParamDeclAttr decl, TypedAttr value,
+                       bool qualifiedBuiltins);
 
   /// The function to use to emit an error.
   std::function<void(ErrorTree)> emitError;
@@ -200,6 +207,8 @@ protected:
 
 private:
   MLIRContext *mlirCtx = nullptr;
+
+  virtual ParamNodeBase *lookupParamNodeBase(SymbolRefAttr symbol) = 0;
 };
 
 } // namespace M::KGEN

@@ -6,17 +6,28 @@
 
 #include "IREvaluatorContext.h"
 #include "KGEN/Interpreter/InterpreterState.h"
+#include "KGEN/POPDialect/POPAttrs.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
+#include "Support/StringExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 
 using namespace M;
 using namespace KGEN;
+
+//===----------------------------------------------------------------------===//
+// ImplNodeBase
+//===----------------------------------------------------------------------===//
 
 void ImplNodeBase::initialize(InstantiatedOpInterface inst,
                               ParameterUseDefGraph &&graph) {
   this->inst = inst;
   this->paramGraph = std::move(graph);
 }
+
+//===----------------------------------------------------------------------===//
+// ParamNodeBase
+//===----------------------------------------------------------------------===//
 
 void ParamNodeBase::emplace() {
   if (done.exchange(DoneState::DONE) == DoneState::NOT_DONE)
@@ -50,6 +61,149 @@ StringAttr ParamNodeBase::getMangledName() {
     return name;
   return StringAttr::getFromOpaquePointer(existing);
 }
+
+/// Print a single SIMD value.
+static void printSIMDValue(raw_ostream &os, const POP::DTypeValue &value,
+                           KGENDType dtype) {
+  if (dtype.isInt()) {
+    os << value.getIntVal();
+  } else if (dtype.isFloat()) {
+    SmallString<256> strVal;
+    value.getFloatVal().toString(strVal);
+    os << StringRef(strVal.data(), strVal.size());
+  } else if (dtype.isBool()) {
+    os << (value.getBoolVal() ? "True" : "False");
+  } else {
+    assert(dtype.isIndex() || dtype.isAddress());
+    os << value.getIndexVal();
+  }
+}
+
+/// Print a KGENDType, following the naming scheme in the Mojo DType struct.
+/// NOTE: It would be better to have custom type name printing that can be
+/// implemented on the struct directly.
+static void printDType(raw_ostream &os, KGENDType dtype, bool qualified) {
+  if (qualified)
+    os << "stdlib.builtin.dtype.";
+  os << "DType." << dtype.getAsString(/*libForm=*/true);
+}
+
+void IREvaluatorContext::printParamValue(raw_ostream &os, ParamDeclAttr decl,
+                                         TypedAttr value,
+                                         bool qualifiedBuiltins) {
+  TypeSwitch<TypedAttr>(value)
+      .Case<DTypeConstantAttr>([&](auto dtypeConstant) {
+        printDType(os, dtypeConstant.getDType(), qualifiedBuiltins);
+      })
+      .Case<IntegerAttr>([&](auto intAttr) {
+        // Print booleans nicely.
+        if (intAttr.getType().isSignlessInteger(1))
+          os << (intAttr.getValue().isZero() ? "False" : "True");
+        else
+          intAttr.print(os, /*elideType=*/true);
+      })
+      .Case<NoneAttr>([&](auto noneAttr) { os << "None"; })
+      .Case<UnboundAttr>([&](auto unboundAttr) { os << "?"; })
+      .Case<TypeParamAttr>([&](auto typeAttr) {
+        if (auto typeValue = dyn_cast<TypeValueType>(typeAttr.getTypeValue())) {
+          auto instanceRef =
+              cast<TypeInstanceRefAttr>(typeValue.getTypeValue());
+          os << stringifyTypeInstanceRef(instanceRef, qualifiedBuiltins);
+          return;
+        }
+
+        // We print a placeholder for anything we don't know how to print.
+        // NOTE: We could consider just printing the mlir for anything else. For
+        // now, this is a more conservative approach, since it prevents leaking
+        // IR details.
+        os << "<unprintable>";
+      })
+      .Case<StructAttr>([&](auto structAttr) {
+        os << "{";
+        llvm::interleaveComma(structAttr.getValues(), os, [&](TypedAttr value) {
+          printParamValue(os, decl, value, qualifiedBuiltins);
+        });
+        os << "}";
+      })
+      .Case<MemRefAttr>([&](auto memRefAttr) {
+        MemoryBlobAttr memory =
+            memRefAttr.getModel().getMemory()[memRefAttr.getIndex()];
+        if (MemoryHandleAttr handle = memory.getHandle(); handle.isString()) {
+          // NOTE: these strings should be null terminated, but let's be safe.
+          os << '"' << StringRef(handle.getData(), handle.getSize() - 1) << '"';
+          return;
+        }
+
+        os << "<unprintable>";
+      })
+      .Case<POP::SIMDAttr>([&](auto simdAttr) {
+        ArrayRef<POP::DTypeValue> values = simdAttr.getValues();
+        KGENDType dType = *simdAttr.getType().getResolvedDType();
+        if (values.size() == 1) {
+          // We handle scalars specially for improved readability.
+          printSIMDValue(os, values[0], dType);
+        } else {
+          os << "[";
+          llvm::interleaveComma(values, os, [&](const POP::DTypeValue &value) {
+            printSIMDValue(os, value, dType);
+          });
+          os << "]";
+        }
+        os << " : ";
+        if (qualifiedBuiltins)
+          os << "stdlib.builtin.simd.";
+        os << "SIMD[";
+        printDType(os, dType, qualifiedBuiltins);
+        os << ", " << values.size() << "]";
+      })
+      .Default([&](auto value) { os << "<unprintable>"; });
+}
+
+std::string
+IREvaluatorContext::stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef,
+                                             bool qualifiedBuiltins) {
+  ParamNodeBase *genNode = lookupParamNodeBase(instanceRef.getSymbol());
+  StructGeneratorOp genOp = cast<StructGeneratorOp>(genNode->gen);
+
+  // Print the type name first. A few common types can be printed more tersely.
+  /// NOTE: It would be better to have custom type name printing that can be
+  /// implemented on the struct directly.
+  std::string name = genOp.getSymName().str();
+  if (!qualifiedBuiltins && name.starts_with("stdlib::")) {
+    if (name == "stdlib::builtin::simd::SIMD")
+      name = "SIMD";
+    else if (name == "stdlib::builtin::int::Int")
+      name = "Int";
+    else if (name == "stdlib::builtin::uint::UInt")
+      name = "UInt";
+    else if (name == "stdlib::builtin::bool::Bool")
+      name = "Bool";
+    else if (name == "stdlib::collections::string::string::String")
+      name = "String";
+  }
+  replaceAll(name, "::", ".");
+
+  ArrayRef<TypedAttr> paramValues = genNode->inputParams.getValue();
+  if (!paramValues.empty()) {
+    std::string paramValuesStr;
+    llvm::raw_string_ostream os(paramValuesStr);
+    auto paramDecls = genOp.getInputParams();
+
+    // If the type is parameterized, print the parameter values.
+    llvm::interleaveComma(llvm::zip(paramDecls, paramValues), os,
+                          [&](auto pair) {
+                            auto [decl, value] = pair;
+                            printParamValue(os, decl, value, qualifiedBuiltins);
+                          });
+
+    name += "[" + paramValuesStr + "]";
+  }
+  return name;
+}
+
+//===----------------------------------------------------------------------===//
+// IREvaluatorContext
+//===----------------------------------------------------------------------===//
 
 IREvaluatorContext::IREvaluatorContext(EnvAttr env, MLIRContext *mlirCtx,
                                        InterpreterState *state)
