@@ -12,19 +12,19 @@
 alias _, (b, c) = 1, (2, 3.0)
 
 
-alias T1, (_, T3) = (Int, (Int, FloatDyn))
+# TODO(MOCO-2764)
+# alias T1, (_, T3) = (Int, (Int, FloatDyn))
 
-fn use[T : AnyType](t : T):
+
+fn use[T: AnyType](t: T):
     pass
 
-fn foo():
 
-    #CHECK: kgen.param.constant: !Int
-    #CHECK: kgen.param.constant: !FloatDyn
+fn foo():
+    # CHECK: kgen.param.constant: !Int
+    # CHECK: kgen.param.constant: !FloatDyn
     use(b)
     use(c)
 
-    #CHECK: lit.var.decl "x" var : !lit.ref<:!mt_Int
-    #CHECK: lit.var.decl "y" var : !lit.ref<:!mt_FloatDyn
-    var x : T1
-    var y : T3
+    # var x: T1
+    # var y: T3

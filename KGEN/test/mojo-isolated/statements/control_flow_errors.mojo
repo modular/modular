@@ -201,8 +201,17 @@ fn testBadCM():
   with BadCM():
     pass
 
+
+@register_passable("trivial")
+struct MyBool(AnyRPTrivialType):
+    var _mlir_value: __mlir_type.i1
+
+    # expected-note @below {{function declared here}}
+    fn __mlir_i1__(self) -> __mlir_type.i1:
+        return self._mlir_value
+
 fn noIndentError():
   for i in ListValueInt():
-    # expected-error @+1 {{'AnyStruct[Bool]' does not implement the '__bool__' method}}
-    if Bool: # no error 'statements must start at the beginning of a line' should be printed
+    # expected-error @+1 {{self argument cannot be converted from type value 'MyBool' to an instance of 'MyBool'; did you mean to instantiate 'MyBool'?}}
+    if MyBool: # no error 'statements must start at the beginning of a line' should be printed
       pass

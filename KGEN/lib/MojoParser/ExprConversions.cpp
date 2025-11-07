@@ -817,9 +817,9 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   toType = getCanonicalType(toType);
   fromType = getCanonicalType(fromType);
 
-  // Trait metatypes are allowed to upcast to trivial types.
+  // Trait metatypes/struct MetaMetaType are allowed to upcast to trivial types.
   if (sugarIsa<TypeType>(toType)) {
-    if (sugarIsa<AnyTraitType>(fromType))
+    if (sugarIsa<AnyTraitType, StructMetaMetaType>(fromType))
       return true;
     if (auto structType = sugarDynCast<StructMetaType>(fromType)) {
       return ASTType(structType.getType())
@@ -1406,13 +1406,14 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
         // destructor (e.g. AnyType) since all traits have that.
         result =
             checkMLIRTypeConformance(shared, valueExpr.expr->getLoc(), trait);
-      } else if (sugarIsa<StructMetaType>(fromType) ||
+      } else if (sugarIsaAndNonNull<StructMetaMetaType>(
+                     fromType.getMetaType()) ||
                  sugarIsaAndNonNull<AnyTraitType>(fromType.getMetaType())) {
         // Only a struct or a trait instance can be converted to a trait.
         if (auto pval = valueExpr.ir.getIfPValue();
             pval && LIT::isTypeExpr(pval)) {
           // Can only convert static types to traits, not existentials.
-          if (ASTDecl *decl = ASTType(pval).getDecl(shared))
+          if (ASTDecl *decl = ASTType(fromType).getDecl(shared))
             return cacheAndReturnVal(fromType, toType,
                                      decl->doesNominalTypeConformTo(trait));
         }
@@ -1420,16 +1421,21 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
       return cacheAndReturnVal(fromType, toType, result);
     }
 
-    // We can convert from AnyTraitType[Derived] to AnyTraitType[Base].
-    // This is a conversion of things like "the Movable type" (which has type
-    // "AnyTraitType[Movable]") to "AnyTraitType[AnyType]".
     if (auto anyTrait = sugarDynCast<AnyTraitType>(toType)) {
-      if (auto fromAnyTrait = sugarDynCast<AnyTraitType>(rvType))
-        if (auto *fromDecl =
-                ASTType(fromAnyTrait.getTraitType()).getDecl(shared))
-          return cacheAndReturnVal(
-              fromType, toType,
-              fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType()));
+      ASTDecl *fromDecl = nullptr;
+      // 2 cases, e.g,:
+      // 1st, AnyTraitType[Copyable] to AnyTraitType[AnyType].
+      // 2nd, Meta[Meta[Int]] to AnyTraitType[Copyable]
+      if (auto rvAnyTrait = sugarDynCast<AnyTraitType>(fromType))
+        fromDecl = ASTType(rvAnyTrait.getTraitType()).getDecl(shared);
+      else if (auto mmType = sugarDynCast<StructMetaMetaType>(fromType))
+        fromDecl = ASTType(mmType.getType()).getDecl(shared);
+
+      if (fromDecl) {
+        return cacheAndReturnVal(
+            fromType, toType,
+            fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType()));
+      }
     }
 
     // Not applicable.
@@ -1465,6 +1471,8 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
         // `#kgen.type<!Int> : !mt_Int`, so that
         // `#kgen.type<!Int> : !AnyType` is convertible to `!Copyable`
         ASTType fromEltTp = ASTType(elt).getMetaType();
+        rvType = VariadicType::get(fromEltTp);
+
         if (fromEltTp.mlirType != toEltTp.mlirType) {
           FailureOr<bool> canUpCast =
               canTypeValueUpCastToTrait({elt, value.expr}, fromEltTp, toEltTp);
@@ -1480,15 +1488,8 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
       return cacheAndReturnVal(rvType, requiredType, true);
     } else {
       ASTType fromEltTp = sugarCast<VariadicType>(rvType).getElementType();
-      // In this case, we do not have a concrete IR in `valueExpr.ir` for each
-      // individual type value in the variadic, strip the meta type to get the
-      // actual type that the type value stands for.
-      CValue ir = fromEltTp;
-      if (auto meta = sugarDynCast<StructMetaType>(fromEltTp))
-        ir = meta.getType();
-
-      FailureOr<bool> canUpCast =
-          canTypeValueUpCastToTrait({ir, value.expr}, fromEltTp, toEltTp);
+      FailureOr<bool> canUpCast = canTypeValueUpCastToTrait(
+          {fromEltTp, value.expr}, fromEltTp, toEltTp);
       if (succeeded(canUpCast))
         return cacheAndReturnVal(rvType, requiredType, canUpCast.value());
     }
@@ -1574,8 +1575,9 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
       if (isa<TypeType>(fromType)) {
         // Conversions from MLIR types.
         return bindMLIRTypeToTrait(valueExpr, trait, *this);
-      } else if (isa<StructMetaType>(fromType) ||
-                 isa_and_nonnull<AnyTraitType>(fromType.getMetaType())) {
+      } else if (sugarIsaAndNonNull<StructMetaMetaType>(
+                     fromType.getMetaType()) ||
+                 sugarIsaAndNonNull<AnyTraitType>(fromType.getMetaType())) {
         // Augment the witness table of closure wrapper with rebind if
         // necessary. We do this for every closure trait in the type.
         for (const auto &symbol : trait.getSymbols()) {
@@ -1603,12 +1605,16 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
         return PValue();
       }
 
-      if (auto rvAnyTrait = sugarDynCast<AnyTraitType>(fromType)) {
-        auto *fromDecl = ASTType(rvAnyTrait.getTraitType()).getDecl(shared);
-        if (fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType())) {
-          // This is just the trait itself, not a conformance, just upcast.
-          return PValue(TypeParamAttr::get(ASTType(typePValue), anyTrait));
-        }
+      ASTDecl *fromDecl = nullptr;
+      if (auto rvAnyTrait = sugarDynCast<AnyTraitType>(fromType))
+        fromDecl = ASTType(rvAnyTrait.getTraitType()).getDecl(shared);
+      else if (auto mmType = sugarDynCast<StructMetaMetaType>(fromType))
+        fromDecl = ASTType(mmType.getType()).getDecl(shared);
+
+      if (fromDecl &&
+          fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType())) {
+        // This is just the trait itself, not a conformance, just upcast.
+        return PValue(TypeParamAttr::get(ASTType(typePValue), anyTrait));
       }
     }
 
