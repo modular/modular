@@ -20,7 +20,7 @@ from gpu import lane_id as get_lane_id
 from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_idx, lane_id, thread_idx
+from gpu import block_idx, lane_id, thread_idx, warp_id as get_warp_id
 from gpu.memory import external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
@@ -155,7 +155,7 @@ fn tma_umma_kernel_ss[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = get_warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     alias max_tmem_cols = 512
@@ -262,7 +262,7 @@ fn tma_umma_kernel_ss[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     alias num_warps = num_threads // WARP_SIZE
-    warp_id = thread_idx.x // WARP_SIZE
+    var warp_id = get_warp_id()
 
     @parameter
     if num_threads > 128:
@@ -393,7 +393,7 @@ fn tma_umma_kernel_ts[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = get_warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
     alias max_tmem_cols = 512
 
@@ -432,7 +432,7 @@ fn tma_umma_kernel_ts[
     ]()
 
     alias num_warps = num_threads // WARP_SIZE
-    warp_id = thread_idx.x // WARP_SIZE
+    var warp_id = get_warp_id()
 
     @parameter
     if num_threads > 128:

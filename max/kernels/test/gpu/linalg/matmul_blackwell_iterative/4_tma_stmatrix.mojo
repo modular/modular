@@ -19,7 +19,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
-from gpu import lane_id as get_lane_id
+from gpu import lane_id as get_lane_id, warp_id
 from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
@@ -218,7 +218,7 @@ fn kernel_4[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     alias max_tmem_cols = 512
@@ -327,7 +327,6 @@ fn kernel_4[
     # store from tensor memory to smem using the swizzling pattern
 
     alias num_warps = num_threads // WARP_SIZE
-    warp_id = thread_idx.x // WARP_SIZE
 
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
