@@ -42,15 +42,15 @@ gemma3_multimodal_arch = SupportedArchitecture(
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-        # SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
     },
     pipeline_model=Gemma3_MultiModalModel,
     task=PipelineTask.TEXT_GENERATION,
-    tokenizer=TextAndVisionTokenizer,  # Gemma3MMSimpleTokenizer,
+    tokenizer=TextAndVisionTokenizer,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     rope_type=RopeType.normal,
-    weight_adapters={
+    weight_adapters={ # TODO this doesn't make sense as both same weight format.  not using at present (`self.adapter(weights)`)
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_language_state_dict,
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_vision_state_dict,
     },
