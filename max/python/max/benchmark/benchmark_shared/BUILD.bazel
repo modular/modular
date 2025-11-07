@@ -9,6 +9,7 @@ modular_py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//max/python/max/config",
         "//max/python/max/pipelines/lib",
         "//max/python/max/serve",
         requirement("datasets"),
