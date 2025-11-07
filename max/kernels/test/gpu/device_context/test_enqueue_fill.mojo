@@ -17,7 +17,7 @@ from testing import assert_equal
 
 def test_enqueue_fill_host_buffer(ctx: DeviceContext):
     var host_buffer = ctx.enqueue_create_host_buffer[DType.float64](8)
-    _ = host_buffer.enqueue_fill(0.1)
+    host_buffer.enqueue_fill(0.1)
     ctx.synchronize()
 
     # Verify all elements are filled with 0.1

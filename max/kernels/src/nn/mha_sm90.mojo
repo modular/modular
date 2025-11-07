@@ -319,9 +319,8 @@ fn mha_sm90_dispatch[
         alias SchedulerType = QueuedTileScheduler[
             scheduler_tile_shape, num_scheduler_heads, decoding=decoding
         ]
-        var schedule = ctx.enqueue_create_buffer[DType.uint32](1).enqueue_fill(
-            UInt32(H100.sm_count)
-        )
+        var schedule = ctx.enqueue_create_buffer[DType.uint32](1)
+        schedule.enqueue_fill(UInt32(H100.sm_count))
         ctx.synchronize()
         var scheduler: SchedulerType = SchedulerType(schedule.unsafe_ptr())
         _mha_sm90_sink_dispatch[

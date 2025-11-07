@@ -79,11 +79,14 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     var vec_device = ctx.enqueue_create_buffer[F32](n)
     vec_device.enqueue_copy_from(vec_host.data)
 
-    var res_add_device = ctx.enqueue_create_buffer[F32](1).enqueue_fill(0)
+    var res_add_device = ctx.enqueue_create_buffer[F32](1)
+    res_add_device.enqueue_fill(0)
 
-    var res_min_device = ctx.enqueue_create_buffer[F32](1).enqueue_fill(0)
+    var res_min_device = ctx.enqueue_create_buffer[F32](1)
+    res_min_device.enqueue_fill(0)
 
-    var res_max_device = ctx.enqueue_create_buffer[F32](1).enqueue_fill(0)
+    var res_max_device = ctx.enqueue_create_buffer[F32](1)
+    res_max_device.enqueue_fill(0)
 
     alias kernel = reduce
 

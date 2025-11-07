@@ -87,7 +87,8 @@ fn _run_test_function_unchecked(ctx: DeviceContext) raises:
         for i in range(length):
             in0_host[i] = i
             out_host[i] = length + i
-    var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
+    var in1 = ctx.enqueue_create_buffer[T](length)
+    in1.enqueue_fill(scalar)
 
     ctx.enqueue_function_unchecked[vec_func](
         in0,
@@ -132,7 +133,8 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
         for i in range(length):
             in0_host[i] = i
             out_host[i] = length + i
-    var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
+    var in1 = ctx.enqueue_create_buffer[T](length)
+    in1.enqueue_fill(scalar)
 
     var compiled_vec_func = ctx.compile_function_checked[vec_func, vec_func]()
     ctx.enqueue_function_checked(
@@ -179,7 +181,8 @@ fn _run_test_function_experimental(ctx: DeviceContext) raises:
         for i in range(length):
             in0_host[i] = i
             out_host[i] = length + i
-    var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
+    var in1 = ctx.enqueue_create_buffer[T](length)
+    in1.enqueue_fill(scalar)
 
     var compiled_vec_func = ctx.compile_function_experimental[vec_func]()
     ctx.enqueue_function_experimental(
