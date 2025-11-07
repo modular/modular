@@ -56,6 +56,8 @@ from .tuning_configs import (
 alias DISPATCH_MISS = 0
 alias DISPATCH_HIT = 1
 
+alias logger = Logger()
+
 
 @always_inline
 fn matmul_dispatch_sm100[
@@ -462,8 +464,6 @@ fn matmul_dispatch_sm100[
     var m = c.dim[0]()
     alias static_N = c.shape.get[1]()
     alias static_K = a.shape.get[1]()
-
-    var logger = Logger()
 
     var epilogue_type = String("None")
 
@@ -2316,8 +2316,6 @@ fn _vendor_blas_matmul_sm100[
     var m = shape.M
     var n = shape.N
     var k = shape.K
-
-    var logger = Logger()
 
     try:
         logger.info("Executing vendor BLAS (cuBLAS/cublasLt)")

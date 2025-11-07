@@ -68,6 +68,8 @@ from .utils import (
 )
 from .utils_gpu import MatmulConfig, MatmulKernels
 
+alias logger = Logger()
+
 alias elementwise_epilogue_type = fn[
     c_type: DType,
     width: Int,
@@ -1295,7 +1297,6 @@ fn bmm_sm100_blockwise_scaled_fp8[
             " by NVIDIA SM90+ TMA instructions!"
         )
 
-    var logger = Logger()
     logger.info(
         "Executing SM100 Basic Batched 1D2D Blockwise Scaled FP8 GEMM"
         " (BLOCK_SCALE_SIZE = 128)"

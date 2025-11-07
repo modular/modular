@@ -63,6 +63,8 @@ from .sm90.dispatch import matmul_dispatch_sm90
 from .sm100.dispatch import matmul_dispatch_sm100
 from .sm100.matmul import matmul_sm100_fallback
 
+alias logger = Logger()
+
 
 fn matmul_kernel[
     c_type: DType,
@@ -388,7 +390,6 @@ fn _matmul_gpu[
     var n = shape.N
     var k = shape.K
 
-    var logger = Logger()
     logger.info("---- MATMUL GPU execution started ----")
     logger.info("MxNxK: ", m, "x", n, "x", k, sep="")
     logger.info("Data types: A=", a_type, " B=", b_type, " C=", c_type)
@@ -839,7 +840,6 @@ fn multistage_gemm[
     var M = c.dim[0]()
     var N = c.dim[1]()
 
-    var logger = Logger()
     logger.info("------ Dispatching to Multistage GEMM ------")
     logger.info(config)
 
@@ -929,7 +929,6 @@ fn multistage_gemm[
     var M = c.dim[0]()
     var N = c.dim[1]()
 
-    var logger = Logger()
     logger.info("------ Dispatching to Multistage GEMM ------")
     logger.info(config)
     logger.info("K partitions:", runtime_config.num_k_partitions)
