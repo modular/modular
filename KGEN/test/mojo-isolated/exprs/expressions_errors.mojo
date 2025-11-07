@@ -1005,10 +1005,10 @@ fn test_trait_member_access_error():
 # Deprecated magic functions
 ##===----------------------------------------------------------------------===##
 
-# expected-warning @+1 {{'__type_of' is deprecated, use 'type_of' instead}}
+# expected-error @+1 {{use of unknown declaration '__type_of'; did you mean 'type_of'?}}
 fn test_type_of_deprecated(x: Int) -> __type_of(x):
     return x
 
 fn test_origin_of_deprecated[T: AnyType](a: T):
-  # expected-warning @+1 {{'__origin_of' is deprecated, use 'origin_of' instead}}
+  # expected-error @+1 {{use of unknown declaration '__origin_of'; did you mean 'origin_of'?}}
   _ = __origin_of(a)
