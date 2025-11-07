@@ -104,6 +104,16 @@ modular_cc_test(
 )
 
 modular_cc_test(
+    name = "VirtualDeviceContextTest",
+    size = "small",
+    srcs = ["VirtualDeviceContextTest.cpp"],
+    deps = [
+        ":TestUtils",
+        "//AsyncRT:DeviceContextImpl",
+    ],
+)
+
+modular_cc_test(
     name = "GPUDeviceContextTest",
     size = "small",
     srcs = ["GPUDeviceContextTest.cpp"],
