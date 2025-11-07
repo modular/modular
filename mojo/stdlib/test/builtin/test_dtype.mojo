@@ -98,15 +98,6 @@ fn test_key_element() raises:
     assert_false(DType.float32 in s)
 
 
-fn test_size_of() raises:
-    @parameter
-    for dt in non_index_integral_dtypes:
-        assert_equal(dt.size_of(), size_of[dt]())
-    assert_equal(DType.int.size_of(), size_of[DType.int]())
-    assert_equal(DType.uint.size_of(), size_of[DType.uint]())
-    assert_equal(DType.float32.size_of(), size_of[DType.float32]())
-
-
 def test_from_str():
     alias dt = DType._from_str("bool")
     assert_equal(dt, DType.bool)

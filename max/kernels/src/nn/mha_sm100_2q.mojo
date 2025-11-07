@@ -112,6 +112,7 @@ from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 
+from sys import size_of, bit_width_of
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
 
@@ -298,7 +299,7 @@ fn _tmem_offset(dtype_size: Int, *, MMA_N: Int, m_mma: Int, n_mma: Int) -> Int:
 @always_inline
 fn _tmem_offset[dtype: DType, *, MMA_N: Int, m_mma: Int, n_mma: Int]() -> Int:
     alias linear = _tmem_offset(
-        dtype.size_of(), MMA_N=MMA_N, m_mma=m_mma, n_mma=n_mma
+        size_of[dtype](), MMA_N=MMA_N, m_mma=m_mma, n_mma=n_mma
     )
     return linear
 
@@ -310,7 +311,7 @@ struct TMemTile[
     BN: Int,
 ]:
     alias dtype: DType = dtype_
-    alias dtype_size = Self.dtype.size_of()
+    alias dtype_size = size_of[Self.dtype]()
     # alias layout_t = STMatrixLayout[
     #     BM, BN, num_threads= num_threads
     # ]
@@ -598,14 +599,14 @@ struct SM100TensorAccumulatorSS[
     # The complete multiplication of all stages produces an unweighted
     # score, which is the input of the `softmax`.
     # The benefit of setting `stages > 1` is that this can hide latency.
-    alias operand_t: DType = operand_type
-    alias operand_size = Self.operand_t.size_of()
-    alias accum_t: DType = accum_type
+    alias operand_t = operand_type
+    alias operand_size = size_of[Self.operand_t]()
+    alias accum_t = accum_type
     alias MMA_K = 16
     alias num_k_mmas = BK // Self.MMA_K
     alias swizzle_granularity = max(
         swizzle_a.bytes(), swizzle_b.bytes()
-    ) // operand_type.size_of()
+    ) // size_of[Self.operand_t]()
     alias padded_BK = align_up(BK, Self.swizzle_granularity)
     alias num_k_blocks = Self.padded_BK // Self.MMA_K
     alias num_k_blocks_per_stage = Self.num_k_blocks // num_stages
@@ -669,7 +670,7 @@ struct SM100TensorAccumulatorTS[
     alias operand_t: DType = operand_type
     alias accum_t: DType = accum_type
 
-    alias operand_size = operand_type.size_of()
+    alias operand_size = size_of[operand_type]()
     alias swizzle_granularity = swizzle_b.bytes() // Self.operand_size
     # alias MMA_N_padded = align_up(MMA_N, Self.swizzle_granularity)
     # BN here is depth
@@ -748,7 +749,7 @@ struct FA4Config:
     alias MMA_K = 16
     alias sm100_smem_carveout = B200.shared_memory_per_multiprocessor - 1024
     alias sm100_tmem_cols = 512
-    alias mbar_size = DType.int64.size_of()  # 8
+    alias mbar_size = size_of[DType.int64]()
     alias num_correction_cols = 1
 
     @always_inline
@@ -1261,7 +1262,7 @@ fn mha_sm100_dispatch[
         num_q_heads=Int(config.num_heads),
         group=group,
         depth=Int(config.depth),
-        dtype_size=q_type.size_of(),
+        dtype_size=size_of[q_type](),
         swizzle_mode=config.swizzle_mode,
         page_size=KVType.page_size,
     )
@@ -1882,7 +1883,7 @@ struct KVProducerPipeline[dtype: DType, config: FA4Config]:
     alias KPairType = TMADestination[dtype, Self.KType.layout]
     alias VPairType = TMADestination[dtype, Self.VType.layout]
     alias kv_elements = Self.KType.layout.size()
-    alias kv_bytes = Self.kv_elements * dtype.size_of()
+    alias kv_bytes = Self.kv_elements * size_of[dtype]()
     alias SMemType = SharedMemPointer[Scalar[dtype]]
 
     var kv_pipeline: KVPipeline[config.num_kv_stages, config.num_mma_stages]
@@ -2015,8 +2016,8 @@ struct KVConsumerPipeline[dtype: DType, config: FA4Config]:
     rV2(5)
     """
 
-    alias full_kv_bytes = config.BN * config.padded_depth * dtype.size_of()
-    alias mma_kv_bytes = config.BN * config.BK0 * dtype.size_of()
+    alias full_kv_bytes = config.BN * config.padded_depth * size_of[dtype]()
+    alias mma_kv_bytes = config.BN * config.BK0 * size_of[dtype]()
 
     var kv_pipeline: KVPipeline[config.num_kv_stages, config.num_mma_stages]
     var k_smem_descriptor: MMASmemDescriptorPair
@@ -2616,7 +2617,7 @@ struct SM100MHA2Q[
     alias num_m_mmas = 2
     alias MMA_M = config.BM // Self.num_m_mmas
     alias qo_elements = Self.padded_depth * Self.MMA_M
-    alias qkv_dt_size = Self.qkv_type.size_of()
+    alias qkv_dt_size = size_of[Self.qkv_type]()
 
     alias OPipelineType = MBarPipeline[2]  # x1 -> 4 barriers
 
@@ -3233,8 +3234,8 @@ struct SM100MHA2Q[
 
                 alias el_offset = offset * exp_simd
                 alias tmem_offset = (
-                    el_offset * Self.qkv_type.size_of()
-                ) // Self.accum_type.size_of()
+                    el_offset * size_of[Self.qkv_type]()
+                ) // size_of[Self.accum_type]()
                 BatchTileType(p_tmem + tmem_offset).store(
                     LocalTensor[
                         Self.accum_type, Layout.row_major(batch_size * exp_simd)
@@ -3251,8 +3252,8 @@ struct SM100MHA2Q[
 
                 alias el_offset = offset * exp_simd
                 alias tmem_offset = (
-                    el_offset * Self.qkv_type.size_of()
-                ) // Self.accum_type.size_of()
+                    el_offset * size_of[Self.qkv_type]()
+                ) // size_of[Self.accum_type]()
                 RemainderTileType(p_tmem + tmem_offset).store(
                     LocalTensor[
                         Self.accum_type, Layout.row_major(remainder * exp_simd)
@@ -3317,7 +3318,7 @@ struct SM100MHA2Q[
         o_mbar[warp_group_idx].wait(o_phase)  # consumer wait
         tcgen05_fence_after()  # example 1
         # TODO: pass in a dedicated barrier that a q-writer can wait on in a persistent kernel?
-        constrained[output_type.size_of() == Self.qkv_type.size_of()]()
+        constrained[size_of[output_type]() == size_of[Self.qkv_type]()]()
         scale_write_output[config=config](
             row,
             inv_row_sum,
@@ -3344,7 +3345,7 @@ struct SM100MHA2Q[
         end: UInt32,
         mask: MaskType,
     ):
-        constrained[Self.accum_type.size_of() == 4]()
+        constrained[size_of[Self.accum_type]() == 4]()
 
         o0_tmem = tmem_addr + config.TMEM_O0
         o1_tmem = tmem_addr + config.TMEM_O1
@@ -3545,7 +3546,7 @@ struct SM100MHA2Q[
         var kv_col: UInt32 = kv_lut.col_idx(position.kv_head_idx())
 
         alias q_elements = (config.BM // 2) * config.BK0
-        alias q_bytes = Self.qkv_type.size_of() * q_elements
+        alias q_bytes = size_of[Self.qkv_type]() * q_elements
 
         kv_smem = q_smem + config.BM * config.padded_depth
         var pipeline_kv: KVPipeType = {kv_pipeline_arg, kv_smem}
@@ -3665,7 +3666,7 @@ struct SM100MHA2Q[
         consumer_o1 = consumer_o0 + 1
 
         alias q0_size = (config.BM // 2) * config.padded_depth
-        alias q0_bytes = q0_size * KVLUTType.dtype.size_of()
+        alias q0_bytes = q0_size * size_of[KVLUTType.dtype]()
         q0 = Self.descriptor_q(q_smem)
         q1 = q0 + q0_bytes
         kv_smem = q_smem + 2 * q0_size

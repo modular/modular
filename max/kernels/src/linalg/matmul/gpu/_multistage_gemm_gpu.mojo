@@ -74,7 +74,7 @@ fn distance[
 ](
     arg0: UnsafePointer[Scalar[dtype]], arg1: UnsafePointer[Scalar[dtype]]
 ) -> Int:
-    return (Int(arg0) - Int(arg1)) // dtype.size_of()
+    return (Int(arg0) - Int(arg1)) // size_of[dtype]()
 
 
 alias WarpSplitKReductionSMem[

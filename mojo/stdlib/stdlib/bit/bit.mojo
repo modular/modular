@@ -19,8 +19,7 @@ from bit import count_leading_zeros
 ```
 """
 
-from sys import llvm_intrinsic
-from sys.info import bit_width_of
+from sys import llvm_intrinsic, bit_width_of, size_of
 
 from bit._mask import is_negative
 
@@ -68,7 +67,7 @@ fn count_leading_zeros[
 
     # HACK(#5003): remove this workaround
     alias d = dtype if dtype is not DType.int else (
-        DType.int32 if dtype.size_of() == 4 else DType.int64
+        DType.int32 if size_of[dtype]() == 4 else DType.int64
     )
     return llvm_intrinsic["llvm.ctlz", SIMD[d, width], has_side_effect=False](
         val.cast[d](), False
@@ -217,7 +216,7 @@ fn byte_swap[
     constrained[dtype.is_integral(), "must be integral"]()
 
     @parameter
-    if dtype.bit_width() < 16:
+    if bit_width_of[dtype]() < 16:
         return val
     return llvm_intrinsic["llvm.bswap", type_of(val), has_side_effect=False](
         val
@@ -336,7 +335,7 @@ fn bit_width[
         A SIMD value where the element at position `i` equals the number of bits required to represent the integer at position `i` of the input.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    alias bitwidth = dtype.bit_width()
+    alias bitwidth = bit_width_of[dtype]()
 
     @parameter
     if dtype.is_unsigned():
@@ -399,7 +398,7 @@ fn log2_floor[
     """
     constrained[dtype.is_integral(), "dtype must be integral"]()
 
-    alias bitwidth = dtype.bit_width()
+    alias bitwidth = bit_width_of[dtype]()
     var res = bitwidth - count_leading_zeros(val) - 1
 
     @parameter

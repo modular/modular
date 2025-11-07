@@ -172,7 +172,9 @@ struct BF16TokenFormat[
     @always_inline
     @staticmethod
     fn token_size() -> Int:
-        return align_up(Self.hid_dim * DType.bfloat16.size_of(), Self.alignment)
+        return align_up(
+            Self.hid_dim * size_of[DType.bfloat16](), Self.alignment
+        )
 
     @always_inline
     @staticmethod
@@ -289,7 +291,9 @@ struct BlockwiseFP8TokenFormat[
     @always_inline
     @staticmethod
     fn fp8_quant_size() -> Int:
-        return align_up(Self.hid_dim * Self.fp8_dtype.size_of(), Self.alignment)
+        return align_up(
+            Self.hid_dim * size_of[Self.fp8_dtype](), Self.alignment
+        )
 
     @always_inline
     @staticmethod
@@ -299,7 +303,7 @@ struct BlockwiseFP8TokenFormat[
             "hid_dim must be divisible by 128",
         ]()
         return align_up(
-            Self.hid_dim // Self.group_size * Self.scales_dtype.size_of(),
+            Self.hid_dim // Self.group_size * size_of[Self.scales_dtype](),
             Self.alignment,
         )
 
@@ -323,7 +327,7 @@ struct BlockwiseFP8TokenFormat[
         block_size: UInt,
     ) -> None:
         alias src_width = simd_width_of[src_type]()
-        alias byte_width = src_width * Self.fp8_dtype.size_of()
+        alias byte_width = src_width * size_of[Self.fp8_dtype]()
 
         alias fp8_max = Scalar[Self.fp8_dtype].MAX_FINITE
         alias fp8_max_t = Scalar[Self.fp8_dtype].MAX_FINITE.cast[
@@ -358,7 +362,7 @@ struct BlockwiseFP8TokenFormat[
             )
 
             # The first thread in each group stores the scale factor.
-            alias scale_bytes = Self.scales_dtype.size_of()
+            alias scale_bytes = size_of[Self.scales_dtype]()
             if lane_id() % UInt(n_threads_per_group) == 0:
                 scale_idx = i * src_width // Self.group_size
                 buf_p.store[width=scale_bytes, alignment=scale_bytes](
@@ -390,7 +394,7 @@ struct BlockwiseFP8TokenFormat[
             )
 
         # Unlike the output tensor, the scales tensor is stored in a transposed way.
-        alias scale_bytes = Self.scales_dtype.size_of()
+        alias scale_bytes = size_of[Self.scales_dtype]()
         for i in range(lane_id(), Self.hid_dim // Self.group_size, WARP_SIZE):
             self.output_scales.store(
                 i,

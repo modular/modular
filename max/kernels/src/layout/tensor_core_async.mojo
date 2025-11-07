@@ -36,7 +36,7 @@ This implementation is specifically optimized for NVIDIA GPUs with Tensor Core s
 """
 from collections import OptionalReg
 from memory import LegacyUnsafePointer as UnsafePointer
-from sys import size_of
+from sys import size_of, bit_width_of
 from sys._assembly import inlined_assembly
 
 from gpu.host.nvidia.tma import TensorMapSwizzle
@@ -270,7 +270,7 @@ fn select_k_atom[
         `Layout` - A core matrix layout optimized for tensor core operations.
     """
     alias a = _select_k_atom_bits[swizzle_mode]()
-    return upcast(a, dtype.bit_width())
+    return upcast(a, bit_width_of[dtype]())
 
 
 fn _checked_tile_shape[
@@ -281,7 +281,7 @@ fn _checked_tile_shape[
 ]() -> IntTuple:
     @parameter
     if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
-        alias k_bytes = BK * dtype.size_of()
+        alias k_bytes = BK * size_of[dtype]()
         constrained[
             (k_bytes % swizzle_mode.bytes()) == 0,
             "K dim "
@@ -341,7 +341,7 @@ fn tile_to_descriptor[
     @parameter
     if is_k_major:
         # Tile a layout to ((8,m),(T,2)) shape to match the K-major wgmma descriptor
-        alias T = _CM_ROW_BYTES // dtype.size_of()
+        alias T = _CM_ROW_BYTES // size_of[dtype]()
         alias tiler = MakeLayoutList(Layout(_CM_NUM_ROWS), Layout(T))
         return logical_divide(layout, materialize[tiler]())
     else:
@@ -382,7 +382,7 @@ fn tile_layout_mn_major[
     @parameter
     if swizzle_mode == TensorMapSwizzle.SWIZZLE_128B:
         # See comments in file header.
-        alias row_len = swizzle_mode.bytes() // dtype.size_of()
+        alias row_len = swizzle_mode.bytes() // size_of[dtype]()
         return Layout(
             [
                 [row_len, mn_dim // row_len],
@@ -396,7 +396,7 @@ fn tile_layout_mn_major[
 
     # No swizzle
     # Number of elements per row in core matrix
-    alias _CM_ROW_LEN = _CM_ROW_BYTES // dtype.size_of()
+    alias _CM_ROW_LEN = _CM_ROW_BYTES // size_of[dtype]()
     return Layout(
         [
             [_CM_ROW_LEN, mn_dim // _CM_ROW_LEN],
@@ -583,8 +583,8 @@ fn _wgmma_descriptor[
         ]()
 
         # Ignore 4 LSB.
-        alias SBO = (stride01 * dtype.size_of()) >> 4
-        alias LBO = (stride11 * dtype.size_of()) >> 4
+        alias SBO = (stride01 * size_of[dtype]()) >> 4
+        alias LBO = (stride11 * size_of[dtype]()) >> 4
 
         return WGMMADescriptor.create[SBO, LBO, swizzle](addr)
 
@@ -592,8 +592,8 @@ fn _wgmma_descriptor[
 
     # Swizzle and non-swizzle modes switch SBO and LBO based on
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=bar%2520sync#asynchronous-warpgroup-level-majorness-supported-by-strides
-    alias SBO = ((stride01 if no_swizzle else stride11) * dtype.size_of()) >> 4
-    alias LBO = ((stride11 if no_swizzle else stride01) * dtype.size_of()) >> 4
+    alias SBO = ((stride01 if no_swizzle else stride11) * size_of[dtype]()) >> 4
+    alias LBO = ((stride11 if no_swizzle else stride01) * size_of[dtype]()) >> 4
 
     return WGMMADescriptor.create[SBO, LBO, swizzle](addr)
 

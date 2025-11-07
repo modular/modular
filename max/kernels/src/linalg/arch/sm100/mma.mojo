@@ -71,14 +71,14 @@ fn max_contiguous_tile_shape[
     @parameter
     if major == Major.K:
         # Tile shape is (MN, K), max K is based on swizzle.
-        return IntTuple(tile_shape[0], swizzle_mode.bytes() // dtype.size_of())
+        return IntTuple(tile_shape[0], swizzle_mode.bytes() // size_of[dtype]())
     elif major == Major.MN:
         # Tile shape is (K, MN), max MN is based on swizzle, max K is 8 based on
         # canonical layout.
         # The following are rare in practice but worth checking.
         # TODO: this may not work for swizzle.NONE, need to double-check
         # TODO: for MN = swizzle_bytes // sizeof,  tile_shape[0] may be the max
-        return IntTuple(8, swizzle_mode.bytes() // dtype.size_of())
+        return IntTuple(8, swizzle_mode.bytes() // size_of[dtype]())
     else:
         constrained[False, "Invalid major"]()
         return IntTuple()

@@ -643,7 +643,7 @@ fn threadfence[scope: Scope = Scope.GPU]():
 
 
 fn _get_type_suffix[dtype: DType]() -> StaticString:
-    alias str = get_static_string["u", _int_to_str[dtype.bit_width()]()]()
+    alias str = get_static_string["u", _int_to_str[bit_width_of[dtype]()]()]()
     return str
 
 
@@ -660,7 +660,7 @@ fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
     if dtype.is_half_float():
         return "h"
     if dtype.is_integral():
-        alias width = dtype.bit_width()
+        alias width = bit_width_of[dtype]()
         if width == 16:
             return "c"
         if width == 32:

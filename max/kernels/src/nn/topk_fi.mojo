@@ -39,7 +39,7 @@ from math import ceildiv, gcd
 from memory import stack_allocation
 from memory import LegacyUnsafePointer as UnsafePointer
 from os import Atomic
-from sys import simd_width_of, size_of
+from sys import simd_width_of, size_of, bit_width_of
 
 
 @always_inline

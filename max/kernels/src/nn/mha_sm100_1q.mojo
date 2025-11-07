@@ -359,7 +359,7 @@ fn _tmem_offset(dtype_size: Int, *, MMA_N: Int, m_mma: Int, n_mma: Int) -> Int:
 @always_inline
 fn _tmem_offset[dtype: DType, *, MMA_N: Int, m_mma: Int, n_mma: Int]() -> Int:
     alias linear = _tmem_offset(
-        dtype.size_of(), MMA_N=MMA_N, m_mma=m_mma, n_mma=n_mma
+        size_of[dtype](), MMA_N=MMA_N, m_mma=m_mma, n_mma=n_mma
     )
     return linear
 

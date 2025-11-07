@@ -175,7 +175,7 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
         )
 
     fn swizzle_granularity(self) -> UInt:
-        return UInt(self.swizzle_mode.bytes()) // UInt(self.dtype.size_of())
+        return UInt(self.swizzle_mode.bytes()) // UInt(size_of[self.dtype]())
 
     fn q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> UInt:
         q_size = self.block_m() * self.padded_depth
@@ -239,7 +239,7 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
         if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
             num_smem_elements += self.p_smem_size()
 
-        num_smem_bytes = self.dtype.size_of() * Int(num_smem_elements)
+        num_smem_bytes = size_of[self.dtype]() * Int(num_smem_elements)
         if sm_90_fa3:
             alias i64_size = size_of[DType.int64]()
             num_smem_bytes += (2 * Int(self.num_pipeline_stages)) * i64_size + (

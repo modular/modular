@@ -14,6 +14,7 @@
 
 from builtin.dtype import _integral_type_of
 from memory import bitcast
+from sys import bit_width_of
 
 
 fn ulp_distance[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Int:
@@ -32,13 +33,12 @@ fn ulp_distance[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Int:
     Returns:
         The ULP distance between the two values.
     """
-    alias bitwidth = dtype.bit_width()
     alias T = _integral_type_of[dtype]()
     # widen to Int first to avoid overflow
     var a_int = Int(bitcast[T](a))
     var b_int = Int(bitcast[T](b))
     # to twos complement
-    alias two_complement_const = Int(1 << (bitwidth - 1))
+    alias two_complement_const = Int(1 << (bit_width_of[dtype]() - 1))
     a_int = two_complement_const - a_int if a_int < 0 else a_int
     b_int = two_complement_const - b_int if b_int < 0 else b_int
     return abs(a_int - b_int)

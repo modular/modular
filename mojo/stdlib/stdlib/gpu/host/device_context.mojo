@@ -5841,7 +5841,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         Raises:
             If the operation fails.
         """
-        alias bitwidth = dtype.bit_width()
+        alias bitwidth = bit_width_of[dtype]()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
             "bitwidth of memset dtype must be one of [8,16,32,64]",
@@ -5891,7 +5891,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         Raises:
             If the operation fails.
         """
-        alias bitwidth = dtype.bit_width()
+        alias bitwidth = bit_width_of[dtype]()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
             "bitwidth of memset dtype must be one of [8,16,32,64]",

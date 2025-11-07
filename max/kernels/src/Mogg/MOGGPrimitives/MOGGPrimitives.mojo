@@ -47,8 +47,8 @@ from .MOGGIntList import IntList
 # ===-----------------------------------------------------------------------===#
 
 
-fn bytecount_with_dtype(shape: IndexList, dtype: DType) -> Int:
-    return shape.flattened_length() * dtype.size_of()
+fn bytecount_with_dtype[dtype: DType](shape: IndexList) -> Int:
+    return shape.flattened_length() * size_of[dtype]()
 
 
 # TODO: This struct should be deleted. Mojo and C++ should always communicate
@@ -183,7 +183,7 @@ fn create_non_tracked_tensor_async[
     ]()
     external_call["MGP_RT_CreateAsyncNonTrackedTensor", NoneType](
         buffer.data,
-        bytecount_with_dtype(buffer.dynamic_shape, dtype),
+        bytecount_with_dtype[dtype](buffer.dynamic_shape),
         tensor_rank,
         UnsafePointer(to=buffer.dynamic_shape.data),
         dtype,
@@ -248,7 +248,7 @@ fn create_tensor_async[
     ]()
     external_call["MGP_RT_CreateAsyncTensorWithBorrow", NoneType](
         buffer.data,
-        bytecount_with_dtype(buffer.dynamic_shape, dtype),
+        bytecount_with_dtype[dtype](buffer.dynamic_shape),
         tensor_rank,
         UnsafePointer(to=buffer.dynamic_shape.data),
         dtype,

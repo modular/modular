@@ -33,7 +33,7 @@ print(len(bs))          # Prints 0.
 
 
 from math import ceildiv
-from sys import simd_width_of
+from sys import simd_width_of, bit_width_of
 
 from algorithm import vectorize
 from bit import log2_floor, pop_count
@@ -45,7 +45,7 @@ from .inline_array import InlineArray
 # Utilities
 # ===-----------------------------------------------------------------------===#
 
-alias _WORD_BITS = DType.int64.bit_width()
+alias _WORD_BITS = bit_width_of[DType.int64]()
 alias _WORD_BITS_LOG2 = log2_floor(_WORD_BITS)
 
 

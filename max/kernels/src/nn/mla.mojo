@@ -1650,7 +1650,7 @@ fn flare_mla_prefill_dispatch[
     alias v_smem = BN * depth
 
     alias smem_use = (q_smem + k_smem + v_smem) * UInt(
-        config.dtype.size_of()
+        size_of[config.dtype]()
     ) if has_nvidia_gpu_accelerator() else 0
 
     var softmax_info_ptr = (

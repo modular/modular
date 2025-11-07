@@ -109,7 +109,7 @@ fn _tma_desc_tile_layout[
         if is_k_major:
             # TMA copies BM x `swizzle_mode.bytes()` Bytes each time.
             return Layout.row_major(
-                dim0, swizzle_mode.bytes() // dtype.size_of()
+                dim0, swizzle_mode.bytes() // size_of[dtype]()
             )
         else:
             constrained[
@@ -117,7 +117,7 @@ fn _tma_desc_tile_layout[
                 "Only support 128B swizzle for mn-major.",
             ]()
 
-            alias swizzle_granularity = swizzle_mode.bytes() // dtype.size_of()
+            alias swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
 
             @parameter
             if dim1 == swizzle_granularity:
@@ -136,7 +136,7 @@ fn _tma_desc_tile_layout[
         constrained[is_k_major, "Only K-Major is supported!"]()
 
         return Layout(
-            [dim0, dim1, swizzle_mode.bytes() // dtype.size_of()],
+            [dim0, dim1, swizzle_mode.bytes() // size_of[dtype]()],
             [1, 1, 1],
         )
 
@@ -1709,8 +1709,8 @@ def create_tma_tile[
     # Current impl limitations
     constrained[rank == 2 or rank == 3, "Only support 2D/3D TMA"]()
 
-    alias desc_bytes_size = __desc_layout.size() * dtype.size_of()
-    alias layout_size = __tile_layout.size() * dtype.size_of()
+    alias desc_bytes_size = __desc_layout.size() * size_of[dtype]()
+    alias layout_size = __tile_layout.size() * size_of[dtype]()
 
     @parameter
     if desc_bytes_size < layout_size:
@@ -1736,12 +1736,12 @@ def create_tma_tile[
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             constrained[
-                (tile_shape[1] * dtype.size_of()) % swizzle_mode.bytes() == 0,
+                (tile_shape[1] * size_of[dtype]()) % swizzle_mode.bytes() == 0,
                 String(swizzle_mode),
                 " mode requires K dim multiple of ",
                 String(swizzle_mode.bytes()),
                 "B. K dim is now ",
-                String(tile_shape[1] * dtype.size_of()),
+                String(tile_shape[1] * size_of[dtype]()),
                 " bytes.",
             ]()
 
@@ -1764,12 +1764,12 @@ def create_tma_tile[
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             constrained[
-                (tile_shape[2] * dtype.size_of()) % swizzle_mode.bytes() == 0,
+                (tile_shape[2] * size_of[dtype]()) % swizzle_mode.bytes() == 0,
                 String(swizzle_mode),
                 " mode requires K dim multiple of ",
                 String(swizzle_mode.bytes()),
                 "B. K dim is now ",
-                String(tile_shape[2] * dtype.size_of()),
+                String(tile_shape[2] * size_of[dtype]()),
                 "bytes.",
             ]()
 
