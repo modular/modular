@@ -1,6 +1,5 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//bazel:api.bzl", "cc_autolink_deps", "modular_cc_library", "modular_shared_library")
-load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 
 bool_flag(
     name = "worker_stats",
@@ -244,7 +243,6 @@ modular_shared_library(
         ],
     ),
     tags = [
-        ALLOW_UNUSED_TAG,
         "no-clang-tidy",  # Copied code doesn't conform to our style
     ],
     target_compatible_with = [
@@ -292,7 +290,6 @@ modular_shared_library(
     }),
     local_defines = ["PLUGIN_UCX_CUDA"],
     tags = [
-        ALLOW_UNUSED_TAG,
         "no-clang-tidy",  # Copied code doesn't conform to our style
     ],
     target_compatible_with = [
@@ -340,7 +337,6 @@ modular_shared_library(
     }),
     local_defines = ["PLUGIN_UCX_CUDA"],
     tags = [
-        ALLOW_UNUSED_TAG,
         "no-clang-tidy",  # Copied code doesn't conform to our style
     ],
     target_compatible_with = [
@@ -387,7 +383,6 @@ modular_shared_library(
     }),
     local_defines = ["PLUGIN_UCX_ROCM"],
     tags = [
-        ALLOW_UNUSED_TAG,
         "no-clang-tidy",  # Copied code doesn't conform to our style
     ],
     target_compatible_with = [
@@ -432,7 +427,6 @@ modular_shared_library(
     }),
     local_defines = ["PLUGIN_UCX_ROCM"],
     tags = [
-        ALLOW_UNUSED_TAG,
         "no-clang-tidy",  # Copied code doesn't conform to our style
     ],
     target_compatible_with = [
