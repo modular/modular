@@ -147,8 +147,7 @@ fn mha_sm90_dispatch[
     alias swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     q = rebind[UnsafePointer[Scalar[KVType.dtype]]](q_arg)
     alias decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
-    alias new_config = MHAConfig(
-        config.dtype,
+    alias new_config = MHAConfig[config.dtype](
         config.num_heads,
         config.depth,
         num_queries_per_block=OptionalReg[UInt](64),

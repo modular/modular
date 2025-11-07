@@ -1282,8 +1282,7 @@ fn mha_sm100_dispatch[
     ],
 ) raises:
     alias decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
-    alias new_config = MHAConfig(
-        config.dtype,
+    alias new_config = MHAConfig[config.dtype](
         config.num_heads,
         config.depth,
         num_queries_per_block=OptionalReg[UInt](64),
@@ -2154,7 +2153,7 @@ fn _mha_sm100[
     alias accum_simd_width = simd_width_of[accum_type]()
     alias row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
     # Account for group query.
-    alias kv_num_heads = num_heads // UInt(group)
+    alias kv_num_heads = num_heads // group
 
     # var lane_predicate = elect_one_sync() # not needed with async_copy
 

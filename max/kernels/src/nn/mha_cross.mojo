@@ -262,8 +262,7 @@ fn mha_cross_gpu_naive[
         "Only support single and half precision.",
     ]()
 
-    alias config = MHAConfig(
-        dtype,
+    alias config = MHAConfig[dtype](
         UInt(Int(q.layout.shape[rank - 2])),
         UInt(Int(q.layout.shape[rank - 1])),
     )

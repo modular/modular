@@ -122,9 +122,7 @@ struct FlashAttentionAlgorithm(
 
 @fieldwise_init
 @register_passable("trivial")
-struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
-    var dtype: DType
-
+struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
     # Q, K, V, output should have the same type.
     var num_heads: UInt
     var depth: UInt
@@ -252,7 +250,6 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
 
     fn __init__(
         out self,
-        dtype: DType,
         num_heads: UInt,
         depth: UInt,
         num_queries_per_block: OptionalReg[UInt] = None,
@@ -265,7 +262,6 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(-1),
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     ):
-        self.dtype = dtype
         self.num_heads = num_heads
         self.depth = depth
         swizzle_granularity = swizzle_mode.bytes() // size_of[DType.bfloat16]()

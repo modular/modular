@@ -122,9 +122,10 @@ fn flash_attention[
     dtype: DType,
     q_layout: Layout, //,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(
-        dtype, UInt(Int(q_layout.shape[2])), UInt(Int(q_layout.shape[3]))
-    ),
+    config: MHAConfig[dtype] = {
+        UInt(Int(q_layout.shape[2])),
+        UInt(Int(q_layout.shape[3])),
+    },
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
     sink: Bool = False,
@@ -249,11 +250,10 @@ fn flash_attention[
     dtype: DType,
     q_layout: Layout, //,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(
-        dtype,
+    config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
-    ),
+    },
     ragged: Bool = False,
     sink: Bool = False,
     decoding_warp_split_k: Bool = False,
@@ -417,11 +417,10 @@ fn flash_attention_dispatch[
     q_layout: Layout, //,
     kv_num_heads: Int,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(
-        dtype,
+    config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
-    ),
+    },
     ragged: Bool = False,
     sink: Bool = False,
     _is_flash_attention_applicable: Bool = True,
@@ -1097,9 +1096,10 @@ fn flash_attention[
     dtype: DType,
     q_layout: Layout, //,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(
-        dtype, UInt(Int(q_layout.shape[2])), UInt(Int(q_layout.shape[3]))
-    ),
+    config: MHAConfig[dtype] = {
+        UInt(Int(q_layout.shape[2])),
+        UInt(Int(q_layout.shape[3])),
+    },
     decoding_warp_split_k: Bool = False,
     _use_valid_length: Bool = False,
     _padded_ndbuffer: Bool = False,
@@ -1203,11 +1203,10 @@ fn flash_attention_ragged[
     type: DType,
     q_layout: Layout, //,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(
-        type,
+    config: MHAConfig[type] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),  # num_heads
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),  # head_dim
-    ),
+    },
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
 ](
@@ -3108,8 +3107,7 @@ fn mha_decoding[
                 sink_weights,
             )
     elif is_amd_gpu():
-        alias config = MHAConfig(
-            q_type,
+        alias config = MHAConfig[q_type](
             num_heads,
             depth,
             num_queries_per_block=BM,
