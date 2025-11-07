@@ -48,10 +48,7 @@ from .constant import constant, constant_external
 from .conv import conv2d, conv3d
 from .conv_transpose import conv2d_transpose
 from .cumsum import cumsum
-from .custom import (
-    custom,
-    inplace_custom,
-)
+from .custom import custom, inplace_custom
 from .debug import print
 from .elementwise import *
 from .elementwise import max as _elementwise_max

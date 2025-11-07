@@ -17,6 +17,7 @@
 
 from collections import OptionalReg
 from math import (
+    acos,
     atanh,
     ceil,
     cos,
@@ -668,6 +669,16 @@ struct Tanh(ElementwiseUnaryOp):
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return tanh(x)
+
+
+@compiler.register("mo.acos")
+struct ACos(ElementwiseUnaryOp):
+    @staticmethod
+    fn elementwise[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return acos(x)
 
 
 @compiler.register("mo.atanh")
