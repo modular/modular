@@ -214,10 +214,13 @@ alias POP_UI8x4_Fold = __mlir_attr.`#pop.simd<42, 255, 1, 0> : !pop.simd<4, ui8>
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_and
 fn fold_pop_simd_and() -> POPUInt8x4T[POP_UI8x4_Fold]:
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@POPUInt8x4T<:simd<4, ui8> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, ui8>, "y": !pop.simd<4, ui8>) -> !pop.simd<4, ui8>> @builtin_function_folder_pop_ops::@"pop_simd_and(__mlir_type.!pop.simd<4, ui8>,__mlir_type.!pop.simd<4, ui8>)", sugar_alias(*"x`1", <46, 255, 1, 0>), sugar_alias(*"y`2", <43, 255, 1, 1>)), #pop.simd_and<#kgen<sugar alias, !pop.simd<4, ui8>, *"x`1", <46, 255, 1, 0>> : !pop.simd<4, ui8>, #kgen<sugar alias, !pop.simd<4, ui8>, *"y`2", <43, 255, 1, 1>> : !pop.simd<4, ui8>>)>, mut *"a`3">
-    alias x = __mlir_attr.`#pop.simd<46, 255, 1, 0> : !pop.simd<4, ui8>`
-    alias y = __mlir_attr.`#pop.simd<43, 255, 1, 1> : !pop.simd<4, ui8>`
-    var a = POPUInt8x4T[pop_simd_and(x, y)]()
+    # CHECK: %a = lit.var.decl "a" {{.*}} <42, 255, 1, 0>
+    var a = POPUInt8x4T[
+        pop_simd_and(
+            __mlir_attr.`#pop.simd<46, 255, 1, 0> : !pop.simd<4, ui8>`,
+            __mlir_attr.`#pop.simd<43, 255, 1, 1> : !pop.simd<4, ui8>`,
+        )
+    ]()
     return a
 
 
