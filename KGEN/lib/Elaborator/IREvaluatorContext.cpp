@@ -6,6 +6,7 @@
 
 #include "IREvaluatorContext.h"
 #include "KGEN/Interpreter/InterpreterState.h"
+#include "llvm/ADT/ScopeExit.h"
 
 using namespace M;
 using namespace KGEN;
@@ -50,7 +51,8 @@ static StringAttr getBytesOf(MemoryBlobAttr value, size_t numBytes) {
 }
 
 /// Extract a value of type `struct<(pointer<none>, index)>` into a StringAttr.
-FailureOr<StringAttr> IREvaluatorContext::evaluateStringPart(TypedAttr part) {
+FailureOr<StringAttr> IREvaluatorContext::evaluateStringPart(TypedAttr part,
+                                                             bool reset) {
   // Get the two parts of the struct, StructExtract will fold.
   auto lengthAttr = dyn_cast<IntegerAttr>(StructExtractAttr::get(part, 1));
   if (!lengthAttr) {
@@ -78,6 +80,12 @@ FailureOr<StringAttr> IREvaluatorContext::evaluateStringPart(TypedAttr part) {
     if (pointerAttr.getOffset() == 0)
       return result;
   }
+
+  // Reset memory upon exit.
+  auto resetState = llvm::make_scope_exit([&] {
+    if (reset)
+      state->reset();
+  });
 
   if (ErrorOrSuccess err = state->internalizeMemory(pointerAttr)) {
     emitError({*errorLoc, "'data_to_str' failed to read data"});
@@ -107,9 +115,9 @@ FailureOr<StringAttr> IREvaluatorContext::evaluateStringPart(TypedAttr part) {
 }
 
 /// Evaluate POC::DataToStr "data_to_str" operator.
-FailureOr<TypedAttr>
-IREvaluatorContext::evaluateDataToStr(ParamOperatorAttr op) {
-  FailureOr<StringAttr> result = evaluateStringPart(op.getOperand(0));
+FailureOr<TypedAttr> IREvaluatorContext::evaluateDataToStr(ParamOperatorAttr op,
+                                                           bool reset) {
+  FailureOr<StringAttr> result = evaluateStringPart(op.getOperand(0), reset);
   if (failed(result))
     return failure();
 
@@ -129,7 +137,7 @@ IREvaluatorContext::evaluateDataToStr(ParamOperatorAttr op) {
   // Otherwise, we need to evaluate the extra parts and concatenate them.
   std::string concatStr = result->str();
   for (TypedAttr extra : extrasAttr.getValues()) {
-    FailureOr<StringAttr> extraResult = evaluateStringPart(extra);
+    FailureOr<StringAttr> extraResult = evaluateStringPart(extra, reset);
     if (failed(extraResult))
       return failure();
     concatStr += extraResult->str();

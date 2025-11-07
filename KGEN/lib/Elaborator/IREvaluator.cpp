@@ -179,7 +179,7 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
     return {StringAttr::get(mlir::debugString(op.getOperands().front()),
                             StringType::get(op.getContext()))};
   case POC::DataToStr:
-    return evaluateDataToStr(op);
+    return evaluateDataToStr(op, /*reset=*/true);
   case POC::StringAddress:
     return evaluateStringAddress(op);
   case POC::Rebind:

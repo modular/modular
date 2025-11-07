@@ -280,7 +280,6 @@ public:
   virtual ErrorTreeOrSuccess
   interpretOpWithFolder(Operation *op, ArrayRef<Attribute> operands) = 0;
 
-protected:
   void reset() {
     resetExecutor();
     for (MemoryTable &table : memory)

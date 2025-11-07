@@ -30,9 +30,9 @@ protected:
   FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
 
   /// Evaluate POC::DataToStr "data_to_str" operator.
-  FailureOr<TypedAttr> evaluateDataToStr(ParamOperatorAttr op);
+  FailureOr<TypedAttr> evaluateDataToStr(ParamOperatorAttr op, bool reset);
 
-  FailureOr<StringAttr> evaluateStringPart(TypedAttr part);
+  FailureOr<StringAttr> evaluateStringPart(TypedAttr part, bool reset);
 
   /// The function to use to emit an error.
   std::function<void(ErrorTree)> emitError;
