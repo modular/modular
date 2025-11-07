@@ -73,6 +73,7 @@ from layout.tma_async import (
     SharedMemBarrier,
     TMANestedTensorTile,
 )
+from logger import Logger
 from memory import bitcast, stack_allocation
 from nn.mha_fa3_utils import (
     MHAPosition,
@@ -115,6 +116,8 @@ from tensor import ManagedTensorSlice
 from utils.index import Index
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
+
+alias logger = Logger()
 
 
 struct RegisterAccumulatorDescription:
@@ -1828,6 +1831,22 @@ fn _mha_sm100_enqueue[
         extra_B200_smem
     )
     alias num_threads = config.num_threads[True]()
+    alias decoding = _is_decoding[MaxSeqLenType]()
+    logger.info("------ Dispatching to SM100 FMHA-1Q ------")
+    logger.info(
+        "QKV Type: ",
+        KVLUTType.dtype,
+        "Depth:",
+        config.depth,
+        "Number of Q // KV Heads:",
+        config.num_heads,
+        "//",
+        config.num_heads // group,
+        "Batch Size:",
+        batch_size,
+        "Num Partitions:" if decoding else "Max Num Prompt Tiles:",
+        partition.num_partitions() if decoding else max_num_prompt_tiles,
+    )
     ctx.enqueue_function_checked[kernel_sm100, kernel_sm100](
         q_tma_op,
         k_tma_op,

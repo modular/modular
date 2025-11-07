@@ -73,6 +73,7 @@ from layout.tma_async import (
     SharedMemBarrier,
     TMANestedTensorTile,
 )
+from logger import Logger
 from memory import bitcast
 from nn.mha_fa3_utils import (
     _get_position,
@@ -114,7 +115,7 @@ from linalg.arch.sm100.mma import smem_descriptor
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
 
-from pathlib import Path
+alias logger = Logger()
 
 alias LocalTensor[
     dtype: DType, layout: Layout, element_layout: Layout = Layout(1, 1)
@@ -1726,6 +1727,21 @@ fn _mha_sm100_enqueue[
         max_seq_len.as_uint32(), config.BM
     )
     var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
+    logger.info("------ Dispatching to SM100 FMHA-2Q ------")
+    logger.info(
+        "QKV Type:",
+        KVLUTType.dtype,
+        "Depth:",
+        config.depth,
+        "Number of Q // KV Heads:",
+        config.num_q_heads,
+        "//",
+        config.num_kv_heads,
+        "Batch Size:",
+        batch_size,
+        "Max Num Prompt Tiles:",
+        max_num_prompt_tiles,
+    )
     alias num_threads = config.num_threads
     alias smem_use = config.smem_used
     alias kernel = SM100MHA2Q[
@@ -1757,9 +1773,6 @@ fn _mha_sm100_enqueue[
         block_dim=(Int(num_threads), 1, 1),
         shared_mem_bytes=Int(smem_use),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
-        # func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-        #     B200.shared_memory_per_multiprocessor - 1024
-        # ),
     )
 
 
