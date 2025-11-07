@@ -93,17 +93,14 @@ private:
       CompileOffloadClosureAttr compileOffloadClosureAttr);
   FailureOr<TypedAttr> evaluateCompileAssemblyAttr(CompileAssemblyAttr attr);
 
-  std::string stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef,
-                                       bool qualifiedBuiltins);
-  void printParamValue(raw_ostream &os, ParamDeclAttr decl, TypedAttr value,
-                       bool qualifiedBuiltins);
-
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);
   }
   Type getReboundType(Type type) {
     return ParameterEvaluator::getReboundType(type);
   }
+
+  ParamNodeBase *lookupParamNodeBase(SymbolRefAttr symbol) override;
 
   /// A reference to the elaborator instance. The elaborator is invoked to
   /// concretize symbol constants prior to interpreting them.

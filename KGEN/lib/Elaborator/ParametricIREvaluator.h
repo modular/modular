@@ -200,11 +200,6 @@ private:
       CompileOffloadClosureAttr compileOffloadClosureAttr);
   FailureOr<TypedAttr> evaluateCompileAssemblyAttr(CompileAssemblyAttr attr);
 
-  std::string stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef,
-                                       bool qualifiedBuiltins);
-  void printParamValue(raw_ostream &os, ParamDeclAttr decl, TypedAttr value,
-                       bool qualifiedBuiltins);
-
   void dump() {
     for (auto pair : getCurrentParamEval().getDeclBindings()) {
       llvm::dbgs() << "[param name]: " << pair.first
@@ -215,6 +210,8 @@ private:
   ParametricParameterEvaluator &getCurrentParamEval() {
     return paramEvaluators.back();
   }
+
+  ParamNodeBase *lookupParamNodeBase(SymbolRefAttr symbol) override;
 
   /// A reference to the elaborator instance. The elaborator is invoked to
   /// concretize symbol constants prior to interpreting them.
