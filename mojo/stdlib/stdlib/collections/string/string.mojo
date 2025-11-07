@@ -821,42 +821,6 @@ struct String(
         """
         return self.as_string_slice() < rhs.as_string_slice()
 
-    @always_inline("nodebug")
-    fn __le__(self, rhs: String) -> Bool:
-        """Compare this String to the RHS using LE comparison.
-
-        Args:
-            rhs: The other String to compare against.
-
-        Returns:
-            True iff this String is less than or equal to the RHS String.
-        """
-        return not (rhs < self)
-
-    @always_inline("nodebug")
-    fn __gt__(self, rhs: String) -> Bool:
-        """Compare this String to the RHS using GT comparison.
-
-        Args:
-            rhs: The other String to compare against.
-
-        Returns:
-            True iff this String is strictly greater than the RHS String.
-        """
-        return rhs < self
-
-    @always_inline("nodebug")
-    fn __ge__(self, rhs: String) -> Bool:
-        """Compare this String to the RHS using GE comparison.
-
-        Args:
-            rhs: The other String to compare against.
-
-        Returns:
-            True iff this String is greater than or equal to the RHS String.
-        """
-        return not (self < rhs)
-
     @staticmethod
     fn _add(lhs: Span[Byte], rhs: Span[Byte]) -> String:
         var lhs_len = len(lhs)

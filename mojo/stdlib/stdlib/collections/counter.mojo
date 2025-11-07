@@ -26,7 +26,13 @@ from utils import Variant
 
 @fieldwise_init
 struct Counter[V: KeyElement, H: Hasher = default_hasher](
-    Boolable, Copyable, Defaultable, Iterable, Movable, Sized
+    Boolable,
+    Copyable,
+    Defaultable,
+    EqualityComparable,
+    Iterable,
+    Movable,
+    Sized,
 ):
     """A container for counting hashable items.
 
@@ -207,17 +213,6 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             return True
 
         return is_eq(self.keys()) and is_eq(other.keys())
-
-    fn __ne__(self, other: Self) -> Bool:
-        """Check if all counts disagree. Missing counts are treated as zero.
-
-        Args:
-            other: The other Counter to compare to.
-
-        Returns:
-            True if the two Counters are not equal, False otherwise.
-        """
-        return not self == other
 
     fn __le__(self, other: Self) -> Bool:
         """Check if all counts are less than or equal to the other Counter.
@@ -608,7 +603,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             self[item.key] = self.get(item.key, 0) - item.value
 
 
-struct CountTuple[V: KeyElement](Copyable, Movable):
+struct CountTuple[V: KeyElement](Comparable, Copyable, Movable):
     """A tuple representing a value and its count in a Counter.
 
     Parameters:
