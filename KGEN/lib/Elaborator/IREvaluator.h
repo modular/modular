@@ -82,13 +82,7 @@ private:
                                          bool withResultSlot);
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
   FailureOr<TypedAttr> evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry);
-  FailureOr<TypedAttr>
-  evaluateGetLinkageNameAttr(GetLinkageNameAttr getLinkageNameAttr);
-  FailureOr<TypedAttr>
-  evaluateGetSourceNameAttr(GetSourceNameAttr getSourceNameAttr);
-  FailureOr<TypedAttr> evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr);
-  FailureOr<TypedAttr> evaluateTypeConformToTraitAttr(
-      TypeConformsToTraitAttr typeConformToTraitAttr);
+
   FailureOr<TypedAttr> evaluateCompileOffloadClosureAttr(
       CompileOffloadClosureAttr compileOffloadClosureAttr);
   FailureOr<TypedAttr> evaluateCompileAssemblyAttr(CompileAssemblyAttr attr);
@@ -102,16 +96,24 @@ private:
 
   ParamNodeBase *lookupParamNodeBase(SymbolRefAttr symbol) override;
 
+  /// Compute the expected mangled name of a generator from a parameter.
+  /// Returns both the mangled name and the generator referenced by the
+  /// parameter. The parameter will be legalized to ensure a SymbolConstantAttr.
+  /// If `allowParametric`, any not fully bound symbol reference will just have
+  /// its symbol name returned. Otherwise, not fully bound symbols are errors.
+  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> getExpectedMangledName(
+      Location errorLoc, StringRef errorContext, TypedAttr symCst,
+      bool allowParametric, bool sanitize,
+      function_ref<std::string(StringRef)> getPrefix) override;
+
+  GeneratorOp getGenerator(SymbolRefAttr symbol) override;
+
   /// A reference to the elaborator instance. The elaborator is invoked to
   /// concretize symbol constants prior to interpreting them.
   Elaborator *elaborator;
 
   /// The contextual node being elaborated.
   ImplNode *parent = nullptr;
-  /// The contextual location of an error.
-  std::optional<Location> errorLoc;
-  /// The function to use to emit an error.
-  std::function<void(ErrorTree)> emitError;
 };
 
 //===----------------------------------------------------------------------===//
