@@ -185,13 +185,12 @@ class Gemma3LanguageModel(Module):
     def __call__(
         self,
         tokens: TensorValue,
-        signal_buffers: Sequence[BufferValue],
-        kv_collections: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
         image_embeddings: Sequence[TensorValue],
         image_token_indices: TensorValue,
-        **kwargs,
+        signal_buffers: Sequence[BufferValue],
+        kv_collections: Sequence[PagedCacheValues],
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens, signal_buffers)
 
@@ -218,7 +217,6 @@ class Gemma3LanguageModel(Module):
                 signal_buffers,
                 kv_collections,
                 input_row_offsets=input_row_offsets,
-                **kwargs,
             )
 
         last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
