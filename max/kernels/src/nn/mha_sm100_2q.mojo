@@ -80,8 +80,7 @@ from nn.mha_fa3_utils import (
     NonNullPointer,
     NullPointer,
     OptionalPointer,
-    output_reg_to_smem,
-    output_gmem_to_smem_STMatrix,
+    output_reg_to_smem_st_matrix,
     Pack,
     produce,
     q_out_tma,
@@ -416,7 +415,7 @@ struct TMemTile[
         named_barrier[num_threads]()
 
     @always_inline
-    fn load_async_st_matrix[
+    fn load_async_with_st_matrix_layout[
         *, num_threads: Int
     ](
         self,
@@ -2408,7 +2407,7 @@ fn scale_write_output[
     ],
     consumer_mbar: MBarType,
 ):
-    o = o_tmem.load_async_st_matrix[num_threads=WARPGROUP_SIZE]()
+    o = o_tmem.load_async_with_st_matrix_layout[num_threads=WARPGROUP_SIZE]()
     alias num_rows = o.layout[0].size()
     inv_row_sums = LocalTensor[
         accum_type, Layout.row_major(num_rows)
@@ -2468,7 +2467,7 @@ fn scale_write_output[
             Int(2 * warpy + i), Int(0)
         )
 
-        output_gmem_to_smem_STMatrix[
+        output_reg_to_smem_st_matrix[
             BM=16, padded_depth=padded_depth, swizzle=swizzle, num_consumer=1
         ](
             lane,
