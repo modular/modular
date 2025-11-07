@@ -8,6 +8,7 @@
 #define KGEN_ELABORATOR_IREVALUATOR_H
 
 #include "Cache/CachedTransform.h"
+#include "IREvaluatorContext.h"
 #include "KGEN/Interpreter/BytecodeInterpreter.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -33,6 +34,7 @@ struct ExpansionGraph;
 /// `get_alignof` a decl type.
 class IREvaluator : public ParameterEvaluationContext,
                     public ParameterEvaluator,
+                    public IREvaluatorContext,
                     public BytecodeInterpreter {
 public:
   /// Construct the IR evaluator with a symbol table for evaluating symbolic
@@ -78,11 +80,6 @@ private:
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
                                          bool withResultSlot);
-  /// Evaluate a `get_env` operator.
-  FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
-  /// Evaluate POC::DataToStr "data_to_str" operator.
-  FailureOr<TypedAttr> evaluateDataToStr(ParamOperatorAttr op);
-  FailureOr<StringAttr> evaluateStringPart(TypedAttr part);
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
   FailureOr<TypedAttr> evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry);
   FailureOr<TypedAttr>
