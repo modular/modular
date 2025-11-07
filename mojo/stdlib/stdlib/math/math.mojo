@@ -108,7 +108,6 @@ fn ceildiv[T: CeilDivable, //](numerator: T, denominator: T) -> T:
     Returns:
         The ceiling of dividing numerator by denominator.
     """
-    # return -(numerator // -denominator)
     return numerator.__ceildiv__(denominator)
 
 
