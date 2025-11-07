@@ -214,8 +214,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         return is_eq(self.keys()) and is_eq(other.keys())
 
-    fn __le__(self, other: Self) -> Bool:
-        """Check if all counts are less than or equal to the other Counter.
+    fn le(self, other: Self) -> Bool:
+        """Check if all counts are less than or equal to those in the other
+        Counter.
+
+        Note that since we check that _all_ counts satisfy the condition, this
+        comparison does not make Counters totally ordered.
 
         Args:
             other: The other Counter to compare to.
@@ -235,8 +239,11 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         return is_le(self.keys())
 
-    fn __lt__(self, other: Self) -> Bool:
-        """Check if all counts are less than in the other Counter.
+    fn lt(self, other: Self) -> Bool:
+        """Check if all counts are less than those in the other Counter.
+
+        Note that since we check that _all_ counts satisfy the condition, this
+        comparison does not make Counters totally ordered.
 
         Args:
             other: The other Counter to compare to.
@@ -245,10 +252,22 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             True if all counts are less than in the other Counter, False
             otherwise.
         """
-        return self <= other and self != other
 
-    fn __gt__(self, other: Self) -> Bool:
-        """Check if all counts are greater than in the other Counter.
+        @parameter
+        @always_inline
+        fn is_lt(keys: _DictKeyIter[V, Int, _]) -> Bool:
+            for e in keys:
+                if self.get(e, 0) >= other.get(e, 0):
+                    return False
+            return True
+
+        return is_lt(self.keys())
+
+    fn gt(self, other: Self) -> Bool:
+        """Check if all counts are greater than those in the other Counter.
+
+        Note that since we check that _all_ counts satisfy the condition, this
+        comparison does not make Counters totally ordered.
 
         Args:
             other: The other Counter to compare to.
@@ -257,10 +276,14 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             True if all counts are greater than in the other Counter, False
             otherwise.
         """
-        return other < self
+        return other.lt(self)
 
-    fn __ge__(self, other: Self) -> Bool:
-        """Check if all counts are greater than or equal to the other Counter.
+    fn ge(self, other: Self) -> Bool:
+        """Check if all counts are greater than or equal to those in the other
+        Counter.
+
+        Note that since we check that _all_ counts satisfy the condition, this
+        comparison does not make Counters totally ordered.
 
         Args:
             other: The other Counter to compare to.
@@ -269,7 +292,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             True if all counts are greater than or equal to the other Counter,
             False otherwise.
         """
-        return other <= self
+        return other.le(self)
 
     # ===------------------------------------------------------------------=== #
     # Binary operators
