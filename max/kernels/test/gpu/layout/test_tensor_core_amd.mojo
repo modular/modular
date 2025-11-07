@@ -2099,7 +2099,8 @@ fn test_load_b_tr(ctx: DeviceContext) raises:
 
     var flag = ctx.enqueue_create_buffer[DType.bool](WARP_SIZE)
 
-    ctx.enqueue_function[kernel[IndexList[3](32, 32, 16)]](
+    alias kernel_32_32_16 = kernel[IndexList[3](32, 32, 16)]
+    ctx.enqueue_function_checked[kernel_32_32_16, kernel_32_32_16](
         flag, grid_dim=(1), block_dim=(WARP_SIZE)
     )
     with flag.map_to_host() as flag_host:
@@ -2107,7 +2108,8 @@ fn test_load_b_tr(ctx: DeviceContext) raises:
             if not flag_host[i]:
                 assert_equal(flag_host[i], True, "frags_simd != frags_tr")
 
-    ctx.enqueue_function[kernel[IndexList[3](16, 16, 32)]](
+    alias kernel_16_16_32 = kernel[IndexList[3](16, 16, 32)]
+    ctx.enqueue_function_checked[kernel_16_16_32, kernel_16_16_32](
         flag, grid_dim=(1), block_dim=(WARP_SIZE)
     )
     with flag.map_to_host() as flag_host:

@@ -1043,7 +1043,7 @@ fn bulk_mma[
         )
     elif num_k_mmas == 2:
         inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x 
+            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x
         )
     elif num_k_mmas == 3:
         inlined_assembly[mma_string, NoneType, constraints=constraints](
@@ -1744,12 +1744,6 @@ fn _mha_sm100_enqueue[
         PartitionType,
     ].kernel
     ctx.enqueue_function_checked[kernel, kernel](
-        # ctx.enqueue_function[
-        #     kernel,
-        #     dump_llvm = Path("warp_mma.ll"),
-        #     dump_asm = Path("warp_mma.ptx"),
-        #     _dump_sass = Path("warp_mma.sass"),
-        # ](
         q_tma_op,
         k_tma_op,
         v_tma_op,

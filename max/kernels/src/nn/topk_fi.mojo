@@ -816,25 +816,20 @@ fn topk_sampling_from_prob[
 
     @parameter
     fn launch_kernel[vec_size: Int, deterministic: Bool]() raises:
-        ctx.enqueue_function[
-            TopKSamplingFromProbKernel[
-                block_size,
-                vec_size,
-                dtype,
-                out_idx_type,
-                probs.layout,
-                output.layout,
-                deterministic,
-            ]
-        ](
+        alias kernel = TopKSamplingFromProbKernel[
+            block_size,
+            vec_size,
+            dtype,
+            out_idx_type,
+            probs.layout,
+            output.layout,
+            deterministic,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             probs,
             output,
-            indices.value().ptr if indices else UnsafePointer[
-                Scalar[out_idx_type]
-            ](),
-            top_k_arr.value().ptr if top_k_arr else UnsafePointer[
-                Scalar[out_idx_type]
-            ](),
+            indices.value().to_device_buffer(ctx),
+            top_k_arr.value().to_device_buffer(ctx),
             top_k_val,
             d,
             rng_seed,
