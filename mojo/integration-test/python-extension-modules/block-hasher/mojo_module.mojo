@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from hashlib import default_comp_time_hasher
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys import size_of
 

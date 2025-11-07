@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections.string.string_slice import get_static_string
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of
