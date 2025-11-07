@@ -43,6 +43,8 @@ Type ASTType::getMetaType() const {
     return {};
   if (auto declRef = dyn_cast<StructType>(mlirType))
     return StructMetaType::get(declRef);
+  if (auto metaRef = dyn_cast<StructMetaType>(mlirType))
+    return StructMetaMetaType::get(metaRef);
   if (auto paramRef = dyn_cast<ParamType>(mlirType))
     return paramRef.getParam().getType();
   if (auto traitRef = dyn_cast<TraitType>(mlirType))
@@ -83,6 +85,9 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
   if (auto anyStruct = dyn_cast<StructMetaType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(anyStruct.getSymbol());
 
+  if (auto anyMeta = dyn_cast<StructMetaMetaType>(type))
+    return &shared.declResolver->getDeclForTypeSymbol(anyMeta.getSymbol());
+
   if (auto anyTrait = dyn_cast<AnyTraitType>(type))
     type = anyTrait.getTraitType();
 
@@ -97,8 +102,10 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
 
 ArrayRef<TypedAttr> ASTType::getParamBindings() const {
   Type metatype = ASTType(getMetaType()).stripTopLevelSugar();
-  if (StructMetaType metaType = dyn_cast_or_null<StructMetaType>(metatype))
+  if (auto metaType = dyn_cast_or_null<StructMetaType>(metatype))
     return metaType.getParamValues();
+  if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
+    return mmType.getParamValues();
   return {};
 }
 
@@ -109,9 +116,12 @@ ASTType ASTType::getWithoutParameters(SharedState &shared) const {
   if (auto declRef = dyn_cast<StructType>(mlirType))
     return cast<StructDeclOp>(getDecl(shared)->getIfOperation())
         .bindReference();
-  if (StructMetaType metaType = dyn_cast_or_null<StructMetaType>(mlirType))
+  if (auto metaType = dyn_cast_or_null<StructMetaType>(mlirType))
     return MetaType::get(
         ASTType(metaType.getType()).getWithoutParameters(shared));
+  if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(mlirType))
+    return MetaType::get(
+        ASTType(mmType.getType()).getWithoutParameters(shared));
 
   // Look through sugar.
   ASTType stripped = stripTopLevelSugar();
@@ -199,7 +209,7 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
 
   ASTDecl *decl = type.getDecl(shared);
 
-  if (!decl) {
+  if (!decl || isa<StructMetaType>(type.mlirType)) {
     // If this is a generic type, use the default specification.
     if (auto paramRefTy = dyn_cast<ParamType>(type.mlirType))
       if (isa<ParamType, AnyTraitType>(paramRefTy.getParam().getType()))

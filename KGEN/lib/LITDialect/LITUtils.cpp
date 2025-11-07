@@ -30,7 +30,8 @@ static bool isMetaType(Type type) {
     return isMetaType(genType.getBody());
   if (auto param = dyn_cast<ParamType>(type))
     return isa<StructMetaType, AnyTraitType>(param.getParam().getType());
-  if (isa<TypeType, StructMetaType, TraitType, AnyTraitType>(type))
+  if (isa<TypeType, StructMetaType, StructMetaMetaType, TraitType,
+          AnyTraitType>(type))
     return true;
 
   auto canType = getCanonicalType(type);

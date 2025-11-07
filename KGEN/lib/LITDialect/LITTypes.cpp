@@ -1599,6 +1599,28 @@ StructMetaType StructMetaType::bindUnbound(ArrayRef<TypedAttr> values) const {
   return StructMetaType::get(getType().bindUnbound(values));
 }
 
+SymbolRefAttr StructMetaMetaType::getSymbol() const {
+  return getType().getSymbol();
+}
+
+TypeSignatureType StructMetaMetaType::getSignature() const {
+  return getType().getSignature();
+}
+
+ArrayRef<TypedAttr> StructMetaMetaType::getParamValues() const {
+  return getType().getParamValues();
+}
+
+StructMetaMetaType
+StructMetaMetaType::bindAll(ArrayRef<TypedAttr> values) const {
+  return StructMetaMetaType::get(getType().bindAll(values));
+}
+
+StructMetaMetaType
+StructMetaMetaType::bindUnbound(ArrayRef<TypedAttr> values) const {
+  return StructMetaMetaType::get(getType().bindUnbound(values));
+}
+
 //===----------------------------------------------------------------------===//
 // Type Utilities
 //===----------------------------------------------------------------------===//

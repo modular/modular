@@ -106,3 +106,14 @@ fn access_param_from_metatype():
     # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK-NEXT: lit.call {{.*}}@"use_int{{.*}}([[TMP]])
     use_int(StefStressTest[0].increment().increment().x)
+
+
+# COM: we should handle mt_Int : mt_mt_Int -> copyable : any_trait<Copyable>
+# correctly, since Int is a Copyable
+fn meta_type_to_trait[T: type_of(Copyable), //, W: T](t: W):
+    pass
+
+
+fn meta_type_to_trait_driver():
+    # CHECK: lit.call @metatypes::@"meta_type_to_trait[{{.*}}]<:!lit.anytrait<!Copyable> !mt_Int, :!mt_Int !Int>(%1)
+    meta_type_to_trait[Int](1)
