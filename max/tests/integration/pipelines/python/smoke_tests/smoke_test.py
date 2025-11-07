@@ -386,7 +386,14 @@ def smoke_test(
     # TODO Refactor this to a model list/matrix specifying type of model
     is_vision_model = any(
         kw in model
-        for kw in ("qwen2.5-vl", "vision", "internvl", "idefics", "pixtral")
+        for kw in (
+            "qwen2.5-vl",
+            "vision",
+            "internvl",
+            "idefics",
+            "pixtral",
+            "olmocr",
+        )
     )
     tasks = ["gsm8k_cot_llama"]
     if is_vision_model:
