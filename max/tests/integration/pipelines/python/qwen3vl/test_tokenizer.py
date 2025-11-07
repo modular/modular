@@ -17,7 +17,7 @@ from max.interfaces import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
-from max.pipelines.architectures.qwen3vl.tokenizer import Qwen3VLTokenizer
+from max.pipelines.architectures.qwen3vl_moe.tokenizer import Qwen3VLTokenizer
 from transformers import AutoProcessor
 from utils.config_loader import ConfigNames, get_config_loader
 

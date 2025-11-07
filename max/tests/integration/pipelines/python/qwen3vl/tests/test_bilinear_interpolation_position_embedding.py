@@ -12,10 +12,10 @@ from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.qwen3vl.nn.data_processing import (
+from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_bilinear_interpolation_weights_and_indices,
 )
-from max.pipelines.architectures.qwen3vl.nn.visual_transformer import (
+from max.pipelines.architectures.qwen3vl_moe.nn.visual_transformer import (
     BilinearInterpolationPositionEmbedding,
 )
 from torch.utils.dlpack import from_dlpack
@@ -80,6 +80,10 @@ def generate_max_outputs(
         hidden_size=vision_config["hidden_size"],
         spatial_merge_size=vision_config["spatial_merge_size"],
     )
+
+    embeddings_weights = {
+        "embedding.weight": embeddings_weights["pos_embed.weight"]
+    }
 
     # Load weights using state_dict
     patch_embed_module.load_state_dict(embeddings_weights, strict=True)
@@ -169,8 +173,11 @@ def test_vision_patch_position_embedding(target_size: int) -> None:
 
     # Verify output shape
     expected_shape = (seq_len, hf_vision_config["hidden_size"])
+    assert torch_output.shape == expected_shape, (
+        f"Expected shape {expected_shape}, got Torch: {torch_output.shape}, Max: {max_output.shape}"
+    )
     assert max_output.shape == expected_shape, (
-        f"Expected shape {expected_shape}, got {max_output.shape}"
+        f"Expected shape {expected_shape}, got Torch: {torch_output.shape}, Max: {max_output.shape}"
     )
 
     # TODO: Uncomment this when the kernel for bilinear interpolation embedding is implemented
@@ -237,8 +244,11 @@ def test_vision_patch_position_embedding_non_square(
 
     # Verify output shape
     expected_shape = (seq_len, hf_vision_config["hidden_size"])
+    assert torch_output.shape == expected_shape, (
+        f"Expected shape {expected_shape}, got Torch: {torch_output.shape}, Max: {max_output.shape}"
+    )
     assert max_output.shape == expected_shape, (
-        f"Expected shape {expected_shape}, got {max_output.shape}"
+        f"Expected shape {expected_shape}, got Torch: {torch_output.shape}, Max: {max_output.shape}"
     )
 
     # Compare outputs
@@ -304,8 +314,11 @@ def test_vision_patch_position_embedding_video() -> None:
 
     # Verify output shape
     expected_shape = (seq_len, hf_vision_config["hidden_size"])
+    assert torch_output.shape == expected_shape, (
+        f"Expected shape {expected_shape}, got Torch: {torch_output.shape}, Max: {max_output.shape}"
+    )
     assert max_output.shape == expected_shape, (
-        f"Expected shape {expected_shape}, got {max_output.shape}"
+        f"Expected shape {expected_shape}, got Torch: {torch_output.shape}, Max: {max_output.shape}"
     )
 
     # Compare outputs

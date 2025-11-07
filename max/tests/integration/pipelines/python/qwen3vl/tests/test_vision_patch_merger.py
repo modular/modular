@@ -14,7 +14,7 @@ from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.qwen3vl.nn.visual_transformer import (
+from max.pipelines.architectures.qwen3vl_moe.nn.visual_transformer import (
     VisionPatchMerger,
 )
 from torch.utils.dlpack import from_dlpack
