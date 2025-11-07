@@ -29,7 +29,6 @@ struct TuningConfigSM100(TuningConfig):
     var cluster_shape: IndexList[3]
     var block_swizzle_size: UInt
     var rasterize_order: RasterOrder
-    var num_pipeline_stages: UInt
     var cta_group: Int
     var swapAB: Bool
     var k_group_size: UInt
@@ -46,7 +45,6 @@ struct TuningConfigSM100(TuningConfig):
         cluster_shape: IndexList[3],
         block_swizzle_size: UInt,
         rasterize_order: RasterOrder,
-        num_pipeline_stages: UInt = 1,
     ):
         self.M = M
         self.M_end = M + 1
@@ -57,7 +55,6 @@ struct TuningConfigSM100(TuningConfig):
         self.cluster_shape = cluster_shape
         self.block_swizzle_size = block_swizzle_size
         self.rasterize_order = rasterize_order
-        self.num_pipeline_stages = num_pipeline_stages
         self.cta_group = 2
         self.swapAB = False
         self.k_group_size = 1
@@ -78,7 +75,6 @@ struct TuningConfigSM100(TuningConfig):
         cluster_shape: IndexList[3],
         block_swizzle_size: UInt,
         rasterize_order: RasterOrder,
-        num_pipeline_stages: UInt = 1,
         swapAB: Bool = False,
         k_group_size: UInt = 1,
         num_accum_pipeline_stages: UInt = 2,
@@ -98,7 +94,6 @@ struct TuningConfigSM100(TuningConfig):
         self.cluster_shape = cluster_shape
         self.block_swizzle_size = block_swizzle_size
         self.rasterize_order = rasterize_order
-        self.num_pipeline_stages = num_pipeline_stages
         self.swapAB = swapAB
         self.k_group_size = k_group_size
         self.num_accum_pipeline_stages = num_accum_pipeline_stages
@@ -134,7 +129,6 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=1,
             rasterize_order=RasterOrder(1),
-            num_pipeline_stages=6,
         ),
         TuningConfigSM100(
             M=48000,
@@ -146,7 +140,6 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=4,
             rasterize_order=RasterOrder(1),
-            num_pipeline_stages=6,
         ),
         # ------------ llama3-8b-tp2 ------------#
         TuningConfigSM100(
@@ -159,7 +152,6 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
-            num_pipeline_stages=10,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
             k_group_size=1,
@@ -176,7 +168,6 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
-            num_pipeline_stages=16,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
             k_group_size=2,
@@ -191,7 +182,6 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             cluster_shape=Index(2, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
-            num_pipeline_stages=14,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
             k_group_size=2,
@@ -207,7 +197,6 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
-            num_pipeline_stages=22,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
             k_group_size=2,
@@ -223,7 +212,6 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
-            num_pipeline_stages=12,
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
             k_group_size=2,

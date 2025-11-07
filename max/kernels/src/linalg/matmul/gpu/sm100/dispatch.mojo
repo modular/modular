@@ -1733,7 +1733,6 @@ fn _bf16_experimental[
                 cluster_shape=tuning_config.cluster_shape,
                 block_swizzle_size=Int(tuning_config.block_swizzle_size),
                 raster_order=tuning_config.rasterize_order,
-                num_pipeline_stages=tuning_config.num_pipeline_stages,
                 AB_swapped=tuning_config.swapAB,
                 num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
                 num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
