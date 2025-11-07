@@ -40,7 +40,7 @@ LLVMThreadPool::~LLVMThreadPool() {
   std::move(poolTurnStile.chain).emplace();
 }
 
-void LLVMThreadPool::asyncEnqueue(std::function<void()> task,
+void LLVMThreadPool::asyncEnqueue(llvm::unique_function<void()> task,
                                   ThreadPoolTaskGroup *group) {
   // Grab the turnstile for this task group, or create one.
   TurnStile *turnstile = groupTurnStiles.modify([this, group](auto &map) {
@@ -53,15 +53,16 @@ void LLVMThreadPool::asyncEnqueue(std::function<void()> task,
   // Increment the number of active tasks.
   ++turnstile->counter;
 
-  runtime.getWorkQueue()->addTask([this, turnstile, func = std::move(task)] {
-    // Run the task.
-    func();
-    // If this is the last task in the taskgroup to complete, erase it from
-    // the map to keep the map size bounded.
-    turnstile->taskComplete();
-    // Indicate that a threadpool task has completed.
-    poolTurnStile.taskComplete();
-  });
+  runtime.getWorkQueue()->addTask(
+      [this, turnstile, func = std::move(task)]() mutable {
+        // Run the task.
+        func();
+        // If this is the last task in the taskgroup to complete, erase it from
+        // the map to keep the map size bounded.
+        turnstile->taskComplete();
+        // Indicate that a threadpool task has completed.
+        poolTurnStile.taskComplete();
+      });
 }
 
 void LLVMThreadPool::wait() { poolTurnStile.waitAndReset(runtime); }

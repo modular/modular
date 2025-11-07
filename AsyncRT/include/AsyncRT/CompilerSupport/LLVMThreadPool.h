@@ -24,7 +24,7 @@ public:
       : runtime(runtime), poolTurnStile(runtime) {}
   ~LLVMThreadPool();
 
-  void asyncEnqueue(std::function<void()> task,
+  void asyncEnqueue(llvm::unique_function<void()> task,
                     llvm::ThreadPoolTaskGroup *Group) override;
   void wait() override;
   void wait(llvm::ThreadPoolTaskGroup &group) override;
