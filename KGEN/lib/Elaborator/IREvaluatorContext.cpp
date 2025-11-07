@@ -6,10 +6,50 @@
 
 #include "IREvaluatorContext.h"
 #include "KGEN/Interpreter/InterpreterState.h"
+#include "KGEN/TransformUtils/ManglingUtils.h"
 #include "llvm/ADT/ScopeExit.h"
 
 using namespace M;
 using namespace KGEN;
+
+void ImplNodeBase::initialize(InstantiatedOpInterface inst,
+                              ParameterUseDefGraph &&graph) {
+  this->inst = inst;
+  this->paramGraph = std::move(graph);
+}
+
+void ParamNodeBase::emplace() {
+  if (done.exchange(DoneState::DONE) == DoneState::NOT_DONE)
+    paramCh.copy().emplace();
+}
+
+AsyncValueRef<Chain> ParamNodeBase::copy() const { return paramCh.copy(); }
+
+void ParamNodeBase::setToError() {
+  if (done.exchange(DoneState::ERROR) == DoneState::NOT_DONE)
+    paramCh.copy().emplace();
+}
+
+StringAttr ParamNodeBase::getMangledName() {
+  // Check cached result.
+  if (const void *namePtr = mangledName.load())
+    return StringAttr::getFromOpaquePointer(namePtr);
+
+  // Bind all parameter values in this scope.
+  ArrayRef<TypedAttr> inputParamValues = inputParams.getValue();
+  [[maybe_unused]] ArrayRef<ParamDeclAttr> inputParamDecls =
+      gen.getInputParams();
+  assert(inputParamValues.size() == inputParamDecls.size() &&
+         "incorrect # input parameter values");
+  std::string baseName = mangleParameterValues(gen, inputParamValues,
+                                               [](StringRef) { return ""; });
+  StringAttr name = StringAttr::get(gen->getContext(), baseName);
+
+  const void *existing = nullptr;
+  if (mangledName.compare_exchange_strong(existing, name.getAsOpaquePointer()))
+    return name;
+  return StringAttr::getFromOpaquePointer(existing);
+}
 
 IREvaluatorContext::IREvaluatorContext(EnvAttr env, MLIRContext *mlirCtx,
                                        InterpreterState *state)

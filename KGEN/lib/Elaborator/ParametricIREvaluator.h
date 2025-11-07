@@ -237,17 +237,13 @@ private:
 /// This struct represents a concrete instantiation of a generator -- generators
 /// may have multiple concrete instantiations -- and contains the current state
 /// of elaboration for that concrete instance.
-struct PImplNode {
+struct PImplNode : ImplNodeBase {
   /// Create a new generator implementation node.
   PImplNode(InstantiatedOpInterface inst, PParamNode *parent,
             ParameterUseDefGraph &&graph)
-      : inst(inst), parent(parent), paramGraph(std::move(graph)) {}
+      : ImplNodeBase(inst, std::move(graph)), parent(parent) {}
 
   PImplNode(PParamNode *parent);
-
-  /// Initialize the fields of the node if created with the single-argument
-  /// constructor above.
-  void initialize(InstantiatedOpInterface inst, ParameterUseDefGraph &&graph);
 
   /// Take the provided error and set this node to an `error` state. Erase all
   /// state dominated by this node.
@@ -256,19 +252,8 @@ struct PImplNode {
   /// Get the current active evaluator instance.
   ParametricIREvaluator &getEvaluator() { return stack.back().evaluator; }
 
-  /// This op represents a concrete instantiation of a generator.
-  InstantiatedOpInterface inst;
   /// The parent expansion tree node.
   PParamNode *parent;
-  /// Keep track of the nested parameter scopes within this symbol.
-  ParameterUseDefGraph paramGraph;
-
-  /// An error contained by this node. This allows us to delay error handling in
-  /// cases where an error is recoverable.
-  std::optional<ErrorTree> error;
-  /// An atomic indicating whether an error is present. This can be used to
-  /// check for an error when the ImplNode is shared.
-  std::atomic<bool> hasError = false;
 
   struct WorkItem {
     /// The operations to process.
@@ -291,13 +276,6 @@ struct PImplNode {
   /// The current stack of worklists and scopes.
   std::vector<WorkItem> stack;
 
-  /// The elaborator will asynchronously dispatch elaboration of generator
-  /// instantiations with no result parameters in separate tasks, deferring
-  /// handling of the calls until they are complete. This atomic tracks the
-  /// number of in-flight so-called "dependencies". Upon hitting zero, the
-  /// elaborator will complete processing of this node by handling the calls in
-  /// `dependencies`.
-  std::atomic<size_t> numDependencies = 1;
   /// This is the list of deferred generator instantiations via calls that need
   /// to be handled when the implementation node is complete and all its
   /// dependencies are ready.
@@ -306,16 +284,13 @@ struct PImplNode {
   /// elaboration of this node requires elaboration of another node. The blocker
   /// node has to be completed before elaboration of this node can continue.
   std::optional<std::pair<Location, PParamNode *>> blocker;
-  /// This flag is set when the implementation node is done processing. A
-  /// separate flag is needed because an error state can cause the node to
-  /// complete early. This flag prevents double-completion.
-  std::atomic<bool> done = false;
-
-  /// A chain representing SCC completion.
-  AsyncValueRef<Chain> sccCh;
 
   std::optional<Location> fromLoc;
 };
+
+//===----------------------------------------------------------------------===//
+// PParamNode
+//===----------------------------------------------------------------------===//
 
 /// This struct is a node in the expansion tree that describes the elaboration.
 /// In general, we try to limit effects to a single subtree. The only exception
@@ -323,13 +298,12 @@ struct PImplNode {
 /// this is because they're semi-independent of the current node and will
 /// elaborate to something concrete we can simply refer to. We try to track
 /// dependencies in order to make that graph explicit.
-struct PParamNode {
+struct PParamNode : public ParamNodeBase {
   /// Create an expansion tree node to represent a generator instantiation.
   PParamNode(AsyncRT::Runtime &runtime, GeneratorOpInterface gen,
              ParameterExprArrayAttr vals, size_t depth,
              ParametricExpansionGraph *expansionGraph)
-      : gen(gen), inputParams(vals), depth(depth), impl(this),
-        paramCh(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)),
+      : ParamNodeBase(runtime, gen, vals, depth), impl(this),
         expansionGraph(expansionGraph) {
     assert(expansionGraph && "Expansion graph cannot be null");
   }
@@ -354,54 +328,14 @@ struct PParamNode {
   /// implementation succeeded, return success instead.
   ErrorTreeOrSuccess collectErrorsOrSuccess();
 
-  /// Return the mangled name of this ParamNode. Calculates it on first
-  /// invocation.
-  StringAttr getMangledName();
-
-  /// The generator represented by this node.
-  GeneratorOpInterface gen;
-  /// The input parameters with which the generator is being instantiated.
-  ParameterExprArrayAttr inputParams;
-  /// The current depth of the node. The depth varies based on the traversal
-  /// order of the callgraph.
-  size_t depth;
-
   /// The instantiation of the parametric function.
   PImplNode impl;
-
-  /// The current state of the node. This flag is used to break recursion.
-  ParamNodeState state;
 
   /// Add a waiter to the runtime and report task completion to
   /// ParamNodeRuntime.
   void andThenAsync(AsyncValue::Waiter &&waiter);
 
-  /// Construct the async value. This will notify waiters.
-  void emplace();
-
-  /// Construct the async value to error state. This is used when we want to
-  /// abandon uncompleted tasks.
-  void setToError();
-
-  /// An async value is ready if the underlying async value is in Active or
-  /// Error state.
-  bool getIsError() const { return done == DoneState::ERROR; }
-
-  /// Make explicit copy of this AsyncValueRef, increasing the AsyncValue's
-  /// refcount by one.
-  AsyncValueRef<Chain> copy() const;
-
 private:
-  /// The name of the parameterized node.
-  std::atomic<const void *> mangledName = nullptr;
-
-  /// The chain to signal when this parameter node is done processing.
-  AsyncRT::AsyncValueRef<AsyncRT::Chain> paramCh;
-
-  /// Atomic to prevent race on emplace.
-  std::atomic<uint8_t> done = false;
-  enum DoneState : uint8_t { NOT_DONE, DONE, ERROR };
-
   /// The runtime manages the set of tasks kicked off in a given process. The
   /// ParamNode alerts the runtime upon creation and completion of tasks so that
   /// the runtime can sync tasks.
