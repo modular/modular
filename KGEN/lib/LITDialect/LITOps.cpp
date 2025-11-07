@@ -1368,7 +1368,8 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
         /*convention=*/TypeConvention::Unspecified,
         /*definesClosure=*/none,
         /*dtorWitness=*/{}, /*docString=*/{},
-        /*deprecationWarning=*/{}, /*linearTypeErrorMsg*/ {});
+        /*deprecationWarning=*/{}, /*linearTypeErrorMsg*/ {},
+        /*closureSignature*/ {});
   result.regions[0]->push_back(new Block());
 }
 

@@ -664,7 +664,8 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     OptionalAttr<StrAttr>:$deprecationWarning,
     // This is the error message to produce if a non-destructible type needs an
     // implicit destructor call.
-    OptionalAttr<StrAttr>:$linearTypeErrorMsg
+    OptionalAttr<StrAttr>:$linearTypeErrorMsg,
+    OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$closureSignature
   );
 
   let regions = (region SizedRegion<1>:$fields);

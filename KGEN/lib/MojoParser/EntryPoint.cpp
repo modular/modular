@@ -243,10 +243,9 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
     if (op == declOp && isa<PackageOp>(declOp))
       return WalkResult::skip();
 
-    // Keep the top level closures around. These should NEVER be included in
-    // bytecode packages.
+    // Keep the top level closures around.
     if (auto traitDecl = dyn_cast<TraitDeclOp>(op))
-      if (traitDecl.getDefinesClosure())
+      if (traitDecl.getClosureSignature().has_value())
         return WalkResult::skip();
 
     if (isa<mlir::SymbolOpInterface, FnOp>(op) && !liveSymbols.contains(op)) {
