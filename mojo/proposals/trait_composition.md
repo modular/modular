@@ -10,10 +10,10 @@ and facilitate the future removal of implicit conformance.
   specifying multiple type bounds. For example:
 
   ```mojo
-  trait _CopyableGreaterThanComparable(Copyable, GreaterThanComparable):
+  trait _CopyableComparable(Copyable, Comparable):
       ...
 
-  fn max[T: _CopyableGreaterThanComparable](x: T, *ys: T) -> T:
+  fn max[T: _CopyableComparable](x: T, *ys: T) -> T:
   ```
 
 - In a survey conducted on March 11, 2025, out of 161 instances of implicit

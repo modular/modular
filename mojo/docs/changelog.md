@@ -455,6 +455,11 @@ what we publish.
     ...
     ```
 
+- The following traits have been removed: `LessThanComparable`,
+  `GreaterThanComparable`, `LessThanOrEqualComparable`,
+  `GreaterThanOrEqualComparable`. It is extremely rare that a type would only
+  implement one of these, so one can just use `Comparable` instead.
+
 ### 🛠️ Fixed {#25-7-fixed}
 
 - The `math.cos` and `math.sin` function can now be evaluated at compile time

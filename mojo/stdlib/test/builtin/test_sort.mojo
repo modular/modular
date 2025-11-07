@@ -545,20 +545,8 @@ struct Person(Comparable, ImplicitlyCopyable, Movable):
             return self.name < other.name
         return False
 
-    fn __le__(self, other: Self) -> Bool:
-        return not (other < self)
-
-    fn __gt__(self, other: Self) -> Bool:
-        return other < self
-
-    fn __ge__(self, other: Self) -> Bool:
-        return not (self < other)
-
     fn __eq__(self, other: Self) -> Bool:
         return self.age == other.age and self.name == other.name
-
-    fn __ne__(self, other: Self) -> Bool:
-        return self.age != other.age or self.name != other.name
 
 
 def test_sort_comparamble_elements_list():

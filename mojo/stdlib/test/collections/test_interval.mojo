@@ -129,23 +129,11 @@ struct MyType(
     fn __init__(out self, value: Float64, /):
         self.value = value
 
-    fn __gt__(self, other: Self) -> Bool:
-        return self.value > other.value
-
     fn __lt__(self, other: Self) -> Bool:
         return self.value < other.value
 
-    fn __ge__(self, other: Self) -> Bool:
-        return self.value >= other.value
-
-    fn __le__(self, other: Self) -> Bool:
-        return self.value <= other.value
-
     fn __eq__(self, other: Self) -> Bool:
         return self.value == other.value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return self.value != other.value
 
     fn __sub__(self, other: Self) -> Self:
         return Self(self.value - other.value)

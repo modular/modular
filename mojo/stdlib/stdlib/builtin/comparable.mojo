@@ -12,68 +12,59 @@
 # ===----------------------------------------------------------------------=== #
 
 
-trait LessThanComparable:
-    """A type which can be less than compared with other instances of itself."""
+trait Comparable(EqualityComparable):
+    """A type which can be compared for order with other instances of itself.
+
+    Implementers of this trait must define the `__lt__` and `__eq__` methods.
+
+    The default implementations of the default comparison methods can be
+    potentially inefficent for types where comparison is expensive. For such
+    types, it is recommended to override all the default implementations.
+    """
 
     fn __lt__(self, rhs: Self) -> Bool:
         """Define whether `self` is less than `rhs`.
 
         Args:
-            rhs: The right hand side of the comparison.
+            rhs: The value to compare with.
 
         Returns:
             True if `self` is less than `rhs`.
         """
         ...
 
-
-trait GreaterThanComparable:
-    """A type which can be greater than compared with other instances of itself.
-    """
-
+    @always_inline
     fn __gt__(self, rhs: Self) -> Bool:
         """Define whether `self` is greater than `rhs`.
 
         Args:
-            rhs: The right hand side of the comparison.
+            rhs: The value to compare with.
 
         Returns:
             True if `self` is greater than `rhs`.
         """
-        ...
+        return rhs < self
 
-
-trait LessThanOrEqualComparable:
-    """A type which can be less than or equal to compared with other instances of itself.
-    """
-
+    @always_inline
     fn __le__(self, rhs: Self) -> Bool:
         """Define whether `self` is less than or equal to `rhs`.
 
         Args:
-            rhs: The right hand side of the comparison.
+            rhs: The value to compare with.
 
         Returns:
             True if `self` is less than or equal to `rhs`.
         """
-        ...
+        return not rhs < self
 
-
-trait GreaterThanOrEqualComparable:
-    """A type which can be greater than or equal to compared with other instances of itself.
-    """
-
+    @always_inline
     fn __ge__(self, rhs: Self) -> Bool:
         """Define whether `self` is greater than or equal to `rhs`.
 
         Args:
-            rhs: The right hand side of the comparison.
+            rhs: The value to compare with.
 
         Returns:
             True if `self` is greater than or equal to `rhs`.
         """
-        ...
-
-
-alias Comparable = EqualityComparable & LessThanComparable & GreaterThanComparable & LessThanOrEqualComparable & GreaterThanOrEqualComparable
-"""A type which can be compared with other instances of itself."""
+        return not self < rhs
