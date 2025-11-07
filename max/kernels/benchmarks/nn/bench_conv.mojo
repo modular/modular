@@ -194,7 +194,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
         BenchId("Conv", String(spec)),
         spec,
         # TODO: Pick relevant benchmetric.
-        ThroughputMeasure(BenchMetric.elements, spec.flops()),
+        [ThroughputMeasure(BenchMetric.elements, spec.flops())],
     )
 
     input_ptr.free()

@@ -168,7 +168,7 @@ def main():
         bench.bench_with_input[SumKernelBenchmarkParams, sum_kernel_benchmark](
             BenchId("sum_kernel_benchmark", "gpu"),
             SumKernelBenchmarkParams(out_ptr, a_ptr),
-            ThroughputMeasure(BenchMetric.bytes, SIZE * size_of[dtype]()),
+            [ThroughputMeasure(BenchMetric.bytes, SIZE * size_of[dtype]())],
         )
         # Pretty print in table format
         print(bench)

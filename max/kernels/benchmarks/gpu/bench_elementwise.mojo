@@ -220,7 +220,7 @@ fn run_elementwise[
                 name,
             ),
         ),
-        ThroughputMeasure(BenchMetric.bytes, num_bytes),
+        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
     ctx.synchronize()

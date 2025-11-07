@@ -451,7 +451,7 @@ struct BenchmarkInfo(Copyable, Movable):
         out self,
         name: String,
         var result: Report,
-        var measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        var measures: List[ThroughputMeasure] = {},
         verbose_timing: Bool = False,
     ):
         """Constructs a `BenchmarkInfo` object to return benchmark report and
@@ -535,12 +535,14 @@ struct Bench(Stringable, Writable):
     bench.bench_with_input[IndexList[2], example](
         BenchId("top_k_custom", "gpu"),
         shape,
-        ThroughputMeasure(
+        [
+            ThroughputMeasure(
             BenchMetric.elements, shape.flattened_length()
-        ),
-        ThroughputMeasure(
-            BenchMetric.flops, shape.flattened_length() * 3 # number of ops
-        ),
+            ),
+            ThroughputMeasure(
+                BenchMetric.flops, shape.flattened_length() * 3 # number of ops
+            ),
+        ]
     )
     # Add more benchmarks like above to compare results
 
@@ -610,7 +612,7 @@ struct Bench(Stringable, Writable):
         mut self,
         bench_id: BenchId,
         input: T,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks an input function with input args of type AnyType.
 
@@ -638,34 +640,6 @@ struct Bench(Stringable, Writable):
             bench_fn(b, input)
 
         self.bench_function[input_closure](bench_id, measures)
-
-    fn bench_with_input[
-        T: AnyType,
-        bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
-    ](
-        mut self,
-        bench_id: BenchId,
-        input: T,
-        *measures: ThroughputMeasure,
-    ) raises:
-        """Benchmarks an input function with input args of type AnyType.
-
-        Parameters:
-            T: Benchmark function input type.
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            input: Represents the target function's input arguments.
-            measures: Variadic arg used to represent a list of ThroughputMeasure's.
-
-        Raises:
-            If the operation fails.
-        """
-        var measures_list = List[ThroughputMeasure]()
-        for m in measures:
-            measures_list.append(m)
-        self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
     fn bench_with_input[
         T: AnyTrivialRegType,
@@ -702,34 +676,6 @@ struct Bench(Stringable, Writable):
             bench_fn(b, input)
 
         self.bench_function[input_closure](bench_id, measures)
-
-    fn bench_with_input[
-        T: AnyTrivialRegType,
-        bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
-    ](
-        mut self,
-        bench_id: BenchId,
-        input: T,
-        *measures: ThroughputMeasure,
-    ) raises:
-        """Benchmarks an input function with input args of type AnyTrivialRegType.
-
-        Parameters:
-            T: Benchmark function input type.
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            input: Represents the target function's input arguments.
-            measures: Variadic arg used to represent a list of ThroughputMeasure's.
-
-        Raises:
-            If the operation fails.
-        """
-        var measures_list = List[ThroughputMeasure]()
-        for m in measures:
-            measures_list.append(m)
-        self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
     @always_inline
     fn bench_function[
@@ -826,26 +772,6 @@ struct Bench(Stringable, Writable):
         elif self.mode == Mode.Test:
             self._test[bench_fn]()
 
-    fn bench_function[
-        bench_fn: fn (mut Bencher) capturing [_] -> None
-    ](mut self, bench_id: BenchId, *measures: ThroughputMeasure) raises:
-        """Benchmarks or Tests an input function.
-
-        Parameters:
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            measures: Variadic arg used to represent a list of ThroughputMeasure's.
-
-        Raises:
-            If the operation fails.
-        """
-        var measures_list = List[ThroughputMeasure]()
-        for m in measures:
-            measures_list.append(m)
-        self.bench_function[bench_fn](bench_id, measures_list)
-
     # TODO (#31795): overload should not be needed
     fn bench_function[
         bench_fn: fn (mut Bencher) raises capturing [_] -> None
@@ -883,26 +809,6 @@ struct Bench(Stringable, Writable):
                 abort(String(e))
 
         self.bench_function[abort_on_err](bench_id, measures)
-
-    fn bench_function[
-        bench_fn: fn (mut Bencher) raises capturing [_] -> None
-    ](mut self, bench_id: BenchId, *measures: ThroughputMeasure,) raises:
-        """Benchmarks or Tests an input function.
-
-        Parameters:
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            measures: Variadic arg used to represent a list of ThroughputMeasure's.
-
-        Raises:
-            If the operation fails.
-        """
-        var measures_list = List[ThroughputMeasure]()
-        for m in measures:
-            measures_list.append(m)
-        self.bench_function[bench_fn](bench_id, measures_list)
 
     fn _test[bench_fn: fn (mut Bencher) capturing [_] -> None](mut self) raises:
         """Tests an input function by executing it only once.

@@ -88,10 +88,12 @@ fn bench_matmul[
                 False, in_dtype, out_dtype, shape_c, shape_a, shape_b
             ]("gemv_gevm", shape_c_dim, shape_a_dim, shape_b_dim)
         ),
-        ThroughputMeasure(
-            BenchMetric.flops,
-            2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[0],
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.flops,
+                2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[0],
+            )
+        ],
     )
 
     # Retain our buffers till the end.
@@ -135,10 +137,12 @@ fn bench_matmul_transpose[
                 "gemv_transpose", shape_c_dim, shape_a_dim, shape_b_dim
             )
         ),
-        ThroughputMeasure(
-            BenchMetric.flops,
-            2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[1],
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.flops,
+                2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[1],
+            )
+        ],
     )
 
     # Retain our buffers till the end.
@@ -210,10 +214,12 @@ fn bench_matmul_naive[
                 "gemv_naive", shape_c_dim, shape_a_dim, shape_b_dim
             )
         ),
-        ThroughputMeasure(
-            BenchMetric.flops,
-            2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[1],
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.flops,
+                2 * shape_c_dim[0] * shape_c_dim[1] * shape_b_dim[1],
+            )
+        ],
     )
 
     ctx.synchronize()

@@ -273,7 +273,7 @@ fn bench_reduce[
     m.bench_function[bench_iter](
         BenchId(name),
         # add data movement to measures
-        ThroughputMeasure(BenchMetric.bytes, num_bytes),
+        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
     # Copy results back and verify

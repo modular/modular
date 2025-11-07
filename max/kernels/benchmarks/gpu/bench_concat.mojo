@@ -111,10 +111,12 @@ fn bench_concat[
         BenchId("concat", name),
         out_shape,
         # TODO: Pick relevant benchmetric.
-        ThroughputMeasure(
-            BenchMetric.elements,
-            out_shape.flattened_length() * size_of[type]() * 2,
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.elements,
+                out_shape.flattened_length() * size_of[type]() * 2,
+            )
+        ],
     )
 
     ctx.enqueue_copy(output_host.ptr, output_ptr)

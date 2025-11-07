@@ -126,7 +126,7 @@ fn run_reduce[
         BenchId(
             "reduce", input_id=String(dtype, "/shape=", shape, "/axis=", axis)
         ),
-        ThroughputMeasure(BenchMetric.elements, in_size),
+        [ThroughputMeasure(BenchMetric.elements, in_size)],
     )
 
     ctx.synchronize()

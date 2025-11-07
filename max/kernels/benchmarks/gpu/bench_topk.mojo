@@ -132,7 +132,8 @@ fn bench_topk_batched[
 
     var num_bytes = device_in.tensor.size() * size_of[dtype]()
     m.bench_function[bench_func](
-        BenchId(kernel_name), ThroughputMeasure(BenchMetric.bytes, num_bytes)
+        BenchId(kernel_name),
+        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
     # Copy results back to host
@@ -298,7 +299,7 @@ fn bench_topk_multi_rank[
     var kernel_name = "topk-multirank"
     var num_bytes = device_in.tensor.size() * size_of[dtype]()
     m.bench_function[bench_func](
-        BenchId(kernel_name), ThroughputMeasure(BenchMetric.bytes, num_bytes)
+        BenchId(kernel_name), [ThroughputMeasure(BenchMetric.bytes, num_bytes)]
     )
 
     # Copy results back to host

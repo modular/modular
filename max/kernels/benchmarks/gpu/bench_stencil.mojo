@@ -231,14 +231,15 @@ fn bench_stencil_avg_pool[
         "x",
         num_channels,
     )
+    var flops = ThroughputMeasure(BenchMetric.flops, compute_flops())
     m.bench_function[bench_gpu](
         BenchId(bench_name + "_gpu"),
-        ThroughputMeasure(BenchMetric.flops, compute_flops()),
+        [flops],
     )
 
     m.bench_function[bench_cpu](
         BenchId(bench_name + "_cpu"),
-        ThroughputMeasure(BenchMetric.flops, compute_flops()),
+        [flops],
     )
 
     # Ensure correctness
@@ -443,14 +444,15 @@ fn bench_stencil_max_pool[
         "x",
         num_channels,
     )
+    var flops = ThroughputMeasure(BenchMetric.flops, compute_flops())
     m.bench_function[bench_gpu](
         BenchId(bench_name + "_gpu"),
-        ThroughputMeasure(BenchMetric.flops, compute_flops()),
+        [flops],
     )
 
     m.bench_function[bench_cpu](
         BenchId(bench_name + "_cpu"),
-        ThroughputMeasure(BenchMetric.flops, compute_flops()),
+        [flops],
     )
 
     # Ensure correctness
@@ -666,14 +668,15 @@ fn bench_stencil_avg_pool_padded[
         pad_w,
     )
 
+    var flops = ThroughputMeasure(BenchMetric.flops, compute_flops())
     m.bench_function[bench_gpu](
         BenchId(bench_name + "_gpu"),
-        ThroughputMeasure(BenchMetric.flops, compute_flops()),
+        [flops],
     )
 
     m.bench_function[bench_cpu](
         BenchId(bench_name + "_cpu"),
-        ThroughputMeasure(BenchMetric.flops, compute_flops()),
+        [flops],
     )
 
     # Ensure correctness

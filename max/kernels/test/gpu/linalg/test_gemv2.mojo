@@ -179,7 +179,7 @@ fn test[
 
     bench.bench_function[bench_func](
         BenchId("mojo matmul"),
-        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+        [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
     )
 
     @parameter
@@ -201,7 +201,7 @@ fn test[
 
     bench.bench_function[bench_func_vendor_blas](
         BenchId("vendor_blas matmul"),
-        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+        [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
     )
 
     _ = c_device

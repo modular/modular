@@ -499,7 +499,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
     m.bench_function[bench_matmul_10](
         BenchId("matmul_sgemm_10"),
-        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+        [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
     )
     _ = a_buffer
     _ = b_buffer
@@ -535,7 +535,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     m.bench_function[bench_naive](
         BenchId("matmul_naive"),
         # TODO: Pick relevant benchmetric
-        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+        [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
     )
 
     ctx.enqueue_copy(c_host_naive, c_device)

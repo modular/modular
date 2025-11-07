@@ -46,7 +46,8 @@ fn time_kernel[
         m.iter_custom[kernel_launch](ctx)
 
     m.bench_function[bench_func](
-        BenchId(kernel_name), ThroughputMeasure(BenchMetric.elements, 2 * size)
+        BenchId(kernel_name),
+        [ThroughputMeasure(BenchMetric.elements, 2 * size)],
     )
 
 
@@ -98,7 +99,7 @@ fn run_cublas[
 
         m.bench_function[bench_func](
             BenchId(get_bench_id()),
-            ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+            [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
         )
         # Do one iteration for verification.
         ctx.enqueue_memset(DeviceBuffer[dtype](ctx, c, M * N, owning=False), 0)

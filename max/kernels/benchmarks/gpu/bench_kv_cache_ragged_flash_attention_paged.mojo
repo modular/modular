@@ -254,7 +254,7 @@ def execute_kv_cache_ragged_flash_attention[
                     use_random_cache_lengths,
                 )
             ),
-            ThroughputMeasure(BenchMetric.flops, flop_count),
+            [ThroughputMeasure(BenchMetric.flops, flop_count)],
         )
     else:
         kernel_launch(ctx)

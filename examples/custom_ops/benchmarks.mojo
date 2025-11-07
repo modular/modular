@@ -343,7 +343,7 @@ def run_conv1d[impl: StaticString]():
             bencher.iter[run_bench]()
 
         bench.bench_function[bench_cpu](
-            BenchId("cpu", "naive"), flops, elements
+            BenchId("cpu", "naive"), [flops, elements]
         )
 
     @parameter
@@ -377,7 +377,7 @@ def run_conv1d[impl: StaticString]():
                 bench.iter_custom[kernel_launch](gpu_ctx)
 
             bench.bench_function[bench_gpu](
-                BenchId(impl, String(impl)), flops, elements
+                BenchId(impl, String(impl)), [flops, elements]
             )
 
         bench_conv1d_kernel[impl]()

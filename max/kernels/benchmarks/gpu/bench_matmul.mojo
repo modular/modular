@@ -199,6 +199,11 @@ fn bench_matmul[
 
         b.iter_custom[kernel_launch](ctx)
 
+    var flops = ThroughputMeasure(
+        BenchMetric.flops,
+        # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
+        2 * shape_c_dim[0] * shape_c_dim[1] * shape_a_dim[1],
+    )
     b.bench_function[bench_func](
         BenchId(
             _get_run_name[
@@ -212,11 +217,7 @@ fn bench_matmul[
             ](shape_c_dim, shape_a_dim, shape_b_dim)
         ),
         # TODO: Pick relevant benchmetric
-        ThroughputMeasure(
-            BenchMetric.flops,
-            # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-            2 * shape_c_dim[0] * shape_c_dim[1] * shape_a_dim[1],
-        ),
+        [flops],
     )
 
     # Retain our buffers till the end.

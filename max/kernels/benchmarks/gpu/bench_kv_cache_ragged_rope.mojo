@@ -194,7 +194,7 @@ def execute_kv_cache_ragged_rope[
                 use_random_seq_lengths,
             )
         ),
-        ThroughputMeasure(BenchMetric.flops, flop_count),
+        [ThroughputMeasure(BenchMetric.flops, flop_count)],
     )
 
     _ = kv_block_device^
