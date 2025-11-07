@@ -12,6 +12,7 @@
 #include "AsyncRT/Runtime/AsyncValueRef.h"
 #include "AsyncRT/Runtime/WorkQueue.h"
 #include "AsyncRT/Support/Chain.h"
+#include "AsyncRT/Support/ConcurrentMPMCQueue.h"
 #include "AsyncRT/Support/LockFreeRingBuffer.h"
 #include "AsyncRT/Support/Semaphore.h"
 #include "AsyncRT/Support/ThreadAffinity.h"
@@ -27,6 +28,7 @@
 
 #include <atomic>
 #include <cmath>
+#include <functional>
 #include <thread>
 
 #define DEBUG_TYPE "asyncrt"
@@ -238,7 +240,7 @@ struct WorkQueueThread {
   ///
   /// Work items on this list always take precedence over those in
   /// overflowTaskList.
-  LockFreeRingBuffer<WorkItem> &taskList;
+  MoodyCamel::ConcurrentQueue<WorkItem> &taskList;
 
   /// The mutex-protected queue of pending 'overflow' work items available for
   /// any worker to process. Since synchronization is expensive, should only be
@@ -310,7 +312,7 @@ struct WorkQueueThread {
   /// necessary, the underlying worker thread will be created and it will
   /// enter its runItems loop.
   WorkQueueThread(SharedThreadState &sharedState,
-                  LockFreeRingBuffer<WorkItem> &taskList,
+                  MoodyCamel::ConcurrentQueue<WorkItem> &taskList,
                   std::mutex &overflowMutex,
                   SmallVectorImpl<WorkItem> &overflowTaskList, size_t workerID,
                   size_t cpuID, std::chrono::microseconds busyWaitTime,
@@ -548,7 +550,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 #endif
     // In the normal case we happily pick up and do work.
 
-    if (WorkItem workItem = taskList.dequeue()) {
+    if (WorkItem workItem; taskList.try_dequeue(workItem)) {
       doWork</*IsWaiter=*/false>(std::move(workItem), kGlobal);
 #if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
@@ -598,7 +600,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
         start = std::chrono::high_resolution_clock::now();
 #endif
 
-        if (WorkItem workItem = taskList.dequeue()) {
+        if (WorkItem workItem; taskList.try_dequeue(workItem)) {
           doWork</*IsWaiter=*/true>(std::move(workItem), kGlobal);
 #if ASYNCRT_WORKER_STATS
           auto end = std::chrono::high_resolution_clock::now();
@@ -643,7 +645,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       if (!overflowTaskList.empty()) {
         while (!overflowTaskList.empty()) {
           WorkItem workItem = overflowTaskList.pop_back_val();
-          if (!taskList.enqueue(workItem)) {
+          if (!taskList.enqueue(std::move(workItem))) {
             // Oops, went too far.
             overflowTaskList.emplace_back(std::move(workItem));
             break;
@@ -695,7 +697,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // a semaphore after enqueue in the addTask(). Also scenario is highly
     // unlikely for numThreads > 1.
 
-    if (auto labelledTask = taskList.dequeue()) {
+    if (WorkItem labelledTask; taskList.try_dequeue(labelledTask)) {
       doWork</*IsWaiter=*/false>(std::move(labelledTask), kGlobal);
 #if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
@@ -844,7 +846,7 @@ private:
 
   /// The lock-free queue of pending tasks available for any worker.
   /// It may become full.
-  LockFreeRingBuffer<WorkItem> taskList;
+  MoodyCamel::ConcurrentQueue<WorkItem> taskList;
   /// The mutex-protected queue of pending tasks available for any worker.
   /// Only used when the taskList is full.
   std::mutex overflowMutex; // protects overflowTaskList
@@ -904,7 +906,8 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
   llvm::dbgs() << affinityEnqueueTime << "," << affinityEnqueueCount << ","
                << taskListEnqueueTime << "," << taskListEnqueueCount << "\n";
 #endif
-  assert(!taskList.dequeue() &&
+  WorkItem workItem;
+  assert(!taskList.try_dequeue(workItem) &&
          "destroying ThreadPoolWorkQueue with pending work items");
 
   if (sharedState.mainWillDonate) {
@@ -1002,7 +1005,7 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
     return;
   }
   // Try to add this work to the lock-free queue.
-  if (taskList.enqueue(workItem)) {
+  if (taskList.enqueue(std::move(workItem))) {
     // If there are any suspended workers, kick one of them now to make sure
     // there's at least one worker still awake to pick up work.
     int workerIDToPoke = sharedState.takeAnySuspendedThread();
