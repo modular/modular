@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from sys import align_of, simd_width_of, size_of
+from sys import align_of, simd_width_of, size_of, has_nvidia_gpu_accelerator
 from sys.info import _is_sm_100x_or_newer
 
 from algorithm import elementwise
@@ -59,11 +59,13 @@ fn matmul[
         alias epilogue = elementwise_lambda_fn.value()
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
-        alias simd_size = 32 // size_of[
-            c.type
-        ]() if ctx.default_device_info >= B200 else simd_width_of[
-            c.type, target = get_gpu_target()
-        ]()
+        alias use_32b_simd = (
+            has_nvidia_gpu_accelerator()
+            and ctx.default_device_info.compute >= B200.compute
+        )
+        alias simd_size = 32 // size_of[c.type]() if use_32b_simd else (
+            simd_width_of[c.type, target = get_gpu_target()]()
+        )
 
         @parameter
         @__copy_capture(c)

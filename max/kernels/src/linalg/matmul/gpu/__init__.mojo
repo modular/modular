@@ -18,6 +18,7 @@ from sys import (
     env_get_int,
     has_accelerator,
     has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
     simd_width_of,
     size_of,
 )
@@ -492,7 +493,10 @@ fn _matmul_gpu[
     alias bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
 
     @parameter
-    if ctx.default_device_info > H100:
+    if (
+        has_nvidia_gpu_accelerator()
+        and ctx.default_device_info.compute > H100.compute
+    ):
         return matmul_dispatch_sm100[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,

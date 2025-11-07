@@ -21,8 +21,14 @@ from layout.tensor_core import TensorCore
 from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import Index, IndexList
 
-alias fp8_dtype = DType.float8_e4m3fnuz if DeviceContext.default_device_info <= MI300X else DType.float8_e4m3fn
-alias bf8_dtype = DType.float8_e5m2fnuz if DeviceContext.default_device_info <= MI300X else DType.float8_e5m2
+alias fp8_dtype = (
+    DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute
+    <= MI300X.compute else DType.float8_e4m3fn
+)
+alias bf8_dtype = (
+    DType.float8_e5m2fnuz if DeviceContext.default_device_info.compute
+    <= MI300X.compute else DType.float8_e5m2
+)
 
 
 fn test_load_a[

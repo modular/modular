@@ -22,8 +22,14 @@ from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
 from testing import assert_equal
 from utils.index import Index, IndexList
 
-alias fp8_dtype = DType.float8_e4m3fnuz if DeviceContext.default_device_info <= MI300X else DType.float8_e4m3fn
-alias bf8_dtype = DType.float8_e5m2fnuz if DeviceContext.default_device_info <= MI300X else DType.float8_e5m2
+alias fp8_dtype = (
+    DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute
+    <= MI300X.compute else DType.float8_e4m3fn
+)
+alias bf8_dtype = (
+    DType.float8_e5m2fnuz if DeviceContext.default_device_info.compute
+    <= MI300X.compute else DType.float8_e5m2
+)
 
 # CHECK-LABEL: test_load_and_mma_f32_f32_16x16x4
 # CHECK-LABEL: test_load_a
@@ -2132,5 +2138,5 @@ def main():
         test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2(ctx)
 
         @parameter
-        if DeviceContext.default_device_info >= MI355X:
+        if DeviceContext.default_device_info.compute >= MI355X.compute:
             test_load_b_tr(ctx)
