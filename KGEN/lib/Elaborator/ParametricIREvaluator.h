@@ -12,6 +12,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/lib/Elaborator/IREvaluatorContext.h"
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/Threading/Shared.h"
 #include "mlir/Support/IndentedOstream.h"
@@ -32,6 +33,7 @@ struct ParametricExpansionGraph;
 /// expressions, such as `apply` on a symbol constant or `get_sizeof` and
 /// `get_alignof` a decl type.
 class ParametricIREvaluator : public ParameterEvaluationContext,
+                              public IREvaluatorContext,
                               public ParametricParameterEvaluator,
                               public ParametricIRInterpreter {
 public:
@@ -103,8 +105,6 @@ public:
 
   void setDeclBinding(Attribute decl, Attribute value,
                       bool overwrite = false) override {
-    // llvm::dbgs() << "-- irevaluator: " << this << " paramEval: " <<
-    // &getCurrentParamEval() << "\n";
     getCurrentParamEval().setDeclBinding(cast<ParamDeclAttr>(decl), value,
                                          overwrite);
   }
@@ -186,13 +186,8 @@ private:
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
                                          bool withResultSlot);
-  /// Evaluate a `get_env` operator.
-  FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
-  /// Evaluate POC::DataToStr "data_to_str" operator.
-  FailureOr<TypedAttr> evaluateDataToStr(ParamOperatorAttr op);
-  FailureOr<StringAttr> evaluateStringPart(TypedAttr part);
+
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
-  FailureOr<TypedAttr> evaluateBindParams(BindParamsAttr bindParams);
   FailureOr<TypedAttr> evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry);
   FailureOr<TypedAttr>
   evaluateGetLinkageNameAttr(GetLinkageNameAttr getLinkageNameAttr);

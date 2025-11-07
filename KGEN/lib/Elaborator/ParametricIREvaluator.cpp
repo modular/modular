@@ -13,6 +13,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
+#include "KGEN/lib/Elaborator/IREvaluatorContext.h"
 #include "ParametricElaborator.h"
 #include "Support/Compiler/DiagnosticHandler.h"
 #include "Support/MDialect/MTypeInterfaces.h"
@@ -487,8 +488,6 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateExpression(
     return cast<TypedAttr>(symOr.takeValue());
   }
 
-  if (auto bindParams = dyn_cast<BindParamsAttr>(attr))
-    return evaluateBindParams(bindParams);
   if (auto getWitnessEntry = dyn_cast<GetWitnessAttr>(attr))
     return evaluateGetWitnessAttr(getWitnessEntry);
   if (auto getLinkageNameAttr = dyn_cast<GetLinkageNameAttr>(attr))
@@ -634,108 +633,6 @@ ParametricIREvaluator::evaluateApplyLike(ParamOperatorAttr op,
   return TypedAttr();
 }
 
-// See if we can decode the first 'numBytes' of the memory blob into a
-// StringAttr.
-static StringAttr getBytesOf(MemoryBlobAttr value, size_t numBytes) {
-  // We don't bother handling these.
-  if (!value.getPointerRegions().empty() || !value.getSymbolRegions().empty())
-    return {};
-
-  if (numBytes <= value.getHandle().getSize()) {
-    return StringAttr::get(StringRef(value.getHandle().getData(), numBytes),
-                           StringType::get(value.getContext()));
-  }
-  return {};
-}
-
-/// Extract a value of type `struct<(pointer<none>, index)>` into a StringAttr.
-FailureOr<StringAttr>
-ParametricIREvaluator::evaluateStringPart(TypedAttr part) {
-  // Get the two parts of the struct, StructExtract will fold.
-  auto lengthAttr = dyn_cast<IntegerAttr>(StructExtractAttr::get(part, 1));
-  if (!lengthAttr) {
-    emitError({*errorLoc, "'data_to_str' length didn't resolve to a constant"});
-    return failure();
-  }
-  size_t numBytes = lengthAttr.getInt();
-  if (!numBytes)
-    return {StringAttr::get("", StringType::get(getContext()))};
-
-  MemRefAttr pointerAttr =
-      dyn_cast<MemRefAttr>(StructExtractAttr::get(part, 0));
-  if (!pointerAttr) {
-    emitError({*errorLoc, "'data_to_str' did not narrow to a constant"});
-    return failure();
-  }
-
-  // Check to see if we have a memref(interp.memory_handle(...)) because
-  // we can just immediately fold it in common cases without materializing the
-  // memory.
-  // We don't handle index/offset yet.
-  if (auto result =
-          getBytesOf(pointerAttr.getModel().getMemory()[pointerAttr.getIndex()],
-                     numBytes)) {
-    if (pointerAttr.getOffset() == 0)
-      return result;
-  }
-
-  if (ErrorOrSuccess err = internalizeMemory(pointerAttr)) {
-    emitError({*errorLoc, "'data_to_str' failed to read data"});
-    return failure();
-  }
-
-  size_t address = cast<PointerAttr>(pointerAttr).getAddr();
-  Type byteType = IntegerType::get(getContext(), 8);
-
-  // Read each of the bytes into 'result' one at a time.  If any fail,
-  // just bail out.
-  std::string result;
-  while (numBytes) {
-    ErrorOr<TypedAttr> attrOr = readAttributeFromMemory(address, byteType);
-    if (attrOr.isError() || !isa<IntegerAttr>(attrOr.get())) {
-      emitError({*errorLoc, "'data_to_str' failed to read data"});
-      return failure();
-    }
-    result.push_back((char)cast<IntegerAttr>(attrOr.get()).getInt());
-    ++address;
-    --numBytes;
-  }
-
-  // Success!
-  return {StringAttr::get(result, StringType::get(getContext()))};
-}
-
-/// Evaluate POC::DataToStr "data_to_str" operator.
-FailureOr<TypedAttr>
-ParametricIREvaluator::evaluateDataToStr(ParamOperatorAttr op) {
-  FailureOr<StringAttr> result = evaluateStringPart(op.getOperand(0));
-  if (failed(result))
-    return failure();
-
-  // Extra string parts, which will be a VariadicAttr of type
-  // !kgen.variadic<>
-  VariadicAttr extrasAttr = dyn_cast<VariadicAttr>(op.getOperand(1));
-  if (!extrasAttr) {
-    emitError(
-        {*errorLoc, "'data_to_str' did not narrow to a variadic constant"});
-    return failure();
-  }
-
-  // If there are no extra parts then we're done.
-  if (extrasAttr.getValues().empty())
-    return TypedAttr(*result);
-
-  // Otherwise, we need to evaluate the extra parts and concatenate them.
-  std::string concatStr = result->str();
-  for (TypedAttr extra : extrasAttr.getValues()) {
-    FailureOr<StringAttr> extraResult = evaluateStringPart(extra);
-    if (failed(extraResult))
-      return failure();
-    concatStr += extraResult->str();
-  }
-  return TypedAttr(StringAttr::get(concatStr, StringType::get(getContext())));
-}
-
 FailureOr<TypedAttr>
 ParametricIREvaluator::evaluateStringAddress(ParamOperatorAttr op) {
   // Ensure the string is null-terminated. This is safe because `StringAttr`
@@ -765,13 +662,6 @@ ParametricIREvaluator::evaluateStringAddress(ParamOperatorAttr op) {
     return failure();
   }
   return {ptr};
-}
-
-FailureOr<TypedAttr>
-ParametricIREvaluator::evaluateBindParams(BindParamsAttr bindParams) {
-  // Simply re-construct the bind params with the current evaluation context.
-  return BindParamsAttr::get(bindParams.getGenerator(),
-                             bindParams.getParamValues(), this);
 }
 
 FailureOr<TypedAttr>
@@ -823,28 +713,6 @@ ParametricIREvaluator::evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry) {
     return failure();
   }
   return simplified;
-}
-
-FailureOr<TypedAttr>
-ParametricIREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
-  // Grab the module from the elaborator. This is a read operation of memory
-  // that is not modified during elaboration, so no synchronization is needed.
-  auto name = dyn_cast<StringAttr>(op.getOperands().front());
-  if (!name) {
-    emitError({*errorLoc, "'get_env' name did not narrow to a constant"});
-    return failure();
-  }
-
-  // Get the `StringRef` out of the `StringAttr` because the latter comes with
-  // a `StringType` type that makes pointer comparisons fails.
-  ErrorOr<TypedAttr> result =
-      elaborator->env.queryValue(name.getValue(), op.getType());
-  if (result.isError()) {
-    emitError({*errorLoc, result.getError()});
-    return failure();
-  }
-
-  return result.get();
 }
 
 static void emitDiagnosticToStream(raw_ostream &os, Diagnostic &diag) {
@@ -1237,7 +1105,9 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateTypeConformToTraitAttr(
 
 ParametricIREvaluator::ParametricIREvaluator(ParametricElaborator &elaborator,
                                              PImplNode *parent)
-    : ParametricParameterEvaluator(),
+    : IREvaluatorContext(elaborator.env, elaborator.getTarget().getContext(),
+                         this),
+      ParametricParameterEvaluator(),
       ParametricIRInterpreter(elaborator.config.maxDepth,
                               elaborator.getTarget()),
       elaborator(&elaborator), parent(parent) {
@@ -1247,7 +1117,9 @@ ParametricIREvaluator::ParametricIREvaluator(ParametricElaborator &elaborator,
 }
 
 ParametricIREvaluator::ParametricIREvaluator(const ParametricIREvaluator &other)
-    : ParametricParameterEvaluator(other),
+    : IREvaluatorContext(other.elaborator->env, other.getTarget().getContext(),
+                         this),
+      ParametricParameterEvaluator(other),
       ParametricIRInterpreter(other.maxDepth, other.getTarget()),
       elaborator(other.elaborator), parent(other.parent) {
   setEvaluationContext(this);
