@@ -58,13 +58,7 @@ static constexpr StringRef kLLVMArgMetadataArrayAttrName =
 //===----------------------------------------------------------------------===//
 
 PImplNode::PImplNode(PParamNode *parent)
-    : parent(parent), paramGraph(parent->gen.getBodyRegion()) {}
-
-void PImplNode::initialize(InstantiatedOpInterface inst,
-                           ParameterUseDefGraph &&graph) {
-  this->inst = inst;
-  this->paramGraph = std::move(graph);
-}
+    : ImplNodeBase(parent->gen.getBodyRegion()), parent(parent) {}
 
 static std::mutex &getGlobalMutex() {
   static std::mutex mutex;
@@ -107,18 +101,6 @@ void PParamNode::andThenAsync(AsyncValue::Waiter &&waiter) {
   });
 }
 
-void PParamNode::emplace() {
-  if (done.exchange(DoneState::DONE) == DoneState::NOT_DONE)
-    paramCh.copy().emplace();
-}
-
-AsyncValueRef<Chain> PParamNode::copy() const { return paramCh.copy(); }
-
-void PParamNode::setToError() {
-  if (done.exchange(DoneState::ERROR) == DoneState::NOT_DONE)
-    paramCh.copy().emplace();
-}
-
 ParametricExpansionGraph::~ParametricExpansionGraph() {
   if (--numOutstandingResources == 0) {
     quiesceChain.copy().emplace();
@@ -159,27 +141,6 @@ ErrorTreeOrSuccess PParamNode::collectErrorsOrSuccess() {
     return success();
   return ErrorTree(gen.getLoc(), "function instantiation failed 1",
                    impl.error->copy());
-}
-
-StringAttr PParamNode::getMangledName() {
-  // Check cached result.
-  if (const void *namePtr = mangledName.load())
-    return StringAttr::getFromOpaquePointer(namePtr);
-
-  // Bind all parameter values in this scope.
-  ArrayRef<TypedAttr> inputParamValues = inputParams.getValue();
-  [[maybe_unused]] ArrayRef<ParamDeclAttr> inputParamDecls =
-      gen.getInputParams();
-  assert(inputParamValues.size() == inputParamDecls.size() &&
-         "incorrect # input parameter values");
-  std::string baseName = mangleParameterValues(gen, inputParamValues,
-                                               [](StringRef) { return ""; });
-  StringAttr name = StringAttr::get(gen->getContext(), baseName);
-
-  const void *existing = nullptr;
-  if (mangledName.compare_exchange_strong(existing, name.getAsOpaquePointer()))
-    return name;
-  return StringAttr::getFromOpaquePointer(existing);
 }
 
 #define HANDLE_EVALUATOR_CONC(VAR, INODE, LOC, EXPR)                           \
