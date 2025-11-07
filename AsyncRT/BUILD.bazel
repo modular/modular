@@ -113,6 +113,8 @@ modular_cc_library(
         "lib/DeviceContext/Metal/MetalDeviceContext.h",
         "lib/DeviceContext/Metal/MetalImpl.cpp",
         "lib/DeviceContext/Metal/MetalImpl.hpp",
+        "lib/DeviceContext/Virtual/VirtualDeviceContext.cpp",
+        "lib/DeviceContext/Virtual/VirtualDeviceContext.h",
     ],
     visibility = ["//AsyncRT:__subpackages__"],
     deps = [
