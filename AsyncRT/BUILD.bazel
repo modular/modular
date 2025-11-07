@@ -96,6 +96,8 @@ modular_cc_library(
         "lib/DeviceContext/BufferCache.h",
         "lib/DeviceContext/CPU/CpuDeviceContext.cpp",
         "lib/DeviceContext/CPU/CpuDeviceContext.h",
+        "lib/DeviceContext/CUDA/CUDACompilationDriver.cpp",
+        "lib/DeviceContext/CUDA/CUDACompilationDriver.h",
         "lib/DeviceContext/CUDA/CUDADeviceContext.cpp",
         "lib/DeviceContext/CUDA/CUDADeviceContext.h",
         "lib/DeviceContext/CUDA/CUDADriver.cpp",
