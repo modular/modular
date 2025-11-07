@@ -117,6 +117,10 @@ buildPackageModule(ModuleOp theModule, LIT::PackageOp parsedPackageOp) {
     assert(func.getThunkKeyAttr() && "top-level function must be a thunk");
     pushOpsOntoWorklist(MutableArrayRef(*func));
   }
+  for (auto trait : theModule.getOps<LIT::TraitDeclOp>()) {
+    if (trait.getClosureSignature().has_value())
+      pushOpsOntoWorklist(MutableArrayRef(*trait));
+  }
 
   // Clone the parsed package operation and push its ops onto the worklist.
   LIT::PackageOp thePackage = cloneWithoutRegions(parsedPackageOp);

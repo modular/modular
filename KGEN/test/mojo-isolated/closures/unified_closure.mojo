@@ -15,7 +15,7 @@
 # CHECK-DAG: [[INT:!.*]] = !lit.struct<@{{.*}}::@Int>
 
 # CHECK: lit.trait.decl @"fn(y: Int) -> Int"<?, *"_Self`{{.*}}": [[TRAIT]]>([[PARENT]])
-# CHECK-SAME: unspecified attributes {definesClosure, dtorWitness = #kgen.get_witness<:[[TRAIT]] *"_Self`{{.*}}", "{{.*}}::AnyType", "__del__{{.*}}"> : !kgen.generator<!lit.generator<<"_Self`0x": [[TRAIT]], |>[1]("self": !lit.ref<:[[TRAIT]] *(0,0), mut *[0,0]> owned_in_mem, |) -> !kgen.none>>
+# CHECK-SAME: unspecified attributes {closureSignature = {{.*}}, definesClosure, dtorWitness = #kgen.get_witness<:[[TRAIT]] *"_Self`{{.*}}", "{{.*}}::AnyType", "__del__{{.*}}"> : !kgen.generator<!lit.generator<<"_Self`0x": [[TRAIT]], |>[1]("self": !lit.ref<:[[TRAIT]] *(0,0), mut *[0,0]> owned_in_mem, |) -> !kgen.none>>
 # CHECK-NEXT:  lit.fn @"__call__({{.*}})"
 # CHECK-SAME: [mut *"self`"](%{{.*}}: !lit.ref<:[[TRAIT]] *"_Self`{{.*}}", mut *"self`"> read_mem, |, %y: [[INT]]) capturing -> [[INT]]
 # CHECK-SAME: attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
@@ -413,11 +413,12 @@ fn bindIt(z: Int):
 
 # COM: Verify that all closures are rebound when closure traits are combined or inherited
 
+
 fn takeIt[C: (fn (Bool) unified -> Int) & fn (Int) unified -> Int](closure: C):
     _ = closure(3)
 
 
-trait BoolWrapper(fn(Bool) unified -> Int):
+trait BoolWrapper(fn (Bool) unified -> Int):
     pass
 
 
@@ -426,9 +427,10 @@ trait BoolWrapper(fn(Bool) unified -> Int):
 # CHECK: kgen.conformance @"fn(Bool) -> Int"
 # CHECK: kgen.witness "__call__($0,::Bool)" : !lit.generator<[1](!lit.ref<!MultipleClosure, mut *[0,0]> read_mem, !Bool, |) capturing -> !Int1> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> read_mem, "x": !Bool) capturing -> !Int1> @{{.*}}::@MultipleClosure::@"__call__({{.*}}::MultipleClosure,::Bool)")
 
+
 # CHECK: kgen.conformance @"fn(Int) -> Int"
 # CHECK:kgen.witness "__call__($0,::Int)" : !lit.generator<[1](!lit.ref<!MultipleClosure, mut *[0,0]> read_mem, !Int1, |) capturing -> !Int1> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> read_mem, "x": !Int1) capturing -> !Int1> @{{.*}}::@MultipleClosure::@"__call__({{.*}}::MultipleClosure,::Int)")
-struct MultipleClosure(Movable, BoolWrapper, fn (Int) unified -> Int):
+struct MultipleClosure(BoolWrapper, Movable, fn (Int) unified -> Int):
     fn __init__(out self):
         pass
 
@@ -458,7 +460,8 @@ fn bindIt(z: Int):
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator<<"x": [[INT]]>[1](!lit.ref<@{{.*}}::@"fn[a: Int](b: Int) -> Int_wrapper_copyable"<:[[TRAIT1]] impl, :origin.set origin_set>, mut *[0,0]> read_mem, |, "y": [[INT]]) capturing -> [[INT]]> =
 # CHECK-SAME: rebind(:!lit.generator<<"a": [[INT]]>[1](!lit.ref<@{{.*}}::@"fn[a: Int](b: Int) -> Int_wrapper_copyable"<:[[TRAIT1]] impl, :origin.set origin_set>, mut *[0,0]> read_mem, |, "b": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"fn[a: Int](b: Int) -> Int_wrapper_copyable"::@"__call__[::Int]({{.*}}::fn[a: Int](b: Int) -> Int_wrapper_copyable[$0, $1],::Int)"<:[[TRAIT1]] impl, :origin.set origin_set, :[[INT]] ?>)
 
-fn takeIt[C: fn[x: Int](y: Int) unified -> Int](closure: C):
+
+fn takeIt[C: fn[x: Int] (y: Int) unified -> Int](closure: C):
     # see MOCO-2606
     _ = closure.__call__[2](3)
 

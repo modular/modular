@@ -907,12 +907,20 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
     UnreachableOp::create(builder);
     functions.insert({callName, fnOp.getSymNameAttr()});
   };
+  auto key = dependentSignatureType.FnTypeGeneratorType::get(
+      dependentSignatureType.getInputParamTypes(),
+      dependentSignatureType.getValues(),
+      dependentSignatureType.getArgConventions(),
+      dependentSignatureType.getFnEffects().setUnified(false),
+      dependentSignatureType.getFnMetadata(),
+      dependentSignatureType.getMetadata());
   auto createTraitFn = [&]() -> ASTDecl * {
     auto [closureTrait, traitDecl] = createTraitOp(
         moduleDecl, name, parents, nestedFunctionOrTypeLocation, populate);
+    closureTrait.setClosureSignature(key);
     return traitDecl;
   };
-  return getOrCreateClosureTrait(dependentSignatureType, createTraitFn);
+  return getOrCreateClosureTrait(key, createTraitFn);
 }
 
 StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(

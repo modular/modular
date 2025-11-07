@@ -1565,7 +1565,24 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
         DeclResolvedness::body);
     declResolver->finalizeFuncSignature(thunk, thunkDecl);
   }
+  for (auto trait :
+       llvm::make_early_inc_range(tmpModule.getOps<TraitDeclOp>())) {
+    if (!trait.getClosureSignature().has_value())
+      continue;
 
+    FnTypeGeneratorType key = *trait.getClosureSignature();
+    auto creation = [&]() {
+      if (failed(bytecodeReader->materialize(trait)))
+        this->emitError(loc, "failed to materialize closure trait");
+      trait->remove();
+      theModule.push_back(trait);
+      ASTDecl &traitDecl = declResolver->addBytecodeDecl(
+          &*trait, trait.getSymNameAttr(), &getTopLevelDecl(),
+          DeclResolvedness::body);
+      return &traitDecl;
+    };
+    this->getClosureEmitter().getOrCreateClosureTrait(key, creation);
+  }
   // Insert a new module decl.
   ASTDecl &decl = declResolver->addBytecodeDecl(
       packageOp, declName, parentState.decl, DeclResolvedness::signature);
@@ -2045,9 +2062,12 @@ ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(
     InlineLevel inlineLevel, bool isCopyable, TypeConvention typeConvention) {
   ASTDecl *traitDecl =
       getOrCreateClosureTrait(loc, *moduleDecl, sig, inlineLevel);
-  TraitType traitType =
-      dyn_cast<TraitType>(traitDecl->getTypeDeclSelf().getMetaType());
-  assert(traitType && "expected traits self type to be a trait type");
+  TraitDeclOp traitDeclOp =
+      dyn_cast_if_present<TraitDeclOp>(traitDecl->getIfOperation());
+  assert(traitDeclOp &&
+         "expected creation function to produce a trait decl op");
+  TraitType traitType = traitDeclOp.getCanonicalTrait();
+
   auto ptr = impl->unifiedClosureWrappers.find({traitType, moduleDecl});
   if (ptr == impl->unifiedClosureWrappers.end())
     ptr = impl->unifiedClosureWrappers
