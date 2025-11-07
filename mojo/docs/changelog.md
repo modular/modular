@@ -119,8 +119,8 @@ what we publish.
   i.e., `(Int, Float) : Tuple[__typeof(Int), __typeof(Float)]`.
 
 - The `__type_of` magic function has been been renamed to `type_of`. Using the
-  old spelling will yield a deprecation warning. Similarly, `__origin_of` has
-  been deprecated in favor of the new `origin_of`.
+  old spelling will yield an error. Similarly, `__origin_of` has been removed in
+  favor of the new `origin_of`.
 
 ### Library changes {#25-7-library-changes}
 
