@@ -32,7 +32,7 @@ from max.interfaces import (
     TextGenerationRequestMessage,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import smart_resize
-from max.pipelines.architectures.qwen3vl.nn.data_processing import (
+from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_bilinear_interpolation_weights_and_indices,
     get_rope_index,
     get_seqlens,
@@ -431,7 +431,6 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             if vision_config := getattr(
                 huggingface_config, "vision_config", None
             ):
-                self.tokens_per_second = vision_config.tokens_per_second
                 # If num_position_embeddings wasn't found in AutoConfig, try from pipeline_config
                 if self.num_position_embeddings is None:
                     self.num_position_embeddings = getattr(

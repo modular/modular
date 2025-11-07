@@ -164,7 +164,7 @@ class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
     ) -> KVCacheParams:
         # Delegate to Llama3Config for language model parameters.
         llm_config = getattr(
-            huggingface_config, "llm_config", huggingface_config
+            huggingface_config, "text_config", huggingface_config
         )
         return Llama3Config.get_kv_params(
             huggingface_config=llm_config,
@@ -177,7 +177,7 @@ class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         # Delegate to Llama3Config for language model parameters.
         llm_config = getattr(
-            huggingface_config, "llm_config", huggingface_config
+            huggingface_config, "text_config", huggingface_config
         )
         return Llama3Config.get_num_layers(llm_config)
 
@@ -206,7 +206,7 @@ class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "layer_norm",
     ) -> Qwen3VLConfig:
         """Generate Qwen3VLConfig from pipeline and HuggingFace configs.
 
@@ -231,7 +231,7 @@ class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
             raise ValueError("vision_config not found in huggingface_config")
         vision_config = VisionConfig.generate(
             hf_vision_config,
-            vision_state_dict["vision_encoder.patch_embed.proj.weight"].dtype,
+            vision_state_dict["patch_embed.proj.weight"].dtype,
             llm_state_dict["language_model.embed_tokens.weight"].dtype,
             pipeline_config,
         )
@@ -239,7 +239,7 @@ class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
         # Create Llama3Config for the language model (with Qwen2 attention_bias=True)
         llm_config = Llama3Config.generate(
             pipeline_config=pipeline_config,
-            huggingface_config=huggingface_config,
+            huggingface_config=huggingface_config.text_config,
             state_dict=llm_state_dict,
             dtype=dtype,
             n_devices=n_devices,
@@ -260,7 +260,9 @@ class Qwen3VLConfig(MAXModelConfig, Qwen3VLConfigBase):
             video_token_id=huggingface_config.video_token_id,
             vision_start_token_id=huggingface_config.vision_start_token_id,
             spatial_merge_size=hf_vision_config.spatial_merge_size,
-            mrope_section=huggingface_config.rope_scaling["mrope_section"],
+            mrope_section=huggingface_config.text_config.rope_scaling[
+                "mrope_section"
+            ],
             # Vision configuration
             vision_config=vision_config,
             # Composed language model configuration
