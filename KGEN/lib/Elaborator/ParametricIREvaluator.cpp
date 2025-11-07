@@ -859,109 +859,23 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateCompileOffloadClosureAttr(
   return {populateFnRef};
 }
 
-FailureOr<TypedAttr> ParametricIREvaluator::evaluateGetLinkageNameAttr(
-    GetLinkageNameAttr getLinkageNameAttr) {
-  // This only supports generators with an empty set of parameters, otherwise we
-  // need to resolve the symbol name after elaboration.
-  TargetInfoAttr target =
-      cast<TargetParamAttr>(getLinkageNameAttr.getTarget()).getTarget();
-  // HACK HACK HACK: Our current name mangling scheme is not compatible with the
-  // GPU backends.
-
-  // Add "_" prefix to GPU kernel name if it starts with a number, otherwise ptx
-  // compiler will fail.
-  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
-      elaborator->getExpectedMangledName(
-          *errorLoc, "get_linkage_name", getLinkageNameAttr.getFunc(),
-          /*allowParametric=*/true, /*sanitize=*/target.isGPU(),
-          [isGPU = target.isGPU()](StringRef name) {
-            return (isGPU && llvm::isDigit(name.front())) ? "_" : "";
-          });
-  if (pairOrError.isError()) {
-    emitError(pairOrError.takeError());
-    return failure();
-  }
-  StringAttr name = pairOrError.takeValue().first;
-  return {StringAttr::get(name.getValue(), getLinkageNameAttr.getType())};
-}
-
-FailureOr<TypedAttr> ParametricIREvaluator::evaluateGetSourceNameAttr(
-    GetSourceNameAttr getSourceNameAttr) {
-
-  auto symbol = dyn_cast<SymbolConstantAttr>(getSourceNameAttr.getFunc());
-  if (!symbol) {
-    emitError({*errorLoc, "'get_source_name' function argument did not resolve "
-                          "to a concrete function"});
-    return failure();
-  }
-  auto func = elaborator->oldSymTab.lookup<GeneratorOp>(
-      cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
-  std::optional<StringRef> sourceName = func.getSourceName();
-  if (!sourceName) {
-    emitError({*errorLoc, "function '" +
-                              symbol.getSymbol().getLeafReference().getValue() +
-                              "' has no source name"});
-    return failure();
-  }
-  return {StringAttr::get(*sourceName, getSourceNameAttr.getType())};
-}
-
 ParamNodeBase *
 ParametricIREvaluator::lookupParamNodeBase(SymbolRefAttr symbol) {
   return elaborator->lookupImplNode(symbol)->parent;
 }
 
-FailureOr<TypedAttr> ParametricIREvaluator::evaluateGetTypeNameAttr(
-    GetTypeNameAttr getTypeNameAttr) {
-  auto qualifiedBuiltins =
-      dyn_cast<BoolAttr>(getTypeNameAttr.getQualifiedBuiltins());
-  if (!qualifiedBuiltins) {
-    emitError({*errorLoc, "'get_type_name' name did not narrow to a constant"});
-    return failure();
-  }
-
-  // Find the struct generator for the instantiated type ref.
-  TypedAttr typeRef = getTypeNameAttr.getTypeValue();
-  if (!isa<TypeInstanceRefAttr>(typeRef)) {
-    typeRef = cast<TypeValueType>(cast<TypeParamAttr>(typeRef).getTypeValue())
-                  .getTypeValue();
-  }
-
-  TypeInstanceRefAttr instanceRef = cast<TypeInstanceRefAttr>(typeRef);
-  return {StringAttr::get(
-      stringifyTypeInstanceRef(instanceRef, qualifiedBuiltins.getValue()),
-      getTypeNameAttr.getType())};
+GeneratorOp ParametricIREvaluator::getGenerator(SymbolRefAttr symbol) {
+  return elaborator->oldSymTab.lookup<GeneratorOp>(
+      cast<FlatSymbolRefAttr>(symbol).getAttr());
 }
 
-FailureOr<TypedAttr> ParametricIREvaluator::evaluateTypeConformToTraitAttr(
-    TypeConformsToTraitAttr typeConformToTraitAttr) {
-  // This is the list of trait names (`alias T = T1 & T2 & ....`) we need to
-  // check.
-  auto traitNames =
-      dyn_cast<VariadicAttr>(typeConformToTraitAttr.getTraitNames());
-  if (!traitNames) {
-    emitError({*errorLoc, "'" + TypeConformsToTraitAttr::name + "'" +
-                              " did not narrow to concrete trait names"});
-    return failure();
-  }
-
-  // Find the struct generator for the instantiated type ref.
-  TypedAttr typeRef = typeConformToTraitAttr.getTypeValue();
-  if (!isa<TypeInstanceRefAttr>(typeRef)) {
-    typeRef = cast<TypeValueType>(cast<TypeParamAttr>(typeRef).getTypeValue())
-                  .getTypeValue();
-  }
-  TypeInstanceRefAttr instanceRef = cast<TypeInstanceRefAttr>(typeRef);
-  PParamNode *genNode =
-      elaborator->lookupImplNode(instanceRef.getSymbol())->parent;
-  StructGeneratorOp genOp = cast<StructGeneratorOp>(genNode->gen);
-
-  // Check when the struct conforms to all the traits.
-  for (auto toCheck : traitNames.getValues())
-    if (!genOp.lookupSymbol(cast<StringAttr>(toCheck).getValue()))
-      return {BoolAttr::get(getContext(), false)};
-
-  return {BoolAttr::get(getContext(), true)};
+ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
+ParametricIREvaluator::getExpectedMangledName(
+    Location errorLoc, StringRef errorContext, TypedAttr symCst,
+    bool allowParametric, bool sanitize,
+    function_ref<std::string(StringRef)> getPrefix) {
+  return elaborator->getExpectedMangledName(
+      errorLoc, errorContext, symCst, allowParametric, sanitize, getPrefix);
 }
 
 //===----------------------------------------------------------------------===//

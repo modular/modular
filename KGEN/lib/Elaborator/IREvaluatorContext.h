@@ -178,7 +178,6 @@ class IREvaluatorContext {
 public:
   IREvaluatorContext(EnvAttr env, MLIRContext *mlirCtx,
                      InterpreterState *state);
-
   virtual ~IREvaluatorContext() = default;
 
 protected:
@@ -189,6 +188,14 @@ protected:
   FailureOr<TypedAttr> evaluateDataToStr(ParamOperatorAttr op, bool reset);
 
   FailureOr<StringAttr> evaluateStringPart(TypedAttr part, bool reset);
+
+  FailureOr<TypedAttr>
+  evaluateGetLinkageNameAttr(GetLinkageNameAttr getLinkageNameAttr);
+  FailureOr<TypedAttr>
+  evaluateGetSourceNameAttr(GetSourceNameAttr getSourceNameAttr);
+  FailureOr<TypedAttr> evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr);
+  FailureOr<TypedAttr> evaluateTypeConformToTraitAttr(
+      TypeConformsToTraitAttr typeConformToTraitAttr);
 
   std::string stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef,
                                        bool qualifiedBuiltins);
@@ -209,6 +216,18 @@ private:
   MLIRContext *mlirCtx = nullptr;
 
   virtual ParamNodeBase *lookupParamNodeBase(SymbolRefAttr symbol) = 0;
+
+  /// Compute the expected mangled name of a generator from a parameter.
+  /// Returns both the mangled name and the generator referenced by the
+  /// parameter. The parameter will be legalized to ensure a SymbolConstantAttr.
+  /// If `allowParametric`, any not fully bound symbol reference will just have
+  /// its symbol name returned. Otherwise, not fully bound symbols are errors.
+  virtual ErrorTreeOr<std::pair<StringAttr, GeneratorOp>>
+  getExpectedMangledName(Location errorLoc, StringRef errorContext,
+                         TypedAttr symCst, bool allowParametric, bool sanitize,
+                         function_ref<std::string(StringRef)> getPrefix) = 0;
+
+  virtual GeneratorOp getGenerator(SymbolRefAttr symbol) = 0;
 };
 
 } // namespace M::KGEN

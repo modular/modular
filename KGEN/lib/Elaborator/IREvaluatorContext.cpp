@@ -62,6 +62,101 @@ StringAttr ParamNodeBase::getMangledName() {
   return StringAttr::getFromOpaquePointer(existing);
 }
 
+FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
+    GetLinkageNameAttr getLinkageNameAttr) {
+  // This only supports generators with an empty set of parameters, otherwise we
+  // need to resolve the symbol name after elaboration.
+  TargetInfoAttr target =
+      cast<TargetParamAttr>(getLinkageNameAttr.getTarget()).getTarget();
+  // HACK HACK HACK: Our current name mangling scheme is not compatible with the
+  // GPU backends.
+
+  // Add "_" prefix to GPU kernel name if it starts with a number, otherwise ptx
+  // compiler will fail.
+  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
+      getExpectedMangledName(
+          *errorLoc, "get_linkage_name", getLinkageNameAttr.getFunc(),
+          /*allowParametric=*/true, /*sanitize=*/target.isGPU(),
+          [isGPU = target.isGPU()](StringRef name) {
+            return (isGPU && llvm::isDigit(name.front())) ? "_" : "";
+          });
+  if (pairOrError.isError()) {
+    emitError(pairOrError.takeError());
+    return failure();
+  }
+  StringAttr name = pairOrError.takeValue().first;
+  return {StringAttr::get(name.getValue(), getLinkageNameAttr.getType())};
+}
+
+FailureOr<TypedAttr> IREvaluatorContext::evaluateGetSourceNameAttr(
+    GetSourceNameAttr getSourceNameAttr) {
+
+  auto symbol = dyn_cast<SymbolConstantAttr>(getSourceNameAttr.getFunc());
+  if (!symbol) {
+    emitError({*errorLoc, "'get_source_name' function argument did not resolve "
+                          "to a concrete function"});
+    return failure();
+  }
+
+  auto func = getGenerator(symbol.getSymbol());
+
+  std::optional<StringRef> sourceName = func.getSourceName();
+  if (!sourceName) {
+    emitError({*errorLoc, "function '" +
+                              symbol.getSymbol().getLeafReference().getValue() +
+                              "' has no source name"});
+    return failure();
+  }
+  return {StringAttr::get(*sourceName, getSourceNameAttr.getType())};
+}
+
+FailureOr<TypedAttr>
+IREvaluatorContext::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
+  auto qualifiedBuiltins =
+      dyn_cast<BoolAttr>(getTypeNameAttr.getQualifiedBuiltins());
+  if (!qualifiedBuiltins) {
+    emitError({*errorLoc, "'get_type_name' name did not narrow to a constant"});
+    return failure();
+  }
+
+  // Find the struct generator for the instantiated type ref.
+  TypedAttr typeRef = getTypeNameAttr.getTypeValue();
+  if (!isa<TypeInstanceRefAttr>(typeRef)) {
+    typeRef = cast<TypeValueType>(cast<TypeParamAttr>(typeRef).getTypeValue())
+                  .getTypeValue();
+  }
+
+  TypeInstanceRefAttr instanceRef = cast<TypeInstanceRefAttr>(typeRef);
+  return {StringAttr::get(
+      stringifyTypeInstanceRef(instanceRef, qualifiedBuiltins.getValue()),
+      getTypeNameAttr.getType())};
+}
+
+FailureOr<TypedAttr> IREvaluatorContext::evaluateTypeConformToTraitAttr(
+    TypeConformsToTraitAttr typeConformToTraitAttr) {
+  // This is the list of trait names (`alias T = T1 & T2 & ....`) we need to
+  // check.
+  auto traitNames =
+      dyn_cast<VariadicAttr>(typeConformToTraitAttr.getTraitNames());
+  if (!traitNames) {
+    emitError({*errorLoc, "'" + TypeConformsToTraitAttr::name + "'" +
+                              " did not narrow to concrete trait names"});
+    return failure();
+  }
+
+  // Find the struct generator for the instantiated type ref.
+  TypedAttr typeRef = typeConformToTraitAttr.getTypeValue();
+  if (!isa<TypeInstanceRefAttr>(typeRef)) {
+    typeRef = cast<TypeValueType>(cast<TypeParamAttr>(typeRef).getTypeValue())
+                  .getTypeValue();
+  }
+  TypeInstanceRefAttr instanceRef = cast<TypeInstanceRefAttr>(typeRef);
+  ParamNodeBase *genNode = lookupParamNodeBase(instanceRef.getSymbol());
+  StructGeneratorOp genOp = cast<StructGeneratorOp>(genNode->gen);
+
+  return typeConformToTraitAttr.simplify(SymbolTable(genOp));
+}
+
 /// Print a single SIMD value.
 static void printSIMDValue(raw_ostream &os, const POP::DTypeValue &value,
                            KGENDType dtype) {
