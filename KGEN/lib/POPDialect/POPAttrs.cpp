@@ -1882,16 +1882,9 @@ SIMDSplatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 static LogicalResult
 verifySIMDBinaryOp(function_ref<InFlightDiagnostic()> emitError, TypedAttr lhs,
-                   TypedAttr rhs, bool allowFP) {
+                   TypedAttr rhs) {
   if (lhs.getType() != rhs.getType() || !isa<SIMDType>(lhs.getType()))
     return emitError() << "requires two equally-typed SIMD operands";
-
-  if (!allowFP) {
-    auto simdType = cast<SIMDType>(lhs.getType());
-    auto dtype = simdType.getResolvedDType();
-    if (!dtype.has_value() || !dtype->isIntLike())
-      return emitError() << "requires two equally-typed integer SIMD operands";
-  }
 
   return success();
 }
@@ -1925,7 +1918,7 @@ Type SIMDAndAttr::getType() const { return getLhs().getType(); }
 
 LogicalResult SIMDAndAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   TypedAttr lhs, TypedAttr rhs) {
-  return verifySIMDBinaryOp(emitError, lhs, rhs, /*allowFP=*/false);
+  return verifySIMDBinaryOp(emitError, lhs, rhs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1957,7 +1950,7 @@ Type SIMDXorAttr::getType() const { return getLhs().getType(); }
 
 LogicalResult SIMDXorAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   TypedAttr lhs, TypedAttr rhs) {
-  return verifySIMDBinaryOp(emitError, lhs, rhs, /*allowFP=*/false);
+  return verifySIMDBinaryOp(emitError, lhs, rhs);
 }
 
 //===----------------------------------------------------------------------===//

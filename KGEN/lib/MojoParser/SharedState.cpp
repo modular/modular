@@ -2455,6 +2455,17 @@ struct BuiltinFunctionFolder {
   /// but didn't produce a value (e.g. StoreOps).
   FailureOr<TypedAttr> fold(Operation &op);
 };
+
+// Handle a simple binary operation that folds to a SIMD binary attribute.
+template <typename T>
+FailureOr<TypedAttr> foldSIMDBinOp(Operation &op,
+                                   BuiltinFunctionFolder &folder) {
+  if (auto lhs = folder.findValue(op.getOperand(0)))
+    if (auto rhs = folder.findValue(op.getOperand(1)))
+      return T::get(lhs, rhs);
+  return failure();
+}
+
 } // end anonymous namespace
 
 /// Process the following operation, doing one of three things:
@@ -2642,12 +2653,10 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     }
   }
 
-  if (auto andOp = dyn_cast<POP::SIMDAndOp>(op)) {
-    if (auto lhsOp = findValue(andOp.getLhs())) {
-      if (auto rhsOp = findValue(andOp.getRhs()))
-        return POP::SIMDAndAttr::get(lhsOp, rhsOp);
-    }
-  }
+  if (auto andOp = dyn_cast<POP::SIMDAndOp>(op))
+    return foldSIMDBinOp<POP::SIMDAndAttr>(op, *this);
+  if (auto xorOp = dyn_cast<POP::SIMDXOrOp>(op))
+    return foldSIMDBinOp<POP::SIMDXorAttr>(op, *this);
 
   if (auto bitcast = dyn_cast<POP::PointerBitcastOp>(op)) {
     if (auto src = findValue(bitcast.getInput()))

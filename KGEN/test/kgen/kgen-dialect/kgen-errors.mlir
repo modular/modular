@@ -799,9 +799,9 @@ kgen.generator export @concretize_variadic_splaut(
 
 // -----
 
-// expected-error @+2 {{requires two equally-typed integer SIMD operands}}
+// expected-error @+2 {{requires two equally-typed SIMD operands}}
 "some.op"() {
-  b = #pop.simd_and< #pop<simd "1.0"> : !pop.scalar<f32>, #pop<simd "2.0"> : !pop.scalar<f32>> : !pop.scalar<f32>
+  a = #pop.simd_xor< #pop<simd 1> : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<ui32>> : !pop.scalar<si32>
 } : () -> ()
 
 // -----
