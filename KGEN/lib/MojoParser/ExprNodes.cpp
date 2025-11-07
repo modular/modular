@@ -916,6 +916,15 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
 
     auto diag = emitter.emitError(loc, "use of unknown declaration '")
                 << spelling << "'" << expr->getRange();
+    if (spelling == "__type_of" || spelling == "_type_of" ||
+        spelling == "typeof") {
+      diag << "; did you mean 'type_of'?"
+           << FixIt::replaceToken(loc, "type_of");
+    } else if (spelling == "__origin_of" || spelling == "_origin_of" ||
+               spelling == "originof") {
+      diag << "; did you mean 'origin_of'?"
+           << FixIt::replaceToken(loc, "origin_of");
+    }
     return {};
   }
 
@@ -3932,14 +3941,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 }
 
 AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
-  if (kind == kOriginOfDeprecated || kind == kOriginOf) {
-    if (kind == kOriginOfDeprecated) {
-      emitter.emitWarning(
-          getLoc(), "'__origin_of' is deprecated, use 'origin_of' instead")
-          << getRange() << FixIt::replaceToken(getLoc(), "origin_of");
-    }
+  if (kind == kOriginOf)
     return emitOriginOf(dest, emitter);
-  }
 
   // __get_nearest_error_slot returns an MLValue.
   if (kind == kGetNearestErrorSlot) {
@@ -3981,14 +3984,8 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     return {};
   }
 
-  if (kind == kTypeOfDeprecated || kind == kTypeOf) {
-    if (kind == kTypeOfDeprecated) {
-      emitter.emitWarning(getLoc(),
-                          "'__type_of' is deprecated, use 'type_of' instead")
-          << getRange() << FixIt::replaceToken(getLoc(), "type_of");
-    }
+  if (kind == kTypeOf)
     return emitTypeOf(dest, emitter);
-  }
 
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(this);
