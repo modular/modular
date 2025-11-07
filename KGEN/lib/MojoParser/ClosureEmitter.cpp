@@ -1840,9 +1840,13 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   // as a scope. We will also store an independent scope on the op to validate
   // the nested ops.
   Location fileOnlyLoc = DebugInfo::extractSourceLoc(location);
-  Location opLoc = FusedLoc::get(
-      ctx, fileOnlyLoc,
-      cast<FnOp>(symbolParent->getIfOperation()).getSubprogramScope());
+  Location opLoc = fileOnlyLoc;
+  if (DebugInfo::DISubprogramAttr subprogram =
+          cast<FnOp>(symbolParent->getIfOperation()).getSubprogramScope()) {
+    opLoc = FusedLoc::get(
+        ctx, fileOnlyLoc,
+        cast<FnOp>(symbolParent->getIfOperation()).getSubprogramScope());
+  }
 
   // TODO: use effect to determine the memory kind for the closure
   bool isRegPassable = nestedFn.getFuncTypeGenerator().isRegisterPassable();

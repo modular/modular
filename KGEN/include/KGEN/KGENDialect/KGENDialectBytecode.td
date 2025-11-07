@@ -76,6 +76,17 @@ def WrappedVariantType : DialectType<(type
   TypedAttr:$variadic
 )>;
 
+def ClosureType : DialectType<(type
+  ConcreteAttribute<"SymbolRefAttr">:$parentSymbol,
+  StringAttr:$name,
+  EnumAttr<"ClosureMemoryKind">:$closureMemoryKind
+)>;
+
+def ParamClosureType : DialectType<(type
+  ConcreteAttribute<"SymbolRefAttr">:$parentSymbol,
+  StringAttr:$name
+)>;
+
 def KGENDialectTypes : DialectTypes<"kgen"> {
   let elems = [
     WrappedParamRefType,
@@ -94,6 +105,8 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     StructInstanceType,
     PackType,
     WrappedVariantType,
+    ClosureType,
+    ParamClosureType,
   ];
 }
 
@@ -257,6 +270,10 @@ def TailKindAttr : DialectAttribute<(attr
   EnumAttr<"TailKind">:$value
 )>;
 
+def ClosureMethodAttr : DialectAttribute<(attr
+  EnumAttr<"ClosureMethod">:$value
+)>;
+
 def ConstraintAttr : DialectAttribute<(attr
   TypedAttr:$prop,
   ConcreteAttribute<"LocationAttr">:$loc
@@ -275,6 +292,25 @@ def SugarAttr : DialectAttribute<(attr
   EnumAttr<"SugarKind">:$kind,
   TypedAttr:$sugared,
   TypedAttr:$original
+)>;
+
+def ClosureSymbolAttr : DialectAttribute<(attr
+  ConcreteAttribute<"SymbolRefAttr">:$parentSymbol,
+  StringAttr:$nestedFuncName,
+  ConcreteAttribute<"ClosureMethodAttr">:$method,
+  TypedAttrArray:$paramValues,
+  ConcreteType<"GeneratorType">:$type
+)>;
+
+def ClosureAttr : DialectAttribute<(attr
+  ConcreteType<"ParamClosureType">:$type
+)>;
+
+def MemSymbolTripleAttr : DialectAttribute<(attr
+  ConcreteOptionalAttribute<"SymbolConstantAttr">:$copy,
+  ConcreteOptionalAttribute<"SymbolConstantAttr">:$move,
+  ConcreteOptionalAttribute<"SymbolConstantAttr">:$del,
+  ConcreteOptionalAttribute<"UnitAttr">:$isMove
 )>;
 
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
@@ -313,7 +349,11 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     TailKindAttr,
     LLVMBitcodeLibAttr,
     LLVMBitcodeLibArrayAttr,
-    SugarAttr
+    SugarAttr,
+    ClosureSymbolAttr,
+    ClosureAttr,
+    ClosureMethodAttr,
+    MemSymbolTripleAttr
   ];
 }
 
