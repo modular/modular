@@ -221,6 +221,46 @@ fn fold_pop_simd_and() -> POPUInt8x4T[POP_UI8x4_Fold]:
     return a
 
 
+# CHECK-LABEL: lit.fn @"pop_unresolved_simd_and
+@always_inline("builtin")
+fn pop_unresolved_simd_and[
+    dt: DType, n: Int
+](x: SIMD[dt, n], y: SIMD[dt, n],) -> SIMD[dt, n]._mlir_type:
+    return __mlir_op.`pop.simd.and`(x._mlir_value, y._mlir_value)
+
+
+##===----------------------------------------------------------------------===##
+# Fold pop.simd_xor
+##===----------------------------------------------------------------------===##
+
+
+@always_inline("builtin")
+fn pop_simd_xor(
+    x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
+) -> __mlir_type.`!pop.simd<4, ui8>`:
+    return __mlir_op.`pop.simd.xor`(x, y)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_xor
+fn fold_pop_simd_xor() -> POPUInt8x4T[POP_UI8x4_Fold]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@POPUInt8x4T<:simd<4, ui8> sugar_builtin(apply(:!lit.generator<("x": !pop.simd<4, ui8>, "y": !pop.simd<4, ui8>) -> !pop.simd<4, ui8>> @builtin_function_folder_pop_ops::@"pop_simd_xor(__mlir_type.!pop.simd<4, ui8>,__mlir_type.!pop.simd<4, ui8>)", <9, 15, 1, 1>, <35, 240, 0, 1>), <42, 255, 1, 0>)>, mut *"a`1">
+    var a = POPUInt8x4T[
+        pop_simd_xor(
+            __mlir_attr.`#pop.simd<9, 15, 1, 1> : !pop.simd<4, ui8>`,
+            __mlir_attr.`#pop.simd<35, 240, 0, 1> : !pop.simd<4, ui8>`,
+        )
+    ]()
+    return a
+
+
+# CHECK-LABEL: lit.fn @"pop_unresolved_simd_xor
+@always_inline("builtin")
+fn pop_unresolved_simd_xor[
+    dt: DType, n: Int
+](x: SIMD[dt, n], y: SIMD[dt, n],) -> SIMD[dt, n]._mlir_type:
+    return __mlir_op.`pop.simd.xor`(x._mlir_value, y._mlir_value)
+
+
 ##===----------------------------------------------------------------------===##
 # Fold pop.simd_cmp
 ##===----------------------------------------------------------------------===##
