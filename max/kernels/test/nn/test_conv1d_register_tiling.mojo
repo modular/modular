@@ -13,6 +13,7 @@
 
 # Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import simd_width_of
 
 from buffer import NDBuffer

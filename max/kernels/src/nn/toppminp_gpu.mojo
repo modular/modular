@@ -13,6 +13,7 @@
 
 
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of
 
 from builtin.dtype import _uint_type_of_width

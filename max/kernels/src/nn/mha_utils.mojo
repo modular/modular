@@ -14,6 +14,7 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv, align_up
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import (
     CompilationTarget,
     align_of,

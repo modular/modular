@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import isclose
 from random import rand, random_float64, seed
 from sys import has_amd_gpu_accelerator

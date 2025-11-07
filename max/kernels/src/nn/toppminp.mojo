@@ -13,6 +13,7 @@
 
 
 from math import iota
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import random_float64
 
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple

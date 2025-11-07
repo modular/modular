@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
+from memory import LegacyUnsafePointer as UnsafePointer
 from gpu import *
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout

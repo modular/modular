@@ -37,6 +37,7 @@ from layout import (
 )
 from math import ceildiv, gcd
 from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import Atomic
 from sys import simd_width_of, size_of
 

@@ -14,6 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import simd_width_of
 from sys.intrinsics import readfirstlane
 

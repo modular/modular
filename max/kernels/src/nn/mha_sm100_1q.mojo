@@ -14,6 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv, exp2, recip
 from math.constants import log2e
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, simd_width_of, size_of
 
 import gpu.warp as warp

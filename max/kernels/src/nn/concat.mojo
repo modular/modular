@@ -13,6 +13,7 @@
 
 from collections import OptionalReg
 from math import align_down, align_up, ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys._build import is_debug_build
 from sys.info import simd_width_of, size_of
 

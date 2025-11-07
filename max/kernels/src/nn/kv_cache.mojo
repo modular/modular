@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import unswitch
