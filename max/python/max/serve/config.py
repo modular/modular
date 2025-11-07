@@ -327,11 +327,15 @@ class Settings(BaseSettings):
         logger.info("Model Worker Config")
         logger.info("=" * 60)
         logger.info(f"    use_heartbeat          : {self.use_heartbeat}")
-        logger.info(f"    timeout                : {self.mw_timeout_s:.1f}s")
+        if self.mw_timeout_s is not None:
+            logger.info(
+                f"    timeout                : {self.mw_timeout_s:.1f}s"
+            )
         logger.info(
             f"    health_fail_timeout    : {self.mw_health_fail_s:.1f}s"
         )
-        logger.info(
-            f"    telemetry_spawn_timeout: {self.telemetry_worker_spawn_timeout:.1f}s"
-        )
+        if self.telemetry_worker_spawn_timeout is not None:
+            logger.info(
+                f"    telemetry_spawn_timeout: {self.telemetry_worker_spawn_timeout:.1f}s"
+            )
         logger.info("")
