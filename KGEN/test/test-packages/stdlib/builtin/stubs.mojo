@@ -222,6 +222,20 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     ]:
         return {}
 
+    @always_inline("builtin")
+    fn __lshift__(
+        self, rhs: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<lshift `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
+        return {}
+
 
 @nonmaterializable(FloatDyn)
 @register_passable("trivial")
@@ -344,6 +358,42 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable, Intable):
     fn __iadd__(mut self, rhs: Int):
         self = self + rhs
 
+    @always_inline("nodebug")
+    fn __isub__(mut self, rhs: Int):
+        self = self - rhs
+
+    @always_inline("nodebug")
+    fn __ifloordiv__(mut self, rhs: Int):
+        self = self // rhs
+
+    @always_inline("nodebug")
+    fn __imod__(mut self, rhs: Int):
+        self = self % rhs
+
+    @always_inline("nodebug")
+    fn __ipow__(mut self, rhs: Int):
+        self = self**rhs
+
+    @always_inline("nodebug")
+    fn __ilshift__(mut self, rhs: Int):
+        self = self << rhs
+
+    @always_inline("nodebug")
+    fn __iand__(mut self, rhs: Int):
+        self = self & rhs
+
+    @always_inline("nodebug")
+    fn __ixor__(mut self, rhs: Int):
+        self = self ^ rhs
+
+    @always_inline("nodebug")
+    fn __ior__(mut self, rhs: Int):
+        self = self | rhs
+
+    @always_inline("nodebug")
+    fn __mod__(self, rhs: Int) -> Int:
+        pass
+
     @always_inline("builtin")
     fn __eq__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
@@ -394,6 +444,10 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable, Intable):
             mlir_value=__mlir_op.`index.divs`(self._mlir_value, rhs._mlir_value)
         )
 
+    @always_inline("nodebug")
+    fn __floordiv__(self, rhs: Int) -> Int:
+        pass
+
     @always_inline("builtin")
     fn __int__(self) -> Int:
         return self
@@ -422,6 +476,10 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable, Intable):
 
     @always_inline("nodebug")
     fn __rshift__(self, rhs: Int) -> Int:
+        pass
+
+    @always_inline("nodebug")
+    fn __lshift__(self, rhs: Int) -> Int:
         pass
 
     @always_inline("builtin")
@@ -744,6 +802,10 @@ struct VariadicList[type: AnyTrivialRegType]:
     @implicit
     fn __init__(out self, value: Self._mlir_type):
         self.value = value
+
+    @always_inline
+    fn __getitem__(self, idx: Int) -> type:
+        pass
 
 
 # Helper to compute the union of two origins:
