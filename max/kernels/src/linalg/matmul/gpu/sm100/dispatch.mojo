@@ -496,6 +496,19 @@ fn matmul_dispatch_sm100[
     alias MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
     alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
 
+    # 1. for m==1 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
+    # 2. Our GEMV matmul dosen't support float8 yet.
+    # 3. static_N=1 is not supported on SM100 due to the output buffer TMA requirements. (`N * size_of(c_type) % 16 == 0`).
+    @parameter
+    if a_type is DType.bfloat16:
+        if static_N == 1 or m == 1:
+            logger.info("------ Executing GEMV Matmul------")
+            gemv_gpu[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
+            ](c, a, b, ctx)
+            return
+
     # SM100 kernel requirements:
     # 1. `N * size_of(c_type) % 16B == 0` for output buffer (TMA requirement)
     # 2. `c_type == DType.bfloat16` SM100 kernel only supports bfloat16 for output buffer
@@ -535,20 +548,6 @@ fn matmul_dispatch_sm100[
             logger.info("------ Executing MOJO SM100 Matmul------")
             return
 
-    # if it's not a hit to this point, then it means the shape is not tuned or supported for sm100 therefore we fallback to other options
-    # NOTE:
-    # 1. for m==1 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
-    # 2. Our GEMV matmul dosen't support float8 yet.
-    # 3. static_N=1 is not supported on SM100 due to the output buffer TMA requirements. (`N * size_of(c_type) % 16 == 0`).
-    @parameter
-    if a_type is DType.bfloat16:
-        if static_N == 1 or m == 1:
-            logger.info("------ Executing GEMV Matmul------")
-            gemv_gpu[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-            ](c, a, b, ctx)
-            return
     # fallback to vendor matmul for untuned shapes
     # We assume that this will always be a hit as in the worst case it will be a navie matmul.
     return _vendor_blas_matmul_sm100[
@@ -1767,22 +1766,7 @@ fn _bf16_experimental[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    # Use the largest mma instruction as a fallback when heuristic
-    # can't cover the shape.
-    alias fallback_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        mma_shape=Index(256, 256, BK),
-        cluster_shape=Index(2, 1, 1),
-    )
-
-    _matmul_dispatch_sm100[
-        transpose_b=transpose_b,
-        config=fallback_config,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        pdl_level=pdl_level,
-    ](c, a, b, ctx)
-
-    return DISPATCH_HIT
+    return DISPATCH_MISS
 
 
 # NOTE:
