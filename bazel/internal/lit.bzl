@@ -186,7 +186,7 @@ def lit_tests(
         exec_properties: Remote exec resources https://www.buildbuddy.io/docs/rbe-platforms/#runner-resource-allocation
     """
 
-    validate_gpu_tags(tags, gpu_constraints)
+    validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
 
     tool_names = []
     tool_paths = []

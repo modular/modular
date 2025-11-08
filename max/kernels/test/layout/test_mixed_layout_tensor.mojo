@@ -15,12 +15,11 @@ from layout._mixed_layout import MixedLayout, make_row_major
 from layout._mixed_layout_tensor import MixedLayoutTensor, distribute, tile
 from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
 from layout.int_tuple import IntTuple
-from testing import assert_equal, assert_true
+from testing import TestSuite, assert_equal, assert_true
 
 
 def main():
-    test_distribute()
-    test_tile()
+    TestSuite().discover_tests[__functions_in_module()]().run()
 
 
 fn test_distribute() raises:
@@ -31,25 +30,11 @@ fn test_distribute() raises:
 
     alias data_layout_shape = MixedTuple[ComptimeInt[4], ComptimeInt[4]]
     alias data_layout_stride = MixedTuple[ComptimeInt[4], ComptimeInt[1]]
-    alias data_layout_shape_types = data_layout_shape._get_variadic_pack()
-    alias data_layout_stride_types = data_layout_stride._get_variadic_pack()
-
-    var layout_tensor = MixedLayoutTensor[
-        dtype = DType.uint32,
-        shape_types=data_layout_shape_types,
-        stride_types=data_layout_stride_types,
-    ](
+    var layout_tensor = MixedLayoutTensor[dtype = DType.uint32](
         ptr=ptr,
-        layout=MixedLayout[
-            shape_types=data_layout_shape_types,
-            stride_types=data_layout_stride_types,
-        ](
-            shape=rebind[MixedTuple[*data_layout_shape_types]](
-                data_layout_shape(Idx[4](), Idx[4]())
-            ),
-            stride=rebind[MixedTuple[*data_layout_stride_types]](
-                data_layout_stride(Idx[4](), Idx[1]())
-            ),
+        layout=MixedLayout(
+            shape=data_layout_shape(Idx[4](), Idx[4]()),
+            stride=data_layout_stride(Idx[4](), Idx[1]()),
         ),
     )
 
@@ -57,16 +42,7 @@ fn test_distribute() raises:
     for th_id in range(4):
         var frag = distribute[
             dtype = DType.uint32,
-            thread_layout = rebind[
-                MixedLayout[
-                    shape_types = MixedTuple[
-                        ComptimeInt[2], ComptimeInt[2]
-                    ]._get_variadic_pack(),
-                    stride_types = MixedTuple[
-                        ComptimeInt[2], ComptimeInt[1]
-                    ]._get_variadic_pack(),
-                ]
-            ](thread_layout),
+            thread_layout=thread_layout,
         ](layout_tensor, th_id)
 
         # Fill the fragment positions with the thread id (0..3)

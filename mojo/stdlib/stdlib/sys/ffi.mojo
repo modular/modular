@@ -699,7 +699,7 @@ fn _get_dylib_function[
         _ = func_ptr
         return result
 
-    var dylib = dylib_global.get_or_create_ptr()[].handle()
+    var dylib = dylib_global.get_or_create_ptr()[].borrow()
     var new_func = dylib._get_function[func_name, result_type]()
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](

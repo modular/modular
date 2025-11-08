@@ -62,7 +62,12 @@ struct MaskName(Stringable):
 @fieldwise_init
 @register_passable("trivial")
 struct TileMaskStatus(
-    EqualityComparable, ImplicitlyCopyable, Movable, Stringable, Writable
+    EqualityComparable,
+    Identifiable,
+    ImplicitlyCopyable,
+    Movable,
+    Stringable,
+    Writable,
 ):
     """A tile's masking status."""
 
@@ -85,9 +90,6 @@ struct TileMaskStatus(
 
     fn __is__(self, rhs: Self) -> Bool:
         return self.status == rhs.status
-
-    fn __is_not__(self, rhs: Self) -> Bool:
-        return self.status != rhs.status
 
     fn __str__(self) -> String:
         return String.write(self)

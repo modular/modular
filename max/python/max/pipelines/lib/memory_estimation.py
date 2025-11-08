@@ -21,11 +21,13 @@ from typing import TYPE_CHECKING, Any, cast
 
 from max.driver import Device
 from max.dtype import DType
+from max.kv_cache import PagedKVCacheManager
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
+
 
 from .interfaces import KVCacheMixin, PipelineModel
 from .kv_cache_config import KVCacheConfig
@@ -126,6 +128,53 @@ class MemoryEstimator:
             - cls.static_memory_size(
                 pipeline_model, pipeline_config, model_config
             )
+        )
+
+    @classmethod
+    def max_supported_sequence_length(
+        cls,
+        pipeline_model: type[PipelineModel[Any]],
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig,
+        devices: list[Device],
+    ) -> int:
+        """Compute the hard upper bound on tokens for a single request.
+
+        Mirrors the paged KV cache constraint: per replica, a request cannot
+        exceed total pages per device times page size.
+        """
+
+        # Retrieve needed parameters.
+        if not model_config.quantization_encoding:
+            raise ValueError(
+                "quantization_encoding must be provided in model_config"
+            )
+
+        # Ensure pipeline_model implements KVCacheMixin
+        if not issubclass(pipeline_model, KVCacheMixin):
+            raise ValueError(
+                "pipeline_model must implement KVCacheMixin to compute max sequence length"
+            )
+
+        kv_cache_model = cast(type[KVCacheMixin], pipeline_model)
+
+        params = kv_cache_model.get_kv_params(
+            huggingface_config=model_config.huggingface_config,
+            n_devices=len(devices),
+            kv_cache_config=model_config.kv_cache_config,
+            cache_dtype=model_config.quantization_encoding.cache_dtype,
+        )
+        num_layers = kv_cache_model.get_num_layers(
+            huggingface_config=model_config.huggingface_config
+        )
+
+        # Available cache memory
+        memory_available = cls.available_kv_cache_memory(
+            pipeline_model, pipeline_config, model_config, devices
+        )
+
+        return PagedKVCacheManager.max_supported_sequence_length(
+            params, num_layers, memory_available
         )
 
     @classmethod

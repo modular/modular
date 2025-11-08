@@ -275,10 +275,6 @@ struct TileScheduler[
         alias fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
         # alias stage_frag_size = stage_rep * fragment_size
 
-        # first width is the largest width that is a power of two
-        var upper_frag = SIMD[accum_type, widths[0]]()
-        var lower_frag = SIMD[accum_type, widths[0]]()
-
         var local_warp_id = epilogue_thread_idx // UInt(WARP_SIZE)
 
         # workspace has layout (X, BM, MMA_N)
@@ -303,10 +299,8 @@ struct TileScheduler[
             alias stage_width = widths[stage]
             alias stage_rep = stage_width // 8
             alias stage_frag_size = stage_rep * fragment_size
-            var stage_frag_upper = upper_frag.slice[stage_frag_size]()
-            var stage_frag_lower = lower_frag.slice[stage_frag_size]()
 
-            stage_frag_upper = tcgen05_ld[
+            var stage_frag_upper = tcgen05_ld[
                 datapaths=data_paths,
                 bits=bits,
                 repeat=stage_rep,
@@ -315,7 +309,7 @@ struct TileScheduler[
                 width=stage_frag_size,
             ](stage_tmem_addr)
 
-            stage_frag_lower = tcgen05_ld[
+            var stage_frag_lower = tcgen05_ld[
                 datapaths=data_paths,
                 bits=bits,
                 repeat=stage_rep,

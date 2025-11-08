@@ -5,10 +5,8 @@ modular_py_binary(
     srcs = ["addition.py"],
     imports = ["."],
     deps = [
-        "//max/python/max/graph",
         "//max/python/max/engine",
-        # FIXME: Hack, not used directly. Nightly tests fail without this dep.
-        "@mojo//:python",
+        "//max/python/max/graph",
         requirement("numpy"),
     ],
 )

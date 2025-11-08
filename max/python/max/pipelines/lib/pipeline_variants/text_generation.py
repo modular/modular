@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
 import logging
@@ -27,6 +28,7 @@ import numpy as np
 import numpy.typing as npt
 from llguidance import LLMatcher
 from max.driver import load_devices
+from max.engine import Model
 from max.graph.weights import (
     WeightsAdapter,
     WeightsFormat,
@@ -237,12 +239,32 @@ class TextGenerationPipeline(
         # Load sampler.
         from max.graph import DeviceRef as _DeviceRef
 
-        self._sampler = session.load(
-            token_sampler(
-                self._pipeline_config.sampling_config,
-                device=_DeviceRef.from_device(self._devices[0]),
+        self._sampler_with_bitmask: Model | None = None
+        if self._pipeline_config.sampling_config.enable_structured_output:
+            self._sampler_with_bitmask = session.load(
+                token_sampler(
+                    self._pipeline_config.sampling_config,
+                    device=_DeviceRef.from_device(self._devices[0]),
+                )
             )
-        )
+            cfg_without_bitmask = copy.deepcopy(
+                self._pipeline_config.sampling_config
+            )
+            cfg_without_bitmask.enable_structured_output = False
+            self._sampler_without_bitmask = session.load(
+                token_sampler(
+                    cfg_without_bitmask,
+                    device=_DeviceRef.from_device(self._devices[0]),
+                )
+            )
+        else:
+            self._sampler_without_bitmask = session.load(
+                token_sampler(
+                    self._pipeline_config.sampling_config,
+                    device=_DeviceRef.from_device(self._devices[0]),
+                )
+            )
+            self._sampler_with_bitmask = None
 
     @property
     def pipeline_config(self) -> PipelineConfig:
@@ -366,6 +388,9 @@ class TextGenerationPipeline(
         if self.vocab_size is None:
             raise ValueError("vocab_size must be set to use structured output")
 
+        if all(context.json_schema is None for context in batch):
+            return None
+
         return llguidance.numpy.allocate_token_bitmask(
             len(batch), self.vocab_size
         )
@@ -415,7 +440,6 @@ class TextGenerationPipeline(
 
         # Keep a global index for bitmask indexing.
         i = 0
-        has_structured_output = False
         for i, (replica_idx, context) in enumerate(
             zip(replica_ids, flat_batch, strict=False)
         ):
@@ -425,9 +449,6 @@ class TextGenerationPipeline(
             # - Updating the bitmask for the context.
             if bitmask is not None:
                 self.update_for_structured_output(context, bitmask, i)
-
-            if context.json_schema is not None:
-                has_structured_output = True
 
             if not self._pipeline_model.kv_manager.contains(context.request_id):
                 self._pipeline_model.kv_manager.external_claim(
@@ -439,7 +460,7 @@ class TextGenerationPipeline(
 
         # If structured output is enabled for a specific request, we only need to run for a single step.
         # This is the only check to ensure that we do not apply an outdated bitmask to new inputs, during the next step.
-        if has_structured_output:
+        if bitmask is not None:
             num_steps = 1
 
         # Retrieve the KV Cache Inputs.
@@ -575,8 +596,18 @@ class TextGenerationPipeline(
 
         batch_processors: list[BatchLogitsProcessor] = []
         if len(flat_batch) > 0:
+            # If structured output is present in the batch, use the sampler with bitmask.
+            sampler: Model
+            if bitmask is not None:
+                assert self._sampler_with_bitmask is not None, (
+                    "Sampler must be built with bitmask sampling"
+                )
+                sampler = self._sampler_with_bitmask
+            else:
+                sampler = self._sampler_without_bitmask
+
             sampling_processor = FusedSamplingProcessor(
-                sampler=self._sampler,
+                sampler=sampler,
                 pipeline_config=self._pipeline_config,
                 context_batch=flat_batch,
                 num_steps=num_steps,
@@ -584,6 +615,7 @@ class TextGenerationPipeline(
                 bitmask=bitmask,
                 vocab_size=self.vocab_size,
             )
+
             batch_processors.append(sampling_processor)
 
         curr_step_inputs = model_inputs
@@ -604,6 +636,16 @@ class TextGenerationPipeline(
                         f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}, {num_steps=:}"
                     )
                     raise  # re-raise the original exception
+
+            # Validate output. This is more of an internal check that the model
+            # is implemented correctly.
+            if (
+                self._pipeline_config.sampling_config.enable_variable_logits
+                and model_outputs.logit_offsets is None
+            ):
+                raise ValueError(
+                    "Model must return logit_offsets when enable_variable_logits is True."
+                )
 
             # Continue and execute the next step if the batch.
             if len(flat_batch) == 0:

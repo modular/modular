@@ -288,8 +288,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
     @always_inline
     fn _compare[
-        self_elt_types: VariadicOf[Copyable & Movable & LessThanComparable],
-        other_elt_types: VariadicOf[Copyable & Movable & LessThanComparable],
+        self_elt_types: VariadicOf[Copyable & Movable & Comparable],
+        other_elt_types: VariadicOf[Copyable & Movable & Comparable],
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Int:
         alias self_len = type_of(self).__len__()
         alias other_len = type_of(other).__len__()
@@ -327,13 +327,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
     @always_inline
     fn __lt__[
-        self_elt_types: VariadicOf[
-            Copyable & Movable & LessThanComparable & GreaterThanComparable
-        ],
-        other_elt_types: VariadicOf[
-            Copyable & Movable & LessThanComparable & GreaterThanComparable
-        ],
-        //,
+        self_elt_types: VariadicOf[Copyable & Movable & Comparable],
+        other_elt_types: VariadicOf[Copyable & Movable & Comparable], //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using less than comparison.
 
@@ -351,13 +346,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
     @always_inline
     fn __le__[
-        self_elt_types: VariadicOf[
-            Copyable & Movable & LessThanComparable & GreaterThanComparable
-        ],
-        other_elt_types: VariadicOf[
-            Copyable & Movable & LessThanComparable & GreaterThanComparable
-        ],
-        //,
+        self_elt_types: VariadicOf[Copyable & Movable & Comparable],
+        other_elt_types: VariadicOf[Copyable & Movable & Comparable], //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using less than or equal to comparison.
 
@@ -375,19 +365,15 @@ struct Tuple[*element_types: Copyable & Movable](
 
     @always_inline
     fn __gt__[
-        self_elt_types: VariadicOf[
-            Copyable & Movable & LessThanComparable & GreaterThanComparable
-        ],
-        other_elt_types: VariadicOf[
-            Copyable & Movable & LessThanComparable & GreaterThanComparable
-        ],
-        //,
+        self_elt_types: VariadicOf[Copyable & Movable & Comparable],
+        other_elt_types: VariadicOf[Copyable & Movable & Comparable], //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using greater than comparison.
 
         Parameters:
             self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other Tuple.
+            other_elt_types: The types of the elements contained in the other
+                Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -400,13 +386,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
     @always_inline
     fn __ge__[
-        self_elt_types: VariadicOf[
-            Copyable & Movable & LessThanComparable & GreaterThanComparable
-        ],
-        other_elt_types: VariadicOf[
-            Copyable & Movable & LessThanComparable & GreaterThanComparable
-        ],
-        //,
+        self_elt_types: VariadicOf[Copyable & Movable & Comparable],
+        other_elt_types: VariadicOf[Copyable & Movable & Comparable], //,
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
         """Compare this tuple to another tuple using greater than or equal to comparison.
 

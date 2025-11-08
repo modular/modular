@@ -257,6 +257,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             graph_mode=graph_mode,
             data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
             use_subgraphs=self.pipeline_config.model_config.use_subgraphs,
+            return_logits=self.return_logits,
         )
 
     @override

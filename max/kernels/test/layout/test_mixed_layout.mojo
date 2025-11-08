@@ -14,13 +14,11 @@
 from layout._mixed_layout import MixedLayout, make_row_major
 from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
 from layout.int_tuple import IntTuple
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, TestSuite
 
 
 def main():
-    test_size_cosize()
-    test_crd2idx()
-    test_row_major()
+    TestSuite().discover_tests[__functions_in_module()]().run()
 
 
 fn test_size_cosize() raises:
@@ -41,7 +39,8 @@ fn test_size_cosize() raises:
 
 fn test_crd2idx() raises:
     var layout = MixedLayout(
-        shape=[Idx[4](), Idx[2]()], stride=[Idx[1](), Idx[4]()]
+        shape=[Idx[4](), Idx[2]()],
+        stride=[Idx[1](), Idx[4]()],
     )
 
     # Multi-dimensional coordinates

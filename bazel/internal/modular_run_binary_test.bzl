@@ -30,8 +30,7 @@ def modular_run_binary_test(
         toolchains: Extra toolchains
         **kwargs: Passed through to the test target
     """
-
-    validate_gpu_tags(tags, gpu_constraints)
+    validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
 
     binary_test(
         name = name,

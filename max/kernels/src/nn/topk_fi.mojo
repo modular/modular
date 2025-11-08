@@ -123,8 +123,8 @@ fn TopKMaskLogitsKernel[
     var tx = Int(thread_idx.x)
     var row_idx = bx
 
-    var logits_ptr = logits.ptr + bx * UInt(d)
-    var masked_logits_ptr = masked_logits.ptr + bx * UInt(d)
+    var logits_ptr = logits.ptr + bx * d
+    var masked_logits_ptr = masked_logits.ptr + bx * d
 
     alias row_layout = Layout.row_major(1, UNKNOWN_VALUE)
     var logits_row = LayoutTensor[dtype, row_layout, MutAnyOrigin](
@@ -167,7 +167,7 @@ fn TopKMaskLogitsKernel[
             for i in range(ceildiv(d, block_size * vec_size)):
                 if (i * block_size + Int(tx)) * vec_size < d:
                     logits_vec = logits_row.load[width=vec_size](
-                        0, i * block_size * vec_size + Int(tx * UInt(vec_size))
+                        0, i * block_size * vec_size + tx * vec_size
                     ).cast[DType.float32]()
 
                 var probs_gt_pivot_0_count = SIMD[DType.int32, vec_size]()
@@ -237,7 +237,7 @@ fn TopKMaskLogitsKernel[
         logits_vec = 0
         if (i * block_size + Int(tx)) * vec_size < d:
             logits_vec = logits_row.load[width=vec_size](
-                0, i * block_size * vec_size + Int(tx * UInt(vec_size))
+                0, i * block_size * vec_size + tx * vec_size
             ).cast[DType.float32]()
 
         logits_vec = (logits_vec.cast[DType.float64]().gt(pivot)).select(
@@ -247,7 +247,7 @@ fn TopKMaskLogitsKernel[
         if (i * block_size + Int(tx)) * vec_size < d:
             masked_logits_row.store[width=vec_size](
                 0,
-                i * block_size * vec_size + Int(tx * UInt(vec_size)),
+                i * block_size * vec_size + tx * vec_size,
                 logits_vec.cast[dtype](),
             )
 
@@ -330,7 +330,7 @@ fn device_sampling_from_prob[
     """Device-level sampling from probability distribution with atomic operations.
     """
 
-    var tx = thread_idx.x
+    var tx = Int(thread_idx.x)
 
     # Step 1: Filter probabilities based on predicate (prob > low).
     var prob_gt_threshold = SIMD[DType.float32, vec_size]()

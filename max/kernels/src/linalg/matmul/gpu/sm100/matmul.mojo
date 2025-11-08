@@ -225,7 +225,6 @@ fn load_AB[
         if elect_one_cta:
             tma_mbar[0].expect_bytes(expected_bytes)
 
-        @parameter
         for j in range(k_group_size):
             var a_smem_tile = a_smem.next(stage * k_group_size + j)[]
             var b_smem_tile = b_smem.next(stage * k_group_size + j)[]
@@ -311,8 +310,6 @@ fn consumer_main_loop[
 
     # Compose TMEM address: accum stage encoded in column field with stride in columns.
     if elect_one_sync():
-
-        @parameter
         for j in range(k_group_size):
             var a_smem_tile = a_smem_iter.next(stage * k_group_size + j)[]
             var b_smem_tile = b_smem_iter.next(stage * k_group_size + j)[]

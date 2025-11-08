@@ -19,6 +19,7 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn import ReturnLogits
 from max.nn.comm.ep import EPConfig
 from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
@@ -73,6 +74,9 @@ class DeepseekV3ConfigBase(MAXModelConfigBase):
     float8_config: Float8Config | None = None
     ep_config: EPConfig | None = None
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
+
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+    """Whether to return the last token, all logits, or a variable number of logits."""
 
     def __post_init__(self):
         if self.hidden_act != "silu":

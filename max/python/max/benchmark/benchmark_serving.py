@@ -48,103 +48,54 @@ if TYPE_CHECKING:
     from max.diagnostics.gpu import BackgroundRecorder as GPUBackgroundRecorder
     from max.diagnostics.gpu import GPUStats
 
-try:
-    from max.benchmark.benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        Backend,
-        ServingBenchmarkConfig,
-        parse_benchmark_args,
-    )
-    from max.benchmark.benchmark_shared.cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        CpuMetricsCollector,
-        collect_pids_for_port,
-    )
-    from max.benchmark.benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        ArxivSummarizationBenchmarkDataset,
-        AxolotlBenchmarkDataset,
-        BatchJobBenchmarkDataset,
-        BenchmarkDataset,
-        ChatSession,
-        CodeDebugBenchmarkDataset,
-        ObfuscatedConversationsBenchmarkDataset,
-        RandomBenchmarkDataset,
-        SampledRequest,
-        ShareGPTBenchmarkDataset,
-        SonnetBenchmarkDataset,
-        VisionArenaBenchmarkDataset,
-    )
-    from max.benchmark.benchmark_shared.lora_driver import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        LoRADriver,
-        LoRAOutputFormat,
-        benchmark_lora_loading,
-        benchmark_lora_unloading,
-    )
-    from max.benchmark.benchmark_shared.metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        BenchmarkMetrics,
-        LoRAMetrics,
-        StandardPercentileMetrics,
-        ThroughputMetrics,
-    )
-    from max.benchmark.benchmark_shared.request import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        REQUEST_DRIVER_CLASSES,
-        ProgressBarRequestDriver,
-        RequestCounter,
-        RequestDriver,
-        RequestFuncInput,
-        RequestFuncOutput,
-    )
-    from max.benchmark.benchmark_shared.server_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        fetch_and_parse_metrics,
-        print_server_metrics,
-    )
-except ImportError:
-    from benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        Backend,
-        ServingBenchmarkConfig,
-        parse_benchmark_args,
-    )
-    from benchmark_shared.cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        CpuMetricsCollector,
-        collect_pids_for_port,
-    )
-    from benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        ArxivSummarizationBenchmarkDataset,
-        AxolotlBenchmarkDataset,
-        BatchJobBenchmarkDataset,
-        BenchmarkDataset,
-        ChatSession,
-        CodeDebugBenchmarkDataset,
-        ObfuscatedConversationsBenchmarkDataset,
-        RandomBenchmarkDataset,
-        SampledRequest,
-        ShareGPTBenchmarkDataset,
-        SonnetBenchmarkDataset,
-        VisionArenaBenchmarkDataset,
-    )
-    from benchmark_shared.lora_driver import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        LoRADriver,
-        LoRAOutputFormat,
-        benchmark_lora_loading,
-        benchmark_lora_unloading,
-    )
-    from benchmark_shared.metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        BenchmarkMetrics,
-        LoRAMetrics,
-        StandardPercentileMetrics,
-        ThroughputMetrics,
-    )
-    from benchmark_shared.request import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        REQUEST_DRIVER_CLASSES,
-        ProgressBarRequestDriver,
-        RequestCounter,
-        RequestDriver,
-        RequestFuncInput,
-        RequestFuncOutput,
-    )
-    from benchmark_shared.server_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        compute_metrics_delta,
-        fetch_and_parse_metrics,
-        print_server_metrics,
-    )
+from max.benchmark.benchmark_shared.config import (
+    Backend,
+    ServingBenchmarkConfig,
+    parse_benchmark_args,
+)
+from max.benchmark.benchmark_shared.cpu_metrics import (
+    CpuMetricsCollector,
+    collect_pids_for_port,
+)
+from max.benchmark.benchmark_shared.datasets import (
+    ArxivSummarizationBenchmarkDataset,
+    AxolotlBenchmarkDataset,
+    BatchJobBenchmarkDataset,
+    BenchmarkDataset,
+    ChatSession,
+    CodeDebugBenchmarkDataset,
+    ObfuscatedConversationsBenchmarkDataset,
+    RandomBenchmarkDataset,
+    SampledRequest,
+    ShareGPTBenchmarkDataset,
+    SonnetBenchmarkDataset,
+    VisionArenaBenchmarkDataset,
+)
+from max.benchmark.benchmark_shared.lora_driver import (
+    LoRADriver,
+    LoRAOutputFormat,
+    benchmark_lora_loading,
+    benchmark_lora_unloading,
+)
+from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkMetrics,
+    LoRAMetrics,
+    StandardPercentileMetrics,
+    ThroughputMetrics,
+)
+from max.benchmark.benchmark_shared.request import (
+    REQUEST_DRIVER_CLASSES,
+    ProgressBarRequestDriver,
+    RequestCounter,
+    RequestDriver,
+    RequestFuncInput,
+    RequestFuncOutput,
+)
+from max.benchmark.benchmark_shared.server_metrics import (
+    compute_metrics_delta,
+    fetch_and_parse_metrics,
+    print_server_metrics,
+)
 
 BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
     "This command runs comprehensive benchmark tests on a model server to"

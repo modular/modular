@@ -99,26 +99,26 @@ fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
 @always_inline
 fn _has_type[type: DType](a: DType, b: DType, c: DType, d: DType) -> Bool:
-    return a is type and b is type and c is type and d is type
+    return _has_type[(type, type, type, type)](a, b, c, d)
 
 
 @always_inline
 fn _has_type[
     abcd: Tuple[DType, DType, DType, DType]
 ](a: DType, b: DType, c: DType, d: DType) -> Bool:
-    return a is abcd[0] and b is abcd[1] and c is abcd[2] and d is abcd[3]
+    return (a, b, c, d) == abcd
 
 
 @always_inline
 fn _has_shape[size: Int](a: Int, b: Int, c: Int, d: Int) -> Bool:
-    return a == size and b == size and c == size and d == size
+    return _has_shape[(size, size, size, size)](a, b, c, d)
 
 
 @always_inline
 fn _has_shape[
     abcd: Tuple[Int, Int, Int, Int]
 ](a: Int, b: Int, c: Int, d: Int) -> Bool:
-    return a == abcd[0] and b == abcd[1] and c == abcd[2] and d == abcd[3]
+    return (a, b, c, d) == abcd
 
 
 # ===----------------------------------------------------------------------===#

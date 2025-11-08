@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, final
 
 import numpy as np
 from max.driver import DeviceStream
+from max.engine import Model
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
     BatchLogitsProcessor,
@@ -80,8 +81,17 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
 
         # Multistep execution loop.
         tracer.next("prepare_sampling_processor")
+        sampler: Model
+        if bitmask is not None:
+            assert self._sampler_with_bitmask is not None, (
+                "Sampler must be built with bitmask sampling"
+            )
+            sampler = self._sampler_with_bitmask
+        else:
+            sampler = self._sampler_without_bitmask
+
         sampling_processor = FusedSamplingProcessor(
-            sampler=self._sampler,
+            sampler=sampler,
             pipeline_config=self._pipeline_config,
             context_batch=context_batch,
             num_steps=num_steps,

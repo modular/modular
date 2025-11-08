@@ -29,6 +29,7 @@ from sys import external_call
 from sys.arg import argv
 from sys.ffi import (
     DLHandle,
+    OwnedDLHandle,
     c_char,
     c_double,
     c_int,
@@ -1303,7 +1304,7 @@ struct CPython(Defaultable, Movable):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var lib: DLHandle
+    var lib: OwnedDLHandle
     """The handle to the CPython shared library."""
     var version: PythonVersion
     """The version of the Python runtime."""
@@ -1456,12 +1457,12 @@ struct CPython(Defaultable, Movable):
         #   into the process by loading the `libpython` dynamic library.
         try:
             # Try to load the library from the current process.
-            self.lib = DLHandle()
+            self.lib = OwnedDLHandle()
             if not self.lib.check_symbol("Py_Initialize"):
                 # If the library is not present in the current process, try to load it from the environment variable.
-                self.lib = DLHandle(python_lib)
+                self.lib = OwnedDLHandle(python_lib)
         except e:
-            self.lib = abort[DLHandle](
+            self.lib = abort[OwnedDLHandle](
                 String("Failed to load libpython from", python_lib, ":\n", e)
             )
 
@@ -1469,71 +1470,81 @@ struct CPython(Defaultable, Movable):
             if not self.lib.check_symbol("Py_Initialize"):
                 self.init_error = "compatible Python library not found"
             self.lib.call["Py_Initialize"]()
-            self.version = PythonVersion(_py_get_version(self.lib))
+            self.version = PythonVersion(_py_get_version(self.lib.borrow()))
         else:
             self.version = PythonVersion(0, 0, 0)
 
         # The Very High Level Layer
-        self._PyRun_SimpleString = PyRun_SimpleString.load(self.lib)
-        self._PyRun_String = PyRun_String.load(self.lib)
-        self._Py_CompileString = Py_CompileString.load(self.lib)
-        self._PyEval_EvalCode = PyEval_EvalCode.load(self.lib)
+        self._PyRun_SimpleString = PyRun_SimpleString.load(self.lib.borrow())
+        self._PyRun_String = PyRun_String.load(self.lib.borrow())
+        self._Py_CompileString = Py_CompileString.load(self.lib.borrow())
+        self._PyEval_EvalCode = PyEval_EvalCode.load(self.lib.borrow())
         # Reference Counting
-        self._Py_NewRef = Py_NewRef.load(self.lib)
-        self._Py_IncRef = Py_IncRef.load(self.lib)
-        self._Py_DecRef = Py_DecRef.load(self.lib)
+        self._Py_NewRef = Py_NewRef.load(self.lib.borrow())
+        self._Py_IncRef = Py_IncRef.load(self.lib.borrow())
+        self._Py_DecRef = Py_DecRef.load(self.lib.borrow())
         # Exception Handling
-        self._PyErr_Clear = PyErr_Clear.load(self.lib)
-        self._PyErr_SetString = PyErr_SetString.load(self.lib)
-        self._PyErr_SetNone = PyErr_SetNone.load(self.lib)
-        self._PyErr_Occurred = PyErr_Occurred.load(self.lib)
+        self._PyErr_Clear = PyErr_Clear.load(self.lib.borrow())
+        self._PyErr_SetString = PyErr_SetString.load(self.lib.borrow())
+        self._PyErr_SetNone = PyErr_SetNone.load(self.lib.borrow())
+        self._PyErr_Occurred = PyErr_Occurred.load(self.lib.borrow())
         if self.version.minor >= 12:
             self._PyErr_GetRaisedException = PyErr_GetRaisedException.load(
-                self.lib
+                self.lib.borrow()
             )
         else:
             self._PyErr_GetRaisedException = _PyErr_GetRaisedException_dummy
-        self._PyErr_Fetch = PyErr_Fetch.load(self.lib)
+        self._PyErr_Fetch = PyErr_Fetch.load(self.lib.borrow())
         # Initialization, Finalization, and Threads
-        self._PyEval_SaveThread = PyEval_SaveThread.load(self.lib)
-        self._PyEval_RestoreThread = PyEval_RestoreThread.load(self.lib)
-        self._PyGILState_Ensure = PyGILState_Ensure.load(self.lib)
-        self._PyGILState_Release = PyGILState_Release.load(self.lib)
+        self._PyEval_SaveThread = PyEval_SaveThread.load(self.lib.borrow())
+        self._PyEval_RestoreThread = PyEval_RestoreThread.load(
+            self.lib.borrow()
+        )
+        self._PyGILState_Ensure = PyGILState_Ensure.load(self.lib.borrow())
+        self._PyGILState_Release = PyGILState_Release.load(self.lib.borrow())
         # Importing Modules
-        self._PyImport_ImportModule = PyImport_ImportModule.load(self.lib)
-        self._PyImport_AddModule = PyImport_AddModule.load(self.lib)
+        self._PyImport_ImportModule = PyImport_ImportModule.load(
+            self.lib.borrow()
+        )
+        self._PyImport_AddModule = PyImport_AddModule.load(self.lib.borrow())
         # Abstract Objects Layer
         # Object Protocol
-        self._PyObject_HasAttrString = PyObject_HasAttrString.load(self.lib)
-        self._PyObject_GetAttrString = PyObject_GetAttrString.load(self.lib)
-        self._PyObject_SetAttrString = PyObject_SetAttrString.load(self.lib)
-        self._PyObject_Str = PyObject_Str.load(self.lib)
-        self._PyObject_Hash = PyObject_Hash.load(self.lib)
-        self._PyObject_IsTrue = PyObject_IsTrue.load(self.lib)
-        self._PyObject_Type = PyObject_Type.load(self.lib)
-        self._PyObject_Length = PyObject_Length.load(self.lib)
-        self._PyObject_GetItem = PyObject_GetItem.load(self.lib)
-        self._PyObject_SetItem = PyObject_SetItem.load(self.lib)
-        self._PyObject_GetIter = PyObject_GetIter.load(self.lib)
+        self._PyObject_HasAttrString = PyObject_HasAttrString.load(
+            self.lib.borrow()
+        )
+        self._PyObject_GetAttrString = PyObject_GetAttrString.load(
+            self.lib.borrow()
+        )
+        self._PyObject_SetAttrString = PyObject_SetAttrString.load(
+            self.lib.borrow()
+        )
+        self._PyObject_Str = PyObject_Str.load(self.lib.borrow())
+        self._PyObject_Hash = PyObject_Hash.load(self.lib.borrow())
+        self._PyObject_IsTrue = PyObject_IsTrue.load(self.lib.borrow())
+        self._PyObject_Type = PyObject_Type.load(self.lib.borrow())
+        self._PyObject_Length = PyObject_Length.load(self.lib.borrow())
+        self._PyObject_GetItem = PyObject_GetItem.load(self.lib.borrow())
+        self._PyObject_SetItem = PyObject_SetItem.load(self.lib.borrow())
+        self._PyObject_GetIter = PyObject_GetIter.load(self.lib.borrow())
         # Call Protocol
-        self._PyObject_Call = PyObject_Call.load(self.lib)
-        self._PyObject_CallObject = PyObject_CallObject.load(self.lib)
+        self._PyObject_Call = PyObject_Call.load(self.lib.borrow())
+        self._PyObject_CallObject = PyObject_CallObject.load(self.lib.borrow())
         # Number Protocol
-        self._PyNumber_Long = PyNumber_Long.load(self.lib)
-        self._PyNumber_Float = PyNumber_Float.load(self.lib)
+        self._PyNumber_Long = PyNumber_Long.load(self.lib.borrow())
+        self._PyNumber_Float = PyNumber_Float.load(self.lib.borrow())
         # Iterator Protocol
-        self._PyIter_Check = PyIter_Check.load(self.lib)
-        self._PyIter_Next = PyIter_Next.load(self.lib)
+        self._PyIter_Check = PyIter_Check.load(self.lib.borrow())
+        self._PyIter_Next = PyIter_Next.load(self.lib.borrow())
         # Concrete Objects Layer
         # Type Objects
-        self._PyType_GetFlags = PyType_GetFlags.load(self.lib)
-        self._PyType_IsSubtype = PyType_IsSubtype.load(self.lib)
-        self._PyType_GenericAlloc = PyType_GenericAlloc.load(self.lib)
+        self._PyType_GetFlags = PyType_GetFlags.load(self.lib.borrow())
+        self._PyType_IsSubtype = PyType_IsSubtype.load(self.lib.borrow())
+        self._PyType_GenericAlloc = PyType_GenericAlloc.load(self.lib.borrow())
         if self.version.minor >= 11:
-            self._PyType_GetName = PyType_GetName.load(self.lib)
+            self._PyType_GetName = PyType_GetName.load(self.lib.borrow())
         else:
             self._PyType_GetName = _PyType_GetName_dummy
-        self._PyType_FromSpec = PyType_FromSpec.load(self.lib)
+        self._PyType_FromSpec = PyType_FromSpec.load(self.lib.borrow())
         # The None Object
         if self.version.minor >= 13:
             # Py_GetConstantBorrowed is part of the Stable ABI since version 3.13
@@ -1555,60 +1566,72 @@ struct CPython(Defaultable, Movable):
             # PyTypeObject PyLong_Type
             self.lib.get_symbol[PyTypeObject]("PyLong_Type")
         )
-        self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib)
-        self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib)
-        self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib)
+        self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib.borrow())
+        self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib.borrow())
+        self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib.borrow())
         # Boolean Objects
         self._PyBool_Type = PyTypeObjectPtr(
             # PyTypeObject PyBool_Type
             self.lib.get_symbol[PyTypeObject]("PyBool_Type")
         )
-        self._PyBool_FromLong = PyBool_FromLong.load(self.lib)
+        self._PyBool_FromLong = PyBool_FromLong.load(self.lib.borrow())
         # Floating-Point Objects
         self._PyFloat_Type = PyTypeObjectPtr(
             # PyTypeObject PyFloat_Type
             self.lib.get_symbol[PyTypeObject]("PyFloat_Type")
         )
-        self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib)
-        self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib)
+        self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib.borrow())
+        self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib.borrow())
         # Unicode Objects and Codecs
-        self._PyUnicode_DecodeUTF8 = PyUnicode_DecodeUTF8.load(self.lib)
-        self._PyUnicode_AsUTF8AndSize = PyUnicode_AsUTF8AndSize.load(self.lib)
+        self._PyUnicode_DecodeUTF8 = PyUnicode_DecodeUTF8.load(
+            self.lib.borrow()
+        )
+        self._PyUnicode_AsUTF8AndSize = PyUnicode_AsUTF8AndSize.load(
+            self.lib.borrow()
+        )
         # Tuple Objects
-        self._PyTuple_New = PyTuple_New.load(self.lib)
-        self._PyTuple_GetItem = PyTuple_GetItem.load(self.lib)
-        self._PyTuple_SetItem = PyTuple_SetItem.load(self.lib)
+        self._PyTuple_New = PyTuple_New.load(self.lib.borrow())
+        self._PyTuple_GetItem = PyTuple_GetItem.load(self.lib.borrow())
+        self._PyTuple_SetItem = PyTuple_SetItem.load(self.lib.borrow())
         # List Objects
-        self._PyList_New = PyList_New.load(self.lib)
-        self._PyList_GetItem = PyList_GetItem.load(self.lib)
-        self._PyList_SetItem = PyList_SetItem.load(self.lib)
+        self._PyList_New = PyList_New.load(self.lib.borrow())
+        self._PyList_GetItem = PyList_GetItem.load(self.lib.borrow())
+        self._PyList_SetItem = PyList_SetItem.load(self.lib.borrow())
         # Dictionary Objects
         self._PyDict_Type = PyTypeObjectPtr(
             # PyTypeObject PyDict_Type
             self.lib.get_symbol[PyTypeObject]("PyDict_Type")
         )
-        self._PyDict_New = PyDict_New.load(self.lib)
-        self._PyDict_SetItem = PyDict_SetItem.load(self.lib)
-        self._PyDict_GetItemWithError = PyDict_GetItemWithError.load(self.lib)
-        self._PyDict_Next = PyDict_Next.load(self.lib)
+        self._PyDict_New = PyDict_New.load(self.lib.borrow())
+        self._PyDict_SetItem = PyDict_SetItem.load(self.lib.borrow())
+        self._PyDict_GetItemWithError = PyDict_GetItemWithError.load(
+            self.lib.borrow()
+        )
+        self._PyDict_Next = PyDict_Next.load(self.lib.borrow())
         # Set Objects
-        self._PySet_New = PySet_New.load(self.lib)
-        self._PySet_Add = PySet_Add.load(self.lib)
+        self._PySet_New = PySet_New.load(self.lib.borrow())
+        self._PySet_Add = PySet_Add.load(self.lib.borrow())
         # Module Objects
-        self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
-        self._PyModule_Create2 = PyModule_Create2.load(self.lib)
-        self._PyModule_AddFunctions = PyModule_AddFunctions.load(self.lib)
-        self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(self.lib)
+        self._PyModule_GetDict = PyModule_GetDict.load(self.lib.borrow())
+        self._PyModule_Create2 = PyModule_Create2.load(self.lib.borrow())
+        self._PyModule_AddFunctions = PyModule_AddFunctions.load(
+            self.lib.borrow()
+        )
+        self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(
+            self.lib.borrow()
+        )
         # Slice Objects
-        self._PySlice_New = PySlice_New.load(self.lib)
+        self._PySlice_New = PySlice_New.load(self.lib.borrow())
         # Capsules
-        self._PyCapsule_New = PyCapsule_New.load(self.lib)
-        self._PyCapsule_GetPointer = PyCapsule_GetPointer.load(self.lib)
+        self._PyCapsule_New = PyCapsule_New.load(self.lib.borrow())
+        self._PyCapsule_GetPointer = PyCapsule_GetPointer.load(
+            self.lib.borrow()
+        )
         # Memory Management
-        self._PyObject_Free = PyObject_Free.load(self.lib)
+        self._PyObject_Free = PyObject_Free.load(self.lib.borrow())
         # Object Implementation Support
         # Common Object Structures
-        self._Py_Is = Py_Is.load(self.lib)
+        self._Py_Is = Py_Is.load(self.lib.borrow())
 
     fn __del__(deinit self):
         pass
@@ -1616,7 +1639,8 @@ struct CPython(Defaultable, Movable):
     fn destroy(mut self):
         # https://docs.python.org/3/c-api/init.html#c.Py_FinalizeEx
         self.lib.call["Py_FinalizeEx"]()
-        self.lib.close()
+        # Note: self.lib will be automatically closed when CPython is destroyed
+        # due to OwnedDLHandle's RAII semantics
 
     fn check_init_error(self) raises:
         """Used for entry points that initialize Python on first use, will

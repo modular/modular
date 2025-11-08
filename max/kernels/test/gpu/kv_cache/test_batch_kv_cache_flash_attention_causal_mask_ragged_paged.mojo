@@ -297,19 +297,22 @@ def execute_ragged_flash_attention[
 def execute_flash_attention_suite(ctx: DeviceContext):
     alias types = (DType.float32, DType.bfloat16)
 
-    for bs in [1, 4]:
+    for bs in [1, 4, 16]:
 
         @parameter
         for type_idx in range(len(types)):
             alias type = types[type_idx]
+            if bs == 16 and type == DType.float32:
+                # This fails for the MI300X
+                continue
             ce_cache_sizes = List[Int]()
             ce_seq_lens = List[Int]()
             tg_cache_sizes = List[Int]()
             tg_seq_lens = List[Int]()
             for _ in range(bs):
                 tg_seq_lens.append(1)
-                tg_cache_sizes.append(Int(random_ui64(512, 1024)))
-                ce_seq_lens.append(Int(random_ui64(512, 1024)))
+                tg_cache_sizes.append(Int(random_ui64(1, 1024)))
+                ce_seq_lens.append(Int(random_ui64(1, 1024)))
                 ce_cache_sizes.append(0)
 
             print("CE", bs, type)
@@ -327,11 +330,12 @@ def execute_flash_attention_suite(ctx: DeviceContext):
 
     # edge cases
     print("CE", 1, DType.bfloat16)
-    var short_ce_seq_len = [2]
-    var short_ce_cache_size = [0]
-    execute_ragged_flash_attention[
-        llama_num_q_heads, DType.bfloat16, kv_params_llama3
-    ](short_ce_seq_len, short_ce_cache_size, 2, 1, ctx)
+    for len in [2, 27]:
+        var short_ce_seq_len = [len]
+        var short_ce_cache_size = [0]
+        execute_ragged_flash_attention[
+            llama_num_q_heads, DType.bfloat16, kv_params_llama3
+        ](short_ce_seq_len, short_ce_cache_size, 2, 1, ctx)
 
     print("TG", 2, DType.bfloat16)
     tg_seq_lens = [1, 1]

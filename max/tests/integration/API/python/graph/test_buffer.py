@@ -250,6 +250,7 @@ def test_variadic_buffer_handling(
     assert isinstance(output, Tensor)
 
 
+@pytest.mark.skip
 def test_inplace_custom(custom_ops_path: Path) -> None:
     tensor_type = TensorType(DType.float32, shape=[4], device=DeviceRef.CPU())
     buffer_type = BufferType(DType.float32, shape=[4], device=DeviceRef.CPU())

@@ -641,11 +641,14 @@ fn matmul_dispatch_sm100_fp8[
 
     alias nk_idx_list = tuning_table.query_index[rule_eq_nk]()
 
+    # TODO: re-enable the following tuning dispatch.
     # make sure the domain (nk_idx_list) is not empty!
-    @parameter
-    if nk_idx_list:
-        if _search[tuning_table, domain=nk_idx_list]() == DISPATCH_HIT:
-            return DISPATCH_HIT
+    if m > 128:
+
+        @parameter
+        if nk_idx_list:
+            if _search[tuning_table, domain=nk_idx_list]() == DISPATCH_HIT:
+                return DISPATCH_HIT
 
     @parameter
     fn matmul_swapab[static_m: Int]() raises -> Int:

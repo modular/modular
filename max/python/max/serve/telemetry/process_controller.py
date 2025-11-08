@@ -138,7 +138,11 @@ async def start_process_consumer(
 
         proc.start(init_and_process, settings, metrics_q, health_q, handle_fn)
 
-        await proc.ready(lambda: health_q.get(timeout=20))
+        await proc.ready(
+            lambda: health_q.get(
+                timeout=settings.telemetry_worker_spawn_timeout
+            )
+        )
 
         if settings.use_heartbeat:
             proc.watch_heartbeat(lambda: health_q.get(timeout=5))
