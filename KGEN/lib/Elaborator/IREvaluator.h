@@ -83,10 +83,6 @@ private:
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
   FailureOr<TypedAttr> evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry);
 
-  FailureOr<TypedAttr> evaluateCompileOffloadClosureAttr(
-      CompileOffloadClosureAttr compileOffloadClosureAttr);
-  FailureOr<TypedAttr> evaluateCompileAssemblyAttr(CompileAssemblyAttr attr);
-
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);
   }
@@ -107,6 +103,14 @@ private:
       function_ref<std::string(StringRef)> getPrefix) override;
 
   GeneratorOp getGenerator(SymbolRefAttr symbol) override;
+
+  ErrorOr<CrossDeviceFunction>
+  compileAsm(MLIRContext *ctx, GeneratorOp, SymbolConstantAttr, StringAttr,
+             TargetInfoAttr, EmitAs, EmissionOptions emissionOptions) override;
+
+  void addDeferredFunction(OwningOpRef<FuncOp> func) override;
+
+  ImplNodeBase *getParentNode() override;
 
   /// A reference to the elaborator instance. The elaborator is invoked to
   /// concretize symbol constants prior to interpreting them.
@@ -130,10 +134,11 @@ struct ImplNode : public ImplNodeBase {
       : ImplNodeBase(inst, std::move(graph)), parent(parent) {}
 
   ImplNode(ParamNode *parent);
+  virtual ~ImplNode() = default;
 
   /// Take the provided error and set this node to an `error` state. Erase all
   /// state dominated by this node.
-  void setToError(ErrorTree &&err);
+  void setToError(ErrorTree &&err) override;
 
   /// Get the current active evaluator instance.
   IREvaluator &getEvaluator() { return stack.back().evaluator; }

@@ -8,7 +8,9 @@
 #include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/Support/NameMangling.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
+#include "Support/Compiler/DiagnosticHandler.h"
 #include "Support/StringExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 
@@ -155,6 +157,149 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateTypeConformToTraitAttr(
   StructGeneratorOp genOp = cast<StructGeneratorOp>(genNode->gen);
 
   return typeConformToTraitAttr.simplify(SymbolTable(genOp));
+}
+
+static void emitDiagnosticToStream(raw_ostream &os, Diagnostic &diag) {
+  os << "\n" << diag.getLocation() << ": " << diag;
+  for (Diagnostic &note : diag.getNotes())
+    emitDiagnosticToStream(os, note);
+}
+
+FailureOr<TypedAttr>
+IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
+  // Cheeky copy. The state of the symbol table right at this moment is
+  // sufficient to produce a standalone object for the generator being JIT'd.
+  // Slice out a standalone module to re-elaborate with the new target.
+
+  TargetInfoAttr target = cast<TargetParamAttr>(attr.getTarget()).getTarget();
+  EmitAs emissionKind = cast<EmitAsAttr>(attr.getEmissionKind()).getValue();
+  StringRef emissionOptionsStr =
+      cast<StringAttr>(attr.getEmissionOptions()).getValue();
+  bool propagateError = cast<BoolAttr>(attr.getPropagateError()).getValue();
+  SymbolConstantAttr symbol = dyn_cast<SymbolConstantAttr>(attr.getFunc());
+  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
+      getExpectedMangledName(*errorLoc, "compile_assembly", symbol,
+                             /*allowParametric=*/false,
+                             /*sanitize=*/false, [](StringRef) { return ""; });
+  if (pairOrError.isError()) {
+    getParentNode()->setToError(pairOrError.takeError());
+    return failure();
+  }
+  StringAttr name;
+  GeneratorOp func;
+  std::tie(name, func) = pairOrError.takeValue();
+
+  // Construct the expected result type.
+  MLIRContext *ctx = attr.getContext();
+  Builder b(ctx);
+  auto noneType = KGEN::NoneType::get(ctx);
+  auto populateFnType = FuncTypeGeneratorType::get(
+      /*inputParamTypes=*/{},
+      b.getFunctionType(PointerType::get(noneType), noneType),
+      {ArgConvention::ReadReg}, FnEffects().setCapturing());
+
+  // Specialize the generator with another target by slicing it and its
+  // transitive dependencies out of the IR and re-invoking the elaborator. If it
+  // turns out that the specialization has more than one implementation, then
+  // the elaborator invocation will fail due to multiple implementations of a
+  // primary generator, and the functor will return an error.
+
+  // Parse the emission options from a comma separated list of values.
+  SmallVector<StringRef> emissionOptions;
+  emissionOptionsStr.split(emissionOptions, /*Separator=*/",",
+                           /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+
+  // Capture the diagnostics that may be emitted.
+  DiagnosticHandler handler(ctx);
+  ErrorOr<CrossDeviceFunction> closure = compileAsm(
+      ctx, func, symbol, name, target, emissionKind, emissionOptions);
+  handler.release();
+
+  if (closure.isError()) {
+    // Emit all the errors now.
+    if (!propagateError) {
+      handler.emitDiagnostics([&](Diagnostic &diag) {
+        ctx->getDiagEngine().emit(std::move(diag));
+      });
+      emitError({*errorLoc, closure.takeError()});
+      return failure();
+    }
+    // Concat all the errors together and return it as a variant.
+    std::string error;
+    llvm::raw_string_ostream os(error);
+    os << closure.getError();
+    handler.emitDiagnostics(
+        [&](Diagnostic &diag) { emitDiagnosticToStream(os, diag); });
+    // Note: return -1 to indicate an error state.
+    return {StructAttr::get({StringAttr::get(os.str(), StringType::get(ctx)),
+                             b.getIndexAttr(-1),
+                             UninitMemAttr::get(populateFnType)})};
+  }
+
+  auto populate = cast<FuncOp>(closure->populateCapturesFn.release());
+  auto populateFnRef = SymbolConstantAttr::get(populate);
+  addDeferredFunction(populate);
+  return {
+      StructAttr::get({closure->contents, b.getIndexAttr(closure->numCaptures),
+                       populateFnRef})};
+}
+
+FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
+    CompileOffloadClosureAttr compileOffloadClosureAttr) {
+  // Create the signature and an empty body of the populate capture for offload
+  // closures as part of elaboration step.
+  // We currently only support capturing closure as a parameter. So this closure
+  // has to be created during elaboration time as a compile time constant.
+  // However, bundling GPU and other offload compilation means
+  // that the actual compilation of the offload functions will happen later
+  // once all of them are seen and collected, and the actual body of this
+  // closure will not be known until the offload function is compiled
+  // (so that we know what needs to be captured).
+  // We will generated the actual body of this closure later.
+
+  // Slice out a standalone module to re-elaborate with the new target later.
+
+  TargetInfoAttr target =
+      cast<TargetParamAttr>(compileOffloadClosureAttr.getTarget()).getTarget();
+  // Add "_" prefix to GPU kernel name if it starts with a number, otherwise ptx
+  // compiler will fail.
+  ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
+      getExpectedMangledName(*errorLoc, "compile_offload_closure",
+                             compileOffloadClosureAttr.getFunc(),
+                             /*allowParametric=*/false, /*sanitize=*/false,
+                             [isGPU = target.isGPU()](StringRef name) {
+                               return (isGPU && llvm::isDigit(name.front()))
+                                          ? "_"
+                                          : "";
+                             });
+
+  if (pairOrError.isError()) {
+    emitError(pairOrError.takeError());
+    return failure();
+  }
+  StringAttr name = pairOrError.takeValue().first;
+
+  // Construct the expected result type.
+  MLIRContext *ctx = compileOffloadClosureAttr.getContext();
+  auto noneType = KGEN::NoneType::get(ctx);
+
+  // The location to use for generated code. Remove all debuginfo from it.
+  Location loc = DebugInfo::stripDebugScopesRecursively(*errorLoc);
+
+  // The expected signature is `fn(Pointer[None]) capturing -> None`.
+  ImplicitLocOpBuilder bb(loc, ctx);
+  auto nonePtr = PointerType::get(noneType);
+  auto sig = FuncType::get(bb.getFunctionType(nonePtr, noneType),
+                           ArgConvention::ReadReg, FnEffects().setCapturing());
+
+  OwningOpRef<FuncOp> populateFunc = FuncOp::create(
+      bb, bb.getStringAttr(name.getValue() + "_populate_captures"), sig,
+      InlineLevel::Always);
+
+  auto populate = cast<FuncOp>(populateFunc.get());
+  auto populateFnRef = SymbolConstantAttr::get(populate);
+  addDeferredFunction(std::move(populateFunc));
+  return {populateFnRef};
 }
 
 /// Print a single SIMD value.
