@@ -39,7 +39,6 @@ from utils import IndexList
 from .utils import (
     LocalLayoutTensor,
     SharedLayoutTensor,
-    convert_f32_to_bf16,
     get_fragment_layout,
     get_warp_coords,
     get_warp_layout,
@@ -974,9 +973,7 @@ struct PRegisterBuffer[
 
                 @parameter
                 for j in range(output_frag_size):
-                    out[0, j] = convert_f32_to_bf16[dtype](
-                        self.reg_tile[tile_idx, j]
-                    )
+                    out[0, j] = self.reg_tile[tile_idx, j].cast[dtype]()
             elif mma_shape[0] == 16:
                 constrained[
                     output_frag_size == 4,
@@ -992,12 +989,10 @@ struct PRegisterBuffer[
                 for m, j in itertools.product(
                     range(num_m_mmas), range(output_frag_size)
                 ):
-                    mma_reg_tile[m, j] = convert_f32_to_bf16[dtype](
-                        reg_tile_split[m, j]
-                    )
-                    mma_reg_tile[m, output_frag_size + j] = convert_f32_to_bf16[
-                        dtype
-                    ](reg_tile_split[m + num_m_mmas, j])
+                    mma_reg_tile[m, j] = reg_tile_split[m, j].cast[dtype]()
+                    mma_reg_tile[m, output_frag_size + j] = reg_tile_split[
+                        m + num_m_mmas, j
+                    ].cast[dtype]()
                 return mma_reg_tile
             else:
                 constrained[
@@ -1009,19 +1004,19 @@ struct PRegisterBuffer[
             # and transpose the v tile when writing to the shared memory
             @parameter
             for j in range(4):
-                out[0, 2 * j] = convert_f32_to_bf16[Self.mma_dtype](
-                    self.reg_tile[tile_idx, j]
-                )
+                out[0, 2 * j] = self.reg_tile[tile_idx, j].cast[
+                    Self.mma_dtype
+                ]()
 
-                out[0, 2 * j + 1] = convert_f32_to_bf16[Self.mma_dtype](
-                    self.reg_tile[tile_idx, 4 + j]
-                )
-                out[0, 2 * j + 8] = convert_f32_to_bf16[Self.mma_dtype](
-                    self.reg_tile[tile_idx, 8 + j]
-                )
-                out[0, 2 * j + 8 + 1] = convert_f32_to_bf16[Self.mma_dtype](
-                    self.reg_tile[tile_idx, 12 + j]
-                )
+                out[0, 2 * j + 1] = self.reg_tile[tile_idx, 4 + j].cast[
+                    Self.mma_dtype
+                ]()
+                out[0, 2 * j + 8] = self.reg_tile[tile_idx, 8 + j].cast[
+                    Self.mma_dtype
+                ]()
+                out[0, 2 * j + 8 + 1] = self.reg_tile[tile_idx, 12 + j].cast[
+                    Self.mma_dtype
+                ]()
         return rebind[Self.MMATileType](
             out.tile[num_n_mmas, simd_width_of[Self.mma_dtype]()](0, k_idx)
         )

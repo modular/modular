@@ -144,20 +144,6 @@ fn copy_local_to_dram2[
                     )
 
 
-@always_inline
-fn convert_f32_to_bf16[dtype: DType](x: SIMD, out res: SIMD[dtype, x.size]):
-    # CK uses truncation for f32 to bf16 conversion but it's not accurate,
-    # we only use it when benchmarking against CK otherwise in practice
-    # we use the accurate conversion.
-    alias use_truncation = False
-
-    @parameter
-    if use_truncation:
-        res = type_of(res)(from_bits=(x.to_bits() >> 16).cast[DType.uint16]())
-    else:
-        res = x.cast[dtype]()
-
-
 struct SharedMemoryManager[
     shared_kv: Bool,
     full_kv: Bool,
