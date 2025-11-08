@@ -10,6 +10,7 @@
 # RUN: not not %t 2>&1 | FileCheck %s
 
 from compile import compile_info
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 def main():

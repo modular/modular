@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 
 @export("my_add_one")
 fn my_add_one(x: UnsafePointer[Int32]):

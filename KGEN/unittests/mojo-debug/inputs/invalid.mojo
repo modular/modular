@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
+
 
 @fieldwise_init
 struct A(ImplicitlyCopyable, Movable):

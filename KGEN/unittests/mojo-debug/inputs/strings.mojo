@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
+
 
 fn test(st: String):
     print(st)  # breakpoint
