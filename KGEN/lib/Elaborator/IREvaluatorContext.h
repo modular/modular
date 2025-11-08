@@ -12,6 +12,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/Threading/Shared.h"
 
@@ -27,10 +28,13 @@ struct ImplNodeBase {
       : inst(inst), paramGraph(std::move(graph)) {}
 
   ImplNodeBase(Region &scope) : paramGraph(scope) {}
+  virtual ~ImplNodeBase() = default;
 
   /// Initialize the fields of the node if created with the single-argument
   /// constructor above.
   void initialize(InstantiatedOpInterface inst, ParameterUseDefGraph &&graph);
+
+  virtual void setToError(ErrorTree &&err) = 0;
 
   /// This op represents a concrete instantiation of a generator.
   InstantiatedOpInterface inst;
@@ -196,6 +200,9 @@ protected:
   FailureOr<TypedAttr> evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr);
   FailureOr<TypedAttr> evaluateTypeConformToTraitAttr(
       TypeConformsToTraitAttr typeConformToTraitAttr);
+  FailureOr<TypedAttr> evaluateCompileOffloadClosureAttr(
+      CompileOffloadClosureAttr compileOffloadClosureAttr);
+  FailureOr<TypedAttr> evaluateCompileAssemblyAttr(CompileAssemblyAttr attr);
 
   std::string stringifyTypeInstanceRef(TypeInstanceRefAttr instanceRef,
                                        bool qualifiedBuiltins);
@@ -228,6 +235,14 @@ private:
                          function_ref<std::string(StringRef)> getPrefix) = 0;
 
   virtual GeneratorOp getGenerator(SymbolRefAttr symbol) = 0;
+
+  virtual void addDeferredFunction(OwningOpRef<FuncOp> func) = 0;
+
+  virtual ErrorOr<CrossDeviceFunction>
+  compileAsm(MLIRContext *ctx, GeneratorOp, SymbolConstantAttr, StringAttr,
+             TargetInfoAttr, EmitAs, EmissionOptions emissionOptions) = 0;
+
+  virtual ImplNodeBase *getParentNode() = 0;
 };
 
 } // namespace M::KGEN
