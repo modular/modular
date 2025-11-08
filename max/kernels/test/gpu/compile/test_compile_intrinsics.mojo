@@ -103,12 +103,10 @@ def test_compile_code():
         ]()
     )
 
-
-from gpu.host import DeviceContext
-
-
-def main():
-    # test_compile_code()
+    print("== test_compile_code (Metal/M4)")
+    # CHECK: declare void @air.atomic.fence(i32, i32, i32)
+    # CHECK: declare void @air.atomic.global.store.i32(ptr addrspace(1), i32, i32, i32, i1)
+    # CHECK: declare i32 @air.atomic.global.load.i32(ptr addrspace(1), i32, i32, i1)
     print(
         _compile_code[
             kernel[DType.int32],
@@ -116,22 +114,7 @@ def main():
             emission_kind="llvm-opt",
         ]()
     )
-    """
-    alias dtype = DType.int32
-    with DeviceContext() as ctx:
-        a = ctx.enqueue_create_buffer[dtype](1)
-        a = a.enqueue_fill(0)
 
-        b = ctx.enqueue_create_buffer[dtype](1)
-        b = b.enqueue_fill(0)
-        ctx.enqueue_function[
-            kernel[dtype]
-        ](a.unsafe_ptr(), b.unsafe_ptr(), Scalar[dtype](42), grid_dim=(1,), block_dim=(1,))
-        ctx.synchronize()
 
-        with a.map_to_host() as a_host:
-            print("Result:", a_host[0])  # Should print 42
-        
-        with b.map_to_host() as b_host:
-            print("Intermediate:", b_host[0])  # Should print 42
-    """
+def main():
+    test_compile_code()
