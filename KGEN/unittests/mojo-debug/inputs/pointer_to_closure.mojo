@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StaticString
+from memory import LegacyOpaquePointer as OpaquePointer
 
 
 struct CallbackHolder:

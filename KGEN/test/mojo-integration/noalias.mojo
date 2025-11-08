@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: kgen -emit-llvm=opt %s | FileCheck %s
 
+from memory import LegacyUnsafePointer as UnsafePointer
+
 
 # CHECK: ; Function Attrs: {{.*}}memory(argmem: readwrite)
 # CHECK-LABEL: @mayalias(

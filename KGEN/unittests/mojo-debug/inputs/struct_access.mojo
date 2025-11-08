@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from debug_test_utils import keep_alive
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 struct MyPair:
