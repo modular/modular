@@ -16,7 +16,7 @@ from ._io import stderr, stdin, stdout
 from .arg import argv
 from .compile import is_compile_time
 from .debug import breakpointhook
-from .ffi import DEFAULT_RTLD, RTLD, DLHandle, OwnedDLHandle, external_call
+from .ffi import DEFAULT_RTLD, RTLD, OwnedDLHandle, external_call
 from .info import (
     CompilationTarget,
     align_of,

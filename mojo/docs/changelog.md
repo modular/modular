@@ -358,6 +358,11 @@ what we publish.
 
   Currently only equality and inequality are supported.
 
+- `DLHandle` is no longer part of the public API. Use `OwnedDLHandle` instead,
+  which provides RAII-based automatic resource management for dynamically linked
+  libraries. `DLHandle` has been renamed to `_DLHandle` and remains available
+  internally for use by the standard library.
+
 ### Tooling changes {#25-7-tooling-changes}
 
 - `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)

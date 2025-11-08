@@ -163,9 +163,9 @@ struct OwnedDLHandle(Movable):
     """Represents an owned handle to a dynamically linked library with RAII
     semantics.
 
-    Unlike `DLHandle` which is a non-owning reference, `OwnedDLHandle` owns the
-    library handle and automatically calls `dlclose()` when the object is
-    destroyed. This prevents resource leaks and double-free bugs.
+    `OwnedDLHandle` owns the library handle and automatically calls `dlclose()`
+    when the object is destroyed. This prevents resource leaks and double-free
+    bugs.
 
     Example usage:
     ```mojo
@@ -179,7 +179,7 @@ struct OwnedDLHandle(Movable):
     ```
     """
 
-    var _handle: DLHandle
+    var _handle: _DLHandle
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -196,7 +196,7 @@ struct OwnedDLHandle(Movable):
         Raises:
             If `dlopen(nullptr, flags)` fails.
         """
-        self._handle = DLHandle(flags)
+        self._handle = _DLHandle(flags)
 
     fn __init__[
         PathLike: os.PathLike, //
@@ -214,12 +214,12 @@ struct OwnedDLHandle(Movable):
         Raises:
             If `dlopen(path, flags)` fails.
         """
-        self._handle = DLHandle(path, flags)
+        self._handle = _DLHandle(path, flags)
 
     @doc_private
     @always_inline
     fn __init__(out self, *, unsafe_uninitialized: Bool):
-        self._handle = DLHandle(OpaquePointer())
+        self._handle = _DLHandle(OpaquePointer())
 
     fn __del__(deinit self):
         """Unload the associated dynamic library.
@@ -232,23 +232,14 @@ struct OwnedDLHandle(Movable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn borrow(self) -> DLHandle:
+    fn borrow(self) -> _DLHandle:
         """Returns a non-owning reference to this handle.
 
-        The returned `DLHandle` does not own the library and should not be
+        The returned `_DLHandle` does not own the library and should not be
         used after this `OwnedDLHandle` is destroyed.
 
         Returns:
             A non-owning reference to the library handle.
-        """
-        return self._handle
-
-    @doc_private
-    @deprecated("Use borrow() instead.")
-    fn handle(self) -> DLHandle:
-        """Returns a non-owning reference to this handle.
-
-        Deprecated: Use `borrow()` instead.
         """
         return self._handle
 
@@ -401,10 +392,10 @@ struct OwnedDLHandle(Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct DLHandle(Boolable, Copyable, Movable):
+struct _DLHandle(Boolable, Copyable, Movable):
     """Represents a non-owning reference to a dynamically linked library.
 
-    `DLHandle` is a lightweight, trivially copyable reference to a dynamic
+    `_DLHandle` is a lightweight, trivially copyable reference to a dynamic
     library. It does not own the library handle and multiple copies can safely
     reference the same library.
 
@@ -412,7 +403,7 @@ struct DLHandle(Boolable, Copyable, Movable):
     instead, which automatically calls `dlclose()` when destroyed.
 
     Notes:
-        If you manually call `close()` on a `DLHandle`, be careful not to use
+        If you manually call `close()` on a `_DLHandle`, be careful not to use
         any copies of that handle afterward, as they will reference a closed
         library. For safer usage, prefer `OwnedDLHandle`.
     """
@@ -460,7 +451,7 @@ struct DLHandle(Boolable, Copyable, Movable):
     @staticmethod
     fn _dlopen(
         file: UnsafePointer[c_char, mut=False, origin=_], flags: Int
-    ) raises -> DLHandle:
+    ) raises -> _DLHandle:
         var handle = dlopen(file, flags)
         if handle == OpaquePointer():
             var error_message = dlerror()
@@ -468,7 +459,7 @@ struct DLHandle(Boolable, Copyable, Movable):
                 "dlopen failed: ",
                 StringSlice(unsafe_from_utf8_ptr=error_message),
             )
-        return DLHandle(handle)
+        return _DLHandle(handle)
 
     fn check_symbol(self, var name: String) -> Bool:
         """Check that the symbol exists in the dynamic library.

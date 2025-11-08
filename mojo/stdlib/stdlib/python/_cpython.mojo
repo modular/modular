@@ -28,7 +28,7 @@ from pathlib import Path
 from sys import external_call
 from sys.arg import argv
 from sys.ffi import (
-    DLHandle,
+    _DLHandle,
     OwnedDLHandle,
     c_char,
     c_double,
@@ -270,7 +270,7 @@ struct PythonVersion(ImplicitlyCopyable, Movable):
         self = PythonVersion(components[0], components[1], components[2])
 
 
-fn _py_get_version(lib: DLHandle) -> StaticString:
+fn _py_get_version(lib: _DLHandle) -> StaticString:
     return StaticString(
         unsafe_from_utf8_ptr=lib.call[
             "Py_GetVersion",
@@ -748,7 +748,7 @@ struct ExternalFunction[
 ]:
     @staticmethod
     @always_inline
-    fn load(lib: DLHandle) -> type:
+    fn load(lib: _DLHandle) -> type:
         """Loads this external function from an opened dynamic library."""
         return lib._get_function[name, type]()
 
