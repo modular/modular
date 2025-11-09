@@ -13,6 +13,7 @@
 
 from collections import OptionalReg
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys.info import _cdna_4_or_newer
 from sys import env_get_bool
 
@@ -40,7 +41,6 @@ from .utils import (
     LocalLayoutTensor,
     SharedLayoutTensor,
     SharedMemoryManager,
-    convert_f32_to_bf16,
     copy_local_to_dram2,
     get_fragment_layout,
     get_nested_fragment_layout,

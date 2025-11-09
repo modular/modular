@@ -12,6 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from max._core import __version__
+from max._core.driver import (
+    get_virtual_device_count,
+    is_virtual_device_mode,
+    set_virtual_device_count,
+)
 from max._core_types.driver import DLPackArray
 
 from .driver import (
@@ -43,6 +48,9 @@ __all__ = [
     "accelerator_api",
     "accelerator_architecture_name",
     "devices_exist",
+    "get_virtual_device_count",
+    "is_virtual_device_mode",
     "load_devices",
     "scan_available_devices",
+    "set_virtual_device_count",
 ]

@@ -13,7 +13,7 @@
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import DimList
-from gpu import barrier
+from gpu import barrier, warp_id, lane_id
 from gpu.host import DeviceContext
 
 # from testing import assert_almost_equal
@@ -114,13 +114,10 @@ fn wgmma_kernel_ss[
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
 
-    var warp_id = thread_idx.x // 32
-    var lane_id = thread_idx.x % 32
-
     var th_local_res = (
-        c_gmem.tile[16, WMMA_N](Int(warp_id), 0)
+        c_gmem.tile[16, WMMA_N](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lane_id)
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
 
     for i in range(num_output_regs):

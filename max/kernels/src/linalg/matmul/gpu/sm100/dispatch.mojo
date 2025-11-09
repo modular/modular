@@ -12,7 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from sys import align_of, env_get_bool, env_get_int, simd_width_of, size_of
+from sys import (
+    align_of,
+    env_get_bool,
+    env_get_int,
+    simd_width_of,
+    size_of,
+    has_nvidia_gpu_accelerator,
+)
 
 from algorithm import elementwise
 from buffer.buffer import NDBuffer
@@ -48,6 +55,8 @@ from .tuning_configs import (
 
 alias DISPATCH_MISS = 0
 alias DISPATCH_HIT = 1
+
+alias logger = Logger()
 
 
 @always_inline
@@ -456,8 +465,6 @@ fn matmul_dispatch_sm100[
     alias static_N = c.shape.get[1]()
     alias static_K = a.shape.get[1]()
 
-    var logger = Logger()
-
     var epilogue_type = String("None")
 
     @parameter
@@ -488,6 +495,19 @@ fn matmul_dispatch_sm100[
     # default matmul config for sm100
     alias MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
     alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+
+    # 1. for m==1 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
+    # 2. Our GEMV matmul dosen't support float8 yet.
+    # 3. static_N=1 is not supported on SM100 due to the output buffer TMA requirements. (`N * size_of(c_type) % 16 == 0`).
+    @parameter
+    if a_type is DType.bfloat16:
+        if static_N == 1 or m == 1:
+            logger.info("------ Executing GEMV Matmul------")
+            gemv_gpu[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
+            ](c, a, b, ctx)
+            return
 
     # SM100 kernel requirements:
     # 1. `N * size_of(c_type) % 16B == 0` for output buffer (TMA requirement)
@@ -528,20 +548,6 @@ fn matmul_dispatch_sm100[
             logger.info("------ Executing MOJO SM100 Matmul------")
             return
 
-    # if it's not a hit to this point, then it means the shape is not tuned or supported for sm100 therefore we fallback to other options
-    # NOTE:
-    # 1. for m==1 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
-    # 2. Our GEMV matmul dosen't support float8 yet.
-    # 3. static_N=1 is not supported on SM100 due to the output buffer TMA requirements. (`N * size_of(c_type) % 16 == 0`).
-    @parameter
-    if a_type is DType.bfloat16:
-        if static_N == 1 or m == 1:
-            logger.info("------ Executing GEMV Matmul------")
-            gemv_gpu[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-            ](c, a, b, ctx)
-            return
     # fallback to vendor matmul for untuned shapes
     # We assume that this will always be a hit as in the worst case it will be a navie matmul.
     return _vendor_blas_matmul_sm100[
@@ -1726,7 +1732,6 @@ fn _bf16_experimental[
                 cluster_shape=tuning_config.cluster_shape,
                 block_swizzle_size=Int(tuning_config.block_swizzle_size),
                 raster_order=tuning_config.rasterize_order,
-                num_pipeline_stages=tuning_config.num_pipeline_stages,
                 AB_swapped=tuning_config.swapAB,
                 num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
                 num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
@@ -1761,22 +1766,7 @@ fn _bf16_experimental[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
-    # Use the largest mma instruction as a fallback when heuristic
-    # can't cover the shape.
-    alias fallback_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        mma_shape=Index(256, 256, BK),
-        cluster_shape=Index(2, 1, 1),
-    )
-
-    _matmul_dispatch_sm100[
-        transpose_b=transpose_b,
-        config=fallback_config,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        pdl_level=pdl_level,
-    ](c, a, b, ctx)
-
-    return DISPATCH_HIT
+    return DISPATCH_MISS
 
 
 # NOTE:
@@ -2311,8 +2301,6 @@ fn _vendor_blas_matmul_sm100[
     var n = shape.N
     var k = shape.K
 
-    var logger = Logger()
-
     try:
         logger.info("Executing vendor BLAS (cuBLAS/cublasLt)")
         return matmul_vendor[
@@ -2421,11 +2409,13 @@ fn _matmul_dispatch_sm100[
         alias epilogue = elementwise_lambda_fn.value()
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
-        alias simd_size = 32 // size_of[
-            c.type
-        ]() if ctx.default_device_info >= B200 else simd_width_of[
-            c.type, target = get_gpu_target()
-        ]()
+        alias use_32b_simd = (
+            has_nvidia_gpu_accelerator()
+            and ctx.default_device_info.compute >= B200.compute
+        )
+        alias simd_size = 32 // size_of[c.type]() if use_32b_simd else (
+            simd_width_of[c.type, target = get_gpu_target()]()
+        )
 
         @parameter
         @__copy_capture(c)

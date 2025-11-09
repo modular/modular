@@ -162,9 +162,8 @@ fn _run_cpu_ctx_memcpy_async(
     print("_run_cpu_ctx_memcpy_async(", length, ")")
 
     var host_buf = cpu_ctx.enqueue_create_host_buffer[DType.int64](length)
-    var dev_buf = ctx.enqueue_create_buffer[DType.int64](length).enqueue_fill(
-        13
-    )
+    var dev_buf = ctx.enqueue_create_buffer[DType.int64](length)
+    dev_buf.enqueue_fill(13)
 
     for i in range(length):
         host_buf[i] = 2 * i
@@ -175,7 +174,7 @@ fn _run_cpu_ctx_memcpy_async(
         for i in range(length):
             expect_eq(dev_buf[i], 2 * i)
 
-    host_buf = host_buf.enqueue_fill(12)
+    host_buf.enqueue_fill(12)
     cpu_ctx.enqueue_copy(host_buf, dev_buf)
 
     for i in range(length):

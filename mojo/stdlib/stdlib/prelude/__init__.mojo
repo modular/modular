@@ -129,6 +129,7 @@ from builtin.variadics import VariadicList, VariadicListMem, VariadicPack
 from documentation import doc_private
 from iter import Iterable, Iterator, enumerate, iter, map, next, zip
 from memory import (
+    alloc,
     AddressSpace,
     ExternalImmutPointer,
     ExternalMutPointer,

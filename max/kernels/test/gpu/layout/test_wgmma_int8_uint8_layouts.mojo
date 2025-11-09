@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import barrier
+from gpu import barrier, warp_id, lane_id
 from gpu.host import DeviceContext
 from gpu import thread_idx
 from gpu.intrinsics import threadfence
@@ -90,8 +90,6 @@ fn wgmma_kernel[
         threadfence()
         wgmma_fence_aligned()
 
-    var warp_id = thread_idx.x // 32
-    var lan_id = thread_idx.x % 32
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-D.png
     # Each warp updates a 16x8 tile, and within each tile,
@@ -99,9 +97,9 @@ fn wgmma_kernel[
     # is as follows:
     c0 = bitcast[DType.int32, 4](c_reg)
     var th_local_res = (
-        result_c.tile[16, 8](Int(warp_id), 0)
+        result_c.tile[16, 8](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lan_id)
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
     th_local_res[0, 0][0] = c0[0]
     th_local_res[0, 0][1] = c0[1]

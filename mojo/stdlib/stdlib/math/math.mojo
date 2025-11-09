@@ -108,7 +108,6 @@ fn ceildiv[T: CeilDivable, //](numerator: T, denominator: T) -> T:
     Returns:
         The ceiling of dividing numerator by denominator.
     """
-    # return -(numerator // -denominator)
     return numerator.__ceildiv__(denominator)
 
 
@@ -1956,7 +1955,7 @@ fn atanh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     ]()
 
     @parameter
-    if dtype.bit_width() <= 16:
+    if bit_width_of[dtype]() <= 16:
         # We promote the input to float32 and then cast back to the original
         # type. This is done to avoid precision issues that can occur when
         # using the lower-precision floating-point types.

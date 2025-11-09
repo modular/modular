@@ -28,7 +28,7 @@ from .datasets import DATASET_REGISTRY, DatasetMode
 
 logger = logging.getLogger(__name__)
 
-from max.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+from max.config import (
     MAXConfig,
     deep_merge_max_configs,
 )

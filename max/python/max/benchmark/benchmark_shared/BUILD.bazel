@@ -1,5 +1,4 @@
 load("//bazel:api.bzl", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
-load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 
 modular_py_library(
     name = "benchmark_shared",
@@ -10,6 +9,7 @@ modular_py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//max/python/max/config",
         "//max/python/max/pipelines/lib",
         "//max/python/max/serve",
         requirement("datasets"),
@@ -32,8 +32,5 @@ pkg_files(
     srcs = glob(["**/*.py"]),
     prefix = "benchmark/benchmark_shared",
     strip_prefix = strip_prefix.from_pkg(""),
-    # Used under the OSS path, but not under the internal path.
-    # TODO: Remove when we no longer have internal symlinking to OSS.
-    tags = [ALLOW_UNUSED_TAG],
     visibility = ["//visibility:public"],
 )

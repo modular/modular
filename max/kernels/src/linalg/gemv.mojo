@@ -64,6 +64,8 @@ from utils.static_tuple import StaticTuple
 from .matmul.gpu import matmul_kernel_naive
 from .utils import GemmShape, elementwise_epilogue_type
 
+alias logger = Logger()
+
 
 @fieldwise_init
 struct GEMVAlgorithm(ImplicitlyCopyable, Movable, Stringable, Writable):
@@ -472,7 +474,6 @@ fn gemv_gpu_dispatch[
     a: NDBuffer[rank=2, *_, **_],
     b: NDBuffer[rank=2, *_, **_],
     ctx: DeviceContext,
-    logger: Logger,
 ) raises:
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
@@ -774,7 +775,7 @@ fn gemv_gpu_dispatch[
 
 fn log_shape[
     has_mode_1: Bool, has_mode_2: Bool, name: String
-](logger: Logger, mode_1: Int, mode_2: Int,) -> None:
+](mode_1: Int, mode_2: Int,) -> None:
     logger.info(
         name,
         ": (",
@@ -798,8 +799,6 @@ fn gemv_gpu[
     b: NDBuffer[rank=2, *_, **_],
     ctx: DeviceContext,
 ) raises:
-    var logger = Logger()
-
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
@@ -813,9 +812,9 @@ fn gemv_gpu[
     logger.info("------ Dispatching to GEMV ------")
 
     # Log dimension static/dynamic status
-    log_shape[has_M, has_K, "A"](logger, m, k)
-    log_shape[has_K, has_N, "B"](logger, k, n)
-    log_shape[has_M, has_N, "C"](logger, m, n)
+    log_shape[has_M, has_K, "A"](m, k)
+    log_shape[has_K, has_N, "B"](k, n)
+    log_shape[has_M, has_N, "C"](m, n)
 
     # Kernel selection
     var kernel_func: GEMVAlgorithm
@@ -860,7 +859,7 @@ fn gemv_gpu[
 
     gemv_gpu_dispatch[
         transpose_b=transpose_b, elementwise_lambda_fn=elementwise_lambda_fn
-    ](kernel_func, c, a, b, ctx, logger)
+    ](kernel_func, c, a, b, ctx)
 
 
 # Parallelized version of Gemv

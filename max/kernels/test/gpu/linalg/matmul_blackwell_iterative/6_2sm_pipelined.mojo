@@ -715,10 +715,10 @@ fn kernel_6[
     mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
     compute_barrier = compute_barrier_base.bitcast[SharedMemBarrier]()
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var warp_id = get_warp_id()
+    var elect_one_warp = warp_id == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
-    var warp_id = get_warp_id()
     alias max_tmem_cols = 512
 
     if elect_one_warp:

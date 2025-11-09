@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, ceildiv, rsqrt
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys.info import align_of, simd_width_of, size_of
 
 import gpu.warp as warp

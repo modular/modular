@@ -71,7 +71,7 @@ fn bench_add[
         BenchId("add", String(shape)),
         shape,
         # TODO: Pick relevant benchmetric.
-        ThroughputMeasure(BenchMetric.elements, size * size_of[type]() * 3),
+        [ThroughputMeasure(BenchMetric.elements, size * size_of[type]() * 3)],
     )
 
     ctx.enqueue_copy(output_ptr_host, output_ptr)

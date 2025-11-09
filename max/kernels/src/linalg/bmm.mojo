@@ -68,6 +68,8 @@ from .utils import (
 )
 from .utils_gpu import MatmulConfig, MatmulKernels
 
+alias logger = Logger()
+
 alias elementwise_epilogue_type = fn[
     c_type: DType,
     width: Int,
@@ -861,7 +863,10 @@ fn _batched_matmul_gpu[
         c_n % 128 == 0 and a_k % 32 == 0 and a_k >= 128
     )
 
-    alias use_A100_kernels = ctx.default_device_info >= A100 and has_nvidia_gpu_accelerator()
+    alias use_A100_kernels = (
+        has_nvidia_gpu_accelerator()
+        and ctx.default_device_info.compute >= A100.compute
+    )
 
     @parameter
     if has_static_NK and use_A100_kernels and multistage_gemm_cond:
@@ -1292,7 +1297,6 @@ fn bmm_sm100_blockwise_scaled_fp8[
             " by NVIDIA SM90+ TMA instructions!"
         )
 
-    var logger = Logger()
     logger.info(
         "Executing SM100 Basic Batched 1D2D Blockwise Scaled FP8 GEMM"
         " (BLOCK_SCALE_SIZE = 128)"

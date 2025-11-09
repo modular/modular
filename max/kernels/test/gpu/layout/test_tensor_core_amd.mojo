@@ -22,8 +22,14 @@ from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
 from testing import assert_equal
 from utils.index import Index, IndexList
 
-alias fp8_dtype = DType.float8_e4m3fnuz if DeviceContext.default_device_info <= MI300X else DType.float8_e4m3fn
-alias bf8_dtype = DType.float8_e5m2fnuz if DeviceContext.default_device_info <= MI300X else DType.float8_e5m2
+alias fp8_dtype = (
+    DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute
+    <= MI300X.compute else DType.float8_e4m3fn
+)
+alias bf8_dtype = (
+    DType.float8_e5m2fnuz if DeviceContext.default_device_info.compute
+    <= MI300X.compute else DType.float8_e5m2
+)
 
 # CHECK-LABEL: test_load_and_mma_f32_f32_16x16x4
 # CHECK-LABEL: test_load_a
@@ -2093,7 +2099,8 @@ fn test_load_b_tr(ctx: DeviceContext) raises:
 
     var flag = ctx.enqueue_create_buffer[DType.bool](WARP_SIZE)
 
-    ctx.enqueue_function[kernel[IndexList[3](32, 32, 16)]](
+    alias kernel_32_32_16 = kernel[IndexList[3](32, 32, 16)]
+    ctx.enqueue_function_checked[kernel_32_32_16, kernel_32_32_16](
         flag, grid_dim=(1), block_dim=(WARP_SIZE)
     )
     with flag.map_to_host() as flag_host:
@@ -2101,7 +2108,8 @@ fn test_load_b_tr(ctx: DeviceContext) raises:
             if not flag_host[i]:
                 assert_equal(flag_host[i], True, "frags_simd != frags_tr")
 
-    ctx.enqueue_function[kernel[IndexList[3](16, 16, 32)]](
+    alias kernel_16_16_32 = kernel[IndexList[3](16, 16, 32)]
+    ctx.enqueue_function_checked[kernel_16_16_32, kernel_16_16_32](
         flag, grid_dim=(1), block_dim=(WARP_SIZE)
     )
     with flag.map_to_host() as flag_host:
@@ -2132,5 +2140,5 @@ def main():
         test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2(ctx)
 
         @parameter
-        if DeviceContext.default_device_info >= MI355X:
+        if DeviceContext.default_device_info.compute >= MI355X.compute:
             test_load_b_tr(ctx)

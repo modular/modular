@@ -14,7 +14,7 @@
 
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu import thread_idx
+from gpu import thread_idx, warp_id
 from gpu.intrinsics import threadfence
 from gpu.mma import (
     WGMMADescriptor,
@@ -90,7 +90,6 @@ fn wgmma_f16_kernel[
         threadfence()
         wgmma_fence_aligned()
 
-    var warp_id = thread_idx.x // 32
     var lan_id = thread_idx.x % 32
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-D.png
@@ -99,7 +98,7 @@ fn wgmma_f16_kernel[
     # is as follows:
     c0 = bitcast[DType.float16, 4](c_reg)
     var th_local_res = (
-        result_c.tile[16, 8](warp_id, 0)
+        result_c.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lan_id)
     )

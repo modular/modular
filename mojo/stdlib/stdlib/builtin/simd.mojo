@@ -618,7 +618,7 @@ struct SIMD[dtype: DType, size: Int](
         _simd_construction_checks[dtype, size]()
 
         @parameter
-        if dtype.bit_width() > DType.int.bit_width():
+        if bit_width_of[dtype]() > bit_width_of[DType.int]():
             alias dt = _unsigned_integral_type_of[DType.int]()
             self = bitcast[dt](Scalar[DType.int](value.__int__())).cast[dtype]()
         else:
@@ -1210,7 +1210,7 @@ struct SIMD[dtype: DType, size: Int](
         constrained[dtype.is_integral(), "must be an integral type"]()
         debug_assert(all(rhs.ge(0)), "unhandled negative value")
         debug_assert(
-            all(rhs.lt(dtype.bit_width())),
+            all(rhs.lt(bit_width_of[dtype]())),
             "unhandled value greater than size",
         )
         return Self(
@@ -1233,7 +1233,7 @@ struct SIMD[dtype: DType, size: Int](
         constrained[dtype.is_integral(), "must be an integral type"]()
         debug_assert(all(rhs.ge(0)), "unhandled negative value")
         debug_assert(
-            all(rhs.lt(dtype.bit_width())),
+            all(rhs.lt(bit_width_of[dtype]())),
             "unhandled value greater than size",
         )
         return Self(
@@ -2254,7 +2254,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline
     fn to_bits[
-        _dtype: DType = _uint_type_of_width[dtype.bit_width()]()
+        _dtype: DType = _uint_type_of_width[bit_width_of[dtype]()]()
     ](self) -> SIMD[_dtype, size]:
         """Bitcasts the SIMD vector to an integer SIMD vector.
 
@@ -2269,7 +2269,7 @@ struct SIMD[dtype: DType, size: Int](
             "the target type must be unsigned integral",
         ]()
         constrained[
-            _dtype.bit_width() >= dtype.bit_width(),
+            bit_width_of[_dtype]() >= bit_width_of[dtype](),
             "the target type must be at least as wide as the source type",
         ]()
 
@@ -3560,7 +3560,7 @@ fn _convert_f32_to_float8_scalar[
 
     alias FP8_NUM_MANTISSA_BITS = FPUtils[target].mantissa_width()
     alias FP8_NUM_EXPONENT_BITS = FPUtils[target].exponent_width()
-    alias FP32_NUM_BITS = dtype.bit_width()
+    alias FP32_NUM_BITS = bit_width_of[dtype]()
     alias FP8_EXPONENT_MASK: UInt8 = (1 << FP8_NUM_EXPONENT_BITS) - 1
     alias FP8_MANTISSA_MASK: UInt8 = (1 << FP8_NUM_MANTISSA_BITS) - 1
     alias FP8_EXPONENT_BIAS = FPUtils[target].exponent_bias()
@@ -3897,7 +3897,7 @@ fn _floor(x: SIMD) -> type_of(x):
         return x
 
     alias integral_type = FPUtils[x.dtype].integral_type
-    alias bitwidth = x.dtype.bit_width()
+    alias bitwidth = bit_width_of[x.dtype]()
     alias exponent_width = FPUtils[x.dtype].exponent_width()
     alias mantissa_width = FPUtils[x.dtype].mantissa_width()
     alias mask = FPUtils[x.dtype].exponent_mask()
@@ -3965,7 +3965,7 @@ __extension SIMD(ConvertibleToPython):
                 raise cpy.unsafe_get_error()
             # NOTE: if dtype is not float64, we truncate.
             self = Scalar[dtype](float_value)
-        elif dtype.is_integral() and dtype.bit_width() <= 64:
+        elif dtype.is_integral() and bit_width_of[dtype]() <= 64:
             self = Int(obj)
         else:
             self = Scalar[dtype]()

@@ -181,7 +181,7 @@ class BilinearInterpolationPositionEmbedding(Module):
         self.spatial_merge_size = spatial_merge_size
         self.num_position_embeddings = num_position_embeddings
         self.num_grid_per_side = int(num_position_embeddings**0.5)
-        self.pos_embed = Embedding(
+        self.embedding = Embedding(
             vocab_size=num_position_embeddings,
             hidden_dim=hidden_size,
             dtype=dtype,
@@ -203,24 +203,24 @@ class BilinearInterpolationPositionEmbedding(Module):
         Returns:
             tensor of shape (4, total_n_patches, hidden_size)
         """
-        weights = weights.cast(self.pos_embed.weight.dtype)
+        weights = weights.cast(self.embedding.weight.dtype)
         # pos_embeds.shape: (4, total_n_patches, hidden_size)
-        pos_embeds_0 = self.pos_embed(idxs[0, :])
-        pos_embeds_1 = self.pos_embed(idxs[1, :])
-        pos_embeds_2 = self.pos_embed(idxs[2, :])
-        pos_embeds_3 = self.pos_embed(idxs[3, :])
+        pos_embeds_0 = self.embedding(idxs[0, :])
+        pos_embeds_1 = self.embedding(idxs[1, :])
+        pos_embeds_2 = self.embedding(idxs[2, :])
+        pos_embeds_3 = self.embedding(idxs[3, :])
 
         weighted_embeds_0 = pos_embeds_0 * weights[0, :]
         weighted_embeds_1 = pos_embeds_1 * weights[1, :]
         weighted_embeds_2 = pos_embeds_2 * weights[2, :]
         weighted_embeds_3 = pos_embeds_3 * weights[3, :]
+
         weighted_embeds = (
             weighted_embeds_0
             + weighted_embeds_1
             + weighted_embeds_2
             + weighted_embeds_3
         )
-
         # TODO: This will be done in the kernel for bilinear interpolation embedding. Kernel is WIP.
         # split weighted_embeds to have embeds of each video in a tensor.
         # for each video, repeat patches t times, then apply spatial merging which is described as follows:
@@ -343,14 +343,14 @@ class VisionMLP(Module, Shardable):
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
 
-        self.linear1 = Linear(
+        self.linear_fc1 = Linear(
             in_dim=hidden_size,
             out_dim=intermediate_size,
             dtype=dtype,
             device=devices[0],
             has_bias=True,
         )
-        self.linear2 = Linear(
+        self.linear_fc2 = Linear(
             in_dim=intermediate_size,
             out_dim=hidden_size,
             dtype=dtype,
@@ -359,39 +359,39 @@ class VisionMLP(Module, Shardable):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        x = self.linear1(x)
+        x = self.linear_fc1(x)
         # This matches the "gelu_pytorch_tanh" activation in the torch.
         x = ops.gelu(x, approximate="tanh")
-        x = self.linear2(x)
+        x = self.linear_fc2(x)
         return x
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
-        return self.linear1.sharding_strategy
+        return self.linear_fc1.sharding_strategy
 
     @sharding_strategy.setter
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
         if strategy.is_replicate:
             # Replicate all weights across devices
-            self.linear1.sharding_strategy = ShardingStrategy.replicate(
+            self.linear_fc1.sharding_strategy = ShardingStrategy.replicate(
                 strategy.num_devices
             )
-            self.linear2.sharding_strategy = ShardingStrategy.replicate(
+            self.linear_fc2.sharding_strategy = ShardingStrategy.replicate(
                 strategy.num_devices
             )
         else:
             # Tensor parallel: first linear rowwise, second linear columnwise
-            self.linear1.sharding_strategy = ShardingStrategy.rowwise(
+            self.linear_fc1.sharding_strategy = ShardingStrategy.rowwise(
                 strategy.num_devices
             )
-            self.linear2.sharding_strategy = ShardingStrategy.columnwise(
+            self.linear_fc2.sharding_strategy = ShardingStrategy.columnwise(
                 strategy.num_devices
             )
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[VisionMLP]:
         # Shard underlying weights
-        linear1_shards = self.linear1.shard(devices)
-        linear2_shards = self.linear2.shard(devices)
+        linear1_shards = self.linear_fc1.shard(devices)
+        linear2_shards = self.linear_fc2.shard(devices)
 
         shards: list[VisionMLP] = []
         for idx, device in enumerate(devices):
@@ -402,8 +402,8 @@ class VisionMLP(Module, Shardable):
                 intermediate_size=self.intermediate_size,
             )
             # Assign shards
-            sharded.linear1 = linear1_shards[idx]
-            sharded.linear2 = linear2_shards[idx]
+            sharded.linear_fc1 = linear1_shards[idx]
+            sharded.linear_fc2 = linear2_shards[idx]
             shards.append(sharded)
         return shards
 
@@ -652,14 +652,17 @@ class VisionPatchMerger(Module, Shardable):
             signal_buffers: Communication buffers for distributed execution.
             signal_buffers: Sequence[BufferValue]
         """
+        n_patches, hidden_size = x.shape
+        factor = self.input_dim // self.hidden_size
+        x = x.rebind(((n_patches // factor) * factor, hidden_size))
         if self.use_postshuffle_norm:
-            x = x.reshape((-1, self.input_dim))
+            x = x.reshape(((n_patches // factor), self.input_dim))
 
         # Apply LayerNorm
         x = self.norm(x)
 
         # Reshape for MLP input
-        x = x.reshape((-1, self.input_dim))
+        x = x.reshape(((n_patches // factor), self.input_dim))
 
         # Apply first linear layer, then GELU, then second linear layer
         x = self.linear_fc1(x)
@@ -680,7 +683,6 @@ class VisionTransformer(Module):
     - VisionPatchMerger layer which also uses post-shuffle normalization
     - BilinearInterpolationPositionEmbedding for position encoding
     - No window attention
-    - No window-based attention
     """
 
     def __init__(

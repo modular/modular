@@ -192,7 +192,8 @@ fn _run_test_function_unchecked(ctx: DeviceContext) raises:
         for i in range(length):
             in0_host[i] = i
             out_host[i] = length + i
-    var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
+    var in1 = ctx.enqueue_create_buffer[T](length)
+    in1.enqueue_fill(scalar)
 
     print("compiling vec_func")
     var compiled_vec_func = ctx.compile_function_unchecked[vec_func]()
@@ -248,7 +249,8 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
         for i in range(length):
             in0_host[i] = i
             out_host[i] = length + i
-    var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
+    var in1 = ctx.enqueue_create_buffer[T](length)
+    in1.enqueue_fill(scalar)
 
     print("compiling vec_func")
     # TODO(MAXPLAT-333): Make compile_function_experimental support this case.

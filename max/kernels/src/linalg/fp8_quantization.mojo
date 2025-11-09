@@ -45,6 +45,8 @@ from .utils_gpu import MatmulConfig
 # Static scaled fp8 quantization
 ########################################################
 
+alias logger = Logger()
+
 
 @always_inline
 fn quantize_static_scaled_fp8[
@@ -430,7 +432,6 @@ fn matmul_dynamic_scaled_fp8[
         input_scale_granularity == "colwise"
         and weight_scale_granularity == "rowwise"
     ) or (input_scale_granularity == weight_scale_granularity == "tensor"):
-        var logger = Logger()
         logger.info(
             "Dispatching Matmul Dynamic Scaled FP8. Input Scale Granularity: ",
             input_scale_granularity,
@@ -624,8 +625,6 @@ fn naive_blockwise_scaled_fp8_matmul[
         "Only float32 is supported for accumulation for scaled matmul",
     ]()
 
-    var logger = Logger()
-
     var M = c.dim(0)
     var N = c.dim(1)
     var K = a.dim(1)
@@ -741,7 +740,6 @@ fn naive_blockwise_scaled_fp8_matmul[
         "Only float32 is supported for accumulation for scaled matmul",
     ]()
 
-    var logger = Logger()
     var a = from_ndbuffer_row_major(a_device)
     var b = from_ndbuffer_row_major(b_device)
     var c = from_ndbuffer_row_major(c_device)
@@ -1013,7 +1011,6 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
     if max_num_tokens_per_expert == 0:
         return
 
-    var logger = Logger()
     logger.info("Executing Naive Grouped Blockwise Scaled FP8 GEMM")
 
     alias kernel = naive_blockwise_scaled_fp8_grouped_matmul_kernel[

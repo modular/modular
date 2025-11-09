@@ -681,11 +681,11 @@ fn kernel_8[
 
     alias accum_type = get_accum_type[a_type]()
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var warp_id = get_warp_id()
+    var elect_one_warp = warp_id == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     var is_first_cta_in_cluster = block_rank_in_cluster() == 0
-    var warp_id = get_warp_id()
     alias max_tmem_cols = 512
 
     if elect_one_warp and elect_one_thread:

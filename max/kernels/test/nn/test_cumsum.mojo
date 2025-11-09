@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import iota, isclose
 
 from layout import Layout, LayoutTensor, RuntimeLayout

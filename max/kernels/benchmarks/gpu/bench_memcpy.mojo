@@ -179,7 +179,7 @@ fn bench_memcpy(
             String("memcpy_", config),
             input_id="length=" + _human_memory(length_in_bytes),
         ),
-        ThroughputMeasure(BenchMetric.bytes, transferred_size_in_bytes),
+        [ThroughputMeasure(BenchMetric.bytes, transferred_size_in_bytes)],
     )
     context.synchronize()
 
@@ -225,10 +225,10 @@ fn bench_p2p(
         b.iter_custom[kernel_launch](ctx1)
 
     # Create list of throughput measures
-    var measures = List[ThroughputMeasure](
+    var measures = [
         # Raw bandwidth (considering only one transfer)
         ThroughputMeasure(BenchMetric.bytes, length_in_bytes),
-    )
+    ]
 
     b.bench_function[bench_func](
         BenchId(

@@ -109,7 +109,7 @@ fn _tma_desc_tile_layout[
         if is_k_major:
             # TMA copies BM x `swizzle_mode.bytes()` Bytes each time.
             return Layout.row_major(
-                dim0, swizzle_mode.bytes() // dtype.size_of()
+                dim0, swizzle_mode.bytes() // size_of[dtype]()
             )
         else:
             constrained[
@@ -117,7 +117,7 @@ fn _tma_desc_tile_layout[
                 "Only support 128B swizzle for mn-major.",
             ]()
 
-            alias swizzle_granularity = swizzle_mode.bytes() // dtype.size_of()
+            alias swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
 
             @parameter
             if dim1 == swizzle_granularity:
@@ -136,7 +136,7 @@ fn _tma_desc_tile_layout[
         constrained[is_k_major, "Only K-Major is supported!"]()
 
         return Layout(
-            [dim0, dim1, swizzle_mode.bytes() // dtype.size_of()],
+            [dim0, dim1, swizzle_mode.bytes() // size_of[dtype]()],
             [1, 1, 1],
         )
 
@@ -247,13 +247,19 @@ struct SharedMemBarrier(ImplicitlyCopyable, Movable):
         )
 
     @always_inline("nodebug")
-    fn wait(ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
+    fn wait[
+        ticks: Optional[UInt32] = None
+    ](ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
         """Wait until the barrier is satisfied.
 
         Blocks the calling thread until the barrier is satisfied, either by
         the expected number of threads arriving or the expected data transfer
         completing. This method implements an efficient spin-wait mechanism
         optimized for GPU execution.
+
+        Parameters:
+            ticks: The number of ticks to wait before timing out in nanoseconds.
+                   Defaults to None.
 
         Args:
             phase: The phase value to check against. Defaults to 0.
@@ -263,19 +269,33 @@ struct SharedMemBarrier(ImplicitlyCopyable, Movable):
             hardware-accelerated barrier instructions.
         """
         # Based on cutlass
-        # https://github.com/NVIDIA/cutlass/blob/b78588d1630aa6643bf021613717bafb705df4ef/include/cute/arch/copy_sm90_desc.hpp#L92-L110
+        # https://github.com/NVIDIA/cutlass/blob/d1ef0e87f2f3d68cf5ad7472cadc1152a8d3857c/include/cutlass/arch/barrier.h#L408
 
+        alias wait_asm = (
+            "mbarrier.try_wait.parity.shared::cta.b64 P1, [$0], $1"
+            + (" , $2" if ticks else "")
+            + ";"
+        )
         alias asm = """{
             .reg .pred P1;
             LAB_WAIT:
-            mbarrier.try_wait.parity.shared::cta.b64 P1, [$0], $1;
+            """ + wait_asm + """
             @P1 bra DONE;
             bra LAB_WAIT;
             DONE:
         }"""
-        inlined_assembly[asm, NoneType, constraints="r,r"](
-            Int32(Int(self.unsafe_ptr())), phase
-        )
+
+        alias constraints = "r,r" + (",r" if ticks else "")
+
+        @parameter
+        if ticks:
+            inlined_assembly[asm, NoneType, constraints=constraints](
+                Int32(Int(self.unsafe_ptr())), phase, UInt32(ticks.value())
+            )
+        else:
+            inlined_assembly[asm, NoneType, constraints=constraints](
+                Int32(Int(self.unsafe_ptr())), phase
+            )
 
     @always_inline("nodebug")
     fn wait_acquire[
@@ -1689,8 +1709,8 @@ def create_tma_tile[
     # Current impl limitations
     constrained[rank == 2 or rank == 3, "Only support 2D/3D TMA"]()
 
-    alias desc_bytes_size = __desc_layout.size() * dtype.size_of()
-    alias layout_size = __tile_layout.size() * dtype.size_of()
+    alias desc_bytes_size = __desc_layout.size() * size_of[dtype]()
+    alias layout_size = __tile_layout.size() * size_of[dtype]()
 
     @parameter
     if desc_bytes_size < layout_size:
@@ -1716,12 +1736,12 @@ def create_tma_tile[
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             constrained[
-                (tile_shape[1] * dtype.size_of()) % swizzle_mode.bytes() == 0,
+                (tile_shape[1] * size_of[dtype]()) % swizzle_mode.bytes() == 0,
                 String(swizzle_mode),
                 " mode requires K dim multiple of ",
                 String(swizzle_mode.bytes()),
                 "B. K dim is now ",
-                String(tile_shape[1] * dtype.size_of()),
+                String(tile_shape[1] * size_of[dtype]()),
                 " bytes.",
             ]()
 
@@ -1744,12 +1764,12 @@ def create_tma_tile[
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             constrained[
-                (tile_shape[2] * dtype.size_of()) % swizzle_mode.bytes() == 0,
+                (tile_shape[2] * size_of[dtype]()) % swizzle_mode.bytes() == 0,
                 String(swizzle_mode),
                 " mode requires K dim multiple of ",
                 String(swizzle_mode.bytes()),
                 "B. K dim is now ",
-                String(tile_shape[2] * dtype.size_of()),
+                String(tile_shape[2] * size_of[dtype]()),
                 "bytes.",
             ]()
 

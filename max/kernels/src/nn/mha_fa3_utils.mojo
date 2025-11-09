@@ -1064,7 +1064,7 @@ fn produce[
 
 
 @always_inline
-fn output_gmem_to_smem_STMatrix[
+fn output_reg_to_smem_st_matrix[
     output_type: DType,
     accum_type: DType,
     num_m_mmas: Int,
@@ -1163,7 +1163,7 @@ fn output_reg_to_smem[
     @parameter
     if use_stmatrix:
         var warp_group_thread_idx = tid % WARPGROUP_SIZE
-        output_gmem_to_smem_STMatrix[BM, padded_depth, swizzle, num_consumer](
+        output_reg_to_smem_st_matrix[BM, padded_depth, swizzle, num_consumer](
             warp_group_thread_idx,
             local_warp_group_idx,
             output_reg_tile,

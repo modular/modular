@@ -15,6 +15,7 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import (
     align_of,
     has_nvidia_gpu_accelerator,
@@ -111,11 +112,10 @@ fn flare_mla_decoding[
     dtype: DType,
     q_layout: Layout, //,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(
-        dtype,
+    config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[rank - 2])),
         UInt(Int(q_layout.shape[rank - 1])),
-    ),
+    },
     ragged: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
@@ -221,9 +221,10 @@ fn flare_mla_decoding[
     dtype: DType,
     q_layout: Layout, //,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(
-        dtype, UInt(Int(q_layout.shape[2])), UInt(Int(q_layout.shape[3]))
-    ),
+    config: MHAConfig[dtype] = {
+        UInt(Int(q_layout.shape[2])),
+        UInt(Int(q_layout.shape[3])),
+    },
     decoding_warp_split_k: Bool = False,
 ](
     output: LayoutTensor[
@@ -294,11 +295,10 @@ fn flare_mla_decoding_dispatch[
     q_layout: Layout, //,
     kv_num_heads: Int,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(
-        dtype,
+    config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
-    ),
+    },
     ragged: Bool = False,
     # Work arounds to unify KVCache and LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]inputs:
     # Differentiate two cases, KV cache's length is before adding the latest
@@ -580,8 +580,7 @@ fn mla_decoding[
             Int(batch_idx),
         )
     elif is_amd_gpu():
-        alias config = MHAConfig(
-            q_type,
+        alias config = MHAConfig[q_type](
             num_heads,
             depth,
             num_queries_per_block=BM,
@@ -1375,8 +1374,7 @@ fn flare_mla_prefill[
             128
         )  # BN = 64 for nvidia, 128 in the only supported BN for amd
 
-        alias mha_config = MHAConfig(
-            dtype,
+        alias mha_config = MHAConfig[dtype](
             UInt(Int(q_layout.shape[rank - 2])),  # num_heads
             UInt(Int(k.layout.shape[rank - 1])),  # depth
             num_keys_per_block=num_keys_per_block,
@@ -1529,8 +1527,7 @@ fn flare_mla_prefill[
         ) if has_nvidia_gpu_accelerator() else UInt(
             128
         )  # BN = 64 for nvidia, 128 in the only supported BN for amd
-        alias mha_config = MHAConfig(
-            dtype,
+        alias mha_config = MHAConfig[dtype](
             UInt(Int(q_layout.shape[rank - 2])),
             UInt(Int(k.layout.shape[rank - 1])),
             num_keys_per_block=num_keys_per_block,
@@ -1588,11 +1585,10 @@ fn flare_mla_prefill_dispatch[
     use_cascade_attention: Bool = False,
     q_depth: Int = 192,
     cache_depth: Int = 576,
-    config: MHAConfig = MHAConfig(
-        dtype,
+    config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
-    ),
+    },
     _ndbuffer_mha_operand: Bool = False,
 ](
     output: LayoutTensor[
@@ -1654,7 +1650,7 @@ fn flare_mla_prefill_dispatch[
     alias v_smem = BN * depth
 
     alias smem_use = (q_smem + k_smem + v_smem) * UInt(
-        config.dtype.size_of()
+        size_of[config.dtype]()
     ) if has_nvidia_gpu_accelerator() else 0
 
     var softmax_info_ptr = (

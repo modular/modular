@@ -59,7 +59,7 @@ alias DEFAULT_LEVEL = Level._from_str(
 
 @fieldwise_init
 struct Level(
-    EqualityComparable,
+    Comparable,
     Identifiable,
     ImplicitlyCopyable,
     Movable,
@@ -107,28 +107,6 @@ struct Level(
         """
         return self._value == other._value
 
-    fn __gt__(self, other: Self) -> Bool:
-        """Returns True if this level is greater than the other level.
-
-        Args:
-            other: The level to compare with.
-
-        Returns:
-            Bool: True if this level is greater than the other level, False otherwise.
-        """
-        return self._value > other._value
-
-    fn __ge__(self, other: Self) -> Bool:
-        """Returns True if this level is greater than or equal to the other level.
-
-        Args:
-            other: The level to compare with.
-
-        Returns:
-            Bool: True if this level is greater than or equal to the other level, False otherwise.
-        """
-        return self._value >= other._value
-
     fn __lt__(self, other: Self) -> Bool:
         """Returns True if this level is less than the other level.
 
@@ -139,17 +117,6 @@ struct Level(
             Bool: True if this level is less than the other level, False otherwise.
         """
         return self._value < other._value
-
-    fn __le__(self, other: Self) -> Bool:
-        """Returns True if this level is less than or equal to the other level.
-
-        Args:
-            other: The level to compare with.
-
-        Returns:
-            Bool: True if this level is less than or equal to the other level, False otherwise.
-        """
-        return self._value <= other._value
 
     fn __is__(self, other: Self) -> Bool:
         """Returns True if this level is identical to the other level.

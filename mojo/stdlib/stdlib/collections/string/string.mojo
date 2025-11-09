@@ -87,7 +87,7 @@ from hashlib.hasher import Hasher
 from io.write import STACK_BUFFER_BYTES, _TotalWritableBytes, _WriteBufferStack
 from os import PathLike, abort
 from os.atomic import Atomic, Consistency, fence
-from sys import size_of
+from sys import size_of, bit_width_of
 from sys.ffi import c_char
 from sys.info import is_32bit
 
@@ -820,42 +820,6 @@ struct String(
             otherwise.
         """
         return self.as_string_slice() < rhs.as_string_slice()
-
-    @always_inline("nodebug")
-    fn __le__(self, rhs: String) -> Bool:
-        """Compare this String to the RHS using LE comparison.
-
-        Args:
-            rhs: The other String to compare against.
-
-        Returns:
-            True iff this String is less than or equal to the RHS String.
-        """
-        return not (rhs < self)
-
-    @always_inline("nodebug")
-    fn __gt__(self, rhs: String) -> Bool:
-        """Compare this String to the RHS using GT comparison.
-
-        Args:
-            rhs: The other String to compare against.
-
-        Returns:
-            True iff this String is strictly greater than the RHS String.
-        """
-        return rhs < self
-
-    @always_inline("nodebug")
-    fn __ge__(self, rhs: String) -> Bool:
-        """Compare this String to the RHS using GE comparison.
-
-        Args:
-            rhs: The other String to compare against.
-
-        Returns:
-            True iff this String is greater than or equal to the RHS String.
-        """
-        return not (self < rhs)
 
     @staticmethod
     fn _add(lhs: Span[Byte], rhs: Span[Byte]) -> String:
@@ -2370,7 +2334,9 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
         42949672960,
     )
     var n = UInt32(n0)
-    var log2 = Int((DType.uint32.bit_width() - 1) ^ count_leading_zeros(n | 1))
+    var log2 = Int(
+        (bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
+    )
     return (n0 + lookup_table[Int(log2)]) >> 32
 
 
@@ -2408,7 +2374,7 @@ fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
         var sign = 0 if n0 > 0 else 1
 
         @parameter
-        if is_32bit() or dtype.bit_width() <= 32:
+        if is_32bit() or bit_width_of[dtype]() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (

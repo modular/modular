@@ -15,6 +15,7 @@ from collections import OptionalReg
 from itertools import product
 from math import ceildiv, recip
 from math.constants import log2e
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, simd_width_of, size_of, llvm_intrinsic
 from sys.intrinsics import readfirstlane
 from sys.info import _cdna_4_or_newer
@@ -221,26 +222,31 @@ fn copy_dram_to_sram_lds[
 
 @always_inline
 fn load_b_[
-    swizzle: OptionalReg[Swizzle], k_tile_idx: Int
+    mma_shape: IndexList[3], swizzle: OptionalReg[Swizzle], k_tile_idx: Int
 ](src: LayoutTensor) -> SIMD[src.dtype, simd_width_of[src.dtype]()]:
-    constrained[src.shape[0]() == 32]()
+    alias MMA_M = mma_shape[0]
+    alias MMA_K = mma_shape[2]
+    constrained[src.shape[0]() == MMA_M]()
     alias simd_width = simd_width_of[src.dtype]()
-    var tile = src.tile[32, 16](0, k_tile_idx)
-    var dist = tile.vectorize[1, simd_width]().distribute[
-        Layout.col_major(32, 2)
-    ](lane_id())
-    var offset = dist.distance(src.ptr) // simd_width
+    var tile = src.tile[MMA_M, MMA_K](0, k_tile_idx)
+    alias thread_layout = Layout.col_major(32, 2) if mma_shape[
+        0
+    ] == 32 else Layout.col_major(16, 4)
+    var dist = tile.vectorize[1, simd_width]().distribute[thread_layout,](
+        lane_id()
+    )
+    var offset = dist.distance(src.ptr)
 
     @parameter
     if swizzle:
-        offset = swizzle.value()(offset) * simd_width
+        offset = swizzle.value()(offset // simd_width) * simd_width
     var value = src.ptr.offset(offset).load[width=simd_width]()
     return value
 
 
 @always_inline
 fn load_b[
-    swizzle: OptionalReg[Swizzle]
+    mma_shape: IndexList[3], swizzle: OptionalReg[Swizzle]
 ](
     src: LayoutTensor,
     out res: LayoutTensor[
@@ -251,15 +257,17 @@ fn load_b[
     ],
 ):
     var output = type_of(res).stack_allocation()
-
-    alias M = src.shape[0]() // 32
-    alias N = src.shape[1]() // 16
-    constrained[src.shape[1]() == 32, "src.shape[1]() == 32"]()
+    alias MMA_M = mma_shape[0]
+    alias MMA_K = mma_shape[2]
+    alias M = src.shape[0]() // MMA_M
+    alias N = src.shape[1]() // MMA_K
     var output_vectorized = output.vectorize[1, 8]()
 
     @parameter
     for i, j in product(range(M), range(N)):
-        var out_reg = load_b_[swizzle, j](src.tile[32, 32](i, 0))
+        var out_reg = load_b_[mma_shape, swizzle, j](
+            src.tile[MMA_M, src.shape[1]()](i, 0)
+        )
         output_vectorized[i + j * M, 0] = rebind[
             type_of(output_vectorized[i + j * M, 0])
         ](out_reg)
@@ -282,7 +290,7 @@ struct KVBuffer[
 ]:
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
-    alias num_mmas = ceildiv(WN if swizzle else depth, Self.MMA_N)
+    alias num_mmas = ceildiv(WN if transpose else depth, Self.MMA_N)
     alias num_k_mmas2 = ceildiv(BK, Int(Self.MMA_K * k_group_size))
     alias simd_width = simd_width_of[kv_t.dtype]()
 
@@ -362,10 +370,6 @@ struct KVBuffer[
         ],
         end: UInt,
     ):
-        constrained[
-            mma_shape[2] * k_group_size == 16,
-            "mma_shape[2] * k_group_size must be 16",
-        ]()
         self.mma_tile = type_of(self.mma_tile).stack_allocation()
         self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
 
@@ -443,7 +447,7 @@ struct KVBuffer[
             var warp_tile = smem_tile.tile[Self.wtile_dim0, Self.wtile_dim1](
                 wtile_coord0, wtile_coord1
             )
-            var load_b_tile = load_b[swizzle=swizzle](warp_tile)
+            var load_b_tile = load_b[Self.mma_shape, swizzle=swizzle](warp_tile)
 
             self.mma_tile.vectorize[1, Self.simd_width]().copy_from(
                 load_b_tile.vectorize[1, Self.simd_width]()
@@ -452,9 +456,6 @@ struct KVBuffer[
         else:
             alias MMA_M = mma_shape[0]
             alias MMA_K = mma_shape[2]
-            constrained[
-                MMA_K == 16, "MMA_K must be 16 but got " + String(MMA_K)
-            ]()
 
             @parameter
             for k in range(BK // MMA_K):
@@ -471,10 +472,25 @@ struct KVBuffer[
 
                 @parameter
                 for i in range(depth // MMA_M):
+                    alias tile_layout = type_of(
+                        smem_tile.tile[MMA_K, MMA_M](0, i)
+                    ).layout
+                    # TODO: KERN-2173, the offset calculation is a workaround
+                    # a bug in tile, remove this once the bug is fixed
+                    alias tiles_per_bk = BK // MMA_M
+                    alias stride = self.base_layout.size()
+                    alias offset = (
+                        MMA_M * (i % tiles_per_bk)
+                        + (i // tiles_per_bk) * stride
+                    )
+                    var tile = LayoutTensor[
+                        smem_tile.dtype,
+                        tile_layout,
+                        MutAnyOrigin,
+                        address_space = smem_tile.address_space,
+                    ](smem_tile.ptr.offset(offset))
                     frags[i, 0] = rebind[frags.element_type](
-                        load_b_tr[Self.mma_shape](
-                            smem_tile.tile[MMA_K, MMA_M](0, i)
-                        )
+                        load_b_tr[Self.mma_shape](tile)
                     )
                 self.mma_tile.split[Self.num_k_mmas2]()[k].vectorize[
                     1, Self.simd_width
@@ -489,7 +505,8 @@ __extension Attention:
         var k_buffer = KVBuffer[
             mma_shape = Self.mma_shape,
             k_group_size = Self.k_group_size,
-            swizzle = Swizzle(4, 0, 4),
+            swizzle = Swizzle(4, 0, 4) if Self.mma_shape[0]
+            == 32 else OptionalReg[Swizzle](None),
             BN = Int(Self.BN),
             WN = Int(Self.WN),
             BK = Int(Self.BK),

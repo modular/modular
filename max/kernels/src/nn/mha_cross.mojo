@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, simd_width_of
 
 from algorithm.functional import vectorize
@@ -261,8 +262,7 @@ fn mha_cross_gpu_naive[
         "Only support single and half precision.",
     ]()
 
-    alias config = MHAConfig(
-        dtype,
+    alias config = MHAConfig[dtype](
         UInt(Int(q.layout.shape[rank - 2])),
         UInt(Int(q.layout.shape[rank - 1])),
     )

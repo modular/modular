@@ -476,9 +476,6 @@ class Qwen2_5VLModel(
             ]
             signal_buffers = [inp.buffer for inp in all_inputs[8 * n_devices :]]
 
-            # Execute vision transformer using the vision encoder module with multi-GPU support
-            # For now, use the first device's inputs (keeping compatibility with single GPU approach)
-            # TODO: Implement proper multi-GPU execution when vision encoder is fully parallelized
             vision_outputs = vision_encoder(
                 pixel_values=pixel_values_list,
                 rot_pos_ids=rot_pos_ids_list,

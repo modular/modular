@@ -41,6 +41,8 @@ from utils.static_tuple import StaticTuple
 from ....arch.sm100 import MmaOpSM100_SS
 from ....utils import elementwise_epilogue_type
 
+alias logger = Logger()
+
 alias smem_layout_3D[layout: Layout] = Layout(
     IntTuple(
         1,
@@ -679,7 +681,6 @@ fn matmul_sm100_blockwise_scaled_fp8[
             " by NVIDIA SM90+ TMA instructions!"
         )
 
-    var logger = Logger()
     logger.info(
         "Executing Basic 1D2D Blockwise Scaled FP8 GEMM (BLOCK_SCALE_SIZE ="
         " 128)"

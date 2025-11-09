@@ -149,10 +149,10 @@ fn _shuffle_amd_helper[
             return _shuffle_amd_helper(dst_lane, val.cast[DType.int32]()).cast[
                 dtype
             ]()
-        elif dtype.bit_width() == 16:
+        elif bit_width_of[dtype]() == 16:
             var val_splatted = SIMD[dtype, 2](val._refine[new_size=1]())
             return _shuffle_amd_helper(dst_lane, val_splatted)[0]
-        elif dtype.bit_width() == 64:
+        elif bit_width_of[dtype]() == 64:
             var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
             var val_half1, val_half2 = val_bitcast.deinterleave()
             var shuffle1 = _shuffle_amd_helper(dst_lane, val_half1)
@@ -1216,7 +1216,7 @@ fn _vote_amd_helper[ret_type: DType](vote: Bool) -> Scalar[ret_type]:
         "Unsupported return type",
     ]()
 
-    alias instruction = String("llvm.amdgcn.ballot.i", ret_type.bit_width())
+    alias instruction = String("llvm.amdgcn.ballot.i", bit_width_of[ret_type]())
     return llvm_intrinsic[
         instruction,
         Scalar[ret_type],

@@ -35,6 +35,8 @@ alias MAX_M = Int.MAX
 alias DISPATCH_MISS = 0
 alias DISPATCH_HIT = 1
 
+alias logger = Logger()
+
 
 fn matmul_dispatch_sm90[
     c_type: DType,
@@ -67,7 +69,6 @@ fn matmul_dispatch_sm90[
     alias N = c.shape.get[1]()
     alias N_multiple_of_8 = N % 8 == 0
 
-    var logger = Logger()
     logger.info("------ Dispatching to sm90 ------")
 
     # Support K multiple of 16B for FP8 due to using TMA.

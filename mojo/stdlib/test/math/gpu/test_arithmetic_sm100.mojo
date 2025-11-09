@@ -128,9 +128,8 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext):
     ctx.enqueue_copy(c_device_buffer, c_host.unsafe_ptr())
 
     # Compute expected result on host
-    var c_expected = ctx.enqueue_create_host_buffer[DType.float32](
-        buff_size
-    ).enqueue_fill(0)
+    var c_expected = ctx.enqueue_create_host_buffer[DType.float32](buff_size)
+    c_expected.enqueue_fill(0)
     ctx.synchronize()
 
     @parameter

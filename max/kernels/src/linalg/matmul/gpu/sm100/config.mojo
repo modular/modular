@@ -86,7 +86,7 @@ struct MatmulConfig[
         self.block_tile_shape = Index(
             self.mma_shape[0] // self.cta_group,
             self.mma_shape[1] // self.cta_group,
-            128 // a_type.size_of(),
+            128 // size_of[a_type](),
         )
 
         # If MMA_M is 256, each of the pair ctas has the entire MMA_N
@@ -307,7 +307,7 @@ fn choose_config[
     # Nvidia mma instruction process 32B in K.
     alias Kbytes_per_mma = 32
     # We use 128B swizzle, tile size in K is 128B over element size.
-    alias BK = 128 // a_type.size_of()
+    alias BK = 128 // size_of[a_type]()
 
     alias M_pivote = 32
 
@@ -413,7 +413,7 @@ fn choose_config[
 
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
         mma_shape=IndexList[3](
-            mma_mn[0], mma_mn[1], Kbytes_per_mma // a_type.size_of()
+            mma_mn[0], mma_mn[1], Kbytes_per_mma // size_of[a_type]()
         ),
         cta_group=cta_group,
         cluster_shape=Index(cta_group, 1, 1),

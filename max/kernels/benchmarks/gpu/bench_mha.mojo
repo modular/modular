@@ -190,7 +190,7 @@ fn run_mha[
             ),
                 # fmt: on
             ),
-            ThroughputMeasure(BenchMetric.flops, compute_flops()),
+            [ThroughputMeasure(BenchMetric.flops, compute_flops())],
         )
     else:
         kernel_launch(ctx)

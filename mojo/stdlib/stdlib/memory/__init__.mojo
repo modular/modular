@@ -42,3 +42,4 @@ from .unsafe_pointer import (
     UnsafePointer,
     UnsafePointerV2,
 )
+from .maybe_uninitialized import UnsafeMaybeUninitialized

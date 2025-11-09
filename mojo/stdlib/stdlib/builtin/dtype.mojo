@@ -58,8 +58,8 @@ struct DType(
       for SIMD vectors, tensors, and other data structures
     - **Type parameters**: Pass `DType` values as compile-time parameters to
       parameterized types like `SIMD[dtype, size]`
-    - **Type introspection**: Call methods like `.bit_width()`, `.is_floating_point()`
-      to query type properties at compile time
+    - **Type introspection**: Call methods like `.is_floating_point()` to query
+      type properties at compile time
     - **Type conversion**: Use in casting operations to convert between different
       numeric representations
 
@@ -73,7 +73,6 @@ struct DType(
     var dtype = data.dtype
 
     print("Is float:", dtype.is_floating_point())  # True
-    print("Bit width:", dtype.bit_width())          # 16
     print("Is signed:", dtype.is_signed())         # True
     ```
     """
@@ -648,73 +647,6 @@ struct DType(
         """
         return self.is_integral() or self.is_floating_point()
 
-    @always_inline
-    fn size_of(self) -> Int:
-        """Returns the size in bytes of the current DType.
-
-        Returns:
-            Returns the size in bytes of the current DType.
-        """
-
-        if self._is_non_index_integral():
-            return Int(
-                UInt8(
-                    mlir_value=__mlir_op.`pop.shl`(
-                        UInt8(1)._mlir_value,
-                        __mlir_op.`pop.sub`(
-                            __mlir_op.`pop.shr`(
-                                __mlir_op.`pop.simd.and`(
-                                    self._as_ui8(),
-                                    _mIsNotInteger._mlir_value,
-                                ),
-                                UInt8(1)._mlir_value,
-                            ),
-                            UInt8(3)._mlir_value,
-                        ),
-                    )
-                )
-            )
-
-        elif self is DType.bool:
-            return size_of[DType.bool]()
-        elif self is DType.int:
-            return size_of[DType.int]()
-        elif self is DType.uint:
-            return size_of[DType.uint]()
-
-        elif self is DType.float8_e3m4:
-            return size_of[DType.float8_e3m4]()
-        elif self is DType.float8_e4m3fn:
-            return size_of[DType.float8_e4m3fn]()
-        elif self is DType.float8_e4m3fnuz:
-            return size_of[DType.float8_e4m3fnuz]()
-        elif self is DType.float8_e5m2:
-            return size_of[DType.float8_e5m2]()
-        elif self is DType.float8_e5m2fnuz:
-            return size_of[DType.float8_e5m2fnuz]()
-
-        elif self is DType.bfloat16:
-            return size_of[DType.bfloat16]()
-        elif self is DType.float16:
-            return size_of[DType.float16]()
-
-        elif self is DType.float32:
-            return size_of[DType.float32]()
-
-        elif self is DType.float64:
-            return size_of[DType.float64]()
-
-        return size_of[DType.invalid]()
-
-    @always_inline
-    fn bit_width(self) -> Int:
-        """Returns the size in bits of the current DType.
-
-        Returns:
-            Returns the size in bits of the current DType.
-        """
-        return 8 * self.size_of()
-
     # ===-------------------------------------------------------------------===#
     # Floating point generics
     # ===-------------------------------------------------------------------===#
@@ -731,7 +663,7 @@ struct DType(
             The mantissa width.
         """
         constrained[dtype.is_floating_point(), "dtype must be floating point"]()
-        return dtype.bit_width() - DType.exponent_width[dtype]() - 1
+        return bit_width_of[dtype]() - DType.exponent_width[dtype]() - 1
 
     @staticmethod
     @always_inline("nodebug")
@@ -998,7 +930,7 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
     if dtype.is_unsigned():
         return dtype
     elif dtype.is_integral():
-        return _uint_type_of_width[dtype.bit_width()]()
+        return _uint_type_of_width[bit_width_of[dtype]()]()
 
     elif dtype.is_float8():
         return DType.uint8

@@ -13,6 +13,7 @@
 
 
 from math import align_up, ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from os.atomic import Atomic
 from sys.info import simd_width_of
 
@@ -483,9 +484,8 @@ fn moe_create_indices[
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.create_indices", task_id=Int(context.get_device_context().id())
     ):
-        var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint32](
-            1
-        ).enqueue_fill(0)
+        var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint32](1)
+        lock_buffer.enqueue_fill(0)
         var lock = LayoutTensor[
             DType.uint32, Layout.row_major(1), MutAnyOrigin
         ](lock_buffer.unsafe_ptr())
@@ -503,7 +503,8 @@ fn moe_create_indices[
 
         var expert_usage_stats_host = cuda_ctx.enqueue_create_host_buffer[
             DType.uint32
-        ](2).enqueue_fill(0)
+        ](2)
+        expert_usage_stats_host.enqueue_fill(0)
         cuda_ctx.enqueue_copy[DType.uint32](
             rebind[UnsafePointer[UInt32]](expert_usage_stats.ptr),
             expert_usage_stats_host,

@@ -28,7 +28,15 @@ underlying GPU architecture.
 from collections.string.string_slice import get_static_string
 from memory import LegacyUnsafePointer as UnsafePointer
 from os.atomic import Consistency
-from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, size_of, _RegisterPackType
+from sys import (
+    is_amd_gpu,
+    is_gpu,
+    is_nvidia_gpu,
+    is_apple_gpu,
+    size_of,
+    _RegisterPackType,
+    external_call,
+)
 from sys._assembly import inlined_assembly
 from sys.info import (
     CompilationTarget,
@@ -643,8 +651,19 @@ fn threadfence[scope: Scope = Scope.GPU]():
 
 
 fn _get_type_suffix[dtype: DType]() -> StaticString:
-    alias str = get_static_string["u", _int_to_str[dtype.bit_width()]()]()
+    alias str = get_static_string["u", _int_to_str[bit_width_of[dtype]()]()]()
     return str
+
+
+fn _get_air_atomic_suffix[dtype: DType]() -> StaticString:
+    @parameter
+    if dtype is DType.float32:
+        return "f32"
+    elif dtype in (DType.int32, DType.uint32):
+        return "i32"
+    else:
+        constrained[False, "unsupported dtype for air atomic intrinsics"]()
+        return ""
 
 
 fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
@@ -660,7 +679,7 @@ fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
     if dtype.is_half_float():
         return "h"
     if dtype.is_integral():
-        alias width = dtype.bit_width()
+        alias width = bit_width_of[dtype]()
         if width == 16:
             return "c"
         if width == 32:
@@ -684,6 +703,33 @@ fn _get_nvtx_pointer_constraint() -> StaticString:
         ),
     ]()
     return _get_nvtx_register_constraint[DType.int]()
+
+
+struct _AirMemFlags:
+    """AIR memory domain flags used by Apple/Metal intrinsics.
+    These values select **which address space's visibility** a fence operates on.
+    """
+
+    alias Device = Int32(1)
+    alias ThreadGroup = Int32(2)
+
+
+struct _AirScope:
+    """AIR synchronization scope for ordering and visibility.
+    The scope determines **which set of threads** participates in the ordering
+    established by a fence or an atomic op with scope.
+    """
+
+    alias Workgroup = Int32(1)
+    alias Device = Int32(2)
+    alias SIMDGroup = Int32(4)
+
+
+struct _AirMemOrder:
+    """AIR memory ordering semantics for atomic operations and fences."""
+
+    alias Relaxed = Int32(0)
+    alias SeqCst = Int32(5)
 
 
 @always_inline
@@ -738,6 +784,26 @@ fn store_release[
             alignment = alignment._mlir_value,
             ordering = Consistency.RELEASE.__mlir_attr(),
         ](value, ptr.address)
+    elif is_apple_gpu():
+        alias mem_flags = _AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else _AirMemFlags.Device
+        alias air_scope = _AirScope.Workgroup if scope is Scope.BLOCK else _AirScope.Device
+        external_call["air.atomic.fence", NoneType](
+            mem_flags,
+            _AirMemOrder.SeqCst,
+            air_scope,
+        )
+        alias addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
+        alias store_intrin_base = "air.atomic.local.store" if addr_space == AddressSpace.SHARED else "air.atomic.global.store"
+        alias store_intrin = store_intrin_base + "." + _get_air_atomic_suffix[
+            dtype
+        ]()
+        external_call[store_intrin, NoneType,](
+            ptr.address_space_cast[addr_space](),
+            value,
+            _AirMemOrder.Relaxed,
+            air_scope,
+            True,
+        )
     else:
         return CompilationTarget.unsupported_target_error[
             operation="store_release"
@@ -850,6 +916,26 @@ fn load_acquire[
             alignment = alignment._mlir_value,
             ordering = Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
+    elif is_apple_gpu():
+        alias addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
+        alias mem_flags = _AirMemFlags.ThreadGroup if addr_space == AddressSpace.SHARED else _AirMemFlags.Device
+        alias air_scope = _AirScope.Workgroup if scope is Scope.BLOCK else _AirScope.Device
+        alias load_intrin_base = "air.atomic.local.load" if addr_space == AddressSpace.SHARED else "air.atomic.global.load"
+        alias load_intrin = load_intrin_base + "." + _get_air_atomic_suffix[
+            dtype
+        ]()
+        var value = external_call[load_intrin, Scalar[dtype],](
+            ptr.address_space_cast[addr_space](),
+            _AirMemOrder.Relaxed,
+            air_scope,
+            True,
+        )
+        external_call["air.atomic.fence", NoneType](
+            mem_flags,
+            _AirMemOrder.SeqCst,
+            air_scope,
+        )
+        return value
     else:
         return CompilationTarget.unsupported_target_error[
             Scalar[dtype],

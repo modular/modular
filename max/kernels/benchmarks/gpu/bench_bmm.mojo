@@ -302,10 +302,12 @@ fn bench_bmm[
             ](b, m, n, k)
         ),
         # TODO: Pick relevant benchmetric
-        ThroughputMeasure(
-            BenchMetric.flops,
-            2 * B * M * N * K,
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.flops,
+                2 * B * M * N * K,
+            )
+        ],
     )
 
     # Retain our buffers till the end.

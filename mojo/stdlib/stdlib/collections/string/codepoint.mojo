@@ -281,19 +281,6 @@ struct Codepoint(
         """
         return self.to_u32() == other.to_u32()
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Return True if this character has a different codepoint value from
-        `other`.
-
-        Args:
-            other: The codepoint value to compare against.
-
-        Returns:
-            True if this character and `other` have different codepoint values;
-            False otherwise.
-        """
-        return self.to_u32() != other.to_u32()
-
     fn __lt__(self, other: Self) -> Bool:
         """Return True if this character is less than a different codepoint value from
         `other`.
@@ -306,45 +293,6 @@ struct Codepoint(
             False otherwise.
         """
         return self.to_u32() < other.to_u32()
-
-    fn __le__(self, other: Self) -> Bool:
-        """Return True if this character is less than or equal to a different codepoint value from
-        `other`.
-
-        Args:
-            other: The codepoint value to compare against.
-
-        Returns:
-            True if this character's value is less than or equal to the other codepoint value;
-            False otherwise.
-        """
-        return self.to_u32() <= other.to_u32()
-
-    fn __ge__(self, other: Self) -> Bool:
-        """Return True if this character is greater than or equal to a different codepoint value from
-        `other`.
-
-        Args:
-            other: The codepoint value to compare against.
-
-        Returns:
-            True if this character's value is greater than or equal to the other codepoint value;
-            False otherwise.
-        """
-        return self.to_u32() >= other.to_u32()
-
-    fn __gt__(self, other: Self) -> Bool:
-        """Return True if this character is greater than a different codepoint value from
-        `other`.
-
-        Args:
-            other: The codepoint value to compare against.
-
-        Returns:
-            True if this character's value is greater than the other codepoint value;
-            False otherwise.
-        """
-        return self.to_u32() > other.to_u32()
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations

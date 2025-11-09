@@ -14,6 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import size_of, simd_width_of
 from sys.info import _cdna_4_or_newer
 
@@ -59,7 +60,6 @@ from .utils import (
     LocalLayoutTensor,
     SharedLayoutTensor,
     SharedMemoryManager,
-    convert_f32_to_bf16,
     copy_local_to_dram2,
     get_fragment_layout,
     get_nested_fragment_layout,

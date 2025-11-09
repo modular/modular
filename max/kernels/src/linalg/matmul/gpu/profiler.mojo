@@ -109,9 +109,8 @@ struct BlackwellWarpProfilingWorkspaceManager[
         ctx: DeviceContext,
     ) raises -> Span[UInt64, MutAnyOrigin]:
         var length = Int(Self._calculate_buffer_length())
-        var device_buffer = ctx.enqueue_create_buffer[DType.uint64](
-            length
-        ).enqueue_fill(0)
+        var device_buffer = ctx.enqueue_create_buffer[DType.uint64](length)
+        device_buffer.enqueue_fill(0)
         return Span[UInt64, MutAnyOrigin](
             ptr=device_buffer.unsafe_ptr(),
             length=length,

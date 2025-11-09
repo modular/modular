@@ -78,6 +78,7 @@ qwen2_5_vl_arch = SupportedArchitecture(
     supported_encodings={
         SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
     },
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen2_5vl_model_state_dict,

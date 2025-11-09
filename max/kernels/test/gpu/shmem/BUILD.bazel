@@ -17,7 +17,7 @@ lit_tests(
     },
     gpu_constraints = select({
         "//:h100_gpu": ["//:has_multi_gpu"],
-        "//:b200_gpu": ["//:has_multi_gpu"],
+        # "//:b200_gpu": ["//:has_multi_gpu"],    # TODO(KERN-2180): Fix timeout
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     mojo_deps = [

@@ -506,7 +506,7 @@ class ColumnParallelLinear(Linear):
 
         if tied_weight and (
             kwargs.get("float8_config") is not None
-            or kwargs.get("has_bias") is not None
+            or kwargs.get("has_bias", False)
         ):
             raise ValueError(
                 "float8 and bias are both unsupported by "

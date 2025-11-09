@@ -1084,6 +1084,14 @@ fn _dispatch_max_num_blocks[
     alias default_idx = allreduce_table.query_index[rule_eq_arch_default]()
     constrained[len(default_idx)]()
     alias default_entry = allreduce_table.configs[default_idx[0]]
+    var default_num_blocks = default_entry.num_blocks
+
+    # Override defaults for specific AMD CDNA3 parts regardless of sm_version aliasing
+    alias arch = _accelerator_arch()
+    if "gfx950" in arch:  # MI355 family
+        default_num_blocks = 64
+    elif "gfx942" in arch:  # MI300 family
+        default_num_blocks = 32
 
     # narrowing the search space to matching sm_version and ngpus
     @parameter
@@ -1094,7 +1102,7 @@ fn _dispatch_max_num_blocks[
 
     @parameter
     if not search_domain:
-        return default_entry.num_blocks
+        return default_num_blocks
 
     # get all static num_bytes values in table within the search space
     @parameter
@@ -1125,7 +1133,7 @@ fn _dispatch_max_num_blocks[
             else:
                 break
 
-    return default_entry.num_blocks
+    return default_num_blocks
 
 
 fn get_sm_version() -> StaticString:

@@ -463,7 +463,7 @@ elif target_arch == "90a":  # Add your mapping here
 Note: The `target_arch` has the "sm_" prefix stripped, so "sm_90a" becomes
 "90a".
 
-Note: GPUs are currently 1:1 with the `target_arch` string. This is going to be 
+Note: GPUs are currently 1:1 with the `target_arch` string. This is going to be
 changed to support multiple GPUs per target_arch in the future.
 
 ### Step 5: Update `GPUInfo.target` Method
@@ -1936,7 +1936,7 @@ alias Radeon860m = GPUInfo.from_family(
 
 @fieldwise_init
 @register_passable
-struct GPUInfo(Identifiable, Stringable, Writable):
+struct GPUInfo(EqualityComparable, Identifiable, Stringable, Writable):
     """Comprehensive information about a GPU architecture.
 
     This struct contains detailed specifications about GPU capabilities,
@@ -2124,62 +2124,6 @@ struct GPUInfo(Identifiable, Stringable, Writable):
             max_thread_block_size=family.max_thread_block_size,
         )
 
-    fn __lt__(self, other: Self) -> Bool:
-        """Compares if this GPU has lower compute capability than another.
-
-        Args:
-            other: Another `GPUInfo` instance to compare against.
-
-        Returns:
-            True if this GPU has lower compute capability, False otherwise.
-        """
-        debug_assert(
-            self.vendor == other.vendor,
-            "the vendors must be the same to perform the comparison",
-        )
-        return self.compute < other.compute
-
-    fn __le__(self, other: Self) -> Bool:
-        """Compares if this GPU has lower or equal compute capability.
-
-        Args:
-            other: Another `GPUInfo` instance to compare against.
-
-        Returns:
-            True if this GPU has lower or equal compute capability.
-        """
-        debug_assert(
-            self.vendor == other.vendor,
-            "the vendors must be the same to perform the comparison",
-        )
-        return self.compute <= other.compute
-
-    fn __gt__(self, other: Self) -> Bool:
-        """Compares if this GPU has higher compute capability than another.
-
-        Args:
-            other: Another `GPUInfo` instance to compare against.
-
-        Returns:
-            True if this GPU has higher compute capability, False otherwise.
-        """
-        if self.vendor != other.vendor:
-            return False
-        return self.compute > other.compute
-
-    fn __ge__(self, other: Self) -> Bool:
-        """Compares if this GPU has higher or equal compute capability.
-
-        Args:
-            other: Another `GPUInfo` instance to compare against.
-
-        Returns:
-            True if this GPU has higher or equal compute capability.
-        """
-        if self.vendor != other.vendor:
-            return False
-        return self.compute >= other.compute
-
     fn __eq__(self, other: Self) -> Bool:
         """Checks if two `GPUInfo` instances represent the same GPU model.
 
@@ -2190,17 +2134,6 @@ struct GPUInfo(Identifiable, Stringable, Writable):
             True if both instances represent the same GPU model.
         """
         return self.name == other.name
-
-    fn __ne__(self, other: Self) -> Bool:
-        """Checks if two `GPUInfo` instances represent different GPU models.
-
-        Args:
-            other: Another `GPUInfo` instance to compare against.
-
-        Returns:
-            True if instances represent different GPU models.
-        """
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         """Identity comparison operator for `GPUInfo` instances.

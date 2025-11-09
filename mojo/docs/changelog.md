@@ -119,8 +119,8 @@ what we publish.
   i.e., `(Int, Float) : Tuple[__typeof(Int), __typeof(Float)]`.
 
 - The `__type_of` magic function has been been renamed to `type_of`. Using the
-  old spelling will yield a deprecation warning. Similarly, `__origin_of` has
-  been deprecated in favor of the new `origin_of`.
+  old spelling will yield an error. Similarly, `__origin_of` has been removed in
+  favor of the new `origin_of`.
 
 ### Library changes {#25-7-library-changes}
 
@@ -277,6 +277,10 @@ what we publish.
   (`llvm.air.simd_shuffle[_up/_down/_xor]`) instructions, achieving feature
   parity with NVIDIA and AMD backends.
 
+- `gpu.intrinsics.store_release()` and `gpu.intrinsics.load_acquire()` now
+  support Apple silicon GPUs, expanding support for proper memory
+  synchronization on these devices.
+
 - The `gpu` package has been reorganized into logical subdirectories for better
   code organization:
   - `gpu/primitives/` - Low-level GPU execution primitives (warp, block,
@@ -357,6 +361,11 @@ what we publish.
   ```
 
   Currently only equality and inequality are supported.
+
+- `DLHandle` is no longer part of the public API. Use `OwnedDLHandle` instead,
+  which provides RAII-based automatic resource management for dynamically linked
+  libraries. `DLHandle` has been renamed to `_DLHandle` and remains available
+  internally for use by the standard library.
 
 ### Tooling changes {#25-7-tooling-changes}
 

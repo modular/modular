@@ -12,25 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from pathlib import Path
-from sys import DLHandle, OwnedDLHandle
+from sys import OwnedDLHandle
 
 from testing import assert_equal, assert_raises, assert_true
 from testing import TestSuite
-
-
-# ===----------------------------------------------------------------------=== #
-# DLHandle tests
-# ===----------------------------------------------------------------------=== #
-
-
-def check_invalid_dlhandle():
-    with assert_raises(contains="dlopen failed"):
-        _ = DLHandle("/an/invalid/library")
-
-
-def check_invalid_dlhandle_path():
-    with assert_raises(contains="dlopen failed"):
-        _ = DLHandle(Path("/an/invalid/library"))
 
 
 # ===----------------------------------------------------------------------=== #

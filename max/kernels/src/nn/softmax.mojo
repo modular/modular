@@ -13,6 +13,7 @@
 
 from collections import OptionalReg
 from math import align_down, ceildiv, exp, exp2, log
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 
 import gpu.warp as warp

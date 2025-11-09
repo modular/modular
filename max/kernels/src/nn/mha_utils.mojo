@@ -14,6 +14,7 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv, align_up
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import (
     CompilationTarget,
     align_of,
@@ -121,9 +122,7 @@ struct FlashAttentionAlgorithm(
 
 @fieldwise_init
 @register_passable("trivial")
-struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
-    var dtype: DType
-
+struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
     # Q, K, V, output should have the same type.
     var num_heads: UInt
     var depth: UInt
@@ -176,7 +175,7 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
         )
 
     fn swizzle_granularity(self) -> UInt:
-        return UInt(self.swizzle_mode.bytes()) // UInt(self.dtype.size_of())
+        return UInt(self.swizzle_mode.bytes()) // UInt(size_of[self.dtype]())
 
     fn q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> UInt:
         q_size = self.block_m() * self.padded_depth
@@ -240,7 +239,7 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
         if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
             num_smem_elements += self.p_smem_size()
 
-        num_smem_bytes = self.dtype.size_of() * Int(num_smem_elements)
+        num_smem_bytes = size_of[self.dtype]() * Int(num_smem_elements)
         if sm_90_fa3:
             alias i64_size = size_of[DType.int64]()
             num_smem_bytes += (2 * Int(self.num_pipeline_stages)) * i64_size + (
@@ -251,7 +250,6 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
 
     fn __init__(
         out self,
-        dtype: DType,
         num_heads: UInt,
         depth: UInt,
         num_queries_per_block: OptionalReg[UInt] = None,
@@ -264,7 +262,6 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(-1),
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     ):
-        self.dtype = dtype
         self.num_heads = num_heads
         self.depth = depth
         swizzle_granularity = swizzle_mode.bytes() // size_of[DType.bfloat16]()

@@ -14,6 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv, exp2, recip
 from math.constants import log2e
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, simd_width_of, size_of
 
 import gpu.warp as warp
@@ -72,6 +73,7 @@ from layout.tma_async import (
     SharedMemBarrier,
     TMANestedTensorTile,
 )
+from logger import Logger
 from memory import bitcast, stack_allocation
 from nn.mha_fa3_utils import (
     MHAPosition,
@@ -114,6 +116,8 @@ from tensor import ManagedTensorSlice
 from utils.index import Index
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
+
+alias logger = Logger()
 
 
 struct RegisterAccumulatorDescription:
@@ -355,7 +359,7 @@ fn _tmem_offset(dtype_size: Int, *, MMA_N: Int, m_mma: Int, n_mma: Int) -> Int:
 @always_inline
 fn _tmem_offset[dtype: DType, *, MMA_N: Int, m_mma: Int, n_mma: Int]() -> Int:
     alias linear = _tmem_offset(
-        dtype.size_of(), MMA_N=MMA_N, m_mma=m_mma, n_mma=n_mma
+        size_of[dtype](), MMA_N=MMA_N, m_mma=m_mma, n_mma=n_mma
     )
     return linear
 
@@ -1281,8 +1285,7 @@ fn mha_sm100_dispatch[
     ],
 ) raises:
     alias decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
-    alias new_config = MHAConfig(
-        config.dtype,
+    alias new_config = MHAConfig[config.dtype](
         config.num_heads,
         config.depth,
         num_queries_per_block=OptionalReg[UInt](64),
@@ -1828,6 +1831,22 @@ fn _mha_sm100_enqueue[
         extra_B200_smem
     )
     alias num_threads = config.num_threads[True]()
+    alias decoding = _is_decoding[MaxSeqLenType]()
+    logger.info("------ Dispatching to SM100 FMHA-1Q ------")
+    logger.info(
+        "QKV Type: ",
+        KVLUTType.dtype,
+        "Depth:",
+        config.depth,
+        "Number of Q // KV Heads:",
+        config.num_heads,
+        "//",
+        config.num_heads // group,
+        "Batch Size:",
+        batch_size,
+        "Num Partitions:" if decoding else "Max Num Prompt Tiles:",
+        partition.num_partitions() if decoding else max_num_prompt_tiles,
+    )
     ctx.enqueue_function_checked[kernel_sm100, kernel_sm100](
         q_tma_op,
         k_tma_op,
@@ -2153,7 +2172,7 @@ fn _mha_sm100[
     alias accum_simd_width = simd_width_of[accum_type]()
     alias row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
     # Account for group query.
-    alias kv_num_heads = num_heads // UInt(group)
+    alias kv_num_heads = num_heads // group
 
     # var lane_predicate = elect_one_sync() # not needed with async_copy
 

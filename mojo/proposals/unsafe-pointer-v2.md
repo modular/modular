@@ -11,8 +11,8 @@ however its current API has several flaws.
 
 1. **Unsafe implicit conversions**
    - `immutable` → `mutable` ([GitHub issue #4386](https://github.com/modular/modular/issues/4386))
-   - `__origin_of(a)` → `__origin_of(b)`
-   - `AnyOrigin` → `__origin_of(a)`
+   - `origin_of(a)` → `origin_of(b)`
+   - `AnyOrigin` → `origin_of(a)`
 
 2. **Defaulted origin (`AnyOrigin`)**
    When an `UnsafePointer` is introduced with its defaulted `AnyOrigin`, any use

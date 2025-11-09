@@ -312,6 +312,37 @@ class DeviceStream:
 def accelerator_count() -> int:
     """Returns number of accelerator devices available."""
 
+def set_virtual_device_count(count: int) -> None:
+    """
+    Set the number of virtual devices for device creation.
+
+    When count is greater than 0, Device::create() will return VirtualDevice
+    instances instead of real hardware devices for GPU APIs, and
+    Device::numberOfDevices() will return this count. This allows creating
+    devices for GPU configurations that don't match the current hardware.
+
+    Args:
+        count (int): The number of virtual devices. Set to 0 to disable
+            virtual device mode.
+    """
+
+def get_virtual_device_count() -> int:
+    """
+    Get the current virtual device count.
+
+    Returns:
+        int: The number of virtual devices, or 0 if virtual device mode
+            is disabled.
+    """
+
+def is_virtual_device_mode() -> bool:
+    """
+    Check if virtual device mode is currently enabled.
+
+    Returns:
+        bool: True if virtual device mode is enabled (count > 0), False otherwise.
+    """
+
 class Tensor:
     """
     Device-resident tensor representation.

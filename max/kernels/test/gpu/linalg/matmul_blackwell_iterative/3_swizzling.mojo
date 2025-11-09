@@ -23,7 +23,7 @@ from gpu import lane_id as get_lane_id
 from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_idx, lane_id, thread_idx
+from gpu import block_idx, lane_id, thread_idx, warp_id
 from gpu.memory import external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
@@ -194,7 +194,7 @@ fn kernel_3[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     alias max_tmem_cols = 512
@@ -318,7 +318,6 @@ fn kernel_3[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     alias num_warps = num_threads // WARP_SIZE
-    warp_id = thread_idx.x // WARP_SIZE
 
     ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
@@ -330,7 +329,7 @@ fn kernel_3[
             alias mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
-                4 * m_mma + warp_id, n_mma
+                4 * m_mma + warp_id(), n_mma
             )
 
             c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[

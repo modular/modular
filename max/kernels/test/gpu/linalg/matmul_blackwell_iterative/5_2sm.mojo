@@ -23,7 +23,7 @@ from gpu import WARP_SIZE, barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync, elect_one_sync
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
+from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx, warp_id
 from gpu.memory import fence_async_view_proxy, external_memory
 from gpu.mma import st_matrix
 from gpu.mma_sm100 import *
@@ -205,7 +205,7 @@ fn kernel_5[
     tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
     mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = warp_id() == 0
     var elect_one_thread = elect_one_sync()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     alias max_tmem_cols = 512
@@ -332,8 +332,6 @@ fn kernel_5[
         mma_mbar[0].wait(mma_phase)
         mma_phase ^= 1
 
-    warp_id = thread_idx.x // WARP_SIZE
-
     # For tcgen05.ld 16x256, we need to split the register to deal with
     # loading 32 lanes for each warp.
     c_frag_upper, c_frag_lower = c_frag.split()
@@ -349,7 +347,7 @@ fn kernel_5[
         dtype=accum_type,
         pack=False,
         width = c_frag_upper.size,
-    ](tmem_addr | ((warp_id * 32) << 16))
+    ](tmem_addr | ((warp_id() * 32) << 16))
 
     c_frag_lower = tcgen05_ld[
         datapaths=16,
@@ -358,13 +356,13 @@ fn kernel_5[
         dtype=accum_type,
         pack=False,
         width = c_frag_lower.size,
-    ](tmem_addr | ((warp_id * 32 + 16) << 16))
+    ](tmem_addr | ((warp_id() * 32 + 16) << 16))
     tcgen05_load_wait()
 
     alias C_WBM = BM // 2 if MMA_M == 128 else BM // 4
     alias C_WBN = BN if MMA_M == 128 else MMA_N
-    var c_coord_x = warp_id % 2 if MMA_M == 128 else warp_id
-    var c_coord_y = warp_id // 2 if MMA_M == 128 else 0
+    var c_coord_x = warp_id() % 2 if MMA_M == 128 else warp_id()
+    var c_coord_y = warp_id() // 2 if MMA_M == 128 else 0
 
     # 32 x BN
     c_warp_tile = c_smem_tile.tile[C_WBM, C_WBN](c_coord_x, c_coord_y)
@@ -384,7 +382,7 @@ fn kernel_5[
         Layout.row_major(BM * NUM_TMA_TILES, TMA_BN)
     ]()
 
-    var split_coord_x = warp_id // 2 if MMA_M == 128 else 0
+    var split_coord_x = warp_id() // 2 if MMA_M == 128 else 0
     var c_smem_split = c_smem_tile_reshaped.tile[C_SPLIT_ROWS, TMA_BN](
         split_coord_x, 0
     )
@@ -393,7 +391,7 @@ fn kernel_5[
     for tma_n in range(NUM_ST_MATRIX):
         var c_smem_iter = c_smem_split.tile[BM, TMA_BN](tma_n, 0)
         var c_smem_warp_tile = c_smem_iter.tile[32, TMA_BN](
-            warp_id % 2 if MMA_M == 128 else warp_id, 0
+            warp_id() % 2 if MMA_M == 128 else warp_id(), 0
         )
         var upper = c_smem_warp_tile.tile[16, TMA_BN](0, 0)
         var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)

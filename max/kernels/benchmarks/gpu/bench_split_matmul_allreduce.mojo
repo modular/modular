@@ -221,6 +221,11 @@ fn bench_matmul_all_reduce[
 
         b.iter_custom_multicontext[kernel_launch](list_of_ctx)
 
+    var flops = ThroughputMeasure(
+        BenchMetric.flops,
+        (2 * m.value * m.value * k.value + m.value * m.value) * ngpus,
+    )
+
     b.bench_function[bench_func](
         BenchId(
             _get_run_name[
@@ -231,10 +236,7 @@ fn bench_matmul_all_reduce[
                 overlap_with_dpl,
             ](m, n, k)
         ),
-        ThroughputMeasure(
-            BenchMetric.flops,
-            (2 * m.value * m.value * k.value + m.value * m.value) * ngpus,
-        ),
+        [flops],
     )
 
     _ = signal_buffers^

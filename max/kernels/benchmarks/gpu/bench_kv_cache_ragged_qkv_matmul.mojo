@@ -200,11 +200,13 @@ def execute_kv_cache_ragged_matmul[
             )
         ),
         # TODO: Pick relevant benchmetric
-        ThroughputMeasure(
-            BenchMetric.flops,
-            # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-            2 * Int(total_seq_len) * hidden_size * combined_hidden_size,
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.flops,
+                # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
+                2 * Int(total_seq_len) * hidden_size * combined_hidden_size,
+            )
+        ],
     )
 
 

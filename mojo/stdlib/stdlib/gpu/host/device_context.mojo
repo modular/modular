@@ -604,7 +604,7 @@ struct HostBuffer[dtype: DType](
         ]()
         self.context().enqueue_copy(self, src_ptr)
 
-    fn enqueue_fill(self, val: Scalar[dtype]) raises -> Self:
+    fn enqueue_fill(self, val: Scalar[dtype]) raises:
         """Enqueues an operation to fill this buffer with a specified value.
 
         This method schedules a memory set operation that fills the entire buffer
@@ -614,9 +614,6 @@ struct HostBuffer[dtype: DType](
         Args:
             val: The value to fill the buffer with.
 
-        Returns:
-            Self reference for method chaining.
-
         Raises:
             If the operation fails.
         """
@@ -625,7 +622,6 @@ struct HostBuffer[dtype: DType](
             "HostBuffer is not supported on GPUs",
         ]()
         self.context().enqueue_memset(self, val)
-        return self
 
     fn reassign_ownership_to(self, ctx: DeviceContext) raises:
         """Transfers ownership of this buffer to another device context.
@@ -1234,7 +1230,7 @@ struct DeviceBuffer[dtype: DType](
         ]()
         self.context().enqueue_copy(self, src_ptr)
 
-    fn enqueue_fill(self, val: Scalar[dtype]) raises -> Self:
+    fn enqueue_fill(self, val: Scalar[dtype]) raises:
         """Enqueues an operation to fill this buffer with a specified value.
 
         This method schedules a memory set operation that fills the entire buffer
@@ -1244,9 +1240,6 @@ struct DeviceBuffer[dtype: DType](
         Args:
             val: The value to fill the buffer with.
 
-        Returns:
-            Self reference for method chaining.
-
         Raises:
             If the operation fails.
         """
@@ -1255,7 +1248,6 @@ struct DeviceBuffer[dtype: DType](
             "DeviceBuffer is not supported on GPUs",
         ]()
         self.context().enqueue_memset(self, val)
-        return self
 
     fn reassign_ownership_to(self, ctx: DeviceContext) raises:
         """Transfers ownership of this buffer to another device context.
@@ -5849,7 +5841,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         Raises:
             If the operation fails.
         """
-        alias bitwidth = dtype.bit_width()
+        alias bitwidth = bit_width_of[dtype]()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
             "bitwidth of memset dtype must be one of [8,16,32,64]",
@@ -5899,7 +5891,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         Raises:
             If the operation fails.
         """
-        alias bitwidth = dtype.bit_width()
+        alias bitwidth = bit_width_of[dtype]()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
             "bitwidth of memset dtype must be one of [8,16,32,64]",

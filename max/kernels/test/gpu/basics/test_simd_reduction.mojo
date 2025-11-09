@@ -43,7 +43,8 @@ def test_simd_reduction(ctx: DeviceContext):
 
     var output_buffer = ctx.enqueue_create_buffer[DType.int](
         buffer_size // simd_width
-    ).enqueue_fill(9)
+    )
+    output_buffer.enqueue_fill(9)
 
     ctx.enqueue_copy(input_buffer, input_host)
 
