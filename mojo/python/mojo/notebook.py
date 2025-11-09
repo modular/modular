@@ -54,7 +54,7 @@ fn PyInit_{MODNAME}() -> PythonObject:
     try:
         var m = PythonModuleBuilder("{MODNAME}")
         # Register the entrypoint function that should exist in user code:
-        m.def_function[entrypoint]("entrypoint", docstring="Execute cell entry and return a PythonObject")
+        m.def_function[{ENTRYPOINT}]("{ENTRYPOINT}", docstring="Execute cell entry and return a PythonObject")
         return m.finalize()
     except e:
         return abort[PythonObject](String("error creating Python Mojo module:", e))
@@ -66,7 +66,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
     """A Mojo cell.
 
     Usage:
-        - Run Mojo code in a cell (prints to stdout):
+        - Run Mojo code in a cell look for main() function:
 
             ```mojo
             %%mojo
@@ -74,13 +74,14 @@ def mojo(line, cell) -> None:  # noqa: ANN001
                 print("Hello from Mojo!")
             ```
 
-        - Run Mojo code in a cell with entrypoint function (returns Python objects):
+        - Run Mojo code in a cell with some entrypoint function:
 
             ```mojo
-            %%mojo entrypoint
+            %%mojo draw
             from python import Python, PythonObject
 
-            fn entrypoint() raises -> PythonObject:
+            # draw function is the entrypoint
+            fn draw() raises -> PythonObject:
                 Digraph = Python.import_module("graphviz").Digraph
 
                 g = Digraph()
@@ -146,25 +147,23 @@ def mojo(line, cell) -> None:  # noqa: ANN001
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("command", nargs="?", default="run")
-    parser.add_argument(
-        "--entrypoint",
-        action="store_true",
-        help="Use entrypoint mode for returning Python objects",
-    )
 
     args, extra_args = parser.parse_known_args(line.strip().split())
 
     # Check if entrypoint mode is requested
-    is_entrypoint = args.command == "entrypoint" or args.entrypoint
+    is_entrypoint = args.command not in ["run", "build", "package"]
 
     with tempfile.TemporaryDirectory() as tempdir:
         path = Path(tempdir)
 
         if is_entrypoint:
+            entrypoint = args.command
             modname = f"mojocell_{uuid.uuid4().hex[:8]}"
 
             mojo_content = ENTRYPOINT_TEMPLATE.format(
-                USER_CODE=cell, MODNAME=modname
+                USER_CODE=cell,
+                MODNAME=modname,
+                ENTRYPOINT=entrypoint,
             )
             mojo_path = path / f"{modname}.mojo"
             with open(mojo_path, "w") as f:
@@ -177,7 +176,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
                 mod = importlib.import_module(modname)
 
                 # Call entrypoint function and display result
-                result = mod.entrypoint()
+                result = getattr(mod, entrypoint)()
 
                 # Use IPython display for rich rendering
                 if display:
@@ -191,7 +190,6 @@ def mojo(line, cell) -> None:  # noqa: ANN001
                     sys.path.remove(str(path))
 
         else:
-            # Use traditional approach with subprocess
             mojo_path = path / "cell.mojo"
             with open(mojo_path, "w") as f:
                 f.write(cell)
