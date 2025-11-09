@@ -31,6 +31,10 @@ def test_get_name() -> None:
         delattr(sys.modules[__name__], "deny_name")
 
 
+def test_getitem() -> None:
+    person = def_method.Person()
+    assert person[0] == "J"
+
 def test_split_name() -> None:
     person = def_method.Person()
     assert person.split_name(" ") == ["John", "Smith"]
