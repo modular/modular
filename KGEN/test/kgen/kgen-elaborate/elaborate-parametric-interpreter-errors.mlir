@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-generators="max-depth=128 use-parametric-interpret=true" -verify-diagnostics -split-input-file -allow-unregistered-dialect
+// RUN: kgen-opt %s -elaborate-generators="max-depth=64 use-parametric-interpret=true" -verify-diagnostics -split-input-file -allow-unregistered-dialect
 
 
 // Recursive expansions.
