@@ -12,35 +12,6 @@ struct Empty: pass
 # Input parameters
 ##===----------------------------------------------------------------------===##
 
-@register_passable("trivial")
-struct DType:
-    alias type = __mlir_type.`!kgen.dtype`
-    var _mlir_value: Self.type
-
-    alias float32 = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
-    alias int32 = __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`
-
-    @always_inline("builtin")
-    @implicit
-    fn __init__(out self, value: Self.type):
-        self._mlir_value = value
-
-# CHECK-LABEL: lit.struct.decl @SIMD
-# CHECK-SAME: <[[SIMDDT:.*]]: !DType, [[SIMDSIZE:.*]]: !Int>
-# CHECK-SAME: register_passable
-@register_passable("trivial")
-struct SIMD[dt: DType, size: Int]:
-    var value: __mlir_type[`!pop.simd<`, size._mlir_value, `, `, dt._mlir_value, `>`]
-
-    fn __add__(lhs, rhs: Self) -> Self:
-        while __mlir_attr.true:
-            pass
-
-    @staticmethod
-    fn splat():
-        pass
-
-
 @register_passable
 struct StructWithIntParam[size: Int]:
     pass
@@ -83,7 +54,7 @@ fn call_generic[dt: DType]():
   generic_fn[dt, 42, DType](57)
 
   # CHECK: %[[C57_2:.*]] = {{.*}}constant{{.*}}57
-  # CHECK: lit.call @parameters::@"generic_fn{{.*}}"<:!DType dt, :!Int {13}, :type @parameters::@SIMD<{{.*}}:!DType dt, :!Int {4}>{{.*}}>(%[[C57_2]])
+  # CHECK: lit.call @parameters::@"generic_fn{{.*}}"<:!DType dt, :!Int {13}, :type {{.*}}@SIMD<{{.*}}:!DType dt, :!Int {4}>{{.*}}>(%[[C57_2]])
   generic_fn[dt, 13, SIMD[dt, 4]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
@@ -134,9 +105,9 @@ fn testSIMD(a: Scalar[DType.float32],
             b: Scalar[DType.int32],
             mut reff: Scalar[DType.int32]):
   # CHECK: %field1 = lit.var.decl {{.*}} : !lit.ref<scalar<{{.*}}f32{{.*}}>,
-  var field1 = a.value
+  var field1 = a._mlir_value
   # CHECK: %field2 = lit.var.decl {{.*}} : !lit.ref<scalar<{{.*}}si32{{.*}}>,
-  var field2 = reff.value
+  var field2 = reff._mlir_value
 
   # Test calls to methods and operators on parameterized type.
   # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!DType {{.*}}f32{{.*}}, :!Int {1}>(%a, %a)

@@ -10,88 +10,6 @@
 
 fn noop(): pass
 
-@register_passable("trivial")
-struct DType:
-    alias type = __mlir_type.`!kgen.dtype`
-    var _mlir_value: Self.type
-
-    alias float32 = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
-    alias int32 = __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`
-    alias float64 = __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`
-
-    @always_inline("builtin")
-    @implicit
-    fn __init__(out self, value: Self.type):
-        self._mlir_value = value
-
-
-alias Float32 = SIMD[DType.float32, 1]
-alias Float64 = SIMD[DType.float64, 1]
-
-# CHECK-LABEL: lit.struct.decl @SIMD
-# CHECK-SAMEL <[[SIMDDT:.*]]: !DType, [[SIMDSIZE:.*]]: !Int>
-# CHECK-SAME: register_passable
-@register_passable("trivial")
-struct SIMD[dtype: DType, size: Int]:
-    alias _mlir_type = __mlir_type[
-        `!pop.simd<`, size._mlir_value, `, `, dtype._mlir_value, `>`
-    ]
-
-    var _mlir_value: Self._mlir_type
-    """The underlying storage for the vector."""
-
-    @always_inline("nodebug")
-    fn __init__(out self, *, mlir_value: Self._mlir_type):
-        self._mlir_value = mlir_value
-
-    @always_inline("nodebug")
-    fn __init__(out self):
-        alias res = SIMD[dtype, size](Int())
-        self = res
-
-    @always_inline
-    fn __init__(out self, value: Int, /):
-        var index = __mlir_op.`pop.cast_from_builtin`[
-            _type = __mlir_type.`!pop.scalar<index>`
-        ](value._mlir_value)
-        var s = __mlir_op.`pop.cast`[_type = SIMD[dtype, 1]._mlir_type](index)
-
-        @parameter
-        if size == 1:
-            self._mlir_value = rebind[Self._mlir_type](s)
-        else:
-            self._mlir_value = __mlir_op.`pop.simd.splat`[
-                _type = Self._mlir_type
-            ](s)
-
-    @implicit
-    fn __init__(out self, value: FloatLiteral, /):
-        var res = __mlir_attr[
-            `#pop<float_literal_convert<`, value.value, `>> : `, Self._mlir_type
-        ]
-        self = Self(mlir_value=res)
-
-    fn __add__(lhs, rhs: Self) -> Self:
-        while __mlir_attr.true:
-            pass
-
-    @staticmethod
-    fn splat():
-        pass
-
-    @always_inline("nodebug")
-    fn __truediv__(self, rhs: Self) -> Self:
-        return Self(
-            mlir_value=__mlir_op.`pop.div`(self._mlir_value, rhs._mlir_value)
-        )
-
-    @always_inline("nodebug")
-    fn __rtruediv__(self, value: Self) -> Self:
-        return value / self
-
-    @always_inline("nodebug")
-    fn __iadd__(mut self, rhs: Self):
-        self = self + rhs
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlyInt
 struct MemoryOnlyInt(ImplicitlyCopyable):
@@ -758,7 +676,7 @@ fn patterns():
 
   # CHECK: %someSIMD = lit.var.decl "someSIMD" var
   # CHECK: [[SIMD:%.*]] = lit.ref.load %someSIMD
-  # CHECK: {{%.*}} = lit.call {{.*}}@expressions::@SIMD::@"__iadd__({{.*}}(%someSIMD, [[SIMD]])
+  # CHECK: {{%.*}} = lit.call {{.*}}@SIMD::@"__iadd__({{.*}}(%someSIMD, [[SIMD]])
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
