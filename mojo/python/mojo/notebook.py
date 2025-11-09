@@ -30,14 +30,10 @@ except ImportError:
         return fn
 
 
+import mojo.importer
+
 from .paths import MojoCompilationError
 from .run import subprocess_run_mojo
-
-try:
-    import mojo.importer
-except ImportError:
-    pass  # Will fall back to subprocess approach
-
 
 # Template for creating a Mojo module with Python bindings that can return any object
 ENTRYPOINT_TEMPLATE = """\
