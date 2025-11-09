@@ -20,6 +20,7 @@ from memory import OpaquePointer, stack_allocation
 from python import Python, PythonObject
 from python._cpython import (
     GILAcquired,
+    Py_mp_subscript,
     Py_TPFLAGS_DEFAULT,
     PyCFunction,
     PyCFunctionWithKeywords,
@@ -78,6 +79,17 @@ fn _register_py_type_object(
         )
 
     type_dict[][type_id] = type_obj^
+
+
+@fieldwise_init
+struct TypeObjectSlot:
+    """Enum for the methods that make up the python special protocols like mapping, sequence.
+    """
+
+    var _tp_slot: Int
+
+    # https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript
+    alias MappingGetItem = TypeObjectSlot(Py_mp_subscript)
 
 
 fn lookup_py_type_object[T: AnyType]() raises -> PythonObject:
@@ -213,6 +225,47 @@ fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
         repr_str = String("<uninitialized ", get_type_name[T](), ">")
 
     return cpython.PyUnicode_DecodeUTF8(repr_str)
+
+
+fn _mp_subscript_wrapper[
+    method_type: AnyTrivialRegType,
+    func: PyObjectFunction[method_type, self_type=_, has_kwargs=_],
+](py_self: PyObjectPtr, key: PyObjectPtr) -> PyObjectPtr:
+    """Python-compatible wrapper for mapping subscript protocol (__getitem__).
+
+    This function serves as the `mp_subscript` slot (slot 5) for Python type objects.
+    It adapts user methods to the binaryfunc signature required by the mapping protocol.
+
+    Parameters:
+        method_type: The type of the method to wrap.
+        func: The PyObjectFunction to call for subscript operations.
+
+    Args:
+        py_self: Pointer to the Python object (the container).
+        key: Pointer to the Python object used as the subscript key.
+
+    Returns:
+        A new Python object representing the result of the subscript operation,
+        or null pointer if an error occurs (with Python exception set).
+    """
+    ref cpython = Python().cpython()
+
+    var self_obj = PythonObject(from_borrowed=py_self)
+
+    try:
+        # Call the user's method with self and the key as a tuple of arguments
+        # Create a Python tuple with a single element (the key).
+        var tuple_builder = cpython.PyTuple_New(1)
+        _ = cpython.PyTuple_SetItem(tuple_builder, 0, key)
+
+        var result = func._call_method(
+            self_obj, PythonObject(from_owned=tuple_builder)
+        )
+        return result.steal_data()
+    except e:
+        var error_type = cpython.get_error_global("PyExc_Exception")
+        cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+        return PyObjectPtr()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -887,6 +940,61 @@ struct PythonTypeBuilder(Copyable, Movable):
         return self._generic_def_py_method[
             _py_function_wrapper[method, is_method=True](), static_method=False
         ](method_name, docstring)
+
+    fn def_special_method[
+        method_type: AnyTrivialRegType, //,
+        method: PyObjectFunction[method_type, self_type=_, has_kwargs=_],
+        tp_slot: TypeObjectSlot,
+    ](
+        mut self: Self,
+        method_name: StaticString,
+        docstring: StaticString = "",
+    ) -> ref [self] Self:
+        """Declare a binding for a special method like __getitem__.
+
+        This method registers functions for Python's special method slots (like mapping
+        protocol operations). Different special methods require different function signatures.
+
+        Example signatures for mapping subscript (__getitem__):
+        ```mojo
+        fn __getitem__(py_self: PythonObject, key: PythonObject) raises -> PythonObject: ...
+        ```
+
+        Parameters:
+            method_type: The type of the method to declare a binding for.
+            method: The method to declare a binding for. Users can pass their
+                function directly, and it will be implicitly converted to a
+                PyObjectFunction if and only if its signature is supported.
+            tp_slot: The type table slot for special methods (e.g., TypeObjectSlot.MappingGetItem).
+
+        Args:
+            method_name: The name with which the method will be exposed on the
+                type.
+            docstring: The docstring for the method of the type.
+
+        Returns:
+            The builder with the method binding declared.
+        """
+
+        # For mapping protocol subscript (__getitem__), use the binaryfunc wrapper
+        @parameter
+        if tp_slot._tp_slot == Py_mp_subscript:
+            self._insert_slot(
+                PyType_Slot(
+                    Py_mp_subscript,
+                    rebind[OpaquePointer](
+                        _mp_subscript_wrapper[method_type, method]
+                        # _py_c_function_wrapper[method, is_method=True]()
+                    ),
+                ),
+            )
+        else:
+            # For other special methods, add support as needed
+            abort(
+                "Unsupported special method slot: " + String(tp_slot._tp_slot)
+            )
+
+        return self
 
     fn def_staticmethod[
         method_type: AnyTrivialRegType, //,
