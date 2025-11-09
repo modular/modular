@@ -635,7 +635,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     return success(!decl.isErroneous());
   }
 
-  auto emitError = [&](SMLoc loc, const Twine &message) -> InflightDiag {
+  auto emitError = [&](SMLoc loc, const Twine &message) -> MojoInflightDiag {
     return this->emitError(loc, message);
   };
 

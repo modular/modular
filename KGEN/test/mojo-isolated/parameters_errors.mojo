@@ -624,7 +624,7 @@ struct StructWithAlias:
 
 # Make sure error messages include scope for auto parameters.
 # MOCO-970: "can't convert type to type" error stripped off full parameter name.
-struct TestAutoParams[f1: HasSize]:
+struct TestAutoParamsAndSugar[f1: HasSize]:
     fn method[f2: HasSize](self, f3: HasSize):
         # expected-error @+1 {{cannot be converted from 'HasSize[f1.size]' to 'HasSize[4]'}}
         takes4(HasSize[f1.size]())

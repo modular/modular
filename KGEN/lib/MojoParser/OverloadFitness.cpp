@@ -40,28 +40,31 @@ struct DiagEmitter : public SharedStateUser {
       : SharedStateUser(shared), callLoc(callLoc), numOperands(numOperands),
         callSyntax(callSyntax) {}
 
-  InflightDiag unexpectedKwArgs(ArrayRef<StringAttr> unknownKwOperands) const;
-  InflightDiag wrongParamCount(size_t expectedNumParams,
-                               size_t actualNumParams) const;
-  InflightDiag wrongArgCountWithPack(size_t minRequiredArgs,
-                                     size_t maxAllowedArgs,
-                                     size_t numOperands) const;
-  InflightDiag wrongPosOnlyCount(size_t minRequiredArgs, size_t maxAllowedArgs,
-                                 size_t numOperands,
-                                 const Twine &argOrParam) const;
-  InflightDiag resultGenericMemType(Type outputType) const;
-  InflightDiag argGenericMemType(size_t expectedArgIdx,
-                                 Type expectedType) const;
-  InflightDiag argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
-                               ASTType ty, ASTExprAnd<AnyValue> operand,
-                               size_t argIdx) const;
-  InflightDiag missingArgs(ArrayRef<StringAttr> missingArgs,
-                           const Twine &kindStr) const;
-  InflightDiag posOnlyPassedByKw(ArrayRef<StringAttr> posOnlyPassedByKw) const;
-  InflightDiag tooManyPosArgs(size_t maxAllowedArgs,
-                              size_t numPosOperands) const;
-  InflightDiag byPosAndKw(ArrayRef<StringAttr> names) const;
-  InflightDiag badImplicitConversion(ASTType fromType, ASTType toType) const;
+  MojoInflightDiag
+  unexpectedKwArgs(ArrayRef<StringAttr> unknownKwOperands) const;
+  MojoInflightDiag wrongParamCount(size_t expectedNumParams,
+                                   size_t actualNumParams) const;
+  MojoInflightDiag wrongArgCountWithPack(size_t minRequiredArgs,
+                                         size_t maxAllowedArgs,
+                                         size_t numOperands) const;
+  MojoInflightDiag wrongPosOnlyCount(size_t minRequiredArgs,
+                                     size_t maxAllowedArgs, size_t numOperands,
+                                     const Twine &argOrParam) const;
+  MojoInflightDiag resultGenericMemType(Type outputType) const;
+  MojoInflightDiag argGenericMemType(size_t expectedArgIdx,
+                                     Type expectedType) const;
+  MojoInflightDiag argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
+                                   ASTType ty, ASTExprAnd<AnyValue> operand,
+                                   size_t argIdx) const;
+  MojoInflightDiag missingArgs(ArrayRef<StringAttr> missingArgs,
+                               const Twine &kindStr) const;
+  MojoInflightDiag
+  posOnlyPassedByKw(ArrayRef<StringAttr> posOnlyPassedByKw) const;
+  MojoInflightDiag tooManyPosArgs(size_t maxAllowedArgs,
+                                  size_t numPosOperands) const;
+  MojoInflightDiag byPosAndKw(ArrayRef<StringAttr> names) const;
+  MojoInflightDiag badImplicitConversion(ASTType fromType,
+                                         ASTType toType) const;
 
 private:
   SMLoc callLoc;
@@ -69,13 +72,16 @@ private:
   CallSyntax callSyntax;
 
   /// Wrapper around pretty printing logic for an argument given by index.
-  void describeArgumentNo(InflightDiag &diag, size_t argIdx) const;
+  void describeArgumentNo(MojoInflightDiag &diag, size_t argIdx) const;
 
-  InflightDiag initDiag() const { return shared.emitError(callLoc); }
+  MojoInflightDiag initDiag() const {
+    return MojoInflightDiag(shared.emitError(callLoc), {});
+  }
 };
 } // namespace
 
-void DiagEmitter::describeArgumentNo(InflightDiag &diag, size_t argIdx) const {
+void DiagEmitter::describeArgumentNo(MojoInflightDiag &diag,
+                                     size_t argIdx) const {
   // If this is a method syntax call, don't count the receiver.
   if (callSyntax == CallSyntax::kMethodCall ||
       callSyntax == CallSyntax::kMethodCallSynthetic) {
@@ -101,55 +107,54 @@ void DiagEmitter::describeArgumentNo(InflightDiag &diag, size_t argIdx) const {
   }
 }
 
-InflightDiag
+MojoInflightDiag
 DiagEmitter::unexpectedKwArgs(ArrayRef<StringAttr> unknownKwOperands) const {
-  InflightDiag diag = initDiag();
+  auto diag = initDiag();
   emitUnknownKeywords(diag, unknownKwOperands, "argument");
   return diag;
 }
 
-InflightDiag DiagEmitter::wrongParamCount(size_t expectedNumParams,
-                                          size_t actualNumParams) const {
-  InflightDiag diag = initDiag() << "callee";
+MojoInflightDiag DiagEmitter::wrongParamCount(size_t expectedNumParams,
+                                              size_t actualNumParams) const {
+  auto diag = initDiag() << "callee";
   emitWrongArgOrParamCount(diag, /*minRequired=*/expectedNumParams,
                            /*maxAllowed=*/expectedNumParams, actualNumParams,
                            "parameter");
   return diag;
 }
 
-InflightDiag DiagEmitter::wrongArgCountWithPack(size_t minRequiredArgs,
-                                                size_t maxAllowedArgs,
-                                                size_t numOperands) const {
-  InflightDiag diag = initDiag()
-                      << "callee with non-empty variadic pack argument";
+MojoInflightDiag DiagEmitter::wrongArgCountWithPack(size_t minRequiredArgs,
+                                                    size_t maxAllowedArgs,
+                                                    size_t numOperands) const {
+  auto diag = initDiag() << "callee with non-empty variadic pack argument";
   emitWrongArgOrParamCount(diag, minRequiredArgs, maxAllowedArgs, numOperands,
                            "positional operand");
   return diag;
 }
 
-InflightDiag DiagEmitter::wrongPosOnlyCount(size_t minRequiredArgs,
-                                            size_t maxAllowedArgs,
-                                            size_t numOperands,
-                                            const Twine &argOrParam) const {
-  InflightDiag diag = initDiag() << "callee";
+MojoInflightDiag DiagEmitter::wrongPosOnlyCount(size_t minRequiredArgs,
+                                                size_t maxAllowedArgs,
+                                                size_t numOperands,
+                                                const Twine &argOrParam) const {
+  auto diag = initDiag() << "callee";
   emitWrongArgOrParamCount(diag, minRequiredArgs, maxAllowedArgs, numOperands,
                            "positional " + argOrParam);
   return diag;
 }
 
-InflightDiag DiagEmitter::resultGenericMemType(Type outputType) const {
+MojoInflightDiag DiagEmitter::resultGenericMemType(Type outputType) const {
   return initDiag()
          << "result cannot bind AnyTrivialRegType type to memory-only type "
-         << outputType;
+         << ASTType(outputType);
 }
 
-InflightDiag DiagEmitter::argGenericMemType(size_t expectedArgIdx,
-                                            Type expectedType) const {
-  InflightDiag diag = initDiag();
+MojoInflightDiag DiagEmitter::argGenericMemType(size_t expectedArgIdx,
+                                                Type expectedType) const {
+  MojoInflightDiag diag = initDiag();
   describeArgumentNo(diag, expectedArgIdx);
   return std::move(diag)
          << " cannot bind AnyTrivialRegType type to memory-only type "
-         << expectedType;
+         << ASTType(expectedType);
 }
 
 /// Return true if the two types are the same when any parameter expressions are
@@ -184,7 +189,7 @@ static bool isEqualModuloExpressions(ASTType lhsType, ASTType rhsType,
 
 /// Attach extra type conversion error detail or hints to the user when
 /// reporting an error passing `operand` to an argument of type `argType`.
-static void addTypeConversionDetail(InflightDiag &diag,
+static void addTypeConversionDetail(MojoInflightDiag &diag,
                                     ASTExprAnd<AnyValue> operand,
                                     ASTType argType, SharedState &shared) {
   auto loc = operand.expr->getLoc();
@@ -223,7 +228,7 @@ static void addTypeConversionDetail(InflightDiag &diag,
 /// Emit a tailored diagnostic when failing to convert a value to type !lit.ref.
 /// This happens when the user is forming a Reference incorrectly which happens
 /// when confusion and details run the highest.
-static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
+static void diagnoseFailedRefTypeConversion(MojoInflightDiag &diag,
                                             ASTExprAnd<AnyValue> operand,
                                             RefType argType,
                                             SharedState &shared) {
@@ -275,7 +280,7 @@ static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
   }
 }
 
-static void printUValueTypeInfo(const AnyValue &value, InflightDiag &diag) {
+static void printUValueTypeInfo(const AnyValue &value, MojoInflightDiag &diag) {
   if (auto initList = value.getIfInitializer()) {
     switch (initList->syntax) {
     case InitializerUValue::kSlice:
@@ -295,12 +300,12 @@ static void printUValueTypeInfo(const AnyValue &value, InflightDiag &diag) {
     diag << "unknown overload";
 }
 
-InflightDiag
+MojoInflightDiag
 DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
                              ASTType ty, ASTExprAnd<AnyValue> operand,
                              size_t argIdx) const {
   using ArgTypeMismatchKind = OverloadFitness::ArgTypeMismatchKind;
-  InflightDiag diag = initDiag();
+  MojoInflightDiag diag = initDiag();
   switch (kind) {
   case ArgTypeMismatchKind::kNotLValue:
     if ((callSyntax == CallSyntax::kMethodCall ||
@@ -364,36 +369,36 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
   }
 }
 
-InflightDiag DiagEmitter::missingArgs(ArrayRef<StringAttr> missingArgs,
-                                      const Twine &kindStr) const {
-  InflightDiag diag = initDiag();
+MojoInflightDiag DiagEmitter::missingArgs(ArrayRef<StringAttr> missingArgs,
+                                          const Twine &kindStr) const {
+  MojoInflightDiag diag = initDiag();
   emitMissing(diag, missingArgs, kindStr + " argument");
   return diag;
 }
 
-InflightDiag
+MojoInflightDiag
 DiagEmitter::posOnlyPassedByKw(ArrayRef<StringAttr> posOnlyPassedByKw) const {
-  InflightDiag diag = initDiag();
+  MojoInflightDiag diag = initDiag();
   emitPosOnlyPassedByKw(diag, posOnlyPassedByKw, "argument");
   return diag;
 }
 
-InflightDiag DiagEmitter::tooManyPosArgs(size_t maxAllowedArgs,
-                                         size_t numPosOperands) const {
-  InflightDiag diag = initDiag();
+MojoInflightDiag DiagEmitter::tooManyPosArgs(size_t maxAllowedArgs,
+                                             size_t numPosOperands) const {
+  MojoInflightDiag diag = initDiag();
   emitTooManyPositional(diag, maxAllowedArgs, numPosOperands, "argument");
   return diag;
 }
 
-InflightDiag DiagEmitter::byPosAndKw(ArrayRef<StringAttr> names) const {
-  InflightDiag diag = initDiag();
+MojoInflightDiag DiagEmitter::byPosAndKw(ArrayRef<StringAttr> names) const {
+  MojoInflightDiag diag = initDiag();
   emitByPosAndKw(diag, names, "argument");
   return diag;
 }
 
-InflightDiag DiagEmitter::badImplicitConversion(ASTType fromType,
-                                                ASTType toType) const {
-  InflightDiag diag = initDiag();
+MojoInflightDiag DiagEmitter::badImplicitConversion(ASTType fromType,
+                                                    ASTType toType) const {
+  MojoInflightDiag diag = initDiag();
   diag << "cannot implicitly convert";
   if (fromType)
     diag << " " << fromType;
@@ -772,7 +777,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   // Check that the signature can be rebound with this set of bindings. We use
   // diagnostic handlers to capture any issues.
-  InflightDiag diag = shared.emitError(callLoc);
+  MojoInflightDiag diag = shared.emitError(callLoc);
   ParameterInferenceDiagnostics inferenceDiags;
   PogListAttr paramListAttr = signature.getMetadata();
   ParamBindings::DiagEmitter bindingDiag{
@@ -1103,7 +1108,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     /// index.
     auto processPositionalOperand =
         [&](ASTType expectedType,
-            ArgConvention conv) -> std::optional<InflightDiag> {
+            ArgConvention conv) -> std::optional<MojoInflightDiag> {
       auto &operand = operands[posOperandIdx];
       ssize_t localOperandIdx = posOperandIdx;
       auto [kind, ty] =

@@ -44,10 +44,10 @@ public:
   using SharedStateUser::emitError;
 
   /// Emit an error at a specific lexer location.
-  InflightDiag emitError(llvm::SMLoc loc, const Twine &message = {});
+  MojoInflightDiag emitError(llvm::SMLoc loc, const Twine &message = {});
 
   /// Emit an error at the current token.
-  InflightDiag emitTokenError(const Twine &message = {}) {
+  MojoInflightDiag emitTokenError(const Twine &message = {}) {
     return emitError(getToken().getLoc(), message);
   }
 

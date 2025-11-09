@@ -61,14 +61,14 @@ bool Token::isIdentifier() const {
 // Lexer
 //===----------------------------------------------------------------------===//
 
-Lexer::Lexer(Diags &diags, StringRef curBuffer, const char *curPtr)
+Lexer::Lexer(MojoDiags &diags, StringRef curBuffer, const char *curPtr)
     : diags(diags), curBuffer(curBuffer), curPtr(curPtr),
       curToken(Token::eof, StringRef(), 0), lastLineStart(nullptr),
       lastLineIndent(0) {
   lexToken();
 }
 
-Lexer::Lexer(Diags &diags, const llvm::MemoryBuffer *buffer)
+Lexer::Lexer(MojoDiags &diags, const llvm::MemoryBuffer *buffer)
     : diags(diags), curBuffer(buffer->getBuffer()), curPtr(curBuffer.begin()),
       curToken(Token::eof, StringRef(), 0), lastLineStart(nullptr),
       lastLineIndent(0) {
@@ -86,14 +86,14 @@ static StringRef findBuffer(llvm::SourceMgr &sourceMgr,
   return buffer->getBuffer();
 }
 
-Lexer::Lexer(Diags &diags, const LexerCursor &cursor)
+Lexer::Lexer(MojoDiags &diags, const LexerCursor &cursor)
     : diags(diags), curBuffer(findBuffer(diags.sourceMgr, cursor)),
       curToken(Token::eof, {}, 0) {
   cursor.restore(*this);
 }
 
 /// Emit an error message and return a Token::error token.
-InflightDiag Lexer::emitErrorAt(const char *loc, const Twine &message) {
+MojoInflightDiag Lexer::emitErrorAt(const char *loc, const Twine &message) {
   auto diag = diags.emitError(SMLoc::getFromPointer(loc), message);
   formToken(Token::error, loc, -1);
   return diag;

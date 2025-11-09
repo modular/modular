@@ -14,7 +14,7 @@
 using namespace M::KGEN::LIT;
 using namespace M;
 
-InflightDiag ParserBase::emitError(SMLoc loc, const Twine &message) {
+MojoInflightDiag ParserBase::emitError(SMLoc loc, const Twine &message) {
   auto diag = shared.emitError(loc, message);
 
   // If we hit a parse error in response to a lexer error, then the lexer

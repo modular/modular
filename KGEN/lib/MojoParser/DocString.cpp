@@ -532,8 +532,8 @@ private:
       auto &[element, seenLoc] = it;
       if (seenLoc)
         continue;
-      InflightDiag diag = emitDiag(loc)
-                          << tag << " '" << element << "' is not documented";
+      MojoInflightDiag diag = emitDiag(loc) << tag << " '" << element
+                                            << "' is not documented";
 
       // Attach a fixit to add the element to the doc string.
       const char *prevEndLoc =
@@ -732,14 +732,15 @@ private:
   /// Emit a diagnostic at the given doc string location.
   /// TODO: Remove the emitError argument, but we first need to add `Raises`
   /// docstrings to resolve all the warnings in the standard library.
-  InflightDiag emitDiag(const char *loc, const Twine &msg = {},
-                        bool emitError = true) {
+  MojoInflightDiag emitDiag(const char *loc, const Twine &msg = {},
+                            bool emitError = true) {
     SMLoc smLoc = translateLoc(loc);
     return smLoc.isValid() ? emitDiag(smLoc, msg, emitError)
                            : emitDiag(docStr->getLoc(), msg, emitError);
   }
   template <typename T>
-  InflightDiag emitDiag(T loc, const Twine &msg = {}, bool emitError = true) {
+  MojoInflightDiag emitDiag(T loc, const Twine &msg = {},
+                            bool emitError = true) {
     if (emitError && errorOnInvalidDocStrings)
       return sharedState.emitError(loc, msg);
     return sharedState.emitWarning(loc, msg);

@@ -16,13 +16,13 @@
 #ifndef KGEN_MOJOPARSER_EXPRNODES_H
 #define KGEN_MOJOPARSER_EXPRNODES_H
 
+#include "KGEN/MojoParser/ExprNode.h"
+#include "KGEN/MojoParser/MojoDiags.h"
+
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITAttrs.h"
-#include "KGEN/MojoParser/ExprNode.h"
-#include "Support/Compiler/Diags.h"
-#include "llvm/ADT/StringExtras.h"
-
 #include "KGEN/LITDialect/LITOps.h"
+#include "llvm/ADT/StringExtras.h"
 
 namespace M::KGEN {
 class FuncTypeGeneratorType;

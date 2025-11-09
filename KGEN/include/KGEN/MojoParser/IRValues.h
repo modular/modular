@@ -50,7 +50,6 @@
 #include "Support/ADT/SmartVariant.h"
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
-#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Value.h"
 
 namespace M::KGEN::LIT {

@@ -234,7 +234,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 /// stores them into each component LValue.
 CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
                                IREmitter &emitter) const {
-  auto emitError = [&]() -> InflightDiag {
+  auto emitError = [&]() -> MojoInflightDiag {
     return emitter.emitError(expr->getLoc())
            << value.expr->getRange() << expr->getRange();
   };

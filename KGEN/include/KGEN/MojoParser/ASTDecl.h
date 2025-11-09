@@ -139,7 +139,7 @@ public:
   /// inflight diagnostic that explains why this doesn't conform.  It can be
   /// reported or abandoned based on the client's needs.
   bool doesNominalTypeConformTo(TraitType trait,
-                                std::optional<InflightDiag> &diag);
+                                std::optional<MojoInflightDiag> &diag);
 
   /// Helper for clients that don't care about the diagnostic.
   bool doesNominalTypeConformTo(TraitType trait);

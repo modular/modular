@@ -23,6 +23,48 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 //===----------------------------------------------------------------------===//
+// Mojo Diagnostics
+//===----------------------------------------------------------------------===//
+
+MojoInflightDiag MojoDiags::emitError(llvm::SMLoc loc, const Twine &message) {
+  return MojoInflightDiag(Diags::emitError(loc, message), {});
+}
+MojoInflightDiag MojoDiags::emitWarning(llvm::SMLoc loc, const Twine &message) {
+  return MojoInflightDiag(Diags::emitWarning(loc, message), {});
+}
+
+MojoInflightDiag MojoInflightDiag::attachNote(llvm::SMLoc loc) && {
+  if (!getDiags())
+    return std::move(*this);
+  return std::move(*this).attachNote(getDiags()->translateLocation(loc));
+}
+MojoInflightDiag &MojoInflightDiag::attachNote(llvm::SMLoc loc) & {
+  InflightDiag::attachNote(loc);
+  return *this;
+}
+
+void MojoInflightDiag::addType(ASTType type) {
+  if (!getDiags())
+    return; // Ignore discarded diagnostics.
+  // Remember that we emitted this type.
+  emittedTypes.push_back({getLastLoc(), type});
+
+  auto *shared = static_cast<SharedState *>(getDiags()->extraContext);
+  *this << '\'' << type.getAsString(/*forDiag=*/shared) << '\'';
+}
+
+/// On destruction, emit notes about any sugared values in the types we emitted.
+/// There may be more than one type, in which case we're complaining about a X
+/// != Y sort of event. We should only unwrap any given identical alias once.
+MojoInflightDiag::~MojoInflightDiag() {
+  // If abandoned, don't do anything.
+  if (!getDiags() || emittedTypes.empty())
+    return;
+
+  // TODO: Expand sugar.
+}
+
+//===----------------------------------------------------------------------===//
 // ASTType
 //===----------------------------------------------------------------------===//
 
@@ -461,14 +503,6 @@ ASTType ASTType::getSignatureUserResultType() const {
   auto sigGenType = cast<FnTypeGeneratorType>(mlirType);
   return LIT::getSignatureUserResultType(sigGenType, sigGenType.getArguments(),
                                          sigGenType.getResults().front());
-}
-
-void M::addToDiagnostic(ASTType type, InflightDiag &diag) {
-  if (!diag.getDiags())
-    return; // Ignore discarded diagnostics.
-
-  auto *shared = static_cast<SharedState *>(diag.getDiags()->extraContext);
-  diag << '\'' << type.getAsString(/*forDiag=*/shared) << '\'';
 }
 
 void M::addToDiagnostic(TypedAttr paramValue, InflightDiag &diag) {

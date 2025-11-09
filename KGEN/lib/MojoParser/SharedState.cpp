@@ -497,20 +497,21 @@ void SharedState::deleteDecl(ASTDecl &decl) {
 
 ASTDecl &SharedState::getTopLevelDecl() { return *impl->topLevelDecl; }
 
-InflightDiag SharedState::emitError(Location loc, const Twine &message) {
+MojoInflightDiag SharedState::emitError(Location loc, const Twine &message) {
   return diags.emitError(loc, message);
 }
 
 /// Emit an error through the parser's logic.
-InflightDiag SharedState::emitError(llvm::SMLoc loc, const Twine &message) {
+MojoInflightDiag SharedState::emitError(llvm::SMLoc loc, const Twine &message) {
   return diags.emitError(loc, message);
 }
 
 /// Emit a warning.
-InflightDiag SharedState::emitWarning(Location loc, const Twine &message) {
+MojoInflightDiag SharedState::emitWarning(Location loc, const Twine &message) {
   return diags.emitWarning(loc, message);
 }
-InflightDiag SharedState::emitWarning(llvm::SMLoc loc, const Twine &message) {
+MojoInflightDiag SharedState::emitWarning(llvm::SMLoc loc,
+                                          const Twine &message) {
   return diags.emitWarning(loc, message);
 }
 
@@ -2445,7 +2446,7 @@ struct BuiltinFunctionFolder {
       : shared(shared), evaluator(shared), doEmitError(doEmitError) {}
 
   // This helper handles emitting an error (or not) as needed.
-  InflightDiag emitError(Location loc) {
+  MojoInflightDiag emitError(Location loc) {
     auto result = shared.emitError(loc) << "'@always_inline(\"builtin\")' ";
     if (!doEmitError) // Only emit an error if requested.
       result.abandon();

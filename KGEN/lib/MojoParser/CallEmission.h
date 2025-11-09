@@ -203,7 +203,7 @@ public:
                                        bool emitDiagnosticOnFailure) const;
   PValue filterOverloadSetForValueType(
       ASTType functionType, ASTDecl &declScope,
-      function_ref<InflightDiag &(llvm::SMLoc)> emitError) const;
+      function_ref<MojoInflightDiag &(llvm::SMLoc)> emitError) const;
 
   /// If the specified type can be constructed with the specified operands
   /// return the initializer that would be invoked. If not, return null PValue.

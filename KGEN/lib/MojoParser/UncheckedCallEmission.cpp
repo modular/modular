@@ -1441,7 +1441,7 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
                                        unsigned argIdx, TypedAttr origin,
                                        const OriginInfo &previousAccess) {
   bool isImmut = OriginType::isMutableKnown(origin, false);
-  InflightDiag diag = emitError(callExpr->getLoc());
+  MojoInflightDiag diag = emitError(callExpr->getLoc());
 
   diag << "argument of ";
 
@@ -1461,7 +1461,7 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
             // not the generic unbound one from the containing decl.
             auto resultType =
                 cast<FnTypeGeneratorType>(pv.getType()).getUserResultType();
-            diag << resultType << " initializer ";
+            diag << ASTType(resultType) << " initializer ";
           } else if (auto sourceName = calleeFunc.getSourceNameAttr()) {
             diag << sourceName << ' ';
           }

@@ -302,10 +302,10 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
   return success();
 }
 
-LogicalResult LIT::verifyAndBuildConformance(ASTDecl &structDecl,
-                                             SymbolRefAttr parent,
-                                             std::optional<InflightDiag> &diag,
-                                             ConformanceOp op) {
+LogicalResult
+LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
+                               std::optional<MojoInflightDiag> &diag,
+                               ConformanceOp op) {
   // Set up builder to insert witness entry. We install witness op in the
   // conformance op as we verifying such that get_witness will be folded
   // correctly by the evaluation context. This allows us to fold dependent decls
@@ -491,9 +491,10 @@ LogicalResult LIT::verifyAndBuildConformance(ASTDecl &structDecl,
                    CallSyntax::kMethodCallSynthetic);
     PValue result = ov.filterOverloadSetForValueType(
         traitSignature, emitter.getDeclScope(),
-        function_ref<InflightDiag &(SMLoc)>([&](SMLoc loc) -> InflightDiag & {
-          return diag->attachNote(traitFnDecl->getLoc());
-        }));
+        function_ref<MojoInflightDiag &(SMLoc)>(
+            [&](SMLoc loc) -> MojoInflightDiag & {
+              return diag->attachNote(traitFnDecl->getLoc());
+            }));
     if (!result)
       return failure();
 
@@ -547,9 +548,9 @@ LogicalResult LIT::verifyAndBuildConformance(ASTDecl &structDecl,
                                                  traitAliasType,
                                                  emitter.getDeclScope())) {
         diag->attachNote(traitAliasDecl->getLoc())
-            << "alias '" + name.str() + "' type " << structAliasType
+            << "alias '" + name.str() + "' type " << ASTType(structAliasType)
             << " doesn't conform to trait's alias '" << name.str() << "' type "
-            << traitAliasType;
+            << ASTType(traitAliasType);
         return failure();
       }
 
@@ -732,7 +733,7 @@ static TraitType getDeclProvidedTrait(ASTDecl *decl) {
 /// inflight diagnostic that explains why this doesn't conform.  It can be
 /// reported or abandoned based on the client's needs.
 bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
-                                       std::optional<InflightDiag> &diag) {
+                                       std::optional<MojoInflightDiag> &diag) {
   if (failed(shared.declResolver->resolveBody(*this, getLoc())))
     return false; // Error emitted.
 
@@ -801,7 +802,7 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
 
 /// Helper for clients that don't care about the diagnostic.
 bool ASTDecl::doesNominalTypeConformTo(TraitType trait) {
-  std::optional<InflightDiag> diag;
+  std::optional<MojoInflightDiag> diag;
   bool result = doesNominalTypeConformTo(trait, diag);
   if (diag)
     diag->abandon();
@@ -1003,14 +1004,14 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared,
   ArrayRef<ASTDecl *> entries = traitDecl->lookupInCurrentScope(entryName);
   if (entries.empty()) {
     shared.emitError(errorLoc, "trait ")
-        << trait << " has no entry named " << entryName;
+        << ASTType(trait) << " has no entry named " << entryName;
     return failure();
   }
 
   // If there are multiple entries, emit an error.
   if (entries.size() > 1) {
     shared.emitError(errorLoc, "trait ")
-        << trait << " has multiple entries named " << entryName;
+        << ASTType(trait) << " has multiple entries named " << entryName;
     return failure();
   }
 
@@ -1085,11 +1086,11 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     return {};
   }
 
-  std::optional<InflightDiag> checkDiag;
+  std::optional<MojoInflightDiag> checkDiag;
   if (!metaTypeDecl->doesNominalTypeConformTo(trait, checkDiag)) {
-    InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
-                        << type << " to trait " << ASTType(trait)
-                        << value.expr->getRange();
+    MojoInflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
+                            << type << " to trait " << ASTType(trait)
+                            << value.expr->getRange();
     if (checkDiag)
       diag.attachNote(metaTypeDecl->getLoc()) << std::move(*checkDiag);
     return {};

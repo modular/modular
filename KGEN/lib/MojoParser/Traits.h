@@ -11,10 +11,6 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 
-namespace M {
-class InflightDiag;
-} // namespace M
-
 namespace M::KGEN {
 class GetWitnessAttr;
 } // namespace M::KGEN
@@ -23,6 +19,7 @@ namespace M::KGEN::LIT {
 class ASTDecl;
 class SharedState;
 class FnTypeGeneratorType;
+class MojoInflightDiag;
 
 /// Check conformance of a struct against a given trait decl, build the
 /// conformance op along the way. Inherited methods are not checked, so to
@@ -32,7 +29,7 @@ class FnTypeGeneratorType;
 /// certain ancestors. On success, the `ConformanceOp` will be populated.
 LogicalResult verifyAndBuildConformance(ASTDecl &structDecl,
                                         SymbolRefAttr parent,
-                                        std::optional<InflightDiag> &diag,
+                                        std::optional<MojoInflightDiag> &diag,
                                         ConformanceOp op);
 
 /// Sort & deduplicate the list of symbols deterministically.
