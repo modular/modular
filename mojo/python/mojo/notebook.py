@@ -13,7 +13,6 @@
 
 import argparse
 import importlib
-import re
 import sys
 import tempfile
 import uuid
@@ -162,14 +161,8 @@ def mojo(line, cell) -> None:  # noqa: ANN001
         path = Path(tempdir)
 
         if is_entrypoint:
-            # Use entrypoint approach with Python module binding
             modname = f"mojocell_{uuid.uuid4().hex[:8]}"
 
-            # Validate module name
-            if not re.match(r"^[A-Za-z_]\w*$", modname):
-                raise ValueError(f"Invalid module name: {modname}")
-
-            # Create Mojo source with entrypoint template
             mojo_content = ENTRYPOINT_TEMPLATE.format(
                 USER_CODE=cell, MODNAME=modname
             )
@@ -181,7 +174,6 @@ def mojo(line, cell) -> None:  # noqa: ANN001
             sys.path.insert(0, str(path))
 
             try:
-                # Import the Mojo module (compiles and loads)
                 mod = importlib.import_module(modname)
 
                 # Call entrypoint function and display result
