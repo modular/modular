@@ -527,6 +527,8 @@ def main():
     test_parameterized_on_cuda_sm90()
     test_hello_mojo_sm80()
     test_hello_mojo_sm90()
+    #    FIXME: MSTDL-1794
+    #    Compilation for GPU calls to another compilation for GPU
     #    test_erf_elementwise_sm80()
     #    test_erf_elementwise_sm90()
     test_erf_kernel_sm80()
