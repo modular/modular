@@ -4,17 +4,18 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file provides the base class for Mojo parsers that is common between
-// expression and statement parsing.
+// This file provides logic that is shared across all the subsystems in the Mojo
+// parser.
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef KGEN_MOJOPARSER_SHAREDSTATE_H
 #define KGEN_MOJOPARSER_SHAREDSTATE_H
 
-#include "KGEN/LITDialect/OriginTrackable.h"
 #include "KGEN/MojoParser/IRValues.h"
-#include "Support/Compiler/Diags.h"
+#include "KGEN/MojoParser/MojoDiags.h"
+
+#include "KGEN/LITDialect/OriginTrackable.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/MapVector.h"
@@ -103,7 +104,7 @@ public:
   SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config);
   ~SharedState();
 
-  Diags diags; // Contains SourceMgr and MLIRContext pointers.
+  MojoDiags diags; // Contains SourceMgr and MLIRContext pointers.
   const CompilationOptions &options;
 
   std::unique_ptr<DeclResolver> declResolver;
@@ -149,12 +150,12 @@ public:
   NoneAttr getNoneAttr() const;
 
   /// Emit an error.
-  InflightDiag emitError(Location loc, const Twine &message = {});
-  InflightDiag emitError(llvm::SMLoc loc, const Twine &message = {});
+  MojoInflightDiag emitError(Location loc, const Twine &message = {});
+  MojoInflightDiag emitError(llvm::SMLoc loc, const Twine &message = {});
 
   /// Emit a warning.
-  InflightDiag emitWarning(Location loc, const Twine &message = {});
-  InflightDiag emitWarning(llvm::SMLoc loc, const Twine &message = {});
+  MojoInflightDiag emitWarning(Location loc, const Twine &message = {});
+  MojoInflightDiag emitWarning(llvm::SMLoc loc, const Twine &message = {});
 
   /// Inflate a lightweight SMLoc into an MLIR Location object for addition
   /// into the IR.
@@ -627,18 +628,19 @@ public:
   }
 
   /// Emit an error.
-  InflightDiag emitError(Location loc, const Twine &message = {}) const {
+  MojoInflightDiag emitError(Location loc, const Twine &message = {}) const {
     return shared.emitError(loc, message);
   }
-  InflightDiag emitError(llvm::SMLoc loc, const Twine &message = {}) const {
+  MojoInflightDiag emitError(llvm::SMLoc loc, const Twine &message = {}) const {
     return shared.emitError(loc, message);
   }
 
   /// Emit a warning.
-  InflightDiag emitWarning(Location loc, const Twine &message = {}) const {
+  MojoInflightDiag emitWarning(Location loc, const Twine &message = {}) const {
     return shared.emitWarning(loc, message);
   }
-  InflightDiag emitWarning(llvm::SMLoc loc, const Twine &message = {}) const {
+  MojoInflightDiag emitWarning(llvm::SMLoc loc,
+                               const Twine &message = {}) const {
     return shared.emitWarning(loc, message);
   }
 };

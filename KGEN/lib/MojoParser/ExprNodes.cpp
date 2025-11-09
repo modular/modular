@@ -362,7 +362,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
   for (const Operand &operand : subscript.operands) {
     ExprNode *valueExpr = operand.expr;
     if (!operand.isKeyword()) {
-      InflightDiag diag =
+      MojoInflightDiag diag =
           emitter.emitError(loc, "attribute spec requires a keyword parameter");
 
       // Jump through some hoops to emit a hint about using the old syntax.
@@ -1136,7 +1136,7 @@ static ASTType parseMLIRType(StringRef name, const ExprNode *node,
     result = mlir::parseType(name, shared.getContext());
   }
   if (!result) {
-    InflightDiag diagnostic =
+    MojoInflightDiag diagnostic =
         shared.emitError(node->getLoc(), "invalid MLIR type: ")
         << name << node->getRange();
     for (Diagnostic &diag : typeDiagnostics) {

@@ -37,7 +37,7 @@ struct InferenceFailure {
   InferenceFailure(Failure info) : info(info) {}
 
   // Describe what went wrong.
-  void addExplanation(InflightDiag &diag) const;
+  void addExplanation(MojoInflightDiag &diag) const;
 
 private:
   SmartVariant<TypeConflictFailure, ValueConflictFailure, NotFoundFailure> info;
@@ -56,7 +56,7 @@ public:
     diags.push_back({paramIdx, argExpr, std::move(info)});
   }
 
-  void addExplanation(InflightDiag &diag);
+  void addExplanation(MojoInflightDiag &diag);
 
   size_t getNumFailures() const { return diags.size(); }
 

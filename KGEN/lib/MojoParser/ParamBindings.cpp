@@ -840,7 +840,7 @@ ParamBindings::verifyBindings(LITGeneratorType sig, StringRef baseName,
 }
 
 std::tuple<ParameterExprArrayAttr, ParamBindings::Fitness,
-           std::optional<InflightDiag>>
+           std::optional<MojoInflightDiag>>
 ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               PogListAttr paramListAttr, const Twine &baseName,
                               SMLoc exprLoc, std::optional<Location> opLoc,
@@ -849,7 +849,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                       countNumImplicitKinds(paramListAttr) -
                       countNumInferredKinds(paramListAttr);
   ParameterInferenceDiagnostics inferenceDiags;
-  std::optional<InflightDiag> diag;
+  std::optional<MojoInflightDiag> diag;
   DiagEmitter diagEmitter{
       /*emitParamCount=*/[&](size_t numActual, bool posOnly) {
         diag = shared.emitError(exprLoc, baseName);

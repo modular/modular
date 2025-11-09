@@ -225,8 +225,8 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
 
   if (!isa<OriginType>(origin.getType())) {
     emitter.emitError(origExpr->getLoc())
-        << "result reference origin has unexpected type " << origin.getType()
-        << origExpr->getRange();
+        << "result reference origin has unexpected type "
+        << ASTType(origin.getType()) << origExpr->getRange();
     return hadError();
   }
 
@@ -357,7 +357,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
       SMLoc starLoc = p.getToken().getLoc();
       if (p.consumeIf(Token::star)) {
         if (variadicKind != VariadicKind::PosVarArg) {
-          InflightDiag diag = p.emitError(
+          MojoInflightDiag diag = p.emitError(
               starLoc, "only variadic arguments' types can be unpacked");
           if (name) {
             diag.attachNote(loc)
@@ -677,9 +677,9 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
 
 /// Helper to emit a consistent error message when a required argument or
 /// parameter follows a optional one.
-static InflightDiag emitOptionalAfterRequired(IREmitter &emitter,
-                                              const ParsedArgument &arg,
-                                              StringRef argOrParam) {
+static MojoInflightDiag emitOptionalAfterRequired(IREmitter &emitter,
+                                                  const ParsedArgument &arg,
+                                                  StringRef argOrParam) {
   std::string kindStr = arg.kwArgHandling == KWArgHandling::kKeywordOnly
                             ? "keyword-only"
                             : "positional";
@@ -735,7 +735,7 @@ emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
       !defaultKwOnly.empty()) {
     if (arg.kgenConvention != ArgConvention::ByRefResult &&
         arg.kgenConvention != ArgConvention::ByRefError) {
-      InflightDiag diag = emitOptionalAfterRequired(
+      MojoInflightDiag diag = emitOptionalAfterRequired(
           emitter, arg,
           exprContext == EC_DefaultParam ? "parameter" : "argument");
       if (arg.typeExpr)
@@ -2113,12 +2113,12 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
   // it don't type check, and we clear our special function information.  This
   // reduces cascade errors.
   auto emitErrorLoc = [&](SMLoc loc,
-                          const Twine &message = Twine()) -> InflightDiag {
+                          const Twine &message = Twine()) -> MojoInflightDiag {
     fnInfo = SpecialFunctionInfo();
     decl.setErroneous();
     return shared.emitError(loc, message);
   };
-  auto emitError = [&](const Twine &message = Twine()) -> InflightDiag {
+  auto emitError = [&](const Twine &message = Twine()) -> MojoInflightDiag {
     fnInfo = SpecialFunctionInfo();
     decl.setErroneous();
     return shared.emitError(funcOp.getLoc(), message);

@@ -16,9 +16,8 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/MojoDiags.h"
 #include "KGEN/POPDialect/POPTypes.h"
-
-#include "Support/Compiler/Diags.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -84,7 +83,7 @@ void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
 // Diagnostic utilities
 //===----------------------------------------------------------------------===//
 
-void LIT::emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
+void LIT::emitWrongArgOrParamCount(MojoInflightDiag &diag, size_t minRequired,
                                    size_t maxAllowed, size_t numActual,
                                    const Twine &argOrParam) {
   diag << " expects ";
@@ -105,12 +104,12 @@ void LIT::emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
 }
 
 /// Emit a comma separated list of names, each in '...'.
-static void emitNames(InflightDiag &diag, ArrayRef<StringAttr> names) {
+static void emitNames(MojoInflightDiag &diag, ArrayRef<StringAttr> names) {
   llvm::interleave(
       names, [&](StringAttr str) { diag << str; }, [&]() { diag << ", "; });
 }
 
-void LIT::emitUnknownKeywords(InflightDiag &diag,
+void LIT::emitUnknownKeywords(MojoInflightDiag &diag,
                               ArrayRef<StringAttr> unknownKeywords,
                               StringRef argOrParam) {
   diag << "unknown keyword " << argOrParam << plural(unknownKeywords.size())
@@ -118,7 +117,8 @@ void LIT::emitUnknownKeywords(InflightDiag &diag,
   emitNames(diag, unknownKeywords);
 }
 
-void LIT::emitPosOnlyPassedByKw(InflightDiag &diag, ArrayRef<StringAttr> names,
+void LIT::emitPosOnlyPassedByKw(MojoInflightDiag &diag,
+                                ArrayRef<StringAttr> names,
                                 StringRef argOrParam) {
   size_t numNames = names.size();
   diag << "positional-only " << argOrParam << plural(numNames)
@@ -126,14 +126,14 @@ void LIT::emitPosOnlyPassedByKw(InflightDiag &diag, ArrayRef<StringAttr> names,
   emitNames(diag, names);
 }
 
-void LIT::emitOutOfOrderInferredKw(InflightDiag &diag,
+void LIT::emitOutOfOrderInferredKw(MojoInflightDiag &diag,
                                    ArrayRef<StringAttr> names) {
   size_t numNames = names.size();
   diag << "inferred parameter" << plural(numNames) << " passed out of order: ";
   emitNames(diag, names);
 }
 
-void LIT::emitMissing(InflightDiag &diag, ArrayRef<StringAttr> names,
+void LIT::emitMissing(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
                       const Twine &kindStr) {
   size_t numNames = names.size();
   diag << "missing " << numNames << " required " << kindStr << plural(numNames)
@@ -141,7 +141,7 @@ void LIT::emitMissing(InflightDiag &diag, ArrayRef<StringAttr> names,
   emitNames(diag, names);
 }
 
-void LIT::emitByPosAndKw(InflightDiag &diag, ArrayRef<StringAttr> names,
+void LIT::emitByPosAndKw(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
                          const Twine &kindStr) {
   size_t numNames = names.size();
   diag << kindStr << plural(numNames)
@@ -149,7 +149,7 @@ void LIT::emitByPosAndKw(InflightDiag &diag, ArrayRef<StringAttr> names,
   emitNames(diag, names);
 }
 
-void LIT::emitTooManyPositional(InflightDiag &diag, size_t numMaxAllowed,
+void LIT::emitTooManyPositional(MojoInflightDiag &diag, size_t numMaxAllowed,
                                 size_t numActual, const Twine &kindStr) {
   diag << "expected at most " << numMaxAllowed << " positional " << kindStr
        << plural(numMaxAllowed) << ", got " << numActual;

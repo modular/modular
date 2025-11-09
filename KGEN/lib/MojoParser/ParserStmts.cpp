@@ -999,7 +999,7 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   auto emitter = getEmitter();
   MLValue errSlot = emitter.findNearestErrorSlot();
   if (!errSlot) {
-    InflightDiag diag =
+    MojoInflightDiag diag =
         emitError(loc.Start, "cannot raise error in this context") << loc;
     diag.attachNote(loc.Start) << "try surrounding 'raise' in a 'try' block";
     if (auto func = getBlockParentOfType<FnOp>(builder.getInsertionBlock()))
@@ -1019,8 +1019,8 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
     // rethrowing the current error.  This isn't correct Python semantics, see
     // the caveat above.
     if (!inExceptRegion) {
-      InflightDiag diag = emitError(loc.Start, "no contextual error to reraise")
-                          << loc;
+      MojoInflightDiag diag =
+          emitError(loc.Start, "no contextual error to reraise") << loc;
       diag.attachNote(loc.Start) << "provide an error to raise or place "
                                     "'raise' statement inside an except region";
       dest.resetForError(emitter);

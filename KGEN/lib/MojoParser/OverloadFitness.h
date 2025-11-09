@@ -14,7 +14,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENEnums.h"
 #include "KGEN/MojoParser/IRValues.h"
-#include "Support/Compiler/Diags.h"
+#include "KGEN/MojoParser/MojoDiags.h"
 
 namespace M::KGEN::LIT {
 class CallOperands;
@@ -50,7 +50,7 @@ public:
   bool isBetter(const OverloadFitness &other) const;
 
   /// Consume the diagnostic if the candidate is not valid.
-  InflightDiag takeDiag() {
+  MojoInflightDiag takeDiag() {
     assert(!isValid());
     return std::move(*diag);
   }
@@ -92,7 +92,7 @@ private:
   /// For valid candidates, this defines the parameter bindings to use.
   ParameterExprArrayAttr paramBindings;
   /// The diagnostic for invalid candidates, or null for valid ones.
-  std::optional<InflightDiag> diag = std::nullopt;
+  std::optional<MojoInflightDiag> diag = std::nullopt;
 
   /// If this candidate requires any arguments to be emitted (from a PValue or
   /// SValue to an MValue) so a origin can be inferred, their corresponding
@@ -120,7 +120,7 @@ private:
     int8_t getBoolMask() const;
   } payload;
 
-  OverloadFitness(InflightDiag &&diag) : diag(std::move(diag)) {}
+  OverloadFitness(MojoInflightDiag &&diag) : diag(std::move(diag)) {}
   OverloadFitness(ParameterExprArrayAttr paramBindings)
       : paramBindings(paramBindings) {}
 

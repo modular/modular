@@ -178,7 +178,7 @@ public:
   /// they don't. The setEvaluator hook is used to install the parameter value
   /// in the evaluator used by the implementation. If the parameters do not
   /// work, this emits diagnostics using the locations and `baseName` provided.
-  std::tuple<ParameterExprArrayAttr, Fitness, std::optional<InflightDiag>>
+  std::tuple<ParameterExprArrayAttr, Fitness, std::optional<MojoInflightDiag>>
   verifyBindings(ArrayRef<Type> expectedParamTypes, PogListAttr paramListAttr,
                  const Twine &baseName, llvm::SMLoc exprLoc,
                  std::optional<Location> opLoc, bool partial) const;

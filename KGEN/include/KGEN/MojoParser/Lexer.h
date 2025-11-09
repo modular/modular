@@ -11,7 +11,8 @@
 #ifndef KGEN_MOJOPARSER_LEXER_H
 #define KGEN_MOJOPARSER_LEXER_H
 
-#include "Support/Compiler/Diags.h"
+#include "KGEN/MojoParser/MojoDiags.h"
+
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -19,7 +20,6 @@
 #include "llvm/Support/SMLoc.h"
 
 namespace M {
-class Diags;
 class IPRational;
 } // namespace M
 
@@ -115,9 +115,9 @@ private:
 /// This implements a lexer for .mojo files.
 class Lexer {
 public:
-  Lexer(Diags &diags, StringRef curBuffer, const char *curPtr);
-  Lexer(Diags &diags, const llvm::MemoryBuffer *buffer);
-  Lexer(Diags &diags, const LexerCursor &cursor);
+  Lexer(MojoDiags &diags, StringRef curBuffer, const char *curPtr);
+  Lexer(MojoDiags &diags, const llvm::MemoryBuffer *buffer);
+  Lexer(MojoDiags &diags, const LexerCursor &cursor);
 
   /// Move to the next valid token.
   void lexToken();
@@ -140,7 +140,7 @@ public:
   /// wrapping quotes.
   static SMLoc getStringLiteralStartLoc(StringRef spelling);
 
-  InflightDiag emitTokenError(const Twine &message) {
+  MojoInflightDiag emitTokenError(const Twine &message) {
     return emitErrorAt(getToken().getSpelling().data(), message);
   }
 
@@ -160,7 +160,7 @@ private:
   }
   void formToken(Token::Kind kind, StringRef spelling, ssize_t indentation,
                  size_t tokenStartOffset = 0);
-  InflightDiag emitErrorAt(const char *loc, const Twine &message);
+  MojoInflightDiag emitErrorAt(const char *loc, const Twine &message);
 
   // Lexer implementation methods.
   void lexIdentifierOrKeyword(const char *tokStart, ssize_t indentation);
@@ -172,7 +172,7 @@ private:
 
 private:
   /// This the source file diagnostic manager to use.
-  Diags &diags;
+  MojoDiags &diags;
   /// This is the overall memory buffer that we are lexing from.
   StringRef curBuffer;
   /// This the start of the next byte to lex.

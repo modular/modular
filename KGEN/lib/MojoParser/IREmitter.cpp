@@ -725,7 +725,7 @@ static LogicalResult emitErrorIfUnmaterializableValue(IREmitter &emitter,
   // We cannot emit types as values yet.
   if (isTypeExpr(attr) && !isa<ModuleAttr>(attr)) {
     const ExprNode *expr = value.expr;
-    InflightDiag diag = emitter.emitError(
+    MojoInflightDiag diag = emitter.emitError(
         expr->getLoc(), "dynamic type values not permitted yet");
     if (context == EC_VarInit)
       diag << "; try creating an `alias` instead of a `var`";

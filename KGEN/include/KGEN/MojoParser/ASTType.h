@@ -26,12 +26,13 @@ class ParamDeclAttr;
 namespace KGEN::LIT {
 class ASTDecl;
 class CValue;
-class SharedState;
 template <typename ValueType>
 struct ASTExprAnd;
+class MojoInflightDiag;
 enum class TypeConvention : uint32_t;
 class RefType;
 class RefPackType;
+class SharedState;
 
 /// This is a simple wrapper around an MLIR Type that provides helpful utilities
 /// for working with our types, provides pretty printing in diagnostics, and
@@ -236,8 +237,7 @@ raw_ostream &operator<<(raw_ostream &os, ASTType type);
 
 } // namespace KGEN::LIT
 
-void addToDiagnostic(KGEN::LIT::ASTType type, InflightDiag &diag);
-void addToDiagnostic(TypedAttr paramValue, InflightDiag &diag);
+void addToDiagnostic(TypedAttr paramValue, M::InflightDiag &diag);
 
 } // namespace M
 

@@ -237,7 +237,7 @@ static CallKind getCallKind(CallSyntax syntax) {
 // as well.
 // TODO(MOCO-2080): Make this irrelevant by improving the original error
 // message that wasn't detailed enough.
-static void printSimilarTypesNote(InflightDiag &diag, llvm::SMLoc smLoc,
+static void printSimilarTypesNote(MojoInflightDiag &diag, llvm::SMLoc smLoc,
                                   Type actualMlirType, Type expectedMlirType) {
   std::string actualRaw;
   llvm::raw_string_ostream(actualRaw) << actualMlirType;
@@ -317,7 +317,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
     diag.attachNote(expr->getLoc()) << "did you mean to call it?";
   for (ASTDecl *candidate : newFnDecls) {
     auto func = cast<FnOp>(candidate->getIfOperation());
-    InflightDiag &note = diag.attachNote(candidate->getLoc());
+    MojoInflightDiag &note = diag.attachNote(candidate->getLoc());
     if (func.getSynthetic()) {
       note << "candidate generated with type "
            << ASTType(func.getFullSignature());
@@ -643,7 +643,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
                 << ", disambiguate with an explicit cast" << expr->getRange();
     for (ASTDecl *candidate : newFnDecls) {
       auto func = cast<FnOp>(candidate->getIfOperation());
-      InflightDiag &note = diag.attachNote(candidate->getLoc());
+      MojoInflightDiag &note = diag.attachNote(candidate->getLoc());
       if (func.getSynthetic()) {
         note << "candidate generated with type "
              << ASTType(func.getFullSignature());
@@ -664,8 +664,8 @@ OverloadSet::filterOverloadSetForValueType(ASTType functionType,
                                          /*emitError=*/nullptr);
   }
 
-  std::optional<InflightDiag> diag;
-  auto emitError = [&](SMLoc loc) -> InflightDiag & {
+  std::optional<MojoInflightDiag> diag;
+  auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
     return diag.emplace(getShared().emitError(loc));
   };
   return filterOverloadSetForValueType(functionType, declScope, emitError);
@@ -673,7 +673,7 @@ OverloadSet::filterOverloadSetForValueType(ASTType functionType,
 
 PValue OverloadSet::filterOverloadSetForValueType(
     ASTType functionType, ASTDecl &declScope,
-    function_ref<InflightDiag &(SMLoc)> emitError) const {
+    function_ref<MojoInflightDiag &(SMLoc)> emitError) const {
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
   if (!sugarIsa<FnTypeGeneratorType>(functionType)) {
@@ -771,7 +771,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
   if (!emitError)
     return {};
 
-  InflightDiag &diag = emitError(expr->getLoc());
+  MojoInflightDiag &diag = emitError(expr->getLoc());
   std::string functionTypeAsString = functionType.getAsString(&getShared());
 
   ArrayRef<ASTDecl *> declsToReport;
@@ -838,7 +838,7 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
 
   for (ASTDecl *candidate : fnDecls) {
     auto func = cast<FnOp>(candidate->getIfOperation());
-    InflightDiag &note = diag.attachNote(candidate->getLoc());
+    MojoInflightDiag &note = diag.attachNote(candidate->getLoc());
     if (func.getSynthetic()) {
       note << "candidate generated with type "
            << ASTType(func.getFullSignature());

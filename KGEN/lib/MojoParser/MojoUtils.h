@@ -14,10 +14,6 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <cstddef>
 
-namespace M {
-class InflightDiag;
-} // namespace M
-
 namespace M::KGEN {
 enum class ArgConvention : uint32_t;
 class ParamDeclAttr;
@@ -25,6 +21,7 @@ class FuncTypeGeneratorType;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
+class MojoInflightDiag;
 class StructMetaType;
 class ASTType;
 class OriginSetAttr;
@@ -67,35 +64,36 @@ void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);
 
 /// Helper to produce a consistent error message for incorrect argument and
 /// parameter counts.
-void emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
+void emitWrongArgOrParamCount(MojoInflightDiag &diag, size_t minRequired,
                               size_t maxAllowed, size_t numActual,
                               const Twine &argOrParam);
 
 /// Helper to emit an error message for unknown keyword operands.
-void emitUnknownKeywords(InflightDiag &diag,
+void emitUnknownKeywords(MojoInflightDiag &diag,
                          ArrayRef<StringAttr> unknownKeywords,
                          StringRef argOrParam);
 
 /// Helper to emit an error message for positional-only operands passed by
 /// keyword.
-void emitPosOnlyPassedByKw(InflightDiag &diag, ArrayRef<StringAttr> names,
+void emitPosOnlyPassedByKw(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
                            StringRef argOrParam);
 
 /// Helper to emit an error message for explicitly-specified inferred parameters
 /// passed out of order.
-void emitOutOfOrderInferredKw(InflightDiag &diag, ArrayRef<StringAttr> names);
+void emitOutOfOrderInferredKw(MojoInflightDiag &diag,
+                              ArrayRef<StringAttr> names);
 
 /// Helper to emit an error message for missing operands.
-void emitMissing(InflightDiag &diag, ArrayRef<StringAttr> names,
+void emitMissing(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
                  const Twine &kindStr);
 
 /// Helper to emit an error message for arguments/parameters passed both
 /// positionally and by keyword.
-void emitByPosAndKw(InflightDiag &diag, ArrayRef<StringAttr> names,
+void emitByPosAndKw(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
                     const Twine &kindStr);
 
 /// Helper to emit an error message for too many positional arguments/params.
-void emitTooManyPositional(InflightDiag &diag, size_t numMaxAllowed,
+void emitTooManyPositional(MojoInflightDiag &diag, size_t numMaxAllowed,
                            size_t numActual, const Twine &kindStr);
 
 /// Return a printable name for an anonymous positional-only argument/parameter.

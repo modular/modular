@@ -2318,9 +2318,9 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
             {overrideAliasParamValue, synthNode},
             parentAliasDeclOp.getParamDecl().getType(), traitDecl)) {
       auto diag = emitError(aliasDeclOp->getLoc(), "invalid redefinition of '")
-                  << name << "': cannot convert " << overrideAliasType
+                  << name << "': cannot convert " << ASTType(overrideAliasType)
                   << " to parent trait's alias's type "
-                  << parentAliasDeclOp.getParamDecl().getType();
+                  << ASTType(parentAliasDeclOp.getParamDecl().getType());
       diag.attachNote(parentAliasDeclOp->getLoc())
           << "parent trait's alias defined here";
       return failure();
@@ -3175,7 +3175,7 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
   if (auto traitType = dyn_cast<LIT::TraitType>(type.mlirType)) {
     emitError(decl.getLoc(), "TODO: dynamic traits not supported yet, please "
                              "use a compile time generic instead of ")
-        << traitType;
+        << ASTType(traitType);
     return failure();
   }
 
@@ -4209,7 +4209,7 @@ ParseResult DeclResolver::resolveBody(ConformanceOp op, ASTDecl &decl) {
   // TODO: Sink this to when the body is actually resolved.
   decl.resolvedness = DeclResolvedness::body;
   // Verify conformance explicitly.
-  std::optional<InflightDiag> diag;
+  std::optional<MojoInflightDiag> diag;
 
   // For extension conformances, we need to pass the target struct, not the
   // extension

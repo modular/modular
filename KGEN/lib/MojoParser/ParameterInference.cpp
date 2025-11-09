@@ -36,7 +36,7 @@ extern bool checkConventionsConvertible(ArgConvention expectedConv,
 // InferenceFailure
 //===----------------------------------------------------------------------===//
 
-void InferenceFailure::addExplanation(InflightDiag &diag) const {
+void InferenceFailure::addExplanation(MojoInflightDiag &diag) const {
   if (isa<NotFoundFailure>(info)) {
     diag << ", it isn't used in any argument";
     return;
@@ -55,7 +55,7 @@ void InferenceFailure::addExplanation(InflightDiag &diag) const {
   auto failure = cast<TypeConflictFailure>(info);
   if (sugarIsa<TypeType>(failure.paramType)) {
     if (auto anyStruct = dyn_cast<StructMetaType>(failure.argParamType)) {
-      diag << ", argument type " << anyStruct.getType()
+      diag << ", argument type " << ASTType(anyStruct.getType())
            << " is not a '@register_passable(\"trivial\")' type, so "
               "does not satisfy AnyTrivialRegType";
       return;
@@ -64,7 +64,7 @@ void InferenceFailure::addExplanation(InflightDiag &diag) const {
 
   if (sugarIsa<TraitType>(failure.paramType)) {
     if (auto anyStruct = dyn_cast<StructMetaType>(failure.argParamType)) {
-      diag << ", argument type " << anyStruct.getType()
+      diag << ", argument type " << ASTType(anyStruct.getType())
            << " does not conform to trait " << failure.paramType;
       return;
     }
@@ -80,7 +80,7 @@ void InferenceFailure::addExplanation(InflightDiag &diag) const {
 // ParameterInferenceDiagnostics
 //===----------------------------------------------------------------------===//
 
-void ParameterInferenceDiagnostics::addExplanation(InflightDiag &diag) {
+void ParameterInferenceDiagnostics::addExplanation(MojoInflightDiag &diag) {
   // Pick the first diagnostic for the earliest parameter after numActual.
   const FailedInference *best = nullptr;
   for (const FailedInference &failure : diags) {
