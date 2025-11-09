@@ -66,7 +66,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
     """A Mojo cell.
 
     Usage:
-        - Run mojo in a cell (prints to stdout):
+        - Run Mojo code in a cell (prints to stdout):
 
             ```mojo
             %%mojo
@@ -78,16 +78,16 @@ def mojo(line, cell) -> None:  # noqa: ANN001
 
             ```mojo
             %%mojo entrypoint
-            from python import PythonObject
-            from IPython.display import SVG
+            from python import Python, PythonObject
 
-            fn entrypoint() -> PythonObject:
-                # Return any Python object - SVG, DataFrame, etc.
-                svg_content = '''<?xml version="1.0"?>
-                <svg width="100" height="100" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="50" cy="50" r="40" fill="red" />
-                </svg>'''
-                return SVG(data=svg_content)
+            fn entrypoint() raises -> PythonObject:
+                Digraph = Python.import_module("graphviz").Digraph
+
+                g = Digraph()
+                g.node('A')
+                g.node('B')
+
+                return g
             ```
 
         - Compile a python extension SO file:
