@@ -67,7 +67,15 @@ def mojo(line, cell) -> None:  # noqa: ANN001
     """A Mojo cell.
 
     Usage:
-        - Run Mojo code with entrypoint function (returns Python objects):
+        - Run mojo in a cell (prints to stdout):
+
+            ```mojo
+            %%mojo
+            def main():
+                print("Hello from Mojo!")
+            ```
+
+        - Run Mojo code in a cell with entrypoint function (returns Python objects):
 
             ```mojo
             %%mojo entrypoint
@@ -81,14 +89,6 @@ def mojo(line, cell) -> None:  # noqa: ANN001
                     <circle cx="50" cy="50" r="40" fill="red" />
                 </svg>'''
                 return SVG(data=svg_content)
-            ```
-
-        - Traditional main() approach (prints to stdout):
-
-            ```mojo
-            %%mojo
-            def main():
-                print("Hello from Mojo!")
             ```
 
         - Compile a python extension SO file:
