@@ -8,27 +8,27 @@
 
 
 struct WeirdArray:
-    fn __getitem__(self, x: Index) -> Index:
+    fn __getitem__(self, x: Int) -> Int:
         return x
 
-    fn __getitem__(self, x: Index, y: Index) -> Index:
+    fn __getitem__(self, x: Int, y: Int) -> Int:
         return x
 
-    fn __getitem__(self, x: Index, y: Index, z: Index) -> Index:
+    fn __getitem__(self, x: Int, y: Int, z: Int) -> Int:
         return x
 
-    fn __getitem__(self, x: float, *ints: Index) -> Index:
-        return `1`
+    fn __getitem__(self, x: float, *ints: Int) -> Int:
+        return 1
 
-    fn __setitem__(self, x: Index, y: Index, value: Index):
+    fn __setitem__(self, x: Int, y: Int, value: Int):
         pass
 
-    fn __getitem__(self, s: Slice) -> Index:
-        return `2`
+    fn __getitem__(self, s: Slice) -> Int:
+        return 2
 
 
 # CHECK-LABEL: lit.fn @"test_getitem
-fn test_getitem(a: WeirdArray, idx: Index, f: float):
+fn test_getitem(a: WeirdArray, idx: Int, f: float):
     # CHECK: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx)
     _ = a[idx]
 
@@ -43,7 +43,7 @@ fn test_getitem(a: WeirdArray, idx: Index, f: float):
     _ = a[f, idx, idx, idx, idx]
 
 
-fn test_getitem_kw(a: WeirdArray, idx: Index, idx2: Index, idx3: Index):
+fn test_getitem_kw(a: WeirdArray, idx: Int, idx2: Int, idx3: Int):
     # CHECK: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, %idx)
     _ = a[x=idx]
 
@@ -58,14 +58,14 @@ fn test_getitem_kw(a: WeirdArray, idx: Index, idx2: Index, idx3: Index):
 
 
 # CHECK-LABEL: lit.fn @"test_setitem
-fn test_setitem[x: Index](a: WeirdArray, idx: Index):
-    # CHECK: %[[X:.*]] = kgen.param.constant = <x>
+fn test_setitem[x: Int](a: WeirdArray, idx: Int):
+    # CHECK: %[[X:.*]] = kgen.param.constant: !Int = <x>
     # CHECK: lit.call {{.*}}__setitem__{{.*}}(%a, %idx, %idx, %[[X]])
     a[idx, idx] = x
 
 
 # CHECK-LABEL: lit.fn @"test_getitem_slice
-fn test_getitem_slice(a: WeirdArray, i: Index, j: Index, k: Index):
+fn test_getitem_slice(a: WeirdArray, i: Int, j: Int, k: Int):
     # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type none, :type none>(%none{{.*}}, %none{{.*}}, %none{{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[:]
@@ -74,92 +74,92 @@ fn test_getitem_slice(a: WeirdArray, i: Index, j: Index, k: Index):
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[::]
 
-    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type index, :type index, :type none>(%i, %j, %none{{.*}}) :
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type !Int, :type !Int, :type none>(%i, %j, %none{{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[i:j]
 
-    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type index, :type index>(%none{{.*}}, %i, %j) :
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type none, :type !Int, :type !Int>(%none{{.*}}, %i, %j) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[:i:j]
 
-    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type index, :type index, :type index>(%i, %j, %k) :
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:type !Int, :type !Int, :type !Int>(%i, %j, %k) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[i:j:k]
 
 
 struct IndexArray:
-    fn __getitem__(mut self, x: Index) -> Index:
+    fn __getitem__(mut self, x: Int) -> Int:
         pass
 
-    fn __setitem__(mut self, x: Index, value: Index):
+    fn __setitem__(mut self, x: Int, value: Int):
         pass
 
 
 struct IndexArrayArray:
-    fn __getitem__(mut self, x: Index) -> IndexArray:
+    fn __getitem__(mut self, x: Int) -> IndexArray:
         pass
 
-    fn __setitem__(mut self, x: Index, var value: IndexArray):
+    fn __setitem__(mut self, x: Int, var value: IndexArray):
         pass
 
 
-fn takes_inout_int(mut a: Index):
+fn takes_inout_int(mut a: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_writeback1
 fn test_writeback1[
-    x: Index, y: Index
+    x: Int, y: Int
 ](mut a: IndexArray, mut b: IndexArrayArray):
-    # CHECK: %[[V0:.*]] = kgen.param.constant = <x>
+    # CHECK: %[[V0:.*]] = kgen.param.constant: !Int = <x>
     # CHECK-NEXT: %[[V1:.*]] = lit.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])
     # CHECK-NEXT: %[[LT:.*]] = lit.var.decl "anonymous*" synth
     # CHECK-NEXT: lit.ref.store %[[V1]], %[[LT]]
     # CHECK-NEXT: lit.call {{.*}}takes_inout_int{{.*}}(%[[LT]])
-    # CHECK-NEXT: %[[V3:.*]] = kgen.param.constant = <x>
+    # CHECK-NEXT: %[[V3:.*]] = kgen.param.constant: !Int = <x>
     # CHECK-NEXT: %[[V4:.*]] = lit.ref.load %[[LT]]
     # CHECK-NEXT: lit.call {{.*}}__setitem__{{.*}}(%a, %[[V3]], %[[V4]])
     takes_inout_int(a[x])
 
 # CHECK-LABEL: lit.fn @"test_writeback2
 fn test_writeback2[
-    x: Index, y: Index
+    x: Int, y: Int
 ](mut a: IndexArray, mut b: IndexArrayArray):
-    # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
+    # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant: !Int = <x>
     # CHECK-NEXT: %[[LT2:.*]] = lit.var.decl {{.*}}!IndexArray
     # CHECK-NEXT: %[[V4:.*]] = {{.*}}__getitem__{{.*}}(%b, %[[C1]], %[[LT2]])
-    # CHECK-NEXT: %[[C2:.*]] = kgen.param.constant = <y>
+    # CHECK-NEXT: %[[C2:.*]] = kgen.param.constant: !Int = <y>
     # CHECK-NEXT: %[[V5:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[LT2]], %[[C2]])
 
-    # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
+    # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant: !Int = <x>
     # CHECK-NEXT: lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[LT2]])
-    # CHECK-NEXT: %[[LT1:.*]] = lit.var.decl {{.*}}!lit.ref<index
+    # CHECK-NEXT: %[[LT1:.*]] = lit.var.decl {{.*}}!lit.ref<!Int
     # CHECK-NEXT: lit.ref.store %[[V5]], %[[LT1]]
     # CHECK-NEXT: lit.call {{.*}}takes_inout_int{{.*}}(%[[LT1]])
 
-    # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
+    # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant: !Int = <x>
     # CHECK-NEXT: %[[LT3:.*]] = lit.var.decl {{.*}}!IndexArray
     # CHECK-NEXT: lit.call {{.*}}__getitem__{{.*}}(%b, %[[C1]], %[[LT3]])
-    # CHECK-NEXT: %[[C2:.*]] = kgen.param.constant = <y>
+    # CHECK-NEXT: %[[C2:.*]] = kgen.param.constant: !Int = <y>
     # CHECK-NEXT: %[[V9:.*]] = lit.ref.load %[[LT1]]
     # CHECK-NEXT: lit.call {{.*}}__setitem__{{.*}}(%[[LT3]], %[[C2]], %[[V9]])
-    # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
+    # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant: !Int = <x>
     # CHECK-NEXT: %[[V11:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[LT3]])
     takes_inout_int(b[x][y])
 
 
 @register_passable
 struct RegWeirdArray:
-    fn __getitem__(self, idx: Index) -> Index:
+    fn __getitem__(self, idx: Int) -> Int:
         return idx
 
-    fn __setitem__(self, idx: Index, value: Index):
+    fn __setitem__(self, idx: Int, value: Int):
         pass
 
 
 # CHECK-LABEL: lit.fn @"test_dlvalue_to_pvalue
-fn test_dlvalue_to_pvalue[arr: RegWeirdArray, y: Index]():
-    # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <apply({{.*}}@RegWeirdArray::@"__getitem__{{.*}}"), store_to_mem(arr), y)>
+fn test_dlvalue_to_pvalue[arr: RegWeirdArray, y: Int]():
+    # CHECK-NEXT: lit.alias.decl *"x{{.*}}": !Int = <apply({{.*}}@RegWeirdArray::@"__getitem__{{.*}}"), store_to_mem(arr), y)>
     alias x = arr[y]
 
 

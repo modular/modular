@@ -16,18 +16,6 @@ alias MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
 alias OriginSet = __mlir_type.`!lit.origin.set`
 
 
-alias `0` = __mlir_attr.`0 : index`
-alias `1` = __mlir_attr.`1 : index`
-alias `2` = __mlir_attr.`2 : index`
-alias `3` = __mlir_attr.`3 : index`
-alias `4` = __mlir_attr.`4 : index`
-alias `5` = __mlir_attr.`5 : index`
-alias `6` = __mlir_attr.`6 : index`
-alias `7` = __mlir_attr.`7 : index`
-alias `8` = __mlir_attr.`8 : index`
-alias `9` = __mlir_attr.`9 : index`
-
-
 @register_passable("trivial")
 struct Origin[mut: Bool]:
     alias _mlir_type = __mlir_type[

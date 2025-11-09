@@ -16,7 +16,7 @@ trait SomeTrait:
 
 
 @register_passable("trivial")
-struct ParamType[x: Index](SomeTrait):
+struct ParamType[x: Int](SomeTrait):
     pass
 
 
@@ -26,23 +26,23 @@ struct ParamType[x: Index](SomeTrait):
 
 
 @register_passable("trivial")
-struct DependentParam[x: Index, y: ParamType[x]]:
+struct DependentParam[x: Int, y: ParamType[x]]:
     pass
 
 
-fn inferred_param_from_arg[x: Index, //](y: ParamType[x]):
+fn inferred_param_from_arg[x: Int, //](y: ParamType[x]):
     pass
 
 
-fn inferred_param_from_param[x: Index, //, y: ParamType[x]]():
+fn inferred_param_from_param[x: Int, //, y: ParamType[x]]():
     pass
 
 
-fn inferred_param_variadic[x: Index, //, *y: ParamType[x]]():
+fn inferred_param_variadic[x: Int, //, *y: ParamType[x]]():
     pass
 
 
-fn inferred_with_default[x: Index, //, y: ParamType[x], z: Index = `1`]():
+fn inferred_with_default[x: Int, //, y: ParamType[x], z: Int = 1]():
     pass
 
 
@@ -51,68 +51,68 @@ fn inferred_trait[T: SomeTrait, //, y: T]():
 
 
 fn inferred_dependent_param[
-    x: Index, y: ParamType[x], //, z: DependentParam[x, y]
+    x: Int, y: ParamType[x], //, z: DependentParam[x, y]
 ]():
     pass
 
 
-fn inferred_partial[x: Index, //, y: Index](z: ParamType[x]):
+fn inferred_partial[x: Int, //, y: Int](z: ParamType[x]):
     pass
 
 
-fn inferred_partial_dependent[x: Index, //, y: Index, z: ParamType[x]]():
+fn inferred_partial_dependent[x: Int, //, y: Int, z: ParamType[x]]():
     pass
 
 
-struct InferredStruct[x: Index, //, y: Index, z: ParamType[x]]:
+struct InferredStruct[x: Int, //, y: Int, z: ParamType[x]]:
     pass
 
 
 struct InferredStructConversion[
-    x: Index, //, y: AnyTrivialRegType, z: ParamType[x]
+    x: Int, //, y: AnyTrivialRegType, z: ParamType[x]
 ]:
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_inferred_params
-fn test_inferred_params[x: Index, y: ParamType[x], z: DependentParam[x, y]]():
-    # CHECK: inferred_param_from_arg{{.*}}<x>(%0)
+fn test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
+    # CHECK: inferred_param_from_arg{{.*}}<:!Int x>(%0)
     inferred_param_from_arg(y)
-    # CHECK: inferred_param_from_param{{.*}}<x, :[[PARAMTYPE:@.*ParamType]]<x> y>
+    # CHECK: inferred_param_from_param{{.*}}<:!Int x, :[[PARAMTYPE:@.*ParamType]]<:!Int x> y>
     inferred_param_from_param[y]()
-    # CHECK: inferred_param_variadic{{.*}}<x, :variadic<[[PARAMTYPE]]<x>> [y, y]>
+    # CHECK: inferred_param_variadic{{.*}}<:!Int x, :variadic<[[PARAMTYPE]]<:!Int x>> [y, y]>
     inferred_param_variadic[y, y]()
-    # CHECK: inferred_trait{{.*}}<:!SomeTrait [[PARAMTYPE]]<x>, :[[PARAMTYPE]]<x> y>
+    # CHECK: inferred_trait{{.*}}<:!SomeTrait [[PARAMTYPE]]<:!Int x>, :[[PARAMTYPE]]<:!Int x> y>
     inferred_trait[y]()
-    # CHECK: inferred_with_default{{.*}}<x, :[[PARAMTYPE]]<x> y, {{.*}}1{{.*}}>
+    # CHECK: inferred_with_default{{.*}}<:!Int x, :[[PARAMTYPE]]<:!Int x> y, :!Int {1}>
     inferred_with_default[y]()
-    # CHECK: inferred_with_default{{.*}}<x, :[[PARAMTYPE]]<x> y, {{.*}}2{{.*}}>
-    inferred_with_default[y, `2`]()
-    # CHECK: inferred_dependent_param{{.*}}<x, :[[PARAMTYPE]]<x> y, :{{@.*DependentParam}}<x, :[[PARAMTYPE]]<x> y> z>
+    # CHECK: inferred_with_default{{.*}}<:!Int x, :[[PARAMTYPE]]<:!Int x> y, :!Int {2}>
+    inferred_with_default[y, 2]()
+    # CHECK: inferred_dependent_param{{.*}}<:!Int x, :[[PARAMTYPE]]<:!Int x> y, :{{@.*DependentParam}}<:!Int x, :[[PARAMTYPE]]<:!Int x> y> z>
     inferred_dependent_param[z]()
-    # CHECK: inferred_dependent_param{{.*}}<x, :[[PARAMTYPE]]<x> y, :{{@.*DependentParam}}<x, :[[PARAMTYPE]]<x> y> z>
+    # CHECK: inferred_dependent_param{{.*}}<:!Int x, :[[PARAMTYPE]]<:!Int x> y, :{{@.*DependentParam}}<:!Int x, :[[PARAMTYPE]]<:!Int x> y> z>
     inferred_dependent_param[x=x, z]()
 
-    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": index, +>("z": !lit.struct<#ParamType <*(0,0)>>)
-    alias partially_bound = inferred_partial[`1`]
-    # CHECK: lit.call @inferred::@"inferred_partial{{.*}}"<x, {{.*}}1{{.*}}>(
+    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": !Int, +>("z": !lit.struct<#ParamType <:!Int *(0,0)>>)
+    alias partially_bound = inferred_partial[1]
+    # CHECK: lit.call @inferred::@"inferred_partial{{.*}}"<:!Int x, :!Int {1}>(
     partially_bound(y)
 
-    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": index, +, "z": [[PARAMTYPE]]<*(0,0)>>
-    # CHECK-SAME: inferred_partial_dependent{{.*}}<?, {{.*}}1{{.*}}, :[[PARAMTYPE]]<?> ?>
-    alias partially_bound_dependent = inferred_partial_dependent[`1`]
-    # CHECK-NEXT: !lit.generator<() -> !kgen.none> = <{{.*}}inferred_partial_dependent{{.*}}<x, {{.*}}1{{.*}}, :@inferred::@ParamType<x> y>>
+    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": !Int, +, "z": [[PARAMTYPE]]<:!Int *(0,0)>>
+    # CHECK-SAME: inferred_partial_dependent{{.*}}<:!Int ?, :!Int {1}, :[[PARAMTYPE]]<:!Int ?> ?>
+    alias partially_bound_dependent = inferred_partial_dependent[1]
+    # CHECK-NEXT: !lit.generator<() -> !kgen.none> = <{{.*}}inferred_partial_dependent{{.*}}<:!Int x, :!Int {1}, :@inferred::@ParamType<:!Int x> y>>
     alias fully_bound = partially_bound_dependent[y]
 
-    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: meta<!lit.struct<#InferredStruct <?, {{.*}}1{{.*}}, :[[PARAMTYPE]]<?> ?>,
-    # CHECK-SAME: <"x": index, +, "z": [[PARAMTYPE]]<*(0,0)>>>> = <{{.*}}@InferredStruct<?, {{.*}}1{{.*}}, :[[PARAMTYPE]]<?> ?>>
-    alias partially_bound_type = InferredStruct[`1`]
-    # CHECK-NEXT: partially_bound_explicit_inferred{{.*}} = <@inferred::@InferredStruct<{{.*}}1{{.*}}, {{.*}}2{{.*}}, :@inferred::@ParamType<{{.*}}1{{.*}}> ?>>
-    alias partially_bound_explicit_inferred = InferredStruct[x=`1`, `2`]
-    # CHECK-NEXT: fully_bound_type{{.*}}<@inferred::@InferredStruct<x, {{.*}}1{{.*}}, :@inferred::@ParamType<x> y>>
+    # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: meta<!lit.struct<#InferredStruct <:!Int ?, :!Int {1}, :[[PARAMTYPE]]<:!Int ?> ?>,
+    # CHECK-SAME: <"x": !Int, +, "z": [[PARAMTYPE]]<:!Int *(0,0)>>>> = <{{.*}}@InferredStruct<:!Int ?, :!Int {1}, :[[PARAMTYPE]]<:!Int ?> ?>>
+    alias partially_bound_type = InferredStruct[1]
+    # CHECK-NEXT: partially_bound_explicit_inferred{{.*}} = <@inferred::@InferredStruct<:!Int {1}, :!Int {2}, :@inferred::@ParamType<:!Int {1}> ?>>
+    alias partially_bound_explicit_inferred = InferredStruct[x=1, 2]
+    # CHECK-NEXT: fully_bound_type{{.*}}<@inferred::@InferredStruct<:!Int x, :!Int {1}, :@inferred::@ParamType<:!Int x> y>>
     alias fully_bound_type = partially_bound_type[y]
 
-    # CHECK-NEXT: InferredStructConversion<x, :type !Int, :[[PARAMTYPE]]<x> y>
+    # CHECK-NEXT: InferredStructConversion<:!Int x, :type !Int, :[[PARAMTYPE]]<:!Int x> y>
     var inferred_type: InferredStructConversion[Int, y]
 
 

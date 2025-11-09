@@ -221,21 +221,21 @@ fn fn_raises():
 
 
 # expected-warning @below {{function has results, but no 'Returns' in doc string}}
-fn fn_args_missing_return() -> Index:
+fn fn_args_missing_return() -> Int:
     """This doc string is missing a `Returns:` section."""
-    return `0`
+    return 0
 
 
-fn fn_returns_section_empty() -> Index:
+fn fn_returns_section_empty() -> Int:
     """This doc string includes a `Returns:` section, but it's empty.
 
     # expected-warning @below {{'Returns' section is empty}}
     Returns:
     """
-    return `0`
+    return 0
 
 
-fn fn_returns_section_poor_style() -> Index:
+fn fn_returns_section_poor_style() -> Int:
     """This doc string has a `Returns:` section with poor style.
 
     Returns:
@@ -243,7 +243,7 @@ fn fn_returns_section_poor_style() -> Index:
     """
     # expected-warning @-2 {{section body should begin with a capital letter or non-alpha character, but this begins with 'd'}}
     # expected-warning @-3 {{section body should end with a period '.' or backtick '`', but this ends with '!'}}
-    return `0`
+    return 0
 
 
 fn fn_nested_fn():
@@ -265,7 +265,7 @@ struct Error:
     pass
 
 
-fn fn_raises_with_return_type(x: Index) raises -> Index:
+fn fn_raises_with_return_type(x: Int) raises -> Int:
     """This is a function that raises, with an explicit return type.
 
     Because it raises, it implicitly has a memory-only `__result__` argument.
@@ -280,9 +280,9 @@ fn fn_raises_with_return_type(x: Index) raises -> Index:
     Raises:
         Exception description goes here.
     """
-    return `0`
+    return 0
 
-def def_implicit_return_type(x: Index):
+def def_implicit_return_type(x: Int):
     """This is a `def` function with no explicit return type.
 
     Args:

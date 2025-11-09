@@ -102,21 +102,21 @@ fn testSIMD(
     twoUses(a, b)
 
 
-struct TwoParams[a: Index, b: Index]:
+struct TwoParams[a: Int, b: Int]:
     @implicit
-    fn __init__(out self, other: TwoParams[`1`, `1`]):
+    fn __init__(out self, other: TwoParams[1, 1]):
         pass
 
 
 # expected-note @below {{function declared here}}
 fn infer_then_convert[
-    a: Index, b: Index
+    a: Int, b: Int
 ](lhs: TwoParams[a, b], rhs: TwoParams[a, b]):
     pass
 
 
 fn left_to_right_implicit_conversion(
-    lhs: TwoParams[`1`, `2`], rhs: TwoParams[`1`, `1`]
+    lhs: TwoParams[1, 2], rhs: TwoParams[1, 1]
 ):
     # This succeeds because 'a' and 'b' are inferred to '1' and '2', and 'rhs'
     # can implicitly convert from 'TwoParams[1, 1]' to 'TwoParams[1, 2]'.
@@ -184,7 +184,7 @@ fn callVariadic():
 
 
 # expected-note @below {{'StructWithVariadic' declared here}}
-struct StructWithVariadic[*a: Index]:
+struct StructWithVariadic[*a: Int]:
     pass
 
 
@@ -543,8 +543,8 @@ fn call_mem_param_with_ref(ref [AddressSpace(2)]b: MemParamType[3]):
 
 # expected-note @below {{declared here}}
 fn substitution_edge_case[p: Int, //, f: fn[a: Int] () [_] -> ParamType[a]]():
-    # expected-error @below {{'substitution_edge_case' parameter 'f' has 'fn[a: Int]() -> ParamType[a]' type, but value has type 'index'}}
-    substitution_edge_case[`0`]
+    # expected-error @below {{'substitution_edge_case' parameter 'f' has 'fn[a: Int]() -> ParamType[a]' type, but value has type 'IntLiteral[0]'}}
+    substitution_edge_case[0]
 
 
 

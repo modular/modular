@@ -9,17 +9,17 @@
 
 @register_passable
 struct BoxedInt:
-    var value: Index
+    var value: Int
 
     @implicit
-    fn __init__(out self, value: Index):
+    fn __init__(out self, value: Int):
         self.value = value
 
     fn __copyinit__(out self, existing: Self):
         self.value = existing.value
 
-    fn boxedAdd(self, rhs: Index) -> Index:
-        return __mlir_op.`index.add`(self.value, rhs)
+    fn boxedAdd(self, rhs: Int) -> Int:
+        return self.value+rhs
 
 
 struct Param[T: AnyTrivialRegType]:
@@ -28,7 +28,7 @@ struct Param[T: AnyTrivialRegType]:
 
 # CHECK-LABEL: lit.fn @"capturing_in_struct
 # CHECK-SAME: capturing -> !kgen.none
-fn capturing_in_struct[x: Param[fn () capturing -> Index]]():
+fn capturing_in_struct[x: Param[fn () capturing -> Int]]():
     pass
 
 
@@ -46,21 +46,21 @@ struct CapturingMember[f: fn () capturing -> None]:
         pass
 
 
-fn makeClosure[p: Index](x: Index) -> Index:
-    var z = __mlir_op.`index.add`(x, x)
+fn makeClosure[p: Int](x: Int) -> Int:
+    var z = x+x
 
-    # CHECK: [[COPY_VAL:%.*]] = lit.ref.load %z : <index, mut *"z`">
-    # CHECK: %index = kgen.param.constant = <p>
+    # CHECK: [[COPY_VAL:%.*]] = lit.ref.load %z : <!Int, mut *"z`">
+    # CHECK:  = kgen.param.constant: !Int = <p>
     @__copy_capture(z, p)
     @parameter
-    fn writer() -> Index:
-        # CHECK: lit.return [[COPY_VAL]] : index
+    fn writer() -> Int:
+        # CHECK: lit.return [[COPY_VAL]] : !Int
         return z
 
     return writer()
 
 
 fn foo():
-    var x = `3`
-    var y = `2`
-    _ = makeClosure[`3`](x)
+    var x = 3
+    var y = 2
+    _ = makeClosure[3](x)

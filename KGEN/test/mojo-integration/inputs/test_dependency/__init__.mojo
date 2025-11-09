@@ -3,4 +3,4 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from .impl import use_me, int
+from .impl import use_me
