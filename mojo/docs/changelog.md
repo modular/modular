@@ -277,6 +277,10 @@ what we publish.
   (`llvm.air.simd_shuffle[_up/_down/_xor]`) instructions, achieving feature
   parity with NVIDIA and AMD backends.
 
+- `gpu.intrinsics.store_release()` and `gpu.intrinsics.load_acquire()` now
+  support Apple silicon GPUs, expanding support for proper memory
+  synchronization on these devices.
+
 - The `gpu` package has been reorganized into logical subdirectories for better
   code organization:
   - `gpu/primitives/` - Low-level GPU execution primitives (warp, block,
