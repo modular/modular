@@ -67,6 +67,28 @@ comptime Py_TPFLAGS_DICT_SUBCLASS = c_ulong(1 << 29)
 comptime Py_TPFLAGS_BASE_EXC_SUBCLASS = c_ulong(1 << 30)
 comptime Py_TPFLAGS_TYPE_SUBCLASS = c_ulong(1 << 31)
 
+# Python constants, for example some operations may want to return Not Implemented.
+# ref: https://github.com/python/cpython/blob/main/Include/object.h#L659
+# ref:  https://docs.python.org/3/c-api/object.html#c.Py_CONSTANT_NONE
+comptime Py_CONSTANT_NONE = 0
+comptime Py_CONSTANT_FALSE = 1
+comptime Py_CONSTANT_TRUE = 2
+comptime Py_CONSTANT_ELLIPSIS = 3
+comptime Py_CONSTANT_NOT_IMPLEMENTED = 4
+comptime Py_CONSTANT_ZERO = 5
+comptime Py_CONSTANT_ONE = 6
+comptime Py_CONSTANT_EMPTY_STR = 7
+comptime Py_CONSTANT_EMPTY_BYTES = 8
+comptime Py_CONSTANT_EMPTY_TUPLE = 9
+
+# These flags are used by the richcompare function.
+# ref: https://github.com/python/cpython/blob/main/Include/object.h#L721
+comptime Py_LT = 0
+comptime Py_LE = 1
+comptime Py_EQ = 2
+comptime Py_NE = 3
+comptime Py_GT = 4
+comptime Py_GE = 5
 
 # TODO(MOCO-1138):
 #   This should be a C ABI function pointer, not a Mojo ABI function.
@@ -1568,7 +1590,7 @@ struct CPython(Defaultable, Movable):
             # PyObject *Py_GetConstantBorrowed(unsigned int constant_id)
             self._Py_None = self.lib.call[
                 "Py_GetConstantBorrowed", PyObjectPtr
-            ](0)
+            ](Py_CONSTANT_NONE)
         else:
             # PyObject *Py_None
             self._Py_None = PyObjectPtr(
