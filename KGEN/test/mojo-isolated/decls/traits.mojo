@@ -38,14 +38,14 @@ trait Trait:
     fn overloaded(self):
         ...
 
-    fn overloaded(self, x: Index):
+    fn overloaded(self, x: Int):
         ...
 
     fn overloaded(self, x: string):
         ...
 
-    # CHECK-LABEL: lit.fn @"parametric{{.*}}<x>
-    fn parametric[x: Index](self):
+    # CHECK-LABEL: lit.fn @"parametric{{.*}}<x: !Int>
+    fn parametric[x: Int](self):
         ...
 
 
@@ -130,17 +130,17 @@ fn generic_trait_fn[T: Trait](x: T):
     # CHECK: lit.call[!lit.generator<[1]("self": {{[^)]*}}) -> !kgen.none>:
     # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "overloaded{{.*}}">]{{.*}}(%x)
     x.overloaded()
-    # CHECK: lit.call[!lit.generator<[1]("self": {{.*}}, "x": index)
+    # CHECK: lit.call[!lit.generator<[1]("self": {{.*}}, "x": !Int)
     # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "overloaded{{.*}}">]{{.*}}(%x, %{{.*}})
-    x.overloaded(`1`)
+    x.overloaded(1)
     # CHECK: lit.call[!lit.generator<[1]("self": {{.*}}, "x": !kgen.string)
     # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "overloaded{{.*}}">]{{.*}}(%x, %{{.*}})
     x.overloaded(__mlir_attr.`"trait" : !kgen.string`)
 
     # CHECK: lit.call[!lit.generator<[1]("self": {{[^)]*}} read_mem)
-    # CHECK-SAME: bind_params(:!lit.generator<<"x": index>[1](
+    # CHECK-SAME: bind_params(:!lit.generator<<"x": !Int>[1](
     # CHECK-SAME: #kgen.get_witness<:!Trait T, "traits::Trait", "parametric{{.*}}">, {{.*}}1{{.*}})
-    x.parametric[`1`]()
+    x.parametric[1]()
 
 
 # CHECK-LABEL: lit.fn @"existential_arg
@@ -150,26 +150,26 @@ fn existential_arg(x: Trait):
 
 
 trait SimpleTrait(ImplicitlyCopyable):
-    fn method(self, y: Index):
+    fn method(self, y: Int):
         ...
 
-    fn param_method[x: Index](self):
+    fn param_method[x: Int](self):
         ...
 
 
 struct TraitStruct(SimpleTrait):
-    fn method(self, y: Index):
+    fn method(self, y: Int):
         pass
 
-    fn param_method[x: Index](self):
+    fn param_method[x: Int](self):
         pass
 
 
-struct ParametricTraitStruct[z: Index](SimpleTrait):
-    fn method(self, y: Index):
+struct ParametricTraitStruct[z: Int](SimpleTrait):
+    fn method(self, y: Int):
         pass
 
-    fn param_method[x: Index](self):
+    fn param_method[x: Int](self):
         pass
 
 
@@ -185,17 +185,17 @@ fn infer_trait[T: SimpleTrait](value: T):
 fn test_metatype_to_trait():
     # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait !TraitStruct
     take_simple_trait[TraitStruct]()
-    # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait {{.*}}@ParametricTraitStruct<2>
-    take_simple_trait[ParametricTraitStruct[__mlir_attr.`2 : index`]]()
+    # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait {{.*}}@ParametricTraitStruct<:!Int {2}>
+    take_simple_trait[ParametricTraitStruct[2]]()
 
 
 # CHECK-LABEL: lit.fn @"test_infer_trait
 fn test_infer_trait(
-    a: TraitStruct, b: ParametricTraitStruct[__mlir_attr.`2 : index`]
+    a: TraitStruct, b: ParametricTraitStruct[2]
 ):
     # CHECK: call {{.*}}infer_trait{{.*}}<:!SimpleTrait !TraitStruct
     infer_trait(a)
-    # CHECK: call {{.*}}infer_trait{{.*}}<:!SimpleTrait {{.*}}@ParametricTraitStruct<2>
+    # CHECK: call {{.*}}infer_trait{{.*}}<:!SimpleTrait {{.*}}@ParametricTraitStruct<:!Int {2}>
     infer_trait(b)
 
 
@@ -243,7 +243,7 @@ fn move_me[T: Movable](var value: T) -> T:
 # COM: Just check that conformance checking succeeds.
 trait TraitForReg:
     @implicit
-    fn __init__(out self, x: Index):
+    fn __init__(out self, x: Int):
         ...
 
     fn __copyinit__(out self, existing: Self):
@@ -266,9 +266,9 @@ trait TraitForReg:
 @register_passable
 struct RegTraitType(TraitForReg):
     # CHECK-LABEL: lit.fn @"__init__
-    # CHECK-SAME: (%x: index) -> !RegTraitType
+    # CHECK-SAME: (%x: !Int) -> !RegTraitType
     @implicit
-    fn __init__(out self, x: Index):
+    fn __init__(out self, x: Int):
         pass
 
     fn __copyinit__(out self, existing: Self):
@@ -293,7 +293,7 @@ fn raising_method[T: TraitForReg](x: T) raises:
 trait CrazyTrait:
     pass
 
-    fn foo[b: Index](self, c: Index) -> Self:
+    fn foo[b: Int](self, c: Int) -> Self:
         ...
 
 
@@ -332,12 +332,12 @@ trait SimpleTraitMethod:
 
 
 @register_passable
-struct VariadicTrait[*I: Index](SimpleTraitMethod):
+struct VariadicTrait[*I: Int](SimpleTraitMethod):
     fn foo(self):
         pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}SimpleTraitMethod
-    # CHECK-NEXT: kgen.witness "foo{{.*}}" : !lit.generator<[1]("self": {{.*}}<:variadic<index> I>{{.*}} read_mem) -> !kgen.none> = {{.*}}@"foo{{.*}}"<:variadic<index> I>
+    # CHECK-NEXT: kgen.witness "foo{{.*}}" : !lit.generator<[1]("self": {{.*}}<:variadic<!Int> I>{{.*}} read_mem) -> !kgen.none> = {{.*}}@"foo{{.*}}"<:variadic<!Int> I>
 
 # CHECK-LABEL: lit.fn @"test_bind_variadic
 fn test_bind_variadic():
@@ -345,7 +345,7 @@ fn test_bind_variadic():
     fn bind_trait[T: SimpleTraitMethod]():
         pass
 
-    # CHECK: call{{.*}}@VariadicTrait<:variadic<index> []>
+    # CHECK: call{{.*}}@VariadicTrait<:variadic<!Int> []>
     bind_trait[VariadicTrait[]]()
 
 
@@ -763,25 +763,25 @@ struct ConcreteType(TraitParameterized):
 
 
 trait KeysBuilder:
-    fn add[x: Index](mut self):
+    fn add[x: Int](mut self):
         ...
 
 
-struct KeysContainer[end: Index](KeysBuilder):
-    fn add[x: Index](mut self):
+struct KeysContainer[end: Int](KeysBuilder):
+    fn add[x: Int](mut self):
         pass
 
 
 # CHECK-LABEL: lit.fn @"param_trait
 fn param_trait[T: SimpleTrait, value: T]():
     # CHECK-NEXT: apply({{.*}} #kgen.get_witness<:!SimpleTrait T, "traits::SimpleTrait", "method{{.*}}">{{.*}} store_to_mem(value), {{.*}}1{{.*}})
-    alias param = value.method(`1`)
+    alias param = value.method(1)
     # CHECK-NEXT: [[VAR:%.*]] = lit.var.decl
     # CHECK-NEXT: [[VALUE:%.*]] = kgen.param.materialize
     # CHECK-NEXT: store [[VALUE]], [[VAR]]
     # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[VAR]]
-    # CHECK: call[{{.*}}#kgen.get_witness<:!SimpleTrait T, "traits::SimpleTrait", "method{{.*}}">{{.*}}([[IMM]], %index)
-    value.method(`2`)
+    # CHECK: call[{{.*}}#kgen.get_witness<:!SimpleTrait T, "traits::SimpleTrait", "method{{.*}}">{{.*}}([[IMM]],
+    value.method(2)
 
 
 trait Makeable:
@@ -888,7 +888,7 @@ struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
 
 
 @register_passable("trivial")
-struct ParamType[x: Index]:
+struct ParamType[x: Int]:
     pass
 
 # CHECK: lit.trait.decl @RGTrait{{.*}} register_passable

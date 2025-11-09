@@ -4,24 +4,21 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-alias int = __mlir_type.index
-alias `0` = __mlir_attr.`0 : index`
-
 alias ALIAS = child()
 
 
-fn use_me() -> int:
+fn use_me() -> __mlir_type.index:
     @no_inline
     @parameter
-    fn preserve_me() -> int:
+    fn preserve_me() -> __mlir_type.index:
         return ALIAS
 
     return preserve_me()
 
 
-fn child() -> int:
-    return `0`
+fn child() -> __mlir_type.index:
+    return __mlir_attr.`0 : index`
 
 
-fn dead() -> int:
-    return `0`
+fn dead() -> __mlir_type.index:
+    return __mlir_attr.`0 : index`

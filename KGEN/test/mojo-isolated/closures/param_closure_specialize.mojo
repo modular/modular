@@ -7,18 +7,18 @@
 
 
 @register_passable
-struct Thing[x: Index]:
+struct Thing[x: Int]:
     pass
 
 
 # CHECK-LABEL: lit.fn @"pass_param_closure
 fn pass_param_closure():
-    fn closure(x: Thing[`2`]) escaping:
+    fn closure(x: Thing[2]) escaping:
         pass
 
-    # CHECK: rebind %{{.*}} : !lit.ref<!None, mut {{.*}}> to !lit.ref<{{.*}}<sugar_alias(*"2`0x11", 2)>
-    take_param_closure[`2`](closure)
+    # CHECK: rebind %{{.*}} : !lit.ref<!None, mut {{.*}}> to !lit.ref<{{.*}}<:!Int {2}>
+    take_param_closure[2](closure)
 
 
-fn take_param_closure[dt: Index](cls: fn (Thing[dt]) escaping -> None):
+fn take_param_closure[dt: Int](cls: fn (Thing[dt]) escaping -> None):
     pass

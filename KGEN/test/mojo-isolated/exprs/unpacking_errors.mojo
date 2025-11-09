@@ -8,15 +8,15 @@
 
 
 # expected-note @+1 {{declared here}}
-struct Parametric[a: Index]:
+struct Parametric[a: Int]:
     pass
 
 
 fn test_unbound_pack_with_variadic():
     # expected-error @+1 {{unbound pack `*_` must be the last positional parameter}}
-    Parametric[*_, `2`]
+    Parametric[*_, 2]
     # expected-error @+1 {{unbound pack `*_` must be the last positional parameter}}
-    Parametric[*_, `1`, *_]
+    Parametric[*_, 1, *_]
 
 
 fn test_unbound_pack_arg():

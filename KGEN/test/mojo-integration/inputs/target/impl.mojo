@@ -10,5 +10,5 @@ from test_dependency import *
 
 
 @export
-fn anchor() -> int:
+fn anchor() -> __mlir_type.index:
     return use_me()

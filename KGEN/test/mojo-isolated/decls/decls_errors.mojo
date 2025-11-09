@@ -447,11 +447,11 @@ fn test_too_few_pos_only(a: Int, msg: Int = 3):
 
 # COM: Issue #23007
 # expected-note @+1 {{function declared here}}
-fn missing_args(a: Index, b: Index, c: Index = `2`, d: Index = `2`): pass
+fn missing_args(a: Int, b: Int, c: Int = 2, d: Int = 2): pass
 
 fn test_missing_args():
   # expected-error @+1 {{invalid call to 'missing_args': missing 2 required positional arguments: 'a', 'b'}}
-  _ = missing_args(c=`1`, d=`1`)
+  _ = missing_args(c=1, d=1)
 
 
 struct ConvertibleFromInt:
@@ -510,7 +510,7 @@ struct InitOverloaded:
   fn __init__(out self, a: Int): pass
   # expected-note @below {{argument #0 cannot be converted from 'StringLiteral["foo"]' to 'index'}}
   # expected-note @below {{argument #0 cannot be converted from 'Parametric[1]' to 'index'}}
-  fn __init__(out self, a: Index): pass
+  fn __init__(out self, a: __mlir_type.index): pass
 
 fn testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
   # expected-error @+1 {{cannot construct 'InitOverloaded' with itself, you can remove the constructor call}}
@@ -906,7 +906,7 @@ fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
   x.parametric()
 
 trait Shape(ImplicitlyCopyable, Movable):
-	fn area(self) -> Index:
+	fn area(self) -> Int:
 	    ...
 
 @fieldwise_init
@@ -1034,8 +1034,8 @@ struct AnyTypeMember[T: AnyType](ImplicitlyCopyable, Movable):
 # Ensure @fieldwise_init fails gracefully in the presence of duplicate field names.
 @fieldwise_init
 struct BadStruct:
-    var b: Index  # expected-note {{previous definition here}}
-    var b: Index  # expected-error {{invalid redefinition of 'b'}}
+    var b: Int  # expected-note {{previous definition here}}
+    var b: Int  # expected-error {{invalid redefinition of 'b'}}
 
 
 # Also ensure that @fieldwise_init doesn't fail if a method/alias shadows it.
@@ -1043,16 +1043,16 @@ struct BadStruct:
 struct OtherBadStruct:
     # expected-note @below {{previous definition here}}
     # expected-note @below {{cannot overload with this non-function definition}}
-    var b: Index
-    alias b = `0`  # expected-error {{invalid redefinition of 'b'}}
+    var b: Int
+    alias b = 0  # expected-error {{invalid redefinition of 'b'}}
 
     fn b(mut self):  # expected-error {{invalid redefinition of 'b'}}
         pass
 
 
 fn test_bad_struct():
-    _ = BadStruct(`1`)
-    _ = OtherBadStruct(`2`)
+    _ = BadStruct(1)
+    _ = OtherBadStruct(2)
 
 ##===----------------------------------------------------------------------===##
 # Bad implicit conversions.

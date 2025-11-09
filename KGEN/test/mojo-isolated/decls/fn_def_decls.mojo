@@ -14,102 +14,102 @@ fn empty_def():
 
 
 # CHECK-LABEL: lit.fn @"slash
-# CHECK-SAME: (%a: index, |, %b: index)
-fn slash(a: Index, /, b: Index):
+# CHECK-SAME: (%a: !Int, |, %b: !Int)
+fn slash(a: Int, /, b: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"trailing_slash
-# CHECK-SAME: (%a: index, |)
-fn trailing_slash(a: Index, /):
+# CHECK-SAME: (%a: !Int, |)
+fn trailing_slash(a: Int, /):
     pass
 
 
 # CHECK-LABEL: lit.fn @"star
-# CHECK-SAME: (%a: index, *, %b: index)
-fn star(a: Index, *, b: Index):
+# CHECK-SAME: (%a: !Int, *, %b: !Int)
+fn star(a: Int, *, b: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"leading_star
-# CHECK-SAME: (*, %a: index)
-fn leading_star(*, a: Index):
+# CHECK-SAME: (*, %a: !Int)
+fn leading_star(*, a: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"star_and_slash
-# CHECK-LABEL: (%a: index, |, *, %b: index)
-fn star_and_slash(a: Index, /, *, b: Index):
+# CHECK-LABEL: (%a: !Int, |, *, %b: !Int)
+fn star_and_slash(a: Int, /, *, b: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"star_and_slash_2
-# CHECK-SAME: (%a: index, |, %b: index, *, %c: index)
-fn star_and_slash_2(a: Index, /, b: Index, *, c: Index):
+# CHECK-SAME: (%a: !Int, |, %b: !Int, *, %c: !Int)
+fn star_and_slash_2(a: Int, /, b: Int, *, c: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"default_args
-# CHECK-SAME: (%a: index, %b: index = sugar_alias(*"8`0x17", 8), *, %c: index, %d: index = sugar_alias(*"9`0x18", 9))
-fn default_args(a: Index, b: Index = `8`, *, c: Index, d: Index = `9`):
+# CHECK-SAME: (%a: !Int, %b: !Int = {8}, *, %c: !Int, %d: !Int = {9})
+fn default_args(a: Int, b: Int = 8, *, c: Int, d: Int = 9):
     pass
 
 
 # CHECK-LABEL: lit.fn @"variadic_and_kw_only
-# CHECK-SAME: (%a: index, %b: index, %args: !kgen.variadic<index> pos_vararg, *, %c: index, %d: index = sugar_alias(*"9`0x18", 9))
+# CHECK-SAME: (%a: !Int, %b: !Int, %args: !kgen.variadic<!Int> pos_vararg, *, %c: !Int, %d: !Int = {9})
 fn variadic_and_kw_only(
-    a: Index, b: Index, *args: Index, c: Index, d: Index = `9`
+    a: Int, b: Int, *args: Int, c: Int, d: Int = 9
 ):
     pass
 
 
 # CHECK-LABEL: lit.fn @"variadic_arg_after_default
-# CHECK-SAME: (%a: index, %b: index = {{.*}}0{{.*}}, %args: !kgen.variadic<index> pos_vararg = *?,
-# CHECK-SAME:  *, %c: index, %d: index = {{.*}}1{{.*}}, %kwargs: {{.*}}|kw_vararg = *?)
+# CHECK-SAME: (%a: !Int, %b: !Int = {0}, %args: !kgen.variadic<!Int> pos_vararg = *?,
+# CHECK-SAME:  *, %c: !Int, %d: !Int = {1}, %kwargs: {{.*}}|kw_vararg = *?)
 fn variadic_arg_after_default(
-    a: Index,
-    b: Index = `0`,
-    *args: Index,
-    c: Index,
-    d: Index = `1`,
-    **kwargs: Index,
+    a: Int,
+    b: Int = 0,
+    *args: Int,
+    c: Int,
+    d: Int = 1,
+    **kwargs: Int,
 ):
     pass
 
 
 # CHECK-LABEL: lit.fn @"variadic_param_after_default
-# CHECK-SAME: <a, b = {{.*}}0{{.*}}, args: {{.*}} pos_vararg = *?, *, c, d = {{.*}}1{{.*}}>()
+# CHECK-SAME: <a: !Int, b: !Int = {0}, args: {{.*}} pos_vararg = *?, *, c: !Int, d: !Int = {1}>()
 fn variadic_param_after_default[
-    a: Index, b: Index = `0`, *args: Index, c: Index, d: Index = `1`
+    a: Int, b: Int = 0, *args: Int, c: Int, d: Int = 1
 ]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"inferred_params
-# CHECK-SAME: <x, y, +>
-fn inferred_params[x: Index, y: Index, //]():
-    # CHECK-NEXT: !lit.generator<<"x": index, "y": index, +>() -> !kgen.none> = <@
-    alias fn_type: fn[x: Index, y: Index, //] () -> None = inferred_params
+# CHECK-SAME: <x: !Int, y: !Int, +>
+fn inferred_params[x: Int, y: Int, //]():
+    # CHECK-NEXT: !lit.generator<<"x": !Int, "y": !Int, +>() -> !kgen.none> = <@
+    alias fn_type: fn[x: Int, y: Int, //] () -> None = inferred_params
 
 
 # CHECK-LABEL: lit.fn @"inferred_params_regular
-# CHECK-SAME: <x, +, y>
-fn inferred_params_regular[x: Index, //, y: Index]():
-    # CHECK-NEXT: !lit.generator<<"x": index, +, "y": index>() -> !kgen.none> = <@
+# CHECK-SAME: <x: !Int, +, y: !Int>
+fn inferred_params_regular[x: Int, //, y: Int]():
+    # CHECK-NEXT: !lit.generator<<"x": !Int, +, "y": !Int>() -> !kgen.none> = <@
     alias fn_type: fn[
-        x: Index, //, y: Index
+        x: Int, //, y: Int
     ] () -> None = inferred_params_regular
 
 
 # CHECK-LABEL: lit.fn @"inferred_params_pos_only
-# CHECK-SAME: <x, +, y = {{.*}}1{{.*}}, |>
-fn inferred_params_pos_only[x: Index, //, y: Index = `1`, /]():
+# CHECK-SAME: <x: !Int, +, y: !Int = {1}, |>
+fn inferred_params_pos_only[x: Int, //, y: Int = 1, /]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"inferred_params_kw_only
-# CHECK-SAME: <x, +, *, y>
-fn inferred_params_kw_only[x: Index, //, *, y: Index]():
+# CHECK-SAME: <x: !Int, +, *, y: !Int>
+fn inferred_params_kw_only[x: Int, //, *, y: Int]():
     pass
 
 

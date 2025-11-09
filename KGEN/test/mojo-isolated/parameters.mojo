@@ -182,14 +182,14 @@ fn testParamSubst():
 
 
 # Test parameter substitution.
-# CHECK-LABEL: lit.fn @"fnToCall{{.*}}"<size, arr: array<size, f32>>()
-fn fnToCall[size: Index, arr: __mlir_type[`!pop.array<`, size, `, f32>`]]():
+# CHECK-LABEL: lit.fn @"fnToCall{{.*}}"<size: !Int, arr: array<#lit.struct.extract<:!Int size, "_mlir_value">, f32>>()
+fn fnToCall[size: Int, arr: __mlir_type[`!pop.array<`, size._mlir_value, `, f32>`]]():
   pass
 
 # CHECK: lit.fn @"fnWithCall{{.*}}"<array: array<10, f32>
 fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
-   # CHECK: lit.call @parameters::@"fnToCall{{.*}}"<10, :array<10, f32> array>()
-   fnToCall[Int(10)._mlir_value, array]()
+   # CHECK: lit.call @parameters::@"fnToCall{{.*}}"<:!Int {10}, :array<10, f32> array>()
+   fnToCall[10, array]()
 
 # CHECK-LABEL: lit.fn @"meta_str{{.*}}"<["value`"]*"value`": string, +, type: @stdlib::@builtin::@stubs::@StringLiteral<:string *"value`">>() -> !kgen.none
 fn meta_str[type: StringLiteral]():
@@ -282,30 +282,30 @@ fn autoparam_param_alias_params[x: Int, //, y: TwoParamsSwap[2, _]]():
     pass
 
 @register_passable("trivial")
-struct IndexParam[x: Index]:
+struct IndexParam[x: Int]:
     @implicit
     fn __init__(out self, p: __mlir_type.`!kgen.none`):
         pass
 
 
 # CHECK-LABEL: lit.fn @"autoparam_of_params
-# CHECK-SAME: <["x`"]*"x`", a, +, b: {{.*}}IndexParam<*"x`">, c: {{.*}}IndexParam<a>
-fn autoparam_of_params[a: Index, //, b: IndexParam, c: IndexParam[a]]():
+# CHECK-SAME: <["x`"]*"x`": !Int, a: !Int, +, b: {{.*}}IndexParam<:!Int *"x`">, c: {{.*}}IndexParam<:!Int a>
+fn autoparam_of_params[a: Int, //, b: IndexParam, c: IndexParam[a]]():
     pass
 
 # CHECK-LABEL: lit.fn @"autoparam_of_struct_metatype_params
-# CHECK-SAME: <["x`1"]*"x`1", +, a: meta<!lit.struct<#IndexParam <*"x`1">>>>
+# CHECK-SAME: <["x`1"]*"x`1": !Int, +, a: meta<!lit.struct<#IndexParam <:!Int *"x`1">>>>
 fn autoparam_of_struct_metatype_params[a: type_of(IndexParam)]():
     pass
 
 @fieldwise_init
 @register_passable("trivial")
-struct DependentParams[x: Index, //, p: IndexParam[x]]:
+struct DependentParams[x: Int, //, p: IndexParam[x]]:
     pass
 
 
 # CHECK-LABEL: lit.fn @"autoparam_of_dependent_params
-# CHECK-SAME: <["x`"]*"x`", ["p`1"]*"p`1": {{.*}}IndexParam<*"x`">, +, dp: {{.*}}DependentParams<*"x`", :{{.*}}IndexParam<*"x`"> *"p`1">>
+# CHECK-SAME: <["x`"]*"x`": !Int, ["p`1"]*"p`1": {{.*}}IndexParam<:!Int *"x`">, +, dp: {{.*}}DependentParams<:!Int *"x`", :{{.*}}IndexParam<:!Int *"x`"> *"p`1">>
 fn autoparam_of_dependent_params[dp: DependentParams]():
     pass
 
@@ -331,27 +331,27 @@ fn nonprop_capture_set[f: fn[g: fn () capturing [_] -> None] () -> None]():
 
 
 # CHECK-LABEL: lit.fn @"autoparam_param_vararg
-# CHECK-SAME: <["__origins__`"]*"__origins__`": origin.set, +, f: {{.*}}, x: variadic<index> pos_vararg>
-fn autoparam_param_vararg[f: fn () [_] -> None, *x: Index]():
+# CHECK-SAME: <["__origins__`"]*"__origins__`": origin.set, +, f: {{.*}}, x: variadic<!Int> pos_vararg>
+fn autoparam_param_vararg[f: fn () [_] -> None, *x: Int]():
     pass
 
 
-# CHECK-LABEL: lit.fn @"auto_kw_default{{.*}}"<u = {{.*}}3{{.*}}, |, v = {{.*}}3{{.*}}, ?, {{.*}}, {{.*}}>(%a
-fn auto_kw_default[u: Index = `3`, /, v: Index = `3`](a: IndexParam, b: IndexParam):
+# CHECK-LABEL: lit.fn @"auto_kw_default{{.*}}"<u: !Int = {3}, |, v: !Int = {3}, ?, {{.*}}, {{.*}}>(%a
+fn auto_kw_default[u: Int = 3, /, v: Int = 3](a: IndexParam, b: IndexParam):
   pass
 
 
 # CHECK-LABEL: lit.fn @"test_auto_kw_default
-# CHECK-SAME: <?, [[A:.*]], [[B:.*]]>(%a
+# CHECK-SAME: <?, [[A:.*]]: !Int, [[B:.*]]: !Int>(%a
 fn test_auto_kw_default(a: IndexParam, b: IndexParam):
-  # CHECK-NEXT: <{{.*}}3{{.*}}, {{.*}}3{{.*}}, [[A]], [[B]]>
+  # CHECK-NEXT: <:!Int {3}, :!Int {3}, :!Int [[A]], :!Int [[B]]>
   auto_kw_default(a, b)
-  # CHECK-NEXT: <{{.*}}1{{.*}}, {{.*}}3{{.*}}, [[A]], [[B]]>
-  auto_kw_default[`1`](a, b)
-  # CHECK-NEXT: <{{.*}}3{{.*}}, {{.*}}2{{.*}}, [[A]], [[B]]>
-  auto_kw_default[v=`2`](a, b)
-  # CHECK-NEXT: <{{.*}}1{{.*}}, {{.*}}2{{.*}}, [[A]], [[B]]>
-  auto_kw_default[`1`, v=`2`](a, b)
+  # CHECK-NEXT: <:!Int {1}, :!Int {3}, :!Int [[A]], :!Int [[B]]>
+  auto_kw_default[1](a, b)
+  # CHECK-NEXT: <:!Int {3}, :!Int {2}, :!Int [[A]], :!Int [[B]]>
+  auto_kw_default[v=2](a, b)
+  # CHECK-NEXT: <:!Int {1}, :!Int {2}, :!Int [[A]], :!Int [[B]]>
+  auto_kw_default[1, v=2](a, b)
 
 
 trait ASuperTrait:
@@ -536,27 +536,27 @@ fn call_take_nonmat():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.fn @"takeCallable{{.*}}"<
-# CHECK-SAME: callable: !lit.generator<(index, |) -> index>>(%a: index) -> index
+# CHECK-SAME: callable: !lit.generator<(!Int, |) -> !Int>>(%a: !Int) -> !Int
 fn takeCallable[
-     callable: fn(Index) -> Index
-   ](a: Index) -> Index:
-  # CHECK-NEXT: %0 = lit.call[!lit.generator<(index, |) -> index>: callable](%a)
+     callable: fn(Int) -> Int
+   ](a: Int) -> Int:
+  # CHECK-NEXT: %0 = lit.call[!lit.generator<(!Int, |) -> !Int>: callable](%a)
   # CHECK-NEXT: lit.return %0
   return callable(a)
 
-fn takeAndReturnIndex(x: Index) -> Index:
+fn takeAndReturnIndex(x: Int) -> Int:
   return x
 
-fn posOnlyArg(x: Index, /):
+fn posOnlyArg(x: Int, /):
   pass
 
 # CHECK-LABEL: lit.fn @"takeAndReturnIndex
-fn passFunction(a: Index) -> Index:
-  # CHECK: rebind(:!lit.generator<("x": index, |) -> !kgen.none> {{.*}}posOnlyArg
-  alias changeKw: fn(x: Index) -> None = posOnlyArg
+fn passFunction(a: Int) -> Int:
+  # CHECK: rebind(:!lit.generator<("x": !Int, |) -> !kgen.none> {{.*}}posOnlyArg
+  alias changeKw: fn(x: Int) -> None = posOnlyArg
 
-  # CHECK: lit.call @parameters::@"takeCallable{{.*}}<:!lit.generator<(index, |) -> index>
-  # CHECK-SAME: rebind(:!lit.generator<("x": index) -> index> {{.*}}takeAndReturnIndex{{.*}}")>(%a)
+  # CHECK: lit.call @parameters::@"takeCallable{{.*}}<:!lit.generator<(!Int, |) -> !Int>
+  # CHECK-SAME: rebind(:!lit.generator<("x": !Int) -> !Int> {{.*}}takeAndReturnIndex{{.*}}")>(%a)
   return takeCallable[takeAndReturnIndex](a)
 
 # CHECK-LABEL: lit.fn @"callableWithParam{{.*}}"<type: dtype>() -> !kgen.none
@@ -577,12 +577,12 @@ fn passFunctionParam2():
 
 
 @register_passable("trivial")
-struct ParamType[x: Index]:
+struct ParamType[x: Int]:
     pass
 
 
 # CHECK-LABEL: lit.fn @"dependent_function_type
-fn dependent_function_type[a: Index, f: fn (ParamType[a]) -> None]():
+fn dependent_function_type[a: Int, f: fn (ParamType[a]) -> None]():
     alias func = dependent_function_type
     # CHECK: lit.call{{.*}}dependent_function_type
     func[a, f]()
@@ -590,13 +590,13 @@ fn dependent_function_type[a: Index, f: fn (ParamType[a]) -> None]():
 fn overloaded_function():
     pass
 
-fn overloaded_function(a: Index):
+fn overloaded_function(a: Int):
     pass
 
 struct ParamFuncType[f: fn() -> None]:
     pass
 
-fn bind_twice[f: fn() -> None, g: fn(Index) -> None]():
+fn bind_twice[f: fn() -> None, g: fn(Int) -> None]():
     pass
 
 fn variadic_func_param[*fs: fn() -> None]():
@@ -614,7 +614,7 @@ fn bind_overloaded_fn[f: fn[f: fn () -> None] () -> None]():
     # CHECK-NEXT: bind_params(:{{.*}} f, {{.*}}@"overloaded_function()")
     alias h = f[f=overloaded_function]
 
-    # CHECK-NEXT: bind_twice{{.*}}<:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()", :!lit.generator<(index, |) -> !kgen.none> {{.*}}overloaded_function(__mlir_type.index)")>
+    # CHECK-NEXT: bind_twice{{.*}}<:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()", :!lit.generator<(!Int, |) -> !kgen.none> {{.*}}overloaded_function(::Int)")>
     alias bound = bind_twice[overloaded_function][overloaded_function]
 
     # CHECK-NEXT: variadic_func_param{{.*}}<:variadic<{{.*}}> [{{.*}}@"overloaded_function()", {{.*}}@"overloaded_function()"]>
@@ -644,21 +644,21 @@ fn testUseOfAliases():
 
 @register_passable
 struct MyDType:
-  var state : Index
+  var state : Int
 
   fn __copyinit__(out self, existing: Self):
     self.state = self.state
 
   @implicit
-  fn __init__(out self, value: Index):
+  fn __init__(out self, value: Int):
      self.state = value
 
   fn __eq__(self, rhs: MyDType) -> Bool:
      return __mlir_attr.true
 
-  alias ui8 = MyDType(Int(1)._mlir_value)
-  alias float32 = MyDType(Int(2)._mlir_value)
-  alias float64 = MyDType(Int(3)._mlir_value)
+  alias ui8 = MyDType(Int(1))
+  alias float32 = MyDType(Int(2))
+  alias float64 = MyDType(Int(3))
 
 struct MyVector[size: Int, dtype: MyDType]:
     pass
@@ -817,8 +817,8 @@ struct StaticVec[size: Int]:
 
 fn callee1[size: Int](v: StaticVec[size]): pass
 fn callee2[T: __mlir_type.`!kgen.type`](v: T): pass
-fn callee3[size: Index, type: __mlir_type.`!kgen.dtype`]
-   (v:  __mlir_type[`!pop.simd<`, size, `, `, type, `>`]): pass
+fn callee3[size: Int, type: __mlir_type.`!kgen.dtype`]
+   (v:  __mlir_type[`!pop.simd<`, size._mlir_value, `, `, type, `>`]): pass
 fn callee4[T: __mlir_type.`!kgen.type`]
    (v:  __mlir_type[`!kgen.pointer<`, T, `>`]): pass
 
@@ -835,8 +835,8 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
   callee1(b2)
   # CHECK-NEXT: lit.call @{{.*}}callee2{{.*}}<:type @parameters::@StaticVec<:!Int size>{{.*}}>(%b)
   callee2(b)
-  # CHECK-NEXT: lit.call @{{.*}}callee3{{.*}}<17, :dtype f32>(%c)
-  callee3(c)
+  # CHECK-NEXT: lit.call @{{.*}}callee3{{.*}}<:!Int {17}, :dtype f32>(%c)
+  callee3[17](c)
   # CHECK-NEXT: lit.call @{{.*}}callee4{{.*}}<:type f32>(%d)
   callee4(d)
 
@@ -967,9 +967,9 @@ fn deduce_kw_only[*Ts: Int, x: Int](y: Abstraction[x]):
 
 
 # CHECK-LABEL: lit.fn @"out_of_order_kw
-fn out_of_order_kw[x: Index, y: IndexParam[x]]():
+fn out_of_order_kw[x: Int, y: IndexParam[x]]():
     # CHECK-NEXT: out_of_order_kw{{.*}}<{{.*}}0{{.*}}, :{{.*}}IndexParam<{{.*}}0{{.*}}> {{.*}}IndexParam::@"__init__{{.*}}<{{.*}}0{{.*}}>, #kgen.none)>>
-    alias bound = out_of_order_kw[y=None, x=`0`]
+    alias bound = out_of_order_kw[y=None, x=0]
 
 
 # CHECK-LABEL: lit.fn @"test_deduce_kw_only
@@ -1176,14 +1176,14 @@ fn reference_params_through_struct():
 
 
 @register_passable
-struct DependentParam[x: Index, y: ParamType[x]]:
+struct DependentParam[x: Int, y: ParamType[x]]:
     pass
 
 
 # CHECK-LABEL: lit.fn @"auto_param_dependent
-# CHECK-SAME: <?, [[Y0:.*]], [[Y1:.*]]: {{.*}}ParamType<[[Y0]]>>
+# CHECK-SAME: <?, [[Y0:.*]]: !Int, [[Y1:.*]]: {{.*}}ParamType<:!Int [[Y0]]>>
 fn auto_param_dependent(value: DependentParam[*_]):
-    # CHECK-NEXT: ParamType<[[Y0]]> = <[[Y1]]>
+    # CHECK-NEXT: ParamType<:!Int [[Y0]]> = <[[Y1]]>
     alias param = value.y
 
 
@@ -1280,20 +1280,20 @@ struct Optional[T: AnyType]:
     fn __init__(out self, value: T):
         pass
 
-fn default_on_infer_failure[p: Index = `0`](a: Optional[ParamType[p]] = None):
+fn default_on_infer_failure[p: Int = 0](a: Optional[ParamType[p]] = None):
     pass
 
 # CHECK-LABEL: lit.fn @"test_optional_inference
-fn test_optional_inference(value: ParamType[`3`]):
-    # CHECK-NEXT: [[NONE:%.*]] = lit.var.decl {{.*}}ParamType<{{.*}}0{{.*}}>
+fn test_optional_inference(value: ParamType[3]):
+    # CHECK-NEXT: [[NONE:%.*]] = lit.var.decl {{.*}}ParamType<:!Int {0}>
     # CHECK: [[IMMUT:%.*]] = lit.ref.immut [[NONE]]
-    # CHECK-NEXT: call {{.*}}default_on_infer_failure{{.*}}<{{.*}}0{{.*}}>([[IMMUT]])
+    # CHECK-NEXT: call {{.*}}default_on_infer_failure{{.*}}<:!Int {0}>([[IMMUT]])
     default_on_infer_failure()
 
-    # CHECK: call {{.*}}default_on_infer_failure{{.*}}<{{.*}}0{{.*}}>
+    # CHECK: call {{.*}}default_on_infer_failure{{.*}}<:!Int {0}>
     default_on_infer_failure(None)
 
-    # CHECK: call {{.*}}default_on_infer_failure{{.*}}<{{.*}}3{{.*}}>
+    # CHECK: call {{.*}}default_on_infer_failure{{.*}}<:!Int {3}>
     default_on_infer_failure(value)
 
 ##===----------------------------------------------------------------------===##
@@ -1535,7 +1535,7 @@ fn test_inference_from_Self_type(x: Int):
   # CHECK: lit.call {{.*}}__init__{{.*}}<:!AnyType !Int, :!Movable !Int>{{.*}}({{.*}}, [[TMP]])
   _ = DependentSpecificInitSelf(x)
 
-struct AutoParamDefault[value: Index, param: Index, default: Index = param]:
+struct AutoParamDefault[value: Int, param: Int, default: Int = param]:
     @implicit
     fn __init__(out self, ptr: ParamType[value]): pass
     fn __init__(out self, *, other: Self): pass
@@ -1543,7 +1543,7 @@ struct AutoParamDefault[value: Index, param: Index, default: Index = param]:
     fn method(self, other: AutoParamDefault[value, *_]): pass
 
 # CHECK-LABEL: lit.fn @"implicit_conversion_overload
-fn implicit_conversion_overload(x: AutoParamDefault[`1`], ptr: ParamType[`1`]):
+fn implicit_conversion_overload(x: AutoParamDefault[1], ptr: ParamType[1]):
     # CHECK: call {{.*}}method{{.*}}(%x, %ptr)
     x.method(ptr)
 

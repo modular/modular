@@ -7,14 +7,14 @@
 
 
 # CHECK-LABEL: lit.struct.decl @"`_CI_
-# CHECK:         lit.struct.field field0 : index
+# CHECK:         lit.struct.field field0 : !Int
 # CHECK:         lit.fn @"__copyinit__
 
 
 # CHECK-LABEL: lit.fn @"foo
 fn foo():
-    var w = `5`
+    var w = 5
 
-    fn bar() -> Index:
-        var x = __mlir_op.`index.add`(w, w)
+    fn bar() -> Int:
+        var x = w + w
         return x

@@ -14,7 +14,7 @@ fn test_never_declared_fn():
     # expected-error @+1 {{use of unknown declaration 'never_declared_fn'}}
     never_declared_fn()
 
-fn implicit_var_decl(a: Index):
+fn implicit_var_decl(a: Int):
     c = a  # implicit declaration of c
 
 struct BadMethod:
@@ -23,13 +23,13 @@ struct BadMethod:
         pass
 
 # expected-error @+1 {{'__sub__' must be a method, not a global function}}
-fn __sub__(self: Index, a: Index):
+fn __sub__(self: Int, a: Int):
      pass
 
 fn missing_colon()  # expected-error {{expected ':' in function definition}}
     # Don't get confused by comments or blank lines!
 
-    var x = `1`
+    var x = 1
 
 # Missing colon after fn definition complains about function effects
 # https://github.com/modularml/modular/issues/23359
@@ -38,10 +38,10 @@ def missing_colon_2()
     test_never_declared_fn()
 
 # expected-error @below {{expected argument name}}
-fn missing_argument_name(*: Index): pass
+fn missing_argument_name(*: Int): pass
 
 # expected-error @below {{expected parameter name}}
-fn missing_parameter_name[: Index](): pass
+fn missing_parameter_name[: Int](): pass
 
 # expected-error @+1 {{use of unknown declaration 'InvalidType'}}
 fn test_unknown_arg_type(a: InvalidType):
@@ -49,27 +49,27 @@ fn test_unknown_arg_type(a: InvalidType):
     return
 
 # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
-fn two_stars(a: Index, *, *, b: Index):
+fn two_stars(a: Int, *, *, b: Int):
     pass
 
 # expected-error @+1 {{cannot have two '/' markers in the same argument list}}
-fn two_slashes(a: Index, /, /, b: Index):
+fn two_slashes(a: Int, /, /, b: Int):
     pass
 
 # expected-error @+1 {{cannot specify '/' marker after '*' marker}}
-fn slash_after_start(a: Index, *, /, b: Index):
+fn slash_after_start(a: Int, *, /, b: Int):
     pass
 
 # expected-error @+1 {{'/' marker cannot be used at the start of the argument list}}
-fn leading_slash(/, a: Index):
+fn leading_slash(/, a: Int):
     pass
 
 # expected-error @+1 {{'*' marker is not allowed at end of argument list}}
-fn trailing_star(a: Index, *):
+fn trailing_star(a: Int, *):
     pass
 
 # # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
-fn two_variadics(*a: Index, *b: Index):
+fn two_variadics(*a: Int, *b: Int):
     pass
 
 # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
@@ -77,27 +77,27 @@ fn two_variadic_packs[*Ts: AnyTrivialRegType](*a: *Ts, *b: *Ts):
     pass
 
 # expected-error @+1 {{parametric functions may not be used as arguments; consider passing as a parameter instead}}
-fn foo(x: fn[a: Index] () -> None):
+fn foo(x: fn[a: Int] () -> None):
     pass
 
 # expected-error @below {{non-owned variadic keyword arguments are not supported yet}}
-fn borrowed_kwargs(read **kwargs: Index):
+fn borrowed_kwargs(read **kwargs: Int):
     pass
 
 # expected-error @below {{'//' marker cannot be used at the start of the parameter list}}
-fn invalid_inferred[//, x: Index]():
+fn invalid_inferred[//, x: Int]():
     pass
 
 # expected-error @below {{cannot specify '//' marker after '*' marker in parameter list}}
-fn invalid_inferred_kw_only[*, x: Index, //, y: Index]():
+fn invalid_inferred_kw_only[*, x: Int, //, y: Int]():
     pass
 
 # expected-error @below {{'//' can only be used in parameter lists to denote inferred parameters}}
-fn invalid_inferred_argument(x: Index, //):
+fn invalid_inferred_argument(x: Int, //):
     pass
 
 # expected-error @below {{inferred parameters may not have defaults}}
-fn invalid_inferred_default[x: Index = `1`, //]():
+fn invalid_inferred_default[x: Int = 1, //]():
     pass
 
 struct NonCopyable:

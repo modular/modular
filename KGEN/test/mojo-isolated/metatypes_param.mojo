@@ -13,7 +13,7 @@
 # CHECK-LABEL: lit.struct.decl @Param
 @fieldwise_init
 @register_passable("trivial")
-struct Param[x: Index]:
+struct Param[x: Int]:
     alias value = x
 
     @staticmethod
@@ -31,7 +31,7 @@ struct Param[x: Index]:
 # CHECK-LABEL: lit.struct.decl @TwoParam
 @fieldwise_init
 @register_passable("trivial")
-struct TwoParam[x: Index, y: Index]:
+struct TwoParam[x: Int, y: Int]:
     alias first = x
     alias second = y
 
@@ -44,7 +44,7 @@ struct TwoParam[x: Index, y: Index]:
 fn fully_bound_alias():
     # COM: Test alias to a fully bound parametric type.
     # CHECK: BoundType{{.*}}: meta<!lit.struct<{{.*}}Param <{{.*}}1{{.*}}>>> = <{{.*}}@Param<{{.*}}1{{.*}}>>
-    alias BoundType = Param[`1`]
+    alias BoundType = Param[1]
     # CHECK: alias_value{{.*}} = <sugar_alias(#lit.struct.extract<:meta<!lit.struct<#Param <{{.*}}1{{.*}}>>> @metatypes_param::@Param<{{.*}}1{{.*}}>, "value">, {{.*}}1{{.*}})>
     alias alias_value = BoundType.value
     # CHECK: call {{.*}}@Param::@"foo()"<{{.*}}1{{.*}}>
@@ -56,82 +56,82 @@ fn fully_bound_alias():
 # CHECK-LABEL: unbound_alias
 fn unbound_alias():
     # COM: Test alias to a fully unbound parametric type.
-    # CHECK: [[UNBOUND:\*"Unbound.*]]: meta<!lit.struct<{{.*}}Param <?>, <"x": index>>> = <{{.*}}@Param<?>>
+    # CHECK: [[UNBOUND:\*"Unbound.*]]: meta<!lit.struct<#Param <:!Int ?>, <"x": !Int>>> = <{{.*}}@Param<:!Int ?>>
     alias Unbound = Param
-    # CHECK: unbound_value{{.*}} = <sugar_alias(#lit.struct.extract<:meta<!lit.struct<#Param <{{.*}}2{{.*}}>>> @metatypes_param::@Param<{{.*}}2{{.*}}>, "value">, {{.*}}2{{.*}})>
-    alias unbound_value = Unbound[`2`].value
-    # CHECK: call {{.*}}@Param::@"foo()"<{{.*}}2{{.*}}>
-    Unbound[`2`].foo()
-    # CHECK: unbound_function{{.*}}: !lit.generator<<"x": index, |>() -> !kgen.none> = <{{.*}}@Param::@"foo()"<?>>
+    # CHECK: unbound_value{{.*}} = <sugar_alias(#lit.struct.extract<:meta<!lit.struct<#Param <{{.*}}2{{.*}}>>> @metatypes_param::@Param<:!Int {2}>, "value">, {{.*}}2{{.*}})>
+    alias unbound_value = Unbound[2].value
+    # CHECK: call {{.*}}@Param::@"foo()"<:!Int {2}>
+    Unbound[2].foo()
+    # CHECK: unbound_function{{.*}}: !lit.generator<<"x": !Int, |>() -> !kgen.none> = <{{.*}}@Param::@"foo()"<:!Int ?>>
     alias unbound_function = Unbound.foo
 
     # COM: Test fully unbound alias can be fully bound.
-    # CHECK: BoundFromUnbound{{.*}}: meta<!lit.struct<#Param <{{.*}}1{{.*}}>>> =
-    # CHECK-SAME: <@metatypes_param::@Param<{{.*}}1{{.*}}>>
-    alias BoundFromUnbound = Unbound[`1`]
+    # CHECK: BoundFromUnbound{{.*}}: meta<!lit.struct<#Param <:!Int {1}>>> =
+    # CHECK-SAME: <@metatypes_param::@Param<:!Int {1}>>
+    alias BoundFromUnbound = Unbound[1]
 
 
 # CHECK-LABEL: partially_bound_alias
 fn partially_bound_alias():
     # COM: Test partially binding a type.
-    # CHECK: [[PBOUND:\*"PartiallyBound.*]]: meta<!lit.struct<#TwoParam <{{.*}}1{{.*}}, ?>, <"y": index>>> = <{{.*}}@TwoParam<{{.*}}1{{.*}}, ?>>
-    alias PartiallyBound = TwoParam[`1`]
+    # CHECK: [[PBOUND:\*"PartiallyBound.*]]: meta<!lit.struct<#TwoParam <:!Int {1}, :!Int ?>, <"y": !Int>>> = <{{.*}}@TwoParam<:!Int {1}, :!Int ?>>
+    alias PartiallyBound = TwoParam[1]
 
     # COM: Test taking a function from a partially bound type.
-    # CHECK: [[PBOUND_FN:\*"PartiallyBoundFn.*]]: !lit.generator<<"y": index, |>() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<{{.*}}1{{.*}}, ?>>
+    # CHECK: [[PBOUND_FN:\*"PartiallyBoundFn.*]]: !lit.generator<<"y": !Int, |>() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int ?>>
     alias PartiallyBoundFn = PartiallyBound.foo
-    # CHECK: FullyBoundFn{{.*}}: {{.*}} =   <@metatypes_param::@TwoParam::@"foo()"<{{.*}}1{{.*}}, {{.*}}2{{.*}}>>
-    alias FullyBoundFn = PartiallyBoundFn[`2`]
+    # CHECK: FullyBoundFn{{.*}}: {{.*}} =   <@metatypes_param::@TwoParam::@"foo()"<:!Int {1}, :!Int {2}>>
+    alias FullyBoundFn = PartiallyBoundFn[2]
 
     # COM: Test fully binding a partially bound type.
-    # CHECK: *"BoundFromPartial`3": meta<!lit.struct<#TwoParam <{{.*}}1{{.*}}, {{.*}}2{{.*}}>>> =
-    # CHECK-SAME: <@metatypes_param::@TwoParam<{{.*}}1{{.*}}, {{.*}}2{{.*}}>>
-    alias BoundFromPartial = PartiallyBound[`2`]
-    # CHECK: first{{.*}} = <sugar_alias(#lit.struct.extract<:meta<!lit.struct<#TwoParam <{{.*}}1{{.*}}, {{.*}}2{{.*}}>>> @metatypes_param::@TwoParam<{{.*}}1{{.*}}, {{.*}}2{{.*}}>, "first">, {{.*}}1{{.*}})>
+    # CHECK: *"BoundFromPartial`3": meta<!lit.struct<#TwoParam <:!Int {1}, :!Int {2}>>> =
+    # CHECK-SAME: <@metatypes_param::@TwoParam<:!Int {1}, :!Int {2}>>
+    alias BoundFromPartial = PartiallyBound[2]
+    # CHECK: first{{.*}} = <sugar_alias(#lit.struct.extract<:meta<!lit.struct<#TwoParam <:!Int {1}, :!Int {2}>>> @metatypes_param::@TwoParam<:!Int {1}, :!Int {2}>, "first">, {{.*}}1{{.*}})>
     alias first = BoundFromPartial.first
-    # CHECK: second{{.*}} = <sugar_alias(#lit.struct.extract<:meta<!lit.struct<#TwoParam <{{.*}}1{{.*}}, {{.*}}2{{.*}}>>> @metatypes_param::@TwoParam<{{.*}}1{{.*}}, {{.*}}2{{.*}}>, "second">, {{.*}}2{{.*}})>
+    # CHECK: second{{.*}} = <sugar_alias(#lit.struct.extract<:meta<!lit.struct<#TwoParam <:!Int {1}, :!Int {2}>>> @metatypes_param::@TwoParam<:!Int {1}, :!Int {2}>, "second">, {{.*}}2{{.*}})>
     alias second = BoundFromPartial.second
-    # CHECK: fn_from_bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<{{.*}}1{{.*}}, {{.*}}2{{.*}}>>
+    # CHECK: fn_from_bound{{.*}}: !lit.generator<() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int {2}>>
     alias fn_from_bound = BoundFromPartial.foo
 
 
 # CHECK-LABEL: partially_bound_kw
 fn partially_bound_kw():
     # COM: Test partially binding the parameters out-of-order with keywords.
-    # CHECK: TwoParam <?, {{.*}}1{{.*}}>
-    alias PartiallyBound = TwoParam[y=`1`]
-    # CHECK: TwoParam <{{.*}}2{{.*}}, {{.*}}1{{.*}}>
-    alias FullyBound = PartiallyBound[x=`2`]
+    # CHECK: TwoParam <:!Int ?, :!Int {1}>
+    alias PartiallyBound = TwoParam[y=1]
+    # CHECK: TwoParam <:!Int {2}, :!Int {1}>
+    alias FullyBound = PartiallyBound[x=2]
 
     # COM: Test emission of fully bound type.
-    # CHECK: expr_type{{.*}}@TwoParam<{{.*}}2{{.*}}, {{.*}}1{{.*}}>
+    # CHECK: expr_type{{.*}}@TwoParam<:!Int {2}, :!Int {1}>
     var expr_type: FullyBound
 
 
 # CHECK-LABEL: lit.fn @"partial_autoparam
-# CHECK-SAME: <?, [[X:.*]]>(%value: !lit.struct<#TwoParam <[[X]], {{.*}}1{{.*}}>>
-fn partial_autoparam(value: TwoParam[y=`1`]):
+# CHECK-SAME: <?, [[X:.*]]: !Int>(%value: !lit.struct<#TwoParam <:!Int [[X]], :!Int {1}>>
+fn partial_autoparam(value: TwoParam[y=1]):
     alias first = value.x
     alias second = value.y
 
 
-# CHECK-LABEL: lit.struct.decl @ParamVarArg<F, I: variadic<index> pos_vararg>
+# CHECK-LABEL: lit.struct.decl @ParamVarArg<F: !Int, I: variadic<!Int> pos_vararg>
 @fieldwise_init
 @register_passable("trivial")
-struct ParamVarArg[F: Index, *I: Index]:
+struct ParamVarArg[F: Int, *I: Int]:
     # CHECK-LABEL: lit.fn @"self_type
-    # CHECK-SAME: #ParamVarArg <F, :variadic<index> I>
+    # CHECK-SAME: #ParamVarArg <:!Int F, :variadic<!Int> I>
     @staticmethod
     fn self_type() -> Self:
-        # CHECK: lit.alias.decl {{.*}}Unbound{{.*}}: {{.*}}ParamVarArg <?, :variadic<index> ?>, <"F": index, "I": variadic<index> pos_vararg>>
+        # CHECK: lit.alias.decl {{.*}}Unbound{{.*}}: {{.*}}ParamVarArg <:!Int ?, :variadic<!Int> ?>, <"F": !Int, "I": variadic<!Int> pos_vararg>>
         alias Unbound = ParamVarArg
-        # CHECK: lit.alias.decl {{.*}}BoundSome{{.*}}: {{.*}}ParamVarArg <{{.*}}1{{.*}}, :variadic<index> ?>
-        alias BoundSome = Unbound[`1`]
-        # CHECK: lit.alias.decl {{.*}}BoundFinal{{.*}}: {{.*}}ParamVarArg <{{.*}}1{{.*}}, :variadic<index> [{{.*}}3{{.*}}, {{.*}}4{{.*}}]>
-        alias BoundFinal = BoundSome[`3`, `4`]
+        # CHECK: lit.alias.decl {{.*}}BoundSome{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :variadic<!Int> ?>
+        alias BoundSome = Unbound[1]
+        # CHECK: lit.alias.decl {{.*}}BoundFinal{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :variadic<!Int> [{3}, {4}]>
+        alias BoundFinal = BoundSome[3, 4]
 
-        # CHECK: BoundMore{{.*}}: {{.*}}ParamVarArg <{{.*}}1{{.*}}, :variadic<index> [{{.*}}2{{.*}}, {{.*}}1{{.*}}]>
-        alias BoundMore = Unbound[`1`, `2`, `1`]
+        # CHECK: BoundMore{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :variadic<!Int> [{2}, {1}]>
+        alias BoundMore = Unbound[1, 2, 1]
 
 
 

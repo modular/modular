@@ -8,11 +8,11 @@
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_pos_only_arg(a: Index, b: Index, /):
+fn takes_pos_only_arg(a: Int, b: Int, /):
     pass
 
 
-fn test_pos_only_arg_passed_by_kw(x: Index):
+fn test_pos_only_arg_passed_by_kw(x: Int):
     # expected-error @+1 {{positional-only argument passed as keyword operand: 'b'}}
     takes_pos_only_arg(x, b=x)
 
@@ -21,11 +21,11 @@ fn test_pos_only_arg_passed_by_kw(x: Index):
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_kw_only_arg(*, a: Index, b: Index, c: Index = `7`):
+fn takes_kw_only_arg(*, a: Int, b: Int, c: Int = 7):
     pass
 
 
-fn test_missing_kw_only_arg(x: Index):
+fn test_missing_kw_only_arg(x: Int):
     # COM: missing kw-only error takes precedence over unknown keyword
     # expected-error @+1 {{missing 1 required keyword-only argument: 'b'}}
     takes_kw_only_arg(a=x, d=x)
@@ -35,12 +35,12 @@ fn test_missing_kw_only_arg(x: Index):
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_pos_or_kw_arg(i: Index, j: Index):
+fn takes_pos_or_kw_arg(i: Int, j: Int):
     pass
 
 
 # expected-note @+1 {{function declared here}}
-fn var_arg_func(*args: Index):
+fn var_arg_func(*args: Int):
     pass
 
 
@@ -49,7 +49,7 @@ fn pack_func[*Ts: AnyType](*args: *Ts):
     pass
 
 
-fn test_unknown_kw_arg(x: Index):
+fn test_unknown_kw_arg(x: Int):
     # expected-error @+1 {{unknown keyword argument: 'c'}}
     takes_pos_or_kw_arg(x, c=x, j=x)
     # expected-error @+1 {{unknown keyword arguments: 'd', 'c'}}
@@ -60,7 +60,7 @@ fn test_unknown_kw_arg(x: Index):
     pack_func(args=x)
 
 
-fn test_passed_by_pos_and_kw_arg(x: Index):
+fn test_passed_by_pos_and_kw_arg(x: Int):
     # expected-error @+1 {{argument passed both as positional and keyword operand: 'i'}}
     takes_pos_or_kw_arg(x, i=x)
 
@@ -69,25 +69,25 @@ fn test_passed_by_pos_and_kw_arg(x: Index):
 
 
 # expected-note @+1 {{declared here}}
-fn takes_pos_or_kw_param[i: Index, j: Index]():
+fn takes_pos_or_kw_param[i: Int, j: Int]():
     pass
 
 
-fn test_unknown_kw_param[x: Index]():
+fn test_unknown_kw_param[x: Int]():
     # expected-error @+1 {{unknown keyword parameter: 'c'}}
     takes_pos_or_kw_param[x, c=x, j=x]
     # expected-error @+1 {{unknown keyword parameters: 'd', 'c'}}
     takes_pos_or_kw_param[x, d=x, c=x]
     # expected-error @below {{unknown keyword parameter: 'Ts'}}
-    pack_func[Ts=Index]
+    pack_func[Ts=Int]
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_pos_only_param[a: Index, b: Index, /]():
+fn takes_pos_only_param[a: Int, b: Int, /]():
     pass
 
 
-fn test_pos_only_param_passed_by_kw[x: Index]():
+fn test_pos_only_param_passed_by_kw[x: Int]():
     # expected-error @+1 {{positional-only parameter passed as keyword operand: 'b'}}
     takes_pos_only_param[x, b=x]()
 
@@ -96,11 +96,11 @@ fn test_pos_only_param_passed_by_kw[x: Index]():
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_kw_only_param[*, a: Index, b: Index, c: Index = `7`]():
+fn takes_kw_only_param[*, a: Int, b: Int, c: Int = 7]():
     pass
 
 
-fn test_missing_kw_only_param[x: Index]():
+fn test_missing_kw_only_param[x: Int]():
     # expected-error @+1 {{unknown keyword parameter: 'd'}}
     takes_kw_only_param[a=x, d=x]()
 
@@ -110,30 +110,30 @@ fn test_missing_kw_only_param[x: Index]():
 
 # expected-note @below {{declared here}}
 fn missing_keyword_only_params_tricky[
-    a: Index, /, *, b: Index, c: Index = `3`
+    a: Int, /, *, b: Int, c: Int = 3
 ]():
     pass
 
 
-fn test_missing_keyword_only_params_tricky[x: Index]():
+fn test_missing_keyword_only_params_tricky[x: Int]():
     # expected-error @below {{expects 1 positional parameter, but 3 were specified}}
     missing_keyword_only_params_tricky[x, x, x]
 
 
 # expected-note @+1 {{function declared here}}
 fn takes_kw_only_args(
-    a: Index, b: Index, *args: Index, c: Index, d: Index = `2`
+    a: Int, b: Int, *args: Int, c: Int, d: Int = 2
 ):
     pass
 
 
-fn test_missing_positional_arg_with_vararg_keyword(x: Index):
+fn test_missing_positional_arg_with_vararg_keyword(x: Int):
     # expected-error @+1 {{missing 1 required positional argument: 'b'}}
-    takes_kw_only_args(x, c=`2`)
+    takes_kw_only_args(x, c=2)
 
 
-fn test_missing_keyword_arg_with_vararg_keyword(x: Index):
-    takes_kw_only_args(x, x, c=`2`)
+fn test_missing_keyword_arg_with_vararg_keyword(x: Int):
+    takes_kw_only_args(x, x, c=2)
 
 
 struct MemExample(ImplicitlyCopyable):
