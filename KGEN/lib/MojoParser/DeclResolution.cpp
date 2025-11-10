@@ -3172,24 +3172,12 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
       parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
     return failure();
 
-  if (auto traitType = dyn_cast<LIT::TraitType>(type.mlirType)) {
+  if (auto traitType = dyn_cast<TraitType>(type)) {
     emitError(decl.getLoc(), "TODO: dynamic traits not supported yet, please "
                              "use a compile time generic instead of ")
         << ASTType(traitType);
     return failure();
   }
-
-#if 0 // FIXME: Enable this someday.
-  // Strip sugar off the field type, this is because we can't handle
-  // canonicalization of LITStructAttr's in complicated cases.
-  // FIXME(Sugar, MOCO-2584): Preserve this sugar.
-  auto canType = getCanonicalType(type);
-  if (canType != type) {
-    if (cast<StructDeclOp>(decl.getParentDecl()->getIfOperation())
-            .isRegisterPassable())
-      type = canType;
-  }
-#endif
 
   fieldOp.setType(type);
   rejectDecorators(decoratorExprs, decl, shared);

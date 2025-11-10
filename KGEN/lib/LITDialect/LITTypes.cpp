@@ -159,15 +159,6 @@ TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
   return TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
 }
 
-bool TypeSignatureType::canElideSugarFor(TypedAttr attr) const { return false; }
-
-Type TypeSignatureType::getCachedCanonicalType(Type type) const {
-  // TypeSignatureType is always canonical, because the embedded types mirror
-  // the parameter decls of the type.  These must line up.
-  assert(isa<TypeSignatureType>(type));
-  return type;
-}
-
 //===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//
@@ -247,26 +238,11 @@ LIT::StructType LIT::StructType::get(SymbolRefAttr name,
                                      TypeSignatureType signature) {
   auto nameSym = SymbolAttr::get(name);
 
-  // The signature is always canonical because the types need to match the
-  // declared types of the struct parameters, even if those types are
-  // non-canonical.  As such, we don't have to canonicalize it.
+  // If this struct type has sugar, we compute a canonical version of it to cut
+  // recursive walks during type canonicalization.
   bool anyDifferent = false;
-
-#if 0
-  // Parameters can have dependent values, and canonicalizing one parameter may
-  // change the type of later ones, for example, canonicaling something of type
-  // T[Sugar(1), value: Foo[Sugar(1))] -> T[1, value: Foo[1]].
-  //
-  // FIXME(MOCO-2584): We want to maintain sugar for parameter types, but we
-  // currently canonicalize them in the parser because we don't have the ability
-  // to recompute this.
-#endif
   SmallVector<TypedAttr> canParams;
   canParams.reserve(paramValues.size());
-
-  // Canonicalize the parameter values, but don't change their ultimate type.
-  // FIXME(MOCO-2584): The types are canonicalized in the parser to remove the
-  // need to do this.
   for (auto param : paramValues) {
     canParams.push_back(getCanonicalAttr(param));
     anyDifferent |= canParams.back() != param;
