@@ -1182,8 +1182,8 @@ struct Struct_ep_fused_silu:
         constrained[is_gpu[target](), "EP is only supported on GPU."]()
 
         var output_tensor = output.to_layout_tensor()
-        var input_tensor = input.to_layout_tensor()
-        var row_offsets_tensor = row_offsets.to_layout_tensor()
+        var input_tensor = input.to_layout_tensor().get_immutable()
+        var row_offsets_tensor = row_offsets.to_layout_tensor().get_immutable()
 
         var gpu_ctx = context.get_device_context()
         alias hw_info = gpu_ctx.default_device_info
@@ -1213,7 +1213,7 @@ struct Struct_ep_fused_silu:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            gpu_ctx.enqueue_function[fused_silu](
+            gpu_ctx.enqueue_function_checked[fused_silu, fused_silu](
                 output_tensor,
                 input_tensor,
                 row_offsets_tensor,
@@ -1258,8 +1258,8 @@ struct Struct_ep_fused_silu_fp8:
 
         var output_tensor = output.to_layout_tensor()
         var scales_tensor = scales.to_layout_tensor()
-        var input_tensor = input.to_layout_tensor()
-        var row_offsets_tensor = row_offsets.to_layout_tensor()
+        var input_tensor = input.to_layout_tensor().get_immutable()
+        var row_offsets_tensor = row_offsets.to_layout_tensor().get_immutable()
 
         var gpu_ctx = context.get_device_context()
         alias hw_info = gpu_ctx.default_device_info
@@ -1294,7 +1294,7 @@ struct Struct_ep_fused_silu_fp8:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            gpu_ctx.enqueue_function[fused_silu_fp8](
+            gpu_ctx.enqueue_function_checked[fused_silu_fp8, fused_silu_fp8](
                 output_tensor,
                 scales_tensor,
                 input_tensor,
