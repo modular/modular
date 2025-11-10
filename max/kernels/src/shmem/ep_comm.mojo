@@ -429,8 +429,8 @@ fn dispatch_kernel[
     max_tokens_per_rank: Int,
     token_fmt_type: TokenFormat,
 ](
-    input_tokens: LayoutTensor[input_type, input_tokens_layout, ImmutAnyOrigin],
-    topk_ids: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin],
+    input_tokens: LayoutTensor[input_type, input_tokens_layout, MutAnyOrigin],
+    topk_ids: LayoutTensor[DType.int32, topk_ids_layout, MutAnyOrigin],
     send_buf_p: UnsafePointer[UInt8],
     recv_buf_p: UnsafePointer[UInt8],
     recv_count_p: UnsafePointer[UInt64],
@@ -954,8 +954,8 @@ fn combine_kernel[
     msg_bytes: Int,
     max_tokens_per_rank: Int,
 ](
-    input_tokens: LayoutTensor[input_type, input_tokens_layout, ImmutAnyOrigin],
-    src_info: LayoutTensor[DType.int32, src_info_layout, ImmutAnyOrigin],
+    input_tokens: LayoutTensor[input_type, input_tokens_layout, MutAnyOrigin],
+    src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
     send_buf_p: UnsafePointer[UInt8],
     recv_buf_p: UnsafePointer[UInt8],
     recv_count_p: UnsafePointer[UInt64],

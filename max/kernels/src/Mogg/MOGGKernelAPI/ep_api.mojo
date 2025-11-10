@@ -17,7 +17,7 @@ Expert Parallelism (EP) Communication Kernel.
 
 import compiler_internal as compiler
 from gpu.grid_controls import pdl_launch_attributes
-from gpu.host import DeviceBuffer, get_gpu_target
+from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from gpu.host.info import is_gpu
 from layout import Layout
 from memory import LegacyOpaquePointer as OpaquePointer
@@ -63,6 +63,18 @@ fn global_cache_insert(key: String, value: OpaquePointer):
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(key),
         value,
+    )
+
+
+@always_inline
+fn unsafe_aliasing_address_to_device_buffer[
+    dtype: DType,
+](var addr: Int, size: Int, ctx: DeviceContext) -> DeviceBuffer[dtype]:
+    return DeviceBuffer[dtype](
+        ctx,
+        _unsafe_aliasing_address_to_pointer[Scalar[dtype]](addr),
+        size,
+        owning=False,
     )
 
 
@@ -341,7 +353,7 @@ struct Struct_ep_dispatch:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var func = gpu_ctx.compile_function[dispatch]()
+            var func = gpu_ctx.compile_function_checked[dispatch, dispatch]()
             var cached_module_key = String("EP_DISPATCH_INITED_DEV_", gpu_id)
 
             # Don't initialize the module repeatedly
@@ -352,24 +364,24 @@ struct Struct_ep_dispatch:
                     _unsafe_aliasing_address_to_pointer[NoneType](1),
                 )
 
-            var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(send_ptrs[gpu_id])
-            )
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(recv_ptrs[gpu_id])
-            )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
-                Int(recv_count_ptrs[gpu_id])
-            )
+            var send_buf = unsafe_aliasing_address_to_device_buffer[
+                DType.uint8
+            ](Int(send_ptrs[gpu_id]), 1, gpu_ctx)
+            var recv_buf = unsafe_aliasing_address_to_device_buffer[
+                DType.uint8
+            ](Int(recv_ptrs[gpu_id]), 1, gpu_ctx)
+            var recv_count_p = unsafe_aliasing_address_to_device_buffer[
+                DType.uint64
+            ](Int(recv_count_ptrs[gpu_id]), 1, gpu_ctx)
 
-            gpu_ctx.enqueue_function(
+            gpu_ctx.enqueue_function_checked(
                 func,
                 input_tokens_tensor,
                 topk_ids_tensor,
-                send_buf_p,
-                recv_buf_p,
+                send_buf,
+                recv_buf,
                 recv_count_p,
-                atomic_counters_0._ptr,
+                atomic_counters_0.to_layout_tensor().to_device_buffer(gpu_ctx),
                 my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -670,7 +682,7 @@ struct Struct_ep_dispatch_fp8:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var func = gpu_ctx.compile_function[dispatch]()
+            var func = gpu_ctx.compile_function_checked[dispatch, dispatch]()
             var cached_module_key = String("EP_DISPATCH_INITED_DEV_", gpu_id)
 
             # Don't initialize the module repeatedly
@@ -681,24 +693,24 @@ struct Struct_ep_dispatch_fp8:
                     _unsafe_aliasing_address_to_pointer[NoneType](1),
                 )
 
-            var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(send_ptrs[gpu_id])
-            )
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(recv_ptrs[gpu_id])
-            )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
-                Int(recv_count_ptrs[gpu_id])
-            )
+            var send_buf = unsafe_aliasing_address_to_device_buffer[
+                DType.uint8
+            ](Int(send_ptrs[gpu_id]), 1, gpu_ctx)
+            var recv_buf = unsafe_aliasing_address_to_device_buffer[
+                DType.uint8
+            ](Int(recv_ptrs[gpu_id]), 1, gpu_ctx)
+            var recv_count_p = unsafe_aliasing_address_to_device_buffer[
+                DType.uint64
+            ](Int(recv_count_ptrs[gpu_id]), 1, gpu_ctx)
 
-            gpu_ctx.enqueue_function(
+            gpu_ctx.enqueue_function_checked(
                 func,
                 input_tokens_tensor,
                 topk_ids_tensor,
-                send_buf_p,
-                recv_buf_p,
+                send_buf,
+                recv_buf,
                 recv_count_p,
-                atomic_counters_0._ptr,
+                atomic_counters_0.to_layout_tensor().to_device_buffer(gpu_ctx),
                 my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
@@ -986,7 +998,7 @@ struct Struct_ep_combine:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var func = gpu_ctx.compile_function[combine]()
+            var func = gpu_ctx.compile_function_checked[combine, combine]()
             var cached_module_key = String("EP_COMBINE_INITED_DEV_", gpu_id)
 
             # Don't initialize the module repeatedly
@@ -997,24 +1009,24 @@ struct Struct_ep_combine:
                     _unsafe_aliasing_address_to_pointer[NoneType](1),
                 )
 
-            var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(send_ptrs[gpu_id])
-            )
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
-                Int(recv_ptrs[gpu_id])
-            )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
-                Int(recv_count_ptrs[gpu_id])
-            )
+            var send_buf = unsafe_aliasing_address_to_device_buffer[
+                DType.uint8
+            ](Int(send_ptrs[gpu_id]), 1, gpu_ctx)
+            var recv_buf = unsafe_aliasing_address_to_device_buffer[
+                DType.uint8
+            ](Int(recv_ptrs[gpu_id]), 1, gpu_ctx)
+            var recv_count_p = unsafe_aliasing_address_to_device_buffer[
+                DType.uint64
+            ](Int(recv_count_ptrs[gpu_id]), 1, gpu_ctx)
 
-            gpu_ctx.enqueue_function(
+            gpu_ctx.enqueue_function_checked(
                 func,
                 input_tokens_tensor,
                 src_info_tensor,
-                send_buf_p,
-                recv_buf_p,
+                send_buf,
+                recv_buf,
                 recv_count_p,
-                atomic_counters_1._ptr,
+                atomic_counters_1.to_layout_tensor().to_device_buffer(gpu_ctx),
                 my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
