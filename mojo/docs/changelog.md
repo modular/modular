@@ -537,3 +537,13 @@ what we publish.
   and sockets with `open(path, "w")` now works correctly. Previously, write
   mode would attempt to remove the existing file before opening it, which
   failed for special files that should not be removed.
+
+- The `sys.intrinsics.compressed_store` function now includes a `debug_assert`
+  to catch null pointer usage, providing a clear error message instead of
+  crashing with a segmentation fault
+  ([#5142](https://github.com/modular/modular/issues/5142)).
+
+- The `sys.intrinsics.strided_load`, `sys.intrinsics.strided_store`,
+  `sys.intrinsics.masked_load`, and `sys.intrinsics.masked_store` functions now
+  include a `debug_assert` to catch null pointer usage, providing a clear error
+  message instead of crashing with a segmentation fault.
