@@ -161,7 +161,6 @@ public:
   bool isSafeToUseValueDestForDirectResult(ASTType destRValueType,
                                            ArrayRef<Value> argumentValues);
 
-private:
   /// The (type-checked and resolved) callee we are emitting the call to.
   RValue callee;
   /// The call's expression node.
@@ -173,6 +172,7 @@ private:
   /// The signature type of the callee, stored for convenience.
   FnTypeGeneratorType calleeSig;
 
+private:
   /// This struct accumulates information about IR to emit after the call, e.g.
   /// writebacks for computed mut lvalues, and origin markers.
   struct AfterCallActions {
@@ -1050,7 +1050,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
   // throws an error.
   if (calleeSig.isThrows()) {
     return emitter.emitErrorForDynamicValueInParameter(
-        callExpr, "TODO: cannot call potentially raising function");
+        callExpr, "cannot call raising function");
   }
   if (calleeSig.isAsync()) {
     return emitter.emitErrorForDynamicValueInParameter(
@@ -1074,7 +1074,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
 
   auto argTypes = boundSigType.getArguments();
   auto argConventions = boundSigType.getArgConventions();
-  // TODO: What about throwing functions?
+  assert(!calleeSig.isThrows() && "Throwing functions not handled");
   if (boundSigType.hasMemoryOnlyResult()) {
     argTypes = argTypes.drop_back();
     argConventions = argConventions.drop_back();
@@ -1118,16 +1118,15 @@ TypedAttr CallEmitter::emitCallInParamContext(
     // all.
     Type resultType = boundSigType.getResults().front();
     auto sugaredCall = ParamOperatorAttr::get(POC::Apply, operands, resultType);
+    result = ParamOperatorAttr::getRebind(result, resultType);
     return SugarAttr::get(SugarKind::AlwaysInlineBuiltin, sugaredCall, result);
   }
 
   TypedAttr result;
+  Type resultType = boundSigType.getUserResultType();
   if (!boundSigType.hasMemoryOnlyResult()) {
-    Type resultType = boundSigType.getResults().front();
     result = ParamOperatorAttr::get(POC::Apply, operands, resultType);
   } else {
-    Type resultType =
-        ASTType(boundSigType.getArguments().back()).getReferenceElementType();
     // ByRefResult uses ApplyResultSlot.
     result = ParamOperatorAttr::get(POC::ApplyResultSlot, operands, resultType);
   }
@@ -1596,7 +1595,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
                                     ValueDest &dest, CallSyntax syntax,
                                     const ExprNode *callExpr) {
   CallEmitter callEmitter(callee, callExpr, *this, dest);
-  auto calleeSig = cast<FnTypeGeneratorType>(callee.getRValueType());
+  auto calleeSig = callEmitter.calleeSig;
 
   // We first emit all the arguments.
   auto argumentValuesOr = callEmitter.emitArgValues(callOperands);

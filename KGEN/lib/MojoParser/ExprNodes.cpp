@@ -186,6 +186,10 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
     // tolerate this.
     indexVal = getCanonicalAttr(indexVal.get());
 
+    assert(indexVal.getType().mlirType ==
+               getCanonicalType(indexVal.getType()) &&
+           "indexVal type and value type must match");
+
     // If this is a wrapper for a type, print it as such.
     if (sugarIsa<TraitType>(indexVal.getType())) {
       // values of trait type are printed in a kgen compatible way, e.g.
@@ -1010,7 +1014,10 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     // Maintain alias sugar, e.g. print "UInt8" as UInt8 instead of SIMD[..].
     if (result) {
       auto sugared = ParamDeclRefAttr::get(param.getParamDecl());
-      result = SugarAttr::get(SugarKind::Alias, sugared, result);
+      // Some param refs (eg to unqualified parameters of structs) are already
+      // fully sugared.
+      if (result.get() != sugared)
+        result = SugarAttr::get(SugarKind::Alias, sugared, result);
     }
 
     return emitter.emitCResult(result.get(), expr, dest);
