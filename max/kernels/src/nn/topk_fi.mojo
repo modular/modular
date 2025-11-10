@@ -28,7 +28,7 @@ from gpu import (
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.host.dim import Dim
-from gpu.random import Random
+from random import Random
 from layout import (
     UNKNOWN_VALUE,
     Layout,

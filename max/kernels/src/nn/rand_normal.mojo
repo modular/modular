@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from algorithm.functional import elementwise
-from gpu.random import NormalRandom
+from random import NormalRandom
 from runtime.asyncrt import DeviceContextPtr
 from tensor._indexing import _dot_prod, _row_major_strides
 
