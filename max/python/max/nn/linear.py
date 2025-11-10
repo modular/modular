@@ -527,21 +527,7 @@ class ColumnParallelLinear(Linear):
 
         self.sharding_strategy = ShardingStrategy.rowwise(self.num_devices)
 
-        # Create normal Linear layers for each device. These layers and weights
-        # are not recorded by the nn.Module and do not appear in the state dict.
-        weight_shards = self.weight.shard(self.devices)
-        bias_shards = (
-            self.bias.shard(self.devices) if self.bias is not None else None
-        )
-
-        self.distributed_linear_layers = []
-        for n, device in enumerate(self.devices):
-            layer = Linear(in_dim, out_dim, dtype, device, **kwargs)
-            layer.device = device
-            layer.weight = weight_shards[n]
-            if bias_shards is not None:
-                layer.bias = bias_shards[n]
-            self.distributed_linear_layers.append(layer)
+        self.distributed_linear_layers = super().shard(self.devices)
 
     def __call__(  # type: ignore[override]
         self, x: Sequence[TensorValue], signal_buffers: Iterable[BufferValue]
