@@ -21,7 +21,7 @@ from gpu.host import DeviceContext
 
 from utils.numerics import FlushDenormals
 
-from .benchmark import _run_impl, _RunOptions
+from .benchmark import _run_impl, _run_impl_fixed, _RunOptions
 
 
 @fieldwise_init
@@ -684,6 +684,7 @@ struct Bench(Stringable, Writable):
         mut self,
         bench_id: BenchId,
         measures: List[ThroughputMeasure] = {},
+        fixed_iterations: Optional[Int] = None,
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -693,6 +694,7 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+            fixed_iterations: Just run a fixed number of iterations.
 
         Raises:
             If the operation fails.
@@ -713,6 +715,7 @@ struct Bench(Stringable, Writable):
 
         self.bench_function[bench_iter](bench_id, measures=measures)
 
+    # TODO: add a variant of the following function for with DeviceContext
     @always_inline
     fn bench_function[
         bench_fn: fn () capturing [_] -> None,
@@ -720,6 +723,7 @@ struct Bench(Stringable, Writable):
         mut self,
         bench_id: BenchId,
         measures: List[ThroughputMeasure] = {},
+        fixed_iterations: Optional[Int] = None,
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -729,6 +733,7 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+            fixed_iterations: Just run a fixed number of iterations.
 
         Raises:
             If the operation fails.
@@ -752,6 +757,7 @@ struct Bench(Stringable, Writable):
         mut self,
         bench_id: BenchId,
         measures: List[ThroughputMeasure] = {},
+        fixed_iterations: Optional[Int] = None,
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -761,6 +767,7 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+            fixed_iterations: Just run a fixed number of iterations.
 
         Raises:
             If the operation fails.
@@ -768,7 +775,9 @@ struct Bench(Stringable, Writable):
 
         if self.mode == Mode.Benchmark:
             for _ in range(self.config.num_repetitions):
-                self._bench[bench_fn](bench_id, measures.copy())
+                self._bench[bench_fn](
+                    bench_id, measures.copy(), fixed_iterations
+                )
         elif self.mode == Mode.Test:
             self._test[bench_fn]()
 
@@ -779,6 +788,7 @@ struct Bench(Stringable, Writable):
         mut self,
         bench_id: BenchId,
         measures: List[ThroughputMeasure] = {},
+        fixed_iterations: Optional[Int] = None,
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -788,6 +798,7 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+            fixed_iterations: Just run a fixed number of iterations.
 
         Raises:
             If the operation fails.
@@ -826,6 +837,7 @@ struct Bench(Stringable, Writable):
         mut self,
         bench_id: BenchId,
         var measures: List[ThroughputMeasure] = {},
+        fixed_iterations: Optional[Int] = None,
     ) raises:
         """Benchmarks an input function.
 
@@ -835,6 +847,7 @@ struct Bench(Stringable, Writable):
         Args:
             bench_id: The benchmark Id object used for identification.
             measures: Optional arg used to represent a list of ThroughputMeasure's.
+            fixed_iterations: Just run a fixed number of iterations.
         """
 
         @parameter
@@ -873,15 +886,20 @@ struct Bench(Stringable, Writable):
         else:
             print(".", end="")
 
-        var res = _run_impl(
-            _RunOptions[benchmark_fn](
-                num_warmup_iters=self.config.num_warmup_iters,
-                max_iters=self.config.max_iters,
-                min_runtime_secs=self.config.min_runtime_secs,
-                max_runtime_secs=self.config.max_runtime_secs,
-                max_batch_size=self.config.max_batch_size,
+        var res: Report
+
+        if fixed_iterations:
+            res = _run_impl_fixed[benchmark_fn](fixed_iterations.value())
+        else:
+            res = _run_impl(
+                _RunOptions[benchmark_fn](
+                    num_warmup_iters=self.config.num_warmup_iters,
+                    max_iters=self.config.max_iters,
+                    min_runtime_secs=self.config.min_runtime_secs,
+                    max_runtime_secs=self.config.max_runtime_secs,
+                    max_batch_size=self.config.max_batch_size,
+                )
             )
-        )
 
         self.info_vec.append(
             BenchmarkInfo(
