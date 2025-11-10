@@ -21,6 +21,7 @@ from max.graph import (
     ops,
 )
 
+from ..comm.ep.ep_kernels import fused_silu_fp8
 from ..kernels import (
     grouped_dynamic_scaled_fp8_matmul,
     moe_create_indices,
@@ -93,25 +94,17 @@ class MoEFp8(MoE):
             self.float8_config.weight_scale,
         )
 
-        gate_up_projs = (
-            ops.silu(gate_up_projs[:, : self.moe_dim])
-            * gate_up_projs[:, self.moe_dim :]
-        )
-        gate_up_projs_fp8, gate_up_projs_scales = (
-            quantize_dynamic_scaled_float8(
-                gate_up_projs,
-                self.float8_config.input_scale,
-                self.float8_config.weight_scale,
-                group_size_or_per_token=token_group_size,
-                out_type=self.dtype,
-                scales_type=self.float8_config.weight_scale.dtype,
-            )
+        silu_out_fp8, silu_out_scales = fused_silu_fp8(
+            gate_up_projs,
+            expert_inputs[2],
+            self.float8_config,
+            self.dtype,
         )
 
         down_projs = grouped_dynamic_scaled_fp8_matmul(
-            gate_up_projs_fp8,
+            silu_out_fp8,
             self.down_proj,
-            gate_up_projs_scales,
+            silu_out_scales,
             self.down_proj_scales,
             expert_inputs[2],
             expert_inputs[3],

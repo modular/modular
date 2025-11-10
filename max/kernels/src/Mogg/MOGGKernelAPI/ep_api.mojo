@@ -16,6 +16,7 @@ Expert Parallelism (EP) Communication Kernel.
 """
 
 import compiler_internal as compiler
+from gpu.grid_controls import pdl_launch_attributes
 from gpu.host import DeviceBuffer, get_gpu_target
 from gpu.host.info import is_gpu
 from layout import Layout
@@ -43,6 +44,8 @@ from shmem.ep_comm import (
     dispatch_cb_kernel,
     combine_kernel,
     combine_cb_kernel,
+    fused_silu_kernel,
+    fused_silu_fp8_kernel,
 )
 
 
@@ -1142,4 +1145,161 @@ struct Struct_ep_combine_cb:
                 my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
+            )
+
+
+# ===-----------------------------------------------------------------------===#
+# Expert Parallelism Utils
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("ep.fused_silu")
+struct Struct_ep_fused_silu:
+    @always_inline
+    @staticmethod
+    fn execute[
+        output_dtype: DType,
+        input_dtype: DType, //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_dtype, rank=2],
+        input: InputTensor[dtype=input_dtype, rank=2],
+        row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the Expert Parallelism fused SILU kernel.
+
+        This function launches the fused_silu kernel to perform the SILU
+        operation for all the MLPs in the EP MoE module. We need to manually
+        implement the custom operation here is because after the EP dispatch
+        phase, the actual number of received tokens is not known to the host.
+
+        This kernel will read the row offsets to determine the actual number of
+        received tokens in the input tensor, and then only perform the SILU
+        operation on the received tokens.
+        """
+        # Ensure this kernel only runs on GPU targets
+        constrained[is_gpu[target](), "EP is only supported on GPU."]()
+
+        var output_tensor = output.to_layout_tensor()
+        var input_tensor = input.to_layout_tensor()
+        var row_offsets_tensor = row_offsets.to_layout_tensor()
+
+        var gpu_ctx = context.get_device_context()
+        alias hw_info = gpu_ctx.default_device_info
+
+        alias fused_silu = fused_silu_kernel[
+            output_dtype,
+            input_dtype,
+            output_tensor.layout,
+            input_tensor.layout,
+            row_offsets_tensor.layout,
+            hw_info.max_thread_block_size,
+            hw_info.sm_count,
+        ]
+
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            # fmt: off
+            return String(
+                "output_dtype=", output_dtype,
+                ";input_dtype=", input_dtype,
+            )
+            # fmt: on
+
+        with Trace[TraceLevel.OP, target=target](
+            "ep.fused_silu",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            task_id=get_safe_task_id(context),
+        ):
+            gpu_ctx.enqueue_function[fused_silu](
+                output_tensor,
+                input_tensor,
+                row_offsets_tensor,
+                grid_dim=hw_info.sm_count,
+                block_dim=hw_info.max_thread_block_size,
+                attributes=pdl_launch_attributes(),
+            )
+
+
+@compiler.register("ep.fused_silu_fp8")
+struct Struct_ep_fused_silu_fp8:
+    @always_inline
+    @staticmethod
+    fn execute[
+        fp8_dtype: DType,
+        scales_dtype: DType,
+        input_dtype: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=fp8_dtype, rank=2],
+        scales: OutputTensor[dtype=scales_dtype, rank=2],
+        input: InputTensor[dtype=input_dtype, rank=2],
+        row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the Expert Parallelism fused SILU kernel with FP8
+        quantization.
+
+        This function launches the fused_silu_fp8 kernel to perform the SILU
+        operation for all the MLPs in the EP MoE module.
+
+        This kernel will read the row offsets to determine the actual number of
+        received tokens in the input tensor, and then only perform the SILU
+        operation on the received tokens. Once the SILU operation is performed,
+        the output will be quantized to the FP8 format. The scales tensor
+        will be stored in a transposed way.
+        """
+        # Ensure this kernel only runs on GPU targets
+        constrained[is_gpu[target](), "EP is only supported on GPU."]()
+
+        alias group_size = 128
+
+        var output_tensor = output.to_layout_tensor()
+        var scales_tensor = scales.to_layout_tensor()
+        var input_tensor = input.to_layout_tensor()
+        var row_offsets_tensor = row_offsets.to_layout_tensor()
+
+        var gpu_ctx = context.get_device_context()
+        alias hw_info = gpu_ctx.default_device_info
+
+        alias fused_silu_fp8 = fused_silu_fp8_kernel[
+            fp8_dtype,
+            scales_dtype,
+            input_dtype,
+            output_tensor.layout,
+            scales_tensor.layout,
+            input_tensor.layout,
+            row_offsets_tensor.layout,
+            hw_info.max_thread_block_size,
+            hw_info.sm_count,
+            group_size,
+        ]
+
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            # fmt: off
+            return String(
+                "fp8_dtype=", fp8_dtype,
+                ";scales_dtype=", scales_dtype,
+                ";input_dtype=", input_dtype,
+                ";group_size=", group_size,
+            )
+            # fmt: on
+
+        with Trace[TraceLevel.OP, target=target](
+            "ep.fused_silu_fp8",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            task_id=get_safe_task_id(context),
+        ):
+            gpu_ctx.enqueue_function[fused_silu_fp8](
+                output_tensor,
+                scales_tensor,
+                input_tensor,
+                row_offsets_tensor,
+                grid_dim=hw_info.sm_count,
+                block_dim=hw_info.max_thread_block_size,
+                attributes=pdl_launch_attributes(),
             )

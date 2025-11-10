@@ -26,6 +26,7 @@ from max.graph import (
 from typing_extensions import Self
 
 from ..comm.ep import EPBatchManager
+from ..comm.ep.ep_kernels import fused_silu
 from ..float8_config import Float8Config
 from ..kernels import grouped_matmul_ragged, moe_create_indices
 from ..layer import LayerList, Module, Shardable
@@ -392,13 +393,10 @@ class MoE(Module, Shardable):
             *expert_inputs[1:],
         )
 
-        gate_up_projs = (
-            ops.silu(gate_up_projs[:, : self.moe_dim])
-            * gate_up_projs[:, self.moe_dim :]
-        )
+        silu_out = fused_silu(gate_up_projs, expert_inputs[1])
 
         down_projs = grouped_matmul_ragged(
-            gate_up_projs,
+            silu_out,
             self.down_proj,
             *expert_inputs[1:],
         )

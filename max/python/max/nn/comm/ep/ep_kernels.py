@@ -20,8 +20,17 @@ This file contains the kernels for Expert Parallelism (EP) communication.
 from __future__ import annotations
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, Dim, TensorType, TensorValue, ops
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Dim,
+    StaticDim,
+    TensorType,
+    TensorValue,
+    ops,
+)
 
+from ...float8_config import Float8Config
 from .ep_config import NUM_GROUPS, EPConfig
 
 
@@ -501,3 +510,139 @@ def call_ep_combine_cb(
     )
 
     return result[0].tensor
+
+
+# ===-----------------------------------------------------------------------===#
+# Expert Parallelism Utils
+# ===-----------------------------------------------------------------------===#
+
+
+def fused_silu(
+    input: TensorValue,
+    row_offsets: TensorValue,
+) -> TensorValue:
+    """Perform fused SILU operation for all the MLPs in the EP MoE module.
+
+    We need to manually implement the custom operation here is because after
+    the EP dispatch phase, the actual number of received tokens is not known to
+    the host. This kernel will read the row offsets to determine the actual
+    number of received tokens in the input tensor, and then only perform the
+    SILU operation on the received tokens.
+
+    Args:
+        input_tokens: Input tokens to perform the SILU operation.
+            Shape: (max_recv_tokens, hidden_size)
+        row_offsets: Row offsets to determine the actual number of received
+            tokens in the input tensor.
+            Shape: (n_local_experts + 1,)
+
+    Returns:
+        output_tokens: Output tokens after the SILU operation.
+            Shape: (max_recv_tokens, hidden_size)
+    """
+
+    if input.rank != 2:
+        raise ValueError("input must be rank 2 tensor")
+
+    if not isinstance(input.shape[1], StaticDim):
+        raise ValueError(
+            f"input.shape[1] must be a statically known dimension. Input shape received: {input.shape}"
+        )
+
+    hidden_size = input.shape[1] // 2
+
+    return ops.custom(
+        "ep.fused_silu",
+        device=input.device,
+        values=[input, row_offsets],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=[input.shape[0], hidden_size],
+                device=input.device,
+            ),
+        ],
+    )[0].tensor
+
+
+def fused_silu_fp8(
+    input: TensorValue,
+    row_offsets: TensorValue,
+    fp8_config: Float8Config,
+    out_type: DType,
+) -> tuple[TensorValue, TensorValue]:
+    """Perform fused SILU operation for all the MLPs in the EP MoE module.
+
+    We need to manually implement the custom operation here is because after
+    the EP dispatch phase, the actual number of received tokens is not known to
+    the host. This kernel will read the row offsets to determine the actual
+    number of received tokens in the input tensor, and then only perform the
+    SILU operation on the received tokens. Once the SILU operation is performed,
+    the output will be quantized to the FP8 format. The scales will be stored
+    in a transposed way.
+
+    Args:
+        input: Input tokens to perform the SILU operation.
+            Shape: (max_recv_tokens, hidden_size)
+        row_offsets: Row offsets to determine the actual number of received
+            tokens in the input tensor.
+            Shape: (n_local_experts + 1,)
+        fp8_config: FP8 configuration.
+
+    Returns:
+        A tuple containing:
+        - output_tokens: Output tokens after the SILU operation.
+            Shape: (max_recv_tokens, hidden_size)
+        - output_scales: Output scales after the SILU operation.
+            Shape: (hidden_size // block_size, max_recv_tokens)
+    """
+
+    if input.rank != 2:
+        raise ValueError("input_tokens must be rank 2 tensor")
+
+    if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        raise ValueError("out_type must be float8_e4m3fn or float8_e4m3fnuz")
+
+    if not isinstance(input.shape[1], StaticDim):
+        raise ValueError(
+            f"input.shape[1] must be a statically known dimension. Input shape received: {input.shape}"
+        )
+
+    if (
+        fp8_config.input_scale.block_size is None
+        or fp8_config.input_scale.block_size[1] != 128
+    ):
+        raise ValueError(
+            "Only support block_size=[1, 128] for input activations."
+        )
+
+    hidden_size = input.shape[1] // 2
+    block_size = fp8_config.input_scale.block_size[1]
+    num_blocks = hidden_size // block_size
+    scales_type = fp8_config.input_scale.dtype
+
+    # For blockwise scaling pad the a_scales to 16 Bytes. This is required by NVIDIA SM90+ TMA instructions
+    padding_size = 16 // scales_type.size_in_bytes
+    a_scales_dim1 = (
+        (input.shape[0] + padding_size - 1) // padding_size
+    ) * padding_size
+
+    result = ops.custom(
+        "ep.fused_silu_fp8",
+        device=input.device,
+        values=[input, row_offsets],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[input.shape[0], hidden_size],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=scales_type,
+                shape=[num_blocks, a_scales_dim1],
+                device=input.device,
+            ),
+        ],
+    )
+
+    return result[0].tensor, result[1].tensor
