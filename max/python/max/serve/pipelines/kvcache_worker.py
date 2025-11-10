@@ -17,7 +17,7 @@ import os
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from queue import Queue
+from threading import Event
 
 from max.serve.config import Settings
 from max.serve.kvcache_agent import start_kvcache_agent_service
@@ -30,7 +30,7 @@ logger = logging.getLogger("max.serve")
 
 
 async def run_kvcache_agent_process(
-    health: Queue[bool],
+    health: Event,
     settings: Settings,
 ) -> None:
     pid = os.getpid()
@@ -41,7 +41,7 @@ async def run_kvcache_agent_process(
         kv_cache_events_zmq_endpoint=settings.kv_cache_events_zmq_endpoint,
     )
 
-    health.put(True)
+    health.set()
     logger.debug("Started KV Cache Agent!")
 
     # Run the blocking call in a thread so the event loop stays alive
@@ -52,7 +52,7 @@ async def run_kvcache_agent_process(
 
 
 def _kvcache_agent_process_fn(
-    health: Queue[bool],
+    health: Event,
     settings: Settings,
 ) -> None:
     try:
@@ -78,10 +78,10 @@ async def start_kv_cache_service(
     logger.info("Starting KV Cache Agent: %s", process_name)
 
     async with subprocess_manager("KVCache Worker") as proc:
-        health = proc.ctx.Queue()
+        health = proc.ctx.Event()
         proc.start(_kvcache_agent_process_fn, health, settings)
 
-        await proc.ready(lambda: health.get(timeout=10))
+        await proc.ready(health, timeout=10)
 
         logger.debug("KV Cache Agent is alive and healthy")
 

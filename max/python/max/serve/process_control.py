@@ -22,7 +22,7 @@ from concurrent.futures import Executor, ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
-from queue import Empty
+from threading import Event
 from typing import Any, ParamSpec, Protocol, TypeVar
 
 logger = logging.getLogger("max.serve.process_control")
@@ -42,11 +42,21 @@ class IPCContext(Protocol):
     # Note: SyncManager returns queue.Queue subclass proxies
     # NOT multiprocessing.queues.Queue objects
     def Queue(self) -> queue.Queue[Any]: ...
+    def Event(self) -> Event: ...
 
 
 class ThreadingContext(IPCContext):
     def Queue(self) -> queue.Queue[Any]:
         return queue.Queue()
+
+    def Event(self) -> Event:
+        return Event()
+
+
+def event_wait_clear(event: Event, timeout: float | None) -> None:
+    if not event.wait(timeout):
+        raise TimeoutError()
+    event.clear()
 
 
 @dataclass
@@ -114,32 +124,24 @@ class ProcessManager:
 
         return self.task
 
-    async def ready(self, blocking_cb: Callable[[], _R]) -> _R:
-        """Calls blocking_cb asynchronously in a thread pool
-
-        blocking_cb must include its own timeout mechanism to
-        avoid tying up thread pool resources forever
-        """
+    async def ready(self, event: Event, timeout: float | None) -> None:
         loop = asyncio.get_event_loop()
         try:
-            return await loop.run_in_executor(None, blocking_cb)
-        except (TimeoutError, Empty):
+            await loop.run_in_executor(None, event_wait_clear, event, timeout)
+        except TimeoutError:
             raise TimeoutError(f"{self.name} failed to become ready") from None
 
-    def watch_heartbeat(self, blocking_cb: Callable[[], Any]) -> Task[None]:
-        """Spawns a task in self.group to periodically check blocking_cb
-
-        blocking_cb must include its own timeout mechanism to
-        generate exceptions
-        """
+    def watch_heartbeat(self, event: Event, timeout: float) -> Task[None]:
         assert self.heartbeat is None
 
         async def run_task() -> None:
             loop = asyncio.get_event_loop()
             while True:
                 try:
-                    await loop.run_in_executor(None, blocking_cb)
-                except (TimeoutError, Empty):
+                    await loop.run_in_executor(
+                        None, event_wait_clear, event, timeout
+                    )
+                except TimeoutError:
                     raise TimeoutError(
                         f"{self.name} failed heartbeat check"
                     ) from None

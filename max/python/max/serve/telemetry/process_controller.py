@@ -21,6 +21,7 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from queue import Queue
+from threading import Event
 
 import prometheus_client
 from max.serve.config import MetricLevel, MetricRecordingMethod, Settings
@@ -134,18 +135,14 @@ async def start_process_consumer(
 
     async with subprocess_manager("Metrics Worker") as proc:
         metrics_q = proc.ctx.Queue()
-        health_q = proc.ctx.Queue()
+        alive = proc.ctx.Event()
 
-        proc.start(init_and_process, settings, metrics_q, health_q, handle_fn)
+        proc.start(init_and_process, settings, metrics_q, alive, handle_fn)
 
-        await proc.ready(
-            lambda: health_q.get(
-                timeout=settings.telemetry_worker_spawn_timeout
-            )
-        )
+        await proc.ready(alive, settings.telemetry_worker_spawn_timeout)
 
         if settings.use_heartbeat:
-            proc.watch_heartbeat(lambda: health_q.get(timeout=5))
+            proc.watch_heartbeat(alive, timeout=5)
 
         yield ProcessTelemetryController(metrics_q)
 
@@ -153,7 +150,7 @@ async def start_process_consumer(
 def init_and_process(
     settings: Settings,
     metrics_q: Queue[list[MaxMeasurement]],
-    health_q: Queue[bool],
+    alive: Event,
     commit_fn: TelemetryFn,
 ) -> None:
     """Initialize logging & metrics, and start the metrics server if enabled. This is expected to run from the Telemetry process."""
@@ -186,18 +183,18 @@ def init_and_process(
         server_thread = threading.Thread(target=run_server, daemon=True)
         server_thread.start()
 
-    return process_telemetry(metrics_q, health_q, commit_fn)
+    return process_telemetry(metrics_q, alive, commit_fn)
 
 
 def process_telemetry(
     metrics_q: Queue[list[MaxMeasurement]],
-    health_q: Queue[bool],
+    alive: Event,
     commit_fn: TelemetryFn,
 ) -> None:
     """Long running function to read from a queue & process each element"""
     try:
         while True:
-            health_q.put(True)
+            alive.set()
 
             try:
                 ms = metrics_q.get(block=True, timeout=100e-3)

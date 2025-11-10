@@ -17,7 +17,7 @@ import os
 import uuid
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from queue import Queue
+from threading import Event
 from typing import Any
 
 import uvloop
@@ -93,7 +93,7 @@ class ModelWorker:
     @staticmethod
     @traced
     async def run(
-        health: Queue[bool],
+        alive: Event,
         model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
         pipeline_config: PipelineConfig,
         settings: Settings,
@@ -158,7 +158,7 @@ class ModelWorker:
 
             count_no_progress = 0
             while True:
-                health.put(True)
+                alive.set()
                 # Checks for new LoRA requests and processes them.
                 if lora_manager is not None:
                     lora_manager.process_lora_requests()
@@ -183,7 +183,7 @@ class ModelWorker:
     @staticmethod
     @traced
     def __call__(
-        health: Queue[bool],
+        alive: Event,
         model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
         pipeline_config: PipelineConfig,
         settings: Settings,
@@ -208,7 +208,7 @@ class ModelWorker:
         try:
             uvloop.run(
                 ModelWorker.run(
-                    health,
+                    alive,
                     model_factory,
                     pipeline_config,
                     settings,
@@ -249,10 +249,10 @@ async def start_model_worker(
     logger.debug("Starting worker: %s", worker_name)
 
     async with subprocess_manager("Model Worker") as proc:
-        health = proc.ctx.Queue()
+        alive = proc.ctx.Event()
         proc.start(
             ModelWorker(),
-            health,
+            alive,
             model_factory,
             pipeline_config,
             settings,
@@ -260,12 +260,10 @@ async def start_model_worker(
             scheduler_zmq_configs,
         )
 
-        await proc.ready(lambda: health.get(timeout=settings.mw_timeout_s))
+        await proc.ready(alive, timeout=settings.mw_timeout_s)
 
         if settings.use_heartbeat:
-            proc.watch_heartbeat(
-                lambda: health.get(timeout=settings.mw_health_fail_s)
-            )
+            proc.watch_heartbeat(alive, timeout=settings.mw_health_fail_s)
 
         logger.debug("Model worker task is ready")
 
