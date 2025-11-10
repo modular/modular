@@ -31,6 +31,17 @@ from python import PythonObject
 # ===----------------------------------------------------------------------=== #
 
 
+trait _IsUnsafePointer:
+    """A temporary helper trait for converting between LegacyUnsafePointer and
+    UnsafePointerV2 in kernel code.
+
+    This trait is used by `_checked` functions to see if the argument can be
+    converted to it's associated kernel argument type.
+    """
+
+    alias _UnsafePointerType: AnyType
+
+
 @always_inline
 fn _default_invariant[mut: Bool]() -> Bool:
     return is_gpu() and mut == False
@@ -71,6 +82,13 @@ struct LegacyUnsafePointer[
     # ===-------------------------------------------------------------------===#
     # Aliases
     # ===-------------------------------------------------------------------===#
+
+    alias _UnsafePointerType = UnsafePointerV2[
+        mut = Self.mut,
+        Self.type,
+        Self.origin,
+        address_space = Self.address_space,
+    ]
 
     # Fields
     alias _mlir_type = __mlir_type[
@@ -1438,3 +1456,7 @@ struct LegacyUnsafePointer[
 
 alias LegacyOpaquePointer = LegacyUnsafePointer[NoneType]
 """An opaque pointer, equivalent to the C `void*` type."""
+
+
+__extension LegacyUnsafePointer(_IsUnsafePointer):
+    pass

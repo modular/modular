@@ -22,6 +22,7 @@ from python import PythonObject
 
 from .legacy_unsafe_pointer import (
     _default_invariant,
+    _IsUnsafePointer,
     LegacyOpaquePointer as OpaquePointer,
     LegacyUnsafePointer as UnsafePointer,
 )
@@ -505,6 +506,8 @@ struct UnsafePointerV2[
     # ===-------------------------------------------------------------------===#
     # Aliases
     # ===-------------------------------------------------------------------===#
+
+    alias _UnsafePointerType = Self
 
     alias _mlir_type = __mlir_type[
         `!kgen.pointer<`,
@@ -1848,3 +1851,7 @@ struct UnsafePointerV2[
         __get_address_as_uninit_lvalue(
             self.address
         ) = __get_address_as_owned_value(src.address)
+
+
+__extension UnsafePointerV2(_IsUnsafePointer):
+    pass

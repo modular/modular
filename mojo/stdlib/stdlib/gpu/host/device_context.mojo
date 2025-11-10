@@ -67,6 +67,7 @@ from utils import Variant
 from utils._serialize import _serialize_elements
 
 from .info import GPUInfo
+from ._pointer_conv import _is_pointer_convertible
 
 
 # Create empty structs to ensure dtype checking when using the C++ handles.
@@ -2666,6 +2667,14 @@ struct DeviceFunction[
                         ", but actual type name is: ",
                         get_type_name[declared_arg_type](),
                     ]()
+                elif _is_pointer_convertible[
+                    declared_arg_type, actual_arg_type.device_type
+                ]():
+                    # This is a temporary check for the conversions between
+                    # LegacyUnsafePointer and UnsafePointer (v2). Since type
+                    # checking would fail between these two types, this allows
+                    # you to convert between them without type checking errors.
+                    pass
                 else:
                     # They handed in a host dtype, in other words, a dtype that
                     # needs to be mapped before handing it to the device. In
