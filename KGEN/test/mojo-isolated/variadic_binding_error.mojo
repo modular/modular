@@ -41,3 +41,19 @@ fn foo():
 
     # @expected-error @below{{invalid call to 'all_int': failed to infer parameter 'elt_type'}}
     all_int(SomeVA[Int, SomeNonCopyable]())
+
+
+struct ParamSubst[
+    T: AnyTrivialRegType,
+    shape: __mlir_type[`!kgen.variadic<`, T, `>`],
+]:
+    pass
+
+
+fn main():
+    # We do not handle conversion between variadic of values at the moment (maybe we should?).
+    var _: ParamSubst[
+        Int,
+        # @expected-error @below{{can not convert 'Variadic[index]' to 'Variadic[Int]'}}
+        __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`,
+    ]
