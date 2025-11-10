@@ -198,7 +198,7 @@ fn kernel_4[
 
     alias accum_type = get_accum_type[a_type]()
 
-    alias c_frag_size = MMA_M * MMA_N // num_threads
+    alias c_frag_size = MMA_M * MMA_N // Int(num_threads)
     var c_frag = SIMD[accum_type, c_frag_size]()
 
     alias a_expected_bytes = a_size * size_of[a_type]()
@@ -271,7 +271,7 @@ fn kernel_4[
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
-                    (UInt(i * BK + k), UInt(block_idx.y * BM)),
+                    (UInt(i * BK + k), block_idx.y * UInt(BM)),
                 )
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
@@ -279,9 +279,9 @@ fn kernel_4[
                     tma_mbar[0],
                     (
                         UInt(i * BK + k),
-                        UInt(block_idx.x * BN),
+                        block_idx.x * UInt(BN),
                     ) if transpose_b else (
-                        UInt(block_idx.x * BN),
+                        block_idx.x * UInt(BN),
                         UInt(i * BK + k),
                     ),
                 )
@@ -326,7 +326,7 @@ fn kernel_4[
 
     # store from tensor memory to smem using the swizzling pattern
 
-    alias num_warps = num_threads // WARP_SIZE
+    alias num_warps = num_threads // UInt(WARP_SIZE)
 
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
@@ -357,7 +357,7 @@ fn kernel_4[
                             UNKNOWN_VALUE,
                         ),
                     )
-                ](thread_idx.x, i, m_mma, 0)
+                ](Int(thread_idx.x), i, m_mma, 0)
                 var offset = c_smem_tile.ptr.offset(
                     st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
                     + BM * TMA_BN * tma_n
@@ -375,7 +375,9 @@ fn kernel_4[
     if elect_one_warp and thread_idx.x < UInt(BN // TMA_BN):
         fence_async_view_proxy()
 
-        var smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
+        var smem_offset = c_smem_tile.ptr.offset(
+            BM * TMA_BN * Int(thread_idx.x)
+        )
 
         c_tma_tile = LayoutTensor[
             c_type,
@@ -388,8 +390,8 @@ fn kernel_4[
         c_tma_op.async_store(
             c_tma_tile,
             (
-                UInt(block_idx.x * BN + thread_idx.x * TMA_BN),
-                UInt(block_idx.y * BM),
+                block_idx.x * UInt(BN) + thread_idx.x * UInt(TMA_BN),
+                block_idx.y * UInt(BM),
             ),
         )
         c_tma_op.commit_group()

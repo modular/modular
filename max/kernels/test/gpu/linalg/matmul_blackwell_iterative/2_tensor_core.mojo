@@ -173,7 +173,9 @@ fn kernel_3[
 
     alias accum_type = get_accum_type[a_type]()
 
-    alias c_frag_size = MMA_M * MMA_N // num_threads  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
+    alias c_frag_size = MMA_M * MMA_N // Int(
+        num_threads
+    )  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
     var c_frag = SIMD[
         accum_type, c_frag_size
     ]()  # array of accumulator elements
@@ -257,7 +259,7 @@ fn kernel_3[
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
-                    (UInt(i * BK + k), UInt(block_idx.y * BM)),
+                    (UInt(i * BK + k), block_idx.y * UInt(BM)),
                 )
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
@@ -265,9 +267,9 @@ fn kernel_3[
                     tma_mbar[0],
                     (
                         UInt(i * BK + k),
-                        UInt(block_idx.x * BN),
+                        block_idx.x * UInt(BN),
                     ) if transpose_b else (
-                        UInt(block_idx.x * BN),
+                        block_idx.x * UInt(BN),
                         UInt(i * BK + k),
                     ),
                 )
@@ -317,9 +319,9 @@ fn kernel_3[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
-    alias num_warps = num_threads // WARP_SIZE
+    alias num_warps = num_threads // UInt(WARP_SIZE)
 
-    ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
+    ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
     @parameter
     for m_mma in range(num_m_mmas):
@@ -328,8 +330,8 @@ fn kernel_3[
         for n_mma in range(num_n_mmas):
             alias mma_id = n_mma * num_m_mmas + m_mma
 
-            c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
-                4 * m_mma + warp_id(), n_mma
+            c_gmem_warp_tile = ctile.tile[MMA_M // Int(num_warps), MMA_N](
+                4 * m_mma + Int(warp_id()), n_mma
             )
 
             c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[

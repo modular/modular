@@ -46,7 +46,7 @@ fn tcgen05_st_ld_roundtrip_kernel[
 
     var data_st = SIMD[DType.float32, width]()
     for n in range(N):
-        data_st[n] = thread_idx.x * N + n
+        data_st[n] = thread_idx.x * UInt(N) + UInt(n)
 
     tcgen05_st[
         datapaths=16,
@@ -227,7 +227,7 @@ fn tcgen05_cp_ld_roundtrip_kernel[
         tcgen05_dealloc[1](tmem_addr, num_cols)
 
     for n in range(N):
-        if data_ld[n] == thread_idx.x * N + n:
+        if data_ld[n] == thread_idx.x * UInt(N) + UInt(n):
             data[thread_idx.x, n] = data_ld[n]
 
 

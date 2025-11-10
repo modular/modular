@@ -1841,7 +1841,7 @@ fn _mha_sm100_enqueue[
         "Number of Q // KV Heads:",
         config.num_heads,
         "//",
-        config.num_heads // group,
+        config.num_heads // UInt(group),
         "Batch Size:",
         batch_size,
         "Num Partitions:" if decoding else "Max Num Prompt Tiles:",
