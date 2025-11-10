@@ -107,10 +107,15 @@ static LogicalResult processRegion(Region *region,
         moveBeforeIndex = currMoveBeforeIndex;
     }
 
-    if (moveBeforeIndex == -1)
+    if (moveBeforeIndex == -1) {
       op->moveBefore(&region->getBlocks().front().front());
-    else
-      op->moveAfter(graph.defs[graph.params[moveBeforeIndex]].defOp);
+    } else {
+      Operation *defOp = graph.defs[graph.params[moveBeforeIndex]].defOp;
+      if (defOp == region->getParentOp())
+        op->moveBefore(&region->getBlocks().front().front());
+      else
+        op->moveAfter(defOp);
+    }
   }
 
   return success();

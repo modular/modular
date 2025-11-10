@@ -75,3 +75,54 @@ kgen.generator @reorder_asserts() {
   }
   kgen.return
 }
+
+// CHECK-LABEL: @reorder_asserts_def_in_parent
+kgen.generator @reorder_asserts_def_in_parent<q, w>() {
+  // COM: lift param asserts to the top of the current param scope.
+  // CHECK-NEXT: kgen.param.assert <ne(w, 0)>
+  // CHECK-NEXT: kgen.param.assert <gt(w, q)>
+  // CHECK-NEXT: kgen.call @g2
+  %0 = kgen.call @g2<q, w>() : () -> index
+  kgen.param.assert <ne(w, 0)>, "w is not 0"
+  kgen.param.assert <gt(w, q)>, "w is greater than q"
+
+  // CHECK: kgen.param.for
+  kgen.param.for iter in ?
+      has_next :() -> i1 ?
+      get_next_iter :() -> () ? {
+        // CHECK: kgen.param.assert <ge(q, 3)>
+        kgen.param.assert <ge(q, 3)>, "q is no less than 3"
+        // CHECK: kgen.param.if
+        %1 = kgen.param.if <lt(q, iter)> -> index {
+          // CHECK: kgen.param.assert <ge(iter, 3)>
+          // CHECK-NEXT: kgen.param.assert <ge(q, 3)>
+          %2 = "produce.value"() : () -> index
+          kgen.param.assert <ge(iter, 3)>, "iter is no less than 3"
+          kgen.param.assert <ge(q, 3)>, "q is no less than 3"
+          kgen.param.yield %2 : index
+        } else {
+          %3 = "produce.value"() : () -> index
+          kgen.param.yield %3 : index
+        }
+        kgen.param.for.continue
+      } else {
+        // CHECK: kgen.param.assert <lt(w, 3)>
+        // CHECK: kgen.param.if
+        %1 = kgen.param.if <lt(q, iter)> -> index {
+          // CHECK-NEXT: kgen.param.assert <ge(q, 3)>
+          %2 = "produce.value"() : () -> index
+          kgen.param.assert <ge(q, 3)>, "q is no less than 3"
+          kgen.param.yield %2 : index
+        } else {
+          // CHECK: else
+          // CHECK-NEXT: kgen.param.assert <ge(iter, 3)>
+          kgen.param.assert <ge(iter, 3)>, "iter is no less than 3"
+          %3 = "produce.value"() : () -> index
+          kgen.param.yield %3 : index
+        }
+        kgen.param.assert <lt(w, 3)>, "w is less than 3"
+        kgen.param.for.break
+      }
+
+  kgen.return
+}
