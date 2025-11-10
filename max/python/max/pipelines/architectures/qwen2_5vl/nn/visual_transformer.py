@@ -35,6 +35,7 @@ from max.nn import (
     RMSNorm,
     Shardable,
 )
+from max.nn.float8_config import Float8Config
 from max.nn.layer import Module
 
 from ..model_config import VisionConfig
@@ -57,6 +58,7 @@ class VisionPatchEmbed(Module, Shardable):
         in_channels: int = 3,
         embed_dim: int = 1152,
         spatial_merge_unit: int = 4,
+        float8_config: Float8Config | None = None,
     ):
         super().__init__()
         self.devices = devices or [DeviceRef.CPU()]
@@ -67,6 +69,7 @@ class VisionPatchEmbed(Module, Shardable):
         self.in_channels = in_channels
         self.embed_dim = embed_dim
         self.spatial_merge_unit = spatial_merge_unit
+        self.float8_config = float8_config
 
         # Calculate input dimension for linear layer, equivalent to the flattened patch size
         self.patch_dim = (
@@ -84,6 +87,7 @@ class VisionPatchEmbed(Module, Shardable):
             device=devices[0],
             quantization_encoding=None,
             has_bias=False,
+            float8_config=float8_config,
         )
 
     def __call__(
@@ -165,6 +169,7 @@ class VisionPatchEmbed(Module, Shardable):
                 in_channels=self.in_channels,
                 embed_dim=self.embed_dim,
                 spatial_merge_unit=self.spatial_merge_unit,
+                float8_config=self.float8_config,
             )
             sharded.proj = proj_shards[shard_idx]
             shards.append(sharded)
@@ -284,6 +289,7 @@ class VisionBlock(Module):
         num_heads: int,
         intermediate_size: int,
         rms_norm_eps: float = 1e-6,
+        float8_config: Float8Config | None = None,
     ):
         super().__init__()
         self.devices = devices
@@ -322,6 +328,7 @@ class VisionBlock(Module):
             head_dim=head_dim,
             devices=self.devices,
             flash_attention=True,
+            float8_config=float8_config,
         )
         self.attn.sharding_strategy = ShardingStrategy.stacked_qkv(
             len(self.devices), num_heads, head_dim
@@ -336,6 +343,7 @@ class VisionBlock(Module):
             feed_forward_length=intermediate_size,
             devices=self.devices,
             has_bias=True,
+            float8_config=float8_config,
         )
         self.mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
             len(self.devices)
@@ -409,6 +417,7 @@ class PatchMerger(Module, Shardable):
         hidden_size: int,
         out_hidden_size: int,
         spatial_merge_size: int,
+        float8_config: Float8Config | None = None,
     ):
         super().__init__()
         self.dtype = dtype
@@ -418,6 +427,7 @@ class PatchMerger(Module, Shardable):
         self.spatial_merge_unit = spatial_merge_size * spatial_merge_size
         self.out_hidden_size = out_hidden_size
         self.devices = devices
+        self.float8_config = float8_config
 
         # Create RMSNorm layer
         self.norm = RMSNorm(
@@ -431,6 +441,7 @@ class PatchMerger(Module, Shardable):
             dtype=dtype,
             device=devices[0],
             has_bias=True,
+            float8_config=float8_config,
         )
 
         self.linear2 = Linear(
@@ -439,6 +450,7 @@ class PatchMerger(Module, Shardable):
             dtype=dtype,
             device=devices[0],
             has_bias=True,
+            float8_config=float8_config,
         )
 
     @property
@@ -484,6 +496,7 @@ class PatchMerger(Module, Shardable):
                 hidden_size=self.hidden_size,
                 out_hidden_size=self.out_hidden_size,
                 spatial_merge_size=self.spatial_merge_size,
+                float8_config=self.float8_config,
             )
             # Assign shards
             sharded.norm.weight = norm_weight_shards[idx]
@@ -569,6 +582,7 @@ class VisionTransformer(Module):
             in_channels=config.in_channels,
             embed_dim=config.hidden_size,
             spatial_merge_unit=self.spatial_merge_unit,
+            float8_config=config.float8_config,
         )
         self.patch_embed.sharding_strategy = ShardingStrategy.replicate(
             len(self.devices)
@@ -592,6 +606,7 @@ class VisionTransformer(Module):
                     num_heads=config.num_attention_heads,
                     intermediate_size=config.intermediate_size,
                     rms_norm_eps=config.rms_norm_eps,
+                    float8_config=config.float8_config,
                 )
                 for _ in range(config.depth)
             ]
@@ -604,6 +619,7 @@ class VisionTransformer(Module):
             hidden_size=config.hidden_size,
             out_hidden_size=config.out_hidden_size,
             spatial_merge_size=config.spatial_merge_size,
+            float8_config=config.float8_config,
         )
         # Use tensor parallel for merger: rowwise -> gelu -> columnwise, then allreduce
         self.merger.sharding_strategy = ShardingStrategy.tensor_parallel(

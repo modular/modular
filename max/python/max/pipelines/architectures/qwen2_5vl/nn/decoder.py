@@ -44,6 +44,7 @@ from max.nn import (
 )
 from max.nn.attention.attention_with_rope import _compute_shard_range
 from max.nn.comm.allreduce import Allreduce
+from max.nn.float8_config import Float8Config
 from max.nn.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
@@ -92,6 +93,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
         linear_cls: Callable[..., Linear] = Linear,
         scale: float | None = None,
         has_bias: bool = True,
+        float8_config: Float8Config | None = None,
     ) -> None:
         """Initializes the Qwen2.5VL attention layer with mrope support.
 
@@ -118,6 +120,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
         self.scale = (
             scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
         )
+        self.float8_config = float8_config
 
         self.devices = devices or [DeviceRef.CPU()]
 
@@ -138,6 +141,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
+            float8_config=float8_config,
         )
         self.k_proj = linear_cls(
             in_dim=hidden_size,
@@ -145,6 +149,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
+            float8_config=float8_config,
         )
         self.v_proj = linear_cls(
             in_dim=hidden_size,
@@ -152,6 +157,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
+            float8_config=float8_config,
         )
 
         self.o_proj = linear_cls(
@@ -159,6 +165,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             out_dim=hidden_size,
             dtype=dtype,
             device=self.devices[0],
+            float8_config=float8_config,
         )
 
     @property
@@ -328,6 +335,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
                 linear_cls=self.o_proj.__class__,
                 scale=self.scale,
                 has_bias=self.has_bias,
+                float8_config=self.float8_config,
             )
 
             # Assign sharded weights
@@ -473,6 +481,7 @@ class Qwen25VLDecoder(Module):
             Qwen25VLDecoderAttentionWithRope,
             scale=config.attention_multiplier,
             has_bias=config.attention_bias,
+            float8_config=config.float8_config,
         )
 
         layers = [
@@ -493,6 +502,7 @@ class Qwen25VLDecoder(Module):
                     hidden_dim=config.hidden_size,
                     feed_forward_length=config.intermediate_size,
                     devices=config.devices,
+                    float8_config=config.float8_config,
                 ),
                 attention_norm=create_norm(),
                 mlp_norm=create_norm(),
@@ -501,7 +511,6 @@ class Qwen25VLDecoder(Module):
             for i in range(config.num_hidden_layers)
         ]
 
-        # Create Embedding and output layers.
         embedding_output_dtype = config.dtype
         if config.float8_config and config.float8_config.embedding_output_dtype:
             embedding_output_dtype = config.float8_config.embedding_output_dtype

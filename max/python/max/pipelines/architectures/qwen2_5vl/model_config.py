@@ -21,6 +21,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn import ReturnLogits
+from max.nn.float8_config import Float8Config, parse_float8_config
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
@@ -76,12 +77,17 @@ class VisionConfig:
     spatial_merge_size: int
     """Spatial merge size for the vision encoder."""
 
+    float8_config: Float8Config | None = None
+    """Float8 quantization configuration for the vision encoder."""
+
     @staticmethod
     def generate(
         vision_config: AutoConfig,
         dtype: DType,
         llm_dtype: DType,
         pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        vision_state_dict: dict[str, WeightData],
     ) -> VisionConfig:
         """Generate VisionConfig from HuggingFace vision config.
 
@@ -91,6 +97,15 @@ class VisionConfig:
         Returns:
             Configured VisionConfig instance.
         """
+        # Parse (if present) a float8 configuration for the vision path.
+        v_float8 = parse_float8_config(
+            huggingface_config,
+            vision_state_dict,
+            dtype,
+            state_dict_name_prefix="vision_encoder.",
+            ignored_modules_prefix="vision_encoder.",
+        )
+
         return VisionConfig(
             dtype=dtype,
             llm_dtype=llm_dtype,
@@ -111,6 +126,7 @@ class VisionConfig:
             rms_norm_eps=1e-06,
             window_size=vision_config.window_size,
             spatial_merge_size=vision_config.spatial_merge_size,
+            float8_config=v_float8,
         )
 
 
@@ -238,6 +254,8 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
             vision_state_dict["vision_encoder.patch_embed.proj.weight"].dtype,
             llm_state_dict["language_model.embed_tokens.weight"].dtype,
             pipeline_config,
+            huggingface_config,
+            vision_state_dict,
         )
 
         # Create Llama3Config for the language model (with Qwen2 attention_bias=True)

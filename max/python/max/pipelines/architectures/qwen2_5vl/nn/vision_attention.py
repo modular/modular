@@ -20,6 +20,7 @@ from collections.abc import Iterable, Sequence
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.float8_config import Float8Config
 from max.nn.kernels import flash_attention_ragged_gpu
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
@@ -49,6 +50,7 @@ class DistributedVisionWindowAttention(Module, Shardable):
         head_dim: int,
         flash_attention: bool = False,
         devices: Sequence[DeviceRef] | None = None,
+        float8_config: Float8Config | None = None,
     ):
         super().__init__()
         self.dtype = dtype
@@ -59,6 +61,7 @@ class DistributedVisionWindowAttention(Module, Shardable):
         # Add explicit scaling factor
         self.scaling = math.sqrt(1.0 / self.head_dim)
         self.flash_attention = flash_attention
+        self.float8_config = float8_config
 
         self.qkv_proj = Weight(
             name="qkv.weight",
@@ -79,6 +82,7 @@ class DistributedVisionWindowAttention(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=True,
+            float8_config=float8_config,
         )
 
     @property
@@ -269,6 +273,7 @@ class DistributedVisionWindowAttention(Module, Shardable):
                 devices=[device],
                 dtype=self.dtype,
                 flash_attention=self.flash_attention,
+                float8_config=self.float8_config,
             )
 
             # Assign sharded weights
