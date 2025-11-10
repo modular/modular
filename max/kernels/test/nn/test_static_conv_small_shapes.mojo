@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.
+# Use `kgen --emit=asm %s -o %t.asm` to exam the assembly code.
 
 from math import ceildiv
 from sys.info import simd_width_of
