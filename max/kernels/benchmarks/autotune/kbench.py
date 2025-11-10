@@ -53,6 +53,7 @@ from utils import pretty_exception_handler
 CONSOLE = Console(width=80)
 CURRENT_FILE = Path(__file__).resolve()
 LINE = "\n" + 70 * "-"
+pd.set_option("display.float_format", str)
 
 
 def store_pickle(path: Path | str, data: Any) -> None:
