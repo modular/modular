@@ -189,11 +189,11 @@ fn make_closure(x: Int):
     # CHECK-NEXT: [[BODY_OP:%.*]] = lit.call @{{.*}}@Int::@"__add__{{.*}}"(%x, %arg0) : !lit.generator<("lhs": [[INT]], "rhs": [[INT]]) -> [[INT]]>
     # CHECK-NEXT: lit.return [[BODY_OP]] : [[INT]]
     # CHECK-NEXT: lit.end_fn
-    # CHECK-NEXT: } : ([[INT]]), !lit.ref<!kgen.closure<@{{.*}}::@"make_closure{{.*}}", "my_closure" nonescaping>, mut *"[[L0:.*]]">
+    # CHECK-NEXT: } : ([[INT]]), !lit.ref<!kgen.closure<@{{.*}}::make_closure{{.*}}", "my_closure" nonescaping>, mut *"[[L0:.*]]">
 
     # CHECK-NEXT: lit.ownership.use [[RAW_CLOSURE]]
     # CHECK-NEXT: [[WRAPPER:%.*]] = lit.var.decl "my_closure" var : !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper_copyable"<:[[TRAIT]] {{.*}}, :origin.set {}>, mut *"[[L1:.*]]">
-    # CHECK-NEXT: lit.call @{{.*}}::@"fn(y: Int) -> Int_wrapper_copyable"::@"__init__($0$)"[mut *"[[L0]]", mut *"[[L1]]"]<:[[TRAIT]] {{.*}}, :origin.set {}>([[RAW_CLOSURE]], [[WRAPPER]]) : !lit.generator<[2]("impl": !lit.ref<!kgen.closure<@{{.*}}::@"make_closure{{.*}}", "my_closure" nonescaping>, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper_copyable"<:[[TRAIT]] {{.*}}, :origin.set {}>, mut *[0,1]> byref_result) -> !kgen.none>
+    # CHECK-NEXT: lit.call @{{.*}}::@"fn(y: Int) -> Int_wrapper_copyable"::@"__init__($0$)"[mut *"[[L0]]", mut *"[[L1]]"]<:[[TRAIT]] {{.*}}, :origin.set {}>([[RAW_CLOSURE]], [[WRAPPER]]) : !lit.generator<[2]("impl": !lit.ref<!kgen.closure<@{{.*}}::make_closure{{.*}}", "my_closure" nonescaping>, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper_copyable"<:[[TRAIT]] {{.*}}, :origin.set {}>, mut *[0,1]> byref_result) -> !kgen.none>
 
     fn my_closure(y: Int) unified {var x} -> Int:
         return x + y
@@ -284,8 +284,8 @@ fn nested[
 
 
 # CHECK: kgen.struct.generator @"bindIt({{.*}})::myclosure"
-# CHECK-SAME: <CAPTURES: !kgen.param_closure<@{{.*}}::@"bindIt(::Int,::Int)" "myclosure">>:
-# CHECK-SAME: [[TRAIT]] = !kgen.closure<@{{.*}}::@"bindIt({{.*}})", "myclosure" nonescaping>{
+# CHECK-SAME: <CAPTURES: !kgen.param_closure<@{{.*}}::bindIt(::Int,::Int)" "myclosure">>:
+# CHECK-SAME: [[TRAIT]] = !kgen.closure<@{{.*}}::bindIt({{.*}})", "myclosure" nonescaping>{
 # CHECK: kgen.conformance @"{{.*}}::AnyType" {
 # CHECK-NEXT: kgen.witness "__del__{{.*}}"
 # CHECK: kgen.conformance @"{{.*}}::Movable" {
@@ -304,9 +304,9 @@ fn bindIt(x: Int, y: Int) -> Int:
 
 # CHECK: kgen.struct.generator @"bindIt()::myclosure"
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator<<"my_param": !AnyType>
-# CHECK-SAME: [1](!lit.ref<!kgen.closure<@{{.*}}::@"bindIt()", "myclosure" nonescaping>, mut *[0,0]> read_mem, |, "z": !Int) capturing -> !kgen.none
-# CHECK-SAME:> = #kgen.closure.symbol<@{{.*}}::@"bindIt()", "myclosure", #kgen.closure_method<call>
-# CHECK-SAME:, <:!AnyType ?, :!kgen.param_closure<@{{.*}}::@"bindIt()" "myclosure"> CAPTURES>>
+# CHECK-SAME: [1](!lit.ref<!kgen.closure<@{{.*}}::bindIt()", "myclosure" nonescaping>, mut *[0,0]> read_mem, |, "z": !Int) capturing -> !kgen.none
+# CHECK-SAME:> = #kgen.closure.symbol<@{{.*}}::bindIt()", "myclosure", #kgen.closure_method<call>
+# CHECK-SAME:, <:!AnyType ?, :!kgen.param_closure<@{{.*}}::bindIt()" "myclosure"> CAPTURES>>
 
 
 # CHECK: lit.file_module

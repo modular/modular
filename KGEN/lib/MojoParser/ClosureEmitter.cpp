@@ -1719,13 +1719,16 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
   return init;
 }
 
-static SymbolRefAttr
-getFullyResolvedSymbolRefUpToFileModule(mlir::SymbolOpInterface op) {
+template <typename T>
+static SymbolRefAttr getFullyResolvedSymbolRefUpTo(mlir::SymbolOpInterface op) {
   SmallVector<FlatSymbolRefAttr> symbols;
-  do {
-    symbols.push_back(FlatSymbolRefAttr::get(op.getNameAttr()));
-  } while ((op = dyn_cast<mlir::SymbolOpInterface>(op->getParentOp())) &&
-           !isa<FileModuleOp>(op));
+  Operation *current = op;
+  while (current && !isa<T>(current)) {
+    if (mlir::SymbolOpInterface next =
+            dyn_cast<mlir::SymbolOpInterface>(current))
+      symbols.push_back(FlatSymbolRefAttr::get(next.getNameAttr()));
+    current = current->getParentOp();
+  }
   if (symbols.size() == 1)
     return symbols.front();
   std::reverse(symbols.begin(), symbols.end());
@@ -1735,12 +1738,10 @@ getFullyResolvedSymbolRefUpToFileModule(mlir::SymbolOpInterface op) {
 
 TypedAttr ClosureEmitter::addWitnessTablesToClosure(
     ASTDecl &moduleDecl, SMLoc smLoc, FnOp parent, ClosureType closureType,
-    SmallVector<ClosureParent> &closureParents) {
+    SmallVector<ClosureParent> &closureParents, SymbolRefAttr parentSymbolRef) {
   // create kgen.struct.generator
   Location location = shared.translateLocation(smLoc);
   MLIRContext *ctx = shared.getContext();
-  SymbolRefAttr parentSymbolRef = getFullyResolvedSymbolRef(
-      cast<mlir::SymbolOpInterface>(parent.getOperation()));
   ParamClosureType paramClosureType =
       KGEN::ParamClosureType::get(ctx, parentSymbolRef, closureType.getName());
 
@@ -1756,8 +1757,9 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
       builder,
       StringAttr::get(
           ctx,
-          Twine(getFlattenedSymbolName(getFullyResolvedSymbolRefUpToFileModule(
-                    cast<mlir::SymbolOpInterface>(parent.getOperation()))))
+          Twine(getFlattenedSymbolName(
+                    getFullyResolvedSymbolRefUpTo<FileModuleOp>(
+                        cast<mlir::SymbolOpInterface>(parent.getOperation()))))
               .concat("::")
               .concat(closureType.getName().getValue())),
       parameters, closureType, traitType);
@@ -1829,7 +1831,6 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   builder.setInsertionPoint(nestedFn);
   MLIRContext *ctx = builder.getContext();
   StringAttr fnName = nestedFn.getSourceNameAttr();
-
   ASTDecl *symbolParent = nestedFnDecl.getParentDecl();
   do {
     if (isa_and_nonnull<FnOp>(symbolParent->getIfOperation()))
@@ -1850,8 +1851,12 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
 
   // TODO: use effect to determine the memory kind for the closure
   bool isRegPassable = nestedFn.getFuncTypeGenerator().isRegisterPassable();
+  // TODO: remove name mangling and replace with abstraction (MOCO-2265)
+  auto parentSymbolRef = SymbolRefAttr::get(
+      ctx, getFlattenedSymbolName(getFullyResolvedSymbolRefUpTo<ModuleOp>(
+               cast<mlir::SymbolOpInterface>(parent.getOperation()))));
   KGEN::ClosureType closureType =
-      ClosureType::get(ctx, symbolParent->getSymbolRef(), fnName,
+      ClosureType::get(ctx, parentSymbolRef, fnName,
                        isRegPassable ? ClosureMemoryKind::REGISTER_PASSABLE
                                      : ClosureMemoryKind::NONESCAPING);
   SmallVector<Attribute> captureInfo;
@@ -1981,9 +1986,9 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     closureParents.push_back(copyParent);
     closureParents.push_back(implicitlyCopyableParent);
   }
-
-  TypedAttr witnessTable = addWitnessTablesToClosure(
-      moduleDecl, nestedFnDecl.getLoc(), parent, closureType, closureParents);
+  TypedAttr witnessTable =
+      addWitnessTablesToClosure(moduleDecl, nestedFnDecl.getLoc(), parent,
+                                closureType, closureParents, parentSymbolRef);
   ParamDeclAttr origin =
       ParamDeclAttr::get(originAttr, OriginType::get(ctx, true));
   auto refType = RefType::get(closureType, ParamDeclRefAttr::get(origin));
