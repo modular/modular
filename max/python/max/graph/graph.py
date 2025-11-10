@@ -827,30 +827,23 @@ class Graph:
         unwrapped_args = tuple(unwrap(arg) for arg in args)
         unwrapped_kwargs = {k: unwrap(arg) for k, arg in kwargs.items()}
 
+        ip = _ip or mlir.InsertionPoint(self._body)
+
         # Construct and insert an op in the body of the graph
         # Insertion point is where the op is to be created in the IR structure
         # location contains info about the source of the op (e.g. file, line)
-        with _ip or mlir.InsertionPoint(self._body), _location():
+        with ip, _location():
             try:
                 with self._capturing_mlir_diagnostics():
                     results = op(*unwrapped_args, **unwrapped_kwargs)
 
-                    if _ip is None or _ip.ref_operation is None:
-                        # Get the op we just staged, which is the last op in the body block.
-                        ops = self._body.operations
-
-                        staged_op = self._body.operations[len(ops) - 1]
+                    if ip.ref_operation is None:
+                        staged_op = _graph.last_operation(self._body)
                     else:
-                        cur_block = _ip.block
-                        ops = cur_block.operations
-                        for idx, op in enumerate(ops):
-                            if op == _ip.ref_operation:
-                                staged_op = ops[idx - 1]
-                                break
-                        else:
-                            assert False, (  # noqa: B011
-                                "Could not find constructed operation in current block"
-                            )
+                        staged_op = _graph.prev_operation(ip.ref_operation)
+
+                    assert staged_op is not None, "unable to find staged op"
+                    staged_op = staged_op.opview
                     self._verify_op(staged_op)
 
             except (mlir.MLIRError, ValueError) as e:  # type: ignore
