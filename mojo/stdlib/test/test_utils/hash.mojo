@@ -77,7 +77,7 @@ def assert_fill_factor[
         if v == 0:
             unfilled += 1
 
-    var fill_factor = 1 - unfilled / num_buckets
+    var fill_factor = 1.0 - Float64(unfilled) / Float64(num_buckets)
     assert_true(
         fill_factor >= lower_bound,
         "Fill factor for {} is {}, provided lower bound was {}".format(
