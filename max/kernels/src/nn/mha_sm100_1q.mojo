@@ -17,6 +17,7 @@ from math.constants import log2e
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, simd_width_of, size_of
 
+from gpu import warp_id
 import gpu.warp as warp
 from algorithm.functional import unswitch
 from gpu import (
@@ -2311,7 +2312,7 @@ fn _mha_sm100[
                 num_keys_arg,
                 kv_input_row_offsets,
             )
-        elif tid // 32 == 0:  # warp id == 0: Q @ K'
+        elif warp_id() == 0:  # warp id == 0: Q @ K'
             startend = position.get_start_and_end_for_partitions(partition)
             var kv_tile_start_row: UInt32 = startend[0]
             var end: UInt32 = startend[1]
@@ -2395,7 +2396,7 @@ fn _mha_sm100[
                 kv_pipeline_states.step()
                 kv_pipeline_states.step()
 
-        elif tid // 32 == 1:  # warp id 1: P @ V
+        elif warp_id() == 1:  # warp id 1: P @ V
             startend = position.get_start_and_end_for_partitions(partition)
             var kv_tile_start_row: UInt32 = startend[0]
             var end: UInt32 = startend[1]

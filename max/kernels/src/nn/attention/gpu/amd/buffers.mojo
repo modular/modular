@@ -719,8 +719,7 @@ struct VBufferTransposeLoads[
         # MMA
         # threads in 16x4 layout
         # each column loads depth x 8 elements from smem
-        var col_idx = lane_id() // 32
-        var lane = lane_id() % 32
+        var col_idx, lane = divmod(lane_id(), 32)
         var smem_iter_tensor = self.smem_iter.next_unsafe(0)[]
 
         @parameter
