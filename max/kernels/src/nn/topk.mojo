@@ -36,7 +36,7 @@ from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.dim import Dim
 from gpu.host.info import is_cpu
 from gpu.memory import AddressSpace, external_memory
-from gpu.random import Random
+from random import Random
 from layout import (
     UNKNOWN_VALUE,
     Layout,

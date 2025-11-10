@@ -367,6 +367,11 @@ what we publish.
   libraries. `DLHandle` has been renamed to `_DLHandle` and remains available
   internally for use by the standard library.
 
+- The Philox random number generator (`Random` and `NormalRandom`) has been
+  moved from `gpu.random` to `random.philox`. These types now work on both CPU
+  and GPU. Import them using `from random import Random, NormalRandom` or
+  `from random.philox import Random, NormalRandom`.
+
 ### Tooling changes {#25-7-tooling-changes}
 
 - `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)

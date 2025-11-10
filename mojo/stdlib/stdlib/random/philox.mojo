@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 """
-Random number generation for GPU kernels.
+Random number generation using the Philox algorithm.
 
 This module implements a high-performance random number generator using the Philox algorithm,
-which is designed for parallel and GPU computing. The Philox algorithm is a counter-based
-random number generator that provides high-quality random numbers with excellent statistical
-properties.
+which is designed for parallel computing and works efficiently on both CPU and GPU. The Philox
+algorithm is a counter-based random number generator that provides high-quality random numbers
+with excellent statistical properties.
 
 The main class is Random which generates both uniform random numbers and raw 32-bit integers.
 It supports:
@@ -25,11 +25,12 @@ It supports:
 - Multiple independent subsequences
 - Configurable number of rounds for quality vs performance tradeoff
 - Vectorized operations for efficiency
+- Cross-platform support (CPU and GPU)
 
 Example:
 
 ```mojo
-from gpu.random import Random
+from random.philox import Random
     rng = Random(seed=42)
     uniform_values = rng.step_uniform()  # Returns 4 random floats in [0,1)
     raw_values = rng.step()  # Returns 4 raw 32-bit integers
@@ -42,7 +43,7 @@ from math import cos, log, sin, sqrt
 
 from memory import bitcast
 
-from .intrinsics import mulwide
+from gpu.intrinsics import mulwide
 
 
 fn _mulhilow(a: UInt32, b: UInt32) -> SIMD[DType.uint32, 2]:
@@ -54,11 +55,12 @@ struct Random[rounds: Int = 10]:
     """A high-performance random number generator using the Philox algorithm.
 
     The Philox algorithm is a counter-based random number generator designed for parallel
-    and GPU computing. It provides high-quality random numbers with excellent statistical properties.
+    computing. It provides high-quality random numbers with excellent statistical properties
+    and works efficiently on both CPU and GPU.
 
     Parameters:
         rounds: Number of mixing rounds to perform. Higher values provide better statistical
-               quality at the cost of performance. Default is 6.
+               quality at the cost of performance. Default is 10.
     """
 
     var _key: SIMD[DType.uint32, 2]
@@ -168,12 +170,13 @@ struct Random[rounds: Int = 10]:
 struct NormalRandom[rounds: Int = 10]:
     """A high-performance random number generator using the Box-Muller transform.
 
-    The Box-Muller transform is a method for generating pairs of independent standard normal random variables.
+    The Box-Muller transform is a method for generating pairs of independent standard normal
+    random variables. Works efficiently on both CPU and GPU.
 
     Parameters:
         rounds: Number of mixing rounds to perform for the underlying random uniform generator that serves as
                input to the Box-Muller transform. Higher values provide better statistical quality at the cost of
-               performance. Default is 6.
+               performance. Default is 10.
     """
 
     var _rng: Random[rounds]

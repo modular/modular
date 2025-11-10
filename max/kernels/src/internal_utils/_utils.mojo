@@ -36,7 +36,7 @@ from buffer.dimlist import _make_tuple
 from compile import compile_info
 from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.random import Random
+from random import Random
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from tensor import DynamicTensor
 from testing import assert_equal, assert_true
