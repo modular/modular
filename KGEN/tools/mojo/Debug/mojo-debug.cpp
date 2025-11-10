@@ -133,6 +133,9 @@ static int debug(const State &state) {
     );
   }
 
+  if (int res = state.rejectUnknownArguments(parsedArgs, options::OPT_UNKNOWN))
+    return res;
+
   bool useRpc = parsedArgs.hasArg(options::OPT_rpc) ||
                 parsedArgs.hasArg(options::OPT_vscode);
 

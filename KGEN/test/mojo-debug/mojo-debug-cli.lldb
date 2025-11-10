@@ -41,3 +41,19 @@
 # COM: Check `mojo debug --cuda-gdb` stuff
 # RUN: mojo debug --cuda-gdb --cuda-gdb-path /foo/bar/cuda-gdb --break-on-launch --dry-run file.mojo | FileCheck %s --check-prefix=CHECK-CUDA-BREAK
 # CHECK-CUDA-BREAK: /foo/bar/cuda-gdb -ex 'set cuda break_on_launch application' --args {{.*}}mojo{{-compiler-only}} run -O0 --debug-level=full file.mojo
+
+# COM: Check that the driver rejects unknown arguments (e.g. user typo)
+# RUN: not mojo debug --cusa-gdb 2>&1 | FileCheck %s --check-prefix=CHECK-UNRECOGNIZED
+# CHECK-UNRECOGNIZED: unrecognized argument '--cusa-gdb'
+
+# COM: Check that the driver rejects unknown arguments (e.g. user typo), with target file
+# RUN: not mojo debug --cusa-gdb --dry-run target.mojo 2>&1 | FileCheck %s --check-prefix=CHECK-UNRECOGNIZED-BEFORE-TARGET
+# CHECK-UNRECOGNIZED-BEFORE-TARGET: unrecognized argument '--cusa-gdb'
+
+# COM: Check that unknown arguments passed after the target don't error out
+# RUN: mojo debug --dry-run target.mojo --unknown-arg --a --b -c | FileCheck %s --check-prefix=CHECK-TARGET-ALLOWED-ARGS
+# CHECK-TARGET-ALLOWED-ARGS: target.mojo --unknown-arg --a --b -c
+
+# COM: Check that --help overrides unknown arguments
+# RUN: mojo debug --help --cusa-gdb | FileCheck %s --check-prefix=CHECK-HELP-OVERRIDES-UNKNOWN
+# CHECK-HELP-OVERRIDES-UNKNOWN: mojo debug
