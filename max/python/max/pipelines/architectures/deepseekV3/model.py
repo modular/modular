@@ -290,6 +290,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         if config.ep_config is not None:
             self.ep_comm_initializer = EPCommInitializer(config.ep_config)
             self.ep_comm_initializer.ep_init(session)
+            if config.ep_config.node_id == -1:
+                raise ValueError(
+                    "EP node ID is not set. Please check if the EP initialization is successful."
+                )
 
         nn_model = DeepseekV3(config)
         nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)

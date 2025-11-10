@@ -333,8 +333,7 @@ class MoE(Module, Shardable):
                 for idx, sharded_mlps in enumerate(expert_mlps_shards):
                     sharded.experts[idx] = sharded_mlps[shard_idx]
             elif self._sharding_strategy.is_expert_parallel:
-                # Assume there is only one node for now.
-                curr_node_idx = 0
+                curr_node_idx = self.ep_batch_manager.config.node_id
                 num_experts_per_node = (
                     self.num_experts // self.ep_batch_manager.config.n_nodes
                 )

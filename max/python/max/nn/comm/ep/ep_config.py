@@ -71,6 +71,9 @@ class EPConfig:
     n_nodes: int
     """Total number of nodes in the distributed setup."""
 
+    node_id: int = -1
+    """ID of the current node. Will be set by the EPCommInitializer."""
+
     dispatch_fp8_config: Float8InputScaleSpec | None = None
     """Configuration for float8 quantization of the dispatch tokens."""
 

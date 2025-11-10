@@ -29,7 +29,7 @@ def call_ep_init(
     atomic_counter_group_0: BufferValue,
     atomic_counter_group_1: BufferValue,
     config: EPConfig,
-) -> TensorValue:
+) -> tuple[TensorValue, TensorValue]:
     """Initialize Expert Parallelism communication infrastructure by creating
     a custom operation that initializes SHMEM context and allocates symmetric
     memory buffers for EP communication.
@@ -44,9 +44,12 @@ def call_ep_init(
         config: EP configuration.
 
     Returns:
-        TensorValue containing device pointers to allocated SHMEM buffers. The
-        tensor has shape [NUM_GROUPS, 3] where each group contains pointers to:
-        [send_buffer, recv_buffer, recv_count_buffer].
+        A tuple containing:
+        - device_ptrs: TensorValue containing device pointers to allocated SHMEM buffers.
+            The tensor has shape [NUM_GROUPS, 3] where each group contains pointers to:
+            [send_buffer, recv_buffer, recv_count_buffer].
+        - my_rank: TensorValue containing the rank of the current GPU. The
+            tensor has shape [1,].
     """
 
     parameters: dict[str, bool | int | str | DType] = {
@@ -69,15 +72,18 @@ def call_ep_init(
         parameters["dispatch_scale_granularity"] = "none"
         parameters["dispatch_scale_dtype"] = DType.float32
 
-    return ops.inplace_custom(
+    results = ops.inplace_custom(
         "ep.init",
         device=atomic_counter_group_0.device,
         values=[atomic_counter_group_0, atomic_counter_group_1],
         out_types=[
-            TensorType(DType.uint64, [NUM_GROUPS, 3], device=DeviceRef.CPU())
+            TensorType(DType.uint64, [NUM_GROUPS, 3], device=DeviceRef.CPU()),
+            TensorType(DType.int32, [1], DeviceRef.CPU()),
         ],
         parameters=parameters,
-    )[0].tensor
+    )
+
+    return results[0].tensor, results[1].tensor
 
 
 def call_ep_dispatch(

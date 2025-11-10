@@ -30,7 +30,12 @@ from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
 )
 
-from shmem import shmem_init_thread, shmem_module_init, shmem_malloc
+from shmem import (
+    shmem_init_thread,
+    shmem_malloc,
+    shmem_module_init,
+    shmem_my_pe,
+)
 from shmem.ep_comm import (
     BF16TokenFormat,
     BlockwiseFP8TokenFormat,
@@ -80,6 +85,7 @@ struct Struct_ep_init:
         target: StaticString,
     ](
         dev_ptrs: OutputTensor[dtype = DType.uint64, rank=2],
+        my_rank_tensor: OutputTensor[dtype = DType.int32, rank=1],
         atomic_counters_0: MutableInputTensor[dtype = DType.int32],
         atomic_counters_1: MutableInputTensor[dtype = DType.int32],
         context: DeviceContextPtr,
@@ -103,6 +109,7 @@ struct Struct_ep_init:
             dev_ptrs: Output tensor to store device pointers. Shape [2, 3] where:
                      - First dimension: buffer groups (0=dispatch, 1=combine)
                      - Second dimension: buffer types (0=send, 1=recv, 2=recv_count)
+            my_rank_tensor: Output tensor to store current device's rank.
             atomic_counters_0: Atomic counters for buffer group 0.
             atomic_counters_1: Atomic counters for buffer group 1.
             context: GPU device context
@@ -207,6 +214,10 @@ struct Struct_ep_init:
         dev_ptrs[1, 1] = UInt64(Int(combine_recv_p))
         dev_ptrs[1, 2] = UInt64(Int(combine_recv_count_p))
 
+        # Store current device's rank
+        var my_rank = Int32(shmem_my_pe())
+        my_rank_tensor[0] = my_rank
+
 
 # ===-----------------------------------------------------------------------===#
 # Expert Parallelism Dispatch Kernel
@@ -280,6 +291,7 @@ struct Struct_ep_dispatch:
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
         alias hw_info = gpu_ctx.default_device_info
         alias gpu_target = get_gpu_target()
         alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
@@ -317,6 +329,7 @@ struct Struct_ep_dispatch:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
+                ";my_rank=", my_rank,
             )
             # fmt: on
 
@@ -354,7 +367,7 @@ struct Struct_ep_dispatch:
                 recv_buf_p,
                 recv_count_p,
                 atomic_counters_0._ptr,
-                Int32(gpu_id),
+                my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
@@ -430,6 +443,7 @@ struct Struct_ep_dispatch_cb:
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
         alias hw_info = gpu_ctx.default_device_info
         alias gpu_target = get_gpu_target()
         alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
@@ -470,6 +484,7 @@ struct Struct_ep_dispatch_cb:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
+                ";my_rank=", my_rank,
             )
             # fmt: on
 
@@ -505,7 +520,7 @@ struct Struct_ep_dispatch_cb:
                 recv_buf_p_dev,
                 recv_count_p_dev,
                 atomic_counters_0_dev,
-                Int32(gpu_id),
+                my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
@@ -596,6 +611,7 @@ struct Struct_ep_dispatch_fp8:
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
         alias hw_info = gpu_ctx.default_device_info
         alias gpu_target = get_gpu_target()
         alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
@@ -642,6 +658,7 @@ struct Struct_ep_dispatch_fp8:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
+                ";my_rank=", my_rank,
             )
             # fmt: on
 
@@ -679,7 +696,7 @@ struct Struct_ep_dispatch_fp8:
                 recv_buf_p,
                 recv_count_p,
                 atomic_counters_0._ptr,
-                Int32(gpu_id),
+                my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
@@ -766,6 +783,7 @@ struct Struct_ep_dispatch_cb_fp8:
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
         alias hw_info = gpu_ctx.default_device_info
         alias gpu_target = get_gpu_target()
         alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
@@ -807,6 +825,7 @@ struct Struct_ep_dispatch_cb_fp8:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
+                ";my_rank=", my_rank,
             )
             # fmt: on
 
@@ -842,7 +861,7 @@ struct Struct_ep_dispatch_cb_fp8:
                 recv_buf_p_dev,
                 recv_count_p_dev,
                 atomic_counters_0_dev,
-                Int32(gpu_id),
+                my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
@@ -924,6 +943,7 @@ struct Struct_ep_combine:
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
         alias hw_info = gpu_ctx.default_device_info
         alias combine_msg_size = hidden_size * size_of[combine_dtype]()
 
@@ -954,6 +974,7 @@ struct Struct_ep_combine:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
+                ";my_rank=", my_rank,
             )
             # fmt: on
 
@@ -991,7 +1012,7 @@ struct Struct_ep_combine:
                 recv_buf_p,
                 recv_count_p,
                 atomic_counters_1._ptr,
-                Int32(gpu_id),
+                my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
@@ -1054,6 +1075,7 @@ struct Struct_ep_combine_cb:
 
         var gpu_ctx = context.get_device_context()
         var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
         alias hw_info = gpu_ctx.default_device_info
         alias combine_msg_size = hidden_size * size_of[combine_dtype]()
 
@@ -1084,6 +1106,7 @@ struct Struct_ep_combine_cb:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
+                ";my_rank=", my_rank,
             )
             # fmt: on
 
@@ -1116,7 +1139,7 @@ struct Struct_ep_combine_cb:
                 recv_buf_p_dev,
                 recv_count_p_dev,
                 atomic_counters_1_dev,
-                Int32(gpu_id),
+                my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )

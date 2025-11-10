@@ -21,6 +21,7 @@ communication in distributed inference scenarios.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Iterable
 from typing import Any
 
@@ -38,6 +39,7 @@ from max.graph import (
     TensorType,
     TensorValue,
     Value,
+    ops,
 )
 from max.support.human_readable_formatter import to_human_readable_bytes
 
@@ -458,6 +460,7 @@ class EPCommInitializer:
             ],
         ) as g:
             dev_ptrs_list: list[TensorValue] = []
+            my_rank_list: list[TensorValue] = []
 
             # Initialize SHMEM context and allocate buffers for each GPU
             for i in range(self.config.n_gpus_per_node):
@@ -468,14 +471,18 @@ class EPCommInitializer:
                 ].buffer
 
                 # Call the custom EP initialization kernel
-                dev_ptrs = call_ep_init(
+                dev_ptrs, my_rank = call_ep_init(
                     atomic_counter_group_0, atomic_counter_group_1, self.config
                 )
                 # Device pointers cannot be output as CPU tensors since the InferenceSession
                 # may not be initialized with CPU; moved to the device as a workaround.
                 dev_ptrs_list.append(dev_ptrs.to(atomic_counter_group_0.device))
 
-            g.output(*dev_ptrs_list)
+                my_rank_list.append(my_rank)
+
+            my_ranks = ops.concat(my_rank_list, axis=0)
+
+            g.output(*dev_ptrs_list, my_ranks.to(DeviceRef.GPU(0)))
         return g
 
     def ep_init(self, session: InferenceSession) -> None:
@@ -488,6 +495,17 @@ class EPCommInitializer:
         logger.info(
             f"Estimated EP memory usage per device: {to_human_readable_bytes(self._estimate_ep_memory_usage())}"
         )
+
+        # Set ENVs for NVSHMEM
+        n_gpus = self.config.n_nodes * self.config.n_gpus_per_node
+        num_experts_per_gpu = self.config.n_experts // n_gpus
+        os.environ["NVSHMEM_IB_ENABLE_IBGDA"] = "1"
+        os.environ["NVSHMEM_IBGDA_NIC_HANDLER"] = "gpu"
+        os.environ["NVSHMEM_IBGDA_RC_MAP_BY"] = "warp"
+        os.environ["NVSHMEM_IBGDA_NUM_RC_PER_PE"] = str(num_experts_per_gpu)
+
+        # TODO: Provide a way to let user manually map NICs to different GPU
+        os.environ["NVSHMEM_ENABLE_NIC_PE_MAPPING"] = "1"
 
         # Build and compile the initialization graph
         graph = self._build_ep_init_graph()
@@ -532,6 +550,19 @@ class EPCommInitializer:
         self.recv_count_ptrs = [
             Tensor.from_numpy(dev_ptr) for dev_ptr in recv_count_ptrs_np
         ]
+
+        # The last element is the my_ranks tensor
+        my_ranks_np = all_outputs_np[-1]
+        my_node_id = my_ranks_np // self.config.n_gpus_per_node
+
+        # check if all GPUs in the same node have the same node_id
+        if not np.all(my_node_id == my_node_id[0]):
+            raise ValueError(
+                "All GPUs in the same node must have the same node ID."
+            )
+        self.config.node_id = my_node_id[0]
+
+        logger.info(f"Initialized EP for node {self.config.node_id}")
 
     def model_inputs(self) -> list[Tensor]:
         """Get the model inputs for the MoE model.
