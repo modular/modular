@@ -2227,7 +2227,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
   if (p.consumeIf(Token::equal)) {
     // Then this is a normal `alias` declaration with an initializer.
     ExprNode *initExpr = nullptr;
-    if (p.parseExpression(initExpr, decl.getIndentation()))
+    if (p.parseVarInitExpression(initExpr, decl.getIndentation()))
       return failure();
 
     IREmitter emitter(sigDecl, EC_AliasValue);
