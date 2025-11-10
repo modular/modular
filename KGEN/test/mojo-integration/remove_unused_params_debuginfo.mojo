@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen -emit-llvm --debug-level line-tables %s | FileCheck %s
+# RUN: kgen -emit=llvm --debug-level line-tables %s | FileCheck %s
 
 from memory import LegacyUnsafePointer as UnsafePointer
 

@@ -1,4 +1,4 @@
-// RUN: kgen -emit-asm -march skylake-avx512 %s | FileCheck %s
+// RUN: kgen -emit=asm -march skylake-avx512 %s | FileCheck %s
 
 kgen.func export @return_zero() -> index {
   // CHECK: %eax

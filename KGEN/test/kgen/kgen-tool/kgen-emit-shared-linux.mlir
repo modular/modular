@@ -1,5 +1,5 @@
 // REQUIRES: system-linux
-// RUN: kgen %s -emit=shared -o %t
+// RUN: kgen %s -emit=shared-lib -o %t
 // RUN: llvm-objdump -t %t | FileCheck %s
 
 // COM: Check that we generate the shared object file properly.

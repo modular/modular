@@ -1,4 +1,4 @@
-// RUN: kgen %s -emit-header -verify-diagnostics
+// RUN: kgen %s -emit=header -verify-diagnostics
 
 // expected-error @below {{bitwidth must be a power of 2}}
 // expected-note @below {{see current operation}}

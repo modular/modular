@@ -1,4 +1,4 @@
-// RUN: kgen %s -emit -o %t_my_kernel.o --save-temps --temps-dir=%t_temps
+// RUN: kgen %s --emit=object -o %t_my_kernel.o --save-temps --temps-dir=%t_temps
 // COM: Check the save tmp files.
 // RUN: find $(dirname %t_temps) -type f -name "*.s" -print -quit | xargs cat | FileCheck %s -check-prefix=ASM
 // RUN: find $(dirname %t_temps) -type f -name "*.pre-split.*.ll" -print -quit | xargs cat | FileCheck %s -check-prefix=PRESPLIT
