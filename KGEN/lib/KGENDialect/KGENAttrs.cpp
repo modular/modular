@@ -1449,6 +1449,7 @@ verifyApplyLike(ArrayRef<TypedAttr> operands, bool isApplyResult,
   }
   for (auto [i, operand, type] : llvm::enumerate(operands, inputTypes)) {
     Type expected = upbindApplyResult(type);
+    // FIXME: This should be a strict type equality check!
     if (!isEqualCanon(operand.getType(), expected)) {
       return emitError() << "'apply' operand #" << i << " type "
                          << operand.getType()
@@ -1742,7 +1743,8 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'data_to_str' expects two operands, one "
                             "string slice and a variadic of string slices";
 
-    if (VariadicType::get(operands[0].getType()) != operands[1].getType())
+    if (!isEqualCanon(VariadicType::get(operands[0].getType()),
+                      operands[1].getType()))
       return emitError() << "'data_to_str' expects two operands, one "
                             "string slice and a variadic of string slices\n"
                          << operands[0].getType() << "\n"
@@ -2731,6 +2733,17 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
   return b.getIndexAttr(*size);
 }
 
+// We want data_to_str to maintain a simple invariant without sugar getting in
+// the way. Just fix up the sugar here so the stdlib doesn't have to deal with
+// it.
+static void simplifyDataToStr(MutableArrayRef<TypedAttr> operands) {
+  assert(operands.size() == 2);
+  auto op1Type = VariadicType::get(operands[0].getType());
+  assert(isEqualCanon(operands[1].getType(), op1Type));
+  if (operands[1].getType() != op1Type)
+    operands[1] = ParamOperatorAttr::getRebind(operands[1], op1Type);
+}
+
 static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
   TypedAttr func = operands.front();
   operands = operands.drop_front();
@@ -3151,7 +3164,10 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     resultType = IntegerType::get(ctx, 1);
     break;
   case POC::AcceleratorArch:
+    resultType = StringType::get(ctx);
+    break;
   case POC::DataToStr:
+    simplifyDataToStr(operands);
     resultType = StringType::get(ctx);
     break;
   case POC::StringAddress: // Can't simplify.
@@ -3611,9 +3627,13 @@ TypedAttr SugarAttr::get(SugarKind kind, TypedAttr sugared,
   if (kind == SugarKind::AlwaysInlineBuiltin && canElideSugarFor(original))
     return original;
 
+  // The two operand types must match otherwise this won't round-trip correctly.
+  assert(sugared.getType() == original.getType() &&
+         "SugarAttr sugared and original types must match");
+
   auto canonical = getCanonicalAttr(original);
   return Base::get(sugared.getContext(), kind, sugared, original, canonical,
-                   original.getType());
+                   sugared.getType());
 }
 
 TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
