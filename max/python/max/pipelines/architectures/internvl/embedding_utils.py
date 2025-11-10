@@ -43,6 +43,11 @@ def merge_multimodal_embeddings(
     # Expand indices to 2D for scatter_nd: [num_tokens, 1]
     indices_2d = ops.unsqueeze(image_token_indices, -1)
 
+    if multimodal_embeddings.dtype != inputs_embeds.dtype:
+        multimodal_embeddings = ops.cast(
+            multimodal_embeddings, dtype=inputs_embeds.dtype
+        )
+
     # Scatter the multimodal embeddings into inputs_embeds at the specified
     # indices.
     return ops.scatter_nd(
@@ -87,6 +92,11 @@ def merge_multimodal_embeddings_with_gather(
         input=multimodal_embeddings,
         indices=gather_indices_unsqueezed,
     )
+
+    if multimodal_embeddings_gathered.dtype != inputs_embeds.dtype:
+        multimodal_embeddings_gathered = ops.cast(
+            multimodal_embeddings_gathered, dtype=inputs_embeds.dtype
+        )
 
     return merge_multimodal_embeddings(
         inputs_embeds=inputs_embeds,
