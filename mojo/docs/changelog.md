@@ -360,7 +360,10 @@ what we publish.
       return 42
   ```
 
-  Currently only equality and inequality are supported.
+  Currently, the following expressions are supported:
+  - equality and inequality
+  - `is_signed()`, `is_unsigned()`, `is_numeric()`, `is_integral()`,
+    `is_floating_point()`, `is_float8()`, `is_half_float()`
 
 - `DLHandle` is no longer part of the public API. Use `OwnedDLHandle` instead,
   which provides RAII-based automatic resource management for dynamically linked

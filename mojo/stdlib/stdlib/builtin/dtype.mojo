@@ -21,10 +21,10 @@ from os import abort
 from sys import CompilationTarget, bit_width_of, size_of
 from sys.intrinsics import _type_is_eq
 
-alias _mIsSigned = UInt8(1)
-alias _mIsInteger = UInt8(1 << 7)
-alias _mIsNotInteger = UInt8(~(1 << 7))
-alias _mIsFloat = UInt8(1 << 6)
+alias _mIsSigned = __mlir_attr.`#pop.simd<1> : !pop.scalar<ui8>`
+alias _mIsInteger = __mlir_attr.`#pop.simd<128> : !pop.scalar<ui8>`
+alias _mIsNotInteger = __mlir_attr.`#pop.simd<127> : !pop.scalar<ui8>`
+alias _mIsFloat = __mlir_attr.`#pop.simd<64> : !pop.scalar<ui8>`
 
 
 @register_passable("trivial")
@@ -480,11 +480,16 @@ struct DType(
     @doc_private
     @always_inline("builtin")
     fn _match(self, mask: UInt8) -> Bool:
+        return self._match(mask._mlir_value)
+
+    @doc_private
+    @always_inline("builtin")
+    fn _match(self, mask: UInt8._mlir_type) -> Bool:
         return Bool(
             mlir_value=__mlir_op.`pop.cmp`[
                 pred = __mlir_attr.`#pop<cmp_pred ne>`
             ](
-                __mlir_op.`pop.simd.and`(self._as_ui8(), mask._mlir_value),
+                __mlir_op.`pop.simd.and`(self._as_ui8(), mask),
                 __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
             )
         )
@@ -556,7 +561,7 @@ struct DType(
         """
         hasher._update_with_simd(UInt8(mlir_value=self._as_ui8()))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_unsigned(self) -> Bool:
         """Returns True if the type parameter is unsigned and False otherwise.
 
@@ -569,18 +574,18 @@ struct DType(
             and not self._match(_mIsSigned)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_signed(self) -> Bool:
         """Returns True if the type parameter is signed and False otherwise.
 
         Returns:
             Returns True if the input type parameter is signed.
         """
-        if self.is_floating_point():
-            return True
-        return self.is_integral() and self._match(_mIsSigned)
+        return self.is_floating_point() or (
+            self.is_integral() and self._match(_mIsSigned)
+        )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn _is_non_index_integral(self) -> Bool:
         """Returns True if the type parameter is a non-index integer value and False otherwise.
 
@@ -589,16 +594,20 @@ struct DType(
         """
         return self._match(_mIsInteger)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_integral(self) -> Bool:
         """Returns True if the type parameter is an integer and False otherwise.
 
         Returns:
             Returns True if the input type parameter is an integer.
         """
-        return self in (DType.int, DType.uint) or self._is_non_index_integral()
+        return (
+            self is DType.int
+            or self is DType.uint
+            or self._is_non_index_integral()
+        )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_floating_point(self) -> Bool:
         """Returns True if the type parameter is a floating-point and False
         otherwise.
@@ -608,7 +617,7 @@ struct DType(
         """
         return self._match(_mIsFloat)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_float8(self) -> Bool:
         """Returns True if the dtype is a 8bit-precision floating point type,
         e.g. float8_e5m2, float8_e5m2fnuz, float8_e4m3fn and float8_e4m3fnuz.
@@ -617,15 +626,15 @@ struct DType(
             True if the dtype is a 8bit-precision float, false otherwise.
         """
 
-        return self in (
-            DType.float8_e3m4,
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-            DType.float8_e5m2,
-            DType.float8_e5m2fnuz,
+        return (
+            self is DType.float8_e3m4
+            or self is DType.float8_e4m3fn
+            or self is DType.float8_e4m3fnuz
+            or self is DType.float8_e5m2
+            or self is DType.float8_e5m2fnuz
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_half_float(self) -> Bool:
         """Returns True if the dtype is a half-precision floating point type,
         e.g. either fp16 or bf16.
@@ -634,9 +643,9 @@ struct DType(
             True if the dtype is a half-precision float, false otherwise..
         """
 
-        return self in (DType.bfloat16, DType.float16)
+        return self is DType.bfloat16 or self is DType.float16
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn is_numeric(self) -> Bool:
         """Returns True if the type parameter is numeric (i.e. you can perform
         arithmetic operations on).
