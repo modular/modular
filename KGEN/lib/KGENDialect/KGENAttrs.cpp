@@ -1449,8 +1449,9 @@ verifyApplyLike(ArrayRef<TypedAttr> operands, bool isApplyResult,
   }
   for (auto [i, operand, type] : llvm::enumerate(operands, inputTypes)) {
     Type expected = upbindApplyResult(type);
-    // FIXME: This should be a strict type equality check!
-    if (!isEqualCanon(operand.getType(), expected)) {
+    // This is a strict type equality check, sugar shouldn't be allowed in the
+    // way, otherwise we can't print/parse the operation.
+    if (operand.getType() != expected) {
       return emitError() << "'apply' operand #" << i << " type "
                          << operand.getType()
                          << " does not match expected type " << expected;

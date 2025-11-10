@@ -585,6 +585,11 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
     return {};
   }
 
+  // Strip all sugar so we don't bind parameters wrong.
+  // TODO: We could improve this to maintain sugar better.
+  callee = getCanonicalAttr(callee.get());
+  expected = cast<FnTypeGeneratorType>(getCanonicalType(expected));
+
   MLIRContext *ctx = expected.getContext();
   auto actual = sugarCast<FnTypeGeneratorType>(callee.getType());
 
