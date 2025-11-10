@@ -138,7 +138,10 @@ static TypedAttr convertLLVMToAttr(llvm::Constant *value, Type type) {
     if (auto cf = dyn_cast<llvm::ConstantFP>(value)) {
       values.push_back(DTypeValue(cf->getValue(), *dtype));
     } else if (auto ci = dyn_cast<llvm::ConstantInt>(value)) {
-      values.push_back(DTypeValue(ci->getValue(), *dtype));
+      if (dtype->isBool())
+        values.push_back(DTypeValue(!ci->getValue().isZero(), *dtype));
+      else
+        values.push_back(DTypeValue(ci->getValue(), *dtype));
     } else if (auto simdValue = dyn_cast<llvm::ConstantVector>(value)) {
       for (auto i = simdValue->op_begin(), e = simdValue->op_end(); i != e;
            ++i) {
