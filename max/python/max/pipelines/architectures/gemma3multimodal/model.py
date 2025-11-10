@@ -43,7 +43,6 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
-    AlwaysSignalBuffersMixin,
     KVCacheConfig,
     KVCacheMixin,
     ModelInputs,
@@ -223,9 +222,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
 
 
 # ⚠️ some parts are finished, some are possibly not (prepare vision inputs for example)
-class Gemma3_MultiModalModel(
-    AlwaysSignalBuffersMixin, PipelineModel[TextAndVisionContext], KVCacheMixin
-):
+class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     """Gemma 3 multimodal pipeline model for text generation.
 
     This class integrates the Gemma 3 multimodal architecture with the MAX Engine pipeline
@@ -286,6 +283,14 @@ class Gemma3_MultiModalModel(
             adapter,
             return_logits,
         )
+
+        # Initialize emtpy signal buffers
+        # self.signal_buffers = [
+        #     Tensor.zeros(
+        #         shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
+        #     )
+        #     for dev in self.devices
+        # ]
 
         self.vision_model, self.language_model = self.load_model(session)
 
@@ -408,12 +413,12 @@ class Gemma3_MultiModalModel(
 
         return vision_model, language_model
 
-    def _build_language_graph(
-        self,
-        config: Gemma3ForConditionalGenerationConfig,
-        state_dict: dict[str, WeightData],
-    ) -> tuple[Graph, dict[str, DLPackArray]]:
-        device0 = self.devices[0]
+    def _language_model_input_types(
+        self, config: Gemma3ForConditionalGenerationConfig
+    ) -> Sequence[TensorType]:
+        device0 = self.devices[
+            0
+        ]  # TODO temp measure while removing per-device stuff
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
@@ -434,7 +439,7 @@ class Gemma3_MultiModalModel(
                 config.dtype,
                 shape=[
                     "num_image_tokens",
-                    config.vision_config.hidden_size, # TODO internVL appeared to use text config hidden size???
+                    config.vision_config.hidden_size,  # TODO internVL appeared to use text config hidden size???
                 ],
                 device=DeviceRef.from_device(dev),
             )
@@ -442,8 +447,8 @@ class Gemma3_MultiModalModel(
         ]
         image_token_indices_types = [
             TensorType(
-                DType.int64,
-                shape=["num_image_tokens"],
+                DType.int32,
+                shape=["total_image_tokens"],
                 device=DeviceRef.from_device(dev),
             )
             for dev in self.devices
@@ -459,26 +464,32 @@ class Gemma3_MultiModalModel(
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]
 
-        language_model = Gemma3LanguageModel(config)
-        language_model.load_state_dict(
-            state_dict,
-            weight_alignment=1,
-            strict=self._strict_state_dict_loading,
+        return (
+            tokens_type,
+            return_n_logits_type,
+            *input_row_offsets_types,
+            *image_embeddings_types,
+            *image_token_indices_types,
+            *signals.input_types(),
+            *flattened_kv_types,
         )
 
-
+    def _build_language_graph(
+        self,
+        config: Gemma3ForConditionalGenerationConfig,
+        state_dict: dict[str, WeightData],
+    ) -> tuple[Graph, dict[str, DLPackArray]]:
         with Graph(
             getattr(self.huggingface_config, "model_type", "Gemma3"),
-            input_types=[
-                tokens_type,
-                return_n_logits_type,
-                *input_row_offsets_types,
-                *image_embeddings_types,
-                *image_token_indices_types,
-                *signals.input_types(),
-                *flattened_kv_types,
-            ],
+            input_types=self._language_model_input_types(config),
         ) as graph:
+            language_model = Gemma3LanguageModel(config)
+            language_model.load_state_dict(
+                state_dict,
+                weight_alignment=1,
+                strict=self._strict_state_dict_loading,
+            )
+
             # Unpack inputs following InternVL pattern
             tokens, return_n_logits, *variadic_args = graph.inputs
 
@@ -520,15 +531,10 @@ class Gemma3_MultiModalModel(
             graph.output(*outputs)
         return graph, language_model.state_dict()
 
-    def _build_vision_graph(
-        self,
-        config: Gemma3ForConditionalGenerationConfig,
-        state_dict: dict[str, WeightData],
-    ) -> tuple[Graph, dict[str, DLPackArray]]:
+    def _vision_model_input_types(
+        self, config: Gemma3ForConditionalGenerationConfig
+    ) -> Sequence[TensorType]:
         """Build the vision model graph for processing images."""
-        # Expect pre-extracted patches from the tokenizer.
-        # Use bfloat16 to match the tokenizer's output.
-        # [B, C, H, W] shape
         pixel_values_types = [
             TensorType(
                 config.dtype,
@@ -547,7 +553,13 @@ class Gemma3_MultiModalModel(
         signals = Signals(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
+        return [*pixel_values_types, *signals.input_types()]
 
+    def _build_vision_graph(
+        self,
+        config: Gemma3ForConditionalGenerationConfig,
+        state_dict: dict[str, WeightData],
+    ) -> tuple[Graph, dict[str, DLPackArray]]:
         # Build vision model architecture.
         vision_model = Gemma3VisionModel(config)
 
@@ -556,7 +568,7 @@ class Gemma3_MultiModalModel(
         for w8 in list(
             state_dict.keys() - vision_model.raw_state_dict().keys()
         ):
-            del state_dict[w8] 
+            del state_dict[w8]
 
         vision_model.load_state_dict(
             state_dict=state_dict,
@@ -568,7 +580,7 @@ class Gemma3_MultiModalModel(
         # Initialize graph with input types
         with Graph(
             config.model_type,
-            input_types=[*pixel_values_types, *signals.input_types()],
+            input_types=self._vision_model_input_types(config),
         ) as graph:
             pixel_values = [
                 inp.tensor for inp in graph.inputs[: len(self.devices)]
@@ -578,7 +590,9 @@ class Gemma3_MultiModalModel(
                 inp.buffer for inp in graph.inputs[len(self.devices) :]
             ]
 
-            image_embeddings = vision_model(pixel_values, signal_buffers)
+            image_embeddings = vision_model(
+                pixel_values[0].tensor, signal_buffers[0]
+            )
 
             graph.output(*image_embeddings)
 
@@ -619,6 +633,7 @@ class Gemma3_MultiModalModel(
             )
             assert len(vision_outputs) == len(self.devices)
 
+            # TODO this is the wrong rank (4, not 2)
             image_embeddings = [
                 output
                 for output in vision_outputs
@@ -633,13 +648,16 @@ class Gemma3_MultiModalModel(
         curr_kv_cache_inputs = list(model_inputs.kv_cache_inputs)
 
         logger.info(f"""
-            tokens: {model_inputs.tokens}
-            logits: {model_inputs.return_n_logits}
-            indices: {image_token_indices}
-            sb: {model_inputs.signal_buffers}
-            offsets: {input_row_offsets_list}
-            embeds: {image_embeddings}
-            kv: {curr_kv_cache_inputs}
+            tokens: {model_inputs.tokens.rank} - {model_inputs.tokens}
+            logits: {model_inputs.return_n_logits.rank} - {model_inputs.return_n_logits}
+            indices: {image_token_indices[0].rank} - {image_token_indices}
+            sb: {model_inputs.signal_buffers[0].rank} - {model_inputs.signal_buffers}
+            offsets: {input_row_offsets_list[0].rank} - {input_row_offsets_list}
+            embeds: {image_embeddings[0].rank} - {image_embeddings}
+            kv: {curr_kv_cache_inputs[0].rank} - {curr_kv_cache_inputs}
+            kv: {curr_kv_cache_inputs[1].rank} - {curr_kv_cache_inputs}
+            kv: {curr_kv_cache_inputs[2].rank} - {curr_kv_cache_inputs}
+            kv: {curr_kv_cache_inputs[3].rank} - {curr_kv_cache_inputs}
         """)
 
         model_outputs = self.language_model.execute(
@@ -647,7 +665,7 @@ class Gemma3_MultiModalModel(
             model_inputs.return_n_logits,
             *input_row_offsets_list,
             *image_embeddings,
-            image_token_indices,
+            *image_token_indices,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
         )
@@ -675,7 +693,6 @@ class Gemma3_MultiModalModel(
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
-
         assert kv_cache_inputs is not None
         kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
         input_row_offsets = np.cumsum(

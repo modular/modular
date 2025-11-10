@@ -24,7 +24,7 @@ from ..model_config import Gemma3ForConditionalGenerationConfig
 from .projection import Gemma3VisionMLP
 
 
-# ✅ based on HF
+# ✅ based on HF and MLX-VLM
 class Gemma3VisionEncoderLayer(Module):
     def __init__(
         self, config: Gemma3ForConditionalGenerationConfig, layer_idx: int
@@ -33,7 +33,7 @@ class Gemma3VisionEncoderLayer(Module):
 
         self.embed_dim = vision_config.hidden_size
 
-        # Pre-attention layer norm ((1152,), eps=1e-06)
+        # Pre-attention layer norm
         self.layer_norm1 = LayerNorm(
             self.embed_dim,
             eps=vision_config.layer_norm_eps,
@@ -47,7 +47,10 @@ class Gemma3VisionEncoderLayer(Module):
             layer_idx=layer_idx,
         )
 
-        # post-attention layer norm ((1152,), eps=1e-06)
+        # MLP (Feed-Forward Network) - simple GELUTanh/fc1/fc2 style
+        self.mlp = Gemma3VisionMLP(config)
+
+        # post-attention layer norm
         self.layer_norm2 = LayerNorm(
             self.embed_dim,
             eps=vision_config.layer_norm_eps,
@@ -55,14 +58,10 @@ class Gemma3VisionEncoderLayer(Module):
             dtype=config.dtype,
         )
 
-        # MLP (Feed-Forward Network) - simple GELUTanhfc1/fc2 style
-        self.mlp = Gemma3VisionMLP(config)
-
     def __call__(
         self,
         hidden_states: TensorValue,
     ) -> TensorValue:
-        # Self-attention with residual
         residual = hidden_states
         hidden_states = self.layer_norm1(hidden_states)
         hidden_states = self.self_attn(hidden_states)
@@ -77,7 +76,7 @@ class Gemma3VisionEncoderLayer(Module):
         return hidden_states
 
 
-# ✅ construct lots of EncoderLayers/run through them
+# ✅ based on HF and MLX-VLM
 class Gemma3VisionEncoder(Module):
     """SigLIP vision encoder with 27 transformer layers."""
 
