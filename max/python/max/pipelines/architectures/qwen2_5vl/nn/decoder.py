@@ -503,6 +503,8 @@ class Qwen25VLDecoder(Module):
 
         # Create Embedding and output layers.
         embedding_output_dtype = config.dtype
+        if config.float8_config and config.float8_config.embedding_output_dtype:
+            embedding_output_dtype = config.float8_config.embedding_output_dtype
 
         embedding_layer = VocabParallelEmbedding(
             config.vocab_size,
