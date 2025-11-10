@@ -1,5 +1,5 @@
 // REQUIRES: x86_64-linux
-// RUN: kgen -emit --mcmodel=medium --large-data-threshold=2 %s -o %t
+// RUN: kgen =-emit=object --mcmodel=medium --large-data-threshold=2 %s -o %t
 // RUN: llvm-objdump %t -t | FileCheck %s
 
 // COM: check that string constant is in .lrodata section

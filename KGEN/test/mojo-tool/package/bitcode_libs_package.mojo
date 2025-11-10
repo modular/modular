@@ -9,7 +9,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # First, create a bitcode library from this file's Mojo function
-# RUN: kgen %s -emit-llvm -o %t.ll
+# RUN: kgen %s -emit=llvm -o %t.ll
 # RUN: llvm-as %t.ll -o %t.bc
 
 # Create a test package that includes the bitcode library

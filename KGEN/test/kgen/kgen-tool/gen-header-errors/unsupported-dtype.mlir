@@ -1,4 +1,4 @@
-// RUN: kgen %s -emit-header -verify-diagnostics -ignore-failure
+// RUN: kgen %s -emit=header -verify-diagnostics -ignore-failure
 
 // expected-error @below {{unhandled floating point dtype: f16}}
 // expected-note @below {{see current operation}}

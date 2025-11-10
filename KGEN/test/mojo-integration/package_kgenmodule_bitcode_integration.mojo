@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # Step 1: Compile the Mojo bitcode implementation to LLVM bitcode
-# RUN: kgen %S/inputs/bitcode_impl.mojo -emit-llvm -o %t_impl.ll
+# RUN: kgen %S/inputs/bitcode_impl.mojo -emit=llvm -o %t_impl.ll
 # RUN: llvm-as %t_impl.ll -o %t_impl.bc
 
 # Step 2: Package the bitcode_package with the bitcode library

@@ -13,15 +13,15 @@ option it takes:
 
 - `-elaborate` stops compilation right after Elaboration (for the host)
   and prints result MLIR
-- `-emit-llvm` stops compilation right after lowering of MLIR to LLVM IR
+- `-emit=llvm` stops compilation right after lowering of MLIR to LLVM IR
   (for the host) and prints result LLVM IR
-- `-emit-llvm=opt` stops compilation after our custom LLVM optimization
+- `-emit=llvm-opt` stops compilation after our custom LLVM optimization
   pipeline and prints result LLVM IR
-- `-emit-asm` runs our custom LLVM optimization pipeline, backends and emit
+- `-emit=asm` runs our custom LLVM optimization pipeline, backends and emit
   result assembly
-- `-emit-asm=verbose` runs our custom LLVM optimization pipeline, backends and
+- `-emit=asm-verbose` runs our custom LLVM optimization pipeline, backends and
   emit result assembly, with more information inlined
-- `-emit` prints binary output
+- `-emit=object` prints binary output
 - others (see `--help`) that are less used for debugging
 
 The tool also supports upstream's `mlir-opt` flags, such as

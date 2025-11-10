@@ -8,7 +8,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen %S/inputs/define_extern_bc_func.mojo -emit-llvm -o %t.ll
+# RUN: kgen %S/inputs/define_extern_bc_func.mojo --emit=llvm -o %t.ll
 # RUN: llvm-as %t.ll -o %t.bc
 # RUN: %mojo --bitcode-libs=%t.bc %s | FileCheck %s
 

@@ -1,13 +1,13 @@
-// RUN: kgen %s -emit-header -func="someKernel:f32(f32,index)" | FileCheck %s --check-prefixes=SCALAR
-// RUN: kgen %s -emit-header -func="someBufferKernel" | FileCheck %s --check-prefixes=BUFFER
-// RUN: kgen %s -emit-header -func="someNDBufferKernel" | FileCheck %s --check-prefixes=NDBUFFER
-// RUN: kgen %s -emit-header -func="someMetaScalarKernel" | FileCheck %s --check-prefixes=SCALARMETA
-// RUN: kgen %s -emit-header -func="nestedParametricStruct" | FileCheck %s --check-prefixes=STRUCT
-// RUN: kgen %s -emit-header -func="litNoneKernel" | FileCheck %s --check-prefixes=VOID
-// RUN: kgen %s -emit-header -func="oneElemStruct" | FileCheck %s --check-prefixes=ONESTRUCT
-// RUN: kgen %s -emit-header -func="twoElemStruct" | FileCheck %s --check-prefixes=TWOSTRUCT
-// RUN: kgen %s -emit-header -func="oneVariadic" | FileCheck %s --check-prefixes=ONEVARIADIC
-// RUN: kgen %s -emit-header -func="twoVariadic" | FileCheck %s --check-prefixes=TWOVARIADIC
+// RUN: kgen %s -emit=header -func="someKernel:f32(f32,index)" | FileCheck %s --check-prefixes=SCALAR
+// RUN: kgen %s -emit=header -func="someBufferKernel" | FileCheck %s --check-prefixes=BUFFER
+// RUN: kgen %s -emit=header -func="someNDBufferKernel" | FileCheck %s --check-prefixes=NDBUFFER
+// RUN: kgen %s -emit=header -func="someMetaScalarKernel" | FileCheck %s --check-prefixes=SCALARMETA
+// RUN: kgen %s -emit=header -func="nestedParametricStruct" | FileCheck %s --check-prefixes=STRUCT
+// RUN: kgen %s -emit=header -func="litNoneKernel" | FileCheck %s --check-prefixes=VOID
+// RUN: kgen %s -emit=header -func="oneElemStruct" | FileCheck %s --check-prefixes=ONESTRUCT
+// RUN: kgen %s -emit=header -func="twoElemStruct" | FileCheck %s --check-prefixes=TWOSTRUCT
+// RUN: kgen %s -emit=header -func="oneVariadic" | FileCheck %s --check-prefixes=ONEVARIADIC
+// RUN: kgen %s -emit=header -func="twoVariadic" | FileCheck %s --check-prefixes=TWOVARIADIC
 
 kgen.func export C @someKernel(%arg1: f32, %arg2: index) -> f32 {
   kgen.return %arg1 : f32

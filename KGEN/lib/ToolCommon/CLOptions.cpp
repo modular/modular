@@ -145,23 +145,29 @@ bool KGENCLOptionsParser::parse(llvm::cl::Option &o, StringRef argName,
 
     return false;
   }
-  if (argName == "emit-llvm") {
-    val = argValue == "opt" ? Command::kEmitLLVMOpt : Command::kEmitLLVM;
-    return false;
-  }
-  if (argName == "emit-asm") {
-    val = argValue == "verbose" ? Command::kEmitAssemblyVerbose
-                                : Command::kEmitAssembly;
-    return false;
-  }
   if (argName == "emit") {
-    val = argValue == "shared" ? Command::kEmitSharedObject : Command::kEmit;
+    if (argValue == "llvm")
+      val = Command::kEmitLLVM;
+    else if (argValue == "llvm-opt")
+      val = Command::kEmitLLVMOpt;
+    else if (argValue == "asm")
+      val = Command::kEmitAssembly;
+    else if (argValue == "asm-verbose")
+      val = Command::kEmitAssemblyVerbose;
+    else if (argValue == "object")
+      val = Command::kEmit;
+    else if (argValue == "shared-lib")
+      val = Command::kEmitSharedObject;
+    else if (argValue == "header")
+      val = Command::kEmitHeader;
+    else if (argValue.empty())
+      val = Command::kEmit;
+    else
+      return o.error("unsupported 'emit' option value '" + argValue + "'");
+
     return false;
   }
-  if (argName == "emit-header") {
-    val = Command::kEmitHeader;
-    return false;
-  }
+
   if (argName == "execute") {
     val = Command::kExecute;
     return false;
