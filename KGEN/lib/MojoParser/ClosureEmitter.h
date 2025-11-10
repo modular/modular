@@ -163,7 +163,8 @@ private:
   TypedAttr
   addWitnessTablesToClosure(ASTDecl &moduleDecl, SMLoc smLoc, FnOp parent,
                             ClosureType closureType,
-                            SmallVector<ClosureParent> &closureParents);
+                            SmallVector<ClosureParent> &closureParents,
+                            SymbolRefAttr parentSymbolRef);
 
   /// Given a trait function, specialize it and add it to the struct.
   /// Returns
