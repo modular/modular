@@ -137,7 +137,7 @@ class MemoryEstimator:
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig,
         devices: list[Device],
-    ) -> int:
+    ) -> int | None:
         """Compute the hard upper bound on tokens for a single request.
 
         Mirrors the paged KV cache constraint: per replica, a request cannot
@@ -152,9 +152,7 @@ class MemoryEstimator:
 
         # Ensure pipeline_model implements KVCacheMixin
         if not issubclass(pipeline_model, KVCacheMixin):
-            raise ValueError(
-                "pipeline_model must implement KVCacheMixin to compute max sequence length"
-            )
+            return None
 
         kv_cache_model = cast(type[KVCacheMixin], pipeline_model)
 
