@@ -6,7 +6,7 @@ load(
     "ASYNCRT_PROFILING_LOCAL_DEFINES",
     "CONFIG_SECTION_LOCAL_DEFINES",
 )
-load("//SDK/lib/API/python/bindings:tblgen.bzl", "mlir_nanobind")
+load("//max/python/max/_core/internal/mlir_nanobind:tblgen.bzl", "mlir_nanobind")  # buildifier: disable=bzl-visibility
 
 pkg_files(
     name = "docs",
