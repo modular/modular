@@ -295,7 +295,31 @@ class Gemma3LanguageModel(Module):
         return (last_logits,)
 
 
-# ⚠️ not sure if `prepare_inputs_for_generation` is required
+# ⚠️ from MLX-VLM not sure if required
+# def masked_scatter(
+#     final_embedding: Tensor,
+#     image_mask_expanded: Tensor,
+#     scaled_image_features: Tensor,
+# ) -> TensorValue: # TODO check return type
+#     # Reshape the tensors to 1D
+#     final_embedding_shape = final_embedding.shape
+#     scaled_image_features_flattened = scaled_image_features.flatten()
+#     final_embedding_flattened = final_embedding.flatten()
+#     image_mask_expanded_flattened = image_mask_expanded.flatten()
+
+#     # Scatter the scaled image features into the special image token positions
+#     image_positions = Tensor(
+#         ops.where(image_mask_expanded_flattened)[0], DType.uint32
+#     )
+#     final_embedding_flattened[image_positions] = scaled_image_features_flattened
+
+#     # Reshape back to the original shape
+#     final_embedding = final_embedding_flattened.reshape(final_embedding_shape)
+
+#     return final_embedding
+
+
+# ⚠️ based on HF and MLX-VLM
 class Gemma3VisionModel(Module):
     def __init__(self, config: Gemma3ForConditionalGenerationConfig) -> None:
         super().__init__()
@@ -306,6 +330,10 @@ class Gemma3VisionModel(Module):
         self.embeddings = Gemma3VisionEmbeddings(
             config, device=config.devices[0]
         )
+        self.embeddings.sharding_strategy = ShardingStrategy.replicate(
+            len(config.devices)
+        )
+        # self.embeddings_list = self.embeddings.shard(config.devices) # TODO for multi device
 
         # Vision encoder (27 transformer layers)
         self.encoder = Gemma3VisionEncoder(config)
@@ -323,8 +351,8 @@ class Gemma3VisionModel(Module):
 
     def __call__(
         self,
-        pixel_values: Sequence[TensorValue],
-        signal_buffers: Sequence[BufferValue],
+        pixel_values: TensorValue,  # Sequence[TensorValue],
+        signal_buffers: TensorValue,  # Sequence[BufferValue],
     ) -> Sequence[TensorValue]:
         """Process pixel values to image embeddings.
 
@@ -336,13 +364,25 @@ class Gemma3VisionModel(Module):
             List of projected image embeddings [pooled_tokens, text_hidden_size] (one per device)
         """
         # convert to patches, run through the encoder layers, then normalize and project into multimodal space
-        hidden_states = self.embeddings(pixel_values[0])
+        # Get vision embeddings from each device
+        hidden_states = self.embeddings(pixel_values)  # replace by below
+        # multi device approach
+        # hidden_states_list = [
+        #     embed(pixels)
+        #     for embed, pixels in zip(
+        #         self.embeddings_list, pixel_values, strict=True
+        #     )
+        # ]
+        logger.info(f"1 hiddenstates: {hidden_states_list}")
 
-        hidden_states = self.encoder(hidden_states)
+        hidden_states_list = self.encoder(hidden_states_list)
+        logger.info(f"2 hiddenstates: {hidden_states}")
 
         hidden_states = self.post_layernorm(hidden_states)
+        logger.info(f"3 hiddenstates: {hidden_states}")
 
         image_embeddings = self.projector(hidden_states)
+        logger.info(f"4 hiddenstates: {hidden_states}")
 
         # Replicate to all devices
         return [image_embeddings for _ in range(len(self.config.devices))]

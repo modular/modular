@@ -29,7 +29,7 @@ from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 from ..model_config import Gemma3ForConditionalGenerationConfig
 
 
-# ✅ working, based on HF
+# ✅ working, based on HF and MLX-VLM
 class Gemma3MultiModalProjector(Module):
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
         super().__init__()
@@ -63,47 +63,46 @@ class Gemma3MultiModalProjector(Module):
             self.patches_per_image // self.tokens_per_side
         )  # 64 / 16 = 4
 
-    # TODO | are these in the right order?  pool -> mm_soft_emb_norm??
-    # TODO | i think should be other way based on the vision tower
     def __call__(self, vision_outputs: Tensor):
         batch_size, _, seq_length = (
             vision_outputs.shape
         )  # TensorValue shape: ['batch_size', 4096, 1152]
 
-        reshaped_vision_outputs = vision_outputs.transpose(
-            1, 2
-        )  # TensorValue shape: ['batch_size', 1152, 4096]
+        reshaped_vision_outputs = vision_outputs.transpose(1, 2)
 
-        # TODO not sure if shape is correct.
         reshaped_vision_outputs = reshaped_vision_outputs.reshape(
             (
                 batch_size,
-                self.patches_per_image,
-                self.patches_per_image,
                 seq_length,
+                self.patches_per_image,
+                self.patches_per_image,
             )
-        )  # TensorValue shape: ['batch_size', 64, 64, 1152]
+        )
 
-        normed_vision_outputs = self.mm_soft_emb_norm(
-            reshaped_vision_outputs
-        )  # TensorValue shape: ['batch_size', 64, 64, 1152]
-
-        # [N, H, W, C]
+        # reshape to 0 2 3 1 HWBC
+        reshaped_vision_outputs = reshaped_vision_outputs.transpose(0, 2, 3, 1)
+        # avg pool
         pooled_vision_outputs = avg_pool2d(
             input=normed_vision_outputs,
             kernel_size=(self.kernel_size, self.kernel_size),  # (4,4)
             stride=self.kernel_size,  # 4
         )
-        pooled_vision_outputs = pooled_vision_outputs.flatten(2)
+        # reshape 0 3 1 2.flatten(2)
+        pooled_vision_outputs = pooled_vision_outputs.transpose(
+            0, 3, 1, 2
+        ).pooled_vision_outputs.flatten(2)
+        # transpose 0 2 1?
         pooled_vision_outputs = vision_outputs.transpose(1, 2)
+
+        normed_vision_outputs = self.mm_soft_emb_norm(reshaped_vision_outputs)
 
         projected_vision_outputs = matmul(
             normed_vision_outputs, self.mm_input_projection_weight
-        )  # ['batch_size', 1152, 4096]
-        return projected_vision_outputs  # .type_as(vision_outputs)
+        )
+        return projected_vision_outputs.type_as(vision_outputs)
 
 
-# ✅ working, based on HF
+# ✅ working, based on HF and MLX-VLM
 class Gemma3VisionMLP(Module):
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
         super().__init__()
