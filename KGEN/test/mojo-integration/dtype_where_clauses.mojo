@@ -28,6 +28,82 @@ fn dtype_where_clause_is_isnot[d: DType]() -> Int where d is not DType.float32:
     return 2
 
 
+@always_inline("builtin")
+fn dtype_where_clause_is_signed[d: DType]() -> Int where d.is_signed():
+    return 1
+
+
+@always_inline("builtin")
+fn dtype_where_clause_is_signed[d: DType]() -> Int where not d.is_signed():
+    return 0
+
+
+@always_inline("builtin")
+fn dtype_where_clause_is_unsigned[d: DType]() -> Int where d.is_unsigned():
+    return 1
+
+
+@always_inline("builtin")
+fn dtype_where_clause_is_unsigned[d: DType]() -> Int where not d.is_unsigned():
+    return 0
+
+
+@always_inline("builtin")
+fn dtype_where_clause_is_integral[d: DType]() -> Int where d.is_integral():
+    return 1
+
+
+@always_inline("builtin")
+fn dtype_where_clause_is_integral[d: DType]() -> Int where not d.is_integral():
+    return 0
+
+
+@always_inline("builtin")
+fn dtype_where_clause_is_floating_point[
+    d: DType
+]() -> Int where d.is_floating_point():
+    return 1
+
+
+@always_inline("builtin")
+fn dtype_where_clause_is_floating_point[
+    d: DType
+]() -> Int where not d.is_floating_point():
+    return 0
+
+
+@always_inline("builtin")
+fn dtype_where_clause_is_half_float[d: DType]() -> Int where d.is_half_float():
+    return 1
+
+
+@always_inline("builtin")
+fn dtype_where_clause_is_half_float[
+    d: DType
+]() -> Int where not d.is_half_float():
+    return 0
+
+
+@always_inline("builtin")
+fn dtype_where_clause_is_float8[d: DType]() -> Int where d.is_float8():
+    return 1
+
+
+@always_inline("builtin")
+fn dtype_where_clause_is_float8[d: DType]() -> Int where not d.is_float8():
+    return 0
+
+
+@always_inline("builtin")
+fn dtype_where_clause_is_numeric[d: DType]() -> Int where d.is_numeric():
+    return 1
+
+
+@always_inline("builtin")
+fn dtype_where_clause_is_numeric[d: DType]() -> Int where not d.is_numeric():
+    return 0
+
+
 # CHECK-LABEL: lit.fn @"foo
 fn foo():
     # CHECK: lit.alias.decl *"x`": !Int = <{42}>
@@ -38,3 +114,52 @@ fn foo():
     alias a = dtype_where_clause_is_isnot[DType.float32]()
     # CHECK: lit.alias.decl *"b`3": !Int = <{2}>
     alias b = dtype_where_clause_is_isnot[DType.float64]()
+
+    # CHECK: lit.alias.decl *"c`{{.*}}": !Int = <{1}>
+    alias c = dtype_where_clause_is_signed[DType.int32]()
+    # CHECK: lit.alias.decl *"d`{{.*}}": !Int = <{0}>
+    alias d = dtype_where_clause_is_signed[DType.uint32]()
+    # CHECK: lit.alias.decl *"e`{{.*}}": !Int = <{1}>
+    alias e = dtype_where_clause_is_signed[DType.float64]()
+
+    # CHECK: lit.alias.decl *"f`{{.*}}": !Int = <{1}>
+    alias f = dtype_where_clause_is_unsigned[DType.uint32]()
+    # CHECK: lit.alias.decl *"g`{{.*}}": !Int = <{0}>
+    alias g = dtype_where_clause_is_unsigned[DType.int32]()
+    # CHECK: lit.alias.decl *"h`{{.*}}": !Int = <{0}>
+    alias h = dtype_where_clause_is_unsigned[DType.float64]()
+
+    # CHECK: lit.alias.decl *"i`{{.*}}": !Int = <{1}>
+    alias i = dtype_where_clause_is_integral[DType.uint32]()
+    # CHECK: lit.alias.decl *"j`{{.*}}": !Int = <{1}>
+    alias j = dtype_where_clause_is_integral[DType.int32]()
+    # CHECK: lit.alias.decl *"k`{{.*}}": !Int = <{0}>
+    alias k = dtype_where_clause_is_integral[DType.float64]()
+
+    # CHECK: lit.alias.decl *"l`{{.*}}": !Int = <{0}>
+    alias l = dtype_where_clause_is_floating_point[DType.int32]()
+    # CHECK: lit.alias.decl *"m`{{.*}}": !Int = <{1}>
+    alias m = dtype_where_clause_is_floating_point[DType.float32]()
+
+    # CHECK: lit.alias.decl *"n`{{.*}}": !Int = <{0}>
+    alias n = dtype_where_clause_is_half_float[DType.int32]()
+    # CHECK: lit.alias.decl *"o`{{.*}}": !Int = <{0}>
+    alias o = dtype_where_clause_is_half_float[DType.float32]()
+    # CHECK: lit.alias.decl *"p`{{.*}}": !Int = <{1}>
+    alias p = dtype_where_clause_is_half_float[DType.float16]()
+    # CHECK: lit.alias.decl *"q`{{.*}}": !Int = <{1}>
+    alias q = dtype_where_clause_is_half_float[DType.bfloat16]()
+
+    # CHECK: lit.alias.decl *"r0`{{.*}}": !Int = <{1}>
+    alias r0 = dtype_where_clause_is_float8[DType.float8_e3m4]()
+    # CHECK: lit.alias.decl *"r1`{{.*}}": !Int = <{1}>
+    alias r1 = dtype_where_clause_is_float8[DType.float8_e5m2]()
+    # CHECK: lit.alias.decl *"r2`{{.*}}": !Int = <{0}>
+    alias r2 = dtype_where_clause_is_float8[DType.float32]()
+
+    # CHECK: lit.alias.decl *"s0`{{.*}}": !Int = <{1}>
+    alias s0 = dtype_where_clause_is_numeric[DType.int32]()
+    # CHECK: lit.alias.decl *"s1`{{.*}}": !Int = <{1}>
+    alias s1 = dtype_where_clause_is_numeric[DType.float32]()
+    # CHECK: lit.alias.decl *"s2`{{.*}}": !Int = <{0}>
+    alias s2 = dtype_where_clause_is_numeric[DType.bool]()
