@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "cc_autolink_deps", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_library", "modular_nanobind_library", "modular_shared_library", "pkg_files", "td_library")
 load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES")
-load("//SDK/lib/API/python/bindings:tblgen.bzl", "mlir_nanobind")
+load("//max/python/max/_core/internal/mlir_nanobind:tblgen.bzl", "mlir_nanobind")  # buildifier: disable=bzl-visibility
 
 exports_files(["include/Support/Driver/DriverCommand.td"])
 
