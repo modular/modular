@@ -1749,3 +1749,11 @@ fn insert_index[
             out[i] = value
 
     return out
+
+
+fn all_zeros(indices: IndexList) -> Bool:
+    @parameter
+    for i in range(indices.size):
+        if indices[i] != 0:
+            return False
+    return True
