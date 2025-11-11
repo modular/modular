@@ -19,6 +19,7 @@ from buffer import Dim, DimList
 from gpu.host import DeviceContext
 from internal_utils import HostNDBuffer, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import memcpy
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
@@ -192,17 +193,69 @@ def execute_ragged_flash_attention(
     kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
 
     true_ce_kv_collection_device = PagedCollectionType(
-        kv_block_paged_device.tensor,
-        true_ce_cache_lengths_device.tensor,
-        paged_lut_device.tensor,
+        LayoutTensor[
+            kv_block_paged_device.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_block_paged_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_paged_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_paged_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            true_ce_cache_lengths_device.dtype,
+            Layout(UNKNOWN_VALUE),
+            ImmutAnyOrigin,
+        ](
+            true_ce_cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                true_ce_cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                true_ce_cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
+        ](
+            paged_lut_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         true_ce_max_prompt_length,
         true_ce_max_full_context_length,
     )
 
     mixed_ce_kv_collection_device = PagedCollectionType(
-        kv_block_paged_device.tensor,
-        mixed_ce_cache_lengths_device.tensor,
-        paged_lut_device.tensor,
+        LayoutTensor[
+            kv_block_paged_device.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_block_paged_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_paged_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_paged_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            mixed_ce_cache_lengths_device.dtype,
+            Layout(UNKNOWN_VALUE),
+            ImmutAnyOrigin,
+        ](
+            mixed_ce_cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                mixed_ce_cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                mixed_ce_cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
+        ](
+            paged_lut_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         mixed_ce_max_prompt_length,
         mixed_ce_max_full_context_length,
     )

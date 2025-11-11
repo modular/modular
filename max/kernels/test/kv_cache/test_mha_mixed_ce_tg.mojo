@@ -18,6 +18,7 @@ from random import random_ui64
 from buffer import Dim, DimList
 from internal_utils import HostNDBuffer, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import memcpy
 from nn.flash_attention import flash_attention_kv_cache
 from nn.mha_mask import CausalMask
@@ -170,17 +171,65 @@ def execute_ragged_flash_attention():
             paged_lut.tensor[bs, block_idx] = randval
 
     true_ce_kv_collection = PagedCollectionType(
-        kv_block_paged.tensor,
-        true_ce_cache_lengths.tensor,
-        paged_lut.tensor,
+        LayoutTensor[
+            kv_block_paged.dtype,
+            Layout.row_major[6](),
+            MutAnyOrigin,
+        ](
+            kv_block_paged.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_paged.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_paged.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            true_ce_cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            true_ce_cache_lengths.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                true_ce_cache_lengths.to_layout_tensor().runtime_layout.shape.value,
+                true_ce_cache_lengths.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[paged_lut.dtype, Layout.row_major[2](), ImmutAnyOrigin,](
+            paged_lut.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         true_ce_max_prompt_length,
         true_ce_max_full_context_length,
     )
 
     mixed_ce_kv_collection = PagedCollectionType(
-        kv_block_paged.tensor,
-        mixed_ce_cache_lengths.tensor,
-        paged_lut.tensor,
+        LayoutTensor[
+            kv_block_paged.dtype,
+            Layout.row_major[6](),
+            MutAnyOrigin,
+        ](
+            kv_block_paged.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_paged.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_paged.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            mixed_ce_cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            mixed_ce_cache_lengths.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                mixed_ce_cache_lengths.to_layout_tensor().runtime_layout.shape.value,
+                mixed_ce_cache_lengths.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[paged_lut.dtype, Layout.row_major[2](), ImmutAnyOrigin](
+            paged_lut.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         mixed_ce_max_prompt_length,
         mixed_ce_max_full_context_length,
     )

@@ -192,9 +192,33 @@ def execute_kv_cache_ragged_flash_attention[
     kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
 
     kv_collection_device = CollectionType(
-        kv_block_paged_device.tensor,
-        cache_lengths_device.tensor,
-        paged_lut_device.tensor,
+        LayoutTensor[
+            kv_block_paged_device.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_block_paged_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_paged_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_paged_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
+        ](
+            paged_lut_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_seq_length,
         max_context_length,
     )
@@ -211,53 +235,49 @@ def execute_kv_cache_ragged_flash_attention[
         input_row_offsets_device,
     )
     @always_inline
-    fn kernel_launch(ctx: DeviceContext) raises:
-        flash_attention[ragged=True](
-            # TODO: move to_layout_tensor here once unified closures are supported.
-            output_device_tensor.as_any_origin(),
-            q_device.to_layout_tensor(),
-            k_cache_device,
-            v_cache_device,
-            CausalMask(),
-            IdentityScoreMod(),
-            ManagedTensorSlice[
-                io_spec=IOUnknown,
-                static_spec = StaticTensorSpec[
-                    DType.uint32, 1
-                ].create_unknown(),
-            ](input_row_offsets_device.tensor),
-            rsqrt(Float32(head_dim)),
-            ctx,
-        )
-
-    if run_benchmark:
-
+    fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn bench_func(mut b: Bencher):
-            b.iter_custom[kernel_launch](ctx)
+        fn kernel_launch(ctx: DeviceContext) raises:
+            flash_attention[ragged=True](
+                # TODO: move to_layout_tensor here once unified closures are supported.
+                output_device_tensor.as_any_origin(),
+                q_device.to_layout_tensor(),
+                k_cache_device,
+                v_cache_device,
+                CausalMask(),
+                IdentityScoreMod(),
+                ManagedTensorSlice[
+                    io_spec=IOUnknown,
+                    static_spec = StaticTensorSpec[
+                        DType.uint32, 1
+                    ].create_unknown(),
+                ](input_row_offsets_device.tensor),
+                rsqrt(Float32(head_dim)),
+                ctx,
+            )
 
-        flop_count = flops(
-            batch_size,
-            num_q_heads,
-            seq_len,
-            cache_len + seq_len,
-            head_dim,
-        )
-        m.bench_function[bench_func](
-            BenchId(
-                _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
-                    batch_size,
-                    seq_len,
-                    use_random_seq_lengths,
-                    cache_len,
-                    use_random_cache_lengths,
-                )
-            ),
-            [ThroughputMeasure(BenchMetric.flops, flop_count)],
-        )
-    else:
-        kernel_launch(ctx)
+        b.iter_custom[kernel_launch](ctx)
+
+    flop_count = flops(
+        batch_size,
+        num_q_heads,
+        seq_len,
+        cache_len + seq_len,
+        head_dim,
+    )
+    m.bench_function[bench_func](
+        BenchId(
+            _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
+                batch_size,
+                seq_len,
+                use_random_seq_lengths,
+                cache_len,
+                use_random_cache_lengths,
+            )
+        ),
+        [ThroughputMeasure(BenchMetric.flops, flop_count)],
+    )
     _ = kv_block_paged_device^
     _ = output_device^
     _ = q_device^

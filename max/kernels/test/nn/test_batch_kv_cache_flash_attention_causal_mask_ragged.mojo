@@ -21,6 +21,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import memcpy
 from nn.flash_attention import flash_attention_kv_cache
 from nn.mha_mask import CausalMask
@@ -149,9 +150,29 @@ def execute_ragged_flash_attention[
         idx += 1
 
     var kv_collection = CollectionType(
-        kv_block.tensor,
-        cache_lengths.tensor,
-        lookup_table.tensor,
+        LayoutTensor[kv_block.dtype, Layout.row_major[6](), MutAnyOrigin](
+            kv_block.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block.to_layout_tensor().runtime_layout.shape.value,
+                kv_block.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[lookup_table.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+            lookup_table.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                lookup_table.to_layout_tensor().runtime_layout.shape.value,
+                lookup_table.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_prompt_length,
         max_context_length,
     )

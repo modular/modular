@@ -146,16 +146,11 @@ def execute_flash_attention[
     var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
 
     ctx.enqueue_copy(cache_lengths_dev, cache_valid_length.data)
-    var cache_lengths_device_nd = NDBuffer[DType.uint32, 1](
-        cache_lengths_dev.unsafe_ptr(), Index(batch_size)
-    )
-    var cache_lengths_device_lt = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+    var cache_lengths_device = LayoutTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
     ](
         cache_lengths_dev.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            Index(batch_size)
-        ),
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
     )
     kv_block_host = HostNDBuffer[dtype, 6](
         IndexList[6](
@@ -193,9 +188,27 @@ def execute_flash_attention[
     ctx.enqueue_copy(lookup_table_device.buffer, lookup_table_host.tensor.data)
 
     var kv_collection_device = CollectionType(
-        kv_block_device.tensor,
-        cache_lengths_device_nd,
-        lookup_table_device.tensor,
+        LayoutTensor[
+            kv_block_device.dtype,
+            Layout.row_major[6](),
+            MutAnyOrigin,
+        ](
+            kv_block_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        cache_lengths_device,
+        LayoutTensor[
+            lookup_table_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            lookup_table_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                lookup_table_device.to_layout_tensor().runtime_layout.shape.value,
+                lookup_table_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_prompt_len,
         max_context_len,
     )
@@ -221,7 +234,14 @@ def execute_flash_attention[
                     mask_device.to_layout_tensor().runtime_layout.shape.value.canonicalize()
                 ),
             ),
-            start_pos=cache_lengths_device_lt,
+            start_pos=LayoutTensor[
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            ](
+                cache_lengths_dev.unsafe_ptr(),
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    Index(batch_size)
+                ),
+            ),
         ),
         IdentityScoreMod(),
         ManagedTensorSlice[
@@ -249,7 +269,14 @@ def execute_flash_attention[
                     mask_device.to_layout_tensor().runtime_layout.shape.value.canonicalize()
                 ),
             ),
-            start_pos=cache_lengths_device_lt,
+            start_pos=LayoutTensor[
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            ](
+                cache_lengths_dev.unsafe_ptr(),
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    Index(batch_size)
+                ),
+            ),
         ),
         ref_output_device.to_layout_tensor(),
         ManagedTensorSlice[
