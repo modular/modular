@@ -2876,8 +2876,10 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
   // remap any values and types in the body with parameter values substituted.
   for (auto [decl, value] :
        llvm::zip(fnOp.collectAllParams(/*implOrigins*/ false),
-                 symCst.getParamValues()))
+                 symCst.getParamValues())) {
+    assert(value.getType() == folder.evaluator.getReboundType(decl.getType()));
     folder.evaluator.setDeclBinding(decl, value);
+  }
 
   // Bind the argument values we are provided.
   for (auto [convention, arg, argValue] :

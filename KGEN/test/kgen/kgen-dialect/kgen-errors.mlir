@@ -412,14 +412,14 @@ kgen.generator @apply_error() {
 // -----
 
 kgen.generator @apply_error() {
-  // expected-error @below {{custom op 'kgen.param.declare' 'apply' expected a function parameter}}
+  // expected-error @below {{custom op 'kgen.param.declare' 'apply' expected a callee operand}}
   kgen.param.declare fn = <apply()>
 }
 
 // -----
 
 kgen.generator @apply_error<fn: <index>() -> ()>() {
-  // expected-error @below {{custom op 'kgen.param.declare' 'apply' function cannot be parametric}}
+  // expected-error @below {{'apply' function cannot be parametric: #kgen.param.decl.ref<"fn"> : !kgen.generator<<index>() -> ()>}}
   kgen.param.declare fn = <apply(:<index>() -> () fn)>
 }
 

@@ -189,9 +189,14 @@ createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
   auto module = cast_or_null<FileModuleOp>(moduleDecl.getIfOperation());
   OpBuilder b(module.getRegion());
   SmallVector<StringAttr> paramNames;
+#ifndef NDEBUG // Only used for assertion checks below.
+  SmallPtrSet<StringAttr, 16> paramNamesSet;
+#endif
   for (ParamDeclAttr param : params) {
     paramNames.push_back(StringAttr::get(
         b.getContext(), demangleParameterName(param.getName())));
+    assert(paramNamesSet.insert(param.getName()).second &&
+           "duplicate parameter name");
   }
   // TODO: The type may contain decl references that need to be remapped.
   SmallVector<PassingKind> passingKinds(params.size(), PassingKind::PosOnly);

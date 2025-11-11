@@ -911,7 +911,7 @@ trait Shape(ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 struct ShapeContainer:
-    var shape: Shape # expected-error {{TODO: dynamic traits not supported yet, please use a compile time generic instead of 'Shape'}}
+    var shape: Shape # expected-error {{dynamic traits not supported yet, please use a compile time generic instead of 'Shape'}}
 
 ##===----------------------------------------------------------------------===##
 # Struct/Trait conformance check failure

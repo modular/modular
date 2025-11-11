@@ -1429,11 +1429,13 @@ verifyApplyLike(ArrayRef<TypedAttr> operands, bool isApplyResult,
                 function_ref<InFlightDiagnostic()> emitError) {
   StringRef prefix = isApplyResult ? "'apply_result_slot' " : "'apply' ";
   if (operands.empty())
-    return emitError() << prefix << "expected a function parameter";
+    return emitError() << prefix << "expected a callee operand";
+
+  auto callee = operands.front();
 
   auto sigGen = cast<FuncTypeGeneratorType>(operands.front().getType());
   if (!sigGen.getInputParamTypes().empty())
-    return emitError() << prefix << "function cannot be parametric";
+    return emitError() << prefix << "function cannot be parametric: " << callee;
 
   FuncType sig = sigGen.getBody();
   // Verify the inputs.
@@ -1452,9 +1454,11 @@ verifyApplyLike(ArrayRef<TypedAttr> operands, bool isApplyResult,
     // This is a strict type equality check, sugar shouldn't be allowed in the
     // way, otherwise we can't print/parse the operation.
     if (operand.getType() != expected) {
-      return emitError() << "'apply' operand #" << i << " type "
-                         << operand.getType()
-                         << " does not match expected type " << expected;
+      auto diag = emitError()
+                  << "'apply' operand #" << i << " type " << operand.getType()
+                  << " does not match expected type " << expected;
+      diag.attachNote() << "callee: " << callee;
+      return failure();
     }
   }
 
@@ -3670,6 +3674,7 @@ static Attribute getLocalCanonical(Attribute attr) {
     return sugar.getCanonical();
   return {};
 }
+
 static Type getLocalCanonical(Type type) {
   // FIXME: Why is this getting called with null types?
   if (!type)
