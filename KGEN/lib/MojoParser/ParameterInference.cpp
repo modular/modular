@@ -4,7 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ParameterInference.h"
+#include "llvm/Support/SaveAndRestore.h"
+
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -12,6 +13,7 @@
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "ParamBindings.h"
+#include "ParameterInference.h"
 
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
@@ -411,16 +413,34 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   if (auto actual = dyn_cast<FnTypeGeneratorType>(actualType)) {
     if (auto expected = dyn_cast<FnTypeGeneratorType>(expectedType)) {
       // See paramIndexRefDepth's comments for what this increment is for.
-      ++paramIndexRefDepth;
-      if (succeeded(matchFunctionTypes(actual, expected))) {
-        // The increment was solely for the matchFunctionTypes call, so undo it.
-        --paramIndexRefDepth;
-        return success();
-      } else {
-        // The increment was solely for the matchFunctionTypes call, so undo it.
-        --paramIndexRefDepth;
+      // The increment was solely for the matchFunctionTypes call, so undo it.
+      llvm::SaveAndRestore depth(paramIndexRefDepth, paramIndexRefDepth + 1);
+      return matchFunctionTypes(actual, expected);
+    }
+  }
+
+  // Handle GeneratorType
+  if (auto actual = dyn_cast<GeneratorType>(actualType)) {
+    if (auto expected = dyn_cast<GeneratorType>(expectedType)) {
+      // See paramIndexRefDepth's comments for what this increment is for.
+      llvm::SaveAndRestore depth(paramIndexRefDepth, paramIndexRefDepth + 1);
+
+      if (isa<FnType>(actual.getBody()) || isa<FnType>(expected.getBody())) {
+        // Matching two FnTypeGeneratorType should have been handled above
+        assert(!isa<FnType>(actual.getBody()) ||
+               !isa<FnType>(expected.getBody()));
         return failure();
       }
+      // This a simple type generator, match the input parameter types and body
+      // type.
+      ArrayRef<Type> actInputs = actual.getInputParamTypes();
+      ArrayRef<Type> expInputs = expected.getInputParamTypes();
+      if (actInputs.size() != expInputs.size())
+        return failure();
+      for (auto [ai, ei] : llvm::zip_equal(actInputs, expInputs))
+        if (failed(matchTypes(ai, ei)))
+          return failure();
+      return matchTypes(actual.getBody(), expected.getBody());
     }
   }
 
