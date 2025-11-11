@@ -49,10 +49,10 @@ modular_py_test(
         "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
     },
     tags = [
-        "AITLIB-293",
         "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
+        "run-in-hf-workflow",
     ],
     deps = [
         "//max/python/max/pipelines/architectures",
@@ -85,11 +85,11 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     tags = [
-        "AITLIB-293",
         "gpu",
         "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
+        "run-in-hf-workflow",
     ],
     deps = [
         "//max/python/max/nn",

@@ -172,7 +172,7 @@ modular_py_test(
         # TODO(PAQ-1096): These are moved to the HF pipeline for now but it
         # should still run under a new generic pipeline that isn't presubmit
         # due to compilation times.
-        "AITLIB-293",
+        "run-in-hf-workflow",
         "gpu",
         "manual",
         "no-sandbox",
@@ -270,11 +270,11 @@ modular_py_test(
     },
     gpu_constraints = ["//:has_gpu"],
     tags = [
-        "AITLIB-293",
         "gpu",
         "manual",  # TODO(AITLIB-293, AITLIB-345)
         "no-sandbox",
         "requires-network",
+        "run-in-hf-workflow",
     ],
     deps = [
         ":generate_llm_logits",
