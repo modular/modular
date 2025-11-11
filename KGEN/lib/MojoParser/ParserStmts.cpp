@@ -90,6 +90,7 @@ static bool isStatementThatMightHaveDecorators(Token::Kind tokenKind) {
   case Token::kw_pass:
   case Token::kw_var:
   case Token::kw_alias:
+  case Token::kw_comptime:
   case Token::kw___mlir_region:
   case Token::kw_return:
   case Token::kw_raise:
@@ -691,6 +692,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
       break;
     return parseVarStmt(startCursor, stmtIndent);
   case Token::kw_alias:
+  case Token::kw_comptime:
     // Decorators on aliases are not allowed inside function bodies.
     if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation()))
       rejectDecorator(/*inFunctionBody=*/true);
@@ -2899,7 +2901,12 @@ parseAliasDeclTargetsExpr(ParserBase &p,
 
 ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
                                            size_t stmtIndent) {
-  SMLoc smLoc = consumeToken(Token::kw_alias).getLoc();
+  // Accept either 'alias' or 'comptime' keyword
+  SMLoc smLoc;
+  if (getToken().is(Token::kw_comptime))
+    smLoc = consumeToken(Token::kw_comptime).getLoc();
+  else
+    smLoc = consumeToken(Token::kw_alias).getLoc();
   Location loc = translateLocation(smLoc);
 
   SmartVariant<StringRef, ExprNode *> parseResult;
