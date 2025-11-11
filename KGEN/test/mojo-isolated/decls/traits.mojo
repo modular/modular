@@ -831,24 +831,24 @@ fn test_infer_sub_trait[T: OtherEmptyTrait](var foo: Foo[T], bar: Bar[T]):
 
 # CHECK-LABEL: lit.fn @"anytrait_assignment
 fn anytrait_assignment():
-    # CHECK-NEXT: !lit.anytrait<!AnyType_Movable> = <!Movable>
-    alias t: type_of(AnyType & Movable) = Movable
+    # CHECK-NEXT: !lit.anytrait<!AnyType_Movable> = <!AnyType_Movable>
+    alias t: type_of(AnyType & Movable) = AnyType&Movable
 
 
 # CHECK-LABEL: lit.fn @"test_anytrait_subtyping
-# CHECK-SAME: <ty: !lit.anytrait<!AnyType>>
-fn test_anytrait_subtyping[ty: type_of(AnyType)]():
+# CHECK-SAME: <ty: !lit.anytrait<!UnknownDestructibility>>
+fn test_anytrait_subtyping[ty: type_of(UnknownDestructibility)]():
     # Call !lit.anytrait subtyping.
-    # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:!lit.anytrait<!AnyType> !AnyType>()
-    test_anytrait_subtyping[AnyType]()
-    # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:!lit.anytrait<!AnyType> !SimpleTrait>()
+    # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:!lit.anytrait<!UnknownDestructibility> !UnknownDestructibility>()
+    test_anytrait_subtyping[UnknownDestructibility]()
+    # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:!lit.anytrait<!UnknownDestructibility> !SimpleTrait>()
     test_anytrait_subtyping[SimpleTrait]()
 
 
 # CHECK-LABEL: lit.fn @"take_many_things_of_specified_trait
-# CHECK-SAME: <element_type: !lit.anytrait<!AnyType>,
-# CHECK-SAME: element_types: variadic<:!lit.anytrait<!AnyType> element_type> pos_vararg>()
-fn take_many_things_of_specified_trait[element_type: type_of(AnyType),
+# CHECK-SAME: <element_type: !lit.anytrait<!UnknownDestructibility>,
+# CHECK-SAME: element_types: variadic<:!lit.anytrait<!UnknownDestructibility> element_type> pos_vararg>()
+fn take_many_things_of_specified_trait[element_type: type_of(UnknownDestructibility),
                                        *element_types: element_type]():
     pass
 
@@ -856,17 +856,17 @@ fn take_many_things_of_specified_trait[element_type: type_of(AnyType),
 # CHECK-LABEL: lit.fn @"call_many_things_of_specified_trait
 fn call_many_things_of_specified_trait(a: TraitStruct):
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-    # CHECK-SAME: <:!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [!TraitStruct]
+    # CHECK-SAME: <:!lit.anytrait<!UnknownDestructibility> !AnyType, :variadic<!AnyType> [!TraitStruct]
     take_many_things_of_specified_trait[AnyType, TraitStruct]()
 
     # Int is movable.
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-    # CHECK-SAME: <:!lit.anytrait<!AnyType> !Movable, :variadic<!Movable> [!Int]
+    # CHECK-SAME: <:!lit.anytrait<!UnknownDestructibility> !Movable, :variadic<!Movable> [!Int]
     take_many_things_of_specified_trait[Movable, Int]()
 
     # TraitStruct conforms to SimpleTrait.
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-    # CHECK-SAME: <:!lit.anytrait<!AnyType> !SimpleTrait, :variadic<!SimpleTrait> [!TraitStruct, !TraitStruct]
+    # CHECK-SAME: <:!lit.anytrait<!UnknownDestructibility> !SimpleTrait, :variadic<!SimpleTrait> [!TraitStruct, !TraitStruct]
     take_many_things_of_specified_trait[SimpleTrait, TraitStruct, TraitStruct]()
 
 
@@ -928,12 +928,12 @@ fn test_pack_of_traits2[elt_trait: _AnyTypeMetaType, *elt_types: elt_trait](
 
 alias _MovableMetaType = type_of(Movable)
 
-fn take_anytype_ref[type: AnyType](ref value: type): pass
+fn take_anytype_ref[type: UnknownDestructibility](ref value: type): pass
 
 # CHECK-LABEL: lit.fn @"pass_movable_mt_ref
 fn pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: PassT):
     # CHECK-NEXT: lit.call @traits::@"take_anytype_ref
-    # CHECK-SAME: <:!AnyType !kgen.param<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT>
+    # CHECK-SAME: <:!UnknownDestructibility !kgen.param<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT>
     # CHECK-SAME: : !lit.generator<("value": !lit.ref<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT, mut *"a`"> ref) -> !kgen.none>
     take_anytype_ref(a)
 
@@ -952,7 +952,7 @@ struct FormVariadicPackWithCastedElementVariadic[
 # This tests that we can take UnsafePointer (which has an AnyType bound for T)
 # and conditional conformance rebind the parametric type with AnyType bound down
 # to Movable correctly.
-fn take_movable_pointer[T: Movable](ptr: UnsafePointer[T]): pass
+fn take_movable_pointer[T: Movable&AnyType](ptr: UnsafePointer[T]): pass
 # CHECK-LABEL: test_parametric_anytype_movable
 # CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <:!AnyType !kgen.param<:!kgen.param<:!lit.anytrait<!ImplicitlyCopyable_Movable> element_trait>
 fn test_parametric_anytype_movable[element_trait: _CollectionElementMetaType,
@@ -960,7 +960,7 @@ fn test_parametric_anytype_movable[element_trait: _CollectionElementMetaType,
                                   (ptr: UnsafePointer[element_types[0]]):
 
         # CHECK: lit.call {{.*}}take_movable_pointer
-        # CHECK-SAME: <:!Movable !kgen.param<:!kgen.param<:!lit.anytrait<!ImplicitlyCopyable_Movable> element_trait>
+        # CHECK-SAME: <:!Movable_AnyType !kgen.param<:!kgen.param<:!lit.anytrait<!ImplicitlyCopyable_Movable> element_trait>
         take_movable_pointer(ptr)
 
 
