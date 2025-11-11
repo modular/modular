@@ -19,7 +19,6 @@ _PACKAGES = {
     "MOGGKernelAPI": "max/kernels/src/Mogg/MOGGKernelAPI",
     "tensor": "max/kernels/src/extensibility/tensor",
 
-
     "compiler_internal": "max/kernels/src/extensibility/compiler_internal",
     "weights_registry": "max/kernels/src/weights_registry",
     "internal_utils": "max/kernels/src/internal_utils",
