@@ -126,8 +126,8 @@ public:
 
   /// Instantiate a new parameter evaluator with the given parameter values.
   ParameterEvaluator(
-      DenseMap<StringAttr, Attribute> declBindings =
-          DenseMap<StringAttr, Attribute>(),
+      DenseMap<StringAttr, TypedAttr> declBindings =
+          DenseMap<StringAttr, TypedAttr>(),
       ArrayRef<TypedAttr> indexBindings = SmallVector<TypedAttr>(),
       size_t expectedNumIndexBindings = 0, size_t inputDepth = 0)
       : declBindings(std::move(declBindings)),
@@ -145,13 +145,13 @@ public:
 
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
-  void setDeclBinding(StringAttr name, Attribute value,
+  void setDeclBinding(StringAttr name, TypedAttr value,
                       bool overwrite = false) {
     assert(overwrite ||
            !declBindings.count(name) && "parameter already declared!");
     declBindings[name] = value;
   }
-  void setDeclBinding(ParamDeclAttr decl, Attribute value,
+  void setDeclBinding(ParamDeclAttr decl, TypedAttr value,
                       bool overwrite = false) {
     setDeclBinding(decl.getName(), value, overwrite);
   }
@@ -166,7 +166,7 @@ public:
     return rewritten;
   }
 
-  bool overwriteDeclBinding(ParamDeclAttr decl, Attribute value) {
+  bool overwriteDeclBinding(ParamDeclAttr decl, TypedAttr value) {
     auto iter = declBindings.find(decl.getName());
     bool exist = iter != declBindings.end();
     declBindings[decl.getName()] = value;
@@ -174,12 +174,12 @@ public:
   }
 
   /// Iterate over the current parameter values.
-  const DenseMap<StringAttr, Attribute> &getDeclBindings() const {
+  const DenseMap<StringAttr, TypedAttr> &getDeclBindings() const {
     return declBindings;
   }
 
   /// Overwrite the current set of parameter values.
-  void setDeclBindings(const DenseMap<StringAttr, Attribute> &values) {
+  void setDeclBindings(const DenseMap<StringAttr, TypedAttr> &values) {
     declBindings = values;
   }
 
@@ -238,7 +238,7 @@ private:
   std::pair<IntegerAttr, bool> narrowCondOp(Attribute attr, size_t rootDepth);
 
   /// These are the name-based parameter bindings.
-  DenseMap<StringAttr, Attribute> declBindings;
+  DenseMap<StringAttr, TypedAttr> declBindings;
 
   /// These are the top-level index-based parameter bindings. This list is
   /// allowed to be shorter than the `expectedNumIndexBindings` value, in that
@@ -297,8 +297,8 @@ public:
 
   /// Instantiate a new parameter evaluator with the given parameter values.
   ParametricParameterEvaluator(
-      DenseMap<StringAttr, Attribute> declBindings =
-          DenseMap<StringAttr, Attribute>(),
+      DenseMap<StringAttr, TypedAttr> declBindings =
+          DenseMap<StringAttr, TypedAttr>(),
       ArrayRef<TypedAttr> indexBindings = SmallVector<TypedAttr>(),
       size_t expectedNumIndexBindings = 0, size_t inputDepth = 0);
 

@@ -250,7 +250,7 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
   // depth based on the current signature, per STCHDDDOS.
   // FIXME: Is there a better way around this? This previously manifested as
   // unintentional name shadowing problems, but walking here is inefficient.
-  auto upbindValue = [&](Attribute value) {
+  auto upbindValue = [&](TypedAttr value) -> TypedAttr {
     if (rootDepth + inputDepth == 0)
       return value;
     IndexDepthAdjuster adjuster(/*adjustDepth=*/rootDepth + inputDepth);
@@ -264,7 +264,7 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
     auto declRefType = doReplace(declRef.getType(), rootDepth);
     if (auto it = declBindings.find(declRef.getName());
         it != declBindings.end()) {
-      auto resultV = cast<TypedAttr>(upbindValue(it->second));
+      auto resultV = upbindValue(it->second);
       // If we are mapping between a sugared and non-sugared version of the
       // parameter, make sure to keep a consistent type.  This enables us to
       // substitute values into parameter expressions that have sugared and
@@ -528,7 +528,7 @@ ParametricParameterEvaluator::ParametricParameterEvaluator(
 
 /// Instantiate a new parameter evaluator with the given parameter values.
 ParametricParameterEvaluator::ParametricParameterEvaluator(
-    DenseMap<StringAttr, Attribute> declBindings,
+    DenseMap<StringAttr, TypedAttr> declBindings,
     ArrayRef<TypedAttr> indexBindings, size_t expectedNumIndexBindings,
     size_t inputDepth)
     : ParameterEvaluator(declBindings, indexBindings, expectedNumIndexBindings,

@@ -146,11 +146,11 @@ ErrorTreeOrSuccess ParamDeclareOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ParamDeclareOp::parametric_interpret(ArrayRef<Attribute> operands,
                                      ParametricInterpreterState &state) {
-  Attribute value = state.getReboundAttribute(getValue());
+  TypedAttr value = state.getReboundAttribute(getValue());
   if (!value)
     return ErrorTree(getLoc(), "cannot interpret kgen.param.declare");
 
-  state.appendParamValues({cast<TypedAttr>(value)}, 1, this->getOperation());
+  state.appendParamValues({value}, 1, this->getOperation());
   state.overwriteDeclBinding(getParamDecl(), value);
   return success();
 }

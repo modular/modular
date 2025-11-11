@@ -59,10 +59,10 @@ public:
 
   virtual TypedAttr getFailableReboundAttribute(TypedAttr attr) = 0;
 
-  virtual void setDeclBinding(Attribute decl, Attribute value,
+  virtual void setDeclBinding(Attribute decl, TypedAttr value,
                               bool overwrite = false) = 0;
 
-  virtual bool overwriteDeclBinding(Attribute decl, Attribute value) = 0;
+  virtual bool overwriteDeclBinding(Attribute decl, TypedAttr value) = 0;
 
   virtual ErrorTreeOr<TypedAttr>
   interpretGenerator(Attribute calleeAttr,
@@ -74,7 +74,7 @@ public:
       ArrayRef<Attribute> arguments, Location loc) = 0;
 
   virtual void
-  setDeclBindings(const DenseMap<StringAttr, Attribute> &values) = 0;
+  setDeclBindings(const DenseMap<StringAttr, TypedAttr> &values) = 0;
   virtual void setDeclBindings(Operation *gen, ArrayRef<TypedAttr> values) = 0;
 
   virtual void clearParameterCache() = 0;

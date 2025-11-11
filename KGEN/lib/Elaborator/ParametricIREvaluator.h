@@ -103,19 +103,18 @@ public:
     return getCurrentParamEval().getReboundAttribute(attr);
   }
 
-  void setDeclBinding(Attribute decl, Attribute value,
+  void setDeclBinding(Attribute decl, TypedAttr value,
                       bool overwrite = false) override {
     getCurrentParamEval().setDeclBinding(cast<ParamDeclAttr>(decl), value,
                                          overwrite);
   }
 
-  bool overwriteDeclBinding(Attribute decl, Attribute value) override {
+  bool overwriteDeclBinding(Attribute decl, TypedAttr value) override {
     return overwriteDeclBinding(cast<ParamDeclAttr>(decl), value);
   }
 
-  bool overwriteDeclBinding(ParamDeclAttr decl, Attribute value) {
-    return getCurrentParamEval().overwriteDeclBinding(cast<ParamDeclAttr>(decl),
-                                                      value);
+  bool overwriteDeclBinding(ParamDeclAttr decl, TypedAttr value) {
+    return getCurrentParamEval().overwriteDeclBinding(decl, value);
   }
 
   TypedAttr getFailableReboundAttribute(TypedAttr attr) override {
@@ -133,7 +132,7 @@ public:
       Attribute calleeAttr, llvm::ArrayRef<TypedAttr> paramValues,
       ArrayRef<Attribute> arguments, Location loc) override;
 
-  void setDeclBindings(const DenseMap<StringAttr, Attribute> &values) override {
+  void setDeclBindings(const DenseMap<StringAttr, TypedAttr> &values) override {
     getCurrentParamEval().setDeclBindings(values);
   }
 
