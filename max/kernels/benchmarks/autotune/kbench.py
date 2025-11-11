@@ -556,7 +556,9 @@ class Spec:
                 for ps in cfg:
                     if ps.name == k:
                         ps.value_set.append(v)
-                        ps.value_set = list(dict.fromkeys(ps.value_set))
+                        ps.value_set = list(
+                            dict.fromkeys(flatten(ps.value_set))
+                        )
                         found = True
                         break
                 if not found:
