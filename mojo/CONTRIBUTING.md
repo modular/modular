@@ -18,10 +18,11 @@ effectively toward the continued improvement of Mojo.
 
 For more information on our priorities, see the following documents:
 
-- Our [Vision document](./stdlib/docs/vision.md) describes the guiding
+- Our [Vision document](https://docs.modular.com/mojo/vision) describes the guiding
   principles behind our development efforts.
-- Our [Roadmap](./stdlib/docs/roadmap.md) identifies concrete development goals
-  as we work towards an even more robust and feature-rich standard library.
+- Our [Roadmap](https://docs.modular.com/mojo/roadmap/) identifies concrete
+  development goals as we work towards an even more robust and feature-rich
+  standard library.
 
 For technical details on developing for the standard library, see the following
 documents:
