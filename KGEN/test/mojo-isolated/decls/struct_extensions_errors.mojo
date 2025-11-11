@@ -4,19 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated --mojo-disable-builtins -verify-diagnostics -split-input-file %s
-
-
-# This is needed by the compiler to synthesize trivial bit.
-struct Bool:
-    @implicit
-    fn __init__(out self, value: __mlir_type.i1):
-        pass
-
-
-trait AnyType:
-    pass
-
+# RUN: %parse-mojo-isolated -verify-diagnostics -split-input-file %s
 
 # @expected-note @below {{extension already assumes these parameter declarations}}
 struct Spaceship[T: AnyType]:
@@ -65,8 +53,6 @@ __extension Spaceship:
 
 # // -----
 
-alias int = __mlir_type.index
-
 # Ambiguous Lookup Case for Two Structs Via One Extension  (ALCFTSVOE):
 # This is a case where we accidentally reference multiple structs, and one of
 # them is accessed via an extension.
@@ -74,7 +60,7 @@ alias int = __mlir_type.index
 
 # @expected-note @below {{conflicts with this previous struct declaration}}
 struct Spaceship:
-    var fuel: int
+    var fuel: Int
 
 
 # @expected-error @below {{invalid redefinition of 'Spaceship'}}
@@ -86,7 +72,7 @@ __extension Spaceship:
     pass
 
 
-fn foo(ship: Spaceship) -> int:  # shouldn't crash here
+fn foo(ship: Spaceship) -> Int:  # shouldn't crash here
     return ship.fuel  # shouldn't crash here either
 
 
@@ -123,12 +109,12 @@ fn zork():
 
 struct BaseStruct:
     # expected-note @below {{extension method conflicts with struct declaration}}
-    var colliding: __mlir_type.index
+    var colliding: Int
 
 
 __extension BaseStruct:
     # expected-error @below {{invalid redefinition of 'colliding'}}
-    fn colliding(self) -> __mlir_type.index:
+    fn colliding(self) -> Int:
         return self.colliding
 
 
@@ -144,12 +130,12 @@ fn test_collisions(s: BaseStruct):
 
 struct BaseStruct:
     # expected-note @below {{extension method conflicts with struct declaration}}
-    alias colliding: __mlir_type.index = __mlir_attr.`42 : index`
+    alias colliding: Int = 42
 
 
 __extension BaseStruct:
     # expected-error @below {{invalid redefinition of 'colliding'}}
-    fn colliding(self) -> __mlir_type.index:
+    fn colliding(self) -> Int:
         return self.colliding
 
 
@@ -165,12 +151,12 @@ fn test_collisions(s: BaseStruct):
 
 struct BaseStruct:
     # expected-note @below {{extension declaration conflicts with struct declaration}}
-    alias colliding: __mlir_type.index = __mlir_attr.`42 : index`
+    alias colliding: Int = 42
 
 
 __extension BaseStruct:
     # expected-error @below {{invalid redefinition of 'colliding'}}
-    alias colliding: __mlir_type.index = __mlir_attr.`43 : index`
+    alias colliding: Int = 43
 
 
 fn test_collisions(s: BaseStruct):
