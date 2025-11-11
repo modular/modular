@@ -5,3 +5,4 @@
 # ===----------------------------------------------------------------------=== #
 
 from .foo import printIt, defineIt
+from .bar import emitLoad
