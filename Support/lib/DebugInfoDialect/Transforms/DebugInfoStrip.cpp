@@ -59,7 +59,7 @@ void DebugInfo::stripDebugInfo(Operation *scope, bool preserveLineTables) {
     }
 
     // For everything else, update the location.
-    replacer.replaceElementsIn(op, /*replaceAttrs=*/false,
+    replacer.replaceElementsIn(op, /*replaceAttrs=*/true,
                                /*replaceLocs=*/true);
     return WalkResult::advance();
   });
