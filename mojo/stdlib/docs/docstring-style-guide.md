@@ -28,27 +28,29 @@ style guide.
   - Similarly, items in a bulleted list should end with a period, unless they
     are single words, or items that would go in code font.
 
-- Use code font for all API names (structs, functions, attributes, argument and
-  parameter names, etc.).
+- Follow the existing style of the source file. (For example, wrap text at
+  80 columns.)
 
-  - Create code font with backticks (\`Int\`).
+### Code in text
 
-  - When writing function/method names in text, add empty parentheses after the
-    name, regardless of argument length. Don't include square brackets (even if
-    the function takes parameters) If it's crucial to identify a specific
-    function overload, add argument names, and/or a parameter list.
+Use code font for all API names (structs, functions, attributes, argument and
+parameter names, etc.).
 
-    For example:
+- Create code font with backticks (\`Int\`).
 
-    - Call the `erase()` method.
+- When writing function/method names in text, add empty parentheses after the
+  name, regardless of argument length. Don't include square brackets (even if
+  the function takes parameters) If it's crucial to identify a specific
+  function overload, add argument names, and/or a parameter list.
 
-    - Use `pop(index)` to pop a specific element from the list.
+  For example:
 
-    - If you know the power at compile time, you can use the `pow[n](x)` version
-      of this function.
+  - Call the `erase()` method.
 
-  - Follow the existing style of the source file. (For example, wrap text at
-    80 columns.)
+  - Use `pop(index)` to pop a specific element from the list.
+
+  - If you know the power at compile time, you can use the `pow[n](x)` version
+    of this function.
 
 ## Functions/Methods
 
@@ -80,7 +82,8 @@ Parameters:
 
 Args:
     value: The value to fill the array with. In the case of an extremely long
-        description, wrap to another line and indent subsequent lines relative to
+        description, wrap to another line and indent subsequent lines relative
+        to the arg/parameter name.
 ```
 
 In the description for each parameter or argument:
@@ -92,6 +95,11 @@ In the description for each parameter or argument:
   generator. Add additional sentences for further description, as appropriate.
 
 - Should usually begin with “The” or “A.”
+
+Note that the argument/parameter name that appears before the description does
+**not** require backticks—the name is automatically formatted in code font. But if
+you refer to an argument/parameter name, struct, etc., in the description, use
+backticks as usual.
 
 ### Return values
 
@@ -321,3 +329,49 @@ fn select[
     ```
     """
 ```
+
+## String escape characters
+
+Docstrings honor string escape sequences, so the sequence `\n` produces a
+newline character, even if the escape sequence appears inside backticks or in a
+code block. Use `\\` to insert a literal backslash. For example, use `\\t` to
+insert the escape sequence for a tab character inside a code example:
+
+```markdown
+    Examples:
+
+    ```mojo
+    print("One\\tTwo")
+    ```
+```
+
+## Math formatting
+
+Mojo API doc generation supports KaTex math markup. KaTeX formulas are delimited
+by double dollar-signs (`$$`). Note that any backslashes in the KaTeX need to be
+escaped with a second backslash:
+
+```markdown
+$$
+    1 - \\frac{u \\cdot v}{\\|u\\|_2 \\|v\\|_2}.
+$$
+```
+
+Output:
+
+$$
+    1 - \frac{u \cdot v}{\|u\|_2 \|v\|_2}
+$$
+
+The dollar sign delimiters can be inline (for short inline expressions like
+`$$x^y$$`—$x^y$). If placed on their own lines, as shown above, the formula is
+rendered as a centered block.
+
+Should you need to include two dollar signs in your API doc, enclose them in a
+`<span>` tag:
+
+```mojo
+<span>$$</span>
+```
+
+The `$$` delimiters are ignored inside backticks and in code blocks.
