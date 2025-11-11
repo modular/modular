@@ -442,7 +442,8 @@ fn isatty(fd: Int) -> Bool:
     """Checks whether a file descriptor refers to a terminal.
 
     Returns `True` if the file descriptor `fd` is open and connected to a
-    tty(-like) device, otherwise `False`.
+    tty(-like) device, otherwise `False`. On GPUs, the function always returns
+    `False`.
 
     Args:
         fd: A file descriptor.
@@ -461,4 +462,5 @@ fn isatty(fd: Int) -> Bool:
             print("Output is redirected")
         ```
     """
+
     return FileDescriptor(fd).isatty()
