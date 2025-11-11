@@ -30,6 +30,7 @@ import sys
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
+from functools import cache
 from pathlib import Path
 from pprint import pformat
 from subprocess import Popen, TimeoutExpired, check_call, check_output
@@ -86,19 +87,22 @@ def test_single_request(model: str, task: str) -> None:
     logger.info(f"Test single request OK. Response: {resp}")
 
 
-def get_gpu_model() -> str:
-    amd = ["rocm-smi", "--showid", "--json"]
-    nv = ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader", "-i", "0"]
+@cache
+def get_gpu_name_and_count() -> tuple[str, int]:
+    """Returns the name and number of the available GPUs, e.g. ('MI300', 2)"""
+    amd = ["amd-smi", "static", "--json"]
+    nv = ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]
     try:
         result = check_output(amd, text=True)
-        data = json.loads(result.strip())
-        return next(iter(data.values()))["Device Name"]
+        data = json.loads(result.strip())["gpu_data"]
+        return data[0]["asic"]["market_name"], len(data)
     except:
         try:
-            return check_output(nv, text=True).strip()
+            lines = check_output(nv, text=True).strip().split("\n")
+            return lines[0].strip(), len(lines)
         except:
-            logger.warning("nvidia-smi and rocm-smi both failed")
-            return "N/A"
+            logger.warning("nvidia-smi and amd-smi both failed")
+            return "N/A", 0
 
 
 def server_is_ready() -> bool:
@@ -110,7 +114,8 @@ def server_is_ready() -> bool:
 
 
 def get_server_cmd(framework: str, model: str) -> list[str]:
-    sglang_backend = "triton" if "b200" in get_gpu_model().lower() else "fa3"
+    gpu_model, _ = get_gpu_name_and_count()
+    sglang_backend = "triton" if "b200" in gpu_model.lower() else "fa3"
     SGLANG = f"sglang.launch_server --attention-backend {sglang_backend} --mem-fraction-static 0.8"
     # limit-mm-per-prompt.video is for InternVL3 on B200
     VLLM = "vllm.entrypoints.openai.api_server --max-model-len 16384 --limit-mm-per-prompt.video 0"
@@ -207,6 +212,8 @@ def gracefully_stop_process(process: Popen) -> None:  # type: ignore
 
 @dataclass
 class EvalSummary:
+    gpu_name: str
+    gpu_count: int
     startup_time_seconds: float
     eval_task: str
     accuracy: float
@@ -238,8 +245,11 @@ def build_eval_summary(
         else:
             raise ValueError(f"Unknown task: {task}")
 
+        gpu_name, gpu_count = get_gpu_name_and_count()
         summaries.append(
             EvalSummary(
+                gpu_name=gpu_name,
+                gpu_count=gpu_count,
                 startup_time_seconds=round(startup_time_seconds, 2),
                 eval_task=task,
                 accuracy=accuracy,
