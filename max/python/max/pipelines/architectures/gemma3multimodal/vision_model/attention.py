@@ -18,10 +18,10 @@ from max.graph import TensorValue, ops
 from max.nn import Linear
 from max.nn.layer import Module
 
-from .model_config import Gemma3ForConditionalGenerationConfig
+from ..model_config import Gemma3ForConditionalGenerationConfig
 
 
-# from Huggingface Transformers
+# ⚠️ from Huggingface Transformers not sure if complete
 class Gemma3VisionAttention(Module):
     """Standard self-attention for SigLIP vision encoder.
 
