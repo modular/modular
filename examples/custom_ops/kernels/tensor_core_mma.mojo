@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys.info import (
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
@@ -61,7 +62,6 @@ from layout.layout_tensor import (
 from layout.math import outer_product_acc
 from layout.swizzle import Swizzle
 from layout.tensor_core import TensorCore
-from memory import UnsafePointer
 from runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 

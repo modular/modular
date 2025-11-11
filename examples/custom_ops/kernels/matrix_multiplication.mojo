@@ -14,6 +14,7 @@
 # DOC: max/tutorials/custom-ops-matmul.mdx
 
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of
 
 import compiler

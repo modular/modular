@@ -124,6 +124,58 @@ what we publish.
 
 ### Library changes {#25-7-library-changes}
 
+- `UnsafePointer` has been renamed to `LegacyUnsafePointer` and a new
+  `UnsafePointer` has [taken its place](https://forum.modular.com/t/proposal-unsafepointer-v2/2411?u=nate).
+  Similarly, `OpaquePointer` has been renamed to `LegacyOpaquePointer` and a new
+  `OpaquePointer` has taken its place.
+  The primary differences is the ordering or parameters now looks as such:
+
+  ```mojo
+  struct UnsafePointer[
+    mut: Bool, //, # Inferred mutability
+    type: AnyType,
+    origin: Origin[mut], # Non-defaulted origin
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+  ]
+
+  alias OpaquePointer[
+    mut: Bool, //, # Inferred mutability
+    origin: Origin[mut], # Non-defaulted origin
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+  ] = UnsafePointer[NoneType, origin, address_space=address_space]
+  ```
+
+  Its implicit constructors now no longer allow for unsafe casting between
+  mutabilities and origins. Code will need to update to the new `UnsafePointer`,
+  however, in the interim, users can find-and-replace their current usages of
+  `UnsafePointer` and rename them to `LegacyUnsafePointer`. Another option is
+  users can add the following import statement to the beginning of any files
+  relying on the old pointer type:
+
+  ```mojo
+  from memory import LegacyUnsafePointer as UnsafePointer
+  # and/or if you use OpaquePointer
+  from memory import LegacyOpaquePointer as OpaquePointer
+  ```
+
+  Users can also use the `as_legacy_pointer` and `as_unsafe_pointer` conversion
+  functions to convert between the two pointer types during this migration
+  period.
+
+  _Note_: `LegacyUnsafePointer` and `LegacyOpaquePointer` will eventually be
+  deprecated and removed in a future version of Mojo.
+
+  Lastly, `alloc` has been moved from a static method on UnsafePointer to a free
+  standing `alloc` function. Therefore, code that was written as:
+
+  ```mojo
+  var ptr = UnsafePointer[Int].alloc(3)
+  # will now be rewritten as
+  var ptr = alloc[Int](3)
+  ```
+
 #### Libraries
 
 - Added `Span.binary_search_by()` which allows binary searching with a custom
@@ -188,7 +240,7 @@ what we publish.
   `Bool` was the only Mojo standard library type to implement
   `ImplicitlyIntable`. Conversions from `Bool` to `Int` can now be performed
   explicitly, using `Int(bool-val)` (via the remaining `Intable` trait, which
-  only supports *explicit* conversions).
+  only supports _explicit_ conversions).
 
 - `assert_equal` now displays colored character-by-character diffs when string
   comparisons fail, making it easier to spot differences. Differing characters

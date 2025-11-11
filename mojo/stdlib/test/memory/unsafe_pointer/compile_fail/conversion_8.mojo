@@ -13,16 +13,14 @@
 
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
-from memory import UnsafePointerV2
 
-
-fn test_cannot_cast_between_different_types[T: AnyType](p: UnsafePointerV2[T]):
+fn test_cannot_cast_between_different_types[T: AnyType](p: UnsafePointer[T]):
     pass
 
 
 def main():
     var x = 42
 
-    var p = UnsafePointerV2(to=x)
+    var p = UnsafePointer(to=x)
     # CHECK: invalid call to 'test_cannot_cast_between_different_types'
     test_cannot_cast_between_different_types[String](p)

@@ -11,40 +11,37 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import (
-    LegacyUnsafePointer as UnsafePointerV1,
-    UnsafePointerV2,
-)
-
 from testing import TestSuite
 
 
 # V2 -> V1 tests
 
 
-fn v1_mutable(_p: UnsafePointerV1[Int, mut=True, origin=_]):
+fn v1_mutable(_p: LegacyUnsafePointer[Int, mut=True, origin=_]):
     pass
 
 
-fn v1_immutable(_p: UnsafePointerV1[Int, mut=False, origin=_]):
+fn v1_immutable(_p: LegacyUnsafePointer[Int, mut=False, origin=_]):
     pass
 
 
-fn v1_mutable_any(_p: UnsafePointerV1[Int, mut=True, origin=MutAnyOrigin]):
+fn v1_mutable_any(_p: LegacyUnsafePointer[Int, mut=True, origin=MutAnyOrigin]):
     pass
 
 
-fn v1_immutable_any(_p: UnsafePointerV1[Int, mut=False, origin=ImmutAnyOrigin]):
+fn v1_immutable_any(
+    _p: LegacyUnsafePointer[Int, mut=False, origin=ImmutAnyOrigin]
+):
     pass
 
 
-fn v1_unbound(_p: UnsafePointerV1[Int, **_]):
+fn v1_unbound(_p: LegacyUnsafePointer[Int, **_]):
     pass
 
 
 def test_v2_mutable_converts_to_v1():
     var x = 42
-    var p = UnsafePointerV2(to=x)
+    var p = UnsafePointer(to=x)
 
     v1_mutable(p)
     v1_immutable(p)
@@ -55,7 +52,7 @@ def test_v2_mutable_converts_to_v1():
 
 def test_v2_immutable_converts_to_v1():
     var x = 42
-    var p = UnsafePointerV2(to=x).as_immutable()
+    var p = UnsafePointer(to=x).as_immutable()
 
     v1_mutable(p)
     v1_immutable(p)
@@ -66,7 +63,7 @@ def test_v2_immutable_converts_to_v1():
 
 def test_v2_mutable_any_converts_to_v1():
     var x = 42
-    var p = UnsafePointerV2(to=x).as_any_origin()
+    var p = UnsafePointer(to=x).as_any_origin()
 
     v1_mutable(p)
     v1_immutable(p)
@@ -77,7 +74,7 @@ def test_v2_mutable_any_converts_to_v1():
 
 def test_v2_immutable_any_converts_to_v1():
     var x = 42
-    var p = UnsafePointerV2(to=x).as_immutable().as_any_origin()
+    var p = UnsafePointer(to=x).as_immutable().as_any_origin()
 
     v1_mutable(p)
     v1_immutable(p)
@@ -97,21 +94,21 @@ fn v2_immutable(_p: UnsafeImmutPointer[Int]):
     pass
 
 
-fn v2_mutable_any(_p: UnsafePointerV2[Int, MutAnyOrigin]):
+fn v2_mutable_any(_p: UnsafePointer[Int, MutAnyOrigin]):
     pass
 
 
-fn v2_immutable_any(_p: UnsafePointerV2[Int, ImmutAnyOrigin]):
+fn v2_immutable_any(_p: UnsafePointer[Int, ImmutAnyOrigin]):
     pass
 
 
-fn v2_unbound(_p: UnsafePointerV2[Int, **_]):
+fn v2_unbound(_p: UnsafePointer[Int, **_]):
     pass
 
 
 def test_v1_mutable_converts_to_v2():
     var x = 42
-    var p = UnsafePointerV1(to=x)
+    var p = LegacyUnsafePointer(to=x)
 
     v2_mutable(p)
     v2_immutable(p)
@@ -122,7 +119,7 @@ def test_v1_mutable_converts_to_v2():
 
 def test_v1_immutable_converts_to_v2():
     var x = 42
-    var p = UnsafePointerV1(to=x).as_immutable()
+    var p = LegacyUnsafePointer(to=x).as_immutable()
 
     v2_mutable(p)
     v2_immutable(p)
@@ -133,7 +130,7 @@ def test_v1_immutable_converts_to_v2():
 
 def test_v1_mutable_any_converts_to_v2():
     var x = 42
-    var p = UnsafePointerV1(to=x).as_any_origin()
+    var p = LegacyUnsafePointer(to=x).as_any_origin()
 
     v2_mutable(p)
     v2_immutable(p)
@@ -144,7 +141,7 @@ def test_v1_mutable_any_converts_to_v2():
 
 def test_v1_immutable_any_converts_to_v2():
     var x = 42
-    var p = UnsafePointerV1(to=x).as_immutable().as_any_origin()
+    var p = LegacyUnsafePointer(to=x).as_immutable().as_any_origin()
 
     v2_mutable(p)
     v2_immutable(p)

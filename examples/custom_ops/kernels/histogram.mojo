@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import Atomic
 
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx

@@ -13,18 +13,16 @@
 
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
-from memory import UnsafePointerV2
-
 
 fn test_cannot_cast_immutable_to_mutable[
     T: AnyType
-](p: UnsafePointerV2[mut=True, T, **_]):
+](p: UnsafePointer[mut=True, T, **_]):
     pass
 
 
 def main():
     var x = 42
 
-    var p = UnsafePointerV2(to=x).as_immutable()
+    var p = UnsafePointer(to=x).as_immutable()
     # CHECK: constraint failed: Invalid UnsafePointer conversion from immutable to mutable
     test_cannot_cast_immutable_to_mutable(p)

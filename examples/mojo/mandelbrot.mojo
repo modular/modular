@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import iota
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import num_physical_cores, simd_width_of
 
 import benchmark

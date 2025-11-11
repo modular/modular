@@ -15,6 +15,7 @@
 # large array of values to produce a single result.
 # Reductions and scans are common algorithm patterns in parallel computing.
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import rand
 
 from algorithm import sum

@@ -13,17 +13,15 @@
 
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
-from memory import UnsafePointerV2
-
 
 fn test_as_any_origin_fails_if_mutability_is_unbound[
     T: AnyType
-](p: UnsafePointerV2[T, **_]):
+](p: UnsafePointer[T, **_]):
     # CHECK: constraint failed: An UnsafePointer with unbound mutability cannot be cast to 'AnyOrigin'.
     var _p = p.as_any_origin()
 
 
 def main():
     var x = 42
-    var p = UnsafePointerV2(to=x)
+    var p = UnsafePointer(to=x)
     test_as_any_origin_fails_if_mutability_is_unbound(p)

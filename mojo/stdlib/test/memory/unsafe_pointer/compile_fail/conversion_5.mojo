@@ -13,18 +13,16 @@
 
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
-from memory import UnsafePointerV2
-
 
 fn test_cannot_cast_from_mutable_any_to_named[
     T: AnyType, mut: Bool, //, origin: Origin[mut]
-](p: UnsafePointerV2[T, origin]):
+](p: UnsafePointer[T, origin]):
     pass
 
 
 def main():
     var x = 42
 
-    var p = UnsafePointerV2(to=x).as_any_origin()
-    # CHECK: argument #0 cannot be converted from 'UnsafePointerV2[Int, MutAnyOrigin]' to 'UnsafePointerV2[Int, x]'
+    var p = UnsafePointer(to=x).as_any_origin()
+    # CHECK: argument #0 cannot be converted from 'UnsafePointer[Int, MutAnyOrigin]' to 'UnsafePointer[Int, x]'
     test_cannot_cast_from_mutable_any_to_named[origin_of(x)](p)

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import iota
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import rand
 from sys import argv, has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 

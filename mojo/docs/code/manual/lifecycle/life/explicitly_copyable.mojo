@@ -24,11 +24,11 @@ struct BigExpensiveStruct(Copyable, Movable):
 
 
 struct ExplicitCopyOnly[ElementType: Copyable & Movable](Copyable, Movable):
-    var ptr: UnsafePointer[ElementType]
+    var ptr: UnsafePointer[ElementType, MutOrigin.external]
 
     fn __init__(out self, var elt: ElementType):
         """Constructs a new container, storing the given value."""
-        self.ptr = UnsafePointer[ElementType].alloc(1)
+        self.ptr = alloc[ElementType](1)
         self.ptr.init_pointee_move(elt^)
 
     fn copy(self) -> Self:

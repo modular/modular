@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of
 
 # AMD Helper functions and structs for Tensor Core MMA operations
@@ -32,7 +33,7 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from memory import Pointer, UnsafePointer
+from memory import Pointer
 
 from utils.index import IndexList
 

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from os.atomic import Atomic
 from random import randint
 from sys import has_accelerator, size_of

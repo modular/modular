@@ -13,12 +13,10 @@
 
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
-from memory import UnsafePointerV2
-
 
 fn test_cannot_cast_between_different_named_origins[
     T: AnyType, mut: Bool, //, origin: Origin[mut]
-](p: UnsafePointerV2[T, origin]):
+](p: UnsafePointer[T, origin]):
     pass
 
 
@@ -26,6 +24,6 @@ def main():
     var x = 42
     var y = 55
 
-    var p = UnsafePointerV2(to=x)
-    # CHECK: argument #0 cannot be converted from 'UnsafePointerV2[Int, x]' to 'UnsafePointerV2[Int, y]'
+    var p = UnsafePointer(to=x)
+    # CHECK: argument #0 cannot be converted from 'UnsafePointer[Int, x]' to 'UnsafePointer[Int, y]'
     test_cannot_cast_between_different_named_origins[origin_of(y)](p)

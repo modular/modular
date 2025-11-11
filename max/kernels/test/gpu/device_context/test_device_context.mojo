@@ -16,7 +16,11 @@ from math import iota
 from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    LegacyOpaquePointer as OpaquePointer,
+    UnsafePointer as UnsafePointerV2,
+)
 from testing import assert_equal
 
 
@@ -165,7 +169,7 @@ struct ToLegacyUnsafePointer(Copyable, DevicePassable, Movable):
 
 
 @fieldwise_init
-struct ToUnsafePointerV2(Copyable, DevicePassable, Movable):
+struct ToUnsafePointer(Copyable, DevicePassable, Movable):
     alias device_type: AnyType = UnsafePointerV2[Float32, MutAnyOrigin]
 
     fn _to_device_type(self, target: OpaquePointer):
@@ -190,14 +194,14 @@ def test_kernel_pointer_conversions(ctx: DeviceContext):
     # No conversion needed
     ctx.enqueue_function_checked[kernel, kernel](
         ToLegacyUnsafePointer(),
-        ToUnsafePointerV2(),
+        ToUnsafePointer(),
         grid_dim=1,
         block_dim=1,
     )
 
     # Converts from UnsafePointer <-> LegacyUnsafePointer
     ctx.enqueue_function_checked[kernel, kernel](
-        ToUnsafePointerV2(),
+        ToUnsafePointer(),
         ToLegacyUnsafePointer(),
         grid_dim=1,
         block_dim=1,

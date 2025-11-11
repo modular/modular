@@ -13,17 +13,15 @@
 
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
-from memory import UnsafePointerV2
-
 
 fn test_mut_cast_fails_if_mutabilities_do_not_match[
     T: AnyType
-](p: UnsafePointerV2[T, **_]):
+](p: UnsafePointer[T, **_]):
     # CHECK: constraint failed: Cannot safely cast an immutable pointer to mutable
     var _p = p.mut_cast[True]()
 
 
 def main():
     var x = 42
-    var p = UnsafePointerV2(to=x).as_immutable()
+    var p = UnsafePointer(to=x).as_immutable()
     test_mut_cast_fails_if_mutabilities_do_not_match(p)

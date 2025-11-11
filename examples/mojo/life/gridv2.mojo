@@ -15,6 +15,7 @@ import random
 from collections import Optional
 
 from memory import memcpy, memset_zero
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 struct Grid[rows: Int, cols: Int](Copyable, Movable, Stringable):

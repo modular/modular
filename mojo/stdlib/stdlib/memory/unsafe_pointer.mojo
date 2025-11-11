@@ -20,12 +20,7 @@ from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from os import abort
 from python import PythonObject
 
-from .legacy_unsafe_pointer import (
-    _default_invariant,
-    _IsUnsafePointer,
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
+from .legacy_unsafe_pointer import _default_invariant, _IsUnsafePointer
 
 
 # ===----------------------------------------------------------------------=== #
@@ -36,7 +31,9 @@ from .legacy_unsafe_pointer import (
 @always_inline
 fn alloc[
     type: AnyType, /
-](count: Int, *, alignment: Int = align_of[type]()) -> ExternalMutPointer[type]:
+](count: Int, *, alignment: Int = align_of[type]()) -> UnsafePointer[
+    type, MutOrigin.external
+]:
     """Allocates contiguous storage for `count` elements of `type` with
     alignment `alignment`.
 
@@ -86,7 +83,7 @@ alias UnsafeMutPointer[
     origin: MutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = UnsafePointerV2[mut=True, type, origin, address_space=address_space]
+] = UnsafePointer[mut=True, type, origin, address_space=address_space]
 """A mutable unsafe pointer."""
 
 alias UnsafeImmutPointer[
@@ -94,294 +91,34 @@ alias UnsafeImmutPointer[
     origin: ImmutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = UnsafePointerV2[type, origin, address_space=address_space]
+] = UnsafePointer[type, origin, address_space=address_space]
 """An immutable unsafe pointer."""
 
-alias OpaquePointerV2[
+alias OpaquePointer[
     mut: Bool, //,
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = UnsafePointerV2[NoneType, origin, address_space=address_space]
+] = UnsafePointer[NoneType, origin, address_space=address_space]
 """An opaque pointer, equivalent to the C `(const) void*` type."""
 
 alias OpaqueMutPointer[
     origin: MutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = OpaquePointerV2[origin, address_space=address_space]
+] = OpaquePointer[origin, address_space=address_space]
 """A mutable opaque pointer, equivalent to the C `void*` type."""
 
 alias OpaqueImmutPointer[
     origin: ImmutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = OpaquePointerV2[origin, address_space=address_space]
+] = OpaquePointer[origin, address_space=address_space]
 """An immutable opaque pointer, equivalent to the C `const void*` type."""
 
 
-alias ExternalMutPointer[
-    type: AnyType,
-    *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-] = ExternalPointer[
-    type,
-    mut=True,
-    address_space=address_space,
-]
-"""A mutable `ExternalPointer`."""
-
-alias ExternalImmutPointer[
-    type: AnyType,
-    *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-] = ExternalPointer[
-    type,
-    mut=True,
-    address_space=address_space,
-]
-"""An immutable `ExternalPointer`."""
-
-alias ExternalPointer[
-    type: AnyType,
-    *,
-    mut: Bool = False,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-] = UnsafePointerV2[
-    mut=mut,
-    type,
-    Origin[mut].external,
-    address_space=address_space,
-]
-"""`ExternalPointer[T]` is an alias of `UnsafePointerV2` with an `external`
-origin, informing the compiler this pointer does not alias any existing values.
-
-Parameters:
-    type: The type the pointer points to.
-    mut: Whether the pointer is mutable - defaults to `False`.
-    address_space: The address space associated with the pointer.
-
-Unlike `UnsafePointer`, `ExternalPointer` does not have a parametric
-`origin` making it unable to alias any existing values. This can lead to
-unexpected behavior if not used correctly. Before you use `ExternalPointer`,
-consider using a more memory safe type instead: `Pointer[T]`, `Span[T]`,
-`ref T`, or `OwnedPointer[T]`. If you _do_ need the unsafe functionality of
-pointer-like behavior (pointer arithmetic, unchecked dereferencing etc.) and are
-unable to use a memory-safe abstraction, consider using `UnsafePointer` with a
-parameterized `origin`.
-
-Safety:
-- **Origin management**: An `ExternalPointer` does not alias any values.
-  See below for more information on how to correctly use origins with
-  `ExternalPointer`.
-- All safety requirements of `UnsafePointer` apply to `ExternalPointer`
-  as well, including: manual memory management, null checking, uninitialized
-  memory access, and bounds checking.
-
-Notes:
-
-Correct origin usage:
-
-`ExternalPointer[T]` contains an `external` origin, meaning it points to
-memory that does not alias any other values. Using an `ExternalPointer`
-**will not** extend the lifetime of any other values in scope. This includes
-returning an `ExternalPointer` from a struct's member function, as it
-will not extend the struct's lifetime _even though_ the struct holds a copy of
-the same pointer. It is seldom correct to return an `ExternalPointer`
-from a member function.
-
-Consider the following example:
-
-```mojo
-struct MyContainer[T: AnyType & Movable]:
-    var data: ExternalMutPointer[T]
-
-    fn __init__(out self, var value: T)
-        self.data = alloc[T](1)
-        self.data.init_pointee_move(value^)
-
-    fn __del__(deinit self):
-        self.data.destroy_pointee()
-        self.data.free()
-
-    fn get_underlying_pointer(self) -> ExternalMutPointer[T]:
-        return self.data
-
-def main():
-    var container = MyContainer[Int](42)
-    var ptr = container.get_underlying_pointer()
-    # container^.__del__() will be called here, deallocating the pointer.
-
-    # `ptr` now points to deallocated memory.
-    print(ptr[]) # <-- Undefined behavior!
-```
-
-The above example shows how easily undefined behavior can arise when using
-`ExternalPointer` incorrectly. Due to Mojo's ASAP destruction rules, the
-compiler will destroy `container` before `ptr` is read from - meaning
-`ptr` now points to deallocated memory. This is because `ptr` does not
-have an origin tied back to `container`.
-
-To prevent bugs like this, `get_underlying_pointer` should be implemented in
-one of the following ways.
-
-Option 1:
-
-Have this function "consume" `self` via `deinit`. This will - at compile time -
-prevent the usage of `container` after this function is called and it will
-prevent `container` from deallocating the memory as its `__del__` method will
-not be called by the compiler.
-
-```mojo
-struct MyContainer[T: AnyType & Movable]:
-    var data: ExternalMutPointer[T]
-
-    # Notice the use of `deinit` to consume `self`.
-    fn get_underlying_pointer(deinit self) -> ExternalMutPointer[T]:
-        return self.data
-
-def main():
-    var container = MyContainer[Int](42)
-    # Notice the `^` transfer sigil.
-    var ptr = container^.get_underlying_pointer()
-
-    # This will print `42` since `container.__del__()` is not called, leaving
-    # the allocated memory intact.
-    print(ptr[])
-
-    # Don't forget the cleanup the memory!
-    ptr.destroy_pointee()
-    ptr.free()
-```
-
-Option 2:
-
-Have the function return a pointer type with an origin tied back to `self`. This
-will inform the compiler that the returned pointer is aliasing `container`,
-preventing the compiler from destroying `container` until `ptr` and
-`container` are both unused.
-
-```mojo
-struct MyContainer[T: AnyType & Movable]:
-    var data: ExternalMutPointer[T]
-
-    # Notice the use of `origin=origin_of(self)`.
-    fn get_underlying_pointer(
-        self,
-    ) -> UnsafeImmutPointer[T, origin=origin_of(self)]:
-        return self.data
-            # cast the pointer to immutable
-            .as_immutable()
-            # cast the origin to the origin of `self`
-            .unsafe_origin_cast[origin_of(self)]()
-
-def main():
-    var container = MyContainer[Int](42)
-    var ptr = container.get_underlying_pointer()
-    # The compiler does *not* destroy `container` here, as `ptr` contains
-    # an origin tied back to `container`.
-
-    print(ptr[]) # <-- This will now print `42`!
-
-    # `container^.__del__()` will be called here, freeing the memory.
-```
-
-Option 3:
-
-Ensure the function resets its data field to null. This will ensure that when
-`self` is destroyed, it does _not_ deallocate the memory exposed via
-`steal_underlying_pointer`. This option should seldom be used as it can still lead
-to bugs if `self` does not account for a null pointer.
-
-```mojo
-struct MyContainer[T: AnyType & Movable]:
-    var data: ExternalMutPointer[T]
-
-    fn steal_underlying_pointer(
-        mut self,
-    ) -> ExternalMutPointer[T]:
-        var result = self.data
-        self.data = {} # <-- Reset the data field to null
-        return result
-
-    fn __del__(deinit self):
-        # Since `data` can now be null, we need to add explicit null checks.
-        if self.data:
-            self.data.destroy_pointee()
-            self.data.free()
-
-def main():
-    var container = MyContainer[Int](42)
-    var ptr = container.steal_underlying_pointer()
-
-    # `container.__del__()` *is* called here, but is now null, leaving
-    #`ptr` pointing to valid memory.
-
-    print(ptr[]) # <-- This will now print `42`!
-
-    # Don't forget the cleanup the memory!
-    ptr.destroy_pointee()
-    ptr.free()
-```
-
-When to Use `ExternalPointer`:
-
-1. Memory Allocation
-
-`ExternalPointer` is the return type of `alloc()` because
-newly allocated memory has no origin aliasing pre-existing values. Data
-structures containing heap allocated memory often hold an `ExternalPointer`.
-
-2. Foreign Function Interface (FFI)
-
-When interfacing with C functions via `external_call`, `ExternalPointer` is
-often the correct type to use as a return type or as an out parameter. This is
-because C functions can return pointers to memory outside the known origins in
-the Mojo program.
-
-```mojo
-from sys.ffi import external_call
-
-# `getenv` returns a pointer to memory outside of the Mojo program.
-#
-# Notably a return type of `ExternalPointer[Byte]` is immutable by default as
-# we are not allowed to modify the memory it points to.
-#
-# If the FFI function returned a mutable pointer, we could specify `mut=True`.
-var env_ptr = external_call["getenv", ExternalPointer[Byte]](
-    # parameters...
-)
-```
-
-3. Memory Management Handoff
-
-Use `ExternalPointer` when a function needs to "leak" or "give up" its pointer
-with the expectation that the caller is now responsible for proper management
-and cleanup. This however, should generally be avoided as it can
-lead to undefined behavior if not implemented correctly. See the section on
-"Correct origin usage" above for more information.
-
-When NOT to Use `ExternalPointer`:
-
-1. Function Arguments
-
-It is almost never correct to take an `ExternalPointer` as an argument to a
-function. Prefer using a more memory safe type instead: e.g. `Pointer[T]` or
-`Span[T]` when the function does not need to take ownership of the pointer. Use
-`OwnedPointer[T]` when the function does need to take ownership of the pointer.
-
-2. Return types of public member functions.
-
-Data structures should almost never expose their internal `ExternalPointer` via
-public functions unless that function is specifically designed to transfer
-ownership and management responsibility to the caller. Instead, public methods
-should return references or memory safe reference types: e.g. `Pointer[T]` or
-`Span[T]`.
-"""
-
-
 @register_passable("trivial")
-struct UnsafePointerV2[
+struct UnsafePointer[
     mut: Bool, //,
     type: AnyType,
     origin: Origin[mut],
@@ -397,7 +134,7 @@ struct UnsafePointerV2[
     Stringable,
     Writable,
 ):
-    """`UnsafePointerV2` represents an indirect reference to one or more values
+    """`UnsafePointer` represents an indirect reference to one or more values
     of type `T` consecutively in memory, and can refer to uninitialized memory.
 
     Because it supports referring to uninitialized memory, it provides unsafe
@@ -407,10 +144,10 @@ struct UnsafePointerV2[
 
     Differences from `LegacyUnsafePointer`:
 
-    - `UnsafePointerV2` fixes the unsafe implicit mutability and origin casting
+    - `UnsafePointer` fixes the unsafe implicit mutability and origin casting
       issues of `LegacyUnsafePointer`.
-    - `UnsafePointerV2` has an inferred mutability parameter.
-    - `UnsafePointerV2` does _not_ have a defaulted origin parameter, this must
+    - `UnsafePointer` has an inferred mutability parameter.
+    - `UnsafePointer` does _not_ have a defaulted origin parameter, this must
       be explicitly specified or unbound.
 
     Important things to know:
@@ -490,7 +227,7 @@ struct UnsafePointerV2[
 
     ```mojo
     var foo: Int = 123
-    var ptr = UnsafePointerV2(to=foo)
+    var ptr = UnsafePointer(to=foo)
     print(ptr[])  # => 123
     # Don't call `free()` because the value was not heap-allocated
     # Mojo will destroy it when the `foo` lifetime ends
@@ -520,7 +257,7 @@ struct UnsafePointerV2[
 
     alias _with_origin[
         with_mut: Bool, //, with_origin: Origin[with_mut]
-    ] = UnsafePointerV2[
+    ] = UnsafePointer[
         mut=with_mut,
         type,
         with_origin,
@@ -568,8 +305,8 @@ struct UnsafePointerV2[
     @always_inline("builtin")
     @implicit
     fn __init__(
-        other: UnsafePointerV2[mut=True, **_],
-        out self: UnsafePointerV2[
+        other: UnsafePointer[mut=True, **_],
+        out self: UnsafePointer[
             other.type,
             ImmutOrigin.cast_from[other.origin],
             address_space = other.address_space,
@@ -587,8 +324,8 @@ struct UnsafePointerV2[
     @always_inline("builtin")
     @implicit
     fn __init__(
-        other: UnsafePointerV2[mut=True, type, **_],
-        out self: UnsafePointerV2[
+        other: UnsafePointer[mut=True, type, **_],
+        out self: UnsafePointer[
             other.type,
             MutAnyOrigin,
             address_space = other.address_space,
@@ -606,8 +343,8 @@ struct UnsafePointerV2[
     @always_inline("builtin")
     @implicit
     fn __init__(
-        other: UnsafePointerV2[**_],
-        out self: UnsafePointerV2[
+        other: UnsafePointer[**_],
+        out self: UnsafePointer[
             other.type,
             ImmutAnyOrigin,
             address_space = other.address_space,
@@ -625,8 +362,8 @@ struct UnsafePointerV2[
     @doc_private
     @implicit
     fn __init__(
-        other: UnsafePointerV2[mut=False, type, **_],
-        out self: UnsafePointerV2[
+        other: UnsafePointer[mut=False, type, **_],
+        out self: UnsafePointer[
             other.type, MutOrigin.cast_from[MutAnyOrigin], **_
         ],
     ):
@@ -636,7 +373,7 @@ struct UnsafePointerV2[
         self = abort[type_of(self)]()
 
     fn __init__(
-        out self: UnsafePointerV2[type, origin],
+        out self: UnsafePointer[type, origin],
         *,
         ref [origin]unchecked_downcast_value: PythonObject,
     ):
@@ -662,13 +399,13 @@ struct UnsafePointerV2[
             type, mut=mut, origin=origin, address_space=address_space
         ],
     ):
-        """Cast a `LegacyUnsafePointer` to an `UnsafePointerV2`.
+        """Cast a `LegacyUnsafePointer` to an `UnsafePointer`.
 
         Args:
             other: The `LegacyUnsafePointer` to cast from.
 
         Returns:
-            An `UnsafePointerV2` with the same type, mutability, origin and
+            An `UnsafePointer` with the same type, mutability, origin and
             address space as the original `LegacyUnsafePointer`.
 
         Notes:
@@ -683,20 +420,20 @@ struct UnsafePointerV2[
     @implicit
     fn __init__(
         other: LegacyUnsafePointer[type, address_space=address_space, **_],
-        out self: UnsafePointerV2[
+        out self: UnsafePointer[
             mut=mut,
             type,
             Origin[mut].cast_from[MutAnyOrigin],
             address_space=address_space,
         ],
     ):
-        """Cast a `LegacyUnsafePointer` to an `UnsafePointerV2`.
+        """Cast a `LegacyUnsafePointer` to an `UnsafePointer`.
 
         Args:
             other: The `LegacyUnsafePointer` to cast from.
 
         Returns:
-            An `UnsafePointerV2` with the same type and mutability.
+            An `UnsafePointer` with the same type and mutability.
 
         Notes:
             This constructor will be removed in a future version of Mojo when
@@ -715,6 +452,25 @@ struct UnsafePointerV2[
         ],
     ):
         result = LegacyUnsafePointer(self.address)
+
+    @always_inline("builtin")
+    fn as_legacy_pointer(
+        self,
+        out result: LegacyUnsafePointer[
+            type, mut=mut, origin=origin, address_space=address_space
+        ],
+    ):
+        """Explicitly cast this pointer to a `LegacyUnsafePointer`.
+
+        Returns:
+            A `LegacyUnsafePointer` with the same type, mutability, origin, and
+            address space as the original pointer.
+
+        Notes:
+            This function will eventually be deprecated and removed in a future
+            version of Mojo.
+        """
+        result = type_of(result)(self.address)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -821,7 +577,7 @@ struct UnsafePointerV2[
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
     fn __eq__(
-        self, rhs: UnsafePointerV2[type, address_space=address_space, **_]
+        self, rhs: UnsafePointer[type, address_space=address_space, **_]
     ) -> Bool:
         """Returns True if the two pointers are equal.
 
@@ -849,7 +605,7 @@ struct UnsafePointerV2[
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
     fn __ne__(
-        self, rhs: UnsafePointerV2[type, address_space=address_space, **_]
+        self, rhs: UnsafePointer[type, address_space=address_space, **_]
     ) -> Bool:
         """Returns True if the two pointers are not equal.
 
@@ -877,7 +633,7 @@ struct UnsafePointerV2[
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
     fn __lt__(
-        self, rhs: UnsafePointerV2[type, address_space=address_space, **_]
+        self, rhs: UnsafePointer[type, address_space=address_space, **_]
     ) -> Bool:
         """Returns True if this pointer represents a lower address than rhs.
 
@@ -905,7 +661,7 @@ struct UnsafePointerV2[
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
     fn __le__(
-        self, rhs: UnsafePointerV2[type, address_space=address_space, **_]
+        self, rhs: UnsafePointer[type, address_space=address_space, **_]
     ) -> Bool:
         """Returns True if this pointer represents a lower than or equal
            address than rhs.
@@ -935,7 +691,7 @@ struct UnsafePointerV2[
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
     fn __gt__(
-        self, rhs: UnsafePointerV2[type, address_space=address_space, **_]
+        self, rhs: UnsafePointer[type, address_space=address_space, **_]
     ) -> Bool:
         """Returns True if this pointer represents a higher address than rhs.
 
@@ -965,7 +721,7 @@ struct UnsafePointerV2[
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
     fn __ge__(
-        self, rhs: UnsafePointerV2[type, address_space=address_space, **_]
+        self, rhs: UnsafePointer[type, address_space=address_space, **_]
     ) -> Bool:
         """Returns True if this pointer represents a higher than or equal
            address than rhs.
@@ -997,13 +753,13 @@ struct UnsafePointerV2[
     @always_inline("builtin")
     fn __merge_with__[
         other_type: type_of(
-            UnsafePointerV2[
+            UnsafePointer[
                 type,
                 origin=_,
                 address_space=address_space,
             ]
         ),
-    ](self) -> UnsafePointerV2[
+    ](self) -> UnsafePointer[
         type=type,
         origin = origin_of(origin, other_type.origin),
         address_space=address_space,
@@ -1109,7 +865,7 @@ struct UnsafePointerV2[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[mut](),
-    ](self: UnsafePointerV2[Scalar[dtype], **_]) -> SIMD[dtype, width]:
+    ](self: UnsafePointer[Scalar[dtype], **_]) -> SIMD[dtype, width]:
         """Loads `width` elements from the value the pointer points to.
 
         Use `alignment` to specify minimal known alignment in bytes; pass a
@@ -1155,7 +911,7 @@ struct UnsafePointerV2[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[mut](),
-    ](self: UnsafePointerV2[Scalar[dtype], **_], offset: Scalar) -> SIMD[
+    ](self: UnsafePointer[Scalar[dtype], **_], offset: Scalar) -> SIMD[
         dtype, width
     ]:
         """Loads the value the pointer points to with the given offset.
@@ -1193,9 +949,7 @@ struct UnsafePointerV2[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[mut](),
-    ](self: UnsafePointerV2[Scalar[dtype], **_], offset: I) -> SIMD[
-        dtype, width
-    ]:
+    ](self: UnsafePointer[Scalar[dtype], **_], offset: I) -> SIMD[dtype, width]:
         """Loads the value the pointer points to with the given offset.
 
         Constraints:
@@ -1231,7 +985,7 @@ struct UnsafePointerV2[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: UnsafePointerV2[mut=True, Scalar[dtype], **_],
+        self: UnsafePointer[mut=True, Scalar[dtype], **_],
         offset: I,
         val: SIMD[dtype, width],
     ):
@@ -1265,7 +1019,7 @@ struct UnsafePointerV2[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: UnsafePointerV2[mut=True, Scalar[dtype], **_],
+        self: UnsafePointer[mut=True, Scalar[dtype], **_],
         offset: Scalar[offset_type],
         val: SIMD[dtype, width],
     ):
@@ -1297,7 +1051,7 @@ struct UnsafePointerV2[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: UnsafePointerV2[mut=True, Scalar[dtype], **_],
+        self: UnsafePointer[mut=True, Scalar[dtype], **_],
         val: SIMD[dtype, width],
     ):
         """Stores a single element value `val` at element offset 0.
@@ -1341,7 +1095,7 @@ struct UnsafePointerV2[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: UnsafePointerV2[mut=True, Scalar[dtype], **_],
+        self: UnsafePointer[mut=True, Scalar[dtype], **_],
         val: SIMD[dtype, width],
     ):
         return self._as_legacy()._store[
@@ -1351,9 +1105,7 @@ struct UnsafePointerV2[
     @always_inline("nodebug")
     fn strided_load[
         dtype: DType, T: Intable, //, width: Int
-    ](self: UnsafePointerV2[Scalar[dtype], **_], stride: T) -> SIMD[
-        dtype, width
-    ]:
+    ](self: UnsafePointer[Scalar[dtype], **_], stride: T) -> SIMD[dtype, width]:
         """Performs a strided load of the SIMD vector.
 
         Parameters:
@@ -1375,7 +1127,7 @@ struct UnsafePointerV2[
         T: Intable, //,
         width: Int = 1,
     ](
-        self: UnsafePointerV2[mut=True, Scalar[dtype], **_],
+        self: UnsafePointer[mut=True, Scalar[dtype], **_],
         val: SIMD[dtype, width],
         stride: T,
     ):
@@ -1399,7 +1151,7 @@ struct UnsafePointerV2[
         width: Int = 1,
         alignment: Int = align_of[dtype](),
     ](
-        self: UnsafePointerV2[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], **_],
         offset: SIMD[_, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
         default: SIMD[dtype, width] = 0,
@@ -1446,7 +1198,7 @@ struct UnsafePointerV2[
         width: Int = 1,
         alignment: Int = align_of[dtype](),
     ](
-        self: UnsafePointerV2[mut=True, Scalar[dtype], **_],
+        self: UnsafePointer[mut=True, Scalar[dtype], **_],
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
@@ -1487,7 +1239,7 @@ struct UnsafePointerV2[
 
     @always_inline
     fn free(
-        self: UnsafePointerV2[
+        self: UnsafePointer[
             mut=True,
             type,
             origin=_,
@@ -1500,7 +1252,7 @@ struct UnsafePointerV2[
     @always_inline("builtin")
     fn bitcast[
         T: AnyType
-    ](self) -> UnsafePointerV2[T, address_space=address_space, origin=origin,]:
+    ](self) -> UnsafePointer[T, address_space=address_space, origin=origin,]:
         """Bitcasts an UnsafePointer to a different type.
 
         Parameters:
@@ -1514,7 +1266,7 @@ struct UnsafePointerV2[
 
     alias _OriginCastType[
         target_mut: Bool, target_origin: Origin[target_mut]
-    ] = UnsafePointerV2[
+    ] = UnsafePointer[
         type,
         address_space=address_space,
         origin=target_origin,
@@ -1610,7 +1362,7 @@ struct UnsafePointerV2[
 
     @doc_private
     fn as_any_origin(
-        self: UnsafePointerV2[type, **_],
+        self: UnsafePointer[type, **_],
         out result: type_of(self)._OriginCastType[False, ImmutAnyOrigin],
     ):
         constrained[
@@ -1625,8 +1377,8 @@ struct UnsafePointerV2[
 
     @always_inline("builtin")
     fn as_any_origin(
-        self: UnsafePointerV2[mut=False, type, **_],
-    ) -> UnsafePointerV2[type, ImmutAnyOrigin, address_space=address_space,]:
+        self: UnsafePointer[mut=False, type, **_],
+    ) -> UnsafePointer[type, ImmutAnyOrigin, address_space=address_space,]:
         """Casts the origin of an immutable pointer to `ImmutAnyOrigin`.
 
         Returns:
@@ -1638,7 +1390,7 @@ struct UnsafePointerV2[
         destruction will not apply during the lifetime of the pointer.
         """
         return __mlir_op.`pop.pointer.bitcast`[
-            _type = UnsafePointerV2[
+            _type = UnsafePointer[
                 type,
                 ImmutAnyOrigin,
                 address_space=address_space,
@@ -1647,8 +1399,8 @@ struct UnsafePointerV2[
 
     @always_inline("builtin")
     fn as_any_origin(
-        self: UnsafePointerV2[mut=True, type, **_],
-    ) -> UnsafePointerV2[type, MutAnyOrigin, address_space=address_space,]:
+        self: UnsafePointer[mut=True, type, **_],
+    ) -> UnsafePointer[type, MutAnyOrigin, address_space=address_space,]:
         """Casts the origin of a mutable pointer to `MutAnyOrigin`.
 
         Returns:
@@ -1663,7 +1415,7 @@ struct UnsafePointerV2[
         destruction will not apply during the lifetime of the pointer.
         """
         return __mlir_op.`pop.pointer.bitcast`[
-            _type = UnsafePointerV2[
+            _type = UnsafePointer[
                 type,
                 MutAnyOrigin,
                 address_space=address_space,
@@ -1673,11 +1425,7 @@ struct UnsafePointerV2[
     @always_inline("builtin")
     fn address_space_cast[
         target_address_space: AddressSpace = Self.address_space,
-    ](self) -> UnsafePointerV2[
-        type,
-        origin,
-        address_space=target_address_space,
-    ]:
+    ](self) -> UnsafePointer[type, origin, address_space=target_address_space,]:
         """Casts this pointer to a different address space.
 
         Parameters:
@@ -1691,7 +1439,7 @@ struct UnsafePointerV2[
 
     @always_inline
     fn destroy_pointee(
-        self: UnsafePointerV2[
+        self: UnsafePointer[
             mut=True, type, address_space = AddressSpace.GENERIC, **_
         ]
     ):
@@ -1709,7 +1457,7 @@ struct UnsafePointerV2[
     fn take_pointee[
         T: Movable, //,
     ](
-        self: UnsafePointerV2[
+        self: UnsafePointer[
             mut=True, T, address_space = AddressSpace.GENERIC, **_
         ]
     ) -> T:
@@ -1735,7 +1483,7 @@ struct UnsafePointerV2[
     fn init_pointee_move[
         T: Movable, //,
     ](
-        self: UnsafePointerV2[
+        self: UnsafePointer[
             mut=True, T, address_space = AddressSpace.GENERIC, **_
         ],
         var value: T,
@@ -1762,7 +1510,7 @@ struct UnsafePointerV2[
     fn init_pointee_copy[
         T: Copyable, //,
     ](
-        self: UnsafePointerV2[
+        self: UnsafePointer[
             mut=True, T, address_space = AddressSpace.GENERIC, **_
         ],
         value: T,
@@ -1789,10 +1537,10 @@ struct UnsafePointerV2[
     fn init_pointee_move_from[
         T: Movable, //,
     ](
-        self: UnsafePointerV2[
+        self: UnsafePointer[
             mut=True, T, address_space = AddressSpace.GENERIC, **_
         ],
-        src: UnsafePointerV2[
+        src: UnsafePointer[
             mut=True, T, address_space = AddressSpace.GENERIC, **_
         ],
     ):
@@ -1853,5 +1601,5 @@ struct UnsafePointerV2[
         ) = __get_address_as_owned_value(src.address)
 
 
-__extension UnsafePointerV2(_IsUnsafePointer):
+__extension UnsafePointer(_IsUnsafePointer):
     pass

@@ -21,7 +21,7 @@ from gpu import block_dim, block_idx, thread_idx
 alias num_elements = 20
 
 
-fn scalar_add(vector: UnsafePointer[Float32], size: Int, scalar: Float32):
+fn scalar_add(vector: LegacyUnsafePointer[Float32], size: Int, scalar: Float32):
     """
     Kernel function to add a scalar to all elements of a vector.
 
