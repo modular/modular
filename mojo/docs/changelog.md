@@ -21,6 +21,21 @@ what we publish.
 
 ### Language enhancements {#25-7-language-enhancements}
 
+- Mojo now supports the `comptime` keyword as a synonym for `alias`. The
+  `comptime` keyword can be used interchangeably with `alias` for compile-time
+  declarations. Both keywords are fully supported and produce identical
+  behavior. For example:
+
+  ```mojo
+  comptime x = 5      # New preferred syntax
+  alias y = 10        # Still fully supported
+  comptime MyType[T: AnyType] = T  # Works with parametric declarations
+  ```
+
+  Note: Future updates will migrate error messages and internal terminology to
+  use "comptime". The `alias` keyword will remain supported for backward
+  compatibility.
+
 - Mojo now supports unpacking an alias tuple with a single statement when it is
   not inside a `struct` or `trait`. For example:
 

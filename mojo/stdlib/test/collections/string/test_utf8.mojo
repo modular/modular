@@ -90,17 +90,17 @@ alias BAD_SEQUENCES = [
 
 
 def validate_utf8[span: Span[Byte]]() -> Bool:
-    alias comptime = _is_valid_utf8_comptime(span)
+    alias comp_time = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
-    assert_equal(comptime, runtime)
-    return comptime
+    assert_equal(comp_time, runtime)
+    return comp_time
 
 
 def validate_utf8(span: Span[Byte]) -> Bool:
-    var comptime = _is_valid_utf8_comptime(span)
+    var comp_time = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
-    assert_equal(comptime, runtime)
-    return comptime
+    assert_equal(comp_time, runtime)
+    return comp_time
 
 
 def test_utf8_validation():
