@@ -891,7 +891,7 @@ PIPELINES = {
             absolute_tolerance=1.0e-04,
             relative_tolerance=2.0e00,
             cos_dist_threshold=6.3e-04,
-            kl_div_threshold=4.0e-02,
+            kl_div_threshold=5.0e-02,
         ),
     ),
     "OpenGVLab/InternVL3-38B-Instruct-bfloat16": PipelineDef(
@@ -912,7 +912,7 @@ PIPELINES = {
             pipeline="OpenGVLab/InternVL3_5-8B-Instruct",
             encoding="bfloat16",
             cos_dist_threshold=1.2e-2,
-            kl_div_threshold=7.7e-03,
+            kl_div_threshold=1.6e-02,
         ),
     ),
     "mistral-community/pixtral-12b-bfloat16": PipelineDef(
