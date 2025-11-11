@@ -36,7 +36,7 @@ fn test_literal_from_comptime_string[s: String]() -> StaticString:
     return get_static_string[s, "-", s]()
 
 
-fn main():
+fn test_parameter_string():
     # CHECK: hello world
     StringParam["hello" + " " + "world"]().print_it()
 
@@ -59,3 +59,15 @@ fn main():
 
     # CHECK: 42
     print(get_static_string[String(Int64(42))]())
+
+
+fn test_string_global_constant():
+    alias A = String(11.1)
+
+    # CHECK: alias is 11.1
+    print("alias is ", A)
+
+
+fn main():
+    test_parameter_string()
+    test_string_global_constant()

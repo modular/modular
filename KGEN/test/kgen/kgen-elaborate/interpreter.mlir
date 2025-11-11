@@ -951,3 +951,25 @@ kgen.generator @callIt() -> !pop.simd<2, ui64> {
   kgen.return %0 : !pop.simd<2, ui64>
 }
 }
+
+// -----
+
+// COM: Check pop.global_constant
+
+// CHECK: [[BLOB:#.*]] = #interp.memory_handle<16, "0xFECABEBAEFBEADDEEFCDAB9078563412">
+kgen.generator @global_const() -> !kgen.pointer<struct<(array<1, scalar<ui128>>)>> {
+  %0 = pop.global_constant: struct<(array<1, scalar<ui128>>)> =
+    <{[0x1234567890abcdefdeadbeefbabecafe]}>
+
+  kgen.return %0 : !kgen.pointer<struct<(array<1, scalar<ui128>>)>>
+}
+
+kgen.generator @callIt()->!kgen.pointer<struct<(array<1, scalar<ui128>>)>> {
+  // CHECK: [[BLOB]], const_global
+  kgen.param.declare C: !kgen.pointer<struct<(array<1, scalar<ui128>>)>> =
+    <apply(:() -> !kgen.pointer<struct<(array<1, scalar<ui128>>)>> @global_const)>
+
+  %0 = kgen.param.constant: !kgen.pointer<struct<(array<1, scalar<ui128>>)>> = <C>
+
+  kgen.return %0: !kgen.pointer<struct<(array<1, scalar<ui128>>)>>
+}
