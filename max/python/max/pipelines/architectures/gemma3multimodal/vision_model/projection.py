@@ -80,7 +80,7 @@ class Gemma3MultiModalProjector(Module):
         )
 
         # reshape to 0 2 3 1 HWBC
-        reshaped_vision_outputs = reshaped_vision_outputs.transpose(0, 2, 3, 1)
+        reshaped_vision_outputs = reshaped_vision_outputs.permute(0, 2, 3, 1)
         # avg pool
         pooled_vision_outputs = avg_pool2d(
             input=normed_vision_outputs,

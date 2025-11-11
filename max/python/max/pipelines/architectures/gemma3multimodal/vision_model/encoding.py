@@ -12,14 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from max.graph import TensorValue
+from collections.abc import Sequence
+
+from max.graph import BufferValue, TensorValue
 from max.nn import (
     LayerList,
     LayerNorm,
     Module,
 )
 
-from ..attention import Gemma3VisionAttention
+from .attention import Gemma3VisionAttention
 from ..model_config import Gemma3ForConditionalGenerationConfig
 from .projection import Gemma3VisionMLP
 
@@ -60,8 +62,9 @@ class Gemma3VisionEncoderLayer(Module):
 
     def __call__(
         self,
-        hidden_states: TensorValue,
-    ) -> TensorValue:
+        hidden_states: TensorValue, # Sequence[TensorValue]
+        signal_buffers: Sequence[BufferValue]
+    ) -> list[TensorValue]:
         residual = hidden_states
         hidden_states = self.layer_norm1(hidden_states)
         hidden_states = self.self_attn(hidden_states)
@@ -80,7 +83,7 @@ class Gemma3VisionEncoderLayer(Module):
 class Gemma3VisionEncoder(Module):
     """SigLIP vision encoder with 27 transformer layers."""
 
-    def __init__(self, config: Gemma3ForConditionalGenerationConfig):
+    def __init__(self, config: Gemma3ForConditionalGenerationConfig): # , signal_buffers: Sequence[TensorValue]):
         super().__init__()
         self.layers = LayerList(
             [
@@ -90,12 +93,12 @@ class Gemma3VisionEncoder(Module):
                 )
             ]
         )
+        # self.signal_buffers = signal_buffers
 
     def __call__(
         self,
         hidden_states: TensorValue,
     ) -> TensorValue:
-        # Pass through all layers
         for layer in self.layers:
-            hidden_states = layer(hidden_states)
+            hidden_states = layer(hidden_states, self.signal_buffers)
         return hidden_states

@@ -188,7 +188,7 @@ class Gemma3LanguageModel(Module):
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
         image_embeddings: Sequence[TensorValue],
-        image_token_indices: TensorValue,
+        image_token_indices: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
         kv_collections: Sequence[PagedCacheValues],
     ) -> tuple[TensorValue, ...]:
@@ -330,13 +330,13 @@ class Gemma3VisionModel(Module):
         self.embeddings = Gemma3VisionEmbeddings(
             config, device=config.devices[0]
         )
-        self.embeddings.sharding_strategy = ShardingStrategy.replicate(
-            len(config.devices)
-        )
-        # self.embeddings_list = self.embeddings.shard(config.devices) # TODO for multi device
+        # self.embeddings.sharding_strategy = ShardingStrategy.replicate(
+        #     len(config.devices)
+        # )
+        # self.embeddings_list = self.embeddings.shard(config.devices)
 
         # Vision encoder (27 transformer layers)
-        self.encoder = Gemma3VisionEncoder(config)
+        self.encoder = Gemma3VisionEncoder(config) # , signal_buffers)
 
         # Post-encoder layer norm
         self.post_layernorm = LayerNorm(
@@ -351,38 +351,30 @@ class Gemma3VisionModel(Module):
 
     def __call__(
         self,
-        pixel_values: TensorValue,  # Sequence[TensorValue],
-        signal_buffers: TensorValue,  # Sequence[BufferValue],
-    ) -> Sequence[TensorValue]:
-        """Process pixel values to image embeddings.
-
-        Args:
-            pixel_values: List of image tensors [batch, channels, height, width] (one per device)
-            signal_buffers: Communication buffers for distributed execution
-
-        Returns:
-            List of projected image embeddings [pooled_tokens, text_hidden_size] (one per device)
-        """
-        # convert to patches, run through the encoder layers, then normalize and project into multimodal space
+        pixel_values: TensorValue,
+        signal_buffers: Sequence[BufferValue],
+    ) -> TensorValue:
         # Get vision embeddings from each device
-        hidden_states = self.embeddings(pixel_values)  # replace by below
-        # multi device approach
-        # hidden_states_list = [
+        hidden_states = self.embeddings(ops.permute(pixel_values, [0,2,3,1]))
+        # hidden_states = [
         #     embed(pixels)
         #     for embed, pixels in zip(
         #         self.embeddings_list, pixel_values, strict=True
         #     )
         # ]
-        logger.info(f"1 hiddenstates: {hidden_states_list}")
+        logger.info(f"1 hiddenstateslist: {hidden_states}")
 
-        hidden_states_list = self.encoder(hidden_states_list)
+        # TODO MLX-VLM transposes here to 0, 2, 3, 1
+        
+        hidden_states = self.encoder(hidden_states)
         logger.info(f"2 hiddenstates: {hidden_states}")
 
         hidden_states = self.post_layernorm(hidden_states)
         logger.info(f"3 hiddenstates: {hidden_states}")
 
         image_embeddings = self.projector(hidden_states)
-        logger.info(f"4 hiddenstates: {hidden_states}")
+        logger.info(f"4 image_embeddings: {image_embeddings}")
 
         # Replicate to all devices
-        return [image_embeddings for _ in range(len(self.config.devices))]
+        #return [image_embeddings for _ in range(len(self.config.devices))]
+        return image_embeddings
