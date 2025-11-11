@@ -218,7 +218,8 @@ static ElaborationState processParamDeclareOp(ImplNode *inode,
   HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getValue());
 
   // Bind it to the parameter declaration it is setting.
-  inode->getEvaluator().setDeclBinding(op.getParamDecl(), value);
+  inode->getEvaluator().setDeclBinding(op.getParamDecl(),
+                                       cast<TypedAttr>(value));
 
   // The kgen.param.declare operation serves no other purpose: remove it.
   op->erase();
