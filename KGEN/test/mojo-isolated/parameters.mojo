@@ -1664,3 +1664,33 @@ struct IOSpec[input: IO]:
 struct ManagedTensorSlice[input: IO, //, io_spec: IOSpec[input]]:
     pass
 alias InputTensor = ManagedTensorSlice[IOSpec[IO()]()]
+
+
+# We should be able to infer parameter from generator type.
+
+# This specifies the type for a generator that generate a generator type.
+alias GeneratorTypeGeneratorType[
+    From: type_of(AnyType), To: type_of(AnyType)
+] = __mlir_type[
+    `!lit.generator<<"From": `,
+    From,
+    `>`,
+    To,
+    `>`,
+]
+
+alias Generator[From: Copyable] = Int
+
+
+fn takeGenerator[
+    F: type_of(AnyType),
+    T: type_of(AnyType), //,
+    G: GeneratorTypeGeneratorType[F, T],
+]():
+    pass
+
+# CHECK-LABEL: lit.fn @"myDriver()"()
+fn myDriver():
+    # We should be able to infer From -> Copyable, To -> mt_Int
+    # CHECK: %0 = lit.call @parameters::@"takeGenerator{{.*}}"<:!lit.anytrait<!AnyType> !Copyable, :!lit.anytrait<!AnyType> !mt_Int, :!lit.generator<<"From": !Copyable>!mt_Int>
+    takeGenerator[Generator]()
