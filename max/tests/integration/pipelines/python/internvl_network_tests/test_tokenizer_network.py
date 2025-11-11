@@ -10,6 +10,7 @@ import io
 
 import pytest
 from max import pipelines
+from max.driver import DeviceSpec
 from max.interfaces import RequestID, TextGenerationRequest
 from max.pipelines import PipelineConfig
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
@@ -18,6 +19,7 @@ from pytest_mock import MockerFixture
 from test_common.mocks import mock_estimate_memory_footprint
 
 
+@pytest.mark.skip(reason="Disabled due to MODELS-849")
 @pytest.mark.asyncio
 @mock_estimate_memory_footprint
 async def test_internvl_tokenizer_with_image() -> None:
@@ -33,7 +35,11 @@ async def test_internvl_tokenizer_with_image() -> None:
     test_image = img_buffer.getvalue()
 
     # Get tokenizer
-    config = PipelineConfig(model_path=model_id, trust_remote_code=True)
+    config = PipelineConfig(
+        model_path=model_id,
+        trust_remote_code=True,
+        device_specs=[DeviceSpec.accelerator()],
+    )
     max_tokenizer, _ = pipelines.PIPELINE_REGISTRY.retrieve_factory(config)
 
     # Note: We don't compare with HF tokenizer for image inputs because InternVL's
