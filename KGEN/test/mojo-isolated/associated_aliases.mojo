@@ -1069,10 +1069,10 @@ trait DependentAssociatedTypeInDefault:
     alias T1: AnyType
     alias V1: Self.T1
 
-
+# CHECK-LABEL: lit.fn @"foo
 fn foo[
     T: DependentAssociatedTypeInDefault,
-    # CHECK: V: !kgen.param<:!AnyType #kgen.get_witness<:!{{.*}} T, "{{.*}}", "T1">> = {{.*}}#kgen.get_witness<:!{{.*}} T, "{{.*}}", "V1">)
+    # CHECK: V: !kgen.param<:!AnyType {{.*}}#kgen.get_witness<:!{{.*}} T, "{{.*}}", "T1">)> = {{.*}}#kgen.get_witness<:!{{.*}} T, "{{.*}}", "V1">)
     V: T.T1 = T.V1,
 ]():
     pass

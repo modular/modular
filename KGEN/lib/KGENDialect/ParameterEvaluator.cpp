@@ -261,21 +261,41 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
   Attribute result = attr;
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(attr)) {
     // If the referenced parameter is not bound, forward the reference.
+    auto declRefType = doReplace(declRef.getType(), rootDepth);
     if (auto it = declBindings.find(declRef.getName());
-        it != declBindings.end())
-      result = upbindValue(it->second);
-    else
-      result = ParamDeclRefAttr::get(declRef.getName(),
-                                     doReplace(declRef.getType(), rootDepth));
+        it != declBindings.end()) {
+      auto resultV = cast<TypedAttr>(upbindValue(it->second));
+      // If we are mapping between a sugared and non-sugared version of the
+      // parameter, make sure to keep a consistent type.  This enables us to
+      // substitute values into parameter expressions that have sugared and
+      // canonical forms.
+      if (resultV.getType() != declRefType &&
+          isEqualCanon(resultV.getType(), declRefType))
+        resultV = ParamOperatorAttr::getRebind(resultV, declRefType);
+      result = resultV;
+    } else {
+      result = ParamDeclRefAttr::get(declRef.getName(), declRefType);
+    }
   } else if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
              indexRef && indexRef.getDepth() == rootDepth) {
     assert(indexRef.getIndex() < expectedNumIndexBindings &&
            "parameter index out of range");
-    if (indexRef.getIndex() < indexBindings.size())
-      result = upbindValue(indexBindings[indexRef.getIndex()]);
-    else
+    auto indexRefType = doReplace(indexRef.getType(), rootDepth);
+    if (indexRef.getIndex() < indexBindings.size()) {
+      auto resultV =
+          cast<TypedAttr>(upbindValue(indexBindings[indexRef.getIndex()]));
+      // If we are mapping between a sugared and non-sugared version of the
+      // parameter, make sure to keep a consistent type.  This enables us to
+      // substitute values into parameter expressions that have sugared and
+      // canonical forms.
+      if (resultV.getType() != indexRefType &&
+          isEqualCanon(resultV.getType(), indexRefType))
+        resultV = ParamOperatorAttr::getRebind(resultV, indexRefType);
+      result = resultV;
+    } else {
       result = ParamIndexRefAttr::get(indexRef.getDepth(), indexRef.getIndex(),
-                                      doReplace(indexRef.getType(), rootDepth));
+                                      indexRefType);
+    }
   } else if (isa<MLIROpAttr>(attr)) {
     // Expression functions and MLIR operation expressions are isolated from
     // above, so don't collect from them.
