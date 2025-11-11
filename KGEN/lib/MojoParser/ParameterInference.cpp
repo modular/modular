@@ -573,7 +573,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       // If we didn't already have a slot for this, make space.
       if (inferredParams.size() <= parameterIndex)
         inferredParams.resize(parameterIndex + 1);
-      TypedAttr &inferredValue = inferredParams[parameterIndex];
+      TypedAttr inferredValue = inferredParams[parameterIndex];
 
       // Otherwise we succeeded in finding a value, see if it is compatible with
       // or more specific than the other values we've inferred.
@@ -582,13 +582,12 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
                                        inferredValue, actualAttr});
         return failure();
       }
-
-      inferredValue = actualAttr;
+      inferredParams[parameterIndex] = actualAttr;
 
       // If we found the next missing parameter value for the evaluator, install
       // it so we can remap dependent types more effectively.
       if (parameterIndex == evaluator.getNumIndexBindings())
-        evaluator.appendIndexBinding(inferredValue);
+        evaluator.appendIndexBinding(actualAttr);
 
       return success();
     }
