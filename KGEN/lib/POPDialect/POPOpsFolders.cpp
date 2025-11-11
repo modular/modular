@@ -2627,6 +2627,54 @@ CastFromBuiltinOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
+// GlobalConstantOp
+//===----------------------------------------------------------------------===//
+static ErrorTreeOrSuccess
+interpretGlobalConstantOpHelper(TypedAttr input, Location loc, MLIRContext *ctx,
+                                Type resultType, InterpreterState &state) {
+  // Determine the allocation size.
+  std::optional<int64_t> size =
+      DataLayoutInterface::getTypeAllocSize(state.getTarget(), input.getType());
+  if (!size)
+    return ErrorTree(loc, "cannot get pop.global_constant value size");
+
+  // Determine the allocation alignment.
+  std::optional<int64_t> align =
+      DataLayoutInterface::getTypeABIAlign(state.getTarget(), input.getType());
+  if (!align)
+    return ErrorTree(loc, "cannot get pop.global_constant value alignment");
+
+  // Get the memory blob from the interpreter
+  ErrorOr<int64_t> addr =
+      state.allocateConstantGlobalMemory(*size, *align, true);
+  if (addr.isError())
+    return ErrorTree(loc, addr.takeError());
+
+  // Write value
+  ErrorOrSuccess result = state.writeAttributeToMemory(*addr, input);
+  if (result.isError())
+    return ErrorTree(loc, result.takeError());
+
+  state.mapResults(PointerAttr::get(ctx, addr.takeValue(), resultType));
+
+  return success();
+}
+
+ErrorTreeOrSuccess GlobalConstantOp::interpret(ArrayRef<Attribute> operands,
+                                               InterpreterState &state) {
+  return interpretGlobalConstantOpHelper(getValue(), getLoc(), getContext(),
+                                         getType(), state);
+}
+
+ErrorTreeOrSuccess
+GlobalConstantOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                       ParametricInterpreterState &state) {
+  return interpretGlobalConstantOpHelper(
+      state.getReboundAttribute(getValue()), getLoc(), getContext(),
+      state.getReboundType(getType()), state);
+}
+
+//===----------------------------------------------------------------------===//
 // VariadicCreateOp
 //===----------------------------------------------------------------------===//
 

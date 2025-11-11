@@ -190,6 +190,26 @@ ErrorOr<int64_t> InterpreterState::allocateHeapMemory(size_t size,
 }
 
 ErrorOr<int64_t>
+InterpreterState::allocateConstantGlobalMemory(size_t size, size_t align,
+                                               bool addMemoryHandle) {
+  ErrorOr<MemoryBlob &> blob =
+      getTable(MemoryKind::ConstGlobal).addBlob(allocator, size, align);
+
+  if (blob.isError())
+    return blob.takeError();
+  // Zero-initialize the memory.
+  memset(blob->getOwned(), 0, size);
+
+  if (addMemoryHandle) {
+    auto hdl = MemoryHandleAttr::get(
+        ctx, align,
+        ArrayRef<char>(reinterpret_cast<char *>(blob->getMemory()), size));
+    blob->memory = hdl;
+  }
+  return blob->baseAddr;
+}
+
+ErrorOr<int64_t>
 InterpreterState::allocatePersistentMemory(size_t size, size_t align,
                                            unsigned addressSpace) {
   ErrorOr<MemoryBlob &> blob =
@@ -264,8 +284,6 @@ ErrorOr<void *> InterpreterState::getWritableMemory(int64_t addr, size_t size,
   if (memref.isError())
     return memref.takeError();
   auto [blob, offset] = memref.takeValue();
-  if (!blob.isOwned())
-    return Error("cannot write to constant global memory");
 
   // If the access is a pointer write, then mark the region as a pointer. The
   // pointer write size must be equal to the target pointer size.
@@ -277,7 +295,7 @@ ErrorOr<void *> InterpreterState::getWritableMemory(int64_t addr, size_t size,
       err.isError())
     return err.takeError();
 
-  return (uint8_t *)blob.getOwned() + offset;
+  return (uint8_t *)blob.getMemory() + offset;
 }
 
 ErrorOr<const void *> InterpreterState::getReadableMemory(int64_t addr,
