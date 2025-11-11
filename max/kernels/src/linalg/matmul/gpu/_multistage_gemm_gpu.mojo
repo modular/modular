@@ -23,7 +23,6 @@ from sys import (
 )
 
 import gpu.warp as warp
-from buffer import NDBuffer
 from buffer.dimlist import Dim
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -1113,6 +1112,7 @@ fn multistage_gemm_split_k_kernel[
     b_type: DType,
     b_layout: Layout,
     work_space_type: DType,
+    workspace_layout: Layout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -1120,7 +1120,7 @@ fn multistage_gemm_split_k_kernel[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
     b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    work_space: NDBuffer[work_space_type, 3, MutAnyOrigin],
+    work_space: LayoutTensor[work_space_type, workspace_layout, MutAnyOrigin],
     num_partitions: Int,
 ):
     var M = c.dim[0]()
@@ -1142,7 +1142,7 @@ fn multistage_gemm_split_k_kernel[
     ]
 
     var work_space_part = work_space_tensor_type(
-        work_space.data + block_idx.z * UInt(M) * UInt(N),
+        work_space.ptr + block_idx.z * UInt(M) * UInt(N),
         RuntimeLayout[
             c_layout,
             element_type = work_space_tensor_type.layout_int_type,

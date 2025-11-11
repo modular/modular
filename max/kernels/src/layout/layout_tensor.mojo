@@ -2166,7 +2166,7 @@ struct LayoutTensor[
     fn store[
         width: Int
     ](self: Self._AsMut, coords: IndexList[*_, **_], val: SIMD[dtype, width],):
-        """Store a SIMD vector to the tensor at the specified 2D coordinates.
+        """Store a SIMD vector to the tensor at the specified ND coordinates.
 
         Performs a vectorized store operation to the tensor's memory, writing
         'width' consecutive elements starting at position (m, n). This method

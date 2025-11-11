@@ -16,6 +16,8 @@ from random import rand
 
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
+from layout import Layout, LayoutTensor, RuntimeLayout
+from layout.layout import UNKNOWN_VALUE
 from linalg.matmul.gpu import split_k_reduce
 from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
@@ -130,9 +132,20 @@ def test_split_k_reduce_rank3[
     ctx.enqueue_copy(work_space_device, work_space_host)
     ctx.enqueue_copy(epilogue_data_device, epilogue_data_host)
 
-    var c = NDBuffer[c_type, 2](c_device.unsafe_ptr(), Index(M, N))
-    var work_space = NDBuffer[work_space_type, 3](
-        work_space_device.unsafe_ptr(), Index(num_partitions, M, N)
+    alias c_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    alias work_space_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
+    )
+
+    # Create LayoutTensors
+    var c = LayoutTensor[c_type, c_layout, MutAnyOrigin](
+        c_device, RuntimeLayout[c_layout].row_major(Index(M, N))
+    )
+    var work_space = LayoutTensor[
+        work_space_type, work_space_layout, ImmutAnyOrigin
+    ](
+        work_space_device,
+        RuntimeLayout[work_space_layout].row_major(Index(num_partitions, M, N)),
     )
     var epilogue_buffer = NDBuffer[c_type, 2](
         epilogue_data_device.unsafe_ptr(), Index(M, N)

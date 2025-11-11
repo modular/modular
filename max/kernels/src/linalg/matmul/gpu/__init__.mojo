@@ -31,7 +31,7 @@ from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import A100, B200, H100, MI355X, GPUInfo
-from layout import LayoutTensor
+from layout import LayoutTensor, RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
@@ -778,12 +778,12 @@ fn _matmul_gpu[
 fn split_k_reduce[
     c_type: DType,
     work_space_type: DType,
-    c_shape: DimList,
-    work_space_shape: DimList,
+    c_layout: Layout,
+    work_space_layout: Layout,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, c_shape],
-    work_space: NDBuffer[work_space_type, 3, _, work_space_shape],
+    c: LayoutTensor[mut=True, c_type, c_layout],
+    work_space: LayoutTensor[work_space_type, work_space_layout],
     ctx: DeviceContext,
 ) raises:
     alias simd_width = simd_width_of[c_type, target = get_gpu_target()]()
@@ -813,8 +813,8 @@ fn split_k_reduce[
                 rebind[IndexList[2]](c_coord), vec.cast[c_type]()
             )
         else:
-            c.store[width=simd_width, alignment=align](
-                rebind[IndexList[2]](c_coord), vec.cast[c_type]()
+            c.store[width=simd_width](
+                c_coord[0], c_coord[1], vec.cast[c_type]()
             )
 
     elementwise[_reduce, simd_width, target="gpu"](Index(M, N), ctx)
@@ -945,10 +945,19 @@ fn multistage_gemm[
         var work_space_data = ctx.enqueue_create_buffer[work_space_type](
             Int(runtime_config.num_k_partitions * UInt(M) * UInt(N))
         )
-        var work_space = NDBuffer[work_space_type, 3](
-            work_space_data.unsafe_ptr(),
-            Index(Int(runtime_config.num_k_partitions), M, N),
+        alias static_N = tensor_c.layout.shape[1].value()
+        alias work_space_layout = Layout.row_major(
+            UNKNOWN_VALUE, UNKNOWN_VALUE, static_N
         )
+        var work_space_runtime_layout = RuntimeLayout[
+            work_space_layout
+        ].row_major(Index(runtime_config.num_k_partitions, M, N))
+
+        var tensor_work_space = LayoutTensor[
+            work_space_type,
+            work_space_layout,
+            MutAnyOrigin,
+        ](work_space_data, work_space_runtime_layout)
 
         alias gemm_kernel_type = multistage_gemm_split_k_kernel[
             c_type,
@@ -958,6 +967,7 @@ fn multistage_gemm[
             b_type,
             tensor_b.layout,
             work_space_type,
+            tensor_work_space.layout,
             transpose_b,
             config,
             elementwise_lambda_fn,
@@ -969,7 +979,7 @@ fn multistage_gemm[
                 tensor_c,
                 tensor_a,
                 tensor_b,
-                work_space,
+                tensor_work_space,
                 Int(runtime_config.num_k_partitions),
                 grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
                 block_dim=runtime_config.block_dim(),
@@ -979,7 +989,7 @@ fn multistage_gemm[
                 tensor_c,
                 tensor_a,
                 tensor_b,
-                work_space,
+                tensor_work_space,
                 Int(runtime_config.num_k_partitions),
                 grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
                 block_dim=runtime_config.block_dim(),
@@ -989,13 +999,9 @@ fn multistage_gemm[
                 ),
             )
 
-        split_k_reduce[
-            c_type,
-            work_space_type,
-            c_shape,
-            work_space.shape,
-            elementwise_lambda_fn,
-        ](c, work_space, ctx)
+        split_k_reduce[elementwise_lambda_fn=elementwise_lambda_fn](
+            tensor_c, tensor_work_space, ctx
+        )
 
         _ = work_space_data^
         return
