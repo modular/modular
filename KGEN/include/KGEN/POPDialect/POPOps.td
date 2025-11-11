@@ -1576,7 +1576,8 @@ def POP_GlobalAllocOp : POPOp<"global_alloc", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_GlobalConstantOp : POPOp<"global_constant",
-   [Pure, PointerElementType<"result", "value">, InferTypeOpAdaptor]> {
+   [Pure, PointerElementType<"result", "value">, InferTypeOpAdaptor,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "create a global constant";
   let description = [{
     The `pop.global_constant` operation creates and returns a pointer to a
