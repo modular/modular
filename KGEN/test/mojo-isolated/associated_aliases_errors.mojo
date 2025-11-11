@@ -4,42 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated --mojo-disable-builtins -split-input-file -verify-diagnostics %s
-
-trait Movable:
-    fn __moveinit__(out self, deinit other: Self):
-        ...
-
-
-trait Copyable:
-    fn __copyinit__(out self, other: Self):
-        ...
-
-    fn copy(self) -> Self:
-        return Self.__copyinit__(self)
-
-
-trait ImplicitlyCopyable(Copyable):
-    pass
-
+# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics %s
 
 # expected-error @below {{only traits may contain an alias without an initializer}}
 alias K: Int
-
-
-struct Int(ImplicitlyCopyable, Movable):
-    fn __init__(out self):
-        pass
-
-
-struct Bool(ImplicitlyCopyable, Movable):
-    fn __init__(out self):
-        pass
-
-    # This is needed by the compiler to synthesize trivial bit.
-    @implicit
-    fn __init__(out self, value: __mlir_type.i1):
-        pass
 
 trait MyTrait:  # expected-note {{trait 'MyTrait' declared here}}
     # expected-note @below {{required alias 'N' is not specified}}
@@ -102,10 +70,6 @@ fn testError2():
 
 
 # // -----
-
-
-struct Int:
-    pass
 
 
 struct TensorIndex[rank: Int]:
