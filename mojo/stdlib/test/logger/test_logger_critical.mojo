@@ -18,13 +18,16 @@ from testing import TestSuite
 def test_log_critical():
     var log = Logger[Level.CRITICAL]()
 
-    # CHECK-NOT: DEBUG::: hello world
+    # CHECK-NOT: DEBUG
+    # CHECK-NOT: ::: hello world
     log.debug("hello", "world")
 
-    # CHECK-NOT: DEBUG::: hello world
+    # CHECK-NOT: DEBUG
+    # CHECK-NOT: ::: hello world
     log.info("hello", "world")
 
-    # CHECK: CRITICAL::: hello
+    # CHECK: CRITICAL
+    # CHECK: ::: hello
     log.critical("hello")
 
 

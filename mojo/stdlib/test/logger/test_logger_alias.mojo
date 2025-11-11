@@ -18,10 +18,12 @@ alias log = Logger[Level.INFO]()
 
 
 def test_log_alias():
-    # CHECK-NOT: DEBUG::: hello world
+    # CHECK-NOT: DEBUG
+    # CHECK-NOT: :::     hello world
     log.debug("hello", "world")
 
-    # CHECK: INFO::: hello
+    # CHECK: INFO
+    # CHECK: ::: hello
     log.info("hello")
 
 

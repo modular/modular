@@ -89,7 +89,10 @@ def test_compile_config_use_logger(
     # On the Mojo side, the logger has printed "I'm a custom Mojo function!"
     # We need to capture the output and check that it matches.
     captured = capfd.readouterr()
-    assert captured.out == "ERROR::: I'm a custom Mojo function!\n"
+    assert (
+        "ERROR" in captured.out
+        and "::: I'm a custom Mojo function!\n" in captured.out
+    )
 
 
 # I'm really not sure why this is. The kernel is in `SDK/integration-test/Inputs/compile_config_ops/__init__.mojo`

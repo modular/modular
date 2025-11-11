@@ -602,3 +602,5 @@ what we publish.
   `sys.intrinsics.masked_load`, and `sys.intrinsics.masked_store` functions now
   include a `debug_assert` to catch null pointer usage, providing a clear error
   message instead of crashing with a segmentation fault.
+
+- The `logger` package now prints its levels in color.
