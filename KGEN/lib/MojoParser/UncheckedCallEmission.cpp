@@ -108,7 +108,7 @@ public:
               ValueDest &dest)
       : emitter(emitter), callee(callee), callExpr(callExpr),
         loc(emitter.translateLocation(callExpr->getLoc())), dest(dest),
-        calleeSig(cast<FuncTypeGeneratorType>(callee.getRValueType())),
+        calleeSig(cast<FnTypeGeneratorType>(callee.getRValueType())),
         afterCallActions(*this) {}
 
   /// Emit IR for a single argument, according to its convention.
@@ -1098,10 +1098,11 @@ TypedAttr CallEmitter::emitCallInParamContext(
     }
 
     // Emit a rebind if the refined type does not match the callee arg type.
-    if (arg.getType() != calleeArgType)
-      arg = ParamOperatorAttr::getRebind(arg, calleeArgType);
+    arg = ParamOperatorAttr::getRebind(arg, calleeArgType);
     operands.push_back(arg);
   }
+
+  Type resultType = boundSigType.getUserResultType();
 
   // Check to see if this is a call to a @always_inline("builtin") function,
   // like Int.__add__ etc.  If so, we need to inlined the body instead of making
@@ -1112,24 +1113,21 @@ TypedAttr CallEmitter::emitCallInParamContext(
   if (auto result =
           emitter.shared.foldInlineBuiltinFunction(operands, loc,
                                                    /*isError*/ false)) {
+    assert(result.getType() == resultType && "result type mismatch");
+
     // Maintain sugar so diagnostics don't show the inlined function call.  If
     // the operands of the apply themselves have sugar then we don't have to
     // retain their canonical form because the canonical rep will discard it
     // all.
-    Type resultType = boundSigType.getResults().front();
     auto sugaredCall = ParamOperatorAttr::get(POC::Apply, operands, resultType);
-    result = ParamOperatorAttr::getRebind(result, resultType);
     return SugarAttr::get(SugarKind::AlwaysInlineBuiltin, sugaredCall, result);
   }
 
-  TypedAttr result;
-  Type resultType = boundSigType.getUserResultType();
-  if (!boundSigType.hasMemoryOnlyResult()) {
+  TypedAttr result; // Memory-only types uses ApplyResultSlot.
+  if (!boundSigType.hasMemoryOnlyResult())
     result = ParamOperatorAttr::get(POC::Apply, operands, resultType);
-  } else {
-    // ByRefResult uses ApplyResultSlot.
+  else
     result = ParamOperatorAttr::get(POC::ApplyResultSlot, operands, resultType);
-  }
 
   // If the result was a returned reference, load it before returning it.
   if (boundSigType.isRefResult()) {

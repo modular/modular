@@ -1658,6 +1658,14 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   SmallVector<ParamDeclRefAttr> paramCaptures =
       graph.usesFromAbove.takeVector();
 
+  // Because our IR has type sugar, we can capture the same parameter from
+  // the sugared and canonical version of the same type.  Remove one of the
+  // versions from the captured uses.
+  SmallPtrSet<StringAttr, 8> capturedParamNames;
+  llvm::erase_if(paramCaptures, [&](ParamDeclRefAttr use) {
+    return !capturedParamNames.insert(use.getName()).second;
+  });
+
   // If this is a `@parameter` closure, attach the capture origins.
   if (signature.isCapturing() && !signature.isUnified()) {
     SmallVector<Type> captureTypes;
@@ -3172,10 +3180,10 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
       parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
     return failure();
 
-  if (auto traitType = dyn_cast<TraitType>(type)) {
-    emitError(decl.getLoc(), "TODO: dynamic traits not supported yet, please "
-                             "use a compile time generic instead of ")
-        << ASTType(traitType);
+  if (sugarIsa<TraitType>(type)) {
+    emitError(decl.getLoc()) << "dynamic traits not supported yet, please "
+                                "use a compile time generic instead of "
+                             << type;
     return failure();
   }
 
