@@ -90,10 +90,8 @@ class LoRARequestProcessor:
         try:
             if request.operation == LoRAOperation.LOAD:
                 return self._handle_load_request(request)
-            elif request.operation == LoRAOperation.UNLOAD:
-                return self._handle_unload_request(request)
             else:
-                return self._handle_list_request()
+                return self._handle_unload_request(request)
         except Exception as e:
             logger.exception(
                 f"Unexpected error handling LoRA request {request}: {e}"
@@ -140,7 +138,7 @@ class LoRARequestProcessor:
 
     def _handle_unload_request(self, request: LoRARequest) -> LoRAResponse:
         """Handle LoRA unload request."""
-        status = self.manager.unload_adapter(request.lora_name)  # type: ignore
+        status = self.manager.unload_adapter(request.lora_name)
 
         if status == LoRAStatus.SUCCESS:
             message = (
@@ -154,8 +152,3 @@ class LoRARequestProcessor:
             message = f"Failed to unload LoRA adapter '{request.lora_name}' with status: {status.value}"
 
         return LoRAResponse(status, message)
-
-    def _handle_list_request(self) -> LoRAResponse:
-        """Handle LoRA list request."""
-        loras = self.manager.loras
-        return LoRAResponse(LoRAStatus.SUCCESS, loras)

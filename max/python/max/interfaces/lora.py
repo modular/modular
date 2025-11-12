@@ -43,7 +43,6 @@ class LoRAOperation(Enum):
 
     LOAD = "load"
     UNLOAD = "unload"
-    LIST = "list"
 
 
 class LoRAStatus(Enum):
@@ -56,13 +55,14 @@ class LoRAStatus(Enum):
     UNLOAD_ERROR = "unload_error"
     LOAD_INVALID_PATH = "load_invalid_path"
     LOAD_INVALID_ADAPTER = "load_invalid_adapter"
+    UNSPECIFIED_ERROR = "unspecified_error"
 
 
 class LoRARequest(msgspec.Struct, omit_defaults=True):
     """Container for LoRA adapter requests."""
 
     operation: LoRAOperation
-    lora_name: str | None = None
+    lora_name: str
     lora_path: str | None = None
 
 

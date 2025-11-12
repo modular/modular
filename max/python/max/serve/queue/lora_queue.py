@@ -16,13 +16,16 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
-import os
 import queue
-from collections.abc import Generator
 
-from max.interfaces import LoRARequest, LoRAResponse, RequestID
+from max.interfaces import (
+    LoRAOperation,
+    LoRARequest,
+    LoRAResponse,
+    LoRAStatus,
+    RequestID,
+)
 from max.interfaces.lora import LORA_REQUEST_ENDPOINT, LORA_RESPONSE_ENDPOINT
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
@@ -32,10 +35,7 @@ logger = logging.getLogger("max.serve")
 class LoRAQueue:
     """Queue for managing LoRA adapter load/unload/list requests."""
 
-    def __init__(
-        self,
-        zmq_endpoint_base: str,
-    ):
+    def __init__(self, zmq_endpoint_base: str, lora_paths: list[str] | None):
         self._request_socket = ZmqPushSocket[tuple[RequestID, LoRARequest]](
             endpoint=f"{zmq_endpoint_base}-{LORA_REQUEST_ENDPOINT}",
             payload_type=tuple[RequestID, LoRARequest],
@@ -45,64 +45,59 @@ class LoRAQueue:
             payload_type=tuple[RequestID, LoRAResponse],
         )
 
-        self.pending_out_queues: dict[
-            RequestID,
-            tuple[asyncio.Queue[LoRAResponse], asyncio.AbstractEventLoop],
-        ] = {}
+        self._loaded_loras: list[str] = []
 
-    @contextlib.contextmanager
-    def open_channel(
-        self, req_id: RequestID, request: LoRARequest
-    ) -> Generator[asyncio.Queue[LoRAResponse], None, None]:
-        try:
-            if req_id in self.pending_out_queues:
-                raise RuntimeError(
-                    f"Detected multiple requests with `req_id` set to {req_id}. "
-                    "This WILL lead to unexpected behavior! "
-                    "Please ensure that the `req_id` is unique for each request."
-                )
+        if lora_paths:
+            self._loaded_loras = [
+                lora.split("=")[0] if lora.find("=") != -1 else lora
+                for lora in lora_paths
+            ]
 
-            out_queue: asyncio.Queue[LoRAResponse] = asyncio.Queue()
-            event_loop = asyncio.get_running_loop()
-            self.pending_out_queues[req_id] = (out_queue, event_loop)
-
-            # put_nowait will fail if the request_push_socket is unavailable
-            # this will immediately trigger the finally block, resulting in
-            # the request being purged, and returned without result.
-            self._request_socket.put_nowait((req_id, request))
-            yield out_queue
-        finally:
-            del self.pending_out_queues[req_id]
+    def list_loras(self) -> list[str]:
+        return self._loaded_loras
 
     async def get_response(
-        self, req_id: RequestID, request: LoRARequest
+        self, req_id: RequestID, request: LoRARequest, timeout: float = 30.0
     ) -> LoRAResponse:
-        with self.open_channel(req_id, request) as queue:
-            return await queue.get()
-
-    async def response_worker(self) -> None:
         """
-        Continuously processes responses from the remote worker process.
+        Send a LoRA request and poll for the response.
 
-        This method runs in a loop, pulling responses from the response socket and routing them
-        to the appropriate pending queues.
-
+        Since LoRA operations are infrequent, we poll directly instead of
+        using a continuous background worker to avoid performance overhead.
         """
+        # Send the request
         try:
-            while True:
-                try:
-                    request_id, response = self._response_socket.get_nowait()
-                    if request_id in self.pending_out_queues:
-                        out_queue, event_loop = self.pending_out_queues[
-                            request_id
-                        ]
-                        asyncio.run_coroutine_threadsafe(
-                            out_queue.put(response), event_loop
-                        )
-                except queue.Empty:
-                    await asyncio.sleep(0.1)
+            self._request_socket.put_nowait((req_id, request))
+        except Exception as e:
+            return LoRAResponse(
+                status=LoRAStatus.UNSPECIFIED_ERROR,
+                message=f"Failed to send LoRA request: {e}",
+            )
 
-        except asyncio.CancelledError:
-            raise
-        finally:
-            logger.debug("Terminating response worker [self=%s]", os.getpid())
+        start_time = asyncio.get_event_loop().time()
+        while True:
+            try:
+                response_id, response = self._response_socket.get_nowait()
+                if response_id == req_id:
+                    # Update loaded loras list on success
+                    if response.status == LoRAStatus.SUCCESS:
+                        if request.operation == LoRAOperation.LOAD:
+                            self._loaded_loras.append(request.lora_name)
+                        elif request.operation == LoRAOperation.UNLOAD:
+                            self._loaded_loras.remove(request.lora_name)
+                    return response
+                else:
+                    # Not our response. This shouldn't happen but log it
+                    logger.warning(
+                        "Received response for unexpected request_id: %s (expected %s)",
+                        response_id,
+                        req_id,
+                    )
+            except queue.Empty:
+                if asyncio.get_event_loop().time() - start_time > timeout:
+                    return LoRAResponse(
+                        status=LoRAStatus.UNSPECIFIED_ERROR,
+                        message=f"Timeout waiting for LoRA response after {timeout}s",
+                    )
+                # Sleep briefly before polling again (this is fine since LoRA ops are infrequent)
+                await asyncio.sleep(0.005)

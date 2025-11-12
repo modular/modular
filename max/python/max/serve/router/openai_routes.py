@@ -165,7 +165,7 @@ class OpenAIResponseGenerator(ABC, Generic[_T]):
         pass
 
 
-async def get_pipeline(
+def get_pipeline(
     request: Request, model_name: str
 ) -> TokenGeneratorPipeline | AudioGeneratorPipeline:
     app_state: State = request.app.state
@@ -176,10 +176,7 @@ async def get_pipeline(
     models = [pipeline.model_name]
 
     if lora_queue := app_state.pipeline.lora_queue:
-        lora_response = await lora_queue.get_response(
-            RequestID(request.state.request_id), LoRARequest(LoRAOperation.LIST)
-        )
-        models += lora_response.message
+        models += lora_queue.list_loras()
 
     if not model_name:
         model_name = pipeline.model_name
@@ -727,9 +724,9 @@ async def openai_create_chat_completion(
         completion_request = CreateChatCompletionRequest.model_validate_json(
             await request.body()
         )
-        pipeline: (
-            TokenGeneratorPipeline | AudioGeneratorPipeline
-        ) = await get_pipeline(request, completion_request.model)
+        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
+            get_pipeline(request, completion_request.model)
+        )
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
         logger.debug(
@@ -903,9 +900,9 @@ async def openai_create_embeddings(
         embeddings_request = CreateEmbeddingRequest.model_validate_json(
             await request.body()
         )
-        pipeline: (
-            TokenGeneratorPipeline | AudioGeneratorPipeline
-        ) = await get_pipeline(request, embeddings_request.model)
+        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
+            get_pipeline(request, embeddings_request.model)
+        )
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
         logger.debug(
@@ -1218,9 +1215,9 @@ async def openai_create_completion(
             await request.body()
         )
 
-        pipeline: (
-            TokenGeneratorPipeline | AudioGeneratorPipeline
-        ) = await get_pipeline(request, completion_request.model)
+        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
+            get_pipeline(request, completion_request.model)
+        )
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
         logger.debug(
@@ -1321,12 +1318,9 @@ async def openai_get_models(request: Request) -> ListModelsResponse:
     ]
 
     if lora_queue := request.app.state.pipeline.lora_queue:
-        loras = await lora_queue.get_response(
-            RequestID(request.state.request_id), LoRARequest(LoRAOperation.LIST)
-        )
         model_list += [
             Model(id=lora, object="model", created=None, owned_by="")
-            for lora in loras.message
+            for lora in lora_queue.list_loras()
         ]
 
     return ListModelsResponse(object="list", data=model_list)
@@ -1363,9 +1357,9 @@ async def create_streaming_audio_speech(
                 await request.body()
             )
         )
-        pipeline: (
-            TokenGeneratorPipeline | AudioGeneratorPipeline
-        ) = await get_pipeline(request, audio_generation_request.model)
+        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
+            get_pipeline(request, audio_generation_request.model)
+        )
         assert isinstance(pipeline, AudioGeneratorPipeline)
         sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(

@@ -121,7 +121,10 @@ async def lifespan(
         )
 
         lora_queue: LoRAQueue | None = (
-            LoRAQueue(serving_settings.pipeline_config.zmq_endpoint_base)
+            LoRAQueue(
+                serving_settings.pipeline_config.zmq_endpoint_base,
+                serving_settings.pipeline_config.lora_config.lora_paths,
+            )
             if serving_settings.pipeline_config.lora_config
             else None
         )

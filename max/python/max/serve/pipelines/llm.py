@@ -101,9 +101,6 @@ class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
         # Add global fanout worker.
         self.create_background_task(self.engine_queue.response_worker())
 
-        if self.lora_queue:
-            self.create_background_task(self.lora_queue.response_worker())
-
         self.logger.debug("%s: Started workers", self.model_name)
         return self
 

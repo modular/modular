@@ -196,7 +196,10 @@ async def _async_worker(
     # to feed the model worker process.
     pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(pipeline_config)
     lora_queue: LoRAQueue | None = (
-        LoRAQueue(pipeline_config.zmq_endpoint_base)
+        LoRAQueue(
+            pipeline_config.zmq_endpoint_base,
+            pipeline_config.lora_config.lora_paths,
+        )
         if pipeline_config.lora_config
         else None
     )
