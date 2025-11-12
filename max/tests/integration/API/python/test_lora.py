@@ -64,17 +64,12 @@ class MockLoRARequestProcessor:
                 else "Failed to load",
             )
         elif request.operation == LoRAOperation.UNLOAD:
-            status = self.manager.unload_adapter(request.lora_name)  # type: ignore
+            status = self.manager.unload_adapter(request.lora_name)
             return LoRAResponse(
                 status=status,
                 message=f"LoRA '{request.lora_name}' unloaded successfully"
                 if status == LoRAStatus.SUCCESS
                 else "Failed to unload",
-            )
-        elif request.operation == LoRAOperation.LIST:
-            return LoRAResponse(
-                status=LoRAStatus.SUCCESS,
-                message=f"Loaded LoRAs: {', '.join(self.manager.loras)}",
             )
         else:
             return LoRAResponse(
