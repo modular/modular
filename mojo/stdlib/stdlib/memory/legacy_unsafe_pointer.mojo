@@ -155,16 +155,29 @@ struct LegacyUnsafePointer[
     @always_inline("builtin")
     @implicit
     fn __init__(
+        out self,
+        other: UnsafePointer[
+            mut=mut, type, origin, address_space=address_space
+        ],
+    ):
+        """Implicitly cast an `UnsafePointer` to a `LegacyUnsafePointer`.
+
+        Args:
+            other: The `UnsafePointer` to cast from.
+        """
+        self.address = __mlir_op.`pop.pointer.bitcast`[_type = Self._mlir_type](
+            other.address
+        )
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
         out self, other: UnsafePointer[type, address_space=address_space, **_]
     ):
         """Implicitly cast an `UnsafePointer` to a `LegacyUnsafePointer`.
 
         Args:
             other: The `UnsafePointer` to cast from.
-
-        Returns:
-            A `LegacyUnsafePointer` with the same type, mutability, origin and
-            address space as the `UnsafePointer`.
         """
         self.address = __mlir_op.`pop.pointer.bitcast`[_type = Self._mlir_type](
             other.address
