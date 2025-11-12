@@ -178,6 +178,9 @@ class Float8Config:
     embedding_output_dtype: DType | None = None
     """The :obj:`DType` of the output from the embedding layer."""
 
+    bias_dtype: DType | None = None
+    """The :obj:`DType` of bias weights."""
+
     quant_method: str | None = None
     """The quantization method used (e.g., "fbgemm_fp8")."""
 
@@ -355,12 +358,15 @@ def _parse_compressed_tensors_float8_config(
         )
     )
 
+    bias_dtype = _bias_dtype(state_dict)
+
     return Float8Config(
         input_scale=input_spec,
         weight_scale=weight_spec,
         mlp_in_float8=mlp_in_float8,
         attn_qkv_in_float8=attn_qkv_in_float8,
         embedding_output_dtype=embedding_output_dtype,
+        bias_dtype=bias_dtype,
         quant_method="compressed-tensors",
     )
 
@@ -394,6 +400,31 @@ def _weight_scale_dtype(state_dict: Mapping[str, WeightData]) -> DType:
         )
 
     return weight_scale_dtype
+
+
+def _bias_dtype(state_dict: Mapping[str, WeightData]) -> DType | None:
+    """Determines the bias dtype from the state dict.
+
+    Looks for any weight ending with `.bias` and returns its dtype.
+    Assumes all bias weights have the same dtype.
+
+    Args:
+        state_dict: The state dictionary containing weights.
+
+    Returns:
+        The dtype of bias weights if found, None otherwise.
+    """
+    bias_dtype: DType | None = None
+    for weight_name, weight in state_dict.items():
+        if weight_name.endswith(".bias"):
+            if bias_dtype is None:
+                bias_dtype = weight.dtype
+            elif weight.dtype != bias_dtype:
+                raise ValueError(
+                    f"Inconsistent bias dtypes found: {bias_dtype} vs {weight.dtype} "
+                    f"in {weight_name}"
+                )
+    return bias_dtype
 
 
 def _parse_fbgemm_float8_config(
@@ -441,12 +472,15 @@ def _parse_fbgemm_float8_config(
         )
     )
 
+    bias_dtype = _bias_dtype(state_dict)
+
     return Float8Config(
         input_scale=input_spec,
         weight_scale=weight_spec,
         mlp_in_float8=mlp_in_float8,
         attn_qkv_in_float8=attn_qkv_in_float8,
         embedding_output_dtype=embedding_output_dtype,
+        bias_dtype=bias_dtype,
         quant_method=quant_method,
     )
 
@@ -498,12 +532,15 @@ def _parse_fp8_float8_config(
         block_size=(128, 128),
     )
 
+    bias_dtype = _bias_dtype(state_dict)
+
     return Float8Config(
         input_scale=input_spec,
         weight_scale=weight_spec,
         mlp_in_float8=set(),
         attn_qkv_in_float8=set(),
         embedding_output_dtype=DType.bfloat16,
+        bias_dtype=bias_dtype,
         quant_method=quant_method,
     )
 

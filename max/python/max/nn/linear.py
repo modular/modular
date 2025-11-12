@@ -142,9 +142,12 @@ class Linear(Module, Shardable):
         )
 
         if has_bias:
+            bias_dtype = dtype
+            if float8_config and float8_config.bias_dtype:
+                bias_dtype = float8_config.bias_dtype
             self.bias = Weight(
                 name=f"{name}.bias" if name else "bias",
-                dtype=dtype,
+                dtype=bias_dtype,
                 shape=(out_dim,),
                 device=device,
                 quantization_encoding=quantization_encoding,
