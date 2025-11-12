@@ -496,16 +496,18 @@ class EPCommInitializer:
             f"Estimated EP memory usage per device: {to_human_readable_bytes(self._estimate_ep_memory_usage())}"
         )
 
-        # Set ENVs for NVSHMEM
-        n_gpus = self.config.n_nodes * self.config.n_gpus_per_node
-        num_experts_per_gpu = self.config.n_experts // n_gpus
-        os.environ["NVSHMEM_IB_ENABLE_IBGDA"] = "1"
-        os.environ["NVSHMEM_IBGDA_NIC_HANDLER"] = "gpu"
-        os.environ["NVSHMEM_IBGDA_RC_MAP_BY"] = "warp"
-        os.environ["NVSHMEM_IBGDA_NUM_RC_PER_PE"] = str(num_experts_per_gpu)
+        # Skip setting NVSHMEM-specific env vars on single node.
+        if self.config.n_nodes > 1 or os.getenv("NVSHMEM_DISABLE_P2P") == "1":
+            # Set ENVs for NVSHMEM
+            n_gpus = self.config.n_nodes * self.config.n_gpus_per_node
+            num_experts_per_gpu = self.config.n_experts // n_gpus
+            os.environ["NVSHMEM_IB_ENABLE_IBGDA"] = "1"
+            os.environ["NVSHMEM_IBGDA_NIC_HANDLER"] = "gpu"
+            os.environ["NVSHMEM_IBGDA_RC_MAP_BY"] = "warp"
+            os.environ["NVSHMEM_IBGDA_NUM_RC_PER_PE"] = str(num_experts_per_gpu)
 
-        # TODO: Provide a way to let user manually map NICs to different GPU
-        os.environ["NVSHMEM_ENABLE_NIC_PE_MAPPING"] = "1"
+            # TODO: Provide a way to let user manually map NICs to different GPU
+            os.environ["NVSHMEM_ENABLE_NIC_PE_MAPPING"] = "1"
 
         # Build and compile the initialization graph
         graph = self._build_ep_init_graph()
