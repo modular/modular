@@ -139,7 +139,7 @@ assert_stmt: 'assert' test [',' test]
 var_stmt: (VAR|REF) top_expr_stmt
 alias_target: NAME | '(' alias_target_list ')'
 alias_target_list: alias_target (',' alias_target)*
-alias_stmt: ALIAS alias_target_list [metaparams] (annassign | ('=' (yield_expr|testlist_star_expr)))
+alias_stmt: (ALIAS|COMPTIME) alias_target_list [metaparams] (annassign | ('=' (yield_expr|testlist_star_expr)))
 
 
 compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | match_stmt
