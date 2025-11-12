@@ -27,14 +27,13 @@ import huggingface_hub
 import requests
 import torch
 import transformers
+from debugging_utils import add_max_hooks
 from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import PipelineTask, PipelineTokenizer
-from max.nn.hooks import PrintHook
 from max.nn.kv_cache import KVCacheStrategy
-from max.nn.layer import Module
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from peft.peft_model import PeftModel
 
@@ -1397,36 +1396,6 @@ def _detect_hf_flakes(
     return wrapper
 
 
-@contextmanager
-def _add_max_hooks() -> Any:
-    """Context manager that adds tensor printing hooks by patching the model class."""
-
-    hook = PrintHook()
-
-    def get_wrapped_load_state_dict(
-        original_load_state_dict: Callable[..., Any],
-    ) -> Callable[..., Any]:
-        def wrapped_load_state_dict(
-            self: Any, *args: Any, **kwargs: Any
-        ) -> Any:
-            result = original_load_state_dict(self, *args, **kwargs)
-            hook.name_layers(self)
-            return result
-
-        return wrapped_load_state_dict
-
-    original_load_state_dict = Module.load_state_dict
-    Module.load_state_dict = get_wrapped_load_state_dict(  # type: ignore[method-assign]
-        original_load_state_dict
-    )
-
-    try:
-        yield
-    finally:
-        hook.remove()
-        Module.load_state_dict = original_load_state_dict  # type: ignore[method-assign]
-
-
 @click.command()
 @click.option(
     "--device",
@@ -1487,6 +1456,15 @@ def _add_max_hooks() -> Any:
     help="Outputs intermediate tensors from both frameworks to the console.",
 )
 @click.option(
+    "--intermediates-dir",
+    "intermediates_dir",
+    type=click.Path(
+        path_type=Path, dir_okay=True, file_okay=False, writable=True
+    ),
+    default=None,
+    help="Directory to write intermediate tensors. If omitted, no files are written.",
+)
+@click.option(
     "--max-batch-size",
     "max_batch_size",
     type=int,
@@ -1518,6 +1496,7 @@ def main(
     max_batch_size: int | None,
     log_hf_downloads: bool,
     print_intermediates: bool,
+    intermediates_dir: Path | None,
     mini: bool,
 ) -> None:
     """Click command entry point that delegates to the implementation function.
@@ -1568,6 +1547,7 @@ def main(
             max_batch_size=max_batch_size,
             log_hf_downloads=log_hf_downloads,
             print_intermediates=print_intermediates,
+            intermediates_dir=intermediates_dir,
             mini=mini,
         )
     except Flake:
@@ -1586,6 +1566,7 @@ def generate_llm_logits(
     reference: list[ModelOutput] | None = None,
     log_hf_downloads: bool = False,
     print_intermediates: bool = False,
+    intermediates_dir: Path | None = None,
     mini: bool = False,
 ) -> None:
     """Output logits to a file for a model based on a fixed set of prompts.
@@ -1631,10 +1612,12 @@ def generate_llm_logits(
     title = f"{pipeline_name} - {framework_name.upper()} - {encoding_name}"
     with github_log_group(title):
         if framework_name == "max":
-            add_max_hooks = (
-                _add_max_hooks() if print_intermediates else nullcontext()
+            hooks_ctx = (
+                add_max_hooks(output_directory=intermediates_dir)
+                if (print_intermediates or intermediates_dir is not None)
+                else nullcontext()
             )
-            with add_max_hooks, maybe_log_hf_downloads(log_hf_downloads):
+            with hooks_ctx, maybe_log_hf_downloads(log_hf_downloads):
                 max_pipeline_and_tokenizer = (
                     pipeline_oracle.create_max_pipeline(
                         encoding=encoding_name,
@@ -1697,8 +1680,13 @@ def generate_llm_logits(
                         device=device,
                     )
                 )
-            if print_intermediates:
-                hook = torch_print_hook.TorchPrintHook()
+            if print_intermediates or intermediates_dir:
+                export_path = (
+                    str(intermediates_dir)
+                    if intermediates_dir is not None
+                    else None
+                )
+                hook = torch_print_hook.TorchPrintHook(export_path=export_path)
                 hook.name_layers(torch_pipeline_and_tokenizer.model)
 
             if pipeline_oracle.task == PipelineTask.TEXT_GENERATION:

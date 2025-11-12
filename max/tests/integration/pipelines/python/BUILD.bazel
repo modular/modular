@@ -237,6 +237,7 @@ modular_py_binary(
     name = "generate_llm_logits",
     testonly = True,
     srcs = [
+        "debugging_utils.py",
         "generate_llm_logits.py",
     ],
     data = [
