@@ -124,6 +124,29 @@ what we publish.
     old() # 'old' is deprecated, use 'new' instead
   ```
 
+- In struct instances that declare a parametric `__call__` method, but not
+  one of the subscript methods (`__getitem__`, `__setitem__`, or
+  `__getattr__`), the `__call__` method can now be invoked with parameters:
+
+  ```mojo
+  struct Callable:
+    fn __init__(out self):
+      pass
+
+    fn __call__[x: Int](self, y: Int) -> Int:
+      return x + y
+
+    fn main():
+      var c = Callable()
+      print(c[1](2)) # 3
+  ```
+
+  Previously you would have needed to explicitly look up `__call__`:
+
+  ```mojo
+  print(c.__call__[1](2))
+  ```
+
 - Added `DType.float4_e2m1fn` as the 4bit float `e2m1` format. This Float4_e2m1
   type is defined by the [Open Compute MX Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf).
 
