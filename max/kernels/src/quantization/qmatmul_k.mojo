@@ -1155,7 +1155,12 @@ fn _matmul_Q4_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr = b_tile_ptr[].q_bits.bits.unsafe_ptr().as_any_origin()
+        var b_q_bits_ptr = (
+            b_tile_ptr[]
+            .q_bits.bits.unsafe_ptr()
+            .as_any_origin()
+            .as_legacy_pointer()
+        )
 
         @parameter
         fn matmul_group_packed(
@@ -1397,7 +1402,12 @@ fn _matmul_Q6_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr = b_tile_ptr[].q_bits.bits.unsafe_ptr().as_any_origin()
+        var b_q_bits_ptr = (
+            b_tile_ptr[]
+            .q_bits.bits.unsafe_ptr()
+            .as_any_origin()
+            .as_legacy_pointer()
+        )
 
         @parameter
         fn matmul_group_packed(

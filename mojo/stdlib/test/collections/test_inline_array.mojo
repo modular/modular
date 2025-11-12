@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys.info import size_of
 
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
@@ -306,7 +305,7 @@ def test_move():
 
     var del_counter = List[Int]()
     var del_counter_ptr = UnsafePointer(to=del_counter).as_immutable()
-    var del_recorder = DelRecorder(0, del_counter_ptr)
+    var del_recorder = DelRecorder[del_counter_ptr.origin](0, del_counter_ptr)
     var arr3 = InlineArray[DelRecorder[del_counter_ptr.origin], 1](del_recorder)
 
     assert_equal(len(del_counter_ptr[]), 0)

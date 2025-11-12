@@ -37,10 +37,6 @@ from collections._index_normalization import normalize_index
 
 from builtin.device_passable import DevicePassable
 from compile import get_type_name
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 
 # ===-----------------------------------------------------------------------===#
@@ -98,7 +94,7 @@ struct InlineArray[
 
     alias device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: LegacyOpaquePointer):
         """Convert the host type object to a device_type and store it at the
         target address.
 
@@ -526,15 +522,14 @@ struct InlineArray[
             UnsafePointer(to=self._array).address,
             i._mlir_value,
         )
-        return UnsafePointer(ptr)[]
+        return UnsafePointer[_, origin_of(self)](ptr)[]
 
     @always_inline
     fn unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
     ](ref [origin, address_space]self) -> UnsafePointer[
         Self.ElementType,
-        mut = origin.mut,
-        origin=origin,
+        origin,
         address_space=address_space,
     ]:
         """Gets an unsafe pointer to the underlying array storage.
