@@ -1412,6 +1412,32 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   if (parsedParamList.parseParametersIfPresent(p, ArgListKind::kParamList))
     return failure();
 
+  if (!parsedParamList.params.empty() && baseName == "__call__" &&
+      dyn_cast_or_null<StructDeclOp>(parentDecl->getIfOperation())) {
+    auto getItems = parentDecl->lookupInCurrentScope("__getitem__");
+    auto setItems = parentDecl->lookupInCurrentScope("__setitem__");
+    auto getAttrs = parentDecl->lookupInCurrentScope("__getattr__");
+    if (!getItems.empty() || !setItems.empty() || !getAttrs.empty()) {
+      auto diag = p.emitWarning(
+          funcOp->getLoc(),
+          llvm::formatv(
+              "parametric '__call__' method cannot be "
+              "called directly because '{}' defines '__getitem__', "
+              "'__setitem__', or '__getattr__'; consider using a different "
+              "name for this method",
+              parentDecl->getNameIfOperation()));
+
+      for (const auto &decl : getItems)
+        diag.attachNote(decl->getLoc()) << "__getitem__ defined here";
+
+      for (const auto &decl : setItems)
+        diag.attachNote(decl->getLoc()) << "__setitem__ defined here";
+
+      for (const auto &decl : getAttrs)
+        diag.attachNote(decl->getLoc()) << "__getattr__ defined here";
+    }
+  }
+
   ParsedArgumentList fnSignature;
   // Set up the known effects.
   if (isAsync) {
