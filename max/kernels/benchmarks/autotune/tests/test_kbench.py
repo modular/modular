@@ -30,8 +30,7 @@ def get_abs_path(path: str) -> Path:
     return Path(string.Template(str(path)).substitute(os.environ)).absolute()
 
 
-kernel_benchmarks_root = get_abs_path("max/kernels/benchmarks/")
-os.environ["KERNEL_BENCHMARKS_ROOT"] = str(kernel_benchmarks_root)
+kernel_benchmarks_root = os.environ["KERNEL_BENCHMARKS_ROOT"]
 
 
 # TODO: refactor to match the expected results
@@ -87,8 +86,41 @@ def test_kbench() -> None:
     pd.testing.assert_series_equal(df["spec"], baseline_df["spec"])
 
 
+# TODO: resolving mpirun deps in bazel.
+# def test_kbench_mpirun() -> None:
+#     _invoke_cli(
+#         kbench_cli,
+#         test_cases=[
+#             f"{kernel_benchmarks_root}/autotune/test.yaml --mpirun-np 5 -fv -o {kernel_benchmarks_root}/autotune/tests/output_mpirun",
+#         ],
+#     )
+
+#     print(
+#         "autotune/tests:",
+#         os.listdir(f"{kernel_benchmarks_root}/autotune/tests"),
+#         os.listdir("."),
+#     )
+
+#     path = [
+#         Path(f"{kernel_benchmarks_root}/autotune/tests/output_mpirun.txt"),
+#         Path(f"{kernel_benchmarks_root}/autotune/tests/output_mpirun.pkl"),
+#         Path(f"{kernel_benchmarks_root}/autotune/tests/output_mpirun.csv"),
+#         Path(f"{kernel_benchmarks_root}/autotune/tests/baseline_mpirun.csv"),
+#     ]
+
+#     for p in path:
+#         assert p.exists()
+
+#     df = pd.read_csv(f"{kernel_benchmarks_root}/autotune/tests/output_mpirun.csv")
+#     baseline_df = pd.read_csv(
+#         f"{kernel_benchmarks_root}/autotune/tests/baseline_mpirun.csv"
+#     )
+
+#     pd.testing.assert_series_equal(df["name"], baseline_df["name"])
+#     pd.testing.assert_series_equal(df["spec"], baseline_df["spec"])
+
+
 def test_kbench_cache() -> None:
-    print("here")
     _invoke_cli(
         kbench_cli,
         test_cases=[

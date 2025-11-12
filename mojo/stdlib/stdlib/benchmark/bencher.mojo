@@ -13,7 +13,7 @@
 
 import time
 from collections import Dict, Optional
-from os import abort
+from os import abort, getenv
 from pathlib import Path
 from sys.arg import argv
 
@@ -360,6 +360,7 @@ struct BenchConfig(Copyable, Movable):
         self.verbose_timing = False
         self.verbose_metric_names = True
 
+        # TODO: This function should move out of BenchConfig and be part of update_bench_config_args.
         @parameter
         fn argparse() raises:
             """Parse cmd line args to define benchmark configuration."""
@@ -607,6 +608,45 @@ struct Bench(Stringable, Writable):
                     self.mode = Mode.Test
 
         argparse()
+
+    fn check_mpirun(mut self) raises -> Int:
+        """
+        Check environment to examine whether the benchmark is called via mpirun.
+        If so, use pe_rank=OMPI_COMM_WORLD_RANK as a suffix for output file.
+
+        Raises:
+            If the operation fails.
+
+        Returns:
+            An integer representing pe rank (default=-1).
+        """
+        var comm_world_size = Int(getenv("OMPI_COMM_WORLD_SIZE", "0"))
+        var pe_rank = Int(getenv("OMPI_COMM_WORLD_RANK", "-1"))
+        if comm_world_size > 0 and pe_rank >= 0:
+            # In case of running this binary with mpirun, all the outputs
+            # will be written to -o output_file unless a distinct suffix is
+            # added to each output.
+            self.append_output_suffix(suffix=String("_", pe_rank))
+        return pe_rank
+
+    fn append_output_suffix(mut self, suffix: String):
+        """
+        Append a suffix string to output file name.
+
+        Args:
+            suffix: Suffix string to append to output file name.
+        """
+        if self.config.out_file:
+            stem = String(self.config.out_file.value())
+            current_suffix = String("")
+            split = String(stem).split(".")
+            if len(split) > 1:
+                stem = String(".".join(split[:-1]))
+                current_suffix = String(split[-1])
+
+            self.config.out_file = Path(
+                ".".join(List[String](stem + suffix, current_suffix))
+            )
 
     fn bench_with_input[
         T: AnyType,
@@ -882,7 +922,7 @@ struct Bench(Stringable, Writable):
 
         var full_name = bench_id.func_name
         if bench_id.input_id:
-            full_name.write("/", bench_id.input_id.value())
+            full_name.write("/input_id:", bench_id.input_id.value())
 
         if self.config.show_progress:
             print("Running", full_name)

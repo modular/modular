@@ -109,6 +109,7 @@ modular_py_test(
         "sample.mojo",
         "test.yaml",
     ],
+    env = {"KERNEL_BENCHMARKS_ROOT": "max/kernels/benchmarks/"},
     mojo_deps = [
         "@mojo//:internal_utils",
         "@mojo//:kv_cache",

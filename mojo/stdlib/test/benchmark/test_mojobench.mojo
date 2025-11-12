@@ -70,26 +70,26 @@ def test_mojobench():
     m.config.verbose_timing = True
 
     # Check default print format
-    # CHECK: | name     | met (ms)
-    # CHECK: | -------- | -
-    # CHECK: | bench1   |
-    # CHECK: | bench2/0 |
-    # CHECK: | bench2/1 |
+    # CHECK: | name              | met (ms)
+    # CHECK: | ----------------- | -
+    # CHECK: | bench1            |
+    # CHECK: | bench2/input_id:0 |
+    # CHECK: | bench2/input_id:1 |
     print(m)
 
     # CHECK: name,met (ms),iters,throughput (GElems/s),Arithmetic (GFLOPS/s),min (ms),mean (ms),max (ms),duration (ms)
     # CHECK: "bench1",
-    # CHECK: "bench2/0",
-    # CHECK: "bench2/1",
+    # CHECK: "bench2/input_id:0",
+    # CHECK: "bench2/input_id:1",
     m.config.format = Format.csv
     print(m)
 
     # CHECK: bench1
     # CHECK-NEXT: bench1
-    # CHECK-NEXT: bench2/0
-    # CHECK-NEXT: bench2/0
-    # CHECK-NEXT: bench2/1
-    # CHECK-NEXT: bench2/1
+    # CHECK-NEXT: bench2/input_id:0
+    # CHECK-NEXT: bench2/input_id:0
+    # CHECK-NEXT: bench2/input_id:1
+    # CHECK-NEXT: bench2/input_id:1
     # CHECK-OUT: bench1
     m.config.format = Format.tabular
     m.dump_report()
