@@ -335,7 +335,14 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
 
   return getSpecialMemberForType(
       type, this,
-      [](StructDeclOp structOp) { return structOp.getDestructorAttr(); }, loc);
+      [](StructDeclOp structOp) -> SymbolConstantAttr {
+        // If the struct is linear, then ignore an explicitly declared
+        // destructor for the purposes of destructor insertion.
+        if (structOp.getLinearTypeErrorMsg().value_or("") != "")
+          return {};
+        return structOp.getDestructorAttr();
+      },
+      loc);
 }
 
 SymbolConstantAttr TypeDeclInfo::getMoveInitForType(Type type,

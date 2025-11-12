@@ -89,3 +89,41 @@ fn foo2[T: UnknownDestructibility](x: T):
 fn foo3[T: ImplicitlyDestructible](var x: T):
     # Is fine, there's a x.__del__() available
     pass
+
+
+
+trait Iterator:
+    alias Element: AnyType
+
+
+struct I(Iterator):
+    alias Element = Int
+
+
+struct _MapIterator[
+    InnerIteratorType: Iterator, //,
+    Function: fn (InnerIteratorType.Element) -> Int,
+]():
+    var _inner: InnerIteratorType
+
+    fn __init__(out self):
+        while True:
+            pass
+
+
+fn f(x: Int) -> Int:
+    return 1
+
+
+fn map[
+    func: fn (Int) -> Int,
+](ref iterable: I) -> _MapIterator[InnerIteratorType=I, Function=func]:
+    return {}
+
+
+# CHECK-LABEL: lit.fn @"moco2373(
+fn moco2373(l: I):
+    var l2 = map[f](l)
+    # This shouldn't cause a crash, it should successfully destruct it.
+    # CHECK: lit.call {{.*}}@_MapIterator::@"__del__
+    _ = l2^
