@@ -27,6 +27,7 @@ from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.kv_cache import (
+    NullKVCacheManager,
     PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
@@ -242,7 +243,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager:
+    ) -> PagedKVCacheManager | NullKVCacheManager:
         return load_kv_manager(
             params=DeepseekV2Config.get_kv_params(
                 huggingface_config=self.huggingface_config,

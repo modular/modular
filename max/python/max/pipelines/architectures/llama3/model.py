@@ -26,6 +26,7 @@ from max.graph import DeviceRef, Graph, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.kv_cache import (
+    NullKVCacheManager,
     PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
@@ -80,7 +81,7 @@ class Llama3Inputs(ModelInputs):
 
     return_n_logits: Tensor
 
-    data_parallel_splits: Tensor | None = None
+    data_parallel_splits: Tensor | Sequence[Sequence[int]] | None = None
     """Tensor containing the data parallel splits."""
 
     def __init__(
@@ -93,7 +94,7 @@ class Llama3Inputs(ModelInputs):
         lora_ids: Tensor | None = None,
         lora_ranks: Tensor | None = None,
         lora_grouped_offsets: Tensor | None = None,
-        data_parallel_splits: Tensor | None = None,
+        data_parallel_splits: Tensor | Sequence[Sequence[int]] | None = None,
     ) -> None:
         """
         Args:
@@ -184,11 +185,25 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
         if self.pipeline_config.model_config.data_parallel_degree > 1:
             assert model_inputs.data_parallel_splits is not None
+            # Convert data_parallel_splits to Tensor if needed
+            if isinstance(model_inputs.data_parallel_splits, Tensor):
+                splits_tensor = model_inputs.data_parallel_splits
+            else:
+                # Convert Sequence[Sequence[int]] to flat array
+                splits_array = np.concatenate(
+                    [
+                        np.array(s, dtype=np.int64)
+                        for s in model_inputs.data_parallel_splits
+                    ]
+                )
+                splits_tensor = Tensor.from_numpy(splits_array).to(
+                    self.devices[0]
+                )
             model_outputs = self.model.execute(
                 model_inputs.tokens,
                 model_inputs.input_row_offsets,
                 model_inputs.return_n_logits,
-                model_inputs.data_parallel_splits,
+                splits_tensor,
                 *curr_kv_cache_inputs,
             )
         elif self._lora_manager:
@@ -245,7 +260,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             np.concatenate([ctx.next_tokens for ctx in context_batch])
         ).to(self.devices[0])
 
-        data_parallel_splits: Tensor | None = None
+        data_parallel_splits: Tensor | Sequence[Sequence[int]] | None = None
         if self.pipeline_config.model_config.data_parallel_degree > 1:
             data_parallel_splits = self.kv_manager.get_data_parallel_splits(
                 context_batch
@@ -314,7 +329,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         self,
         session: InferenceSession,
         available_cache_memory: int | None,
-    ) -> PagedKVCacheManager:
+    ) -> PagedKVCacheManager | NullKVCacheManager:
         # For pipeline parallel, use layers per stage instead of total layers
         num_layers_for_cache = Llama3Config.get_num_layers(
             huggingface_config=self.huggingface_config

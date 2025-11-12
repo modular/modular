@@ -39,6 +39,7 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import TextGenerationContext
 from max.interfaces.request import RequestID
 from max.kv_cache import (
+    NullKVCacheManager,
     PagedCacheInputSymbols,
     PagedKVCacheManager,
     estimate_kv_cache_size,
@@ -107,7 +108,7 @@ class MultimodalKVCacheManager:
       extensible KVCacheInput type.
     """
 
-    text_kv_manager: PagedKVCacheManager
+    text_kv_manager: PagedKVCacheManager | NullKVCacheManager
     """KV cache manager for text inputs."""
 
     vision_kv_manager: PagedKVCacheManager
@@ -156,6 +157,11 @@ class MultimodalKVCacheManager:
             available_cache_memory=available_cache_memory,
             page_size=page_size,
             session=session,
+        )
+        # MultimodalKVCacheManager requires PagedKVCacheManager (not NullKVCacheManager)
+        # since it accesses internal implementation details
+        assert isinstance(paged_text_kv_manager, PagedKVCacheManager), (
+            "MultimodalKVCacheManager requires PagedKVCacheManager"
         )
         self.text_kv_manager = paged_text_kv_manager
 

@@ -31,6 +31,7 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.kv_cache import (
+    NullKVCacheManager,
     PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
@@ -251,7 +252,7 @@ class MistralModel(PipelineModel[TextContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager:
+    ) -> PagedKVCacheManager | NullKVCacheManager:
         assert self.devices, "devices must be provided to load kv manager."
         return load_kv_manager(
             params=MistralConfig.get_kv_params(

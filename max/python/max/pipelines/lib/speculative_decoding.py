@@ -42,7 +42,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.kv_cache import PagedKVCacheManager
+from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn import ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -412,7 +412,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     @property
     def kv_managers(
         self,
-    ) -> list[PagedKVCacheManager]:
+    ) -> list[PagedKVCacheManager | NullKVCacheManager]:
         return [self._draft_model.kv_manager, self._target_model.kv_manager]
 
     @traced

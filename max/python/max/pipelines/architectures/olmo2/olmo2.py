@@ -18,7 +18,7 @@ from collections.abc import Callable
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
-from max.kv_cache import PagedKVCacheManager
+from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn import (
     MLP,
     Embedding,
@@ -176,7 +176,7 @@ class Olmo2(Transformer):
         )
 
     def input_types(
-        self, kv_manager: PagedKVCacheManager
+        self, kv_manager: PagedKVCacheManager | NullKVCacheManager
     ) -> tuple[TensorType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model

@@ -27,7 +27,7 @@ from max.graph import (
     Value,
     ops,
 )
-from max.kv_cache import PagedKVCacheManager
+from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn import Module
 from max.nn.data_parallelism import split_batch
 from max.nn.kv_cache import PagedCacheValues
@@ -77,7 +77,7 @@ class DataParallelLlama(Module):
     # Graph helpers.
     def input_types(
         self,
-        kv_manager: PagedKVCacheManager,
+        kv_manager: PagedKVCacheManager | NullKVCacheManager,
         lora_manager: LoRAManager | None,
     ) -> tuple[TensorType | BufferType, ...]:
         """Creates input tensor types used for building the graph.
@@ -187,7 +187,7 @@ def _assign_weight(module: Module, key: str, value: Any) -> None:
 
 def create_graph(
     config: Llama3Config,
-    kv_manager: PagedKVCacheManager,
+    kv_manager: PagedKVCacheManager | NullKVCacheManager,
     state_dict: dict[str, Any],
 ) -> tuple[Graph, dict[str, Any]]:
     model = DataParallelLlama(config)

@@ -31,6 +31,7 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.kv_cache import (
+    NullKVCacheManager,
     PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
@@ -956,7 +957,7 @@ class Qwen3VLModel(
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager:
+    ) -> PagedKVCacheManager | NullKVCacheManager:
         """Loads and initializes the PagedKVCacheManager for the Qwen3VL model."""
         return load_kv_manager(
             params=Qwen3VLConfig.get_kv_params(

@@ -20,7 +20,7 @@ from collections.abc import Callable, Sequence
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
-from max.kv_cache import PagedKVCacheManager
+from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
 from max.nn import (
     MLP,
     AttentionWithRope,
@@ -245,7 +245,7 @@ class Llama3(Transformer):
 
     def input_types(
         self,
-        kv_manager: PagedKVCacheManager,
+        kv_manager: PagedKVCacheManager | NullKVCacheManager,
         lora_manager: LoRAManager | None,
     ) -> tuple[TensorType, ...]:
         # TODO: Move input symbol computation from the manager classes.

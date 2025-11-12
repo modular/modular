@@ -12,14 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from typing import Any
 
-from max.driver import Device
+from max.driver import Device, is_virtual_device_mode
 from max.engine import InferenceSession
 from max.nn.kv_cache.cache_params import KVCacheParams, KVCacheStrategy
 
+from .null_cache_manager import NullKVCacheManager
 from .paged_cache import PagedKVCacheManager
+
+logger = logging.getLogger("max.pipelines")
 
 CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[PagedKVCacheManager]] = {
     KVCacheStrategy.PAGED: PagedKVCacheManager,
@@ -35,9 +39,27 @@ def load_kv_manager(
     session: InferenceSession,
     available_cache_memory: int | None = None,
     page_size: int | None = 512,
-) -> PagedKVCacheManager:
+) -> PagedKVCacheManager | NullKVCacheManager:
     assert max_batch_size is not None, "Expected max_batch_size to be set"
     assert max_batch_size > 0, "max_batch_size must be greater than 0"
+
+    # In compile-only mode (virtual device mode), use the null KV manager
+    # to avoid GPU memory allocation
+    if is_virtual_device_mode():
+        logger.info(
+            "Detected compile-only mode, using NullKVCacheManager to avoid GPU allocation"
+        )
+        return NullKVCacheManager(
+            params=params,
+            max_batch_size=max_batch_size,
+            max_seq_len=max_seq_len,
+            num_layers=num_layers,
+            devices=devices,
+            session=session,
+            available_cache_memory=available_cache_memory or 1024 * 1024 * 1024,
+            page_size=page_size or 512,
+        )
+
     if params.cache_strategy == KVCacheStrategy.PAGED:
         if page_size is None:
             raise ValueError(

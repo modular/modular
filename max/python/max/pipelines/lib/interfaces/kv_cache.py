@@ -21,6 +21,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import Pipeline
+from max.kv_cache import NullKVCacheManager
 from max.kv_cache.paged_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams
 from transformers import AutoConfig
@@ -34,7 +35,7 @@ if TYPE_CHECKING:
 class KVCacheMixin(Protocol):
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager:
+    ) -> PagedKVCacheManager | NullKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:

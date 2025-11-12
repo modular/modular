@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from .null_cache_manager import NullKVCacheManager
 from .paged_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -28,6 +29,7 @@ from .registry import (
 __all__ = [
     "KVTransferEngine",
     "KVTransferEngineMetadata",
+    "NullKVCacheManager",
     "PagedCacheInputSymbols",
     "PagedKVCacheManager",
     "TransferReqData",
