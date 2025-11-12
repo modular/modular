@@ -466,6 +466,7 @@ def generate_tokens(
         "fn": FN,
         "struct": STRUCT,
         "alias": ALIAS,
+        "comptime" : COMPTIME,
         "var": VAR,
         "__mlir_region": MLIR_REGION,
         "owned": OWNED,
