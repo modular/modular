@@ -497,6 +497,8 @@ what we publish.
 
 - `--help-hidden` option is added to all mojo tools to show hidden options.
 
+- `mojo debug` now rejects unknown options between `debug` and the target.
+
 - The Mojo language server will now report more coherent code actions.
 
 ### ❌ Removed {#25-7-removed}
