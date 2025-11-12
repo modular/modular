@@ -621,3 +621,7 @@ what we publish.
   message instead of crashing with a segmentation fault.
 
 - The `logger` package now prints its levels in color.
+
+- Throwing `deinit` methods now understand that `self` is deinitialized in error
+  paths, avoiding redundant calls to implicit destructors and improving linear
+  type support.
