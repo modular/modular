@@ -127,6 +127,8 @@ what we publish.
 - Added `DType.float4_e2m1fn` as the 4bit float `e2m1` format. This Float4_e2m1
   type is defined by the [Open Compute MX Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf).
 
+- `deinit` methods may now transfer all of 'self' to another `deinit' method.
+
 ### Language changes {#25-7-language-changes}
 
 - Expressions like `(Int, Float)` is no longer a syntax sugar for
