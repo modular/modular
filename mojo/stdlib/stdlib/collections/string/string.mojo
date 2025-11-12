@@ -92,7 +92,7 @@ from sys.ffi import c_char
 from sys.info import is_32bit
 
 from bit import count_leading_zeros
-from memory import LegacyUnsafePointer as UnsafePointer, memcmp, memcpy, memset
+from memory import memcmp, memcpy, memset
 from python import ConvertibleFromPython, ConvertibleToPython, PythonObject
 
 # ===----------------------------------------------------------------------=== #
@@ -128,7 +128,7 @@ struct String(
     # form when '_capacity_or_data.is_inline()' is true. The inline form
     # clobbers these fields (except the top byte of the capacity field) with
     # the string data.
-    var _ptr_or_data: UnsafePointer[UInt8]
+    var _ptr_or_data: UnsafePointer[UInt8, MutOrigin.external]
     """The underlying storage for the string data."""
     var _len_or_data: Int
     """The number of bytes in the string data."""
@@ -215,7 +215,9 @@ struct String(
         # Safety: This should be safe since we set `capacity_or_data` to 0.
         # Meaning any mutation will cause us to either reallocate or inline
         # the string.
-        self._ptr_or_data = data._slice._data.unsafe_mut_cast[True]()
+        self._ptr_or_data = data._slice._data.unsafe_mut_cast[
+            True
+        ]().unsafe_origin_cast[MutOrigin.external]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = 0
@@ -231,7 +233,7 @@ struct String(
         self._len_or_data = Int(
             mlir_value=__mlir_op.`pop.string.size`(data.value)
         )
-        self._ptr_or_data = UnsafePointer(
+        self._ptr_or_data = UnsafePointer[_, MutOrigin.external](
             __mlir_op.`pop.string.address`(data.value)
         ).bitcast[Byte]()
         # Always use static constant representation initially, defer inlining
@@ -538,7 +540,7 @@ struct String(
     fn __init__(
         out self,
         *,
-        unsafe_from_utf8_ptr: UnsafePointer[c_char, mut=_, origin=_],
+        unsafe_from_utf8_ptr: UnsafePointer[mut=False, c_char],
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
@@ -553,7 +555,7 @@ struct String(
         self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     fn __init__(
-        out self, *, unsafe_from_utf8_ptr: UnsafePointer[UInt8, mut=_, origin=_]
+        out self, *, unsafe_from_utf8_ptr: UnsafePointer[mut=False, UInt8]
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
@@ -684,9 +686,9 @@ struct String(
                 ptr.free()
 
     @staticmethod
-    fn _alloc(capacity: Int) -> UnsafePointer[Byte]:
+    fn _alloc(capacity: Int) -> UnsafePointer[Byte, MutOrigin.external]:
         """Allocate space for a new out-of-line string buffer."""
-        var ptr = UnsafePointer[Byte].alloc(capacity + Self.REF_COUNT_SIZE)
+        var ptr = alloc[Byte](capacity + Self.REF_COUNT_SIZE)
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(
@@ -1142,7 +1144,7 @@ struct String(
     @always_inline("nodebug")
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, mut=False, origin = origin_of(self)]:
+    ) -> UnsafePointer[Byte, origin_of(self)]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:
@@ -1164,7 +1166,7 @@ struct String(
 
     fn unsafe_ptr_mut(
         mut self, var capacity: Int = 0
-    ) -> UnsafePointer[Byte, mut=True, origin = origin_of(self)]:
+    ) -> UnsafePointer[Byte, origin_of(self)]:
         """Retrieves a mutable pointer to the unique underlying memory. Passing
         a larger capacity will reallocate the string to the new capacity if
         larger than the existing capacity, allowing you to write more data.
@@ -1187,7 +1189,7 @@ struct String(
 
     fn unsafe_cstr_ptr(
         mut self,
-    ) -> UnsafePointer[c_char, mut=False, origin = origin_of(self)]:
+    ) -> UnsafePointer[c_char, ImmutOrigin.cast_from[origin_of(self)]]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be null, or NUL terminated.

@@ -24,7 +24,7 @@ from os import abort
 from sys import size_of
 from sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
-from memory import LegacyUnsafePointer as UnsafePointer, Pointer, memcpy
+from memory import Pointer, memcpy
 
 from .optional import Optional
 
@@ -248,7 +248,7 @@ struct List[T: Copyable & Movable](
     """
 
     # Fields
-    var _data: UnsafePointer[T]
+    var _data: UnsafePointer[T, MutOrigin.external]
     """The underlying storage for the list."""
     var _len: Int
     """The number of elements in the list."""
@@ -298,7 +298,7 @@ struct List[T: Copyable & Movable](
 
     fn __init__(out self):
         """Constructs an empty list."""
-        self._data = UnsafePointer[T]()
+        self._data = {}
         self._len = 0
         self.capacity = 0
 
@@ -309,9 +309,9 @@ struct List[T: Copyable & Movable](
             capacity: The requested capacity of the list.
         """
         if capacity:
-            self._data = UnsafePointer[T].alloc(capacity)
+            self._data = alloc[T](capacity)
         else:
-            self._data = UnsafePointer[T]()
+            self._data = {}
         self._len = 0
         self.capacity = capacity
         self._annotate_new()
@@ -700,7 +700,7 @@ struct List[T: Copyable & Movable](
 
     @no_inline
     fn _realloc(mut self, new_capacity: Int):
-        var new_data = UnsafePointer[T].alloc(new_capacity)
+        var new_data = alloc[T](new_capacity)
 
         @parameter
         if T.__moveinit__is_trivial:
@@ -1080,7 +1080,7 @@ struct List[T: Copyable & Movable](
         self._len = 0
         self._annotate_shrink(old_size)
 
-    fn steal_data(mut self) -> UnsafePointer[T]:
+    fn steal_data(mut self) -> UnsafePointer[T, MutOrigin.external]:
         """Take ownership of the underlying pointer from the list.
 
         Returns:
@@ -1088,7 +1088,7 @@ struct List[T: Copyable & Movable](
         """
         self._annotate_delete()
         var ptr = self._data
-        self._data = UnsafePointer[T]()
+        self._data = {}
         self._len = 0
         self.capacity = 0
         return ptr
@@ -1242,7 +1242,7 @@ struct List[T: Copyable & Movable](
     fn unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
     ](ref [origin, address_space]self) -> UnsafePointer[
-        T, mut = origin.mut, origin=origin, address_space=address_space
+        T, origin, address_space=address_space
     ]:
         """Retrieves a pointer to the underlying memory.
 
@@ -1262,11 +1262,7 @@ struct List[T: Copyable & Movable](
     @always_inline
     fn _unsafe_next_uninit_ptr(
         ref self,
-    ) -> UnsafePointer[
-        T,
-        mut = Origin(origin_of(self)).mut,
-        origin = origin_of(self),
-    ]:
+    ) -> UnsafePointer[T, origin_of(self),]:
         """Retrieves a pointer to the next uninitialized element position.
 
         Safety:
