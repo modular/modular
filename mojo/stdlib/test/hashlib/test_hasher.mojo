@@ -123,7 +123,7 @@ struct ComplexHashableStructWithListAndWideSIMD(Hashable):
 def test_update_with_bytes():
     var hasher = DummyHasher()
     var hashable = ComplexHashableStructWithList(
-        SomeHashableStruct(42), SomeHashableStruct(10), List[UInt8](1, 2, 3)
+        SomeHashableStruct(42), SomeHashableStruct(10), [UInt8(1), 2, 3]
     )
     hasher.update(hashable)
     assert_equal(hasher^.finish(), 58)
@@ -136,14 +136,14 @@ alias _hash_with_hasher = hash[
 
 def test_with_ahasher():
     var hashable1 = ComplexHashableStructWithList(
-        SomeHashableStruct(42), SomeHashableStruct(10), List[UInt8](1, 2, 3)
+        SomeHashableStruct(42), SomeHashableStruct(10), [UInt8(1), 2, 3]
     )
     var hash_value = _hash_with_hasher(hashable1)
     assert_equal(hash_value, 7948090191592501094)
     var hashable2 = ComplexHashableStructWithListAndWideSIMD(
         SomeHashableStruct(42),
         SomeHashableStruct(10),
-        List[UInt8](1, 2, 3),
+        [UInt8(1), 2, 3],
         SIMD[DType.uint32, 4](1, 2, 3, 4),
     )
     hash_value = _hash_with_hasher(hashable2)

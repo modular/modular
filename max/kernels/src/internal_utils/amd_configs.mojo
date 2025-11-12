@@ -38,13 +38,13 @@ struct TuningConfigAMD(TuningConfig):
 
 
 # Put the tuning results in this file.
-alias configs_amd = List[TuningConfigAMD](
+alias configs_amd: List[TuningConfigAMD] = [
     TuningConfigAMD(m=1, n=1, k=1, bm=11, bn=11),
     TuningConfigAMD(m=1, n=2, k=1, bm=11, bn=11),
     TuningConfigAMD(m=2, n=1, k=1, bm=22, bn=22),
     TuningConfigAMD(m=3, n=1, k=3, bm=33, bn=33),
     TuningConfigAMD(m=16, n=1, k=1, bm=33, bn=33),
-)
+]
 
 # Make sure to register the above configs in the ConfigTable.
 alias TuningTableAMD = Table(configs_amd, "TuningTableAMD")

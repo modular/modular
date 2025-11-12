@@ -66,7 +66,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    var expected_vals = List[Scalar[dtype]](
+    var expected_vals: List[Scalar[dtype]] = [
         42.0,
         43.0,
         44.0,
@@ -83,7 +83,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
         48.0,
         49.0,
         50.0,
-    )
+    ]
     for i in range(2):
         for j in range(8):
             assert_equal(
@@ -137,9 +137,17 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     out_device.enqueue_copy_to(out_host.data)
     ctx.synchronize()
 
-    var expected_vals = List[Scalar[dtype]](
-        42.0, 43.0, 44.0, 43.0, 44.0, 45.0, 44.0, 45.0, 46.0
-    )
+    var expected_vals: List[Scalar[dtype]] = [
+        42.0,
+        43.0,
+        44.0,
+        43.0,
+        44.0,
+        45.0,
+        44.0,
+        45.0,
+        46.0,
+    ]
     for i in range(3):
         for j in range(3):
             assert_equal(
@@ -198,7 +206,7 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     out_device.enqueue_copy_to(out_host.data)
     ctx.synchronize()
 
-    var expected_vals = List[Scalar[dtype]](
+    var expected_vals: List[Scalar[dtype]] = [
         0.0,
         1.0,
         2.0,
@@ -239,7 +247,7 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
         37.0,
         38.0,
         39.0,
-    )
+    ]
     for i in range(4):
         for j in range(2):
             for k in range(5):

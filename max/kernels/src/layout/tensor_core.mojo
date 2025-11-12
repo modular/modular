@@ -244,18 +244,18 @@ struct TensorCore[
 
         @parameter
         if _out_type is DType.float32 and _in_type is DType.float32:
-            return List[IndexList[3]](shape_16x8x4, shape_16x8x8)
+            return [shape_16x8x4, shape_16x8x8]
         elif _out_type is DType.float32 and _in_type is DType.bfloat16:
-            return List[IndexList[3]](shape_16x8x8, shape_16x8x16)
+            return [shape_16x8x8, shape_16x8x16]
         elif _out_type is DType.float32 and _in_type is DType.float16:
-            return List[IndexList[3]](shape_16x8x8, shape_8x8x4)
+            return [shape_16x8x8, shape_8x8x4]
         elif _out_type is DType.float32 and (
             _in_type is DType.float8_e4m3fn or _in_type is DType.float8_e5m2
         ):
-            return List[IndexList[3]](shape_16x8x32)
+            return [shape_16x8x32]
         else:
             constrained[False, "No valid shape of mma"]()
-            return List[IndexList[3]](shape_null)
+            return [shape_null]
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
 

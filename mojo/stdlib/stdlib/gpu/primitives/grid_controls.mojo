@@ -82,12 +82,12 @@ fn pdl_launch_attributes(
     """
 
     if _SUPPORT_PDL_LAUNCH and pdl_level != PDLLevel.OFF:
-        return List[LaunchAttribute](
+        return [
             LaunchAttribute(
                 LaunchAttributeID.PROGRAMMATIC_STREAM_SERIALIZATION,
                 LaunchAttributeValue(True),
             )
-        )
+        ]
     else:
         return List[LaunchAttribute]()
 

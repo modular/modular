@@ -156,9 +156,9 @@ def test_list_clear():
 
 def test_list_to_bool_conversion():
     assert_false(List[String]())
-    assert_true(List[String]("a"))
-    assert_true(List[String]("", "a"))
-    assert_true(List[String](""))
+    assert_true(List[String](["a"]))
+    assert_true(List[String](["", "a"]))
+    assert_true(List[String]([""]))
 
 
 def test_list_pop():
@@ -205,7 +205,7 @@ def test_list_variadic_constructor():
     # Test variadic construct copying behavior
     #
 
-    var l2 = List[CopyCounter](CopyCounter(), CopyCounter(), CopyCounter())
+    var l2 = [CopyCounter(), CopyCounter(), CopyCounter()]
 
     assert_equal(len(l2), 3)
     assert_equal(l2[0].copy_count, 0)
@@ -214,7 +214,7 @@ def test_list_variadic_constructor():
 
 
 def test_list_resize():
-    var l = List[Int](1)
+    var l: List[Int] = [1]
     assert_equal(1, len(l))
     l.resize(2, 0)
     assert_equal(2, len(l))
@@ -498,30 +498,30 @@ def test_list_append():
     items.append(1)
     items.append(2)
     items.append(3)
-    assert_equal(items, List[UInt32](1, 2, 3))
+    assert_equal(items, [UInt32(1), 2, 3])
 
 
 def test_list_extend():
-    var items = List[UInt32](1, 2, 3)
+    var items = [UInt32(1), 2, 3]
     var copy = items.copy()
     items.extend(copy^)
-    assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3))
+    assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3])
 
     items = [1, 2, 3]
     copy = [1, 2, 3]
 
     # Extend with span
     items.extend(Span(copy))
-    assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3))
+    assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3])
 
     # Extend with whole SIMD
-    items = List[UInt32](1, 2, 3)
+    items: List[UInt32] = [1, 2, 3]
     items.extend(SIMD[DType.uint32, 4](1, 2, 3, 4))
-    assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3, 4))
+    assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3, 4])
     # Extend with part of SIMD
-    items = List[UInt32](1, 2, 3)
+    items: List[UInt32] = [1, 2, 3]
     items.extend(SIMD[DType.uint32, 4](1, 2, 3, 4), count=3)
-    assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3))
+    assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3])
 
 
 def test_list_extend_non_trivial():
@@ -559,7 +559,7 @@ def test_list_extend_non_trivial():
 
 def test_list_extend_trivial_copy_nontrivial_move():
     var v1 = List[TriviallyCopyableMoveCounter](capacity=1)
-    var v2 = List(TriviallyCopyableMoveCounter(0))
+    var v2 = [TriviallyCopyableMoveCounter(0)]
 
     assert_equal(v2[0].move_count, 1)
 
@@ -793,7 +793,7 @@ def test_list_realloc_trivial_copy_nontrivial_move():
 
 
 def test_list_boolable():
-    assert_true(List[Int](1))
+    assert_true(List[Int]([1]))
     assert_false(List[Int]())
 
 
@@ -868,7 +868,7 @@ def test_list_mult():
 
     l *= 0
     assert_equal(len(l), 0)
-    assert_equal(len(List[Int](1, 2, 3) * 0), 0)
+    assert_equal(len(List[Int]([1, 2, 3]) * 0), 0)
 
 
 def test_list_contains():
@@ -1050,12 +1050,12 @@ def test_list_comprehension():
 
 
 def test_list_repr_wrap():
-    assert_equal(repr(List("Hello", "World")), "['Hello', 'World']")
+    assert_equal(repr(List[String](["Hello", "World"])), "['Hello', 'World']")
     assert_equal(
-        repr(List[UInt8](0, 1)),
+        repr(List[UInt8]([UInt8(0), 1])),
         "[SIMD[DType.uint8, 1](0), SIMD[DType.uint8, 1](1)]",
     )
-    var l = List(DType.int8, DType.int16)
+    var l = List[DType]([DType.int8, DType.int16])
     assert_equal(
         repr(l),
         "[DType.int8, DType.int16]",

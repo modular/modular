@@ -22,7 +22,7 @@ fn sum_items(data: List[Int8]) -> Int:
 
 
 fn make_abcd_vector() -> List[Int8]:
-    return List[Int8](97, 98, 99, 100)
+    return [97, 98, 99, 100]
 
 
 def test_issue_13632():

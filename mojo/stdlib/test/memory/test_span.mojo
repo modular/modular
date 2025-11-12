@@ -155,7 +155,7 @@ def test_bool():
 
 
 def test_contains():
-    items = List[Byte](1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
+    items: List[Byte] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     span = Span(items)
     assert_true(0 not in span)
     assert_true(16 not in span)
@@ -298,9 +298,27 @@ def test_apply():
         return (x % 2).eq(0)
 
     def _test[D: DType]():
-        items = List[Scalar[D]](
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
-        )
+        items: List[Scalar[D]] = [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+        ]
         twice = items.copy()
         span = Span(twice)
         span.apply[func = _twice[D]]()
@@ -335,14 +353,14 @@ def test_count_func():
     fn is_2[w: Int](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
         return v.eq(2)
 
-    var data = Span(List[Byte](0, 1, 2, 1, 2, 1, 2))
+    var data = Span[Byte]([0, 1, 2, 1, 2, 1, 2])
     assert_equal(3, Int(data.count[func=is_2]()))
     assert_equal(2, Int(data[:-1].count[func=is_2]()))
     assert_equal(1, Int(data[:3].count[func=is_2]()))
 
 
 def test_unsafe_subspan():
-    var data = Span(List[Int](0, 1, 2, 3, 4))
+    var data = Span[Int]([0, 1, 2, 3, 4])
 
     var subspan1 = data.unsafe_subspan(offset=0, length=4)
     assert_equal(List(subspan1), [0, 1, 2, 3])
@@ -382,7 +400,7 @@ def test_binary_search():
 
 
 def test_binary_sarch_by():
-    var data = List[Int](1, 3, 5, 7, 9, 11, 13)
+    var data: List[Int] = [1, 3, 5, 7, 9, 11, 13]
     var span = Span(data)
 
     fn cmp_7(x: Int) -> Int:

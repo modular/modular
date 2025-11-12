@@ -204,7 +204,7 @@ fn assert_utf8_bytes(codepoint: UInt32, var expected: List[Byte]) raises:
     var char = char_opt.value()
 
     # Allocate a length-4 buffer to write to.
-    var buffer = List[Byte](0, 0, 0, 0)
+    var buffer: List[Byte] = [0, 0, 0, 0]
     var written = char.unsafe_write_utf8(buffer.unsafe_ptr())
 
     # Check that the number of bytes written was as expected.

@@ -2154,7 +2154,7 @@ def test_from_bytes_as_bytes():
     )
 
     # Test scalar roundtrip conversions
-    for x in List[Int16](10, 100, -12, 0, 1, -1, 1000, -1000):
+    for x in [Int16(10), 100, -12, 0, 1, -1, 1000, -1000]:
 
         @parameter
         for b in range(2):

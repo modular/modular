@@ -45,7 +45,7 @@ fn _candidate_tempdir_list() -> List[String]:
     _get_default_tempdir will try."""
 
     var dirlist = List[String]()
-    var possible_env_vars = List[StaticString]("TMPDIR", "TEMP", "TMP")
+    var possible_env_vars: List[StaticString] = ["TMPDIR", "TEMP", "TMP"]
     var dirname: String
 
     # First, try the environment.

@@ -87,7 +87,7 @@ def test_write_int_padded():
 
 
 def test_hex_digits_to_hex_chars():
-    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
+    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
     alias S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _hex_digits_to_hex_chars(ptr, UInt32(ord("🔥")))
@@ -113,7 +113,7 @@ def test_hex_digits_to_hex_chars():
 
 
 def test_write_hex():
-    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     alias S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
     _write_hex[8](ptr, ord("🔥"))

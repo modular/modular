@@ -132,10 +132,10 @@ def test_shuffle():
     # Property tests
     alias L_i = List[Int]
     alias L_s = List[String]
-    var a = L_i(1, 2, 3, 4)
-    var b = L_i(1, 2, 3, 4)
-    var c = L_s("Random", "shuffle", "in", "Mojo")
-    var d = L_s("Random", "shuffle", "in", "Mojo")
+    var a: L_i = [1, 2, 3, 4]
+    var b: L_i = [1, 2, 3, 4]
+    var c: L_s = ["Random", "shuffle", "in", "Mojo"]
+    var d: L_s = ["Random", "shuffle", "in", "Mojo"]
 
     shuffle(b)
     assert_equal(len(a), len(b))
@@ -149,19 +149,19 @@ def test_shuffle():
     for item in d:
         assert_true(item in c)
 
-    var e = L_i(21)
+    var e: L_i = [21]
     shuffle(e)
-    assert_true(e == L_i(21))
-    var f = L_s("Mojo")
+    assert_true(e == [21])
+    var f: L_s = ["Mojo"]
     shuffle(f)
-    assert_true(f == L_s("Mojo"))
+    assert_true(f == ["Mojo"])
 
     alias L_l = List[List[Int]]
     var g = L_l()
     var h = L_l()
     for i in range(10):
-        g.append(L_i(i, i + 1, i + 3))
-        h.append(L_i(i, i + 1, i + 3))
+        g.append([i, i + 1, i + 3])
+        h.append([i, i + 1, i + 3])
     shuffle(g)
     # TODO: Uncomment when possible
     # assert_true(g != h)
@@ -169,7 +169,7 @@ def test_shuffle():
     for i in range(10):
         # Currently, the below does not compile.
         # assert_true(g.__contains__(L_i(i, i + 1, i + 3)))
-        var target: List[Int] = L_i(i, i + 1, i + 3)
+        var target: List[Int] = [i, i + 1, i + 3]
         var found = False
         for j in range(len(g)):
             if g[j] == target:
@@ -181,14 +181,14 @@ def test_shuffle():
     var i = L_l_s()
     var j = L_l_s()
     for x in range(10):
-        i.append(L_s(String(x), String(x + 1), String(x + 3)))
-        j.append(L_s(String(x), String(x + 1), String(x + 3)))
+        i.append([String(x), String(x + 1), String(x + 3)])
+        j.append([String(x), String(x + 1), String(x + 3)])
     shuffle(i)
     # TODO: Uncomment when possible
     # assert_true(g != h)
     assert_equal(len(i), len(j))
     for x in range(10):
-        var target: List[String] = L_s(String(x), String(x + 1), String(x + 3))
+        var target: List[String] = [String(x), String(x + 1), String(x + 3)]
         var found = False
         for y in range(len(i)):
             if j[y] == target:

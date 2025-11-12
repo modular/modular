@@ -1062,7 +1062,7 @@ fn MakeLayoutList(v0: Layout, v1: Layout) -> LayoutList:
     Returns:
         A LayoutList containing the two provided layouts.
     """
-    return LayoutList(v0, v1)
+    return [v0, v1]
 
 
 fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:

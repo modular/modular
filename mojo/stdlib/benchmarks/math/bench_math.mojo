@@ -26,7 +26,7 @@ fn make_inputs(
     begin: input_type, end: input_type, num: input_type
 ) -> List[input_type]:
     if num == 1:
-        return List[input_type](begin)
+        return [begin]
 
     var step = (end - begin) / (num - 1)
 
@@ -38,7 +38,7 @@ fn make_inputs(
 
 fn make_int_inputs(begin: Int, end: Int, num: Int) -> List[Int]:
     if num == 1:
-        return List[Int](begin)
+        return [begin]
 
     var step = (end - begin) // (num - 1)
 

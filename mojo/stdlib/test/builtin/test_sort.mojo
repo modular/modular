@@ -334,7 +334,7 @@ fn test_quick_sort_repeated_val() raises:
 
     _quicksort[_greater_than](list)
 
-    var expected = List[Float32](
+    var expected: List[Float32] = [
         9.0,
         9.0,
         9.0,
@@ -371,7 +371,7 @@ fn test_quick_sort_repeated_val() raises:
         1.0,
         1.0,
         1.0,
-    )
+    ]
     for i in range(0, length):
         assert_equal(expected[i], list[i])
 
@@ -379,7 +379,7 @@ fn test_quick_sort_repeated_val() raises:
     fn _less_than(lhs: Float32, rhs: Float32) -> Bool:
         return lhs < rhs
 
-    expected = List[Float32](
+    expected: List[Float32] = [
         1.0,
         1.0,
         1.0,
@@ -416,7 +416,7 @@ fn test_quick_sort_repeated_val() raises:
         9.0,
         9.0,
         9.0,
-    )
+    ]
     _quicksort[_less_than](list)
     for i in range(0, length):
         assert_equal(expected[i], list[i])

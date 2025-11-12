@@ -323,9 +323,12 @@ def test_memcmp_simd_overlap():
     alias simd_width = simd_width_of[DType.int8]()
 
     # Test sizes that trigger overlapping tail reads
-    var test_sizes = List[Int](
-        simd_width + 1, simd_width + 2, simd_width * 2 - 1, simd_width * 2 + 1
-    )
+    var test_sizes: List[Int] = [
+        simd_width + 1,
+        simd_width + 2,
+        simd_width * 2 - 1,
+        simd_width * 2 + 1,
+    ]
 
     for i in range(len(test_sizes)):
         var size = test_sizes[i]
@@ -461,7 +464,7 @@ def test_memcmp_simd_width_edge_cases():
     var simd_width = simd_width_of[DType.int8]()
 
     # Test sizes that might cause issues with SIMD width calculations
-    var critical_sizes = List[Int](
+    var critical_sizes: List[Int] = [
         simd_width - 1,
         simd_width,
         simd_width + 1,
@@ -471,7 +474,7 @@ def test_memcmp_simd_width_edge_cases():
         simd_width * 3 - 1,
         simd_width * 3,
         simd_width * 3 + 1,
-    )
+    ]
 
     for i in range(len(critical_sizes)):
         var size = critical_sizes[i]
@@ -518,7 +521,7 @@ def test_memcmp_simd_zero_bytes():
     assert_equal(result, 0, "Zero-filled buffers should be equal")
 
     # Test zero vs non-zero at different positions
-    var test_positions = List[Int](0, 1, size // 2, size - 1)
+    var test_positions: List[Int] = [0, 1, size // 2, size - 1]
 
     for i in range(len(test_positions)):
         var pos = test_positions[i]

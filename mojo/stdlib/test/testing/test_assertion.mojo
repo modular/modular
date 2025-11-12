@@ -88,13 +88,13 @@ def test_assert_equal_with_simd():
 def test_assert_equal_with_list():
     assert_equal(
         ["This", "is", "Mojo"],
-        List("This", "is", "Mojo"),
+        List[String](["This", "is", "Mojo"]),
     )
 
     with assert_raises():
         assert_equal(
             ["This", "is", "Mojo"],
-            List("This", "is", "mojo"),
+            List[String](["This", "is", "mojo"]),
         )
 
 

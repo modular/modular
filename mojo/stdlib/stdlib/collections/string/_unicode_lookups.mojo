@@ -14,7 +14,7 @@
 UnicodeData.txt and SpecialCasing.txt files, which can be found at
 https://www.unicode.org/Public/16.0.0/"""
 
-alias has_uppercase_mapping = List[UInt32](
+alias has_uppercase_mapping: List[UInt32] = [
     0x0061,  # LATIN SMALL LETTER A a
     0x0062,  # LATIN SMALL LETTER B b
     0x0063,  # LATIN SMALL LETTER C c
@@ -1465,8 +1465,8 @@ alias has_uppercase_mapping = List[UInt32](
     0x1E941,  # ADLAM SMALL LETTER ZAL 𞥁
     0x1E942,  # ADLAM SMALL LETTER KPO 𞥂
     0x1E943,  # ADLAM SMALL LETTER SHA 𞥃
-)
-alias has_lowercase_mapping = List[UInt32](
+]
+alias has_lowercase_mapping: List[UInt32] = [
     0x0041,  # LATIN CAPITAL LETTER A A
     0x0042,  # LATIN CAPITAL LETTER B B
     0x0043,  # LATIN CAPITAL LETTER C C
@@ -2900,8 +2900,8 @@ alias has_lowercase_mapping = List[UInt32](
     0x1E91F,  # ADLAM CAPITAL LETTER ZAL 𞤟
     0x1E920,  # ADLAM CAPITAL LETTER KPO 𞤠
     0x1E921,  # ADLAM CAPITAL LETTER SHA 𞤡
-)
-alias uppercase_mapping = List[UInt32](
+]
+alias uppercase_mapping: List[UInt32] = [
     0x0041,  # a -> A
     0x0042,  # b -> B
     0x0043,  # c -> C
@@ -4352,8 +4352,8 @@ alias uppercase_mapping = List[UInt32](
     0x1E91F,  # 𞥁 -> 𞤟
     0x1E920,  # 𞥂 -> 𞤠
     0x1E921,  # 𞥃 -> 𞤡
-)
-alias lowercase_mapping = List[UInt32](
+]
+alias lowercase_mapping: List[UInt32] = [
     0x0061,  # A -> a
     0x0062,  # B -> b
     0x0063,  # C -> c
@@ -5787,8 +5787,8 @@ alias lowercase_mapping = List[UInt32](
     0x1E941,  # 𞤟 -> 𞥁
     0x1E942,  # 𞤠 -> 𞥂
     0x1E943,  # 𞤡 -> 𞥃
-)
-alias has_uppercase_mapping2 = List[UInt32](
+]
+alias has_uppercase_mapping2: List[UInt32] = [
     0xDF,  #  # LATIN SMALL LETTER SHARP S ß
     0x149,  #  # LATIN SMALL LETTER N PRECEDED BY APOSTROPHE ŉ
     0x1F0,  #  # LATIN SMALL LETTER J WITH CARON ǰ
@@ -5815,8 +5815,8 @@ alias has_uppercase_mapping2 = List[UInt32](
     0xFB15,  #  # ARMENIAN SMALL LIGATURE MEN INI ﬕ
     0xFB16,  #  # ARMENIAN SMALL LIGATURE VEW NOW ﬖ
     0xFB17,  #  # ARMENIAN SMALL LIGATURE MEN XEH ﬗ
-)
-alias uppercase_mapping2 = List[SIMD[DType.uint32, 2]](
+]
+alias uppercase_mapping2: List[SIMD[DType.uint32, 2]] = [
     SIMD[DType.uint32, 2](0x0053, 0x0053),  #  ß -> SS
     SIMD[DType.uint32, 2](0x02BC, 0x004E),  #  ŉ -> ʼN
     SIMD[DType.uint32, 2](0x004A, 0x030C),  #  ǰ -> J̌
@@ -5843,8 +5843,8 @@ alias uppercase_mapping2 = List[SIMD[DType.uint32, 2]](
     SIMD[DType.uint32, 2](0x0544, 0x053B),  #  ﬕ -> ՄԻ
     SIMD[DType.uint32, 2](0x054E, 0x0546),  #  ﬖ -> ՎՆ
     SIMD[DType.uint32, 2](0x0544, 0x053D),  #  ﬗ -> ՄԽ
-)
-alias has_uppercase_mapping3 = List[UInt32](
+]
+alias has_uppercase_mapping3: List[UInt32] = [
     0x390,  #  # GREEK SMALL LETTER IOTA WITH DIALYTIKA AND TONOS ΐ
     0x3B0,  #  # GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND TONOS ΰ
     0x1F52,  #  # GREEK SMALL LETTER UPSILON WITH PSILI AND VARIA ὒ
@@ -5858,8 +5858,8 @@ alias has_uppercase_mapping3 = List[UInt32](
     0x1FE7,  #  # GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND PERISPOMENI ῧ
     0xFB03,  #  # LATIN SMALL LIGATURE FFI ﬃ
     0xFB04,  #  # LATIN SMALL LIGATURE FFL ﬄ
-)
-alias uppercase_mapping3 = List[SIMD[DType.uint32, 4]](
+]
+alias uppercase_mapping3: List[SIMD[DType.uint32, 4]] = [
     SIMD[DType.uint32, 4](0x0399, 0x0308, 0x0301, 0),  #  ΐ -> Ϊ́
     SIMD[DType.uint32, 4](0x03A5, 0x0308, 0x0301, 0),  #  ΰ -> Ϋ́
     SIMD[DType.uint32, 4](0x03A5, 0x0313, 0x0300, 0),  #  ὒ -> Υ̓̀
@@ -5873,4 +5873,4 @@ alias uppercase_mapping3 = List[SIMD[DType.uint32, 4]](
     SIMD[DType.uint32, 4](0x03A5, 0x0308, 0x0342, 0),  #  ῧ -> Ϋ͂
     SIMD[DType.uint32, 4](0x0046, 0x0046, 0x0049, 0),  #  ﬃ -> FFI
     SIMD[DType.uint32, 4](0x0046, 0x0046, 0x004C, 0),  #  ﬄ -> FFL
-)
+]

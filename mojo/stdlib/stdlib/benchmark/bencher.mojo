@@ -42,7 +42,7 @@ struct BenchMetric(ImplicitlyCopyable, Movable, Stringable, Writable):
         3, "TheoreticalArithmetic", "GFLOPS/s"
     )
 
-    alias DEFAULTS = List[BenchMetric](Self.elements, Self.bytes, Self.flops)
+    alias DEFAULTS: List[BenchMetric] = [Self.elements, Self.bytes, Self.flops]
     """Default set of benchmark metrics."""
 
     fn __str__(self) -> String:
@@ -305,9 +305,12 @@ struct BenchConfig(Copyable, Movable):
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias VERBOSE_TIMING_LABELS = List[String](
-        "min (ms)", "mean (ms)", "max (ms)", "duration (ms)"
-    )
+    alias VERBOSE_TIMING_LABELS: List[String] = [
+        "min (ms)",
+        "mean (ms)",
+        "max (ms)",
+        "duration (ms)",
+    ]
     """Labels to print verbose timing results."""
 
     # TODO: to add median and stddev to verbose-timing
@@ -1168,7 +1171,7 @@ struct Bench(Stringable, Writable):
             max_mean = max(max_mean, mean_len)
             max_max = max(max_max, len(String(result.max(unit=Unit.ms))))
             max_dur = max(max_dur, len(String(result.duration(unit=Unit.ms))))
-        return List[Int](max_met, max_min, max_mean, max_max, max_dur)
+        return [max_met, max_min, max_mean, max_max, max_dur]
 
 
 @fieldwise_init

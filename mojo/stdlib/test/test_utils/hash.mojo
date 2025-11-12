@@ -68,7 +68,7 @@ def assert_fill_factor[
     """
     # A perfect hash function is when the number of buckets is equal to number of words
     # and the fill factor results in 1.0
-    var buckets = List[Int](0) * num_buckets
+    var buckets = [0] * num_buckets
     for w in words:
         var h = hash[HasherType=HasherType](w)
         buckets[h % num_buckets] += 1
