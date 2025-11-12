@@ -1937,6 +1937,9 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // of `[A, B, Int]`.  If we had ParameterizedType then we could model this
     // correctly as have an unspecified first set of bindings for the type,
     // and the Int binding could go in a subsequent parameter list.
+    //
+    // When fixing this, remember to check out SubscriptNode::emitLCVIR as well,
+    // as it uses similar logic.
     auto bindings = ParamBindings::getForDeclaredType(emitter.getDeclScope(),
                                                       baseRVType, this);
     auto result =
@@ -2604,9 +2607,44 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   if (!baseAnyValue)
     return {};
 
+  OverloadSetUValue overloads = baseAnyValue.getIfOverloadSet();
+
+  // Is this a non-subscriptable struct instance with a __call__ method? If so,
+  // bind parameters to it instead of fruitlessly trying to subscript.
+  if (auto ty = baseAnyValue.getRValueTypeIfResolvable()) {
+    auto hasMethod = [&](StringRef name) {
+      auto ov = OverloadSet::lookup(emitter.getDeclScope(), ty, name, base,
+                                    CallSyntax::kMethodCallSynthetic);
+      return !ov.isNull();
+    };
+
+    if (auto structTy = dyn_cast<StructMetaType>(ty);
+        (structTy && structTy.getSignature().getInputParamTypes().empty()) ||
+        !structTy) {
+      if (!hasMethod("__getitem__") && !hasMethod("__setitem__") &&
+          !hasMethod("__getattr__")) {
+
+        auto callOv =
+            OverloadSet::lookup(emitter.getDeclScope(), ty, "__call__", base,
+                                CallSyntax::kMethodCallSynthetic);
+
+        if (!callOv.isNull()) {
+          auto bindings = ParamBindings::getForDeclaredType(
+              emitter.getDeclScope(), ty, this);
+          assert(callOv.paramBindings.empty() &&
+                 "parameter bindings should be empty at this point");
+          callOv.paramBindings = std::move(bindings);
+          auto callValue = OverloadSetUValue::create(std::move(callOv));
+          callValue->baseValue = {baseAnyValue, base};
+          overloads = std::move(callValue);
+        }
+      }
+    }
+  }
+
   // If the baseAnyValue has a bound callable symbol, then this is applying
   // (more?) parameter expressions to bind its parameters.
-  if (auto overloads = baseAnyValue.getIfOverloadSet()) {
+  if (overloads) {
     emitter.shared.notifyListenerOnParameterBinding(overloads->fnDecls,
                                                     rsquareLoc, operands);
     // Mutate the overloadset directly.  This is a bit gross, but we know we're
