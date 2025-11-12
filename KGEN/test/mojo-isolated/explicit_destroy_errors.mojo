@@ -80,8 +80,34 @@ fn callsWith():
     _ = testAsyncVoid()
     # CHECK-NOT: lit.call {{.*}}__del__
 
-
-# CHECK-LABEL: lit.struct.decl @Coroutine
-# CHECK-NOT: destructor :!lit.generator
+# CHECK-LABEL: lit.fn @"testAsyncVoid
 async fn testAsyncVoid():
     pass
+
+
+# CHECK-LABEL: lit.struct.decl @ExplicitWithDel
+
+# MOCO-2787 - Linear types do not error if they contain an explicit del
+@explicit_destroy("must use __del__() explicitly")
+struct ExplicitWithDel:
+    fn __init__(out self):
+        pass
+
+    # Presence of a del shouldn't override @explicit_destroy.
+    fn __del__(deinit self):
+        pass
+
+    fn method(self): pass
+
+fn testExplicitWithDel():
+    a = ExplicitWithDel()
+    a.method()
+    a^.__del__() # ok
+
+    b = ExplicitWithDel()
+    b.method() # expected-error {{'b' abandoned without being explicitly destroyed: must use __del__() explicitly}}
+
+
+# This comes from stubs library.
+# CHECK-LABEL: lit.struct.decl @Coroutine
+# CHECK-NOT: destructor :!lit.generator
