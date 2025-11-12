@@ -15,8 +15,12 @@ option it takes:
   and prints result MLIR
 - `-emit=llvm` stops compilation right after lowering of MLIR to LLVM IR
   (for the host) and prints result LLVM IR
+- `-emit=llvm-bitcode` stops compilation right after lowering of MLIR to LLVM IR
+  (for the host) and prints LLVM bitcode
 - `-emit=llvm-opt` stops compilation after our custom LLVM optimization
   pipeline and prints result LLVM IR
+- `-emit=llvm-opt-bitcode` stops compilation after our custom LLVM optimization
+  pipeline and prints LLVM bitcode
 - `-emit=asm` runs our custom LLVM optimization pipeline, backends and emit
   result assembly
 - `-emit=asm-verbose` runs our custom LLVM optimization pipeline, backends and

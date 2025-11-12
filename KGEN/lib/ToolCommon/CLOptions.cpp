@@ -148,8 +148,12 @@ bool KGENCLOptionsParser::parse(llvm::cl::Option &o, StringRef argName,
   if (argName == "emit") {
     if (argValue == "llvm")
       val = Command::kEmitLLVM;
+    else if (argValue == "llvm-bitcode")
+      val = Command::kEmitLLVMBitcode;
     else if (argValue == "llvm-opt")
       val = Command::kEmitLLVMOpt;
+    else if (argValue == "llvm-opt-bitcode")
+      val = Command::kEmitLLVMOptBitcode;
     else if (argValue == "asm")
       val = Command::kEmitAssembly;
     else if (argValue == "asm-verbose")

@@ -37,7 +37,9 @@ enum class Command {
   kEmitAssemblyVerbose,
   kEmitHeader,
   kEmitLLVM,
+  kEmitLLVMBitcode,
   kEmitLLVMOpt,
+  kEmitLLVMOptBitcode,
   kEmitSharedObject,
   kExecute,
 };
@@ -507,8 +509,12 @@ private:
               "elaborate=no-use-parametric-interpreter",
               "Elaborate the input but don't use the parametric interpreter."),
           clEnumValN(Command::kEmitLLVM, "emit=llvm", "Emit funcs as LLVM IR."),
+          clEnumValN(Command::kEmitLLVMBitcode, "emit-llvm=bitcode",
+                     "Emit bitcode of unoptimized LLVM IR."),
           clEnumValN(Command::kEmitLLVMOpt, "emit=llvm-opt",
                      "Emit funcs as optimized LLVM IR."),
+          clEnumValN(Command::kEmitLLVMOptBitcode, "emit-llvm=opt-bitcode",
+                     "Emit bitcode of optimized LLVM IR."),
           clEnumValN(Command::kEmitAssembly, "emit=asm",
                      "Emit the funcs as assembly."),
           clEnumValN(
