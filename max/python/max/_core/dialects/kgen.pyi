@@ -1610,6 +1610,10 @@ class EmitAs(enum.Enum):
 
     object = 3
 
+    llvm_bitcode = 4
+
+    llvm_opt_bitcode = 5
+
 class ArgConvention(enum.Enum):
     read = 0
 
