@@ -30,6 +30,12 @@ struct EmptyExplicit:
         pass
         # CHECK-NOT: lit.call {{.*}}__del__
 
+    # Deinit method should be able to transfer all of self to another
+    # deinit method.
+    fn consume2(deinit self):
+        self^.consume()
+
+
 fn correctUseExample():
     var l = EmptyExplicit()
     l^.consume()

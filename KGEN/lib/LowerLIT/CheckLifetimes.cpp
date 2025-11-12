@@ -33,6 +33,9 @@ using namespace LIT;
 using llvm::BitVector;
 
 static constexpr StringRef extraOriginUsesAttrName = ".mojo.extra.origin.uses";
+static constexpr StringRef unusedMarkDestroyName =
+    ".mojo.unused.mark_destroyed";
+
 namespace {
 /// A simple raise set linked list
 struct RaiseSetEntry {
@@ -1408,10 +1411,18 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
         op.getLoc(), "can only mark directly tracked values as destroyed");
     return;
   }
-
+  // This operation is only generated on 'self' of deinit, so this should never
+  // trigger, but make sure only entire values are destroyed.
   if (access != valueInfo.getFullValueRef(access.valueId)) {
     valueInfo.emitErrorIfNotDiagnosed(
         op.getLoc(), "can only mark full values as destroyed, not subfields");
+    return;
+  }
+
+  // Ignore a mark_destroyed if the whole value is already destroyed. This can
+  // happen when a deinit method transfers self to another deinit method.
+  if (access.isAllMissing(liveValues)) {
+    op.setAttr(unusedMarkDestroyName, UnitAttr::get(op.getContext()));
     return;
   }
 
@@ -2955,6 +2966,11 @@ void DestructorInsertion::scanBlock(Block &block) {
         checkConsume(operand, op, /*isDeref=*/true, dtorInserter);
         break;
       case OperandEffect::memMarkDestroyed:
+        // If the uninit value pass decided that this mark_destroyed is unused,
+        // then we just ignore it.
+        if (op.hasAttr(unusedMarkDestroyName))
+          break;
+
         // The lit.ownership.mark_destroyed op consumes the whole object bit of
         // a value only, but not its fields.  This ensures the sub-fields are
         // destroyed but the full object is not.  It is used in destructors
