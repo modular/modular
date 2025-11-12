@@ -10,7 +10,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import RequestID
-from max.kv_cache import load_kv_manager
+from max.kv_cache import PagedKVCacheManager, load_kv_manager
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
 from test_common.context_utils import create_text_context
 
@@ -90,6 +90,10 @@ async def test_claim_and_release() -> None:
         devices=[device],
         session=InferenceSession(devices=[device]),
         available_cache_memory=500 * 2**20,
+    )
+    # This test requires PagedKVCacheManager to access internal _replica_managers
+    assert isinstance(dp_kv_manager, PagedKVCacheManager), (
+        "test_claim_and_release requires PagedKVCacheManager"
     )
     kv_manager = dp_kv_manager._replica_managers[0]
 

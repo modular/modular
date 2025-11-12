@@ -15,6 +15,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.kv_cache import (
+    NullKVCacheManager,
     PagedKVCacheManager,
     load_kv_manager,
 )
@@ -118,7 +119,7 @@ def generate_torch_outputs(
 
 
 def unflatten_kv_inputs(
-    kv_manager: PagedKVCacheManager,
+    kv_manager: PagedKVCacheManager | NullKVCacheManager,
     kv_params: KVCacheParams,
     kv_inputs_flat: Sequence[Value[Any]],
 ) -> list[PagedCacheValues]:

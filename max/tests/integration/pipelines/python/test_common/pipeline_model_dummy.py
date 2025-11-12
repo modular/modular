@@ -15,6 +15,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask, TextGenerationContext
 from max.kv_cache import (
+    NullKVCacheManager,
     PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
@@ -183,7 +184,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         self,
         session: InferenceSession,
         available_cache_memory: int | None,
-    ) -> PagedKVCacheManager:
+    ) -> PagedKVCacheManager | NullKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, load the kv manager."""
         assert available_cache_memory is not None
         num_layers = self.get_num_layers(self.huggingface_config)
