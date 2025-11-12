@@ -2387,3 +2387,34 @@ std::string KGEN::printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
 
   return str;
 }
+
+FailureOr<TypedAttr>
+KGEN::evaluateVariadicMap(VariadicMapAttr variadicMapAttr,
+                          ParameterEvaluationContext *evaluationContext) {
+  auto va = sugarDynCast<VariadicAttr>(variadicMapAttr.getVariadic());
+  auto gen = sugarDynCast<GeneratorAttr>(
+      ParamOperatorAttr::stripRebind(variadicMapAttr.getGenerator()));
+
+  if (!va || !gen)
+    return failure();
+
+  // We have a concrete value for both the generator/variadic, then fold them.
+  SmallVector<TypedAttr> mappedVals;
+  for (unsigned i = 0; i < va.getValues().size(); i++) {
+    IntegerAttr vaIdx = IntegerAttr::get(IndexType::get(va.getContext()), i);
+    GeneratorAttr spGen =
+        gen.getSpecializedGenerator({va, vaIdx}, evaluationContext);
+    // This should never happen, we should have verified VariadicMapAttr.
+    assert(spGen && spGen.isFullyBound() && "invalid form of variadic map");
+    auto valueInst = spGen.getInstantiatedValue();
+    if (valueInst.getType() != variadicMapAttr.getType().getElementType()) {
+      // NOTE: this assume the type can be rebind (otherwise the rebind on the
+      // VariadicMapAttr itself should have been rejected).
+      valueInst = ParamOperatorAttr::getRebind(
+          valueInst, variadicMapAttr.getType().getElementType());
+    }
+    mappedVals.push_back(valueInst);
+  }
+
+  return {VariadicAttr::get(mappedVals, variadicMapAttr.getType())};
+}

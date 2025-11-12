@@ -518,6 +518,26 @@ def KGEN_DowncastAttr : KGEN_ExprAttr<"Downcast", "downcast",
   let genVerifyDecl = 1;
 }
 
+
+def KGEN_VariadicMapAttr : KGEN_ExprAttr<"VariadicMap", "variadic.map",
+  [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Map a variadic of (type) values to a new variadic of (type) values";
+  let description = [{
+    The `#kgen.variadic.map` attribute is used to convert from a variadic of
+    (type) value to a variadic of (type) value by repeatedly applying the
+    provided generator on each element of the variadic.
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "VariadicType">:$type,
+    "TypedAttr":$variadic,
+    "TypedAttr":$generator
+  );
+
+  let assemblyFormat = "`<` $variadic `,` $generator `>`";
+  let genVerifyDecl = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // GetWitnessAttr
 //===----------------------------------------------------------------------===//

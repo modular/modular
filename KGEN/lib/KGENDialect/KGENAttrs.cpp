@@ -184,6 +184,46 @@ LogicalResult VariadicType::printValue(AsmPrinter &p, TypedAttr value) const {
 }
 
 //===----------------------------------------------------------------------===//
+// VariadicMapAttr
+//===----------------------------------------------------------------------===//
+
+bool VariadicMapAttr::isConstant() const { return false; }
+
+LogicalResult
+VariadicMapAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                        VariadicType type, TypedAttr variadic,
+                        TypedAttr mapper) {
+  auto toApply = dyn_cast<GeneratorType>(mapper.getType());
+  auto srcTp = dyn_cast<VariadicType>(variadic.getType());
+
+  if (!toApply || !srcTp)
+    return emitError()
+           << "expected an input of variadic type and a GeneratorAttr for "
+              "the mapper";
+
+  // Adjust the depth by -1 before type comparision, since the generator attr
+  // increases the depth by one.
+  IndexDepthAdjuster adjuster(-1);
+  toApply = cast<GeneratorType>(adjuster.replace(toApply));
+
+  // Verify that the mapper takes (*Ts, index) as input.
+  ArrayRef<Type> mapperInputTps = toApply.getInputParamTypes();
+  if (mapperInputTps.size() != 2 || srcTp != mapperInputTps[0] ||
+      mapperInputTps[1] != IndexType::get(type.getContext()))
+    return emitError() << "expected a GeneratorAttr that takes [" << srcTp
+                       << ", "
+                       << "index] for the mapper, but got ["
+                       << mapperInputTps[0] << ", " << mapperInputTps[1] << "]";
+
+  if (toApply.getBody() != type.getElementType())
+    return emitError() << "expected a GeneratorAttr with an output type of"
+                       << type.getElementType() << ", but got "
+                       << toApply.getBody();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // UnknownAttr
 //===----------------------------------------------------------------------===//
 
