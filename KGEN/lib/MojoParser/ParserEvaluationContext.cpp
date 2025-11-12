@@ -6,6 +6,7 @@
 
 #include "ParserEvaluationContext.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
@@ -54,6 +55,9 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateExpression(
       return downcast.getInputTypeValue();
     }
   }
+
+  if (auto variadicMap = dyn_cast<VariadicMapAttr>(attr))
+    return evaluateVariadicMap(variadicMap, this);
 
   // Otherwise, this is not something we can evaluate, which is ok, because
   // the parser won't be able to evaluate everything. The user is expected to
