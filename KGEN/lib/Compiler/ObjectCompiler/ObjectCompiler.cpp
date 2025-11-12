@@ -1382,14 +1382,13 @@ ObjectCompiler::lowerLLVMModuleToObjects(
 }
 
 //===----------------------------------------------------------------------===//
-// emitLLVMIR
+// lowerAllFuncsToLLVMAndOptimize
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess ObjectCompiler::emitLLVMIR(ModuleOp module,
-                                          llvm::raw_pwrite_stream &os) {
-  CompilerTimeTraceScope traceScope("emitLLVMIR");
+ErrorOrSuccess ObjectCompiler::lowerAllFuncsToLLVMAndOptimize(
+    ModuleOp module, LLVMModuleAndContext &llvmModule) {
+  CompilerTimeTraceScope traceScope("lowerAllFuncsToLLVMAndOptimize");
 
-  LLVMModuleAndContext llvmModule;
   if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
         return lowerAllFuncsToLLVM(ctx, module);
       }))
@@ -1406,6 +1405,20 @@ ErrorOrSuccess ObjectCompiler::emitLLVMIR(ModuleOp module,
 
   if (failed(runLLVMOptPasses(*llvmModule, **machineOr, options, runtime)))
     return Error("failed to run LLVM opt passes");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// emitLLVMIR
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess ObjectCompiler::emitLLVMIR(ModuleOp module,
+                                          llvm::raw_pwrite_stream &os) {
+  CompilerTimeTraceScope traceScope("emitLLVMIR");
+
+  LLVMModuleAndContext llvmModule;
+  if (ErrorOrSuccess err = lowerAllFuncsToLLVMAndOptimize(module, llvmModule))
+    return err.takeError();
 
   llvmModule->print(os, /*AAW=*/nullptr);
   return success();
@@ -1424,6 +1437,22 @@ ErrorOrSuccess ObjectCompiler::emitAssembly(OwningOpRef<ModuleOp> module,
     return Error(Twine("failed to lower LLVM IR to assembly:") +
                  buf.takeError().get());
   os << buf->getPointer()->getBuffer();
+  return success();
+}
+
+ErrorOrSuccess ObjectCompiler::emitBitcode(llvm::Module &llvmModule,
+                                           llvm::raw_pwrite_stream &os) {
+  CompilerTimeTraceScope traceScope("emitBitcode");
+  if (isMetalTriple(llvmModule.getTargetTriple())) {
+    M::KGEN::WriteBitcodeToFile(llvmModule, os,
+                                /*ShouldPreserveUseListOrder = */ false,
+                                /*ModuleSummaryIndex =*/nullptr,
+                                /*GenerateHash = */ false,
+                                /*ModuleHash = */ nullptr);
+  } else {
+    llvm::WriteBitcodeToFile(llvmModule, os,
+                             /* ShouldPreserveUseListOrder */ true);
+  }
   return success();
 }
 
@@ -1866,6 +1895,14 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
         std::move(output).emplace(buf.copy());
         return;
       }
+      if (emissionKind == EmitAs::LLVM_BITCODE) {
+        if (ErrorOrSuccess err = ObjectCompiler::emitBitcode(module, *buf)) {
+          return std::move(output).setToError(
+              AsyncRT::getMLIRDiagnostic(err.takeError(), loc));
+        }
+        std::move(output).emplace(buf.copy());
+        return;
+      }
 
       // Create the target machine.
       std::string moduleTriple = module.getTargetTriple().getTriple();
@@ -1904,6 +1941,14 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
 
       if (emissionKind == EmitAs::LLVM_OPT) {
         *buf << module;
+        std::move(output).emplace(buf.copy());
+        return;
+      }
+      if (emissionKind == EmitAs::LLVM_OPT_BITCODE) {
+        if (ErrorOrSuccess err = ObjectCompiler::emitBitcode(module, *buf)) {
+          return std::move(output).setToError(
+              AsyncRT::getMLIRDiagnostic(err.takeError(), loc));
+        }
         std::move(output).emplace(buf.copy());
         return;
       }

@@ -686,8 +686,8 @@ kgen.generator @kernel() {
 }
 
 kgen.generator export @top() {
-  // expected-error @below {{emissionKind operand should evaluate to either 'asm', 'llvm', 'llvm-opt', or 'object'}}
-  kgen.param.constant: string = <#kgen.compile_assembly<current_target(), 5, "", false, :() -> () @kernel>>
+  // expected-error @below {{emissionKind operand should evaluate to either 'asm', 'llvm', 'llvm-opt', 'object', 'llvm-bitcode', or 'llvm-opt-bitcode'}}
+  kgen.param.constant: string = <#kgen.compile_assembly<current_target(), 6, "", false, :() -> () @kernel>>
   kgen.return
 }
 
