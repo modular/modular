@@ -590,3 +590,153 @@ def test_gemma3_vs_llama3_prefix_difference(
 
     assert float8_config is not None
     assert float8_config.embedding_output_dtype == DType.bfloat16
+
+
+def test_parse_fbgemm_bias_dtype(
+    hf_config_instruct_fbgemm: AutoConfig,
+    state_dict_with_lm_head_and_fbgemm_scales: dict[str, WeightData],
+) -> None:
+    """Tests that parse_float8_config correctly extracts bias_dtype from state dict."""
+    hf_config = hf_config_instruct_fbgemm
+    state_dict = state_dict_with_lm_head_and_fbgemm_scales.copy()
+
+    # Add bias weights to state dict
+    state_dict["layers.0.mlp.down_proj.bias"] = WeightData(
+        name="layers.0.mlp.down_proj.bias",
+        shape=Shape((1,)),
+        dtype=DType.float32,
+        data=torch.zeros((1,), dtype=DType.float32.to_torch()),
+    )
+    state_dict["layers.0.self_attn.q_proj.bias"] = WeightData(
+        name="layers.0.self_attn.q_proj.bias",
+        shape=Shape((1,)),
+        dtype=DType.float32,
+        data=torch.zeros((1,), dtype=DType.float32.to_torch()),
+    )
+
+    dtype = DType.float8_e4m3fn
+    float8_config = parse_float8_config(hf_config, state_dict, dtype)
+
+    assert float8_config is not None
+    assert float8_config.bias_dtype == DType.float32
+
+
+def test_parse_fbgemm_bias_dtype_none(
+    hf_config_instruct_fbgemm: AutoConfig,
+    state_dict_with_lm_head_and_fbgemm_scales: dict[str, WeightData],
+) -> None:
+    """Tests that parse_float8_config returns None for bias_dtype when no bias weights exist."""
+    hf_config = hf_config_instruct_fbgemm
+    state_dict = state_dict_with_lm_head_and_fbgemm_scales
+    dtype = DType.float8_e4m3fn
+
+    float8_config = parse_float8_config(hf_config, state_dict, dtype)
+
+    assert float8_config is not None
+    assert float8_config.bias_dtype is None
+
+
+def test_parse_fbgemm_bias_dtype_inconsistent(
+    hf_config_instruct_fbgemm: AutoConfig,
+    state_dict_with_lm_head_and_fbgemm_scales: dict[str, WeightData],
+) -> None:
+    """Tests that parse_float8_config raises error for inconsistent bias dtypes."""
+    hf_config = hf_config_instruct_fbgemm
+    state_dict = state_dict_with_lm_head_and_fbgemm_scales.copy()
+
+    # Add bias weights with inconsistent dtypes
+    state_dict["layers.0.mlp.down_proj.bias"] = WeightData(
+        name="layers.0.mlp.down_proj.bias",
+        shape=Shape((1,)),
+        dtype=DType.float32,
+        data=torch.zeros((1,), dtype=DType.float32.to_torch()),
+    )
+    state_dict["layers.0.self_attn.q_proj.bias"] = WeightData(
+        name="layers.0.self_attn.q_proj.bias",
+        shape=Shape((1,)),
+        dtype=DType.bfloat16,  # Different dtype
+        data=torch.zeros((1,), dtype=DType.bfloat16.to_torch()),
+    )
+
+    dtype = DType.float8_e4m3fn
+    with pytest.raises(ValueError, match="Inconsistent bias dtypes found"):
+        parse_float8_config(hf_config, state_dict, dtype)
+
+
+def test_parse_compressed_tensors_bias_dtype(
+    hf_config_compressed_tensors: AutoConfig,
+    state_dict_with_lm_head_and_fbgemm_scales: dict[str, WeightData],
+) -> None:
+    """Tests that parse_float8_config correctly extracts bias_dtype for compressed-tensors."""
+    config = hf_config_compressed_tensors
+    state_dict = state_dict_with_lm_head_and_fbgemm_scales.copy()
+
+    # Add input_scale and weight_scale for compressed-tensors
+    state_dict["layers.0.mlp.down_proj.input_scale"] = WeightData(
+        name="layers.0.mlp.down_proj.input_scale",
+        shape=Shape((1, 1)),
+        dtype=DType.float32,
+        data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+    )
+    state_dict["layers.0.mlp.down_proj.weight_scale"] = WeightData(
+        name="layers.0.mlp.down_proj.weight_scale",
+        shape=Shape((1, 1)),
+        dtype=DType.float32,
+        data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+    )
+
+    # Add bias weights
+    state_dict["layers.0.mlp.down_proj.bias"] = WeightData(
+        name="layers.0.mlp.down_proj.bias",
+        shape=Shape((1,)),
+        dtype=DType.bfloat16,
+        data=torch.zeros((1,), dtype=DType.bfloat16.to_torch()),
+    )
+
+    dtype = DType.float8_e4m3fn
+    float8_config = parse_float8_config(config, state_dict, dtype)
+
+    assert float8_config is not None
+    assert float8_config.bias_dtype == DType.bfloat16
+
+
+@pytest.fixture
+def hf_config_fp8(hf_config_instruct_fbgemm: AutoConfig) -> AutoConfig:
+    """Creates a base fp8 config from an fbgemm config."""
+    config = deepcopy(hf_config_instruct_fbgemm)
+    config.quantization_config["quant_method"] = "fp8"
+    config.quantization_config["activation_scheme"] = "dynamic"
+    config.quantization_config["weight_block_size"] = [128, 128]
+    return config
+
+
+def test_parse_fp8_bias_dtype(
+    hf_config_fp8: AutoConfig,
+    state_dict_with_lm_head_and_fbgemm_scales: dict[str, WeightData],
+) -> None:
+    """Tests that parse_float8_config correctly extracts bias_dtype for fp8 method."""
+    config = hf_config_fp8
+    state_dict = state_dict_with_lm_head_and_fbgemm_scales.copy()
+
+    # Add weight_scale for fp8 (required)
+    state_dict["layers.0.mlp.down_proj.weight_scale"] = WeightData(
+        name="layers.0.mlp.down_proj.weight_scale",
+        shape=Shape((1, 1)),
+        dtype=DType.float32,
+        data=torch.zeros((1, 1), dtype=DType.float32.to_torch()),
+    )
+
+    # Add bias weights
+    state_dict["layers.0.mlp.down_proj.bias"] = WeightData(
+        name="layers.0.mlp.down_proj.bias",
+        shape=Shape((1,)),
+        dtype=DType.float16,
+        data=torch.zeros((1,), dtype=DType.float16.to_torch()),
+    )
+
+    dtype = DType.float8_e4m3fn
+    float8_config = parse_float8_config(config, state_dict, dtype)
+
+    assert float8_config is not None
+    assert float8_config.quant_method == "fp8"
+    assert float8_config.bias_dtype == DType.float16
