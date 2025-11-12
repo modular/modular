@@ -13,7 +13,8 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/bit.h"
 #include "llvm/Support/EndianStream.h"
-#include "llvm/Support/xxhash.h"
+
+#include "Support/HashUtils.h"
 
 using namespace M;
 using namespace Cache;
@@ -27,17 +28,13 @@ std::string TransformCacheKey::hashKey(TransformCacheKey::KeyTy key) {
   TimeTraceScope scope(
       CacheProfilerEntry::create("TransformCacheKey::hashKey"));
 
-  // Reserve a 16 byte result hash.
-  std::string result;
-  result.reserve(sizeof(llvm::XXH128_hash_t));
+  raw_xxhash_stream hasher;
 
   // Take the 128-bit xxhash of the input.
-  llvm::XXH128_hash_t hash =
-      llvm::xxh3_128bits(llvm::arrayRefFromStringRef(key->getBuffer()));
+  hasher << key->getBuffer();
 
   // Write the hash to the result buffer and return it.
-  result.append(llvm::bit_cast<char *>(&hash), sizeof(llvm::XXH128_hash_t));
-  return result;
+  return hasher.hashString();
 }
 
 //===----------------------------------------------------------------------===//
