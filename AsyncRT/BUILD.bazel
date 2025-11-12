@@ -27,6 +27,7 @@ modular_cc_library(
 modular_cc_library(
     name = "DeviceContext.headers",
     hdrs = [
+        "include/AsyncRT/DeviceContext/CompilationDevice.h",
         "include/AsyncRT/DeviceContext/DeviceContext.h",
     ],
     visibility = ["//visibility:private"],
@@ -95,6 +96,8 @@ modular_cc_library(
         "lib/DeviceContext/BufferCache.h",
         "lib/DeviceContext/CPU/CpuDeviceContext.cpp",
         "lib/DeviceContext/CPU/CpuDeviceContext.h",
+        "lib/DeviceContext/CUDA/CUDACompilationDevice.cpp",
+        "lib/DeviceContext/CUDA/CUDACompilationDevice.h",
         "lib/DeviceContext/CUDA/CUDACompilationDriver.cpp",
         "lib/DeviceContext/CUDA/CUDACompilationDriver.h",
         "lib/DeviceContext/CUDA/CUDADeviceContext.cpp",
@@ -115,6 +118,10 @@ modular_cc_library(
         "lib/DeviceContext/Virtual/VirtualDeviceContext.cpp",
         "lib/DeviceContext/Virtual/VirtualDeviceContext.h",
     ],
+    local_defines = select({
+        "@platforms//os:linux": ["MODULAR_LINUX"],
+        "//conditions:default": [],
+    }),
     visibility = ["//AsyncRT:__subpackages__"],
     deps = [
         ":DeviceContext.headers",
