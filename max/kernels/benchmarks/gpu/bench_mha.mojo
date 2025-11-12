@@ -175,7 +175,8 @@ fn run_mha[
             b.iter_custom[_kernel_launch](ctx)
 
         fn compute_flops() -> Int:
-            return 4 * batch_size * num_heads * seq_len * num_keys * depth
+            # Using causal mask, skip half of tiles.
+            return 2 * batch_size * num_heads * seq_len * num_keys * depth
 
         m.bench_function[bench_func](
             BenchId(
