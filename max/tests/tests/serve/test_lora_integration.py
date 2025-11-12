@@ -53,17 +53,12 @@ class MockLoRARequestProcessor:
                 else "Failed to load",
             )
         elif request.operation == LoRAOperation.UNLOAD:
-            status = self.manager.unload_adapter(request.lora_name)  # type: ignore
+            status = self.manager.unload_adapter(request.lora_name)
             return LoRAResponse(
                 status=status,
                 message=f"LoRA '{request.lora_name}' unloaded successfully"
                 if status == LoRAStatus.SUCCESS
                 else "Failed to unload",
-            )
-        elif request.operation == LoRAOperation.LIST:
-            return LoRAResponse(
-                status=LoRAStatus.SUCCESS,
-                message=f"Loaded LoRAs: {', '.join(self.manager.loras)}",
             )
         else:
             return LoRAResponse(
@@ -188,10 +183,6 @@ def test_zmq_handler_direct(
     response = handler._handle_lora_request(unload_request)
     assert response.status == LoRAStatus.SUCCESS
     assert "unloaded successfully" in response.message
-
-    list_request = LoRARequest(operation=LoRAOperation.LIST)
-    response = handler._handle_lora_request(list_request)
-    assert response.status == LoRAStatus.SUCCESS
 
 
 def test_lora_error_handling(lora_manager: LoRAManager) -> None:
