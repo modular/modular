@@ -80,6 +80,25 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "smoke_test_github_matrix",
+    srcs = ["smoke_tests/smoke_test_github_matrix.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_smoke_test_github_matrix",
+    size = "small",
+    srcs = ["test_smoke_test_github_matrix.py"],
+    deps = [
+        ":smoke_test_github_matrix",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
     name = "verify_layers_e2e",
     testonly = True,
     srcs = glob(["verify_layers/*.py"]),
