@@ -408,7 +408,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   ExportMap exportedSymbols = getExportedSymbols(*theModule);
 
   // Handle LLVM output.
-  if (clOptions.cmd == Command::kEmitLLVM) {
+  if (clOptions.cmd == Command::kEmitLLVM ||
+      clOptions.cmd == Command::kEmitLLVMBitcode) {
     llvm::LLVMContext llvmCtx;
     ErrorOr<std::unique_ptr<llvm::Module>> llvmModuleOr =
         objCompiler.lowerAllFuncsToLLVM(llvmCtx, *theModule);
@@ -422,20 +423,35 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       return failure(clOptions.reportError("could not open .ll output file"));
 
     std::unique_ptr<llvm::Module> llvmModule = llvmModuleOr.takeValue();
-    llvmModule->print(outFile->os(), nullptr);
+    if (clOptions.cmd == Command::kEmitLLVMBitcode) {
+      if (ErrorOrSuccess err =
+              objCompiler.emitBitcode(*llvmModule, outFile->os()))
+        return failure(clOptions.reportError(err.takeError().get()));
+    } else {
+      llvmModule->print(outFile->os(), nullptr);
+    }
     outFile->keep();
     return mlir::success();
   }
 
-  if (clOptions.cmd == Command::kEmitLLVMOpt) {
+  if (clOptions.cmd == Command::kEmitLLVMOpt ||
+      clOptions.cmd == Command::kEmitLLVMOptBitcode) {
     auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".ll");
     if (!outFile)
       return failure(clOptions.reportError("could not open .ll output file"));
 
-    if (ErrorOrSuccess err =
-            objCompiler.emitLLVMIR(*theModule, outFile->os())) {
+    LLVMModuleAndContext llvmModule;
+    if (ErrorOrSuccess err = objCompiler.lowerAllFuncsToLLVMAndOptimize(
+            *theModule, llvmModule)) {
       return failure(clOptions.reportError("failed to generate LLVMIR: " +
                                            Twine(err.getError())));
+    }
+    if (clOptions.cmd == Command::kEmitLLVMOptBitcode) {
+      if (ErrorOrSuccess err =
+              objCompiler.emitBitcode(*llvmModule, outFile->os()))
+        return failure(clOptions.reportError(err.takeError().get()));
+    } else {
+      llvmModule->print(outFile->os(), nullptr);
     }
     outFile->keep();
     return mlir::success();
