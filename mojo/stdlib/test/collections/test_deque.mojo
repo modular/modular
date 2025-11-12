@@ -108,6 +108,8 @@ fn test_impl_init_list() raises:
     assert_equal((q._data + 1)[], 1)
     assert_equal((q._data + 2)[], 2)
 
+    _ = q^
+
 
 fn test_impl_init_list_args() raises:
     q = Deque(elements=List(0, 1, 2), maxlen=2, capacity=10)
@@ -116,6 +118,8 @@ fn test_impl_init_list_args() raises:
     assert_equal(q._capacity, 4)
     assert_equal((q._data + 0)[], 1)
     assert_equal((q._data + 1)[], 2)
+
+    _ = q^
 
 
 fn test_impl_init_variadic() raises:
@@ -127,6 +131,8 @@ fn test_impl_init_variadic() raises:
     assert_equal((q._data + 0)[], 0)
     assert_equal((q._data + 1)[], 1)
     assert_equal((q._data + 2)[], 2)
+
+    _ = q^
 
 
 fn test_impl_len() raises:
@@ -194,6 +200,8 @@ fn test_impl_append() raises:
     assert_equal((q._data + 2)[], 3)
     assert_equal((q._data + 3)[], 4)
 
+    _ = q^
+
 
 fn test_impl_append_with_maxlen() raises:
     q = Deque[Int](maxlen=3)
@@ -216,6 +224,8 @@ fn test_impl_append_with_maxlen() raises:
     assert_equal((q._data + 1)[], 1)
     assert_equal((q._data + 2)[], 2)
     assert_equal((q._data + 3)[], 3)
+
+    _ = q^
 
 
 fn test_impl_appendleft() raises:
@@ -265,6 +275,8 @@ fn test_impl_appendleft() raises:
     assert_equal((q._data + 2)[], 2)
     assert_equal((q._data + 3)[], 1)
 
+    _ = q^
+
 
 fn test_impl_appendleft_with_maxlen() raises:
     q = Deque[Int](maxlen=3)
@@ -287,6 +299,8 @@ fn test_impl_appendleft_with_maxlen() raises:
     assert_equal((q._data + 0)[], 3)
     assert_equal((q._data + 1)[], 2)
     assert_equal((q._data + 2)[], 1)
+
+    _ = q^
 
 
 fn test_impl_extend() raises:
@@ -349,6 +363,8 @@ fn test_impl_extend() raises:
     assert_equal((q._data + 9)[], 3)
     assert_equal((q._data + 14)[], 8)
     assert_equal((q._data + 15)[], 9)
+
+    _ = q^
 
 
 fn test_impl_extendleft() raises:
@@ -413,6 +429,8 @@ fn test_impl_extendleft() raises:
     assert_equal((q._data + 11)[], 3)
     assert_equal((q._data + 12)[], 2)
 
+    _ = q^
+
 
 fn test_impl_insert() raises:
     q = Deque[Int](0, 1, 2, 3, 4, 5)
@@ -436,6 +454,8 @@ fn test_impl_insert() raises:
     assert_equal(q._tail, 8)
     assert_equal((q._data + q._tail - 1)[], 8)
     assert_equal((q._data + q._tail - 2)[], 9)
+
+    _ = q^
 
 
 fn test_impl_pop() raises:
@@ -526,6 +546,7 @@ fn test_impl_add() raises:
     assert_equal(q5._tail, 0)
     assert_equal((q5._data + 2)[], 3)
     assert_equal((q5._data + 31)[], 8)
+    _ = q5^
 
     q6 = q4 + q3
     # has to inherit q4 properties
@@ -539,6 +560,8 @@ fn test_impl_add() raises:
     assert_equal(q6._tail, 32)
     assert_equal((q6._data + 0)[], 9)
     assert_equal((q6._data + 31)[], 16)
+
+    _ = q6^
 
 
 fn test_impl_iadd() raises:
@@ -572,6 +595,8 @@ fn test_impl_iadd() raises:
     assert_equal((q2._data + 0)[], 9)
     assert_equal((q2._data + 17)[], 16)
 
+    _ = q2^
+
 
 fn test_impl_mul() raises:
     l = [1, 2, 3]
@@ -595,6 +620,7 @@ fn test_impl_mul() raises:
     assert_equal((q2._data + 0)[], (q._data + 0)[])
     assert_equal((q2._data + 1)[], (q._data + 1)[])
     assert_equal((q2._data + 2)[], (q._data + 2)[])
+    _ = q2^
 
     q3 = q * 2
     assert_equal(q3._head, 0)
@@ -604,6 +630,7 @@ fn test_impl_mul() raises:
     assert_equal(q3._shrink, q._shrink)
     assert_equal((q3._data + 0)[], (q._data + 0)[])
     assert_equal((q3._data + 5)[], (q._data + 2)[])
+    _ = q3^
 
     q4 = q * 3
     # should obey maxlen
@@ -615,6 +642,7 @@ fn test_impl_mul() raises:
     assert_equal(q4._shrink, q._shrink)
     assert_equal((q4._data + 2)[], 3)
     assert_equal((q4._data + 0)[], 3)
+    _ = q4^
 
 
 fn test_impl_imul() raises:
@@ -631,6 +659,7 @@ fn test_impl_imul() raises:
     assert_equal(q._min_capacity, 2)
     assert_equal(q._maxlen, 7)
     assert_equal(q._shrink, False)
+    _ = q^
 
     q = Deque(
         elements=l.copy(), capacity=3, min_capacity=2, maxlen=7, shrink=False
@@ -645,6 +674,7 @@ fn test_impl_imul() raises:
     assert_equal((q._data + 0)[], 1)
     assert_equal((q._data + 1)[], 2)
     assert_equal((q._data + 2)[], 3)
+    _ = q^
 
     q = Deque(
         elements=l.copy(), capacity=3, min_capacity=2, maxlen=7, shrink=False
@@ -658,6 +688,7 @@ fn test_impl_imul() raises:
     assert_equal(q._shrink, False)
     assert_equal((q._data + 0)[], 1)
     assert_equal((q._data + 5)[], 3)
+    _ = q^
 
     q = Deque(
         elements=l.copy(), capacity=3, min_capacity=2, maxlen=7, shrink=False
@@ -672,6 +703,7 @@ fn test_impl_imul() raises:
     assert_equal(q._shrink, False)
     assert_equal((q._data + 2)[], 3)
     assert_equal((q._data + 0)[], 3)
+    _ = q^
 
 
 # ===-----------------------------------------------------------------------===#

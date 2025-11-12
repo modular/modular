@@ -45,7 +45,6 @@ from sys.intrinsics import likely
 
 from bit import count_leading_zeros
 from bit._mask import splat
-from memory import LegacyUnsafePointer as UnsafePointer
 
 
 @always_inline
@@ -491,7 +490,7 @@ struct Codepoint(
     @always_inline
     fn unsafe_write_utf8[
         optimize_ascii: Bool = True, branchless: Bool = False
-    ](self, ptr: UnsafePointer[Byte, mut=True, **_]) -> Int:
+    ](self, ptr: UnsafePointer[mut=True, Byte, **_]) -> Int:
         """Shift unicode to utf8 representation.
 
         Parameters:

@@ -27,11 +27,6 @@ from sys import align_of
 from sys.info import simd_width_of
 
 from algorithm import vectorize
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-    Pointer,
-)
 from builtin.device_passable import DevicePassable
 from compile import get_type_name
 
@@ -106,8 +101,7 @@ struct Span[
     """The immutable version of the `Span`."""
     alias UnsafePointerType = UnsafePointer[
         T,
-        mut=mut,
-        origin=origin,
+        origin,
         address_space=address_space,
     ]
     """The UnsafePointer type that corresponds to this `Span`."""
@@ -117,7 +111,7 @@ struct Span[
 
     alias device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: LegacyOpaquePointer):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
@@ -468,7 +462,7 @@ struct Span[
     @always_inline("builtin")
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[T, mut=mut, origin=origin, address_space=address_space,]:
+    ) -> UnsafePointer[T, origin, address_space=address_space]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:

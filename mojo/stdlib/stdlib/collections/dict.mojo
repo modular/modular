@@ -40,12 +40,7 @@ See the `Dict` docs for more details.
 from hashlib import Hasher, default_comp_time_hasher, default_hasher
 from sys.intrinsics import likely
 
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-    bitcast,
-    memcpy,
-)
+from memory import bitcast, memcpy
 
 alias KeyElement = Copyable & Movable & Hashable & EqualityComparable
 """A trait composition for types which implement all requirements of
@@ -341,27 +336,27 @@ struct _DictIndex(Movable):
     this in the current type system.
     """
 
-    var data: OpaquePointer
+    var data: OpaquePointer[MutOrigin.external]
 
     @always_inline
     fn __init__(out self, reserved: Int):
         if reserved <= 128:
-            var data = UnsafePointer[Int8].alloc(reserved)
+            var data = alloc[Int8](reserved)
             for i in range(reserved):
                 data[i] = _EMPTY
             self.data = data.bitcast[NoneType]()
         elif reserved <= 2**16 - 2:
-            var data = UnsafePointer[Int16].alloc(reserved)
+            var data = alloc[Int16](reserved)
             for i in range(reserved):
                 data[i] = _EMPTY
             self.data = data.bitcast[NoneType]()
         elif reserved <= 2**32 - 2:
-            var data = UnsafePointer[Int32].alloc(reserved)
+            var data = alloc[Int32](reserved)
             for i in range(reserved):
                 data[i] = _EMPTY
             self.data = data.bitcast[NoneType]()
         else:
-            var data = UnsafePointer[Int64].alloc(reserved)
+            var data = alloc[Int64](reserved)
             for i in range(reserved):
                 data[i] = _EMPTY
             self.data = data.bitcast[NoneType]()
