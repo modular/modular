@@ -18,7 +18,7 @@ from testing import assert_equal, assert_true, TestSuite
 
 
 def main():
-    TestSuite().discover_tests[__functions_in_module()]().run()
+    TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 fn test_size_cosize() raises:

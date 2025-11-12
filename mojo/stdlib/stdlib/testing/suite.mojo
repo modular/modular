@@ -453,7 +453,11 @@ struct TestSuite(Movable):
         var suite = Self(
             location=location.or_else(__call_location()), cli_args=cli_args^
         )
-        suite._register_tests[test_funcs]()
+        try:
+            suite._register_tests[test_funcs]()
+        except e:
+            suite^.abandon()
+            raise e
         return suite^
 
     fn __del__(deinit self):
@@ -605,7 +609,12 @@ struct TestSuite(Movable):
             collection.
         """
         var report = self.generate_report(skip_all=skip_all)
+
         if report.failures > 0:
             raise Error(report)
         if not quiet:
             print(report)
+
+    fn abandon(deinit self):
+        """Destroy a test suite without running any tests."""
+        pass

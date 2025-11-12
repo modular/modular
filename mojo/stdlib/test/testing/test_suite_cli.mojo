@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal, assert_false, TestSuite
+from testing.suite import TestSuiteReport
 
 
 def nonconforming_name():
@@ -36,8 +37,13 @@ def test_skipped():
 
 def main():
     var suite = TestSuite.discover_tests[__functions_in_module()]()
-    suite.skip[test_skipped]()
-    var report = suite.generate_report()
+    var report: TestSuiteReport
+    try:
+        suite.skip[test_skipped]()
+        report = suite.generate_report()
+    except e:
+        suite^.abandon()
+        raise e
 
     # NOTE: The suite should not fail, since we skip the failing test from the
     # CLI. The flags are passed directly to the bazel target.

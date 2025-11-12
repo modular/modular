@@ -557,4 +557,4 @@ def test_unsafe_origin_cast():
 
 
 def main():
-    TestSuite().discover_tests[__functions_in_module()]().run()
+    var x = TestSuite.discover_tests[__functions_in_module()]().run()

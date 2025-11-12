@@ -57,4 +57,4 @@ fn test_list_literal_construction() raises:
 
 
 def main():
-    TestSuite().discover_tests[__functions_in_module()]().run()
+    TestSuite.discover_tests[__functions_in_module()]().run()
