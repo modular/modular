@@ -435,7 +435,14 @@ void LowerSemanticCF::lowerParamFor(ParamForOp paramFor,
 static void emitRaise(ImplicitLocOpBuilder &b) {
   Operation *opForRaise = LIT::findOpProcessingRaise(b.getInsertionBlock());
   assert(opForRaise && "IR invalid, RaiseOp must only be in valid context");
-  if (isa<LIT::FnOp>(opForRaise)) {
+  if (auto fnOp = dyn_cast<LIT::FnOp>(opForRaise)) {
+    // If we are in a raising deinit method, and this call throws out of it,
+    // then we should assume that we've deconstructed self enough.  Mark self
+    // as destroyed so we don't get an error.
+    if (fnOp.getSelfDeinit()) {
+      LIT::OwnershipMarkDestroyedOp::create(
+          b, fnOp.getBody()->getArguments().front());
+    }
     LIT::ErrorReturnOp::create(b,
                                ParamConstantOp::create(b, b.getBoolAttr(true)));
   } else {
