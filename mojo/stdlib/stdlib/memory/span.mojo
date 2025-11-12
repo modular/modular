@@ -827,10 +827,13 @@ struct Span[
         dtype: DType, //,
     ](self: Span[Scalar[dtype], **_], needle: Scalar[dtype]) -> Optional[UInt]:
         """Finds the index of `needle` with binary search.
+
         Args:
             needle: The value to binary search for.
+
         Returns:
             Returns None if `needle` is not present.
+
         Notes:
             This function will return an unspecified index if `self` is not
             sorted in ascending order.
