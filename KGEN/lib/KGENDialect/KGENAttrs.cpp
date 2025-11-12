@@ -98,14 +98,26 @@ bool EmitAsAttr::classof(Attribute attr) {
 #ifndef MODULAR_PRODUCTION
   return ::isa<IndexType>(intAttr.getType()) &&
          contains_if(
-             ArrayRef{EmitAs::ASM, EmitAs::LLVM, EmitAs::LLVM_OPT,
-                      EmitAs::OBJECT},
+             ArrayRef{
+                 EmitAs::ASM,
+                 EmitAs::LLVM,
+                 EmitAs::LLVM_OPT,
+                 EmitAs::OBJECT,
+                 EmitAs::LLVM_BITCODE,
+                 EmitAs::LLVM_OPT_BITCODE,
+             },
              [&](EmitAs kind) { return (int)kind == intAttr.getInt(); });
 #else
   return ::isa<IndexType>(intAttr.getType()) &&
          contains_if(
-             ArrayRef{EmitAs::ASM, EmitAs::LLVM, EmitAs::LLVM_OPT,
-                      EmitAs::OBJECT},
+             ArrayRef{
+                 EmitAs::ASM,
+                 EmitAs::LLVM,
+                 EmitAs::LLVM_OPT,
+                 EmitAs::OBJECT,
+                 EmitAs::LLVM_BITCODE,
+                 EmitAs::LLVM_OPT_BITCODE,
+             },
              [&](EmitAs kind) { return (int)kind == intAttr.getInt(); });
 #endif
 }
@@ -508,7 +520,8 @@ LogicalResult CompileAssemblyAttr::verify(
   if (auto emissionIntAttr = ::dyn_cast<IntegerAttr>(emissionKind)) {
     if (!::isa<EmitAsAttr>(emissionIntAttr)) {
       return emitError() << "emissionKind operand should evaluate to either "
-                            "'asm', 'llvm', 'llvm-opt', or 'object'";
+                            "'asm', 'llvm', 'llvm-opt', 'object', "
+                            "'llvm-bitcode', or 'llvm-opt-bitcode'";
     }
   }
 

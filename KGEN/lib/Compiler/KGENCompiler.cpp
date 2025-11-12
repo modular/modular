@@ -360,20 +360,35 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
       return err.takeError();
     break;
 
-  case EmitAs::LLVM: {
+  case EmitAs::LLVM:
+  case EmitAs::LLVM_BITCODE: {
     LLVMModuleAndContext llvmModule;
     if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
           return compiler->lowerAllFuncsToLLVM(ctx, *module);
         }))
       return err.takeError();
-    llvmModule->print(os, nullptr);
+    if (emissionKind == EmitAs::LLVM_BITCODE) {
+      if (ErrorOrSuccess err = compiler->emitBitcode(*llvmModule, os))
+        return err.takeError();
+    } else {
+      llvmModule->print(os, nullptr);
+    }
     break;
   }
 
   case EmitAs::LLVM_OPT:
-    if (ErrorOrSuccess err = compiler->emitLLVMIR(*module, os))
+  case EmitAs::LLVM_OPT_BITCODE: {
+    LLVMModuleAndContext llvmModule;
+    if (ErrorOrSuccess err =
+            compiler->lowerAllFuncsToLLVMAndOptimize(*module, llvmModule))
       return err.takeError();
-    break;
+    if (emissionKind == EmitAs::LLVM_OPT_BITCODE) {
+      if (ErrorOrSuccess err = compiler->emitBitcode(*llvmModule, os))
+        return err.takeError();
+    } else {
+      llvmModule->print(os, nullptr);
+    }
+  } break;
 
   case EmitAs::OBJECT:
     if (ErrorOrSuccess err = compiler->emitSharedObject(std::move(module), os))

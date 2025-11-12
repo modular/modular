@@ -60,6 +60,11 @@ public:
   ErrorOr<std::unique_ptr<llvm::Module>>
   lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module);
 
+  /// Lower the given module to LLVM and run LLVM optimizations.
+  ErrorOrSuccess
+  lowerAllFuncsToLLVMAndOptimize(ModuleOp module,
+                                 LLVMModuleAndContext &llvmModule);
+
   /// Slices the call graph for all exported symbols to produce a standalone
   /// LLVMIR file. The LLVMIR output is written to the provided stream.
   ErrorOrSuccess emitLLVMIR(ModuleOp module, llvm::raw_pwrite_stream &os);
@@ -68,6 +73,12 @@ public:
   /// assembly file. The assembly output is written to the provided stream.
   ErrorOrSuccess emitAssembly(OwningOpRef<ModuleOp> module,
                               llvm::raw_pwrite_stream &os);
+
+  /// Write bitcode representation of the llvmModule using correct
+  /// BitcodeWriter. For example, it will use custom BitcodeWriter 5.0 for Metal
+  /// target.
+  static ErrorOrSuccess emitBitcode(llvm::Module &llvmModule,
+                                    llvm::raw_pwrite_stream &os);
 
   /// Slices the call graph for all exported symbols to produce a standalone
   /// shared object file. The output is written to the provided stream.
