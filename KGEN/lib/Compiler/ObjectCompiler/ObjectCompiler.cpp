@@ -1137,7 +1137,6 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
       // Lower the module to LLVM.
       LLVMModuleAndContext llvmModule;
       Location moduleLoc = op->getLoc();
-      MLIRContext *moduleCtx = op->getContext();
 
       if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
             return lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
