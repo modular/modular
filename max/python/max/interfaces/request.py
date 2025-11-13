@@ -19,13 +19,13 @@ from typing import TypeVar
 
 @dataclasses.dataclass(frozen=True)
 class RequestID:
-    """A unique identifier for a request within the MAX API.
+    """A unique immutable identifier for a request.
 
-    This class wraps a string value to provide a distinct type with stronger type safety
-    than a simple alias. It ensures that RequestIDs must be explicitly constructed
-    and cannot be accidentally interchanged with regular strings.
+    When instantiated without arguments, automatically generates a new
+    UUID4-based ID.
 
-    When called without arguments, automatically generates a new UUID4-based ID.
+    Configuration:
+        value: The string identifier. If not provided, generates a UUID4 hex string.
     """
 
     value: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex)
