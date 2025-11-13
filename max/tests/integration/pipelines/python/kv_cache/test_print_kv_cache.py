@@ -11,14 +11,8 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.kv_cache import (
-    PagedKVCacheManager,
-)
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.kv_cache import PagedKVCacheManager
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 
 
 @dataclass(frozen=True)
@@ -75,6 +69,7 @@ class PrintKVCacheModel:
         not in [
             # Skip types unsupported on CPU.
             DType.float4_e2m1fn,
+            DType.float8_e8m0fnu,
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
             DType.float8_e5m2,
