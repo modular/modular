@@ -350,7 +350,7 @@ def test_allgather_noop() -> None:
             inputs=[graph.inputs[0].tensor],
             signal_buffers=[graph.inputs[1].buffer],
         )
-        assert allgather_outputs[0] is graph.inputs[0].tensor
+        assert allgather_outputs[0]._mlir_value == graph.inputs[0]._mlir_value
 
         allgather_outputs = ops.allgather(inputs=[], signal_buffers=[])
         assert not allgather_outputs

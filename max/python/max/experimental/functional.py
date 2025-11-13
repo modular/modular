@@ -81,6 +81,12 @@ abs = functional(ops.abs)
 #: Adds two tensors element-wise.
 #: See :func:`max.graph.ops.add` for details.
 add = functional(ops.add)
+#: Concatenate values from multiple devices.
+#: See :func:`max.graph.ops.allgather` for details.
+allgather = functional(ops.allgather)
+#: Sum values from multiple devices.
+#: See :func:`max.graph.ops.allreduce.sum` for details.
+allreduce_sum = functional(ops.allreduce.sum)
 #: Returns the indices of the maximum values along an axis.
 #: See :func:`max.graph.ops.argmax` for details.
 argmax = functional(ops.argmax)

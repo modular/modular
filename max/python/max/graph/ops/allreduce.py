@@ -20,11 +20,25 @@ from max._core.dialects import mo
 
 from ..graph import Graph
 from ..type import _ChainType
-from ..value import BufferValue, TensorType, TensorValue
+from ..value import (
+    BufferValue,
+    BufferValueLike,
+    TensorType,
+    TensorValue,
+    TensorValueLike,
+)
+
+
+def _buffer_values(values: Iterable[BufferValueLike]) -> list[BufferValue]:
+    return [BufferValue(v) for v in values]
+
+
+def _tensor_values(values: Iterable[TensorValueLike]) -> list[TensorValue]:
+    return [TensorValue(v) for v in values]
 
 
 def sum(
-    inputs: Iterable[TensorValue], signal_buffers: Iterable[BufferValue]
+    inputs: Iterable[TensorValueLike], signal_buffers: Iterable[BufferValueLike]
 ) -> list[TensorValue]:
     """Collective allreduce summation operation.
 
@@ -42,37 +56,26 @@ def sum(
     Returns:
         An iterable outputs which all hold the reduction output.
     """
-    # Convert `inputs` to list since we'll iterate over it twice.
-    inputs = list(inputs)
-    signal_buffers = list(signal_buffers)
+    inputs = _tensor_values(inputs)
+    signal_buffers = _buffer_values(signal_buffers)
     if len(inputs) != len(signal_buffers):
         raise ValueError(
             f"expected number of inputs ({len(inputs)}) and number of "
             f"signal buffers ({len(signal_buffers)}) to match"
         )
 
-    shape = None
-    devices = []
+    devices = [input.device for input in inputs]
 
-    for input in inputs:
-        if not shape:
-            shape = input.shape
-        if input.shape != shape:
-            raise ValueError(
-                "allreduce.sum operation must have the same shape across all"
-                " input tensors."
-            )
-        if not input.device:
-            raise ValueError(
-                f"allreduce.sum operation input = {input} needs to have an"
-                " explicit device."
-            )
-        if input.device in devices:
-            raise ValueError(
-                "allreduce.sum operation must have unique devices across its"
-                " input tensors."
-            )
-        devices.append(input.device)
+    if not all(input.shape == inputs[0].shape for input in inputs[1:]):
+        raise ValueError(
+            "allreduce.sum operation must have the same shape across all"
+            f" input tensors. Got: {inputs=}"
+        )
+    if len(set(devices)) < len(devices):
+        raise ValueError(
+            "allreduce.sum operation must have unique devices across its input "
+            f"tensors. Got: {devices=}"
+        )
 
     # Per-device execution model:
     # Create one allreduce op per device, each threading the destination
@@ -103,10 +106,14 @@ def sum(
 
 
 def matmul_allreduce(
-    inputs: Iterable[TensorValue],
-    weights: Iterable[TensorValue],
-    signal_buffers: Iterable[BufferValue],
+    inputs: Iterable[TensorValueLike],
+    weights: Iterable[TensorValueLike],
+    signal_buffers: Iterable[BufferValueLike],
 ) -> list[TensorValue]:
+    inputs = _tensor_values(inputs)
+    weights = _tensor_values(weights)
+    signal_buffers = _buffer_values(signal_buffers)
+
     def infer_out_type(a: TensorValue, b: TensorValue) -> TensorType:
         if a.rank != 2 or b.rank != 2:
             raise ValueError("matmul_allreduce inputs must be 2D")
@@ -125,8 +132,8 @@ def matmul_allreduce(
         # Types for 2 outputs: chain, list of tensors
         [infer_out_type(a, b) for a, b in zip(inputs, weights, strict=True)],
         _ChainType(),
-        list(inputs),
-        list(weights),
+        inputs,
+        weights,
         signal_buffers,
         in_chain,
     )
