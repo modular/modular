@@ -265,6 +265,7 @@ modular_py_test(
 modular_multi_py_version_test(
     name = "test_load_library",
     srcs = ["test_load_library.py"],
+    exclude = ["3.14"],  # Current version of numpy doesn't build on 3.14
     deps = [
         "//max/python/max:_core",
     ],
