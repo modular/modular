@@ -346,6 +346,9 @@ struct UInt(
         Returns:
             `floor(self/rhs)` value.
         """
+        if rhs == 0:
+            # this should raise an exception.
+            return 0
         return UInt(
             mlir_value=__mlir_op.`index.divu`(self._mlir_value, rhs._mlir_value)
         )
@@ -360,6 +363,9 @@ struct UInt(
         Returns:
             The remainder of dividing self by rhs.
         """
+        if rhs == 0:
+            # this should raise an exception
+            return 0
         return UInt(
             mlir_value=__mlir_op.`index.remu`(self._mlir_value, rhs._mlir_value)
         )
@@ -374,6 +380,9 @@ struct UInt(
         Returns:
             The quotient and remainder as a `Tuple(self // rhs, self % rhs)`.
         """
+        if rhs == 0:
+            # this should raise an exception
+            return UInt(0), UInt(0)
         return self // rhs, self % rhs
 
     @always_inline("nodebug")
