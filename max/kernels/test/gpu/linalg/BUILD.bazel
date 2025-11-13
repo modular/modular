@@ -87,6 +87,12 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    "test_cublaslt_scaled_mxfp8_matmul.mojo": ["//:b200_gpu"],
+    "test_naive_blockwise_fp8_matmul.mojo": select({
+        "//:h100_gpu": ["//:h100_gpu"],
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 }
 
 _FILECHECK_TESTS = [
