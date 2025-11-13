@@ -86,6 +86,9 @@ alias c_float = Float32
 alias c_double = Float64
 """C `double` type."""
 
+alias c_pid_t = Int
+"""C `pid_t` type."""
+
 alias MAX_PATH = _get_max_path()
 
 
