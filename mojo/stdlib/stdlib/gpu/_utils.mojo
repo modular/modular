@@ -118,9 +118,14 @@ fn to_i64(val: Int64) -> __mlir_type.i64:
     )
 
 
-alias _dtype_to_llvm_type_f8[
-    dtype: DType
-] = __mlir_type.`i8` if dtype is DType.float8_e3m4 or dtype is DType.float8_e4m3fn or dtype is DType.float8_e4m3fnuz or dtype is DType.float8_e5m2 or dtype is DType.float8_e5m2fnuz else __mlir_type.`!kgen.none`
+alias _dtype_to_llvm_type_f8[dtype: DType] = __mlir_type.`i8` if dtype in (
+    DType.float8_e8m0fnu,
+    DType.float8_e3m4,
+    DType.float8_e4m3fn,
+    DType.float8_e4m3fnuz,
+    DType.float8_e5m2,
+    DType.float8_e5m2fnuz,
+) else __mlir_type.`!kgen.none`
 
 alias _dtype_to_llvm_type_bf16[
     dtype: DType
@@ -146,17 +151,15 @@ alias _dtype_to_llvm_type_f64[
     dtype
 ]
 
-alias _dtype_to_llvm_type_i32[
-    dtype: DType
-] = __mlir_type.`i32` if dtype is DType.int32 or dtype is DType.uint32 else _dtype_to_llvm_type_f64[
-    dtype
-]
+alias _dtype_to_llvm_type_i32[dtype: DType] = __mlir_type.`i32` if dtype in (
+    DType.int32,
+    DType.uint32,
+) else _dtype_to_llvm_type_f64[dtype]
 
-alias _dtype_to_llvm_type_i64[
-    dtype: DType
-] = __mlir_type.`i64` if dtype is DType.int64 or dtype is DType.uint64 else _dtype_to_llvm_type_i32[
-    dtype
-]
+alias _dtype_to_llvm_type_i64[dtype: DType] = __mlir_type.`i64` if dtype in (
+    DType.int64,
+    DType.uint64,
+) else _dtype_to_llvm_type_i32[dtype]
 
 alias dtype_to_llvm_type[dtype: DType] = _dtype_to_llvm_type_i64[dtype]
 
