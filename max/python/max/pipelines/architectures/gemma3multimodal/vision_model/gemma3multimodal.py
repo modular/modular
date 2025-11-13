@@ -330,10 +330,10 @@ class Gemma3VisionModel(Module):
         self.embeddings = Gemma3VisionEmbeddings(
             config, device=config.devices[0]
         )
-        # self.embeddings.sharding_strategy = ShardingStrategy.replicate(
-        #     len(config.devices)
-        # )
-        # self.embeddings_list = self.embeddings.shard(config.devices)
+        self.embeddings.sharding_strategy = ShardingStrategy.replicate(
+            len(config.devices)
+        )
+        self.embeddings_list = self.embeddings.shard(config.devices)
 
         # Vision encoder (27 transformer layers)
         self.encoder = Gemma3VisionEncoder(config) # , signal_buffers)
@@ -351,29 +351,27 @@ class Gemma3VisionModel(Module):
 
     def __call__(
         self,
-        pixel_values: TensorValue,
+        pixel_values: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> TensorValue:
+        print(self.embeddings_list)
+        print(self.embeddings_list[0])
         # Get vision embeddings from each device
-        hidden_states = self.embeddings(ops.permute(pixel_values, [0,2,3,1]))
-        # hidden_states = [
-        #     embed(pixels)
-        #     for embed, pixels in zip(
-        #         self.embeddings_list, pixel_values, strict=True
-        #     )
-        # ]
-        logger.info(f"1 hiddenstateslist: {hidden_states}")
+        # hidden_states = self.embeddings(ops.permute(pixel_values, [0,2,3,1]))
+        hidden_states = [
+            embed(pixels)
+            for embed, pixels in zip(
+                self.embeddings_list, pixel_values, strict=True
+            )
+        ]
 
         # TODO MLX-VLM transposes here to 0, 2, 3, 1
         
         hidden_states = self.encoder(hidden_states)
-        logger.info(f"2 hiddenstates: {hidden_states}")
 
         hidden_states = self.post_layernorm(hidden_states)
-        logger.info(f"3 hiddenstates: {hidden_states}")
 
         image_embeddings = self.projector(hidden_states)
-        logger.info(f"4 image_embeddings: {image_embeddings}")
 
         # Replicate to all devices
         #return [image_embeddings for _ in range(len(self.config.devices))]

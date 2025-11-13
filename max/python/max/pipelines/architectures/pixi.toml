@@ -36,8 +36,8 @@ generate_text = { cmd = [
     "max", "generate",
     "--model", "google/gemma-3-4B-it",
     "--custom-architectures", "gemma3multimodal",
-    "--prompt", "what day is it?",
-    "--max-batch-size", "3",
+    "--prompt", "<start_of_turn>what day is it?<end_of_turn>",
+    "--max-batch-size", "1",
     "--max-length", "5000"
 ] }
 
