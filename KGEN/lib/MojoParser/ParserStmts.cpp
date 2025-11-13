@@ -287,6 +287,8 @@ struct StmtParser : public ParserBase {
                              function_ref<ParseResult()> populateFinallyBody);
 
   // Simple statements.
+  ParseResult parseComptimeAssertStmt(LexerCursor startCursor,
+                                      size_t curIndent);
   ParseResult parseReturnStmt(size_t returnIndent);
   ParseResult parseRaiseStmt(size_t raiseIndent);
   ParseResult parseBreakOrContinueStmt(Token::Kind kind, StringRef name,
@@ -548,6 +550,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 ///               | yield_stmt [TODO]
 ///               | raise_stmt [TODO]
 ///               | break_stmt [TODO]
+///               | comptime_assert_stmt
 ///               | continue_stmt [TODO]
 ///               | import_stmt
 ///               | future_stmt [TODO]
@@ -707,6 +710,9 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw_raise:
     rejectDecorator(); // Decorators not allowed.
     return parseRaiseStmt(stmtIndent);
+  case Token::kw___comptime_assert:
+    rejectDecorator(); // Decorators not allowed.
+    return parseComptimeAssertStmt(startCursor, stmtIndent);
   case Token::kw_continue:
     rejectDecorator(); // Decorators not allowed.
     return parseBreakOrContinueStmt(Token::kw_continue, "continue",
@@ -762,6 +768,60 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 //===----------------------------------------------------------------------===//
 // Simple statements.
 //===----------------------------------------------------------------------===//
+
+/// comptime_assert_stmt ::= "__comptime_assert" expression ["," string_literal]
+ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
+                                                size_t curIndent) {
+  auto smLoc = consumeToken(Token::kw___comptime_assert).getLoc();
+  ExprNode *expr = nullptr;
+  if (parseExpression(expr, curIndent))
+    return failure();
+
+  ExprNode *messageExpr = nullptr;
+  if (consumeIf(Token::comma))
+    if (parseExpression(messageExpr, curIndent))
+      return failure();
+
+  // Ok, now that we parsed all the tokens for this statement, do semantic
+  // analysis. First ensure we're in a function. This may be relaxed later.
+  if (!isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
+    emitError(smLoc,
+              "'__comptime_assert' statements must be inside a function");
+    return success();
+  }
+
+  IREmitter emitter = getParamEmitter(EC_ComptimeAssert);
+  RValue propI1 = emitter.emitExprI1(expr, EC_ComptimeAssert);
+  if (!propI1)
+    return failure();
+  PValue propVal = propI1.getIfPValue();
+  if (!propVal) {
+    emitter.emitErrorForDynamicValueInParameter(expr->getLoc());
+    return failure();
+  }
+
+  TypedAttr message;
+  if (messageExpr) {
+    auto messageNode = dyn_cast<StringLiteralNode>(messageExpr);
+    if (!messageNode) {
+      emitter.emitError(messageExpr->getLoc())
+          << "expected a string literal for the message of '__comptime_assert'";
+      return failure();
+    }
+    message = StringAttr::get(messageNode->getValue(),
+                              KGEN::StringType::get(builder.getContext()));
+  } else {
+    message = StringAttr::get({}, KGEN::StringType::get(builder.getContext()));
+  }
+
+  Location loc = translateLocation(smLoc);
+  KGEN::ParamAssertOp::create(builder, loc, propVal.get(), message);
+
+  // Inject this assumption into the current context.
+  curDeclScope->insertKnownAssumptions(
+      {ConstraintAttr::get(propVal.get(), loc)});
+  return success();
+}
 
 /// return_stmt ::= "return" [expression_list]
 ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {

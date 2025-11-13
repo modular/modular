@@ -66,6 +66,7 @@ class _python_symbols(Symbols):
     comp_op: int
     comparison: int
     compound_stmt: int
+    comptime_assert_stmt: int
     continue_stmt: int
     decorated: int
     decorator: int
