@@ -675,7 +675,13 @@ struct DType(
             Returns True if the input type parameter is either integral or
               floating-point.
         """
-        return self.is_integral() or self.is_floating_point()
+        return self.is_integral() or (
+            self.is_floating_point()
+            and (
+                self is not DType.float4_e2m1fn
+                and self is not DType.float8_e8m0fnu
+            )
+        )
 
     # ===-------------------------------------------------------------------===#
     # Floating point generics
