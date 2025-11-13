@@ -236,6 +236,20 @@ struct DType(
     - fn: finite (no inf or -inf encodings)
     - uz: unsigned zero (no -0 encoding)
     """
+    alias float8_e8m0fnu = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e8m0fnu> : !kgen.dtype`
+    )
+    """Represents the 8-bit `E8M0Fnu` floating point format defined in the
+    [OFP8 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
+    encoded as `eeeeeeee`:
+
+    - (e)xponent: 8 bits
+    - (m)antissa: 0 bits
+    - exponent bias: 127
+    - nan: 11111111
+    - fn: finite (no inf or -inf encodings)
+    - u: no sign or zero value.
+    """
     alias float8_e5m2 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e5m2> : !kgen.dtype`
     )
@@ -348,6 +362,8 @@ struct DType(
             return DType.float8_e4m3fn
         elif str == "float8_e4m3fnuz":
             return DType.float8_e4m3fnuz
+        elif str == "float8_e8m0fnu":
+            return DType.float8_e8m0fnu
         elif str == "float8_e5m2":
             return DType.float8_e5m2
         elif str == "float8_e5m2fnuz":
@@ -427,6 +443,8 @@ struct DType(
             return writer.write("float8_e4m3fn")
         elif self is DType.float8_e4m3fnuz:
             return writer.write("float8_e4m3fnuz")
+        elif self is DType.float8_e8m0fnu:
+            return writer.write("float8_e8m0fnu")
         elif self is DType.float8_e5m2:
             return writer.write("float8_e5m2")
         elif self is DType.float8_e5m2fnuz:
@@ -633,7 +651,8 @@ struct DType(
         """
 
         return (
-            self is DType.float8_e3m4
+            self is DType.float8_e8m0fnu
+            or self is DType.float8_e3m4
             or self is DType.float8_e4m3fn
             or self is DType.float8_e4m3fnuz
             or self is DType.float8_e5m2
@@ -798,6 +817,8 @@ struct DType(
         if self is DType.float4_e2m1fn:
             return __mlir_attr.f4E2M1FN
 
+        if self is DType.float8_e8m0fnu:
+            return __mlir_attr.f8E8M0FNU
         if self is DType.float8_e3m4:
             return __mlir_attr.f8E3M4
         if self is DType.float8_e4m3fn:
@@ -874,6 +895,8 @@ struct DType(
         elif _type_is_eq[T, SIMD[DType.float4_e2m1fn, size]]():
             return DType.float4_e2m1fn
 
+        elif _type_is_eq[T, SIMD[DType.float8_e8m0fnu, size]]():
+            return DType.float8_e8m0fnu
         elif _type_is_eq[T, SIMD[DType.float8_e3m4, size]]():
             return DType.float8_e3m4
         elif _type_is_eq[T, SIMD[DType.float8_e4m3fn, size]]():

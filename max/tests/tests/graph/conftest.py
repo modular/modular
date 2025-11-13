@@ -67,6 +67,7 @@ dtypes = st.sampled_from(
         if d
         not in (
             DType.float4_e2m1fn,
+            DType.float8_e8m0fnu,
             DType.float8_e5m2,
             DType.float8_e5m2fnuz,
             DType.float8_e4m3fn,
@@ -84,7 +85,9 @@ def constant_float_dtypes():  # noqa: ANN201
     """Float4 does not fit into a constant, since it's a sub-byte type. It can
     only be used within array. This function restricts the float dtypes that can
     handle a constant values."""
-    return float_dtypes().filter(lambda dtype: dtype.size_in_bits >= 8)
+    return float_dtypes().filter(
+        lambda dtype: dtype.size_in_bits >= 8 and dtype != DType.float8_e8m0fnu
+    )
 
 
 def integral_dtypes():  # noqa: ANN201

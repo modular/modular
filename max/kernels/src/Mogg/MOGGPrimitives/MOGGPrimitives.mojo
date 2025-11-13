@@ -900,6 +900,11 @@ fn DTypeFloat4E2M1TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float4_e2m1fn._mlir_value
 
 
+@register_internal("float8_e8m0fnu")
+fn DTypeFloat8E8M0FnuTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
+    return DType.float8_e8m0fnu._mlir_value
+
+
 @register_internal("float8_e5m2")
 fn DTypeFloat8E5M2TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float8_e5m2._mlir_value
