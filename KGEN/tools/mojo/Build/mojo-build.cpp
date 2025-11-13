@@ -173,6 +173,10 @@ enum class OutputType {
   //
   // Produced when `--emit llvm` is specified.
   llvm,
+  // Produce bitcode of LLVM IR, with the appropriate file extension (.bc).
+  //
+  // Produced when `--emit llvm` is specified.
+  llvmBitcode,
   // Produce assembly code, with the appropriate file extension (.s).
   //
   // Produced when `--emit asm` is specified.
@@ -265,7 +269,8 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
       return state.reportError(
           "shared library should not contain a 'main' function");
     break;
-  case OutputType::llvm: {
+  case OutputType::llvm:
+  case OutputType::llvmBitcode: {
     // Compile Module to LLVM IR
     llvm::LLVMContext llvmCtx;
     ErrorOr<std::unique_ptr<llvm::Module>> llvmModuleOr =
@@ -274,15 +279,23 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
       return state.reportError(Twine("could not lower funcs to LLVM: ") +
                                llvmModuleOr.getError());
 
+    const std::string fileExtension =
+        outputType == OutputType::llvm ? ".ll" : ".bc";
     // Open .ll file
     auto outFile =
-        createOutputFile(state, args, /*hasBinaryOutput=*/false, ".ll");
+        createOutputFile(state, args, /*hasBinaryOutput=*/false, fileExtension);
     if (!outFile)
       return state.reportError("could not open .ll output file");
 
     // Print to .ll file
     std::unique_ptr<llvm::Module> llvmModule = llvmModuleOr.takeValue();
-    llvmModule->print(outFile->os(), nullptr);
+    if (outputType == OutputType::llvmBitcode) {
+      if (ErrorOrSuccess err =
+              objectCompiler->emitBitcode(*llvmModule, outFile->os()))
+        return state.reportError(err.getError());
+    } else {
+      llvmModule->print(outFile->os(), nullptr);
+    }
     outFile->keep();
 
     // Return with success to avoid the link step
@@ -386,6 +399,8 @@ static int linkOutput(OutputType outputType, const State &state,
       return PlatformLibrary::getSharedLibraryName(inputBaseName);
     case OutputType::llvm:
       return (inputBaseName + ".ll").str();
+    case OutputType::llvmBitcode:
+      return (inputBaseName + ".bc").str();
     case OutputType::object:
       return (inputBaseName + ".o").str();
     case OutputType::assembly:
@@ -636,6 +651,8 @@ static int build(const State &subcommandState) {
     outputType = OutputType::sharedLibrary;
   } else if (emitFileType == "llvm") {
     outputType = OutputType::llvm;
+  } else if (emitFileType == "llvm-bitcode") {
+    outputType = OutputType::llvmBitcode;
   } else if (emitFileType == "object") {
     outputType = OutputType::object;
   } else if (emitFileType == "asm") {

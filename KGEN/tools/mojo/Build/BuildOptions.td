@@ -34,6 +34,7 @@ defm emitted_file_type: CommandOptionWithValues<
             "* `shared-lib`: emit a shared (dynamic) library.\n"
             "* `object`: (EXPERIMENTAL) emit a single object file.\n"
             "* `llvm`: emit unoptimized LLVM IR.\n"
+            "* `llvm-bitcode`: emit bitcode of unoptimized LLVM IR.\n"
             "* `asm`: emit target assembly.">,
-  Values<"exe,shared-lib,object,llvm,asm">
+  Values<"exe,shared-lib,object,llvm,llvm-bitcode,asm">
 >;
