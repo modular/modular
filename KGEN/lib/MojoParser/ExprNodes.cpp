@@ -53,8 +53,8 @@ using namespace M::KGEN::LIT;
 
 LogicalResult ExprNode::emitDestructuringPValue(PValue value,
                                                 IREmitter &emitter) const {
-  emitter.emitError(getLoc(),
-                    "invalid alias target: expected an identifier or '_'");
+  emitter.emitError(
+      getLoc(), "invalid comptime declaration: expected an identifier or '_'");
   return failure();
 }
 
@@ -446,18 +446,18 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       // unbound parameters, walk the attribute and check for ParamDeclRefAttrs
       // to values that are UnboundAttrs.
       TypedAttr aliasValue = decl.getValueAttr();
-      WalkResult findUnboundParams =
-          aliasValue.walk([&](ParamDeclRefAttr attr) -> WalkResult {
-            if (auto it = paramDeclIndices.find(attr.getName());
-                it != paramDeclIndices.end() &&
-                isa<UnboundAttr>(paramValues[it->second])) {
-              emitter.shared.emitError(refLoc, "cannot access alias '")
-                  << declName << "' with unbound parameter '"
-                  << structDecl.getName() << "." << attr.getName().str() << "'";
-              return WalkResult::interrupt();
-            }
-            return WalkResult::advance();
-          });
+      WalkResult findUnboundParams = aliasValue.walk([&](ParamDeclRefAttr attr)
+                                                         -> WalkResult {
+        if (auto it = paramDeclIndices.find(attr.getName());
+            it != paramDeclIndices.end() &&
+            isa<UnboundAttr>(paramValues[it->second])) {
+          emitter.shared.emitError(refLoc, "cannot access comptime member '")
+              << declName << "' with unbound parameter '"
+              << structDecl.getName() << "." << attr.getName().str() << "'";
+          return WalkResult::interrupt();
+        }
+        return WalkResult::advance();
+      });
       if (findUnboundParams.wasInterrupted())
         return {};
 
@@ -899,7 +899,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
           if (fnCandidate.getIsStatic())
             replacement = "Self.";
         } else if (isa_and_nonnull<AliasDeclOp>(firstCandidate)) {
-          declKind = "alias ";
+          declKind = "comptime ";
           // Aliases are properties of the type, so `Self` is more idiomatic.
           // However `self.` is also supported.
           replacement = "Self.";

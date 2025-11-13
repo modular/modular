@@ -6,12 +6,12 @@
 
 # RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics %s
 
-# expected-error @below {{only traits may contain an alias without an initializer}}
+# expected-error @below {{only traits may contain a comptime member without an initializer}}
 alias K: Int
 
 trait MyTrait:  # expected-note {{trait 'MyTrait' declared here}}
-    # expected-note @below {{required alias 'N' is not specified}}
-    # expected-note @below {{alias 'N' type 'Bool' doesn't conform to trait's alias 'N' type 'Int'}}
+    # expected-note @below {{required member 'N' is not specified}}
+    # expected-note @below {{comptime member 'N' type 'Bool' does not conform to trait's required type 'Int'}}
     alias N: Int
 
 
@@ -41,13 +41,13 @@ struct StructWithMismatchedAlias:
 
 
 struct StructWithUninitializedAlias:
-    # expected-error @below {{only traits may contain an alias without an initializer}}
+    # expected-error @below {{only traits may contain a comptime member without an initializer}}
     alias N: Bool
 
 
 struct StructWithTypelessUninitializedAlias:
     # This makes sure we print out this error, rather than the also-relevant "alias without initial value must have a type" error
-    # expected-error @below {{expected '=' after alias targets}}
+    # expected-error @below {{expected '=' after comptime declaration}}
     alias N
 
 
@@ -95,12 +95,12 @@ struct ZBool:
 
 
 trait TraitWithTypeAlias:
-    # expected-note @below {{parent trait's alias defined here}}
+    # expected-note @below {{parent trait's member defined here}}
     alias T: ZBool
 
 
 trait TraitWithSameTypeAlias(TraitWithTypeAlias):
-    # expected-error @below {{invalid redefinition of 'T': cannot convert 'ZInt' to parent trait's alias's type 'ZBool'}}
+    # expected-error @below {{invalid redefinition of 'T': cannot convert 'ZInt' to parent trait's member's type 'ZBool'}}
     alias T: ZInt
 
 

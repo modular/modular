@@ -2915,7 +2915,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
 
   if (auto targetExpr = dyn_cast<ExprNode *>(parseResult)) {
     if (!consumeIf(Token::equal)) {
-      emitError(smLoc, "expected '=' after alias targets");
+      emitError(smLoc, "expected '=' after comptime declaration");
       return failure();
     }
 
@@ -2923,7 +2923,9 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
     // easily lead to parser cycles.
     if (isa_and_nonnull<StructDeclOp, TraitDeclOp>(
             parentDecl.getIfOperation())) {
-      emitError(smLoc, "does not support alias destructuring in ")
+      emitError(
+          smLoc,
+          "only comptime declarations with a single name are allowed inside a ")
           << (isa<StructDeclOp>(parentDecl.getIfOperation()) ? "struct"
                                                              : "trait");
       return failure();

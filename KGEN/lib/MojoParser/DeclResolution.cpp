@@ -831,7 +831,7 @@ static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
             nameDecls.back()->getIfOperation())) {
       if (failed(shared.getDeclResolver().resolveBody(*nameDecls.back(),
                                                       funcDecl.getLoc()))) {
-        shared.emitError(funcDecl.getLoc(), "cannot resolve alias '")
+        shared.emitError(funcDecl.getLoc(), "cannot resolve comptime value '")
             << name << "' used in '@__llvm_metadata'";
         return {};
       }
@@ -2295,13 +2295,13 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
     if (!isa_and_nonnull<LIT::TraitDeclOp>(parentDecl.getIfOperation())) {
       // Disallow this, because it would create diamond inheritance problems.
       p.emitError(identifierLoc)
-          << "only traits may contain an alias without an initializer";
+          << "only traits may contain a comptime member without an initializer";
       return failure();
     }
 
     if (!type) {
       p.emitError(identifierLoc)
-          << "alias without initial value must have a type";
+          << "comptime value without an intitializer must have a type";
       return failure();
     }
 
@@ -2359,10 +2359,10 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
             parentAliasDeclOp.getParamDecl().getType(), traitDecl)) {
       auto diag = emitError(aliasDeclOp->getLoc(), "invalid redefinition of '")
                   << name << "': cannot convert " << ASTType(overrideAliasType)
-                  << " to parent trait's alias's type "
+                  << " to parent trait's member's type "
                   << ASTType(parentAliasDeclOp.getParamDecl().getType());
       diag.attachNote(parentAliasDeclOp->getLoc())
-          << "parent trait's alias defined here";
+          << "parent trait's member defined here";
       return failure();
     }
   }
@@ -3124,7 +3124,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
             // the same name. Raise an error.
             auto diag =
                 shared.emitError(structDecl.getLoc())
-                << "trait associated alias requirement '"
+                << "trait member '"
                 << demangleParameterName(existingAlias.getDeclName().getValue())
                 << "' has conflicting default implementations in "
                 << otherTraitName << " and " << currentTraitName
@@ -3534,7 +3534,7 @@ void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,
                 emitError(override->getLoc(), "invalid redefinition of ")
                 << name;
             diag.attachNote(overrideAliasDecl->getLoc())
-                << "cannot overload with this non-alias definition";
+                << "cannot overload with this non-comptime definition";
             continue;
           }
 
@@ -3848,7 +3848,7 @@ DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
 
   assert(parentAliasDecls.size() == 1 &&
          isa_and_present<AliasDeclOp>(inheritedAliasDecl.getIfOperation()) &&
-         "Expected to find exactly one alias decl op");
+         "Expected to find exactly one comptime decl op");
 
   // Make sure to resolve the actual decl that holds inheritedAliasOp before we
   // proceed.
@@ -4205,9 +4205,8 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
             TraitType existingTrait = dyn_cast<TraitType>(existingType);
             TraitType newTrait = dyn_cast<TraitType>(newType);
             if (!existingTrait || !newTrait)
-              return emitError(
-                         traitDecl.getLoc(),
-                         "trait composition has conflicting alias types for '")
+              return emitError(traitDecl.getLoc(),
+                               "trait composition has conflicting types for '")
                      << alias.getDeclName().getValue() << "'";
             // No need to update existingAliases since we don't care about the
             // specific trait type.

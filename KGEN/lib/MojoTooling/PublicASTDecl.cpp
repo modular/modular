@@ -936,7 +936,7 @@ std::string PublicAliasDecl::getDeclarationSnippet(
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
-  os << "alias ";
+  os << "comptime ";
   dumpIdentifierWithType(os, getName(), type);
   if (!value.empty()) {
     if (!parameters.empty())
@@ -1019,7 +1019,7 @@ std::string PublicAliasDecl::getSignature(
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) const {
   std::string output;
   llvm::raw_string_ostream os(output);
-  os << "alias " << getName();
+  os << "comptime " << getName();
   if (!parameters.empty())
     printArgOrParameterSignature(ctx, ArrayRef(parameters), parameterOffsets,
                                  os);

@@ -45,7 +45,7 @@ struct S[a: Int, b: Int]:
 # CHECK:   "description": "An integer, naturally.",
 # CHECK:   "name": "z",
 # CHECK:   "type": "Int"
-# CHECK: "signature": "alias S1[z: Int]"
+# CHECK: "signature": "comptime S1[z: Int]"
 # CHECK: "value": "S[1, z]"
 alias S1[z: Int] = S[1, z]
 """Returns an S with two Zs.

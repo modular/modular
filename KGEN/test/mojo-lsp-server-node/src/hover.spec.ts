@@ -264,7 +264,7 @@ More docstring for SomeStruct.
       contents: {
         kind: "markdown",
         value: `\`\`\`mojo
-alias IntAlias = 12
+comptime IntAlias = 12
 \`\`\`
 ---
 
@@ -283,7 +283,7 @@ Int alias description.
       {
         contents: {
           kind: "markdown",
-          value: "```mojo\nalias ExplicitIntAlias = 123\n```",
+          value: "```mojo\ncomptime ExplicitIntAlias = 123\n```",
         },
         range: doc.findFirstRange("ExplicitIntAlias"),
       }
@@ -294,7 +294,7 @@ Int alias description.
       {
         contents: {
           kind: "markdown",
-          value: '```mojo\nalias AliasInsideFunction = "sdfsdf"\n```',
+          value: '```mojo\ncomptime AliasInsideFunction = "sdfsdf"\n```',
         },
         range: doc.findFirstRange("AliasInsideFunction"),
       }
@@ -305,7 +305,7 @@ Int alias description.
       {
         contents: {
           kind: "markdown",
-          value: "```mojo\nalias AliasToAlias = IntAlias\n```",
+          value: "```mojo\ncomptime AliasToAlias = IntAlias\n```",
         },
         range: doc.findFirstRange("AliasToAlias"),
       }
@@ -316,7 +316,7 @@ Int alias description.
       {
         contents: {
           kind: "markdown",
-          value: "```mojo\nalias AliasInStruct = Int\n```",
+          value: "```mojo\ncomptime AliasInStruct = Int\n```",
         },
         range: doc.findFirstRange("AliasInStruct"),
       }
@@ -589,7 +589,7 @@ struct StructWithAlias
       contents: {
         kind: "markdown",
         value: `\`\`\`mojo
-alias LAZY = 1
+comptime LAZY = 1
 \`\`\`
 ---
 
@@ -606,7 +606,7 @@ Load library lazily (defer function resolution until needed).
       {
         contents: {
           kind: "markdown",
-          value: "```mojo\nalias ExternalAlias = RTLD.LAZY\n```",
+          value: "```mojo\ncomptime ExternalAlias = RTLD.LAZY\n```",
         },
         range: doc.findFirstRange("ExternalAlias"),
       }
@@ -761,13 +761,13 @@ struct Foo:
         self.t = IntTuple()
 
 fn baz():
-    alias f = Foo()
-    alias ft = f.t[0]
+    comptime f = Foo()
+    comptime ft = f.t[0]
 `
     );
     await doc.open();
 
-    // Get hover info for `alias ft = f.t[0]`
+    // Get hover info for `comptime ft = f.t[0]`
     const hover = await doc.hover(doc.findFirstPosition("ft"));
     assert.ok(MarkupContent.is(hover!.contents));
     // The hover info must not contain __getitem__; it should instead

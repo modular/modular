@@ -11,21 +11,23 @@ alias a, (b, c, d) = (1, (2, 3.0))
 
 # // -----
 
-# expected-error @below {{invalid alias target: expected an identifier or '_'}}
+# expected-error @below {{invalid comptime declaration: expected an identifier or '_'}}
 alias t, True, c = 1, 2, 3
 
 
 # // -----
 
+
 struct A:
-    # expected-error @below {{does not support alias destructuring in struct}}
+    # expected-error @below {{only comptime declarations with a single name are allowed inside a struct}}
     alias a, b = 1, 2
 
 
 # // -----
 
+
 trait A:
-    # expected-error @below {{does not support alias destructuring in trait}}
+    # expected-error @below {{only comptime declarations with a single name are allowed inside a trait}}
     alias a, b = 1, 2
 
 
