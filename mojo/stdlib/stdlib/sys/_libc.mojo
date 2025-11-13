@@ -22,7 +22,7 @@ from memory import (
     LegacyUnsafePointer as UnsafePointer,
 )
 from sys import CompilationTarget
-from sys.ffi import c_char, c_int, c_size_t, get_errno
+from sys.ffi import c_char, c_int, c_size_t, c_pid_t, get_errno
 
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations
@@ -107,6 +107,34 @@ struct BufferMode:
 
 
 # ===-----------------------------------------------------------------------===#
+# spawn.h - Spawn process
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn posix_spawnp(
+    pid: UnsafePointer[c_pid_t, mut=True, origin=_],
+    file: UnsafePointer[c_char, mut=False, origin=_],
+    argv: UnsafePointer[UnsafePointer[c_char, mut=False, origin=_]],
+    envp: UnsafePointer[UnsafePointer[c_char, mut=False, origin=_]],
+) -> c_int:
+    """[`posix_spawn`](https://pubs.opengroup.org/onlinepubs/007904975/functions/posix_spawn.html)
+    — function creates a new process (child process) from the specified process image.
+
+    Args:
+        pid: UnsafePointer[c_pid_t], dest. for process id if spawned successfully.
+        file: NULL terminated UnsafePointer[c_char] (C string), containing path to executable.
+        argv: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
+        envp: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
+    """
+    # TODO: Implement `const posix_spawn_file_actions_t`, `*file_actions, const posix_spawnattr_t *restrict attrp,`
+    # to allow full control of how process is spawned
+    return external_call["posix_spawnp", c_int](
+        pid, file, OpaquePointer(), OpaquePointer(), argv, envp
+    )
+
+
+# ===-----------------------------------------------------------------------===#
 # unistd.h
 # ===-----------------------------------------------------------------------===#
 
@@ -176,6 +204,24 @@ fn write(fd: c_int, buf: OpaquePointer, nbyte: c_size_t) -> c_int:
     — write to a file descriptor.
     """
     return external_call["write", c_int](fd, buf, nbyte)
+
+
+# ===-----------------------------------------------------------------------===#
+# sys/wait.h - Control over file descriptors
+# ===-----------------------------------------------------------------------===#
+
+
+# pid_t waitpid(pid_t pid, int *wstatus, int options);
+@always_inline
+fn waitpid(
+    pid: c_pid_t,
+    status: UnsafePointer[c_int, mut=True, origin=_],
+    options: c_int,
+) -> c_pid_t:
+    """[`waitpid()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/waitpid.html)
+    — Wait on child process to finish executing.
+    """
+    return external_call["waitpid", c_pid_t](pid, status, options)
 
 
 # ===-----------------------------------------------------------------------===#

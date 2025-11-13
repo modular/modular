@@ -21,10 +21,14 @@ from os import Process
 from collections import List, Optional
 from collections.string import StringSlice
 
+from memory import LegacyUnsafePointer
+
 from sys import CompilationTarget
 from sys._libc import (
+    waitpid,
     vfork,
     execvp,
+    posix_spawnp,
     exit,
     kill,
     SignalCodes,
@@ -66,7 +70,7 @@ struct Pipe:
             in_close_on_exec: Close the read side of pipe if `exec` sys. call is issued in process.
             out_close_on_exec: Close the write side of pipe if `exec` sys. call is issued in process.
         """
-        var pipe_fds = UnsafePointer[c_int].alloc(2)
+        var pipe_fds = alloc[c_int](2)
         if pipe(pipe_fds) < 0:
             pipe_fds.free()
             raise Error("Failed to create pipe")
@@ -165,10 +169,10 @@ struct Process:
     ```
     """
 
-    var child_pid: c_int
+    var child_pid: Int
     """Child process id."""
 
-    fn __init__(out self, child_pid: c_int):
+    fn __init__(out self, child_pid: Int):
         """Struct to manage metadata about child process.
         Use the `run` static method to create new process.
 
@@ -177,6 +181,12 @@ struct Process:
         """
 
         self.child_pid = child_pid
+
+    fn __del__(deinit self):
+        """ """
+        print("IN DEINIT")
+        if not self.wait_process_status():
+            print("ERROR when waiting on subprocess")
 
     fn _kill(self, signal: Int) -> Bool:
         # `kill` returns 0 on success and -1 on failure
@@ -206,6 +216,18 @@ struct Process:
         """
         return self._kill(SignalCodes.KILL)
 
+    fn wait_process_status(self) -> Bool:
+        """Wait on stuff.
+
+        Returns:
+          Upon successful completion, True is returned else False.
+        """
+        print("Start wait...")
+        var status: c_int = 0
+        var chk_pid = waitpid(self.child_pid, UnsafePointer(to=status), 0)
+        print("Done wait ...", chk_pid, "==?", self.child_pid)
+        return self.child_pid == chk_pid
+
     @staticmethod
     fn run(var path: String, argv: List[String]) raises -> Process:
         """Spawn new process from file executable.
@@ -218,69 +240,51 @@ struct Process:
           An instance of `Process` struct.
         """
 
+        print("Called run")
+
         @parameter
         if CompilationTarget.is_linux() or CompilationTarget.is_macos():
             var file_name = String(path.split(sep)[-1])
-            var pipe = Pipe(out_close_on_exec=True)
-            var exec_err_code = StaticString("EXEC_ERR")
 
-            var pid = vfork()
+            var arg_count = len(argv)
+            var argv_array_ptr_cstr_ptr = LegacyUnsafePointer[
+                LegacyUnsafePointer[c_char, mut=False]
+            ].alloc(arg_count + 2)
+            var offset = 0
+            # Arg 0 in `argv` ptr array should be the file name
+            argv_array_ptr_cstr_ptr[offset] = file_name.unsafe_cstr_ptr()
+            offset += 1
 
-            if pid == 0:
-                # Child process.
-                pipe.set_output_only()
-
-                var arg_count = len(argv)
-                var argv_array_ptr_cstr_ptr = UnsafePointer[
-                    UnsafePointer[c_char, mut=False]
-                ].alloc(arg_count + 2)
-                var offset = 0
-                # Arg 0 in `argv` ptr array should be the file name
-                argv_array_ptr_cstr_ptr[offset] = file_name.unsafe_cstr_ptr()
+            for var arg in argv:
+                argv_array_ptr_cstr_ptr[offset] = arg.unsafe_cstr_ptr()
                 offset += 1
 
-                for var arg in argv:
-                    argv_array_ptr_cstr_ptr[offset] = arg.unsafe_cstr_ptr()
-                    offset += 1
+            # `argv` ptr array terminates with NULL PTR
+            argv_array_ptr_cstr_ptr[offset] = LegacyUnsafePointer[c_char]()
 
-                # `argv` ptr array terminates with NULL PTR
-                argv_array_ptr_cstr_ptr[offset] = UnsafePointer[c_char]()
+            var path_cptr = path.unsafe_cstr_ptr()
 
-                var path_cptr = path.unsafe_cstr_ptr()
+            var pid: Int = 0
 
-                _ = execvp(path_cptr, argv_array_ptr_cstr_ptr)
+            print("Before s")
 
-                # This will only get reached if exec call fails to replace currently executing code
-                argv_array_ptr_cstr_ptr.free()
+            var has_error_code = posix_spawnp(
+                UnsafePointer(to=pid),
+                path_cptr,
+                argv_array_ptr_cstr_ptr,
+                LegacyUnsafePointer[LegacyUnsafePointer[Int8, mut=False]](),
+            )
+            print(has_error_code)
 
-                # Canonical fork/ exec error handling pattern of using a pipe that closes on exec is
-                # used to signal error to parent process `https://cr.yp.to/docs/selfpipe.html`
-                pipe.write_bytes(exec_err_code.as_bytes())
+            print("After s")
 
-                exit(1)
-
-            elif pid < 0:
-                raise Error("Unable to fork parent")
-
-            var err: Optional[StringSlice[MutableAnyOrigin]] = None
-            var err_buff_data = InlineArray[Byte, ERR_STR_LEN](fill=0)
-
-            try:
-                pipe.set_input_only()
-                var buf = Span[Byte, MutableAnyOrigin](
-                    ptr=err_buff_data.unsafe_ptr(), length=ERR_STR_LEN
-                )
-                var bytes_read = pipe.read_bytes(buf)
-                err = StringSlice(unsafe_from_utf8=buf)
-            except e:
+            if has_error_code > 0:
                 raise Error(
-                    "Failed to read child process response from pipe, exception"
-                    " was: "
-                    + String(e)
+                    "Failed to execute "
+                    + path
+                    + ", EINT error code: "
+                    + String(has_error_code)
                 )
-
-            if err and len(err.value()) > 0 and err.value() == exec_err_code:
-                raise Error("Failed to execute " + path)
 
             return Process(child_pid=pid)
         else:
@@ -288,3 +292,86 @@ struct Process:
                 False, "Unknown platform process execution not implemented"
             ]()
             return abort[Process]()
+
+    # @staticmethod
+    # fn run_e(var path: String, argv: List[String]) raises -> Process:
+    #     """Spawn new process from file executable.
+    #
+    #     Args:
+    #       path: The path to the file.
+    #       argv: A list of string arguments to be passed to executable.
+    #
+    #     Returns:
+    #       An instance of `Process` struct.
+    #     """
+    #
+    #     @parameter
+    #     if CompilationTarget.is_linux() or CompilationTarget.is_macos():
+    #         var file_name = String(path.split(sep)[-1])
+    #         var pipe = Pipe(out_close_on_exec=True)
+    #         var exec_err_code = StaticString("EXEC_ERR")
+    #
+    #         var pid = vfork()
+    #
+    #         if pid == 0:
+    #             # Child process.
+    #             pipe.set_output_only()
+    #
+    #             var arg_count = len(argv)
+    #             var argv_array_ptr_cstr_ptr = LegacyUnsafePointer[
+    #                 LegacyUnsafePointer[c_char, mut=False]
+    #             ].alloc(arg_count + 2)
+    #             var offset = 0
+    #             # Arg 0 in `argv` ptr array should be the file name
+    #             argv_array_ptr_cstr_ptr[offset] = file_name.unsafe_cstr_ptr()
+    #             offset += 1
+    #
+    #             for var arg in argv:
+    #                 argv_array_ptr_cstr_ptr[offset] = arg.unsafe_cstr_ptr()
+    #                 offset += 1
+    #
+    #             # `argv` ptr array terminates with NULL PTR
+    #             argv_array_ptr_cstr_ptr[offset] = LegacyUnsafePointer[c_char]()
+    #
+    #             var path_cptr = path.unsafe_cstr_ptr()
+    #
+    #             _ = execvp(path_cptr, argv_array_ptr_cstr_ptr)
+    #
+    #             # This will only get reached if exec call fails to replace currently executing code
+    #             argv_array_ptr_cstr_ptr.free()
+    #
+    #             # Canonical fork/ exec error handling pattern of using a pipe that closes on exec is
+    #             # used to signal error to parent process `https://cr.yp.to/docs/selfpipe.html`
+    #             pipe.write_bytes(exec_err_code.as_bytes())
+    #
+    #             exit(1)
+    #
+    #         elif pid < 0:
+    #             raise Error("Unable to fork parent")
+    #
+    #         var err: Optional[StringSlice[MutAnyOrigin]] = None
+    #         var err_buff_data = InlineArray[Byte, ERR_STR_LEN](fill=0)
+    #
+    #         try:
+    #             pipe.set_input_only()
+    #             var buf = Span[Byte, MutAnyOrigin](
+    #                 ptr=err_buff_data.unsafe_ptr(), length=ERR_STR_LEN
+    #             )
+    #             var bytes_read = pipe.read_bytes(buf)
+    #             err = StringSlice(unsafe_from_utf8=buf)
+    #         except e:
+    #             raise Error(
+    #                 "Failed to read child process response from pipe, exception"
+    #                 " was: "
+    #                 + String(e)
+    #             )
+    #
+    #         if err and len(err.value()) > 0 and err.value() == exec_err_code:
+    #             raise Error("Failed to execute " + path)
+    #
+    #         return Process(child_pid=pid)
+    #     else:
+    #         constrained[
+    #             False, "Unknown platform process execution not implemented"
+    #         ]()
+    #         return abort[Process]()

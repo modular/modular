@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from collections import List
 from os.path import exists
@@ -32,6 +32,11 @@ def test_process_run_missing():
         exists(missing_executable_file),
         "Unexpected file '" + missing_executable_file + "' it should not exist",
     )
+
+    try:
+        _ = Process.run(missing_executable_file, List[String]())
+    except e:
+        print(e)
 
     with assert_raises():
         _ = Process.run(missing_executable_file, List[String]())
