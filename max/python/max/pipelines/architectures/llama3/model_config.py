@@ -256,9 +256,33 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             for spec in pipeline_config.model_config.device_specs[:n_devices]
         ]
 
+        # Normalize the LLM state dict so downstream introspection sees canonical
+        # Llama-style keys (no "language_model." or "model." prefix). This keeps
+        # float8 parsing and feature detection resilient to pack variations.
+        def _strip_prefix(s: str, prefix: str) -> str:
+            return s.removeprefix(prefix)
+
+        has_lm_prefix = any(k.startswith("language_model.") for k in state_dict)
+        has_model_prefix = any(k.startswith("model.") for k in state_dict)
+
+        if has_lm_prefix:
+            normalized_state_dict: dict[str, WeightData] = {
+                _strip_prefix(k, "language_model."): v
+                for k, v in state_dict.items()
+                if k.startswith("language_model.")
+            }
+        elif has_model_prefix:
+            normalized_state_dict = {
+                _strip_prefix(k, "model."): v
+                for k, v in state_dict.items()
+                if k.startswith("model.")
+            }
+        else:
+            normalized_state_dict = dict(state_dict)
+
         # Parse the float8 config from compressed-tensors or FBGEMM.
         float8_config = parse_float8_config(
-            huggingface_config, state_dict, dtype
+            huggingface_config, normalized_state_dict, dtype
         )
 
         # Determine norm_dtype.
@@ -266,8 +290,10 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         # correct. To avoid any issue, only set norm_dtype for float8 models
         # for now.
         norm_dtype = None
-        if "layers.0.input_layernorm.weight" in state_dict:
-            norm_dtype = state_dict["layers.0.input_layernorm.weight"].dtype
+        if "layers.0.input_layernorm.weight" in normalized_state_dict:
+            norm_dtype = normalized_state_dict[
+                "layers.0.input_layernorm.weight"
+            ].dtype
 
         # When tie_word_embeddings=True, the embedding weights are shared with
         # the output weights.
@@ -276,7 +302,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         else:
             tie_word_embeddings = (
                 getattr(huggingface_config, "tie_word_embeddings", False)
-                or "lm_head.weight" not in state_dict
+                or "lm_head.weight" not in normalized_state_dict
             )
 
         embedding_multiplier = getattr(
@@ -376,8 +402,10 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             norm_dtype=norm_dtype,
             attention_bias=attention_bias,
             tie_word_embeddings=tie_word_embeddings,
-            stacked_mlp="layers.0.mlp.gate_up_proj.weight" in state_dict,
-            stacked_qkv="layers.0.self_attn.qkv_proj.weight" in state_dict,
+            stacked_mlp="layers.0.mlp.gate_up_proj.weight"
+            in normalized_state_dict,
+            stacked_qkv="layers.0.self_attn.qkv_proj.weight"
+            in normalized_state_dict,
             attention_multiplier=attention_multiplier,
             embedding_multiplier=embedding_multiplier,
             residual_multiplier=residual_multiplier,
