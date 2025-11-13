@@ -261,6 +261,11 @@ fn allgather[
         _max_num_blocks: Maximum number of blocks for kernel launch (optional).
     """
 
+    # Return early, if input buffer is empty
+    var num_elements = input_buffers[0].num_elements()
+    if num_elements == 0:
+        return
+
     # Default max blocks if not specified.
     var max_num_blocks = _max_num_blocks.or_else(216)
 

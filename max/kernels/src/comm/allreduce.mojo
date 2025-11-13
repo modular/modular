@@ -1220,8 +1220,12 @@ fn allreduce[
       - The `use_multimem` parameter requires P2P access between GPUs to be enabled.
     """
 
-    # TODO: check all devices have the same GPU sm_version
+    # Return early, if the input buffer is empty
+    var num_elements = input_buffers[0].num_elements()
+    if num_elements == 0:
+        return
 
+    # TODO: check all devices have the same GPU sm_version
     alias sm_version = get_sm_version()
     var max_num_blocks = _max_num_blocks.or_else(
         _dispatch_max_num_blocks[ngpus, sm_version](
