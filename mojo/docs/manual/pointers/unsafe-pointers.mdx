@@ -20,6 +20,24 @@ In general, you should prefer safe pointer types when possible, reserving
 For a comparison of standard library pointer types, see [Intro to
 pointers](/mojo/manual/pointers/).
 
+:::note LegacyUnsafePointer
+
+The implementation of `UnsafePointer` documented here replaces an earlier
+version with a slightly different API. The old version has been renamed to
+[`LegacyUnsafePointer`](/mojo/stdlib/memory/legacy_unsafe_pointer/LegacyUnsafePointer/)
+and will be deprecated.
+
+The [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer)
+reference page briefly describes the differences between the new and old
+versions.
+
+To ease this transition, the library currently supports implicit conversion
+between `LegacyUnsafePointer` and `UnsafePointer`, so you can pass a legacy
+pointer to an `UnsafePointer` function, and vice versa.
+
+:::
+
+
 ## Unsafe pointer basics
 
 An `UnsafePointer` is a type that holds an address to memory. You can store
@@ -29,7 +47,7 @@ value pointed to by a pointer is sometimes called a *pointee*.
 
 ```mojo
 # Allocate memory to hold a value
-var ptr = UnsafePointer[Int].alloc(1)
+var ptr = alloc[Int](1)
 # Initialize the allocated memory
 ptr.init_pointee_copy(100)
 ```
@@ -78,12 +96,12 @@ At any given time, a pointer can be in one of several states:
   ptr = UnsafePointer[Int]()
   ```
 
-- Pointing to allocated, uninitialized memory. The `alloc()` static method
+- Pointing to allocated, uninitialized memory. The `alloc()` function
   returns a pointer to a newly-allocated block of memory with space for the
   specified number of elements of the pointee's type.
 
   ```mojo
-  ptr = UnsafePointer[Int].alloc(1)
+  ptr = alloc[Int](1)
   ```
 
   Trying to dereference a pointer to uninitialized memory results in undefined
@@ -132,12 +150,12 @@ The following diagram shows the lifecycle of an `UnsafePointer`:
 
 ### Allocating memory
 
-Use the static `alloc()` method to allocate memory. The method returns a new
+Use the `alloc()` function to allocate memory. This function returns a new
 pointer pointing to the requested memory. You can allocate space for one or
 more values of the pointee's type.
 
 ```mojo
-ptr = UnsafePointer[Int].alloc(10) # Allocate space for 10 Int values
+ptr = alloc[Int](10) # Allocate space for 10 Int values
 ```
 
 The allocated space is *uninitialized*—like a variable that's been declared but
@@ -215,7 +233,7 @@ calls lifecycle methods on the existing pointee (such as the destructor, move
 constructor or copy constructor).
 
 ```mojo
-str_ptr = UnsafePointer[String].alloc(1)
+str_ptr = alloc[String](1)
 # str_ptr[] = "Testing" # Undefined behavior!
 str_ptr.init_pointee_move("Testing")
 str_ptr[] += " pointers" # Works now
@@ -299,7 +317,7 @@ For example, the following example allocates memory to store 6 `Float64`
 values, and initializes them all to zero.
 
 ```mojo
-float_ptr = UnsafePointer[Float64].alloc(6)
+float_ptr = alloc[Float64](6)
 for offset in range(6):
     (float_ptr+offset).init_pointee_copy(0.0)
 ```
@@ -318,7 +336,7 @@ for offset in range(6):
 
 ## `UnsafePointer` and origins
 
-The `UnsafePointer` struct has an optional `origin` parameter to track the
+The `UnsafePointer` struct has an `origin` parameter to track the
 origin of the memory it points to.
 
 For pointers initialized with the `to` keyword argument, the origin is set to
@@ -330,9 +348,11 @@ s = "Testing"
 s_ptr = UnsafePointer(to=s)
 ```
 
-When initializing an `UnsafePointer` in other ways, the `origin` defaults to
-`MutAnyOrigin`—indicating a pointer that could reference anything in the
-current scope.
+When allocating memory with the `alloc()` function, the returned pointer has
+an `origin` value of `MutOrigin.external`. This value represents an origin that
+does not _alias_ any existing value. (For example, it does not point to the
+memory allocated for any other variable.) This memory isn't tracked by Mojo's
+lifetime checker, so you're responsible for freeing it.
 
 If you're using a pointer in the implementation of a struct, you usually don't
 have to worry about the origin, as long as the pointer isn't exposed outside of
@@ -379,6 +399,10 @@ the same location). However, there are specific methods you can use to get an
 When dealing with memory allocated elsewhere, you need to be aware of who's
 responsible for freeing the memory. Freeing memory allocated elsewhere
 can result in undefined behavior.
+
+When working with some foreign functions, you may need to supply a pointer with
+no specific type (a type-erased pointer, or "void pointer" in C/C++). This is
+equivalent to a Mojo `OpaquePointer`.
 
 You also need to be aware of the format of the data stored in memory, including
 data types and byte order. For more information, see
@@ -435,6 +459,29 @@ def get_foreign_pointer() -> UnsafePointer[Int]:
     ]()
     return ptr
 ```
+
+
+### Opaque pointers
+
+The `OpaquePointer` type is a pointer that does not have a specific type. In
+other languages, this is usually called a type-erased pointer or a void pointer.
+Opaque pointers are usually used when interfacing with non-Mojo code, such as a
+C library function that takes a void pointer.
+
+`OpaquePointer` is actually a type alias for `UnsafePointer[NoneType]`, so it
+has the same API as any other `UnsafePointer`.
+
+You can't dereference an opaque pointer, but you can cast it to a specific type
+using the `bitcast()` method. Similarly, you can create an opaque pointer from
+an existing pointer by bitcasting to `NoneType`. For example:
+
+```mojo
+str = "Hello, world!"
+str_ptr = UnsafePointer(to=str)
+opaque_ptr = str_ptr.bitcast[NoneType]()
+# ... call some foreign function that takes a void pointer
+```
+
 
 ## Converting data: bitcasting and byte order
 
