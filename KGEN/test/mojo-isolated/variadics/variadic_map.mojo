@@ -11,7 +11,7 @@ from stdlib.builtin.variadics import *
 
 alias ToFloatMapper[From: AnyType] = FloatDyn
 alias AnyToFloat[Ts: VariadicOf[AnyType]] = MapTypeToType[
-    Variadic=Ts, Mapper=ToFloatMapper
+    To = type_of(FloatDyn), Variadic=Ts, Mapper=ToFloatMapper
 ]
 
 

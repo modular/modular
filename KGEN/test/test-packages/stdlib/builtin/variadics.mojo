@@ -39,7 +39,9 @@ alias TypeToTypeWrap[
 ] = ToWrap[VA[idx]]
 
 
-# Below are two user-facing API to construct the variadic map.
+# Below are two user-facing API to construct the variadic map, we require user
+# to specifies the `To` bound because in case of mapping to dependent type, they
+# might not have a common bound.
 
 # map(t : variadic[S], mapper : (variadic[S], idx : index) -> D) -> variadic[D]
 alias MapVariadicAndIdxToType[
@@ -59,9 +61,9 @@ alias MapVariadicAndIdxToType[
 
 # map(t : variadic[S], mapper : (S) -> D) -> variadic[D]
 alias MapTypeToType[
-    From: type_of(AnyType),
-    To: type_of(AnyType), //,
+    From: type_of(AnyType), //,
     *,
+    To: type_of(AnyType),
     Variadic: __mlir_type[`!kgen.variadic<`, From, `>`],
     Mapper: TypeToTypeGeneratorTypeGenerator[From, To],
 ] = MapVariadicAndIdxToType[
