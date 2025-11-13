@@ -27,19 +27,19 @@ from .validation import assert_same_device
 def gather(
     input: TensorValueLike, indices: TensorValueLike, axis: int
 ) -> TensorValue:
-    """
-    Selects elements out of an input tensor by index.
+    """Selects elements out of an input tensor by index.
 
     Args:
         input: The input symbolic tensor to select elements from.
         indices: A symbolic tensor of index values to use for selection.
-        axis: The dimension which ``indices`` indexes from ``input``.
-            If negative, indexes relative to the end of the input tensor.
-            For instance, ``gather(input, indices, axis=-1)`` will index
-            against the last dimension of ``input``.
+        axis: The dimension which ``indices`` indexes from ``input``. If negative,
+            indexes relative to the end of the input tensor. For instance,
+            ``gather(input, indices, axis=-1)`` will index against the last
+            dimension of ``input``.
 
     Returns:
-        A new symbolic tensor representing the result of the gather operation.
+        TensorValue: A new symbolic tensor representing the result of the gather
+        operation.
     """
     input, indices = TensorValue(input), TensorValue(indices)
     shape = input.shape
