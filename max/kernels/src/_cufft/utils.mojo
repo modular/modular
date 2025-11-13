@@ -23,6 +23,8 @@ from .types import Status
 # ===-----------------------------------------------------------------------===#
 
 alias CUDA_CUFFT_LIBRARY_PATHS = List[Path](
+    "libcufft.so.12",
+    "/usr/local/cuda/lib64/libcufft.so.12",
     "libcufft.so.11",
     "/usr/local/cuda/lib64/libcufft.so.11",
 )
