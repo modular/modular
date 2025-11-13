@@ -17,14 +17,43 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "mlir/IR/Diagnostics.h"
+#include "llvm/ADT/DenseMapInfo.h"
+#include "llvm/Support/SourceMgr.h"
 #include <functional>
 #include <string>
 #include <vector>
 
 namespace llvm {
-class SourceMgr;
-class SMDiagnostic;
-class SMFixIt;
+
+template <>
+struct DenseMapInfo<SMFixIt> {
+  using KeyTy = SMFixIt;
+
+  static inline KeyTy getEmptyKey() {
+    return SMFixIt(
+        SMLoc::getFromPointer(DenseMapInfo<const char *>::getEmptyKey()), "");
+  }
+
+  static inline KeyTy getTombstoneKey() {
+    return SMFixIt(
+        SMLoc::getFromPointer(DenseMapInfo<const char *>::getTombstoneKey()),
+        "");
+  }
+
+  static unsigned getHashValue(const KeyTy &k) {
+    SMRange range = k.getRange();
+    return DenseMapInfo<std::tuple<const char *, const char *, StringRef>>::
+        getHashValue(
+            {range.Start.getPointer(), range.End.getPointer(), k.getText()});
+  }
+
+  static bool isEqual(const KeyTy &a, const KeyTy &b) {
+    SMRange aRange = a.getRange();
+    SMRange bRange = b.getRange();
+    return aRange.Start == bRange.Start && aRange.End == bRange.End &&
+           a.getText() == b.getText();
+  }
+};
 } // namespace llvm
 
 namespace M {
@@ -35,11 +64,41 @@ class InflightDiag;
 class SourceRange;
 class FixIt;
 
+//===----------------------------------------------------------------------===//
+// AutoFixItHandler
+//===----------------------------------------------------------------------===//
+
+/// This class is used to collect and apply fix-its automatically.
+class AutoFixItHandler {
+public:
+  AutoFixItHandler() = default;
+
+  /// Register a fix-it to be applied later.
+  void registerFixIt(const llvm::MemoryBuffer *buffer, llvm::SMFixIt fixIt);
+
+  /// Apply all registered fix-its.
+  void applyFixIts();
+
+  /// Return true if there are any fix-its to apply.
+  bool hasFixIts() const { return !fixits.empty(); }
+
+private:
+  /// A map of buffers (i.e. source files) to a set of fix-its to apply to that
+  /// buffer.
+  DenseMap<const llvm::MemoryBuffer *, llvm::SmallDenseSet<llvm::SMFixIt>>
+      fixits;
+};
+
+//===----------------------------------------------------------------------===//
+// Diags
+//===----------------------------------------------------------------------===//
+
 class Diags {
 public:
   Diags(SourceMgr &sourceMgr, MLIRContext *context, bool useMLIRDiagnostics,
         int maxNotesPerDiagnostic, StringRef stripFilenamePrefix,
-        bool disableWarnings, void *extraContext = nullptr);
+        bool disableWarnings, void *extraContext = nullptr,
+        AutoFixItHandler *autoFixItHandler = nullptr);
   ~Diags();
 
   llvm::SourceMgr &sourceMgr;
@@ -104,6 +163,9 @@ public:
   /// -verify-diagnostics and other MLIR testing features), but we prefer
   /// llvm::SourceMgr for better QoI: it supports source ranges and FixIt hints.
   const bool useMLIRDiagnostics;
+
+  /// When non-null, this handler collects and applies fix-its automatically.
+  AutoFixItHandler *autoFixItHandler;
 
 private:
   /// Keep track of previous diag handler.
@@ -200,6 +262,7 @@ public:
 private:
   void emitMLIRDiagnostic();
   void emitSourceMgrDiagnostic();
+  void emitAutoFixItDiagnostic();
 
   /// Each message in a diagnostic must have a location and text, and may
   /// have any number of highlighted ranges and fixit hints.

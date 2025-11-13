@@ -20,6 +20,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
+#include "Support/Compiler/Diags.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/Config.h"
 #include "Support/Driver/DiagnosticFormat.h"
@@ -489,12 +490,16 @@ static int package(const State &subcommandState) {
         args.getAllArgValues(options::OPT_bitcode_libs));
   }
 
+  ConditionallyDisableMLIRWarnings dwHandler(
+      &packageArgs.ctx, packageArgs.compileOptions.disableWarnings);
+
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
       state, args, packageArgs.compileOptions, &packageArgs.ctx, runtime,
       options::OPT_diagnose_missing_doc_strings,
       options::OPT_validate_doc_strings, options::OPT_max_notes,
       /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
+      options::OPT_fixit,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         parserConfig.exportKgenModule = isKgenModule;
         OwningOpRef<ModuleOp> moduleOp;
@@ -505,6 +510,11 @@ static int package(const State &subcommandState) {
       });
   if (failed(module))
     return state.reportError(module.getError());
+
+  if (!module.get()->getOperation()) {
+    assert(args.hasArg(options::OPT_fixit));
+    return EXIT_SUCCESS;
+  }
 
   // Run the MOGGPreElabPipeline
   KGENCompiler compiler(*module->get()->getContext(),

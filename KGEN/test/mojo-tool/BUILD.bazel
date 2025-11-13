@@ -12,6 +12,7 @@ lit_tests(
             "package/test_package/**/*.mojo",
             "package/test_package_with_main/**/*.mojo",
             "package/test_package_moco_773/**/*.mojo",
+            "package/test_package_fixit/**/*.mojo",
         ],
     ),
     data = [
@@ -21,6 +22,7 @@ lit_tests(
         "package/test_package/**/*.mojo",
         "package/test_package_with_main/**/*.mojo",
         "package/test_package_moco_773/**/*.mojo",
+        "package/test_package_fixit/**/*.mojo",
         "build/inputs/**/*.mojo",
     ]),
     env = {
