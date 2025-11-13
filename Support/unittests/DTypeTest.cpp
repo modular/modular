@@ -80,6 +80,7 @@ TEST(DType, getWidthInBits) {
   EXPECT_EQ(64, DType(DType::ui64).getWidthInBits());
   EXPECT_EQ(128, DType(DType::si128).getWidthInBits());
   EXPECT_EQ(128, DType(DType::ui128).getWidthInBits());
+  EXPECT_EQ(4, DType(DType::f4e2m1fn).getWidthInBits());
   EXPECT_EQ(8, DType(DType::f8e5m2).getWidthInBits());
   EXPECT_EQ(8, DType(DType::f8e5m2fnuz).getWidthInBits());
   EXPECT_EQ(8, DType(DType::f8e4m3fn).getWidthInBits());
@@ -130,6 +131,7 @@ TEST(DType, getSizeInBytes) {
   EXPECT_EQ(-1, DType(DType::invalid).getSizeInBytes(1));
   for (DType dt : getAllKnownDTypes()) {
     EXPECT_GT(dt.getSizeInBytes(1), 0) << dt.getAsString();
+
     if (dt.getWidthInBits() % 8 == 0)
       EXPECT_EQ(dt.getSizeInBytes(8), dt.getWidthInBits()) << dt.getAsString();
   }
@@ -153,6 +155,7 @@ TEST(DType, getAsString) {
   EXPECT_EQ("ui64", DType(DType::ui64).getAsString());
   EXPECT_EQ("si128", DType(DType::si128).getAsString());
   EXPECT_EQ("ui128", DType(DType::ui128).getAsString());
+  EXPECT_EQ("f4e2m1fn", DType(DType::f4e2m1fn).getAsString());
   EXPECT_EQ("f8e5m2", DType(DType::f8e5m2).getAsString());
   EXPECT_EQ("f8e5m2fnuz", DType(DType::f8e5m2fnuz).getAsString());
   EXPECT_EQ("f8e4m3fn", DType(DType::f8e4m3fn).getAsString());
@@ -206,6 +209,7 @@ TEST(DType, getFromString) {
   EXPECT_EQ(DType(DType::ui64), DType::getFromString("ui64"));
   EXPECT_EQ(DType(DType::si128), DType::getFromString("si128"));
   EXPECT_EQ(DType(DType::ui128), DType::getFromString("ui128"));
+  EXPECT_EQ(DType(DType::f4e2m1fn), DType::getFromString("f4e2m1fn"));
   EXPECT_EQ(DType(DType::f8e5m2), DType::getFromString("f8e5m2"));
   EXPECT_EQ(DType(DType::f8e5m2fnuz), DType::getFromString("f8e5m2fnuz"));
   EXPECT_EQ(DType(DType::f8e4m3fn), DType::getFromString("f8e4m3fn"));
