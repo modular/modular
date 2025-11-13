@@ -600,6 +600,10 @@ what we publish.
   `GreaterThanOrEqualComparable`. It is extremely rare that a type would only
   implement one of these, so one can just use `Comparable` instead.
 
+- All telemetry-related code has been removed from the Mojo compiler. This
+  should eliminate the source of some hangs and misbehavior on poor internet
+  connections.
+
 ### 🛠️ Fixed {#25-7-fixed}
 
 - The `math.cos` and `math.sin` function can now be evaluated at compile time
