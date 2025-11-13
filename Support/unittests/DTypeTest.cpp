@@ -29,6 +29,7 @@ static std::vector<DType> getAllKnownDTypes() {
       DType(DType::ui64),
       DType(DType::si128),
       DType(DType::ui128),
+      DType(DType::f8e8m0fnu),
       DType(DType::f8e5m2),
       DType(DType::f8e5m2fnuz),
       DType(DType::f8e4m3fn),
@@ -81,6 +82,7 @@ TEST(DType, getWidthInBits) {
   EXPECT_EQ(128, DType(DType::si128).getWidthInBits());
   EXPECT_EQ(128, DType(DType::ui128).getWidthInBits());
   EXPECT_EQ(4, DType(DType::f4e2m1fn).getWidthInBits());
+  EXPECT_EQ(8, DType(DType::f8e8m0fnu).getWidthInBits());
   EXPECT_EQ(8, DType(DType::f8e5m2).getWidthInBits());
   EXPECT_EQ(8, DType(DType::f8e5m2fnuz).getWidthInBits());
   EXPECT_EQ(8, DType(DType::f8e4m3fn).getWidthInBits());
@@ -156,9 +158,8 @@ TEST(DType, getAsString) {
   EXPECT_EQ("si128", DType(DType::si128).getAsString());
   EXPECT_EQ("ui128", DType(DType::ui128).getAsString());
   EXPECT_EQ("f4e2m1fn", DType(DType::f4e2m1fn).getAsString());
+  EXPECT_EQ("f8e8m0fnu", DType(DType::f8e8m0fnu).getAsString());
   EXPECT_EQ("f8e5m2", DType(DType::f8e5m2).getAsString());
-  EXPECT_EQ("f8e5m2fnuz", DType(DType::f8e5m2fnuz).getAsString());
-  EXPECT_EQ("f8e4m3fn", DType(DType::f8e4m3fn).getAsString());
   EXPECT_EQ("f8e4m3fnuz", DType(DType::f8e4m3fnuz).getAsString());
   EXPECT_EQ("f8e3m4", DType(DType::f8e3m4).getAsString());
   EXPECT_EQ("f16", DType(DType::f16).getAsString());
@@ -210,6 +211,7 @@ TEST(DType, getFromString) {
   EXPECT_EQ(DType(DType::si128), DType::getFromString("si128"));
   EXPECT_EQ(DType(DType::ui128), DType::getFromString("ui128"));
   EXPECT_EQ(DType(DType::f4e2m1fn), DType::getFromString("f4e2m1fn"));
+  EXPECT_EQ(DType(DType::f8e8m0fnu), DType::getFromString("f8e8m0fnu"));
   EXPECT_EQ(DType(DType::f8e5m2), DType::getFromString("f8e5m2"));
   EXPECT_EQ(DType(DType::f8e5m2fnuz), DType::getFromString("f8e5m2fnuz"));
   EXPECT_EQ(DType(DType::f8e4m3fn), DType::getFromString("f8e4m3fn"));

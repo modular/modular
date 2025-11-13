@@ -1081,6 +1081,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
               {KGENDType::si256, "Int256"},
               {KGENDType::ui256, "UInt256"},
               {KGENDType::f4e2m1fn, "Float4_e2m1fn"},
+              {KGENDType::f8e8m0fnu, "Float8_e8m0fnu"},
               {KGENDType::f8e5m2, "Float8_e5m2"},
               {KGENDType::f8e5m2fnuz, "Float8_e5m2fnuz"},
               {KGENDType::f8e4m3fn, "Float8_e4m3fn"},

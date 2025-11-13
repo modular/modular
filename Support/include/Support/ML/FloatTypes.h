@@ -122,7 +122,11 @@ struct float4_e2m1fn_t
 //===----------------------------------------------------------------------===//
 
 namespace Float8 {
-
+struct float8_e8m0fnu_t
+    : Detail::float8_generic_t<llvm::APFloat::S_Float8E8M0FNU> {
+  using Base = Detail::float8_generic_t<llvm::APFloat::S_Float8E8M0FNU>;
+  using Base::Base;
+};
 struct float8_e3m4_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E3M4> {
   using Base = Detail::float8_generic_t<llvm::APFloat::S_Float8E3M4>;
   using Base::Base;

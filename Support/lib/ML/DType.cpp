@@ -237,6 +237,7 @@ size_t DType::getAlignment() const {
       .when<DType::bf16>(getAlign)
       .when<DType::bf16>(getAlign)
       .when<DType::f4e2m1fn>(getAlign)
+      .when<DType::f8e8m0fnu>(getAlign)
       .when<DType::f8e4m3fn>(getAlign)
       .when<DType::f8e4m3fnuz>(getAlign)
       .when<DType::f8e5m2>(getAlign)

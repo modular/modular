@@ -100,6 +100,7 @@ public:
     f4e2m1fn = 0 | mIsFloat,
     /// Some slots are left blank here to enable us to support more lower
     /// precision types in the future.
+    f8e8m0fnu = 9 | mIsFloat,
     f8e3m4 = 10 | mIsFloat,
     f8e4m3fn = 11 | mIsFloat,
     f8e4m3fnuz = 12 | mIsFloat,
