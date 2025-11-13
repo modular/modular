@@ -43,6 +43,7 @@ modular_multi_py_version_test(
     ],
     data = ["//max/tests/tests/graph/testdata"],
     env = {"TESTDATA_DIRECTORY": "max/tests/tests/graph/testdata"},
+    exclude = ["3.14"],  # Current version of numpy doesn't build on 3.14
     imports = ["."],
     deps = [
         "//max/python/max/dtype",

@@ -82,6 +82,8 @@ single_version_override(
     patches = [
         # https://github.com/bazel-contrib/rules_python/pull/3233
         "//bazel/public-patches:rules_python_wheel.patch",
+        # https://github.com/bazel-contrib/rules_python/pull/3330
+        "//bazel/public-patches:rules_python_3_14.patch",
     ],
 )
 
@@ -175,6 +177,7 @@ PYTHON_VERSIONS = [
     "3_11",
     "3_12",
     "3_13",
+    "3_14",
 ]
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
