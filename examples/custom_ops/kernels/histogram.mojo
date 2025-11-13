@@ -28,6 +28,9 @@ alias bin_width = Int(UInt8.MAX)
 
 
 fn _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
+    for i in range(output.dim_size(0)):
+        output[i] = 0
+
     for i in range(input.dim_size(0)):
         output[Int(input[i])] += 1
 
@@ -87,6 +90,9 @@ fn _histogram_gpu(
     var input_device = DeviceBuffer[input.dtype](
         ctx, input.unsafe_ptr(), input.size(), owning=False
     )
+
+    # Zero initialize the output buffer
+    ctx.enqueue_memset(output_device, 0)
 
     ctx.enqueue_function_checked[kernel, kernel](
         output_device,
