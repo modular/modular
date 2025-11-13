@@ -115,21 +115,30 @@ class LinearLoRA(Linear, SupportsLoRA):
         )
         self.lora_ids: TensorValue | None = None
         self.lora_ranks: TensorValue | None = None
+        self.lora_input_slice_idx: TensorValue | None = None
+        self.lora_grouped_offsets: TensorValue | None = None
 
     def set_lora_batch_info(
         self,
         lora_ids: TensorValue,
         lora_ranks: TensorValue,
         lora_grouped_offsets: TensorValue,
+        lora_input_slice_idx: TensorValue,
     ) -> None:
         self.lora_ids = lora_ids
         self.lora_ranks = lora_ranks
         self.lora_grouped_offsets = lora_grouped_offsets
+        self.lora_input_slice_idx = lora_input_slice_idx
 
     def apply_lora(self, x: TensorValue) -> TensorValue:
         y = self(x)
 
-        if self.lora_ids is None or self.lora_ranks is None:
+        if (
+            self.lora_ids is None
+            or self.lora_ranks is None
+            or self.lora_grouped_offsets is None
+            or self.lora_input_slice_idx is None
+        ):
             raise ValueError(
                 "'set_lora_batch_info' not called before executing forward pass."
             )

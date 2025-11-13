@@ -1675,6 +1675,7 @@ def kv_cache_ragged_radd(
     op_name = (
         f"mo.kv_cache.ragged.{kv_params.cache_strategy.kernel_substring()}.radd"
     )
+
     ops.inplace_custom(
         op_name,
         device=input_row_offsets.device,
@@ -3096,6 +3097,7 @@ def sgmv_qkv_lora_kernel(
     lora_ranks: TensorValue,
     input_row_offsets: TensorValue,
     lora_grouped_offsets: TensorValue,
+    lora_input_slice_idx: TensorValue,
     kv_collection: PagedCacheValues,
     kv_params: KVCacheParams,
     layer_idx: TensorValue,

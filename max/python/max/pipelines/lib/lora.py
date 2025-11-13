@@ -588,6 +588,9 @@ class LoRAManager:
                 prev_id = id_
 
         grouped_offsets.append(input_row_offsets[-1])
+        last_lora_idx = (
+            grouped_ids.index(-1) if -1 in grouped_ids else len(grouped_ids)
+        )
 
         lora_ids = Tensor.from_numpy(np.array(grouped_ids, dtype=np.int32)).to(
             device
@@ -598,8 +601,11 @@ class LoRAManager:
         lora_grouped_offsets = Tensor.from_numpy(
             np.array(grouped_offsets, dtype=np.uint32)
         ).to(device)
+        lora_input_slice_idx = Tensor.from_numpy(
+            np.array([last_lora_idx], dtype=np.int64)
+        )
 
-        return lora_ids, lora_ranks, lora_grouped_offsets
+        return lora_ids, lora_ranks, lora_grouped_offsets, lora_input_slice_idx
 
     def _validate_lora_path(self, path: str) -> LoRAStatus:
         """
@@ -938,13 +944,23 @@ class LoRAManager:
         lora_grouped_offsets_type = TensorType(
             DType.uint32, shape=["lora_grouped_offsets"], device=device_ref
         )
-        return [lora_ids_type, lora_ranks_type, lora_grouped_offsets_type]
+        lora_input_slice_idx = TensorType(
+            DType.int64, shape=[1], device=DeviceRef.CPU()
+        )
+
+        return [
+            lora_ids_type,
+            lora_ranks_type,
+            lora_grouped_offsets_type,
+            lora_input_slice_idx,
+        ]
 
     def set_graph_info(
         self,
         lora_ids: TensorValue,
         lora_ranks: TensorValue,
         lora_grouped_offsets: TensorValue,
+        lora_input_slice_idx: TensorValue,
     ) -> None:
         """
         Sets the lora batch info required for the forward-pass.
@@ -956,7 +972,10 @@ class LoRAManager:
         for _, layer in self._lora_layers.items():
             if isinstance(layer, SupportsLoRA):
                 layer.set_lora_batch_info(
-                    lora_ids, lora_ranks, lora_grouped_offsets
+                    lora_ids,
+                    lora_ranks,
+                    lora_grouped_offsets,
+                    lora_input_slice_idx,
                 )
 
     def sort_lora_batch(

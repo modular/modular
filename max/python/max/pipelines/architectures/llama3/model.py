@@ -94,6 +94,7 @@ class Llama3Inputs(ModelInputs):
         lora_ids: Tensor | None = None,
         lora_ranks: Tensor | None = None,
         lora_grouped_offsets: Tensor | None = None,
+        lora_input_slice_idx: Tensor | None = None,
         data_parallel_splits: Tensor | Sequence[Sequence[int]] | None = None,
     ) -> None:
         """
@@ -111,6 +112,7 @@ class Llama3Inputs(ModelInputs):
         self.lora_ids = lora_ids
         self.lora_ranks = lora_ranks
         self.lora_grouped_offsets = lora_grouped_offsets
+        self.lora_input_slice_idx = lora_input_slice_idx
         self.data_parallel_splits = data_parallel_splits
 
 
@@ -214,6 +216,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
                 model_inputs.lora_ids,  # type: ignore
                 model_inputs.lora_ranks,  # type: ignore
                 model_inputs.lora_grouped_offsets,  # type: ignore
+                model_inputs.lora_input_slice_idx,  # type: ignore
                 *model_inputs.signal_buffers,
                 *curr_kv_cache_inputs,
             )
@@ -281,7 +284,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
         # Map model names to LoRA graph inputs
         if self._lora_manager:
-            lora_ids, lora_ranks, lora_grouped_offsets = (
+            lora_ids, lora_ranks, lora_grouped_offsets, lora_input_slice_idx = (
                 self._lora_manager.get_lora_graph_inputs(
                     context_batch, input_row_offsets, self.devices[0]
                 )
@@ -290,6 +293,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             inputs.lora_ids = lora_ids
             inputs.lora_ranks = lora_ranks
             inputs.lora_grouped_offsets = lora_grouped_offsets
+            inputs.lora_input_slice_idx = lora_input_slice_idx
 
         return inputs
 
@@ -314,6 +318,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             lora_ids=prev_model_inputs.lora_ids,
             lora_ranks=prev_model_inputs.lora_ranks,
             lora_grouped_offsets=prev_model_inputs.lora_grouped_offsets,
+            lora_input_slice_idx=prev_model_inputs.lora_input_slice_idx,
             data_parallel_splits=prev_model_inputs.data_parallel_splits,
         )
 
@@ -569,12 +574,14 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
                         lora_ids,
                         lora_ranks,
                         lora_grouped_offsets,
+                        lora_input_slice_idx,
                         *kv_cache_inputs,
                     ) = graph.inputs
                     self._lora_manager.set_graph_info(
                         lora_ids.tensor,
                         lora_ranks.tensor,
                         lora_grouped_offsets.tensor,
+                        lora_input_slice_idx.tensor,
                     )
                 else:
                     (

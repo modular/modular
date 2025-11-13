@@ -268,7 +268,7 @@ class Llama3(Transformer):
             DType.uint32, shape=["input_row_offsets_len"], device=device_ref
         )
         if lora_manager is not None:
-            lora_ids, lora_ranks, lora_grouped_offsets = (
+            lora_ids, lora_ranks, lora_grouped_offsets, lora_input_slice_idx = (
                 lora_manager.input_symbols(device_ref)
             )
             return (
@@ -278,6 +278,7 @@ class Llama3(Transformer):
                 lora_ids,
                 lora_ranks,
                 lora_grouped_offsets,
+                lora_input_slice_idx,
                 *kv_inputs[0],
             )
         else:

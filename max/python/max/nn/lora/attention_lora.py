@@ -16,7 +16,7 @@ from collections.abc import Callable
 from typing import cast
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.nn.float8_config import Float8Config
 
 from ..attention.attention_with_rope import AttentionWithRope
@@ -128,7 +128,13 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
-        xq = fused_qkv_ragged_matmul(
+        # Check that LoRA batch info has been set
+        if self.qkv_loras[0].lora_input_slice_idx is None:
+            raise ValueError(
+                "'set_lora_batch_info' not called before executing forward pass."
+            )
+
+        xq_matmul = fused_qkv_ragged_matmul(
             self.kv_params,
             input=x,
             wqkv=self.wqkv,
@@ -138,48 +144,88 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             layer_idx=layer_idx,
             n_heads=self.n_heads,
         )
+        freqs_cis = ops.cast(freqs_cis, xq_matmul.dtype).to(xq_matmul.device)
 
-        xq += self.fused_qkv_lora(
-            x,
-            kv_collection,
-            input_row_offsets,
-            layer_idx,
-        )
+        def then_fn() -> TensorValue:
+            xq = xq_matmul.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
-        # Apply rope.
-        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
+            xq = fused_qk_ragged_rope(
+                self.kv_params,
+                xq,
+                input_row_offsets,
+                kv_collection,
+                freqs_cis,
+                layer_idx,
+                interleaved=self.rope.interleaved,
+            )
+            # Calculate Flash Attention.
+            attn_out = flash_attention_ragged(
+                self.kv_params,
+                input=xq,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                input_row_offsets=input_row_offsets,
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                scale=self.scale,
+            )
 
-        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
+            attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
 
-        xq = fused_qk_ragged_rope(
-            self.kv_params,
-            xq,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
-            interleaved=self.rope.interleaved,
-        )
-        # Calculate Flash Attention.
-        attn_out = flash_attention_ragged(
-            self.kv_params,
-            input=xq,
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            input_row_offsets=input_row_offsets,
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
-            scale=self.scale,
-        )
+            out = self.o_proj(attn_out)
 
-        attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
+            return out
 
-        out = cast(LinearLoRA, self.o_proj).apply_lora(attn_out)
+        def else_fn() -> TensorValue:
+            xq = self.fused_qkv_lora(
+                x,
+                xq_matmul,
+                kv_collection,
+                input_row_offsets,
+                layer_idx,
+            )
+            xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
-        return out
+            xq = fused_qk_ragged_rope(
+                self.kv_params,
+                xq,
+                input_row_offsets,
+                kv_collection,
+                freqs_cis,
+                layer_idx,
+                interleaved=self.rope.interleaved,
+            )
+            # Calculate Flash Attention.
+            attn_out = flash_attention_ragged(
+                self.kv_params,
+                input=xq,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                input_row_offsets=input_row_offsets,
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                scale=self.scale,
+            )
+
+            attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
+
+            return cast(LinearLoRA, self.o_proj).apply_lora(attn_out)
+
+        return ops.cond(
+            self.qkv_loras[0].lora_input_slice_idx.tensor[0] == 0,
+            [
+                TensorType(
+                    dtype=self.o_proj.weight.dtype,
+                    shape=[total_seq_len, self.q_weight_dim],
+                    device=self.o_proj.device,
+                )
+            ],
+            then_fn,
+            else_fn,
+        )[0].tensor
 
     def fused_qkv_lora(  # noqa: ANN201
         self,
         x: TensorValue,
+        xq: TensorValue,
         kv_collection: PagedCacheValues,
         input_row_offsets: TensorValue,
         layer_idx: TensorValue,
@@ -201,28 +247,36 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
         Raises:
             ValueError: If 'set_lora_batch_info' has not been called on the LoRAs.
         """
-        qkv_loras = self.qkv_loras
+        lora_ids = self.qkv_loras[0].lora_ids
+        lora_ranks = self.qkv_loras[0].lora_ranks
+        max_rank = self.qkv_loras[0].max_lora_rank
+        lora_grouped_offsets = self.qkv_loras[0].lora_grouped_offsets
+        lora_input_slice_idx = self.qkv_loras[0].lora_input_slice_idx
 
-        lora_ids = qkv_loras[0].lora_ids
-        lora_ranks = qkv_loras[0].lora_ranks
-        max_rank = qkv_loras[0].max_lora_rank
-        lora_grouped_offsets = qkv_loras[0].lora_grouped_offsets
-
-        if lora_ids is None or lora_ranks is None:
+        if (
+            lora_ids is None
+            or lora_ranks is None
+            or lora_grouped_offsets is None
+            or lora_input_slice_idx is None
+        ):
             raise ValueError(
                 "'set_lora_batch_info' not called before executing forward pass."
             )
 
-        if len(qkv_loras) == 3:
-            lora_a = ops.concat([lora.lora_A for lora in qkv_loras], axis=1)
-            lora_b = ops.concat([lora.lora_B for lora in qkv_loras], axis=1)
+        if len(self.qkv_loras) == 3:
+            lora_a = ops.concat(
+                [lora.lora_A for lora in self.qkv_loras], axis=1
+            )
+            lora_b = ops.concat(
+                [lora.lora_B for lora in self.qkv_loras], axis=1
+            )
             lora_bias = None
         else:
-            lora_a = qkv_loras[0].lora_A
-            lora_b = qkv_loras[0].lora_B
+            lora_a = self.qkv_loras[0].lora_A
+            lora_b = self.qkv_loras[0].lora_B
             lora_bias = None
 
-        return sgmv_qkv_lora_kernel(
+        return xq + sgmv_qkv_lora_kernel(
             input=x,
             lora_a=lora_a,
             lora_b=lora_b,
@@ -230,6 +284,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             lora_ranks=lora_ranks,
             input_row_offsets=input_row_offsets,
             lora_grouped_offsets=lora_grouped_offsets,
+            lora_input_slice_idx=lora_input_slice_idx,
             kv_collection=kv_collection,
             kv_params=self.kv_params,
             layer_idx=layer_idx,
