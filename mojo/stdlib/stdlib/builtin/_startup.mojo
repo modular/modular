@@ -16,17 +16,15 @@ from sys import external_call
 from sys.ffi import _get_global
 from sys.compile import SanitizeAddress
 
-from memory import LegacyOpaquePointer as OpaquePointer
 
-
-fn _init_global_runtime() -> OpaquePointer:
+fn _init_global_runtime() -> OpaquePointer[MutAnyOrigin]:
     return external_call[
         "KGEN_CompilerRT_AsyncRT_CreateRuntime",
-        OpaquePointer,
+        OpaquePointer[MutAnyOrigin],
     ](0)
 
 
-fn _destroy_global_runtime(ptr: OpaquePointer):
+fn _destroy_global_runtime(ptr: OpaquePointer[MutAnyOrigin]):
     """Destroy the global runtime if ever used."""
     external_call["KGEN_CompilerRT_AsyncRT_DestroyRuntime", NoneType](ptr)
 
@@ -34,7 +32,7 @@ fn _destroy_global_runtime(ptr: OpaquePointer):
 @always_inline
 fn _ensure_current_or_global_runtime_init():
     var current_runtime = external_call[
-        "KGEN_CompilerRT_AsyncRT_GetCurrentRuntime", OpaquePointer
+        "KGEN_CompilerRT_AsyncRT_GetCurrentRuntime", OpaquePointer[MutAnyOrigin]
     ]()
     if current_runtime:
         return

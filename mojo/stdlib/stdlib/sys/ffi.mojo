@@ -18,11 +18,7 @@ from pathlib import Path
 from sys._libc import dlclose, dlerror, dlopen, dlsym
 from sys._libc_errno import ErrNo, get_errno, set_errno
 
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-    OwnedPointer,
-)
+from memory import OwnedPointer
 
 from .info import CompilationTarget, is_64bit
 from .intrinsics import _mlirtype_is_eq
@@ -219,7 +215,7 @@ struct OwnedDLHandle(Movable):
     @doc_private
     @always_inline
     fn __init__(out self, *, unsafe_uninitialized: Bool):
-        self._handle = _DLHandle(OpaquePointer())
+        self._handle = _DLHandle({})
 
     fn __del__(deinit self):
         """Unload the associated dynamic library.
@@ -298,9 +294,7 @@ struct OwnedDLHandle(Movable):
     @always_inline
     fn _get_function[
         result_type: AnyTrivialRegType
-    ](
-        self, *, cstr_name: UnsafePointer[c_char, mut=False, origin=_]
-    ) -> result_type:
+    ](self, *, cstr_name: UnsafePointer[mut=False, c_char]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -317,7 +311,7 @@ struct OwnedDLHandle(Movable):
 
     fn get_symbol[
         result_type: AnyType,
-    ](self, name: StringSlice) -> UnsafePointer[result_type]:
+    ](self, name: StringSlice) -> UnsafePointer[result_type, ImmutAnyOrigin]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 
@@ -334,9 +328,9 @@ struct OwnedDLHandle(Movable):
 
     fn get_symbol[
         result_type: AnyType
-    ](
-        self, *, cstr_name: UnsafePointer[Int8, mut=False, origin=_]
-    ) -> UnsafePointer[result_type]:
+    ](self, *, cstr_name: UnsafePointer[mut=False, Int8]) -> UnsafePointer[
+        result_type, ImmutAnyOrigin
+    ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 
@@ -408,7 +402,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
         library. For safer usage, prefer `OwnedDLHandle`.
     """
 
-    var handle: OpaquePointer
+    var handle: OpaquePointer[MutAnyOrigin]
     """The handle to the dynamic library."""
 
     @always_inline
@@ -426,7 +420,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
         Raises:
             If `dlopen(nullptr, flags)` fails.
         """
-        self = Self._dlopen(UnsafePointer[c_char](), flags)
+        self = Self._dlopen(UnsafePointer[c_char, MutAnyOrigin](), flags)
 
     fn __init__[
         PathLike: os.PathLike, //
@@ -450,10 +444,10 @@ struct _DLHandle(Boolable, Copyable, Movable):
 
     @staticmethod
     fn _dlopen(
-        file: UnsafePointer[c_char, mut=False, origin=_], flags: Int
+        file: UnsafePointer[mut=False, c_char], flags: Int
     ) raises -> _DLHandle:
         var handle = dlopen(file, flags)
-        if handle == OpaquePointer():
+        if not handle:
             var error_message = dlerror()
             raise Error(
                 "dlopen failed: ",
@@ -470,7 +464,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
         Returns:
             `True` if the symbol exists.
         """
-        var opaque_function_ptr: OpaquePointer = dlsym(
+        var opaque_function_ptr = dlsym(
             self.handle,
             name.unsafe_cstr_ptr(),
         )
@@ -488,7 +482,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
             lifetime.
         """
         _ = dlclose(self.handle)
-        self.handle = OpaquePointer()
+        self.handle = {}
 
     fn __bool__(self) -> Bool:
         """Checks if the handle is valid.
@@ -539,9 +533,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
     @always_inline
     fn _get_function[
         result_type: AnyTrivialRegType
-    ](
-        self, *, cstr_name: UnsafePointer[c_char, mut=False, origin=_]
-    ) -> result_type:
+    ](self, *, cstr_name: UnsafePointer[mut=False, c_char]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -560,7 +552,7 @@ struct _DLHandle(Boolable, Copyable, Movable):
 
     fn get_symbol[
         result_type: AnyType,
-    ](self, name: StringSlice) -> UnsafePointer[result_type]:
+    ](self, name: StringSlice) -> UnsafePointer[result_type, ImmutAnyOrigin]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 
@@ -580,9 +572,9 @@ struct _DLHandle(Boolable, Copyable, Movable):
 
     fn get_symbol[
         result_type: AnyType
-    ](
-        self, *, cstr_name: UnsafePointer[Int8, mut=False, origin=_]
-    ) -> UnsafePointer[result_type]:
+    ](self, *, cstr_name: UnsafePointer[mut=False, Int8]) -> UnsafePointer[
+        result_type, ImmutAnyOrigin
+    ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 
@@ -695,7 +687,7 @@ fn _get_dylib_function[
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(func_cache_name),
-        UnsafePointer(to=new_func).bitcast[OpaquePointer]()[],
+        UnsafePointer(to=new_func).bitcast[OpaquePointer[MutAnyOrigin]]()[],
     )
 
     return new_func
@@ -834,13 +826,13 @@ struct _Global[
     init_fn: fn () -> StorageType,
     on_error_msg: Optional[fn () -> Error] = None,
 ](Defaultable):
-    alias ResultType = UnsafePointer[StorageType]
+    alias ResultType = UnsafePointer[StorageType, MutAnyOrigin]
 
     fn __init__(out self):
         pass
 
     @staticmethod
-    fn _init_wrapper() -> OpaquePointer:
+    fn _init_wrapper() -> OpaquePointer[MutAnyOrigin]:
         # Heap allocate space to store this "global"
         # TODO:
         #   Any way to avoid the move, e.g. by calling this function
@@ -850,7 +842,7 @@ struct _Global[
         return ptr^.steal_data().bitcast[NoneType]()
 
     @staticmethod
-    fn _deinit_wrapper(opaque_ptr: OpaquePointer):
+    fn _deinit_wrapper(opaque_ptr: OpaquePointer[MutAnyOrigin]):
         # Deinitialize and deallocate the storage.
         _ = OwnedPointer(
             unsafe_from_raw_pointer=opaque_ptr.bitcast[StorageType]()
@@ -881,7 +873,8 @@ struct _Global[
     @staticmethod
     fn get_or_create_indexed_ptr(idx: Int) raises -> Self.ResultType:
         var ptr = external_call[
-            "KGEN_CompilerRT_GetOrCreateGlobalIndexed", OpaquePointer
+            "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
+            OpaquePointer[MutAnyOrigin],
         ](
             idx,
             Self._init_wrapper,
@@ -899,10 +892,12 @@ struct _Global[
 @always_inline
 fn _get_global[
     name: StaticString,
-    init_fn: fn () -> OpaquePointer,
-    destroy_fn: fn (OpaquePointer) -> None,
-]() -> OpaquePointer:
-    return external_call["KGEN_CompilerRT_GetOrCreateGlobal", OpaquePointer](
+    init_fn: fn () -> OpaquePointer[MutAnyOrigin],
+    destroy_fn: fn (OpaquePointer[MutAnyOrigin]) -> None,
+]() -> OpaquePointer[MutAnyOrigin]:
+    return external_call[
+        "KGEN_CompilerRT_GetOrCreateGlobal", OpaquePointer[MutAnyOrigin]
+    ](
         name,
         init_fn,
         destroy_fn,
@@ -910,10 +905,10 @@ fn _get_global[
 
 
 @always_inline
-fn _get_global_or_null(name: StringSlice) -> OpaquePointer:
-    return external_call["KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer](
-        name.unsafe_ptr(), name.byte_length()
-    )
+fn _get_global_or_null(name: StringSlice) -> OpaquePointer[MutAnyOrigin]:
+    return external_call[
+        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutAnyOrigin]
+    ](name.unsafe_ptr(), name.byte_length())
 
 
 # ===-----------------------------------------------------------------------===#
