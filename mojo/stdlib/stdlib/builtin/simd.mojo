@@ -642,13 +642,9 @@ struct SIMD[dtype: DType, size: Int](
         ](value._mlir_value)
         var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](index)
 
-        @parameter
-        if size == 1:
-            self._mlir_value = rebind[Self._mlir_type](s)
-        else:
-            self._mlir_value = __mlir_op.`pop.simd.splat`[
-                _type = Self._mlir_type
-            ](s)
+        self._mlir_value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
+            s
+        )
 
     @always_inline
     fn __init__[T: Floatable, //](out self: Float64, value: T, /):
@@ -697,13 +693,9 @@ struct SIMD[dtype: DType, size: Int](
         ](si128_)
         var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](si128)
 
-        @parameter
-        if size == 1:
-            self._mlir_value = rebind[Self._mlir_type](s)
-        else:
-            self._mlir_value = __mlir_op.`pop.simd.splat`[
-                _type = Self._mlir_type
-            ](s)
+        self._mlir_value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
+            s
+        )
 
     @always_inline("nodebug")
     @implicit
@@ -750,13 +742,9 @@ struct SIMD[dtype: DType, size: Int](
             _type = __mlir_type.`!pop.scalar<bool>`
         ](fill._mlir_value)
 
-        @parameter
-        if size == 1:
-            self._mlir_value = rebind[Self._Mask._mlir_type](s)
-        else:
-            self._mlir_value = __mlir_op.`pop.simd.splat`[
-                _type = Self._Mask._mlir_type
-            ](s)
+        self._mlir_value = __mlir_op.`pop.simd.splat`[
+            _type = Self._Mask._mlir_type
+        ](s)
 
     @doc_private
     @always_inline("nodebug")
