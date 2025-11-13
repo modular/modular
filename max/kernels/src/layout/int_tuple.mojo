@@ -2299,7 +2299,7 @@ fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
             return init.owned_copy()
 
 
-fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
+fn shape_div[check: Bool = False](a: IntTuple, b: IntTuple) -> IntTuple:
     """Performs division operation between shape tuples.
 
     Handles four cases:
@@ -2309,6 +2309,9 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
     3. int-tuple: Returns `shape_div(a, product(b))`
     4. int-int: Enforces the divisibility condition `a % b == 0 || b % a == 0` when possible
        Returns `a / b` with rounding away from `0` (that is, `1` or `-1` when `a < b`)
+
+    Parameters:
+        check: Whether to check for incompatible shapes.
 
     Args:
         a: The dividend `IntTuple`.
@@ -2334,19 +2337,19 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
                             "Tuple sizes don't match: ", len(a), " != ", len(b)
                         )
                     )
-            return apply_zip[shape_div](a, b)
+            return apply_zip[shape_div[check]](a, b)
         else:  # tuple "int"
             var vb = Int(b)
             var r = IntTuple()
             for v in a:
-                r.append(shape_div(v, vb))
+                r.append(shape_div[check](v, vb))
                 var prod_v = IntTuple(product(v))
-                vb = Int(shape_div(vb, prod_v))
+                vb = Int(shape_div[check](vb, prod_v))
             return r
     else:
         if is_tuple(b):  # "int" tuple
             var prod_b = IntTuple(product(b))
-            return shape_div(a, prod_b)
+            return shape_div[check](a, prod_b)
         else:  # "int" "int"
             var va = Int(a)
             var vb = Int(b)
@@ -2355,7 +2358,7 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
                 return UNKNOWN_VALUE
 
             @parameter
-            if INT_TUPLE_VALIDATION:
+            if INT_TUPLE_VALIDATION or check:
                 if not (va % vb == 0 or vb % va == 0):
                     abort(String("Incompatible shape values: ", va, " ", vb))
 

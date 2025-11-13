@@ -412,6 +412,192 @@ fn stsm_helper[
 
 
 @always_inline
+fn shared_memory_epilogue_transpose[
+    stage: UInt,
+    stageN: UInt,
+    c_type: DType,
+    c_smem_layout: Layout,
+    swizzle: Swizzle,
+    compute_lambda_fn: elementwise_compute_lambda_type,
+    num_output_warps: UInt,
+    warp_dim: UInt,
+    MMA_M: Int,
+    BN: Int,
+    cta_group: Int,
+](
+    M: UInt32,
+    N: UInt32,
+    c_col: UInt,
+    c_row: UInt,
+    c_smem: LayoutTensor[c_type, c_smem_layout, MutAnyOrigin, *_, **_],
+    warp_i: UInt,
+    warp_j: UInt,
+):
+    var c_i = c_col + stage * stageN
+    var c_j = c_row
+    # this function write the shared memory tile to global memory starting at
+    # (c_i, c_j). When `warp_dim` is 2, the layout modes are:
+    # (warp_j, stageN, warp_i, UL),
+    # else, `warp_dim` is 1, the layout modes are:
+    # (stageN, warp_i, U), where U denotes upper and L denotes lower.
+    alias simd_size = simd_width_of[c_type]()
+    alias alignment = align_of[SIMD[c_type, simd_size]]()
+    alias swizzle_dim = 64
+
+    @parameter
+    if warp_dim == 2:
+        alias layout_3d = Layout.row_major(2, Int(stageN), swizzle_dim)
+        var rt_layout_3d = RLayout32Bits[layout_3d]()
+        constrained[c_smem_layout.rank() == 4, "c_smem_layout must be 4D"]()
+        alias thread_layout = Layout.row_major(1, 8, 1, 4)
+        alias result = zipped_divide(
+            upcast(c_smem_layout, simd_size), thread_layout
+        )
+        var rt_thread_layout = RLayout32Bits[thread_layout]()
+        var lane = lane_id()
+        var crd = idx2crd(
+            RuntimeTuple[IntTuple(UNKNOWN_VALUE), element_type = DType.uint32](
+                Int(lane)
+            ),
+            rt_thread_layout.shape,
+            rt_thread_layout.stride,
+        )
+        alias thread_shape = IntTuple(0, UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
+
+        @parameter
+        for iter_i in range(result.shape[1][3].value()):
+
+            @parameter
+            for iter_j in range(result.shape[1][1].value()):
+                alias rest_shape = IntTuple(
+                    UNKNOWN_VALUE, iter_j, UNKNOWN_VALUE, iter_i
+                )
+                var coord = RuntimeTuple[
+                    [thread_shape, rest_shape], element_type = DType.uint32
+                ](
+                    Int(0),
+                    Int(crd[1].get_int()),
+                    Int(0),
+                    Int(crd[3].get_int()),
+                    Int(warp_j),
+                    Int(iter_j),
+                    Int(warp_i),
+                    Int(iter_i),
+                )
+                var offset = simd_size * RLayout32Bits[result]()(coord)
+                var logical_crd = idx2crd(
+                    RuntimeTuple[
+                        IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
+                    ](Int(offset)),
+                    rt_layout_3d.shape,
+                    rt_layout_3d.stride,
+                )
+                var local_i: UInt32
+                var local_j: UInt32
+
+                var ci = logical_crd[0].get_int()
+                var cj = logical_crd[1].get_int()
+                var ck = logical_crd[2].get_int()
+
+                @parameter
+                if cta_group == 2 and MMA_M == 128:
+                    # logical shared memory -> global layout Layout B:
+                    # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-b
+                    local_i = cj + ci * BN
+                    local_j = ck
+                else:
+                    # logical shared memory -> global layout Layout A:
+                    # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-a
+                    local_i = cj
+                    local_j = ci * swizzle_dim + ck
+
+                # undo swizzle to get logical `c_smem[logical_crd]` value.
+                var ptr = (
+                    c_smem.ptr
+                    + swizzle(cj * swizzle_dim + ck)
+                    + ci * swizzle_dim * Int(stageN)
+                )
+                var global_i = local_i + c_i
+                var global_j = local_j + c_j
+                if global_i < Int(M) and global_j < Int(N):
+                    var val = ptr.load[width=simd_size, alignment=alignment]()
+                    var reg_val = compute_lambda_fn[alignment=alignment](
+                        (Int(global_i), Int(global_j)),
+                        val,
+                    )
+                    ptr.store[width=simd_size, alignment=alignment](reg_val)
+    else:
+        # Layout F: https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-f
+        constrained[c_smem_layout.rank() == 3, "c_smem_layout must be 3D"]()
+        alias thread_layout = Layout.row_major(min(16, Int(stageN)), 1, 2)
+        alias thread_bound = UInt(thread_layout.cosize())
+        var lane = lane_id()
+        if lane < thread_bound:
+            alias result = zipped_divide(
+                upcast(c_smem_layout, simd_size), thread_layout
+            )
+            var rt_thread_layout = RLayout32Bits[thread_layout]()
+            var crd = idx2crd(
+                RuntimeTuple[
+                    IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
+                ](Int(lane)),
+                rt_thread_layout.shape,
+                rt_thread_layout.stride,
+            )
+            alias thread_shape = IntTuple(UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
+            alias layout_2d = Layout.row_major(Int(stageN), swizzle_dim)
+            var rt_layout_2d = RLayout32Bits[layout_2d]()
+
+            @parameter
+            for iter_i in range(result.shape[1][2].value()):
+
+                @parameter
+                for iter_j in range(result.shape[1][0].value()):
+                    alias rest_shape = IntTuple(
+                        iter_j,
+                        UNKNOWN_VALUE,
+                        iter_i,
+                    )
+                    var coord = RuntimeTuple[
+                        [thread_shape, rest_shape], element_type = DType.uint32
+                    ](
+                        Int(crd[0].get_int()),
+                        Int(0),
+                        Int(crd[2].get_int()),
+                        Int(iter_j),
+                        Int(warp_i),
+                        Int(iter_i),
+                    )
+                    var offset = simd_size * RLayout32Bits[result]()(coord)
+                    var logical_crd = idx2crd(
+                        RuntimeTuple[
+                            IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
+                        ](Int(offset)),
+                        rt_layout_2d.shape,
+                        rt_layout_2d.stride,
+                    )
+
+                    var local_i = logical_crd[0].get_int()
+                    var local_j = logical_crd[1].get_int()
+
+                    # undo swizzle to get logical `c_smem[logical_crd]` value.
+                    var ptr = c_smem.ptr + swizzle(offset)
+                    var global_i = local_i + c_i
+                    var global_j = local_j + c_j
+                    if global_i < Int(M) and global_j < Int(N):
+                        var val = ptr.load[
+                            width=simd_size, alignment=alignment
+                        ]()
+                        var reg_val = compute_lambda_fn[alignment=alignment](
+                            (Int(global_i), Int(global_j)),
+                            val,
+                        )
+                        ptr.store[width=simd_size, alignment=alignment](reg_val)
+
+    named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+
+
+@always_inline
 fn shared_memory_epilogue[
     MMA_M: UInt,
     data_paths: UInt,
@@ -652,7 +838,8 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         ]()
         constrained[
             (
-                MMA_M != 128
+                config.AB_swapped
+                or MMA_M != 128
                 or register_based_epilogue
                 or elementwise_compute_lambda_fn is None
             )
@@ -662,21 +849,10 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
                 " == 128 and MMA_N is not a multiple of 32"
             ),
         ]()
-        constrained[
-            not config.AB_swapped
-            or register_based_epilogue
-            or elementwise_compute_lambda_fn is None,
-            "2SM swapAB with shared memory based epilogue is not supported",
-        ]()
-
     else:
         constrained[
             MMA_M == 128 or MMA_M == 64,
             "Only support MMA_M == 128 or 64 when cta_group == 1",
-        ]()
-        constrained[
-            register_based_epilogue or elementwise_compute_lambda_fn is None,
-            "only register-based epilogue is supported for cta_group == 1",
         ]()
 
     alias cluster_shape = config.cluster_shape
@@ -1234,8 +1410,6 @@ fn copy_accum_to_gmem[
             # limitation of 128B TMA swizzle. However, for easier programming,
             # we reshape the tile contiguous row_major(stageN, swizzle_width)
             # chunks.
-            alias naive_layout = c_smem_tile.layout
-
             @parameter
             if is_lower_frag_required:
                 alias tile_width = 32
@@ -1290,27 +1464,26 @@ fn copy_accum_to_gmem[
 
                     @parameter
                     if not register_based_epilogue:
-                        shared_memory_epilogue[
-                            UInt(MMA_M),
-                            data_paths,
-                            UInt(num_stages),
+                        shared_memory_epilogue_transpose[
                             UInt(stage),
                             UInt(stageN),
-                            c_smem_warp_tile_upper.dtype,
-                            UInt(c_smem_tile.shape[1]()),
-                            UInt(simd_size),
-                            c_smem_warp_tile_upper.layout,
-                            c_smem_warp_tile_lower.layout,
+                            new_smem.dtype,
+                            new_smem.layout,
                             swizzle,
                             elementwise_compute_lambda_fn.value(),
                             UInt(num_output_warps),
+                            2,
+                            MMA_M,
+                            BN,
+                            cta_group,
                         ](
                             M,
                             N,
                             UInt(c_col),
                             UInt(c_row),
-                            c_smem_warp_tile_upper,
-                            c_smem_warp_tile_lower,
+                            new_smem,
+                            UInt(warp_i),
+                            UInt(warp_j),
                         )
             else:
                 alias tile_width = 16
@@ -1347,27 +1520,26 @@ fn copy_accum_to_gmem[
 
                     @parameter
                     if not register_based_epilogue:
-                        shared_memory_epilogue[
-                            UInt(MMA_M),
-                            data_paths,
-                            UInt(num_stages),
+                        shared_memory_epilogue_transpose[
                             UInt(stage),
                             UInt(stageN),
-                            c_smem_warp_tile_upper.dtype,
-                            UInt(c_smem_tile.shape[1]()),
-                            UInt(simd_size),
-                            c_smem_warp_tile_upper.layout,
-                            c_smem_warp_tile_lower.layout,
+                            new_smem.dtype,
+                            new_smem.layout,
                             swizzle,
                             elementwise_compute_lambda_fn.value(),
                             UInt(num_output_warps),
+                            1,
+                            MMA_M,
+                            BN,
+                            cta_group,
                         ](
                             M,
                             N,
                             UInt(c_col),
                             UInt(c_row),
-                            c_smem_warp_tile_upper,
-                            c_smem_warp_tile_lower,
+                            new_smem,
+                            UInt(warp_id),
+                            UInt(0),
                         )
         else:
             alias c_smem_tile_m = 32 if cta_group == 2 else BM // Int(

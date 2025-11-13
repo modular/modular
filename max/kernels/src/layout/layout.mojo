@@ -2075,11 +2075,14 @@ fn right_inverse(layout: Layout) -> Layout:
     return Layout(shape, stride)
 
 
-fn upcast(layout: Layout, factor: Int) -> Layout:
+fn upcast[check: Bool = True](layout: Layout, factor: Int) -> Layout:
     """Fuses consecutive elements in a layout to create a coarser layout.
 
     This function is useful for converting between different data type granularities,
     such as from bytes to larger data types like bfloat16 or tf32.
+
+    Parameters:
+        check: Whether to check for incompatible factors.
 
     Args:
         layout: The layout to upcast.
@@ -2093,10 +2096,10 @@ fn upcast(layout: Layout, factor: Int) -> Layout:
             return layout
         else:
             var fac = IntTuple(factor)
-            var up_shape = shape_div(
-                layout.shape, shape_div(fac, layout.stride)
+            var up_shape = shape_div[check](
+                layout.shape, shape_div[check](fac, layout.stride)
             )
-            var up_stride = shape_div(layout.stride, fac)
+            var up_stride = shape_div[check](layout.stride, fac)
             return Layout(up_shape, up_stride)
     else:
         var res = Layout()
