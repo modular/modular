@@ -339,6 +339,9 @@ struct DType(
         elif str == "int256":
             return DType.int256
 
+        elif str == "float4_e2m1fn":
+            return DType.float4_e2m1fn
+
         elif str == "float8_e3m4":
             return DType.float8_e3m4
         elif str == "float8_e4m3fn":
@@ -414,6 +417,9 @@ struct DType(
             return writer.write("uint256")
         elif self is DType.int256:
             return writer.write("int256")
+
+        elif self is DType.float4_e2m1fn:
+            return writer.write("float4_e2m1fn")
 
         elif self is DType.float8_e3m4:
             return writer.write("float8_e3m4")
@@ -789,6 +795,9 @@ struct DType(
         if self is DType.int256:
             return __mlir_attr.si256
 
+        if self is DType.float4_e2m1fn:
+            return __mlir_attr.f4E2M1FN
+
         if self is DType.float8_e3m4:
             return __mlir_attr.f8E3M4
         if self is DType.float8_e4m3fn:
@@ -861,6 +870,9 @@ struct DType(
             return DType.uint256
         elif _type_is_eq[T, SIMD[DType.int256, size]]():
             return DType.int256
+
+        elif _type_is_eq[T, SIMD[DType.float4_e2m1fn, size]]():
+            return DType.float4_e2m1fn
 
         elif _type_is_eq[T, SIMD[DType.float8_e3m4, size]]():
             return DType.float8_e3m4
