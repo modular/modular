@@ -38,35 +38,32 @@ logger = logging.getLogger("max.pipelines")
 
 
 class PagedKVCacheManager:
-    """Paged KVCache manager with data and tensor parallelism support. This is
-    essentially N _TPPagedKVCacheManagers in a trench coat.
+    """Paged KVCache manager with data and tensor parallelism support.
 
-    Basic usage:
+    .. code-block:: python
 
-    ```python
-    # Allocate metadata for requests in batch
-    kv_manager.external_claim(ctx1.request_id, replica_idx=0)
-    kv_manager.external_claim(ctx2.request_id, replica_idx=1)
+        # Allocate metadata for requests in batch
+        kv_manager.external_claim(ctx1.request_id, replica_idx=0)
+        kv_manager.external_claim(ctx2.request_id, replica_idx=1)
 
-    # Allocate blocks for these requests
-    kv_manager.prefetch(ctx1, num_steps=10)
-    kv_manager.prefetch(ctx2, num_steps=10)
+        # Allocate blocks for these requests
+        kv_manager.maybe_reserve(ctx1, num_steps=10)
+        kv_manager.maybe_reserve(ctx2, num_steps=10)
 
-    # Get KVCache inputs to feed to graph
-    kv_cache_inputs = kv_manager.fetch([ctx1, ctx2], num_steps=10)
+        # Get KVCache inputs to feed to graph
+        kv_cache_inputs = kv_manager.fetch([ctx1, ctx2], num_steps=10)
 
-    # Run model...
-    # Update requests with newly generated tokens
-    ctx1.update(42)
-    ctx2.update(42)
+        # Run model...
+        # Update requests with newly generated tokens
+        ctx1.update(42)
+        ctx2.update(42)
 
-    # Commit newly written blocks to prefix cache
-    kv_manager.step([ctx1, ctx2])
+        # Commit newly written blocks to prefix cache
+        kv_manager.step([ctx1, ctx2])
 
-    # Release metadata and KV blocks for these requests
-    kv_manager.release(ctx1.request_id)
-    kv_manager.release(ctx2.request_id)
-    ```
+        # Release metadata and KV blocks for these requests
+        kv_manager.release(ctx1.request_id)
+        kv_manager.release(ctx2.request_id)
     """
 
     def __init__(
@@ -185,10 +182,10 @@ class PagedKVCacheManager:
                 by replica index (so contexts that are on the same replica
                 are adjacent in the batch, and the replica must be in order).
 
-        returns:
-            An int64 Tensor with shape (self.num_replicas + 1) that contains the
-            number of requests on each device:
-                [0, num_requests_on_replica_0, num_requests_on_replica_1, ...]
+        Returns:
+            Tensor: An int64 tensor with shape (self.num_replicas + 1) that
+            contains the number of requests on each device:
+            [0, num_requests_on_replica_0, num_requests_on_replica_1, ...]
         """
         splits = np.zeros(self.num_replicas + 1, dtype=np.int64)
         for ctx in context_batch:
@@ -203,9 +200,23 @@ class PagedKVCacheManager:
         data: TextGenerationContext,
         num_steps: int = 1,
     ) -> bool:
+        """Prepares blocks for a request prior to a subsequent fetch call.
+
+        Reuses blocks from prefix cache and allocates new blocks for the request.
+        If a request is reserved, it's guaranteed to not OOM in a subsequent call
+        to ``fetch``.
+
+        Args:
+            data: The text generation context for the request. The request ID
+                must already be assigned to a replica via `external_claim`.
+            num_steps: The number of steps to reserve blocks for. Default: 1.
+
+        Returns:
+            bool: True if the request was successfully reserved; false otherwise.
+        """
         assert data.request_id in self._request_to_replica_idx, (
             f"Request ID {data.request_id} must already be assigned to a "
-            "replica before prefetching"
+            "replica before reserving"
         )
         replica_idx = self._request_to_replica_idx[data.request_id]
         return self._replica_managers[replica_idx].maybe_reserve(

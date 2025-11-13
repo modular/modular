@@ -585,32 +585,34 @@ class KVTransferEngine:
         )
 
     def is_complete(self, transfer_req: TransferReqData) -> bool:
-        """Check if a given send or recv transfer is completed.
+        """Checks if a given send or recv transfer is completed.
 
-        WARNING, this method is prone to infinite loops. For the transfer to
-        progress, the remote engine MUST call wait_recv_complete. As such, the
-        following code will hang:
+        .. warning::
+           This method is prone to infinite loops. For the transfer to progress,
+           the remote engine MUST call wait_recv_complete. As such, the following
+           code will hang:
 
-        ```
-        transfer_req = engine_1.write_to(...)
-        while not engine_1.is_complete(transfer_req):
-            pass
-        while not engine_2.is_complete(transfer_req):
-            pass
-        ```
+           .. code-block:: python
 
-        Instead do:
-        ```
-        transfer_req = engine_1.write_to(...)
-        while not engine_1.is_complete(transfer_req) or not engine_2.is_complete(transfer_req):
-            pass
-        ```
+              transfer_req = engine_1.write_to(...)
+              while not engine_1.is_complete(transfer_req):
+                  pass
+              while not engine_2.is_complete(transfer_req):
+                  pass
+
+           Instead do:
+
+           .. code-block:: python
+
+              transfer_req = engine_1.write_to(...)
+              while not engine_1.is_complete(transfer_req) or not engine_2.is_complete(transfer_req):
+                  pass
 
         Args:
             transfer_req: The transfer request.
 
         Returns:
-            True if all transfers have completed, False otherwise.
+            bool: True if all transfers have completed; false otherwise.
         """
         if self._is_sender_of(transfer_req):
             return self._is_send_complete(transfer_req)

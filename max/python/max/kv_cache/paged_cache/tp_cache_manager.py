@@ -558,11 +558,16 @@ class _TPPagedKVCacheManager:
     ) -> bool:
         """Prepares blocks for a request prior to a subsequent fetch call.
 
-        This will reuse blocks from prefix cache and allocate new blocks for the
-        request. If a request is prefetched, it is guaranteed to not OOM in a
-        subsequent call to `fetch`.
+        Reuses blocks from prefix cache and allocates new blocks for the request.
+        If a request is reserved, it's guaranteed to not OOM in a subsequent call
+        to ``fetch``.
 
-        Returns `True` if the request was prefetched, `False` otherwise.
+        Args:
+            data: The text generation context for the request.
+            num_steps: The number of steps to reserve blocks for. Default: 1.
+
+        Returns:
+            bool: True if the request was successfully reserved; false otherwise.
         """
         self.block_manager.reuse_blocks_from_prefix_cache(data)
 
