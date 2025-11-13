@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up, ceildiv
-from os.atomic import Atomic
+from os.atomic import Atomic, Consistency
 from sys.info import align_of, simd_width_of, size_of
 
 import gpu.warp as warp
@@ -26,7 +26,7 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.intrinsics import Scope, load_acquire, store_release
+from gpu.intrinsics import Scope, load_acquire, store_release, threadfence
 from gpu.sync import syncwarp
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.int_tuple import (
@@ -550,6 +550,12 @@ fn dispatch_kernel[
                     )
                 )
 
+                # TODO(E2EOPT-767): Update to use `store_release`.
+                # When the target device is on the same node, shmem_signal_op is
+                # just a simple `st.global`. Use a membar to ensure that once a
+                # a remote device receives the signal, all transfers are complete.
+                threadfence[Scope.SYSTEM]()
+
                 # This signal operation is sent using the same RC as the one used
                 # for token transfer. Since RC guarantees the message is delivered
                 # in order, the remote device can confirm all the tokens for the
@@ -662,7 +668,7 @@ fn dispatch_kernel[
 
                     # Signal the completion of current token.
                     if lane_id() == 0:
-                        _ = Atomic.fetch_add(
+                        _ = Atomic.fetch_add[ordering = Consistency.RELEASE](
                             expert_finished_counter + target_expert, 1
                         )
 
@@ -797,11 +803,11 @@ fn dispatch_cb_kernel[
 
             if target_rank < UInt(n_ranks):
                 var target_count_ptr = recv_count_p.offset(expert_rank_offset)
-                var token_count = load_acquire[scope = Scope.GPU](
+                var token_count = load_acquire[scope = Scope.SYSTEM](
                     target_count_ptr
                 )
                 while token_count == UInt64.MAX_FINITE:
-                    token_count = load_acquire[scope = Scope.GPU](
+                    token_count = load_acquire[scope = Scope.SYSTEM](
                         target_count_ptr
                     )
 
