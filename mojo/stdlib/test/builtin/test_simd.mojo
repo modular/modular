@@ -26,7 +26,10 @@ from testing import (
     TestSuite,
 )
 from testing.prop import PropTest
-from testing.prop.strategy import SIMD
+
+# TODO(MOCO-522): Figure out desired behavior for importing files with only
+# extensions in them.
+from testing.prop.strategy import *
 
 from utils import StaticTuple
 from utils.numerics import isfinite, isinf, isnan, nan
