@@ -587,7 +587,11 @@ struct _DLHandle(Boolable, Copyable, Movable):
         Returns:
             A pointer to the symbol.
         """
-        debug_assert(self.handle, "Dylib handle is null")
+        debug_assert(
+            self.handle,
+            "Dylib handle is null when loading symbol: ",
+            StringSlice(unsafe_from_utf8_ptr=cstr_name),
+        )
 
         # To check for `dlsym()` results that are _validly_ NULL, we do the
         # dance described in https://man7.org/linux/man-pages/man3/dlsym.3.html:
@@ -610,7 +614,14 @@ struct _DLHandle(Boolable, Copyable, Movable):
             # Redo the `dlsym` call
             res = dlsym[result_type](self.handle, cstr_name)
 
-            debug_assert(not res, "dlsym unexpectedly returned non-NULL result")
+            debug_assert(
+                not res,
+                (
+                    "dlsym unexpectedly returned non-NULL result when loading"
+                    " symbol: "
+                ),
+                StringSlice(unsafe_from_utf8_ptr=cstr_name),
+            )
 
             # Check if an error occurred during the 2nd `dlsym` call.
             var err = dlerror()
