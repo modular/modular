@@ -27,7 +27,7 @@ from benchmark import (
     keep,
     run,
 )
-from memory import memcpy, memset_zero
+from memory import LegacyUnsafePointer as UnsafePointer, memcpy, memset_zero
 from testing import assert_equal
 
 
@@ -149,15 +149,13 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         self.count = count
 
     @always_inline
-    fn get(self, index: Int) -> StringSlice[ImmutableAnyOrigin]:
+    fn get(self, index: Int) -> StringSlice[ImmutAnyOrigin]:
         if index < 0 or index >= self.count:
             return StringSlice(unsafe_from_utf8=Span(ptr=self.keys, length=0))
         var start = 0 if index == 0 else Int(self.keys_end[index - 1])
         var length = Int(self.keys_end[index]) - start
         return StringSlice(
-            unsafe_from_utf8=Span(
-                ptr=self.keys.offset(start), length=UInt(length)
-            )
+            unsafe_from_utf8=Span(ptr=self.keys.offset(start), length=length)
         )
 
     @always_inline
@@ -165,15 +163,15 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         self.count = 0
 
     @always_inline
-    fn __getitem__(self, index: Int) -> StringSlice[ImmutableAnyOrigin]:
+    fn __getitem__(self, index: Int) -> StringSlice[ImmutAnyOrigin]:
         return self.get(index)
 
     @always_inline
     fn __len__(self) -> Int:
         return self.count
 
-    fn keys_vec(self) -> List[StringSlice[ImmutableAnyOrigin]]:
-        var keys = List[StringSlice[ImmutableAnyOrigin]](capacity=self.count)
+    fn keys_vec(self) -> List[StringSlice[ImmutAnyOrigin]]:
+        var keys = List[StringSlice[ImmutAnyOrigin]](capacity=self.count)
         for i in range(self.count):
             keys.append(self[i])
         return keys^

@@ -18,16 +18,36 @@ These are Mojo built-ins, so you don't need to import them.
 alias AnyTrivialRegType = __mlir_type.`!kgen.type`
 """Represents any register passable Mojo data type."""
 
-alias ImmutableOrigin = Origin[False]
+
+@deprecated(use=ImmutOrigin)
+alias ImmutableOrigin = ImmutOrigin
 """Immutable origin reference type."""
 
-alias MutableOrigin = Origin[True]
+alias ImmutOrigin = Origin[False]
+"""Immutable origin reference type."""
+
+
+@deprecated(use=MutOrigin)
+alias MutableOrigin = MutOrigin
 """Mutable origin reference type."""
 
-alias ImmutableAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
+alias MutOrigin = Origin[True]
+"""Mutable origin reference type."""
+
+
+@deprecated(use=ImmutAnyOrigin)
+alias ImmutableAnyOrigin = ImmutAnyOrigin
 """The immutable origin that might access any memory value."""
 
-alias MutableAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<1>`
+alias ImmutAnyOrigin = __mlir_attr.`#lit.any.origin : !lit.origin<0>`
+"""The immutable origin that might access any memory value."""
+
+
+@deprecated(use=MutAnyOrigin)
+alias MutableAnyOrigin = MutAnyOrigin
+"""The mutable origin that might access any memory value."""
+
+alias MutAnyOrigin = __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`
 """The mutable origin that might access any memory value."""
 
 # Static constants are a named subset of the global origin.
@@ -81,14 +101,20 @@ struct Origin[mut: Bool]:
     struct Container[mut: Bool, //, origin: Origin[mut]]:
         var data: Int
 
-        fn imm_borrow(self) -> Container[ImmutableOrigin.cast_from[origin]]:
+        fn imm_borrow(self) -> Container[ImmutOrigin.cast_from[origin]]:
             pass
     ```
     """
 
-    alias empty = Self.cast_from[origin_of()]
-    """An empty `origin_of()` of the given mutability. The empty origin
-    is guaranteed not to alias any existing origins."""
+    alias external = Self.cast_from[origin_of()]
+    """An external origin of the given mutability. The external origin is
+    guaranteed not to alias any existing origins.
+
+    An external origin implies there is no previously existing value that this
+    origin aliases. Therefore, the compiler cannot track the origin or the
+    value's lifecycle. The external origin is useful when interfacing with
+    memory that comes from outside the current Mojo program.
+    """
 
     # ===-------------------------------------------------------------------===#
     # Fields

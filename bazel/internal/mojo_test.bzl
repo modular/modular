@@ -2,7 +2,7 @@
 
 load("@rules_mojo//mojo:mojo_test.bzl", _upstream_mojo_test = "mojo_test")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "get_default_exec_properties", "get_default_test_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load(":mojo_binary.bzl", "mojo_binary")
 
 def mojo_test(
@@ -34,12 +34,10 @@ def mojo_test(
     _upstream_mojo_test(
         name = name,
         tags = tags,
-        data = data + [
-            "//bazel/internal:lsan-suppressions.txt",
-        ],
+        data = data + RUNTIME_SANITIZER_DATA,
         target_compatible_with = target_compatible_with,
         toolchains = toolchains + ["//bazel/internal:current_gpu_toolchain"],
-        env = GPU_TEST_ENV | get_default_test_env(exec_properties) | env,
+        env = GPU_TEST_ENV | runtime_sanitizer_env() | get_default_test_env(exec_properties) | env,
         size = size,
         exec_properties = default_exec_properties | exec_properties,
         **kwargs

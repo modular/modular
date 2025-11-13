@@ -45,8 +45,8 @@ from algorithm import vectorize
 fn _memcmp_impl_unconstrained[
     dtype: DType, //
 ](
-    s1: UnsafePointer[Scalar[dtype], mut=False, **_],
-    s2: UnsafePointer[Scalar[dtype], mut=False, **_],
+    s1: UnsafePointer[mut=False, Scalar[dtype], **_],
+    s2: UnsafePointer[mut=False, Scalar[dtype], **_],
     count: Int,
 ) -> Int:
     for i in range(count):
@@ -61,8 +61,8 @@ fn _memcmp_impl_unconstrained[
 fn _memcmp_opt_impl_unconstrained[
     dtype: DType, //
 ](
-    s1: UnsafePointer[Scalar[dtype], mut=False, **_],
-    s2: UnsafePointer[Scalar[dtype], mut=False, **_],
+    s1: UnsafePointer[mut=False, Scalar[dtype], **_],
+    s2: UnsafePointer[mut=False, Scalar[dtype], **_],
     count: Int,
 ) -> Int:
     alias simd_width = simd_width_of[dtype]()
@@ -107,8 +107,8 @@ fn _memcmp_opt_impl_unconstrained[
 fn _memcmp_impl[
     dtype: DType
 ](
-    s1: UnsafePointer[Scalar[dtype], mut=False, **_],
-    s2: UnsafePointer[Scalar[dtype], mut=False, **_],
+    s1: UnsafePointer[mut=False, Scalar[dtype], **_],
+    s2: UnsafePointer[mut=False, Scalar[dtype], **_],
     count: Int,
 ) -> Int:
     constrained[dtype.is_integral(), "the input dtype must be integral"]()
@@ -122,8 +122,8 @@ fn _memcmp_impl[
 fn memcmp[
     type: AnyType, address_space: AddressSpace
 ](
-    s1: UnsafePointer[type, address_space=address_space, mut=False, **_],
-    s2: UnsafePointer[type, address_space=address_space, mut=False, **_],
+    s1: UnsafePointer[mut=False, type, address_space=address_space],
+    s2: UnsafePointer[mut=False, type, address_space=address_space],
     count: Int,
 ) -> Int:
     """Compares two buffers. Both strings are assumed to be of the same length.
@@ -162,8 +162,8 @@ fn memcmp[
 
 @always_inline
 fn _memcpy_impl(
-    dest_data: UnsafePointer[Byte, mut=True, *_, **_],
-    src_data: UnsafePointer[Byte, mut=False, *_, **_],
+    dest_data: UnsafePointer[mut=True, Byte, **_],
+    src_data: UnsafePointer[mut=False, Byte, **_],
     n: Int,
 ):
     """Copies a memory area.
@@ -249,8 +249,8 @@ fn memcpy[
     T: AnyType,
     __disambiguate: NoneType = None,
 ](
-    dest: UnsafePointer[T, mut=True, origin=_],
-    src: UnsafePointer[T, mut=False, origin=_],
+    dest: UnsafePointer[mut=True, T],
+    src: UnsafePointer[mut=False, T],
     count: Int,
 ):
     memcpy(dest=dest, src=src, count=count)
@@ -261,8 +261,8 @@ fn memcpy[
     T: AnyType
 ](
     *,
-    dest: UnsafePointer[T, mut=True, origin=_],
-    src: UnsafePointer[T, mut=False, origin=_],
+    dest: UnsafePointer[mut=True, T],
+    src: UnsafePointer[mut=False, T],
     count: Int,
 ):
     """Copies a memory area.
@@ -294,7 +294,7 @@ fn memcpy[
 
 @always_inline("nodebug")
 fn _memset_impl(
-    ptr: UnsafePointer[Byte, mut=True, **_], value: Byte, count: Int
+    ptr: UnsafePointer[mut=True, Byte, **_], value: Byte, count: Int
 ):
     @parameter
     fn fill[width: Int](offset: Int):
@@ -305,7 +305,7 @@ fn _memset_impl(
 
 
 @always_inline
-fn memset(ptr: UnsafePointer[_, mut=True, **_], value: Byte, count: Int):
+fn memset(ptr: UnsafePointer[mut=True, _, **_], value: Byte, count: Int):
     """Fills memory with the given value.
 
     Args:
@@ -322,7 +322,7 @@ fn memset(ptr: UnsafePointer[_, mut=True, **_], value: Byte, count: Int):
 
 
 @always_inline
-fn memset_zero(ptr: UnsafePointer[_, mut=True, **_], count: Int):
+fn memset_zero(ptr: UnsafePointer[mut=True, _, **_], count: Int):
     """Fills memory with zeros.
 
     Args:
@@ -335,7 +335,7 @@ fn memset_zero(ptr: UnsafePointer[_, mut=True, **_], count: Int):
 @always_inline
 fn memset_zero[
     dtype: DType, //, *, count: Int
-](ptr: UnsafePointer[Scalar[dtype], mut=True, **_]):
+](ptr: UnsafePointer[mut=True, Scalar[dtype], **_]):
     """Fills memory with zeros.
 
     Parameters:
@@ -362,6 +362,7 @@ fn memset_zero[
 # ===-----------------------------------------------------------------------===#
 
 
+# TODO(MSTDL-2015): ASAN error when updating to use `UnsafePointer`.
 @always_inline
 fn stack_allocation[
     count: Int,
@@ -370,7 +371,9 @@ fn stack_allocation[
     alignment: Int = align_of[dtype](),
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]() -> UnsafePointer[
-    Scalar[dtype], address_space=address_space, origin = MutableOrigin.empty
+    Scalar[dtype],
+    MutOrigin.external,
+    address_space=address_space,
 ]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
@@ -390,6 +393,7 @@ fn stack_allocation[
     ]()
 
 
+# TODO(MSTDL-2015): ASAN error when updating to use `UnsafePointer`.
 @always_inline
 fn stack_allocation[
     count: Int,
@@ -398,9 +402,7 @@ fn stack_allocation[
     name: Optional[StaticString] = None,
     alignment: Int = align_of[type](),
     address_space: AddressSpace = AddressSpace.GENERIC,
-]() -> UnsafePointer[
-    type, address_space=address_space, origin = MutableOrigin.empty
-]:
+]() -> UnsafePointer[type, MutOrigin.external, address_space=address_space]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
 
@@ -428,7 +430,7 @@ fn stack_allocation[
                 count = count._mlir_value,
                 memoryType = __mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
                 _type = UnsafePointer[
-                    type, address_space=address_space
+                    type, MutOrigin.external, address_space=address_space
                 ]._mlir_type,
                 alignment = alignment._mlir_value,
             ]()
@@ -440,7 +442,7 @@ fn stack_allocation[
                 name = _get_kgen_string[global_name](),
                 count = count._mlir_value,
                 _type = UnsafePointer[
-                    type, address_space=address_space
+                    type, MutOrigin.external, address_space=address_space
                 ]._mlir_type,
                 alignment = alignment._mlir_value,
             ]()
@@ -451,19 +453,21 @@ fn stack_allocation[
         elif address_space == AddressSpace.LOCAL:
             var generic_ptr = __mlir_op.`pop.stack_allocation`[
                 count = count._mlir_value,
-                _type = UnsafePointer[type]._mlir_type,
+                _type = UnsafePointer[type, MutOrigin.external]._mlir_type,
                 alignment = alignment._mlir_value,
             ]()
             return __mlir_op.`pop.pointer.bitcast`[
                 _type = UnsafePointer[
-                    type, address_space=address_space
+                    type, MutOrigin.external, address_space=address_space
                 ]._mlir_type
             ](generic_ptr)
 
     # Perform a stack allocation of the requested size, alignment, and type.
     return __mlir_op.`pop.stack_allocation`[
         count = count._mlir_value,
-        _type = UnsafePointer[type, address_space=address_space]._mlir_type,
+        _type = UnsafePointer[
+            type, MutOrigin.external, address_space=address_space
+        ]._mlir_type,
         alignment = alignment._mlir_value,
     ]()
 
@@ -483,14 +487,20 @@ fn _malloc[
     *,
     alignment: Int = align_of[type](),
     out res: UnsafePointer[
-        type, address_space = AddressSpace.GENERIC, origin = MutableOrigin.empty
+        type,
+        MutOrigin.external,
+        address_space = AddressSpace.GENERIC,
     ],
 ):
     @parameter
     if is_gpu():
-        alias U = UnsafePointer[NoneType, address_space = AddressSpace.GENERIC]
+        alias U = UnsafePointer[
+            NoneType,
+            MutOrigin.external,
+            address_space = AddressSpace.GENERIC,
+        ]
         var ptr = external_call["malloc", U](size)
-        return ptr.bitcast[type]().unsafe_origin_cast[MutableOrigin.empty]()
+        return ptr.bitcast[type]()
     else:
         return __mlir_op.`pop.aligned_alloc`[_type = type_of(res)._mlir_type](
             alignment._mlir_value, size._mlir_value

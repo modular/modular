@@ -18,6 +18,7 @@ struct Color(ImplicitlyCopyable, Movable, Writable):
 
     var color: StaticString
 
+    alias NONE = Self("")
     alias RED = Self("\033[91m")
     alias GREEN = Self("\033[92m")
     alias YELLOW = Self("\033[93m")
@@ -32,7 +33,7 @@ struct Color(ImplicitlyCopyable, Movable, Writable):
 
 
 @fieldwise_init
-struct Text[W: Writable, origin: ImmutableOrigin, //, color: Color](Writable):
+struct Text[W: Writable, origin: ImmutOrigin, //, color: Color](Writable):
     """Colors the given writable with the given `Color`."""
 
     var writable: Pointer[W, origin]

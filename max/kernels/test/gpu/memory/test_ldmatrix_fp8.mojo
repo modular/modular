@@ -21,7 +21,7 @@ from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -141,17 +141,17 @@ fn check_ldmatrix_fp8[
     # Create LayoutTensors directly
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var c_tensor_ref = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+    var c_tensor_ref = LayoutTensor[DType.float32, layout, MutAnyOrigin](
         c_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
-    var a_tensor = LayoutTensor[input_type, layout, MutableAnyOrigin](
+    var a_tensor = LayoutTensor[input_type, layout, MutAnyOrigin](
         a_device,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
-    var b_tensor = LayoutTensor[input_type, layout, MutableAnyOrigin](
+    var b_tensor = LayoutTensor[input_type, layout, MutAnyOrigin](
         b_device,
         RuntimeLayout[layout].row_major(
             IndexList[2](N, K)

@@ -75,7 +75,10 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     kv_cache_block_buffer = List[Scalar[dtype]](
         length=block_shape.flattened_length(), fill=0
     )
-    kv_cache_block = NDBuffer(kv_cache_block_buffer.unsafe_ptr(), block_shape)
+    kv_cache_block = LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+        kv_cache_block_buffer.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    )
 
     # Initialize KV cache block buffer with golden values.
     start_positions_dyn = materialize[start_positions]()
@@ -83,7 +86,8 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     var max_cache_len_in_batch = 0
     for batch_idx in range(batch_size):
         memcpy(
-            dest=kv_cache_block._offset(
+            dest=kv_cache_block.ptr
+            + kv_cache_block._offset(
                 IndexList[6](
                     batch_idx, 0, 0, Int(start_positions_dyn[batch_idx]), 0, 0
                 )
@@ -98,16 +102,20 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     # Create the actual KV cache type.
     kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block,
-        cache_lengths=NDBuffer[DType.uint32, 1](
+        cache_lengths=LayoutTensor[
+            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
             start_positions_dyn.unsafe_ptr(),
-            DimList(
-                len(start_positions_dyn),
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                IndexList[1](len(start_positions_dyn))
             ),
         ),
-        lookup_table=NDBuffer[DType.uint32, 1](
+        lookup_table=LayoutTensor[
+            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
             lookup_table.unsafe_ptr(),
-            DimList(
-                len(lookup_table),
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                IndexList[1](len(lookup_table)),
             ),
         ),
         max_seq_length=seq_len,
@@ -175,7 +183,8 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     # Compare output and expected key cache buffers.
     for batch_idx in range(batch_size):
         assert_almost_equal(
-            kv_cache_block._offset(
+            kv_cache_block.ptr
+            + kv_cache_block._offset(
                 IndexList[6](
                     batch_idx, 0, 0, Int(start_positions_dyn[batch_idx]), 0, 0
                 )

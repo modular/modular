@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 alias simd_width = 8
@@ -28,7 +29,7 @@ fn strsv[
     var L_ptr = UnsafePointer[Float32](L.data)
     var n: Int = size
     var x_solved = NDBuffer[
-        DType.float32, 1, MutableAnyOrigin, simd_width * simd_width
+        DType.float32, 1, MutAnyOrigin, simd_width * simd_width
     ].stack_allocation[alignment=64]()
 
     while True:

@@ -8,9 +8,9 @@ modular_py_binary(
     ],
     imports = ["."],
     deps = [
-        "//SDK/lib/API/python/max/entrypoints",
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
-        "//SDK/lib/API/python/max/nn",
+        "//max/python/max/entrypoints",
+        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/nn",
     ],
 )
 

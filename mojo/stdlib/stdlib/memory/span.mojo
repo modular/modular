@@ -21,12 +21,14 @@ from memory import Span
 """
 
 from builtin._location import __call_location
+from bit._mask import splat
 from collections._index_normalization import normalize_index
 from sys import align_of
 from sys.info import simd_width_of
 
 from algorithm import vectorize
-from memory import Pointer
+from builtin.device_passable import DevicePassable
+from compile import get_type_name
 
 
 @fieldwise_init
@@ -82,7 +84,7 @@ struct Span[
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-](Boolable, Defaultable, ImplicitlyCopyable, Movable, Sized):
+](Boolable, Defaultable, DevicePassable, ImplicitlyCopyable, Movable, Sized):
     """A non-owning view of contiguous data.
 
     Parameters:
@@ -93,20 +95,53 @@ struct Span[
     """
 
     # Aliases
-    alias Mutable = Span[T, MutableOrigin.cast_from[origin]]
+    alias Mutable = Span[T, MutOrigin.cast_from[origin]]
     """The mutable version of the `Span`."""
-    alias Immutable = Span[T, ImmutableOrigin.cast_from[origin]]
+    alias Immutable = Span[T, ImmutOrigin.cast_from[origin]]
     """The immutable version of the `Span`."""
     alias UnsafePointerType = UnsafePointer[
         T,
-        mut=mut,
-        origin=origin,
+        origin,
         address_space=address_space,
     ]
     """The UnsafePointer type that corresponds to this `Span`."""
     # Fields
     var _data: Self.UnsafePointerType
     var _len: Int
+
+    alias device_type: AnyType = Self
+
+    fn _to_device_type(self, target: LegacyOpaquePointer):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return String(
+            "Span[",
+            get_type_name[T](),
+            ", address_space=",
+            address_space,
+            "]",
+        )
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing
+        arguments to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return Self.get_type_name()
 
     # ===------------------------------------------------------------------===#
     # Life cycle methods
@@ -123,7 +158,7 @@ struct Span[
     @always_inline("nodebug")
     fn __init__(
         other: Span[T, _],
-        out self: Span[T, ImmutableOrigin.cast_from[other.origin]],
+        out self: Span[T, ImmutOrigin.cast_from[other.origin]],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -427,7 +462,7 @@ struct Span[
     @always_inline("builtin")
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[T, mut=mut, origin=origin, address_space=address_space,]:
+    ) -> UnsafePointer[T, origin, address_space=address_space]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:
@@ -448,7 +483,7 @@ struct Span[
 
     @always_inline
     fn copy_from[
-        _origin: MutableOrigin, //
+        _origin: MutOrigin, //
     ](self: Span[T, _origin], other: Span[T, _],):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
@@ -525,7 +560,7 @@ struct Span[
         """
         return not self == rhs
 
-    fn fill[_origin: MutableOrigin, //](self: Span[T, _origin], value: T):
+    fn fill[_origin: MutOrigin, //](self: Span[T, _origin], value: T):
         """
         Fill the memory that a span references with a given value.
 
@@ -616,9 +651,7 @@ struct Span[
             length = self._len,
         }
 
-    fn reverse[
-        dtype: DType, O: MutableOrigin, //
-    ](self: Span[Scalar[dtype], O]):
+    fn reverse[dtype: DType, O: MutOrigin, //](self: Span[Scalar[dtype], O]):
         """Reverse the elements of the `Span` inplace.
 
         Parameters:
@@ -655,7 +688,7 @@ struct Span[
 
     fn apply[
         dtype: DType,
-        O: MutableOrigin, //,
+        O: MutOrigin, //,
         func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
     ](self: Span[Scalar[dtype], O]):
         """Apply the function to the `Span` inplace.
@@ -687,7 +720,7 @@ struct Span[
 
     fn apply[
         dtype: DType,
-        O: MutableOrigin, //,
+        O: MutOrigin, //,
         func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
         *,
         cond: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
@@ -783,3 +816,85 @@ struct Span[
             "subspan out of bounds.",
         )
         return Self(ptr=self._data + offset, length=length)
+
+    fn _binary_search_index[
+        dtype: DType, //,
+    ](self: Span[Scalar[dtype], **_], needle: Scalar[dtype]) -> Optional[UInt]:
+        """Finds the index of `needle` with binary search.
+        Args:
+            needle: The value to binary search for.
+        Returns:
+            Returns None if `needle` is not present.
+        Notes:
+            This function will return an unspecified index if `self` is not
+            sorted in ascending order.
+        """
+
+        var cursor = UInt(0)
+        var length = UInt(len(self))
+        var value = needle - Scalar[dtype](1)  # just to make it different
+        while length > 0:
+            var half = length >> UInt(Int(length > 1))
+            length -= half
+            value = self.unsafe_get(cursor + half - 1)
+            cursor += UInt(splat(value < needle)) & half
+
+        return Optional(cursor) if value == needle else None
+
+    fn binary_search_by[
+        func: fn (T) -> Int,
+    ](self: Span[T, origin]) -> Optional[Int]:
+        """Finds an element using binary search with a custom comparison function.
+
+        The comparison function should return:
+        - A negative value if the element is less than the target
+        - Zero if the element matches the target
+        - A positive value if the element is greater than the target
+
+        Parameters:
+            func: A function that takes an element and returns an Int representing
+                  the comparison result.
+
+        Returns:
+            Returns the index of the matching element if found, None otherwise.
+
+        Notes:
+            This function assumes that `self` is sorted according to the ordering
+            defined by `func`. If not sorted, the result is unspecified.
+
+        Example:
+            ```mojo
+            var data: List[String] = ["a", "bb", "ccc"]
+            var span = Span(data)
+
+            # Search for "bb"
+            fn cmp(elem: String) -> Int:
+                if elem < "bb":
+                    return -1
+                elif elem > "bb":
+                    return 1
+                else:
+                    return 0
+
+            var index = span.binary_search_by[cmp]()
+            if index:
+                print("Found at index: ", index.value())
+            else:
+                print("Not found")
+            ```
+        """
+
+        var cursor = 0
+        var length = len(self)
+        var cmp_result = 1  # Initialize to non-zero value
+
+        while length > 0:
+            var half = length >> Int(length > 1)
+            length -= half
+            var mid_idx = cursor + half - 1
+            cmp_result = func(self.unsafe_get(mid_idx))
+
+            # If cmp_result < 0, search in the right half
+            cursor += splat(cmp_result < 0) & half
+
+        return Optional(cursor) if cmp_result == 0 else None

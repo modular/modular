@@ -62,8 +62,10 @@ def main():
         bench.bench_with_input[S, bench_parsing_all_floats_in_file[S.T.origin]](
             BenchId("atof", filename),
             items_to_parse,
-            ThroughputMeasure(BenchMetric.elements, len(items_to_parse)),
-            ThroughputMeasure(BenchMetric.bytes, nb_of_bytes),
+            [
+                ThroughputMeasure(BenchMetric.elements, len(items_to_parse)),
+                ThroughputMeasure(BenchMetric.bytes, nb_of_bytes),
+            ],
         )
 
     print(bench)

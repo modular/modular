@@ -16,10 +16,9 @@ from sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
-from gpu import barrier
-from gpu import warp_id as get_warp_id
+from gpu import barrier, warp_id, lane_id
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
@@ -54,13 +53,13 @@ fn _load_a_reg_tile[
     out ret: LayoutTensor[
         dtype,
         _compute_reg_tile_layout(layout, 16 // size_of[dtype]()),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ],
     smem_tile: LayoutTensor[
         dtype,
         layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         *_, **_,
     ],
@@ -68,8 +67,6 @@ fn _load_a_reg_tile[
     constrained[ret.layout[0].shape[0].value() > 0]()
     ret = type_of(ret).stack_allocation()
     var tid = thread_idx.x
-    var lane = tid % 32
-    var wgid = tid // 32
     alias WGMMA_M = wgmma_shape[0]
     alias WGMMA_K = wgmma_shape[2]
 
@@ -91,9 +88,9 @@ fn _load_a_reg_tile[
             alias r_id = m_mma + k_mma * num_wgmma_m
             var smem_wg = (
                 smem_tile.tile[WGMMA_M, WGMMA_K](m_mma, k_mma)
-                .tile[WGMMA_M // 4, WGMMA_K](wgid, 0)
+                .tile[WGMMA_M // 4, WGMMA_K](Int(warp_id()), 0)
                 .vectorize[1, simd_size]()
-                .distribute[Layout.row_major(8, 4)](lane)
+                .distribute[Layout.row_major(8, 4)](lane_id())
             )
             vret.tile[1, 4](r_id, 0).copy_from(smem_wg)
 
@@ -118,7 +115,7 @@ fn tma_wgmma_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
     alias BM = block_tile_shape[0]
@@ -139,7 +136,7 @@ fn tma_wgmma_kernel[
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -147,7 +144,7 @@ fn tma_wgmma_kernel[
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -167,7 +164,7 @@ fn tma_wgmma_kernel[
     var c_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -229,8 +226,7 @@ fn tma_wgmma_kernel[
 
         barrier()
 
-    c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
-    warp_id = get_warp_id()
+    c_gmem_tile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
     @parameter
     for m_mma in range(num_m_mmas):
@@ -242,7 +238,7 @@ fn tma_wgmma_kernel[
             # (m_mma, n_mma) is coordinates for a warp group's tile.
             # A warp group is 4x1 warps.
             warp_tile = c_gmem_tile.tile[wgmma_shape[0] // 4, wgmma_shape[1]](
-                m_mma * 4 + warp_id, n_mma
+                m_mma * 4 + Int(warp_id()), n_mma
             )
 
             # Tile at (mma_id, 0) is a long vector containing all fragments
@@ -344,7 +340,6 @@ def test_tma_wgmma[
     ]
 
     ctx.enqueue_function_checked[kernel, kernel](
-        # ctx.enqueue_function[kernel, dump_llvm=Path("invalid.ll")](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),
@@ -355,11 +350,11 @@ def test_tma_wgmma[
 
     vendor_blas.matmul(
         ctx,
-        rebind[NDBuffer[c_type, 2, MutableAnyOrigin]](c_ref.device_buffer()),
-        rebind[NDBuffer[a_type, 2, MutableAnyOrigin]](
+        rebind[NDBuffer[c_type, 2, MutAnyOrigin]](c_ref.device_buffer()),
+        rebind[NDBuffer[a_type, 2, MutAnyOrigin]](
             a.device_buffer[update=False]()
         ),
-        rebind[NDBuffer[b_type, 2, MutableAnyOrigin]](
+        rebind[NDBuffer[b_type, 2, MutAnyOrigin]](
             b.device_buffer[update=False]()
         ),
         c_row_major=True,

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OwnedKwargsDict
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 
 from python import Python, PythonObject

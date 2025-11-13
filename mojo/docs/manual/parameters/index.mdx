@@ -181,12 +181,12 @@ like this:
 
 ```mojo
 struct GenericArray[ElementType: Copyable & Movable]:
-    var data: UnsafePointer[ElementType]
+    var data: UnsafePointer[ElementType, MutOrigin.external]
     var size: Int
 
     fn __init__(out self, var *elements: ElementType):
         self.size = len(elements)
-        self.data = UnsafePointer[ElementType].alloc(self.size)
+        self.data = alloc[ElementType](self.size)
         for i in range(self.size):
             (self.data + i).init_pointee_move(elements[i].copy())
 
@@ -724,7 +724,7 @@ define a `Span` that requires a mutable origin.
 def mutate_span(span: Span[mut=True, Byte]):
     for i in range(0, len(span), 2):
         if i + 1 < len(span):
-            span.swap_elements(UInt(i), UInt(i + 1))
+            span.swap_elements(i, i + 1)
 ```
 
 If the compiler can't infer the value of an infer-only parameter, and it's not

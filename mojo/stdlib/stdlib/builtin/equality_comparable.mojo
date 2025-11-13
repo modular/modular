@@ -28,6 +28,7 @@ trait EqualityComparable:
         """
         ...
 
+    @always_inline
     fn __ne__(self, other: Self) -> Bool:
         """Define whether two instances of the object are not equal to each
         other.

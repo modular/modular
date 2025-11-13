@@ -25,7 +25,7 @@ from gpu.tcgen05 import (
     tcgen05_store_wait,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_true
 
 
@@ -76,7 +76,7 @@ fn test_tcgen05_dealloc() raises:
     assert_true("tcgen05.dealloc.cta_group::1.sync.aligned.b32" in asm)
 
 
-fn ld_test_fn():
+fn ld_test_fn[repeat: Int]():
     var ptr_tmem_addr = UnsafePointer[
         UInt32, address_space = AddressSpace.SHARED
     ]()
@@ -86,22 +86,29 @@ fn ld_test_fn():
     _ = tcgen05_ld[
         datapaths=32,
         bits=32,
-        repeat=64,
+        repeat=repeat,
         dtype = DType.float32,
         pack=False,
-        width=64,
+        width=repeat,
     ](tmem_addr)
     tcgen05_load_wait()
     tcgen05_dealloc[1](tmem_addr, num_cols)
 
 
 fn test_tcgen05_ld() raises:
-    var asm = _compile_code[
-        ld_test_fn,
+    var asm_64 = _compile_code[
+        ld_test_fn[64],
         target = get_gpu_target["sm_100a"](),
     ]().asm
-    assert_true("tcgen05.ld.sync.aligned.32x32b.x64.b32" in asm)
-    assert_true("tcgen05.wait::ld.sync.aligned;" in asm)
+    assert_true("tcgen05.ld.sync.aligned.32x32b.x64.b32" in asm_64)
+    assert_true("tcgen05.wait::ld.sync.aligned;" in asm_64)
+
+    var asm_1 = _compile_code[
+        ld_test_fn[1],
+        target = get_gpu_target["sm_100a"](),
+    ]().asm
+    assert_true("tcgen05.ld.sync.aligned.32x32b.x1.b32" in asm_1)
+    assert_true("tcgen05.wait::ld.sync.aligned;" in asm_1)
 
 
 fn st_test_fn():
@@ -142,7 +149,7 @@ fn cp_test_fn():
     var smem_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(32, 32)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()

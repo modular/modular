@@ -12,6 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from os.atomic import Atomic
 
 import gpu.warp as warp

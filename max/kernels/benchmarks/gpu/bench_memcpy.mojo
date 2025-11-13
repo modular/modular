@@ -19,6 +19,7 @@ from algorithm.functional import parallelize_over_rows
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu.host import DeviceContext, HostBuffer
 from internal_utils import arg_parse
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal, assert_true
 
 from utils import IndexList
@@ -178,7 +179,7 @@ fn bench_memcpy(
             String("memcpy_", config),
             input_id="length=" + _human_memory(length_in_bytes),
         ),
-        ThroughputMeasure(BenchMetric.bytes, transferred_size_in_bytes),
+        [ThroughputMeasure(BenchMetric.bytes, transferred_size_in_bytes)],
     )
     context.synchronize()
 
@@ -224,10 +225,10 @@ fn bench_p2p(
         b.iter_custom[kernel_launch](ctx1)
 
     # Create list of throughput measures
-    var measures = List[ThroughputMeasure](
+    var measures = [
         # Raw bandwidth (considering only one transfer)
         ThroughputMeasure(BenchMetric.bytes, length_in_bytes),
-    )
+    ]
 
     b.bench_function[bench_func](
         BenchId(

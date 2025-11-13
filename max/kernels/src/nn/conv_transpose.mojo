@@ -13,6 +13,10 @@
 
 from collections import OptionalReg
 from math import align_down, ceildiv
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from sys import align_of, simd_width_of
 
 from _cudnn.cnn_infer import (
@@ -388,7 +392,7 @@ struct ConvTransposedPacked[
     output_alignment: Int, //,
     input_origin: Origin[input_mut],
     filter_origin: Origin[filter_mut],
-    output_origin: MutableOrigin,
+    output_origin: MutOrigin,
     input_layout: Layout,
     filter_layout: Layout,
     output_layout: Layout,

@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys import size_of
 from bit import rotate_bits_left
-from memory import bitcast, Span
+from memory import LegacyUnsafePointer as UnsafePointer, Span, bitcast
 
 from .hasher import Hasher
 
@@ -162,7 +163,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         # values smaller than 8 bytes contribute only once
         # values which are multiple of 8 bytes contribute multiple times
         # e.g. int128 is 16 bytes long and evaluates to 2 rounds
-        alias rounds = max(1, new_data.dtype.size_of() // 8)
+        alias rounds = max(1, size_of[new_data.dtype]() // 8)
 
         @parameter
         if rounds == 1:
@@ -182,7 +183,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
             @parameter
             for i in range(new_data.size):
                 var v = new_data[i]
-                constrained[v.dtype.size_of() > 8 and v.dtype.is_integral()]()
+                constrained[size_of[v.dtype]() > 8 and v.dtype.is_integral()]()
 
                 @parameter
                 for r in range(0, rounds, 2):

@@ -27,7 +27,7 @@ trait BaseT:
 @register_passable("trivial")
 struct ImplT(BaseT, ImplicitlyCopyable, Movable):
     alias rank = 1
-    var values: NDBuffer[DType.float32, Self.rank, MutableAnyOrigin]
+    var values: NDBuffer[DType.float32, Self.rank, MutAnyOrigin]
 
     def __init__(out self, buf: NDBuffer[DType.float32, Self.rank]):
         self.values = buf
@@ -40,7 +40,7 @@ def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int):
     @parameter
     @__copy_capture(thing)
     fn kernel_fn():
-        var idx = thread_idx.x
+        var idx = Int(thread_idx.x)
         print(Float32(thing.get_val(idx)) * 2)
 
     alias kernel = kernel_fn

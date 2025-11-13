@@ -31,7 +31,7 @@ from bit import log2_floor
 from builtin.device_passable import DevicePassable
 from builtin.dtype import _unsigned_integral_type_of
 from gpu.host import DeviceBuffer, HostBuffer, DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_dim, block_idx, lane_id, thread_idx
 from gpu.intrinsics import AMDBufferResource
 from gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
@@ -39,7 +39,11 @@ from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
-from memory import stack_allocation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    stack_allocation,
+)
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
@@ -880,24 +884,24 @@ struct LayoutTensor[
         alignment=alignment,
     ]
 
-    alias MutableAnyType = Self.OriginCastType[True, MutableAnyOrigin]
+    alias MutableAnyType = Self.OriginCastType[True, MutAnyOrigin]
     alias _AsMut = Self.OriginCastType[True, _]
 
     @always_inline("nodebug")
     fn as_any_origin(
         self: Self._AsMut,
-    ) -> type_of(self).OriginCastType[True, MutableAnyOrigin]:
-        """Casts the origin of the mutable `LayoutTensor` to `MutableAnyOrigin`.
+    ) -> type_of(self).OriginCastType[True, MutAnyOrigin]:
+        """Casts the origin of the mutable `LayoutTensor` to `MutAnyOrigin`.
 
         Returns:
-            A pointer with the origin set to `MutableAnyOrigin`.
+            A pointer with the origin set to `MutAnyOrigin`.
 
         This requires the tensor to already be mutable as casting mutability
         is inherently very unsafe.
 
         It is usually preferred to maintain concrete origin values instead of
-        using `MutableAnyOrigin`. However, if it is needed, keep in mind that
-        `MutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        using `MutAnyOrigin`. However, if it is needed, keep in mind that
+        `MutAnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the tensor.
         """
         return {
@@ -909,15 +913,15 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn as_any_origin(
         self: LayoutTensor[mut=False, *_, **_],
-    ) -> type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
-        """Casts the origin of the immutable `LayoutTensor` to `ImmutableAnyOrigin`.
+    ) -> type_of(self).OriginCastType[False, ImmutAnyOrigin]:
+        """Casts the origin of the immutable `LayoutTensor` to `ImmutAnyOrigin`.
 
         Returns:
-            A tensor with the origin set to `ImmutableAnyOrigin`.
+            A tensor with the origin set to `ImmutAnyOrigin`.
 
         It is usually preferred to maintain concrete origin values instead of
-        using `ImmutableAnyOrigin`. However, if it is needed, keep in mind that
-        `ImmutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        using `ImmutAnyOrigin`. However, if it is needed, keep in mind that
+        `ImmutAnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the tensor.
         """
         return {
@@ -929,7 +933,7 @@ struct LayoutTensor[
     @doc_private
     fn as_any_origin(
         self: LayoutTensor[*_, **_],
-        out result: type_of(self).OriginCastType[False, ImmutableAnyOrigin],
+        out result: type_of(self).OriginCastType[False, ImmutAnyOrigin],
     ):
         constrained[
             False,
@@ -977,7 +981,7 @@ struct LayoutTensor[
     @always_inline
     fn get_immutable(
         self,
-    ) -> Self.OriginCastType[False, ImmutableOrigin.cast_from[origin]]:
+    ) -> Self.OriginCastType[False, ImmutOrigin.cast_from[origin]]:
         """
         Return an immutable version of this tensor.
 
@@ -1202,7 +1206,7 @@ struct LayoutTensor[
     @always_inline
     fn __add__(
         self, other: Scalar[dtype]
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Add a scalar value to each element of the tensor.
 
         Performs an elementwise addition operation, adding the scalar value to
@@ -1261,7 +1265,7 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout, **_,
         ],
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Add another tensor to this tensor elementwise.
 
         Performs an elementwise addition between this tensor and another tensor.
@@ -1342,7 +1346,7 @@ struct LayoutTensor[
     @always_inline
     fn __mul__(
         self, other: Scalar[dtype]
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Multiply each element of the tensor by a scalar value.
 
         Performs an elementwise multiplication operation, multiplying each
@@ -1380,7 +1384,7 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout, **_,
         ],
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Multiply this tensor with another tensor elementwise.
 
         Performs an elementwise multiplication (Hadamard product) between this tensor
@@ -1489,7 +1493,7 @@ struct LayoutTensor[
     @always_inline
     fn __sub__(
         self, other: Scalar[dtype]
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Subtract a scalar value from each element of the tensor.
 
         Performs an elementwise subtraction operation, subtracting the scalar
@@ -1527,7 +1531,7 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout, **_,
         ],
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Subtract another tensor from this tensor elementwise.
 
         Performs an elementwise subtraction between this tensor and another
@@ -1629,7 +1633,7 @@ struct LayoutTensor[
     @always_inline
     fn __truediv__(
         self, other: Scalar[dtype]
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Divide each element of the tensor by a scalar value.
 
         Performs an elementwise division operation, dividing each element in the
@@ -1673,7 +1677,7 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout, **_,
         ],
-    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
+    ) -> Self.OriginCastType[True, MutAnyOrigin]:
         """Divide this tensor by another tensor elementwise.
 
         Performs an elementwise division between this tensor and another tensor.
@@ -2162,7 +2166,7 @@ struct LayoutTensor[
     fn store[
         width: Int
     ](self: Self._AsMut, coords: IndexList[*_, **_], val: SIMD[dtype, width],):
-        """Store a SIMD vector to the tensor at the specified 2D coordinates.
+        """Store a SIMD vector to the tensor at the specified ND coordinates.
 
         Performs a vectorized store operation to the tensor's memory, writing
         'width' consecutive elements starting at position (m, n). This method
@@ -2334,14 +2338,14 @@ struct LayoutTensor[
             UnsafePointer[
                 Scalar[dtype],
                 address_space=address_space,
-                origin = MutableOrigin.empty,
+                origin = MutOrigin.external,
             ]()
         )
 
     alias StackTensorType = LayoutTensor[
         dtype,
         layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space=address_space,
         element_layout=element_layout,
         layout_int_type=layout_int_type,
@@ -2932,7 +2936,7 @@ struct LayoutTensor[
 
             @parameter
             for i in range(num_tiles):
-                alias stride = Int(_tiled_layout[1].stride[i])
+                alias stride = product(_tiled_layout[1].stride[i])
                 offset += tile_coords[i] * stride
 
             var runtime_layout = tile_type.RuntimeLayoutType(
@@ -3656,12 +3660,10 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(fragments_layout_stride)):
-                alias fragments_stride_i = UInt(
-                    mlir_value=Int(fragments_layout_stride[i])._mlir_value
-                )
+                alias fragments_stride_i = UInt(Int(fragments_layout_stride[i]))
                 alias shape_i = UInt(Int(thread_projected_shape[i]))
                 alias stride_i = UInt(Int(thread_projected_stride[i]))
-                var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
+                var thread_coord_i = (thread_id // stride_i) % shape_i
                 offset += thread_coord_i * fragments_stride_i
 
             # Swizzling applies to the index of elements rather than scalars because
@@ -3720,15 +3722,13 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(flatten(Self.layout.stride))):
-                var fragments_stride_i = self.runtime_layout.stride.value[i]
-                alias shape_i = UInt(
-                    mlir_value=Int(thread_projected_shape[i])._mlir_value
+                var fragments_stride_i = UInt(
+                    self.runtime_layout.stride.value[i]
                 )
-                alias stride_i = UInt(
-                    mlir_value=Int(thread_projected_stride[i])._mlir_value
-                )
-                var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
-                offset += thread_coord_i * UInt(fragments_stride_i)
+                alias shape_i = UInt(Int(thread_projected_shape[i]))
+                alias stride_i = UInt(Int(thread_projected_stride[i]))
+                var thread_coord_i = (thread_id // stride_i) % shape_i
+                offset += thread_coord_i * fragments_stride_i
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -3831,12 +3831,10 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(fragments_layout_stride)):
-                alias fragments_stride_i = UInt(
-                    mlir_value=Int(fragments_layout_stride[i])._mlir_value
-                )
+                alias fragments_stride_i = UInt(Int(fragments_layout_stride[i]))
                 alias shape_i = UInt(Int(thread_projected_shape[i]))
                 alias stride_i = UInt(Int(thread_projected_stride[i]))
-                var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
+                var thread_coord_i = (thread_id // stride_i) % shape_i
                 offset_coords[i] = Int(thread_coord_i)
                 offset += thread_coord_i * fragments_stride_i
 
@@ -3904,16 +3902,14 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(flatten(Self.layout.stride))):
-                var fragments_stride_i = self.runtime_layout.stride.value[i]
-                alias shape_i = UInt(
-                    mlir_value=Int(thread_projected_shape[i])._mlir_value
+                var fragments_stride_i = UInt(
+                    self.runtime_layout.stride.value[i]
                 )
-                alias stride_i = UInt(
-                    mlir_value=Int(thread_projected_stride[i])._mlir_value
-                )
-                var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
+                alias shape_i = UInt(Int(thread_projected_shape[i]))
+                alias stride_i = UInt(Int(thread_projected_stride[i]))
+                var thread_coord_i = (thread_id // stride_i) % shape_i
                 offset_coords[i] = Int(thread_coord_i)
-                offset += thread_coord_i * UInt(fragments_stride_i)
+                offset += thread_coord_i * fragments_stride_i
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -3952,7 +3948,7 @@ struct LayoutTensor[
                 )
 
     alias ShapeVectorizedType[
-        origin: ImmutableOrigin,
+        origin: ImmutOrigin,
         vector_shape: IntTuple,
         linear_vectorize: Bool,
     ] = LayoutTensor[
@@ -3999,7 +3995,7 @@ struct LayoutTensor[
 
     @always_inline
     fn _vectorize_2[
-        _origin: ImmutableOrigin,  # FIXME: MOCO-1912
+        _origin: ImmutOrigin,  # FIXME: MOCO-1912
         vector_shape: IntTuple,
         check_rank: Bool = True,
         linear_vectorize: Bool = vector_shape.is_value(),
@@ -5043,7 +5039,7 @@ struct LayoutTensor[
         num_blocks = in_size // block_size
         alias input_layout = Layout.row_major(in_size, in_size)
 
-        fn kernel(tensor: LayoutTensor[dtype, input_layout, MutableAnyOrigin]):
+        fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
             # extract a tile from the input tensor.
             var global_tile = tensor.tile[block_size, block_size](block_idx.x, block_idx.y)
 
@@ -5052,7 +5048,7 @@ struct LayoutTensor[
             var shared_tile = LayoutTensor[
                 dtype,
                 tile_layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 address_space = AddressSpace.SHARED,
             ].stack_allocation()
 
@@ -5436,7 +5432,7 @@ fn stack_allocation_like[
 ) -> LayoutTensor[
     dtype,
     layout,
-    MutableAnyOrigin,
+    MutAnyOrigin,
     address_space=target_address_space,
     masked = in_tensor.masked,
 ]:
@@ -5471,7 +5467,7 @@ fn stack_allocation_like[
     var global_tensor = LayoutTensor[
         DType.float32,
         Layout([10, 10]),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space=AddressSpace.GLOBAL
     ].stack_allocation()
 
@@ -5500,7 +5496,7 @@ fn stack_allocation_like[
     return LayoutTensor[
         dtype,
         layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space=target_address_space,
         masked = in_tensor.masked,
     ].stack_allocation()
@@ -6141,7 +6137,7 @@ fn cp_async_mn_major[
     # of the warp group. Thus, we use the minimal desc layout.
     alias core_matrix_num_rows = 8
     alias swizzle_bytes = 128  # assume 128B swizzle
-    alias swizzle_granularity = swizzle_bytes // dtype.size_of()
+    alias swizzle_granularity = swizzle_bytes // size_of[dtype]()
     alias desc_layout = Layout.row_major(
         core_matrix_num_rows, swizzle_granularity
     )
@@ -7627,13 +7623,13 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
         ...
         var src_reg = LayoutTensor[DType.float32,
             Layout.row_major(16, 8),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation().fill(1)
 
         var dst_reg = LayoutTensor[DType.bfloat16,
             Layout.row_major(16, 8),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
 
@@ -8061,7 +8057,7 @@ struct LayoutTensorIter[
             self.idx += rhs
 
         @parameter
-        if masked:
+        if masked and axis:
             self.runtime_layout = self._clip_shape()
 
         @parameter

@@ -43,45 +43,60 @@ alias GOOD_SEQUENCES = [
 ]
 
 
-alias BAD_SEQUENCES = [
-    List[Byte](0xC3, 0x28),  # continuation bytes does not start with 10xx
-    List[Byte](0xA0, 0xA1),  # first byte is continuation byte
-    List[Byte](0xE2, 0x28, 0xA1),  # second byte should be continuation byte
-    List[Byte](0xE2, 0x82, 0x28),  # third byte should be continuation byte
-    List[Byte](
-        0xF0, 0x28, 0x8C, 0xBC
-    ),  # second byte should be continuation byte
-    List[Byte](
-        0xF0, 0x90, 0x28, 0xBC
-    ),  # third byte should be continuation byte
-    List[Byte](
-        0xF0, 0x28, 0x8C, 0x28
-    ),  # fourth byte should be continuation byte
-    List[Byte](0xC0, 0x9F),  # overlong, could be just one byte
-    List[Byte](0xF5, 0xFF, 0xFF, 0xFF),  # missing continuation bytes
-    List[Byte](0xED, 0xA0, 0x81),  # UTF-16 surrogate pair
-    List[Byte](0xF8, 0x90, 0x80, 0x80, 0x80),  # 5 bytes is too long
+alias BAD_SEQUENCES: List[List[Byte]] = [
+    [0xC3, 0x28],  # continuation bytes does not start with 10xx
+    [0xA0, 0xA1],  # first byte is continuation byte
+    [0xE2, 0x28, 0xA1],  # second byte should be continuation byte
+    [0xE2, 0x82, 0x28],  # third byte should be continuation byte
+    [0xF0, 0x28, 0x8C, 0xBC],  # second byte should be continuation byte
+    [0xF0, 0x90, 0x28, 0xBC],  # third byte should be continuation byte
+    [0xF0, 0x28, 0x8C, 0x28],  # fourth byte should be continuation byte
+    [0xC0, 0x9F],  # overlong, could be just one byte
+    [0xF5, 0xFF, 0xFF, 0xFF],  # missing continuation bytes
+    [0xED, 0xA0, 0x81],  # UTF-16 surrogate pair
+    [0xF8, 0x90, 0x80, 0x80, 0x80],  # 5 bytes is too long
     List("123456789012345".as_bytes())
-    + List[Byte](0xED),  # Continuation bytes are missing
+    + [0xED],  # Continuation bytes are missing
     List("123456789012345".as_bytes())
-    + List[Byte](0xF1),  # Continuation bytes are missing
+    + [0xF1],  # Continuation bytes are missing
     List("123456789012345".as_bytes())
-    + List[Byte](0xC2),  # Continuation bytes are missing
-    List[Byte](0xC2, 0x7F),  # second byte is not continuation byte
-    List[Byte](0xCE),  # Continuation byte missing
-    List[Byte](0xCE, 0xBA, 0xE1),  # two continuation bytes missing
-    List[Byte](0xCE, 0xBA, 0xE1, 0xBD),  # One continuation byte missing
-    List[Byte](
-        0xCE, 0xBA, 0xE1, 0xBD, 0xB9, 0xCF
-    ),  # fifth byte should be continuation byte
-    List[Byte](
-        0xCE, 0xBA, 0xE1, 0xBD, 0xB9, 0xCF, 0x83, 0xCE
-    ),  # missing continuation byte
-    List[Byte](
-        0xCE, 0xBA, 0xE1, 0xBD, 0xB9, 0xCF, 0x83, 0xCE, 0xBC, 0xCE
-    ),  # missing continuation byte
-    List[Byte](0xDF),  # missing continuation byte
-    List[Byte](0xEF, 0xBF),  # missing continuation byte
+    + [0xC2],  # Continuation bytes are missing
+    [0xC2, 0x7F],  # second byte is not continuation byte
+    [0xCE],  # Continuation byte missing
+    [0xCE, 0xBA, 0xE1],  # two continuation bytes missing
+    [0xCE, 0xBA, 0xE1, 0xBD],  # One continuation byte missing
+    [
+        0xCE,
+        0xBA,
+        0xE1,
+        0xBD,
+        0xB9,
+        0xCF,
+    ],  # fifth byte should be continuation byte
+    [
+        0xCE,
+        0xBA,
+        0xE1,
+        0xBD,
+        0xB9,
+        0xCF,
+        0x83,
+        0xCE,
+    ],  # missing continuation byte
+    [
+        0xCE,
+        0xBA,
+        0xE1,
+        0xBD,
+        0xB9,
+        0xCF,
+        0x83,
+        0xCE,
+        0xBC,
+        0xCE,
+    ],  # missing continuation byte
+    [0xDF],  # missing continuation byte
+    [0xEF, 0xBF],  # missing continuation byte
 ]
 
 # ===----------------------------------------------------------------------=== #
@@ -90,17 +105,17 @@ alias BAD_SEQUENCES = [
 
 
 def validate_utf8[span: Span[Byte]]() -> Bool:
-    alias comptime = _is_valid_utf8_comptime(span)
+    alias comp_time = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
-    assert_equal(comptime, runtime)
-    return comptime
+    assert_equal(comp_time, runtime)
+    return comp_time
 
 
 def validate_utf8(span: Span[Byte]) -> Bool:
-    var comptime = _is_valid_utf8_comptime(span)
+    var comp_time = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
-    assert_equal(comptime, runtime)
-    return comptime
+    assert_equal(comp_time, runtime)
+    return comp_time
 
 
 def test_utf8_validation():
@@ -133,55 +148,53 @@ def test_utf8_validation():
     """
     assert_true(validate_utf8[text.as_bytes()]())
 
-    alias positive = List[List[UInt8]](
-        List[UInt8](0x0),
-        List[UInt8](0x00),
-        List[UInt8](0x66),
-        List[UInt8](0x7F),
-        List[UInt8](0x00, 0x7F),
-        List[UInt8](0x7F, 0x00),
-        List[UInt8](0xC2, 0x80),
-        List[UInt8](0xDF, 0xBF),
-        List[UInt8](0xE0, 0xA0, 0x80),
-        List[UInt8](0xE0, 0xA0, 0xBF),
-        List[UInt8](0xED, 0x9F, 0x80),
-        List[UInt8](0xEF, 0x80, 0xBF),
-        List[UInt8](0xF0, 0x90, 0xBF, 0x80),
-        List[UInt8](0xF2, 0x81, 0xBE, 0x99),
-        List[UInt8](0xF4, 0x8F, 0x88, 0xAA),
-    )
+    alias positive: List[List[UInt8]] = [
+        [0x0],
+        [0x00],
+        [0x66],
+        [0x7F],
+        [0x00, 0x7F],
+        [0x7F, 0x00],
+        [0xC2, 0x80],
+        [0xDF, 0xBF],
+        [0xE0, 0xA0, 0x80],
+        [0xE0, 0xA0, 0xBF],
+        [0xED, 0x9F, 0x80],
+        [0xEF, 0x80, 0xBF],
+        [0xF0, 0x90, 0xBF, 0x80],
+        [0xF2, 0x81, 0xBE, 0x99],
+        [0xF4, 0x8F, 0x88, 0xAA],
+    ]
 
     @parameter
     for i in range(len(positive)):
         assert_true(validate_utf8[positive[i]]())
 
-    alias negative = List[List[UInt8]](
-        List[UInt8](0x80),
-        List[UInt8](0xBF),
-        List[UInt8](0xC0, 0x80),
-        List[UInt8](0xC1, 0x00),
-        List[UInt8](0xC2, 0x7F),
-        List[UInt8](0xDF, 0xC0),
-        List[UInt8](0xE0, 0x9F, 0x80),
-        List[UInt8](0xE0, 0xC2, 0x80),
-        List[UInt8](0xED, 0xA0, 0x80),
-        List[UInt8](0xED, 0x7F, 0x80),
-        List[UInt8](0xEF, 0x80, 0x00),
-        List[UInt8](0xF0, 0x8F, 0x80, 0x80),
-        List[UInt8](0xF0, 0xEE, 0x80, 0x80),
-        List[UInt8](0xF2, 0x90, 0x91, 0x7F),
-        List[UInt8](0xF4, 0x90, 0x88, 0xAA),
-        List[UInt8](0xF4, 0x00, 0xBF, 0xBF),
-        List[UInt8](
-            0xC2, 0x80, 0x00, 0x00, 0xE1, 0x80, 0x80, 0x00, 0xC2, 0xC2, 0x80
-        ),
-        List[UInt8](0x00, 0xC2, 0xC2, 0x80, 0x00, 0x00, 0xE1, 0x80, 0x80),
-        List[UInt8](0x00, 0x00, 0x00, 0xF1, 0x80, 0x00),
-        List[UInt8](0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF1),
-        List[UInt8](0x00, 0x00, 0x00, 0x00, 0xF1, 0x00, 0x80, 0x80),
-        List[UInt8](0x00, 0x00, 0xF1, 0x80, 0xC2, 0x80, 0x00),
-        List[UInt8](0x00, 0x00, 0xF0, 0x80, 0x80, 0x80),
-    )
+    alias negative: List[List[UInt8]] = [
+        [0x80],
+        [0xBF],
+        [0xC0, 0x80],
+        [0xC1, 0x00],
+        [0xC2, 0x7F],
+        [0xDF, 0xC0],
+        [0xE0, 0x9F, 0x80],
+        [0xE0, 0xC2, 0x80],
+        [0xED, 0xA0, 0x80],
+        [0xED, 0x7F, 0x80],
+        [0xEF, 0x80, 0x00],
+        [0xF0, 0x8F, 0x80, 0x80],
+        [0xF0, 0xEE, 0x80, 0x80],
+        [0xF2, 0x90, 0x91, 0x7F],
+        [0xF4, 0x90, 0x88, 0xAA],
+        [0xF4, 0x00, 0xBF, 0xBF],
+        [0xC2, 0x80, 0x00, 0x00, 0xE1, 0x80, 0x80, 0x00, 0xC2, 0xC2, 0x80],
+        [0x00, 0xC2, 0xC2, 0x80, 0x00, 0x00, 0xE1, 0x80, 0x80],
+        [0x00, 0x00, 0x00, 0xF1, 0x80, 0x00],
+        [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF1],
+        [0x00, 0x00, 0x00, 0x00, 0xF1, 0x00, 0x80, 0x80],
+        [0x00, 0x00, 0xF1, 0x80, 0xC2, 0x80, 0x00],
+        [0x00, 0x00, 0xF0, 0x80, 0x80, 0x80],
+    ]
 
     @parameter
     for i in range(len(negative)):
@@ -268,22 +281,22 @@ def test_count_utf8_continuation_bytes():
 
     def _test(amnt: Int, items: List[UInt8]):
         var p = items.unsafe_ptr()
-        var span = Span(ptr=p, length=UInt(len(items)))
+        var span = Span(ptr=p, length=len(items))
         assert_equal(amnt, _count_utf8_continuation_bytes(span))
 
-    _test(5, List[UInt8](c, c, c, c, c))
-    _test(2, List[UInt8](b2, c, b2, c, b1))
-    _test(2, List[UInt8](b2, c, b1, b2, c))
-    _test(2, List[UInt8](b2, c, b2, c, b1))
-    _test(2, List[UInt8](b2, c, b1, b2, c))
-    _test(2, List[UInt8](b1, b2, c, b2, c))
-    _test(2, List[UInt8](b3, c, c, b1, b1))
-    _test(2, List[UInt8](b1, b1, b3, c, c))
-    _test(2, List[UInt8](b1, b3, c, c, b1))
-    _test(3, List[UInt8](b1, b4, c, c, c))
-    _test(3, List[UInt8](b4, c, c, c, b1))
-    _test(3, List[UInt8](b3, c, c, b2, c))
-    _test(3, List[UInt8](b2, c, b3, c, c))
+    _test(5, [c, c, c, c, c])
+    _test(2, [b2, c, b2, c, b1])
+    _test(2, [b2, c, b1, b2, c])
+    _test(2, [b2, c, b2, c, b1])
+    _test(2, [b2, c, b1, b2, c])
+    _test(2, [b1, b2, c, b2, c])
+    _test(2, [b3, c, c, b1, b1])
+    _test(2, [b1, b1, b3, c, c])
+    _test(2, [b1, b3, c, c, b1])
+    _test(3, [b1, b4, c, c, c])
+    _test(3, [b4, c, c, c, b1])
+    _test(3, [b3, c, c, b2, c])
+    _test(3, [b2, c, b3, c, c])
 
 
 def test_utf8_byte_type():

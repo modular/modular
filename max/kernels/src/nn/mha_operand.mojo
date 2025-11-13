@@ -11,13 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from kv_cache.types import KVCacheT
 from layout import Layout, LayoutTensor
 from layout.layout import UNKNOWN_VALUE, DimList
 from layout.runtime_layout import RuntimeLayout
 from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from utils import Index, IndexList
 
 from builtin.device_passable import DevicePassable
@@ -28,6 +32,7 @@ trait MHAOperand(DevicePassable):
     """This serves as the trait to support arguments to our MHA kernel."""
 
     alias dtype: DType
+    alias page_size: Int
 
     # TODO: change this to return a LayoutTensor once MOCO-1471 is fixed
     @always_inline
@@ -77,7 +82,9 @@ trait MHAOperand(DevicePassable):
 
 
 @register_passable("trivial")
-struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
+struct KVCacheMHAOperand[
+    cache_t: KVCacheT,
+](MHAOperand):
     """An implementation for `mo.opaque` KVCacheT arguments to MHA kernels.
 
     We can eventually remove this trait and just add it as a sub-trait in the
@@ -85,6 +92,7 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
     """
 
     alias dtype = cache_t.dtype
+    alias page_size = cache_t.page_size_
     var cache: cache_t
 
     alias device_type: AnyType = Self
@@ -161,7 +169,8 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
     """An implementation for NDBuffer arguments to MHA kernels."""
 
     alias dtype = dtype_
-    var buffer: LayoutTensor[Self.dtype, layout, MutableAnyOrigin]
+    alias page_size = 0
+    var buffer: LayoutTensor[Self.dtype, layout, MutAnyOrigin]
 
     alias device_type: AnyType = Self
 
@@ -178,7 +187,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
 
     fn __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, layout, MutableAnyOrigin],
+        buffer: LayoutTensor[Self.dtype, layout, MutAnyOrigin],
     ):
         self.buffer = buffer
 
@@ -244,7 +253,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
 
         rt_layout = RuntimeLayout[layout_].row_major(IndexList[2](rows, cols))
 
-        var tensor = LayoutTensor[Self.dtype, layout_, MutableAnyOrigin](
+        var tensor = LayoutTensor[Self.dtype, layout_, MutAnyOrigin](
             self.buffer.ptr, rt_layout
         )
 
@@ -260,9 +269,10 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
     """An implementation for ragged NDBuffer arguments to MHA kernels."""
 
     alias dtype = dtype_
-    var buffer: LayoutTensor[Self.dtype, layout, MutableAnyOrigin]
+    alias page_size = 0
+    var buffer: LayoutTensor[Self.dtype, layout, MutAnyOrigin]
     var cache_row_offsets: LayoutTensor[
-        DType.uint32, cache_layout, MutableAnyOrigin
+        DType.uint32, cache_layout, MutAnyOrigin
     ]
 
     alias device_type: AnyType = Self
@@ -280,9 +290,9 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 
     fn __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, layout, MutableAnyOrigin],
+        buffer: LayoutTensor[Self.dtype, layout, MutAnyOrigin],
         cache_row_offsets: LayoutTensor[
-            DType.uint32, cache_layout, MutableAnyOrigin
+            DType.uint32, cache_layout, MutAnyOrigin
         ],
     ):
         constrained[
@@ -361,7 +371,7 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         alias layout_ = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
         rt_layout = RuntimeLayout[layout_].row_major(IndexList[2](rows, cols))
-        var tensor = LayoutTensor[Self.dtype, layout_, MutableAnyOrigin](
+        var tensor = LayoutTensor[Self.dtype, layout_, MutAnyOrigin](
             self.buffer.ptr, rt_layout
         )
 

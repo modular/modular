@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from collections import OptionalReg
 from sys import size_of
 
@@ -31,12 +32,12 @@ from utils.index import product
 fn _create_buffer_host[
     rank: Int, dtype: DType
 ](dims: IndexList[rank]) -> LayoutTensor[
-    dtype, Layout.row_major[rank](), MutableAnyOrigin
+    dtype, Layout.row_major[rank](), MutAnyOrigin
 ]:
     var total_size: Int = product(dims)
     var mem_ptr = UnsafePointer[Scalar[dtype]].alloc(total_size)
     alias layout = Layout.row_major[rank]()
-    var buffer = LayoutTensor[dtype, layout, MutableAnyOrigin](
+    var buffer = LayoutTensor[dtype, layout, MutAnyOrigin](
         mem_ptr, RuntimeLayout[layout].row_major(dims)
     )
     return buffer
@@ -141,7 +142,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     fn run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
         ctx.enqueue_function_checked[kernel, kernel](
             output_device_ref.as_any_origin(),
-            StaticTuple[LayoutTensor[dtype, layout, MutableAnyOrigin], 4](
+            StaticTuple[LayoutTensor[dtype, layout, MutAnyOrigin], 4](
                 input_0_device_ref.as_any_origin(),
                 input_1_device_ref.as_any_origin(),
                 input_2_device_ref.as_any_origin(),
@@ -220,7 +221,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         ](
             output_device_ref.as_any_origin(),
             4,
-            StaticTuple[LayoutTensor[dtype, layout, MutableAnyOrigin], 4](
+            StaticTuple[LayoutTensor[dtype, layout, MutAnyOrigin], 4](
                 input_0_device_ref.as_any_origin(),
                 input_1_device_ref.as_any_origin(),
                 input_2_device_ref.as_any_origin(),

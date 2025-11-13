@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
 from gpu import global_idx
 from gpu.host import DeviceBuffer, DeviceContext, DeviceStream
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import (
     assert_equal,
     assert_false,
@@ -91,7 +93,7 @@ def test_create_stream_with_priority(ctx: DeviceContext):
         output_device_low,
         length,
         multiplier,
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
     low_priority_stream.synchronize()
@@ -106,7 +108,7 @@ def test_create_stream_with_priority(ctx: DeviceContext):
         output_device_high,
         length,
         multiplier,
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
     high_priority_stream.synchronize()
@@ -135,7 +137,7 @@ def test_create_stream_with_priority(ctx: DeviceContext):
             output_device_mid,
             length,
             multiplier,
-            grid_dim=((length + 31) // 32),
+            grid_dim=ceildiv(length, 32),
             block_dim=32,
         )
         mid_priority_stream.synchronize()
@@ -200,7 +202,7 @@ def test_multiple_priority_streams(ctx: DeviceContext):
             output_devices[i],
             length,
             multipliers[i],
-            grid_dim=((length + 31) // 32),
+            grid_dim=ceildiv(length, 32),
             block_dim=32,
         )
 

@@ -191,11 +191,11 @@ fn gpu_bicubic_kernel[
         mut=True,
         dtype,
         output_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space=address_space,
     ],
     input: LayoutTensor[
-        dtype, input_layout, MutableAnyOrigin, address_space=address_space
+        dtype, input_layout, MutAnyOrigin, address_space=address_space
     ],
 ) -> None:
     """Perform bicubic interpolation using GPU.

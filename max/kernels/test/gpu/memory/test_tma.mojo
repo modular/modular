@@ -14,7 +14,7 @@
 from io.io import _printf
 
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
+from gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from gpu import block_idx
 from gpu.memory import (
     AddressSpace,
@@ -25,7 +25,7 @@ from gpu.sync import (
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 
 from utils.index import Index
 

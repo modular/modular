@@ -54,7 +54,7 @@ from layout import (
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 
 from utils import IndexList
 from utils.index import Index
@@ -63,6 +63,8 @@ from utils.static_tuple import StaticTuple
 
 from .matmul.gpu import matmul_kernel_naive
 from .utils import GemmShape, elementwise_epilogue_type
+
+alias logger = Logger()
 
 
 @fieldwise_init
@@ -152,7 +154,7 @@ fn gemv_kernel[
                 * b.load(idx).cast[s_type]()
             )
 
-    accum = warp.sum[a_type, output_type=s_type](accum)
+    accum = warp.sum(accum)
 
     if lane_id() == 0:
 
@@ -181,9 +183,9 @@ fn gemv_kernel_vector[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],  # m
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],  # m * k
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],  # 1 * k
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],  # m
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],  # m * k
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],  # 1 * k
     m: Int,
     n: Int,
     k: Int,
@@ -217,7 +219,7 @@ fn gemv_kernel_vector[
 
         idx += UInt(step)
 
-    var accum = warp.sum[a_type, output_type=s_type](local_accum)
+    var accum = warp.sum(local_accum)
 
     if lane_id() == 0:
 
@@ -255,9 +257,9 @@ fn gemv_split_k[
     s_type: DType = get_accum_type[c_type](),
     check_bounds: Bool = True,
 ](
-    output: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    act: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    weight: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    output: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    act: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    weight: LayoutTensor[b_type, b_layout, MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -280,7 +282,7 @@ fn gemv_split_k[
     var tile_w = LayoutTensor[
         b_type,
         Layout.row_major(Int(tile_n), Int(simd_width)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     # these are the partial accumlations for each thread this a matrix of values
@@ -289,7 +291,7 @@ fn gemv_split_k[
         LayoutTensor[
             s_type,
             Layout.row_major(Int(tile_m), Int(tile_n)),
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -364,7 +366,7 @@ fn gemv_split_k[
     var shmem = LayoutTensor[
         s_type,
         Layout.row_major(1, Int(tile_m * tile_n * k_warp_num)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -472,7 +474,6 @@ fn gemv_gpu_dispatch[
     a: NDBuffer[rank=2, *_, **_],
     b: NDBuffer[rank=2, *_, **_],
     ctx: DeviceContext,
-    logger: Logger,
 ) raises:
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
@@ -595,7 +596,7 @@ fn gemv_gpu_dispatch[
                 var b_tensor_n_major = LayoutTensor[
                     b.type,
                     b_layout_template,
-                    MutableAnyOrigin,
+                    MutAnyOrigin,
                     address_space = aligned_b.address_space,
                 ](aligned_b, b_runtime_layout)
 
@@ -774,7 +775,7 @@ fn gemv_gpu_dispatch[
 
 fn log_shape[
     has_mode_1: Bool, has_mode_2: Bool, name: String
-](logger: Logger, mode_1: Int, mode_2: Int,) -> None:
+](mode_1: Int, mode_2: Int,) -> None:
     logger.info(
         name,
         ": (",
@@ -798,8 +799,6 @@ fn gemv_gpu[
     b: NDBuffer[rank=2, *_, **_],
     ctx: DeviceContext,
 ) raises:
-    var logger = Logger()
-
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
@@ -813,9 +812,9 @@ fn gemv_gpu[
     logger.info("------ Dispatching to GEMV ------")
 
     # Log dimension static/dynamic status
-    log_shape[has_M, has_K, "A"](logger, m, k)
-    log_shape[has_K, has_N, "B"](logger, k, n)
-    log_shape[has_M, has_N, "C"](logger, m, n)
+    log_shape[has_M, has_K, "A"](m, k)
+    log_shape[has_K, has_N, "B"](k, n)
+    log_shape[has_M, has_N, "C"](m, n)
 
     # Kernel selection
     var kernel_func: GEMVAlgorithm
@@ -860,7 +859,7 @@ fn gemv_gpu[
 
     gemv_gpu_dispatch[
         transpose_b=transpose_b, elementwise_lambda_fn=elementwise_lambda_fn
-    ](kernel_func, c, a, b, ctx, logger)
+    ](kernel_func, c, a, b, ctx)
 
 
 # Parallelized version of Gemv

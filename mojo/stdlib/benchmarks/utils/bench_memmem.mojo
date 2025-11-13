@@ -17,7 +17,7 @@ from sys import simd_width_of
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId
 from bit import count_trailing_zeros
-from memory import memcmp, pack_bits
+from memory import LegacyUnsafePointer as UnsafePointer, memcmp, pack_bits
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
@@ -158,8 +158,8 @@ fn _memmem_baseline[
         return UnsafePointer[Scalar[dtype]]()
     if needle_len == 1:
         return _memchr(
-            Span[Scalar[dtype], ImmutableAnyOrigin](
-                ptr=haystack.as_immutable(), length=UInt(haystack_len)
+            Span[Scalar[dtype], ImmutAnyOrigin](
+                ptr=haystack.as_immutable(), length=haystack_len
             ),
             needle[0],
         )

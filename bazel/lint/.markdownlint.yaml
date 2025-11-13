@@ -11,7 +11,7 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-# This configures the lint rules for markdownlint, used in markdownlint.sh
+# This configures the lint rules for markdownlint.
 # It overrides for the default lint config here:
 # https://github.com/DavidAnson/markdownlint/blob/main/schema/.markdownlint.yaml
 # Also see the definition for all markdownlint rules here:

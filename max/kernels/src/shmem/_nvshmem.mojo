@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections.string.string_slice import get_static_string
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of
@@ -18,11 +19,12 @@ from sys.ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,
-    _OwnedDLHandle,
+    OwnedDLHandle,
     c_int,
     c_uint,
     c_size_t,
     external_call,
+    RTLD,
 )
 from sys.info import CompilationTarget, is_nvidia_gpu
 
@@ -34,12 +36,6 @@ from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
 # ===-----------------------------------------------------------------------===#
 # Library Load
 # ===-----------------------------------------------------------------------===#
-
-alias NVSHMEM_LIBRARY_PATHS = List[Path](
-    "libnvshmem_host.so.3.4.5",
-    "libnvshmem_host.so.3",
-    "libnvshmem_host.so",
-)
 
 
 @register_passable
@@ -54,40 +50,23 @@ struct NVSHMEMIVersion:
         self.patch = 5
 
 
-fn _on_error_msg() -> Error:
-    return Error(
-        (
-            "Cannot find the NVShmem libraries. Please make sure that "
-            "the CUDA toolkit is installed and that the library path is "
-            "correctly set in one of the following paths ["
-        ),
-        ", ".join(materialize[NVSHMEM_LIBRARY_PATHS]()),
-        (
-            "]. You may need to make sure that you are using the non-slim"
-            " version of the MAX container."
-        ),
-    )
+alias NVSHMEM_LIBRARY = _Global["NVSHMEM_LIBRARY", _init_nvshmem_dylib]
 
 
-alias NVSHMEM_LIBRARY = _Global[
-    "NVSHMEM_LIBRARY", _init_nvshmem_dylib, on_error_msg=_on_error_msg
-]
-
-
-fn _init_nvshmem_dylib() -> _OwnedDLHandle:
-    var candidates = materialize[NVSHMEM_LIBRARY_PATHS]()
-    # Prefer loading NVSHMEM libs from MODULAR_NVSHMEM_LIB_DIR if set.
-    var dir = getenv("MODULAR_NVSHMEM_LIB_DIR")
-    if dir:
-        var prefixed = List[Path](
-            String(dir, "/libnvshmem_host.so.3.4.5"),
-            String(dir, "/libnvshmem_host.so.3"),
-            String(dir, "/libnvshmem_host.so"),
-        )
-        for p in candidates:
-            prefixed.append(p)
-        candidates = prefixed^
-    return _find_dylib["NVSHMEM"](candidates)
+fn _init_nvshmem_dylib() -> OwnedDLHandle:
+    var lib = "libnvshmem_host.so.3"
+    # If provided, allow an override directory for nvshmem bootstrap libs.
+    # Example:
+    #   export MODULAR_SHMEM_LIB_DIR="/path/to/venv/lib"
+    # will dlopen the library from:
+    #   /path/to/venv/lib/libnvshmem_host.so.3
+    if dir_name := getenv("MODULAR_SHMEM_LIB_DIR"):
+        lib = String(Path(dir_name) / lib)
+    try:
+        return OwnedDLHandle(path=lib)
+    except e:
+        abort(String("failed to load NVSHMEM library: ", e))
+        return OwnedDLHandle(unsafe_uninitialized=True)
 
 
 @always_inline

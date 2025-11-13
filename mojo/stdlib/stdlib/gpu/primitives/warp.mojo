@@ -35,6 +35,7 @@ from sys import (
     CompilationTarget,
     bit_width_of,
     is_amd_gpu,
+    is_apple_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
     size_of,
@@ -148,10 +149,10 @@ fn _shuffle_amd_helper[
             return _shuffle_amd_helper(dst_lane, val.cast[DType.int32]()).cast[
                 dtype
             ]()
-        elif dtype.bit_width() == 16:
+        elif bit_width_of[dtype]() == 16:
             var val_splatted = SIMD[dtype, 2](val._refine[new_size=1]())
             return _shuffle_amd_helper(dst_lane, val_splatted)[0]
-        elif dtype.bit_width() == 64:
+        elif bit_width_of[dtype]() == 64:
             var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
             var val_half1, val_half2 = val_bitcast.deinterleave()
             var shuffle1 = _shuffle_amd_helper(dst_lane, val_half1)
@@ -161,6 +162,76 @@ fn _shuffle_amd_helper[
         else:
             constrained[False, "unhandled shuffle dtype"]()
             return 0
+
+
+@always_inline
+fn _shuffle_apple_helper[
+    op: StringSlice, dtype: DType, simd_width: Int
+](
+    mask: UInt,  # Ignored, for API parity
+    val: SIMD[dtype, simd_width],
+    offset: UInt32,
+) -> SIMD[dtype, simd_width]:
+    """
+    Mapping from Metal stdlib to AIR (LLVM) intrinsics:
+      Metal                         → AIR intrinsic stem
+      ----------------------------------------------------------
+      simd_shuffle                  → llvm.air.simd_shuffle
+      simd_shuffle_down             → llvm.air.simd_shuffle_down
+      simd_shuffle_up               → llvm.air.simd_shuffle_up
+      simd_shuffle_xor              → llvm.air.simd_shuffle_xor
+    """
+
+    constrained[
+        dtype.is_half_float() or simd_width == 1,
+        "Unsupported simd_width",
+    ]()
+
+    var arg = UInt16(offset)  # AIR intrinsics use 16-bit offsets
+
+    @parameter
+    if dtype in (DType.int64, DType.uint64):
+        var bits = bitcast[DType.uint32, simd_width * 2](val)
+        var half1, half2 = bits.deinterleave()
+
+        var half1_n = rebind[SIMD[DType.uint32, simd_width]](half1)
+        var half2_n = rebind[SIMD[DType.uint32, simd_width]](half2)
+        var s1 = _shuffle_apple_helper[op, DType.uint32, simd_width](
+            mask, half1_n, offset
+        )
+        var s2 = _shuffle_apple_helper[op, DType.uint32, simd_width](
+            mask, half2_n, offset
+        )
+
+        var merged = s1.interleave(s2)
+        return bitcast[dtype, simd_width](merged)
+    elif dtype is DType.bool:
+        var val1 = rebind[SIMD[DType.int32, 1]](val.cast[DType.int32]())
+        var tmp = _shuffle_apple_helper[op, DType.int32, 1](mask, val1, offset)
+        return tmp.cast[dtype]()
+    elif (
+        dtype is DType.bfloat16
+    ):  # bfloat16 is declared in MSL but actually causes a backend error.
+
+        @parameter
+        if simd_width == 1:
+            var pair = SIMD[dtype, 2](val._refine[new_size=1]())
+            var pair_i32 = bitcast[DType.int32, 1](pair)
+            var y_i32 = _shuffle_apple_helper[op, DType.int32, 1](
+                mask, pair_i32, offset
+            )
+            return bitcast[dtype, 2](y_i32)[0]
+        else:
+            var packed = bitcast[DType.int32, simd_width // 2](val)
+            var packed_shuf = _shuffle_apple_helper[
+                op, DType.int32, simd_width // 2
+            ](mask, packed, offset)
+            return bitcast[dtype, simd_width](packed_shuf)
+    else:
+        alias name = "llvm.air.simd_shuffle" + (
+            "" if op == "indexed" else "_" + op
+        )
+        return llvm_intrinsic[name, SIMD[dtype, simd_width]](val, arg)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -268,6 +339,10 @@ fn shuffle_idx[
         ](mask, val, offset)
     elif is_amd_gpu():
         return _shuffle_idx_amd(mask, val, offset)
+    elif is_apple_gpu():
+        return _shuffle_apple_helper["indexed", dtype, simd_width](
+            mask, val, offset
+        )
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
@@ -363,6 +438,8 @@ fn shuffle_up[
         )
     elif is_amd_gpu():
         return _shuffle_up_amd(mask, val, offset)
+    elif is_apple_gpu():
+        return _shuffle_apple_helper["up", dtype, simd_width](mask, val, offset)
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
@@ -457,6 +534,10 @@ fn shuffle_down[
         return _shuffle["down", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
     elif is_amd_gpu():
         return _shuffle_down_amd(mask, val, offset)
+    elif is_apple_gpu():
+        return _shuffle_apple_helper["down", dtype, simd_width](
+            mask, val, offset
+        )
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
@@ -554,6 +635,10 @@ fn shuffle_xor[
         return _shuffle["bfly", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
     elif is_amd_gpu():
         return _shuffle_xor_amd(mask, val, offset)
+    elif is_apple_gpu():
+        return _shuffle_apple_helper["xor", dtype, simd_width](
+            mask, val, offset
+        )
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
@@ -765,96 +850,20 @@ fn lane_group_sum_and_broadcast[
 
 
 @always_inline
-fn sum[
-    val_type: DType, simd_width: Int, //
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+fn sum(val: SIMD) -> Scalar[val.dtype]:
     """Computes the sum of values across all lanes in a warp.
 
     This is a convenience wrapper around lane_group_sum_and_broadcast that
     operates on the entire warp.  It performs a parallel reduction using warp
     shuffle operations to find the global sum across all lanes in the warp.
 
-    Parameters:
-        val_type: The data type of the SIMD elements (e.g. float32, int32).
-        simd_width: The number of elements in the SIMD vector.
-
     Args:
         val: The SIMD value to reduce. Each lane contributes its value to the sum.
 
     Returns:
-        A SIMD value where all lanes contain the sum found across the entire warp.
-        The sum is broadcast to all lanes.
+        The scalar sum of values across all lanes in the warp.
     """
-    return lane_group_sum_and_broadcast[num_lanes=WARP_SIZE](val)
-
-
-@fieldwise_init
-@register_passable("trivial")
-struct ReductionMethod(EqualityComparable, Identifiable):
-    """Enumerates the supported reduction methods."""
-
-    var _value: Int
-
-    alias TENSOR_CORE = Self(0)
-    """Use tensor core for reduction."""
-    alias WARP = Self(1)
-    """Use warp shuffle for reduction."""
-
-    fn __eq__(self, other: Self) -> Bool:
-        """Checks if two ReductionMethod are equal.
-
-        Args:
-            other: The other ReductionMethod to compare.
-
-        Returns:
-            True if the ReductionMethod are equal, false otherwise.
-        """
-        return self._value == other._value
-
-    fn __is__(self, other: Self) -> Bool:
-        """Checks if two ReductionMethod are identical.
-
-        Args:
-            other: The other ReductionMethod to compare.
-
-        Returns:
-            True if the ReductionMethod are identical, false otherwise.
-        """
-        return self == other
-
-
-@always_inline
-fn sum[
-    intermediate_type: DType,
-    *,
-    output_type: DType,
-](x: SIMD) -> Scalar[output_type]:
-    """Performs a warp-level reduction to compute the sum of values across threads.
-
-    This function provides two reduction methods:
-    1. Warp shuffle: Uses warp shuffle operations to efficiently sum values across threads
-    2. Tensor core: Leverages tensor cores for high-performance reductions, with dtype casting
-
-    The tensor core method will cast the input to the specified intermediate dtype before
-    reduction to ensure compatibility with tensor core operations. The warp shuffle method
-    requires the output dtype to match the input dtype.
-
-    Parameters:
-        intermediate_type: The data type to cast to when using tensor core reduction.
-        output_type: The desired output data type for the reduced value.
-
-    Args:
-        x: The SIMD value to reduce across the warp.
-
-    Returns:
-        A scalar containing the sum of the input values across all threads in the warp,
-        cast to the specified output dtype.
-
-    Constraints:
-        - For warp shuffle reduction, output_type must match the input value dtype.
-        - For tensor core reduction, input will be cast to intermediate_type.
-    """
-    return sum(x.reduce_add())._refine[output_type]()
+    return lane_group_sum_and_broadcast[num_lanes=WARP_SIZE](val.reduce_add())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1045,27 +1054,20 @@ fn lane_group_max_and_broadcast[
 
 
 @always_inline
-fn max[
-    val_type: DType,
-    simd_width: Int, //,
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+fn max(val: SIMD) -> Scalar[val.dtype]:
     """Computes the maximum value across all lanes in a warp.
 
     This is a convenience wrapper around lane_group_max that operates on the entire warp.
     It performs a parallel reduction using warp shuffle operations to find the global maximum
     value across all lanes in the warp.
 
-    Parameters:
-        val_type: The data type of the SIMD elements (e.g. float32, int32).
-        simd_width: The number of elements in the SIMD vector.
-
     Args:
         val: The SIMD value to reduce. Each lane contributes its value to find the maximum.
 
     Returns:
-        A SIMD value where all lanes contain the maximum value found across the entire warp.
+        The scalar maximum value across all lanes in the warp.
     """
-    return lane_group_max[num_lanes=WARP_SIZE](val)
+    return lane_group_max[num_lanes=WARP_SIZE](val.reduce_max())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1117,27 +1119,20 @@ fn lane_group_min[
 
 
 @always_inline
-fn min[
-    val_type: DType, simd_width: Int, //
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+fn min(val: SIMD) -> Scalar[val.dtype]:
     """Computes the minimum value across all lanes in a warp.
 
     This is a convenience wrapper around lane_group_min that operates on the entire warp.
     It performs a parallel reduction using warp shuffle operations to find the global minimum
     value across all lanes in the warp.
 
-    Parameters:
-        val_type: The data type of the SIMD elements (e.g. float32, int32).
-        simd_width: The number of elements in the SIMD vector.
-
     Args:
         val: The SIMD value to reduce. Each lane contributes its value to find the minimum.
 
     Returns:
-        A SIMD value where all lanes contain the minimum value found across the entire warp.
-        The minimum value is broadcast to all lanes.
+        The scalar minimum value across all lanes in the warp.
     """
-    return lane_group_min[num_lanes=WARP_SIZE](val)
+    return lane_group_min[num_lanes=WARP_SIZE](val.reduce_min())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1221,7 +1216,7 @@ fn _vote_amd_helper[ret_type: DType](vote: Bool) -> Scalar[ret_type]:
         "Unsupported return type",
     ]()
 
-    alias instruction = String("llvm.amdgcn.ballot.i", ret_type.bit_width())
+    alias instruction = String("llvm.amdgcn.ballot.i", bit_width_of[ret_type]())
     return llvm_intrinsic[
         instruction,
         Scalar[ret_type],

@@ -88,13 +88,13 @@ def test_assert_equal_with_simd():
 def test_assert_equal_with_list():
     assert_equal(
         ["This", "is", "Mojo"],
-        List("This", "is", "Mojo"),
+        List[String](["This", "is", "Mojo"]),
     )
 
     with assert_raises():
         assert_equal(
             ["This", "is", "Mojo"],
-            List("This", "is", "mojo"),
+            List[String](["This", "is", "mojo"]),
         )
 
 
@@ -232,7 +232,7 @@ def test_assert_equal_stringslice():
     fn _build(value: StaticString, start: Int, end: Int) -> StaticString:
         return StaticString(
             ptr=value.unsafe_ptr() + start,
-            length=UInt(end - start),
+            length=end - start,
         )
 
     fn _build(
@@ -240,7 +240,7 @@ def test_assert_equal_stringslice():
     ) -> StringSlice[origin_of(value)]:
         return StringSlice[origin_of(value)](
             ptr=value.unsafe_ptr() + start,
-            length=UInt(end - start),
+            length=end - start,
         )
 
     l1 = [_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12)]

@@ -206,7 +206,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
 
         @always_inline("nodebug")
         fn _build_slice(
-            p: UnsafePointer[UInt8, mut=_, origin=_], start: Int, end: Int
+            p: UnsafePointer[mut=False, UInt8], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(ptr=p + start, length=end - start)
 
@@ -323,7 +323,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
     ) raises -> Bool:
         @always_inline("nodebug")
         fn _build_slice(
-            p: UnsafePointer[UInt8, mut=_, origin=_], start: Int, end: Int
+            p: UnsafePointer[mut=False, UInt8], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(ptr=p + start, length=end - start)
 

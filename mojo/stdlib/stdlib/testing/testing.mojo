@@ -240,7 +240,7 @@ fn assert_equal[
 
 @always_inline
 fn assert_equal[
-    O: ImmutableOrigin,
+    O: ImmutOrigin,
 ](
     lhs: StringSlice[O],
     rhs: String,
@@ -273,7 +273,7 @@ fn assert_equal[
 
 @always_inline
 fn assert_equal[
-    O: ImmutableOrigin,
+    O: ImmutOrigin,
 ](
     lhs: String,
     rhs: StringSlice[O],

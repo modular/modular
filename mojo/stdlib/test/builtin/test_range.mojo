@@ -14,6 +14,18 @@
 from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
+alias DTYPES = [
+    DType.int8,
+    DType.int16,
+    DType.int32,
+    DType.int64,
+    DType.uint8,
+    DType.uint16,
+    DType.uint32,
+    DType.uint64,
+]
+
+
 def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int):
     var iter = range_iter^
     for i in range(len):
@@ -47,7 +59,7 @@ def test_range_uint_bounds():
     _test_range_iter_bounds(range(UInt(0), UInt(11), UInt(2)), 6)
 
 
-def test_range_scalar_bounds[dtype: DType]():
+def _test_range_scalar_bounds[dtype: DType]():
     alias scalar = Scalar[dtype]
 
     _test_range_iter_bounds(range(scalar(0)), 0)
@@ -61,6 +73,12 @@ def test_range_scalar_bounds[dtype: DType]():
     if dtype.is_signed():
         _test_range_iter_bounds(range(scalar(10), scalar(0), scalar(-1)), 10)
         _test_range_iter_bounds(range(scalar(38), scalar(-13), scalar(-23)), 3)
+
+
+def test_range_scalar_bounds():
+    @parameter
+    for dtype in DTYPES:
+        _test_range_scalar_bounds[dtype]()
 
 
 def test_larger_than_int_max_bounds():
@@ -139,7 +157,7 @@ def test_range_len_uint():
     )
 
 
-def test_range_len_scalar[dtype: DType]():
+def _test_range_len_scalar[dtype: DType]():
     alias scalar = Scalar[dtype]
 
     # empty
@@ -156,6 +174,12 @@ def test_range_len_scalar[dtype: DType]():
 
     # start > end
     assert_equal(range(scalar(10), scalar(0), scalar(1)).__len__(), 0)
+
+
+def test_range_len_scalar():
+    @parameter
+    for dtype in DTYPES:
+        _test_range_len_scalar[dtype]()
 
 
 def test_range_getitem():
@@ -225,7 +249,7 @@ def test_range_reversed():
 
     # Test a reversed range's sum and length compared to the original
     @parameter
-    fn test_sum_reversed(start: Int, end: Int, step: Int) raises:
+    def test_sum_reversed(start: Int, end: Int, step: Int):
         var forward = range(start, end, step)
         var iforward = forward.__iter__()
         var ibackward = forward.__reversed__()

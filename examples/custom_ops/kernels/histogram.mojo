@@ -46,7 +46,9 @@ fn _histogram_gpu(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](block_dim)
     )
     fn kernel(
-        output: UnsafePointer[Int64], input: UnsafePointer[UInt8], n: Int
+        output: UnsafePointer[Int64, MutAnyOrigin],
+        input: UnsafePointer[UInt8, MutAnyOrigin],
+        n: Int,
     ):
         var tid = global_idx.x
 

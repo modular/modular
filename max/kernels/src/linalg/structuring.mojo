@@ -25,9 +25,14 @@ from layout.layout_tensor import (
     _copy_dram_to_local,
     _copy_local_to_dram,
 )
-from layout.int_tuple import _get_index_type
+from layout.int_tuple import (
+    _get_index_type,
+    _get_layout_type,
+    _get_unsigned_type,
+)
 from layout.tma_async import SharedMemBarrier
 from layout.layout import blocked_product, logical_product
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 
 
 struct ScatterGatherAmd[
@@ -63,7 +68,6 @@ struct ScatterGatherAmd[
             mut=True, *_, address_space = AddressSpace.LOCAL, **_
         ],
         src_gmem_tile: LayoutTensor,
-        src_tensor: LayoutTensor,
         offset: OptionalReg[UInt] = None,
     ):
         """Copy DRAM to registers.
@@ -71,7 +75,6 @@ struct ScatterGatherAmd[
         Args:
             dst_reg_tile: Destination register tile.
             src_gmem_tile: Source global memory tile.
-            src_tensor: Source tensor.
             offset: Optional copy offset.
         """
         _copy_dram_to_local[
@@ -144,30 +147,45 @@ struct IteratorScatterGatherAmd[
 alias SMemTileType[
     _dtype: DType,
     layout: Layout,
-    alignment: Int = align_of[SIMD[_dtype, simd_width_of[_dtype]()]](),
+    /,
+    *,
+    element_layout: Layout = Layout(1, 1),
+    layout_int_type: DType = _get_layout_type(layout, AddressSpace.SHARED),
+    linear_idx_type: DType = _get_index_type(layout, AddressSpace.SHARED),
+    masked: Bool = False,
+    alignment: Int = align_of[_dtype](),
 ] = LayoutTensor[
     _dtype,
     layout,
-    MutableAnyOrigin,
+    MutAnyOrigin,
     address_space = AddressSpace.SHARED,
+    element_layout=element_layout,
+    layout_int_type=layout_int_type,
+    linear_idx_type=linear_idx_type,
+    masked=masked,
     alignment=alignment,
 ]
 """Type alias for shared memory tile tensors."""
 
-alias SMemWarpTileType[
-    _dtype: DType, layout: Layout, warp_rows: Int, warp_cols: Int
-] = SMemTileType[_dtype, layout].TileType[warp_rows, warp_cols]
-"""Type alias for warp-level shared memory tiles with specified dimensions."""
-
 alias RegTileType[
     _dtype: DType,
     layout: Layout,
-    alignment: Int = align_of[SIMD[_dtype, simd_width_of[_dtype]()]](),
+    /,
+    *,
+    element_layout: Layout = Layout(1, 1),
+    layout_int_type: DType = _get_layout_type(layout, AddressSpace.LOCAL),
+    linear_idx_type: DType = _get_index_type(layout, AddressSpace.LOCAL),
+    masked: Bool = False,
+    alignment: Int = align_of[_dtype](),
 ] = LayoutTensor[
     _dtype,
     layout,
-    MutableAnyOrigin,
+    MutAnyOrigin,
     address_space = AddressSpace.LOCAL,
+    element_layout=element_layout,
+    layout_int_type=layout_int_type,
+    linear_idx_type=linear_idx_type,
+    masked=masked,
     alignment=alignment,
 ]
 """Type alias for register (local memory) tile tensors."""
@@ -176,6 +194,11 @@ alias SMemBarrier = UnsafePointer[
     SharedMemBarrier, address_space = AddressSpace.SHARED
 ]
 """Type alias for shared memory barrier pointer."""
+
+alias PipelineBarrier[num_pipeline_stages: Int] = SMemArrayType[
+    SharedMemBarrier, num_pipeline_stages
+]
+"""Type alias for shared memory pipeline barrier array."""
 
 
 @register_passable("trivial")
@@ -226,6 +249,7 @@ struct SMemTileArrayType[
 
         self.ptr = unsafe_ptr
 
+    @always_inline
     fn __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at index.
 
@@ -237,9 +261,20 @@ struct SMemTileArrayType[
         """
         return Self.Tile(self.ptr + eval[layout.size()] * Int(index))
 
+    @always_inline
+    @staticmethod
+    fn stack_allocation() -> Self:
+        var ptr = stack_allocation[
+            Self.storage_size,
+            dtype,
+            alignment=alignment,
+            address_space = AddressSpace.SHARED,
+        ]()
+        return Self(ptr)
+
 
 @register_passable("trivial")
-struct SMemArrayType[type: AnyType, size: Int]:
+struct SMemArrayType[type: AnyTrivialRegType, size: Int]:
     """Shared memory array of fixed size.
 
     Parameters:
@@ -266,7 +301,7 @@ struct SMemArrayType[type: AnyType, size: Int]:
 
     @always_inline
     fn __getitem__[T: Intable](self, index: T) -> Self.ptr_type:
-        """Get element at index.
+        """Get a pointer to the element at index.
 
         Args:
             index: Element index.
@@ -274,7 +309,7 @@ struct SMemArrayType[type: AnyType, size: Int]:
         Returns:
             Pointer to element.
         """
-        return self.ptr + size_of[type]() * Int(index)
+        return self.ptr.offset(Int(index))
 
     @always_inline
     @staticmethod
@@ -285,6 +320,17 @@ struct SMemArrayType[type: AnyType, size: Int]:
             Total size in bytes.
         """
         return size * size_of[type]()
+
+    @always_inline
+    @staticmethod
+    fn stack_allocation[alignment: Int = align_of[type]()]() -> Self:
+        var ptr = stack_allocation[
+            Self.len(),
+            type,
+            alignment=alignment,
+            address_space = AddressSpace.SHARED,
+        ]()
+        return Self(ptr)
 
 
 alias eval[T: AnyType, //, val: T] = val
@@ -326,7 +372,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
         dtype: DType, layout: Layout, num_tiles: Int
     ] = SMemTileArrayType[dtype, layout, num_tiles, SMBP.alignment]
 
-    alias Array[type: AnyType, size: Int] = SMemArrayType[type, size]
+    alias Array[type: AnyTrivialRegType, size: Int] = SMemArrayType[type, size]
 
     var base_ptr: UnsafePointer[Int8, address_space = AddressSpace.SHARED]
     var offset: Int
@@ -374,7 +420,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
 
     @always_inline
     fn build[
-        type: AnyType,
+        type: AnyTrivialRegType,
         size: Int, //,
         T: type_of(Self.Array[type, size]),
     ](mut self) -> T:

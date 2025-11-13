@@ -36,13 +36,7 @@ from builtin.anytype import AnyType, Some, UnknownDestructibility
 from builtin.bool import Bool, Boolable, ImplicitlyBoolable, all, any
 from builtin.breakpoint import breakpoint
 from builtin.builtin_slice import Slice, slice
-from builtin.comparable import (
-    Comparable,
-    GreaterThanComparable,
-    GreaterThanOrEqualComparable,
-    LessThanComparable,
-    LessThanOrEqualComparable,
-)
+from builtin.comparable import Comparable
 from builtin.constrained import constrained
 from builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
 from builtin.debug_assert import debug_assert
@@ -54,7 +48,6 @@ from builtin.floatable import Floatable, FloatableRaising
 from builtin.format_int import bin, hex, oct
 from builtin.identifiable import Identifiable
 from builtin.int import (
-    ImplicitlyIntable,
     Indexer,
     Int,
     Intable,
@@ -76,7 +69,7 @@ from builtin.math import (
 )
 from builtin.none import NoneType
 from builtin.range import range
-from builtin.rebind import rebind, rebind_var
+from builtin.rebind import rebind, rebind_var, trait_downcast
 from builtin.repr import Representable, repr
 from builtin.reversed import ReversibleRange, reversed
 from builtin.simd import (
@@ -111,10 +104,14 @@ from builtin.swap import swap
 from builtin.tuple import Tuple
 from builtin.type_aliases import (
     AnyTrivialRegType,
+    ImmutAnyOrigin,
     ImmutableAnyOrigin,
     ImmutableOrigin,
+    ImmutOrigin,
+    MutAnyOrigin,
     MutableAnyOrigin,
     MutableOrigin,
+    MutOrigin,
     Origin,
     OriginSet,
     StaticConstantOrigin,
@@ -131,4 +128,17 @@ from builtin.value import (
 from builtin.variadics import VariadicList, VariadicListMem, VariadicPack
 from documentation import doc_private
 from iter import Iterable, Iterator, enumerate, iter, map, next, zip
-from memory import AddressSpace, OpaquePointer, Pointer, Span, UnsafePointer
+from memory import (
+    alloc,
+    AddressSpace,
+    LegacyOpaquePointer,
+    LegacyUnsafePointer,
+    OpaqueImmutPointer,
+    OpaqueMutPointer,
+    OpaquePointer,
+    Pointer,
+    Span,
+    UnsafeImmutPointer,
+    UnsafeMutPointer,
+    UnsafePointer,
+)

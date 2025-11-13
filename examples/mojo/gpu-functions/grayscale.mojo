@@ -76,8 +76,8 @@ def main():
 
 
 fn color_to_grayscale(
-    rgb_tensor: LayoutTensor[int_dtype, rgb_layout, MutableAnyOrigin],
-    gray_tensor: LayoutTensor[int_dtype, gray_layout, MutableAnyOrigin],
+    rgb_tensor: LayoutTensor[int_dtype, rgb_layout, MutAnyOrigin],
+    gray_tensor: LayoutTensor[int_dtype, gray_layout, MutAnyOrigin],
 ):
     """Converting each RGB pixel to grayscale, parallelized across the output tensor on the GPU.
     """

@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
 from gpu import global_idx
 from gpu.host import DeviceBuffer, DeviceContext, DeviceEvent, DeviceStream
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import (
     assert_equal,
     assert_false,
@@ -86,7 +88,7 @@ def test_event_record_and_synchronize(ctx: DeviceContext):
         output_device,
         length,
         multiplier,
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
 
@@ -144,7 +146,7 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext):
         intermediate_device,
         length,
         multiplier1,
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
 
@@ -159,7 +161,7 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext):
         output_device,
         length,
         multiplier2,
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
 
@@ -214,7 +216,7 @@ def test_multiple_events_synchronization(ctx: DeviceContext):
             output_devices[i],
             length,
             multipliers[i],
-            grid_dim=((length + 31) // 32),
+            grid_dim=ceildiv(length, 32),
             block_dim=32,
         )
         # Record event for each stream
@@ -274,7 +276,7 @@ def test_event_dependency_chain(ctx: DeviceContext):
         buffer1,
         length,
         Float32(2.0),
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
     stream1.record_event(event1_copied)
@@ -287,7 +289,7 @@ def test_event_dependency_chain(ctx: DeviceContext):
         buffer2,
         length,
         Float32(3.0),
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
     stream2.record_event(event2_moved)
@@ -300,7 +302,7 @@ def test_event_dependency_chain(ctx: DeviceContext):
         buffer3,
         length,
         Float32(5.0),
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
 
@@ -357,7 +359,7 @@ def test_event_across_context_streams(ctx: DeviceContext):
         output_device,
         length,
         multiplier,
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
 

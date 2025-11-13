@@ -57,7 +57,7 @@ struct Deque[ElementType: Copyable & Movable](
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _data: UnsafePointer[ElementType]
+    var _data: UnsafePointer[ElementType, MutOrigin.external]
     """The underlying storage for the deque."""
 
     var _head: Int
@@ -124,7 +124,7 @@ struct Deque[ElementType: Copyable & Movable](
             deque_capacity = min(deque_capacity, max_deque_capacity)
 
         self._capacity = deque_capacity
-        self._data = UnsafePointer[ElementType].alloc(deque_capacity)
+        self._data = alloc[ElementType](deque_capacity)
         self._head = 0
         self._tail = 0
         self._min_capacity = min_deque_capacity
@@ -510,7 +510,7 @@ struct Deque[ElementType: Copyable & Movable](
             (self._data + offset).destroy_pointee()
         self._data.free()
         self._capacity = self._min_capacity
-        self._data = UnsafePointer[ElementType].alloc(self._capacity)
+        self._data = alloc[ElementType](self._capacity)
         self._head = 0
         self._tail = 0
 
@@ -925,7 +925,7 @@ struct Deque[ElementType: Copyable & Movable](
         if new_capacity == n_total:
             new_capacity <<= 1
 
-        new_data = UnsafePointer[ElementType].alloc(new_capacity)
+        new_data = alloc[ElementType](new_capacity)
 
         for i in range(n_retain):
             offset = self._physical_index(self._head + i)
@@ -954,7 +954,7 @@ struct Deque[ElementType: Copyable & Movable](
             head_len = deque_len
             tail_len = 0
 
-        new_data = UnsafePointer[ElementType].alloc(new_capacity)
+        new_data = alloc[ElementType](new_capacity)
 
         src = self._data + self._head
         dsc = new_data

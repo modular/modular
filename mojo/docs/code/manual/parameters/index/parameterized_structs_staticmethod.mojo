@@ -13,18 +13,18 @@
 
 
 struct GenericArray[ElementType: Copyable & Movable]:
-    var data: UnsafePointer[ElementType]
+    var data: UnsafePointer[ElementType, MutOrigin.external]
     var size: Int
 
     fn __init__(out self, var *elements: ElementType):
         self.size = len(elements)
-        self.data = UnsafePointer[ElementType].alloc(self.size)
+        self.data = alloc[ElementType](self.size)
         for i in range(self.size):
             (self.data + i).init_pointee_move(elements[i].copy())
 
     fn __init__(out self, *, count: Int, value: ElementType):
         self.size = count
-        self.data = UnsafePointer[ElementType].alloc(self.size)
+        self.data = alloc[ElementType](self.size)
         for i in range(self.size):
             (self.data + i).init_pointee_copy(value)
 

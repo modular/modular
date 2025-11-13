@@ -28,6 +28,7 @@ from sys.param_env import env_get_string
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
+from memory import LegacyUnsafePointer as UnsafePointer
 from shmem import *
 from shmem.ep_comm import (
     BF16TokenFormat,

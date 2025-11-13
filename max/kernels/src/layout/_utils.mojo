@@ -22,6 +22,7 @@ from gpu.compute.mma import mma
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from memory.unsafe import bitcast
+from memory import LegacyUnsafePointer as UnsafePointer
 
 from utils import IndexList
 
@@ -38,7 +39,7 @@ struct ManagedLayoutTensor[
     alias layout_tensor_type = LayoutTensor[
         dtype,
         layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         layout_int_type = Self.element_type,
         linear_idx_type = Self.index_type,
     ]
@@ -158,7 +159,7 @@ struct ManagedLayoutTensor[
 
     fn device_buffer[
         update: Bool = True
-    ](self) raises -> NDBuffer[dtype, layout.rank(), MutableAnyOrigin]:
+    ](self) raises -> NDBuffer[dtype, layout.rank(), MutAnyOrigin]:
         @parameter
         if update:
             self._update_device()
@@ -191,7 +192,7 @@ struct ManagedLayoutTensor[
 
     fn buffer[
         update: Bool = True
-    ](self) raises -> NDBuffer[dtype, layout.rank(), MutableAnyOrigin]:
+    ](self) raises -> NDBuffer[dtype, layout.rank(), MutAnyOrigin]:
         @parameter
         if update:
             self._update_host()

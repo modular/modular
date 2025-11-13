@@ -29,7 +29,6 @@ def test_operation[
     var scalar: String
     var pairwise: String
     var suffix: String
-    var scalar_ftz: String = ""
 
     # sm_80 does not support trivial add/sub/mul bfloat16 operations, but
     # these can be implemented using the FMA instruction. Verify that the
@@ -53,25 +52,13 @@ def test_operation[
     else:
         suffix = ".bf16"
 
-    # FTZ variants (will be accepted only when gated below).
-    # Gate FTZ acceptance: only on Hopper+ *and* only for f16/f32.
-
-    # On sm_80 or for bf16 (any arch), FTZ must NOT appear.
-    if target_arch in ["sm_90", "sm_90a", "sm_100", "sm_100a", "sm_100b"] and (
-        dtype is DType.float16 or dtype is DType.float32
-    ):
-        scalar_ftz = ".ftz"
-    scalar = prefix + scalar_ftz + suffix
+    scalar = prefix + suffix
     pairwise = scalar + "x2 "
 
     alias target = get_gpu_target[target_arch]()
-    var s1 = _compile_code[op_fn[width=1], target=target]()
-    var s2 = _compile_code[op_fn[width=2], target=target]()
-    var s8 = _compile_code[op_fn[width=8], target=target]()
-
-    assert_true(scalar in s1)
-    assert_true(pairwise in s2)
-    assert_true(pairwise in s8)
+    assert_true(scalar in _compile_code[op_fn[width=1], target=target]())
+    assert_true(pairwise in _compile_code[op_fn[width=2], target=target]())
+    assert_true(pairwise in _compile_code[op_fn[width=8], target=target]())
 
 
 def test_add[dtype: DType, target_arch: StaticString]():
@@ -120,54 +107,19 @@ def test_fma[dtype: DType]():
     ](x: SIMD[dtype, width], y: type_of(x), z: type_of(x)) -> type_of(x):
         return x.fma(y, z)
 
-    # Ensure `_mul_with_fastmath_none` threads fastmath flags through to
-    # pop.mul.
-    fn _mul_with_fastmath_none[
-        width: Int
-    ](x: SIMD[DType.float32, width], y: type_of(x)) -> type_of(x):
-        return x._mul_with_fastmath_none(y)
-
     @parameter
     if dtype is DType.bfloat16:
         assert_true("fma.rn.bf16 " in _compile_code[fma[width=1]]())
         assert_true("fma.rn.bf16x2 " in _compile_code[fma[width=2]]())
         assert_true("fma.rn.bf16x2 " in _compile_code[fma[width=8]]())
-
-        # Check that `_mul_with_fastmath_none` disables FMA contraction.
-        assert_false(
-            "fma.rn.bf16 " in _compile_code[_mul_with_fastmath_none[width=1]]()
-        )
     elif dtype is DType.float32:
-        var s1_f32 = _compile_code[fma_manual[width=1]]()
-        var s2_f32 = _compile_code[fma_manual[width=2]]()
-        var s8_f32 = _compile_code[fma_manual[width=8]]()
-        # Allow FTZ on Hopper+;
-        assert_true(("fma.rn.f32" in s1_f32) or ("fma.rn.ftz.f32" in s1_f32))
-        assert_true(
-            ("fma.rn.f32x2" in s2_f32) or ("fma.rn.ftz.f32x2" in s2_f32)
-        )
-        assert_true(
-            ("fma.rn.f32x2" in s8_f32) or ("fma.rn.ftz.f32x2" in s8_f32)
-        )
-        assert_false(
-            "fma.rn.f32 " in _compile_code[_mul_with_fastmath_none[width=1]]()
-        )
+        assert_true("fma.rn.f32 " in _compile_code[fma_manual[width=1]]())
+        assert_true("fma.rn.f32x2 " in _compile_code[fma_manual[width=2]]())
+        assert_true("fma.rn.f32x2 " in _compile_code[fma_manual[width=8]]())
     else:
-        var s1_f16 = _compile_code[fma[width=1]]()
-        var s2_f16 = _compile_code[fma[width=2]]()
-        var s8_f16 = _compile_code[fma[width=8]]()
-        # Allow FTZ only on Hopper+ based on the compiled accelerator arch.
-
-        assert_true(("fma.rn.f16" in s1_f16) or ("fma.rn.ftz.f16" in s1_f16))
-        assert_true(
-            ("fma.rn.f16x2" in s2_f16) or ("fma.rn.ftz.f16x2" in s2_f16)
-        )
-        assert_true(
-            ("fma.rn.f16x2" in s8_f16) or ("fma.rn.ftz.f16x2" in s8_f16)
-        )
-        assert_false(
-            "fma.rn.f16 " in _compile_code[_mul_with_fastmath_none[width=1]]()
-        )
+        assert_true("fma.rn.f16 " in _compile_code[fma[width=1]]())
+        assert_true("fma.rn.f16x2 " in _compile_code[fma[width=2]]())
+        assert_true("fma.rn.f16x2 " in _compile_code[fma[width=8]]())
 
 
 def test_cast():
@@ -176,34 +128,30 @@ def test_cast():
     ](src: SIMD[src_type, width]) -> SIMD[dst_type, width]:
         return src.cast[dst_type]()
 
-    var s_f32_to_f16x2 = _compile_code[
-        cast[src_type = DType.float32, dst_type = DType.float16, width=4]
-    ]()
-    # Allow optional .ftz in cvt.* on Hopper+ backends.
     assert_true(
-        ("cvt.rn.f16x2.f32" in s_f32_to_f16x2)
-        or ("cvt.rn.ftz.f16x2.f32" in s_f32_to_f16x2)
+        "cvt.rn.f16x2.f32"
+        in _compile_code[
+            cast[src_type = DType.float32, dst_type = DType.float16, width=4]
+        ]()
     )
-
-    var s_f32_to_bf16x2 = _compile_code[
-        cast[src_type = DType.float32, dst_type = DType.bfloat16, width=4]
-    ]()
-    # Allow optional .ftz in cvt.* on Hopper+ backends.
     assert_true(
-        ("cvt.rn.bf16x2.f32" in s_f32_to_bf16x2)
-        or ("cvt.rn.ftz.bf16x2.f32" in s_f32_to_bf16x2)
+        "cvt.rn.bf16x2.f32"
+        in _compile_code[
+            cast[src_type = DType.float32, dst_type = DType.bfloat16, width=4]
+        ]()
     )
-    var s_b2f_1 = _compile_code[
-        cast[src_type = DType.bfloat16, dst_type = DType.float32, width=1]
-    ]()
-    # Allow optional .ftz in cvt.* on Hopper+ backends.
-    assert_true(("cvt.f32.bf16" in s_b2f_1) or ("cvt.ftz.f32.bf16" in s_b2f_1))
-
-    var s_b2f_4 = _compile_code[
-        cast[src_type = DType.bfloat16, dst_type = DType.float32, width=4]
-    ]()
-    # Allow optional .ftz in cvt.* on Hopper+ backends.
-    assert_true(("cvt.f32.bf16" in s_b2f_4) or ("cvt.ftz.f32.bf16" in s_b2f_4))
+    assert_true(
+        "cvt.f32.bf16"
+        in _compile_code[
+            cast[src_type = DType.bfloat16, dst_type = DType.float32, width=1]
+        ]()
+    )
+    assert_true(
+        "cvt.f32.bf16"
+        in _compile_code[
+            cast[src_type = DType.bfloat16, dst_type = DType.float32, width=4]
+        ]()
+    )
 
 
 def main():

@@ -14,12 +14,13 @@
 from gpu import thread_idx
 from gpu.host import DeviceContext
 from gpu.host.func_attribute import Attribute
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 
 def test_function_attributes():
     fn kernel(x: UnsafePointer[Int]):
-        x[0] = thread_idx.x
+        x[0] = Int(thread_idx.x)
 
     with DeviceContext() as ctx:
         var func = ctx.compile_function[kernel]()

@@ -53,7 +53,8 @@ fn _run_memset_cascade[
     print("-")
     print("_run_memset_cascade(", length, ", ", val, ")")
 
-    var buf = ctx.enqueue_create_buffer[dtype](length).enqueue_fill(val)
+    var buf = ctx.enqueue_create_buffer[dtype](length)
+    buf.enqueue_fill(val)
 
     with buf.map_to_host() as buf:
         for i in range(length):

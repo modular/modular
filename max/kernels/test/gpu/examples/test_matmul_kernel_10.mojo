@@ -71,9 +71,9 @@ fn sgemm_warp_tiling_kernel[
     NUM_THREADS: Int,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    mat_c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    mat_a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    mat_b: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    mat_c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
+    mat_a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    mat_b: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ):
@@ -107,14 +107,14 @@ fn sgemm_warp_tiling_kernel[
     var a_sram = NDBuffer[
         a_type,
         1,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         DimList(Int(BK * BM_padded)),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_sram = NDBuffer[
         b_type,
         1,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         DimList(Int(BK * BN)),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
@@ -141,19 +141,19 @@ fn sgemm_warp_tiling_kernel[
     var thread_results = NDBuffer[
         c_type,
         4,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         DimList(Int(WMITER), Int(WNITER), Int(TM), Int(TN)),
     ]().stack_allocation()
     thread_results.zero()
 
     # We cache into registers on the warptile level.
     var reg_m = NDBuffer[
-        a_type, 2, MutableAnyOrigin, DimList(Int(WMITER), Int(TM))
+        a_type, 2, MutAnyOrigin, DimList(Int(WMITER), Int(TM))
     ]().stack_allocation()
     reg_m.zero()
 
     var reg_n = NDBuffer[
-        b_type, 2, MutableAnyOrigin, DimList(Int(WNITER), Int(TN))
+        b_type, 2, MutAnyOrigin, DimList(Int(WNITER), Int(TN))
     ]().stack_allocation()
     reg_n.zero()
 
@@ -205,13 +205,11 @@ fn sgemm_warp_tiling_kernel[
                 @parameter
                 for i in range(0, Int(TM), 4):
                     var vec = a_sram.load[width=4, alignment=16](
-                        Int(
-                            (dot_idx * BM_padded)
-                            + warp_row * UInt(WM)
-                            + w_sub_row_idx * w_sub_m
-                            + thread_row_in_warp * UInt(TM)
-                            + i
-                        )
+                        (dot_idx * BM_padded)
+                        + Int(warp_row) * WM
+                        + w_sub_row_idx * w_sub_m
+                        + Int(thread_row_in_warp) * TM
+                        + i
                     )
                     reg_m.store(Index(w_sub_row_idx, i), vec)
 
@@ -221,12 +219,10 @@ fn sgemm_warp_tiling_kernel[
                 @parameter
                 for i in range(0, Int(TN), 4):
                     var vec = b_sram.load[width=4, alignment=16](
-                        Int(
-                            (dot_idx * BN)
-                            + warp_col * UInt(WN)
-                            + w_sub_col_idx * w_sub_n
-                            + thread_col_in_warp * UInt(TN)
-                        )
+                        (dot_idx * BN)
+                        + Int(warp_col) * WN
+                        + w_sub_col_idx * w_sub_n
+                        + Int(thread_col_in_warp) * TN
                     )
                     reg_n.store(Index(w_sub_col_idx, i), vec)
 
@@ -314,17 +310,17 @@ fn sgemm_warp_tiling_kernel[
 
 
 fn matmul_naive(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
-    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
 ):
-    var x: UInt = global_idx.x
-    var y: UInt = global_idx.y
+    var x = Int(global_idx.x)
+    var y = Int(global_idx.y)
 
-    if x >= UInt(m) or y >= UInt(n):
+    if x >= m or y >= n:
         return
 
     var a = NDBuffer[DType.float32, 2](a_ptr, Index(m, k))
@@ -429,10 +425,10 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         "TN must be a multiple of 4",
     ]()
 
-    var a_host = UnsafePointer[Float32].alloc(M * K)
-    var b_host = UnsafePointer[Float32].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var c_host_naive = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[Float32](M * K)
+    var b_host = alloc[Float32](K * N)
+    var c_host = alloc[Float32](M * N)
+    var c_host_naive = alloc[Float32](M * N)
 
     for i in range(M * K):
         a_host[i] = i
@@ -503,7 +499,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
     m.bench_function[bench_matmul_10](
         BenchId("matmul_sgemm_10"),
-        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+        [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
     )
     _ = a_buffer
     _ = b_buffer
@@ -539,7 +535,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     m.bench_function[bench_naive](
         BenchId("matmul_naive"),
         # TODO: Pick relevant benchmetric
-        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+        [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
     )
 
     ctx.enqueue_copy(c_host_naive, c_device)

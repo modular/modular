@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import barrier
+from gpu import barrier, warp_id, lane_id
 from gpu.host import DeviceContext
-from gpu import thread_idx
+from gpu import thread_idx, warp_id, lane_id
 from gpu.mma import (
     WGMMADescriptor,
     wgmma_async,
@@ -55,27 +55,21 @@ fn wgmma_tf32_tf32_f32_kernel[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
 ](
-    a_gmem: LayoutTensor[
-        DType.float32, Layout.row_major(M, K), MutableAnyOrigin
-    ],
-    b_gmem: LayoutTensor[
-        DType.float32, Layout.row_major(K, N), MutableAnyOrigin
-    ],
-    result_c: LayoutTensor[
-        DType.float32, Layout.row_major(M, N), MutableAnyOrigin
-    ],
+    a_gmem: LayoutTensor[DType.float32, Layout.row_major(M, K), MutAnyOrigin],
+    b_gmem: LayoutTensor[DType.float32, Layout.row_major(K, N), MutAnyOrigin],
+    result_c: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.float32,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float32,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -106,17 +100,15 @@ fn wgmma_tf32_tf32_f32_kernel[
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
 
-    var warp_id = thread_idx.x // 32
-    var lan_id = thread_idx.x % 32
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N8-D.png
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
     var th_local_res = (
-        result_c.tile[16, 8](warp_id, 0)
+        result_c.tile[16, 8](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lan_id)
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
     th_local_res[0, 0][0] = c_reg[0]
     th_local_res[0, 0][1] = c_reg[1]
@@ -362,27 +354,21 @@ fn wgmma_bf16_bf16_f32_kernel[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
 ](
-    a_gmem: LayoutTensor[
-        DType.bfloat16, Layout.row_major(M, K), MutableAnyOrigin
-    ],
-    b_gmem: LayoutTensor[
-        DType.bfloat16, Layout.col_major(N, K), MutableAnyOrigin
-    ],
-    result_c: LayoutTensor[
-        DType.float32, Layout.row_major(M, N), MutableAnyOrigin
-    ],
+    a_gmem: LayoutTensor[DType.bfloat16, Layout.row_major(M, K), MutAnyOrigin],
+    b_gmem: LayoutTensor[DType.bfloat16, Layout.col_major(N, K), MutAnyOrigin],
+    result_c: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.bfloat16,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -414,17 +400,15 @@ fn wgmma_bf16_bf16_f32_kernel[
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
 
-    var warp_id = thread_idx.x // 32
-    var lan_id = thread_idx.x % 32
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-D.png
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
     var th_local_res = (
-        result_c.tile[16, 8](warp_id, 0)
+        result_c.tile[16, 8](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lan_id)
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
     th_local_res[0, 0][0] = c_reg[0]
     th_local_res[0, 0][1] = c_reg[1]
@@ -662,27 +646,21 @@ fn wgmma_f16_f16_f32_kernel[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
 ](
-    a_gmem: LayoutTensor[
-        DType.float16, Layout.row_major(M, K), MutableAnyOrigin
-    ],
-    b_gmem: LayoutTensor[
-        DType.float16, Layout.col_major(N, K), MutableAnyOrigin
-    ],
-    result_c: LayoutTensor[
-        DType.float32, Layout.row_major(M, N), MutableAnyOrigin
-    ],
+    a_gmem: LayoutTensor[DType.float16, Layout.row_major(M, K), MutAnyOrigin],
+    b_gmem: LayoutTensor[DType.float16, Layout.col_major(N, K), MutAnyOrigin],
+    result_c: LayoutTensor[DType.float32, Layout.row_major(M, N), MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.float16,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float16,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -714,17 +692,15 @@ fn wgmma_f16_f16_f32_kernel[
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
 
-    var warp_id = thread_idx.x // 32
-    var lan_id = thread_idx.x % 32
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-D.png
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
     var th_local_res = (
-        result_c.tile[16, 8](warp_id, 0)
+        result_c.tile[16, 8](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lan_id)
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
     th_local_res[0, 0][0] = c_reg[0]
     th_local_res[0, 0][1] = c_reg[1]
@@ -962,27 +938,21 @@ fn wgmma_f16_f16_f16_kernel[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
 ](
-    a_gmem: LayoutTensor[
-        DType.float16, Layout.row_major(M, K), MutableAnyOrigin
-    ],
-    b_gmem: LayoutTensor[
-        DType.float16, Layout.row_major(K, N), MutableAnyOrigin
-    ],
-    result_c: LayoutTensor[
-        DType.float16, Layout.row_major(M, N), MutableAnyOrigin
-    ],
+    a_gmem: LayoutTensor[DType.float16, Layout.row_major(M, K), MutAnyOrigin],
+    b_gmem: LayoutTensor[DType.float16, Layout.row_major(K, N), MutAnyOrigin],
+    result_c: LayoutTensor[DType.float16, Layout.row_major(M, N), MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.float16,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float16,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -1014,8 +984,6 @@ fn wgmma_f16_f16_f16_kernel[
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
 
-    var warp_id = thread_idx.x // 32
-    var lan_id = thread_idx.x % 32
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-D.png
     # Each warp updates a 16x8 tile, and within each tile,
@@ -1023,9 +991,9 @@ fn wgmma_f16_f16_f16_kernel[
     # is as follows:
     c0 = bitcast[DType.float16, 4](c_reg)
     var th_local_res = (
-        result_c.tile[16, 8](warp_id, 0)
+        result_c.tile[16, 8](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lan_id)
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
     th_local_res[0, 0][0] = c0[0]
     th_local_res[0, 0][1] = c0[1]
@@ -1270,21 +1238,21 @@ fn wgmma_kernel[
     b_smem_layout: Layout,
     transpose_b: Bool = False,
 ](
-    a_gmem: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b_gmem: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    c_gmem: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a_gmem: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b_gmem: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c_gmem: LayoutTensor[c_type, c_layout, MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.bfloat16,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -1327,12 +1295,10 @@ fn wgmma_kernel[
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
 
-    var warp_id = thread_idx.x // 32
-    var lan_id = thread_idx.x % 32
     var th_local_res = (
-        c_gmem.tile[16, 8](warp_id, 0)
+        c_gmem.tile[16, 8](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lan_id)
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
     th_local_res[0, 0][0] = c_reg[0].cast[c_gmem.dtype]()
     th_local_res[0, 0][1] = c_reg[1].cast[c_gmem.dtype]()

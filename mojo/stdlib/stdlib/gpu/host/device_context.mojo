@@ -56,13 +56,18 @@ from gpu.host.compile import (
     _to_sass,
     get_gpu_target,
 )
-from memory import stack_allocation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    stack_allocation,
+)
 from memory.unsafe import bitcast
 
 from utils import Variant
 from utils._serialize import _serialize_elements
 
 from .info import GPUInfo
+from ._pointer_conv import _is_pointer_convertible
 
 
 # Create empty structs to ensure dtype checking when using the C++ handles.
@@ -600,7 +605,7 @@ struct HostBuffer[dtype: DType](
         ]()
         self.context().enqueue_copy(self, src_ptr)
 
-    fn enqueue_fill(self, val: Scalar[dtype]) raises -> Self:
+    fn enqueue_fill(self, val: Scalar[dtype]) raises:
         """Enqueues an operation to fill this buffer with a specified value.
 
         This method schedules a memory set operation that fills the entire buffer
@@ -610,9 +615,6 @@ struct HostBuffer[dtype: DType](
         Args:
             val: The value to fill the buffer with.
 
-        Returns:
-            Self reference for method chaining.
-
         Raises:
             If the operation fails.
         """
@@ -621,7 +623,6 @@ struct HostBuffer[dtype: DType](
             "HostBuffer is not supported on GPUs",
         ]()
         self.context().enqueue_memset(self, val)
-        return self
 
     fn reassign_ownership_to(self, ctx: DeviceContext) raises:
         """Transfers ownership of this buffer to another device context.
@@ -1230,7 +1231,7 @@ struct DeviceBuffer[dtype: DType](
         ]()
         self.context().enqueue_copy(self, src_ptr)
 
-    fn enqueue_fill(self, val: Scalar[dtype]) raises -> Self:
+    fn enqueue_fill(self, val: Scalar[dtype]) raises:
         """Enqueues an operation to fill this buffer with a specified value.
 
         This method schedules a memory set operation that fills the entire buffer
@@ -1240,9 +1241,6 @@ struct DeviceBuffer[dtype: DType](
         Args:
             val: The value to fill the buffer with.
 
-        Returns:
-            Self reference for method chaining.
-
         Raises:
             If the operation fails.
         """
@@ -1251,7 +1249,6 @@ struct DeviceBuffer[dtype: DType](
             "DeviceBuffer is not supported on GPUs",
         ]()
         self.context().enqueue_memset(self, val)
-        return self
 
     fn reassign_ownership_to(self, ctx: DeviceContext) raises:
         """Transfers ownership of this buffer to another device context.
@@ -1634,6 +1631,10 @@ struct DeviceStream(ImplicitlyCopyable, Movable):
 
     @parameter
     @always_inline
+    @deprecated(
+        "`enqueue_function` is deprecated. Use `enqueue_function_checked`"
+        " instead."
+    )
     fn enqueue_function[
         *Ts: AnyType
     ](
@@ -2666,6 +2667,14 @@ struct DeviceFunction[
                         ", but actual type name is: ",
                         get_type_name[declared_arg_type](),
                     ]()
+                elif _is_pointer_convertible[
+                    declared_arg_type, actual_arg_type.device_type
+                ]():
+                    # This is a temporary check for the conversions between
+                    # LegacyUnsafePointer and UnsafePointer (v2). Since type
+                    # checking would fail between these two types, this allows
+                    # you to convert between them without type checking errors.
+                    pass
                 else:
                     # They handed in a host dtype, in other words, a dtype that
                     # needs to be mapped before handing it to the device. In
@@ -2701,7 +2710,7 @@ struct DeviceFunction[
         # time.
         @parameter
         fn calculate_args_size() -> Int:
-            var tmp_args_size = 8  # always reserve 8 extra bytes for aligment.
+            var tmp_args_size = 8  # always reserve 8 extra bytes for alignment.
 
             @parameter
             for i in range(num_passed_args):
@@ -4045,6 +4054,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
     @parameter
     @always_inline
+    @deprecated(
+        "`enqueue_function` is deprecated. Use `enqueue_function_checked`"
+        " instead."
+    )
     fn enqueue_function[
         func_type: AnyTrivialRegType, //,
         func: func_type,
@@ -4267,6 +4280,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
     @parameter
     @always_inline
+    @deprecated(
+        "`enqueue_function` is deprecated. Use `enqueue_function_checked`"
+        " instead."
+    )
     fn enqueue_function[
         *Ts: AnyType
     ](
@@ -4591,9 +4608,9 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         from layout import Layout, LayoutTensor
 
         fn vector_add(
-            a: LayoutTensor[DType.float32, Layout.row_major(1000), MutableAnyOrigin],
-            b: LayoutTensor[DType.float32, Layout.row_major(1000), MutableAnyOrigin],
-            c: LayoutTensor[DType.float32, Layout.row_major(1000), MutableAnyOrigin],
+            a: LayoutTensor[DType.float32, Layout.row_major(1000), MutAnyOrigin],
+            b: LayoutTensor[DType.float32, Layout.row_major(1000), MutAnyOrigin],
+            c: LayoutTensor[DType.float32, Layout.row_major(1000), MutAnyOrigin],
         ):
             # ... kernel implementation ...
             pass
@@ -4819,7 +4836,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
                 var scale_factor = 2.0
 
                 # This kernel captures 'scale_factor' from the enclosing scope
-                fn scale_kernel(data: LayoutTensor[DType.float32, Layout.row_major(100), MutableAnyOrigin]):
+                fn scale_kernel(data: LayoutTensor[DType.float32, Layout.row_major(100), MutAnyOrigin]):
                     # Uses captured scale_factor variable
                     pass
 
@@ -5124,6 +5141,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
     @parameter
     @always_inline
+    @deprecated(
+        "`enqueue_function` is deprecated. Use `enqueue_function_checked`"
+        " instead."
+    )
     fn enqueue_function[
         *Ts: AnyType
     ](
@@ -5829,7 +5850,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         Raises:
             If the operation fails.
         """
-        alias bitwidth = dtype.bit_width()
+        alias bitwidth = bit_width_of[dtype]()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
             "bitwidth of memset dtype must be one of [8,16,32,64]",
@@ -5879,7 +5900,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         Raises:
             If the operation fails.
         """
-        alias bitwidth = dtype.bit_width()
+        alias bitwidth = bit_width_of[dtype]()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
             "bitwidth of memset dtype must be one of [8,16,32,64]",

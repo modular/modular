@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import ceildiv, isclose
 from random import rand
 from sys.info import simd_width_of
@@ -40,7 +41,7 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from testing import assert_equal, assert_raises
+from testing import assert_equal, assert_raises, TestSuite
 
 from utils.index import Index, IndexList
 
@@ -414,7 +415,7 @@ fn test_conv_transpose_shape_basic() raises:
     output_pads_ptr.free()
 
 
-def main():
+fn test_2d_stride_3_2_pad_1_1_2_2() raises:
     test_conv_transposed[DType.float32, 2](
         1,  # N
         Index(3, 3),
@@ -427,6 +428,8 @@ def main():
         1,  # num_groups
     )
 
+
+fn test_2d_basic_no_pad() raises:
     test_conv_transposed[DType.float32, 2](
         1,  # N
         Index(3, 3),
@@ -439,6 +442,8 @@ def main():
         1,  # num_groups
     )
 
+
+fn test_2d_dilation_2_2() raises:
     test_conv_transposed[DType.float32, 2](
         1,  # N
         Index(3, 3),
@@ -451,6 +456,8 @@ def main():
         1,  # num_groups
     )
 
+
+fn test_2d_stride_3_2_kernel_2_2() raises:
     test_conv_transposed[DType.float32, 2](
         1,  # N
         Index(3, 3),
@@ -463,6 +470,8 @@ def main():
         1,  # num_groups
     )
 
+
+fn test_3d_stride_1_3_2() raises:
     test_conv_transposed[DType.float32, 3](
         1,  # N
         Index(2, 3, 3),
@@ -475,6 +484,8 @@ def main():
         1,  # num_groups
     )
 
+
+fn test_3d_stride_2_1_2_dilation_1_1_2() raises:
     test_conv_transposed[DType.float32, 3](
         1,  # N
         Index(3, 4, 7),
@@ -487,6 +498,8 @@ def main():
         1,  # num_groups
     )
 
+
+fn test_3d_with_padding() raises:
     test_conv_transposed[DType.float32, 3](
         1,  # N
         Index(4, 3, 3),
@@ -499,6 +512,8 @@ def main():
         1,  # num_groups
     )
 
+
+fn test_3d_complex_padding_dilation() raises:
     test_conv_transposed[DType.float32, 3](
         1,  # N
         Index(4, 5, 7),
@@ -511,6 +526,8 @@ def main():
         1,  # num_groups
     )
 
+
+fn test_3d_multi_channel() raises:
     test_conv_transposed[DType.float32, 3](
         1,  # N
         Index(5, 5, 5),
@@ -523,8 +540,25 @@ def main():
         1,  # num_groups
     )
 
+
+def main():
+    var suite = TestSuite()
+
     # Test conv_transpose_shape function
-    test_conv_transpose_shape_basic()
+    suite.test[test_conv_transpose_shape_basic]()
+
+    # Test full conv transposed operations
+    suite.test[test_2d_stride_3_2_pad_1_1_2_2]()
+    suite.test[test_2d_basic_no_pad]()
+    suite.test[test_2d_dilation_2_2]()
+    suite.test[test_2d_stride_3_2_kernel_2_2]()
+    suite.test[test_3d_stride_1_3_2]()
+    suite.test[test_3d_stride_2_1_2_dilation_1_1_2]()
+    suite.test[test_3d_with_padding]()
+    suite.test[test_3d_complex_padding_dilation]()
+    suite.test[test_3d_multi_channel]()
+
+    suite^.run()
 
     # Large shapes commented out to save CI cost.
 

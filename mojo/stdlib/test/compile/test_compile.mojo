@@ -14,7 +14,7 @@
 from compile import compile_info
 from gpu import *
 from gpu.host import *
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import *
 from testing import TestSuite
 from sys.info import _cdna_4_or_newer, _is_amd_cdna, CompilationTarget
@@ -52,7 +52,7 @@ alias target_regular = __mlir_attr[
 ]
 
 
-def test_data_layout_llvm[emission_kind: StaticString]():
+def _test_data_layout_llvm[emission_kind: StaticString]():
     fn my_func(src: UnsafePointer[Int32]):
         return
 
@@ -72,6 +72,11 @@ def test_data_layout_llvm[emission_kind: StaticString]():
         "e-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64"
         in target_regular_llvm
     )
+
+
+def test_data_layout_llvm():
+    _test_data_layout_llvm["llvm"]()
+    _test_data_layout_llvm["llvm-opt"]()
 
 
 def test_data_layout_asm():

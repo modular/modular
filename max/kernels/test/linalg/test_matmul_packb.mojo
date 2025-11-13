@@ -34,9 +34,9 @@ alias kc = 128
 @export(ABI="C")
 fn pack_b(
     packed_b: NDBuffer[
-        type, 3, MutableAnyOrigin, DimList(width // kernel_cols, K, kernel_cols)
+        type, 3, MutAnyOrigin, DimList(width // kernel_cols, K, kernel_cols)
     ],
-    b: NDBuffer[type, 2, MutableAnyOrigin, DimList(K, N)],
+    b: NDBuffer[type, 2, MutAnyOrigin, DimList(K, N)],
 ):
     PackMatrixCols[
         DimList(K, N),
@@ -59,10 +59,10 @@ fn pack_b(
 
 fn test_pack_b() raises:
     var packed_b = NDBuffer[
-        type, 3, MutableAnyOrigin, DimList(width // kernel_cols, K, kernel_cols)
+        type, 3, MutAnyOrigin, DimList(width // kernel_cols, K, kernel_cols)
     ].stack_allocation[alignment=64]()
     packed_b.fill(1)
-    var b = NDBuffer[type, 2, MutableAnyOrigin, DimList(K, N)].stack_allocation[
+    var b = NDBuffer[type, 2, MutAnyOrigin, DimList(K, N)].stack_allocation[
         alignment=64
     ]()
     b.fill(1)

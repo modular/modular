@@ -13,6 +13,10 @@
 
 from collections import OptionalReg, Dict
 from math import align_down, ceildiv
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from os import abort
 from sys.ffi import _get_global_or_null, external_call
 from sys.info import align_of, simd_width_of
@@ -365,7 +369,7 @@ struct ConvDirectNHWC[
     output_layout: Layout,
     input_origin: Origin[input_mut],
     filter_origin: Origin[filter_mut],
-    output_origin: MutableOrigin,
+    output_origin: MutOrigin,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -3076,9 +3080,9 @@ fn conv2d_gpu_naive_nhwc_rscf[
     block_size: Int,
     maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type],
 ](
-    input: LayoutTensor[input_type, input_layout, MutableAnyOrigin],
-    filter: LayoutTensor[filter_type, filter_layout, MutableAnyOrigin],
-    output: LayoutTensor[output_type, output_layout, MutableAnyOrigin],
+    input: LayoutTensor[input_type, input_layout, MutAnyOrigin],
+    filter: LayoutTensor[filter_type, filter_layout, MutAnyOrigin],
+    output: LayoutTensor[output_type, output_layout, MutAnyOrigin],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
@@ -3416,11 +3420,9 @@ fn conv_gpu[
     maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type] = None,
     filter_is_fcrs: Bool = False,
 ](
-    input: LayoutTensor[input_type, input_layout, MutableAnyOrigin],
-    filter: LayoutTensor[filter_type, filter_layout, MutableAnyOrigin],
-    output: LayoutTensor[
-        mut=True, output_type, output_layout, MutableAnyOrigin
-    ],
+    input: LayoutTensor[input_type, input_layout, MutAnyOrigin],
+    filter: LayoutTensor[filter_type, filter_layout, MutAnyOrigin],
+    output: LayoutTensor[mut=True, output_type, output_layout, MutAnyOrigin],
     stride: IndexList[conv_rank],
     dilation: IndexList[conv_rank],
     padding: IndexList[conv_rank],
@@ -3474,7 +3476,7 @@ fn conv_gpu[
 
                 conv_cudnn[input_type, filter_type, output_type,](
                     LayoutTensor[
-                        input_type, Layout.row_major[4](), MutableAnyOrigin
+                        input_type, Layout.row_major[4](), MutAnyOrigin
                     ](
                         input.ptr,
                         RuntimeLayout[Layout.row_major[4]()].row_major(
@@ -3482,7 +3484,7 @@ fn conv_gpu[
                         ),
                     ),
                     LayoutTensor[
-                        filter_type, Layout.row_major[4](), MutableAnyOrigin
+                        filter_type, Layout.row_major[4](), MutAnyOrigin
                     ](
                         filter.ptr,
                         RuntimeLayout[Layout.row_major[4]()].row_major(
@@ -3490,7 +3492,7 @@ fn conv_gpu[
                         ),
                     ),
                     LayoutTensor[
-                        output_type, Layout.row_major[4](), MutableAnyOrigin
+                        output_type, Layout.row_major[4](), MutAnyOrigin
                     ](
                         output_tmp.ptr,
                         RuntimeLayout[Layout.row_major[4]()].row_major(
@@ -3525,7 +3527,7 @@ fn conv_gpu[
             else:
                 conv_cudnn[input_type, filter_type, output_type,](
                     LayoutTensor[
-                        input_type, Layout.row_major[4](), MutableAnyOrigin
+                        input_type, Layout.row_major[4](), MutAnyOrigin
                     ](
                         input.ptr,
                         RuntimeLayout[Layout.row_major[4]()].row_major(
@@ -3533,7 +3535,7 @@ fn conv_gpu[
                         ),
                     ),
                     LayoutTensor[
-                        filter_type, Layout.row_major[4](), MutableAnyOrigin
+                        filter_type, Layout.row_major[4](), MutAnyOrigin
                     ](
                         filter.ptr,
                         RuntimeLayout[Layout.row_major[4]()].row_major(
@@ -3541,7 +3543,7 @@ fn conv_gpu[
                         ),
                     ),
                     LayoutTensor[
-                        output_type, Layout.row_major[4](), MutableAnyOrigin
+                        output_type, Layout.row_major[4](), MutAnyOrigin
                     ](
                         output.ptr,
                         RuntimeLayout[Layout.row_major[4]()].row_major(
@@ -3596,9 +3598,9 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     block_size: Int,
     maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type],
 ](
-    input: LayoutTensor[input_type, input_layout, MutableAnyOrigin],
-    filter: LayoutTensor[filter_type, filter_layout, MutableAnyOrigin],
-    output: LayoutTensor[output_type, output_layout, MutableAnyOrigin],
+    input: LayoutTensor[input_type, input_layout, MutAnyOrigin],
+    filter: LayoutTensor[filter_type, filter_layout, MutAnyOrigin],
+    output: LayoutTensor[output_type, output_layout, MutAnyOrigin],
     stride: IndexList[3],
     dilation: IndexList[3],
     padding: IndexList[3],

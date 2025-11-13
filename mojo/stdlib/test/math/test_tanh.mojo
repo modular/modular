@@ -15,6 +15,7 @@ from math import tanh
 from random import randn, seed
 
 from buffer import NDBuffer
+from memory import LegacyUnsafePointer as UnsafePointer
 from test_utils import compare, libm_call
 from testing import assert_almost_equal, TestSuite
 
@@ -123,7 +124,7 @@ def test_tanh_tfvals_fp64():
             assert_almost_equal(err[i], abs_rel_err[i])
 
 
-def test_tanh_libm[N: Int = 8192]():
+def _test_tanh_libm[N: Int = 8192]():
     seed(0)
     alias test_dtype = DType.float32
     var x32 = UnsafePointer[Scalar[test_dtype]].alloc(N)
@@ -180,8 +181,8 @@ def test_direct():
     )
 
 
-def test_tanh_libm_wrapper():
-    test_tanh_libm[]()
+def test_tanh_libm():
+    _test_tanh_libm[]()
 
 
 def main():

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up, ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from os.atomic import Atomic
 from sys import size_of
 
@@ -122,7 +123,7 @@ struct SplitKTileScheduler[
     alias log_cluster_size = log2_floor(cluster_shape[0] * cluster_shape[1])
 
     alias WorkTileType[dtype: DType, layout: Layout] = LayoutTensor[
-        dtype, layout, MutableAnyOrigin
+        dtype, layout, MutAnyOrigin
     ]
 
     @always_inline
@@ -419,28 +420,17 @@ struct SplitKTileScheduler[
         dyn_tile_shape: IndexList[3],
         dyn_cluster_shape: IndexList[2],
     ) -> Int:
-        var problem_blocks = Self.get_problem_blocks_shape(
-            problem_shape, dyn_tile_shape, dyn_cluster_shape
-        )
-
-        var problem_blocks_m = align_up(
-            UInt(problem_blocks[0]),
-            UInt(dyn_cluster_shape[0]),
-        )
-        var problem_blocks_n = align_up(
-            UInt(problem_blocks[1]),
-            UInt(dyn_cluster_shape[1]),
-        )
-
         constrained[
             accum_type == DType.float32,
             "Only support float32 accumulator type",
         ]()
 
-        var num_output_tiles = problem_blocks_m * problem_blocks_n
+        var num_output_tiles = Self.get_num_tiles(
+            problem_shape, dyn_tile_shape, dyn_cluster_shape
+        )
 
         var locks_workspace_bytes = (
-            num_output_tiles * UInt(size_of[Int32]()) * dyn_num_consumer
+            num_output_tiles * size_of[Int32]() * dyn_num_consumer
         )
 
         return Int(locks_workspace_bytes)
@@ -506,7 +496,7 @@ struct SplitKTileScheduler[
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
+        c_reg_tile: RegTileType[accum_type, c_reg_layout],
         work_tile_info: WorkInfo,
         num_barriers: UInt32,
         warp_group_local_idx: UInt32,
@@ -520,9 +510,6 @@ struct SplitKTileScheduler[
         var lock_idx = (
             reduction_tile_idx * num_barriers
         ) + warp_group_local_idx
-
-        var num_peers = 0
-        var reduction_peer_offset = 0
 
         var warp_group_thread_idx = thread_idx.x % UInt(WARPGROUP_SIZE)
 
@@ -645,7 +632,7 @@ struct SplitKTileScheduler[
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
+        c_reg_tile: RegTileType[accum_type, c_reg_layout],
         reduction_tile_idx: UInt32,
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,
@@ -695,7 +682,7 @@ struct SplitKTileScheduler[
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
+        c_reg_tile: RegTileType[accum_type, c_reg_layout],
         reduction_tile_idx: UInt32,
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,

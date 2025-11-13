@@ -54,9 +54,9 @@ fn multistage_gemm_simple[
     binary_lambda_fn: binary_fn_type,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()
@@ -106,9 +106,9 @@ fn naive_dual_gemm[
     binary_lambda_fn: binary_fn_type,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c01: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b01: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    c01: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b01: LayoutTensor[b_type, b_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ):
     try:

@@ -271,7 +271,7 @@ available in an SDK; it was available only in web-hosted a JupyterLab
 environment. After we made Mojo available for local development, we
 shut down the JupyterLab environment and launched a new Mojo Playground
 for people to try Mojo on the web. But ever since we made the Mojo SDK
-avialable for Linux and Mac, Mojo Playground usage steadily declined.
+available for Linux and Mac, Mojo Playground usage steadily declined.
 The trickle of users we get now no longer justifies the maintenance
 and hosting costs.
 

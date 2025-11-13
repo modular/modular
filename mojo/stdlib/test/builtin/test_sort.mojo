@@ -334,7 +334,7 @@ fn test_quick_sort_repeated_val() raises:
 
     _quicksort[_greater_than](list)
 
-    var expected = List[Float32](
+    var expected: List[Float32] = [
         9.0,
         9.0,
         9.0,
@@ -371,7 +371,7 @@ fn test_quick_sort_repeated_val() raises:
         1.0,
         1.0,
         1.0,
-    )
+    ]
     for i in range(0, length):
         assert_equal(expected[i], list[i])
 
@@ -379,7 +379,7 @@ fn test_quick_sort_repeated_val() raises:
     fn _less_than(lhs: Float32, rhs: Float32) -> Bool:
         return lhs < rhs
 
-    expected = List[Float32](
+    expected: List[Float32] = [
         1.0,
         1.0,
         1.0,
@@ -416,13 +416,13 @@ fn test_quick_sort_repeated_val() raises:
         9.0,
         9.0,
         9.0,
-    )
+    ]
     _quicksort[_less_than](list)
     for i in range(0, length):
         assert_equal(expected[i], list[i])
 
 
-fn test_partition_top_k(length: Int, k: Int) raises:
+fn _test_partition_top_k(length: Int, k: Int) raises:
     var list = List[Float32](capacity=length)
 
     for i in range(0, length):
@@ -545,20 +545,8 @@ struct Person(Comparable, ImplicitlyCopyable, Movable):
             return self.name < other.name
         return False
 
-    fn __le__(self, other: Self) -> Bool:
-        return not (other < self)
-
-    fn __gt__(self, other: Self) -> Bool:
-        return other < self
-
-    fn __ge__(self, other: Self) -> Bool:
-        return not (self < other)
-
     fn __eq__(self, other: Self) -> Bool:
         return self.age == other.age and self.name == other.name
-
-    fn __ne__(self, other: Self) -> Bool:
-        return self.age != other.age or self.name != other.name
 
 
 def test_sort_comparamble_elements_list():
@@ -683,9 +671,9 @@ def test_ensure_no_copies():
 
 
 def test_partition():
-    test_partition_top_k(7, 5)
-    test_partition_top_k(11, 2)
-    test_partition_top_k(4, 1)
+    _test_partition_top_k(7, 5)
+    _test_partition_top_k(11, 2)
+    _test_partition_top_k(4, 1)
 
 
 def main():

@@ -24,31 +24,31 @@ alias BLOCK_DIM = 8
 
 
 fn stencil1d(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     arr_size: Int,
     coeff0: Int,
     coeff1: Int,
     coeff2: Int,
 ):
-    var tid = global_idx.x
+    var tid = Int(global_idx.x)
 
     var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
     var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
 
-    if 0 < tid < UInt(arr_size - 1):
-        b[tid] = coeff0 * a[(tid - 1)] + coeff1 * a[tid] + coeff2 * a[(tid + 1)]
+    if 0 < tid < arr_size - 1:
+        b[tid] = coeff0 * a[tid - 1] + coeff1 * a[tid] + coeff2 * a[tid + 1]
 
 
 fn stencil1d_smem(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     arr_size: Int,
     coeff0: Int,
     coeff1: Int,
     coeff2: Int,
 ):
-    var tid = global_idx.x
+    var tid = Int(global_idx.x)
     var lindex = thread_idx.x + 1
 
     var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
@@ -60,16 +60,14 @@ fn stencil1d_smem(
 
     a_shared[lindex] = a[tid]
     if thread_idx.x == 0:
-        a_shared[lindex - 1] = (
-            a[(tid - 1)] if 0 <= tid - 1 < UInt(arr_size) else 0
-        )
-        a_shared[lindex + BLOCK_DIM] = (
-            a[(tid + BLOCK_DIM)] if tid + BLOCK_DIM < UInt(arr_size) else 0
-        )
+        a_shared[lindex - 1] = a[tid - 1] if 0 <= tid - 1 < arr_size else 0
+
+        var idx = tid + Int(BLOCK_DIM)
+        a_shared[lindex + BLOCK_DIM] = a[idx] if idx < arr_size else 0
 
     barrier()
 
-    if 0 < tid < UInt(arr_size - 1):
+    if 0 < tid < arr_size - 1:
         b[tid] = (
             coeff0 * a_shared[lindex - 1]
             + coeff1 * a_shared[lindex]
@@ -87,8 +85,8 @@ fn run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
     alias coeff2 = 4
     alias iterations = 4
 
-    var a_host = UnsafePointer[Float32].alloc(m)
-    var b_host = UnsafePointer[Float32].alloc(m)
+    var a_host = alloc[Float32](m)
+    var b_host = alloc[Float32](m)
 
     for i in range(m):
         a_host[i] = i

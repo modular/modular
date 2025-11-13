@@ -60,7 +60,7 @@ struct Table[type: TuningConfig](Stringable):
         return is_valid
 
     fn __str__(self) -> String:
-        var s = List[String](self.name)
+        var s: List[String] = [self.name]
         for i in range(len(self.configs)):
             var cfg = self.configs[i]
             s += [String("[", i, "] ", String(cfg))]

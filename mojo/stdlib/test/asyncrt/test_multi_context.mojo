@@ -14,6 +14,7 @@
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu import *
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 
@@ -52,12 +53,12 @@ fn _run_test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             in0_host2[i] = i
 
     # Setup right side constants.
-    _ = in1_dev1.enqueue_fill(2.0)
-    _ = in1_dev2.enqueue_fill(2.0)
+    in1_dev1.enqueue_fill(2.0)
+    in1_dev2.enqueue_fill(2.0)
 
     # Write known bad values to out_dev.
-    _ = out_dev1.enqueue_fill(101.0)
-    _ = out_dev2.enqueue_fill(102.0)
+    out_dev1.enqueue_fill(101.0)
+    out_dev2.enqueue_fill(102.0)
 
     var block_dim = 32
 

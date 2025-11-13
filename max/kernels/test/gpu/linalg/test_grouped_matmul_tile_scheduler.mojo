@@ -23,7 +23,7 @@ from utils.index import Index
 
 fn test_kernel[
     swizzle: Bool, shape: DimList
-](group_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, shape]):
+](group_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin, shape]):
     scheduler = TileScheduler[
         M=20,
         tile_shape = Index(4, 8, 16),

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import fma
+from memory import LegacyUnsafePointer as UnsafePointer
 
 from buffer.buffer import NDBuffer
 

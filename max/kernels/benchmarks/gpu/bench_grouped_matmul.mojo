@@ -248,10 +248,12 @@ fn bench_grouped_matmul[
             )
         ),
         # TODO: Pick relevant benchmetric
-        ThroughputMeasure(
-            BenchMetric.flops,
-            2 * total_num_tokens * N * K,
-        ),
+        [
+            ThroughputMeasure(
+                BenchMetric.flops,
+                2 * total_num_tokens * N * K,
+            )
+        ],
     )
 
     # Retain our buffers till the end.

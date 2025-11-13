@@ -16,13 +16,13 @@ from os import Atomic
 from sys.intrinsics import (
     ballot,
     implicitarg_ptr,
-    lane_id,
     readfirstlane,
     sendmsg,
 )
 from time import sleep
 
-from memory import Span
+from gpu.primitives.id import lane_id
+from memory import LegacyUnsafePointer as UnsafePointer, Span
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.

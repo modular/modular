@@ -17,7 +17,7 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu import thread_idx
 from gpu.memory import external_memory
 from gpu.sync import barrier
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_equal
 
 

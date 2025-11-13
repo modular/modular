@@ -13,14 +13,22 @@
 from sys import size_of
 
 from gpu.cluster import cluster_mask_base
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host._tensormap import SwizzleMode
+from gpu.memory import AddressSpace
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_id_in_cluster
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
+from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import coalesce
-from layout.tensor_core_async import tile_to_descriptor
+from layout.tensor_core_async import (
+    tile_to_descriptor,
+    tile_layout_k_major,
+    tile_layout_mn_major,
+)
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import Index, IndexList, product
 
 
@@ -34,7 +42,7 @@ fn extract_first_2_modes[l: Layout]() -> Layout:
     )
 
 
-@fieldwise_init
+@fieldwise_init("implicit")
 @register_passable("trivial")
 struct Major:
     var val: Int
@@ -44,6 +52,36 @@ struct Major:
 
     fn __eq__(self, rhs: Major) -> Bool:
         return self.val == rhs.val
+
+
+fn max_contiguous_tile_shape[
+    rank: Int, //,
+    dtype: DType,
+    tile_shape: IndexList[rank],
+    /,
+    *,
+    major: Major = Major.K,
+    swizzle_mode: SwizzleMode = SwizzleMode.NONE,
+]() -> IntTuple:
+    """Returns the maximum shape of a tile that's contiguous in memory for mma op. This is used to create TMA descriptor.
+    """
+
+    constrained[rank == 2, "Only 2D tensors are supported!"]()
+
+    @parameter
+    if major == Major.K:
+        # Tile shape is (MN, K), max K is based on swizzle.
+        return IntTuple(tile_shape[0], swizzle_mode.bytes() // size_of[dtype]())
+    elif major == Major.MN:
+        # Tile shape is (K, MN), max MN is based on swizzle, max K is 8 based on
+        # canonical layout.
+        # The following are rare in practice but worth checking.
+        # TODO: this may not work for swizzle.NONE, need to double-check
+        # TODO: for MN = swizzle_bytes // sizeof,  tile_shape[0] may be the max
+        return IntTuple(8, swizzle_mode.bytes() // size_of[dtype]())
+    else:
+        constrained[False, "Invalid major"]()
+        return IntTuple()
 
 
 # TODO: add create method to mma_operand trait and unify this with
@@ -65,6 +103,50 @@ fn _create_mma_desc[
     # Create and return the MMA shared memory descriptor
     # This will be used by the SM100 MMA operations to access shared memory
     return MMASmemDescriptor.create[SBO, LBO, swizzle_mode](ptr)
+
+
+fn _create_mma_desc_pair[
+    dtype: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
+](
+    ptr: UnsafePointer[
+        Scalar[dtype], address_space = AddressSpace.SHARED, *_, **_
+    ]
+) -> MMASmemDescriptorPair:
+    # Extract the stride values from the canonical layout
+    # The canonical layout is expected to have at least 2 dimensions
+    alias stride01 = canonical_layout[0].stride[1].value()
+    alias stride11 = canonical_layout[1].stride[1].value()
+    alias SBO = stride01 * size_of[dtype]()
+    alias LBO = stride11 * size_of[dtype]()
+
+    # Create and return the MMA shared memory descriptor
+    # This will be used by the SM100 MMA operations to access shared memory
+    return MMASmemDescriptorPair.create[SBO, LBO, swizzle_mode](ptr)
+
+
+@always_inline
+fn smem_descriptor[
+    dtype: DType, //,
+    *,
+    BMN: Int,
+    BK: Int,
+    swizzle_mode: TensorMapSwizzle,
+    is_k_major: Bool,
+](
+    ptr: UnsafePointer[
+        Scalar[dtype], address_space = AddressSpace.SHARED, *_, **_
+    ]
+) -> MMASmemDescriptorPair:
+    alias smem_layout = tile_layout_k_major[
+        dtype, BMN, BK, swizzle_mode
+    ]() if is_k_major else tile_layout_mn_major[dtype, BMN, BK, swizzle_mode]()
+    alias canonical_layout = tile_to_descriptor[
+        dtype, smem_layout, is_k_major=is_k_major
+    ]()
+    alias cl = canonical_layout if is_k_major else canonical_layout.transpose()
+    return _create_mma_desc_pair[
+        canonical_layout=cl, swizzle_mode=swizzle_mode
+    ](ptr)
 
 
 @register_passable("trivial")

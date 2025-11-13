@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from collections import OptionalReg
 from math import isclose
 from random import rand
@@ -194,8 +195,7 @@ fn test[
         ),
     )
 
-    alias config = MHAConfig(
-        qkv_type,
+    alias config = MHAConfig[qkv_type](
         UInt(num_heads),
         UInt(depth),
         BK=OptionalReg[UInt](UInt(128 // size_of[qkv_type]())),
@@ -250,8 +250,7 @@ fn test[
         ),
     )
 
-    alias config_baseline = MHAConfig(
-        qkv_type,
+    alias config_baseline = MHAConfig[qkv_type](
         UInt(num_heads),
         UInt(depth),
         BK=OptionalReg[UInt](UInt(128 // size_of[qkv_type]())),

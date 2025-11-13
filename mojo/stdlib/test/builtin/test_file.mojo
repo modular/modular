@@ -11,8 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from os import remove
 from pathlib import Path, _dir_of_current_file
+from stat import S_ISFIFO
+from subprocess import run
 from tempfile import gettempdir
+from time import sleep
 
 from testing import assert_equal, assert_true, TestSuite
 
@@ -252,12 +256,76 @@ def test_file_write_again():
         assert_equal(read_file.read(), expected_content)
 
 
+def test_file_rw_mode_preserves_content():
+    """Test that opening a file in 'rw' mode does not truncate existing content.
+
+    The FileHandle "rw" mode should not truncate file contents before reading,
+    unlike "w" mode which should truncate.
+    """
+    var temp_file = Path(gettempdir().value()) / "test_file_rw_mode"
+
+    # First, create a file with some content using write mode
+    var expected_content = "hello\nworld"
+    with open(temp_file, "w") as f:
+        f.write(expected_content)
+
+    # Now open it in "rw" mode and verify we can read the existing content
+    with open(temp_file, "rw") as f:
+        _ = f.seek(0)
+        var content = f.read()
+        assert_equal(
+            content,
+            expected_content,
+            "rw mode should preserve existing file content",
+        )
+
+        # Also verify we can write to it
+        _ = f.seek(0)
+        f.write("new content")
+
+    # Verify the write succeeded
+    with open(temp_file, "r") as f:
+        assert_equal(f.read(), "new content")
+
+
+def test_file_write_mode_truncates():
+    """Test that opening a file in 'w' mode truncates existing content."""
+    var temp_file = Path(gettempdir().value()) / "test_file_write_mode"
+
+    # Create a file with some content
+    with open(temp_file, "w") as f:
+        f.write("initial content")
+
+    # Open in write mode and write less content
+    with open(temp_file, "w") as f:
+        f.write("new")
+
+    # Verify the file was truncated
+    with open(temp_file, "r") as f:
+        assert_equal(
+            f.read(), "new", "w mode should truncate existing file content"
+        )
+
+
 def test_file_get_raw_fd():
     # since JIT and build give different file descriptors, we test by checking
     # if we printed to the right file.
-    var f1 = open(Path(gettempdir().value()) / "test_file_dummy_1", "rw")
-    var f2 = open(Path(gettempdir().value()) / "test_file_dummy_2", "rw")
-    var f3 = open(Path(gettempdir().value()) / "test_file_dummy_3", "rw")
+    # First, ensure the test files are empty by opening in write mode
+    var temp1 = Path(gettempdir().value()) / "test_file_dummy_1"
+    var temp2 = Path(gettempdir().value()) / "test_file_dummy_2"
+    var temp3 = Path(gettempdir().value()) / "test_file_dummy_3"
+    # Ensure the files are empty by doing this cleanup at the beginning of the
+    # test
+    with open(temp1, "w"):
+        pass
+    with open(temp2, "w"):
+        pass
+    with open(temp3, "w"):
+        pass
+
+    var f1 = open(temp1, "rw")
+    var f2 = open(temp2, "rw")
+    var f3 = open(temp3, "rw")
 
     print(
         "test from file 1",
@@ -297,6 +365,179 @@ def test_file_get_raw_fd():
     f1.close()
     f2.close()
     f3.close()
+
+
+def test_file_append_mode():
+    """Test that opening a file in 'a' mode appends to existing content."""
+    var temp_file = Path(gettempdir().value()) / "test_file_append_mode"
+
+    # Create a file with initial content
+    var initial_content = "initial content"
+    with open(temp_file, "w") as f:
+        f.write(initial_content)
+
+    # Open in append mode and add more content
+    var appended_text = " appended"
+    with open(temp_file, "a") as f:
+        f.write(appended_text)
+
+    # Verify the content was appended, not overwritten
+    with open(temp_file, "r") as f:
+        var content = f.read()
+        assert_equal(
+            content,
+            initial_content + appended_text,
+            "append mode should add to existing content",
+        )
+
+    # Test multiple append operations
+    with open(temp_file, "a") as f:
+        f.write(" more")
+    with open(temp_file, "a") as f:
+        f.write(" text")
+
+    with open(temp_file, "r") as f:
+        var final_content = f.read()
+        assert_equal(
+            final_content,
+            initial_content + appended_text + " more text",
+            "multiple appends should accumulate",
+        )
+
+
+def test_file_append_mode_creates_file():
+    """Test that append mode creates a new file if it doesn't exist."""
+    var temp_file = Path(gettempdir().value()) / "test_file_append_new"
+
+    # Delete the file if it exists
+    try:
+        remove(temp_file)
+    except:
+        pass
+
+    # Open in append mode (should create the file)
+    var content = "new file content"
+    with open(temp_file, "a") as f:
+        f.write(content)
+
+    # Verify the file was created with the content
+    with open(temp_file, "r") as f:
+        assert_equal(
+            f.read(), content, "append mode should create new file if missing"
+        )
+
+
+def test_file_append_mode_with_unicode():
+    """Test that append mode works correctly with Unicode characters."""
+    var temp_file = Path(gettempdir().value()) / "test_file_append_unicode"
+
+    # Create a file with Unicode content
+    with open(temp_file, "w") as f:
+        f.write("Hello 🔥")
+
+    # Append more Unicode content
+    with open(temp_file, "a") as f:
+        f.write(" World 🚀")
+
+    # Verify both parts are present
+    with open(temp_file, "r") as f:
+        var content = f.read()
+        assert_equal(
+            content,
+            "Hello 🔥 World 🚀",
+            "append mode should handle Unicode correctly",
+        )
+
+
+def test_file_open_fifo():
+    """Test that opening a FIFO in write mode doesn't attempt to remove it.
+
+    Regression test for bug where `FileHandle` should not try to remove
+    special files (FIFOs, devices, sockets) when opening in write mode.
+    Only regular files should be removed/truncated in write mode.
+
+    This test creates a FIFO and verifies that attempting to open it doesn't
+    raise the "unable to remove existing file" error. We use a background
+    reader process to avoid blocking.
+    """
+    var fifo_path = Path(gettempdir().value()) / "test_file_fifo"
+
+    # Clean up any existing FIFO from previous test runs
+    try:
+        remove(fifo_path)
+    except:
+        pass
+
+    # Create a FIFO using mkfifo command. In the future, we should add a
+    # `mkfifo` function in the stdlib itself.
+    # Note that `mkfifo` is mandatory in POSIX which is all we currently
+    # support, so no need to guard against availability.
+    _ = run("mkfifo " + String(fifo_path))
+
+    # Verify the FIFO was created
+    assert_true(fifo_path.exists())
+
+    # Start a background reader with explicit synchronization
+    # Create a flag file that signals when the reader is ready
+    var ready_flag = Path(gettempdir().value()) / "test_file_fifo_ready"
+    try:
+        remove(ready_flag)
+    except:
+        pass
+
+    # Start the reader and signal when it's ready
+    # The reader opens the FIFO first, then creates the ready flag
+    var start_reader = (
+        "sh -c '(cat "
+        + String(fifo_path)
+        + " > /dev/null & echo $! > "
+        + String(gettempdir().value())
+        + "/fifo_reader_pid; sleep 0.1; touch "
+        + String(ready_flag)
+        + ") &' >/dev/null 2>&1"
+    )
+    try:
+        _ = run(start_reader)
+    except:
+        print("Warning: Could not start background reader, skipping test")
+        try:
+            remove(fifo_path)
+        except:
+            pass
+        return
+
+    # Wait for reader to signal it's ready (with timeout)
+    var max_wait = 20  # 20 iterations * 0.1s = 2 seconds max
+    var reader_ready = False
+    for _ in range(max_wait):
+        if ready_flag.exists():
+            reader_ready = True
+            break
+        sleep(0.1)
+
+    if not reader_ready:
+        print("Warning: Reader not ready after timeout, skipping test")
+        try:
+            remove(fifo_path)
+            remove(ready_flag)
+        except:
+            pass
+        return
+
+    # The key test: opening a FIFO in write mode should NOT raise
+    # "unable to remove existing file" error. The bug was that `FileHandle`
+    # tried to remove the FIFO before opening it, which failed.
+    # If this raises an error, the test will fail.
+    var f = open(fifo_path, "w")
+    f.write("test data\n")
+    f.close()
+
+    # Clean up the FIFO and ready flag
+    try:
+        remove(fifo_path)
+        remove(ready_flag)
+    except:
+        pass
 
 
 def main():

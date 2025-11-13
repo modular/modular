@@ -26,8 +26,7 @@ NVIDIA and AMD GPU architectures and supports various data types with SIMD
 vectorization.
 """
 
-
-from math import align_up
+from math import align_up, ceildiv
 
 from memory import stack_allocation
 
@@ -40,17 +39,82 @@ import .warp
 
 
 @always_inline
-fn _block_reduce[
-    dtype: DType,
-    width: Int, //,
-    block_size: Int,
-    warp_reduce_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
-        dtype, width
+fn _block_reduce_with_padding[
+    dtype: DType, //,
+    *,
+    n_warps: Int,
+    padding: Int,
+    warp_reduce_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> Scalar[
+        dtype
     ],
     broadcast: Bool = False,
-](val: SIMD[dtype, width], *, initial_val: SIMD[dtype, width]) -> SIMD[
-    dtype, width
-]:
+](val: Scalar[dtype], *, initial_val: Scalar[dtype]) -> Scalar[dtype]:
+    # Add padding to avoid bank conflicts
+    var shared_mem = stack_allocation[
+        n_warps + padding, dtype, address_space = AddressSpace.SHARED
+    ]()
+
+    var wid = Int(warp_id())
+    var lid = Int(lane_id())
+
+    # Step 1: Perform warp-level reduction.
+    var warp_result = warp_reduce_fn(val)
+
+    @always_inline
+    fn compute_offset(offset: Int) -> Int:
+        """Computes the offset with the padding if needed."""
+
+        @parameter
+        if padding > 0:
+            return offset + Int(UInt(offset) // UInt(WARP_SIZE))
+        else:
+            return offset
+
+    # Step 2: Store warp results to shared memory with padding consideration
+    # Each leader thread (lane 0) is responsible for its warp.
+    # Account for padding when storing to avoid bank conflicts
+    if lid == 0:
+        shared_mem[compute_offset(Int(wid))] = warp_result
+
+    barrier()
+
+    # Step 3: Have the first warp reduce all warp results.
+    if wid == 0:
+        # Make sure that the "ghost" warps do not contribute to the sum.
+        var block_val = initial_val
+        # Load values from the shared memory (ith lane will have ith warp's
+        # value). Account for padding when loading.
+        if lid < n_warps:
+            block_val = shared_mem[compute_offset(lid)]
+
+        # Reduce across the first warp
+        warp_result = warp_reduce_fn(block_val)
+
+        @parameter
+        if broadcast:
+            # Store the final result back to shared memory for broadcast
+            if lid == 0:
+                shared_mem[] = warp_result
+
+    @parameter
+    if broadcast:
+        # Synchronize and broadcast the result to all threads
+        barrier()
+        # All threads read the final result from shared memory
+        warp_result = shared_mem[]
+
+    return warp_result
+
+
+@always_inline
+fn _block_reduce[
+    dtype: DType, //,
+    block_size: Int,
+    warp_reduce_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> Scalar[
+        dtype
+    ],
+    broadcast: Bool = False,
+](val: Scalar[dtype], *, initial_val: Scalar[dtype]) -> Scalar[dtype]:
     """Performs a generic block-level reduction operation.
 
     This function implements a block-level reduction using warp-level operations
@@ -59,7 +123,6 @@ fn _block_reduce[
 
     Parameters:
         dtype: The data type of the SIMD elements.
-        width: The SIMD width for vector operations.
         block_size: The number of threads in the block.
         warp_reduce_fn: A function that performs warp-level reduction.
         broadcast: If True, the final reduced value is broadcast to all
@@ -99,48 +162,24 @@ fn _block_reduce[
 
         return warp_result
 
-    var shared_mem = stack_allocation[
-        n_warps * width, dtype, address_space = AddressSpace.SHARED
-    ]()
-
-    # Step 1: Perform warp-level reduction.
-    var warp_result = warp_reduce_fn(val)
-
-    # Step 2: Store warp results to shared memory
-    var wid = warp_id()
-    var lid = lane_id()
-    # Each leader thread (lane 0) is responsible for its warp.
-    if lid == 0:
-        shared_mem.store(wid, warp_result)
-
-    barrier()
-
-    # Step 3: Have the first warp reduce all warp results.
-    if wid == 0:
-        # Make sure that the "ghost" warps do not contribute to the sum.
-        var block_val = initial_val
-        # Load values from the shared memory (ith lane will have ith warp's
-        # value).
-        if lid < UInt(n_warps):
-            block_val = shared_mem.load[width=width](lid)
-
-        # Reduce across the first warp
-        warp_result = warp_reduce_fn(block_val)
-
-        @parameter
-        if broadcast:
-            # Store the final result back to shared memory for broadcast
-            if lid == 0:
-                shared_mem.store(warp_result)
-
     @parameter
-    if broadcast:
-        # Synchronize and broadcast the result to all threads
-        barrier()
-        # All threads read the final result from shared memory
-        warp_result = shared_mem.load[width=width](0)
+    if n_warps == 2:
+        return _block_reduce_with_padding[
+            n_warps=n_warps,
+            padding=0,
+            warp_reduce_fn=warp_reduce_fn,
+            broadcast=broadcast,
+        ](val, initial_val=initial_val)
 
-    return warp_result
+    # General case with bank conflict optimization
+    # Add padding to avoid bank conflicts
+    alias padding = ceildiv(n_warps, WARP_SIZE) if n_warps > WARP_SIZE else 0
+    return _block_reduce_with_padding[
+        n_warps=n_warps,
+        padding=padding,
+        warp_reduce_fn=warp_reduce_fn,
+        broadcast=broadcast,
+    ](val, initial_val=initial_val)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -174,7 +213,7 @@ fn sum[
     """
 
     return _block_reduce[block_size, warp.sum, broadcast=broadcast](
-        val, initial_val=0
+        val.reduce_add(), initial_val=0
     )
 
 
@@ -211,7 +250,7 @@ fn max[
     """
 
     return _block_reduce[block_size, warp.max, broadcast=broadcast](
-        val, initial_val=Scalar[dtype].MIN_FINITE
+        val.reduce_max(), initial_val=Scalar[dtype].MIN_FINITE
     )
 
 
@@ -247,7 +286,7 @@ fn min[
     """
 
     return _block_reduce[block_size, warp.min, broadcast=broadcast](
-        val, initial_val=Scalar[dtype].MAX_FINITE
+        val.reduce_min(), initial_val=Scalar[dtype].MAX_FINITE
     )
 
 

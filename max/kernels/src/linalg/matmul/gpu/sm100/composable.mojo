@@ -13,6 +13,10 @@
 
 from hashlib import default_comp_time_hasher
 from math import ceildiv
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from sys import size_of
 
 from buffer.buffer import NDBuffer
@@ -21,7 +25,7 @@ from gpu import WARP_SIZE, barrier
 from gpu import lane_id as get_lane_id
 from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu import block_idx, lane_id, thread_idx
 from gpu.memory import external_memory
 from gpu.mma_sm100 import *
@@ -551,14 +555,14 @@ struct Pipeline[
         alias a_smem_tile_t = LayoutTensor[
             a_type,
             a_smem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             alignment=128,
         ]
         alias b_smem_tile_t = LayoutTensor[
             b_type,
             b_smem_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             alignment=128,
         ]

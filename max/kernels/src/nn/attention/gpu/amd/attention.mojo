@@ -14,7 +14,8 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
-from sys import simd_width_of
+from memory import LegacyUnsafePointer as UnsafePointer
+from sys import size_of, simd_width_of
 from sys.info import _cdna_4_or_newer
 
 from algorithm.functional import unswitch
@@ -30,7 +31,7 @@ from layout.layout_tensor import (
     copy_local_to_dram,
 )
 from layout.swizzle import Swizzle
-from layout.tensor_core import TiledTensorCore
+from layout.tensor_core import TiledTensorCore, num_matrix_reg
 from memory.pointer import AddressSpace as BaseAddressSpace
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
@@ -59,7 +60,6 @@ from .utils import (
     LocalLayoutTensor,
     SharedLayoutTensor,
     SharedMemoryManager,
-    convert_f32_to_bf16,
     copy_local_to_dram2,
     get_fragment_layout,
     get_nested_fragment_layout,
@@ -69,6 +69,15 @@ from .utils import (
 
 
 trait AttentionConfig(ImplicitlyCopyable):
+    # share shared memory for k and v
+    alias shared_kv: Bool
+    # shared memory for the full tile vs BK blocks
+    alias full_kv: Bool
+    # pad the depth for v smem
+    alias depth_padded: Bool
+    # double buffer
+    alias double_buffer: Bool
+
     @staticmethod
     @always_inline
     fn q_head_idx() -> UInt:
@@ -271,7 +280,12 @@ struct Attention[
 
     alias swap_a_b = True
     alias use_exp2 = True
-    alias k_group_size = 16 // Self.mma_shape[2] if not token_gen else 2
+    # we want to load 16B of data for each fragment so k_group_size is set such that
+    # k_group_size * num_matrix_fragments * size_of[Self.q_type]() = 16B
+    alias k_group_size = 16 // (
+        num_matrix_reg[Self.mma_shape[0], Self.mma_shape[2]]()
+        * size_of[Self.q_type]()
+    )
     alias num_k_mmas2 = ceildiv(
         Self.BK, UInt(Self.mma_shape[2] * Self.k_group_size)
     )
@@ -298,9 +312,12 @@ struct Attention[
         Int(Self.num_m_mmas),
         Int(Self.num_n_mmas),
         Self.output_frag_size,
-        Self.token_gen,
+        Self.BN != Self.WN,
         Self.mma_shape,
         Self.k_group_size,
+        # use double buffer as proxy for experimental kernel
+        # need to find a better way to determine this
+        tr_load_enabled = attention_config_t.double_buffer,
     ]
 
     alias row_layout = Layout.row_major(
@@ -328,14 +345,16 @@ struct Attention[
     ]
 
     alias SharedMemoryManagerType = SharedMemoryManager[
-        q_type,
+        attention_config_t.shared_kv,
+        attention_config_t.full_kv,
+        attention_config_t.depth_padded,
+        attention_config_t.double_buffer,
+        Self.q_type,
         Int(Self.BM),
         Int(Self.BN),
         Int(Self.BK),
         Int(Self.depth),
-        Int(Self.num_warps_n),
         Self.token_gen,
-        Self.output_depth,
     ]
 
     alias QRegisterBufferType = QRegisterBuffer[
@@ -585,7 +604,7 @@ struct Attention[
         mask: mask_t,
         sink_weights: OptionalReg[
             LayoutTensor[
-                Self.q_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+                Self.q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
             ]
         ],
         batch_idx: Int,
@@ -610,11 +629,11 @@ struct Attention[
         self.smem_manager = Self.SharedMemoryManagerType()
 
         self.warp_scratch_tensor = type_of(self.warp_scratch_tensor)(
-            self.smem_manager.get_warp_scratch_ptr()
+            self.smem_manager.get_warp_scratch_ptr[Self.accum_type]()
         )
 
         self.p_reg_buffer = Self.PRegisterBufferType(
-            self.smem_manager.get_p_ptr()
+            self.smem_manager.get_p_ptr[Self.q_type]()
         )
 
         var q_tile = self.gmem_manager.get_q_tensor(q)
@@ -745,219 +764,3 @@ struct Attention[
 
                 exp_sum_ptr[q_head_idx] = row_sum
                 qk_max_ptr[q_head_idx] = row_max
-
-    @always_inline
-    fn prefill(
-        mut self,
-    ):
-        constrained[Self.BK == 32, "BK must be 32"]()
-
-        @always_inline
-        @parameter
-        fn loop_over_kvcache[
-            tile_size: Int
-        ](kv_tile_start_row: UInt32, end: UInt32, not_last_iter: Bool):
-            if self.mask_skip_and_advance(
-                kv_tile_start_row,
-            ):
-                return
-
-            var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
-
-            var k_tile = self.gmem_manager.get_kv_tensor(
-                self.k.block_paged_ptr[Int(Self.BN)](
-                    self.get_batch_idx(),
-                    kv_tile_start_row,
-                    Self.kv_head_idx(),
-                    0,
-                ),
-                kv_tile_num_rows,
-            )
-
-            var v_tile = self.gmem_manager.get_kv_tensor(
-                self.v.block_paged_ptr[Int(Self.BN)](
-                    self.get_batch_idx(),
-                    kv_tile_start_row,
-                    Self.kv_head_idx(),
-                    0,
-                ),
-                kv_tile_num_rows,
-            )
-
-            self.zero_p_buffer()
-
-            var num_b_rows = Int(kv_tile_num_rows)
-
-            var k_buffer = KBuffer[
-                tensor_core_mma = Self.get_tensor_core_mma_qk(),
-                swizzle=None,
-                BN = Int(Self.BN),
-                WN = Int(Self.WN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
-            ](
-                k_tile,
-                num_b_rows,
-                self.smem_manager.get_k_ptr[k_tile.dtype](),
-            )
-
-            var v_buffer = VBufferTransposeLoads[
-                tensor_core_mma = Self.get_tensor_core_mma_pv(),
-                BN = Int(Self.BN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
-            ](v_tile, self.smem_manager.get_v_ptr[v_tile.dtype]())
-
-            @parameter
-            @always_inline
-            fn prefetch_function():
-                v_buffer.load_from_dram()
-
-            self.mma_qk[prefetch_function=prefetch_function](k_buffer)
-
-            self.mask_apply(
-                kv_tile_start_row,
-                kv_tile_num_rows,
-                not_last_iter,
-            )
-            # don't know why we need this barrier but i get random failures without it
-            barrier()
-            self.online_softmax()
-            barrier()
-
-            self.mma_pv(v_buffer)
-
-        for i in range(UInt32(0), UInt32(self.num_keys), UInt32(Self.BN)):
-            var end = min(i + Self.BN, self.num_keys)
-            loop_over_kvcache[Int(Self.BN)](i, end, end != self.num_keys)
-
-        self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
-
-        self.store_output()
-
-    @always_inline
-    fn decoding(
-        mut self,
-        exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
-        qk_max_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
-        num_partitions: Int,
-    ):
-        constrained[Self.BK == 32, "BK must be 32"]()
-
-        @always_inline
-        @parameter
-        fn loop_over_kvcache[
-            tile_size: Int
-        ](kv_tile_start_row: Int, end: Int, not_last_iter: Bool):
-            if self.mask_skip_and_advance(
-                kv_tile_start_row,
-            ):
-                return
-
-            var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
-
-            var k_tile = self.gmem_manager.get_kv_tensor(
-                self.k.block_paged_ptr[Int(Self.BN)](
-                    self.get_batch_idx(),
-                    kv_tile_start_row,
-                    self.kv_head_idx(),
-                    0,
-                ),
-                kv_tile_num_rows,
-            )
-
-            var v_tile = self.gmem_manager.get_kv_tensor(
-                self.v.block_paged_ptr[Int(Self.BN)](
-                    self.get_batch_idx(),
-                    kv_tile_start_row,
-                    self.kv_head_idx(),
-                    0,
-                ),
-                kv_tile_num_rows,
-            )
-
-            self.zero_p_buffer()
-
-            alias swizzle = Swizzle(2, 0, 2)
-
-            var num_b_rows = OptionalReg[Int](
-                kv_tile_num_rows
-            ) if not not_last_iter else None
-
-            var k_buffer = KBuffer[
-                tensor_core_mma = Self.get_tensor_core_mma_qk(),
-                swizzle=swizzle,
-                BN = Int(Self.BN),
-                WN = Int(Self.WN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
-                token_gen = Self.token_gen,
-            ](
-                k_tile,
-                num_b_rows,
-                self.smem_manager.get_k_ptr[k_tile.dtype](),
-            )
-            var v_tile_slice = v_tile.slice[:, : Int(Self.output_depth)]()
-            var v_buffer = VBuffer[
-                tensor_core_mma = Self.get_tensor_core_mma_pv(),
-                swizzle=None,
-                BN = Int(Self.BN),
-                WN = Int(Self.WN),
-                BK = Int(Self.BK),
-                depth = Self.output_depth,
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
-                token_gen = Self.token_gen,
-            ](
-                v_tile_slice,
-                num_b_rows,
-                self.smem_manager.get_v_ptr[v_tile.dtype](),
-            )
-
-            @parameter
-            @always_inline
-            fn prefetch_function():
-                v_buffer.load_from_dram()
-
-            self.mma_qk[prefetch_function=prefetch_function](k_buffer)
-
-            self.mask_apply(
-                kv_tile_start_row,
-                kv_tile_num_rows,
-                not_last_iter,
-            )
-
-            # Not sure why we need this barrier here, but the code hangs without it
-            barrier()
-
-            self.online_softmax()
-
-            # warp scratch and p_smem are using the same smem space
-            barrier()
-
-            self.copy_fragment_to_smem()
-
-            barrier()
-
-            self.mma_pv(v_buffer)
-            # ensure that smem for v is not required anymore
-            barrier()
-
-        start, end = get_start_and_end_for_partitions[Int(Self.BN)](
-            self.num_keys, num_partitions, Int(block_idx.x)
-        )
-
-        for i in range(start, end, Self.BN):
-            var end_ = min(i + Int(Self.BN), end)
-            loop_over_kvcache[Int(Self.BN)](i, end_, end_ != end)
-
-        # Apply softmax denominator.
-        self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
-        self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)
-        self.store_output()

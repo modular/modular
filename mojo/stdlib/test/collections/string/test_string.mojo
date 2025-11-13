@@ -685,13 +685,12 @@ def test_rfind():
 
 def test_split():
     alias S = StaticString
-    alias L = List[StaticString]
 
     # Should add all whitespace-like chars as one
     # test all unicode separators
-    var next_line = List[UInt8](0xC2, 0x85)
-    var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
-    var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
+    var next_line: List[UInt8] = [0xC2, 0x85]
+    var unicode_line_sep: List[UInt8] = [0xE2, 0x80, 0xA8]
+    var unicode_paragraph_sep: List[UInt8] = [0xE2, 0x80, 0xA9]
     # TODO add line and paragraph separator as StringLiteral once unicode
     # escape sequences are accepted
     var univ_sep_var = String(
@@ -709,13 +708,13 @@ def test_split():
         String(bytes=unicode_paragraph_sep),
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
-    assert_equal(StringSlice(s).split(), L("hello", "world"))
+    assert_equal(StringSlice(s).split(), [StaticString("hello"), "world"])
 
     # should split into empty strings between separators
-    assert_equal(S("1,,,3").split(","), L("1", "", "", "3"))
-    assert_equal(S(",,,").split(","), L("", "", "", ""))
-    assert_equal(S(" a b ").split(" "), L("", "a", "b", ""))
-    assert_equal(S("abababaaba").split("aba"), L("", "b", "", ""))
+    assert_equal(S("1,,,3").split(","), [StaticString("1"), "", "", "3"])
+    assert_equal(S(",,,").split(","), [StaticString(""), "", "", ""])
+    assert_equal(S(" a b ").split(" "), [StaticString(""), "a", "b", ""])
+    assert_equal(S("abababaaba").split("aba"), [StaticString(""), "b", "", ""])
     assert_true(len(S("").split()) == 0)
     assert_true(len(S(" ").split()) == 0)
     assert_true(len(S("").split(" ")) == 1)
@@ -726,38 +725,40 @@ def test_split():
     assert_true(len(S("   ").split(" ")) == 4)
 
     # should split into maxsplit + 1 items
-    assert_equal(S("1,2,3").split(",", 0), L("1,2,3"))
-    assert_equal(S("1,2,3").split(",", 1), L("1", "2,3"))
+    assert_equal(S("1,2,3").split(",", 0), [StaticString("1,2,3")])
+    assert_equal(S("1,2,3").split(",", 1), [StaticString("1"), "2,3"])
 
     # Split in middle
-    assert_equal(S("faang").split("n"), L("faa", "g"))
+    assert_equal(S("faang").split("n"), [StaticString("faa"), "g"])
 
     # No match from the delimiter
-    assert_equal(S("hello world").split("x"), L("hello world"))
+    assert_equal(S("hello world").split("x"), [StaticString("hello world")])
 
     # Multiple character delimiter
-    assert_equal(S("hello").split("ll"), L("he", "o"))
+    assert_equal(S("hello").split("ll"), [StaticString("he"), "o"])
 
-    res = L("", "bb", "", "", "", "bbb", "")
+    res = [StaticString(""), "bb", "", "", "", "bbb", ""]
     assert_equal(S("abbaaaabbba").split("a"), res)
     assert_equal(S("abbaaaabbba").split("a", 8), res)
     s1 = S("abbaaaabbba").split("a", 5)
-    assert_equal(s1, L("", "bb", "", "", "", "bbba"))
-    assert_equal(S("aaa").split("a", 0), L("aaa"))
-    assert_equal(S("a").split("a"), L("", ""))
-    assert_equal(S("1,2,3").split("3", 0), L("1,2,3"))
-    assert_equal(S("1,2,3").split("3", 1), L("1,2,", ""))
-    assert_equal(S("1,2,3,3").split("3", 2), L("1,2,", ",", ""))
-    assert_equal(S("1,2,3,3,3").split("3", 2), L("1,2,", ",", ",3"))
+    assert_equal(s1, [StaticString(""), "bb", "", "", "", "bbba"])
+    assert_equal(S("aaa").split("a", 0), [StaticString("aaa")])
+    assert_equal(S("a").split("a"), [StaticString(""), ""])
+    assert_equal(S("1,2,3").split("3", 0), [StaticString("1,2,3")])
+    assert_equal(S("1,2,3").split("3", 1), [StaticString("1,2,"), ""])
+    assert_equal(S("1,2,3,3").split("3", 2), [StaticString("1,2,"), ",", ""])
+    assert_equal(
+        S("1,2,3,3,3").split("3", 2), [StaticString("1,2,"), ",", ",3"]
+    )
 
-    assert_equal(S("Hello 🔥!").split(), L("Hello", "🔥!"))
+    assert_equal(S("Hello 🔥!").split(), [StaticString("Hello"), "🔥!"])
 
     s2 = S("Лорем ипсум долор сит амет").split(" ")
-    assert_equal(s2, L("Лорем", "ипсум", "долор", "сит", "амет"))
+    assert_equal(s2, [StaticString("Лорем"), "ипсум", "долор", "сит", "амет"])
     s3 = S("Лорем ипсум долор сит амет").split("м")
-    assert_equal(s3, L("Лоре", " ипсу", " долор сит а", "ет"))
+    assert_equal(s3, [StaticString("Лоре"), " ипсу", " долор сит а", "ет"])
 
-    assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
+    assert_equal(S("123").split(""), [StaticString(""), "1", "2", "3", ""])
     assert_equal(S("").join(S("123").split("")), "123")
     assert_equal(S(",1,2,3,").split(","), S("123").split(""))
     assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
@@ -768,20 +769,26 @@ def test_splitlines():
     alias L = List[StaticString]
 
     # Test with no line breaks
-    assert_equal(S("hello world").splitlines(), L("hello world"))
+    assert_equal(S("hello world").splitlines(), [StaticString("hello world")])
 
     # Test with line breaks
-    assert_equal(S("hello\nworld").splitlines(), L("hello", "world"))
-    assert_equal(S("hello\rworld").splitlines(), L("hello", "world"))
-    assert_equal(S("hello\r\nworld").splitlines(), L("hello", "world"))
+    assert_equal(
+        S("hello\nworld").splitlines(), [StaticString("hello"), "world"]
+    )
+    assert_equal(
+        S("hello\rworld").splitlines(), [StaticString("hello"), "world"]
+    )
+    assert_equal(
+        S("hello\r\nworld").splitlines(), [StaticString("hello"), "world"]
+    )
 
     # Test with multiple different line breaks
     s1 = S("hello\nworld\r\nmojo\rlanguage\r\n")
-    hello_mojo = L("hello", "world", "mojo", "language")
+    hello_mojo = [StaticString("hello"), "world", "mojo", "language"]
     assert_equal(s1.splitlines(), hello_mojo)
     assert_equal(
         s1.splitlines(keepends=True),
-        L("hello\n", "world\r\n", "mojo\r", "language\r\n"),
+        [StaticString("hello\n"), "world\r\n", "mojo\r", "language\r\n"],
     )
 
     # Test with an empty string
@@ -791,7 +798,7 @@ def test_splitlines():
     assert_equal(s2.splitlines(), hello_mojo)
     assert_equal(
         s2.splitlines(keepends=True),
-        L("hello\v", "world\f", "mojo\x1c", "language\x1d"),
+        [StaticString("hello\v"), "world\f", "mojo\x1c", "language\x1d"],
     )
 
     # test \x1c \x1d \x1e
@@ -799,7 +806,7 @@ def test_splitlines():
     assert_equal(s3.splitlines(), hello_mojo)
     assert_equal(
         s3.splitlines(keepends=True),
-        L("hello\x1c", "world\x1d", "mojo\x1e", "language\x1e"),
+        [StaticString("hello\x1c"), "world\x1d", "mojo\x1e", "language\x1e"],
     )
 
     # test \x85 \u2028 \u2029
@@ -814,7 +821,7 @@ def test_splitlines():
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
             _to_string_list(item.splitlines(keepends=True)),
-            List("hello" + u, "world" + u, "mojo" + u, "language" + u),
+            ["hello" + u, "world" + u, "mojo" + u, "language" + u],
         )
 
 
@@ -822,9 +829,9 @@ def test_isspace():
     assert_false(String().isspace())
 
     # test all utf8 and unicode separators
-    var next_line = List[UInt8](0xC2, 0x85)
-    var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
-    var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
+    var next_line: List[UInt8] = [0xC2, 0x85]
+    var unicode_line_sep: List[UInt8] = [0xE2, 0x80, 0xA8]
+    var unicode_paragraph_sep: List[UInt8] = [0xE2, 0x80, 0xA9]
     # TODO add line and paragraph separator as StringLiteral once unicode
     # escape sequences are accepted
     var univ_sep_var = [
@@ -845,7 +852,7 @@ def test_isspace():
     for i in univ_sep_var:
         assert_true(i.isspace())
 
-    for i in List[String]("not", "space", "", "s", "a", "c"):
+    for i in [String("not"), "space", "", "s", "a", "c"]:
         assert_false(i.isspace())
 
     for sep1 in univ_sep_var:
@@ -1142,7 +1149,7 @@ def test_string_char_slices_iter():
     assert_equal("🔥", String(item))
     assert_equal(0, len(iterator))
 
-    var items = List[String](
+    var items: List[String] = [
         "mojo🔥",
         "السلام عليكم",
         "Dobrý den",
@@ -1154,8 +1161,8 @@ def test_string_char_slices_iter():
         "你好",
         "Olá",
         "Здравствуйте",
-    )
-    var rev = List[String](
+    ]
+    var rev: List[String] = [
         "🔥ojom",
         "مكيلع مالسلا",
         "ned ýrboD",
@@ -1167,7 +1174,7 @@ def test_string_char_slices_iter():
         "好你",
         "álO",
         "етйувтсвардЗ",
-    )
+    ]
     var items_amount_characters = [5, 12, 9, 5, 7, 6, 5, 5, 2, 3, 12]
     for item_idx in range(len(items)):
         var item = items[item_idx]
@@ -1403,7 +1410,7 @@ def test_reserve():
 
 def test_uninit_ctor():
     var hello_len = len("hello")
-    var s = String(unsafe_uninit_length=UInt(hello_len))
+    var s = String(unsafe_uninit_length=hello_len)
     memcpy(
         dest=s.unsafe_ptr_mut(),
         src=StaticString("hello").unsafe_ptr(),
@@ -1413,7 +1420,7 @@ def test_uninit_ctor():
 
     # Resize with uninitialized memory.
     var s2 = String()
-    s2.resize(unsafe_uninit_length=UInt(hello_len))
+    s2.resize(unsafe_uninit_length=hello_len)
     memcpy(
         dest=s2.unsafe_ptr_mut(),
         src=StaticString("hello").unsafe_ptr(),
@@ -1533,12 +1540,12 @@ def test_sso():
 
     # The capacity should be 2x the previous amount, rounded up to 8.
     alias expected_capacity = UInt((Int(String.INLINE_CAPACITY) * 2 + 7) & ~7)
-    assert_equal(s.capacity(), expected_capacity)
+    assert_equal(s.capacity(), Int(expected_capacity))
     assert_equal(s._is_inline(), False)
 
     # Shrink down to small, but stays out of line to maintain our malloc.
     s.resize(4)
-    assert_equal(s.capacity(), expected_capacity)
+    assert_equal(s.capacity(), Int(expected_capacity))
     assert_equal(s._is_inline(), False)
     assert_equal(s, "ffff")
 

@@ -150,6 +150,19 @@ llvm_config.add_tool_substitutions(
     ]
 )
 
+if("--sanitize" not in set(extra_mojo_args)):
+    extra_mojo_args.extend(["--sanitize", "address"])
+
+llvm_config.add_tool_substitutions(
+    [
+        ToolSubst(
+            "%mojo-build-asan",
+            mojo_exe,
+            extra_args=["build"] + extra_mojo_args
+        )
+    ]
+)
+
 llvm_config.add_tool_substitutions(
     [
         ToolSubst(

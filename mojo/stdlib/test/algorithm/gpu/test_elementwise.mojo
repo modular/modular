@@ -26,10 +26,10 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     var in_host = NDBuffer[
-        dtype, 2, MutableAnyOrigin, DimList(2, 8)
+        dtype, 2, MutAnyOrigin, DimList(2, 8)
     ].stack_allocation()
     var out_host = NDBuffer[
-        dtype, 2, MutableAnyOrigin, DimList(2, 8)
+        dtype, 2, MutAnyOrigin, DimList(2, 8)
     ].stack_allocation()
 
     var flattened_length = in_host.num_elements()
@@ -66,7 +66,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    var expected_vals = List[Scalar[dtype]](
+    var expected_vals: List[Scalar[dtype]] = [
         42.0,
         43.0,
         44.0,
@@ -83,7 +83,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
         48.0,
         49.0,
         50.0,
-    )
+    ]
     for i in range(2):
         for j in range(8):
             assert_equal(
@@ -98,10 +98,10 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
     var in_host = NDBuffer[
-        dtype, 2, MutableAnyOrigin, DimList(3, 3)
+        dtype, 2, MutAnyOrigin, DimList(3, 3)
     ].stack_allocation()
     var out_host = NDBuffer[
-        dtype, 2, MutableAnyOrigin, DimList(3, 3)
+        dtype, 2, MutAnyOrigin, DimList(3, 3)
     ].stack_allocation()
 
     var flattened_length = in_host.num_elements()
@@ -137,9 +137,17 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     out_device.enqueue_copy_to(out_host.data)
     ctx.synchronize()
 
-    var expected_vals = List[Scalar[dtype]](
-        42.0, 43.0, 44.0, 43.0, 44.0, 45.0, 44.0, 45.0, 46.0
-    )
+    var expected_vals: List[Scalar[dtype]] = [
+        42.0,
+        43.0,
+        44.0,
+        43.0,
+        44.0,
+        45.0,
+        44.0,
+        45.0,
+        46.0,
+    ]
     for i in range(3):
         for j in range(3):
             assert_equal(
@@ -154,10 +162,10 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
 fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
     var in_host = NDBuffer[
-        dtype, 3, MutableAnyOrigin, DimList(2, 4, 5)
+        dtype, 3, MutAnyOrigin, DimList(2, 4, 5)
     ].stack_allocation()
     var out_host = NDBuffer[
-        dtype, 3, MutableAnyOrigin, DimList(4, 2, 5)
+        dtype, 3, MutAnyOrigin, DimList(4, 2, 5)
     ].stack_allocation()
 
     var flattened_length = in_host.num_elements()
@@ -198,7 +206,7 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     out_device.enqueue_copy_to(out_host.data)
     ctx.synchronize()
 
-    var expected_vals = List[Scalar[dtype]](
+    var expected_vals: List[Scalar[dtype]] = [
         0.0,
         1.0,
         2.0,
@@ -239,7 +247,7 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
         37.0,
         38.0,
         39.0,
-    )
+    ]
     for i in range(4):
         for j in range(2):
             for k in range(5):
@@ -252,7 +260,7 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     _ = out_device
 
 
-fn test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
+def _test_elementwise_zero_dimension_3d(ctx: DeviceContext):
     """Test elementwise operations with zero dimension in 3D tensor."""
     alias dtype = DType.float32
     alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
@@ -329,7 +337,7 @@ def test_elementwise_gpu():
         run_elementwise[DType.float16](ctx)
         run_elementwise_uneven_simd[DType.float16](ctx)
         run_elementwise_transpose_copy[DType.float16](ctx)
-        test_elementwise_zero_dimension_3d(ctx)
+        _test_elementwise_zero_dimension_3d(ctx)
 
 
 def main():

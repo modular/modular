@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import erf
+from memory import LegacyUnsafePointer as UnsafePointer
 from random import randn, seed
 
 from test_utils import compare, libm_call

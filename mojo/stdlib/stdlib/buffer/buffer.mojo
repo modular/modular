@@ -26,7 +26,12 @@ from sys.intrinsics import PrefetchOptions, masked_load, masked_store, prefetch
 
 from buffer.dimlist import Dim, DimList, _make_tuple
 from builtin.device_passable import DevicePassable
-from memory import memset_zero, stack_allocation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    memset_zero,
+    stack_allocation,
+)
 
 from utils._serialize import _serialize
 from utils.index import IndexList
@@ -613,7 +618,7 @@ struct NDBuffer[
     @always_inline("nodebug")
     fn get_immutable(
         self,
-    ) -> Self.OriginCastType[False, ImmutableOrigin.cast_from[origin]]:
+    ) -> Self.OriginCastType[False, ImmutOrigin.cast_from[origin]]:
         """Changes the mutability of the `NDBuffer` to immutable.
 
         Returns:
@@ -628,18 +633,18 @@ struct NDBuffer[
     @always_inline("nodebug")
     fn as_any_origin(
         self: NDBuffer[mut=True, *_, **_],
-    ) -> type_of(self).OriginCastType[True, MutableAnyOrigin]:
-        """Changes the origin of the `NDBuffer` to `MutableAnyOrigin`.
+    ) -> type_of(self).OriginCastType[True, MutAnyOrigin]:
+        """Changes the origin of the `NDBuffer` to `MutAnyOrigin`.
 
         Returns:
-            A buffer with the origin set to `MutableAnyOrigin`.
+            A buffer with the origin set to `MutAnyOrigin`.
 
         This requires the buffer to already be mutable as casting mutability
         is inherently very unsafe.
 
         It is usually preferred to maintain concrete origin values instead of
-        using `MutableAnyOrigin`. However, if it is needed, keep in mind that
-        `MutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        using `MutAnyOrigin`. However, if it is needed, keep in mind that
+        `MutAnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the buffer.
         """
         return {
@@ -651,15 +656,15 @@ struct NDBuffer[
     @always_inline("nodebug")
     fn as_any_origin(
         self: NDBuffer[mut=False, *_, **_],
-    ) -> type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
-        """Changes the origin of the `NDBuffer` to `ImmutableAnyOrigin`.
+    ) -> type_of(self).OriginCastType[False, ImmutAnyOrigin]:
+        """Changes the origin of the `NDBuffer` to `ImmutAnyOrigin`.
 
         Returns:
-            A buffer with the origin set to `ImmutableAnyOrigin`.
+            A buffer with the origin set to `ImmutAnyOrigin`.
 
         It is usually preferred to maintain concrete origin values instead of
-        using `ImmutableAnyOrigin`. However, if it is needed, keep in mind that
-        `ImmutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        using `ImmutAnyOrigin`. However, if it is needed, keep in mind that
+        `ImmutAnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the buffer.
         """
         return {

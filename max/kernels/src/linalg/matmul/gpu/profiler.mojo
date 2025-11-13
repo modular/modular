@@ -107,12 +107,11 @@ struct BlackwellWarpProfilingWorkspaceManager[
     @always_inline
     fn get_workspace(
         ctx: DeviceContext,
-    ) raises -> Span[UInt64, MutableAnyOrigin]:
+    ) raises -> Span[UInt64, MutAnyOrigin]:
         var length = Int(Self._calculate_buffer_length())
-        var device_buffer = ctx.enqueue_create_buffer[DType.uint64](
-            length
-        ).enqueue_fill(0)
-        return Span[UInt64, MutableAnyOrigin](
+        var device_buffer = ctx.enqueue_create_buffer[DType.uint64](length)
+        device_buffer.enqueue_fill(0)
+        return Span[UInt64, MutAnyOrigin](
             ptr=device_buffer.unsafe_ptr(),
             length=length,
         )
@@ -124,7 +123,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
     ](
         sm_idx: UInt32,
         entry_idx: UInt32,
-        workspace: Span[UInt64, MutableAnyOrigin],
+        workspace: Span[UInt64, MutAnyOrigin],
         timeline: Tuple[UInt64, UInt64],
     ):
         alias total_threads = WARP_SIZE * Self._get_warp_count[warp_role]()
@@ -144,7 +143,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
     @always_inline
     fn dump_workspace_as_csv(
         ctx: DeviceContext,
-        workspace: Span[UInt64, MutableAnyOrigin],
+        workspace: Span[UInt64, MutAnyOrigin],
         filename: StaticString,
     ) raises:
         var length = Int(Self._calculate_buffer_length())
@@ -195,7 +194,7 @@ struct BlackwellProfileWarp[
     alias enable_profiling = max_entries_per_warp > 0
 
     var timeline: Tuple[UInt64, UInt64]
-    var workspace: Span[UInt64, MutableAnyOrigin]
+    var workspace: Span[UInt64, MutAnyOrigin]
 
     # which entry is going to be written to the workspace for this warp
     var entry_idx: UInt32
@@ -203,7 +202,7 @@ struct BlackwellProfileWarp[
     @always_inline
     fn __init__(
         out self,
-        workspace: Span[UInt64, MutableAnyOrigin],
+        workspace: Span[UInt64, MutAnyOrigin],
         entry_idx: UInt32,
     ):
         self.timeline = (0, 0)

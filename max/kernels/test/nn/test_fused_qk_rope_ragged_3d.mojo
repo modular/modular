@@ -21,7 +21,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple
+from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple, UNKNOWN_VALUE
 from memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_3d_goldens import (
@@ -85,7 +85,10 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     kv_cache_block_buffer = List[Scalar[dtype]](
         length=block_shape.flattened_length(), fill=0
     )
-    kv_cache_block = NDBuffer(kv_cache_block_buffer.unsafe_ptr(), block_shape)
+    kv_cache_block = LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+        kv_cache_block_buffer.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    )
 
     start_positions_dyn = materialize[start_positions]()
     # Initialize KV cache block buffer with golden values.
@@ -93,7 +96,8 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     max_cache_len_in_batch = 0
     for batch_idx in range(batch_size):
         memcpy(
-            dest=kv_cache_block._offset(
+            dest=kv_cache_block.ptr
+            + kv_cache_block._offset(
                 IndexList[6](
                     batch_idx, 0, 0, Int(start_positions_dyn[batch_idx]), 0, 0
                 )
@@ -108,16 +112,20 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     # Create the actual KV cache type.
     kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block,
-        cache_lengths=NDBuffer[DType.uint32, 1](
+        cache_lengths=LayoutTensor[
+            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
             start_positions_dyn.unsafe_ptr(),
-            DimList(
-                len(start_positions_dyn),
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                IndexList[1](len(start_positions_dyn))
             ),
         ),
-        lookup_table=NDBuffer[DType.uint32, 1](
+        lookup_table=LayoutTensor[
+            DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
             lookup_table.unsafe_ptr(),
-            DimList(
-                len(lookup_table),
+            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                IndexList[1](len(lookup_table)),
             ),
         ),
         max_seq_length=seq_len,
@@ -140,7 +148,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     # Total sequence length across all batches
     position_ids_input_buffer = position_ids_input[DType.uint32]()
     position_ids = LayoutTensor[
-        DType.uint32, Layout.row_major[2](), MutableAnyOrigin
+        DType.uint32, Layout.row_major[2](), MutAnyOrigin
     ](
         position_ids_input_buffer.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[2]()].row_major(
@@ -251,7 +259,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         for seq_idx in range(seq_len):
             for head_idx in range(num_heads):
                 # Calculate offsets for current position
-                cache_block_ptr = kv_cache_block._offset(
+                cache_block_ptr = kv_cache_block.ptr + kv_cache_block._offset(
                     IndexList[6](
                         batch_idx,
                         0,

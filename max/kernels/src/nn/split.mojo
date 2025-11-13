@@ -33,7 +33,7 @@ fn split[
     num_outputs: Int,
     target: StaticString,
     trace_description: StaticString,
-    outputs_origin: MutableOrigin,
+    outputs_origin: MutOrigin,
     outputs_layout: Layout,
 ](
     input: LayoutTensor[dtype, **_],

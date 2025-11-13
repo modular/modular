@@ -35,7 +35,7 @@ from ....structuring import SharedMemBarrier, SMemBarrier, SMemTileType
 from layout.swizzle import make_swizzle
 from gpu import thread_idx
 from sys import simd_width_of
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
 
 
@@ -52,7 +52,7 @@ trait TileLoader:
     @always_inline
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128],
+        dst: SMemTileType[Self._dtype, _, alignment=128, **_],
         mem_barrier: SMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
@@ -124,7 +124,7 @@ struct TileLoaderTMA[
     @always_inline
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128],
+        dst: SMemTileType[Self._dtype, _, alignment=128, **_],
         mem_barrier: SMemBarrier,
         _coords: Tuple[UInt, UInt],
     ):
@@ -213,7 +213,7 @@ struct TileLoaderCPAsync[
     var src: LayoutTensor[
         dtype,
         src_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ]
 
@@ -223,7 +223,7 @@ struct TileLoaderCPAsync[
         src: LayoutTensor[
             dtype,
             src_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.GENERIC,
         ],
     ):
@@ -236,7 +236,7 @@ struct TileLoaderCPAsync[
 
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128],
+        dst: SMemTileType[Self._dtype, _, alignment=128, **_],
         mem_barrier: SMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
@@ -283,14 +283,14 @@ fn async_copy_with_bound_check[
     src: LayoutTensor[
         dtype,
         src_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
         *_, **_,
     ],
     dst: LayoutTensor[
         dtype,
         dst_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         *_, **_,
     ],

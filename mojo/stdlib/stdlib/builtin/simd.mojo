@@ -75,7 +75,12 @@ from builtin.device_passable import DevicePassable
 from builtin.format_int import _try_write_int
 from builtin.math import DivModable, Powable
 from documentation import doc_private
-from memory import bitcast, memcpy
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    bitcast,
+    memcpy,
+)
 from python import ConvertibleToPython, Python, PythonObject
 
 from utils import IndexList, StaticTuple
@@ -128,6 +133,15 @@ alias Int256 = Scalar[DType.int256]
 alias UInt256 = Scalar[DType.uint256]
 """Represents a 256-bit unsigned scalar integer."""
 
+alias Float4_e2m1fn = Scalar[DType.float4_e2m1fn]
+"""Represents a 4-bit `e2m1` floating point format, encoded as
+`s.ee.m` and defined by the [Open Compute MX Format Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf):
+
+- (s)ign: 1 bit
+- (e)xponent: 2 bits
+- (m)antissa: 1 bits
+- exponent_bias: 1
+"""
 alias Float8_e5m2 = Scalar[DType.float8_e5m2]
 """Represents the 8-bit E5M2 floating point format from the [OFP8
 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
@@ -604,7 +618,7 @@ struct SIMD[dtype: DType, size: Int](
         _simd_construction_checks[dtype, size]()
 
         @parameter
-        if dtype.bit_width() > DType.int.bit_width():
+        if bit_width_of[dtype]() > bit_width_of[DType.int]():
             alias dt = _unsigned_integral_type_of[DType.int]()
             self = bitcast[dt](Scalar[DType.int](value.__int__())).cast[dtype]()
         else:
@@ -941,32 +955,6 @@ struct SIMD[dtype: DType, size: Int](
         )
 
     @always_inline("nodebug")
-    fn _mul_with_fastmath_none(self, rhs: Self) -> Self:
-        """Multiplies with fastmath='none'.
-
-        This is sometimes needed to circumvent the default fastmath='contract',
-        for numerical reasons.
-
-        Args:
-            rhs: The rhs value.
-
-        Returns:
-            A new vector whose element at position `i` is computed as
-            `self[i] * rhs[i]`, with fastmath='none'.
-        """
-
-        constrained[
-            dtype.is_floating_point(),
-            "expected mul {fastmath = none} is only used for float operands",
-        ]()
-
-        return Self(
-            mlir_value=__mlir_op.`pop.mul`[
-                fastmathFlags = __mlir_attr.`#pop<fmf none>`
-            ](self._mlir_value, rhs._mlir_value)
-        )
-
-    @always_inline("nodebug")
     fn __truediv__(self, rhs: Self) -> Self:
         """Computes `self / rhs`.
 
@@ -1222,7 +1210,7 @@ struct SIMD[dtype: DType, size: Int](
         constrained[dtype.is_integral(), "must be an integral type"]()
         debug_assert(all(rhs.ge(0)), "unhandled negative value")
         debug_assert(
-            all(rhs.lt(dtype.bit_width())),
+            all(rhs.lt(bit_width_of[dtype]())),
             "unhandled value greater than size",
         )
         return Self(
@@ -1245,7 +1233,7 @@ struct SIMD[dtype: DType, size: Int](
         constrained[dtype.is_integral(), "must be an integral type"]()
         debug_assert(all(rhs.ge(0)), "unhandled negative value")
         debug_assert(
-            all(rhs.lt(dtype.bit_width())),
+            all(rhs.lt(bit_width_of[dtype]())),
             "unhandled value greater than size",
         )
         return Self(
@@ -2266,7 +2254,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline
     fn to_bits[
-        _dtype: DType = _uint_type_of_width[dtype.bit_width()]()
+        _dtype: DType = _uint_type_of_width[bit_width_of[dtype]()]()
     ](self) -> SIMD[_dtype, size]:
         """Bitcasts the SIMD vector to an integer SIMD vector.
 
@@ -2281,7 +2269,7 @@ struct SIMD[dtype: DType, size: Int](
             "the target type must be unsigned integral",
         ]()
         constrained[
-            _dtype.bit_width() >= dtype.bit_width(),
+            bit_width_of[_dtype]() >= bit_width_of[dtype](),
             "the target type must be at least as wide as the source type",
         ]()
 
@@ -3572,7 +3560,7 @@ fn _convert_f32_to_float8_scalar[
 
     alias FP8_NUM_MANTISSA_BITS = FPUtils[target].mantissa_width()
     alias FP8_NUM_EXPONENT_BITS = FPUtils[target].exponent_width()
-    alias FP32_NUM_BITS = dtype.bit_width()
+    alias FP32_NUM_BITS = bit_width_of[dtype]()
     alias FP8_EXPONENT_MASK: UInt8 = (1 << FP8_NUM_EXPONENT_BITS) - 1
     alias FP8_MANTISSA_MASK: UInt8 = (1 << FP8_NUM_MANTISSA_BITS) - 1
     alias FP8_EXPONENT_BIAS = FPUtils[target].exponent_bias()
@@ -3909,7 +3897,7 @@ fn _floor(x: SIMD) -> type_of(x):
         return x
 
     alias integral_type = FPUtils[x.dtype].integral_type
-    alias bitwidth = x.dtype.bit_width()
+    alias bitwidth = bit_width_of[x.dtype]()
     alias exponent_width = FPUtils[x.dtype].exponent_width()
     alias mantissa_width = FPUtils[x.dtype].mantissa_width()
     alias mask = FPUtils[x.dtype].exponent_mask()
@@ -3946,48 +3934,3 @@ fn _write_scalar[
         constrained[
             False, "unable to write dtype, only integral/float/bool supported"
         ]()
-
-
-__extension SIMD(ConvertibleToPython):
-    # TODO(MSTDL-1587): Remove the dummy parameter.
-    @always_inline
-    fn __init__[
-        *, `_`: NoneType = None
-    ](out self: Scalar[dtype], obj: PythonObject, /) raises:
-        """Initialize a SIMD value from a PythonObject.
-
-        Parameters:
-            _: A dummy parameter to ensure this overload has lower priority than
-                the others. Its value is ignored.
-
-        Args:
-            obj: The PythonObject to convert.
-
-        Raises:
-            If the conversion to double fails.
-        """
-
-        @parameter
-        if dtype.is_floating_point():
-            ref cpy = Python().cpython()
-            var float_value = cpy.PyFloat_AsDouble(obj._obj_ptr)
-            if float_value == -1.0 and cpy.PyErr_Occurred():
-                # Note that -1.0 does not guarantee an error, it just means we
-                # need to check if there was an exception.
-                raise cpy.unsafe_get_error()
-            # NOTE: if dtype is not float64, we truncate.
-            self = Scalar[dtype](float_value)
-        elif dtype.is_integral() and dtype.bit_width() <= 64:
-            self = Int(obj)
-        else:
-            self = Scalar[dtype]()
-            constrained[False, "unsupported dtype"]()
-
-    fn to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-        """
-        constrained[size == 1, "only works with scalar values"]()
-        return PythonObject(self._refine[new_size=1]())

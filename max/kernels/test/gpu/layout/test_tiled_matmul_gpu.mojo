@@ -23,6 +23,7 @@ from layout._ndbuffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from layout._utils import ManagedLayoutTensor
 from layout.math import outer_product_acc
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils import IndexList
 from utils.index import Index
 
@@ -34,15 +35,15 @@ fn naive_matmul[
     BM: Int,
     BN: Int,
 ](
-    dst: LayoutTensor[DType.float32, layout_dst, MutableAnyOrigin],
-    lhs: LayoutTensor[DType.float32, layout_dst, MutableAnyOrigin],
-    rhs: LayoutTensor[DType.float32, layout_dst, MutableAnyOrigin],
+    dst: LayoutTensor[DType.float32, layout_dst, MutAnyOrigin],
+    lhs: LayoutTensor[DType.float32, layout_dst, MutAnyOrigin],
+    rhs: LayoutTensor[DType.float32, layout_dst, MutAnyOrigin],
 ):
-    var dst_tile = dst.tile[BM, BN](block_idx.y, block_idx.x)
+    var dst_tile = dst.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
     dst_tile[thread_idx.y, thread_idx.x] = 0
     for k in range(dst.shape[0]()):
-        var lhs_tile = rhs.tile[BM, 1](block_idx.y, k)
-        var rhs_tile = lhs.tile[1, BN](k, block_idx.x)
+        var lhs_tile = rhs.tile[BM, 1](Int(block_idx.y), k)
+        var rhs_tile = lhs.tile[1, BN](k, Int(block_idx.x))
         dst_tile[thread_idx.y, thread_idx.x] += (
             lhs_tile[thread_idx.y, k] * rhs_tile[k, thread_idx.x]
         )
@@ -96,15 +97,15 @@ fn sram_blocked_matmul[
     BN: Int,
     BK: Int,
 ](
-    dst: LayoutTensor[DType.float32, layout_dst, MutableAnyOrigin],
-    lhs: LayoutTensor[DType.float32, layout_lhs, MutableAnyOrigin],
-    rhs: LayoutTensor[DType.float32, layout_rhs, MutableAnyOrigin],
+    dst: LayoutTensor[DType.float32, layout_dst, MutAnyOrigin],
+    lhs: LayoutTensor[DType.float32, layout_lhs, MutAnyOrigin],
+    rhs: LayoutTensor[DType.float32, layout_rhs, MutAnyOrigin],
 ):
     # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
     var lhs_sram_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(BM, BK)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -113,12 +114,12 @@ fn sram_blocked_matmul[
     var rhs_sram_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(BK, BN)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     # Block the dst matrix with [BM, BN] tile size.
-    var dst_tile = dst.tile[BM, BN](block_idx.y, block_idx.x)
+    var dst_tile = dst.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
     # Distribute thread layout into a block of size [BM, BN]. It repeats the
     # layout across the BMxBN block, e.g. row major layout will repeat as the
@@ -141,8 +142,8 @@ fn sram_blocked_matmul[
     # Loop over tiles in K dim.
     for k in range(lhs.shape[1]() // BK):
         # Block both l.h.s and r.h.s DRAM tensors.
-        var lhs_tile = lhs.tile[BM, BK](block_idx.y, k)
-        var rhs_tile = rhs.tile[BK, BN](k, block_idx.x)
+        var lhs_tile = lhs.tile[BM, BK](Int(block_idx.y), k)
+        var rhs_tile = rhs.tile[BK, BN](k, Int(block_idx.x))
 
         # Distribute layout of threads into DRAM and SRAM to perform the copy.
         var lhs_tile_local = lhs_tile.distribute[thread_layout](thread_idx.x)
@@ -235,9 +236,9 @@ fn single_warp_mma_sync_m16n8k8[
     layout_a_mma: Layout,
     layout_b_mma: Layout,
 ](
-    mat_c: LayoutTensor[DType.float32, layout_c, MutableAnyOrigin],
-    mat_a: LayoutTensor[DType.float32, layout_a, MutableAnyOrigin],
-    mat_b: LayoutTensor[DType.float32, layout_b, MutableAnyOrigin],
+    mat_c: LayoutTensor[DType.float32, layout_c, MutAnyOrigin],
+    mat_a: LayoutTensor[DType.float32, layout_a, MutAnyOrigin],
+    mat_b: LayoutTensor[DType.float32, layout_b, MutAnyOrigin],
 ):
     var mat_a_mma = mat_a.composition[layout_a_mma]()
     # Note: CUTLASS layout above assumes the same layout as the instruction itself, l.h.s row-major and r.h.s col-major.
@@ -339,15 +340,15 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     BN: Int,
     BK: Int,
 ](
-    dst: NDBuffer[DType.float32, 2, MutableAnyOrigin, dst_shape],
-    lhs: NDBuffer[DType.float32, 2, MutableAnyOrigin, lhs_shape],
-    rhs: NDBuffer[DType.float32, 2, MutableAnyOrigin, rhs_shape],
+    dst: NDBuffer[DType.float32, 2, MutAnyOrigin, dst_shape],
+    lhs: NDBuffer[DType.float32, 2, MutAnyOrigin, lhs_shape],
+    rhs: NDBuffer[DType.float32, 2, MutAnyOrigin, rhs_shape],
 ):
     # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
     var lhs_sram_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(BM, BK)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -356,12 +357,14 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     var rhs_sram_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(BK, BN)),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     # Block the dst matrix with [BM, BN] tile size.
-    var dst_tile = dst.tile[BM, BN](IndexList[2](block_idx.y, block_idx.x))
+    var dst_tile = dst.tile[BM, BN](
+        IndexList[2](Int(block_idx.y), Int(block_idx.x))
+    )
 
     # Distribute thread layout into a block of size [BM, BN]. It repeats the
     # layout across the BMxBN block, e.g. row major layout will repeat as the
@@ -380,7 +383,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     # Allocate a register tile for the dst matrix with the same layout.
     # TODO: Is it useful to have stack_allocation_like[thread_layout](nd_buffer) ? We can do this if needed.
     var dst_register_tile = (
-        LayoutTensor[DType.float32, Layout.row_major(2, 2), MutableAnyOrigin]
+        LayoutTensor[DType.float32, Layout.row_major(2, 2), MutAnyOrigin]
         .stack_allocation()
         .fill(0)
     )
@@ -388,22 +391,22 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     # Loop over tiles in K dim.
     for k in range(lhs.dim(1) // BK):
         # Block both l.h.s and r.h.s DRAM tensors.
-        var lhs_tile = lhs.tile[BM, BK](IndexList[2](block_idx.y, k))
-        var rhs_tile = rhs.tile[BK, BN](IndexList[2](k, block_idx.x))
+        var lhs_tile = lhs.tile[BM, BK](IndexList[2](Int(block_idx.y), k))
+        var rhs_tile = rhs.tile[BK, BN](IndexList[2](k, Int(block_idx.x)))
 
         # Distribute layout of threads into DRAM and SRAM to perform the copy.
         var lhs_sram_tile_local = lhs_sram_tile.distribute[thread_layout](
             thread_idx.x
         )
         copy_from_nd_buffer[thread_layout=thread_layout](
-            lhs_sram_tile_local, lhs_tile, thread_idx.x
+            lhs_sram_tile_local, lhs_tile, Int(thread_idx.x)
         )
 
         var rhs_sram_tile_local = rhs_sram_tile.distribute[thread_layout](
             thread_idx.x
         )
         copy_from_nd_buffer[thread_layout=thread_layout](
-            rhs_sram_tile_local, rhs_tile, thread_idx.x
+            rhs_sram_tile_local, rhs_tile, Int(thread_idx.x)
         )
 
         barrier()
@@ -422,7 +425,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
 
     # Move data from register tile to DRAM
     copy_to_nd_buffer[thread_layout=thread_layout](
-        dst_tile, dst_register_tile, thread_idx.x
+        dst_tile, dst_register_tile, Int(thread_idx.x)
     )
 
 

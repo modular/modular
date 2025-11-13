@@ -19,6 +19,7 @@ from layout._fillers import random
 import linalg.matmul.vendor.blas as vendor_blas
 from testing import assert_equal
 from random import random_si64
+from linalg.matmul.gpu.amd.warp_spec_matmul import warp_specialized_matmul
 
 
 def test_warp_specialization_amd[
@@ -31,8 +32,8 @@ def test_warp_specialization_amd[
     WM: Int,
     WN: Int,
     WK: Int,
-    producer_warps_a: Int,
-    producer_warps_b: Int,
+    a_producer_warps: Int,
+    b_producer_warps: Int,
     consumer_warps: Int,
     pipeline_stages: Int = 1,
 ](ctx: DeviceContext):
@@ -41,12 +42,7 @@ def test_warp_specialization_amd[
     var device_c = ctx.enqueue_create_buffer[DType.float32](M * N)
     var device_c_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
 
-    with device_a.map_to_host() as host_a, device_b.map_to_host() as host_b, device_c.map_to_host() as host_c, device_c_ref.map_to_host() as host_c_ref:
-        host_c = host_c.enqueue_fill(0)
-        host_c_ref = host_c_ref.enqueue_fill(0)
-
-        ctx.synchronize()
-
+    with device_a.map_to_host() as host_a, device_b.map_to_host() as host_b:
         for i in range(M * K):
             var val = random_si64(0, 20)
             host_a[i] = val.cast[DType.bfloat16]()
@@ -55,83 +51,54 @@ def test_warp_specialization_amd[
             var val = random_si64(0, 20)
             host_b[i] = val.cast[DType.bfloat16]()
 
-        ctx.enqueue_copy(device_a, host_a)
-        ctx.enqueue_copy(device_b, host_b)
-        ctx.enqueue_copy(device_c, host_c)
-        ctx.enqueue_copy(device_c_ref, host_c_ref)
-        ctx.synchronize()
+    var a_device_tensor = LayoutTensor[
+        DType.bfloat16,
+        Layout.row_major(M, K),
+    ](device_a)
 
-        var a_device_tensor = LayoutTensor[
-            DType.bfloat16,
-            Layout.row_major(M, K),
-        ](device_a)
+    var b_device_tensor = LayoutTensor[DType.bfloat16, Layout.row_major(N, K)](
+        device_b
+    )
 
-        var b_device_tensor = LayoutTensor[
-            DType.bfloat16, Layout.row_major(N, K)
-        ](device_b)
+    var c_device_tensor = LayoutTensor[DType.float32, Layout.row_major(M, N)](
+        device_c
+    )
 
-        var c_device_tensor = LayoutTensor[
-            DType.float32, Layout.row_major(M, N)
-        ](device_c)
+    var c_device_ref_tensor = LayoutTensor[
+        DType.float32, Layout.row_major(M, N)
+    ](device_c_ref)
 
-        var c_device_ref_tensor = LayoutTensor[
-            DType.float32, Layout.row_major(M, N)
-        ](device_c_ref)
+    warp_specialized_matmul[
+        M,
+        N,
+        K,
+        BM,
+        BN,
+        BK,
+        WM,
+        WN,
+        WK,
+        a_producer_warps,
+        b_producer_warps,
+        consumer_warps,
+        pipeline_stages,
+    ](
+        a_device_tensor,
+        b_device_tensor,
+        c_device_tensor,
+        ctx,
+    )
 
-        var global_c_device_tensor = c_device_tensor.address_space_cast[
-            AddressSpace.GLOBAL
-        ]()
-        var global_a_device_tensor = a_device_tensor.address_space_cast[
-            AddressSpace.GLOBAL
-        ]()
-        var global_b_device_tensor = b_device_tensor.address_space_cast[
-            AddressSpace.GLOBAL
-        ]()
+    vendor_blas.matmul(
+        ctx,
+        c_device_ref_tensor,
+        a_device_tensor,
+        b_device_tensor,
+        c_row_major=True,
+        transpose_b=True,
+    )
 
-        alias kernel = warp_specialized_matmul[
-            a_device_tensor.dtype,
-            c_device_tensor.dtype,
-            a_device_tensor.layout,
-            b_device_tensor.layout,
-            c_device_tensor.layout,
-            BM,
-            BN,
-            BK,
-            WM,
-            WN,
-            WK,
-            producer_warps_a=producer_warps_a,
-            producer_warps_b=producer_warps_b,
-            consumer_warps=consumer_warps,
-            pipeline_stages=pipeline_stages,
-        ]
-
-        ctx.enqueue_function_checked[kernel, kernel](
-            global_a_device_tensor,
-            global_b_device_tensor,
-            global_c_device_tensor,
-            grid_dim=(M // BM, N // BN),
-            block_dim=(
-                WARP_SIZE
-                * (producer_warps_a + producer_warps_b + consumer_warps)
-            ),
-        )
-
-        vendor_blas.matmul(
-            ctx,
-            c_device_ref_tensor,
-            a_device_tensor,
-            b_device_tensor,
-            c_row_major=True,
-            transpose_b=True,
-        )
-
-        ctx.synchronize()
-
-        ctx.enqueue_copy(host_c, device_c)
-        ctx.enqueue_copy(host_c_ref, device_c_ref)
-        ctx.synchronize()
-
+    with device_c.map_to_host() as host_c, device_c_ref.map_to_host() as host_c_ref:
         var errors = 0
         for i in range(M * N):
             # print(i // N, i % N, c_host.tensor.data[i], c_host_ref.tensor.data[i])

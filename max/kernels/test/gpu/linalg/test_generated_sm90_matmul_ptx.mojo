@@ -17,7 +17,7 @@ from sys import size_of
 
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import get_gpu_target
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.compile import _compile_code
 from gpu.host.info import H100
 from layout import Layout

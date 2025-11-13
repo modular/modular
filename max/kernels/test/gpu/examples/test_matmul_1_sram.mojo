@@ -28,9 +28,9 @@ alias tile_size = 32
 
 
 fn matmul_sram(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
-    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     M: Int,
     N: Int,
     K: Int,
@@ -139,11 +139,11 @@ fn run_matmul(ctx: DeviceContext) raises:
     alias N = 502
     alias K = 511
 
-    var a_host_ptr = UnsafePointer[Float32].alloc(M * K)
+    var a_host_ptr = alloc[Float32](M * K)
     var a_host = NDBuffer[DType.float32, 2, _, DimList(M, K)](a_host_ptr)
-    var b_host_ptr = UnsafePointer[Float32].alloc(K * N)
+    var b_host_ptr = alloc[Float32](K * N)
     var b_host = NDBuffer[DType.float32, 2, _, DimList(K, N)](b_host_ptr)
-    var c_host_ptr = UnsafePointer[Float32].alloc(M * N)
+    var c_host_ptr = alloc[Float32](M * N)
     var c_host = NDBuffer[DType.float32, 2, _, DimList(M, N)](c_host_ptr)
 
     for i in range(M):

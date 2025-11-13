@@ -40,9 +40,9 @@ fn kernel_1[
     transpose_b: Bool = True,
     BLOCKSIZE: Int = 32,
 ](
-    c: LayoutTensor[mut=True, DType.bfloat16, Layout.row_major(M, N)],
-    a: LayoutTensor[mut=False, DType.bfloat16, Layout.row_major(M, K)],
-    b: LayoutTensor[mut=False, DType.bfloat16, Layout.row_major(K, N)],
+    c: LayoutTensor[DType.bfloat16, Layout.row_major(M, N), MutAnyOrigin],
+    a: LayoutTensor[DType.bfloat16, Layout.row_major(M, K), MutAnyOrigin],
+    b: LayoutTensor[DType.bfloat16, Layout.row_major(K, N), MutAnyOrigin],
 ):
     var row = block_dim.y * block_idx.y + (thread_idx.y)
     var col = block_dim.x * block_idx.x + (thread_idx.x)
@@ -106,7 +106,7 @@ def test_kernel_1[
     # Use 1D thread block for memory coalescing
     alias BLOCKSIZE = 32
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         c.device_tensor(),
         a.device_tensor(),
         b.device_tensor(),
@@ -123,7 +123,7 @@ def test_kernel_1[
         @always_inline
         @parameter
         fn run_kernel(ctx: DeviceContext) raises:
-            ctx.enqueue_function[kernel](
+            ctx.enqueue_function_checked[kernel, kernel](
                 c.device_tensor[update=False](),
                 a.device_tensor[update=False](),
                 b.device_tensor[update=False](),

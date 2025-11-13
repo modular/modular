@@ -21,7 +21,7 @@ from sys import (
 )
 from sys.intrinsics import assume, likely, unlikely
 
-from memory import memset_zero
+from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
 from testing import assert_equal
 from testing import TestSuite
 

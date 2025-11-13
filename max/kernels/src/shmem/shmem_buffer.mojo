@@ -12,13 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
-from sys import CompilationTarget, has_nvidia_gpu_accelerator, size_of
+from sys import (
+    CompilationTarget,
+    has_nvidia_gpu_accelerator,
+    has_amd_gpu_accelerator,
+    size_of,
+)
 from sys.ffi import external_call
 
 from gpu.host import DeviceContext, HostBuffer
 from gpu.host.device_context import _checked, _DeviceContextPtr
 
 from .shmem_api import shmem_free, shmem_malloc
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 struct SHMEMBuffer[dtype: DType](Sized):
@@ -34,7 +40,7 @@ struct SHMEMBuffer[dtype: DType](Sized):
         size: Int,
     ) raises:
         @parameter
-        if has_nvidia_gpu_accelerator():
+        if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
             self._data = shmem_malloc[dtype](UInt(size))
             self._ctx_ptr = ctx._handle
             self._size = size

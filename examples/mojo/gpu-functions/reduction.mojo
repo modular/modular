@@ -37,17 +37,20 @@ alias TPB: UInt = 512
 alias LOG_TPB = log2_floor(TPB)
 alias BATCH_SIZE = 8  # needs to be power of 2
 alias SIZE = 1 << 12
-alias NUM_BLOCKS: UInt = UInt(ceildiv(SIZE, TPB * BATCH_SIZE))
+alias NUM_BLOCKS = UInt(ceildiv(SIZE, Int(TPB * BATCH_SIZE)))
 alias WARP_SIZE = 32
 alias dtype = DType.int32
 
 
 fn sum_kernel[
     size: Int, batch_size: Int
-](output: UnsafePointer[Int32], a: UnsafePointer[Int32],):
+](
+    output: UnsafePointer[Int32, MutAnyOrigin],
+    a: UnsafePointer[Int32, MutAnyOrigin],
+):
     """Efficient reduction of the vector a."""
     sums = stack_allocation[
-        TPB,
+        Int(TPB),
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
     ]()
@@ -84,11 +87,13 @@ fn sum_kernel[
 
 
 struct SumKernelBenchmarkParams:
-    var out_ptr: UnsafePointer[Int32]
-    var a_ptr: UnsafePointer[Int32]
+    var out_ptr: UnsafePointer[Int32, MutAnyOrigin]
+    var a_ptr: UnsafePointer[Int32, MutAnyOrigin]
 
     fn __init__(
-        out self, out_ptr: UnsafePointer[Int32], a_ptr: UnsafePointer[Int32]
+        out self,
+        out_ptr: UnsafePointer[mut=True, Int32],
+        a_ptr: UnsafePointer[mut=True, Int32],
     ):
         self.out_ptr = out_ptr
         self.a_ptr = a_ptr
@@ -128,8 +133,10 @@ def main():
     with DeviceContext() as ctx:
         # Allocate memory on the device
         alias kernel = sum_kernel[SIZE, BATCH_SIZE]
-        out = ctx.enqueue_create_buffer[dtype](1).enqueue_fill(0)
-        a = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
+        out = ctx.enqueue_create_buffer[dtype](1)
+        out.enqueue_fill(0)
+        a = ctx.enqueue_create_buffer[dtype](SIZE)
+        a.enqueue_fill(0)
 
         # Initialise a with random integers between 0 and 10
         with a.map_to_host() as a_host:
@@ -146,7 +153,8 @@ def main():
 
         # Calculate the sum in a sequential fashion on the host
         # for correctness check
-        expected = ctx.enqueue_create_host_buffer[dtype](1).enqueue_fill(0)
+        expected = ctx.enqueue_create_host_buffer[dtype](1)
+        expected.enqueue_fill(0)
         with a.map_to_host() as a_host:
             for i in range(SIZE):
                 expected[0] += a_host[i]
@@ -165,7 +173,7 @@ def main():
         bench.bench_with_input[SumKernelBenchmarkParams, sum_kernel_benchmark](
             BenchId("sum_kernel_benchmark", "gpu"),
             SumKernelBenchmarkParams(out_ptr, a_ptr),
-            ThroughputMeasure(BenchMetric.bytes, SIZE * size_of[dtype]()),
+            [ThroughputMeasure(BenchMetric.bytes, SIZE * size_of[dtype]())],
         )
         # Pretty print in table format
         print(bench)

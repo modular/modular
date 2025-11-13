@@ -177,51 +177,43 @@ fn test_moe_create_indices(
 
     alias layout = Layout.row_major(UNKNOWN_VALUE)
 
-    var token_expert_order = LayoutTensor[
-        DType.uint32, layout, MutableAnyOrigin
-    ](
+    var token_expert_order = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
         token_expert_order_buffer_device,
         RuntimeLayout[layout].row_major(
             IndexList[1](token_expert_order_length)
         ),
     )
 
-    var expert_start_indices = LayoutTensor[
-        DType.uint32, layout, MutableAnyOrigin
-    ](
+    var expert_start_indices = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
         expert_start_indices_buffer.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[1](num_experts + 1)),
     )
 
-    var restore_token_order = LayoutTensor[
-        DType.uint32, layout, MutableAnyOrigin
-    ](
+    var restore_token_order = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
         restore_token_order_buffer.unsafe_ptr(),
         RuntimeLayout[layout].row_major(
             IndexList[1](token_expert_order_length)
         ),
     )
 
-    var expert_ids = LayoutTensor[DType.int32, layout, MutableAnyOrigin](
+    var expert_ids = LayoutTensor[DType.int32, layout, MutAnyOrigin](
         expert_ids_buffer.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[1](num_experts)),
     )
 
-    var expert_usage_stats = LayoutTensor[
-        DType.uint32, layout, MutableAnyOrigin
-    ](
+    var expert_usage_stats = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
         expert_usage_stats_buffer.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[1](2)),
     )
 
-    var top_k = LayoutTensor[DType.uint32, layout, MutableAnyOrigin](
+    var top_k = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
         top_k_buffer_device.unsafe_ptr(),
         RuntimeLayout[layout].row_major(
             IndexList[1](token_expert_order_length)
         ),
     )
 
-    var top_k_host = LayoutTensor[DType.uint32, layout, MutableAnyOrigin](
+    var top_k_host = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
         top_k_buffer_host.unsafe_ptr(),
         RuntimeLayout[layout].row_major(
             IndexList[1](token_expert_order_length)

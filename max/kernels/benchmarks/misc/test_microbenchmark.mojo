@@ -17,6 +17,7 @@ import microbenchmark
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul
+from memory import LegacyUnsafePointer as UnsafePointer
 from microbenchmark import Benchmarkable
 
 from utils.index import Index
@@ -52,9 +53,9 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
     var a_ptr: UnsafePointer[Scalar[a_type]]
     var b_ptr: UnsafePointer[Scalar[b_type]]
     var c_ptr: UnsafePointer[Scalar[c_type]]
-    var am: NDBuffer[a_type, 2, MutableAnyOrigin, DimList.create_unknown[2]()]
-    var bm: NDBuffer[b_type, 2, MutableAnyOrigin, DimList.create_unknown[2]()]
-    var cm: NDBuffer[c_type, 2, MutableAnyOrigin, DimList.create_unknown[2]()]
+    var am: NDBuffer[a_type, 2, MutAnyOrigin, DimList.create_unknown[2]()]
+    var bm: NDBuffer[b_type, 2, MutAnyOrigin, DimList.create_unknown[2]()]
+    var cm: NDBuffer[c_type, 2, MutAnyOrigin, DimList.create_unknown[2]()]
 
     fn __init__(out self, m: Int, n: Int, k: Int):
         self.m = m

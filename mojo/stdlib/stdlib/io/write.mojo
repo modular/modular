@@ -14,12 +14,12 @@
 
 from io.io import _printf
 from os import abort
-from sys import align_of
+from sys import align_of, size_of
 from sys.info import is_gpu
 from sys.param_env import env_get_int
 
 from bit import byte_swap
-from memory import Span, bitcast, memcpy
+from memory import LegacyUnsafePointer as UnsafePointer, Span, bitcast, memcpy
 
 # ===-----------------------------------------------------------------------===#
 
@@ -220,7 +220,7 @@ struct _WriteBufferHeap(Writable, Writer):
 
 
 struct _WriteBufferStack[
-    origin: MutableOrigin,
+    origin: MutOrigin,
     W: Writer, //,
     stack_buffer_bytes: UInt = STACK_BUFFER_BYTES,
 ](Writer):
@@ -284,7 +284,7 @@ struct _TotalWritableBytes(Writer):
 
     fn __init__[
         T: Copyable & Movable & Writable, //,
-        origin: ImmutableOrigin = StaticConstantOrigin,
+        origin: ImmutOrigin = StaticConstantOrigin,
     ](
         out self,
         values: List[T, *_],
@@ -347,7 +347,7 @@ fn _hex_digits_to_hex_chars(ptr: UnsafePointer[Byte], decimal: Scalar):
     assert_equal("d6", S(ptr=ptr, length=2))
     ```
     """
-    alias size = decimal.dtype.size_of()
+    alias size = size_of[decimal.dtype]()
     var bytes = bitcast[DType.uint8, size](byte_swap(decimal))
     var nibbles = (bytes >> 4).interleave(bytes & 0xF)
     ptr.store(_hex_table._dynamic_shuffle(nibbles))

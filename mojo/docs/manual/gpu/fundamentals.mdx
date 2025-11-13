@@ -119,7 +119,7 @@ from gpu import block_dim, block_idx, thread_idx
 
 alias num_elements = 20
 
-fn scalar_add(vector: UnsafePointer[Float32], size: Int, scalar: Float32):
+fn scalar_add(vector: LegacyUnsafePointer[Float32], size: Int, scalar: Float32):
     """
     Kernel function to add a scalar to all elements of a vector.
 
@@ -361,9 +361,13 @@ fn print_threads():
 
 def main():
     @parameter
-    if not has_accelerator() or has_apple_gpu_accelerator():
-        print("No supported GPU detected")
-        exit(0)
+    if not has_accelerator():
+        print("No compatible GPU found")
+    elif has_apple_gpu_accelerator():
+        print(
+            "Printing from a kernel is not currently supported on Apple silicon"
+            " GPUs"
+        )
     else:
         # Initialize GPU context for device 0 (default GPU device).
         ctx = DeviceContext()

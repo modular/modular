@@ -40,7 +40,8 @@ struct ParamStruct[param_value: Int]:
         pass
 
     fn __add__(
-        self, rhs: ParamStruct
+        self,
+        rhs: ParamStruct,
     ) -> ParamStruct[self.param_value + rhs.param_value]:
         return ParamStruct[self.param_value + rhs.param_value]()
 

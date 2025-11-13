@@ -21,6 +21,10 @@ from sys import llvm_intrinsic
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from utils import Index, StaticTuple
 
 alias void = DType.invalid._mlir_value

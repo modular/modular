@@ -667,3 +667,15 @@ fn _is_significant_measurement(
 
     # Otherwise the result is not statistically significant.
     return False
+
+
+@always_inline
+fn _run_impl_fixed[
+    timing_fn: fn (num_iters: Int) raises capturing [_] -> Int
+](fixed_iterations: Int) raises -> Report:
+    # Only run 'timing_fn' for the fixed number of iterations and return the report.
+    var report = Report()
+    report.runs.append(
+        Batch(timing_fn(fixed_iterations), fixed_iterations, True)
+    )
+    return report^

@@ -15,6 +15,10 @@ import time
 from collections import OptionalReg
 from io.io import _snprintf
 from math import ceildiv
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from random import rand, random_float64
 from sys import argv, env_get_string
 from builtin.device_passable import DevicePassable
@@ -32,7 +36,7 @@ from buffer.dimlist import _make_tuple
 from compile import compile_info
 from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.random import Random
+from random import Random
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from tensor import DynamicTensor
 from testing import assert_equal, assert_true
@@ -62,7 +66,7 @@ struct HostNDBuffer[
     /,
     shape: DimList = DimList.create_unknown[rank](),
 ](ImplicitlyCopyable, Movable):
-    var tensor: NDBuffer[dtype, rank, MutableAnyOrigin, shape]
+    var tensor: NDBuffer[dtype, rank, MutAnyOrigin, shape]
 
     @always_inline
     fn __init__(
@@ -75,7 +79,7 @@ struct HostNDBuffer[
                 " all shapes are statically known"
             ),
         ]()
-        self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
+        self.tensor = NDBuffer[dtype, rank, MutAnyOrigin, shape](
             UnsafePointer[Scalar[dtype]].alloc(shape.product().get()),
         )
 
@@ -116,7 +120,7 @@ struct HostNDBuffer[
     fn to_layout_tensor(
         self,
         out result: LayoutTensor[
-            dtype, Layout.row_major(IntTuple(shape)), MutableAnyOrigin
+            dtype, Layout.row_major(IntTuple(shape)), MutAnyOrigin
         ],
     ):
         result = {
@@ -138,7 +142,7 @@ struct DeviceNDBuffer[
     var tensor: NDBuffer[
         dtype,
         rank,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         shape,
     ]
 
@@ -157,7 +161,7 @@ struct DeviceNDBuffer[
         ]()
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
         self.buffer = ctx.enqueue_create_buffer[dtype](shape.product().get())
-        self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
+        self.tensor = NDBuffer[dtype, rank, MutAnyOrigin, shape](
             self.buffer.unsafe_ptr(),
         )
 
@@ -172,7 +176,7 @@ struct DeviceNDBuffer[
         self.buffer = ctx.enqueue_create_buffer[dtype](
             product(dynamic_shape, rank)
         )
-        self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
+        self.tensor = NDBuffer[dtype, rank, MutAnyOrigin, shape](
             self.buffer.unsafe_ptr(), dynamic_shape
         )
 
@@ -197,7 +201,7 @@ struct DeviceNDBuffer[
         self.buffer = ctx.enqueue_create_buffer[dtype](
             product(dynamic_shape, rank)
         )
-        self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
+        self.tensor = NDBuffer[dtype, rank, MutAnyOrigin, shape](
             self.buffer.unsafe_ptr(), dynamic_shape, stride
         )
 
@@ -235,7 +239,7 @@ struct DeviceNDBuffer[
 # TODO: add address_space: AddressSpace = AddressSpace.GENERIC
 @fieldwise_init
 struct TestTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
-    var ndbuffer: NDBuffer[dtype, rank, MutableAnyOrigin]
+    var ndbuffer: NDBuffer[dtype, rank, MutAnyOrigin]
     var shape: DimList
     var num_elements: Int
 

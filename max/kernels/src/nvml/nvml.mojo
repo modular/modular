@@ -16,9 +16,13 @@ from collections.string.string_slice import _to_string_list
 from os import abort
 from pathlib import Path
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle, _try_find_dylib, c_char
+from sys.ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
 
-from memory import stack_allocation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    stack_allocation,
+)
 
 # ===-----------------------------------------------------------------------===#
 # Constants
@@ -49,7 +53,7 @@ fn _get_nvml_library_paths() raises -> List[Path]:
 alias CUDA_NVML_LIBRARY = _Global["CUDA_NVML_LIBRARY", _init_dylib]
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     try:
         var dylib = _try_find_dylib(_get_nvml_library_paths())
         _check_error(
@@ -57,7 +61,7 @@ fn _init_dylib() -> _OwnedDLHandle:
         )
         return dylib^
     except e:
-        return abort[_OwnedDLHandle](
+        return abort[OwnedDLHandle](
             String("CUDA NVML library initialization failed: ", e)
         )
 

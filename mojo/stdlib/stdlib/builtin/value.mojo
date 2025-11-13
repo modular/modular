@@ -158,7 +158,7 @@ trait ImplicitlyCopyable(Copyable):
 
     ### Examples
 
-    A type can opt-in to implicit copying by conforming to `ImplicityCopyable`
+    A type can opt-in to implicit copying by conforming to `ImplicitlyCopyable`
     (in the example below, the compiler also synthesizes a default field-wise
     `__copyinit__()` implementation, as the user didn't provide a definition):
 

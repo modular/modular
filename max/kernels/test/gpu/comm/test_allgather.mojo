@@ -12,13 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from sys import size_of
+from sys import size_of, has_amd_gpu_accelerator
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allgather import allgather
+import comm.vendor.ccl as vendor_ccl
 from comm.allreduce import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, assert_true
 
 
@@ -87,7 +89,7 @@ def all_gather_test[
         out_bufs_list.append(device_outputs^)
 
     # Create input NDBuffers.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
         fill={}
     )
 
@@ -98,7 +100,7 @@ def all_gather_test[
 
     # Create flat output buffer array (ngpus * ngpus).
     var out_bufs = InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus * ngpus
+        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ](fill={})
 
     for device_idx in range(ngpus):
@@ -108,6 +110,44 @@ def all_gather_test[
                 out_bufs_list[device_idx][input_idx].unsafe_ptr(),
                 DimList(lengths[input_idx]),
             )
+
+    # Optional: vendor CCL (only if all lengths are equal; NCCL/RCCL requires uniform count).
+    var uniform = True
+    for i in range(1, ngpus):
+        if lengths[i] != lengths[0]:
+            uniform = False
+            break
+
+    if uniform and has_amd_gpu_accelerator():
+        # Reset outputs for vendor test
+        for device_idx in range(ngpus):
+            for input_idx in range(ngpus):
+                list_of_ctx[device_idx].enqueue_memset[dtype](
+                    out_bufs_list[device_idx][input_idx], val=0
+                )
+
+        var flat_out = InlineArray[
+            NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
+        ](fill={})
+        for device_idx in range(ngpus):
+            for input_idx in range(ngpus):
+                var idx = device_idx * ngpus + input_idx
+                flat_out[idx] = NDBuffer[dtype, rank](
+                    out_bufs_list[device_idx][input_idx].unsafe_ptr(),
+                    DimList(lengths[input_idx]),
+                )
+
+        try:
+            print("  Testing vendor CCL allgather (uniform counts)")
+            vendor_ccl.allgather[dtype=dtype, rank=rank, ngpus=ngpus](
+                in_bufs, flat_out, list_of_ctx
+            )
+
+            for i in range(ngpus):
+                list_of_ctx[i].synchronize()
+            _verify_results[dtype](out_bufs_list, list_of_ctx, lengths, ngpus)
+        except:
+            pass
 
     # Test the naive implementation explicitly.
     print("  Testing backward compatible implementation (naive path)")

@@ -42,12 +42,11 @@ Usage Example:
                 # Process tiles.a_tile and tiles.b_tile
                 gemm(tiles.a_tile, tiles.b_tile, output)
 """
-from layout.tma_async import PipelineState
-from ....structuring import SMemBarrier
+from layout.tma_async import PipelineState, SharedMemBarrier
+from ....structuring import SMemBarrier, PipelineBarrier
 from gpu.sync import async_copy_arrive
 from gpu.globals import WARPGROUP_SIZE
 from ....structuring import NVIDIASharedMemoryManager
-from ....structuring import SMemBarrier
 
 
 # Ring buffer abstraction for producer-consumer synchronization
@@ -234,6 +233,10 @@ struct RingBuffer[
     alias BTileArray = Self.SMM.TileArray[
         b_type, b_tile_layout, num_pipeline_stages
     ]
+
+    # Pipeline barrier type for managing pipeline synchronization
+    alias PipelineBarrier = PipelineBarrier[num_pipeline_stages]
+
     # Actual tile tensor types that hold the data
     alias ATile = Self.ATileArray.Tile
     alias BTile = Self.BTileArray.Tile
@@ -241,8 +244,8 @@ struct RingBuffer[
     # Barriers for synchronization:
     # - full_mbar[i]: Signaled by producer when slot i contains data
     # - empty_mbar[i]: Signaled by consumers when slot i is free
-    var full_mbar: SMemBarrier
-    var empty_mbar: SMemBarrier
+    var full_mbar: Self.PipelineBarrier
+    var empty_mbar: Self.PipelineBarrier
 
     # Pipeline states track current position and phase in the ring buffer
     var read_state: PipelineState[num_pipeline_stages]  # Consumer's position
@@ -257,8 +260,8 @@ struct RingBuffer[
 
     fn __init__(
         out self,
-        full_mbar: SMemBarrier,
-        empty_mbar: SMemBarrier,
+        full_mbar: Self.PipelineBarrier,
+        empty_mbar: Self.PipelineBarrier,
         warp_group_thread_idx: UInt,
         a_tiles: Self.ATileArray,
         b_tiles: Self.BTileArray,
@@ -287,9 +290,9 @@ struct RingBuffer[
             for i in range(num_pipeline_stages):
                 # Full barrier: expects arrivals from producer threads
                 # For async_copy, all threads in warp group participate
-                self.full_mbar[i].init(1 if tma_transfer else WARPGROUP_SIZE)
+                self.full_mbar[i][].init(1 if tma_transfer else WARPGROUP_SIZE)
                 # Empty barrier: expects arrivals from all consumers across cluster
-                self.empty_mbar[i].init(num_consumers * cluster_size)
+                self.empty_mbar[i][].init(num_consumers * cluster_size)
 
     fn __enter__(mut self) -> Self:
         """Context manager entry."""
@@ -315,11 +318,11 @@ struct RingBuffer[
         """
         var write_idx = self.write_state.index()
         # Wait for all consumers to signal this slot is empty
-        self.empty_mbar[Int(write_idx)].wait(self.write_state.phase())
+        self.empty_mbar[Int(write_idx)][].wait(self.write_state.phase())
         if tma_transfer:
             # For TMA transfers, set expected bytes for the barrier
             alias expected_bytes = Self.get_expected_bytes()
-            self.full_mbar[Int(write_idx)].expect_bytes(expected_bytes)
+            self.full_mbar[Int(write_idx)][].expect_bytes(expected_bytes)
         return write_idx
 
     @always_inline
@@ -333,7 +336,7 @@ struct RingBuffer[
         """
         var slot = self.get_slot()
         return (
-            SMemBarrier(to=self.full_mbar[slot]),
+            self.full_mbar[slot],
             self.a_tiles[slot],
             self.b_tiles[slot],
         )
@@ -351,9 +354,9 @@ struct RingBuffer[
         if not tma_transfer:
             var write_idx = self.write_state.index()
             # Signal that async copy operations have been issued
-            async_copy_arrive(SMemBarrier(to=self.full_mbar[write_idx]))
+            async_copy_arrive(self.full_mbar[write_idx])
             # Arrive at barrier to signal tile is ready
-            _ = self.full_mbar[write_idx].arrive()
+            _ = self.full_mbar[write_idx][].arrive()
         # Move to next slot in the ring buffer
         self.write_state.step()
 
@@ -368,7 +371,7 @@ struct RingBuffer[
         """
         var read_idx = self.read_state.index()
         # Wait for producer to signal this slot is full
-        self.full_mbar[Int(read_idx)].wait(self.read_state.phase())
+        self.full_mbar[Int(read_idx)][].wait(self.read_state.phase())
         return read_idx
 
     @always_inline
@@ -405,13 +408,13 @@ struct RingBuffer[
         if cluster_size > 1:
             # In multi-cluster mode, one thread per block arrives
             if self.warp_group_thread_idx < UInt(cluster_size):
-                _ = self.empty_mbar[Int(read_idx)].arrive_cluster(
+                _ = self.empty_mbar[Int(read_idx)][].arrive_cluster(
                     self.warp_group_thread_idx
                 )
         else:
             # In single-block mode, only thread 0 arrives
             if self.warp_group_thread_idx == 0:
-                _ = self.empty_mbar[Int(read_idx)].arrive()
+                _ = self.empty_mbar[Int(read_idx)][].arrive()
 
         # Advance to next pipeline stage
         self.read_state.step()
@@ -443,9 +446,9 @@ struct RingBuffer[
             @parameter
             if cluster_size > 1:
                 if self.warp_group_thread_idx < UInt(cluster_size):
-                    _ = self.empty_mbar[i].arrive_cluster(
+                    _ = self.empty_mbar[i][].arrive_cluster(
                         self.warp_group_thread_idx
                     )
             else:
                 if self.warp_group_thread_idx == 0:
-                    _ = self.empty_mbar[i].arrive()
+                    _ = self.empty_mbar[i][].arrive()

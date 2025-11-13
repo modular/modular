@@ -17,6 +17,7 @@ from itertools import product
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout.layout import blocked_product
 from layout._fillers import arange
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 from utils.index import IndexList
@@ -50,7 +51,7 @@ def test_nested_layout_shape():
     alias base_layout = Layout.row_major(32, 32)
     alias smem_layout = blocked_product(base_layout, tiler_layout)
 
-    var tensor = LayoutTensor[DType.float32, smem_layout, MutableAnyOrigin](
+    var tensor = LayoutTensor[DType.float32, smem_layout, MutAnyOrigin](
         UnsafePointer[Float32]()
     )
 
@@ -70,10 +71,10 @@ def test_nested_layout_shape():
     # Test case 2: Ensure non-nested layouts still work (regression test)
     alias simple_layout = Layout.row_major(16, 32)
     alias simple_shape0 = LayoutTensor[
-        DType.float32, simple_layout, MutableAnyOrigin
+        DType.float32, simple_layout, MutAnyOrigin
     ].shape[0]()
     alias simple_shape1 = LayoutTensor[
-        DType.float32, simple_layout, MutableAnyOrigin
+        DType.float32, simple_layout, MutAnyOrigin
     ].shape[1]()
 
     assert_equal(simple_shape0, 16, "Non-nested shape[0] should still work")
@@ -82,12 +83,12 @@ def test_nested_layout_shape():
 
 fn _create_tensor_2x2[
     dtype: DType
-]() -> LayoutTensor[dtype, Layout.row_major(2, 2), MutableAnyOrigin]:
+]() -> LayoutTensor[dtype, Layout.row_major(2, 2), MutAnyOrigin]:
     """Helper to create a 2x2 row-major tensor on the stack."""
     return LayoutTensor[
         dtype,
         Layout.row_major(2, 2),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ].stack_allocation()
 
@@ -95,8 +96,8 @@ fn _create_tensor_2x2[
 fn _copy_transpose[
     dtype: DType
 ](
-    src: LayoutTensor[dtype, Layout.row_major(2, 2), MutableAnyOrigin],
-    mut dst: LayoutTensor[dtype, Layout.row_major(2, 2), MutableAnyOrigin],
+    src: LayoutTensor[dtype, Layout.row_major(2, 2), MutAnyOrigin],
+    mut dst: LayoutTensor[dtype, Layout.row_major(2, 2), MutAnyOrigin],
 ):
     """Copy tensor src into dst with transposed indices."""
     for i, j in product(range(2), range(2)):
@@ -168,7 +169,7 @@ def test_different_layouts_arithmetic():
     var b = LayoutTensor[
         DType.float32,
         Layout.col_major(2, 2),
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ].stack_allocation()
     for i, j in product(range(2), range(2)):

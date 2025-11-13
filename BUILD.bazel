@@ -222,6 +222,30 @@ config_setting(
     flag_values = {"//:modular_config": "asan"},
 )
 
+config_setting(
+    name = "asan_linux_aarch64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+    flag_values = {"//:modular_config": "asan"},
+)
+
+config_setting(
+    name = "asan_linux_x86_64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    flag_values = {"//:modular_config": "asan"},
+)
+
+config_setting(
+    name = "asan_macos",
+    constraint_values = ["@platforms//os:macos"],
+    flag_values = {"//:modular_config": "asan"},
+)
+
 alias(
     name = "tsan",
     actual = ":modular_config_tsan",

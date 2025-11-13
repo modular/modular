@@ -1,0 +1,23 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "pipelines",
+    srcs = glob(["*.py"]),
+    imports = ["../../.."],
+    deps = [
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/serve:exceptions",
+        "//max/python/max/serve/kvcache_agent",
+        "//max/python/max/serve/scheduler",
+        "//max/python/max/serve/telemetry",
+        "//max/python/max/support",
+        requirement("gguf"),
+        requirement("transformers"),
+        requirement("numpy"),
+        requirement("uvloop"),
+        requirement("psutil"),
+        requirement("pyzmq"),
+        requirement("taskgroup"),  # only for python < 3.11
+    ],
+)

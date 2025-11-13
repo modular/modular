@@ -238,7 +238,7 @@ fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
         IntTuple(2, 3, 4, 5),
         IntTuple(1, 4, 3, 2)
     )
-    # Result: Layout with shape (2,3,4,5) and stride (1,24,6,2)
+    # Result: Layout with shape (2,3,4,5) and stride (1,40,10,2)
     ```
     """
     var stride = compact_order(shape, order)
@@ -246,7 +246,7 @@ fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
 
 
 @fieldwise_init
-struct _LayoutIter[origin: ImmutableOrigin](
+struct _LayoutIter[origin: ImmutOrigin](
     ImplicitlyCopyable, Iterable, Iterator, Movable
 ):
     """Iterator for traversing Layout dimensions.
@@ -256,7 +256,7 @@ struct _LayoutIter[origin: ImmutableOrigin](
     and stride for that dimension.
 
     Parameters:
-        origin: The origin type for the `Layout` pointer, must be `ImmutableOrigin`.
+        origin: The origin type for the `Layout` pointer, must be `ImmutOrigin`.
 
     Attributes:
         index: Current position in the iteration.
@@ -368,7 +368,7 @@ struct Layout(
 
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _LayoutIter[ImmutableOrigin.cast_from[iterable_origin]]
+    ]: Iterator = _LayoutIter[ImmutOrigin.cast_from[iterable_origin]]
 
     # ===------------------------------------------------------------------===#
     # Initializers
@@ -1062,7 +1062,7 @@ fn MakeLayoutList(v0: Layout, v1: Layout) -> LayoutList:
     Returns:
         A LayoutList containing the two provided layouts.
     """
-    return LayoutList(v0, v1)
+    return [v0, v1]
 
 
 fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import prefetch
 from sys.info import CompilationTarget, align_of
 from sys.intrinsics import PrefetchOptions
@@ -101,7 +102,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         var a_local = NDBuffer[
             a.type,
             1,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             4 * kernel_rows,
             address_space = a.address_space,
         ].stack_allocation()

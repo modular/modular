@@ -16,6 +16,7 @@ from sys import env_get_int
 
 from gpu import block_dim, global_idx, grid_dim
 from gpu.host import DeviceBuffer, DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal, assert_true
 
 
@@ -72,9 +73,8 @@ def main():
     print("Checkpoint - successfully enabled peer access")
 
     # Create and initialize device buffers
-    var dst_buf = ctx1.create_buffer_sync[DType.float32](length).enqueue_fill(
-        1.0
-    )
+    var dst_buf = ctx1.create_buffer_sync[DType.float32](length)
+    dst_buf.enqueue_fill(1.0)
     var src_buf = ctx2.create_buffer_sync[DType.float32](length)
 
     # Initialize source data

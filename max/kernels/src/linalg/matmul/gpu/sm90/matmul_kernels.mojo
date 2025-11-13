@@ -23,7 +23,7 @@ from gpu.grid_controls import (
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.device_context import DeviceBuffer
 from gpu import (
     block_id_in_cluster,
@@ -46,10 +46,9 @@ from layout.tensor_core_async import (
     warpgroup_fence,
 )
 from layout.tma_async import (
-    SharedMemBarrier,
     TMATensorTile,
 )
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -63,6 +62,7 @@ from ....structuring import NVIDIASharedMemoryManager as SharedMemoryManager
 from ....structuring import (
     SMemTileType,
     RegTileType,
+    PipelineBarrier,
 )
 from .ring_buffer import RingBuffer, RingBufferConsumer, RingBufferProducer
 from .tile_loader import (
@@ -70,7 +70,7 @@ from .tile_loader import (
     TileLoaderCPAsync,
     TileLoader,
 )
-from .matmul_output import write_gemm_output_to_global_memory
+from .matmul_output import MatmulTileWriter
 
 
 # Shared memory structure for Hopper SM90 kernel
@@ -103,9 +103,7 @@ struct HopperMatmulSM90Kernel_SMem[
     alias CTile = Self.SMM.Tile[c_type, c_layout]
 
     # Pipeline barrier types - for producer/consumer synchronization
-    alias PipelineBarrier = Self.SMM.Array[
-        SharedMemBarrier, num_pipeline_stages
-    ]
+    alias PipelineBarrier = PipelineBarrier[num_pipeline_stages]
 
     # Tile iterators - cycle through pipeline stages
     var a_tiles: Self.ATileArray
@@ -412,8 +410,8 @@ struct HopperMatmulSM90Kernel[
     ]:
         """Create ring buffer for producer-consumer synchronization."""
         return Self.RingBuffer[tma_transfer](
-            smem.full_mbar.ptr,
-            smem.empty_mbar.ptr,
+            smem.full_mbar,
+            smem.empty_mbar,
             warp_group_thread_idx,
             smem.a_tiles,
             smem.b_tiles,
@@ -502,7 +500,7 @@ struct HopperMatmulSM90Kernel[
         ] = elementwise_lambda_fn
     ](
         c_tma_op: TMATensorTile[c_type, _, _],
-        c: LayoutTensor[c_type, _, MutableAnyOrigin, *_, **_],
+        c: LayoutTensor[c_type, _, MutAnyOrigin, *_, **_],
         c_tile: Self.SMem.CTile,
         output_reg_tile: Self.AccumRegTileType,
         warp_group_thread_idx: UInt,
@@ -512,25 +510,26 @@ struct HopperMatmulSM90Kernel[
         block_x: Int,
     ):
         """Handle consumer output by writing GEMM results to global memory."""
-        write_gemm_output_to_global_memory[
-            c_tile_shape = Index(Self.BM, Self.BN),
-            c_swizzle=c_swizzle,
+        var matmul_tile_writer = MatmulTileWriter[
+            BM = Self.BM,
+            BN = Self.BN,
+            swizzle=c_swizzle,
             wgmma_shape=wgmma_shape,
             num_consumer = Self.num_consumer,
             use_tma_store=use_tma_store,
             elementwise_lambda_fn=custom_elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         ](
-            c_tma_op,
+            # Pointer(to=c_tma_op),
             c,
             c_tile,
-            output_reg_tile,
             warp_group_thread_idx,
             local_warp_group_idx,
             local_thread_idx,
             block_y,
             block_x,
         )
+        matmul_tile_writer.write_tile(c_tma_op, output_reg_tile)
 
     @staticmethod
     @always_inline
@@ -594,8 +593,8 @@ struct HopperMatmulSM90Kernel[
             WARPGROUP_SIZE // num_threads_per_row, num_threads_per_row
         ),
     ](
-        a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-        b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+        a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+        b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
     ) -> Tuple[
         TileLoaderCPAsync[
             a_type,
@@ -712,9 +711,9 @@ struct HopperMatmulSM90Kernel[
         a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
         c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
-        a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-        b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-        c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+        a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+        b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+        c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
         lut_ptr: UnsafePointer[UInt32],
     ):
         """Main kernel entry point for matrix multiplication.
@@ -837,8 +836,8 @@ struct HopperMatmulSM90Kernel[
         a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
         c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
-        c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-        workspace_buffer: NDBuffer[Self.accum_type, 3, MutableAnyOrigin],
+        c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+        workspace_buffer: NDBuffer[Self.accum_type, 3, MutAnyOrigin],
         locks_ptr: UnsafePointer[UInt8],
         problem_shape: IndexList[3],
     ):
@@ -1009,9 +1008,9 @@ struct HopperMatmulSM90Kernel[
         a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
         c_tma_op: TMATensorTile[c_type, c_tile_layout, c_desc_layout],
-        a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-        expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
-        c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+        a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+        expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
+        c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     ):
         """Grouped matmul variant for MoE (Mixture of Experts) models.
 
@@ -1132,7 +1131,7 @@ struct HopperMatmulSM90Kernel[
             alias c_gmem_type = LayoutTensor[
                 c_type,
                 c_gmem_layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 layout_int_type = DType.int32,
                 address_space = AddressSpace.GENERIC,
             ]
@@ -1303,8 +1302,8 @@ struct HopperMatmulSM90Kernel[
     fn wgmma(
         wgmma_op: Self.WgmmaOp,
         local_warp_group_idx: UInt,
-        a_tile: SMemTileType[a_type, _, _],
-        b_tile: SMemTileType[b_type, _, _],
+        a_tile: SMemTileType[a_type, _, **_],
+        b_tile: SMemTileType[b_type, _, **_],
         c_reg_tile: Self.AccumRegTileType,
     ):
         warpgroup_fence(c_reg_tile)

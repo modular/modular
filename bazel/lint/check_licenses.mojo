@@ -48,8 +48,8 @@ fn is_ignored_file(filename: StringSlice) -> Bool:
 
     # Generated files
     if (
-        filename == "max/serve/schemas/kserve.py"
-        or filename == "max/serve/schemas/openai.py"
+        filename == "max/python/max/serve/schemas/kserve.py"
+        or filename == "max/python/max/serve/schemas/openai.py"
     ):
         return True
 

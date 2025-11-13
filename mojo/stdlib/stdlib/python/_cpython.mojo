@@ -18,13 +18,18 @@ Documentation for these functions can be found online at:
 """
 
 from collections import InlineArray
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from os import abort, getenv, setenv
 from os.path import dirname
 from pathlib import Path
 from sys import external_call
 from sys.arg import argv
 from sys.ffi import (
-    DLHandle,
+    _DLHandle,
+    OwnedDLHandle,
     c_char,
     c_double,
     c_int,
@@ -32,6 +37,7 @@ from sys.ffi import (
     c_size_t,
     c_ssize_t,
     c_uint,
+    c_ulong,
 )
 
 from utils import Variant
@@ -52,6 +58,17 @@ alias Py_func_type_input: c_int = 345
 # 0 when Stackless Python is disabled
 # ref: https://github.com/python/cpython/blob/main/Include/object.h
 alias Py_TPFLAGS_DEFAULT = 0
+
+# These flags are used to determine if a type is a subclass.
+# ref: https://github.com/python/cpython/blob/main/Include/object.h
+alias Py_TPFLAGS_LONG_SUBCLASS = c_ulong(1 << 24)
+alias Py_TPFLAGS_LIST_SUBCLASS = c_ulong(1 << 25)
+alias Py_TPFLAGS_TUPLE_SUBCLASS = c_ulong(1 << 26)
+alias Py_TPFLAGS_BYTES_SUBCLASS = c_ulong(1 << 27)
+alias Py_TPFLAGS_UNICODE_SUBCLASS = c_ulong(1 << 28)
+alias Py_TPFLAGS_DICT_SUBCLASS = c_ulong(1 << 29)
+alias Py_TPFLAGS_BASE_EXC_SUBCLASS = c_ulong(1 << 30)
+alias Py_TPFLAGS_TYPE_SUBCLASS = c_ulong(1 << 31)
 
 
 # TODO(MOCO-1138):
@@ -253,7 +270,7 @@ struct PythonVersion(ImplicitlyCopyable, Movable):
         self = PythonVersion(components[0], components[1], components[2])
 
 
-fn _py_get_version(lib: DLHandle) -> StaticString:
+fn _py_get_version(lib: _DLHandle) -> StaticString:
     return StaticString(
         unsafe_from_utf8_ptr=lib.call[
             "Py_GetVersion",
@@ -731,7 +748,7 @@ struct ExternalFunction[
 ]:
     @staticmethod
     @always_inline
-    fn load(lib: DLHandle) -> type:
+    fn load(lib: _DLHandle) -> type:
         """Loads this external function from an opened dynamic library."""
         return lib._get_function[name, type]()
 
@@ -970,6 +987,16 @@ alias PyType_FromSpec = ExternalFunction[
     "PyType_FromSpec",
     # PyObject *PyType_FromSpec(PyType_Spec *spec)
     fn (UnsafePointer[PyType_Spec]) -> PyObjectPtr,
+]
+alias PyType_GetFlags = ExternalFunction[
+    "PyType_GetFlags",
+    # unsigned long PyType_GetFlags(PyTypeObject *type)
+    fn (PyTypeObjectPtr) -> c_ulong,
+]
+alias PyType_IsSubtype = ExternalFunction[
+    "PyType_IsSubtype",
+    # int PyType_IsSubtype(PyTypeObject *a, PyTypeObject *b)
+    fn (PyTypeObjectPtr, PyTypeObjectPtr) -> c_int,
 ]
 
 # Integer Objects
@@ -1277,7 +1304,7 @@ struct CPython(Defaultable, Movable):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var lib: DLHandle
+    var lib: OwnedDLHandle
     """The handle to the CPython shared library."""
     var version: PythonVersion
     """The version of the Python runtime."""
@@ -1335,18 +1362,23 @@ struct CPython(Defaultable, Movable):
     var _PyIter_Next: PyIter_Next.type
     # Concrete Objects Layer
     # Type Objects
+    var _PyType_GetFlags: PyType_GetFlags.type
+    var _PyType_IsSubtype: PyType_IsSubtype.type
     var _PyType_GenericAlloc: PyType_GenericAlloc.type
     var _PyType_GetName: PyType_GetName.type
     var _PyType_FromSpec: PyType_FromSpec.type
     # The None Object
     var _Py_None: PyObjectPtr
     # Integer Objects
+    var _PyLong_Type: PyTypeObjectPtr
     var _PyLong_FromSsize_t: PyLong_FromSsize_t.type
     var _PyLong_FromSize_t: PyLong_FromSize_t.type
     var _PyLong_AsSsize_t: PyLong_AsSsize_t.type
     # Boolean Objects
+    var _PyBool_Type: PyTypeObjectPtr
     var _PyBool_FromLong: PyBool_FromLong.type
     # Floating-Point Objects
+    var _PyFloat_Type: PyTypeObjectPtr
     var _PyFloat_FromDouble: PyFloat_FromDouble.type
     var _PyFloat_AsDouble: PyFloat_AsDouble.type
     # Unicode Objects and Codecs
@@ -1425,12 +1457,12 @@ struct CPython(Defaultable, Movable):
         #   into the process by loading the `libpython` dynamic library.
         try:
             # Try to load the library from the current process.
-            self.lib = DLHandle()
+            self.lib = OwnedDLHandle()
             if not self.lib.check_symbol("Py_Initialize"):
                 # If the library is not present in the current process, try to load it from the environment variable.
-                self.lib = DLHandle(python_lib)
+                self.lib = OwnedDLHandle(python_lib)
         except e:
-            self.lib = abort[DLHandle](
+            self.lib = abort[OwnedDLHandle](
                 String("Failed to load libpython from", python_lib, ":\n", e)
             )
 
@@ -1438,69 +1470,81 @@ struct CPython(Defaultable, Movable):
             if not self.lib.check_symbol("Py_Initialize"):
                 self.init_error = "compatible Python library not found"
             self.lib.call["Py_Initialize"]()
-            self.version = PythonVersion(_py_get_version(self.lib))
+            self.version = PythonVersion(_py_get_version(self.lib.borrow()))
         else:
             self.version = PythonVersion(0, 0, 0)
 
         # The Very High Level Layer
-        self._PyRun_SimpleString = PyRun_SimpleString.load(self.lib)
-        self._PyRun_String = PyRun_String.load(self.lib)
-        self._Py_CompileString = Py_CompileString.load(self.lib)
-        self._PyEval_EvalCode = PyEval_EvalCode.load(self.lib)
+        self._PyRun_SimpleString = PyRun_SimpleString.load(self.lib.borrow())
+        self._PyRun_String = PyRun_String.load(self.lib.borrow())
+        self._Py_CompileString = Py_CompileString.load(self.lib.borrow())
+        self._PyEval_EvalCode = PyEval_EvalCode.load(self.lib.borrow())
         # Reference Counting
-        self._Py_NewRef = Py_NewRef.load(self.lib)
-        self._Py_IncRef = Py_IncRef.load(self.lib)
-        self._Py_DecRef = Py_DecRef.load(self.lib)
+        self._Py_NewRef = Py_NewRef.load(self.lib.borrow())
+        self._Py_IncRef = Py_IncRef.load(self.lib.borrow())
+        self._Py_DecRef = Py_DecRef.load(self.lib.borrow())
         # Exception Handling
-        self._PyErr_Clear = PyErr_Clear.load(self.lib)
-        self._PyErr_SetString = PyErr_SetString.load(self.lib)
-        self._PyErr_SetNone = PyErr_SetNone.load(self.lib)
-        self._PyErr_Occurred = PyErr_Occurred.load(self.lib)
+        self._PyErr_Clear = PyErr_Clear.load(self.lib.borrow())
+        self._PyErr_SetString = PyErr_SetString.load(self.lib.borrow())
+        self._PyErr_SetNone = PyErr_SetNone.load(self.lib.borrow())
+        self._PyErr_Occurred = PyErr_Occurred.load(self.lib.borrow())
         if self.version.minor >= 12:
             self._PyErr_GetRaisedException = PyErr_GetRaisedException.load(
-                self.lib
+                self.lib.borrow()
             )
         else:
             self._PyErr_GetRaisedException = _PyErr_GetRaisedException_dummy
-        self._PyErr_Fetch = PyErr_Fetch.load(self.lib)
+        self._PyErr_Fetch = PyErr_Fetch.load(self.lib.borrow())
         # Initialization, Finalization, and Threads
-        self._PyEval_SaveThread = PyEval_SaveThread.load(self.lib)
-        self._PyEval_RestoreThread = PyEval_RestoreThread.load(self.lib)
-        self._PyGILState_Ensure = PyGILState_Ensure.load(self.lib)
-        self._PyGILState_Release = PyGILState_Release.load(self.lib)
+        self._PyEval_SaveThread = PyEval_SaveThread.load(self.lib.borrow())
+        self._PyEval_RestoreThread = PyEval_RestoreThread.load(
+            self.lib.borrow()
+        )
+        self._PyGILState_Ensure = PyGILState_Ensure.load(self.lib.borrow())
+        self._PyGILState_Release = PyGILState_Release.load(self.lib.borrow())
         # Importing Modules
-        self._PyImport_ImportModule = PyImport_ImportModule.load(self.lib)
-        self._PyImport_AddModule = PyImport_AddModule.load(self.lib)
+        self._PyImport_ImportModule = PyImport_ImportModule.load(
+            self.lib.borrow()
+        )
+        self._PyImport_AddModule = PyImport_AddModule.load(self.lib.borrow())
         # Abstract Objects Layer
         # Object Protocol
-        self._PyObject_HasAttrString = PyObject_HasAttrString.load(self.lib)
-        self._PyObject_GetAttrString = PyObject_GetAttrString.load(self.lib)
-        self._PyObject_SetAttrString = PyObject_SetAttrString.load(self.lib)
-        self._PyObject_Str = PyObject_Str.load(self.lib)
-        self._PyObject_Hash = PyObject_Hash.load(self.lib)
-        self._PyObject_IsTrue = PyObject_IsTrue.load(self.lib)
-        self._PyObject_Type = PyObject_Type.load(self.lib)
-        self._PyObject_Length = PyObject_Length.load(self.lib)
-        self._PyObject_GetItem = PyObject_GetItem.load(self.lib)
-        self._PyObject_SetItem = PyObject_SetItem.load(self.lib)
-        self._PyObject_GetIter = PyObject_GetIter.load(self.lib)
+        self._PyObject_HasAttrString = PyObject_HasAttrString.load(
+            self.lib.borrow()
+        )
+        self._PyObject_GetAttrString = PyObject_GetAttrString.load(
+            self.lib.borrow()
+        )
+        self._PyObject_SetAttrString = PyObject_SetAttrString.load(
+            self.lib.borrow()
+        )
+        self._PyObject_Str = PyObject_Str.load(self.lib.borrow())
+        self._PyObject_Hash = PyObject_Hash.load(self.lib.borrow())
+        self._PyObject_IsTrue = PyObject_IsTrue.load(self.lib.borrow())
+        self._PyObject_Type = PyObject_Type.load(self.lib.borrow())
+        self._PyObject_Length = PyObject_Length.load(self.lib.borrow())
+        self._PyObject_GetItem = PyObject_GetItem.load(self.lib.borrow())
+        self._PyObject_SetItem = PyObject_SetItem.load(self.lib.borrow())
+        self._PyObject_GetIter = PyObject_GetIter.load(self.lib.borrow())
         # Call Protocol
-        self._PyObject_Call = PyObject_Call.load(self.lib)
-        self._PyObject_CallObject = PyObject_CallObject.load(self.lib)
+        self._PyObject_Call = PyObject_Call.load(self.lib.borrow())
+        self._PyObject_CallObject = PyObject_CallObject.load(self.lib.borrow())
         # Number Protocol
-        self._PyNumber_Long = PyNumber_Long.load(self.lib)
-        self._PyNumber_Float = PyNumber_Float.load(self.lib)
+        self._PyNumber_Long = PyNumber_Long.load(self.lib.borrow())
+        self._PyNumber_Float = PyNumber_Float.load(self.lib.borrow())
         # Iterator Protocol
-        self._PyIter_Check = PyIter_Check.load(self.lib)
-        self._PyIter_Next = PyIter_Next.load(self.lib)
+        self._PyIter_Check = PyIter_Check.load(self.lib.borrow())
+        self._PyIter_Next = PyIter_Next.load(self.lib.borrow())
         # Concrete Objects Layer
         # Type Objects
-        self._PyType_GenericAlloc = PyType_GenericAlloc.load(self.lib)
+        self._PyType_GetFlags = PyType_GetFlags.load(self.lib.borrow())
+        self._PyType_IsSubtype = PyType_IsSubtype.load(self.lib.borrow())
+        self._PyType_GenericAlloc = PyType_GenericAlloc.load(self.lib.borrow())
         if self.version.minor >= 11:
-            self._PyType_GetName = PyType_GetName.load(self.lib)
+            self._PyType_GetName = PyType_GetName.load(self.lib.borrow())
         else:
             self._PyType_GetName = _PyType_GetName_dummy
-        self._PyType_FromSpec = PyType_FromSpec.load(self.lib)
+        self._PyType_FromSpec = PyType_FromSpec.load(self.lib.borrow())
         # The None Object
         if self.version.minor >= 13:
             # Py_GetConstantBorrowed is part of the Stable ABI since version 3.13
@@ -1518,52 +1562,76 @@ struct CPython(Defaultable, Movable):
                 self.lib.get_symbol[PyObject]("_Py_NoneStruct")
             )
         # Integer Objects
-        self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib)
-        self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib)
-        self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib)
+        self._PyLong_Type = PyTypeObjectPtr(
+            # PyTypeObject PyLong_Type
+            self.lib.get_symbol[PyTypeObject]("PyLong_Type")
+        )
+        self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib.borrow())
+        self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib.borrow())
+        self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib.borrow())
         # Boolean Objects
-        self._PyBool_FromLong = PyBool_FromLong.load(self.lib)
+        self._PyBool_Type = PyTypeObjectPtr(
+            # PyTypeObject PyBool_Type
+            self.lib.get_symbol[PyTypeObject]("PyBool_Type")
+        )
+        self._PyBool_FromLong = PyBool_FromLong.load(self.lib.borrow())
         # Floating-Point Objects
-        self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib)
-        self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib)
+        self._PyFloat_Type = PyTypeObjectPtr(
+            # PyTypeObject PyFloat_Type
+            self.lib.get_symbol[PyTypeObject]("PyFloat_Type")
+        )
+        self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib.borrow())
+        self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib.borrow())
         # Unicode Objects and Codecs
-        self._PyUnicode_DecodeUTF8 = PyUnicode_DecodeUTF8.load(self.lib)
-        self._PyUnicode_AsUTF8AndSize = PyUnicode_AsUTF8AndSize.load(self.lib)
+        self._PyUnicode_DecodeUTF8 = PyUnicode_DecodeUTF8.load(
+            self.lib.borrow()
+        )
+        self._PyUnicode_AsUTF8AndSize = PyUnicode_AsUTF8AndSize.load(
+            self.lib.borrow()
+        )
         # Tuple Objects
-        self._PyTuple_New = PyTuple_New.load(self.lib)
-        self._PyTuple_GetItem = PyTuple_GetItem.load(self.lib)
-        self._PyTuple_SetItem = PyTuple_SetItem.load(self.lib)
+        self._PyTuple_New = PyTuple_New.load(self.lib.borrow())
+        self._PyTuple_GetItem = PyTuple_GetItem.load(self.lib.borrow())
+        self._PyTuple_SetItem = PyTuple_SetItem.load(self.lib.borrow())
         # List Objects
-        self._PyList_New = PyList_New.load(self.lib)
-        self._PyList_GetItem = PyList_GetItem.load(self.lib)
-        self._PyList_SetItem = PyList_SetItem.load(self.lib)
+        self._PyList_New = PyList_New.load(self.lib.borrow())
+        self._PyList_GetItem = PyList_GetItem.load(self.lib.borrow())
+        self._PyList_SetItem = PyList_SetItem.load(self.lib.borrow())
         # Dictionary Objects
         self._PyDict_Type = PyTypeObjectPtr(
             # PyTypeObject PyDict_Type
             self.lib.get_symbol[PyTypeObject]("PyDict_Type")
         )
-        self._PyDict_New = PyDict_New.load(self.lib)
-        self._PyDict_SetItem = PyDict_SetItem.load(self.lib)
-        self._PyDict_GetItemWithError = PyDict_GetItemWithError.load(self.lib)
-        self._PyDict_Next = PyDict_Next.load(self.lib)
+        self._PyDict_New = PyDict_New.load(self.lib.borrow())
+        self._PyDict_SetItem = PyDict_SetItem.load(self.lib.borrow())
+        self._PyDict_GetItemWithError = PyDict_GetItemWithError.load(
+            self.lib.borrow()
+        )
+        self._PyDict_Next = PyDict_Next.load(self.lib.borrow())
         # Set Objects
-        self._PySet_New = PySet_New.load(self.lib)
-        self._PySet_Add = PySet_Add.load(self.lib)
+        self._PySet_New = PySet_New.load(self.lib.borrow())
+        self._PySet_Add = PySet_Add.load(self.lib.borrow())
         # Module Objects
-        self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
-        self._PyModule_Create2 = PyModule_Create2.load(self.lib)
-        self._PyModule_AddFunctions = PyModule_AddFunctions.load(self.lib)
-        self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(self.lib)
+        self._PyModule_GetDict = PyModule_GetDict.load(self.lib.borrow())
+        self._PyModule_Create2 = PyModule_Create2.load(self.lib.borrow())
+        self._PyModule_AddFunctions = PyModule_AddFunctions.load(
+            self.lib.borrow()
+        )
+        self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(
+            self.lib.borrow()
+        )
         # Slice Objects
-        self._PySlice_New = PySlice_New.load(self.lib)
+        self._PySlice_New = PySlice_New.load(self.lib.borrow())
         # Capsules
-        self._PyCapsule_New = PyCapsule_New.load(self.lib)
-        self._PyCapsule_GetPointer = PyCapsule_GetPointer.load(self.lib)
+        self._PyCapsule_New = PyCapsule_New.load(self.lib.borrow())
+        self._PyCapsule_GetPointer = PyCapsule_GetPointer.load(
+            self.lib.borrow()
+        )
         # Memory Management
-        self._PyObject_Free = PyObject_Free.load(self.lib)
+        self._PyObject_Free = PyObject_Free.load(self.lib.borrow())
         # Object Implementation Support
         # Common Object Structures
-        self._Py_Is = Py_Is.load(self.lib)
+        self._Py_Is = Py_Is.load(self.lib.borrow())
 
     fn __del__(deinit self):
         pass
@@ -1571,7 +1639,8 @@ struct CPython(Defaultable, Movable):
     fn destroy(mut self):
         # https://docs.python.org/3/c-api/init.html#c.Py_FinalizeEx
         self.lib.call["Py_FinalizeEx"]()
-        self.lib.close()
+        # Note: self.lib will be automatically closed when CPython is destroyed
+        # due to OwnedDLHandle's RAII semantics
 
     fn check_init_error(self) raises:
         """Used for entry points that initialize Python on first use, will
@@ -2053,6 +2122,23 @@ struct CPython(Defaultable, Movable):
         """
         return self._PyObject_Type(obj)
 
+    fn PyObject_TypeCheck(
+        self, obj: PyObjectPtr, type: PyTypeObjectPtr
+    ) -> c_int:
+        """Return non-zero if the object `obj` is of type `type` or a subtype of type,
+        and 0 otherwise. Both parameters must be non-NULL.
+
+        Note: this is a static inline function in the Python C API.
+        https://github.com/python/cpython/blob/3dab11f888fda34c02734e4468d1acd4c36927fe/Include/object.h#L431
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_TypeCheck
+        """
+        var type_ptr = self.Py_TYPE(obj)
+        return c_int(
+            (type_ptr == type) or self._PyType_IsSubtype(type_ptr, type)
+        )
+
     fn PyObject_Length(self, obj: PyObjectPtr) -> Py_ssize_t:
         """Return the length of object `obj`.
 
@@ -2198,6 +2284,39 @@ struct CPython(Defaultable, Movable):
     # ref: https://docs.python.org/3/c-api/type.html
     # ===-------------------------------------------------------------------===#
 
+    fn PyType_GetFlags(
+        self,
+        type: PyTypeObjectPtr,
+    ) -> c_ulong:
+        """Return the `tp_flags` member of type.
+
+        References:
+        - https://docs.python.org/3/c-api/type.html#c.PyType_GetFlags
+        """
+        return self._PyType_GetFlags(type)
+
+    fn PyType_HasFeature(self, ptr: PyTypeObjectPtr, feature: c_ulong) -> c_int:
+        """Return non-zero if the type object ptr sets the feature feature. Type features are denoted by single bit flags.
+
+        Note: this is another static helper function in the C API.
+
+        References:
+        - https://docs.python.org/3.13/c-api/type.html#c.PyType_HasFeature
+        """
+        return c_int(self._PyType_GetFlags(ptr) & feature)
+
+    fn PyType_IsSubtype(
+        self,
+        a: PyTypeObjectPtr,
+        b: PyTypeObjectPtr,
+    ) -> c_int:
+        """Return true if *a* is a subtype of *b*.
+
+        References:
+        - https://docs.python.org/3/c-api/type.html#c.PyType_IsSubtype
+        """
+        return self._PyType_IsSubtype(a, b)
+
     fn PyType_GenericAlloc(
         self,
         type: PyTypeObjectPtr,
@@ -2255,6 +2374,43 @@ struct CPython(Defaultable, Movable):
     # ref: https://docs.python.org/3/c-api/long.html
     # ===-------------------------------------------------------------------===#
 
+    fn PyLong_Type(self) -> PyTypeObjectPtr:
+        """The `PyLong_Type` Object.
+
+        This instance of `PyTypeObject` represents the Python integer type. This is
+        the same object as `int` in the Python layer.
+
+        References:
+        - https://docs.python.org/3.10/c-api/long.html#c.PyLong_Type
+        """
+        return self._PyLong_Type
+
+    fn PyLong_Check(self, obj: PyObjectPtr) -> c_int:
+        """Return true if its argument is a `PyLongObject` or a subtype of
+        `PyLongObject`. This function always succeeds.
+
+        Note: this a C macro in the Python C API.
+
+        References:
+        - https://docs.python.org/3/c-api/long.html#c.PyLong_Check
+        - https://github.com/python/cpython/blob/main/Include/longobject.h
+        """
+        return self.PyType_HasFeature(
+            self.Py_TYPE(obj), Py_TPFLAGS_LONG_SUBCLASS
+        )
+
+    fn PyLong_CheckExact(self, obj: PyObjectPtr) -> c_int:
+        """Return true if its argument is a `PyLongObject`, but not a subtype of
+        `PyLongObject`. This function always succeeds.
+
+        Note: this a C macro in the Python C API.
+
+        References:
+        - https://docs.python.org/3/c-api/long.html#c.PyLong_CheckExact
+        - https://github.com/python/cpython/blob/main/Include/longobject.h
+        """
+        return c_int(self.Py_TYPE(obj) == self._PyLong_Type)
+
     fn PyLong_FromSsize_t(self, value: Py_ssize_t) -> PyObjectPtr:
         """Return a new `PyLongObject` object from a C `Py_ssize_t`, or `NULL`
         on failure.
@@ -2295,6 +2451,29 @@ struct CPython(Defaultable, Movable):
     # ref: https://docs.python.org/3/c-api/bool.html
     # ===-------------------------------------------------------------------===#
 
+    fn PyBool_Type(self) -> PyTypeObjectPtr:
+        """The `PyBool_Type` Object.
+
+        This instance of `PyTypeObject` represents the Python boolean type; it
+        is the same object as `bool` in the Python layer.
+
+        References:
+        - https://docs.python.org/3.10/c-api/bool.html#c.PyBool_Type
+        """
+        return self._PyBool_Type
+
+    fn PyBool_Check(self, obj: PyObjectPtr) -> c_int:
+        """Return true if `obj` is of type `PyBool_Type`. This function always
+        succeeds.
+
+        Note: this a C macro in the Python C API.
+
+        References:
+        - https://docs.python.org/3.13/c-api/bool.html#c.PyBool_Check
+        - https://github.com/python/cpython/blob/main/Include/boolobject.h
+        """
+        return c_int(self.Py_TYPE(obj) == self._PyBool_Type)
+
     fn PyBool_FromLong(self, value: c_long) -> PyObjectPtr:
         """Return `Py_True` or `Py_False`, depending on the truth value
         of `value`.
@@ -2310,6 +2489,41 @@ struct CPython(Defaultable, Movable):
     # Floating-Point Objects
     # ref: https://docs.python.org/3/c-api/float.html
     # ===-------------------------------------------------------------------===#
+
+    fn PyFloat_Type(self) -> PyTypeObjectPtr:
+        """The `PyFloat_Type` Object.
+
+        This instance of `PyTypeObject` represents the Python floating point
+        type. This is the same object as `float` in the Python layer.
+
+        References:
+        - https://docs.python.org/3.10/c-api/float.html#c.PyFloat_Type
+        """
+        return self._PyFloat_Type
+
+    fn PyFloat_Check(self, obj: PyObjectPtr) -> c_int:
+        """Return true if its argument is a `PyFloatObject` or a subtype of
+        `PyFloatObject`. This function always succeeds.
+
+        Note: this a C macro in the Python C API.
+
+        References:
+        - https://docs.python.org/3/c-api/float.html#c.PyFloat_Check
+        - https://github.com/python/cpython/blob/main/Include/floatobject.h
+        """
+        return self.PyObject_TypeCheck(obj, self._PyFloat_Type)
+
+    fn PyFloat_CheckExact(self, obj: PyObjectPtr) -> c_int:
+        """Return true if its argument is a `PyFloatObject`, but not a subtype of
+        `PyFloatObject`. This function always succeeds.
+
+        Note: this a C macro in the Python C API.
+
+        References:
+        - https://docs.python.org/3/c-api/float.html#c.PyFloat_CheckExact
+        - https://github.com/python/cpython/blob/main/Include/floatobject.h
+        """
+        return c_int(self.Py_TYPE(obj) == self._PyFloat_Type)
 
     fn PyFloat_FromDouble(self, value: c_double) -> PyObjectPtr:
         """Create a PyFloatObject object from `value`, or `NULL` on failure.
@@ -2356,7 +2570,7 @@ struct CPython(Defaultable, Movable):
     # TODO: fix signature to take unicode and size as args
     fn PyUnicode_AsUTF8AndSize(
         self, obj: PyObjectPtr
-    ) -> StringSlice[ImmutableAnyOrigin]:
+    ) -> StringSlice[ImmutAnyOrigin]:
         """Return a pointer to the UTF-8 encoding of the Unicode object, and
         store the size of the encoded representation (in bytes) in `size`.
 
@@ -2365,7 +2579,7 @@ struct CPython(Defaultable, Movable):
         """
         var length = Py_ssize_t(0)
         var ptr = self._PyUnicode_AsUTF8AndSize(obj, UnsafePointer(to=length))
-        return StringSlice[ImmutableAnyOrigin](
+        return StringSlice[ImmutAnyOrigin](
             ptr=ptr.bitcast[Byte](), length=length
         )
 

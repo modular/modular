@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import ArcPointer
+from memory import ArcPointer, LegacyUnsafePointer as UnsafePointer
 from test_utils import ObservableDel
 from testing import assert_equal, assert_false, assert_true, TestSuite
 

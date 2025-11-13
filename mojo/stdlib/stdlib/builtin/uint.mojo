@@ -17,9 +17,11 @@ These are Mojo built-ins, so you don't need to import them.
 
 from hashlib.hasher import Hasher
 from math import CeilDivable
+from sys.info import bit_width_of
 
 from builtin.math import Absable, DivModable
 from builtin.device_passable import DevicePassable
+from memory import LegacyOpaquePointer as OpaquePointer
 
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -70,7 +72,7 @@ struct UInt(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias BITWIDTH = UInt(DType.uint.bit_width())
+    alias BITWIDTH = UInt(bit_width_of[DType.uint]())
     """The bit width of the integer type."""
 
     alias MAX = UInt(Scalar[DType.uint].MAX)
@@ -344,9 +346,6 @@ struct UInt(
         Returns:
             `floor(self/rhs)` value.
         """
-        if rhs == 0:
-            # this should raise an exception.
-            return 0
         return UInt(
             mlir_value=__mlir_op.`index.divu`(self._mlir_value, rhs._mlir_value)
         )
@@ -361,9 +360,6 @@ struct UInt(
         Returns:
             The remainder of dividing self by rhs.
         """
-        if rhs == 0:
-            # this should raise an exception
-            return 0
         return UInt(
             mlir_value=__mlir_op.`index.remu`(self._mlir_value, rhs._mlir_value)
         )
@@ -378,9 +374,6 @@ struct UInt(
         Returns:
             The quotient and remainder as a `Tuple(self // rhs, self % rhs)`.
         """
-        if rhs == 0:
-            # this should raise an exception
-            return UInt(0), UInt(0)
         return self // rhs, self % rhs
 
     @always_inline("nodebug")

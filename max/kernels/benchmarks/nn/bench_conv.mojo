@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import align_up, ceildiv
 from random import rand
 from sys import simd_width_of, size_of
@@ -193,7 +194,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
         BenchId("Conv", String(spec)),
         spec,
         # TODO: Pick relevant benchmetric.
-        ThroughputMeasure(BenchMetric.elements, spec.flops()),
+        [ThroughputMeasure(BenchMetric.elements, spec.flops())],
     )
 
     input_ptr.free()

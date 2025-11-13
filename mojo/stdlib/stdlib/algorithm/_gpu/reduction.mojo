@@ -339,6 +339,117 @@ fn reduce_kernel[
         launch_dependent_grids()
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+)
+fn small_reduce_kernel[
+    rank: Int,
+    num_reductions: Int,
+    BLOCK_SIZE: Int,
+    input_fn: fn[dtype: DType, width: Int, rank: Int] (
+        IndexList[rank]
+    ) capturing [_] -> SIMD[dtype, width],
+    output_fn: fn[dtype: DType, width: Int, rank: Int] (
+        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    ) capturing [_] -> None,
+    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int] (
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing [_] -> SIMD[ty, width],
+    dtype: DType,
+    simd_width: Int,
+    accum_type: DType = get_accum_type[dtype](),
+](
+    shape: IndexList[rank],
+    axis: Int,
+    init: StaticTuple[Scalar[dtype], num_reductions],
+):
+    var row_size = shape[axis]
+    var num_rows = shape.flattened_length() // row_size
+
+    @parameter
+    if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+        launch_dependent_grids()
+
+    @parameter
+    if PDLLevel() > PDLLevel.OFF:
+        wait_on_dependent_grids()
+
+    alias warps_per_block = BLOCK_SIZE // WARP_SIZE
+
+    # grid stride loop over rows
+    # each block reduces as many rows as warps,
+    # No need to partial reduction because this is the degenerated case of
+    # rows smaller than warp size
+    #
+    for row_idx in range(
+        block_idx.x * UInt(warps_per_block),
+        UInt(num_rows),
+        grid_dim.x * UInt(warps_per_block),
+    ):
+        var row_coords = _get_nd_indices_from_flat_index(
+            Int(row_idx) + Int(warp_id()), shape, axis
+        )
+
+        # One row per warp, warp collectively reads from global
+        if warp_id() < UInt(warps_per_block):
+            var val = InlineArray[SIMD[accum_type, simd_width], num_reductions](
+                fill=0
+            )
+
+            @parameter
+            for i in range(num_reductions):
+                val[i] = init[i].cast[accum_type]()
+
+            if lane_id() < UInt(row_size):
+                row_coords[axis] = Int(lane_id())
+                var t = input_fn[dtype, simd_width, rank](row_coords).cast[
+                    accum_type
+                ]()
+
+                val = type_of(val)(fill=t)
+            else:
+
+                @parameter
+                for i in range(num_reductions):
+                    val[i] = init[i].cast[accum_type]()
+
+            var result = InlineArray[
+                SIMD[accum_type, simd_width], num_reductions
+            ](fill=0)
+
+            @parameter
+            for i in range(num_reductions):
+
+                @always_inline
+                @parameter
+                fn reduce_wrapper[
+                    dtype: DType, width: Int
+                ](
+                    x: SIMD[dtype, width], y: SIMD[dtype, width]
+                ) capturing -> SIMD[dtype, width]:
+                    return reduce_fn[dtype, width, i](x, y)
+
+                result[i] = warp.reduce[warp.shuffle_down, reduce_wrapper](
+                    val[i]
+                )
+
+            if lane_id() == 0:
+                var row_accum_cast = StaticTuple[
+                    Scalar[dtype], num_reductions
+                ]()
+
+                @parameter
+                for i in range(num_reductions):
+                    row_accum_cast[i] = result[i][0].cast[dtype]()
+
+                row_coords[axis] = 0
+                output_fn[dtype, 1, rank](row_coords, row_accum_cast)
+
+    @parameter
+    if PDLLevel() == PDLLevel.OVERLAP_AT_END:
+        launch_dependent_grids()
+
+
 fn reduce_launch[
     num_reductions: Int,
     input_fn: fn[dtype: DType, width: Int, rank: Int] (
@@ -372,21 +483,43 @@ fn reduce_launch[
     if num_blocks == 0:
         return
 
-    alias kernel = reduce_kernel[
-        rank,
-        num_reductions,
-        BLOCK_SIZE,
-        input_fn,
-        output_fn,
-        reduce_fn,
-        dtype,
-        packing_factor,
-    ]
-    ctx.enqueue_function_checked[kernel, kernel](
-        shape,
-        axis,
-        init,
-        grid_dim=num_blocks,
-        block_dim=BLOCK_SIZE,
-        attributes=pdl_launch_attributes(),
-    )
+    # When the row size is smaller than the warp so we can use
+    # multiple warps within a block to reduce rows and save shared memory sync
+    if shape[axis] < WARP_SIZE:
+        alias kernel = small_reduce_kernel[
+            rank,
+            num_reductions,
+            BLOCK_SIZE,
+            input_fn,
+            output_fn,
+            reduce_fn,
+            dtype,
+            packing_factor,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
+            shape,
+            axis,
+            init,
+            grid_dim=num_blocks,
+            block_dim=BLOCK_SIZE,
+            attributes=pdl_launch_attributes(),
+        )
+    else:
+        alias kernel = reduce_kernel[
+            rank,
+            num_reductions,
+            BLOCK_SIZE,
+            input_fn,
+            output_fn,
+            reduce_fn,
+            dtype,
+            packing_factor,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
+            shape,
+            axis,
+            init,
+            grid_dim=num_blocks,
+            block_dim=BLOCK_SIZE,
+            attributes=pdl_launch_attributes(),
+        )

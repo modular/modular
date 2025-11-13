@@ -24,18 +24,18 @@ struct Grid[rows: Int, cols: Int](Copyable, Movable, Stringable):
     # ===-------------------------------------------------------------------===#
 
     alias num_cells = rows * cols
-    var data: UnsafePointer[Int8]
+    var data: UnsafePointer[Int8, MutOrigin.external]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
     fn __init__(out self):
-        self.data = UnsafePointer[Int8].alloc(self.num_cells)
+        self.data = alloc[Int8](self.num_cells)
         memset_zero(self.data, self.num_cells)
 
     fn __copyinit__(out self, existing: Self):
-        self.data = UnsafePointer[Int8].alloc(self.num_cells)
+        self.data = alloc[Int8](self.num_cells)
         memcpy(dest=self.data, src=existing.data, count=self.num_cells)
         # The lifetime of `existing` continues unchanged
 

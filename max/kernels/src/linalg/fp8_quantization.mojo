@@ -27,7 +27,7 @@ from gpu.host.info import B200, H100
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
-from memory import bitcast
+from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from stdlib.bit import log2_floor
 
@@ -44,6 +44,8 @@ from .utils_gpu import MatmulConfig
 ########################################################
 # Static scaled fp8 quantization
 ########################################################
+
+alias logger = Logger()
 
 
 @always_inline
@@ -113,10 +115,9 @@ fn quantize_dynamic_scaled_fp8[
     scales_dtype: DType,
     input_shape: DimList, //,
     group_size_or_per_token: Int,
-    input_hidden_size: Int,
 ](
-    scaled_output: NDBuffer[mut=True, out_dtype, 2, MutableAnyOrigin],
-    scales: NDBuffer[mut=True, scales_dtype, 2, MutableAnyOrigin],
+    scaled_output: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin],
+    scales: NDBuffer[mut=True, scales_dtype, 2, MutAnyOrigin],
     input: NDBuffer[in_dtype, 2, _, input_shape],
     scale_ub: Float32,
     ctx: DeviceContext,
@@ -130,8 +131,10 @@ fn quantize_dynamic_scaled_fp8[
         "output dtype should be float8_e4m3fn or float8_e4m3fnuz",
     ]()
 
-    alias group_size = input_hidden_size if group_size_or_per_token == -1 else group_size_or_per_token
-    alias n_groups = input_hidden_size // group_size
+    alias group_size = input.shape.get[
+        1
+    ]() if group_size_or_per_token == -1 else group_size_or_per_token
+    alias n_groups = input.shape.get[1]() // group_size
     alias simd_width = simd_width_of[in_dtype, target = get_gpu_target()]()
     alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     alias warps_per_block = min(
@@ -141,20 +144,6 @@ fn quantize_dynamic_scaled_fp8[
         "quantize_dynamic_scaled_fp8",
         task_id=Int(ctx.id()),
     ):
-
-        @parameter
-        if n_groups == 0:
-
-            @parameter
-            if input_hidden_size != 0:
-                raise Error(
-                    "Cannot quantize small input where input shape[1] ="
-                    + String(input.shape.get[1]())
-                    + ". Must be greater than group_size "
-                    + String(group_size)
-                )
-            return
-
         if input.dim[0]() == 0:
             return
 
@@ -168,7 +157,7 @@ fn quantize_dynamic_scaled_fp8[
 
         # TODO: the input to this function should ideally be fixed on the origin type rather than parametric.
         # Additionally, it ought to be immutable over time.  The origins need to be bound/correct/matching the expected `quantize_fp8_kernel` below so that type checking succeeds for `enqueue_function_checked`.
-        var expected_input: NDBuffer[in_dtype, 2, MutableAnyOrigin] = input
+        var expected_input: NDBuffer[in_dtype, 2, MutAnyOrigin] = input
 
         ctx.enqueue_function_checked[kernel, kernel](
             scaled_output,
@@ -188,9 +177,9 @@ fn quantize_fp8_kernel[
     warps_per_block: Int,
     group_size: Int,
 ](
-    output: NDBuffer[mut=True, out_type, 2, MutableAnyOrigin],
-    scales: NDBuffer[mut=True, scales_type, 2, MutableAnyOrigin],
-    input: NDBuffer[in_type, 2, MutableAnyOrigin],
+    output: NDBuffer[mut=True, out_type, 2, MutAnyOrigin],
+    scales: NDBuffer[mut=True, scales_type, 2, MutAnyOrigin],
+    input: NDBuffer[in_type, 2, MutAnyOrigin],
     scale_ub: Scalar[scales_type],
 ):
     alias simd_width = simd_width_of[in_type]()
@@ -250,8 +239,8 @@ fn batched_quantize_dynamic_scaled_fp8[
     scales_dtype: DType, //,
     group_size_or_per_token: Int,
 ](
-    scaled_output: NDBuffer[mut=True, out_dtype, 3, MutableAnyOrigin],
-    scales: NDBuffer[mut=True, scales_dtype, 3, MutableAnyOrigin],
+    scaled_output: NDBuffer[mut=True, out_dtype, 3, MutAnyOrigin],
+    scales: NDBuffer[mut=True, scales_dtype, 3, MutAnyOrigin],
     input: NDBuffer[in_dtype, 3, *_],
     scale_ub: Float32,
     ctx: DeviceContext,
@@ -286,7 +275,7 @@ fn batched_quantize_dynamic_scaled_fp8[
 
     # TODO: the input to this function should ideally be fixed on the origin type rather than parametric.
     # Additionally, it ought to be immutable over time.  The origins need to be bound/correct/matching the expected `quantize_fp8_kernel` below so that type checking succeeds for `enqueue_function_checked`.
-    var expected_input: NDBuffer[in_dtype, 3, MutableAnyOrigin] = input
+    var expected_input: NDBuffer[in_dtype, 3, MutAnyOrigin] = input
 
     ctx.enqueue_function_checked[kernel, kernel](
         scaled_output,
@@ -306,9 +295,9 @@ fn batched_quantize_fp8_kernel[
     warps_per_block: Int,
     group_size: Int,
 ](
-    output: NDBuffer[mut=True, out_type, 3, MutableAnyOrigin],
-    scales: NDBuffer[mut=True, scales_type, 3, MutableAnyOrigin],
-    input: NDBuffer[in_type, 3, MutableAnyOrigin],
+    output: NDBuffer[mut=True, out_type, 3, MutAnyOrigin],
+    scales: NDBuffer[mut=True, scales_type, 3, MutAnyOrigin],
+    input: NDBuffer[in_type, 3, MutAnyOrigin],
     scale_ub: Scalar[scales_type],
 ):
     alias simd_width = simd_width_of[in_type]()
@@ -443,6 +432,12 @@ fn matmul_dynamic_scaled_fp8[
         input_scale_granularity == "colwise"
         and weight_scale_granularity == "rowwise"
     ) or (input_scale_granularity == weight_scale_granularity == "tensor"):
+        logger.info(
+            "Dispatching Matmul Dynamic Scaled FP8. Input Scale Granularity: ",
+            input_scale_granularity,
+            ", Weight Scale Granularity: ",
+            weight_scale_granularity,
+        )
 
         @parameter
         if ctx.default_device_info is B200:
@@ -487,7 +482,7 @@ fn matmul_dynamic_scaled_fp8[
             # create a dummy buffer to instruct the matmul kernel to output values
             # in the correct dtype
             var c_dummy = NDBuffer[
-                DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)
+                DType.float32, 2, MutAnyOrigin, DimList(Dim(), N)
             ](
                 UnsafePointer[Scalar[DType.float32]](),
                 IndexList[2](M, N),
@@ -630,8 +625,6 @@ fn naive_blockwise_scaled_fp8_matmul[
         "Only float32 is supported for accumulation for scaled matmul",
     ]()
 
-    var logger = Logger()
-
     var M = c.dim(0)
     var N = c.dim(1)
     var K = a.dim(1)
@@ -639,6 +632,9 @@ fn naive_blockwise_scaled_fp8_matmul[
     var a_scales_dim0 = a_scales.dim(0)
     var b_scales_dim0 = b_scales.dim(0)
     var b_scales_dim1 = b_scales.dim(1)
+
+    if M == 0 or N == 0 or K == 0:
+        return
 
     # these checks are only applicable when A_SCALES_SIZE and B_SCALES_SIZE are not provided
     @parameter
@@ -744,7 +740,6 @@ fn naive_blockwise_scaled_fp8_matmul[
         "Only float32 is supported for accumulation for scaled matmul",
     ]()
 
-    var logger = Logger()
     var a = from_ndbuffer_row_major(a_device)
     var b = from_ndbuffer_row_major(b_device)
     var c = from_ndbuffer_row_major(c_device)
@@ -755,12 +750,12 @@ fn naive_blockwise_scaled_fp8_matmul[
     var N = c_device.dim(1)
     var K = a_device.dim(1)
 
-    if M == 0:
-        return
-
     var a_scales_dim0 = a_scales.dim(0)
     var b_scales_dim0 = b_scales.dim(0)
     var b_scales_dim1 = b_scales.dim(1)
+
+    if M == 0 or N == 0 or K == 0:
+        return
 
     # these checks are only applicable when A_SCALES_SIZE and B_SCALES_SIZE are not provided
     @parameter
@@ -840,11 +835,11 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutableAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
 ):
     # Note: This is a naive kernel that supports a generalized blockwise scaled
     # fp8 matmul.
@@ -969,15 +964,13 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
     scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutableAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutableAnyOrigin],
-    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, MutableAnyOrigin],
-    expert_ids: LayoutTensor[
-        expert_ids_type, expert_ids_layout, MutableAnyOrigin
-    ],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
+    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, MutAnyOrigin],
+    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, MutAnyOrigin],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -1015,7 +1008,9 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
         ),
     ]()
 
-    var logger = Logger()
+    if max_num_tokens_per_expert == 0:
+        return
+
     logger.info("Executing Naive Grouped Blockwise Scaled FP8 GEMM")
 
     alias kernel = naive_blockwise_scaled_fp8_grouped_matmul_kernel[
@@ -1076,15 +1071,13 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, MutableAnyOrigin],
-    expert_ids: LayoutTensor[
-        expert_ids_type, expert_ids_layout, MutableAnyOrigin
-    ],
-    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutableAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, MutAnyOrigin],
+    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, MutAnyOrigin],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
 ):
     constrained[
         accum_type == DType.float32,

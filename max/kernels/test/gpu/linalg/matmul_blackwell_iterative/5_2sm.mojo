@@ -22,8 +22,8 @@ from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync, elect_one_sync
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
+from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx, warp_id
 from gpu.memory import fence_async_view_proxy, external_memory
 from gpu.mma import st_matrix
 from gpu.mma_sm100 import *
@@ -92,7 +92,7 @@ fn kernel_5[
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -134,21 +134,21 @@ fn kernel_5[
     alias sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
     alias sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
     alias c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
@@ -174,7 +174,7 @@ fn kernel_5[
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](a_smem)
@@ -182,7 +182,7 @@ fn kernel_5[
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](b_smem)
@@ -205,7 +205,7 @@ fn kernel_5[
     tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
     mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = warp_id() == 0
     var elect_one_thread = elect_one_sync()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     alias max_tmem_cols = 512
@@ -232,7 +232,11 @@ fn kernel_5[
     var rank_n = block_id_in_cluster.y
 
     # (peer_id, mma_coord_m, mma_coord_n)
-    var peer_cta_coord = (rank_m % cta_group, rank_m // cta_group, rank_n)
+    var peer_cta_coord = (
+        rank_m % UInt(cta_group),
+        rank_m // UInt(cta_group),
+        rank_n,
+    )
 
     var a_multicast_mask: UInt16 = 0x0
     var b_multicast_mask: UInt16 = 0x0
@@ -248,7 +252,7 @@ fn kernel_5[
 
     a_multicast_mask <<= rank_m
     b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * CLUSTER_M
+    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
 
     var a_mma_mask = a_multicast_mask >> peer_cta_coord[0]
     var b_mma_mask = b_multicast_mask >> peer_cta_coord[0]
@@ -276,13 +280,13 @@ fn kernel_5[
             if elect_one_cta:
                 tma_mbar[0].expect_bytes(expected_bytes)
 
-            var a_gmem_slice_coord = (
-                peer_cta_coord[2] * a_tma_rows + block_idx.x * BM
-            )
+            var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
+                a_tma_rows
+            ) + block_idx.x * UInt(BM)
             var b_gmem_slice_coord = (
-                peer_cta_coord[1] * b_tma_rows
-                + peer_cta_coord[0] * BN
-                + block_idx.y * MMA_N
+                peer_cta_coord[1] * UInt(b_tma_rows)
+                + peer_cta_coord[0] * UInt(BN)
+                + block_idx.y * UInt(MMA_N)
             )
 
             @parameter
@@ -296,10 +300,12 @@ fn kernel_5[
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
 
                 var a_smem_slice = type_of(sub_a_smem_tile)(
-                    sub_a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
+                    sub_a_smem_tile.ptr
+                    + peer_cta_coord[2] * UInt(a_tma_load_size)
                 )
                 var b_smem_slice = type_of(sub_b_smem_tile)(
-                    sub_b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
+                    sub_b_smem_tile.ptr
+                    + peer_cta_coord[1] * UInt(b_tma_load_size)
                 )
                 a_tma_op.async_multicast_load[cta_group](
                     a_smem_slice,
@@ -332,8 +338,6 @@ fn kernel_5[
         mma_mbar[0].wait(mma_phase)
         mma_phase ^= 1
 
-    warp_id = thread_idx.x // WARP_SIZE
-
     # For tcgen05.ld 16x256, we need to split the register to deal with
     # loading 32 lanes for each warp.
     c_frag_upper, c_frag_lower = c_frag.split()
@@ -349,7 +353,7 @@ fn kernel_5[
         dtype=accum_type,
         pack=False,
         width = c_frag_upper.size,
-    ](tmem_addr | ((warp_id * 32) << 16))
+    ](tmem_addr | ((warp_id() * 32) << 16))
 
     c_frag_lower = tcgen05_ld[
         datapaths=16,
@@ -358,16 +362,16 @@ fn kernel_5[
         dtype=accum_type,
         pack=False,
         width = c_frag_lower.size,
-    ](tmem_addr | ((warp_id * 32 + 16) << 16))
+    ](tmem_addr | ((warp_id() * 32 + 16) << 16))
     tcgen05_load_wait()
 
     alias C_WBM = BM // 2 if MMA_M == 128 else BM // 4
     alias C_WBN = BN if MMA_M == 128 else MMA_N
-    var c_coord_x = warp_id % 2 if MMA_M == 128 else warp_id
-    var c_coord_y = warp_id // 2 if MMA_M == 128 else 0
+    var c_coord_x = warp_id() % 2 if MMA_M == 128 else warp_id()
+    var c_coord_y = warp_id() // 2 if MMA_M == 128 else 0
 
     # 32 x BN
-    c_warp_tile = c_smem_tile.tile[C_WBM, C_WBN](c_coord_x, c_coord_y)
+    c_warp_tile = c_smem_tile.tile[C_WBM, C_WBN](Int(c_coord_x), Int(c_coord_y))
 
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
@@ -384,16 +388,16 @@ fn kernel_5[
         Layout.row_major(BM * NUM_TMA_TILES, TMA_BN)
     ]()
 
-    var split_coord_x = warp_id // 2 if MMA_M == 128 else 0
+    var split_coord_x = warp_id() // 2 if MMA_M == 128 else 0
     var c_smem_split = c_smem_tile_reshaped.tile[C_SPLIT_ROWS, TMA_BN](
-        split_coord_x, 0
+        Int(split_coord_x), 0
     )
 
     @parameter
     for tma_n in range(NUM_ST_MATRIX):
         var c_smem_iter = c_smem_split.tile[BM, TMA_BN](tma_n, 0)
         var c_smem_warp_tile = c_smem_iter.tile[32, TMA_BN](
-            warp_id % 2 if MMA_M == 128 else warp_id, 0
+            Int(warp_id() % 2 if MMA_M == 128 else warp_id()), 0
         )
         var upper = c_smem_warp_tile.tile[16, TMA_BN](0, 0)
         var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)
@@ -416,7 +420,7 @@ fn kernel_5[
                         UNKNOWN_VALUE,
                     ),
                 )
-            ](lane_id(), i, 0, 0)
+            ](Int(lane_id()), i, 0, 0)
 
             var d_reg_upper_packed = bitcast[DType.float32, 4](d_reg_upper)
             var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
@@ -440,17 +444,19 @@ fn kernel_5[
     # UMMA (tensor memory) → registers → shared memory → global memory
     #           c_frag                   c_smem_tile      c_tma_op
     if elect_one_warp and thread_idx.x < UInt(NUM_TMA_TILES):
-        var row_start = block_idx.x * BM
+        var row_start = block_idx.x * UInt(BM)
 
-        var col_start = block_idx.y * MMA_N + thread_idx.x * TMA_BN
+        var col_start = block_idx.y * UInt(MMA_N) + thread_idx.x * UInt(TMA_BN)
 
         fence_async_view_proxy()
-        var c_smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
+        var c_smem_offset = c_smem_tile.ptr.offset(
+            BM * TMA_BN * Int(thread_idx.x)
+        )
 
         var c_tma_tile = LayoutTensor[
             c_type,
             c_layout,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
             alignment=128,
         ](c_smem_offset)
@@ -549,7 +555,7 @@ fn blackwell_kernel_5[
         cta_group=cta_group,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

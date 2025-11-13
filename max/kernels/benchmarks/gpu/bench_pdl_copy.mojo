@@ -18,6 +18,7 @@ from builtin._closure import __ownership_keepalive
 from gpu import *
 from gpu.grid_controls import pdl_launch_attributes
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 fn copy1(

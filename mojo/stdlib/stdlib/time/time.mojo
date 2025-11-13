@@ -20,6 +20,7 @@ from time import perf_counter_ns
 """
 
 from math import floor
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from sys import (
     CompilationTarget,

@@ -13,7 +13,8 @@
 
 
 from collections import OptionalReg
-from math import align_up, ceildiv
+from math import align_up, ceildiv, align_up
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import (
     CompilationTarget,
     align_of,
@@ -30,7 +31,7 @@ from sys.info import _accelerator_arch
 
 from bit import prev_power_of_two
 from gpu import WARP_SIZE, lane_id
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
@@ -99,7 +100,7 @@ struct FlashAttentionAlgorithm(
 
             @parameter
             if is_sm90or100:
-                return FlashAttentionAlgorithm(2 + dtype.is_half_float())
+                return FlashAttentionAlgorithm(2 + Int(dtype.is_half_float()))
             else:
                 return FlashAttentionAlgorithm(2)
         else:
@@ -121,9 +122,7 @@ struct FlashAttentionAlgorithm(
 
 @fieldwise_init
 @register_passable("trivial")
-struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
-    var dtype: DType
-
+struct MHAConfig[dtype: DType](ImplicitlyCopyable, Movable, Writable):
     # Q, K, V, output should have the same type.
     var num_heads: UInt
     var depth: UInt
@@ -136,6 +135,7 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
     var num_pipeline_stages: UInt
     var k_group_size: UInt
     var algorithm: FlashAttentionAlgorithm
+    var swizzle_mode: TensorMapSwizzle
 
     fn block_m(self) -> UInt:
         return self.num_queries_per_block
@@ -173,6 +173,9 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
             self.num_consumer_threads()
             + self.num_producer_threads[producer_consumer_kernel]()
         )
+
+    fn swizzle_granularity(self) -> UInt:
+        return UInt(self.swizzle_mode.bytes()) // UInt(size_of[self.dtype]())
 
     fn q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> UInt:
         q_size = self.block_m() * self.padded_depth
@@ -236,7 +239,7 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
         if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
             num_smem_elements += self.p_smem_size()
 
-        num_smem_bytes = self.dtype.size_of() * Int(num_smem_elements)
+        num_smem_bytes = size_of[self.dtype]() * Int(num_smem_elements)
         if sm_90_fa3:
             alias i64_size = size_of[DType.int64]()
             num_smem_bytes += (2 * Int(self.num_pipeline_stages)) * i64_size + (
@@ -247,7 +250,6 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
 
     fn __init__(
         out self,
-        dtype: DType,
         num_heads: UInt,
         depth: UInt,
         num_queries_per_block: OptionalReg[UInt] = None,
@@ -258,21 +260,16 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
         num_pipeline_stages: UInt = 4,
         k_group_size: UInt = 1,
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(-1),
-        padded_depth: OptionalReg[UInt] = None,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     ):
-        self.dtype = dtype
         self.num_heads = num_heads
         self.depth = depth
         swizzle_granularity = swizzle_mode.bytes() // size_of[DType.bfloat16]()
-        padded_depth_default = UInt(
-            ceildiv(depth, UInt(swizzle_granularity))
-            * UInt(swizzle_granularity)
-        )
-        self.padded_depth = padded_depth.or_else(padded_depth_default)
+        self.padded_depth = UInt(align_up(depth, UInt(swizzle_granularity)))
         self.num_pipeline_stages = num_pipeline_stages
         self.k_group_size = k_group_size
         self.algorithm = algorithm.init(dtype)
+        self.swizzle_mode = swizzle_mode
         # Not all of these have to be `OptionalReg`, only
         # those that depend on `depth`.
         # Currently, all are `OptionalReg` for consistency.
@@ -311,10 +308,10 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
                     - Int(
                         self.num_queries_per_block
                         * depth
-                        * UInt(1 + persistent)
+                        * UInt(1 + Int(persistent))
                     )
                     - 8 * Int(num_pipeline_stages)
-                    - 20 * persistent
+                    - 20 * Int(persistent)
                 ) // Int(depth * num_pipeline_stages)
                 # divide and multiply by 16 to get a multiple of MMA_K
                 min_upper_bound = 16 * (
@@ -698,10 +695,10 @@ fn dispatch_materialized_mask_and_score_mod[
     callback_fn: callback_fn_type,
     num_heads: Int = -1,
 ](
-    mask_nd: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    mask_nd: LayoutTensor[dtype, layout, MutAnyOrigin],
     start_pos_nd: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
 ) raises -> None:

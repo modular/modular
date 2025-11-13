@@ -3,8 +3,8 @@ title: Unsafe pointers
 description: Using unsafe pointers to access dynamically-allocated memory.
 ---
 
-The [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) type is
-one of several pointer types available in the standard library to indirectly
+The [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) type
+is one of several pointer types available in the standard library to indirectly
 reference locations in memory.
 
 You can use an `UnsafePointer` to dynamically allocate and free memory, or to
@@ -331,7 +331,7 @@ s_ptr = UnsafePointer(to=s)
 ```
 
 When initializing an `UnsafePointer` in other ways, the `origin` defaults to
-`MutableAnyOrigin`—indicating a pointer that could reference anything in the
+`MutAnyOrigin`—indicating a pointer that could reference anything in the
 current scope.
 
 If you're using a pointer in the implementation of a struct, you usually don't

@@ -27,12 +27,13 @@ from os import abort
 from os.atomic import Consistency, fence
 from sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, llvm_intrinsic
 from sys._assembly import inlined_assembly
-from sys.info import CompilationTarget
+from sys.info import CompilationTarget, _is_amd_cdna
 from sys.param_env import env_get_bool
 
 from gpu.intrinsics import Scope
 
 from .._utils import to_i32, to_llvm_shared_mem_ptr
+from memory import LegacyUnsafePointer as UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # barrier
@@ -312,6 +313,124 @@ fn schedule_group_barrier(
         constrained[
             False, "schedule_group_barrier is only supported on AMDGPU."
         ]()
+
+
+# reference for waitcnt_arg and related synchronization utilities:
+# https://github.com/ROCm/rocm-libraries/blob/5ba64a9aa8557e465d1a5937609e23f34adb601e/projects/composablekernel/include/ck_tile/core/arch/arch.hpp#L140
+
+
+struct _WaitCountArg:
+    """
+    Mojo struct to encapsulate waitcnt argument bitfields and helpers.
+    """
+
+    # [V]M [E]XP [L]GKM counters and [U]NUSED ---> VV'UU'LLLL'U'EEE'VVVV
+
+    # Constants
+    alias MAX: UInt32 = 0b1100_1111_0111_1111
+    alias MAX_VM_CNT: UInt32 = 0b111111
+    alias MAX_EXP_CNT: UInt32 = 0b111
+    alias MAX_LGKM_CNT: UInt32 = 0b1111
+
+    @staticmethod
+    fn from_vmcnt(cnt: UInt32) -> UInt32:
+        constrained[
+            _is_amd_cdna(), "from_vmcnt is only supported on AMD CDNA GPUs"
+        ]()
+        debug_assert(
+            cnt <= Self.MAX_VM_CNT,
+            "cnt should be less than or equal to MAX_VM_CNT = 63",
+        )
+        return Self.MAX & ((cnt & 0b1111) | ((cnt & 0b110000) << 10))
+
+    @staticmethod
+    fn from_expcnt(cnt: UInt32) -> UInt32:
+        constrained[
+            _is_amd_cdna(), "from_expcnt is only supported on AMD CDNA GPUs"
+        ]()
+        debug_assert(
+            cnt <= Self.MAX_EXP_CNT,
+            "cnt should be less than or equal to MAX_EXP_CNT = 7",
+        )
+        return Self.MAX & (cnt << 4)
+
+    @staticmethod
+    fn from_lgkmcnt(cnt: UInt32) -> UInt32:
+        constrained[
+            _is_amd_cdna(), "from_lgkmcnt is only supported on AMD CDNA GPUs"
+        ]()
+        debug_assert(
+            cnt <= Self.MAX_LGKM_CNT,
+            "cnt should be less than or equal to MAX_LGKM_CNT = 15",
+        )
+        return Self.MAX & (cnt << 8)
+
+
+@always_inline
+fn s_waitcnt[
+    *,
+    vmcnt: UInt32 = _WaitCountArg.MAX_VM_CNT,
+    expcnt: UInt32 = _WaitCountArg.MAX_EXP_CNT,
+    lgkmcnt: UInt32 = _WaitCountArg.MAX_LGKM_CNT,
+]():
+    """Performs an `s_waitcnt` instruction with the specified counters on AMD GPUs.
+
+    This function waits until the number of *remaining* outstanding memory operations
+    matches the given counter values: vector (vmcnt), export (expcnt), and LGKM
+    (local/global/memory/constant, lgkmcnt). It does not wait for this many instructions
+    to complete, but for the counters to have these exact values before proceeding.
+
+    Only effective on AMD GPUs.
+
+    Parameters:
+        vmcnt: Waits until the remaining VMEM instructions is equal to this value (default: max).
+        expcnt: Waits until the remaining export (GDS) instructions is equal to this value (default: max).
+        lgkmcnt: Waits until the remaining LDS, GDS, constant-fetch, and message instructions is equal to this value (default: max).
+
+    Note:
+        - Only has an effect on AMD GPUs. On other platforms, raises a compile-time error if called.
+        - The counters should be set carefully to avoid deadlocks or missed synchronization.
+        - For example, s_waitcnt(vmcnt=0, expcnt=0, lgkmcnt=0) waits until all memory operations are complete.
+    """
+    constrained[
+        _is_amd_cdna(), "s_waitcnt is only supported on AMD CDNA GPUs"
+    ]()
+    alias waitcnt_val = (
+        _WaitCountArg.from_vmcnt(vmcnt)
+        | _WaitCountArg.from_expcnt(expcnt)
+        | _WaitCountArg.from_lgkmcnt(lgkmcnt)
+    )
+    llvm_intrinsic["llvm.amdgcn.s.waitcnt", NoneType](waitcnt_val)
+
+
+@always_inline
+fn s_waitcnt_barrier[
+    *,
+    vmcnt: UInt32 = _WaitCountArg.MAX_VM_CNT,
+    expcnt: UInt32 = _WaitCountArg.MAX_EXP_CNT,
+    lgkmcnt: UInt32 = _WaitCountArg.MAX_LGKM_CNT,
+]():
+    """Performs an `s_waitcnt` followed by a barrier on AMD GPUs.
+
+    This function first waits until the number of outstanding memory operations
+    matches the specified values (see s_waitcnt above), then forces all threads
+    in the block to synchronize via a barrier. Only effective on AMD GPUs.
+
+    Parameters:
+        vmcnt: Waits until the remaining VMEM instructions is equal to this value (default: max).
+        expcnt: Waits until the remaining export (GDS) instructions is equal to this value (default: max).
+        lgkmcnt: Waits until the remaining LDS, GDS, constant-fetch, and message instructions is equal to this value (default: max).
+
+    Note:
+        - Only has an effect on AMD GPUs. On other platforms, raises a compile-time error if called.
+        - Use this to guarantee memory visibility and thread ordering for precise synchronization.
+        - For example, s_waitcnt_barrier(0,0,0) ensures all outstanding memory instructions are completed and then all threads are synchronized.
+    """
+    constrained[
+        _is_amd_cdna(), "s_waitcnt_barrier is only supported on AMD CDNA GPUs"
+    ]()
+    s_waitcnt[vmcnt=vmcnt, expcnt=expcnt, lgkmcnt=lgkmcnt]()
+    llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
 
 
 # ===-----------------------------------------------------------------------===#

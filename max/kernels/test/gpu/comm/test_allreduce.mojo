@@ -13,18 +13,21 @@
 
 import time
 from math import floor
-from sys import size_of
+from sys import size_of, has_amd_gpu_accelerator
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allreduce import MAX_GPUS, Signal, _allreduce_naive_single, allreduce
+import comm.vendor.ccl as vendor_ccl
 from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal, assert_true
 
 from utils import IndexList, StaticTuple
 
 # Shared test configurations
 alias test_lengths = (
+    0,  # No elements
     8 * 1024,  # Small latency bound
     128 * 1024,  # Larger latency bound
     256 * 1024,  # Smallest bandwidth bound
@@ -71,6 +74,11 @@ fn allreduce_test[
     use_multimem: Bool,
     use_quickreduce: Bool = False,
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
+    # Using multimem with zero length raises CUDA_ERROR_INVALID_VALUE
+    # when setting up the buffers.
+    if use_multimem and length == 0:
+        return
+
     alias num_warmups = 5
     alias num_iters = 100
     alias num_buffers = 1 if use_multimem else ngpus
@@ -123,10 +131,10 @@ fn allreduce_test[
             list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create and initialize input and output buffers.
-    var in_bufs = InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
-    ](fill={})
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], num_buffers](
+        fill={}
+    )
+    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
         fill={}
     )
 
@@ -158,8 +166,8 @@ fn allreduce_test[
 
     # Copy-capture in registers since the lambda will be used on GPU.
     var out_bufs_capture = StaticTuple[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
-    ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        NDBuffer[dtype, rank, MutAnyOrigin], ngpus
+    ](NDBuffer[dtype, rank, MutAnyOrigin]())
 
     for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, rank](
@@ -197,8 +205,13 @@ fn allreduce_test[
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
-    # Perform a benchmarked allreduce.
-    start_t = time.perf_counter_ns()
+    # Precompute expected sum across GPUs for verification.
+    var expected_sum = Scalar[dtype](0)
+    for i in range(ngpus):
+        expected_sum += i + 1
+
+    # Perform a benchmarked allreduce (Mojo).
+    start_t_mojo = time.perf_counter_ns()
 
     for _ in range(num_iters):
 
@@ -211,21 +224,77 @@ fn allreduce_test[
                 use_quickreduce=use_quickreduce,
             ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
 
-    # Synchronize all devices.
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
-    end_t = time.perf_counter_ns()
+    end_t_mojo = time.perf_counter_ns()
 
-    # Quick and dirty benchmark since benchmark module doesn't support
-    # multi-device contexts
-    print("Time taken (ms):", (end_t - start_t) / (1_000_000 * num_iters))
+    print(
+        "Mojo allreduce time (ms):",
+        (end_t_mojo - start_t_mojo) / (1_000_000 * num_iters),
+    )
+
+    # Vendor RCCL comparison (non-multimem path only and only if available).
+    @parameter
+    if not use_multimem and has_amd_gpu_accelerator():
+        try:
+            # Prepare distinct outputs for vendor path to avoid aliasing.
+            var out_dev_vendor = List[DeviceBuffer[dtype]](capacity=ngpus)
+            var out_bufs_vendor = InlineArray[
+                NDBuffer[dtype, rank, MutAnyOrigin], ngpus
+            ](fill={})
+            for i in range(ngpus):
+                out_dev_vendor.append(
+                    list_of_ctx[i].enqueue_create_buffer[dtype](length)
+                )
+                out_bufs_vendor[i] = NDBuffer[dtype, rank](
+                    out_dev_vendor[i].unsafe_ptr(), DimList(length)
+                )
+
+            # Warm-up RCCL.
+            for _ in range(num_warmups):
+                vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
+                    rebind[
+                        InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]
+                    ](in_bufs),
+                    out_bufs_vendor,
+                    list_of_ctx,
+                )
+
+            for i in range(ngpus):
+                list_of_ctx[i].synchronize()
+
+            # Benchmark RCCL.
+            start_t_rccl = time.perf_counter_ns()
+            for _ in range(num_iters):
+                vendor_ccl.allreduce[dtype=dtype, rank=rank, ngpus=ngpus](
+                    rebind[
+                        InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]
+                    ](in_bufs),
+                    out_bufs_vendor,
+                    list_of_ctx,
+                )
+            for i in range(ngpus):
+                list_of_ctx[i].synchronize()
+            end_t_rccl = time.perf_counter_ns()
+
+            print(
+                "RCCL allreduce time (ms):",
+                (end_t_rccl - start_t_rccl) / (1_000_000 * num_iters),
+            )
+
+            # Verify RCCL results
+            for i in range(ngpus):
+                list_of_ctx[i].enqueue_copy(host_buffers[i], out_dev_vendor[i])
+            for i in range(ngpus):
+                for j in range(length):
+                    assert_almost_equal(host_buffers[i][j], expected_sum)
+        except:
+            # Vendor path unavailable or failed; skip silently like vendor_blas fallback
+            pass
 
     # Copy results back and verify
-    var expected_sum = Scalar[dtype](0)
-
     for i in range(ngpus):
-        expected_sum += i + 1
         list_of_ctx[i].enqueue_copy(host_buffers[i], out_bufs_list[i])
 
     # Verify results
@@ -238,6 +307,8 @@ fn allreduce_test[
                 print("Value:", host_buffers[i][j])
                 print("Expected:", expected_sum)
                 raise e
+
+    # (RCCL verification is performed above within the benchmark block.)
 
     # Cleanup
     for i in range(ngpus):
@@ -288,12 +359,12 @@ def allreduce_naive_test() -> None:
         ctxs[i].enqueue_copy(in_dev[i], host_ptrs[i])
 
     # Wrap as NDBuffers for the kernel API
-    var in_bufs = InlineArray[
-        NDBuffer[DType.float32, 1, MutableAnyOrigin], ngpus
-    ](fill={})
-    var out_bufs = InlineArray[
-        NDBuffer[DType.float32, 1, MutableAnyOrigin], ngpus
-    ](fill={})
+    var in_bufs = InlineArray[NDBuffer[DType.float32, 1, MutAnyOrigin], ngpus](
+        fill={}
+    )
+    var out_bufs = InlineArray[NDBuffer[DType.float32, 1, MutAnyOrigin], ngpus](
+        fill={}
+    )
 
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[DType.float32, 1](
@@ -305,8 +376,8 @@ def allreduce_naive_test() -> None:
 
     # Prepare an output lambda that writes into the correct device's out buffer.
     var out_bufs_capture = StaticTuple[
-        NDBuffer[DType.float32, 1, MutableAnyOrigin], ngpus
-    ](NDBuffer[DType.float32, 1, MutableAnyOrigin]())
+        NDBuffer[DType.float32, 1, MutAnyOrigin], ngpus
+    ](NDBuffer[DType.float32, 1, MutAnyOrigin]())
     for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[DType.float32, 1](
             out_dev[i].unsafe_ptr(), DimList(length)

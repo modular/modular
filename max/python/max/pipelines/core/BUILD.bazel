@@ -1,0 +1,13 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "core",
+    srcs = glob(["**/*.py"]),
+    imports = ["../../.."],
+    deps = [
+        "//max/python/max/interfaces",
+        requirement("numpy"),
+        requirement("msgspec"),
+        requirement("llguidance"),
+    ],
+)

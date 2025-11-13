@@ -22,6 +22,7 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import memcpy
 from nn.flash_attention import flash_attention_kv_cache
 from nn.mha_mask import CausalMask
@@ -130,9 +131,33 @@ def execute_ragged_flash_attention[
     kv_collection_continuous = ContinuousBatchingKVCacheCollection[
         dtype, kv_params
     ](
-        kv_block_continuous.tensor,
-        cache_lengths_nd.tensor,
-        lookup_table_continuous.tensor,
+        LayoutTensor[
+            kv_block_continuous.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_block_continuous.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_continuous.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_continuous.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_nd.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_nd.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_nd.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_nd.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            lookup_table_continuous.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            lookup_table_continuous.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                lookup_table_continuous.to_layout_tensor().runtime_layout.shape.value,
+                lookup_table_continuous.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_prompt_length,
         max_full_context_length,
     )
@@ -203,9 +228,29 @@ def execute_ragged_flash_attention[
                 )
 
     kv_collection_paged = PagedKVCacheCollection[dtype, kv_params, page_size](
-        kv_block_paged.tensor,
-        cache_lengths_nd.tensor,
-        paged_lut.tensor,
+        LayoutTensor[kv_block_paged.dtype, Layout.row_major[6](), MutAnyOrigin](
+            kv_block_paged.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_paged.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_paged.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_nd.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_nd.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_nd.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_nd.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[paged_lut.dtype, Layout.row_major[2](), ImmutAnyOrigin](
+            paged_lut.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_prompt_length,
         max_full_context_length,
     )
@@ -284,7 +329,7 @@ def execute_flash_attention_suite():
         for _ in range(bs):
             tg_seq_lens.append(1)
             tg_cache_sizes.append(Int(random_ui64(1, 100)))
-            ce_seq_lens.append(Int(random_ui64(1, 100)))
+            ce_seq_lens.append(Int(random_ui64(2, 100)))
             ce_cache_sizes.append(0)
 
         print("CE", bs, dtype)

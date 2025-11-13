@@ -1,0 +1,46 @@
+[project]
+authors = [{ name = "Modular", email = "hello@modular.com" }]
+dependencies = [
+    "aiohttp>=3.10.5",
+    "datasets>=2.21.0",
+    "hf-transfer>=0.1.9",
+    "huggingface-hub>=0.28.0",
+    "jinja2>=3.1.6",
+    "msgspec>=0.19.0",
+    "numpy>=1.18",
+    "prometheus-client>=0.21.0",
+    "protobuf>=6.31.1,<6.32.0",
+    "psutil>=7.0.0",
+    "safetensors>=0.4.4",
+    "taskgroup>=0.2.2",
+    "tokenizers>=0.19.0",
+    "tqdm>=4.67.1",
+    "transformers>=4.57.0",
+    "typing-extensions>=4.12.2",
+    "Pillow>=11.0.0",
+    # for upload.py
+    "boto3",
+    "click>=8.0.0",
+    "google-auth",
+    "google-cloud-bigquery",
+]
+description = "MAX Serve benchmarking tools"
+name = "benchmarking"
+requires-python = ">=3.9,<3.14"
+version = "0.1.0"
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.pixi.project]
+channels = ["conda-forge", "https://conda.modular.com/max"]
+platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
+
+[tool.pixi.pypi-dependencies]
+benchmarking = { path = ".", editable = true }
+
+[tool.pixi.tasks]

@@ -13,7 +13,9 @@
 
 from collections import OptionalReg
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys.info import _cdna_4_or_newer
+from sys import env_get_bool
 
 from gpu import barrier, block_idx, lane_id
 from layout import LayoutTensor
@@ -39,7 +41,6 @@ from .utils import (
     LocalLayoutTensor,
     SharedLayoutTensor,
     SharedMemoryManager,
-    convert_f32_to_bf16,
     copy_local_to_dram2,
     get_fragment_layout,
     get_nested_fragment_layout,
@@ -52,6 +53,19 @@ from .utils import (
 struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     AttentionConfig
 ):
+    alias USE_EXPERIMENTAL_CDNA4_MHA_KERNEL = _cdna_4_or_newer() and env_get_bool[
+        "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
+    ]() and not token_gen
+
+    # share shared memory for k and v
+    alias shared_kv = False if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else True
+    # shared memory for the full tile vs BK blocks
+    alias full_kv = True if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else False
+    # pad the depth for v smem
+    alias depth_padded = False if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else True
+    # double shared memory for k and v
+    alias double_buffer = True if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else False
+
     @staticmethod
     @always_inline
     fn q_head_idx() -> UInt:
@@ -80,9 +94,9 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     fn get_mma_shape() -> IndexList[3]:
         var mma_shape = (
             IndexList[3](32, 32, 16) if (
-                _cdna_4_or_newer()
-                and config.depth != 64
+                (_cdna_4_or_newer() and config.depth != 64)
                 # will deal with 64 later
+                or Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL
             ) else IndexList[3](32, 32, 8)
         ) if not token_gen else IndexList[3](16, 16, 16)
         return mma_shape

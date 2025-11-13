@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import exp
+from memory import LegacyUnsafePointer as UnsafePointer
 
 from gpu import (
     AMDScheduleBarrierMask,
@@ -22,6 +23,8 @@ from gpu import (
     schedule_barrier,
     schedule_group_barrier,
     thread_idx,
+    s_waitcnt,
+    s_waitcnt_barrier,
 )
 from gpu.globals import WARP_SIZE
 from gpu.host import get_gpu_target
@@ -438,6 +441,64 @@ def test_permlane_compile():
     )
 
 
+# CHECK-LABEL: test_waitcnt_compile
+def test_waitcnt_compile():
+    print("== test_waitcnt_compile")
+
+    fn test_kernel_1():
+        s_waitcnt[vmcnt=11]()
+
+    fn test_kernel_2():
+        s_waitcnt[vmcnt=2, lgkmcnt=2]()
+
+    fn test_kernel_3():
+        s_waitcnt[lgkmcnt=2]()
+
+    fn test_kernel_4():
+        s_waitcnt_barrier[vmcnt=12, lgkmcnt=9]()
+
+    print("== test_kernel_1")
+    # CHECK-LABEL: test_kernel_1
+    # CHECK: s_waitcnt vmcnt(11)
+    print(
+        _compile_code[
+            test_kernel_1,
+            target=MI355X_TARGET,
+        ]()
+    )
+
+    print("== test_kernel_2")
+    # CHECK-LABEL: test_kernel_2
+    # CHECK: s_waitcnt vmcnt(2) lgkmcnt(2)
+    print(
+        _compile_code[
+            test_kernel_2,
+            target=MI355X_TARGET,
+        ]()
+    )
+
+    print("== test_kernel_3")
+    # CHECK-LABEL: test_kernel_3
+    # CHECK: s_waitcnt lgkmcnt(2)
+    print(
+        _compile_code[
+            test_kernel_3,
+            target=MI355X_TARGET,
+        ]()
+    )
+
+    print("== test_kernel_4")
+    # CHECK-LABEL: test_kernel_4
+    # CHECK: s_waitcnt vmcnt(12) lgkmcnt(9)
+    # CHECK: s_barrier
+    print(
+        _compile_code[
+            test_kernel_4,
+            target=MI355X_TARGET,
+        ]()
+    )
+
+
 def main():
     test_shuffle_compile()
     test_cast_fp32_bf16_compile()
@@ -451,3 +512,4 @@ def main():
     test_atomic_compile()
     test_ds_read_tr16_b64_compile()
     test_permlane_compile()
+    test_waitcnt_compile()

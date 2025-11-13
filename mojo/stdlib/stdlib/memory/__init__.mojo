@@ -14,6 +14,10 @@
 as utility functions for dealing with memory."""
 
 from .arc import ArcPointer
+from .legacy_unsafe_pointer import (
+    LegacyOpaquePointer,
+    LegacyUnsafePointer,
+)
 from .memory import memcmp, memcpy, memset, memset_zero, stack_allocation
 from .owned_pointer import OwnedPointer
 from .pointer import (
@@ -24,4 +28,13 @@ from .pointer import (
 )
 from .span import Span
 from .unsafe import bitcast, pack_bits
-from .unsafe_pointer import OpaquePointer, UnsafePointer
+from .unsafe_pointer import (
+    alloc,
+    OpaqueImmutPointer,
+    OpaqueMutPointer,
+    OpaquePointer,
+    UnsafeImmutPointer,
+    UnsafeMutPointer,
+    UnsafePointer,
+)
+from .maybe_uninitialized import UnsafeMaybeUninitialized

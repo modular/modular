@@ -14,6 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import simd_width_of
 from sys.intrinsics import readfirstlane
 
@@ -38,12 +39,12 @@ from utils import IndexList
 from .utils import (
     LocalLayoutTensor,
     SharedLayoutTensor,
-    convert_f32_to_bf16,
     get_fragment_layout,
     get_warp_coords,
     get_warp_layout,
     pad,
 )
+import itertools
 
 
 trait KVBuffer:
@@ -254,7 +255,7 @@ struct KVBufferImpl[
     alias SharedIterType = LayoutTensorIter[
         dtype,
         Self.smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -519,7 +520,7 @@ struct VBufferTransposeLoads[
     alias SharedIterType = LayoutTensorIter[
         dtype,
         Self.smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -718,8 +719,7 @@ struct VBufferTransposeLoads[
         # MMA
         # threads in 16x4 layout
         # each column loads depth x 8 elements from smem
-        var col_idx = lane_id() // 32
-        var lane = lane_id() % 32
+        var col_idx, lane = divmod(lane_id(), 32)
         var smem_iter_tensor = self.smem_iter.next_unsafe(0)[]
 
         @parameter
@@ -908,6 +908,7 @@ struct PRegisterBuffer[
     shared_memory_backed: Bool,
     mma_shape: IndexList[3],
     k_group_size: Int,
+    tr_load_enabled: Bool = False,
 ](RegisterMMABuffer):
     alias reg_dtype = accum_type_
     alias mma_dtype = dtype
@@ -921,10 +922,6 @@ struct PRegisterBuffer[
         Self.reg_tile_layout,
     ]
 
-    alias OutputTileType = LocalLayoutTensor[
-        Self.mma_dtype,
-        Layout.row_major(num_m_mmas, output_frag_size),
-    ]
     alias MMATileType = LocalLayoutTensor[
         Self.mma_dtype,
         Self.mma_tile_layout,
@@ -955,23 +952,70 @@ struct PRegisterBuffer[
 
     @always_inline
     fn get_mma_tile_reg[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
-        var out = Self.OutputTileType.stack_allocation()
+        alias OutputTileType = LocalLayoutTensor[
+            Self.mma_dtype,
+            Layout.row_major(num_m_mmas, output_frag_size),
+        ]
+
+        var out = OutputTileType.stack_allocation()
 
         @parameter
-        for j in range(4):
-            out[0, 2 * j] = convert_f32_to_bf16[Self.mma_dtype](
-                self.reg_tile[tile_idx, j]
-            )
+        if tr_load_enabled:
+            # if tr loads are used then we don't need any packing logic
+            # just convert the registers to bf16
+            @parameter
+            if mma_shape[0] == 32:
+                constrained[
+                    output_frag_size == 16,
+                    "output_frag_size must be 16 for 32x32 mma shape",
+                ]()
 
-            out[0, 2 * j + 1] = convert_f32_to_bf16[Self.mma_dtype](
-                self.reg_tile[tile_idx, 4 + j]
-            )
-            out[0, 2 * j + 8] = convert_f32_to_bf16[Self.mma_dtype](
-                self.reg_tile[tile_idx, 8 + j]
-            )
-            out[0, 2 * j + 8 + 1] = convert_f32_to_bf16[Self.mma_dtype](
-                self.reg_tile[tile_idx, 12 + j]
-            )
+                @parameter
+                for j in range(output_frag_size):
+                    out[0, j] = self.reg_tile[tile_idx, j].cast[dtype]()
+            elif mma_shape[0] == 16:
+                constrained[
+                    output_frag_size == 4,
+                    "output_frag_size must be 4 for 16x16 mma shape",
+                ]()
+
+                var mma_reg_tile = Self.MMATileType.stack_allocation()
+                var reg_tile_split = self.reg_tile.split[num_n_mmas // 2]()[
+                    tile_idx
+                ]
+
+                @parameter
+                for m, j in itertools.product(
+                    range(num_m_mmas), range(output_frag_size)
+                ):
+                    mma_reg_tile[m, j] = reg_tile_split[m, j].cast[dtype]()
+                    mma_reg_tile[m, output_frag_size + j] = reg_tile_split[
+                        m + num_m_mmas, j
+                    ].cast[dtype]()
+                return mma_reg_tile
+            else:
+                constrained[
+                    False,
+                    String("Unsupported mma shape: ", mma_shape[0]),
+                ]()
+        else:
+            # this is special packing, the pattern here depends on how we load
+            # and transpose the v tile when writing to the shared memory
+            @parameter
+            for j in range(4):
+                out[0, 2 * j] = self.reg_tile[tile_idx, j].cast[
+                    Self.mma_dtype
+                ]()
+
+                out[0, 2 * j + 1] = self.reg_tile[tile_idx, 4 + j].cast[
+                    Self.mma_dtype
+                ]()
+                out[0, 2 * j + 8] = self.reg_tile[tile_idx, 8 + j].cast[
+                    Self.mma_dtype
+                ]()
+                out[0, 2 * j + 8 + 1] = self.reg_tile[tile_idx, 12 + j].cast[
+                    Self.mma_dtype
+                ]()
         return rebind[Self.MMATileType](
             out.tile[num_n_mmas, simd_width_of[Self.mma_dtype]()](0, k_idx)
         )
@@ -1058,22 +1102,20 @@ struct PRegisterBuffer[
             )
 
             @parameter
-            for m_mma in range(Self.num_m_mmas):
-
-                @parameter
-                for n_mma in range(num_n_mmas_per_bk):
-                    var p_smem_mma_tile = p_smem_warp_tile.tile[
-                        Self.mma_shape[0], Self.mma_shape[1]
-                    ](m_mma, n_mma)
-                    var p_reg_tile = p_reg_vectorized.tile[1, 1](
-                        (n_mma + i * num_n_mmas_per_bk) * Self.num_m_mmas
-                        + m_mma,
-                        0,
-                    )
-                    copy_local_to_shared[thread_layout=warp_layout](
-                        p_smem_mma_tile.vectorize[
-                            fragment_layout.shape[0].value(),
-                            fragment_layout.shape[1].value(),
-                        ](),
-                        p_reg_tile,
-                    )
+            for m_mma, n_mma in itertools.product(
+                range(Self.num_m_mmas), range(num_n_mmas_per_bk)
+            ):
+                var p_smem_mma_tile = p_smem_warp_tile.tile[
+                    Self.mma_shape[0], Self.mma_shape[1]
+                ](m_mma, n_mma)
+                var p_reg_tile = p_reg_vectorized.tile[1, 1](
+                    (n_mma + i * num_n_mmas_per_bk) * Self.num_m_mmas + m_mma,
+                    0,
+                )
+                copy_local_to_shared[thread_layout=warp_layout](
+                    p_smem_mma_tile.vectorize[
+                        fragment_layout.shape[0].value(),
+                        fragment_layout.shape[1].value(),
+                    ](),
+                    p_reg_tile,
+                )

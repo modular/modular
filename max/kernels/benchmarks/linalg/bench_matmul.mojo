@@ -20,6 +20,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -67,7 +68,7 @@ fn bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
         BenchId("matmul", String(spec)),
         spec,
         # TODO: Pick relevant benchmetric
-        ThroughputMeasure(BenchMetric.elements, spec.flops()),
+        [ThroughputMeasure(BenchMetric.elements, spec.flops())],
     )
 
 

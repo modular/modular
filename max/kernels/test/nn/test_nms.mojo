@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
+from memory import LegacyUnsafePointer as UnsafePointer
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 
@@ -46,7 +46,7 @@ alias unknown_layout_3d = Layout.row_major(
 fn fill_boxes[
     dtype: DType
 ](batch_size: Int, box_list: VariadicList[BoxCoords[dtype]]) -> LayoutTensor[
-    dtype, unknown_layout_3d, MutableAnyOrigin
+    dtype, unknown_layout_3d, MutAnyOrigin
 ]:
     var num_boxes = len(box_list) // batch_size
     var shape = IndexList[3](batch_size, num_boxes, 4)
@@ -83,7 +83,7 @@ fn fill_scores[
     dtype: DType
 ](
     batch_size: Int, num_classes: Int, scores_list: VariadicList[Scalar[dtype]]
-) -> LayoutTensor[dtype, unknown_layout_3d, MutableAnyOrigin]:
+) -> LayoutTensor[dtype, unknown_layout_3d, MutAnyOrigin]:
     var num_boxes = len(scores_list) // batch_size // num_classes
 
     var shape = IndexList[3](batch_size, num_classes, num_boxes)

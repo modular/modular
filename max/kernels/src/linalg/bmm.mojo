@@ -29,13 +29,13 @@ from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
 from gpu import block_idx, global_idx
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import A100, is_cpu, is_valid_target
 from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tma_async import TMATensorTile, create_tma_tile
 from logger import Logger
-from memory import memset_zero
+from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from gpu.host.info import B200, H100
@@ -67,6 +67,8 @@ from .utils import (
     use_i8mm_fn,
 )
 from .utils_gpu import MatmulConfig, MatmulKernels
+
+alias logger = Logger()
 
 alias elementwise_epilogue_type = fn[
     c_type: DType,
@@ -535,7 +537,7 @@ fn _batched_matmul_cpu[
                 c.data.offset(batch * c_stride_between_batches),
                 IndexList[2](c.dim[1](), c.dim[2]()),
             )
-            var a_view = NDBuffer[a_type, 2, MutableAnyOrigin](
+            var a_view = NDBuffer[a_type, 2, MutAnyOrigin](
                 a.data.offset(batch * a_stride_between_batches),
                 IndexList[2](a.dim[1](), a.dim[2]()),
             )
@@ -621,9 +623,9 @@ fn naive_batched_matmul_kernel[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
 ](
-    c_tensor: LayoutTensor[c_type, c_layout, MutableAnyOrigin],  # m
-    a_tensor: LayoutTensor[a_type, a_layout, MutableAnyOrigin],  # m * k
-    b_tensor: LayoutTensor[b_type, b_layout, MutableAnyOrigin],  # 1 * k
+    c_tensor: LayoutTensor[c_type, c_layout, MutAnyOrigin],  # m
+    a_tensor: LayoutTensor[a_type, a_layout, MutAnyOrigin],  # m * k
+    b_tensor: LayoutTensor[b_type, b_layout, MutAnyOrigin],  # 1 * k
     c_buff_nd_shape: IndexList[rank],
 ) -> None:
     var batch_size = UInt(c_tensor.dim(0))
@@ -669,9 +671,9 @@ fn batched_matmul_kernel_gpu[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c_tensor: LayoutTensor[c_type, layout_c, MutableAnyOrigin],  # m
-    a_tensor: LayoutTensor[a_type, layout_a, MutableAnyOrigin],  # m * k
-    b_tensor: LayoutTensor[b_type, layout_b, MutableAnyOrigin],  # 1 * k
+    c_tensor: LayoutTensor[c_type, layout_c, MutAnyOrigin],  # m
+    a_tensor: LayoutTensor[a_type, layout_a, MutAnyOrigin],  # m * k
+    b_tensor: LayoutTensor[b_type, layout_b, MutAnyOrigin],  # 1 * k
     m: Int,
     n: Int,
     k: Int,
@@ -692,14 +694,14 @@ fn batched_matmul_kernel_gpu[
     var c = LayoutTensor[
         c_type,
         c_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = c_ptr.address_space,
     ](c_ptr, RuntimeLayout[c_layout]({m, n}, {n, 1}))
 
     var a = LayoutTensor[
         a_type,
         a_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = a_ptr.address_space,
     ](a_ptr, RuntimeLayout[a_layout]({m, k}, {k, 1}))
 
@@ -861,7 +863,10 @@ fn _batched_matmul_gpu[
         c_n % 128 == 0 and a_k % 32 == 0 and a_k >= 128
     )
 
-    alias use_A100_kernels = ctx.default_device_info >= A100 and has_nvidia_gpu_accelerator()
+    alias use_A100_kernels = (
+        has_nvidia_gpu_accelerator()
+        and ctx.default_device_info.compute >= A100.compute
+    )
 
     @parameter
     if has_static_NK and use_A100_kernels and multistage_gemm_cond:
@@ -1115,13 +1120,11 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-    c_tensor: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c_tensor: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a_scales_tma_op: TMATensorTile[
         a_scales_type, a_scales_tile_layout, a_scales_desc_layout
     ],
-    b_scales_tensor: LayoutTensor[
-        b_scales_type, b_scales_layout, MutableAnyOrigin
-    ],
+    b_scales_tensor: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
     alias c_2d_layout: Layout = _2D_layout[c_layout]
@@ -1137,7 +1140,7 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
         * UInt(b_scales_tensor.dim(2))
     )
 
-    var c = LayoutTensor[c_type, c_2d_layout, MutableAnyOrigin](
+    var c = LayoutTensor[c_type, c_2d_layout, MutAnyOrigin](
         c_ptr,
         RuntimeLayout[c_2d_layout].row_major(
             IndexList[2](c_tensor.dim(1), c_tensor.dim(2)),
@@ -1145,7 +1148,7 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
     )
 
     var b_scales = LayoutTensor[
-        b_scales_type, b_scales_2d_layout, MutableAnyOrigin
+        b_scales_type, b_scales_2d_layout, MutAnyOrigin
     ](
         b_scales_ptr,
         RuntimeLayout[b_scales_2d_layout].row_major(
@@ -1294,7 +1297,6 @@ fn bmm_sm100_blockwise_scaled_fp8[
             " by NVIDIA SM90+ TMA instructions!"
         )
 
-    var logger = Logger()
     logger.info(
         "Executing SM100 Basic Batched 1D2D Blockwise Scaled FP8 GEMM"
         " (BLOCK_SCALE_SIZE = 128)"

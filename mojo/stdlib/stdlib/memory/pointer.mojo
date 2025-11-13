@@ -19,6 +19,7 @@ from memory import Pointer
 ```
 """
 
+from memory import LegacyUnsafePointer as UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
@@ -207,9 +208,9 @@ struct Pointer[
     ]
     alias _with_origin = Pointer[type, _, address_space]
 
-    alias Mutable = Self._with_origin[MutableOrigin.cast_from[origin]]
+    alias Mutable = Self._with_origin[MutOrigin.cast_from[origin]]
     """The mutable version of the `Pointer`."""
-    alias Immutable = Self._with_origin[ImmutableOrigin.cast_from[origin]]
+    alias Immutable = Self._with_origin[ImmutOrigin.cast_from[origin]]
     """The immutable version of the `Pointer`."""
     # Fields
     var _value: Self._mlir_type
@@ -224,7 +225,7 @@ struct Pointer[
     @always_inline("nodebug")
     fn __init__(
         other: Self._with_origin[_],
-        out self: Self._with_origin[ImmutableOrigin.cast_from[other.origin]],
+        out self: Self._with_origin[ImmutOrigin.cast_from[other.origin]],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -257,10 +258,10 @@ struct Pointer[
     @always_inline
     fn get_immutable(self) -> Self.Immutable:
         """Constructs a new Pointer with the same underlying target
-        and an ImmutableOrigin.
+        and an ImmutOrigin.
 
         Returns:
-            A new Pointer with the same target as self and an ImmutableOrigin.
+            A new Pointer with the same target as self and an ImmutOrigin.
 
         Notes:
             This does **not** copy the underlying data.

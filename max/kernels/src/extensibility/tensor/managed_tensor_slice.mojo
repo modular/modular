@@ -29,6 +29,10 @@ from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import trace_arg
@@ -564,7 +568,7 @@ struct ManagedTensorSlice[
 
     # `trait DevicePassable` implementation
     alias device_type: AnyType = LayoutTensor[
-        dtype, static_spec.to_layout(), MutableAnyOrigin
+        dtype, static_spec.to_layout(), MutAnyOrigin
     ]
 
     fn _to_device_type(self, target: OpaquePointer):
@@ -1157,9 +1161,7 @@ struct ManagedTensorSlice[
     @always_inline
     fn to_layout_tensor(
         self,
-        out result: LayoutTensor[
-            dtype, static_spec.to_layout(), MutableAnyOrigin
-        ],
+        out result: LayoutTensor[dtype, static_spec.to_layout(), MutAnyOrigin],
     ):
         alias layout = static_spec.to_layout()
         return type_of(result)(

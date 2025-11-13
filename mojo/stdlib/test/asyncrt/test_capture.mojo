@@ -14,6 +14,7 @@
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu import *
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite
 
 
@@ -49,7 +50,8 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
     alias length = 1024
 
     var in0 = ctx.enqueue_create_buffer[DType.float32](length)
-    var in1 = ctx.enqueue_create_buffer[DType.float32](length).enqueue_fill(2)
+    var in1 = ctx.enqueue_create_buffer[DType.float32](length)
+    in1.enqueue_fill(2)
     var out = ctx.enqueue_create_buffer[DType.float32](length)
 
     # Initialize the input and outputs with known values.

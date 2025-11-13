@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, simd_width_of
 
 from algorithm.functional import vectorize
@@ -39,10 +40,8 @@ fn _bmm0_bs[
     p_ptr: UnsafePointer[Scalar[p_type]],
     q_ptr: UnsafePointer[Scalar[q_type]],
     k_cache: cache_t,
-    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutableAnyOrigin],
-    kv_input_row_offsets: LayoutTensor[
-        DType.uint32, kv_layout, MutableAnyOrigin
-    ],
+    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutAnyOrigin],
+    kv_input_row_offsets: LayoutTensor[DType.uint32, kv_layout, MutAnyOrigin],
     scale: Float32,
     batch_size: Int,
     q_max_seq_len: Int,
@@ -146,10 +145,8 @@ fn _bmm1_bs[
     output_ptr: UnsafePointer[Scalar[output_type]],
     p_ptr: UnsafePointer[Scalar[p_type]],
     v_cache: cache_t,
-    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutableAnyOrigin],
-    kv_input_row_offsets: LayoutTensor[
-        DType.uint32, kv_layout, MutableAnyOrigin
-    ],
+    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutAnyOrigin],
+    kv_input_row_offsets: LayoutTensor[DType.uint32, kv_layout, MutAnyOrigin],
     q_max_seq_len: Int,
     kv_max_seq_len: Int,
     max_cache_size: Int,
@@ -265,8 +262,7 @@ fn mha_cross_gpu_naive[
         "Only support single and half precision.",
     ]()
 
-    alias config = MHAConfig(
-        dtype,
+    alias config = MHAConfig[dtype](
         UInt(Int(q.layout.shape[rank - 2])),
         UInt(Int(q.layout.shape[rank - 1])),
     )

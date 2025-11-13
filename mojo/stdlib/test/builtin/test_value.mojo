@@ -25,7 +25,7 @@ alias EVENT_COPY = 0b1000  # 8
 alias EVENT_MOVE = 0b10000  # 16
 
 
-struct ConditionalTriviality[O: MutableOrigin, //, T: Movable & Copyable](
+struct ConditionalTriviality[O: MutOrigin, //, T: Movable & Copyable](
     Copyable, Movable
 ):
     var events: Pointer[List[Int], O]

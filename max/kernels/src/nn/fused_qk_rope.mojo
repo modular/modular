@@ -254,7 +254,7 @@ fn fused_qk_rope_ragged[
     kv_collection: collection_t,
     freqs_cis: LayoutTensor[freq_dtype, **_],
     position_ids: OptionalReg[
-        LayoutTensor[DType.uint32, Layout.row_major[2](), MutableAnyOrigin]
+        LayoutTensor[DType.uint32, Layout.row_major[2](), MutAnyOrigin]
     ],
     layer_idx: UInt32,
     output: LayoutTensor[mut=True, dtype, **_],

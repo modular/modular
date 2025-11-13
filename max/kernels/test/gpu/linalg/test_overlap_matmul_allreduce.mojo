@@ -19,6 +19,7 @@ from comm.allreduce import MAX_GPUS, Signal, allreduce
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.distributed_matmul import matmul_allreduce
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList, StaticTuple
@@ -126,38 +127,38 @@ fn overlap_matmul_allreduce_test[
     alias B_static_shape = DimList(n.dim, k.dim)
     alias C_static_shape = DimList(m.dim, n.dim)
     var As = InlineArray[
-        NDBuffer[dtype, 2, MutableAnyOrigin, A_static_shape], ngpus
+        NDBuffer[dtype, 2, MutAnyOrigin, A_static_shape], ngpus
     ](fill={})
     var Bs = InlineArray[
-        NDBuffer[dtype, 2, MutableAnyOrigin, B_static_shape], ngpus
+        NDBuffer[dtype, 2, MutAnyOrigin, B_static_shape], ngpus
     ](fill={})
     var Cs = InlineArray[
-        NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape], ngpus
+        NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape], ngpus
     ](fill={})
     var out_bufs = InlineArray[
-        NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape], ngpus
+        NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape], ngpus
     ](fill={})
 
     # Setup the kernel NDBuffers
     @parameter
     for i in range(ngpus):
-        As[i] = NDBuffer[dtype, 2, MutableAnyOrigin, A_static_shape](
+        As[i] = NDBuffer[dtype, 2, MutAnyOrigin, A_static_shape](
             A_list[i].unsafe_ptr(), DimList(m.value, k.value)
         )
-        Bs[i] = NDBuffer[dtype, 2, MutableAnyOrigin, B_static_shape](
+        Bs[i] = NDBuffer[dtype, 2, MutAnyOrigin, B_static_shape](
             B_list[i].unsafe_ptr(), DimList(n.value, k.value)
         )
-        Cs[i] = NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape](
+        Cs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
             C_list[i].unsafe_ptr(), DimList(m.value, n.value)
         )
-        out_bufs[i] = NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape](
+        out_bufs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
             C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
         )
 
     # Copy-capture in registers since the lambda will be used on GPU.
-    var out_bufs_capture = StaticTuple[
-        NDBuffer[dtype, 2, MutableAnyOrigin], ngpus
-    ](NDBuffer[dtype, 2, MutableAnyOrigin]())
+    var out_bufs_capture = StaticTuple[NDBuffer[dtype, 2, MutAnyOrigin], ngpus](
+        NDBuffer[dtype, 2, MutAnyOrigin]()
+    )
 
     @parameter
     for i in range(ngpus):

@@ -51,13 +51,14 @@ fn _support_pdl_launch() -> Bool:
         True if PDL is supported and enabled, False otherwise.
     """
 
-    if not has_nvidia_gpu_accelerator():
+    @parameter
+    if (
+        has_nvidia_gpu_accelerator()
+        and GPUInfo.from_name[_accelerator_arch()]().compute >= H100.compute
+    ):
+        return True
+    else:
         return False
-
-    if GPUInfo.from_name[_accelerator_arch()]() < materialize[H100]():
-        return False
-
-    return True
 
 
 @doc_private
@@ -81,12 +82,12 @@ fn pdl_launch_attributes(
     """
 
     if _SUPPORT_PDL_LAUNCH and pdl_level != PDLLevel.OFF:
-        return List[LaunchAttribute](
+        return [
             LaunchAttribute(
                 LaunchAttributeID.PROGRAMMATIC_STREAM_SERIALIZATION,
                 LaunchAttributeValue(True),
             )
-        )
+        ]
     else:
         return List[LaunchAttribute]()
 

@@ -19,8 +19,14 @@
 
 from sys._assembly import inlined_assembly
 
-from buffer import DimList, NDBuffer
-from memory import memcpy, memset_zero, stack_allocation
+from buffer import DimList
+from layout import Layout, LayoutTensor
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    memcpy,
+    memset_zero,
+    stack_allocation,
+)
 
 # All AMX instructions are of the form
 # `0x00201000 | ((op & 0x1F) << 5) | (operand & 0x1F)`
@@ -384,9 +390,9 @@ fn fma[
 
 @always_inline
 fn dot_at_b_impl(
-    c: NDBuffer[DType.float32, 2, shape = DimList(16, 16)],
-    a: NDBuffer[DType.float32, 2, shape = DimList(16, 16)],
-    b: NDBuffer[DType.float32, 2, shape = DimList(16, 16)],
+    c: LayoutTensor[DType.float32, Layout.row_major(16, 16), MutAnyOrigin],
+    a: LayoutTensor[DType.float32, Layout.row_major(16, 16), ImmutAnyOrigin],
+    b: LayoutTensor[DType.float32, Layout.row_major(16, 16), ImmutAnyOrigin],
 ):
     # Performs a 16x16x16 matrix multiply on the given matrices storing the
     # result into the C matrix. The matrix multiplication is performed as:
@@ -397,11 +403,11 @@ fn dot_at_b_impl(
     # assumed to be transposed and all matrices are stored in row-major
     # order.
 
-    var a_pointer = a.data
-    var b_pointer = b.data
-    var c_pointer = c.data
+    var a_pointer = a.ptr
+    var b_pointer = b.ptr
+    var c_pointer = c.ptr
 
-    alias num_elements = Int(c.shape.at[1]() * c.shape.at[0]())
+    alias num_elements = c.layout.size()
 
     # TODO: We can elide the copy if the data is already is already aligned.
     var a_buffer = stack_allocation[num_elements, Float32, alignment=128]()
@@ -438,15 +444,15 @@ fn dot_at_b_impl(
 
 @always_inline
 fn dot_at_b_impl(
-    c: NDBuffer[DType.float16, 2, shape = DimList(32, 32)],
-    a: NDBuffer[DType.float16, 2, shape = DimList(32, 32)],
-    b: NDBuffer[DType.float16, 2, shape = DimList(32, 32)],
+    c: LayoutTensor[DType.float16, Layout.row_major(32, 32), MutAnyOrigin],
+    a: LayoutTensor[DType.float16, Layout.row_major(32, 32), ImmutAnyOrigin],
+    b: LayoutTensor[DType.float16, Layout.row_major(32, 32), ImmutAnyOrigin],
 ):
-    var a_pointer = a.data
-    var b_pointer = b.data
-    var c_pointer = c.data
+    var a_pointer = a.ptr
+    var b_pointer = b.ptr
+    var c_pointer = c.ptr
 
-    alias num_elements = Int(c.shape.at[1]() * c.shape.at[0]())
+    alias num_elements = c.layout.size()
 
     var a_buffer = stack_allocation[num_elements, Float16, alignment=128]()
     var b_buffer = stack_allocation[num_elements, Float16, alignment=128]()
@@ -481,76 +487,32 @@ fn dot_at_b_impl(
 
 
 @always_inline
-fn dot_at_b(c: NDBuffer, a: type_of(c), b: type_of(c)):
+fn dot_at_b(c: LayoutTensor[mut=True, *_, **_], a: type_of(c), b: type_of(c)):
     constrained[
-        c.type is DType.float32 or c.type is DType.float16,
+        c.dtype is DType.float32 or c.dtype is DType.float16,
         "the buffer dtype must be float32 or float16",
     ]()
 
     @parameter
-    if c.type is DType.float32:
+    if c.dtype is DType.float32:
+        alias f32_tensor = LayoutTensor[
+            DType.float32,
+            Layout.row_major(16, 16),
+            _,
+        ]
         dot_at_b_impl(
-            NDBuffer[
-                DType.float32,
-                2,
-                shape = DimList(16, 16),
-                address_space = AddressSpace.GENERIC,
-            ](
-                c.data.bitcast[Float32]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
-            ),
-            NDBuffer[
-                DType.float32,
-                2,
-                shape = DimList(16, 16),
-                address_space = AddressSpace.GENERIC,
-            ](
-                a.data.bitcast[Float32]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
-            ),
-            NDBuffer[
-                DType.float32,
-                2,
-                shape = DimList(16, 16),
-                address_space = AddressSpace.GENERIC,
-            ](
-                b.data.bitcast[Float32]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
-            ),
+            rebind[f32_tensor[MutAnyOrigin]](c),
+            rebind[f32_tensor[ImmutAnyOrigin]](a),
+            rebind[f32_tensor[ImmutAnyOrigin]](b),
         )
-    elif c.type is DType.float16:
+    elif c.dtype is DType.float16:
+        alias f16_tensor = LayoutTensor[
+            DType.float16,
+            Layout.row_major(32, 32),
+            _,
+        ]
         dot_at_b_impl(
-            NDBuffer[
-                DType.float16,
-                2,
-                shape = DimList(32, 32),
-                address_space = AddressSpace.GENERIC,
-            ](
-                c.data.bitcast[Float16]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
-            ),
-            NDBuffer[
-                DType.float16,
-                2,
-                shape = DimList(32, 32),
-                address_space = AddressSpace.GENERIC,
-            ](
-                a.data.bitcast[Float16]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
-            ),
-            NDBuffer[
-                DType.float16,
-                2,
-                shape = DimList(32, 32),
-                address_space = AddressSpace.GENERIC,
-            ](
-                b.data.bitcast[Float16]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
-            ),
+            rebind[f16_tensor[MutAnyOrigin]](c),
+            rebind[f16_tensor[ImmutAnyOrigin]](a),
+            rebind[f16_tensor[ImmutAnyOrigin]](b),
         )

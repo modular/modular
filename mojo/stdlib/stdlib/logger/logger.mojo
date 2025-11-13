@@ -41,6 +41,7 @@ import sys
 from io.write import _WriteBufferStack
 from os import abort
 from sys.param_env import env_get_string
+from utils._ansi import Text, Color
 
 from builtin._location import __call_location, _SourceLocation
 
@@ -59,7 +60,7 @@ alias DEFAULT_LEVEL = Level._from_str(
 
 @fieldwise_init
 struct Level(
-    EqualityComparable,
+    Comparable,
     Identifiable,
     ImplicitlyCopyable,
     Movable,
@@ -107,28 +108,6 @@ struct Level(
         """
         return self._value == other._value
 
-    fn __gt__(self, other: Self) -> Bool:
-        """Returns True if this level is greater than the other level.
-
-        Args:
-            other: The level to compare with.
-
-        Returns:
-            Bool: True if this level is greater than the other level, False otherwise.
-        """
-        return self._value > other._value
-
-    fn __ge__(self, other: Self) -> Bool:
-        """Returns True if this level is greater than or equal to the other level.
-
-        Args:
-            other: The level to compare with.
-
-        Returns:
-            Bool: True if this level is greater than or equal to the other level, False otherwise.
-        """
-        return self._value >= other._value
-
     fn __lt__(self, other: Self) -> Bool:
         """Returns True if this level is less than the other level.
 
@@ -140,17 +119,6 @@ struct Level(
         """
         return self._value < other._value
 
-    fn __le__(self, other: Self) -> Bool:
-        """Returns True if this level is less than or equal to the other level.
-
-        Args:
-            other: The level to compare with.
-
-        Returns:
-            Bool: True if this level is less than or equal to the other level, False otherwise.
-        """
-        return self._value <= other._value
-
     fn __is__(self, other: Self) -> Bool:
         """Returns True if this level is identical to the other level.
 
@@ -161,6 +129,27 @@ struct Level(
             Bool: True if this level is identical to the other level, False otherwise.
         """
         return self == other
+
+    fn color(self) -> Color:
+        """Returns the ANSI color of the level.
+
+        Returns:
+            The corresponding Color of the level.
+        """
+        if self is Self.TRACE:
+            return Color.GREEN
+        if self is Self.DEBUG:
+            return Color.GREEN
+        if self is Self.INFO:
+            return Color.YELLOW
+        if self is Self.WARNING:
+            return Color.BLUE
+        if self is Self.ERROR:
+            return Color.MAGENTA
+        if self is Self.CRITICAL:
+            return Color.RED
+
+        return Color("")
 
     @staticmethod
     fn _from_str(name: StringSlice) -> Self:
@@ -495,13 +484,15 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         sep: StaticString = " ",
         end: StaticString = "\n",
     ):
+        alias color = _level.color()
+
         var file = self._fd
         var buffer = _WriteBufferStack(file)
 
         if self._prefix:
-            buffer.write(self._prefix)
+            buffer.write(Text[color](self._prefix))
         else:
-            buffer.write(_level, "::: ")
+            buffer.write(Text[color](_level), "::: ")
 
         if self._source_location:
             buffer.write("[", location, "] ")

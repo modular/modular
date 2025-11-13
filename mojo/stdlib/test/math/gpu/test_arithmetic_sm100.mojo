@@ -16,6 +16,7 @@ from random import random_float64
 
 from gpu import block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext, HostBuffer
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, TestSuite
 
 
@@ -100,9 +101,7 @@ fn host_elementwise_fma(
         c[i] = c_temp
 
 
-def test_arithmetic[
-    width: Int, mode: String
-](ctx: DeviceContext,):
+def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext):
     alias thread_count = 32
     alias block_count = 1
     alias buff_size = thread_count * block_count * width
@@ -129,9 +128,8 @@ def test_arithmetic[
     ctx.enqueue_copy(c_device_buffer, c_host.unsafe_ptr())
 
     # Compute expected result on host
-    var c_expected = ctx.enqueue_create_host_buffer[DType.float32](
-        buff_size
-    ).enqueue_fill(0)
+    var c_expected = ctx.enqueue_create_host_buffer[DType.float32](buff_size)
+    c_expected.enqueue_fill(0)
     ctx.synchronize()
 
     @parameter
@@ -184,15 +182,15 @@ def test_arithmetic[
 
 def test_arithmetic_sm100():
     with DeviceContext() as ctx:
-        test_arithmetic[2, "add"](ctx)
-        test_arithmetic[4, "add"](ctx)
-        test_arithmetic[8, "add"](ctx)
-        test_arithmetic[2, "mult"](ctx)
-        test_arithmetic[4, "mult"](ctx)
-        test_arithmetic[8, "mult"](ctx)
-        test_arithmetic[2, "fma"](ctx)
-        test_arithmetic[4, "fma"](ctx)
-        test_arithmetic[8, "fma"](ctx)
+        _test_arithmetic[2, "add"](ctx)
+        _test_arithmetic[4, "add"](ctx)
+        _test_arithmetic[8, "add"](ctx)
+        _test_arithmetic[2, "mult"](ctx)
+        _test_arithmetic[4, "mult"](ctx)
+        _test_arithmetic[8, "mult"](ctx)
+        _test_arithmetic[2, "fma"](ctx)
+        _test_arithmetic[4, "fma"](ctx)
+        _test_arithmetic[8, "fma"](ctx)
 
 
 def main():

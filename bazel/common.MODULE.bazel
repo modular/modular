@@ -2,21 +2,23 @@
 
 bazel_dep(name = "abseil-cpp", version = "20250127.1")
 bazel_dep(name = "apple_support", version = "1.22.1", repo_name = "build_bazel_apple_support")
-bazel_dep(name = "gazelle", version = "0.43.0")
-bazel_dep(name = "rules_go", version = "0.55.0", repo_name = "io_bazel_rules_go")
-bazel_dep(name = "rules_java", version = "8.15.2")
 bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
 bazel_dep(name = "aspect_rules_js", version = "2.4.1")
 bazel_dep(name = "bazel_skylib", version = "1.8.1")
 bazel_dep(name = "curl", version = "8.8.0")
+bazel_dep(name = "gazelle", version = "0.43.0")
+bazel_dep(name = "glfw", version = "3.3.9.bcr.1")
 bazel_dep(name = "google_benchmark", version = "1.8.5")
 bazel_dep(name = "grpc", version = "1.73.1", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "grpc-java", version = "1.67.1")
+bazel_dep(name = "imgui", version = "1.91.8")
 bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
 bazel_dep(name = "opentelemetry-proto", version = "1.5.0")
-bazel_dep(name = "platforms", version = "0.0.11")
+bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "31.1")
 bazel_dep(name = "rules_cc", version = "0.2.8")
+bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_java", version = "8.15.2")
 bazel_dep(name = "rules_mojo", version = "0.5.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
@@ -34,7 +36,7 @@ bazel_dep(name = "rules_nodejs", version = "6.5.0")
 bazel_dep(name = "rules_swift", version = "2.8.2")
 bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
 
-bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = True)
+bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True)
 
 archive_override(
     module_name = "rules_mojo",
@@ -83,18 +85,13 @@ single_version_override(
     ],
 )
 
-# TODO: Remove once >0.8.0 is out
+# TODO: Remove once >0.8.0 is released
 archive_override(
     module_name = "rules_pycross",
-    integrity = "sha256-80I/HQ37qIGF7o632GMRKV7PK4/wpEvBGQyXJsnKkPo=",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/jvolkman/rules_pycross/pull/199
-        "//bazel/public-patches:rules_pycross_patch.patch",
-    ],
-    strip_prefix = "rules_pycross-1d8bdc0e0a48ce338c0de8122c952af841d40d2d",
+    integrity = "sha256-H2I/ayVPKJC1PVDOROxS5AC74n2q7TLwLD+B/Zo0EFc=",
+    strip_prefix = "rules_pycross-15136176e414f09b774e5120c9e3d6d04d105261",
     urls = [
-        "https://github.com/jvolkman/rules_pycross/archive/1d8bdc0e0a48ce338c0de8122c952af841d40d2d.tar.gz",
+        "https://github.com/jvolkman/rules_pycross/archive/15136176e414f09b774e5120c9e3d6d04d105261.tar.gz",
     ],
 )
 
@@ -121,15 +118,6 @@ single_version_override(
     patch_strip = 1,
     patches = [
         "//bazel/public-patches:opentelemetry.patch",
-    ],
-)
-
-single_version_override(
-    module_name = "rules_go",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/bazel-contrib/rules_go/pull/4368
-        "//bazel/public-patches:rules_go.patch",
     ],
 )
 
@@ -250,6 +238,47 @@ RUFF_VERSION = "0.14.0"
 ]
 
 http_archive(
+    name = "rocshmem",
+    build_file_content = """
+
+package(default_visibility = ["//visibility:public"])
+
+# This is the device-side bitcode that is linked into shmem.mojopkg.
+filegroup(
+    name = "device",
+    srcs = ["lib/librocshmem_device.bc"],
+)
+
+filegroup(
+    name = "host",
+    srcs = [
+        "bin/mpirun",
+        "bin/prterun",
+        "lib/libmpi.so",
+        "lib/libmpi.so.40.40.7",
+        "lib/librocshmem.so",
+        "lib/libucp.so.0",
+        "lib/libucs.so.0",
+        "lib/libopen-pal.so.80",
+        "lib/libevent_core-2.1.so.7",
+        "lib/libevent_pthreads-2.1.so.7",
+        "lib/libhwloc.so.15",
+        "lib/libpmix.so.2",
+        "lib/libuct.so.0",
+        "lib/libucm.so.0",
+        "lib/libprrte.so.3",
+        "lib/libnl-3.so.200",
+        "share/openmpi/help-mpirun.txt",
+        "share/prte/help-pcompress.txt",
+        "share/pmix/help-pcompress.txt",
+    ],
+)
+""",
+    sha256 = "a94edf6e52add4efe8c417d338d98c8381701c5399b71412020abef31f8b9d9b",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/rocshmem//a94edf6e52add4efe8c417d338d98c8381701c5399b71412020abef31f8b9d9b/rocshmem.tar.gz",
+)
+
+http_archive(
     name = "nvshmem_prebuilt",
     build_file_content = """
 package(default_visibility = ["//visibility:public"])
@@ -260,18 +289,12 @@ filegroup(
     srcs = ["lib/libnvshmem_device.bc"],
 )
 
-# For linking the nvshmem hostlibs when compiling Mojo binaries from bazel
-cc_library(
-    name = "hostlibs",
-    srcs = glob(["lib/*.so*"]),
-)
-
 # This has three purposes:
+#  - enable bazel to dlopen the libs from test runfiles
 #  - copy the libs to python wheel `site-packages/modular/lib` folder
 #  - relink and copy the libs to conda package `lib` folder
-#  - enable `bmojo` to dlopen the libs from `bazel-bin/external/+http_archive+nvshmem_prebuilt`
 genrule(
-    name = "hostlibs_data",
+    name = "host",
     srcs = glob(["lib/*.so*"]),
     outs = [
         "libnvshmem_host.so.3",
@@ -287,8 +310,8 @@ genrule(
     ''',
 )
 """,
-    sha256 = "8f74673b958e8c3b2e5c2cacfa48aa90139d36377317f48cbd1851f993789655",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/8f74673b958e8c3b2e5c2cacfa48aa90139d36377317f48cbd1851f993789655/nvshmem.tar.gz",
+    sha256 = "1f9ae02d6e90b7248adb3399397229abb85517e5c8e8b62181a08730bb2f616a",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/1f9ae02d6e90b7248adb3399397229abb85517e5c8e8b62181a08730bb2f616a/nvshmem.tar.gz",
 )
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
@@ -311,13 +334,16 @@ mojo.gpu_toolchains(
         "RTX 4090": "rtx4090",
         "NVIDIA GeForce RTX 3090": "rtx3090",
         "NVIDIA GeForce GTX 1080 Ti": "gtx1080ti",
+        "NVIDIA GeForce GTX 1060": "gtx1060",
         "NVIDIA GeForce GTX 970": "gtx970",
         "MI300X": "mi300x",
         "MI325": "mi325",
         "MI355": "mi355",
-        "Navi": "radeon",
-        "AMD Radeon Graphics": "radeon",
+        "Navi 31": "W7900",
+        "Navi 31 [Radeon Pro W7900]": "W7900",
         "AMD Radeon RX 6900 XT": "rx6900xt",
+        "AMD Radeon PRO W7900": "W7900",
+        "AMD Radeon Pro W7900": "W7900",
         "Metal 1": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
         "Metal 2": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
         "Metal 3": "metal3",  # macOS 15
@@ -326,6 +352,7 @@ mojo.gpu_toolchains(
     # GPU name -> target accelerator
     supported_gpus = {
         "780M": "amdgpu:gfx1103",
+        "W7900": "amdgpu:gfx1100",
         "a10": "nvidia:86",
         "a100": "nvidia:80",
         "a3000": "nvidia:86",
@@ -340,6 +367,7 @@ mojo.gpu_toolchains(
         "rtx3090": "nvidia:86",
         "gtx970": "nvidia:52",
         "gtx1080ti": "nvidia:61",
+        "gtx1060": "nvidia:61",
         "rtx4090": "nvidia:89",
         "rtx5090": "nvidia:120a",
         "rx6900xt": "amdgpu:gfx1030",
@@ -352,42 +380,42 @@ use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")
 http_archive(
     name = "uv_linux_aarch64",
     build_file_content = 'exports_files(["uv"])',
-    sha256 = "4351c1e2ec13f5eb4da058ac1c39f00ae3042de9d6fdb6480e0170f32813210f",
+    sha256 = "f177397625eb7ca184a01a954c7d487d1cafee68e53cc8f2789a02f75c347a68",
     strip_prefix = "uv-aarch64-unknown-linux-musl",
-    url = "https://github.com/astral-sh/uv/releases/download/0.7.15/uv-aarch64-unknown-linux-musl.tar.gz",
+    url = "https://github.com/astral-sh/uv/releases/download/0.9.7/uv-aarch64-unknown-linux-musl.tar.gz",
 )
 
 http_archive(
     name = "uv_linux_x86_64",
     build_file_content = 'exports_files(["uv"])',
-    sha256 = "b1dc0892749e93382decbd894755be0ba1535587f0bb8333572b072d1b0f652a",
+    sha256 = "b26fcc8dfa1c39b5a5613445af3be3eefda45d9a39359bee271eafe34913583e",
     strip_prefix = "uv-x86_64-unknown-linux-gnu",
-    url = "https://github.com/astral-sh/uv/releases/download/0.7.15/uv-x86_64-unknown-linux-gnu.tar.gz",
+    url = "https://github.com/astral-sh/uv/releases/download/0.9.7/uv-x86_64-unknown-linux-gnu.tar.gz",
 )
 
 http_archive(
     name = "uv_darwin_aarch64",
     build_file_content = 'exports_files(["uv"])',
-    sha256 = "7a20f3d33cbbc75683d66e0562d4bdbd702ca656d7dc1b7be3c592de6a6517b9",
+    sha256 = "35572b9619fc14d67fc1cd72582c3cfc5c9c66d97f310192e04f26fb3fe96005",
     strip_prefix = "uv-aarch64-apple-darwin",
-    url = "https://github.com/astral-sh/uv/releases/download/0.7.15/uv-aarch64-apple-darwin.tar.gz",
+    url = "https://github.com/astral-sh/uv/releases/download/0.9.7/uv-aarch64-apple-darwin.tar.gz",
 )
 
 bazel_dep(name = "sysroot-jammy-aarch64")
 archive_override(
     module_name = "sysroot-jammy-aarch64",
-    integrity = "sha256-/gPauKjoBn4Wuy7UEYKKAQpqLHjohlf9U5XEH7bNM64=",
+    integrity = "sha256-62kBJgGFqcDoEES1rkFYTaZJ0Zgjz0P8HIls6t5zUKI=",
     urls = [
-        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/5/fe03dab8a8e8067e16bb2ed411828a010a6a2c78e88657fd5395c41fb6cd33ae/sysroot-jammy-aarch64.tar.xz",
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/7/eb6901260185a9c0e81044b5ae41584da649d19823cf43fc1c896ceade7350a2/sysroot-jammy-aarch64.tar.xz",
     ],
 )
 
 bazel_dep(name = "sysroot-jammy-x86_64")
 archive_override(
     module_name = "sysroot-jammy-x86_64",
-    integrity = "sha256-6SU7cW9SeAMp1L2SbyxlUjebYa5nQ2ZwroqTnh5Mb1c=",
+    integrity = "sha256-fVF6U6G1kb7+PM2HS6KM5mKYRF93S6gEg8l7tYIV+nc=",
     urls = [
-        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/5/e9253b716f52780329d4bd926f2c6552379b61ae67436670ae8a939e1e4c6f57/sysroot-jammy-x86_64.tar.xz",
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/7/7d517a53a1b591befe3ccd874ba28ce66298445f774ba80483c97bb58215fa77/sysroot-jammy-x86_64.tar.xz",
     ],
 )
 

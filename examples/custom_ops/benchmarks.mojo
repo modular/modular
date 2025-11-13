@@ -63,9 +63,6 @@ struct Tensor[
             Self.static_spec.strides.into_index_list[rank](),
         )
 
-    fn unsafe_ptr(self) -> UnsafePointer[Scalar[dtype]]:
-        return self.buffer.unsafe_ptr()
-
     fn rand(self) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
             rand(host_buffer.unsafe_ptr(), Self.size)
@@ -343,7 +340,7 @@ def run_conv1d[impl: StaticString]():
             bencher.iter[run_bench]()
 
         bench.bench_function[bench_cpu](
-            BenchId("cpu", "naive"), flops, elements
+            BenchId("cpu", "naive"), [flops, elements]
         )
 
     @parameter
@@ -377,7 +374,7 @@ def run_conv1d[impl: StaticString]():
                 bench.iter_custom[kernel_launch](gpu_ctx)
 
             bench.bench_function[bench_gpu](
-                BenchId(impl, String(impl)), flops, elements
+                BenchId(impl, String(impl)), [flops, elements]
             )
 
         bench_conv1d_kernel[impl]()

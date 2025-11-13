@@ -5,8 +5,8 @@ modular_py_binary(
     srcs = ["basic.py"],
     imports = ["."],
     deps = [
-        "//SDK/lib/API/python/max/entrypoints",
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        "//max/python/max/entrypoints",
+        "//max/python/max/entrypoints:pipelines",
         requirement("tqdm"),
     ],
 )
@@ -18,7 +18,7 @@ modular_run_binary_test(
     external_noop = True,
     tags = ["requires-network"],
     target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME long running on MacOS. MOCO-2412
 )

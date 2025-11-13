@@ -19,11 +19,26 @@ from testing import assert_true
 
 
 def dif_bits(i1: UInt64, i2: UInt64) -> Int:
+    """Computes the number of differing bits between two integers.
+
+    Args:
+        i1: First integer.
+        i2: Second integer.
+
+    Returns:
+        The number of bits that differ between the two integers.
+    """
     return Int(pop_count(i1 ^ i2))
 
 
 @always_inline
 def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int):
+    """Asserts that all pairs of hashes differ by more than the upper bound.
+
+    Args:
+        hashes: List of hash values to compare.
+        upper_bound: Minimum number of differing bits required between hashes.
+    """
     for i in range(len(hashes)):
         for j in range(i + 1, len(hashes)):
             var diff = dif_bits(hashes[i], hashes[j])
@@ -40,9 +55,20 @@ def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int):
 def assert_fill_factor[
     label: String, HasherType: Hasher
 ](words: List[String], num_buckets: Int, lower_bound: Float64):
+    """Asserts that the hash function achieves a minimum fill factor.
+
+    Parameters:
+        label: Label for the test output.
+        HasherType: Type of hasher to use.
+
+    Args:
+        words: List of strings to hash.
+        num_buckets: Number of buckets to distribute hashes into.
+        lower_bound: Minimum required fill factor (0.0 to 1.0).
+    """
     # A perfect hash function is when the number of buckets is equal to number of words
     # and the fill factor results in 1.0
-    var buckets = List[Int](0) * num_buckets
+    var buckets = [0] * num_buckets
     for w in words:
         var h = hash[HasherType=HasherType](w)
         buckets[h % num_buckets] += 1
@@ -51,7 +77,7 @@ def assert_fill_factor[
         if v == 0:
             unfilled += 1
 
-    var fill_factor = 1 - unfilled / num_buckets
+    var fill_factor = 1.0 - Float64(unfilled) / Float64(num_buckets)
     assert_true(
         fill_factor >= lower_bound,
         "Fill factor for {} is {}, provided lower bound was {}".format(

@@ -29,7 +29,7 @@ from benchmark import (
 from buffer import NDBuffer
 from builtin.range import _StridedRange
 from compile import compile_info
-from memory import bitcast
+from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 
 
 fn apply[
@@ -86,11 +86,14 @@ def bench_unary[
 
         b.iter[iter_fn]()
 
+    var elements = ThroughputMeasure(
+        BenchMetric.elements, size * size_of[dtype]()
+    )
     m.bench_with_input[Int, bench](
         BenchId(op_name, String(size)),
         size,
         # TODO: Pick relevant benchmetric.
-        ThroughputMeasure(BenchMetric.elements, size * size_of[dtype]()),
+        [elements],
     )
 
     input_ptr.free()
@@ -391,7 +394,7 @@ def accuracy_test():
     alias delta_range = delta_max - delta_min + 1
 
     var deltas = NDBuffer[
-        DType.int32, 1, MutableAnyOrigin, delta_range
+        DType.int32, 1, MutAnyOrigin, delta_range
     ].stack_allocation()
     deltas.zero()
 

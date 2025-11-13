@@ -34,10 +34,10 @@ alias max_y = 1.5
 
 
 struct Matrix[dtype: DType, rows: Int, cols: Int]:
-    var data: UnsafePointer[Scalar[dtype]]
+    var data: UnsafePointer[Scalar[dtype], MutOrigin.external]
 
     fn __init__(out self):
-        self.data = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
+        self.data = alloc[Scalar[dtype]](rows * cols)
 
     fn store[nelts: Int](self, row: Int, col: Int, val: SIMD[dtype, nelts]):
         self.data.store(row * cols + col, val)

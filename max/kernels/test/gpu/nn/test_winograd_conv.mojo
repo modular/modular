@@ -40,7 +40,7 @@ from utils.numerics import get_accum_type
 @always_inline
 fn _get_b[
     dtype: DType
-](out B: LayoutTensor[dtype, Layout.row_major(4, 4), MutableAnyOrigin]):
+](out B: LayoutTensor[dtype, Layout.row_major(4, 4), MutAnyOrigin]):
     B = type_of(B).stack_allocation()
     # fmt:off
     B[0,0] = 1.0; B[0,1] =  0.0; B[0,2] = -1.0; B[0,3] =  0.0
@@ -53,7 +53,7 @@ fn _get_b[
 @always_inline
 fn _get_g[
     dtype: DType
-](out G: LayoutTensor[dtype, Layout.row_major(4, 3), MutableAnyOrigin]):
+](out G: LayoutTensor[dtype, Layout.row_major(4, 3), MutAnyOrigin]):
     G = type_of(G).stack_allocation()
     # fmt:off
     G[0,0] = 1.0; G[0,1] =  0.0; G[0,2] = 0.0
@@ -66,7 +66,7 @@ fn _get_g[
 @always_inline
 fn _get_a[
     dtype: DType
-](out A: LayoutTensor[dtype, Layout.row_major(2, 4), MutableAnyOrigin]):
+](out A: LayoutTensor[dtype, Layout.row_major(2, 4), MutAnyOrigin]):
     A = type_of(A).stack_allocation()
     # fmt:off
     A[0,0] = 1.0; A[0,1] = 1.0; A[0,2] =  1.0; A[0,3] =  0.0
@@ -87,13 +87,13 @@ fn matmul[
     s_type: DType = get_accum_type[c_type](),
 ](
     C: LayoutTensor[
-        c_type, c_layout, MutableAnyOrigin, element_layout=element_layout, **_
+        c_type, c_layout, MutAnyOrigin, element_layout=element_layout, **_
     ],
     A: LayoutTensor[
-        a_type, a_layout, MutableAnyOrigin, element_layout=element_layout, **_
+        a_type, a_layout, MutAnyOrigin, element_layout=element_layout, **_
     ],
     B: LayoutTensor[
-        b_type, b_layout, MutableAnyOrigin, element_layout=element_layout, **_
+        b_type, b_layout, MutAnyOrigin, element_layout=element_layout, **_
     ],
 ):
     alias M = Int(c_layout.shape[0])
@@ -123,18 +123,16 @@ fn matmul[
 fn get_tile[
     dtype: DType, layout: Layout, //, tile_size: Int
 ](
-    input_tensor: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    input_tensor: LayoutTensor[dtype, layout, MutAnyOrigin],
     n: Int,
     h: Int,
     w: Int,
     c: Int,
-) -> LayoutTensor[
-    dtype, Layout.row_major(tile_size, tile_size), MutableAnyOrigin
-]:
+) -> LayoutTensor[dtype, Layout.row_major(tile_size, tile_size), MutAnyOrigin]:
     # TODO: Issue because returning a stack variable? Workaround
     # with @always_inline
     var result = LayoutTensor[
-        dtype, Layout.row_major(tile_size, tile_size), MutableAnyOrigin
+        dtype, Layout.row_major(tile_size, tile_size), MutAnyOrigin
     ].stack_allocation()
 
     for i in range(tile_size):
@@ -155,9 +153,9 @@ fn winograd_conv2d_gpu_nhwc[
     output_type: DType,
     block_size: Int,
 ](
-    input: NDBuffer[input_type, 4, MutableAnyOrigin, input_dim],
-    filter: NDBuffer[filter_type, 4, MutableAnyOrigin, filter_dim],
-    output: NDBuffer[mut=True, output_type, 4, MutableAnyOrigin, output_dim],
+    input: NDBuffer[input_type, 4, MutAnyOrigin, input_dim],
+    filter: NDBuffer[filter_type, 4, MutAnyOrigin, filter_dim],
+    output: NDBuffer[mut=True, output_type, 4, MutAnyOrigin, output_dim],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
@@ -207,19 +205,19 @@ fn winograd_conv2d_gpu_nhwc[
 
     # Allocate scratch space
     var scratch = LayoutTensor[
-        input_type, Layout.row_major(4, 3), MutableAnyOrigin
+        input_type, Layout.row_major(4, 3), MutAnyOrigin
     ].stack_allocation()
     var scratch_2 = LayoutTensor[
-        input_type, Layout.row_major(4, 4), MutableAnyOrigin
+        input_type, Layout.row_major(4, 4), MutAnyOrigin
     ].stack_allocation()
     var scratch_3 = LayoutTensor[
-        input_type, Layout.row_major(2, 4), MutableAnyOrigin
+        input_type, Layout.row_major(2, 4), MutAnyOrigin
     ].stack_allocation()
     var m = LayoutTensor[
-        output_type, Layout.row_major(4, 4), MutableAnyOrigin
+        output_type, Layout.row_major(4, 4), MutAnyOrigin
     ].stack_allocation()
     var g_transformed = LayoutTensor[
-        input_type, Layout.row_major(4, 4), MutableAnyOrigin
+        input_type, Layout.row_major(4, 4), MutAnyOrigin
     ].stack_allocation()
 
     # Pre-transform filter (G^T * filter * G)
@@ -232,7 +230,7 @@ fn winograd_conv2d_gpu_nhwc[
     # Process each output channel
     for c_out in range(C_out):
         var output_tile = LayoutTensor[
-            output_type, Layout.row_major(2, 2), MutableAnyOrigin
+            output_type, Layout.row_major(2, 2), MutAnyOrigin
         ].stack_allocation()
 
         # Process each input channel
@@ -241,7 +239,9 @@ fn winograd_conv2d_gpu_nhwc[
 
             # TODO: Can we do something like this instead?
             # var input_tile = input_tensor.tile[1,1,4,4](c_out, c_in)
-            var input_tile = get_tile[4](input_tensor, n, h_out, w_out, c_in)
+            var input_tile = get_tile[4](
+                input_tensor, Int(n), Int(h_out), Int(w_out), c_in
+            )
 
             # 2. Transform input (B^T * d * B)
             matmul[transpose_b=False](scratch_2, b, input_tile)
@@ -279,10 +279,10 @@ fn winograd_conv2d_gpu_launcher[
     filter_type: DType,
     output_type: DType,
 ](
-    input: NDBuffer[input_type, input_rank, MutableAnyOrigin, input_dim],
-    filter: NDBuffer[filter_type, filter_rank, MutableAnyOrigin, filter_dim],
+    input: NDBuffer[input_type, input_rank, MutAnyOrigin, input_dim],
+    filter: NDBuffer[filter_type, filter_rank, MutAnyOrigin, filter_dim],
     output: NDBuffer[
-        mut=True, output_type, input_rank, MutableAnyOrigin, output_dim
+        mut=True, output_type, input_rank, MutAnyOrigin, output_dim
     ],
     stride: IndexList[2],
     dilation: IndexList[2],

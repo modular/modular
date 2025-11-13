@@ -87,7 +87,7 @@ from hashlib.hasher import Hasher
 from io.write import STACK_BUFFER_BYTES, _TotalWritableBytes, _WriteBufferStack
 from os import PathLike, abort
 from os.atomic import Atomic, Consistency, fence
-from sys import size_of
+from sys import size_of, bit_width_of
 from sys.ffi import c_char
 from sys.info import is_32bit
 
@@ -128,7 +128,7 @@ struct String(
     # form when '_capacity_or_data.is_inline()' is true. The inline form
     # clobbers these fields (except the top byte of the capacity field) with
     # the string data.
-    var _ptr_or_data: UnsafePointer[UInt8]
+    var _ptr_or_data: UnsafePointer[UInt8, MutOrigin.external]
     """The underlying storage for the string data."""
     var _len_or_data: Int
     """The number of bytes in the string data."""
@@ -215,7 +215,9 @@ struct String(
         # Safety: This should be safe since we set `capacity_or_data` to 0.
         # Meaning any mutation will cause us to either reallocate or inline
         # the string.
-        self._ptr_or_data = data._slice._data.unsafe_mut_cast[True]()
+        self._ptr_or_data = data._slice._data.unsafe_mut_cast[
+            True
+        ]().unsafe_origin_cast[MutOrigin.external]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = 0
@@ -231,7 +233,7 @@ struct String(
         self._len_or_data = Int(
             mlir_value=__mlir_op.`pop.string.size`(data.value)
         )
-        self._ptr_or_data = UnsafePointer(
+        self._ptr_or_data = UnsafePointer[_, MutOrigin.external](
             __mlir_op.`pop.string.address`(data.value)
         ).bitcast[Byte]()
         # Always use static constant representation initially, defer inlining
@@ -538,7 +540,7 @@ struct String(
     fn __init__(
         out self,
         *,
-        unsafe_from_utf8_ptr: UnsafePointer[c_char, mut=_, origin=_],
+        unsafe_from_utf8_ptr: UnsafePointer[mut=False, c_char],
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
@@ -553,7 +555,7 @@ struct String(
         self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     fn __init__(
-        out self, *, unsafe_from_utf8_ptr: UnsafePointer[UInt8, mut=_, origin=_]
+        out self, *, unsafe_from_utf8_ptr: UnsafePointer[mut=False, UInt8]
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
@@ -597,7 +599,7 @@ struct String(
     # Capacity Field Helpers
     # ===------------------------------------------------------------------=== #
 
-    # This includes getting and setting flags from the capcity field such as
+    # This includes getting and setting flags from the capacity field such as
     # null terminator, inline, and indirect. If indirect the length is also
     # stored in the capacity field.
 
@@ -684,9 +686,9 @@ struct String(
                 ptr.free()
 
     @staticmethod
-    fn _alloc(capacity: Int) -> UnsafePointer[Byte]:
+    fn _alloc(capacity: Int) -> UnsafePointer[Byte, MutOrigin.external]:
         """Allocate space for a new out-of-line string buffer."""
-        var ptr = UnsafePointer[Byte].alloc(capacity + Self.REF_COUNT_SIZE)
+        var ptr = alloc[Byte](capacity + Self.REF_COUNT_SIZE)
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(
@@ -820,42 +822,6 @@ struct String(
             otherwise.
         """
         return self.as_string_slice() < rhs.as_string_slice()
-
-    @always_inline("nodebug")
-    fn __le__(self, rhs: String) -> Bool:
-        """Compare this String to the RHS using LE comparison.
-
-        Args:
-            rhs: The other String to compare against.
-
-        Returns:
-            True iff this String is less than or equal to the RHS String.
-        """
-        return not (rhs < self)
-
-    @always_inline("nodebug")
-    fn __gt__(self, rhs: String) -> Bool:
-        """Compare this String to the RHS using GT comparison.
-
-        Args:
-            rhs: The other String to compare against.
-
-        Returns:
-            True iff this String is strictly greater than the RHS String.
-        """
-        return rhs < self
-
-    @always_inline("nodebug")
-    fn __ge__(self, rhs: String) -> Bool:
-        """Compare this String to the RHS using GE comparison.
-
-        Args:
-            rhs: The other String to compare against.
-
-        Returns:
-            True iff this String is greater than or equal to the RHS String.
-        """
-        return not (self < rhs)
 
     @staticmethod
     fn _add(lhs: Span[Byte], rhs: Span[Byte]) -> String:
@@ -1178,7 +1144,7 @@ struct String(
     @always_inline("nodebug")
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, mut=False, origin = origin_of(self)]:
+    ) -> UnsafePointer[Byte, origin_of(self)]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:
@@ -1200,7 +1166,7 @@ struct String(
 
     fn unsafe_ptr_mut(
         mut self, var capacity: Int = 0
-    ) -> UnsafePointer[Byte, mut=True, origin = origin_of(self)]:
+    ) -> UnsafePointer[Byte, origin_of(self)]:
         """Retrieves a mutable pointer to the unique underlying memory. Passing
         a larger capacity will reallocate the string to the new capacity if
         larger than the existing capacity, allowing you to write more data.
@@ -1223,7 +1189,7 @@ struct String(
 
     fn unsafe_cstr_ptr(
         mut self,
-    ) -> UnsafePointer[c_char, mut=False, origin = origin_of(self)]:
+    ) -> UnsafePointer[c_char, ImmutOrigin.cast_from[origin_of(self)]]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be null, or NUL terminated.
@@ -2370,7 +2336,9 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
         42949672960,
     )
     var n = UInt32(n0)
-    var log2 = Int((DType.uint32.bit_width() - 1) ^ count_leading_zeros(n | 1))
+    var log2 = Int(
+        (bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
+    )
     return (n0 + lookup_table[Int(log2)]) >> 32
 
 
@@ -2408,7 +2376,7 @@ fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
         var sign = 0 if n0 > 0 else 1
 
         @parameter
-        if is_32bit() or dtype.bit_width() <= 32:
+        if is_32bit() or bit_width_of[dtype]() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (

@@ -125,7 +125,11 @@ from gpu.intrinsics import (
 )
 from gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
 from gpu.memory import CacheOperation
-from memory import stack_allocation
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    stack_allocation,
+)
 
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
@@ -285,7 +289,7 @@ fn _naive_reduce_kernel_with_lambda[
     alignment: Int,
     output_lambda: elementwise_epilogue_type,
 ](
-    dst_buf: NDBuffer[dtype, rank, MutableAnyOrigin],
+    dst_buf: NDBuffer[dtype, rank, MutAnyOrigin],
     src_buf: UnsafePointer[Scalar[dtype]],
     num_elements: Int,
 ):
@@ -311,9 +315,9 @@ fn _allreduce_naive_single[
     num_buffers: Int = ngpus,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
+        NDBuffer[dtype, rank, MutAnyOrigin], num_buffers
     ],
-    out_buf: NDBuffer[dtype, rank, MutableAnyOrigin],
+    out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
     max_num_blocks: Int,
     ctx: DeviceContext,
 ) raises:
@@ -596,7 +600,7 @@ fn _allreduce_2stage_kernel[
     pdl_level: PDLLevel = PDLLevel(),
     num_buffers: Int = ngpus,
 ](
-    result: NDBuffer[dtype, rank, MutableAnyOrigin],
+    result: NDBuffer[dtype, rank, MutAnyOrigin],
     src_ptrs: InlineArray[UnsafePointer[Scalar[dtype]], num_buffers],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
@@ -695,7 +699,7 @@ fn _allreduce_2stage_kernel[
     # Grid-strided loop with vectorized reduction:
     # - Each thread processes partition elements using 128-bit accesses.
     # - Accumulates in higher precision (float32) for numerical stability.
-    for idx in range(start + global_tid, end, stride):
+    for idx in range(start + Int(global_tid), end, stride):
         # float32 accumulator for numerical stability.
         var elem_idx = idx * simd_width
 
@@ -756,7 +760,7 @@ fn _allreduce_1stage_kernel[
     output_lambda: elementwise_epilogue_type,
     num_buffers: Int = ngpus,
 ](
-    result: NDBuffer[dtype, rank, MutableAnyOrigin],
+    result: NDBuffer[dtype, rank, MutAnyOrigin],
     src_ptrs: InlineArray[UnsafePointer[Scalar[dtype]], num_buffers],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
@@ -837,9 +841,9 @@ fn _allreduce_p2p[
     num_buffers: Int = ngpus,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
+        NDBuffer[dtype, rank, MutAnyOrigin], num_buffers
     ],
-    out_buf: NDBuffer[dtype, rank, MutableAnyOrigin],
+    out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     max_num_blocks: Int,
     ctx: DeviceContext,
@@ -871,6 +875,11 @@ fn _allreduce_p2p[
     """
     alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     var num_elements = list_of_in_bufs[0].num_elements()
+
+    # Do nothing if there are no elements to reduce.
+    if num_elements == 0:
+        return
+
     if num_elements % simd_width != 0:
         raise Error(
             "non SIMD-width multiple number of elements unsupported by"
@@ -1080,6 +1089,14 @@ fn _dispatch_max_num_blocks[
     alias default_idx = allreduce_table.query_index[rule_eq_arch_default]()
     constrained[len(default_idx)]()
     alias default_entry = allreduce_table.configs[default_idx[0]]
+    var default_num_blocks = default_entry.num_blocks
+
+    # Override defaults for specific AMD CDNA3 parts regardless of sm_version aliasing
+    alias arch = _accelerator_arch()
+    if "gfx950" in arch:  # MI355 family
+        default_num_blocks = 64
+    elif "gfx942" in arch:  # MI300 family
+        default_num_blocks = 32
 
     # narrowing the search space to matching sm_version and ngpus
     @parameter
@@ -1090,7 +1107,7 @@ fn _dispatch_max_num_blocks[
 
     @parameter
     if not search_domain:
-        return default_entry.num_blocks
+        return default_num_blocks
 
     # get all static num_bytes values in table within the search space
     @parameter
@@ -1121,7 +1138,7 @@ fn _dispatch_max_num_blocks[
             else:
                 break
 
-    return default_entry.num_blocks
+    return default_num_blocks
 
 
 fn get_sm_version() -> StaticString:
@@ -1141,9 +1158,9 @@ fn allreduce[
     use_quickreduce: Bool = False,
 ](
     input_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], 1 if use_multimem else ngpus
+        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
     ],
-    output_buffer: NDBuffer[dtype, rank, MutableAnyOrigin],
+    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
@@ -1203,8 +1220,12 @@ fn allreduce[
       - The `use_multimem` parameter requires P2P access between GPUs to be enabled.
     """
 
-    # TODO: check all devices have the same GPU sm_version
+    # Return early, if the input buffer is empty
+    var num_elements = input_buffers[0].num_elements()
+    if num_elements == 0:
+        return
 
+    # TODO: check all devices have the same GPU sm_version
     alias sm_version = get_sm_version()
     var max_num_blocks = _max_num_blocks.or_else(
         _dispatch_max_num_blocks[ngpus, sm_version](
@@ -1232,7 +1253,7 @@ fn allreduce[
             output_lambda=output_lambda,
             num_buffers=ngpus,
         ](
-            rebind[InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus]](
+            rebind[InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]](
                 input_buffers
             ),
             output_buffer,
@@ -1430,11 +1451,14 @@ fn allreduce_2stage_quickreduce_tile[
     @parameter
     @always_inline
     fn phase1b_reduce():
-        if thread_idx.x < UInt(ngpus):
-            wait_for_flag(
-                flag_buf[my_rank] + comm_flags0_offset + thread_idx.x,
-                flag_color,
-            )
+        if thread_idx.x == UInt(0):
+
+            @parameter
+            for r in range(ngpus):
+                wait_for_flag(
+                    flag_buf[my_rank] + comm_flags0_offset + r,
+                    flag_color,
+                )
         barrier()
 
         @parameter
@@ -1476,11 +1500,14 @@ fn allreduce_2stage_quickreduce_tile[
         # No additional barrier: thread 0 will wait on all flags below and
         # a barrier after the wait will synchronize the block.
 
-        if thread_idx.x < UInt(ngpus):
-            wait_for_flag(
-                flag_buf[my_rank] + comm_flags1_offset + thread_idx.x,
-                flag_color,
-            )
+        if thread_idx.x == UInt(0):
+
+            @parameter
+            for r in range(ngpus):
+                wait_for_flag(
+                    flag_buf[my_rank] + comm_flags1_offset + r,
+                    flag_color,
+                )
         barrier()
 
         @parameter
@@ -1513,7 +1540,7 @@ fn allreduce_2stage_quickreduce[
     output_lambda: elementwise_epilogue_type,
     atom_size: Int,
 ](
-    result: NDBuffer[dtype, rank, MutableAnyOrigin],
+    result: NDBuffer[dtype, rank, MutAnyOrigin],
     local_src: UnsafePointer[Scalar[dtype]],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,

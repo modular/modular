@@ -39,7 +39,7 @@ from algorithm import vectorize
 from bit import count_trailing_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
-from memory import Span
+from memory import LegacyUnsafePointer as UnsafePointer, Span
 
 from utils.numerics import FPUtils, isnan, nan
 from utils.static_tuple import StaticTuple
@@ -108,7 +108,6 @@ fn ceildiv[T: CeilDivable, //](numerator: T, denominator: T) -> T:
     Returns:
         The ceiling of dividing numerator by denominator.
     """
-    # return -(numerator // -denominator)
     return numerator.__ceildiv__(denominator)
 
 
@@ -453,14 +452,14 @@ fn _exp2_float32(x: SIMD[DType.float32, _]) -> type_of(x):
     xc -= m.cast[x.dtype]()
 
     var r = polynomial_evaluate[
-        List[Float32](
-            1.0,
+        [
+            Float32(1.0),
             0.693144857883,
             0.2401793301105,
             5.551834031939e-2,
             9.810352697968e-3,
             1.33336498402e-3,
-        ),
+        ],
     ](xc)
     return type_of(x)(
         from_bits=r.to_bits[u32]()
@@ -577,8 +576,8 @@ trait _Expable:
 fn _exp_taylor[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    alias coefficients = List[Scalar[dtype]](
-        1.0,
+    alias coefficients = [
+        Scalar[dtype](1.0),
         1.0,
         0.5,
         0.16666666666666666667,
@@ -591,7 +590,7 @@ fn _exp_taylor[
         2.7557319223985890653e-7,
         2.5052108385441718775e-8,
         2.0876756987868098979e-9,
-    )
+    ]
     return polynomial_evaluate[
         coefficients if dtype is DType.float64 else coefficients[:8],
     ](x)
@@ -746,12 +745,12 @@ fn _exp2_approx_f32[
     #  but are tweaked (via Remez) to minimize the maximum relative error
     #  across the interval, which improves worst-case behavior vs plain Taylor.
     var p = polynomial_evaluate[
-        List[Float32](
-            1.0000000000,
+        [
+            Float32(1.0000000000),
             0.6951461434,
             0.2275643945,
             0.0771190897,
-        ),
+        ],
     ](r)
 
     # 5) exponent as int lanes (no extra clamp needed due to early float clamp)
@@ -904,8 +903,8 @@ fn _log_base[
 
     var y = (
         polynomial_evaluate[
-            List[Scalar[dtype]](
-                3.3333331174e-1,
+            [
+                Scalar[dtype](3.3333331174e-1),
                 -2.4999993993e-1,
                 2.0000714765e-1,
                 -1.6668057665e-1,
@@ -914,7 +913,7 @@ fn _log_base[
                 1.1676998740e-1,
                 -1.1514610310e-1,
                 7.0376836292e-2,
-            ),
+            ],
         ](x1)
         * x3
     )
@@ -1077,29 +1076,29 @@ fn erf[
     var x_abs = abs(x)
 
     var r_large = polynomial_evaluate[
-        List[Scalar[dtype]](
-            1.28717512e-1,
+        [
+            Scalar[dtype](1.28717512e-1),
             6.34846687e-1,
             1.06777847e-1,
             -2.42545605e-2,
             3.88393435e-3,
             -3.83208680e-4,
             1.72948930e-5,
-        ),
+        ],
     ](min(x_abs, 3.925))
 
     r_large = r_large.fma(x_abs, x_abs)
     r_large = copysign(1 - exp(-r_large), x)
 
     var r_small = polynomial_evaluate[
-        List[Scalar[dtype]](
-            1.28379151e-1,
+        [
+            Scalar[dtype](1.28379151e-1),
             -3.76124859e-1,
             1.12818025e-1,
             -2.67667342e-2,
             4.99339588e-3,
             -5.99104969e-4,
-        ),
+        ],
     ](x_abs * x_abs).fma(x, x)
 
     return x_abs.gt(0.921875).select[dtype](r_large, r_small)
@@ -1168,24 +1167,24 @@ fn tanh[
     var x_squared = xc * xc
 
     var numerator = xc * polynomial_evaluate[
-        List[Scalar[dtype]](
-            4.89352455891786e-03,
+        [
+            Scalar[dtype](4.89352455891786e-03),
             6.37261928875436e-04,
             1.48572235717979e-05,
             5.12229709037114e-08,
             -8.60467152213735e-11,
             2.00018790482477e-13,
             -2.76076847742355e-16,
-        ),
+        ],
     ](x_squared)
 
     var denominator = polynomial_evaluate[
-        List[Scalar[dtype]](
-            4.89352518554385e-03,
+        [
+            Scalar[dtype](4.89352518554385e-03),
             2.26843463243900e-03,
             1.18534705686654e-04,
             1.19825839466702e-06,
-        ),
+        ],
     ](x_squared)
 
     return numerator / denominator
@@ -1557,13 +1556,13 @@ fn acos[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     # Evaluate Remez polynomial using Horner's method
     # Coefficients derived to minimize maximum absolute error
     var poly = polynomial_evaluate[
-        List[Scalar[x.dtype]](
-            0.1666677296e0,
+        [
+            Scalar[x.dtype](0.1666677296e0),
             0.7495029271e-1,
             0.4547423869e-1,
             0.2424046025e-1,
             0.4197454825e-1,
-        )
+        ]
     ](x_squared)
 
     # Final polynomial term: poly * x² * d
@@ -1636,13 +1635,13 @@ fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     # Evaluate Remez polynomial approximation using Horner's method
     # This approximates the series: asin(x)/x ≈ 1 + x²/6 + 3x⁴/40 + ...
     var poly = polynomial_evaluate[
-        List[Scalar[x.dtype]](
-            0.1666677296e0,
+        [
+            Scalar[x.dtype](0.1666677296e0),
             0.7495029271e-1,
             0.4547423869e-1,
             0.2424046025e-1,
             0.4197454825e-1,
-        )
+        ]
     ](d2)
 
     # Final polynomial evaluation: poly*x*x² + x = x*(poly*x² + 1)
@@ -1907,13 +1906,13 @@ fn _atanh_float32(x: SIMD) -> type_of(x):
     # When x is in the range [0, 0.5], we use a polynomial approximation.
     # P(x) = x + x^3*(c[4] + x^2 * (c[3] + x^2 * (... x^2 * c[0]) ... )).
     var p = polynomial_evaluate[
-        List[Scalar[x.dtype]](
-            0.3333373963832855224609375,
+        [
+            Scalar[x.dtype](0.3333373963832855224609375),
             0.1997792422771453857421875,
             0.14672131836414337158203125,
             8.2311116158962249755859375e-2,
             0.1819281280040740966796875,
-        )
+        ]
     ](x2)
     p = x3.fma(p, x)
 
@@ -1956,7 +1955,7 @@ fn atanh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     ]()
 
     @parameter
-    if dtype.bit_width() <= 16:
+    if bit_width_of[dtype]() <= 16:
         # We promote the input to float32 and then cast back to the original
         # type. This is done to avoid precision issues that can occur when
         # using the lower-precision floating-point types.
@@ -2320,14 +2319,14 @@ fn _cbrtf(x: Float32) -> Float32:
     # Polynomial approximation for cbrt(d) where d ∈ [0.5, 1)
     # Using Horner's method for efficient evaluation
     var poly = polynomial_evaluate[
-        List[Scalar[x.dtype]](
-            2.2241256237030029296875,
+        [
+            Scalar[x.dtype](2.2241256237030029296875),
             -3.8095417022705078125,
             5.898262500762939453125,
             -5.532182216644287109375,
             2.8208892345428466796875,
             -0.601564466953277587890625,
-        )
+        ]
     ](d)
 
     # Newton-Raphson refinement step

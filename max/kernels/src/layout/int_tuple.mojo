@@ -60,7 +60,7 @@ from os import abort
 
 from buffer import DimList
 from builtin.range import _StridedRange
-from memory import memcpy
+from memory import LegacyUnsafePointer as UnsafePointer, memcpy
 from sys.intrinsics import _type_is_eq_parse_time
 
 from utils.numerics import max_finite
@@ -273,7 +273,7 @@ that are not known at compile time or have not been specified.
 
 
 @register_passable("trivial")
-struct _IntTupleIter[origin: ImmutableOrigin](Iterable, Iterator):
+struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
     """Iterator for traversing elements of an IntTuple."""
 
     alias IteratorType[
@@ -338,7 +338,7 @@ struct IntTuple(
 
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _IntTupleIter[ImmutableOrigin.cast_from[iterable_origin]]
+    ]: Iterator = _IntTupleIter[ImmutOrigin.cast_from[iterable_origin]]
 
     var _store: IntArray
     """The underlying storage for the `IntTuple`.
@@ -376,7 +376,7 @@ struct IntTuple(
     @staticmethod
     @always_inline("nodebug")
     fn elements_size[
-        _origin: ImmutableOrigin, n: Int
+        _origin: ImmutOrigin, n: Int
     ](elements: InlineArray[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
         """Calculate the total storage size needed for IntTuples at a specific index.
 
@@ -828,6 +828,24 @@ struct IntTuple(
         var result = IntTuple(num_elems=self.count_values())
         _ = result._fill(self)
         return result
+
+    fn product_flatten(self) -> IntTuple:
+        """Coalesces a nested `IntTuple` into a single-level `IntTuple`, by multiplying all the
+        values together.
+
+        Returns:
+            A new `IntTuple` containing the products of each top level tuple, in a flat structure.
+        """
+
+        var rank = len(self)
+
+        var tup = IntTuple(num_elems=rank)
+
+        for i in range(rank):
+            var product = product(self[i])
+            tup.replace_entry(i, int_value=product)
+
+        return tup
 
     fn all_known(self) -> Bool:
         """Check if all values in this tuple hierarchy are known (not `UNKNOWN_VALUE`).
@@ -2853,12 +2871,15 @@ fn compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
     return to_nest(shape, flat_result)
 
 
-fn to_index_list[rank: Int](t: IntTuple) -> IndexList[rank]:
+fn to_index_list[
+    rank: Int, element_type: DType = DType.int64
+](t: IntTuple) -> IndexList[rank, element_type=element_type]:
     """
     Converts an IntTuple to a flattened IndexList with the same values.
 
     Parameters:
         rank: The rank of the resulting IndexList.
+        element_type: Element type, must be integer type.
 
     Args:
         t: The `IntTuple` defining the values.
@@ -2866,7 +2887,7 @@ fn to_index_list[rank: Int](t: IntTuple) -> IndexList[rank]:
     Returns:
         An IndexList filled with the values of t.
     """
-    var res = IndexList[rank]()
+    var res = IndexList[rank, element_type=element_type]()
     var flattened_t = t.flatten()
     for i in range(len(t)):
         res[i] = Int(flattened_t[i])

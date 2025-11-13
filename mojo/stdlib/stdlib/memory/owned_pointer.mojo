@@ -19,6 +19,8 @@ from memory import OwnedPointer
 ```
 """
 
+from memory import LegacyUnsafePointer as UnsafePointer
+
 
 @register_passable
 struct OwnedPointer[T: AnyType]:

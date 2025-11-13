@@ -21,11 +21,11 @@ def test_log_trace():
     print("=== Test logging at trace level")
     var log = Logger[Level.TRACE]()
 
-    # CHECK: TRACE::: hello
+    # CHECK: {{.*}}TRACE{{.*}}::: hello
     log.trace("hello")
 
     var log2 = Logger[Level.DEBUG]()
-    # CHECK-NOT: TRACE::: hello
+    # CHECK-NOT: {{.*}}TRACE{{.*}}::: hello
     log2.trace("hello")
 
 
@@ -34,10 +34,10 @@ def test_log_info():
     print("=== Test logging at info level")
     var log = Logger[Level.INFO]()
 
-    # CHECK-NOT: DEBUG::: hello world
+    # CHECK-NOT: {{.*}}DEBUG{{.*}}::: hello world
     log.debug("hello", "world")
 
-    # CHECK: INFO::: hello
+    # CHECK: {{.*}}INFO{{.*}}::: hello
     log.info("hello")
 
 
@@ -46,10 +46,10 @@ def test_log_noset():
     print("=== Test no logging by default")
     var log = Logger()
 
-    # CHECK-NOT: DEBUG::: hello world
+    # CHECK-NOT: {{.*}}DEBUG{{.*}}::: hello world
     log.debug("hello", "world")
 
-    # CHECK-NOT: INFO::: hello
+    # CHECK-NOT: {{.*}}INFO{{.*}}::: hello
     log.info("hello")
 
 
@@ -59,7 +59,8 @@ def test_log_with_prefix():
 
     var log = Logger[Level.TRACE](prefix="[XYZ] ")
 
-    # CHECK: [XYZ] hello
+    # CHECK: [XYZ]
+    # CHECK: hello
     log.trace("hello")
 
 
@@ -69,7 +70,7 @@ def test_log_with_location():
 
     alias log = Logger[Level.TRACE](prefix="", source_location=True)
 
-    # CHECK: test_logger.mojo:73:14] hello
+    # CHECK: test_logger.mojo:74:14] hello
     log.trace("hello")
 
 

@@ -22,6 +22,10 @@ from os import listdir
 
 from collections import InlineArray, List
 from collections.string.string_slice import _unsafe_strlen
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+)
 from io import FileDescriptor
 from sys import CompilationTarget, external_call, is_gpu
 from sys.ffi import c_char, c_int
@@ -438,7 +442,8 @@ fn isatty(fd: Int) -> Bool:
     """Checks whether a file descriptor refers to a terminal.
 
     Returns `True` if the file descriptor `fd` is open and connected to a
-    tty(-like) device, otherwise `False`.
+    tty(-like) device, otherwise `False`. On GPUs, the function always returns
+    `False`.
 
     Args:
         fd: A file descriptor.
@@ -457,4 +462,5 @@ fn isatty(fd: Int) -> Bool:
             print("Output is redirected")
         ```
     """
+
     return FileDescriptor(fd).isatty()

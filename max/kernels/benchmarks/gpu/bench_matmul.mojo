@@ -171,15 +171,15 @@ fn bench_matmul[
                 offset_a = (iteration * stride_a) % cache_a
                 offset_b = (iteration * stride_b) % cache_b
                 offset_c = (iteration * stride_c) % cache_c
-            var tensor_a = NDBuffer[dtype, 2, MutableAnyOrigin, shape_a](
+            var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
                 buffer_a.unsafe_ptr() + offset_a, shape_a_dim
             )
-            var tensor_b = NDBuffer[dtype, 2, MutableAnyOrigin, shape_b](
+            var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
                 buffer_b.unsafe_ptr() + offset_b, shape_b_dim
             )
-            var tensor_c = NDBuffer[
-                DType.bfloat16, 2, MutableAnyOrigin, shape_c
-            ](buffer_c.unsafe_ptr() + offset_c, shape_c_dim)
+            var tensor_c = NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c](
+                buffer_c.unsafe_ptr() + offset_c, shape_c_dim
+            )
 
             @parameter
             if use_vendor_blas:
@@ -199,6 +199,11 @@ fn bench_matmul[
 
         b.iter_custom[kernel_launch](ctx)
 
+    var flops = ThroughputMeasure(
+        BenchMetric.flops,
+        # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
+        2 * shape_c_dim[0] * shape_c_dim[1] * shape_a_dim[1],
+    )
     b.bench_function[bench_func](
         BenchId(
             _get_run_name[
@@ -212,11 +217,7 @@ fn bench_matmul[
             ](shape_c_dim, shape_a_dim, shape_b_dim)
         ),
         # TODO: Pick relevant benchmetric
-        ThroughputMeasure(
-            BenchMetric.flops,
-            # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-            2 * shape_c_dim[0] * shape_c_dim[1] * shape_a_dim[1],
-        ),
+        [flops],
     )
 
     # Retain our buffers till the end.

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import OwnedPointer
+from memory import LegacyUnsafePointer as UnsafePointer, OwnedPointer
 from testing import *
 
 

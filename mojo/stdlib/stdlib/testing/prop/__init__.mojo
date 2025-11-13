@@ -13,3 +13,5 @@
 """A property testing package."""
 
 from .random import Rng
+from .runner import PropTest, PropTestConfig
+from .strategy import Strategy

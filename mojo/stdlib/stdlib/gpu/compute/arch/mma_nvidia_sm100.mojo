@@ -17,9 +17,10 @@ from sys import size_of
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
 
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import IndexList
 
 # ===----------------------------------------------------------------------=== #
@@ -882,6 +883,169 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
             New descriptor with updated base address.
         """
         return Self(self.desc + ((offset & 0x3FFFF) >> 4))
+
+
+@register_passable("trivial")
+struct MMASmemDescriptorPair(ImplicitlyCopyable, Movable):
+    """Descriptor for shared memory operands tcgen05 mma instructions.
+
+    This struct represents a descriptor that encodes information about shared memory layout
+    and access patterns for warp group matrix multiply operations. The descriptor contains
+    the following bit fields:
+
+    | Bit field | Size | Description |
+    |-----------|------|-------------|
+    | 0-13   |  14  | Base address in shared memory |
+    | 16-29   |  14  | LBO: leading dim byte offset |
+    | 32-45   |  14  | SBO: stride dim byte offset |
+    | 46-48   |   3  | Fixed constant value: 0b001 |
+    | 49-51   |   3  | Matrix base offset, 0 for canonical layouts |
+    | 52      |   1  | Leading dimension stride mode:<br>&nbsp;&nbsp;0: byte offset relative<br>&nbsp;&nbsp;1: byte address absolute<br>(only used for 48B K tile) |
+    | 53-60   |   8  | Fixed constant value: 0 |
+    | 61-63   |   3  | Swizzle mode:<br>&nbsp;&nbsp;0: No swizzling<br>&nbsp;&nbsp;1: 128-Byte with 32B atomic swizzling<br>&nbsp;&nbsp;2: 128-Byte swizzling<br>&nbsp;&nbsp;4: 64-Byte swizzling<br>&nbsp;&nbsp;6: 32-Byte swizzling |
+
+    Note:
+
+    - Some bits are unused.
+    - Base address, LBO, and SBO ignore 4 least significant bits.
+
+    See https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-shared-memory-desc-layout
+
+    """
+
+    var hi: UInt32
+    """The low 32-bits of the descriptor."""
+    var lo: UInt32
+    """The high 32-bits of the descriptor."""
+
+    @always_inline
+    fn __init__(out self, hi: UInt32, lo: UInt32):
+        """Initialize descriptor with raw 64-bit value.
+
+        This constructor allows creating a descriptor directly from a 64-bit integer
+        that already contains the properly formatted bit fields for the descriptor.
+
+        The implicit attribute enables automatic conversion from `UInt64` to `MMASmemDescriptor`.
+
+        Args:
+            hi: A 32-bit integer containing the upper half of the descriptor layout.
+            lo: A 32-bit integer containing the lower half of the descriptor layout.
+        """
+        self.hi = hi
+        self.lo = lo
+
+    @always_inline
+    fn _insert_bit[start_bit: Int](self, val: UInt32) -> Self:
+        """Insert bits at specified position in descriptor.
+
+        Parameters:
+            start_bit: Starting bit position.
+
+        Args:
+            val: Value to insert.
+
+        Returns:
+            Updated descriptor value with inserted bits.
+        """
+
+        @parameter
+        if start_bit < 32:
+            return Self(self.hi, self.lo | (val << start_bit))
+        else:
+            return Self(self.hi | (val << (start_bit - 32)), self.lo)
+
+    @staticmethod
+    @always_inline
+    fn create[
+        stride_byte_offset: Int,
+        leading_byte_offset: Int,
+        swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    ](
+        smem_ptr: UnsafePointer[
+            _, address_space = AddressSpace.SHARED, *_, **_
+        ],
+    ) -> Self:
+        """Create a descriptor for shared memory operand.
+
+        Parameters:
+            stride_byte_offset: Stride dimension offset in bytes.
+            leading_byte_offset: Leading dimension stride in bytes.
+            swizzle_mode: Memory access pattern mode.
+
+        Args:
+            smem_ptr: Pointer to shared memory operand.
+
+        Returns:
+            Initialized descriptor for the shared memory operand.
+        """
+
+        # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
+        # WGMMA enumerates these as 0, 3, 2, 1.
+        @parameter
+        fn _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
+            @parameter
+            if mode == TensorMapSwizzle.SWIZZLE_NONE:
+                return 0
+            elif mode == TensorMapSwizzle.SWIZZLE_32B:
+                return 6
+            elif mode == TensorMapSwizzle.SWIZZLE_64B:
+                return 4
+            elif mode == TensorMapSwizzle.SWIZZLE_128B:
+                return 2
+            else:
+                constrained[False, String("Unsupported swizzle mode: ", mode)]()
+                return 0
+
+        alias swizzle = _convert_swizzle_enum[swizzle_mode._value]()
+
+        # Extract 18 bits and ignore 4 LSB.
+        var base_ptr = UInt32(Int(smem_ptr))
+        var start_address = UInt32((base_ptr & 0x3FFFF) >> 4)
+
+        # Ignore 4 LSB.
+        var sbo = UInt32((stride_byte_offset & 0x3FFF) >> 4)
+        var lbo = UInt32((leading_byte_offset & 0x3FFF) >> 4)
+
+        # Start from LSB. Mask out higher bits to avoid overwriting.
+        var desc = Self(0, 0)
+        # bits  0-13 address in share memory
+        desc = desc._insert_bit[0](start_address)
+        # bits 14-16 unused
+        # bits 16-29 leading dim byte offset
+        desc = desc._insert_bit[16](lbo)
+        # bits 30-32 unused
+        # bits 32-45 stride dim byte offset
+        desc = desc._insert_bit[32](sbo)
+        # bits 46-48 001
+        desc = desc._insert_bit[46](1)
+        # bits 49-51 matrix base offset, not supported
+        # bits 52    LBO mode, only matters for 48B K tile and not supported
+        # bits 53-60 fixed, 0
+        # bits 61-63 swizzle type
+        desc = desc._insert_bit[61](UInt32(swizzle))
+
+        return desc
+
+    @always_inline
+    fn __iadd__(mut self, offset: UInt32):
+        """Add offset to descriptor's base address in-place.
+
+        Args:
+            offset: Byte offset to add to base address.
+        """
+        self = self + offset
+
+    @always_inline
+    fn __add__(self, offset: UInt32) -> Self:
+        """Add offset to descriptor's base address.
+
+        Args:
+            offset: Byte offset to add to base address.
+
+        Returns:
+            New descriptor with updated base address.
+        """
+        return Self(self.hi, self.lo + ((offset & 0x3FFFF) >> 4))
 
 
 # ===----------------------------------------------------------------------=== #

@@ -21,6 +21,9 @@ common --incompatible_avoid_hardcoded_objc_compilation_flags
 # https://github.com/aspect-build/tools_telemetry
 common --repo_env=ASPECT_TOOLS_TELEMETRY=-all
 
+# Prevent .pyc files from being generated for repository_rules, nice when debugging hermiticity
+common --repo_env=PYTHONDONTWRITEBYTECODE=true
+
 # Retry dependency download flakes
 common --experimental_repository_downloader_retries=5
 
@@ -72,6 +75,14 @@ build --flag_alias=mojocopt=@rules_mojo//:mojo_copt
 build --dynamic_mode=off
 build --features=-supports_dynamic_linker
 
+# Make sure repository rules don't use host tools
+common --repo_env=CC=false
+common --repo_env=CXX=false
+
+# Force hermetic toolchain, make sure we don't accidentally used the default one
+common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+common --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
+
 # Make sure we use llvm-ar on macOS for exec config too
 common --experimental_propagate_custom_flag=@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos
 # Always use llvm-ar which works fine for macOS
@@ -82,6 +93,7 @@ common --@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos=false
 build --features=-layering_check --host_features=-layering_check
 
 build --remote_retries=2
+build --remote_timeout=10m
 # Buildbuddy cache optimization recommendations
 build --experimental_profile_include_primary_output
 build --experimental_profile_include_target_label
@@ -166,6 +178,8 @@ build:remote --repo_env=MODULAR_REMOTE_EXEC=1
 build --internal_spawn_scheduler
 build:linux --spawn_strategy=dynamic,remote,worker,sandboxed,standalone
 build:macos --spawn_strategy=remote,worker,sandboxed,standalone
+build:macos --strategy=CppCompile=dynamic,remote,worker,sandboxed,standalone
+build:macos --strategy=CppLink=dynamic,remote,worker,sandboxed,standalone
 
 # https://github.com/bazelbuild/bazel/issues/25221
 build --strategy=TestRunner=remote,worker,sandboxed,standalone
@@ -183,6 +197,8 @@ build:ci-no-config --ui_event_filters=+WARNING
 build:ci-no-config --verbose_failures
 # Disable dynamic execution for remote exec
 build:ci-no-config --spawn_strategy=remote,worker,sandboxed,standalone
+build:ci-no-config --strategy=CppCompile=remote,worker,sandboxed,standalone
+build:ci-no-config --strategy=CppLink=remote,worker,sandboxed,standalone
 
 build:ci --config=ci-no-config
 # Set CI builds to lower priority than local builds, some CI builds override this

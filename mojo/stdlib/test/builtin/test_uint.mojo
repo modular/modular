@@ -20,6 +20,7 @@ from testing import (
     assert_true,
     TestSuite,
 )
+from sys import bit_width_of
 
 
 def test_simple_uint():
@@ -94,7 +95,7 @@ def test_inequality():
 
 def test_properties():
     assert_equal(UInt.MIN, UInt(0))
-    if DType.int.bit_width() == 32:
+    if bit_width_of[DType.int]() == 32:
         assert_equal(UInt.MAX, (1 << 32) - 1)
     else:
         assert_equal(UInt.MAX, (1 << 64) - 1)
@@ -255,7 +256,7 @@ def test_hash():
 def test_comptime():
     alias a: UInt = 32
     # Verify that count_trailing_zeros works at comptime.
-    alias n = count_trailing_zeros(a)
+    alias n = count_trailing_zeros(Int(a))
     assert_equal(n, 5)
 
 

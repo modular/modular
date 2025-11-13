@@ -2,7 +2,7 @@
 
 Author: Laszlo Kindrat
 Date: Oct 13, 2025
-Status: Accepted.
+Status: Implemented.
 
 The `mojo test` utility has not gained meaningful adoption within Modular since
 its inception two years ago. In mid-2024, it was deprioritized and (aside from a

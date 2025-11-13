@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import TestSuite, assert_equal
 from test_utils import MoveCopyCounter, DelCounter
 

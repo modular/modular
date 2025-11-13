@@ -13,7 +13,7 @@
 
 from internal_utils import HostNDBuffer
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import IntTuple, Layout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 
 from utils.index import IndexList
 
@@ -48,9 +48,29 @@ def do_test[page_size: Int, layout_block_size: Int]():
     var collection = PagedKVCacheCollection[
         DType.float32, kv_params, page_size
     ](
-        blocks.tensor,
-        cache_lengths.tensor,
-        lookup_table.tensor,
+        LayoutTensor[blocks.dtype, Layout.row_major[6](), MutAnyOrigin](
+            blocks.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                blocks.to_layout_tensor().runtime_layout.shape.value,
+                blocks.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[lookup_table.dtype, Layout.row_major[2](), ImmutAnyOrigin](
+            lookup_table.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                lookup_table.to_layout_tensor().runtime_layout.shape.value,
+                lookup_table.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_seq_length,
         max_cache_length,
     )

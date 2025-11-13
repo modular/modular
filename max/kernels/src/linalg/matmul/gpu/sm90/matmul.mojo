@@ -19,7 +19,7 @@ from buffer.dimlist import DimList
 from gpu.globals import WARPGROUP_SIZE
 from gpu.grid_controls import pdl_launch_attributes
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import H100
 from layout import Layout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -36,6 +36,8 @@ from ..tile_scheduler import MatmulSchedule, RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
 from .matmul_kernels import HopperMatmulSM90Kernel, find_K_alignment_upto_16B
 from .matmul_kernel_persistent import HopperMatmulSM90Kernel
+
+alias logger = Logger()
 
 
 fn _is_valid_cluster_shape[
@@ -222,8 +224,6 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     constrained[
         k_align in (4, 8, 16), "H100 matmul K dim must be multiple of 4B"
     ]()
-
-    var logger = Logger()
 
     logger.info("Executing Warp Specialized Gemm with Multicasting")
     logger.info("block_tile_shape:", config.block_tile_shape)
@@ -571,8 +571,6 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         BM > 64 or (BM == 64 and config.num_consumer == 1),
         "Only support 1 consumer for BM=64",
     ]()
-
-    var logger = Logger()
 
     logger.info("Executing Split-K Warp Specialized GEMM with Multicasting")
     logger.info("block_tile_shape:", config.block_tile_shape)

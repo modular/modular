@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from math import isclose
 from random import rand
 
@@ -120,7 +121,7 @@ fn test_attention[
             Index(batch_size, num_keys, kv_num_heads, depth)
         ),
     )
-    var mask = LayoutTensor[mask_type, layout_4d, MutableAnyOrigin](
+    var mask = LayoutTensor[mask_type, layout_4d, MutAnyOrigin](
         mask_ptr,
         RuntimeLayout[layout_4d].row_major(
             Index(batch_size, num_heads, seq_len, num_keys)

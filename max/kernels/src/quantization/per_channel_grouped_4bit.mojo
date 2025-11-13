@@ -14,7 +14,7 @@ from math import ceil, ceildiv
 from sys.info import size_of
 
 from layout import Layout, LayoutTensor
-from memory import bitcast, memcpy
+from memory import LegacyUnsafePointer as UnsafePointer, bitcast, memcpy
 
 from utils import IndexList, StaticTuple, product
 

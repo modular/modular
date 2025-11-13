@@ -481,7 +481,7 @@ We'll create an alias so that we don't have to repeat the type information for
 each kernel launch:
 
 ```mojo :clear
-alias InTensor = LayoutTensor[dtype, layout, MutableAnyOrigin]
+alias InTensor = LayoutTensor[dtype, layout, MutAnyOrigin]
 ```
 
 More information on [origins here](/mojo/manual/values/lifetimes).
@@ -574,10 +574,10 @@ Set up the output buffer/tensor for the host and device:
 var out_buffer = ctx.enqueue_create_buffer[dtype](blocks)
 
 # Zero the values on the device as they'll be used to accumulate results
-_ = out_buffer.enqueue_fill(0)
+out_buffer.enqueue_fill(0)
 
 alias out_layout = Layout.row_major(blocks)
-alias OutTensor = LayoutTensor[dtype, out_layout, MutableAnyOrigin]
+alias OutTensor = LayoutTensor[dtype, out_layout, MutAnyOrigin]
 
 var out_tensor = OutTensor(out_buffer)
 ```
@@ -799,15 +799,15 @@ with in_buffer.map_to_host() as host_buffer:
     iota(host_buffer.unsafe_ptr(), elements_in)
 
 # Zero output buffer values
-_ = out_buffer.enqueue_fill(0)
+out_buffer.enqueue_fill(0)
 
 # Create the LayoutTensors
 alias layout = Layout.row_major(blocks, threads)
-alias InTensor = LayoutTensor[dtype, layout, MutableAnyOrigin]
+alias InTensor = LayoutTensor[dtype, layout, MutAnyOrigin]
 var in_tensor = InTensor(in_buffer)
 
 alias out_layout = Layout.row_major(blocks)
-alias OutTensor = LayoutTensor[dtype, out_layout, MutableAnyOrigin]
+alias OutTensor = LayoutTensor[dtype, out_layout, MutAnyOrigin]
 var out_tensor = OutTensor(out_buffer)
 
 fn reduce_sum(in_tensor: InTensor, out_tensor: OutTensor):

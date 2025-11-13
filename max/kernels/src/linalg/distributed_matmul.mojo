@@ -21,6 +21,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from utils import IndexList
 
 from .matmul.gpu import _matmul_gpu
+from memory import LegacyUnsafePointer as UnsafePointer
 
 alias elementwise_epilogue_type = fn[
     input_index: Int, dtype: DType, rank: Int, width: Int, *, alignment: Int
@@ -40,16 +41,16 @@ fn _matmul_allreduce[
     out_static_shape: DimList,
 ](
     a_buffers: InlineArray[
-        NDBuffer[a_dtype, 2, MutableAnyOrigin, a_static_shape], ngpus
+        NDBuffer[a_dtype, 2, MutAnyOrigin, a_static_shape], ngpus
     ],
     b_buffers: InlineArray[
-        NDBuffer[b_dtype, 2, MutableAnyOrigin, b_static_shape], ngpus
+        NDBuffer[b_dtype, 2, MutAnyOrigin, b_static_shape], ngpus
     ],
     c_temp_buffers: InlineArray[
-        NDBuffer[out_dtype, 2, MutableAnyOrigin, c_static_shape], ngpus
+        NDBuffer[out_dtype, 2, MutAnyOrigin, c_static_shape], ngpus
     ],
     output_buffers: InlineArray[
-        NDBuffer[out_dtype, 2, MutableAnyOrigin, out_static_shape], ngpus
+        NDBuffer[out_dtype, 2, MutAnyOrigin, out_static_shape], ngpus
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     ctxs: List[DeviceContext],
@@ -68,9 +69,9 @@ fn _matmul_allreduce[
     @parameter
     for i in range(ngpus):
         allreduce[ngpus=ngpus, output_lambda = outputs_lambda[input_index=i]](
-            rebind[
-                InlineArray[NDBuffer[out_dtype, 2, MutableAnyOrigin], ngpus]
-            ](c_temp_buffers),
+            rebind[InlineArray[NDBuffer[out_dtype, 2, MutAnyOrigin], ngpus]](
+                c_temp_buffers
+            ),
             output_buffers[i],
             rank_sigs,
             ctxs[i],
@@ -91,16 +92,16 @@ fn _matmul_allreduce_split_m[
     overlap_with_dpl: Bool = True,
 ](
     a_buffers: InlineArray[
-        NDBuffer[a_dtype, 2, MutableAnyOrigin, a_static_shape], ngpus
+        NDBuffer[a_dtype, 2, MutAnyOrigin, a_static_shape], ngpus
     ],
     b_buffers: InlineArray[
-        NDBuffer[b_dtype, 2, MutableAnyOrigin, b_static_shape], ngpus
+        NDBuffer[b_dtype, 2, MutAnyOrigin, b_static_shape], ngpus
     ],
     c_temp_buffers: InlineArray[
-        NDBuffer[out_dtype, 2, MutableAnyOrigin, c_static_shape], ngpus
+        NDBuffer[out_dtype, 2, MutAnyOrigin, c_static_shape], ngpus
     ],
     output_buffers: InlineArray[
-        NDBuffer[out_dtype, 2, MutableAnyOrigin, out_static_shape], ngpus
+        NDBuffer[out_dtype, 2, MutAnyOrigin, out_static_shape], ngpus
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     ctxs: List[DeviceContext],
@@ -123,13 +124,13 @@ fn _matmul_allreduce_split_m[
 
     # Create list of partial A and C NDBuffers for matmul.
     var A_parts = InlineArray[
-        NDBuffer[a_dtype, 2, MutableAnyOrigin, a_part_static_shape], ngpus
+        NDBuffer[a_dtype, 2, MutAnyOrigin, a_part_static_shape], ngpus
     ](fill={})
     var C_parts = InlineArray[
-        NDBuffer[out_dtype, 2, MutableAnyOrigin, c_part_static_shape], ngpus
+        NDBuffer[out_dtype, 2, MutAnyOrigin, c_part_static_shape], ngpus
     ](fill={})
     var Out_parts = InlineArray[
-        NDBuffer[out_dtype, 2, MutableAnyOrigin, c_part_static_shape], ngpus
+        NDBuffer[out_dtype, 2, MutAnyOrigin, c_part_static_shape], ngpus
     ](fill={})
 
     # Overlap matmul with previous partition's allreduce
@@ -139,19 +140,19 @@ fn _matmul_allreduce_split_m[
         @parameter
         for i in range(ngpus):
             A_parts[i] = NDBuffer[
-                a_dtype, 2, MutableAnyOrigin, a_part_static_shape
+                a_dtype, 2, MutAnyOrigin, a_part_static_shape
             ](
                 a_buffers[i].data + stage * m_part * k,
                 DimList(curr_m, k),
             )
             C_parts[i] = NDBuffer[
-                out_dtype, 2, MutableAnyOrigin, c_part_static_shape
+                out_dtype, 2, MutAnyOrigin, c_part_static_shape
             ](
                 c_temp_buffers[i].data + stage * length,
                 DimList(curr_m, n),
             )
             Out_parts[i] = NDBuffer[
-                out_dtype, 2, MutableAnyOrigin, c_part_static_shape
+                out_dtype, 2, MutAnyOrigin, c_part_static_shape
             ](
                 output_buffers[i].data + stage * length,
                 DimList(curr_m, n),
@@ -199,7 +200,7 @@ fn _matmul_allreduce_split_m[
                 pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
             ](
                 rebind[
-                    InlineArray[NDBuffer[out_dtype, 2, MutableAnyOrigin], ngpus]
+                    InlineArray[NDBuffer[out_dtype, 2, MutAnyOrigin], ngpus]
                 ](C_parts),
                 Out_parts[i],
                 rank_sigs,
@@ -222,16 +223,16 @@ fn _matmul_allreduce_split_n[
     overlap_with_dpl: Bool = True,
 ](
     a_buffers: InlineArray[
-        NDBuffer[a_dtype, 2, MutableAnyOrigin, a_static_shape], ngpus
+        NDBuffer[a_dtype, 2, MutAnyOrigin, a_static_shape], ngpus
     ],
     b_buffers: InlineArray[
-        NDBuffer[b_dtype, 2, MutableAnyOrigin, b_static_shape], ngpus
+        NDBuffer[b_dtype, 2, MutAnyOrigin, b_static_shape], ngpus
     ],
     c_temp_buffers: InlineArray[
-        NDBuffer[out_dtype, 2, MutableAnyOrigin, c_static_shape], ngpus
+        NDBuffer[out_dtype, 2, MutAnyOrigin, c_static_shape], ngpus
     ],
     output_buffers: InlineArray[
-        NDBuffer[out_dtype, 2, MutableAnyOrigin, out_static_shape], ngpus
+        NDBuffer[out_dtype, 2, MutAnyOrigin, out_static_shape], ngpus
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     ctxs: List[DeviceContext],
@@ -258,13 +259,13 @@ fn _matmul_allreduce_split_n[
 
     # Create list of partial B and C NDBuffers for matmul.
     var B_parts = InlineArray[
-        NDBuffer[b_dtype, 2, MutableAnyOrigin, b_part_static_shape], ngpus
+        NDBuffer[b_dtype, 2, MutAnyOrigin, b_part_static_shape], ngpus
     ](fill={})
     var C_parts = InlineArray[
-        NDBuffer[out_dtype, 2, MutableAnyOrigin, c_part_static_shape], ngpus
+        NDBuffer[out_dtype, 2, MutAnyOrigin, c_part_static_shape], ngpus
     ](fill={})
     var Out_parts = InlineArray[
-        NDBuffer[out_dtype, 2, MutableAnyOrigin, c_part_static_shape], ngpus
+        NDBuffer[out_dtype, 2, MutAnyOrigin, c_part_static_shape], ngpus
     ](fill={})
 
     # Overlap matmul with previous partition's allreduce
@@ -275,19 +276,19 @@ fn _matmul_allreduce_split_n[
         @parameter
         for i in range(ngpus):
             B_parts[i] = NDBuffer[
-                b_dtype, 2, MutableAnyOrigin, b_part_static_shape
+                b_dtype, 2, MutAnyOrigin, b_part_static_shape
             ](
                 b_buffers[i].data + stage * n_part * k,
                 DimList(n_part, k),
             )
             C_parts[i] = NDBuffer[
-                out_dtype, 2, MutableAnyOrigin, c_part_static_shape
+                out_dtype, 2, MutAnyOrigin, c_part_static_shape
             ](
                 c_temp_buffers[i].data + stage * length,
                 DimList(m, n_part),
             )
             Out_parts[i] = NDBuffer[
-                out_dtype, 2, MutableAnyOrigin, c_part_static_shape
+                out_dtype, 2, MutAnyOrigin, c_part_static_shape
             ](
                 output_buffers[i].data + stage * length,
                 DimList(m, n_part),
@@ -328,7 +329,7 @@ fn _matmul_allreduce_split_n[
                 pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
             ](
                 rebind[
-                    InlineArray[NDBuffer[out_dtype, 2, MutableAnyOrigin], ngpus]
+                    InlineArray[NDBuffer[out_dtype, 2, MutAnyOrigin], ngpus]
                 ](C_parts),
                 Out_parts[i],
                 rank_sigs,
@@ -351,16 +352,16 @@ fn matmul_allreduce[
     overlap_with_dpl: Bool = True,
 ](
     a_buffers: InlineArray[
-        NDBuffer[a_dtype, 2, MutableAnyOrigin, a_static_shape], ngpus
+        NDBuffer[a_dtype, 2, MutAnyOrigin, a_static_shape], ngpus
     ],
     b_buffers: InlineArray[
-        NDBuffer[b_dtype, 2, MutableAnyOrigin, b_static_shape], ngpus
+        NDBuffer[b_dtype, 2, MutAnyOrigin, b_static_shape], ngpus
     ],
     c_temp_buffers: InlineArray[
-        NDBuffer[out_dtype, 2, MutableAnyOrigin, c_static_shape], ngpus
+        NDBuffer[out_dtype, 2, MutAnyOrigin, c_static_shape], ngpus
     ],
     output_buffers: InlineArray[
-        NDBuffer[out_dtype, 2, MutableAnyOrigin, out_static_shape], ngpus
+        NDBuffer[out_dtype, 2, MutAnyOrigin, out_static_shape], ngpus
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     ctxs: List[DeviceContext],
@@ -435,16 +436,16 @@ fn matmul_allreduce[
     out_static_shape: DimList,
 ](
     a_buffers: InlineArray[
-        NDBuffer[a_dtype, 2, MutableAnyOrigin, a_static_shape], ngpus
+        NDBuffer[a_dtype, 2, MutAnyOrigin, a_static_shape], ngpus
     ],
     b_buffers: InlineArray[
-        NDBuffer[b_dtype, 2, MutableAnyOrigin, b_static_shape], ngpus
+        NDBuffer[b_dtype, 2, MutAnyOrigin, b_static_shape], ngpus
     ],
     c_temp_buffers: InlineArray[
-        NDBuffer[out_dtype, 2, MutableAnyOrigin, c_static_shape], ngpus
+        NDBuffer[out_dtype, 2, MutAnyOrigin, c_static_shape], ngpus
     ],
     output_buffers: InlineArray[
-        NDBuffer[out_dtype, 2, MutableAnyOrigin, out_static_shape], ngpus
+        NDBuffer[out_dtype, 2, MutAnyOrigin, out_static_shape], ngpus
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     ctxs: List[DeviceContext],

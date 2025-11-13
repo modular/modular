@@ -156,8 +156,17 @@ fi
         "-o",
         "xfail_strict=true",
         "-o",
+        "filterwarnings=error::pytest.PytestUnhandledCoroutineWarning",
+        "-o",
         f"junit_suite_name={os.environ['TEST_TARGET']}",
     ]
+
+    try:
+        _ = importlib.import_module("pytest_asyncio")
+        pytest_args.append("--asyncio-mode=auto")
+    except ModuleNotFoundError:
+        pass
+
     if namespace.k:
         pytest_args.extend(["-k", namespace.k])
     elif namespace.n:  # Skip xdist when filtering

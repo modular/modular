@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from memory import LegacyUnsafePointer as UnsafePointer
 from sys import simd_width_of
 
 from gpu import barrier, block_idx, lane_id
@@ -30,6 +31,15 @@ from .mha_gfx942 import Attention, MHAAttentionConfig
 
 @fieldwise_init
 struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
+    # share shared memory for k and v
+    alias shared_kv = True
+    # shared memory for the full tile vs BK blocks
+    alias full_kv = False
+    # pad the depth for v smem
+    alias depth_padded = True
+    # double buffer
+    alias double_buffer = False
+
     @staticmethod
     @always_inline
     fn q_head_idx() -> UInt:
@@ -173,7 +183,7 @@ __extension Attention:
             var k_rope_tile = LayoutTensor[
                 k_rope_t.dtype,
                 k_rope_gmem_layout,
-                MutableAnyOrigin,
+                MutAnyOrigin,
                 masked=True,
             ](
                 k_rope.block_paged_ptr[Int(Self.BN)](

@@ -116,5 +116,54 @@ def test_tuple_unpack():
     assert_equal(list2, [3, 7])
 
 
+def test_tuple_default():
+    var t: Tuple[Int, String, Float32] = {}
+    assert_equal(t[0], 0)
+    assert_equal(t[1], "")
+    assert_equal(t[2], 0.0)
+
+
+def test_tuple_comparison():
+    assert_true((1, 2, 3) == (1, 2, 3))
+    assert_false((1, 2, 3) != (1, 2, 3))
+    assert_false((1, 2, 3) < (1, 2, 3))
+    assert_false((1, 2, 3) > (1, 2, 3))
+    assert_true((1, 2, 3) <= (1, 2, 3))
+    assert_true((1, 2, 3) >= (1, 2, 3))
+    assert_true((1, 2, 3) < (1, 2, 4))
+    assert_true((1, 2, 3) > (1, 2, 2))
+    assert_true((1, 2, 3) <= (1, 2, 4))
+    assert_true((1, 2, 3) >= (1, 2, 2))
+    assert_false((1, 2, 3) < (1, 2, 2))
+    assert_false((1, 2, 3) > (1, 2, 4))
+    assert_true((1, 2, 3) <= (1, 2, 4))
+    assert_true((1, 2, 3) >= (1, 2, 2))
+
+
+def test_tuple_comparison_different_types():
+    assert_false((1, "foo") == (1, "bar"))
+    assert_true((1, "foo") != (1, "bar"))
+    assert_false((1, "foo") < (1, "bar"))
+    assert_true((1, "foo") > (1, "bar"))
+
+
+def test_tuple_comparison_different_lengths():
+    assert_false((1, 2, 3) == (1, 2))
+    assert_true((1, 2, 3) != (1, 2))
+    assert_false((1, 2, 3) < (1, 2))
+    assert_true((1, 2, 3) > (1, 2))
+    assert_false((1, 2, 3) <= (1, 2))
+    assert_true((1, 2, 3) >= (1, 2))
+
+
+def test_tuple_comparison_different_types_and_lengths():
+    assert_false((1, "foo") == (1, "bar", "baz"))
+    assert_true((1, "foo") != (1, "bar", "baz"))
+    assert_false((1, "foo") < (1, "bar", "baz"))
+    assert_true((1, "foo") > (1, "bar", "baz"))
+    assert_false((1, "foo") <= (1, "bar", "baz"))
+    assert_true((1, "foo") >= (1, "bar", "baz"))
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -97,13 +97,13 @@ def execute_ragged_flash_attention[
 
     q_ragged_host = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
     random(q_ragged_host.tensor)
     q_padded_host = HostNDBuffer[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_length, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_length, num_q_heads, Int(kv_params.head_size)
         )
     )
 
@@ -119,7 +119,7 @@ def execute_ragged_flash_attention[
         memcpy(
             dest=padded_ptr,
             src=ragged_ptr,
-            count=unpadded_seq_len * num_q_heads * kv_params.head_size,
+            count=unpadded_seq_len * num_q_heads * Int(kv_params.head_size),
         )
 
     q_ragged_device = q_ragged_host.copy_to_device(ctx)
@@ -130,14 +130,14 @@ def execute_ragged_flash_attention[
         dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
-            batch_size, max_prompt_length, num_q_heads, kv_params.head_size
+            batch_size, max_prompt_length, num_q_heads, Int(kv_params.head_size)
         ),
     )
     ref_output_device = ref_output_host.copy_to_device(ctx)
 
     test_output_host = HostNDBuffer[
         dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
-    ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
+    ](IndexList[3](total_length, num_q_heads, Int(kv_params.head_size)))
     test_output_device = test_output_host.copy_to_device(ctx)
 
     # initialize our KVCache
@@ -147,8 +147,8 @@ def execute_ragged_flash_attention[
             2,
             num_layers,
             max_seq_len_cache,
-            kv_params.num_heads,
-            kv_params.head_size,
+            Int(kv_params.num_heads),
+            Int(kv_params.head_size),
         ),
     )
     random(kv_block_host.tensor)
@@ -174,9 +174,39 @@ def execute_ragged_flash_attention[
     var lookup_table_device = lookup_table_host.copy_to_device(ctx)
 
     var kv_collection_device = CollectionType(
-        kv_block_device.tensor,
-        cache_lengths_device.tensor,
-        lookup_table_device.tensor,
+        LayoutTensor[
+            kv_block_device.dtype,
+            Layout.row_major[6](),
+            MutAnyOrigin,
+        ](
+            kv_block_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_device.dtype,
+            Layout(UNKNOWN_VALUE),
+            ImmutAnyOrigin,
+        ](
+            cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            lookup_table_device.dtype,
+            Layout(UNKNOWN_VALUE),
+            ImmutAnyOrigin,
+        ](
+            lookup_table_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                lookup_table_device.to_layout_tensor().runtime_layout.shape.value,
+                lookup_table_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_prompt_length,
         max_context_length,
     )
@@ -195,13 +225,13 @@ def execute_ragged_flash_attention[
     sink_weights_device = sink_weights_host.copy_to_device(ctx)
 
     var sink_weights_device_tensor: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None
 
     @parameter
     if sink:
         sink_weights_device_tensor = LayoutTensor[
-            dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ](
             sink_weights_device.to_layout_tensor().ptr,
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -256,8 +286,8 @@ def execute_ragged_flash_attention[
         for s in range(prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
-                    var ref_val = ref_out[bs, s, h, hd]
-                    var test_val = test_out[ragged_offset + s, h, hd]
+                    var ref_val = ref_out[bs, s, h, Int(hd)]
+                    var test_val = test_out[ragged_offset + s, h, Int(hd)]
                     try:
                         assert_almost_equal(
                             ref_val,

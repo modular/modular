@@ -94,7 +94,7 @@ struct InlineArray[
 
     alias device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    fn _to_device_type(self, target: LegacyOpaquePointer):
         """Convert the host type object to a device_type and store it at the
         target address.
 
@@ -279,7 +279,7 @@ struct InlineArray[
 
     @always_inline
     fn __init__[
-        origin: MutableOrigin, //,
+        origin: MutOrigin, //,
     ](
         out self,
         *,
@@ -522,15 +522,14 @@ struct InlineArray[
             UnsafePointer(to=self._array).address,
             i._mlir_value,
         )
-        return UnsafePointer(ptr)[]
+        return UnsafePointer[_, origin_of(self)](ptr)[]
 
     @always_inline
     fn unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
     ](ref [origin, address_space]self) -> UnsafePointer[
         Self.ElementType,
-        mut = origin.mut,
-        origin=origin,
+        origin,
         address_space=address_space,
     ]:
         """Gets an unsafe pointer to the underlying array storage.

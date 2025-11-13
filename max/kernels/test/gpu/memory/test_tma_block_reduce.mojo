@@ -20,7 +20,7 @@ import gpu.warp as warp
 from buffer import NDBuffer
 from gpu import WARP_SIZE, lane_id
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
+from gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from gpu import block_dim, block_idx, thread_idx
 from gpu.memory import (
     AddressSpace,
@@ -33,7 +33,7 @@ from gpu.sync import (
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
@@ -94,9 +94,9 @@ fn global_reduction_kernel[
     var vec_data = SIMD[accum_type, simd_width](0)
 
     if idx < UInt(num_cols):
-        vec_data = input_fn[simd_width, 2](IndexList[2](row, idx)).cast[
-            accum_type
-        ]()
+        vec_data = input_fn[simd_width, 2](
+            IndexList[2](Int(row), Int(idx))
+        ).cast[accum_type]()
 
     var thread_sum = vec_data.reduce_add()
 
@@ -226,15 +226,15 @@ def test_tma_block_reduce[
             ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
                 return data_buf.load[width=width](rebind[IndexList[2]](idx))
 
-            ctx.enqueue_function[
-                global_reduction_kernel[
-                    dtype,
-                    accum_type,
-                    simd_width,
-                    max_warps_per_block,
-                    input_fn_2d,
-                ]
-            ](
+            alias kernel = global_reduction_kernel[
+                dtype,
+                accum_type,
+                simd_width,
+                max_warps_per_block,
+                input_fn_2d,
+            ]
+
+            ctx.enqueue_function_checked[kernel, kernel](
                 d_out,
                 cols,  # num_cols
                 grid_dim=grid_dim,

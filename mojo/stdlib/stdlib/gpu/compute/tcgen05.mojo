@@ -22,7 +22,7 @@ from sys.info import _has_blackwell_tcgen05
 from gpu import external_memory
 from gpu.compute.mma import _str_iota  # TODO: move to a string module
 from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
-from memory import bitcast
+from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 
 alias check_blackwell_constraint = constrained[
     _has_blackwell_tcgen05(),
@@ -214,9 +214,7 @@ fn tcgen05_ld[
     # fmt: off
     @parameter
     if width == 1:
-        return call_ld_intrinsic[
-                _RegisterPackType[UInt32]
-            ]()
+        return call_ld_intrinsic[UInt32]()
     elif width == 2:
         return call_ld_intrinsic[
                 _RegisterPackType[UInt32, UInt32]

@@ -25,7 +25,11 @@ from linalg.arch.cpu.vnni_intrinsics import (
 )
 from linalg.matmul import elementwise_epilogue_type
 from linalg.utils import partition_work
-from memory import bitcast, stack_allocation
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    bitcast,
+    stack_allocation,
+)
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index
@@ -394,8 +398,8 @@ fn _copy_column_q_bits_to_block[
 
 fn _pack_block_Q4_K[
     block_n: Int,
-    src_origin: MutableOrigin,
-    dst_origin: MutableOrigin,
+    src_origin: MutOrigin,
+    dst_origin: MutOrigin,
 ](
     var src_ptr: UnsafePointer[_block_Q4_K, origin=src_origin],
     stride: Int,
@@ -515,8 +519,8 @@ fn _pack_block_Q4_K[
 
 fn _pack_block_Q6_K[
     block_n: Int,
-    src_origin: MutableOrigin,
-    dst_origin: MutableOrigin,
+    src_origin: MutOrigin,
+    dst_origin: MutOrigin,
 ](
     var src_ptr: UnsafePointer[_block_Q6_K, origin=src_origin],
     stride: Int,
@@ -1151,7 +1155,12 @@ fn _matmul_Q4_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr = b_tile_ptr[].q_bits.bits.unsafe_ptr().as_any_origin()
+        var b_q_bits_ptr = (
+            b_tile_ptr[]
+            .q_bits.bits.unsafe_ptr()
+            .as_any_origin()
+            .as_legacy_pointer()
+        )
 
         @parameter
         fn matmul_group_packed(
@@ -1187,7 +1196,7 @@ fn _matmul_Q4_K_columns[
     @__copy_capture(b_tile_ptr, b_q_scales_and_mins_buf, b_q_bits)
     @always_inline
     fn process_rows[tile_m: Int](m: Int):
-        var b_q_bits_ptr = b_q_bits.as_any_origin()
+        var b_q_bits_ptr = b_q_bits.as_any_origin().as_legacy_pointer()
 
         @parameter
         fn matmul_group_unpacked(
@@ -1393,7 +1402,12 @@ fn _matmul_Q6_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr = b_tile_ptr[].q_bits.bits.unsafe_ptr().as_any_origin()
+        var b_q_bits_ptr = (
+            b_tile_ptr[]
+            .q_bits.bits.unsafe_ptr()
+            .as_any_origin()
+            .as_legacy_pointer()
+        )
 
         @parameter
         fn matmul_group_packed(
@@ -1421,7 +1435,7 @@ fn _matmul_Q6_K_columns[
     @__copy_capture(b_tile_ptr, b_q_bits)
     @always_inline
     fn process_rows[tile_m: Int](m: Int):
-        var b_q_bits_ptr = b_q_bits.as_any_origin()
+        var b_q_bits_ptr = b_q_bits.as_any_origin().as_legacy_pointer()
 
         @parameter
         fn matmul_group_unpacked(

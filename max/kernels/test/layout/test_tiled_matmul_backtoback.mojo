@@ -22,7 +22,7 @@ from layout import Layout, RuntimeLayout
 from layout.int_tuple import IntTuple, size
 from layout.layout import expand_modes_alike, flatten
 from layout.layout_tensor import LayoutTensor
-from memory import stack_allocation
+from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
 from testing import assert_false
 
 from utils import StaticTuple
@@ -31,9 +31,9 @@ from utils import StaticTuple
 fn matmul_naive[
     layoutC: Layout, layoutA: Layout, layoutB: Layout, elt: DType
 ](
-    C: LayoutTensor[elt, layoutC, MutableAnyOrigin],
-    A: LayoutTensor[elt, layoutA, MutableAnyOrigin],
-    B: LayoutTensor[elt, layoutB, MutableAnyOrigin],
+    C: LayoutTensor[elt, layoutC, MutAnyOrigin],
+    A: LayoutTensor[elt, layoutA, MutAnyOrigin],
+    B: LayoutTensor[elt, layoutB, MutAnyOrigin],
 ):
     constrained[len(layoutC) == 2]()
     constrained[len(layoutA) == 2]()
@@ -207,9 +207,9 @@ fn matmul[
     layoutA: Layout,
     layoutB: Layout,
 ](
-    C: LayoutTensor[elt, layoutC, MutableAnyOrigin],
-    A: LayoutTensor[elt, layoutA, MutableAnyOrigin],
-    B: LayoutTensor[elt, layoutB, MutableAnyOrigin],
+    C: LayoutTensor[elt, layoutC, MutAnyOrigin],
+    A: LayoutTensor[elt, layoutA, MutAnyOrigin],
+    B: LayoutTensor[elt, layoutB, MutAnyOrigin],
 ):
     alias WNr = W * Nr
     alias Stride = stride[elt](WNr)
@@ -314,8 +314,8 @@ fn matmul[
 
 fn alloc_tensor[
     elt: DType, layout: Layout
-]() -> LayoutTensor[elt, layout, MutableAnyOrigin]:
-    return LayoutTensor[elt, layout, MutableAnyOrigin](
+]() -> LayoutTensor[elt, layout, MutAnyOrigin]:
+    return LayoutTensor[elt, layout, MutAnyOrigin](
         UnsafePointer[Scalar[elt]].alloc(layout.size(), alignment=64)
     )
 
@@ -323,9 +323,9 @@ fn alloc_tensor[
 fn alloc_tensor[
     elt: DType, layout: Layout
 ](rtlayout: RuntimeLayout[layout, **_]) -> LayoutTensor[
-    elt, layout, MutableAnyOrigin
+    elt, layout, MutAnyOrigin
 ]:
-    return LayoutTensor[elt, layout, MutableAnyOrigin](
+    return LayoutTensor[elt, layout, MutAnyOrigin](
         UnsafePointer[Scalar[elt]].alloc(rtlayout.size(), alignment=64),
         rtlayout,
     )
@@ -447,8 +447,8 @@ fn vectorize_layout_tensor[
     simd_width: Int = max(simd_width_of[elt_a](), simd_width_of[elt_b]()),
     unroll_factor: Int = 4,
 ](
-    a: LayoutTensor[elt_a, layout_a, MutableAnyOrigin],
-    b: LayoutTensor[elt_b, layout_b, MutableAnyOrigin],
+    a: LayoutTensor[elt_a, layout_a, MutAnyOrigin],
+    b: LayoutTensor[elt_b, layout_b, MutAnyOrigin],
 ):
     alias expanded = expand_modes_alike(
         layout_a.shape, layout_a.stride, layout_b.shape, layout_b.stride
@@ -469,8 +469,8 @@ fn copy_to[
     simd_width: Int = max(simd_width_of[elt_dst](), simd_width_of[elt_src]()),
     unroll_factor: Int = 4,
 ](
-    dst: LayoutTensor[elt_dst, layout_dst, MutableAnyOrigin],
-    src: LayoutTensor[elt_src, layout_src, MutableAnyOrigin],
+    dst: LayoutTensor[elt_dst, layout_dst, MutAnyOrigin],
+    src: LayoutTensor[elt_src, layout_src, MutAnyOrigin],
 ):
     @always_inline
     @parameter
@@ -500,8 +500,8 @@ fn check_approx_equal[
     rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
 ](
-    dst: LayoutTensor[elt_dst, layout_dst, MutableAnyOrigin],
-    src: LayoutTensor[elt_src, layout_src, MutableAnyOrigin],
+    dst: LayoutTensor[elt_dst, layout_dst, MutAnyOrigin],
+    src: LayoutTensor[elt_src, layout_src, MutAnyOrigin],
 ) raises:
     var fail: Bool = False
 
@@ -541,10 +541,10 @@ fn matmulb2b[
     layoutB: Layout,
     layoutC: Layout,
 ](
-    D: LayoutTensor[elt, layoutD, MutableAnyOrigin],
-    A: LayoutTensor[elt, layoutA, MutableAnyOrigin],
-    B: LayoutTensor[elt, layoutB, MutableAnyOrigin],
-    C: LayoutTensor[elt, layoutC, MutableAnyOrigin],
+    D: LayoutTensor[elt, layoutD, MutAnyOrigin],
+    A: LayoutTensor[elt, layoutA, MutAnyOrigin],
+    B: LayoutTensor[elt, layoutB, MutAnyOrigin],
+    C: LayoutTensor[elt, layoutC, MutAnyOrigin],
 ):
     alias WNr = W * Nr
     alias Stride = stride[elt](WNr)

@@ -25,7 +25,7 @@ struct Node[
         ElementType: The type of element stored in the node.
     """
 
-    alias _NodePointer = UnsafePointer[Self]
+    alias _NodePointer = UnsafePointer[Self, MutOrigin.external]
 
     var value: ElementType
     """The value stored in this node."""
@@ -93,7 +93,7 @@ struct _LinkedListIter[
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator, Movable):
     var src: Pointer[LinkedList[ElementType], origin]
-    var curr: UnsafePointer[Node[ElementType]]
+    var curr: UnsafePointer[Node[ElementType], MutOrigin.external]
 
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
@@ -146,7 +146,7 @@ struct LinkedList[
     at any position.
     """
 
-    alias _NodePointer = UnsafePointer[Node[ElementType]]
+    alias _NodePointer = UnsafePointer[Node[ElementType], MutOrigin.external]
 
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
@@ -238,7 +238,7 @@ struct LinkedList[
         Notes:
             Time Complexity: O(1).
         """
-        var addr = Self._NodePointer.alloc(1)
+        var addr = alloc[Node[ElementType]](1)
         if not addr:
             abort("Out of memory")
         var value_ptr = UnsafePointer(to=addr[].value)
@@ -262,7 +262,7 @@ struct LinkedList[
             Time Complexity: O(1).
         """
         var node = Node(value^, None, self._head)
-        var addr = Self._NodePointer.alloc(1)
+        var addr = alloc[Node[ElementType]](1)
         if not addr:
             abort("Out of memory")
         addr.init_pointee_move(node^)
@@ -450,7 +450,7 @@ struct LinkedList[
         i = max(0, i if i >= 0 else i + len(self))
 
         if i == 0:
-            var node = Self._NodePointer.alloc(1)
+            var node = alloc[Node[ElementType]](1)
             if not node:
                 abort("Out of memory")
             node.init_pointee_move(
@@ -476,7 +476,7 @@ struct LinkedList[
         var current = self._get_node_ptr(i)
         if current:
             var next = current[].next
-            var node = Self._NodePointer.alloc(1)
+            var node = alloc[Node[ElementType]](1)
             if not node:
                 abort("Out of memory")
             var data = UnsafePointer(to=node[].value)
@@ -631,7 +631,7 @@ struct LinkedList[
 
     fn _get_node_ptr[
         I: Indexer, //
-    ](ref self, idx: I) -> UnsafePointer[Node[ElementType]]:
+    ](ref self, idx: I) -> UnsafePointer[Node[ElementType], MutOrigin.external]:
         """Get a pointer to the node at the specified index.
 
         Parameters:

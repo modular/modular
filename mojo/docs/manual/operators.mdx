@@ -141,7 +141,7 @@ var j_uint: UInt = 8
 sum_uint = i_uint + j_uint  # Result is type UInt
 print("UInt sum:", sum_uint)
 
-sum_mixed = a_int + i_uint  # Result is type Int
+sum_mixed = a_int + Int(i_uint)  # Result is type Int
 print("Mixed sum:", sum_mixed)
 
 quotient_int = a_int / b_int  # Result is type Float64
@@ -244,7 +244,8 @@ print("simd7:", simd7)
 
 ```output
 simd6: [-2.2, 6.6, -13.200001, 22.0]
-simd7: [1, 5, 1, 9]```
+simd7: [1, 5, 1, 9]
+```
 
 One exception is that the exponentiation operator, `**`, is overloaded so that
 you can specify an `Int` type exponent. All values in the `SIMD` are
@@ -340,7 +341,6 @@ There are three operators related to division:
     Result int32: [5, -6, 7, -8]
     ```
 
-
 #### `IntLiteral` and `FloatLiteral` values
 
 [`IntLiteral`](/mojo/stdlib/builtin/int_literal/IntLiteral) and
@@ -390,10 +390,10 @@ Mojo supports a standard set of comparison operators: `==`, `!=`, `<`, `<=`,
 `>`, and `>=`. However their behavior depends on the type of values being
 compared.
 
-The remainder of this section describes numeric comparison operators. String
+The remainder of this section describes numerical comparison operators. String
 comparisons are discussed in the [String operators](#string-operators). Several
 other types in the Mojo standard library support various comparison operators,
-in particular the equality and inequality comparisons. Consult the
+in particular the "equal" and "not equal" comparisons. Consult the
 [API documentation](/mojo/lib) for a type to determine whether any comparison
 operators are supported.
 
@@ -686,7 +686,7 @@ slice in the form `[start:end]` returns a substring starting with the character
 index specified by `start` and continuing up to but not including the character
 at index `end`. You can use positive or negative indexing for both the start and
 end values. Omitting `start` is the same as specifying `0`, and omitting `end`
-is the same as specifying 1 plus the length of the string.
+is the same as specifying the length of the string.
 
 ```mojo
 var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" # String type value
@@ -1000,20 +1000,21 @@ comparison.
 
 There are two traits associated with the comparison dunder methods. A type that
 implements the [`Comparable`](/mojo/stdlib/builtin/comparable/Comparable) trait
-must define all of the comparison methods. However, some types don't have a
-natural ordering (for example, complex numbers). For those types you can decide
-to implement the
+defines all of the comparison methods, and authors are required to implement at
+least the "less-than" and "equal" methods, since the trait provides defaults
+for the rest. However, some types don't have a natural ordering (for example,
+complex numbers). For those types you can decide to implement the
 [`EqualityComparable`](/mojo/stdlib/builtin/equality_comparable/EqualityComparable)
-trait, which requires defining only the equality and inequality comparison
-methods.
+trait, which defines only the "equal" and "not equal" comparison methods, with
+"equal" being required to implement by conforming structs.
 
 The supported comparison operators and their corresponding methods are shown in
 the table below.
 
 | **Operator** | **Dunder method** |
 | ------------ | ----------------- |
-| `==` equality | `__eq__()` |
-| `!=` inequality | `__ne__()` |
+| `==` equal | `__eq__()` |
+| `!=` not equal | `__ne__()` |
 | `<` less than | `__lt__()` |
 | `<=` less than or equal | `__le__()` |
 | `>` greater than | `__gt__()` |
@@ -1031,32 +1032,22 @@ more information on the differences between defining functions with `def` and
 :::
 
 As an example, consider implementing support for all of the comparison operator
-dunder methods for a custom `MyInt` struct.
+dunder methods for a custom `MyInt` struct by relying on the default
+implementations provided by the `Comparable` (and transitively the
+`EqualityComparable`) traits.
 
 ```mojo
 @fieldwise_init
-struct MyInt(
-    Comparable
-):
+struct MyInt(Comparable):
     var value: Int
 
     fn __eq__(self, rhs: MyInt) -> Bool:
         return self.value == rhs.value
 
-    fn __ne__(self, rhs: MyInt) -> Bool:
-        return self.value != rhs.value
-
     fn __lt__(self, rhs: MyInt) -> Bool:
         return self.value < rhs.value
 
-    fn __le__(self, rhs: MyInt) -> Bool:
-        return self.value <= rhs.value
-
-    fn __gt__(self, rhs: MyInt) -> Bool:
-        return self.value > rhs.value
-
-    fn __ge__(self, rhs: MyInt) -> Bool:
-        return self.value >= rhs.value
+    # `__ne__`, `__le__`, `__gt__`, and `__ge__` have default implementations.
 ```
 
 ### Membership operator dunder methods

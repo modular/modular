@@ -16,6 +16,7 @@ from math import iota
 from sys import is_nvidia_gpu
 
 from layout import LayoutTensor, Layout, UNKNOWN_VALUE
+from memory import LegacyOpaquePointer as OpaquePointer
 
 from utils.index import IndexList
 from builtin.device_passable import DevicePassable
@@ -61,7 +62,12 @@ struct MaskName(Stringable):
 @fieldwise_init
 @register_passable("trivial")
 struct TileMaskStatus(
-    EqualityComparable, ImplicitlyCopyable, Movable, Stringable, Writable
+    EqualityComparable,
+    Identifiable,
+    ImplicitlyCopyable,
+    Movable,
+    Stringable,
+    Writable,
 ):
     """A tile's masking status."""
 
@@ -84,9 +90,6 @@ struct TileMaskStatus(
 
     fn __is__(self, rhs: Self) -> Bool:
         return self.status == rhs.status
-
-    fn __is_not__(self, rhs: Self) -> Bool:
-        return self.status != rhs.status
 
     fn __str__(self) -> String:
         return String.write(self)
@@ -599,11 +602,11 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
     alias mask_safe_out_of_bounds: Bool = False
     alias check_mask_during_decoding: Bool = True
 
-    alias MaskType = LayoutTensor[dtype_, layout_, MutableAnyOrigin]
+    alias MaskType = LayoutTensor[dtype_, layout_, MutAnyOrigin]
     var mask_tensor: Self.MaskType
     var start_pos: OptionalReg[
         LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ]
     var is_multiple_of_2: Bool
@@ -626,7 +629,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
         mask_tensor: Self.MaskType,
         start_pos: OptionalReg[
             LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
             ]
         ] = None,
     ):

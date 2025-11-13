@@ -17,7 +17,7 @@ from sys import align_of, size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -51,6 +51,7 @@ def test_matmul_sm100_epilogue[
     test_lambda_fn: Bool = False,
     register_based_epilogue: Bool = False,
     swapAB: Bool = False,
+    k_group_size: UInt = 1,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value
@@ -80,6 +81,8 @@ def test_matmul_sm100_epilogue[
             register_based_epilogue,
             " swapAB=",
             swapAB,
+            " k_group_size=",
+            k_group_size,
         )
     )
 
@@ -149,6 +152,8 @@ def test_matmul_sm100_epilogue[
         ),
         mma_shape=mma_shape,
         cta_group=cta_group,
+        AB_swapped=swapAB,
+        k_group_size=k_group_size,
     )
 
     alias optional_lambda_fn = OptionalReg[elementwise_compute_lambda_type](
@@ -160,7 +165,6 @@ def test_matmul_sm100_epilogue[
         config=matmul_config,
         elementwise_compute_lambda_fn=optional_lambda_fn,
         register_based_epilogue=register_based_epilogue,
-        swapAB=swapAB,
     ](
         c_device.to_layout_tensor(),
         a_device.to_layout_tensor(),
@@ -250,13 +254,7 @@ def main():
         for mma_m_scale in range(1, 3):
 
             @parameter
-            for mma_n_scale in range(2, 17, 2):
-                # from 16*1 till 16*16 which is 256
-                # basically, if MMA_M is 64, then BN must be multiple of 16 (mma_n_scale must be even)
-                @parameter
-                if mma_m_scale == 1 and mma_n_scale % 2 != 0:
-                    continue
-
+            for mma_n_scale in range(1, 17):
                 alias block_tile_shape = Index(
                     64 * mma_m_scale, 8 * mma_n_scale, BK
                 )
@@ -267,6 +265,15 @@ def main():
 
                 @parameter
                 for register_based_epilogue in [True, False]:
+                    # shared memory based epilogue has accuracy issues for MMA_M == 128 and MMA_N is not a multiple of 32
+                    @parameter
+                    if (
+                        not register_based_epilogue
+                        and mma_m_scale == 1
+                        and mma_n_scale % 2 != 0
+                    ):
+                        continue
+
                     test_matmul_sm100_epilogue[
                         dtype,
                         dtype,
@@ -311,6 +318,7 @@ def main():
                         cta_group=2,
                         test_lambda_fn=True,
                         register_based_epilogue=register_based_epilogue,
+                        k_group_size=2,
                     ](
                         ctx,
                         dynamic(500),

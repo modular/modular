@@ -16,6 +16,7 @@
 from algorithm import parallelize
 from gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
 from math import iota
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from shmem import *
 from sys.ffi import c_int
@@ -59,9 +60,9 @@ fn ring_reduce(
     var num_threads = block_dim.x
     var num_blocks = grid_dim.x
     var block_idx = block_idx.x
-    var elems_per_block = nreduce // num_blocks
+    var elems_per_block = nreduce // Int(num_blocks)
 
-    if elems_per_block * (block_idx + 1) > nreduce:
+    if elems_per_block * Int(block_idx + 1) > nreduce:
         return
 
     src += block_idx * UInt(elems_per_block)

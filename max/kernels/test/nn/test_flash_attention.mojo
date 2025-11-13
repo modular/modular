@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from collections import Optional
 from math import exp, isclose
 from random import rand, seed
@@ -423,13 +424,13 @@ def build_ndbuffer[
     *,
     static_shape: IndexList[rank] = IndexList[rank](fill=UNKNOWN_VALUE),
 ](shape: IndexList[rank]) -> LayoutTensor[
-    dtype, Layout.row_major(static_shape), MutableAnyOrigin
+    dtype, Layout.row_major(static_shape), MutAnyOrigin
 ]:
     var ptr = UnsafePointer[Scalar[dtype]].alloc(shape.flattened_length())
     rand(ptr, shape.flattened_length())
-    return LayoutTensor[
-        dtype, Layout.row_major(static_shape), MutableAnyOrigin
-    ](ptr, RuntimeLayout[Layout.row_major(static_shape)].row_major(shape))
+    return LayoutTensor[dtype, Layout.row_major(static_shape), MutAnyOrigin](
+        ptr, RuntimeLayout[Layout.row_major(static_shape)].row_major(shape)
+    )
 
 
 def test_case[

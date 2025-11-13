@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from collections import OptionalReg
 from math import exp
 from random import rand, random_float64, seed
@@ -71,10 +72,14 @@ fn test[
         batch_size,
         "num_partitions:",
         num_partitions.value() if num_partitions else -1,
+        "num_heads:",
+        num_heads,
         "seq_len:",
         seq_len,
         "num_keys:",
         num_keys,
+        "group:",
+        group,
         "qkv_type:",
         qkv_type,
         "mask_type:",
@@ -522,6 +527,91 @@ fn test_context_encoding(ctx: DeviceContext) raises:
             against_gpu_naive=True,
         ](528, 528, ctx)
 
+        test[
+            4,
+            DType.bfloat16,
+            DType.bfloat16,
+            depth=128,
+            num_heads=1,
+            against_gpu_naive=True,
+        ](128, 64, ctx, use_index_input=True)
+
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            3,
+            against_gpu_naive=True,
+        ](256, 128, ctx)
+
+        test[
+            3,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            24,
+            group=3,
+            against_gpu_naive=True,
+        ](1024, 100, ctx)
+
+        test[
+            4,
+            DType.float32,
+            DType.float32,
+            128,
+            24,
+            group=3,
+            against_gpu_naive=True,
+        ](214, 300, ctx)
+
+        test[
+            3,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            24,
+            group=1,
+            against_gpu_naive=True,
+        ](512, 1024, ctx)
+
+        test[
+            3,
+            DType.float32,
+            DType.float32,
+            128,
+            32,
+            group=3,
+            against_gpu_naive=True,
+        ](12, 8, ctx)
+
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            3,
+            against_gpu_naive=True,
+        ](14, 18, ctx)
+
+        # odd seq_len
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            3,
+            against_gpu_naive=True,
+        ](15, 18, ctx)
+        test[
+            3,
+            DType.bfloat16,
+            DType.float32,
+            128,
+            3,
+            against_gpu_naive=True,
+        ](119, 200, ctx)
+
 
 fn test_decoding[
     batch_size: Int,
@@ -628,94 +718,8 @@ fn test_decoding_large_group[
         ](1, 2000, ctx, use_index_input=use_index_input)
 
 
-fn test_cross_attention[batch_size: Int](ctx: DeviceContext) raises:
-    test[
-        4,
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=128,
-        num_heads=1,
-        against_gpu_naive=True,
-    ](128, 64, ctx, use_index_input=True)
-
-    test[
-        4,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        3,
-        against_gpu_naive=True,
-    ](256, 128, ctx)
-
-    test[
-        3,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        24,
-        group=3,
-        against_gpu_naive=True,
-    ](1024, 100, ctx)
-
-    test[
-        4,
-        DType.float32,
-        DType.float32,
-        128,
-        24,
-        group=3,
-        against_gpu_naive=True,
-    ](214, 300, ctx)
-
-    test[
-        3,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        24,
-        group=1,
-        against_gpu_naive=True,
-    ](512, 1024, ctx)
-
-    test[
-        3,
-        DType.float32,
-        DType.float32,
-        128,
-        32,
-        group=3,
-        against_gpu_naive=True,
-    ](12, 8, ctx)
-
-    test[
-        4,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        3,
-        against_gpu_naive=True,
-    ](14, 18, ctx)
-
-    # odd seq_len
-    test[
-        4,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        3,
-        against_gpu_naive=True,
-    ](15, 18, ctx)
-    test[
-        3,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        3,
-        against_gpu_naive=True,
-    ](119, 200, ctx)
-
-
 fn test_flash_attention_sink_kernel(ctx: DeviceContext) raises:
+    print("test_flash_attention_sink_kernel")
     alias batch_size = 1
     alias num_heads = 2
     alias kv_heads = num_heads
@@ -907,7 +911,7 @@ fn test_flash_attention_sink_kernel(ctx: DeviceContext) raises:
 def main():
     with DeviceContext() as ctx:
         test_context_encoding(ctx)
-        test_cross_attention[1](ctx)
+        # TODO(KERN-1726): Enable this test after implementing the sink kernel
         test_flash_attention_sink_kernel(ctx)
 
         # KERN-1726: Disable warp split-k because it fails with mha_decoding_single_batch

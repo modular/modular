@@ -17,6 +17,7 @@ from os.atomic import Atomic
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal, TestSuite
 
 
@@ -57,9 +58,7 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     alias n = 1024
     alias F32 = DType.float32
 
-    var vec_host = NDBuffer[
-        F32, 1, MutableAnyOrigin, DimList(n)
-    ].stack_allocation()
+    var vec_host = NDBuffer[F32, 1, MutAnyOrigin, DimList(n)].stack_allocation()
 
     if fill_strategy is FillStrategy.LINSPACE:
         for i in range(n):
@@ -80,11 +79,14 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     var vec_device = ctx.enqueue_create_buffer[F32](n)
     vec_device.enqueue_copy_from(vec_host.data)
 
-    var res_add_device = ctx.enqueue_create_buffer[F32](1).enqueue_fill(0)
+    var res_add_device = ctx.enqueue_create_buffer[F32](1)
+    res_add_device.enqueue_fill(0)
 
-    var res_min_device = ctx.enqueue_create_buffer[F32](1).enqueue_fill(0)
+    var res_min_device = ctx.enqueue_create_buffer[F32](1)
+    res_min_device.enqueue_fill(0)
 
-    var res_max_device = ctx.enqueue_create_buffer[F32](1).enqueue_fill(0)
+    var res_max_device = ctx.enqueue_create_buffer[F32](1)
+    res_max_device.enqueue_fill(0)
 
     alias kernel = reduce
 

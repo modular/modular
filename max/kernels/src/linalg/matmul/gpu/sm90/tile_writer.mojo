@@ -13,17 +13,21 @@
 
 """TileWriter module for efficient tile writing in GPU matrix multiplication.
 
-This module provides utilities for writing matrix tiles from shared memory to
-global memory using two different mechanisms:
+This module provides utilities for writing tiles to memory using different
+mechanisms and destinations:
 
-1. TMA (Tensor Memory Accelerator): Hardware-accelerated stores for efficient
-   2D tile transfers from shared to global memory.
+1. Register → Shared Memory: Uses st.matrix hardware instruction for efficient
+   storage of WGMMA accumulator results to shared memory with swizzling.
 
-2. Regular stores: Software-based synchronous stores with manual thread
-   distribution and swizzling for optimal memory access patterns.
+2. Register → Global Memory: Direct stores from register tiles to global memory
+   with optional epilogue processing and bounds checking.
 
-The TileWriter trait abstracts these writing mechanisms to provide a unified
-interface for the matmul kernel's consumer threads.
+3. Shared Memory → Global Memory: Hardware-accelerated TMA stores or regular
+   stores for efficient 2D tile transfers from shared to global memory.
+
+Two main traits abstract these writing mechanisms:
+- TileWriter: For shared memory → global memory transfers
+- RegTileWriter: For register → memory (shared or global) transfers
 """
 
 from layout.tma_async import TMATensorTile
@@ -38,7 +42,7 @@ from ....structuring import (
 from layout.swizzle import Swizzle
 from gpu import thread_idx, lane_id
 from sys import simd_width_of
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
 from layout import Layout
 from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
@@ -55,6 +59,9 @@ from collections import OptionalReg
 from layout.layout_tensor import copy_local_to_dram
 import itertools
 from memory.pointer import _GPUAddressSpace
+from layout.swizzle import Swizzle, make_ldmatrix_swizzle
+from layout.tensor_core_async import st_matrix_n_layout
+from stdlib.bit import log2_floor
 
 
 # Import ThreadInfo from matmul_output
@@ -135,7 +142,7 @@ struct TileCoordinates:
 
 
 @register_passable("trivial")
-trait TileWriter:
+trait SMemTileWriter:
     """Base trait for tile writing mechanisms in matrix multiplication.
 
     This trait defines the interface for writing tiles from shared memory to global memory,
@@ -147,7 +154,7 @@ trait TileWriter:
     @always_inline
     fn write_tile(
         self,
-        src: SMemTileType[Self._dtype, _, alignment=128, *_, **_],
+        src: SMemTileType[Self._dtype, _, alignment=128, **_],
         coords: Tuple[UInt, UInt],
     ):
         """Write a tile from shared memory to global memory.
@@ -164,8 +171,8 @@ struct TileWriterTMA[
     tma_origin: Origin[False],
     dtype: DType,
     tma_layout: Layout,
-    desc_layout: Layout,
-](TileWriter):
+    desc_layout: Layout, //,
+](SMemTileWriter):
     """TMA-based tile writer for hardware-accelerated memory transfers.
 
     This writer uses NVIDIA's Tensor Memory Accelerator (TMA) for efficient
@@ -200,7 +207,7 @@ struct TileWriterTMA[
     @always_inline
     fn write_tile(
         self,
-        src: SMemTileType[Self._dtype, _, alignment=128, *_, **_],
+        src: SMemTileType[Self._dtype, _, alignment=128, **_],
         coords: Tuple[UInt, UInt],
     ):
         """Write a tile using TMA hardware acceleration.
@@ -227,7 +234,7 @@ struct TileWriterTMA[
 
 
 @register_passable("trivial")
-struct TileWriterRegular[
+struct TileWriterThreadwise[
     dtype: DType,
     dst_layout: Layout,
     dst_address_space: AddressSpace,
@@ -237,16 +244,15 @@ struct TileWriterRegular[
     dst_masked: Bool,
     dst_alignment: Int, //,
     thread_layout: Layout,
-    swizzle: Swizzle,
     simd_size: Int,
-    use_x2_for_last_iter: Bool = False,  # Handle masked x2 case
-](TileWriter):
+    half_tile: Bool = False,  # Handle masked x2 case
+](SMemTileWriter):
     alias _dtype = Self.dtype
 
-    var dst: LayoutTensor[
+    alias DstType = LayoutTensor[
         dtype,
         dst_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space=dst_address_space,
         element_layout=dst_element_layout,
         layout_int_type=dst_layout_int_type,
@@ -254,25 +260,16 @@ struct TileWriterRegular[
         masked=dst_masked,
         alignment=dst_alignment,
     ]
+    var dst: Self.DstType
     var thread_idx: UInt
 
     @always_inline
     fn __init__(
         out self,
-        dst: LayoutTensor[
-            dtype,
-            dst_layout,
-            MutableAnyOrigin,
-            address_space=dst_address_space,
-            element_layout=dst_element_layout,
-            layout_int_type=dst_layout_int_type,
-            linear_idx_type=dst_linear_idx_type,
-            masked=dst_masked,
-            alignment=dst_alignment,
-        ],
+        dst: Self.DstType,
         thread_idx: UInt,
     ):
-        """Initialize the regular tile writer.
+        """Initialize the threadwise tile writer.
 
         Args:
             dst: Destination tensor in global memory.
@@ -284,24 +281,30 @@ struct TileWriterRegular[
     @always_inline
     fn write_tile(
         self,
-        src: SMemTileType[Self._dtype, _, alignment=128, *_, **_],
+        src: SMemTileType[Self._dtype, _, alignment=128, **_],
         coords: Tuple[UInt, UInt],
     ):
-        """Write a tile using regular stores.
+        """Write a tile using thread-distributed stores.
 
-        Distributes the write operation across threads with proper swizzling
+        Each thread writes a portion of the tile with proper swizzling
         for optimal memory access patterns.
 
         Args:
             src: Source tile in shared memory.
             coords: Tile indices (row_tile, col_tile) in the destination matrix.
         """
-        # For the regular writer used in _perform_output_store, coords are always (0, 0)
-        # because the destination tile is already pre-extracted as c_gmem_wg_tile.
+        # For the threadwise writer, coords are always (0, 0) because the
+        # destination tile is already pre-extracted as the workgroup tile.
         # We directly use self.dst as the destination.
 
+        alias swizzle = make_ldmatrix_swizzle[
+            Self._dtype,
+            src.stride[0](),
+            log2_floor(16 // size_of[Self._dtype]()),
+        ]()
+
         @parameter
-        if use_x2_for_last_iter:
+        if half_tile:
             # Handle masked x2 case - write only half the tile width
             # Get compile-time layout dimensions
             alias dst_height = dst_layout.shape[0].value()
@@ -346,20 +349,20 @@ struct TileWriterRegular[
 trait RegTileWriter:
     """Base trait for tile writing mechanisms in matrix multiplication.
 
-    This trait defines the interface for writing tiles from shared memory to global memory,
-    abstracting over different hardware mechanisms.
+    This trait defines the interface for writing register tiles to memory
+    (either shared memory or global memory).
     """
 
     @always_inline
     fn write_tile(
         self,
-        src: RegTileType[_, _, _],
+        c_reg_tile: RegTileType,
         coords: Tuple[UInt, UInt],
     ) capturing -> None:
-        """Write a tile from shared memory to global memory.
+        """Write a register tile to memory.
 
         Args:
-            src: Source tile in shared memory (must be 128-byte aligned).
+            c_reg_tile: Source register tile containing accumulator values.
             coords: Tile coordinates (row, column) in the destination matrix.
         """
         ...
@@ -372,32 +375,40 @@ struct FragmentToSMemWriter[
     tile_n_size: Int,  # Size of each tile in N dimension (e.g., TMA_BN)
     num_m_mmas: Int,
     num_consumer: Int,
-    use_x2_for_last_iter: Bool,
+    half_tile: Bool,
     WG_BM: Int,  # Warp group M dimension
     WG_BN: Int,  # Warp group N dimension
-    sub_wg_bn_id: Int,  # Sub warp group ID in N dimension
+    sub_wg_id: Int,  # Sub warp group ID in N dimension
 ](RegTileWriter):
-    """Writer for storing accumulator fragments from registers to shared memory.
+    """Writes WGMMA accumulator results from registers to shared memory using st.matrix.
 
-    Uses st.matrix instructions for efficient bf16 storage with proper swizzling
-    for bank conflict avoidance.
+    Stores 16-byte fragments with swizzling to avoid bank conflicts. Sub-warp groups
+    divide N-dimension work, each handling a portion of WG_BN output tiles.
 
     Parameters:
-        c_type: Output data type (e.g., bfloat16).
-        c_tile_layout: Shared memory tile layout.
-        tile_n_size: Size of each tile in N dimension.
-        num_m_mmas: Number of MMA tiles in M dimension.
+        c_type: Output data type (must be bfloat16 for st.matrix).
+        c_tile_layout: Layout of the entire shared memory region.
+        tile_n_size: Width of each output tile (typically TMA_BN).
+        num_m_mmas: Number of MMA operations in M dimension.
         num_consumer: Number of consumer warp groups.
-        use_x2_for_last_iter: Whether to use x2 mode for the last iteration.
-        WG_BM: Warp group M dimension.
-        WG_BN: Warp group N dimension.
-        sub_wg_bn_id: Sub warp group ID in N dimension.
+        half_tile: Special mode for handling partial tiles.
+        WG_BM: Warp group tile height.
+        WG_BN: Warp group tile width.
+        sub_wg_id: Which portion of WG_BN this instance handles.
     """
+
+    alias st_matrix_swizzle = make_ldmatrix_swizzle[
+        c_type, tile_n_size, log2_floor(16 // size_of[c_type]())
+    ]()
+    alias st_matrix_rt_layout_type = RuntimeLayout[
+        st_matrix_n_layout[c_type, tile_n_size, num_m_mmas, num_consumer](),
+        element_type = DType.int32,
+        linear_idx_type = DType.int32,
+    ]
 
     var c_tile: SMemTileType[c_type, c_tile_layout, alignment=128]
     var warp_group_thread_idx: UInt
     var local_warp_group_idx: UInt
-    var st_matrix_swizzle: Swizzle
     var st_matrix_rt_layout: RuntimeLayout[
         st_matrix_n_layout[c_type, tile_n_size, num_m_mmas, num_consumer](),
         element_type = DType.int32,
@@ -410,138 +421,135 @@ struct FragmentToSMemWriter[
         c_tile: SMemTileType[c_type, c_tile_layout, alignment=128],
         warp_group_thread_idx: UInt,
         local_warp_group_idx: UInt,
-        st_matrix_swizzle: Swizzle,
-        st_matrix_rt_layout: RuntimeLayout[
-            st_matrix_n_layout[c_type, tile_n_size, num_m_mmas, num_consumer](),
-            element_type = DType.int32,
-            linear_idx_type = DType.int32,
-        ],
     ):
         """Initialize the fragment writer.
 
         Args:
             c_tile: Shared memory tile to write to.
             warp_group_thread_idx: Thread index within the warp group.
-            local_warp_group_idx: Warp group index within the consumer groups.
-            st_matrix_swizzle: Swizzle pattern for bank conflict avoidance.
-            st_matrix_rt_layout: Runtime layout for st.matrix operations.
+            local_warp_group_idx: Sub-warp group index (divides N-dimension work).
         """
         self.c_tile = c_tile
         self.warp_group_thread_idx = warp_group_thread_idx
         self.local_warp_group_idx = local_warp_group_idx
-        self.st_matrix_swizzle = st_matrix_swizzle
-        self.st_matrix_rt_layout = st_matrix_rt_layout
+        self.st_matrix_rt_layout = Self.st_matrix_rt_layout_type()
 
     @always_inline
-    fn _store_fragment_to_smem(
+    fn _compute_swizzled_offset[n_frag: Int, m_frag: Int](self) -> Int32:
+        """Compute swizzled offset for st.matrix to avoid bank conflicts.
+
+        Parameters:
+            n_frag: Fragment index in N dimension within tile.
+            m_frag: Fragment index in M dimension (MMA tile index).
+
+        Returns:
+            Swizzled offset for st.matrix instruction.
+        """
+        var layout_coords = RuntimeTuple[
+            IntTuple(
+                UNKNOWN_VALUE,
+                IntTuple(n_frag, m_frag, UNKNOWN_VALUE),
+            )
+        ](
+            Int(self.warp_group_thread_idx),
+            n_frag,
+            m_frag,
+            Int(self.local_warp_group_idx),
+        )
+        var linear_idx = self.st_matrix_rt_layout(layout_coords)
+        return self.st_matrix_swizzle(linear_idx)
+
+    alias st_matrix_layout = Layout.row_major(WG_BM, tile_n_size)
+
+    @always_inline
+    fn _store_fragment[
+        elements_per_op: Int,  # 8 for normal mode, 4 for x2 mode
+        m_frag: Int,
+        n_frag: Int,
+    ](
         self,
-        c_reg_tile: RegTileType,
-        m_mma: Int,
-        n_mma: Int,
-        layout_coords: RuntimeTuple,
-        smem_frag: SMemTileType,
+        smem_tile: SMemTileType[c_type, Self.st_matrix_layout, **_],
+        data: SIMD[c_type, elements_per_op],
     ) -> None:
-        """Store a single fragment to shared memory using st.matrix.
+        """Store register data to shared memory using st.matrix instruction.
+
+        Parameters:
+            elements_per_op: Elements per st.matrix operation (4 or 8).
+            m_frag: Fragment index in M dimension (0 to num_m_mmas-1).
+            n_frag: Fragment index in N dimension within tile.
 
         Args:
-            c_reg_tile: Source register tile.
-            m_mma: M dimension MMA tile index.
-            n_mma: N dimension MMA tile index.
-            layout_coords: Runtime coordinates for st.matrix layout indexing.
-            smem_frag: LayoutTensor view of the target tile in shared memory.
+            smem_tile: Target shared memory tile.
+            data: Register data to store.
         """
-        # Fragment size configuration
-        alias frag_width = 1 if use_x2_for_last_iter else 2
-        alias frag_multiplier = 2 if use_x2_for_last_iter else 1
-        alias elements_per_frag = 4 * frag_width
+        alias packed_width = elements_per_op // 2  # BF16 pairs packed as float32
 
-        # Load and convert fragment
-        var c_frag = c_reg_tile.tile[1, elements_per_frag](
-            m_mma,
-            frag_multiplier * n_mma,
-        )
-        var d_reg = c_frag.load[elements_per_frag](0, 0).cast[DType.bfloat16]()
-        var d_reg_packed = bitcast[DType.float32, 2 * frag_width](d_reg)
+        # Pack BF16 pairs into float32 (hardware requirement)
+        var packed_data = bitcast[DType.float32, packed_width](data)
 
-        # Compute swizzled offset for bank conflict avoidance
-        var linear_idx = self.st_matrix_rt_layout(layout_coords)
-        var swizzled_idx = self.st_matrix_swizzle(linear_idx)
+        # Get swizzled offset for bank conflict avoidance
+        var swizzled_offset = self._compute_swizzled_offset[n_frag, m_frag]()
 
-        # st.matrix requires runtime-computed offset (hardware constraint)
-        st_matrix[simd_width = 2 * frag_width](
-            smem_frag.ptr.offset(Int(swizzled_idx)), d_reg_packed
+        # Execute st.matrix hardware instruction
+        st_matrix[simd_width=packed_width](
+            smem_tile.ptr.offset(swizzled_offset), packed_data
         )
 
     @always_inline
     fn write_tile(
         self,
-        c_reg_tile: RegTileType[_, _, _],
+        c_reg_tile: RegTileType,
         coords: Tuple[UInt, UInt],
     ) capturing -> None:
-        """Write accumulator fragments to shared memory at specified tile coordinates.
+        """Write accumulator tile from registers to shared memory.
 
         Args:
-            c_reg_tile: Source register tile containing accumulator values.
-            coords: Tile coordinates (row_tile_idx, col_tile_idx) where to write.
+            c_reg_tile: Register tile containing MMA results.
+            coords: Tile position (row_idx, col_idx) in output.
         """
-        var row_tile_idx = coords[0]
-        var col_tile_idx = coords[1]
+        # Locate destination tile in shared memory
+        var tile_linear_idx = Int(coords[0]) + Int(coords[1])
+        alias elements_per_tile = WG_BM * tile_n_size
+        alias total_tiles = c_tile_layout.size() // elements_per_tile
 
-        # Memory layout uses equal stride for both indices
-        alias tile_stride = WG_BM * tile_n_size
-        var tile_idx = Int(row_tile_idx) + Int(col_tile_idx)
-
-        # Reshape shared memory as rows of tiles for indexed access
-        alias total_size = c_tile_layout.size()
-        alias num_tiles = total_size // tile_stride
-        var smem_square_layout = self.c_tile.reshape[
-            Layout.row_major(num_tiles, tile_stride)
+        # Reshape shared memory to access individual tiles
+        var smem_tiles = self.c_tile.reshape[
+            Layout.row_major(total_tiles, elements_per_tile)
         ]()
-
-        # Select the specific tile region for this write operation
-        var selected_tile_region = smem_square_layout.tile[1, tile_stride](
-            tile_idx, 0
+        var dest_tile_flat = smem_tiles.tile[1, elements_per_tile](
+            tile_linear_idx, 0
         )
 
-        # FIXME: For some reason this reshape breaks inference
-        # var smem_frag = selected_tile_region.reshape[
-        #     Layout(IntTuple(tile_stride), IntTuple(1))
-        # ]()
+        # SMem fragment view for st.matrix operations
+        var smem_frag = dest_tile_flat.reshape[Self.st_matrix_layout]()
 
-        # Workaround: Create properly typed view for st.matrix
-        var smem_frag = SMemTileType[
-            c_type, Layout(IntTuple(tile_stride), IntTuple(1))
-        ](selected_tile_region.ptr)
+        # st.matrix configuration
+        alias elements_per_store = 4 * (1 if half_tile else 2)
+        alias reg_fragment_scale = 2 if half_tile else 1
 
-        # st.matrix processes 16 elements per operation
-        alias ST_MATRIX_WIDTH = 16
-        alias num_n_fragments = tile_n_size // ST_MATRIX_WIDTH
+        alias ST_MATRIX_WIDTH_BYTES = 16  # Fragment size: st.matrix operates on 16-byte chunks
+        var n_fragment_base = (
+            Int(coords[1]) * tile_n_size
+            + sub_wg_id * WG_BN  # Sub-warp handles portion of WG_BN
+        ) // ST_MATRIX_WIDTH_BYTES
 
-        var n_mma_base = Int(col_tile_idx) * num_n_fragments + sub_wg_bn_id * (
-            WG_BN // ST_MATRIX_WIDTH
-        )
-
-        # Process all fragments
+        # Store all fragments using st.matrix
         @parameter
-        for m_mma, n_offset in itertools.product(
-            range(num_m_mmas), range(num_n_fragments)
+        for m_frag, n_frag in itertools.product(
+            range(num_m_mmas), range(tile_n_size // ST_MATRIX_WIDTH_BYTES)
         ):
-            var n_mma = n_mma_base + n_offset
-
-            var layout_coords = RuntimeTuple[
-                IntTuple(
-                    UNKNOWN_VALUE,
-                    IntTuple(n_offset, m_mma, UNKNOWN_VALUE),
-                )
-            ](
-                Int(self.warp_group_thread_idx),
-                n_offset,
-                m_mma,
-                Int(self.local_warp_group_idx),
+            # Load fragment from registers
+            var reg_fragment_idx = reg_fragment_scale * (
+                n_fragment_base + n_frag
             )
-
-            self._store_fragment_to_smem(
-                c_reg_tile, m_mma, n_mma, layout_coords, smem_frag
+            var reg_fragment = c_reg_tile.tile[1, elements_per_store](
+                m_frag, reg_fragment_idx
+            )
+            var frag_data = reg_fragment.load[elements_per_store](0, 0).cast[
+                c_type
+            ]()
+            self._store_fragment[elements_per_store, m_frag, n_frag](
+                smem_frag, frag_data
             )
 
 
@@ -594,10 +602,11 @@ struct RegisterToGMemWriter[
     alias num_frag_mats = Self.num_n_frag_mat * Self.num_m_frag_mat
 
     var thread_info: ThreadInfo
-    var dst: LayoutTensor[
+
+    alias DstType = LayoutTensor[
         c_type,
         dst_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space=dst_address_space,
         element_layout=dst_element_layout,
         layout_int_type=dst_layout_int_type,
@@ -605,6 +614,7 @@ struct RegisterToGMemWriter[
         masked=dst_masked,
         alignment=dst_alignment,
     ]
+    var dst: Self.DstType
     var num_m_mmas: Int
     var tile_coords: OptionalReg[TileCoordinates]
     var max_row: OptionalReg[UInt32]
@@ -612,17 +622,7 @@ struct RegisterToGMemWriter[
     @always_inline
     fn __init__(
         out self,
-        dst: LayoutTensor[
-            c_type,
-            dst_layout,
-            MutableAnyOrigin,
-            address_space=dst_address_space,
-            element_layout=dst_element_layout,
-            layout_int_type=dst_layout_int_type,
-            linear_idx_type=dst_linear_idx_type,
-            masked=dst_masked,
-            alignment=dst_alignment,
-        ],
+        dst: Self.DstType,
         warp_group_thread_idx: UInt,
         num_m_mmas: Int,
         tile_coords: OptionalReg[TileCoordinates] = None,
@@ -667,7 +667,7 @@ struct RegisterToGMemWriter[
     @always_inline
     fn write_tile(
         self,
-        c_reg_tile: RegTileType[_, _, _],
+        c_reg_tile: RegTileType,
         coords: Tuple[UInt, UInt],
     ) capturing -> None:
         """Write a single MMA tile from registers to global memory.
@@ -694,7 +694,7 @@ struct RegisterToGMemWriter[
     @always_inline
     fn _write_direct_vectorized(
         self,
-        c_reg_tile: RegTileType[_, _, _],
+        c_reg_tile: RegTileType,
         m_mma: Int,
         n_mma: Int,
         mma_id: Int,
@@ -717,7 +717,7 @@ struct RegisterToGMemWriter[
     @always_inline
     fn _write_with_transform(
         self,
-        c_reg_tile: RegTileType[_, _, _],
+        c_reg_tile: RegTileType,
         m_mma: Int,
         n_mma: Int,
         mma_id: Int,
@@ -737,7 +737,7 @@ struct RegisterToGMemWriter[
         var warp_coords = self.tile_coords.value().adjust(warp_coords_base)
 
         # Distribute fragments across threads
-        var c_frag_vec2 = c_reg_tile.vectorize[1, 2]()
+        var c_reg_frag = c_reg_tile.vectorize[1, 2]()
         var gmem_frag, gmem_offset_coords_raw, gmem_offset = (
             warp_tile.vectorize[1, 2]().distribute_with_offset[
                 Layout.row_major(8, 4)
@@ -754,8 +754,8 @@ struct RegisterToGMemWriter[
 
         # Process all vectors
         @parameter
-        for i in range(num_vecs):
-            alias dst_idx = gmem_frag.layout(i)
+        for frag_idx in range(num_vecs):
+            alias dst_idx = gmem_frag.layout(frag_idx)
             alias dst_m_offset = dst_idx // N
             alias dst_n_offset = dst_idx % N
             var m = Int(coords[0] + dst_m_offset)
@@ -763,23 +763,19 @@ struct RegisterToGMemWriter[
 
             # Bounds check and apply transformation
             if m < Int(max_row) and n < N:
-                self._apply_transform_and_store[i](
-                    gmem_frag, c_frag_vec2, mma_id, m, n
+                self._apply_transform_and_store[frag_idx](
+                    gmem_frag, c_reg_frag, mma_id, m, n
                 )
 
     @always_inline
     fn _apply_transform_and_store[
-        i: Int
+        frag_idx: Int
     ](
         self,
         gmem_frag: LayoutTensor[
-            c_type,
-            _,
-            MutableAnyOrigin,
-            address_space=dst_address_space,
-            *_, **_,
+            c_type, _, MutAnyOrigin, address_space=_, *_, **_
         ],
-        c_frag_vec2: LayoutTensor[_, _, MutableAnyOrigin, *_, **_],
+        c_reg_frag: RegTileType,
         mma_id: Int,
         m: Int,
         n: Int,
@@ -792,20 +788,20 @@ struct RegisterToGMemWriter[
             alias epilogue = epilogue_fn.value()
             epilogue[alignment=alignment](
                 (m, n),
-                c_frag_vec2[mma_id, i].cast[c_type](),
+                c_reg_frag[mma_id, frag_idx].cast[c_type](),
             )
         else:  # compute_lambda
             alias compute_lambda = compute_lambda_fn.value()
             var reg_val = compute_lambda[alignment=alignment](
                 (m, n),
-                c_frag_vec2[mma_id, i].cast[c_type](),
+                c_reg_frag[mma_id, frag_idx].cast[c_type](),
             )
-            gmem_frag[i, 0] = rebind[gmem_frag.element_type](reg_val)
+            gmem_frag[frag_idx, 0] = rebind[gmem_frag.element_type](reg_val)
 
     @always_inline
     fn _write_with_runtime_bounds(
         self,
-        c_reg_tile: RegTileType[_, _, _],
+        c_reg_tile: RegTileType,
         m_mma: Int,
         n_mma: Int,
         mma_id: Int,
@@ -832,72 +828,52 @@ struct RegisterToGMemWriter[
         for m_frag, n_frag in itertools.product(
             range(Self.num_m_frag_mat), range(Self.num_n_frag_mat)
         ):
-            self._write_fragment_matrix[m_frag, n_frag](
-                c_reg_tile, warp_tile, warp_tile_coords, mma_id
-            )
+            alias frag_mat_id = n_frag * Self.num_m_frag_mat + m_frag
+            var frag_mat_gmem = warp_tile.tile[8, 8](m_frag, n_frag)
 
-    @always_inline
-    fn _write_fragment_matrix[
-        m_frag: Int, n_frag: Int
-    ](
-        self,
-        c_reg_tile: RegTileType[_, _, _],
-        warp_tile: LayoutTensor[
-            c_type,
-            _,
-            MutableAnyOrigin,
-            address_space=dst_address_space,
-            *_, **_,
-        ],
-        warp_tile_coords: IndexList[2],
-        mma_id: Int,
-    ) capturing:
-        """Write a single 8x8 fragment matrix with bounds checking."""
-        alias frag_mat_id = n_frag * Self.num_m_frag_mat + m_frag
-        var frag_mat_gmem = warp_tile.tile[8, 8](m_frag, n_frag)
+            # Get runtime bounds
+            var max_row = UInt32(frag_mat_gmem.runtime_layout.shape[0].value[0])
+            var max_col = UInt32(frag_mat_gmem.runtime_layout.shape[1].value[0])
 
-        # Get runtime bounds
-        var max_row = UInt32(frag_mat_gmem.runtime_layout.shape[0].value[0])
-        var max_col = UInt32(frag_mat_gmem.runtime_layout.shape[1].value[0])
-
-        @parameter
-        for i in range(2):
-            if (
-                self.thread_info.lane_row < max_row
-                and self.thread_info.lane_col * 2 + i < max_col
-            ):
-                var reg_val = c_reg_tile[mma_id, frag_mat_id * 2 + i].cast[
-                    c_type
-                ]()
-
-                @parameter
-                fn epilogue_coordinates() -> Tuple[Int, Int]:
-                    return (
-                        Int(warp_tile_coords[0])
-                        + Int(m_frag * 8 + self.thread_info.lane_row),
-                        Int(warp_tile_coords[1])
-                        + Int(n_frag * 8 + self.thread_info.lane_col * 2 + i),
-                    )
-
-                @parameter
-                if epilogue_fn:
-                    alias epilogue = epilogue_fn.value()
-                    var frag_m, frag_n = epilogue_coordinates()
-                    epilogue[alignment = align_of[Scalar[c_type]]()](
-                        (frag_m, frag_n), reg_val
-                    )
-                else:
+            @parameter
+            for i in range(2):
+                if (
+                    self.thread_info.lane_row < max_row
+                    and self.thread_info.lane_col * 2 + i < max_col
+                ):
+                    var reg_val = c_reg_tile[mma_id, frag_mat_id * 2 + i].cast[
+                        c_type
+                    ]()
 
                     @parameter
-                    if compute_lambda_fn:
-                        # Now supports compute_lambda
-                        alias compute_lambda = compute_lambda_fn.value()
-                        var frag_m, frag_n = epilogue_coordinates()
-                        reg_val = compute_lambda[
-                            alignment = align_of[Scalar[c_type]]()
-                        ]((frag_m, frag_n), reg_val)
+                    fn epilogue_coordinates() -> Tuple[Int, Int]:
+                        return (
+                            Int(warp_tile_coords[0])
+                            + Int(m_frag * 8 + self.thread_info.lane_row),
+                            Int(warp_tile_coords[1])
+                            + Int(
+                                n_frag * 8 + self.thread_info.lane_col * 2 + i
+                            ),
+                        )
 
-                    frag_mat_gmem[
-                        Int(self.thread_info.lane_row),
-                        Int(self.thread_info.lane_col * 2 + i),
-                    ] = rebind[frag_mat_gmem.element_type](reg_val)
+                    @parameter
+                    if epilogue_fn:
+                        alias epilogue = epilogue_fn.value()
+                        var frag_m, frag_n = epilogue_coordinates()
+                        epilogue[alignment = align_of[Scalar[c_type]]()](
+                            (frag_m, frag_n), reg_val
+                        )
+                    else:
+
+                        @parameter
+                        if compute_lambda_fn:
+                            alias compute_lambda = compute_lambda_fn.value()
+                            var frag_m, frag_n = epilogue_coordinates()
+                            reg_val = compute_lambda[
+                                alignment = align_of[Scalar[c_type]]()
+                            ]((frag_m, frag_n), reg_val)
+
+                        frag_mat_gmem[
+                            Int(self.thread_info.lane_row),
+                            Int(self.thread_info.lane_col * 2 + i),
+                        ] = rebind[frag_mat_gmem.element_type](reg_val)

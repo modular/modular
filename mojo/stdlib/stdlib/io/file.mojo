@@ -35,7 +35,11 @@ from io.write import _WriteBufferStack
 from os import PathLike, abort
 from sys import external_call, size_of
 
-from memory import Span
+from memory import (
+    LegacyOpaquePointer as OpaquePointer,
+    LegacyUnsafePointer as UnsafePointer,
+    Span,
+)
 
 
 # This type is used to pass into CompilerRT functions.  It is an owning
@@ -81,18 +85,17 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         Args:
             path: The file path.
-            mode: The mode to open the file in: {"r", "w", "rw"}.
+            mode: The mode to open the file in: {"r", "w", "rw", "a"}.
 
         Raises:
             If file open mode is not one of the supported modes.
             If there is an error when opening the file.
         """
-        # TODO(#3849): this should support the append flag
-        if not (mode == "r" or mode == "w" or mode == "rw"):
+        if not (mode == "r" or mode == "w" or mode == "rw" or mode == "a"):
             raise Error(
                 'ValueError: invalid mode: "',
                 mode,
-                '". Can only be one of: {"r", "w", "rw"}',
+                '". Can only be one of: {"r", "w", "rw", "a"}',
             )
         var err_msg = _OwnedStringRef()
         var handle = external_call[
@@ -491,7 +494,7 @@ fn open[
 
     Args:
         path: The path to the file to open.
-        mode: The mode to open the file in: {"r", "w", "rw"}.
+        mode: The mode to open the file in: {"r", "w", "rw", "a"}.
 
     Returns:
         A file handle.

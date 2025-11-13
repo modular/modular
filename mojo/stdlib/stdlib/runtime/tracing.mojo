@@ -144,9 +144,7 @@ struct TraceCategory(EqualityComparable, Identifiable, Intable):
 
 
 @register_passable("trivial")
-struct TraceLevel(
-    EqualityComparable, Identifiable, ImplicitlyCopyable, Movable
-):
+struct TraceLevel(Comparable, Identifiable, ImplicitlyCopyable, Movable):
     """An enum-like struct specifying the level of tracing to perform."""
 
     alias ALWAYS = Self(0)
@@ -184,28 +182,16 @@ struct TraceLevel(
         return self.value == rhs.value
 
     @always_inline("nodebug")
-    fn __ne__(self, rhs: Self) -> Bool:
-        """Compares for inequality.
+    fn __lt__(self, rhs: Self) -> Bool:
+        """Performs less than comparison.
 
         Args:
             rhs: The value to compare.
 
         Returns:
-            True if they are not equal.
+            True if this value is less than to `rhs`.
         """
-        return self.value != rhs.value
-
-    @always_inline("nodebug")
-    fn __le__(self, rhs: Self) -> Bool:
-        """Performs less than or equal to comparison.
-
-        Args:
-            rhs: The value to compare.
-
-        Returns:
-            True if this value is less than or equal to `rhs`.
-        """
-        return self.value <= rhs.value
+        return self.value < rhs.value
 
     @always_inline("nodebug")
     fn __is__(self, rhs: Self) -> Bool:

@@ -18,7 +18,7 @@ from sys.info import align_of, simd_width_of
 from algorithm import sync_parallelize, tile, vectorize
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import memset_zero
+from memory import LegacyUnsafePointer as UnsafePointer, memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 
 from utils.index import Index, IndexList
@@ -74,7 +74,7 @@ trait InnerMatmulKernel(ImplicitlyCopyable):
 fn elementwise_epilogue_c_tile[
     simd_width: Int,
     dtype: DType,
-    origin: MutableOrigin,
+    origin: MutOrigin,
     c_shape: DimList,
     func: fn[dtype: DType, width: Int, *, alignment: Int = 1] (
         IndexList[2], SIMD[dtype, width]
@@ -178,7 +178,7 @@ struct TiledMatmul[
     b_origin: Origin[b_mut],
     c_type: DType,
     c_shape: DimList,
-    c_origin: MutableOrigin,
+    c_origin: MutOrigin,
     algorithm: InnerMatmulKernel,
 ](ImplicitlyCopyable, Movable):
     """Tiled matmul implementation integrating packing, inner loop and tile
@@ -640,7 +640,7 @@ fn _matmul_cpu_impl[
                 alg,
                 c,
                 a_packed if use_i8mm else type_of(a).OriginCastType[
-                    True, MutableAnyOrigin
+                    True, MutAnyOrigin
                 ](
                     # TODO: This is VERY unsafe. `a` may not be mutable which could
                     # result in undefined behavior. `a` and all dependents of this

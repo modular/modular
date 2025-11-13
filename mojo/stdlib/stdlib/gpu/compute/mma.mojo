@@ -21,6 +21,8 @@ from sys.info import (
     CompilationTarget,
     _cdna_4_or_newer,
     _is_amd_rdna,
+    _is_amd_rdna3,
+    _is_amd_rdna4,
     is_amd_gpu,
 )
 
@@ -31,9 +33,9 @@ from gpu._utils import (
     llvm_struct_to_simd,
     simd_to_llvm_struct,
 )
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
-from memory import bitcast
+from memory import LegacyUnsafePointer as UnsafePointer, bitcast
 
 from utils import StaticTuple
 from utils.index import Index
@@ -47,18 +49,36 @@ fn get_amd_fp8_dtype() -> DType:
     """Gets the appropriate FP8 dtype for the current AMD GPU architecture.
 
     Returns:
-        `DType.float8_e4m3fn` for CDNA4+ GPUs, `DType.float8_e4m3fnuz` for older AMD GPUs.
+        - `DType.float8_e4m3fn` for CDNA4+ and RDNA4+ GPUs
+        - `DType.float8_e4m3fnuz` for CDNA1-3 GPUs
+        - `DType.invalid` for RDNA3 (no native FP8 support).
     """
-    return DType.float8_e4m3fn if _cdna_4_or_newer() else DType.float8_e4m3fnuz
+
+    @parameter
+    if _is_amd_rdna3():
+        return DType.invalid
+    elif _is_amd_rdna4() or _cdna_4_or_newer():
+        return DType.float8_e4m3fn
+    else:
+        return DType.float8_e4m3fnuz
 
 
 fn get_amd_bf8_dtype() -> DType:
     """Gets the appropriate BF8 dtype for the current AMD GPU architecture.
 
     Returns:
-        `DType.float8_e5m2` for CDNA4+ GPUs, `DType.float8_e5m2fnuz` for older AMD GPUs.
+        - `DType.float8_e5m2` for CDNA4+ and RDNA4+ GPUs
+        - `DType.float8_e5m2fnuz` for CDNA1-3 GPUs
+        - `DType.invalid` for RDNA3 (no native BF8 support).
     """
-    return DType.float8_e5m2 if _cdna_4_or_newer() else DType.float8_e5m2fnuz
+
+    @parameter
+    if _is_amd_rdna3():
+        return DType.invalid
+    elif _is_amd_rdna4() or _cdna_4_or_newer():
+        return DType.float8_e5m2
+    else:
+        return DType.float8_e5m2fnuz
 
 
 @always_inline
@@ -79,26 +99,26 @@ fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
 @always_inline
 fn _has_type[type: DType](a: DType, b: DType, c: DType, d: DType) -> Bool:
-    return a is type and b is type and c is type and d is type
+    return _has_type[(type, type, type, type)](a, b, c, d)
 
 
 @always_inline
 fn _has_type[
     abcd: Tuple[DType, DType, DType, DType]
 ](a: DType, b: DType, c: DType, d: DType) -> Bool:
-    return a is abcd[0] and b is abcd[1] and c is abcd[2] and d is abcd[3]
+    return (a, b, c, d) == abcd
 
 
 @always_inline
 fn _has_shape[size: Int](a: Int, b: Int, c: Int, d: Int) -> Bool:
-    return a == size and b == size and c == size and d == size
+    return _has_shape[(size, size, size, size)](a, b, c, d)
 
 
 @always_inline
 fn _has_shape[
     abcd: Tuple[Int, Int, Int, Int]
 ](a: Int, b: Int, c: Int, d: Int) -> Bool:
-    return a == abcd[0] and b == abcd[1] and c == abcd[2] and d == abcd[3]
+    return (a, b, c, d) == abcd
 
 
 # ===----------------------------------------------------------------------===#

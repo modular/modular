@@ -41,7 +41,7 @@ struct TuningConfigNvidia(TuningConfig):
         return "/".join(s)
 
 
-alias configs = List(
+alias configs: List[TuningConfigNvidia] = [
     # Automatically generated from [output.yaml]
     TuningConfigNvidia(
         M=128000,
@@ -852,7 +852,7 @@ alias configs = List(
         TUNE_NUM_WARP_K_PARTITIONS=2,
         nranks=8,
     ),
-)
+]
 
 
 alias TuningTableNvidia = Table(configs, "TuningTableNvidia")

@@ -16,6 +16,8 @@ from sys.info import CompilationTarget, is_64bit
 
 from bit import count_leading_zeros
 from builtin.simd import _modf
+from itertools import product
+from memory import LegacyUnsafePointer as UnsafePointer
 from testing import (
     assert_almost_equal,
     assert_equal,
@@ -23,6 +25,11 @@ from testing import (
     assert_true,
     TestSuite,
 )
+from testing.prop import PropTest
+
+# TODO(MOCO-522): Figure out desired behavior for importing files with only
+# extensions in them.
+from testing.prop.strategy import *
 
 from utils import StaticTuple
 from utils.numerics import isfinite, isinf, isnan, nan
@@ -217,7 +224,14 @@ def test_to_bits():
     assert_equal(reconstructed_int16, int16_vals)
 
 
-def test_from_to_bits_roundtrip():
+# TODO: Use property testing framework to test this.
+def test_from_to_bits_roundtrip_property_test():
+    @parameter
+    def properties[dtype: DType, size: Int](simd: SIMD[dtype, size]):
+        var bits = simd.to_bits()
+        var reconstructed = SIMD[dtype, size](from_bits=bits)
+        assert_equal(reconstructed, simd)
+
     alias dtypes = [
         DType.bool,
         DType.int,
@@ -230,34 +244,23 @@ def test_from_to_bits_roundtrip():
         DType.int32,
         DType.uint64,
         DType.int64,
-        DType.uint128,
-        DType.int128,
-        DType.uint256,
+        # TODO: Figure out compiler crash when testing with 128-bit types.
+        # DType.int128,
+        # DType.uint128,
         DType.int256,
+        DType.uint256,
+        DType.float16,
+        DType.float32,
+        DType.float64,
+        DType.bfloat16,
     ]
+    alias sizes = [1, 2, 4]
+
+    var prop_test = PropTest()
 
     @parameter
-    for dt in dtypes:
-        alias S = Scalar[dt]
-        for n in range(-5, 5):
-            var res = S(from_bits=S(n).to_bits())
-            assert_equal(res, S(n))
-
-    fn floating_point_dtypes() -> List[DType]:
-        var res = [DType.float16, DType.float32, DType.float64]
-
-        res.append(DType.bfloat16)
-        return res^
-
-    alias fp_dtypes = floating_point_dtypes()
-
-    @parameter
-    for dt in fp_dtypes:
-        alias S = Scalar[dt]
-        for i in range(-10, 10):
-            var v = 1 / S(i)
-            var res = S(from_bits=S(v).to_bits())
-            assert_equal(res, S(v))
+    for dtype, size in product(dtypes, sizes):
+        prop_test.test[properties[dtype, size]](SIMD[dtype, size].strategy())
 
 
 def test_simd_variadic():
@@ -1388,7 +1391,7 @@ def test_clamp():
 
 def test_indexing():
     var s = SIMD[DType.int32, 4](1, 2, 3, 4)
-    assert_equal(s[False], 1)
+    assert_equal(s[Int(False)], 1)
     assert_equal(s[Int(2)], 3)
     assert_equal(s[3], 4)
 
@@ -2154,7 +2157,7 @@ def test_from_bytes_as_bytes():
     )
 
     # Test scalar roundtrip conversions
-    for x in List[Int16](10, 100, -12, 0, 1, -1, 1000, -1000):
+    for x in [Int16(10), 100, -12, 0, 1, -1, 1000, -1000]:
 
         @parameter
         for b in range(2):

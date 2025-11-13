@@ -134,7 +134,7 @@ fn test_case_batched[
                     LayoutTensor[
                         K_device_buffer.dtype,
                         Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
+                        MutAnyOrigin,
                     ](
                         k_lt.ptr,
                         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -165,7 +165,7 @@ fn test_case_batched[
             LayoutTensor[
                 K_device_buffer.dtype,
                 Layout.row_major(UNKNOWN_VALUE),
-                MutableAnyOrigin,
+                MutAnyOrigin,
             ](
                 k_lt.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -228,7 +228,7 @@ fn test_case_batched[
                         LayoutTensor[
                             K_host_buffer.dtype,
                             Layout.row_major(UNKNOWN_VALUE),
-                            MutableAnyOrigin,
+                            MutAnyOrigin,
                         ](
                             k_lt.ptr,
                             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -253,7 +253,7 @@ fn test_case_batched[
                 LayoutTensor[
                     K_device_buffer.dtype,
                     Layout.row_major(UNKNOWN_VALUE),
-                    MutableAnyOrigin,
+                    MutAnyOrigin,
                 ](
                     k_lt.ptr,
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -362,7 +362,7 @@ fn test_case_multi_rank[
             LayoutTensor[
                 K_device_buffer.dtype,
                 Layout.row_major(UNKNOWN_VALUE),
-                MutableAnyOrigin,
+                MutAnyOrigin,
             ](
                 k_lt.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -399,7 +399,7 @@ fn test_case_multi_rank[
                 LayoutTensor[
                     K_host_buffer.dtype,
                     Layout.row_major(UNKNOWN_VALUE),
-                    MutableAnyOrigin,
+                    MutAnyOrigin,
                 ](
                     k_lt.ptr,
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
@@ -874,6 +874,16 @@ def main():
         )
         print_test_case(test_case_22)
         test_case_batched[DType.float32, fill_random](ctx, test_case_22)
+
+        # Test with zero batch size
+        alias test_case_23 = TestCase[_sampling=False](
+            N=1024,
+            K=1,
+            block_size=256,
+            batch_size=0,
+        )
+        print_test_case(test_case_23)
+        test_case_batched[dtype, fill_iota](ctx, test_case_23)
 
         # Run minimum top-k tests
         test_min_topk[dtype](ctx)

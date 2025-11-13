@@ -64,12 +64,12 @@ values, so values aren't destroyed prematurely.
 ### Origin types
 
 Mojo supplies a struct and a set of aliases that you can use to specify
-origin types. As the names suggest, the `ImmutableOrigin` and
-`MutableOrigin` aliases represent immutable and mutable origins,
+origin types. As the names suggest, the `ImmutOrigin` and
+`MutOrigin` aliases represent immutable and mutable origins,
 respectively:
 
 ```mojo
-struct ImmutableRef[origin: ImmutableOrigin]:
+struct ImmutableRef[origin: ImmutOrigin]:
     pass
 ```
 
@@ -121,7 +121,7 @@ few ways to specify origin values:
   associated with the value (or values) passed in.
 * Inferred origin. You can use inferred parameters to capture the origin of a
   value passed in to a function.
-* Wildcard origins. The `ImmutableAnyOrigin` and `MutableAnyOrigin` aliases are
+* Wildcard origins. The `ImmutAnyOrigin` and `MutAnyOrigin` aliases are
   special cases indicating a reference that might access any live value.
 
 #### Static origins
@@ -272,7 +272,7 @@ specifier can be either:
   ```
 
 You can also name the origin explicitly. This is useful if you want to
-restrict the argument to either a `ImmutableOrigin` or `MutableOrigin`, or if
+restrict the argument to either a `ImmutOrigin` or `MutOrigin`, or if
 you want to bind a function's return value to the origin of an argument.
 
 For example, the `Span` type is a non-owning view of contiguous data (like a

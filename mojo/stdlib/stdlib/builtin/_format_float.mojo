@@ -28,6 +28,8 @@ from sys.info import size_of
 
 from memory import bitcast
 
+from .globals import global_constant
+
 from utils.numerics import FPUtils, isinf, isnan
 
 
@@ -369,7 +371,7 @@ fn _compute_endpoint[
 ](cache_index: Int, beta: Int, left_endpoint: Bool) -> Scalar[CarrierDType]:
     @parameter
     if CarrierDType is DType.uint64:
-        var cache = cache_f64[cache_index]
+        var cache = global_constant[cache_f64]()[cache_index]
         var cache_high = _uint128_high(cache)
         if left_endpoint:
             return (
@@ -382,7 +384,7 @@ fn _compute_endpoint[
                 >> (total_bits - sig_bits - 1 - beta)
             ).cast[CarrierDType]()
     else:
-        var cache = cache_f32[cache_index]
+        var cache = global_constant[cache_f32]()[cache_index]
         if left_endpoint:
             return (
                 (cache - (cache >> (sig_bits + 2)))
@@ -586,7 +588,8 @@ fn _compute_mul_parity[
     if CarrierDType is DType.uint64:
         debug_assert(1 <= beta < 64, "beta must be between 1 and 64")
         var r = _umul192_lower128(
-            two_f.cast[DType.uint64](), cache_f64[cache_index]
+            two_f.cast[DType.uint64](),
+            global_constant[cache_f64]()[cache_index],
         )
         var r_high = _uint128_high(r)
         var r_low = _uint128_low(r)
@@ -604,7 +607,8 @@ fn _compute_mul_parity[
             "beta for float types 32bits must be between 1 and 32",
         )
         var r = _umul96_lower64(
-            two_f.cast[DType.uint32](), cache_f32[cache_index]
+            two_f.cast[DType.uint32](),
+            global_constant[cache_f32]()[cache_index],
         )
         return _MulParity(
             ((r >> (64 - beta)) & 1) != 0,
@@ -659,12 +663,12 @@ fn _compute_mul[
     CarrierDType: DType
 ](u: Scalar[CarrierDType], cache_index: Int) -> _MulResult[CarrierDType]:
     if CarrierDType is DType.uint64:
-        var r = _umul192_upper128(u, cache_f64[cache_index])
+        var r = _umul192_upper128(u, global_constant[cache_f64]()[cache_index])
         var r_high = _uint128_high(r)
         var r_low = _uint128_low(r)
         return _MulResult[CarrierDType](r_high.cast[CarrierDType](), r_low == 0)
     else:
-        var cache_value = cache_f32[cache_index]
+        var cache_value = global_constant[cache_f32]()[cache_index]
         var r = _umul96_upper64(u, cache_value)
         return _MulResult[CarrierDType](
             (r >> 32).cast[CarrierDType](), r.cast[CarrierDType]() == 0
@@ -675,12 +679,12 @@ fn _compute_delta[
     CarrierDType: DType, total_bits: Int, cache_bits: Int
 ](cache_index: Int, beta: Int) -> Scalar[CarrierDType]:
     if CarrierDType is DType.uint64:
-        var cache = cache_f64[cache_index]
+        var cache = global_constant[cache_f64]()[cache_index]
         return (_uint128_high(cache) >> (total_bits - 1 - beta)).cast[
             CarrierDType
         ]()
     else:
-        var cache = cache_f32[cache_index]
+        var cache = global_constant[cache_f32]()[cache_index]
         return (cache >> (cache_bits - 1 - beta)).cast[CarrierDType]()
 
 
@@ -732,7 +736,7 @@ fn _compute_round_up_for_shorter_interval_case[
     CarrierDType: DType, total_bits: Int, sig_bits: Int, cache_bits: Int
 ](cache_index: Int, beta: Int) -> Scalar[CarrierDType]:
     if CarrierDType is DType.uint64:
-        var cache = cache_f64[cache_index]
+        var cache = global_constant[cache_f64]()[cache_index]
         var cache_high = _uint128_high(cache)
         return (
             (
@@ -743,7 +747,7 @@ fn _compute_round_up_for_shorter_interval_case[
             + 1
         ) / 2
     else:
-        var cache = cache_f32[cache_index]
+        var cache = global_constant[cache_f32]()[cache_index]
         return (
             (cache >> (cache_bits - sig_bits - 2 - beta)).cast[CarrierDType]()
             + 1

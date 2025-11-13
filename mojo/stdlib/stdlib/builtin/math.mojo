@@ -185,7 +185,7 @@ fn max[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
 
 
 @always_inline
-fn max[T: Copyable & GreaterThanComparable](x: T, *ys: T) -> T:
+fn max[T: Copyable & Comparable](x: T, *ys: T) -> T:
     """Gets the maximum value from a sequence of values.
 
     Parameters:
@@ -268,7 +268,7 @@ fn min[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
 
 
 @always_inline
-fn min[T: Copyable & LessThanComparable](x: T, *ys: T) -> T:
+fn min[T: Copyable & Comparable](x: T, *ys: T) -> T:
     """Gets the minimum value from a sequence of values.
 
     Parameters:

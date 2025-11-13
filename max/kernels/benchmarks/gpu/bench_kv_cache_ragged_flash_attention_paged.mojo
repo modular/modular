@@ -90,6 +90,7 @@ def execute_kv_cache_ragged_flash_attention[
     use_random_seq_lengths: Bool,
     cache_len: Int,
     use_random_cache_lengths: Bool,
+    run_benchmark: Bool,
 ):
     alias num_layers = 1
     alias layer_idx = 0
@@ -155,13 +156,6 @@ def execute_kv_cache_ragged_flash_attention[
     random(q_host.tensor)
     var q_device = q_host.copy_to_device(ctx)
 
-    # initialize mask tensor
-    # dummy mask to satisfy the argument.
-    dummy_mask = LayoutTensor[dtype, Layout.row_major[4]()](
-        UnsafePointer[Scalar[dtype]](),
-        RuntimeLayout[Layout.row_major[4]()].row_major(IndexList[4]()),
-    )
-
     # initialize reference output
     output_host = HostNDBuffer[dtype, 3, DimList(Dim(), num_q_heads, head_dim)](
         IndexList[3](Int(total_seq_len), num_q_heads, head_dim)
@@ -198,9 +192,33 @@ def execute_kv_cache_ragged_flash_attention[
     kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
 
     kv_collection_device = CollectionType(
-        kv_block_paged_device.tensor,
-        cache_lengths_device.tensor,
-        paged_lut_device.tensor,
+        LayoutTensor[
+            kv_block_paged_device.dtype, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_block_paged_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                kv_block_paged_device.to_layout_tensor().runtime_layout.shape.value,
+                kv_block_paged_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        ](
+            cache_lengths_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths_device.to_layout_tensor().runtime_layout.shape.value,
+                cache_lengths_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[
+            paged_lut_device.dtype, Layout.row_major[2](), ImmutAnyOrigin
+        ](
+            paged_lut_device.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[2]()](
+                paged_lut_device.to_layout_tensor().runtime_layout.shape.value,
+                paged_lut_device.to_layout_tensor().runtime_layout.stride.value,
+            ),
+        ),
         max_seq_length,
         max_context_length,
     )
@@ -214,7 +232,6 @@ def execute_kv_cache_ragged_flash_attention[
         k_cache_device,
         v_cache_device,
         output_device_tensor,
-        dummy_mask,
         input_row_offsets_device,
     )
     @always_inline
@@ -259,7 +276,7 @@ def execute_kv_cache_ragged_flash_attention[
                 use_random_cache_lengths,
             )
         ),
-        ThroughputMeasure(BenchMetric.flops, flop_count),
+        [ThroughputMeasure(BenchMetric.flops, flop_count)],
     )
     _ = kv_block_paged_device^
     _ = output_device^
@@ -281,6 +298,7 @@ def main():
     var seq_len = arg_parse("seq_len", 1)
     var cache_len = arg_parse("cache_len", 1)
     var use_random_cache_lengths = arg_parse("use_random_cache_lengths", False)
+    var run_benchmark = arg_parse("run_benchmark", True)
 
     seed(0)
 
@@ -302,6 +320,7 @@ def main():
                 use_random_seq_lengths,
                 cache_len,
                 use_random_cache_lengths,
+                run_benchmark,
             )
 
     except e:

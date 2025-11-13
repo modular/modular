@@ -72,7 +72,12 @@ from sys.intrinsics import likely, unlikely
 
 from bit import count_trailing_zeros
 from bit._mask import is_negative, splat
-from memory import Span, memcmp, memcpy, pack_bits
+from memory import (
+    Span,
+    memcmp,
+    memcpy,
+    pack_bits,
+)
 from memory.memory import _memcmp_impl_unconstrained
 from python import ConvertibleToPython, Python, PythonObject
 
@@ -495,9 +500,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     """
 
     # Aliases
-    alias Mutable = StringSlice[MutableOrigin.cast_from[origin]]
+    alias Mutable = StringSlice[MutOrigin.cast_from[origin]]
     """The mutable version of the `StringSlice`."""
-    alias Immutable = StringSlice[ImmutableOrigin.cast_from[origin]]
+    alias Immutable = StringSlice[ImmutOrigin.cast_from[origin]]
     """The immutable version of the `StringSlice`."""
     # Fields
     var _slice: Span[Byte, origin]
@@ -516,7 +521,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     @always_inline("nodebug")
     fn __init__(
         other: StringSlice,
-        out self: StringSlice[ImmutableOrigin.cast_from[other.origin]],
+        out self: StringSlice[ImmutOrigin.cast_from[other.origin]],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -531,7 +536,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
         # encoded, they can be arbitrary binary data.
         var length: Int = Int(mlir_value=__mlir_op.`pop.string.size`(_kgen))
-        var ptr = UnsafePointer[mut=False, origin=StaticConstantOrigin](
+        var ptr = UnsafePointer[mut=False, _, StaticConstantOrigin](
             __mlir_op.`pop.string.address`(_kgen)
         ).bitcast[Byte]()
         self._slice = {ptr = ptr, length = length}
@@ -581,7 +586,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     fn __init__(
         out self,
         *,
-        unsafe_from_utf8_ptr: UnsafePointer[Byte, mut=mut, origin=origin, **_],
+        unsafe_from_utf8_ptr: UnsafePointer[Byte, origin],
     ):
         """Construct a new StringSlice from a `UnsafePointer[Byte]` pointing to
         null-terminated UTF-8 encoded bytes.
@@ -622,9 +627,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     fn __init__(
         out self,
         *,
-        unsafe_from_utf8_ptr: UnsafePointer[
-            c_char, mut=mut, origin=origin, **_
-        ],
+        unsafe_from_utf8_ptr: UnsafePointer[c_char, origin],
     ):
         """Construct a new StringSlice from a `UnsafePointer[c_char]` pointing
         to null-terminated UTF-8 encoded bytes.
@@ -644,7 +647,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     fn __init__(
         out self,
         *,
-        ptr: UnsafePointer[Byte, mut=mut, origin=origin, **_],
+        ptr: UnsafePointer[Byte, origin],
         length: Int,
     ):
         """Construct a `StringSlice` from a pointer to a sequence of UTF-8
@@ -664,7 +667,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     @implicit
     fn __init__[
-        _origin: ImmutableOrigin, //
+        _origin: ImmutOrigin, //
     ](out self: StringSlice[_origin], ref [_origin]value: String):
         """Construct an immutable StringSlice.
 
@@ -677,7 +680,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         self = value.as_string_slice()
 
     fn __init__[
-        _origin: MutableOrigin, //
+        _origin: MutOrigin, //
     ](out self: StringSlice[_origin], ref [_origin]value: String):
         """Construct a mutable StringSlice.
 
@@ -853,7 +856,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     @doc_private
     fn __init__(
-        out self: StringSlice[ImmutableAnyOrigin],
+        out self: StringSlice[ImmutAnyOrigin],
         *,
         unsafe_borrowed_obj: PythonObject,
     ) raises:
@@ -1463,7 +1466,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     @always_inline
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, mut=mut, origin=origin]:
+    ) -> UnsafePointer[Byte, origin]:
         """Gets a pointer to the first element of this string slice.
 
         Returns:
@@ -2445,7 +2448,7 @@ fn _to_string_list[
     O: Origin, //,
     T: Copyable & Movable,  # TODO(MOCO-1446): Make `T` parameter inferred
     len_fn: fn (T) -> Int,
-    unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, mut = O.mut, origin=O],
+    unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, O],
 ](items: List[T]) -> List[String]:
     var i_len = len(items)
 
@@ -2475,7 +2478,7 @@ fn _to_string_list[O: Origin, //](items: List[StringSlice[O]]) -> List[String]:
 
     fn unsafe_ptr_fn(
         v: StringSlice[O],
-    ) -> UnsafePointer[Byte, mut = O.mut, origin=O]:
+    ) -> UnsafePointer[Byte, O]:
         return v.unsafe_ptr()
 
     fn len_fn(v: StringSlice[O]) -> Int:
@@ -2498,9 +2501,7 @@ fn _to_string_list[O: Origin, //](items: List[Span[Byte, O]]) -> List[String]:
         The list of created strings.
     """
 
-    fn unsafe_ptr_fn(
-        v: Span[Byte, O]
-    ) -> UnsafePointer[Byte, mut = O.mut, origin=O]:
+    fn unsafe_ptr_fn(v: Span[Byte, O]) -> UnsafePointer[Byte, O]:
         return v.unsafe_ptr()
 
     fn len_fn(v: Span[Byte, O]) -> Int:
@@ -2511,7 +2512,7 @@ fn _to_string_list[O: Origin, //](items: List[Span[Byte, O]]) -> List[String]:
 
 @always_inline
 fn _unsafe_strlen(
-    ptr: UnsafePointer[Byte, mut=False, **_], max: UInt = UInt.MAX
+    ptr: UnsafePointer[mut=False, Byte], max: UInt = UInt.MAX
 ) -> UInt:
     """Get the length of a null-terminated string from a pointer.
 
@@ -2670,7 +2671,7 @@ fn _memmem_impl[
 fn _memrchr[
     dtype: DType
 ](
-    source: UnsafePointer[Scalar[dtype], mut=False, **_],
+    source: UnsafePointer[mut=False, Scalar[dtype]],
     char: Scalar[dtype],
     len: Int,
 ) -> type_of(source):
@@ -2684,15 +2685,11 @@ fn _memrchr[
 
 @always_inline
 fn _memrmem[
-    dtype: DType, address_space: AddressSpace
+    dtype: DType
 ](
-    haystack: UnsafePointer[
-        Scalar[dtype], address_space=address_space, mut=False, **_
-    ],
+    haystack: UnsafePointer[mut=False, Scalar[dtype]],
     haystack_len: Int,
-    needle: UnsafePointer[
-        Scalar[dtype], address_space=address_space, mut=False, **_
-    ],
+    needle: UnsafePointer[mut=False, Scalar[dtype]],
     needle_len: Int,
 ) -> type_of(haystack):
     if not needle_len:

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from memory import LegacyUnsafePointer as UnsafePointer
 from gpu import block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext, DeviceBuffer
 from layout.layout import Layout
@@ -359,10 +360,10 @@ fn pad_constant[
         )
 
     var input_strides_buf = LayoutTensor[
-        DType.int, Layout(rank), MutableAnyOrigin
+        DType.int, Layout(rank), MutAnyOrigin
     ].stack_allocation()
     var output_strides_buf = LayoutTensor[
-        DType.int, Layout(rank), MutableAnyOrigin
+        DType.int, Layout(rank), MutAnyOrigin
     ].stack_allocation()
     _fill_strides_indexlist[rank](input_shape, input_strides_buf)
     _fill_strides_indexlist[rank](output_shape, output_strides_buf)

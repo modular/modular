@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from memory import LegacyUnsafePointer as UnsafePointer
 from os import abort
 from pathlib import Path
 from sys import (
@@ -20,7 +21,7 @@ from sys import (
     size_of,
 )
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle, _try_find_dylib
+from sys.ffi import _Global, OwnedDLHandle, _try_find_dylib
 from sys.param_env import env_get_int
 
 from utils.variant import Variant
@@ -29,15 +30,15 @@ from utils.variant import Variant
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_NVTX_LIBRARY_PATHS = List[Path](
+alias CUDA_NVTX_LIBRARY_PATHS: List[Path] = [
     "libnvToolsExt.so",
     "/usr/local/cuda/lib64/libnvToolsExt.so",
     "/usr/lib/x86_64-linux-gnu/libnvToolsExt.so.1",
-)
-alias ROCTX_LIBRARY_PATHS = List[Path](
+]
+alias ROCTX_LIBRARY_PATHS: List[Path] = [
     "librocprofiler-sdk-roctx.so",
     "/opt/rocm/lib/librocprofiler-sdk-roctx.so",
-)
+]
 
 alias LIBRARY_PATHS = CUDA_NVTX_LIBRARY_PATHS if has_nvidia_gpu_accelerator() else ROCTX_LIBRARY_PATHS
 
@@ -87,10 +88,10 @@ alias GPU_TRACING_LIBRARY = _Global[
 ]()
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+fn _init_dylib() -> OwnedDLHandle:
     @parameter
     if _is_disabled():
-        return abort[_OwnedDLHandle]("cannot load dylib when disabled")
+        return abort[OwnedDLHandle]("cannot load dylib when disabled")
 
     try:
         var dylib = _try_find_dylib["GPU tracing library"](
@@ -107,7 +108,7 @@ fn _init_dylib() -> _OwnedDLHandle:
 
         return dylib^
     except e:
-        return _OwnedDLHandle(unsafe_uninitialized=True)
+        return OwnedDLHandle(unsafe_uninitialized=True)
 
 
 @always_inline

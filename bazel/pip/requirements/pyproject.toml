@@ -3,7 +3,7 @@ name = "bazel-pyproject"
 version = "0"
 requires-python = ">=3.10" # NOTE: Must be kept in sync with other global settings
 dependencies = [
-  "editdistance",
+  "levenshtein",
   "absl-py",
   "aiofiles",
   "aiohttp",
@@ -42,7 +42,7 @@ dependencies = [
   "notebook",
   "numpy",
   "nvitop",
-  "onnxruntime==1.19.2 ", # Needed by faster_whisper, newer versions don't support python 3.9
+  "onnxruntime", # Needed by faster_whisper
   "opentelemetry-api",
   "opentelemetry-exporter-otlp-proto-http>=1.28.2",
   "opentelemetry-exporter-prometheus",
@@ -105,6 +105,9 @@ dependencies = [
 
   # benchmarks
   "schema==0.7.5",
+
+  # nsight-sql-tool
+  "sqlalchemy>=2.0.29",
 
   # perfsect_v2
   "responses>=0.23.3",

@@ -148,36 +148,79 @@ struct RTLD:
     alias GLOBAL = 256 if CompilationTarget.is_linux() else 8
     """Make symbols available for symbol resolution of subsequently loaded
     libraries."""
+    alias NODELETE = 4096 if CompilationTarget.is_linux() else 128
+    """Do not delete the library when the process exits."""
 
 
 alias DEFAULT_RTLD = RTLD.NOW | RTLD.GLOBAL
 
 
-struct _OwnedDLHandle(Movable):
-    """Represents an owned handle to a dynamically linked library that can be
-    loaded and unloaded.
+struct OwnedDLHandle(Movable):
+    """Represents an owned handle to a dynamically linked library with RAII
+    semantics.
 
-    This type is intended to replace `DLHandle`, by incrementally introducing
-    ownership semantics to `DLHandle`.
+    `OwnedDLHandle` owns the library handle and automatically calls `dlclose()`
+    when the object is destroyed. This prevents resource leaks and double-free
+    bugs.
+
+    Example usage:
+    ```mojo
+    from sys.ffi import OwnedDLHandle
+
+    fn main() raises:
+        var lib = OwnedDLHandle("libm.so")
+        var sqrt = lib.get_function[fn(Float64) -> Float64]("sqrt")
+        print(sqrt(4.0))  # Prints: 2.0
+        # Library automatically closed when lib goes out of scope
+    ```
     """
 
-    var _handle: DLHandle
+    var _handle: _DLHandle
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __init__(out self, path: String, flags: Int = DEFAULT_RTLD) raises:
-        self._handle = DLHandle(path, flags)
+    fn __init__(out self, flags: Int = DEFAULT_RTLD) raises:
+        """Initialize an owned handle to all global symbols in the current
+        process.
+
+        Args:
+            flags: The flags to load the dynamic library.
+
+        Raises:
+            If `dlopen(nullptr, flags)` fails.
+        """
+        self._handle = _DLHandle(flags)
+
+    fn __init__[
+        PathLike: os.PathLike, //
+    ](out self, path: PathLike, flags: Int = DEFAULT_RTLD) raises:
+        """Initialize an OwnedDLHandle by loading the dynamic library at the
+        given path.
+
+        Parameters:
+            PathLike: The type conforming to the `os.PathLike` trait.
+
+        Args:
+            path: The path to the dynamic library file.
+            flags: The flags to load the dynamic library.
+
+        Raises:
+            If `dlopen(path, flags)` fails.
+        """
+        self._handle = _DLHandle(path, flags)
 
     @doc_private
     @always_inline
     fn __init__(out self, *, unsafe_uninitialized: Bool):
-        self._handle = DLHandle(OpaquePointer())
+        self._handle = _DLHandle({})
 
     fn __del__(deinit self):
-        """Delete the DLHandle object unloading the associated dynamic library.
+        """Unload the associated dynamic library.
+
+        This automatically calls `dlclose()` on the underlying library handle.
         """
         self._handle.close()
 
@@ -185,19 +228,181 @@ struct _OwnedDLHandle(Movable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn handle(self) -> DLHandle:
+    fn borrow(self) -> _DLHandle:
+        """Returns a non-owning reference to this handle.
+
+        The returned `_DLHandle` does not own the library and should not be
+        used after this `OwnedDLHandle` is destroyed.
+
+        Returns:
+            A non-owning reference to the library handle.
+        """
         return self._handle
+
+    fn __bool__(self) -> Bool:
+        """Checks if the handle is valid.
+
+        Returns:
+            `True` if the handle is not null and `False` otherwise.
+        """
+        return self._handle.__bool__()
+
+    fn check_symbol(self, var name: String) -> Bool:
+        """Check that the symbol exists in the dynamic library.
+
+        Args:
+            name: The symbol to check.
+
+        Returns:
+            `True` if the symbol exists.
+        """
+        return self._handle.check_symbol(name)
+
+    fn get_function[
+        result_type: AnyTrivialRegType
+    ](self, var name: String) -> result_type:
+        """Returns a handle to the function with the given name in the dynamic
+        library.
+
+        Parameters:
+            result_type: The type of the function pointer to return.
+
+        Args:
+            name: The name of the function to get the handle for.
+
+        Returns:
+            A handle to the function.
+        """
+        return self._handle.get_function[result_type](name)
+
+    @always_inline
+    fn _get_function[
+        func_name: StaticString, result_type: AnyTrivialRegType
+    ](self) -> result_type:
+        """Returns a handle to the function with the given name in the dynamic
+        library.
+
+        Parameters:
+            func_name: The name of the function to get the handle for.
+            result_type: The type of the function pointer to return.
+
+        Returns:
+            A handle to the function.
+        """
+        return self._handle._get_function[func_name, result_type]()
+
+    @always_inline
+    fn _get_function[
+        result_type: AnyTrivialRegType
+    ](self, *, cstr_name: UnsafePointer[mut=False, c_char]) -> result_type:
+        """Returns a handle to the function with the given name in the dynamic
+        library.
+
+        Parameters:
+            result_type: The type of the function pointer to return.
+
+        Args:
+            cstr_name: The name of the function to get the handle for.
+
+        Returns:
+            A handle to the function.
+        """
+        return self._handle._get_function[result_type](cstr_name=cstr_name)
+
+    fn get_symbol[
+        result_type: AnyType,
+    ](self, name: StringSlice) -> UnsafePointer[result_type, ImmutAnyOrigin]:
+        """Returns a pointer to the symbol with the given name in the dynamic
+        library.
+
+        Parameters:
+            result_type: The type of the symbol to return.
+
+        Args:
+            name: The name of the symbol to get the handle for.
+
+        Returns:
+            A pointer to the symbol.
+        """
+        return self._handle.get_symbol[result_type](name)
+
+    fn get_symbol[
+        result_type: AnyType
+    ](self, *, cstr_name: UnsafePointer[mut=False, Int8]) -> UnsafePointer[
+        result_type, ImmutAnyOrigin
+    ]:
+        """Returns a pointer to the symbol with the given name in the dynamic
+        library.
+
+        Parameters:
+            result_type: The type of the symbol to return.
+
+        Args:
+            cstr_name: The name of the symbol to get the handle for.
+
+        Returns:
+            A pointer to the symbol.
+        """
+        return self._handle.get_symbol[result_type](cstr_name=cstr_name)
+
+    @always_inline
+    fn call[
+        name: StaticString,
+        return_type: AnyTrivialRegType = NoneType,
+        *T: AnyType,
+    ](self, *args: *T) -> return_type:
+        """Call a function with any amount of arguments.
+
+        Parameters:
+            name: The name of the function.
+            return_type: The return type of the function.
+            T: The types of `args`.
+
+        Args:
+            args: The arguments.
+
+        Returns:
+            The result.
+        """
+        return self._handle.call[name, return_type](args)
+
+    fn call[
+        name: StaticString, return_type: AnyTrivialRegType = NoneType
+    ](self, args: VariadicPack[element_trait=AnyType]) -> return_type:
+        """Call a function with any amount of arguments.
+
+        Parameters:
+            name: The name of the function.
+            return_type: The return type of the function.
+
+        Args:
+            args: The arguments.
+
+        Returns:
+            The result.
+        """
+        return self._handle.call[name, return_type](args)
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct DLHandle(Boolable, Copyable, Movable):
-    """Represents a dynamically linked library that can be loaded and unloaded.
+struct _DLHandle(Boolable, Copyable, Movable):
+    """Represents a non-owning reference to a dynamically linked library.
 
-    The library is loaded on initialization and unloaded by `close`.
+    `_DLHandle` is a lightweight, trivially copyable reference to a dynamic
+    library. It does not own the library handle and multiple copies can safely
+    reference the same library.
+
+    For automatic resource management with RAII semantics, use `OwnedDLHandle`
+    instead, which automatically calls `dlclose()` when destroyed.
+
+    Notes:
+        If you manually call `close()` on a `_DLHandle`, be careful not to use
+        any copies of that handle afterward, as they will reference a closed
+        library. For safer usage, prefer `OwnedDLHandle`.
     """
 
-    var handle: OpaquePointer
+    var handle: OpaquePointer[MutAnyOrigin]
     """The handle to the dynamic library."""
 
     @always_inline
@@ -213,9 +418,9 @@ struct DLHandle(Boolable, Copyable, Movable):
             `dlopen(nullptr, flags)`.
 
         Raises:
-            If the operation fails.
+            If `dlopen(nullptr, flags)` fails.
         """
-        self = Self._dlopen(UnsafePointer[c_char](), flags)
+        self = Self._dlopen(UnsafePointer[c_char, MutAnyOrigin](), flags)
 
     fn __init__[
         PathLike: os.PathLike, //
@@ -231,7 +436,7 @@ struct DLHandle(Boolable, Copyable, Movable):
             flags: The flags to load the dynamic library.
 
         Raises:
-            If the operation fails.
+            If `dlopen(path, flags)` fails.
         """
 
         var fspath = path.__fspath__()
@@ -239,16 +444,16 @@ struct DLHandle(Boolable, Copyable, Movable):
 
     @staticmethod
     fn _dlopen(
-        file: UnsafePointer[c_char, mut=False, origin=_], flags: Int
-    ) raises -> DLHandle:
+        file: UnsafePointer[mut=False, c_char], flags: Int
+    ) raises -> _DLHandle:
         var handle = dlopen(file, flags)
-        if handle == OpaquePointer():
+        if not handle:
             var error_message = dlerror()
             raise Error(
                 "dlopen failed: ",
                 StringSlice(unsafe_from_utf8_ptr=error_message),
             )
-        return DLHandle(handle)
+        return _DLHandle(handle)
 
     fn check_symbol(self, var name: String) -> Bool:
         """Check that the symbol exists in the dynamic library.
@@ -259,7 +464,7 @@ struct DLHandle(Boolable, Copyable, Movable):
         Returns:
             `True` if the symbol exists.
         """
-        var opaque_function_ptr: OpaquePointer = dlsym(
+        var opaque_function_ptr = dlsym(
             self.handle,
             name.unsafe_cstr_ptr(),
         )
@@ -267,10 +472,17 @@ struct DLHandle(Boolable, Copyable, Movable):
         return Bool(opaque_function_ptr)
 
     fn close(mut self):
-        """Delete the DLHandle object unloading the associated dynamic library.
+        """Unload the associated dynamic library.
+
+        Warning:
+            Since `DLHandle` is trivially copyable, multiple copies of this
+            handle may exist. After calling `close()`, all copies will reference
+            an invalid library handle. For safer resource management, prefer
+            using `OwnedDLHandle` which automatically manages the library
+            lifetime.
         """
         _ = dlclose(self.handle)
-        self.handle = OpaquePointer()
+        self.handle = {}
 
     fn __bool__(self) -> Bool:
         """Checks if the handle is valid.
@@ -321,9 +533,7 @@ struct DLHandle(Boolable, Copyable, Movable):
     @always_inline
     fn _get_function[
         result_type: AnyTrivialRegType
-    ](
-        self, *, cstr_name: UnsafePointer[c_char, mut=False, origin=_]
-    ) -> result_type:
+    ](self, *, cstr_name: UnsafePointer[mut=False, c_char]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -342,7 +552,7 @@ struct DLHandle(Boolable, Copyable, Movable):
 
     fn get_symbol[
         result_type: AnyType,
-    ](self, name: StringSlice) -> UnsafePointer[result_type]:
+    ](self, name: StringSlice) -> UnsafePointer[result_type, ImmutAnyOrigin]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 
@@ -362,9 +572,9 @@ struct DLHandle(Boolable, Copyable, Movable):
 
     fn get_symbol[
         result_type: AnyType
-    ](
-        self, *, cstr_name: UnsafePointer[Int8, mut=False, origin=_]
-    ) -> UnsafePointer[result_type]:
+    ](self, *, cstr_name: UnsafePointer[mut=False, Int8]) -> UnsafePointer[
+        result_type, ImmutAnyOrigin
+    ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 
@@ -461,7 +671,7 @@ struct DLHandle(Boolable, Copyable, Movable):
 
 @always_inline
 fn _get_dylib_function[
-    dylib_global: _Global[StorageType=_OwnedDLHandle, *_, **_],
+    dylib_global: _Global[StorageType=OwnedDLHandle, *_, **_],
     func_name: StaticString,
     result_type: AnyTrivialRegType,
 ]() raises -> result_type:
@@ -472,12 +682,12 @@ fn _get_dylib_function[
         _ = func_ptr
         return result
 
-    var dylib = dylib_global.get_or_create_ptr()[].handle()
+    var dylib = dylib_global.get_or_create_ptr()[].borrow()
     var new_func = dylib._get_function[func_name, result_type]()
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(func_cache_name),
-        UnsafePointer(to=new_func).bitcast[OpaquePointer]()[],
+        UnsafePointer(to=new_func).bitcast[OpaquePointer[MutAnyOrigin]]()[],
     )
 
     return new_func
@@ -485,14 +695,14 @@ fn _get_dylib_function[
 
 fn _try_find_dylib[
     name: StaticString = ""
-](paths: List[Path]) raises -> _OwnedDLHandle:
+](paths: List[Path]) raises -> OwnedDLHandle:
     """Try to load a dynamically linked library given a list of possible paths.
 
     Parameters:
         name: Optional name for the library to be used in error messages.
 
     Args:
-        paths: A list of paths or library names to pass to the DLHandle
+        paths: A list of paths or library names to pass to the OwnedDLHandle
                constructor.
 
     Returns:
@@ -508,7 +718,7 @@ fn _try_find_dylib[
         # We can't check the existence of the path ahead of time, we have to
         # call the function and check for an error.
         try:
-            return _OwnedDLHandle(String(path))
+            return OwnedDLHandle(String(path))
         except:
             # If the call to DLOpen fails, we should just try the next path
             # in the list. It's only a fatal error if the library cannot be
@@ -520,7 +730,7 @@ fn _try_find_dylib[
 
 fn _try_find_dylib[
     name: StaticString = ""
-](*paths: Path) raises -> _OwnedDLHandle:
+](*paths: Path) raises -> OwnedDLHandle:
     """Load a dynamically linked library given a variadic list of possible names.
     """
     # Convert the variadic pack to a list.
@@ -532,7 +742,7 @@ fn _try_find_dylib[
 
 fn _find_dylib[
     name: StaticString = "", abort_on_failure: Bool = True
-](paths: List[Path]) -> _OwnedDLHandle:
+](paths: List[Path]) -> OwnedDLHandle:
     """Load a dynamically linked library given a list of possible paths or names.
 
     If the library is not found, the function will abort.
@@ -540,11 +750,11 @@ fn _find_dylib[
     Parameters:
         name: Optional name for the library to be used in error messages.
         abort_on_failure: If set, then the function will abort the program if
-           the library is not found. Otherwise, we return a null _OwnedDLHandle
+           the library is not found. Otherwise, we return a null OwnedDLHandle
            on failure.
 
     Args:
-        paths: A list of paths or library names to pass to the DLHandle
+        paths: A list of paths or library names to pass to the OwnedDLHandle
                constructor.
 
     Returns:
@@ -556,14 +766,14 @@ fn _find_dylib[
 
         @parameter
         if abort_on_failure:
-            return abort[_OwnedDLHandle](String(e))
+            return abort[OwnedDLHandle](String(e))
         else:
-            return _OwnedDLHandle(unsafe_uninitialized=True)
+            return OwnedDLHandle(unsafe_uninitialized=True)
 
 
 fn _find_dylib[
     msg: fn () -> String, abort_on_failure: Bool = True
-](paths: List[Path]) -> _OwnedDLHandle:
+](paths: List[Path]) -> OwnedDLHandle:
     """Load a dynamically linked library given a list of possible paths or names.
 
     If the library is not found, the function will abort.
@@ -572,11 +782,11 @@ fn _find_dylib[
         msg: A function that produces the error message to use if the
              library cannot be found.
         abort_on_failure: If set, then the function will abort the program if
-           the library is not found. Otherwise, we return a null _OwnedDLHandle
+           the library is not found. Otherwise, we return a null OwnedDLHandle
            on failure.
 
     Args:
-        paths: A list of paths or library names to pass to the DLHandle
+        paths: A list of paths or library names to pass to the OwnedDLHandle
                constructor.
 
     Returns:
@@ -588,12 +798,12 @@ fn _find_dylib[
 
         @parameter
         if abort_on_failure:
-            return abort[_OwnedDLHandle, prefix="ERROR:"](msg())
+            return abort[OwnedDLHandle, prefix="ERROR:"](msg())
         else:
-            return _OwnedDLHandle(unsafe_uninitialized=True)
+            return OwnedDLHandle(unsafe_uninitialized=True)
 
 
-fn _find_dylib[name: StaticString = ""](*paths: Path) -> _OwnedDLHandle:
+fn _find_dylib[name: StaticString = ""](*paths: Path) -> OwnedDLHandle:
     """Load a dynamically linked library given a variadic list of possible names.
     """
     # Convert the variadic pack to a list.
@@ -616,13 +826,13 @@ struct _Global[
     init_fn: fn () -> StorageType,
     on_error_msg: Optional[fn () -> Error] = None,
 ](Defaultable):
-    alias ResultType = UnsafePointer[StorageType]
+    alias ResultType = UnsafePointer[StorageType, MutAnyOrigin]
 
     fn __init__(out self):
         pass
 
     @staticmethod
-    fn _init_wrapper() -> OpaquePointer:
+    fn _init_wrapper() -> OpaquePointer[MutAnyOrigin]:
         # Heap allocate space to store this "global"
         # TODO:
         #   Any way to avoid the move, e.g. by calling this function
@@ -632,7 +842,7 @@ struct _Global[
         return ptr^.steal_data().bitcast[NoneType]()
 
     @staticmethod
-    fn _deinit_wrapper(opaque_ptr: OpaquePointer):
+    fn _deinit_wrapper(opaque_ptr: OpaquePointer[MutAnyOrigin]):
         # Deinitialize and deallocate the storage.
         _ = OwnedPointer(
             unsafe_from_raw_pointer=opaque_ptr.bitcast[StorageType]()
@@ -663,7 +873,8 @@ struct _Global[
     @staticmethod
     fn get_or_create_indexed_ptr(idx: Int) raises -> Self.ResultType:
         var ptr = external_call[
-            "KGEN_CompilerRT_GetOrCreateGlobalIndexed", OpaquePointer
+            "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
+            OpaquePointer[MutAnyOrigin],
         ](
             idx,
             Self._init_wrapper,
@@ -681,10 +892,12 @@ struct _Global[
 @always_inline
 fn _get_global[
     name: StaticString,
-    init_fn: fn () -> OpaquePointer,
-    destroy_fn: fn (OpaquePointer) -> None,
-]() -> OpaquePointer:
-    return external_call["KGEN_CompilerRT_GetOrCreateGlobal", OpaquePointer](
+    init_fn: fn () -> OpaquePointer[MutAnyOrigin],
+    destroy_fn: fn (OpaquePointer[MutAnyOrigin]) -> None,
+]() -> OpaquePointer[MutAnyOrigin]:
+    return external_call[
+        "KGEN_CompilerRT_GetOrCreateGlobal", OpaquePointer[MutAnyOrigin]
+    ](
         name,
         init_fn,
         destroy_fn,
@@ -692,10 +905,10 @@ fn _get_global[
 
 
 @always_inline
-fn _get_global_or_null(name: StringSlice) -> OpaquePointer:
-    return external_call["KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer](
-        name.unsafe_ptr(), name.byte_length()
-    )
+fn _get_global_or_null(name: StringSlice) -> OpaquePointer[MutAnyOrigin]:
+    return external_call[
+        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutAnyOrigin]
+    ](name.unsafe_ptr(), name.byte_length())
 
 
 # ===-----------------------------------------------------------------------===#

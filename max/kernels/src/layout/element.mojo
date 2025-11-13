@@ -32,6 +32,7 @@ from layout.layout import coalesce, is_contiguous_dim
 
 from . import Layout, RuntimeLayout
 from .int_tuple import UNKNOWN_VALUE, _get_index_type
+from memory import LegacyUnsafePointer as UnsafePointer
 
 
 @always_inline
@@ -666,7 +667,7 @@ struct MemoryElement[
     """
 
     alias _AsMut[
-        mut_origin: MutableOrigin,
+        mut_origin: MutOrigin,
     ] = MemoryElement[
         mut=True,
         dtype,

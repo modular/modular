@@ -405,7 +405,7 @@ fn vectorize[
     dtype: DType,
     rank: Int,
     shape: DimList,
-    origin: MutableOrigin,
+    origin: MutOrigin,
     _res_shape: DimList = _vectorize_shape[*sizes](shape),
 ](buff: NDBuffer[dtype, rank, origin, shape, *_]) -> Tuple[
     NDBuffer[

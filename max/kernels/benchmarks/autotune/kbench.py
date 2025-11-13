@@ -16,6 +16,7 @@ import copy
 import csv
 import functools
 import gc
+import glob
 import logging
 import math
 import os
@@ -53,6 +54,7 @@ from utils import pretty_exception_handler
 CONSOLE = Console(width=80)
 CURRENT_FILE = Path(__file__).resolve()
 LINE = "\n" + 70 * "-"
+pd.set_option("display.float_format", str)
 
 
 def store_pickle(path: Path | str, data: Any) -> None:
@@ -555,7 +557,9 @@ class Spec:
                 for ps in cfg:
                     if ps.name == k:
                         ps.value_set.append(v)
-                        ps.value_set = list(dict.fromkeys(ps.value_set))
+                        ps.value_set = list(
+                            dict.fromkeys(flatten(ps.value_set))
+                        )
                         found = True
                         break
                 if not found:
@@ -785,6 +789,14 @@ def _get_visible_device_prefix(target_accelerator: str = "") -> str:
         return ""
 
 
+def _get_similar_files(path: Path) -> list[Path]:
+    dir_name = os.path.dirname(path)
+    stem = path.stem
+    suffix = path.suffix
+    pattern = os.path.join(dir_name, f"{stem}*{suffix}")
+    return [Path(p) for p in sorted(glob.glob(pattern))]
+
+
 @dataclass
 class BuildItem:
     """
@@ -834,6 +846,7 @@ class Scheduler:
     num_gpu: int
     build_items: list[BuildItem]
     obj_cache: KbenchCache
+    output_suffix: str
     output_dir: Path
     num_specs: int
 
@@ -864,6 +877,7 @@ class Scheduler:
         output_dir_list = [
             Path(f"{output_dir}/out_{i}") for i in range(self.num_specs)
         ]
+        self.output_suffix = output_suffix
         self.output_dir = output_dir
 
         self.build_items = [
@@ -883,14 +897,21 @@ class Scheduler:
         self.progress = progress
 
     @staticmethod
-    def kbench_mkdir(output_dir):  # noqa: ANN001, ANN205
+    def kbench_mkdir(args: tuple[Path, str]) -> Path:
         """Run the following command:
         `mkdir -p {output_dir}`
         """
+
+        output_dir, output_suffix = args
         if os.path.exists(output_dir) and os.path.isdir(output_dir):
             logging.warning(
                 f"Following output dir already exists and will be overwritten!\n[{str(output_dir)}]\n"
             )
+            # Check for existing output files and remove them (if any):
+            existing_csv = _get_similar_files(output_dir / output_suffix)
+            for f in existing_csv:
+                os.remove(f)
+
         os.makedirs(output_dir, exist_ok=True)
         return output_dir
 
@@ -902,7 +923,9 @@ class Scheduler:
         """
         Make output directories for kbench results (one per spec-instance)
         """
-        output_dir_list = [b.output_dir for b in self.build_items]
+        output_dir_list = [
+            (b.output_dir, self.output_suffix) for b in self.build_items
+        ]
 
         for r in self.build_pool.imap(
             self.kbench_mkdir,
@@ -1141,6 +1164,33 @@ class Scheduler:
             build_df.loc[:, ["mesh_idx", "name", "met (ms)", "iters", "spec"]]
         )
 
+    @staticmethod
+    def load_csv_to_pd(
+        mesh_idx: int, current_spec: SpecInstance, files: list[Path]
+    ) -> list[pd.DataFrame]:
+        valid_specs: list[pd.DataFrame] = []
+        for f in files:
+            df = pd.read_csv(f, index_col=None, header=0)
+            if not df.empty:
+                df.insert(0, "mesh_idx", mesh_idx)
+                df.insert(len(df.columns), "spec", str(current_spec))
+                # If there are more than one entries in CSV then bencher
+                # has added an extra column at the end of name with input_id.
+                # TODO: This will create multiple rows with same mesh_idx.
+                # Ensure this doesn't cause issues with 'kprofile' utilities.
+                # TODO: Set an alternative index if input_id is missing.
+                if len(df) > 1:
+                    if df["name"].str.contains("/input:id").all():
+                        raise ValueError(
+                            "Detected multiple lines in output. All entries should have /input_id:"
+                        )
+                    id_column = df["name"].str.split("/input_id:").str[-1]
+                    df["spec"] = (
+                        df["spec"].astype(str) + "/input_id=" + id_column
+                    )
+                valid_specs.append(df)
+        return valid_specs
+
     # Retrieve, sort, and pick top choices
     @staticmethod
     def get_valid_specs(bi_list: list[BuildItem], spec: Spec):  # noqa: ANN205
@@ -1149,26 +1199,30 @@ class Scheduler:
 
         for idx, b in enumerate(bi_list):
             valid = False
-            if os.path.exists(b.output_path):
-                df = pd.read_csv(b.output_path, index_col=None, header=0)
-                if not df.empty:
-                    df.insert(0, "mesh_idx", b.idx)
-                    df.insert(len(df.columns), "spec", str(spec.mesh[b.idx]))
+            files = _get_similar_files(b.output_path)
 
+            if b.exec_output.return_code == os.EX_OK:
+                if files:
+                    current_valid_specs = Scheduler.load_csv_to_pd(
+                        mesh_idx=b.idx,
+                        current_spec=spec.mesh[b.idx],
+                        files=files,
+                    )
+                    valid_specs.extend(current_valid_specs)
+                    valid = len(current_valid_specs) > 0
+
+                if not valid:
+                    df = pd.DataFrame().from_dict(
+                        {
+                            "mesh_idx": [b.idx],
+                            "name": ["-"],
+                            "met (ms)": [0],
+                            "iters": [0],
+                            "spec": [str(spec.mesh[b.idx])],
+                        }
+                    )
                     valid_specs.append(df)
                     valid = True
-            if not valid and b.exec_output.return_code == os.EX_OK:
-                df = pd.DataFrame().from_dict(
-                    {
-                        "mesh_idx": [b.idx],
-                        "name": ["-"],
-                        "met (ms)": [0],
-                        "iters": [0],
-                        "spec": [str(spec.mesh[b.idx])],
-                    }
-                )
-                valid_specs.append(df)
-                valid = True
 
             if not valid:
                 invalid_specs.append(idx)
@@ -1753,6 +1807,12 @@ help_str = "Benchmarking toolkit for Mojo kernels"
     help="Set the total number of GPU devices for running, it can only be used with '--target-accelerator' (default=1).",
 )
 @click.option(
+    "--mpirun-np",
+    default=1,
+    help="Set the total number of GPU devices for running with mpirun, it cannot be combined with '--num-gpus' (default=1)."
+    "Make sure to call 'Bench.check_mpirun()' in mojo benchmark.",
+)
+@click.option(
     "--dryrun",
     "-dryrun",
     is_flag=True,
@@ -1828,6 +1888,7 @@ def cli(
     clear_cache,  # noqa: ANN001
     num_cpu,  # noqa: ANN001
     num_gpu,  # noqa: ANN001
+    mpirun_np: int,
     dryrun,  # noqa: ANN001
     verbose,  # noqa: ANN001
     shapes,  # noqa: ANN001
@@ -1900,19 +1961,25 @@ def cli(
         )
     )
 
+    if num_gpu > 1 and not target_accelerator:
+        raise ValueError(
+            "Cannot use --num-gpu>1 without specifying --target-accelerator"
+        )
+    if mpirun_np > 1 and num_gpu > 1:
+        raise ValueError(
+            "Cannot use --num-gpu>1 and --mpirun-np>1 at the same time!"
+        )
+
     exec_suffix = exec_suffix.split(" ") if exec_suffix else []
     exec_prefix = exec_prefix.split(" ") if exec_prefix else []
+    if mpirun_np > 1:
+        exec_prefix.extend(["mpirun", "-np", str(mpirun_np)])
 
     files = FileGlobArg(files) if files else []
 
     shapes_per_partition = math.ceil(len(shape_list) / num_partitions)
     shape_idx_lb = partition_idx * shapes_per_partition
     shape_idx_ub = min(shape_idx_lb + shapes_per_partition, len(shape_list))
-
-    if num_gpu > 1 and not target_accelerator:
-        raise ValueError(
-            "Cannot use --num-gpu>1 without specifying --target-accelerator"
-        )
 
     for i in range(shape_idx_lb, shape_idx_ub):
         run(

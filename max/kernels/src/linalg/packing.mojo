@@ -18,7 +18,11 @@ from sys.intrinsics import PrefetchOptions
 from algorithm import unswitch
 from buffer.buffer import NDBuffer, partial_simd_load
 from buffer.dimlist import DimList
-from memory import memcpy, stack_allocation
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    memcpy,
+    stack_allocation,
+)
 from register import register_internal
 
 from utils.index import Index, IndexList
@@ -49,7 +53,7 @@ struct PackMatrixRows[
     dtype: DType,
     simd_size: Int,
     row_inner_size: Int,
-    packed_origin: MutableOrigin,
+    packed_origin: MutOrigin,
     original_origin: Origin[original_mut],
 ](ImplicitlyCopyable, Movable):
     """Pack rows from a matrix into the mlas packed layout and
@@ -233,7 +237,7 @@ struct PackMatrixRows[
         var transpose_buffer = NDBuffer[
             dtype,
             2,
-            MutableAnyOrigin,
+            MutAnyOrigin,
             DimList(simd_size, simd_size),
         ].stack_allocation[alignment = align_of[SIMD[dtype, simd_size]]()]()
 
@@ -292,7 +296,7 @@ struct PackMatrixCols[
     column_inner_size: Int,
     use_vnni: Bool,
     use_i8mm: Bool,
-    packed_origin: MutableOrigin,
+    packed_origin: MutOrigin,
     original_origin: Origin[original_mut],
 ](ImplicitlyCopyable, Movable):
     """Pack columns from a matrix into the mlas packed layout and
@@ -315,8 +319,8 @@ struct PackMatrixCols[
     # Interface function:
     @staticmethod
     fn run(
-        packed_matrix: NDBuffer[dtype, 3, MutableAnyOrigin, packed_shape],
-        original_matrix: NDBuffer[dtype, 2, MutableAnyOrigin, original_shape],
+        packed_matrix: NDBuffer[dtype, 3, MutAnyOrigin, packed_shape],
+        original_matrix: NDBuffer[dtype, 2, MutAnyOrigin, original_shape],
         global_offset: IndexList[2],
         pack_tile_dim: IndexList[2],
         valid_data_dim: IndexList[2],
@@ -748,7 +752,7 @@ fn _pack_b_ndbuffer_impl[
     c_shape: DimList,
     transposed: Bool,
     b_origin: Origin[b_mut],
-    output_origin: MutableOrigin,
+    output_origin: MutOrigin,
 ](
     b_input: NDBuffer[b_type, 2, b_origin, b_shape],
     output_buffer: NDBuffer[b_type, 2, output_origin],
@@ -780,7 +784,7 @@ fn _pack_b_ndbuffer_impl[
             @parameter
             if not transposed:
                 var perm = NDBuffer[
-                    DType.int, 1, MutableAnyOrigin, 2
+                    DType.int, 1, MutAnyOrigin, 2
                 ].stack_allocation()
                 perm[0] = 1
                 perm[1] = 0
@@ -830,7 +834,7 @@ fn pack_b_ndbuffer[
     c_type: DType,
     c_shape: DimList,
     b_origin: Origin[b_mut],
-    output_origin: MutableOrigin,
+    output_origin: MutOrigin,
 ](
     b_input: NDBuffer[b_type, 2, b_origin, b_shape],
     output_buffer: NDBuffer[b_type, 2, output_origin],
@@ -939,7 +943,7 @@ struct BTileGenerator[
         global_offset: GemmShape,
         tile_dim_nk: IndexList[2],
         valid_data_dim_nk: IndexList[2],
-    ) -> NDBuffer[b_type, 3, MutableAnyOrigin, config.packed_shape]:
+    ) -> NDBuffer[b_type, 3, MutAnyOrigin, config.packed_shape]:
         """Get a packed matrix (B) tile.
 
         Args:

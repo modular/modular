@@ -15,7 +15,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from buffer import DimList, NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu import thread_idx
+from gpu import thread_idx, warp_id, lane_id
 from gpu.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
@@ -47,21 +47,21 @@ fn wgmma_kernel_rs[
     b_smem_layout: Layout,
     transpose_b: Bool = False,
 ](
-    a_gmem: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b_gmem: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    c_gmem: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a_gmem: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b_gmem: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c_gmem: LayoutTensor[c_type, c_layout, MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.bfloat16,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -74,9 +74,6 @@ fn wgmma_kernel_rs[
 
     alias b_tile_dim0 = N if transpose_b else WMMA_K
     alias b_tile_dim1 = WMMA_K if transpose_b else N
-
-    var warp_id = thread_idx.x // 32
-    var lane_id = thread_idx.x % 32
 
     for k_i in range(K // WMMA_K):
         var a_gmem_tile = a_gmem.tile[M, WMMA_K](0, k_i)
@@ -96,8 +93,8 @@ fn wgmma_kernel_rs[
         var mat_b_desc = _rhs_descriptor[transpose_b](b_smem_tile)
 
         var a_reg = SIMD[DType.bfloat16, 8](0)
-        var row = warp_id * 16 + lane_id // 4
-        var col = (lane_id % 4) * 2
+        var row = warp_id() * 16 + lane_id() // 4
+        var col = (lane_id() % 4) * 2
         a_reg[0] = a_gmem_tile.ptr[row * UInt(K) + col].cast[DType.bfloat16]()
         a_reg[1] = a_gmem_tile.ptr[row * UInt(K) + col + 1].cast[
             DType.bfloat16
@@ -135,9 +132,9 @@ fn wgmma_kernel_rs[
         wgmma_wait_group_sync()
 
     var th_local_res = (
-        c_gmem.tile[16, WMMA_N](warp_id, 0)
+        c_gmem.tile[16, WMMA_N](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lane_id)
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
 
     for i in range(num_output_regs):
@@ -160,21 +157,21 @@ fn wgmma_kernel_ss[
     b_smem_layout: Layout,
     transpose_b: Bool = False,
 ](
-    a_gmem: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b_gmem: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    c_gmem: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a_gmem: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b_gmem: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c_gmem: LayoutTensor[c_type, c_layout, MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         DType.bfloat16,
         a_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
-        MutableAnyOrigin,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -218,13 +215,10 @@ fn wgmma_kernel_ss[
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
 
-    var warp_id = thread_idx.x // 32
-    var lane_id = thread_idx.x % 32
-
     var th_local_res = (
-        c_gmem.tile[16, WMMA_N](warp_id, 0)
+        c_gmem.tile[16, WMMA_N](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lane_id)
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
 
     for i in range(num_output_regs):
