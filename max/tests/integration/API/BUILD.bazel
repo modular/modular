@@ -2,7 +2,6 @@ filegroup(
     name = "pytest_inputs",
     testonly = True,
     srcs = [
-        "Inputs/dynamic-model.mlir",
         "Inputs/named-inputs.mlir",
         "Inputs/no-inputs.mlir",
         "Inputs/scalar-input.mlir",

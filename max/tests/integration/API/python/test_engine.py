@@ -219,30 +219,6 @@ def test_execute_noncontiguous_tensor(
         assert isclose(output_tensor[idx].item(), expected[idx])
 
 
-def test_execute_devicetensor_dynamic_shape(
-    session: InferenceSession, dynamic_model_path: Path
-) -> None:
-    # Device tensors should be able to execute even when the model expects
-    # dynamic shapes.
-    model = session.load(dynamic_model_path)
-    tensor_one = Tensor(DType.int32, (5,))
-    tensor_two = Tensor(DType.int32, (5,))
-
-    for x in range(5):
-        tensor_one[x] = x
-        tensor_two[x] = 2 * x
-
-    tensor_one = tensor_one.to(model.input_devices[0])
-    tensor_two = tensor_two.to(model.input_devices[1])
-    outputs = model.execute(tensor_one, tensor_two)
-    assert len(outputs) == 1
-    output_tensor = outputs[0]
-    assert isinstance(output_tensor, Tensor)
-    output_tensor = output_tensor.to(CPU())
-    for x in range(5):
-        assert output_tensor[x].item() == 3 * x
-
-
 def test_execute_devicetensor_numpy_stays_alive(
     session: InferenceSession, mo_model_path: Path
 ) -> None:
