@@ -33,12 +33,12 @@ from testing import (
 # ---------------------------------------------------------------------------- #
 
 
-def _mutable_pointer(p: UnsafeMutPointer[Int, **_]):
+def _mutable_pointer(p: MutUnsafePointer[Int, **_]):
     assert_true(p)
     assert_equal(p[], 42)
 
 
-def _immutable_pointer(p: UnsafeImmutPointer[Int, **_]):
+def _immutable_pointer(p: ImmutUnsafePointer[Int, **_]):
     assert_true(p)
     assert_equal(p[], 42)
 

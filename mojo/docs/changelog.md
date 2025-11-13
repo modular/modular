@@ -231,6 +231,12 @@ what we publish.
   _Note_: `LegacyUnsafePointer` and `LegacyOpaquePointer` will eventually be
   deprecated and removed in a future version of Mojo.
 
+  There are a few new helpful type aliases for `UnsafePointer`:
+  - `MutUnsafePointer`
+  - `ImmutUnsafePointer`
+  - `MutOpaquePointer`
+  - `ImmutOpaquePointer`
+
   Lastly, `alloc` has been moved from a static method on UnsafePointer to a free
   standing `alloc` function. Therefore, code that was written as:
 

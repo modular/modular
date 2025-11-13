@@ -78,7 +78,7 @@ fn alloc[
 # ===----------------------------------------------------------------------=== #
 
 
-alias UnsafeMutPointer[
+alias MutUnsafePointer[
     type: AnyType,
     origin: MutOrigin,
     *,
@@ -86,7 +86,7 @@ alias UnsafeMutPointer[
 ] = UnsafePointer[mut=True, type, origin, address_space=address_space]
 """A mutable unsafe pointer."""
 
-alias UnsafeImmutPointer[
+alias ImmutUnsafePointer[
     type: AnyType,
     origin: ImmutOrigin,
     *,
@@ -102,14 +102,14 @@ alias OpaquePointer[
 ] = UnsafePointer[NoneType, origin, address_space=address_space]
 """An opaque pointer, equivalent to the C `(const) void*` type."""
 
-alias OpaqueMutPointer[
+alias MutOpaquePointer[
     origin: MutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = OpaquePointer[origin, address_space=address_space]
 """A mutable opaque pointer, equivalent to the C `void*` type."""
 
-alias OpaqueImmutPointer[
+alias ImmutOpaquePointer[
     origin: ImmutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -822,8 +822,8 @@ struct UnsafePointer[
     fn swap_pointees[
         U: Movable, //
     ](
-        self: UnsafeMutPointer[U, address_space = AddressSpace.GENERIC],
-        other: UnsafeMutPointer[U, address_space = AddressSpace.GENERIC],
+        self: MutUnsafePointer[U, address_space = AddressSpace.GENERIC],
+        other: MutUnsafePointer[U, address_space = AddressSpace.GENERIC],
     ):
         """Swap the values at the pointers.
 
@@ -1317,7 +1317,7 @@ struct UnsafePointer[
             Casting the mutability of a pointer is inherently very unsafe.
             Improper usage can lead to undefined behavior. Consider restricting
             types to their proper mutability at the function signature level.
-            For example, taking an `UnsafeMutPointer[T, **_]` as an
+            For example, taking an `MutUnsafePointer[T, **_]` as an
             argument over an unbound `UnsafePointer[T, **_]` is preferred.
         """
         return self._as_legacy().unsafe_mut_cast[target_mut]()

@@ -86,11 +86,11 @@ def test_v2_immutable_any_converts_to_v1():
 # V1 -> V2 tests
 
 
-fn v2_mutable(_p: UnsafeMutPointer[Int]):
+fn v2_mutable(_p: MutUnsafePointer[Int]):
     pass
 
 
-fn v2_immutable(_p: UnsafeImmutPointer[Int]):
+fn v2_immutable(_p: ImmutUnsafePointer[Int]):
     pass
 
 

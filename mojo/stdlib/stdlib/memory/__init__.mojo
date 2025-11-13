@@ -30,11 +30,11 @@ from .span import Span
 from .unsafe import bitcast, pack_bits
 from .unsafe_pointer import (
     alloc,
-    OpaqueImmutPointer,
-    OpaqueMutPointer,
+    ImmutOpaquePointer,
+    MutOpaquePointer,
     OpaquePointer,
-    UnsafeImmutPointer,
-    UnsafeMutPointer,
+    ImmutUnsafePointer,
+    MutUnsafePointer,
     UnsafePointer,
 )
 from .maybe_uninitialized import UnsafeMaybeUninitialized

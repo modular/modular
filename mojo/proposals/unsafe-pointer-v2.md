@@ -83,10 +83,10 @@ struct UnsafePointer[
 - `origin` defaults to `MutAnyOrigin`, bypassing lifetime tracking
 - Allows unsafe implicit conversions (immutable → mutable, origin casts)
 
-## `UnsafePointerV2` API
+## `UnsafePointer` (v2) API
 
 ```mojo
-struct UnsafePointerV2[
+struct UnsafePointer[
     mut: Bool, //, # ✅ Inferred mutability, no default
     type: AnyType,
     origin: Origin[mut], # ✅ Non-defaulted origin, must be explicit
@@ -95,8 +95,8 @@ struct UnsafePointerV2[
 ]:
     ...
 
-alias UnsafeMutPointer[...] = UnsafePointerV2[mut=True, ...]
-alias UnsafeImmutPointer[...] = UnsafePointerV2[mut=False, ...]
+alias MutUnsafePointer[...] = UnsafePointer[mut=True, ...]
+alias ImmutUnsafePointer[...] = UnsafePointer[mut=False, ...]
 ```
 
 **Improvements:**
@@ -109,8 +109,8 @@ alias UnsafeImmutPointer[...] = UnsafePointerV2[mut=False, ...]
 
 | Mojo | C++ | Rust |
 | --- | --- | --- |
-| `UnsafeImmutPointer[T]` | `const T*` | `*const T` |
-| `UnsafeMutPointer[T]` | `T*` | `*mut T` |
+| `ImmutUnsafePointer[T]` | `const T*` | `*const T` |
+| `MutUnsafePointer[T]` | `T*` | `*mut T` |
 
 ---
 
@@ -118,9 +118,9 @@ alias UnsafeImmutPointer[...] = UnsafePointerV2[mut=False, ...]
 
 `UnsafePointer` is deeply integrated across the codebase.
 Changing its interface directly would break a large amount of code, both
-internally and in the community. `UnsafePointerV2` provides a transition path,
-allowing incremental migration and validation before replacing `UnsafePointer`
-entirely.
+internally and in the community. `UnsafePointer` (v2) provides a transition
+path, allowing incremental migration and validation before replacing
+`UnsafePointer` entirely.
 
 ---
 
@@ -139,28 +139,6 @@ entirely.
 ### **26.1 (Jan 2026)**
 
 - Deprecate `LegacyUnsafePointer` (and then eventually remove).
-
----
-
-## Migration Guidelines
-
-Developers should start updating their code to the v2 API using the new
-`UnsafeMutPointer` and `UnsafeImmutPointer` aliases where possible.
-Use `UnsafePointerV2` directly only when these aliases don’t apply.
-
-These aliases will remain stable across the migration, while `UnsafePointerV2`
-itself will eventually be renamed back to `UnsafePointer`.
-
-### Example Migration Steps
-
-#### **25.7**
-
-- Replace `UnsafePointer` with `UnsafePointerV2` or the new aliases.
-- Fix any unsafe implicit casts.
-
-#### **26.1**
-
-- Rename `UnsafePointerV2` to `UnsafePointer`.
 
 ---
 
