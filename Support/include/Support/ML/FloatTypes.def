@@ -22,6 +22,13 @@ DECLARE_FLOAT(f4e2m1fn,                   // SHORT_NAME
 
 // The Float8 types.
 
+DECLARE_FLOAT(f8e8m0fnu,                   // SHORT_NAME
+              float8_e8m0fnu,              // LONG_NAME
+              M_FLOAT8_E8M0FNU,            // M_TYPE
+              mlir::Float8E8M0FNUType,     // MLIR_TYPE
+              M::Float8::float8_e8m0fnu_t, // CXX_TYPE
+              APFloat::Float8E8M0FNU)      // APFLOAT_SEMANTICS
+
 DECLARE_FLOAT(f8e3m4,                   // SHORT_NAME
               float8_e3m4,              // LONG_NAME
               M_FLOAT8_E3M4,            // M_TYPE
