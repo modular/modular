@@ -17,6 +17,9 @@ class SourceMgr;
 namespace mlir {
 class TimingScope;
 } // namespace mlir
+namespace M {
+class AutoFixItHandler;
+} // namespace M
 
 namespace M::AsyncRT {
 class Runtime;
@@ -56,6 +59,9 @@ struct ParserConfig {
 
   /// The compilation options to use when parsing the file.
   const CompilationOptions &options;
+
+  /// When non-null, this handler collects and applies fix-its automatically.
+  AutoFixItHandler *autoFixItHandler = nullptr;
 
   /// When non-empty, this prefix is stripped from filenames used for
   /// diagnostics & debugging.

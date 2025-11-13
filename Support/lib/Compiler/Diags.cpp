@@ -7,6 +7,8 @@
 #include "Support/Compiler/Diags.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Diagnostics.h"
+#include "llvm/ADT/RewriteBuffer.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/SourceMgr.h"
 
 using llvm::SMRange;
@@ -184,6 +186,44 @@ std::string Diags::SourceMgrLocationMapper::getCanonicalFilename(
 }
 
 //===----------------------------------------------------------------------===//
+// AutoFixItHandler
+//===----------------------------------------------------------------------===//
+
+void AutoFixItHandler::registerFixIt(const llvm::MemoryBuffer *buffer,
+                                     llvm::SMFixIt fixIt) {
+  auto [it, inserted] =
+      fixits.try_emplace(buffer, llvm::SmallDenseSet<llvm::SMFixIt>{fixIt});
+  if (!inserted)
+    it->second.insert(fixIt);
+}
+
+void AutoFixItHandler::applyFixIts() {
+  for (auto &[buffer, fixIts] : fixits) {
+    // For each file, we collect all the fixits and apply them to copy.
+    llvm::RewriteBuffer rewriteBuffer;
+    const char *bufferStart = buffer->getBufferStart();
+    rewriteBuffer.Initialize(bufferStart, buffer->getBufferEnd());
+    for (auto &fixIt : fixIts) {
+      SMRange fixItRange = fixIt.getRange();
+      assert(fixItRange.isValid());
+      const char *startLoc = fixItRange.Start.getPointer();
+      const char *endLoc = fixItRange.End.getPointer();
+      rewriteBuffer.ReplaceText(startLoc - bufferStart, endLoc - startLoc,
+                                fixIt.getText());
+    }
+
+    // Then we write the buffer back to the file.
+    llvm::Error err = llvm::writeToOutput(buffer->getBufferIdentifier(),
+                                          [&](raw_ostream &os) {
+                                            rewriteBuffer.write(os);
+                                            return llvm::Error::success();
+                                          });
+    if (err)
+      llvm::errs() << "Error writing buffer to file: " << err << "\n";
+  }
+}
+
+//===----------------------------------------------------------------------===//
 // Diags implementation
 //===----------------------------------------------------------------------===//
 
@@ -197,11 +237,12 @@ static void prefixStrippingDiagHandler(const llvm::SMDiagnostic &diagnostic,
 Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
              bool useMLIRDiagnostics, int maxNotesPerDiagnostic,
              StringRef stripFilenamePrefix, bool disableWarnings,
-             void *extraContext)
+             void *extraContext, AutoFixItHandler *autoFixItHandler)
     : sourceMgr(sourceMgr), context(context), extraContext(extraContext),
       sourceMgrMapper(std::make_unique<SourceMgrLocationMapper>(
           context, stripFilenamePrefix)),
       useMLIRDiagnostics(useMLIRDiagnostics),
+      autoFixItHandler(autoFixItHandler),
       maxNotesPerDiagnostic(maxNotesPerDiagnostic),
       disableWarnings(disableWarnings) {
   // Install a prefix-stripping diag handler if necessary.
@@ -376,6 +417,8 @@ InflightDiag::~InflightDiag() {
     diags->errorEmitted = true;
   if (diags->useMLIRDiagnostics)
     emitMLIRDiagnostic();
+  else if (diags->autoFixItHandler)
+    emitAutoFixItDiagnostic();
   else
     emitSourceMgrDiagnostic();
 }
@@ -388,6 +431,32 @@ void InflightDiag::emitMLIRDiagnostic() {
   mlirDiag << messages.front().text;
   for (auto &note : llvm::drop_begin(messages))
     mlirDiag.attachNote(note.loc) << note.text;
+}
+
+void InflightDiag::emitAutoFixItDiagnostic() {
+  auto &sourceMgr = diags->sourceMgr;
+
+  // If there is more than one fixit, we can't know with certainty which one
+  // to apply.
+  std::optional<SMFixIt> fixIt;
+  for (auto &message : messages) {
+    auto &newFixits = message.fixIts;
+    if (newFixits.empty())
+      continue;
+    if (newFixits.size() > 1 || fixIt.has_value()) {
+      fixIt = std::nullopt;
+      break;
+    }
+    fixIt = newFixits[0];
+  }
+
+  if (fixIt) {
+    // If we found exactly one fixit, register it with the auto fixit handler.
+    unsigned bufferId =
+        sourceMgr.FindBufferContainingLoc(fixIt->getRange().Start);
+    const llvm::MemoryBuffer *buffer = sourceMgr.getMemoryBuffer(bufferId);
+    diags->autoFixItHandler->registerFixIt(buffer, *fixIt);
+  }
 }
 
 /// Print the diagnostic + each note through SourceMgr.

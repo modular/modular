@@ -11,6 +11,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "Support/Compiler/Diags.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Pass/PassManager.h"
@@ -366,6 +367,7 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier stripFilePrefixId,
     llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdLibPath,
+    llvm::opt::OptSpecifier autoFixIt,
     function_ref<OwningOpRef<ModuleOp>(ParserConfig &, mlir::TimingScope &)>
         parseFn) {
   // We don't allow users to configure the time profiler.
@@ -389,8 +391,25 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   parseConfig.stripFilePrefix = args.getLastArgValue(stripFilePrefixId);
   parseConfig.useBuiltinModule = !args.hasArg(disableBuiltins);
 
+  std::unique_ptr<AutoFixItHandler> autoFixItHandler;
+  if (args.hasArg(autoFixIt))
+    autoFixItHandler = std::make_unique<AutoFixItHandler>();
+  parseConfig.autoFixItHandler = autoFixItHandler.get();
+
   mlir::TimingScope mojoScope = timing.nest("Import Mojo");
   OwningOpRef<ModuleOp> module = parseFn(parseConfig, mojoScope);
+
+  // If we have any fixits, apply them, and return a null module.
+  if (autoFixItHandler) {
+    if (autoFixItHandler->hasFixIts()) {
+      autoFixItHandler->applyFixIts();
+      llvm::outs() << "Fixits applied.\n";
+    } else {
+      llvm::outs() << "No fixits to apply.\n";
+    }
+    return OwningOpRef<ModuleOp>();
+  }
+
   if (!module)
     return Error("failed to parse the provided Mojo source module");
 

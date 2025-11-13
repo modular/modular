@@ -57,4 +57,10 @@ def disable_warnings : Flag<["--", "-"],
   "disable-warnings">, Group<DiagnosticOptionGroup>, Index<7>,
   HelpText<"Do not print warning messages.">;
 
+def fixit : Flag<["--", "-"],
+  "experimental-fixit">, Group<DiagnosticOptionGroup>, Index<8>,
+  HelpText<"Automatically apply fix-its to the code, and rerun the command "
+           "again after the fix-its are applied. WARNING: this feature is "
+           "highly experimental and may result in irreversible data loss.">;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_DIAGNOSTICOPTIONS_TD

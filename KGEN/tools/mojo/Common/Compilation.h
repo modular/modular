@@ -80,7 +80,8 @@ ErrorOrSuccess parseTargetOptions(
 
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,
 /// and attaching post parse metadata. On success, returns the parsed module
-/// operation.
+/// operation. If the `autoFixIt` flag is set and the parser collects any
+/// fix-its, they will be applied, and the returned module will be null.
 ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
@@ -89,6 +90,7 @@ ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier stripFilePrefixId,
     llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdlibPath,
+    llvm::opt::OptSpecifier autoFixIt,
     function_ref<OwningOpRef<ModuleOp>(KGEN::LIT::ParserConfig &,
                                        mlir::TimingScope &)>
         parseFn);
