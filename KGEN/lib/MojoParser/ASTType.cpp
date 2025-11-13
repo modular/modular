@@ -61,7 +61,11 @@ MojoInflightDiag::~MojoInflightDiag() {
   if (!getDiags() || emittedTypes.empty())
     return;
 
-  // TODO: Expand sugar.
+  for (auto [loc, type] : emittedTypes) {
+    Type desugared = SugarAttr::strip(type);
+    if (desugared != type)
+      attachNote(loc) << type << " is aka " << ASTType(desugared);
+  }
 }
 
 //===----------------------------------------------------------------------===//
