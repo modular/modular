@@ -36,7 +36,12 @@ class LoRAConfig(MAXConfig):
     """Maximum rank of all possible LoRAs"""
 
     max_num_loras: int = 1
-    """The maximum number of active LoRAs in a batch"""
+    """The maximum number of active LoRAs in a batch.
+
+    This controls how many LoRA adapters can be active simultaneously during
+    inference. Lower values reduce memory usage but limit concurrent adapter
+    usage.
+    """
 
     _config_file_section_name: str = "lora_config"
     """The section name to use when loading this config from a MAXConfig file.
