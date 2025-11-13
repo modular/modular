@@ -389,121 +389,119 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
 
   auto output = AsyncRT::AsyncValueRef<MCInfo>::allocate(runtime);
 
-  runtime.getWorkQueue()->addTask([nonBitcodeKeySize, loc, &runtime,
-                                   keyBuf = keyBuf.copy(),
-                                   output = output.copy(), options, isJIT,
-                                   isParLLC, moduleIdx, splitIdx,
-                                   numFunctionBase,
-                                   inputModule = std::move(module),
-                                   &targetMachine, &tmMutex]() mutable {
-    if (isNVPTXBackend(options) && isParLLC) {
-      return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-          "cannot do per function codegen for NVPTX backend.", loc));
-    }
-    LLVMModuleAndContext moduleAndContext;
-    if (isParLLC) {
-      BufferRef keyBufRef(std::move(keyBuf));
-      StringRef bitcodeBuffer = keyBufRef->getBuffer();
-      bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
+  runtime.getWorkQueue()->addTask(
+      [nonBitcodeKeySize, loc, keyBuf = keyBuf.copy(), output = output.copy(),
+       options, isJIT, isParLLC, moduleIdx, splitIdx, numFunctionBase,
+       inputModule = std::move(module), &targetMachine, &tmMutex]() mutable {
+        if (isNVPTXBackend(options) && isParLLC) {
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+              "cannot do per function codegen for NVPTX backend.", loc));
+        }
+        LLVMModuleAndContext moduleAndContext;
+        if (isParLLC) {
+          BufferRef keyBufRef(std::move(keyBuf));
+          StringRef bitcodeBuffer = keyBufRef->getBuffer();
+          bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
 
-      // Load the cached bytecode into a new context.
-      // This is necessary to avoid data races during multi-threading with
-      // per function parallelization.
-      ErrorOrSuccess createModuleResult = moduleAndContext.create(
-          [&](llvm::LLVMContext &ctx)
-              -> ErrorOr<std::unique_ptr<llvm::Module>> {
-            llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
-                llvm::parseBitcodeFile(llvm::MemoryBufferRef(bitcodeBuffer, ""),
-                                       ctx);
-            if (!moduleOr)
-              return Error("failed to create LLVMModuleAndContext");
-            return std::move(*moduleOr);
-          });
-      if (createModuleResult) {
-        return std::move(output).setToError(
-            AsyncRT::getMLIRDiagnostic("failed to load LLVM IR bitcode", loc));
-      }
-    } else {
-      moduleAndContext = std::move(inputModule);
-    }
+          // Load the cached bytecode into a new context.
+          // This is necessary to avoid data races during multi-threading with
+          // per function parallelization.
+          ErrorOrSuccess createModuleResult = moduleAndContext.create(
+              [&](llvm::LLVMContext &ctx)
+                  -> ErrorOr<std::unique_ptr<llvm::Module>> {
+                llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
+                    llvm::parseBitcodeFile(
+                        llvm::MemoryBufferRef(bitcodeBuffer, ""), ctx);
+                if (!moduleOr)
+                  return Error("failed to create LLVMModuleAndContext");
+                return std::move(*moduleOr);
+              });
+          if (createModuleResult) {
+            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+                "failed to load LLVM IR bitcode", loc));
+          }
+        } else {
+          moduleAndContext = std::move(inputModule);
+        }
 
-    // Create TargetMachine for this module. This is also necessary to
-    // avoid data races during multi-threading.
-    ErrorOr<std::unique_ptr<llvm::TargetMachine>> machineOr =
-        createTargetMachine(options, isJIT);
-    if (failed(machineOr)) {
-      return std::move(output).setToError(
-          AsyncRT::getMLIRDiagnostic("failed to create TargetMachine", loc));
-    }
+        // Create TargetMachine for this module. This is also necessary to
+        // avoid data races during multi-threading.
+        ErrorOr<std::unique_ptr<llvm::TargetMachine>> machineOr =
+            createTargetMachine(options, isJIT);
+        if (failed(machineOr)) {
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+              "failed to create TargetMachine", loc));
+        }
 
-    llvm::TargetMachine &llvmTargetMachine =
-        static_cast<llvm::TargetMachine &>(**machineOr);
-    llvmTargetMachine.Options.MCOptions.AsmVerbose = options.verboseOutput;
-    llvmTargetMachine.Options.MCOptions.PreserveAsmComments =
-        options.verboseOutput;
+        llvm::TargetMachine &llvmTargetMachine =
+            static_cast<llvm::TargetMachine &>(**machineOr);
+        llvmTargetMachine.Options.MCOptions.AsmVerbose = options.verboseOutput;
+        llvmTargetMachine.Options.MCOptions.PreserveAsmComments =
+            options.verboseOutput;
 
-    std::string saveTempsPrefix = options.saveTempsPrefix;
-    if (!options.saveTempsPrefix.empty()) {
-      if (moduleIdx)
-        saveTempsPrefix += "_" + std::to_string(*moduleIdx);
-      if (splitIdx)
-        saveTempsPrefix += "__" + std::to_string(*splitIdx);
-    }
+        std::string saveTempsPrefix = options.saveTempsPrefix;
+        if (!options.saveTempsPrefix.empty()) {
+          if (moduleIdx)
+            saveTempsPrefix += "_" + std::to_string(*moduleIdx);
+          if (splitIdx)
+            saveTempsPrefix += "__" + std::to_string(*splitIdx);
+        }
 
-    if (failed(
-            writeTempModule(saveTempsPrefix, ".pre-llc", *moduleAndContext))) {
-      return std::move(output).setToError(
-          AsyncRT::getMLIRDiagnostic("failed save pre-llc llvm IR", loc));
-    }
+        if (failed(writeTempModule(saveTempsPrefix, ".pre-llc",
+                                   *moduleAndContext))) {
+          return std::move(output).setToError(
+              AsyncRT::getMLIRDiagnostic("failed save pre-llc llvm IR", loc));
+        }
 
-    std::unique_ptr<llvm::MachineModuleInfo> machineModuleInfo;
-    std::unique_ptr<llvm::MCContext> mcContext;
-    auto buf = WriteableBuffer::get();
+        std::unique_ptr<llvm::MachineModuleInfo> machineModuleInfo;
+        std::unique_ptr<llvm::MCContext> mcContext;
+        auto buf = WriteableBuffer::get();
 
-    // Run llc passes.
-    if (failed(runLlcPasses(
-            *moduleAndContext, options, **machineOr, *buf, machineModuleInfo,
-            mcContext, llvm::CodeGenFileType::ObjectFile,
-            /*stopBeforeAsmPrint=*/true, numFunctionBase, &targetMachine))) {
-      return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-          "llc failed to codegen LLVM IR to object code", loc));
-    }
+        // Run llc passes.
+        if (failed(runLlcPasses(*moduleAndContext, options, **machineOr, *buf,
+                                machineModuleInfo, mcContext,
+                                llvm::CodeGenFileType::ObjectFile,
+                                /*stopBeforeAsmPrint=*/true, numFunctionBase,
+                                &targetMachine))) {
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+              "llc failed to codegen LLVM IR to object code", loc));
+        }
 
-    if (!options.saveTempsPrefix.empty()) {
-      if (failed(writeTempModule(saveTempsPrefix, ".post-llc",
-                                 *moduleAndContext))) {
-        return std::move(output).setToError(
-            AsyncRT::getMLIRDiagnostic("failed save post-llc llvm IR", loc));
-      }
-    }
+        if (!options.saveTempsPrefix.empty()) {
+          if (failed(writeTempModule(saveTempsPrefix, ".post-llc",
+                                     *moduleAndContext))) {
+            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+                "failed save post-llc llvm IR", loc));
+          }
+        }
 
-    llvm::StringMap<const llvm::Function *> fnNameToFnPtr;
-    auto wbuf = WriteableBuffer::get();
+        llvm::StringMap<const llvm::Function *> fnNameToFnPtr;
+        auto wbuf = WriteableBuffer::get();
 
-    for (llvm::Function &fn : moduleAndContext->functions())
-      fnNameToFnPtr.insert({fn.getName().str(), &fn});
+        for (llvm::Function &fn : moduleAndContext->functions())
+          fnNameToFnPtr.insert({fn.getName().str(), &fn});
 
-    llvm::WriteBitcodeToFile(*moduleAndContext, *wbuf);
+        llvm::WriteBitcodeToFile(*moduleAndContext, *wbuf);
 
-    // Move and reset SubtargetInfo for MachineFunctions to
-    // shared TargetMachine so as to reduce memory footprint
-    // as soon as possible before reaching the mclinking barrier.
-    {
-      // Need to use a mutex here while modifying the shared targetMachine.
-      std::lock_guard<std::mutex> lock(tmMutex);
-      resetSubtargetInfo(targetMachine, *machineModuleInfo);
-    }
+        // Move and reset SubtargetInfo for MachineFunctions to
+        // shared TargetMachine so as to reduce memory footprint
+        // as soon as possible before reaching the mclinking barrier.
+        {
+          // Need to use a mutex here while modifying the shared targetMachine.
+          std::lock_guard<std::mutex> lock(tmMutex);
+          resetSubtargetInfo(targetMachine, *machineModuleInfo);
+        }
 
-    // Release more memory before reaching the mclinking barrier.
-    releaseTargetMachineConstants(**machineOr);
+        // Release more memory before reaching the mclinking barrier.
+        releaseTargetMachineConstants(**machineOr);
 
-    std::move(output).emplace(
-        wbuf, std::move(machineModuleInfo),
-        // Keep the original llvm::Module alive so that the MachineFunction
-        // reference to llvm::Function is still valid.
-        std::move(moduleAndContext), fnNameToFnPtr, std::move(*machineOr),
-        std::move(mcContext), splitIdx);
-  });
+        std::move(output).emplace(
+            wbuf, std::move(machineModuleInfo),
+            // Keep the original llvm::Module alive so that the MachineFunction
+            // reference to llvm::Function is still valid.
+            std::move(moduleAndContext), fnNameToFnPtr, std::move(*machineOr),
+            std::move(mcContext), splitIdx);
+      });
 
   return output;
 }
@@ -1189,12 +1187,11 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
                                          symbolLinkageTypes);
 
       andThenSyncMoving(
-          cachedResults,
-          [this, moduleName = std::move(moduleName), op, moduleLoc, moduleCtx,
-           buf = buf.copy(), output = output.copy(), emitAssembly,
-           options = options, symbolLinkageTypes,
-           originalFnOrdering = std::move(originalFnOrdering)](
-              MutableArrayRef<AnyAsyncValueRef> values) mutable {
+          cachedResults, [this, moduleName = std::move(moduleName), op,
+                          moduleLoc, buf = buf.copy(), output = output.copy(),
+                          emitAssembly, options = options, symbolLinkageTypes,
+                          originalFnOrdering = std::move(originalFnOrdering)](
+                             MutableArrayRef<AnyAsyncValueRef> values) mutable {
             ErrorOr<WriteableBufferRef> mcLinkResult =
                 emitArchiveMCLinking(values, moduleName, emitAssembly,
                                      symbolLinkageTypes, originalFnOrdering);
