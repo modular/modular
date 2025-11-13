@@ -19,7 +19,6 @@ modular_cc_binary(
         "//Support:Base",
         "//Support:Context",
         "//Support:Globals",
-        "//Support:Telemetry",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:MlirLspServerLib",
     ],

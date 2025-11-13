@@ -9,7 +9,6 @@
 #include "AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
 #include "AsyncRT/Runtime/Algorithms.h"
 #include "AsyncRT/Runtime/Runtime.h"
-#include "Cache/CacheTelemetryContext.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/ExecutionEngine/JIT/StaticArchiveLayer.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -27,7 +26,6 @@
 #include "Support/Config.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
-#include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/CAPI/IR.h"
 #include "mlir/CAPI/Rewrite.h"
@@ -737,33 +735,20 @@ KGENCompiler::KGENCompiler(MLIRContext &context, CompilationOptions options,
 
 ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
                                              TargetInfoAttr target) {
-  llvm::StringMap<Telemetry::MetricAttributeValue> attrs;
-  auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
-  if (fileLine)
-    attrs["filename"] = fileLine.getFilename().str();
-
   auto cacheBackend = getMojoCacheBackend();
   if (cacheBackend.isError())
     return cacheBackend.takeError();
 
   // Run the passes as a cached transform.
   ContextRef ctx = loadContext(target.getContext());
-  [[maybe_unused]] auto timeScope =
-      ctx->get<M::Telemetry::TelemetryContext>()
-          ->createUInt64Timer<std::chrono::milliseconds>(
-              "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
 
   auto transformCache =
       RCRef<Cache::TransformCache>::create(std::move(*cacheBackend));
 
-  return runKGENPipeline(theModule, target, transformCache,
-                         ctx->get<AsyncRT::Runtime>()->getReadyChain().copy(),
-                         Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
-                             "KGENCompiler::runKGENPipeline",
-                             "mojo.compiler.cache.miss.time",
-                             {{"pipeline", "KGEN"}}),
-                         Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
-                             "KGENCompiler::runKGENPipeline"));
+  return runKGENPipeline(
+      theModule, target, transformCache,
+      ctx->get<AsyncRT::Runtime>()->getReadyChain().copy(),
+      [](mlir::Operation *) {}, [](mlir::Operation *) {});
 }
 
 static mlir::PassManager
@@ -831,12 +816,7 @@ ErrorOrSuccess KGENCompiler::runGenerateLibraryPipeline(ModuleOp module) {
       *loadContext(module.getContext())->get<AsyncRT::Runtime>();
   AsyncRT::AnyAsyncValueRef ready = Cache::cachedTransform(
       module, transformCache.copy(), AsyncValueRef<Chain>::createReady(runtime),
-      pm,
-      Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
-          "KGEN::runGenerateLibraryPipeline", "mojo.compiler.cache.miss.time",
-          {{"pipeline", "KGEN"}}),
-      Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
-          "KGEN::runGenerateLibraryPipeline"));
+      pm, [](mlir::Operation *) {}, [](mlir::Operation *) {});
 
   // This await here is important since pm is local in this function.
   AsyncRT::await(ready);

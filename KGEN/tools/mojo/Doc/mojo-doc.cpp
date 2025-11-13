@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-doc.h"
-#include "../../common/Telemetry.h"
 
 #include "AsyncRT/Runtime/Allocator.h"
 #include "AsyncRT/Runtime/Runtime.h"
@@ -90,13 +89,6 @@ static int doc(const State &subcommandState) {
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
-
-  // Initialize telemetry, making sure to redact any arguments that may contain
-  // user-sensitive data.
-  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  auto scopedThread = logToolInvocationEventAsync(
-      telemetryCtx, StringRef(state.subcommand), args,
-      /*privateArgs=*/{options::OPT_I, options::OPT_o});
 
   // Resolve the input, or exit with an error.
   auto pathOrErr =
