@@ -17,14 +17,14 @@ RUNNERS = {
     "H100": "modrunner-h100",
     "B200": "modrunner-b200",
     "MI300": "modrunner-mi300",
-    "H100_2X": "modrunner-h100-2x",
+    "2xH100": "modrunner-h100-2x",
 }
 
 # Framework → GPUs that framework cannot run on.
 HW_EX = {"vllm": {"MI300"}, "sglang": {"MI300"}}
 
 # Models tagged "multi" are skipped on these GPUs.
-MULTI_GPUS = {"H100_2X"}
+MULTI_GPUS = {"2xH100"}
 
 # Model → list of exclusions:
 #   - framework (e.g. "max")
@@ -112,7 +112,7 @@ def main(
         "H100": run_on_h100,
         "B200": run_on_b200,
         "MI300": run_on_mi300,
-        "H100_2X": run_on_2xh100,
+        "2xH100": run_on_2xh100,
     }
     gpus = [gpu for gpu, ok in flags.items() if ok]
     models = parse_override(models_override) or list(MODELS)

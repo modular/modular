@@ -114,24 +114,28 @@ def server_is_ready() -> bool:
 
 
 def get_server_cmd(framework: str, model: str) -> list[str]:
-    gpu_model, _ = get_gpu_name_and_count()
+    gpu_model, gpu_count = get_gpu_name_and_count()
     sglang_backend = "triton" if "b200" in gpu_model.lower() else "fa3"
     SGLANG = f"sglang.launch_server --attention-backend {sglang_backend} --mem-fraction-static 0.8"
     # limit-mm-per-prompt.video is for InternVL3 on B200
     VLLM = "vllm.entrypoints.openai.api_server --max-model-len 16384 --limit-mm-per-prompt.video 0"
     MAX = "max.entrypoints.pipelines serve"
-    MAX_CI = "./bazelw run --config=ci --config=disable-mypy max -- serve"
+
+    if gpu_count > 1:
+        MAX += f" --devices gpu:{','.join(str(i) for i in range(gpu_count))}"
+        VLLM += f" --tensor-parallel-size={gpu_count}"
+        SGLANG += f" --tp-size={gpu_count}"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"
-        cmd = [sys.executable, "-m", "max.entrypoints.pipelines", "serve"]
+        cmd = [sys.executable, "-m", *MAX.split()]
     else:
+        assert framework != "max-ci", "max-ci must be run through bazel"
         interpreter = [".venv-serve/bin/python", "-m"]
         commands = {
             "sglang": [*interpreter, *SGLANG.split()],
             "vllm": [*interpreter, *VLLM.split()],
             "max": [*interpreter, *MAX.split()],
-            "max-ci": MAX_CI.split(),
         }
         cmd = commands[framework]
     return cmd + ["--port", "8000", "--trust-remote-code", "--model", model]
