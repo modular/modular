@@ -16,19 +16,19 @@ import click
 RUNNERS = {
     "H100": "modrunner-h100",
     "B200": "modrunner-b200",
-    "MI300": "modrunner-mi300",
+    "MI355": "modrunner-mi355",
     "2xH100": "modrunner-h100-2x",
 }
 
 # Framework → GPUs that framework cannot run on.
-HW_EX = {"vllm": {"MI300"}, "sglang": {"MI300"}}
+HW_EX = {"vllm": {"MI355"}, "sglang": {"MI355"}}
 
 # Models tagged "multi" are skipped on these GPUs.
 MULTI_GPUS = {"2xH100"}
 
 # Model → list of exclusions:
 #   - framework (e.g. "max")
-#   - gpu (e.g. "MI300")
+#   - gpu (e.g. "MI355")
 #   - framework@gpu (e.g. "sglang@B200")
 #   - "multi" (skip model on MULTI_GPUS)
 #
@@ -57,11 +57,11 @@ MODELS = {
     "qwen/qwen2.5-7b-instruct": ["multi"],
     "qwen/qwen2.5-vl-7b-instruct": ["multi"],
     "qwen/qwen3-8b": ["multi"],
-    "redhatai/gemma-3-27b-it-fp8-dynamic": ["MI300"],
+    "redhatai/gemma-3-27b-it-fp8-dynamic": ["MI355"],
     "unsloth/gpt-oss-20b-bf16": [
         "max-ci@H100",
         "max@H100",
-        "max@MI300",
+        "max@MI355",
         "multi",
     ],
 }
@@ -98,20 +98,20 @@ def parse_override(raw: str | None) -> list[str]:
 )
 @click.option("--run-on-h100", is_flag=True)
 @click.option("--run-on-b200", is_flag=True)
-@click.option("--run-on-mi300", is_flag=True)
+@click.option("--run-on-mi355", is_flag=True)
 @click.option("--run-on-2xh100", is_flag=True)
 def main(
     framework: str,
     models_override: str | None,
     run_on_h100: bool,
     run_on_b200: bool,
-    run_on_mi300: bool,
+    run_on_mi355: bool,
     run_on_2xh100: bool,
 ) -> None:
     flags = {
         "H100": run_on_h100,
         "B200": run_on_b200,
-        "MI300": run_on_mi300,
+        "MI355": run_on_mi355,
         "2xH100": run_on_2xh100,
     }
     gpus = [gpu for gpu, ok in flags.items() if ok]
