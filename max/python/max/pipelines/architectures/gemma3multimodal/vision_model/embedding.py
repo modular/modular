@@ -65,7 +65,7 @@ class Gemma3VisionEmbeddings(Module):
         self.num_patches = (
             self.image_size // self.patch_size
         ) ** 2  # 4096 = (896 // 14)^2
-        self.num_positions = self.num_patches
+        self.num_positions = self.num_patches + 1 # ? internvl adds the 1
 
         self.position_embedding = Embedding(
             vocab_size=self.num_positions,
