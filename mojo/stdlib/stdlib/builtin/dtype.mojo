@@ -183,6 +183,20 @@ struct DType(
     - exponent_bias: 1
     """
 
+    alias float8_e8m0fnu = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e8m0fnu> : !kgen.dtype`
+    )
+    """Represents the 8-bit `E8M0Fnu` floating point format defined in the
+    [OFP8 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
+    encoded as `eeeeeeee`:
+
+    - (e)xponent: 8 bits
+    - (m)antissa: 0 bits
+    - exponent bias: 127
+    - nan: 11111111
+    - fn: finite (no inf or -inf encodings)
+    - u: no sign or zero value.
+    """
     alias float8_e3m4 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e3m4> : !kgen.dtype`
     )
@@ -197,10 +211,6 @@ struct DType(
     - fn: finite (no inf or -inf encodings)
     - -0: 1.000.0000
     """
-
-    # reference for the 4 float8 types
-    # https://onnx.ai/onnx/technical/float8.html
-
     alias float8_e4m3fn = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e4m3fn> : !kgen.dtype`
     )
@@ -235,20 +245,6 @@ struct DType(
     - nan: 1.0000.000
     - fn: finite (no inf or -inf encodings)
     - uz: unsigned zero (no -0 encoding)
-    """
-    alias float8_e8m0fnu = DType(
-        mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e8m0fnu> : !kgen.dtype`
-    )
-    """Represents the 8-bit `E8M0Fnu` floating point format defined in the
-    [OFP8 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
-    encoded as `eeeeeeee`:
-
-    - (e)xponent: 8 bits
-    - (m)antissa: 0 bits
-    - exponent bias: 127
-    - nan: 11111111
-    - fn: finite (no inf or -inf encodings)
-    - u: no sign or zero value.
     """
     alias float8_e5m2 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e5m2> : !kgen.dtype`
