@@ -548,6 +548,11 @@ what we publish.
 
 - The Mojo language server will now report more coherent code actions.
 
+- The `mojo` driver now has a `--experimental-fixit` flag that automatically
+  applies FixIt hints emitted by the parser. This feature is highly
+  experimental, and users should ensure they back up their files (or check them
+  into source control) before using it.
+
 ### ❌ Removed {#25-7-removed}
 
 - `LayoutTensorBuild` type has been removed.  Use `LayoutTensor` with parameters
