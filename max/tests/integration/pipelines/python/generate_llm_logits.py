@@ -32,6 +32,7 @@ from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
+from max.entrypoints.cli.entrypoint import configure_cli_logging
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
@@ -1578,6 +1579,7 @@ def generate_llm_logits(
     """
     if workspace_dir := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(workspace_dir)
+    configure_cli_logging(level="INFO")
 
     pipeline_oracle = PIPELINE_ORACLES[pipeline_name]
 
