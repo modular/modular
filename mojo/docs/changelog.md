@@ -69,9 +69,10 @@ what we publish.
     fn __iter__(self) -> Self.BorrowingIterator: ...
   ```
 
-- Literals now have a default type. For example, you can now bind `[1,2,3]` to
-  `T` in a call to a function defined as `fn zip[T: Iterable](impl:T)` because
-  it will default to the standard library's List type.
+- Collection literals now have a default type. For example, you can now bind
+  `[1,2,3]` to `T` in a call to a function defined as
+  `fn zip[T: Iterable](impl:T)` because it will default to the standard
+  library's `List` type.
 
 - Mojo now has a `__functions_in_module` experimental intrinsic that allows
   reflection over the functions declared in the module where it is called. For
@@ -151,6 +152,29 @@ what we publish.
   type is defined by the [Open Compute MX Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf).
 
 - `deinit` methods may now transfer all of 'self' to another `deinit' method.
+
+- Error and warning messages now preserve `comptime` aliases in many cases, to
+  prevent extremely long type names for complex types.  The compiler will expand
+  these when necessary to understand the type based on a simple heuristic, for
+  example:
+
+  ```mojo
+  struct Dep[T: AnyType, v: T]: pass
+  alias MyDep[T: AnyType, v: T] = Dep[T, v]
+  alias MyDepGetAlias0 = MyDep.hello
+  ```
+
+  produces:
+
+  ```console
+  $ mojo t.mojo
+  t.mojo:10:29: error: 'MyDep' needs more parameters bound before accessing attributes
+  alias MyDepGetAlias0 = MyDep.hello
+                            ^
+  t.mojo:10:29: note: 'MyDep' is aka 'alias[T: AnyType, v: T] Dep[T, v]'
+  ```
+
+  please file issues in cases where more information needs to be exposed.
 
 ### Language changes {#25-7-language-changes}
 
