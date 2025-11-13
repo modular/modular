@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-demangle.h"
-#include "../../common/Telemetry.h"
 
 #include "AsyncRT/Runtime/Runtime.h"
 #include "Init/Init.h"
@@ -74,11 +73,6 @@ static int demangle(const State &state) {
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
-
-  // Initialize telemetry.
-  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  auto scopedThread = logToolInvocationEventAsync(
-      telemetryCtx, StringRef(state.subcommand), args);
 
   // Initialize the MLIR context with all of KGEN's dialects.
   DialectRegistry registry;

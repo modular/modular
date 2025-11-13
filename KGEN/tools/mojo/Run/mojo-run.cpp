@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-run.h"
-#include "../../common/Telemetry.h"
 #include "../Common/Compilation.h"
 
 #include "AsyncRT/CompilerSupport/Context.h"
@@ -29,7 +28,6 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
-#include "Support/Telemetry/Telemetry.h"
 
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -230,11 +228,6 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 static ErrorOrSuccess executeMain(ExecutionEngine &engine,
                                   AsyncRT::Runtime &runtime,
                                   ArrayRef<const char *> arguments) {
-  [[maybe_unused]] auto timeScope =
-      runtime.context->get<M::Telemetry::TelemetryContext>()
-          ->createUInt64Timer<std::chrono::milliseconds>(
-              "mojo.run.time", M::Telemetry::Level::L2);
-
   auto runFn = [arguments](void *fnPtr) -> ErrorOrSuccess {
     using FnType = int (*)(int, const char *const *);
 
@@ -388,13 +381,6 @@ static int run(const State &subcommandState) {
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
   registerContext(mlirCtx, ctx);
-
-  // Initialize telemetry, making sure to redact any arguments that may contain
-  // user-sensitive data.
-  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  auto scopedThread = logToolInvocationEventAsync(
-      telemetryCtx, StringRef(state.subcommand), args,
-      /*privateArgs=*/{options::OPT_D, options::OPT_I});
 
   // Lower the input file to an MLIR module.
   AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();

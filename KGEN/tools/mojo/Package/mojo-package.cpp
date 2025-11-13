@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-package.h"
-#include "../../common/Telemetry.h"
 #include "../Common/Compilation.h"
 
 #include "AsyncRT/CompilerSupport/Context.h"
@@ -453,13 +452,6 @@ static int package(const State &subcommandState) {
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
   registerContext(packageArgs.ctx, ctx);
-
-  // Initialize telemetry, making sure to redact any arguments that may contain
-  // user-sensitive data.
-  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  auto scopedThread = logToolInvocationEventAsync(
-      telemetryCtx, StringRef(state.subcommand), args,
-      /*privateArgs=*/{options::OPT_I, options::OPT_o});
 
   //===--------------------------------------------------------------------===//
   // Build the package

@@ -122,7 +122,6 @@ pkg_files(
             "//KGEN:Support",
             "//KGEN:SupportForceLinkMLIRC",
             "//KGEN:ToolCommon",
-            "//KGEN/tools/common",
             "//Support:Base",
             "//Support:Compiler",
             "//Support:CrashReporting",
@@ -131,7 +130,6 @@ pkg_files(
             "//Support:Globals",
             "//Support:MArchTarget",
             "//Support:MDialect",
-            "//Support:Telemetry",
             "@llvm-project//mlir:IndexDialect",
         ],
     )

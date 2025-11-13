@@ -10,7 +10,6 @@
 #include "AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
 #include "AsyncRT/Runtime/Algorithms.h"
 #include "AsyncRT/Runtime/Runtime.h"
-#include "Cache/CacheTelemetryContext.h"
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Compiler/LLVMOptimizationPipeline.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
@@ -28,7 +27,6 @@
 #include "MCLinker.h"
 #include "Support/Context.h"
 #include "Support/FileSystemExtras.h"
-#include "Support/Telemetry/Telemetry.h"
 #include "LLVM/Bitcode/MetalBitcodeWriter.h"
 
 #include "mlir/IR/DialectResourceBlobManager.h"
@@ -185,10 +183,6 @@ static LogicalResult runLLVMOptPasses(llvm::Module &module,
                                       const CompilationOptions &options,
                                       AsyncRT::Runtime &runtime) {
   CompilerTimeTraceScope traceScope("llvm-optimize", module.getName());
-  [[maybe_unused]] auto timeScope =
-      runtime.context->get<M::Telemetry::TelemetryContext>()
-          ->createUInt64Timer<std::chrono::milliseconds>(
-              "mojo.llvm.optimize.time", M::Telemetry::Level::L2);
   using namespace llvm;
 
   LoopAnalysisManager loopAnalysisMgr;
@@ -247,17 +241,8 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
              std::unique_ptr<llvm::MCContext> &mcContext,
              llvm::CodeGenFileType fileType, bool stopBeforeAsmPrint,
              unsigned numFunctionsBase = 0,
-             llvm::TargetMachine *sharedTargetMachine = nullptr,
-             M::Telemetry::TelemetryContext *telemetryCtx = nullptr) {
+             llvm::TargetMachine *sharedTargetMachine = nullptr) {
   CompilerTimeTraceScope traceScope("llvm-codegen", module.getName());
-  std::optional<M::Telemetry::Timer<uint64_t, std::chrono::milliseconds>>
-      timeScope;
-  if (telemetryCtx) {
-    llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
-        {"filename", module.getSourceFileName()}};
-    timeScope = telemetryCtx->createUInt64Timer<std::chrono::milliseconds>(
-        "mojo.llvm.optimize.time", M::Telemetry::Level::L2, attrs);
-  }
   using namespace llvm;
 
   // Build up all of the passes that we want to do to the module.
@@ -404,120 +389,121 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
 
   auto output = AsyncRT::AsyncValueRef<MCInfo>::allocate(runtime);
 
-  runtime.getWorkQueue()->addTask(
-      [nonBitcodeKeySize, loc, &runtime, keyBuf = keyBuf.copy(),
-       output = output.copy(), options, isJIT, isParLLC, moduleIdx, splitIdx,
-       numFunctionBase, inputModule = std::move(module), &targetMachine,
-       &tmMutex]() mutable {
-        if (isNVPTXBackend(options) && isParLLC) {
-          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-              "cannot do per function codegen for NVPTX backend.", loc));
-        }
-        LLVMModuleAndContext moduleAndContext;
-        if (isParLLC) {
-          BufferRef keyBufRef(std::move(keyBuf));
-          StringRef bitcodeBuffer = keyBufRef->getBuffer();
-          bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
+  runtime.getWorkQueue()->addTask([nonBitcodeKeySize, loc, &runtime,
+                                   keyBuf = keyBuf.copy(),
+                                   output = output.copy(), options, isJIT,
+                                   isParLLC, moduleIdx, splitIdx,
+                                   numFunctionBase,
+                                   inputModule = std::move(module),
+                                   &targetMachine, &tmMutex]() mutable {
+    if (isNVPTXBackend(options) && isParLLC) {
+      return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+          "cannot do per function codegen for NVPTX backend.", loc));
+    }
+    LLVMModuleAndContext moduleAndContext;
+    if (isParLLC) {
+      BufferRef keyBufRef(std::move(keyBuf));
+      StringRef bitcodeBuffer = keyBufRef->getBuffer();
+      bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
 
-          // Load the cached bytecode into a new context.
-          // This is necessary to avoid data races during multi-threading with
-          // per function parallelization.
-          ErrorOrSuccess createModuleResult = moduleAndContext.create(
-              [&](llvm::LLVMContext &ctx)
-                  -> ErrorOr<std::unique_ptr<llvm::Module>> {
-                llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
-                    llvm::parseBitcodeFile(
-                        llvm::MemoryBufferRef(bitcodeBuffer, ""), ctx);
-                if (!moduleOr)
-                  return Error("failed to create LLVMModuleAndContext");
-                return std::move(*moduleOr);
-              });
-          if (createModuleResult) {
-            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-                "failed to load LLVM IR bitcode", loc));
-          }
-        } else {
-          moduleAndContext = std::move(inputModule);
-        }
+      // Load the cached bytecode into a new context.
+      // This is necessary to avoid data races during multi-threading with
+      // per function parallelization.
+      ErrorOrSuccess createModuleResult = moduleAndContext.create(
+          [&](llvm::LLVMContext &ctx)
+              -> ErrorOr<std::unique_ptr<llvm::Module>> {
+            llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
+                llvm::parseBitcodeFile(llvm::MemoryBufferRef(bitcodeBuffer, ""),
+                                       ctx);
+            if (!moduleOr)
+              return Error("failed to create LLVMModuleAndContext");
+            return std::move(*moduleOr);
+          });
+      if (createModuleResult) {
+        return std::move(output).setToError(
+            AsyncRT::getMLIRDiagnostic("failed to load LLVM IR bitcode", loc));
+      }
+    } else {
+      moduleAndContext = std::move(inputModule);
+    }
 
-        // Create TargetMachine for this module. This is also necessary to
-        // avoid data races during multi-threading.
-        ErrorOr<std::unique_ptr<llvm::TargetMachine>> machineOr =
-            createTargetMachine(options, isJIT);
-        if (failed(machineOr)) {
-          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-              "failed to create TargetMachine", loc));
-        }
+    // Create TargetMachine for this module. This is also necessary to
+    // avoid data races during multi-threading.
+    ErrorOr<std::unique_ptr<llvm::TargetMachine>> machineOr =
+        createTargetMachine(options, isJIT);
+    if (failed(machineOr)) {
+      return std::move(output).setToError(
+          AsyncRT::getMLIRDiagnostic("failed to create TargetMachine", loc));
+    }
 
-        llvm::TargetMachine &llvmTargetMachine =
-            static_cast<llvm::TargetMachine &>(**machineOr);
-        llvmTargetMachine.Options.MCOptions.AsmVerbose = options.verboseOutput;
-        llvmTargetMachine.Options.MCOptions.PreserveAsmComments =
-            options.verboseOutput;
+    llvm::TargetMachine &llvmTargetMachine =
+        static_cast<llvm::TargetMachine &>(**machineOr);
+    llvmTargetMachine.Options.MCOptions.AsmVerbose = options.verboseOutput;
+    llvmTargetMachine.Options.MCOptions.PreserveAsmComments =
+        options.verboseOutput;
 
-        std::string saveTempsPrefix = options.saveTempsPrefix;
-        if (!options.saveTempsPrefix.empty()) {
-          if (moduleIdx)
-            saveTempsPrefix += "_" + std::to_string(*moduleIdx);
-          if (splitIdx)
-            saveTempsPrefix += "__" + std::to_string(*splitIdx);
-        }
+    std::string saveTempsPrefix = options.saveTempsPrefix;
+    if (!options.saveTempsPrefix.empty()) {
+      if (moduleIdx)
+        saveTempsPrefix += "_" + std::to_string(*moduleIdx);
+      if (splitIdx)
+        saveTempsPrefix += "__" + std::to_string(*splitIdx);
+    }
 
-        if (failed(writeTempModule(saveTempsPrefix, ".pre-llc",
-                                   *moduleAndContext))) {
-          return std::move(output).setToError(
-              AsyncRT::getMLIRDiagnostic("failed save pre-llc llvm IR", loc));
-        }
+    if (failed(
+            writeTempModule(saveTempsPrefix, ".pre-llc", *moduleAndContext))) {
+      return std::move(output).setToError(
+          AsyncRT::getMLIRDiagnostic("failed save pre-llc llvm IR", loc));
+    }
 
-        std::unique_ptr<llvm::MachineModuleInfo> machineModuleInfo;
-        std::unique_ptr<llvm::MCContext> mcContext;
-        auto buf = WriteableBuffer::get();
+    std::unique_ptr<llvm::MachineModuleInfo> machineModuleInfo;
+    std::unique_ptr<llvm::MCContext> mcContext;
+    auto buf = WriteableBuffer::get();
 
-        // Run llc passes.
-        if (failed(runLlcPasses(
-                *moduleAndContext, options, **machineOr, *buf,
-                machineModuleInfo, mcContext, llvm::CodeGenFileType::ObjectFile,
-                /*stopBeforeAsmPrint=*/true, numFunctionBase, &targetMachine,
-                runtime.context->get<M::Telemetry::TelemetryContext>()))) {
-          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-              "llc failed to codegen LLVM IR to object code", loc));
-        }
+    // Run llc passes.
+    if (failed(runLlcPasses(
+            *moduleAndContext, options, **machineOr, *buf, machineModuleInfo,
+            mcContext, llvm::CodeGenFileType::ObjectFile,
+            /*stopBeforeAsmPrint=*/true, numFunctionBase, &targetMachine))) {
+      return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+          "llc failed to codegen LLVM IR to object code", loc));
+    }
 
-        if (!options.saveTempsPrefix.empty()) {
-          if (failed(writeTempModule(saveTempsPrefix, ".post-llc",
-                                     *moduleAndContext))) {
-            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-                "failed save post-llc llvm IR", loc));
-          }
-        }
+    if (!options.saveTempsPrefix.empty()) {
+      if (failed(writeTempModule(saveTempsPrefix, ".post-llc",
+                                 *moduleAndContext))) {
+        return std::move(output).setToError(
+            AsyncRT::getMLIRDiagnostic("failed save post-llc llvm IR", loc));
+      }
+    }
 
-        llvm::StringMap<const llvm::Function *> fnNameToFnPtr;
-        auto wbuf = WriteableBuffer::get();
+    llvm::StringMap<const llvm::Function *> fnNameToFnPtr;
+    auto wbuf = WriteableBuffer::get();
 
-        for (llvm::Function &fn : moduleAndContext->functions())
-          fnNameToFnPtr.insert({fn.getName().str(), &fn});
+    for (llvm::Function &fn : moduleAndContext->functions())
+      fnNameToFnPtr.insert({fn.getName().str(), &fn});
 
-        llvm::WriteBitcodeToFile(*moduleAndContext, *wbuf);
+    llvm::WriteBitcodeToFile(*moduleAndContext, *wbuf);
 
-        // Move and reset SubtargetInfo for MachineFunctions to
-        // shared TargetMachine so as to reduce memory footprint
-        // as soon as possible before reaching the mclinking barrier.
-        {
-          // Need to use a mutex here while modifying the shared targetMachine.
-          std::lock_guard<std::mutex> lock(tmMutex);
-          resetSubtargetInfo(targetMachine, *machineModuleInfo);
-        }
+    // Move and reset SubtargetInfo for MachineFunctions to
+    // shared TargetMachine so as to reduce memory footprint
+    // as soon as possible before reaching the mclinking barrier.
+    {
+      // Need to use a mutex here while modifying the shared targetMachine.
+      std::lock_guard<std::mutex> lock(tmMutex);
+      resetSubtargetInfo(targetMachine, *machineModuleInfo);
+    }
 
-        // Release more memory before reaching the mclinking barrier.
-        releaseTargetMachineConstants(**machineOr);
+    // Release more memory before reaching the mclinking barrier.
+    releaseTargetMachineConstants(**machineOr);
 
-        std::move(output).emplace(
-            wbuf, std::move(machineModuleInfo),
-            // Keep the original llvm::Module alive so that the MachineFunction
-            // reference to llvm::Function is still valid.
-            std::move(moduleAndContext), fnNameToFnPtr, std::move(*machineOr),
-            std::move(mcContext), splitIdx);
-      });
+    std::move(output).emplace(
+        wbuf, std::move(machineModuleInfo),
+        // Keep the original llvm::Module alive so that the MachineFunction
+        // reference to llvm::Function is still valid.
+        std::move(moduleAndContext), fnNameToFnPtr, std::move(*machineOr),
+        std::move(mcContext), splitIdx);
+  });
 
   return output;
 }
@@ -1148,23 +1134,8 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
   auto runTransformation = [&](Operation *op, WriteableBufferRef buf,
                                AsyncRT::AnyAsyncValueRef chain) {
     auto output = AsyncRT::AsyncValueRef<BufferRef>::allocate(runtime);
-#ifdef MODULAR_ENABLE_TELEMETRY
-    CacheTelemetryContext::getCacheTelemetryContext(
-        loadContext(op->getContext()))
-        .recordCacheMiss("ObjectCompiler::emitArchive");
-#endif
     chain.andThenSync([this, op, output = output.copy(), buf = buf.copy(), &tm,
                        emitAssembly]() mutable {
-
-#ifdef MODULAR_ENABLE_TELEMETRY
-      [[maybe_unused]] auto timeScope =
-          loadContext(op->getContext())
-              ->get<M::Telemetry::TelemetryContext>()
-              ->createUInt64Timer<std::chrono::milliseconds>(
-                  "mojo.compile.cache.miss.time", M::Telemetry::Level::L2,
-                  {{"pipeline", "ObjectCompiler::emitArchive"}});
-#endif
-
       // Lower the module to LLVM.
       LLVMModuleAndContext llvmModule;
       Location moduleLoc = op->getLoc();
@@ -1224,16 +1195,6 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
            options = options, symbolLinkageTypes,
            originalFnOrdering = std::move(originalFnOrdering)](
               MutableArrayRef<AnyAsyncValueRef> values) mutable {
-
-#ifdef MODULAR_ENABLE_TELEMETRY
-            [[maybe_unused]] auto timeScope =
-                loadContext(moduleCtx)
-                    ->get<M::Telemetry::TelemetryContext>()
-                    ->createUInt64Timer<std::chrono::milliseconds>(
-                        "mojo.compile.cache.miss.time", M::Telemetry::Level::L2,
-                        {{"pipeline", "ObjectCompiler::emitArchive"}});
-#endif
-
             ErrorOr<WriteableBufferRef> mcLinkResult =
                 emitArchiveMCLinking(values, moduleName, emitAssembly,
                                      symbolLinkageTypes, originalFnOrdering);
@@ -1280,11 +1241,6 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
     return output;
   };
   auto onCacheHit = [](Operation *op, BufferRef buf) {
-#ifdef MODULAR_ENABLE_TELEMETRY
-    CacheTelemetryContext::getCacheTelemetryContext(
-        loadContext(op->getContext()))
-        .recordCacheHit("ObjectCompiler::emitArchive");
-#endif
     op->erase();
     return buf.copy();
   };
@@ -1844,10 +1800,6 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
                             &linker](WriteableBufferRef buf,
                                      AsyncRT::AnyAsyncValueRef chain) mutable {
     auto output = AsyncRT::AsyncValueRef<BufferRef>::allocate(runtime);
-#ifdef MODULAR_ENABLE_TELEMETRY
-    Cache::CacheTelemetryContext::getCacheTelemetryContext(runtime.context)
-        .recordCacheMiss("lowerLLVMModuleToObjectGPU");
-#endif
 
     chain.andThenAsync([loc, &runtime, emissionKind, output = output.copy(),
                         buf = buf.copy(), keyBuf = std::move(keyBuf), options,
@@ -1965,11 +1917,9 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
           module.setDataLayout(tm.createDataLayout());
         }
 
-        if (failed(runLlcPasses(
-                module, options, tm, *buf, machineModuleInfo, mcContext,
-                llvm::CodeGenFileType::AssemblyFile,
-                /*stopBeforeAsmPrint=*/false, 0, nullptr,
-                runtime.context->get<M::Telemetry::TelemetryContext>()))) {
+        if (failed(runLlcPasses(module, options, tm, *buf, machineModuleInfo,
+                                mcContext, llvm::CodeGenFileType::AssemblyFile,
+                                /*stopBeforeAsmPrint=*/false, 0, nullptr))) {
           return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "llc failed to codegen LLVM IR to object code", loc));
         }
@@ -1988,11 +1938,10 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
         if (isNVPTXBackend(options)) {
           // Compile to PTX first.
 
-          if (failed(runLlcPasses(
-                  module, options, tm, *codeBuf, machineModuleInfo, mcContext,
-                  llvm::CodeGenFileType::AssemblyFile,
-                  /*stopBeforeAsmPrint=*/false, 0, nullptr,
-                  runtime.context->get<M::Telemetry::TelemetryContext>()))) {
+          if (failed(runLlcPasses(module, options, tm, *codeBuf,
+                                  machineModuleInfo, mcContext,
+                                  llvm::CodeGenFileType::AssemblyFile,
+                                  /*stopBeforeAsmPrint=*/false, 0, nullptr))) {
             return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                 "llc failed to codegen LLVM IR to object code", loc));
           }
@@ -2022,11 +1971,10 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
           }
           (*buf) << (*bufOr)->getBuffer();
         } else {
-          if (failed(runLlcPasses(
-                  module, options, tm, *codeBuf, machineModuleInfo, mcContext,
-                  llvm::CodeGenFileType::ObjectFile,
-                  /*stopBeforeAsmPrint=*/false, 0, nullptr,
-                  runtime.context->get<M::Telemetry::TelemetryContext>()))) {
+          if (failed(runLlcPasses(module, options, tm, *codeBuf,
+                                  machineModuleInfo, mcContext,
+                                  llvm::CodeGenFileType::ObjectFile,
+                                  /*stopBeforeAsmPrint=*/false, 0, nullptr))) {
             return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                 "llc failed to codegen LLVM IR to object code", loc));
           }
@@ -2052,13 +2000,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
     return output;
   };
 
-  auto onCacheHit = [&](BufferRef buf) {
-#ifdef MODULAR_ENABLE_TELEMETRY
-    Cache::CacheTelemetryContext::getCacheTelemetryContext(runtime.context)
-        .recordCacheHit("lowerLLVMModuleToObjectGPU");
-#endif
-    return buf.copy();
-  };
+  auto onCacheHit = [&](BufferRef buf) { return buf.copy(); };
 
   return Cache::cachedTransform(
       AsyncRT::MLIRLocationDecoder::getEncodedLocation(loc),
@@ -2195,15 +2137,6 @@ ObjectCompiler::emitGPUKernels(
 
   // Perform a cache aware transformation to translate the module to an
   // archive file.
-
-#ifdef MODULAR_ENABLE_TELEMETRY
-  [[maybe_unused]] auto timeScope =
-      loadContext(module->getContext())
-          ->get<M::Telemetry::TelemetryContext>()
-          ->createUInt64Timer<std::chrono::milliseconds>(
-              "mojo.compile.cache.miss.time", M::Telemetry::Level::L2,
-              {{"pipeline", "ObjectCompiler::emitArchive"}});
-#endif
 
   // Lower the module to LLVM.
   LLVMModuleAndContext llvmModule;

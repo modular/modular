@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-repl.h"
-#include "../../common/Telemetry.h"
 #include "../Common/LLDB.h"
 #include "Init/Init.h"
 #include "llvm/Option/ArgList.h"
@@ -39,11 +38,6 @@ static int repl(const State &state) {
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
-
-  // Initialize telemetry.
-  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  auto scopedThread = logToolInvocationEventAsync(
-      telemetryCtx, StringRef(state.subcommand), args);
 
   if (args.hasArg(options::OPT_help)) {
     return state.printHelp(

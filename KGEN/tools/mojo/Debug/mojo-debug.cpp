@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-debug.h"
-#include "../../common/Telemetry.h"
 #include "../Common/CudaGdb.h"
 #include "../Common/LLDB.h"
 #include "Init/Init.h"
@@ -98,11 +97,6 @@ static int debug(const State &state) {
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
-
-  // Initialize telemetry.
-  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  auto scopedThread = logToolInvocationEventAsync(
-      telemetryCtx, StringRef(state.subcommand), parsedArgs);
 
   // LLVMOption treats all "positional arguments" (arguments that do not have a
   // "-" or "--" prefix) as `INPUT`. The very first of these is our launch input
