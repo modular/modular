@@ -2731,15 +2731,21 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     return failure();
   }
 
-  // For vardecls, the primary pattern we're trying to handle is:
-  //   %tmp = lit.var.decl Int
-  //   %tmp2 = lit.ref.struct.ger %tmp, value
-  //   lit.ref.store %v, %tmp2
-  //   lit.load.consume %tmp
-  // Which happens in ctors for builtin operations.  Ignore anything more
-  // complex.
   if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
     auto eltType = evaluator.getReboundType(varDecl.getType().getElementType());
+    // Permit vardecls of certain types we know about.
+    if (eltType.isIntOrIndexOrFloat() ||
+        isa<POP::SIMDType, DTypeType>(eltType)) {
+      varDeclSoFar[varDecl] = UnknownAttr::get(eltType);
+      return TypedAttr();
+    }
+    // The primary pattern we're trying to handle here is:
+    //   %tmp = lit.var.decl Int
+    //   %tmp2 = lit.ref.struct.ger %tmp, value
+    //   lit.ref.store %v, %tmp2
+    //   lit.load.consume %tmp
+    // Which happens in ctors for builtin operations.  Ignore anything more
+    // complex.
     ASTDecl *decl = ASTType(eltType).getDecl(shared);
     StructDeclOp structOp;
     if (decl &&

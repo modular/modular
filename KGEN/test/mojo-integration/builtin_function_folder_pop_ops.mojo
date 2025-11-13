@@ -32,6 +32,14 @@ struct DTypeT[x: DType](ImplicitlyCopyable):
         pass
 
 
+struct BuiltinSI32T[x: __mlir_type.`!pop.scalar<si32>`](ImplicitlyCopyable):
+    fn __init__(out self):
+        pass
+
+    fn __copyinit__(out self, existing: Self):
+        pass
+
+
 ##===----------------------------------------------------------------------===##
 # Fold pop.cast_from_builtin
 ##===----------------------------------------------------------------------===##
@@ -461,3 +469,47 @@ fn pop_unresolved_simd_cmp_sge[
     return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ge>`](
         x._mlir_value, y._mlir_value
     )
+
+
+@always_inline("builtin")
+fn var_decls[dtype: DType](value: IntLiteral) -> Scalar[dtype]._mlir_type:
+    # Convert the IntLiteral to si32
+    var si32_ = __mlir_attr[
+        `#pop<int_literal_convert<`, value.value, `, 0>> : si32`
+    ]
+    # Convert si32 to !pop.simd<si32>
+    var si32 = __mlir_op.`pop.cast_from_builtin`[
+        _type = __mlir_type.`!pop.scalar<si32>`
+    ](si32_)
+    # Convert !pop.simd<si32> to !pop.simd<X>
+    var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](si32)
+    # Convert !pop.simd<X> to !pop.simd<ui8>
+    var pop_ui8 = __mlir_op.`pop.cast`[_type = Scalar[DType.uint8]._mlir_type](
+        si32
+    )
+    # Convert !pop.simd<ui8> to ui8
+    var ui8 = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.ui8](pop_ui8)
+    # Convert ui8 to dtype
+    var dt = __mlir_op.`pop.dtype.from_ui8`(ui8)
+    # Convert dtype to ui8
+    var dt_ui8 = __mlir_op.`pop.dtype.to_ui8`(dt)
+    # Convert the ui8 back to !pop.simd<ui8>
+    var pop_ui8_2 = __mlir_op.`pop.cast_from_builtin`[
+        _type = Scalar[DType.uint8]._mlir_type
+    ](dt_ui8)
+    # Convert !pop.simd<ui8> back to !pop.simd<X>
+    var t = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](pop_ui8_2)
+    # Combine the two
+    var u = __mlir_op.`pop.simd.xor`(s, t)
+    return u
+
+
+# CHECK-LABEL: lit.fn @"fold_var_decls
+fn fold_var_decls() -> (
+    BuiltinSI32T[__mlir_attr.`#pop.simd<0> : !pop.scalar<si32>`]
+):
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder_pop_ops::@BuiltinSI32T<:scalar<si32> sugar_builtin({{.*}}, 0)>, mut *"a`1">
+    var a = BuiltinSI32T[var_decls[DType.int32](42)]()
+    # CHECK: %b = lit.var.decl "b" var : !lit.ref<@builtin_function_folder_pop_ops::@BuiltinSI32T<:scalar<si32> sugar_builtin({{.*}}, -256)>, mut *"b`2">
+    var b = BuiltinSI32T[var_decls[DType.int32](-1)]()
+    return a
