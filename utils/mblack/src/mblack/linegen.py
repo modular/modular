@@ -478,6 +478,7 @@ class LineGenerator(Visitor[Line]):
         v = self.visit_stmt
         Ø: Set[str] = set()
         self.visit_assert_stmt = partial(v, keywords={"assert"}, parens={"assert", ","})
+        self.visit_comptime_assert_stmt = partial(v, keywords={"__comptime_assert"}, parens={"__comptime_assert", ","})
         self.visit_if_stmt = partial(
             v, keywords={"if", "else", "elif"}, parens={"if", "elif"}
         )
@@ -1255,6 +1256,7 @@ def maybe_make_parens_invisible_in_atom(
             syms.annassign,
             syms.expr_stmt,
             syms.assert_stmt,
+            syms.comptime_assert_stmt,
             syms.return_stmt,
             # these ones aren't useful to end users, but they do please fuzzers
             syms.for_stmt,

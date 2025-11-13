@@ -1792,9 +1792,10 @@ class StringParenWrapper(BaseStringSplitter, CustomSplitMapMixin):
                 OR
             None, otherwise.
         """
-        # If this line is apart of an assert statement and the first leaf
-        # contains the "assert" keyword...
-        if parent_type(LL[0]) == syms.assert_stmt and LL[0].value == "assert":
+        # If this line is part of an assert or comptime_assert statement and the first leaf
+        # contains the "assert" or "__comptime_assert" keyword...
+        if ((parent_type(LL[0]) == syms.assert_stmt and LL[0].value == "assert") or
+            (parent_type(LL[0]) == syms.comptime_assert_stmt and LL[0].value == "__comptime_assert")):
             is_valid_index = is_valid_index_factory(LL)
 
             for i, leaf in enumerate(LL):

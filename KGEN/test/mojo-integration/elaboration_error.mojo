@@ -59,3 +59,16 @@ fn constrained[cond: Bool, msg: StaticString]():
     __mlir_op.`kgen.param.assert`[
         cond = cond.__mlir_i1__(), message=msg_literal
     ]()  # expected-note {{constraint failed: param must be 2}}
+
+
+# expected-error @+2{{function instantiation failed}}
+@export
+fn test_comptime_assert():
+    parametric_assert[1]()  # expected-note {{call expansion failed}}
+
+
+# expected-note @+2{{function instantiation failed}}
+@no_inline
+fn parametric_assert[param: Int]():
+    # expected-note @below {{constraint failed: param must be 2}}
+    __comptime_assert param == 2, "param must be 2"

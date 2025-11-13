@@ -103,7 +103,7 @@ vfplist: vfpdef (',' vfpdef)* [',']
 stmt: simple_stmt | compound_stmt
 simple_stmt: small_stmt (';' small_stmt)* [';'] NEWLINE
 small_stmt: (expr_stmt | print_stmt | del_stmt | pass_stmt | flow_stmt |
-             import_stmt | global_stmt | exec_stmt | assert_stmt | alias_stmt)
+             import_stmt | global_stmt | exec_stmt | assert_stmt | comptime_assert_stmt | alias_stmt)
 expr_stmt: testlist_star_expr_stmt (annassign | augassign (yield_expr|testlist) |
                      ('=' (yield_expr|testlist_star_expr))*)
 top_expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
@@ -136,6 +136,7 @@ dotted_name: NAME ('.' NAME)*
 global_stmt: ('global' | 'nonlocal') NAME (',' NAME)*
 exec_stmt: 'exec' expr ['in' test [',' test]]
 assert_stmt: 'assert' test [',' test]
+comptime_assert_stmt: '__comptime_assert' test [',' test]
 var_stmt: (VAR|REF) top_expr_stmt
 alias_target: NAME | '(' alias_target_list ')'
 alias_target_list: alias_target (',' alias_target)*
