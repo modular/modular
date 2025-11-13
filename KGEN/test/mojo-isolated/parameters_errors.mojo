@@ -254,13 +254,13 @@ fn form_reference_to_overloaded[value: NotConvertible]():
 
 
 fn testAliases(variable: Int):
-    # expected-error @below {{only traits may contain an alias without an initializer}}
+    # expected-error @below {{only traits may contain a comptime member without an initializer}}
     alias MissingInit: Int
 
     # expected-error @+1 {{cannot use a dynamic value in alias initializer}}
     alias NotConstant = variable + 2
 
-    # expected-error @+1 {{expected '=' after alias targets}}
+    # expected-error @+1 {{expected '=' after comptime declaration}}
     alias MissingTypeAndInit
 
 
@@ -300,10 +300,10 @@ fn testStructWithParams():
     _ = StructWithParams[1, 2].a3
 
     # This is an error because the referenced alias depends on an unbound parameter.
-    # expected-error @+1 {{cannot access alias 'a3' with unbound parameter 'StructWithParams.b'}}
+    # expected-error @+1 {{cannot access comptime member 'a3' with unbound parameter 'StructWithParams.b'}}
     _ = StructWithParams[1].a3
 
-    # expected-error @+1 {{cannot access alias 'a3' with unbound parameter 'StructWithParams.a'}}
+    # expected-error @+1 {{cannot access comptime member 'a3' with unbound parameter 'StructWithParams.a'}}
     _ = StructWithParams.a3
 
     # expected-error @+1 {{parametric value expects 1 parameter, but 2 were specified}}

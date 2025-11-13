@@ -63,5 +63,5 @@ fn test_indentation2(p: Bool):
 fn m # expected-error {{expected '(' for argument list}}
 
 # Issue #6909
-# expected-error @below {{invalid alias target: expected an identifier or '_'}}
+# expected-error @below {{invalid comptime declaration: expected an identifier or '_'}}
 alias True = 42

@@ -523,7 +523,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     if (decls.empty() ||
         !isa_and_nonnull<AliasDeclOp>(decls.front()->getIfOperation())) {
       diag->attachNote(traitAlias->getLoc())
-          << "required alias '" << name.str() << "' is not specified";
+          << "required member '" << name.str() << "' is not specified";
       return failure(); // Stop the outer loop.
     }
     ASTDecl *structAliasDecl = decls.front();
@@ -548,8 +548,9 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
                                                  traitAliasType,
                                                  emitter.getDeclScope())) {
         diag->attachNote(traitAliasDecl->getLoc())
-            << "alias '" + name.str() + "' type " << ASTType(structAliasType)
-            << " doesn't conform to trait's alias '" << name.str() << "' type "
+            << "comptime member "
+            << "'" + name.str() + "'" << " type " << ASTType(structAliasType)
+            << " does not conform to trait's required type "
             << ASTType(traitAliasType);
         return failure();
       }
