@@ -39,7 +39,7 @@ from .matmul.gpu.sm100.warp_specialized_blockwise_fp8 import (
     sm100_warp_specialized_blockwise_fp8,
 )
 from .utils import elementwise_epilogue_type
-from .utils_gpu import MatmulConfig
+from linalg.matmul.gpu.sm100.config import MatmulConfig
 
 ########################################################
 # Static scaled fp8 quantization
@@ -547,14 +547,15 @@ fn matmul_dynamic_scaled_fp8[
             alias matmul_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
-                block_tile_shape=block_tile_shape,
+                cluster_shape=Index(
+                    cluster_shape[0], cluster_shape[1], cluster_shape[2]
+                ),
                 mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
+                cta_group=2,
             )
             sm100_warp_specialized_blockwise_fp8[
                 transpose_b=transpose_b,
                 config=matmul_config,
-                cta_group=2,
             ](
                 c_tensor,
                 a_tensor,
