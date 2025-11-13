@@ -475,6 +475,9 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         default_factory=lambda: ["q_proj", "k_proj", "v_proj", "o_proj"],
         metadata={"group": "LoRA Configuration"},
     )
+    """List of module names to apply LoRA to when generating random test adapters.
+    Only used when num_loras > 0 and generating adapters (not when using existing lora_paths).
+    Example values: q_proj, k_proj, v_proj, o_proj."""
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -534,7 +537,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "lora_request_ratio": "Ratio of requests to send with LoRA adapters (0.0-1.0). E.g., 0.5 means 50%% of requests use LoRA.",
             "max_concurrent_lora_ops": "Maximum concurrent LoRA loading/unloading operations during benchmarking.",
             "max_num_loras": "Maximum number of LoRA adapters cached on GPU. ***This should match the server configuration.***",
-            "lora_target_modules": "List of module names to apply LoRA to (e.g., q_proj, k_proj, v_proj, o_proj).",
+            "lora_target_modules": "List of module names to apply LoRA to when generating random test adapters (e.g., q_proj, k_proj, v_proj, o_proj). Only used when num_loras > 0 and generating adapters (not when using existing lora_paths).",
         }
         return {**base_help, **serving_help}
 
