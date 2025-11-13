@@ -34,6 +34,7 @@ struct TuningConfigSM100(TuningConfig):
     var k_group_size: UInt
     var num_accum_pipeline_stages: UInt
     var num_clc_pipeline_stages: UInt
+    var num_split_k: Int
 
     fn __init__(
         out self,
@@ -60,6 +61,7 @@ struct TuningConfigSM100(TuningConfig):
         self.k_group_size = 1
         self.num_accum_pipeline_stages = 2
         self.num_clc_pipeline_stages = 2
+        self.num_split_k = 1
 
     fn __str__(self) -> String:
         return String("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
@@ -79,6 +81,7 @@ struct TuningConfigSM100(TuningConfig):
         k_group_size: UInt = 1,
         num_accum_pipeline_stages: UInt = 2,
         num_clc_pipeline_stages: UInt = 2,
+        num_split_k: Int = 1,
     ):
         self.M = M
         self.M_end = M_end
@@ -98,6 +101,7 @@ struct TuningConfigSM100(TuningConfig):
         self.k_group_size = k_group_size
         self.num_accum_pipeline_stages = num_accum_pipeline_stages
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
+        self.num_split_k = num_split_k
 
 
 # codegen template
@@ -218,12 +222,27 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
         ),
         TuningConfigSM100(
             M=9,
-            M_end=32,
+            M_end=18,
             N=4096,
             K=4096,
             mma_shape=Index(128, 16, 16),
             cta_group=2,
             cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+            k_group_size=2,
+        ),
+        TuningConfigSM100(
+            M=19,
+            M_end=64,
+            N=4096,
+            K=4096,
+            mma_shape=Index(128, 32, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 2, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             swapAB=True,
