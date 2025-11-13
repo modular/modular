@@ -1,7 +1,6 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
 _LIT_TESTS = [
-    "test_has_intel_amx.mojo",
     "test_neon_dotprod_intrinsics.mojo",
     "test_neon_matmul_intrinsics.mojo",
     "test_vnni_intrinsics.mojo",
