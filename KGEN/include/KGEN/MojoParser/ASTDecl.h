@@ -328,9 +328,25 @@ private:
   /// These are the declarations defined within this scope.  This is lazily
   /// allocated the first time something is added, because it the vast majority
   /// of decls (leaves in the tree) don't need it.  (5-12% need it).
+  ///
   /// This includes "owned" child decls whose `parentDecl` points back to this
   /// decl, as well as "inherited" child decls whose `parentDecl` points to
   /// other decls (as is the case for trait composition decls, see STCASTD).
+  ///
+  /// It also includes entries that are imported from other scopes. When an
+  /// UnresolvedImportOp is resolved, it will be replaced with pointers to
+  /// ASTDecls that are *owned* by other ASTDecls.
+  ///
+  /// It also sometimes includes the same ASTDecl twice, under different names.
+  /// For example, an `__extension MyStruct` will be known to its parent ASTDecl
+  /// as "extension:MyStruct" as well as "extension:" (the latter name is shared
+  /// by all extensions).
+  /// TODO(MOCO-2674): Have a review for this "extension:" choice, in case
+  /// others have concerns about it.
+  ///
+  /// TODO(MOCO-522): Arcana docs on all the above, and on how importing works
+  /// in general.
+  ///
   /// TODO: Properly model inherited vs. owned decls.
   using DeclInScopeType = llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>>;
   std::unique_ptr<DeclInScopeType> declsInScope;
