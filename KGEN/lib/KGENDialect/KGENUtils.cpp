@@ -2393,8 +2393,7 @@ FailureOr<TypedAttr>
 KGEN::evaluateVariadicMap(VariadicMapAttr variadicMapAttr,
                           ParameterEvaluationContext *evaluationContext) {
   auto va = sugarDynCast<VariadicAttr>(variadicMapAttr.getVariadic());
-  auto gen = sugarDynCast<GeneratorAttr>(
-      ParamOperatorAttr::stripRebind(variadicMapAttr.getGenerator()));
+  auto gen = sugarDynCast<GeneratorAttr>(variadicMapAttr.getGenerator());
 
   if (!va || !gen)
     return failure();
@@ -2408,12 +2407,6 @@ KGEN::evaluateVariadicMap(VariadicMapAttr variadicMapAttr,
     // This should never happen, we should have verified VariadicMapAttr.
     assert(spGen && spGen.isFullyBound() && "invalid form of variadic map");
     auto valueInst = spGen.getInstantiatedValue();
-    if (valueInst.getType() != variadicMapAttr.getType().getElementType()) {
-      // NOTE: this assume the type can be rebind (otherwise the rebind on the
-      // VariadicMapAttr itself should have been rejected).
-      valueInst = ParamOperatorAttr::getRebind(
-          valueInst, variadicMapAttr.getType().getElementType());
-    }
     mappedVals.push_back(valueInst);
   }
 

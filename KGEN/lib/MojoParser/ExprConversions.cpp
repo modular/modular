@@ -13,6 +13,7 @@
 #include "ClosureEmitter.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
+
 #include "MojoUtils.h"
 #include "ParserEvaluationContext.h"
 #include "StructEmitter.h"
@@ -769,10 +770,16 @@ static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
     return {};
   }
 
-  // Otherwise, since this is not a function, and its still convertible, that
-  // means only the input param metadata can differ. Emit a simple rebind.
-  return emitter.emitCResult(ParamOperatorAttr::getRebind(genAttr, expected),
-                             expr, dest);
+  // This must be a concrete generator attr, and it should have been ensured by
+  // `canConvertGeneratorTypes`
+  auto concreteGenAttr = sugarCast<GeneratorAttr>(genAttr.get());
+  ValueDest tmpDest(dest.getContext());
+  CValue convBody = emitter.emitImplicitConversionToType(
+      {concreteGenAttr.getBody(), expr}, expected.getBody(), tmpDest);
+
+  assert(convBody && convBody.getIfPValue());
+  auto convGen = GeneratorAttr::get(convBody.getIfPValue().get(), expected);
+  return emitter.emitCResult(convGen, expr, dest);
 }
 
 //===----------------------------------------------------------------------===//

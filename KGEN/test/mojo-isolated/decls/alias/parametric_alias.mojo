@@ -67,7 +67,7 @@ struct MyStruct[a: Int, b: Int](MyTrait):
     # CHECK-NEXT: lit.alias.decl *"ParamType{{.*}}": !lit.generator<<"a1": !Int>![[INT_META]]> = <#kgen.gen<!Int>>
     alias ParamType[a1: Int] = Int
     # CHECK: kgen.conformance @"{{.*}}::MyTrait"
-    # CHECK-NEXT: kgen.witness "ParamType" : !lit.generator<<"a": !Int>!AnyType> = rebind(:!lit.generator<<"a1": !Int>![[INT_META]]> #kgen.gen<!Int>)
+    # CHECK-NEXT: kgen.witness "ParamType" : !lit.generator<<"a": !Int>!AnyType> = #kgen.gen<!Int>
 
 
 ##===----------------------------------------------------------------------===##
@@ -93,11 +93,11 @@ fn expect_two_ints[binop: type_of(myIntAdd)]():
 fn implicit_conversions():
     # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> {{.*}}#kgen.gen<
     expect_two_ints[myIntAdd]()
-    # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> rebind(
+    # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> {{.*}}#kgen.gen<
     expect_two_ints[myDefaultAdd]()
     # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> #kgen.gen<
     expect_two_ints[myIntFMA[z=2]]()
-    # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> rebind(:!lit.generator<<"y": !Int, "z": !Int>!Int> #kgen.gen<
+    # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> {{.*}}#kgen.gen<
     expect_two_ints[myIntFMA[x=2]]()
 
 
