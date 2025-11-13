@@ -715,7 +715,9 @@ struct DType(
         constrained[dtype.is_floating_point(), "dtype must be floating point"]()
 
         @parameter
-        if dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        if dtype is DType.float4_e2m1fn:
+            return 2
+        elif dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
             return 8
         elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
             return 16
@@ -741,7 +743,9 @@ struct DType(
         constrained[dtype.is_floating_point(), "dtype must be floating point"]()
 
         @parameter
-        if dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        if dtype is DType.float4_e2m1fn:
+            return 2
+        elif dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
             return 4
         elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
             return 5

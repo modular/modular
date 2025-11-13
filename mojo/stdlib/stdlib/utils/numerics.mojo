@@ -708,6 +708,8 @@ fn max_finite[dtype: DType]() -> Scalar[dtype]:
         return Scalar[dtype](
             ~Scalar[_unsigned_integral_type_of[dtype]()](0) >> 1
         )
+    elif dtype is DType.float4_e2m1fn:
+        return 0b0111
     elif dtype is DType.float8_e4m3fn:
         return 448
     elif dtype is DType.float8_e4m3fnuz:
