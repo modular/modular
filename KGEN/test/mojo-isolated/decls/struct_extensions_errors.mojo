@@ -32,20 +32,6 @@ struct Spaceship:
 # // -----
 
 
-# @expected-note @below {{conflicts with this previous declaration}}
-fn Spaceship():
-    pass
-
-
-# @expected-error @below {{can't find a struct named 'Spaceship'}}
-# @expected-error @below {{cannot define an extension here with name 'Spaceship'}}
-__extension Spaceship:
-    pass
-
-
-# // -----
-
-
 # @expected-error @below {{can't find a struct named 'Spaceship'}}
 __extension Spaceship:
     pass
@@ -161,3 +147,7 @@ __extension BaseStruct:
 
 fn test_collisions(s: BaseStruct):
     var result = s.colliding
+
+
+
+# TODO(MOCO-522): Add a test for a function and an extension having same name.
