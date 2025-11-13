@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import align_up
 from sys import (
     env_get_bool,
@@ -18,6 +19,7 @@ from sys import (
     env_get_int,
     has_nvidia_gpu_accelerator,
     size_of,
+    align_of,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -35,7 +37,7 @@ from internal_utils._utils import (
     static,
 )
 from linalg.matmul.gpu import _matmul_gpu
-
+from linalg.utils import elementwise_compute_lambda_type
 from utils import IndexList
 
 
@@ -96,6 +98,8 @@ fn bench_matmul[
     cache_busting: Bool,
     use_vendor_blas: Bool,
     transpose_b: Bool = False,
+    epilogue: Bool = False,
+    register_based_epilogue: Bool = False,
 ](
     ctx: DeviceContext,
     mut b: Bench,
@@ -182,6 +186,25 @@ fn bench_matmul[
             )
 
             @parameter
+            @always_inline
+            @__copy_capture(tensor_c)
+            fn test_lambda_add_coords_prod[
+                _dtype: DType,
+                width: Int,
+                *,
+                alignment: Int = align_of[SIMD[_dtype, width]](),
+            ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+                _dtype, width
+            ]:
+                var x = tensor_c.load[width=width](idx).cast[_dtype]()
+                var y = val * x
+                return y
+
+            alias optional_lambda_fn = OptionalReg[
+                elementwise_compute_lambda_type
+            ](test_lambda_add_coords_prod) if epilogue else None
+
+            @parameter
             if use_vendor_blas:
                 vendor_blas.matmul[use_tf32=True](
                     ctx,
@@ -195,6 +218,8 @@ fn bench_matmul[
                 _matmul_gpu[
                     use_tensor_core=True,
                     transpose_b=transpose_b,
+                    elementwise_compute_lambda_fn=optional_lambda_fn,
+                    register_based_epilogue=register_based_epilogue,
                 ](tensor_c, tensor_a, tensor_b, ctx)
 
         b.iter_custom[kernel_launch](ctx)
@@ -235,6 +260,8 @@ fn create_matmul_bench[
     transpose_b: Bool,
     cache_busting: Bool,
     use_vendor_blas: Bool,
+    epilogue: Bool,
+    register_based_epilogue: Bool,
 ](
     ctx: DeviceContext,
     mut b: Bench,
@@ -259,6 +286,8 @@ fn create_matmul_bench[
         transpose_b=transpose_b,
         cache_busting=cache_busting,
         use_vendor_blas=use_vendor_blas,
+        epilogue=epilogue,
+        register_based_epilogue=register_based_epilogue,
     ](
         ctx,
         b,
@@ -281,6 +310,10 @@ def main():
     alias cache_busting = True
     alias transpose_b = True
     alias use_vendor_blas = env_get_bool["use_vendor_blas", False]()
+    alias epilogue = env_get_bool["epilogue", False]()
+    alias register_based_epilogue = env_get_bool[
+        "register_based_epilogue", True
+    ]()
 
     var m = Bench()
     with DeviceContext() as ctx:
@@ -289,6 +322,8 @@ def main():
             transpose_b=transpose_b,
             cache_busting=cache_busting,
             use_vendor_blas=use_vendor_blas,
+            epilogue=epilogue,
+            register_based_epilogue=register_based_epilogue,
         ](
             ctx,
             m,
