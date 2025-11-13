@@ -96,16 +96,6 @@ public:
   /// `makeUnlistedDecl`.
   void attachDeclToParentNameTable(ASTDecl *decl, StringAttr name);
 
-  // Adds decl to its parent ASTDecl under the name aliasName.
-  // This assumes you've already used attachDeclToParentNameTable; use this
-  // when you want it known to its parent as an *additional* name.
-  // For example, an extension named "extension:Spaceship_3" might want to be
-  // known to its parent as both "extension:Spaceship" (to help lookups which
-  // look for all extensions for a given type) and also "extension:" (to make
-  // importing all extensions easier).
-  // TODO(MOCO-522): Centralize into arcana doc.
-  void aliasDeclInParent(ASTDecl *decl, StringAttr aliasName);
-
   /// Attach a declaration to a trait composition's decl. This does not modify
   /// any existing parent-child relationships of the `childDecl`. It merely adds
   /// it to the trait composition's declsInScope map.
@@ -132,8 +122,7 @@ public:
   /// may differ from that of the decl).
   LogicalResult aliasImportDecls(ArrayRef<ASTDecl *> decls, StringAttr name,
                                  StringAttr declName, StringAttr moduleName,
-                                 llvm::SMLoc aliasLoc, ASTDecl &context,
-                                 bool allowMultipleWithSameName);
+                                 llvm::SMLoc aliasLoc, ASTDecl &context);
 
 private:
   /// Add a pre-existing set of declarations, which may optionally be imported
@@ -143,8 +132,7 @@ private:
                                llvm::SMLoc aliasLoc, ASTDecl &context,
                                bool emitDiagnostics = true,
                                StringAttr moduleName = StringAttr(),
-                               StringAttr declNameInModule = StringAttr(),
-                               bool allowMultipleWithSameName = false);
+                               StringAttr declNameInModule = StringAttr());
 
 public:
   /// Import the given module into the provided destination.

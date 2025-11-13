@@ -1641,13 +1641,13 @@ SharedState::lookupAndResolveMangledDecl(StringAttr leafRef, SMLoc loc,
   if (!declOp)
     return nullptr;
 
-  // Extensions are registered in the ASTDecl name table under names like
-  // "extension:MyStruct, so look up using that kind of name.
+  // Extensions should be registered in the ASTDecl name table under their
+  // target struct's name (e.g., "SIMD"), not their full decl name (like
+  // "extension:SIMD"). When looking up an extension, use the target struct's
+  // name.
   StringAttr name;
   if (auto *extOp = dyn_cast_or_null<ExtensionDeclOp>(&declOp)) {
-    StringAttr baseName = extOp->getTargetStruct().value().getLeafReference();
-    std::string extensionName = "extension:" + baseName.getValue().str();
-    name = StringAttr::get(extOp->getContext(), extensionName);
+    name = extOp->getTargetStruct().value().getLeafReference();
   } else {
     name = declOp.getDeclName();
   }
@@ -1872,21 +1872,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           .Case([&](ExtensionDeclOp op) {
             SymbolRefAttr targetStruct = op.getTargetStruct().value();
             StringAttr baseName = targetStruct.getLeafReference();
-            // Extensions are registered under two names:
-            // - "extension:MyStruct", for looking for all extensions for a
-            //   given MyStruct
-            // - "extension:", for looking for all extensions for any struct
-            //   in a given scope (useful for importing).
-            // Register this extension under both names now.
-            // TODO(MOCO-522): Arcana docs on this!
-            std::string extensionName =
-                "extension:" + baseName.getValue().str();
-            StringAttr extensionNameAttr =
-                StringAttr::get(op.getContext(), extensionName);
-            ASTDecl &extensionDecl = addDeclForOp(op, extensionNameAttr);
-            StringAttr extensionsNameAttr =
-                StringAttr::get(op.getContext(), "extension:");
-            declResolver->aliasDeclInParent(&extensionDecl, extensionsNameAttr);
+            addDeclForOp(op, baseName);
           })
           .Case([&](AliasDeclOp op) {
             addDeclForOp(op, StringAttr::get(op.getContext(),
