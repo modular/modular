@@ -41,6 +41,7 @@ struct Dep[T: AnyType, v: T]:
 alias MyDep[T: AnyType, v: T] = Dep[T, v]
 
 # expected-error @below {{'MyDep' needs more parameters bound before accessing attributes}}
+# expected-note @below {{'MyDep' is aka 'alias[T: AnyType, v: T] Dep[T, v]'}}
 alias MyDepGetAlias0 = MyDep.hello
 
 # expected-error @below {{'alias[v: Int] Dep[Int, v]' needs more parameters bound before accessing attributes}}
