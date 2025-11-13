@@ -24,7 +24,6 @@ from gpu import (
 )
 from gpu.host import DeviceContext
 from memory import (
-    LegacyUnsafePointer as UnsafePointer,
     memset_zero,
     stack_allocation,
 )
@@ -37,9 +36,9 @@ alias TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
 
 fn matmul(
-    a_ptr: UnsafePointer[Scalar[DType.int]],
-    b_ptr: UnsafePointer[Scalar[DType.int]],
-    c_ptr: UnsafePointer[Scalar[DType.int]],
+    a_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
+    b_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
+    c_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -113,9 +112,9 @@ fn run_matmul(ctx: DeviceContext) raises:
     alias n = 512
     alias k = 512
 
-    var a_host_ptr = UnsafePointer[Scalar[DType.int]].alloc(m * k)
-    var b_host_ptr = UnsafePointer[Scalar[DType.int]].alloc(k * n)
-    var c_host_ptr = UnsafePointer[Scalar[DType.int]].alloc(m * n)
+    var a_host_ptr = alloc[Scalar[DType.int]](m * k)
+    var b_host_ptr = alloc[Scalar[DType.int]](k * n)
+    var c_host_ptr = alloc[Scalar[DType.int]](m * n)
 
     var a_host = NDBuffer[DType.int, 2, _, DimList(m, k)](a_host_ptr)
     var b_host = NDBuffer[DType.int, 2, _, DimList(k, n)](b_host_ptr)

@@ -31,7 +31,7 @@ from gpu import (
 from gpu.host import DeviceContext
 from gpu.intrinsics import ldg
 from linalg.utils import elementwise_epilogue_type
-from memory import LegacyUnsafePointer as UnsafePointer, stack_allocation
+from memory import stack_allocation
 
 from utils import StaticTuple
 from utils.index import Index
@@ -310,9 +310,9 @@ fn sgemm_warp_tiling_kernel[
 
 
 fn matmul_naive(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
-    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -425,10 +425,10 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         "TN must be a multiple of 4",
     ]()
 
-    var a_host = UnsafePointer[Float32].alloc(M * K)
-    var b_host = UnsafePointer[Float32].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var c_host_naive = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[Float32](M * K)
+    var b_host = alloc[Float32](K * N)
+    var c_host = alloc[Float32](M * N)
+    var c_host_naive = alloc[Float32](M * N)
 
     for i in range(M * K):
         a_host[i] = i

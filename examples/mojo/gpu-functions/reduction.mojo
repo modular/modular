@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
 from os.atomic import Atomic
 from random import randint
 from sys import has_accelerator, size_of
@@ -45,7 +44,10 @@ alias dtype = DType.int32
 
 fn sum_kernel[
     size: Int, batch_size: Int
-](output: UnsafePointer[Int32], a: UnsafePointer[Int32],):
+](
+    output: UnsafePointer[Int32, MutAnyOrigin],
+    a: UnsafePointer[Int32, MutAnyOrigin],
+):
     """Efficient reduction of the vector a."""
     sums = stack_allocation[
         Int(TPB),
@@ -85,11 +87,13 @@ fn sum_kernel[
 
 
 struct SumKernelBenchmarkParams:
-    var out_ptr: UnsafePointer[Int32]
-    var a_ptr: UnsafePointer[Int32]
+    var out_ptr: UnsafePointer[Int32, MutAnyOrigin]
+    var a_ptr: UnsafePointer[Int32, MutAnyOrigin]
 
     fn __init__(
-        out self, out_ptr: UnsafePointer[Int32], a_ptr: UnsafePointer[Int32]
+        out self,
+        out_ptr: UnsafePointer[mut=True, Int32],
+        a_ptr: UnsafePointer[mut=True, Int32],
     ):
         self.out_ptr = out_ptr
         self.a_ptr = a_ptr

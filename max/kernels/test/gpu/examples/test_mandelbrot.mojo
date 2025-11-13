@@ -19,7 +19,6 @@ from buffer import NDBuffer
 from complex import ComplexSIMD
 from gpu import *
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer
 from testing import assert_equal
 
 from utils.index import Index
@@ -58,7 +57,7 @@ fn mandelbrot_kernel[
     return iters
 
 
-fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type]]):
+fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
     # Each task gets a row.
     var row = global_idx.x
     if row >= height:
@@ -88,7 +87,7 @@ fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type]]):
 
 
 fn run_mandelbrot(ctx: DeviceContext) raises:
-    var out_host = UnsafePointer[Scalar[int_type]].alloc(width * height)
+    var out_host = alloc[Scalar[int_type]](width * height)
 
     var out_device = ctx.enqueue_create_buffer[int_type](width * height)
 

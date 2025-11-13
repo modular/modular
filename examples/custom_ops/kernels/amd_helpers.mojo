@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of
 
 # AMD Helper functions and structs for Tensor Core MMA operations
@@ -559,7 +558,7 @@ fn compare_equal[
     gpu_ctx.enqueue_memset(
         DeviceBuffer[max_relative_error.dtype](
             gpu_ctx,
-            rebind[UnsafePointer[Scalar[max_relative_error.dtype]]](
+            rebind[LegacyUnsafePointer[Scalar[max_relative_error.dtype]]](
                 max_relative_error.ptr
             ),
             m * n,

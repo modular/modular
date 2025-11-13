@@ -18,15 +18,14 @@ from buffer.dimlist import DimList
 from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.host import DeviceContext
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from utils.index import Index
 
 alias BLOCK_DIM = 4
 
 
 fn stencil2d(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     arr_size: Int,
     num_rows: Int,
     num_cols: Int,
@@ -59,8 +58,8 @@ fn stencil2d(
 
 
 fn stencil2d_smem(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     arr_size: Int,
     num_rows: Int,
     num_cols: Int,
@@ -141,8 +140,8 @@ fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
     alias num_rows = 8
     alias num_cols = 8
 
-    var a_host = UnsafePointer[Float32].alloc(m)
-    var b_host = UnsafePointer[Float32].alloc(m)
+    var a_host = alloc[Float32](m)
+    var b_host = alloc[Float32](m)
 
     for i in range(m):
         a_host[i] = i

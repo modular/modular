@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv, isclose
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys import argv, simd_width_of
 from sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 
@@ -315,10 +314,10 @@ fn test(ctx: DeviceContext) raises:
     alias b_layout = Layout(IntTuple(K, N), IntTuple(N, 1))
     alias c_layout = Layout(IntTuple(M, N), IntTuple(N, 1))
 
-    var a_host = UnsafePointer[Float32].alloc(M * K)
-    var b_host = UnsafePointer[Float32].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[Float32](M * K)
+    var b_host = alloc[Float32](K * N)
+    var c_host = alloc[Float32](M * N)
+    var c_host_ref = alloc[Float32](M * N)
 
     for i in range(M * K):
         a_host[i] = i

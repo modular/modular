@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import iota
-from memory import LegacyUnsafePointer as UnsafePointer
 from random import rand
 from sys import argv, has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
@@ -63,9 +62,6 @@ struct Tensor[
             Self.static_spec.shape.into_index_list[rank](),
             Self.static_spec.strides.into_index_list[rank](),
         )
-
-    fn unsafe_ptr(self) -> UnsafePointer[Scalar[dtype]]:
-        return self.buffer.unsafe_ptr()
 
     fn rand(self) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:

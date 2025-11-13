@@ -14,7 +14,6 @@
 # DOC: max/tutorials/custom-ops-matmul.mdx
 
 from math import ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of
 
 import compiler
@@ -914,7 +913,9 @@ struct MatrixMultiplication[algorithm: StaticString]:
             gpu_ctx.enqueue_memset(
                 DeviceBuffer[output.dtype](
                     gpu_ctx,
-                    rebind[UnsafePointer[Scalar[output.dtype]]](out_layout.ptr),
+                    rebind[LegacyUnsafePointer[Scalar[output.dtype]]](
+                        out_layout.ptr
+                    ),
                     M * N,
                     owning=False,
                 ),

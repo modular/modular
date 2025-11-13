@@ -17,7 +17,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import block_dim, global_idx
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer as UnsafePointer, memcpy
+from memory import memcpy
 from testing import assert_false
 
 from utils.index import Index
@@ -32,10 +32,10 @@ fn scatter_nd_gpu[
     dtype: DType,
     indices_type: DType,
 ](
-    output_data_ptr: UnsafePointer[Scalar[dtype]],
-    indices_data_ptr: UnsafePointer[Scalar[indices_type]],
-    element_counts_and_input_dims_ptr: UnsafePointer[Int64],
-    updates_data_ptr: UnsafePointer[Scalar[dtype]],
+    output_data_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    indices_data_ptr: UnsafePointer[Scalar[indices_type], MutAnyOrigin],
+    element_counts_and_input_dims_ptr: UnsafePointer[Int64, MutAnyOrigin],
+    updates_data_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     num_indices: Int,
     last_index_dimension: Int,
     num_updates_elements: Int,
@@ -182,7 +182,7 @@ fn scatter_nd[
 
     # NDBuffer below will store both input_strides and data NDBuffer dimensions.
     # (combine both in one to reduce number of memcpy from H->D).
-    var ptr = UnsafePointer[Int64].alloc(last_shape_of_indices * 2)
+    var ptr = alloc[Int64](last_shape_of_indices * 2)
     var element_counts_and_input_dims = NDBuffer[DType.int64, 1](
         ptr, DimList(last_shape_of_indices * 2)
     )
