@@ -393,13 +393,13 @@ fn store_C[
     # Load c_frag_upper
     # Load once if MMA_N is power of 2, otherwise load twice
 
-    var c_upper_pow_2_main = SIMD[
+    var c_upper_pow_2_main: SIMD[
         accum_type, main_repetition * num_regs_per_thread
-    ](0)
+    ]
 
-    var c_lower_pow_2_main = SIMD[
+    var c_lower_pow_2_main: SIMD[
         accum_type, main_repetition * num_regs_per_thread
-    ](0)
+    ]
 
     # dummy registers in case there's no remainder. We still need to
     # satisfy power-of-2 when using SIMD.
@@ -510,8 +510,8 @@ fn store_C[
                 ](Int(lane_id()), i, m_mma, 0)
                 # i,0,0
 
-                var d_reg_upper = SIMD[DType.bfloat16, 8](0)
-                var d_reg_lower = SIMD[DType.bfloat16, 8](0)
+                var d_reg_upper: SIMD[DType.bfloat16, 8]
+                var d_reg_lower: SIMD[DType.bfloat16, 8]
 
                 # if MMA_N is a power of 2, then just use the main load for all iterations
                 # if it's not a power of 2, then go till NUM_ST_MATRIX -1 using the main regists

@@ -70,6 +70,8 @@ fn bench_math[
 
     b.iter[call_fn]()
 
+    _ = inputs^
+
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark fma
@@ -91,6 +93,8 @@ fn bench_math3[
 
     b.iter[call_fn]()
 
+    _ = inputs^
+
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark lcm/gcd
@@ -107,6 +111,8 @@ fn bench_math2[math_f2p: fn (Int, Int, /) -> Int](mut b: Bencher) raises:
             keep(result)
 
     b.iter[call_fn]()
+
+    _ = int_inputs^
 
 
 # ===-----------------------------------------------------------------------===#

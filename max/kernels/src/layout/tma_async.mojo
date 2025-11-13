@@ -2240,6 +2240,9 @@ struct TensorMapArray[
         first dimension size (1, 2, 4, 8, ..., max_descriptor_length) while maintaining the
         same remaining tile shape specified by desc_remaining_tile_shape.
 
+        Raises:
+            If the operation fails.
+
         Args:
             ctx:
                 The device context used to create the TMA descriptors.

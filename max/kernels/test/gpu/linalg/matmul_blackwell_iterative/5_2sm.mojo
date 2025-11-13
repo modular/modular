@@ -340,28 +340,27 @@ fn kernel_5[
 
     # For tcgen05.ld 16x256, we need to split the register to deal with
     # loading 32 lanes for each warp.
-    c_frag_upper, c_frag_lower = c_frag.split()
 
     # warp_id 0 -> 0, 16
     # warp_id 1 -> 32, 48
     # warp_id 2 -> 64, 80
     # warp_id 3 -> 96, 112
-    c_frag_upper = tcgen05_ld[
+    var c_frag_upper = tcgen05_ld[
         datapaths=16,
         bits=256,
         repeat = BN // 8 if MMA_M == 128 else MMA_N // 8,
         dtype=accum_type,
         pack=False,
-        width = c_frag_upper.size,
+        width = c_frag.size // 2,
     ](tmem_addr | ((warp_id() * 32) << 16))
 
-    c_frag_lower = tcgen05_ld[
+    var c_frag_lower = tcgen05_ld[
         datapaths=16,
         bits=256,
         repeat = BN // 8 if MMA_M == 128 else MMA_N // 8,
         dtype=accum_type,
         pack=False,
-        width = c_frag_lower.size,
+        width = c_frag.size // 2,
     ](tmem_addr | ((warp_id() * 32 + 16) << 16))
     tcgen05_load_wait()
 

@@ -58,6 +58,8 @@ fn test_svg_nvidia_shape() raises:
         file_path=Path("./test_svg_nvidia_shape.svg"),
     )
 
+    _ = tensor_dist^
+
 
 fn test_svg_nvidia_tile() raises:
     # nvidia tensor core a matrix fragment
