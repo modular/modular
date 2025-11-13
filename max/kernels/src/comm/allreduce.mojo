@@ -875,6 +875,11 @@ fn _allreduce_p2p[
     """
     alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     var num_elements = list_of_in_bufs[0].num_elements()
+
+    # Do nothing if there are no elements to reduce.
+    if num_elements == 0:
+        return
+
     if num_elements % simd_width != 0:
         raise Error(
             "non SIMD-width multiple number of elements unsupported by"

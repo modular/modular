@@ -711,6 +711,9 @@ fn grouped_matmul_dynamic_scaled_fp8[
     alias K = b.shape.get[2]()
     var seq_len = a.dim[0]()
 
+    if num_active_experts == 0 or max_num_tokens_per_expert == 0:
+        return
+
     @parameter
     if ctx.default_device_info is B200:
         alias umma_shape: IndexList[3] = Index(64, 64, 32)

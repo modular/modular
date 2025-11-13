@@ -27,6 +27,7 @@ from utils import IndexList, StaticTuple
 
 # Shared test configurations
 alias test_lengths = (
+    0,  # No elements
     8 * 1024,  # Small latency bound
     128 * 1024,  # Larger latency bound
     256 * 1024,  # Smallest bandwidth bound
@@ -73,6 +74,11 @@ fn allreduce_test[
     use_multimem: Bool,
     use_quickreduce: Bool = False,
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
+    # Using multimem with zero length raises CUDA_ERROR_INVALID_VALUE
+    # when setting up the buffers.
+    if use_multimem and length == 0:
+        return
+
     alias num_warmups = 5
     alias num_iters = 100
     alias num_buffers = 1 if use_multimem else ngpus
