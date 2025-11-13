@@ -320,7 +320,7 @@ def cli_serve(
     type=int,
     default=0,
     show_default=True,
-    help="# of warmup iterations to run before the final timed run.",
+    help="Number of warmup iterations to run before the final timed run.",
 )
 def cli_pipeline(
     prompt: str,
@@ -396,7 +396,7 @@ def cli_pipeline(
     type=int,
     default=0,
     show_default=True,
-    help="# of warmup iterations to run before the final timed run.",
+    help="Number of warmup iterations to run before the final timed run.",
 )
 def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     """Encode text input into model embeddings.

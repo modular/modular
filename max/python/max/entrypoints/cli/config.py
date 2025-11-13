@@ -175,7 +175,7 @@ def create_click_option(
     # Get help field.
     return click.option(
         get_normalized_flag_name(dataclass_field, field_type),
-        show_default=True,
+        show_default=False,  # Many strings include default already, and True breaks Sphinx docs
         help=help_text,
         is_flag=is_flag(field_type),
         default=get_default(dataclass_field),
@@ -203,19 +203,26 @@ def config_to_flag(
         ):
             continue
 
+        original_name = _field.name
+        field_type = field_types[original_name]
+
         if prefix:
-            field_type = field_types[_field.name]
-            new_name = f"{prefix}_{_field.name}"
+            # Create a copy of the help text with the prefixed name
+            new_name = f"{prefix}_{original_name}"
 
-            if _field.name in help_text:
-                help_text[new_name] = help_text[_field.name]
+            if original_name in help_text:
+                help_text[new_name] = help_text[original_name]
 
-            _field.name = new_name
-            new_option = create_click_option(help_text, _field, field_type)
-        else:
+            # Create a new Field with the modified name by copying all attributes
+            from copy import copy
+
+            modified_field = copy(_field)
+            modified_field.name = new_name
             new_option = create_click_option(
-                help_text, _field, field_types[_field.name]
+                help_text, modified_field, field_type
             )
+        else:
+            new_option = create_click_option(help_text, _field, field_type)
         options.append(new_option)
 
     def apply_flags(func: Callable[_P, _R]) -> Callable[_P, _R]:
