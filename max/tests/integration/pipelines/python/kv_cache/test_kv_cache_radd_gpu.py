@@ -39,17 +39,20 @@ class KVCacheRaddModel:
         a: TensorValue,
         input_row_offsets: TensorValue,
         batch_offset: TensorValue,
-        *fetch_args: TensorValue,
+        kv_blocks: TensorValue,
+        cache_lengths: TensorValue,
+        lookup_table: TensorValue,
+        max_lengths: TensorValue,
     ) -> None:
         """Apply the radd operation to the KV cache."""
         kv_cache_ragged_radd(
             kv_params=self.kv_params,
             a=a,
             kv_collection=PagedCacheValues(
-                kv_blocks=fetch_args[0].buffer,
-                cache_lengths=fetch_args[1].tensor,
-                lookup_table=fetch_args[2].tensor,
-                max_lengths=fetch_args[3].tensor,
+                kv_blocks=kv_blocks.buffer,
+                cache_lengths=cache_lengths.tensor,
+                lookup_table=lookup_table.tensor,
+                max_lengths=max_lengths.tensor,
             ),
             input_row_offsets=input_row_offsets,
             batch_offset=batch_offset,

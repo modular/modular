@@ -162,7 +162,7 @@ def test_get_lora_graph_inputs(
     input_row_offsets = np.array([0, 8, 16])
 
     # Get LoRA graph inputs
-    lora_ids, _, _ = lora_manager.get_lora_graph_inputs(
+    lora_ids, _, _, _ = lora_manager.get_lora_graph_inputs(
         [
             MagicMock(model_name="loaded_lora"),
             MagicMock(model_name=lora_manager.base_model_path),
@@ -238,7 +238,7 @@ def test_model_name_base_model_mapping(
     ]
 
     # Get LoRA graph inputs
-    lora_ids, _, _ = lora_manager.get_lora_graph_inputs(
+    lora_ids, _, _, _ = lora_manager.get_lora_graph_inputs(
         contexts,
         input_row_offsets,
         device,
@@ -295,7 +295,7 @@ def test_served_model_name_base_model_mapping(
     contexts = [context_served, context_lora]
 
     # Get LoRA graph inputs
-    lora_ids, _, _ = lora_manager.get_lora_graph_inputs(
+    lora_ids, _, _, _ = lora_manager.get_lora_graph_inputs(
         contexts,
         input_row_offsets,
         device,
