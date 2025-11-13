@@ -19,6 +19,22 @@ from max.graph import DeviceRef
 DEVICE = Accelerator() if accelerator_count() else CPU()
 
 
+def test_allgather() -> None:
+    input = Tensor.ones([2, 4], dtype=DType.float32, device=DEVICE)
+    signal_buffer = Tensor.zeros([], device=DEVICE)
+    [result] = F.allgather([input], [signal_buffer])
+    result._sync_realize()
+    assert result.real
+
+
+def test_allreduce() -> None:
+    input = Tensor.ones([2, 4], dtype=DType.float32, device=DEVICE)
+    signal_buffer = Tensor.zeros([], device=DEVICE)
+    [result] = F.allreduce_sum([input], [signal_buffer])
+    result._sync_realize()
+    assert result.real
+
+
 def test_as_interleaved_complex() -> None:
     # needs even last dimension
     complex_input = Tensor.ones([2, 4], dtype=DType.float32, device=DEVICE)
