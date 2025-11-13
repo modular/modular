@@ -22,7 +22,7 @@ from algorithm import parallel_memcpy
 
 from math import ceildiv
 
-from memory import LegacyUnsafePointer as UnsafePointer, memcpy
+from memory import memcpy
 from runtime.asyncrt import parallelism_level
 
 
@@ -30,8 +30,8 @@ fn parallel_memcpy[
     dtype: DType
 ](
     *,
-    dest: UnsafePointer[Scalar[dtype]],
-    src: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[mut=True, Scalar[dtype]],
+    src: UnsafePointer[mut=False, Scalar[dtype]],
     count: Int,
     count_per_task: Int,
     num_tasks: Int,
@@ -73,8 +73,8 @@ fn parallel_memcpy[
     dtype: DType,
 ](
     *,
-    dest: UnsafePointer[Scalar[dtype]],
-    src: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[mut=True, Scalar[dtype]],
+    src: UnsafePointer[mut=False, Scalar[dtype]],
     count: Int,
 ):
     """Copies `count` elements from a memory buffer `src` to `dest` in parallel.

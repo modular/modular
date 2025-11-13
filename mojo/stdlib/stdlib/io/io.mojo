@@ -28,16 +28,12 @@ from sys import (
     stdout,
 )
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
-from sys._libc import dup, fclose, fdopen, fflush
+from sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
 from sys.ffi import c_char
 from sys.info import CompilationTarget
 from sys.intrinsics import _type_is_eq
 
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-    bitcast,
-)
+from memory import bitcast
 
 from .file_descriptor import FileDescriptor
 
@@ -49,7 +45,7 @@ from .file_descriptor import FileDescriptor
 @fieldwise_init
 @register_passable("trivial")
 struct _fdopen[mode: StaticString = "a"]:
-    var handle: OpaquePointer
+    var handle: FILE_ptr
 
     fn __init__(out self, stream_id: FileDescriptor):
         """Creates a file handle to the stdout/stderr stream.
@@ -129,18 +125,11 @@ struct _fdopen[mode: StaticString = "a"]:
         ```
         """
         # getdelim will allocate the buffer using malloc().
-        var buffer = UnsafePointer[UInt8]()
+        var buffer = UnsafePointer[UInt8, MutOrigin.external]()
         var n = UInt64(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
-        var bytes_read = external_call[
-            "getdelim",
-            Int,
-            UnsafePointer[UnsafePointer[UInt8]],
-            UnsafePointer[UInt64],
-            Int,
-            OpaquePointer,
-        ](
+        var bytes_read = external_call["getdelim", Int,](
             UnsafePointer(to=buffer),
             UnsafePointer(to=n),
             ord(delimiter),
@@ -262,12 +251,6 @@ fn _printf[
                     return UInt64(rebind[Int](value))
                 elif _type_is_eq[T, UInt]():
                     return UInt64(rebind[UInt](value))
-                elif _type_is_eq[UnsafePointer[UInt8], UInt]():
-                    return UInt64(Int(rebind[UnsafePointer[UInt8]](value)))
-                elif _type_is_eq[UnsafePointer[Int8], UInt]():
-                    return UInt64(Int(rebind[UnsafePointer[Int8]](value)))
-                elif _type_is_eq[OpaquePointer, UInt]():
-                    return UInt64(Int(rebind[OpaquePointer](value)))
                 return 0
 
             alias args_len = len(VariadicList(types))
@@ -319,7 +302,7 @@ fn _printf[
 @no_inline
 fn _snprintf[
     fmt: StaticString, *types: AnyType
-](str: UnsafePointer[UInt8], size: Int, *args: *types) -> Int:
+](str: UnsafePointer[mut=True, UInt8], size: Int, *args: *types) -> Int:
     """Writes a format string into an output pointer.
 
     Parameters:
@@ -486,7 +469,7 @@ fn input(prompt: String = "") raises -> String:
     return _fdopen["r"](stdin).readline()
 
 
-fn _get_stdout_stream() -> OpaquePointer:
-    return external_call[
-        "KGEN_CompilerRT_IO_get_stdout_stream", OpaquePointer
+fn _get_stdout_stream(out result: OpaquePointer[MutOrigin.external]):
+    result = external_call[
+        "KGEN_CompilerRT_IO_get_stdout_stream", type_of(result)
     ]()

@@ -11,9 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer as UnsafePointer
 from sys.ffi import c_int, external_call
 from sys.info import CompilationTarget, platform_map
+
+
+fn _errno_ptr(out result: UnsafePointer[c_int, MutOrigin.external]):
+    @parameter
+    if CompilationTarget.is_linux():
+        result = external_call["__errno_location", type_of(result)]()
+    elif CompilationTarget.is_macos():
+        result = external_call["__error", type_of(result)]()
+    else:
+        result = CompilationTarget.unsupported_target_error[
+            type_of(result), operation="get_errno"
+        ]()
 
 
 fn get_errno() -> ErrNo:
@@ -29,18 +40,7 @@ fn get_errno() -> ErrNo:
     Constrained:
         Compilation error on unsupported platforms.
     """
-
-    @parameter
-    if CompilationTarget.is_linux():
-        return ErrNo(
-            external_call["__errno_location", UnsafePointer[c_int]]()[]
-        )
-    elif CompilationTarget.is_macos():
-        return ErrNo(external_call["__error", UnsafePointer[c_int]]()[])
-    else:
-        return CompilationTarget.unsupported_target_error[
-            ErrNo, operation="get_errno"
-        ]()
+    return ErrNo(_errno_ptr()[])
 
 
 fn set_errno(errno: ErrNo):
@@ -55,16 +55,7 @@ fn set_errno(errno: ErrNo):
     Constrained:
         Compilation error on unsupported platforms.
     """
-
-    @parameter
-    if CompilationTarget.is_linux():
-        external_call[
-            "__errno_location", UnsafePointer[c_int]
-        ]()[] = errno.value
-    elif CompilationTarget.is_macos():
-        external_call["__error", UnsafePointer[c_int]]()[] = errno.value
-    else:
-        CompilationTarget.unsupported_target_error[operation="set_errno"]()
+    _errno_ptr()[] = errno.value
 
 
 # Alias to shorten the error definitions below
@@ -438,7 +429,9 @@ struct ErrNo(
             debug_assert(
                 self != ErrNo.SUCCESS, "macos can't stringify ErrNo.SUCCESS"
             )
-        var ptr = external_call["strerror", UnsafePointer[Byte]](self.value)
+        var ptr = external_call[
+            "strerror", UnsafePointer[Byte, MutOrigin.external]
+        ](self.value)
         var string = StringSlice(unsafe_from_utf8_ptr=ptr)
         string.write_to(writer)
 
