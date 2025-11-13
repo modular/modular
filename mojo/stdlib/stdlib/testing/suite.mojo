@@ -460,10 +460,6 @@ struct TestSuite(Movable):
             raise e
         return suite^
 
-    fn __del__(deinit self):
-        """Destructor for the test suite."""
-        pass
-
     fn test[f: _Test.fn_type](mut self):
         """Registers a test to be run.
 
@@ -472,26 +468,18 @@ struct TestSuite(Movable):
         """
         self.tests.append(_Test(f, get_function_name[f]()))
 
-    fn skip[f: _Test.fn_type](mut self) raises:
+    fn skip[f: _Test.fn_type](mut self):
         """Registers a test to be skipped.
 
         If attempting to skip a test that is not registered in the suite (either
-        explicitly or via automatic discovery), an error will be raised.
+        explicitly or via automatic discovery), an error will be raised when the
+        suite is run.
 
         Parameters:
             f: The function to skip.
-
-        Raises:
-            If the test is not found in the test suite.
         """
-        # TODO: _Test doesn't conform to EqualityComparable, so we can't use
-        # `in` here. Also, we might wanna do this in O(1) time.
         alias skipped_name = get_function_name[f]()
-        for test in self.tests:
-            if test.name == skipped_name:
-                self.skip_list.add(test.name)
-                return
-        raise Error("test not found in suite: ", skipped_name)
+        self.skip_list.add(skipped_name)
 
     fn _parse_filter_lists(mut self) raises:
         # TODO: We need a proper argument parsing library to do this right.
@@ -545,6 +533,24 @@ struct TestSuite(Movable):
         # SAFETY: We know that `self.allow_list` is not `None` here.
         return test.name not in self.allow_list.unsafe_value()
 
+    fn _validate_skip_list(self) raises:
+        # TODO: _Test doesn't conform to EqualityComparable, so we can't use
+        # `in` here. Also, we might wanna do this in O(1) time.
+        for test_name in self.skip_list:
+            var found = False
+            for test in self.tests:
+                if test.name == test_name:
+                    found = True
+                    break
+            if not found:
+                raise Error(
+                    (
+                        "trying to skip a test that is not registered in the"
+                        " suite: "
+                    ),
+                    test_name,
+                )
+
     fn generate_report(
         mut self, skip_all: Bool = False
     ) raises -> TestSuiteReport:
@@ -560,6 +566,7 @@ struct TestSuite(Movable):
         Returns:
             A report containing the results of all tests.
         """
+        self._validate_skip_list()
 
         # We call `_parse_filter_lists` even if `skip_all` is true to make sure
         # CLI arguments are parsed and checked. We should probably refactor this

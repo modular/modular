@@ -39,12 +39,20 @@ def main():
     alias funcs = __functions_in_module()
     var suite = TestSuite.discover_tests[funcs]()
 
+    suite.skip[test_skipped]()
+    suite.skip[nonconforming_name]()
+    with assert_raises(
+        contains=(
+            "trying to skip a test that is not registered in the suite:"
+            " nonconforming_name"
+        )
+    ):
+        suite^.run()
+
+    suite = TestSuite.discover_tests[funcs]()
     var report: TestSuiteReport
     try:
         suite.skip[test_skipped]()
-        with assert_raises(contains="test not found in suite"):
-            suite.skip[nonconforming_name]()
-
         report = suite.generate_report()
     except e:
         suite^.abandon()
