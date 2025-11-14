@@ -7,8 +7,14 @@ modular_py_binary(
         "kbench.py",
         "utils.py",
     ],
+    data = [
+        "@nvshmem_prebuilt//:device",
+        "@nvshmem_prebuilt//:host",
+    ],
     env = {
         "KERNEL_BENCHMARKS_ROOT": "$$BUILD_WORKSPACE_DIRECTORY/" + package_name() + "/..",
+        "BITCODE_LIBS_PATH": "$(rootpath @nvshmem_prebuilt//:device)",
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     imports = ["."],
     main = "kbench.py",
@@ -26,6 +32,7 @@ modular_py_binary(
         "@mojo//:nn",
         "@mojo//:quantization",
         "@mojo//:register",
+        "@mojo//:shmem",
         "@mojo//:stdlib",
     ],
     deps = [
