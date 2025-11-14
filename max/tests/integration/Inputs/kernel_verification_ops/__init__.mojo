@@ -183,7 +183,7 @@ struct OpWithIntParameter[IntParameter: Int]:
         x: InputTensor[dtype = output.dtype, rank = output.rank],
     ):
         output[0] = x[0]
-        print(IntParameter)
+        print(Self.IntParameter)
 
 
 @compiler.register("op_with_dtype_parameter")
@@ -194,7 +194,7 @@ struct OpWithDTypeParameter[DTypeParameter: DType]:
         x: InputTensor[dtype = output.dtype, rank = output.rank],
     ):
         output[0] = x[0]
-        print(DTypeParameter)
+        print(Self.DTypeParameter)
 
 
 @compiler.register("op_with_string_parameter")
@@ -205,7 +205,7 @@ struct OpWithStringParameter[StringParameter: String]:
         x: InputTensor[dtype = output.dtype, rank = output.rank],
     ):
         output[0] = x[0]
-        print(StringParameter)
+        print(Self.StringParameter)
 
 
 @compiler.register("op_with_string_slice_parameter")
@@ -216,7 +216,7 @@ struct OpWithStringSliceParameter[StringParameter: StringSlice]:
         x: InputTensor[dtype = output.dtype, rank = output.rank],
     ):
         output[0] = x[0]
-        print(StringParameter)
+        print(Self.StringParameter)
 
 
 @compiler.register("op_with_static_string_parameter")
@@ -227,4 +227,4 @@ struct OpWithStaticStringParameter[StringParameter: StaticString]:
         x: InputTensor[dtype = output.dtype, rank = output.rank],
     ):
         output[0] = x[0]
-        print(StringParameter)
+        print(Self.StringParameter)
