@@ -51,7 +51,7 @@ struct _SpanIter[
     """
 
     var index: Int
-    var src: Span[T, origin, address_space=address_space]
+    var src: Span[Self.T, Self.origin, address_space = Self.address_space]
 
     @always_inline
     fn __iter__(self) -> Self:
@@ -60,15 +60,15 @@ struct _SpanIter[
     @always_inline
     fn __has_next__(self) -> Bool:
         @parameter
-        if forward:
+        if Self.forward:
             return self.index < len(self.src)
         else:
             return self.index > 0
 
     @always_inline
-    fn __next_ref__(mut self) -> ref [origin, address_space] T:
+    fn __next_ref__(mut self) -> ref [Self.origin, Self.address_space] Self.T:
         @parameter
-        if forward:
+        if Self.forward:
             var curr = self.index
             self.index += 1
             return self.src[curr]
@@ -95,14 +95,14 @@ struct Span[
     """
 
     # Aliases
-    alias Mutable = Span[T, MutOrigin.cast_from[origin]]
+    alias Mutable = Span[Self.T, MutOrigin.cast_from[Self.origin]]
     """The mutable version of the `Span`."""
-    alias Immutable = Span[T, ImmutOrigin.cast_from[origin]]
+    alias Immutable = Span[Self.T, ImmutOrigin.cast_from[Self.origin]]
     """The immutable version of the `Span`."""
     alias UnsafePointerType = UnsafePointer[
-        T,
-        origin,
-        address_space=address_space,
+        Self.T,
+        Self.origin,
+        address_space = Self.address_space,
     ]
     """The UnsafePointer type that corresponds to this `Span`."""
     # Fields
@@ -126,9 +126,9 @@ struct Span[
         """
         return String(
             "Span[",
-            get_type_name[T](),
+            get_type_name[Self.T](),
             ", address_space=",
-            address_space,
+            Self.address_space,
             "]",
         )
 
@@ -157,8 +157,8 @@ struct Span[
     @implicit
     @always_inline("nodebug")
     fn __init__(
-        other: Span[T, _],
-        out self: Span[T, ImmutOrigin.cast_from[other.origin]],
+        other: Span[Self.T, _],
+        out self: Span[Self.T, ImmutOrigin.cast_from[other.origin]],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -180,7 +180,9 @@ struct Span[
 
     @always_inline
     @implicit
-    fn __init__(out self, ref [origin, address_space]list: List[T, *_]):
+    fn __init__(
+        out self, ref [Self.origin, Self.address_space]list: List[Self.T, *_]
+    ):
         """Construct a `Span` from a `List`.
 
         Args:
@@ -188,8 +190,8 @@ struct Span[
         """
         self._data = (
             list.unsafe_ptr()
-            .address_space_cast[address_space]()
-            .unsafe_origin_cast[origin]()
+            .address_space_cast[Self.address_space]()
+            .unsafe_origin_cast[Self.origin]()
         )
         self._len = list._len
 
@@ -197,7 +199,7 @@ struct Span[
     @implicit
     fn __init__[
         size: Int, //
-    ](out self, ref [origin]array: InlineArray[T, size]):
+    ](out self, ref [Self.origin]array: InlineArray[Self.T, size]):
         """Construct a `Span` from an `InlineArray`.
 
         Parameters:
@@ -209,9 +211,9 @@ struct Span[
 
         self._data = (
             UnsafePointer(to=array)
-            .bitcast[T]()
-            .address_space_cast[address_space]()
-            .unsafe_origin_cast[origin]()
+            .bitcast[Self.T]()
+            .address_space_cast[Self.address_space]()
+            .unsafe_origin_cast[Self.origin]()
         )
         self._len = size
 
@@ -220,7 +222,9 @@ struct Span[
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__[I: Indexer](self, idx: I) -> ref [origin, address_space] T:
+    fn __getitem__[
+        I: Indexer
+    ](self, idx: I) -> ref [Self.origin, Self.address_space] Self.T:
         """Get a reference to an element in the span.
 
         Args:
@@ -265,24 +269,29 @@ struct Span[
     @always_inline
     fn __iter__(
         self,
-    ) -> _SpanIter[T, origin, address_space=address_space,]:
+    ) -> _SpanIter[Self.T, Self.origin, address_space = Self.address_space,]:
         """Get an iterator over the elements of the `Span`.
 
         Returns:
             An iterator over the elements of the `Span`.
         """
-        return _SpanIter[address_space=address_space](0, self)
+        return _SpanIter[address_space = Self.address_space](0, self)
 
     @always_inline
     fn __reversed__(
         self,
-    ) -> _SpanIter[T, origin, forward=False, address_space=address_space,]:
+    ) -> _SpanIter[
+        Self.T,
+        Self.origin,
+        forward=False,
+        address_space = Self.address_space,
+    ]:
         """Iterate backwards over the `Span`.
 
         Returns:
             A reversed iterator of the `Span` elements.
         """
-        return _SpanIter[forward=False, address_space=address_space](
+        return _SpanIter[forward=False, address_space = Self.address_space](
             len(self), self
         )
 
@@ -304,8 +313,8 @@ struct Span[
     ](
         self: Span[
             Scalar[dtype],
-            origin,
-            address_space=address_space,
+            Self.origin,
+            address_space = Self.address_space,
         ],
         value: Scalar[dtype],
     ) -> Bool:
@@ -437,7 +446,9 @@ struct Span[
         return rebind[Self.Immutable](self)
 
     @always_inline
-    fn unsafe_get(self, idx: Some[Indexer]) -> ref [origin, address_space] T:
+    fn unsafe_get(
+        self, idx: Some[Indexer]
+    ) -> ref [Self.origin, Self.address_space] Self.T:
         """Get a reference to the element at `index` without bounds checking.
 
         Args:
@@ -462,7 +473,7 @@ struct Span[
     @always_inline("builtin")
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[T, origin, address_space=address_space]:
+    ) -> UnsafePointer[Self.T, Self.origin, address_space = Self.address_space]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:
@@ -471,7 +482,9 @@ struct Span[
         return self._data
 
     @always_inline
-    fn as_ref(self) -> Pointer[T, origin, address_space=address_space]:
+    fn as_ref(
+        self,
+    ) -> Pointer[Self.T, Self.origin, address_space = Self.address_space]:
         """
         Gets a `Pointer` to the first element of this span.
 
@@ -479,12 +492,14 @@ struct Span[
             A `Pointer` pointing at the first element of this span.
         """
 
-        return Pointer[T, origin, address_space=address_space](to=self._data[0])
+        return Pointer[Self.T, Self.origin, address_space = Self.address_space](
+            to=self._data[0]
+        )
 
     @always_inline
     fn copy_from[
         _origin: MutOrigin, //
-    ](self: Span[T, _origin], other: Span[T, _],):
+    ](self: Span[Self.T, _origin], other: Span[Self.T, _],):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
 
@@ -516,7 +531,7 @@ struct Span[
     @__unsafe_disable_nested_origin_exclusivity
     fn __eq__[
         _T: EqualityComparable & Copyable & Movable, //,
-    ](self: Span[_T, origin], rhs: Span[_T, _],) -> Bool:
+    ](self: Span[_T, Self.origin], rhs: Span[_T, _],) -> Bool:
         """Verify if span is equal to another span.
 
         Parameters:
@@ -545,7 +560,7 @@ struct Span[
     @always_inline
     fn __ne__[
         _T: EqualityComparable & Copyable & Movable, //
-    ](self: Span[_T, origin], rhs: Span[_T]) -> Bool:
+    ](self: Span[_T, Self.origin], rhs: Span[_T]) -> Bool:
         """Verify if span is not equal to another span.
 
         Parameters:
@@ -560,7 +575,7 @@ struct Span[
         """
         return not self == rhs
 
-    fn fill[_origin: MutOrigin, //](self: Span[T, _origin], value: T):
+    fn fill[_origin: MutOrigin, //](self: Span[Self.T, _origin], value: Self.T):
         """
         Fill the memory that a span references with a given value.
 
@@ -574,7 +589,7 @@ struct Span[
             element = value.copy()
 
     @always_inline
-    fn unsafe_swap_elements(self: Span[mut=True, T], a: Int, b: Int):
+    fn unsafe_swap_elements(self: Span[mut=True, Self.T], a: Int, b: Int):
         """Swap the values at indices `a` and `b` without performing bounds checking.
 
         Args:
@@ -599,7 +614,7 @@ struct Span[
         # `a` and `b` may be equal, so we cannot use `swap` directly.
         ptr.offset(a).swap_pointees(ptr.offset(b))
 
-    fn swap_elements(self: Span[mut=True, T], a: Int, b: Int) raises:
+    fn swap_elements(self: Span[mut=True, Self.T], a: Int, b: Int) raises:
         """
         Swap the values at indices `a` and `b`.
 
@@ -626,14 +641,16 @@ struct Span[
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: type_of(Span[T, _, address_space=address_space]),
+        other_type: type_of(
+            Span[Self.T, _, address_space = Self.address_space]
+        ),
     ](
         self,
         out result: Span[
-            mut = mut & other_type.origin.mut,
-            T,
-            origin_of(origin, other_type.origin),
-            address_space=address_space,
+            mut = Self.mut & other_type.origin.mut,
+            Self.T,
+            origin_of(Self.origin, other_type.origin),
+            address_space = Self.address_space,
         ],
     ):
         """Returns a pointer merged with the specified `other_type`.
@@ -842,8 +859,8 @@ struct Span[
         return Optional(cursor) if value == needle else None
 
     fn binary_search_by[
-        func: fn (T) -> Int,
-    ](self: Span[T, origin]) -> Optional[Int]:
+        func: fn (Self.T) -> Int,
+    ](self: Span[Self.T, Self.origin]) -> Optional[Int]:
         """Finds an element using binary search with a custom comparison function.
 
         The comparison function should return:

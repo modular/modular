@@ -42,7 +42,7 @@ struct Tuple[*element_types: Copyable & Movable](
     alias _mlir_type = __mlir_type[
         `!kgen.pack<:`,
         VariadicOf[Copyable & Movable],
-        element_types,
+        Self.element_types,
         `>`,
     ]
 
@@ -58,7 +58,7 @@ struct Tuple[*element_types: Copyable & Movable](
         )
 
     @always_inline("nodebug")
-    fn __init__(out self, var *args: *element_types):
+    fn __init__(out self, var *args: * Self.element_types):
         """Construct the tuple.
 
         Args:
@@ -70,7 +70,9 @@ struct Tuple[*element_types: Copyable & Movable](
     fn __init__(
         out self,
         *,
-        var storage: VariadicPack[_, _, Copyable & Movable, *element_types],
+        var storage: VariadicPack[
+            _, _, Copyable & Movable, *Self.element_types
+        ],
     ):
         """Construct the tuple from a low-level internal representation.
 
@@ -85,7 +87,7 @@ struct Tuple[*element_types: Copyable & Movable](
 
         # Move each element into the tuple storage.
         @parameter
-        fn init_elt[idx: Int](var elt: element_types[idx]):
+        fn init_elt[idx: Int](var elt: Self.element_types[idx]):
             UnsafePointer(to=self[idx]).init_pointee_move(elt^)
 
         storage^.consume_elements[init_elt]()
@@ -143,7 +145,7 @@ struct Tuple[*element_types: Copyable & Movable](
             The tuple length.
         """
 
-        alias result = stdlib.builtin.variadic_size(element_types)
+        alias result = stdlib.builtin.variadic_size(Self.element_types)
         return result
 
     @always_inline("nodebug")
@@ -156,7 +158,7 @@ struct Tuple[*element_types: Copyable & Movable](
         return Self.__len__()
 
     @always_inline("nodebug")
-    fn __getitem__[idx: Int](ref self) -> ref [self] element_types[idx]:
+    fn __getitem__[idx: Int](ref self) -> ref [self] Self.element_types[idx]:
         """Get a reference to an element in the tuple.
 
         Parameters:
@@ -202,7 +204,7 @@ struct Tuple[*element_types: Copyable & Movable](
         for i in range(type_of(self).__len__()):
 
             @parameter
-            if _type_is_eq[element_types[i], T]():
+            if _type_is_eq[Self.element_types[i], T]():
                 if rebind[T](self[i]) == value:
                     return True
 

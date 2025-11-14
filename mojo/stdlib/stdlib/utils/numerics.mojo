@@ -51,10 +51,10 @@ struct FPUtils[
         _constraint: Implements the constraint. Do not pass explicitly.
     """
 
-    alias integral_type = _integral_type_of[dtype]()
+    alias integral_type = _integral_type_of[Self.dtype]()
     """The equivalent integer dtype of the float type."""
 
-    alias uint_type = _unsigned_integral_type_of[dtype]()
+    alias uint_type = _unsigned_integral_type_of[Self.dtype]()
     """The equivalent uint dtype of the float type."""
 
     @staticmethod
@@ -65,7 +65,7 @@ struct FPUtils[
         Returns:
             The mantissa width.
         """
-        return DType.mantissa_width[dtype]()
+        return DType.mantissa_width[Self.dtype]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -78,7 +78,7 @@ struct FPUtils[
         Returns:
             The max exponent.
         """
-        return DType.max_exponent[dtype]()
+        return DType.max_exponent[Self.dtype]()
 
     @staticmethod
     @always_inline("nodebug")
@@ -88,7 +88,7 @@ struct FPUtils[
         Returns:
             The exponent width.
         """
-        return DType.exponent_width[dtype]()
+        return DType.exponent_width[Self.dtype]()
 
     @staticmethod
     @always_inline
@@ -98,7 +98,7 @@ struct FPUtils[
         Returns:
             The exponent bias.
         """
-        return DType.exponent_bias[dtype]()
+        return DType.exponent_bias[Self.dtype]()
 
     @staticmethod
     @always_inline
@@ -168,7 +168,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn bitcast_to_integer(value: Scalar[dtype]) -> Int:
+    fn bitcast_to_integer(value: Scalar[Self.dtype]) -> Int:
         """Bitcasts the floating-point value to an integer.
 
         Args:
@@ -181,7 +181,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn bitcast_to_uint(value: Scalar[dtype]) -> Scalar[Self.uint_type]:
+    fn bitcast_to_uint(value: Scalar[Self.dtype]) -> Scalar[Self.uint_type]:
         """Bitcasts the floating-point value to an integer.
 
         Args:
@@ -194,7 +194,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn bitcast_from_integer(value: Int) -> Scalar[dtype]:
+    fn bitcast_from_integer(value: Int) -> Scalar[Self.dtype]:
         """Bitcasts the floating-point value from an integer.
 
         Args:
@@ -203,11 +203,11 @@ struct FPUtils[
         Returns:
             An floating-point representation of the Int.
         """
-        return bitcast[dtype, 1](Scalar[Self.integral_type](value))
+        return bitcast[Self.dtype, 1](Scalar[Self.integral_type](value))
 
     @staticmethod
     @always_inline
-    fn get_sign(value: Scalar[dtype]) -> Bool:
+    fn get_sign(value: Scalar[Self.dtype]) -> Bool:
         """Returns the sign of the floating point value.
 
         Args:
@@ -220,7 +220,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn set_sign(value: Scalar[dtype], sign: Bool) -> Scalar[dtype]:
+    fn set_sign(value: Scalar[Self.dtype], sign: Bool) -> Scalar[Self.dtype]:
         """Sets the sign of the floating point value.
 
         Args:
@@ -239,7 +239,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_exponent(value: Scalar[dtype]) -> Int:
+    fn get_exponent(value: Scalar[Self.dtype]) -> Int:
         """Returns the exponent bits of the floating-point value.
 
         Args:
@@ -254,7 +254,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_exponent_biased(value: Scalar[dtype]) -> Int:
+    fn get_exponent_biased(value: Scalar[Self.dtype]) -> Int:
         """Returns the biased exponent of the floating-point value as an Int,
         this is how the value is stored before subtracting the exponent bias.
 
@@ -271,7 +271,9 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn set_exponent(value: Scalar[dtype], exponent: Int) -> Scalar[dtype]:
+    fn set_exponent(
+        value: Scalar[Self.dtype], exponent: Int
+    ) -> Scalar[Self.dtype]:
         """Sets the exponent bits of the floating-point value.
 
         Args:
@@ -288,7 +290,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_mantissa(value: Scalar[dtype]) -> Int:
+    fn get_mantissa(value: Scalar[Self.dtype]) -> Int:
         """Gets the mantissa bits of the floating-point value.
 
         Args:
@@ -301,7 +303,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_mantissa_uint(value: Scalar[dtype]) -> Scalar[Self.uint_type]:
+    fn get_mantissa_uint(value: Scalar[Self.dtype]) -> Scalar[Self.uint_type]:
         """Gets the mantissa bits of the floating-point value.
 
         Args:
@@ -314,7 +316,9 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn set_mantissa(value: Scalar[dtype], mantissa: Int) -> Scalar[dtype]:
+    fn set_mantissa(
+        value: Scalar[Self.dtype], mantissa: Int
+    ) -> Scalar[Self.dtype]:
         """Sets the mantissa bits of the floating-point value.
 
         Args:
@@ -331,7 +335,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn pack(sign: Bool, exponent: Int, mantissa: Int) -> Scalar[dtype]:
+    fn pack(sign: Bool, exponent: Int, mantissa: Int) -> Scalar[Self.dtype]:
         """Construct a floating-point value from its constituent sign, exponent,
         and mantissa.
 
@@ -343,7 +347,7 @@ struct FPUtils[
         Returns:
             Returns the floating-point value.
         """
-        var res: Scalar[dtype] = 0
+        var res: Scalar[Self.dtype] = 0
         res = Self.set_sign(res, sign)
         res = Self.set_exponent(res, exponent)
         res = Self.set_mantissa(res, mantissa)

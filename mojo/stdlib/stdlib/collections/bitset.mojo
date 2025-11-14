@@ -108,7 +108,7 @@ struct BitSet[size: Int](
     lookup speed are critical.
     """
 
-    alias _words_size = max(1, ceildiv(size, _WORD_BITS))
+    alias _words_size = max(1, ceildiv(Self.size, _WORD_BITS))
     var _words: InlineArray[Int64, Self._words_size]  # Payload storage.
 
     # --------------------------------------------------------------------- #
@@ -184,7 +184,7 @@ struct BitSet[size: Int](
         Args:
             idx: The non-negative index of the bit to set (must be < `size`).
         """
-        _check_index_bounds["set"](idx, size)
+        _check_index_bounds["set"](idx, Self.size)
         var w = _word_index(idx)
         self._words.unsafe_get(w) |= _bit_mask(idx)
 
@@ -198,7 +198,7 @@ struct BitSet[size: Int](
         Args:
             idx: The non-negative index of the bit to clear (must be < `size`).
         """
-        _check_index_bounds["clearing"](idx, size)
+        _check_index_bounds["clearing"](idx, Self.size)
         var w = _word_index(idx)
         self._words.unsafe_get(w) &= ~_bit_mask(idx)
 
@@ -213,7 +213,7 @@ struct BitSet[size: Int](
         Args:
             idx: The non-negative index of the bit to toggle (must be < `size`).
         """
-        _check_index_bounds["toggling"](idx, size)
+        _check_index_bounds["toggling"](idx, Self.size)
         var w = _word_index(idx)
         self._words.unsafe_get(w) ^= _bit_mask(idx)
 
@@ -230,7 +230,7 @@ struct BitSet[size: Int](
         Returns:
             True if the bit at `idx` is set, False otherwise.
         """
-        _check_index_bounds["testing"](idx, size)
+        _check_index_bounds["testing"](idx, Self.size)
         var w = _word_index(idx)
         return (self._words.unsafe_get(w) & _bit_mask(idx)) != 0
 
@@ -443,7 +443,7 @@ struct BitSet[size: Int](
                 var abs_idx = bit_idx_base + bit_pos
 
                 # Skip bits that would be beyond the maximum size
-                if abs_idx >= size:
+                if abs_idx >= Self.size:
                     break
 
                 if not first:

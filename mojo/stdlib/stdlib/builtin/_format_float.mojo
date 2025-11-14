@@ -58,7 +58,7 @@ struct _MulParity:
 @fieldwise_init
 @register_passable("trivial")
 struct _MulResult[CarrierDType: DType]:
-    var integer_part: Scalar[CarrierDType]
+    var integer_part: Scalar[Self.CarrierDType]
     var is_integer: Bool
 
 
@@ -66,11 +66,11 @@ struct _MulResult[CarrierDType: DType]:
 @register_passable("trivial")
 struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type]:
     alias CarrierType = Scalar[Self.CarrierDType]
-    alias total_bits = size_of[dtype]() * 8
+    alias total_bits = size_of[Self.dtype]() * 8
     alias carrier_bits = size_of[Self.CarrierDType]() * 8
-    alias sig_bits = FPUtils[dtype].mantissa_width()
-    alias exp_bits = FPUtils[dtype].exponent_width()
-    alias neg_exp_bias = -FPUtils[dtype].exponent_bias()
+    alias sig_bits = FPUtils[Self.dtype].mantissa_width()
+    alias exp_bits = FPUtils[Self.dtype].exponent_width()
+    alias neg_exp_bias = -FPUtils[Self.dtype].exponent_bias()
     alias min_normal_exp = Self.neg_exp_bias + 1
     alias cache_bits = 64 if Self.CarrierDType == DType.uint32 else 128
     alias min_k = -31 if Self.CarrierDType == DType.uint32 else -292

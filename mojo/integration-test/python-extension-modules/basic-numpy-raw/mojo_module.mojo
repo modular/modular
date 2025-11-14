@@ -45,7 +45,7 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable, Movable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
-    var data: UnsafePointer[Scalar[dtype]]
+    var data: UnsafePointer[Scalar[Self.dtype]]
     var nd: Int
     var dimensions: UnsafePointer[Int]
     var strides: UnsafePointer[Int]

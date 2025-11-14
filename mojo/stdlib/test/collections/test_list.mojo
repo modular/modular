@@ -74,7 +74,7 @@ def test_list():
 
 
 struct WeirdList[T: AnyType]:
-    fn __init__(out self, var *values: T, __list_literal__: ()):
+    fn __init__(out self, var *values: Self.T, __list_literal__: ()):
         pass
 
 

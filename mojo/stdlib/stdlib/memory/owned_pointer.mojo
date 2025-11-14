@@ -38,7 +38,7 @@ struct OwnedPointer[T: AnyType]:
         T: The type to be stored in the `OwnedPointer`.
     """
 
-    var _inner: UnsafePointer[T, address_space = AddressSpace.GENERIC]
+    var _inner: UnsafePointer[Self.T, address_space = AddressSpace.GENERIC]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -97,7 +97,7 @@ struct OwnedPointer[T: AnyType]:
         """
         self = OwnedPointer[_T](copy_value=other[])
 
-    fn __init__(out self, *, unsafe_from_raw_pointer: UnsafePointer[T]):
+    fn __init__(out self, *, unsafe_from_raw_pointer: UnsafePointer[Self.T]):
         """Construct a new `OwnedPointer` by taking ownership of the provided `UnsafePointer`.
 
         Args:
@@ -115,7 +115,7 @@ struct OwnedPointer[T: AnyType]:
         """
         self._inner = unsafe_from_raw_pointer
 
-    fn __del__(deinit self: OwnedPointer[T]):
+    fn __del__(deinit self: OwnedPointer[Self.T]):
         """Destroy the OwnedPointer[]."""
         self._inner.destroy_pointee()
         self._inner.free()
@@ -126,7 +126,7 @@ struct OwnedPointer[T: AnyType]:
 
     fn __getitem__(
         ref [AddressSpace.GENERIC]self,
-    ) -> ref [self, AddressSpace.GENERIC] T:
+    ) -> ref [self, AddressSpace.GENERIC] Self.T:
         """Returns a reference to the pointers's underlying data with parametric mutability.
 
         Returns:
@@ -143,7 +143,7 @@ struct OwnedPointer[T: AnyType]:
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn unsafe_ptr(self) -> UnsafePointer[T]:
+    fn unsafe_ptr(self) -> UnsafePointer[Self.T]:
         """UNSAFE: returns the backing pointer for this `OwnedPointer`.
 
         Returns:
@@ -168,7 +168,7 @@ struct OwnedPointer[T: AnyType]:
         self._inner.free()
         return r^
 
-    fn steal_data(deinit self) -> UnsafePointer[T]:
+    fn steal_data(deinit self) -> UnsafePointer[Self.T]:
         """Take ownership over the heap allocated pointer backing this
         `OwnedPointer`.
 

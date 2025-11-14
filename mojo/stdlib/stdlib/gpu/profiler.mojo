@@ -68,7 +68,7 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable, Movable):
         self.start_time = 0
 
         @parameter
-        if enabled:
+        if Self.enabled:
             self.name = name
             self.loc = __call_location()
         else:
@@ -80,7 +80,7 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable, Movable):
         """Enter the profiling block and record start time if enabled."""
 
         @parameter
-        if not enabled:
+        if not Self.enabled:
             return
         self.start_time = perf_counter_ns()
 
@@ -90,7 +90,7 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable, Movable):
         """
 
         @parameter
-        if not enabled:
+        if not Self.enabled:
             return
 
         var end_time = perf_counter_ns()

@@ -645,7 +645,7 @@ struct UMMAInsDescriptor[
             and b_type in available_operand_types,
             String(
                 "Currently only support E4M3 and E5M2 for UMMA kind: ",
-                mma_kind,
+                Self.mma_kind,
             ),
         ]()
 
@@ -700,21 +700,21 @@ struct UMMAInsDescriptor[
         )
 
         @parameter
-        if mma_kind == UMMAKind.KIND_TF32:
+        if Self.mma_kind == UMMAKind.KIND_TF32:
             return Self(
                 desc
                 | Self._create_tf32_desc[d_type, a_type, b_type]()
                 | transpose_bit
             )
 
-        elif mma_kind == UMMAKind.KIND_F16:
+        elif Self.mma_kind == UMMAKind.KIND_F16:
             return Self(
                 desc
                 | Self._create_f16_desc[d_type, a_type, b_type]()
                 | transpose_bit
             )
 
-        elif mma_kind == UMMAKind.KIND_F8F6F4:
+        elif Self.mma_kind == UMMAKind.KIND_F8F6F4:
             return Self(
                 desc
                 | Self._create_f8f6f4_desc[d_type, a_type, b_type]()
@@ -722,7 +722,9 @@ struct UMMAInsDescriptor[
             )
 
         else:
-            constrained[False, String("Unsupported UMMA kind: ", mma_kind)]()
+            constrained[
+                False, String("Unsupported UMMA kind: ", Self.mma_kind)
+            ]()
             return Self(0x0)
 
 

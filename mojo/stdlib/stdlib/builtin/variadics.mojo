@@ -71,19 +71,19 @@ struct _VariadicListIter[type: AnyTrivialRegType](
         type: The type of the elements in the list.
     """
 
-    alias Element = type
+    alias Element = Self.type
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
     var index: Int
-    var src: VariadicList[type]
+    var src: VariadicList[Self.type]
 
     @always_inline
     fn __has_next__(self) -> Bool:
         return self.index < len(self.src)
 
-    fn __next__(mut self) -> type:
+    fn __next__(mut self) -> Self.type:
         self.index += 1
         return self.src[self.index - 1]
 
@@ -137,18 +137,18 @@ struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
         type: The type of the elements in the list.
     """
 
-    alias _mlir_type = Variadic[type]
+    alias _mlir_type = Variadic[Self.type]
 
     var value: Self._mlir_type
     """The underlying storage for the variadic list."""
 
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _VariadicListIter[type]
+    ]: Iterator = _VariadicListIter[Self.type]
 
     @always_inline
     @implicit
-    fn __init__(out self, *value: type):
+    fn __init__(out self, *value: Self.type):
         """Constructs a VariadicList from a variadic list of arguments.
 
         Args:
@@ -179,7 +179,7 @@ struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
         return Int(mlir_value=__mlir_op.`pop.variadic.size`(self.value))
 
     @always_inline
-    fn __getitem__[I: Indexer](self, idx: I) -> type:
+    fn __getitem__[I: Indexer](self, idx: I) -> Self.type:
         """Gets a single element on the variadic list.
 
         Args:
@@ -223,19 +223,21 @@ struct _VariadicListMemIter[
     """
 
     alias variadic_list_type = VariadicListMem[
-        elt_type, elt_origin._mlir_origin, is_owned
+        Self.elt_type, Self.elt_origin._mlir_origin, Self.is_owned
     ]
 
-    alias Element = elt_type
+    alias Element = Self.elt_type
 
     var index: Int
     var src: Pointer[
         Self.variadic_list_type,
-        list_origin,
+        Self.list_origin,
     ]
 
     fn __init__(
-        out self, index: Int, ref [list_origin]list: Self.variadic_list_type
+        out self,
+        index: Int,
+        ref [Self.list_origin]list: Self.variadic_list_type,
     ):
         self.index = index
         self.src = Pointer(to=list)
@@ -244,7 +246,9 @@ struct _VariadicListMemIter[
     fn __has_next__(self) -> Bool:
         return self.index < len(self.src[])
 
-    fn __next_ref__(mut self) -> ref [elt_origin._mlir_origin] elt_type:
+    fn __next_ref__(
+        mut self,
+    ) -> ref [Self.elt_origin._mlir_origin] Self.elt_type:
         self.index += 1
         return rebind[Self.variadic_list_type.reference_type](
             Pointer(to=self.src[][self.index - 1])
@@ -270,7 +274,7 @@ struct VariadicListMem[
                   passed as an 'var' argument.
     """
 
-    alias reference_type = Pointer[element_type, origin]
+    alias reference_type = Pointer[Self.element_type, Self.origin]
     alias _mlir_type = Variadic[Self.reference_type._mlir_type]
 
     var value: Self._mlir_type
@@ -310,7 +314,7 @@ struct VariadicListMem[
         # them.  We destroy in backwards order to match how arguments are
         # normally torn down when CheckLifetimes is left to its own devices.
         @parameter
-        if is_owned:
+        if Self.is_owned:
             for i in reversed(range(len(self))):
                 # Safety: We own the elements in this list.
                 UnsafePointer(to=self[i]).unsafe_mut_cast[
@@ -318,7 +322,7 @@ struct VariadicListMem[
                 ]().destroy_pointee()
 
     fn consume_elements[
-        elt_handler: fn (idx: Int, var elt: element_type) capturing
+        elt_handler: fn (idx: Int, var elt: Self.element_type) capturing
     ](deinit self):
         """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
@@ -330,7 +334,7 @@ struct VariadicListMem[
         """
 
         constrained[
-            is_owned,
+            Self.is_owned,
             "consume_elements may only be called on owned variadic lists",
         ]()
 
@@ -368,8 +372,8 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[elt_is_mutable].cast_from[origin_of(origin, self)]
-    ] element_type:
+        Origin[Self.elt_is_mutable].cast_from[origin_of(Self.origin, self)]
+    ] Self.element_type:
         """Gets a single element on the variadic list.
 
         Args:
@@ -385,7 +389,9 @@ struct VariadicListMem[
 
     fn __iter__(
         self,
-    ) -> _VariadicListMemIter[element_type, origin, origin_of(self), is_owned]:
+    ) -> _VariadicListMemIter[
+        Self.element_type, Self.origin, origin_of(self), Self.is_owned
+    ]:
         """Iterate over the list.
 
         Returns:
@@ -464,11 +470,11 @@ struct VariadicPack[
 
     alias _mlir_type = __mlir_type[
         `!lit.ref.pack<:variadic<`,
-        element_trait,
+        Self.element_trait,
         `> `,
-        element_types,
+        Self.element_types,
         `, `,
-        origin._mlir_origin,
+        Self.origin._mlir_origin,
         `>`,
     ]
 
@@ -497,7 +503,7 @@ struct VariadicPack[
         """Destructor that releases elements if owned."""
 
         @parameter
-        if is_owned:
+        if Self.is_owned:
 
             @parameter
             for i in reversed(range(Self.__len__())):
@@ -507,7 +513,7 @@ struct VariadicPack[
                 ]().destroy_pointee()
 
     fn consume_elements[
-        elt_handler: fn[idx: Int] (var elt: element_types[idx]) capturing
+        elt_handler: fn[idx: Int] (var elt: Self.element_types[idx]) capturing
     ](deinit self):
         """Consume the variadic pack by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
@@ -519,7 +525,7 @@ struct VariadicPack[
         """
 
         constrained[
-            is_owned,
+            Self.is_owned,
             "consume_elements may only be called on owned variadic packs",
         ]()
 
@@ -543,7 +549,7 @@ struct VariadicPack[
             The number of elements in the variadic pack.
         """
 
-        alias result = variadic_size(element_types)
+        alias result = variadic_size(Self.element_types)
         return result
 
     @always_inline
@@ -560,7 +566,9 @@ struct VariadicPack[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__[index: Int](self) -> ref [Self.origin] element_types[index]:
+    fn __getitem__[
+        index: Int
+    ](self) -> ref [Self.origin] Self.element_types[index]:
         """Return a reference to an element of the pack.
 
         Parameters:

@@ -107,15 +107,15 @@ struct CodepointSliceIter[
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    alias Element = StringSlice[origin]
+    alias Element = StringSlice[Self.origin]
 
-    var _slice: StringSlice[origin]
+    var _slice: StringSlice[Self.origin]
 
     # Note:
     #   Marked private since `StringSlice.codepoints()` is the intended public
     #   way to construct this type.
     @doc_private
-    fn __init__(out self, str_slice: StringSlice[origin]):
+    fn __init__(out self, str_slice: StringSlice[Self.origin]):
         self._slice = str_slice
 
     # ===-------------------------------------------------------------------===#
@@ -143,7 +143,7 @@ struct CodepointSliceIter[
         #   scan of the string, which is needlessly expensive for this purpose.
         return len(self._slice) > 0
 
-    fn __next__(mut self) -> StringSlice[origin]:
+    fn __next__(mut self) -> StringSlice[Self.origin]:
         """Get the next codepoint in the underlying string slice.
 
         This returns the next single-codepoint substring slice encoded in the
@@ -159,7 +159,7 @@ struct CodepointSliceIter[
         """
 
         @parameter
-        if forward:
+        if Self.forward:
             return self.next().value()
         else:
             return self.next_back().value()
@@ -180,7 +180,7 @@ struct CodepointSliceIter[
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn peek_next(self) -> Optional[StringSlice[origin]]:
+    fn peek_next(self) -> Optional[StringSlice[Self.origin]]:
         """Check what the next single-codepoint slice in this iterator is,
         without advancing the iterator state.
 
@@ -219,11 +219,11 @@ struct CodepointSliceIter[
             #   to contain valid UTF-8.
             var curr_ptr = self._slice.unsafe_ptr()
             var byte_len = Int(_utf8_first_byte_sequence_length(curr_ptr[]))
-            return StringSlice[origin](ptr=curr_ptr, length=byte_len)
+            return StringSlice[Self.origin](ptr=curr_ptr, length=byte_len)
         else:
             return None
 
-    fn peek_back(mut self) -> Optional[StringSlice[origin]]:
+    fn peek_back(mut self) -> Optional[StringSlice[Self.origin]]:
         """Check what the last single-codepoint slice in this iterator is,
         without advancing the iterator state.
 
@@ -269,11 +269,11 @@ struct CodepointSliceIter[
                 byte_len += 1
                 back_ptr -= 1
 
-            return StringSlice[origin](ptr=back_ptr, length=byte_len)
+            return StringSlice[Self.origin](ptr=back_ptr, length=byte_len)
         else:
             return None
 
-    fn next(mut self) -> Optional[StringSlice[origin]]:
+    fn next(mut self) -> Optional[StringSlice[Self.origin]]:
         """Get the next codepoint slice in the underlying string slice, or None
         if the iterator is empty.
 
@@ -283,7 +283,7 @@ struct CodepointSliceIter[
         Returns:
             A character if the string is not empty, otherwise None.
         """
-        var result: Optional[StringSlice[origin]] = self.peek_next()
+        var result: Optional[StringSlice[Self.origin]] = self.peek_next()
 
         if result:
             # SAFETY: We just checked that `result` holds a value
@@ -295,7 +295,7 @@ struct CodepointSliceIter[
 
         return result
 
-    fn next_back(mut self) -> Optional[StringSlice[origin]]:
+    fn next_back(mut self) -> Optional[StringSlice[Self.origin]]:
         """Get the last single-codepoint slice in this iterator is, or None
         if the iterator is empty.
 
@@ -306,7 +306,7 @@ struct CodepointSliceIter[
             The last codepoint slice in the underlying string, or None if the
             string is empty.
         """
-        var result: Optional[StringSlice[origin]] = self.peek_back()
+        var result: Optional[StringSlice[Self.origin]] = self.peek_back()
 
         if result:
             # SAFETY: We just checked that `result` holds a value
@@ -333,7 +333,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
     ]: Iterator = Self
     alias Element = Codepoint
 
-    var _slice: StringSlice[origin]
+    var _slice: StringSlice[Self.origin]
     """String slice containing the bytes that have not been read yet.
 
     When this iterator advances, the pointer in `_slice` is advanced by the
@@ -345,7 +345,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
     #   Marked private since `StringSlice.codepoints()` is the intended public
     #   way to construct this type.
     @doc_private
-    fn __init__(out self, str_slice: StringSlice[origin]):
+    fn __init__(out self, str_slice: StringSlice[Self.origin]):
         self._slice = str_slice
 
     # ===-------------------------------------------------------------------===#
@@ -500,12 +500,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     """
 
     # Aliases
-    alias Mutable = StringSlice[MutOrigin.cast_from[origin]]
+    alias Mutable = StringSlice[MutOrigin.cast_from[Self.origin]]
     """The mutable version of the `StringSlice`."""
-    alias Immutable = StringSlice[ImmutOrigin.cast_from[origin]]
+    alias Immutable = StringSlice[ImmutOrigin.cast_from[Self.origin]]
     """The immutable version of the `StringSlice`."""
     # Fields
-    var _slice: Span[Byte, origin]
+    var _slice: Span[Byte, Self.origin]
 
     # ===------------------------------------------------------------------===#
     # Initializers
@@ -514,7 +514,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     @always_inline("nodebug")
     fn __init__(out self):
         """Create an empty / zero-length slice."""
-        self._slice = Span[Byte, origin]()
+        self._slice = Span[Byte, Self.origin]()
 
     @doc_private
     @implicit
@@ -559,7 +559,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         self = StaticString(lit.value)
 
     @always_inline("builtin")
-    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, origin, **_]):
+    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, Self.origin, **_]):
         """Construct a new `StringSlice` from a sequence of UTF-8 encoded bytes.
 
         Args:
@@ -576,17 +576,15 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # debug_assert(
         #     _is_valid_utf8(value.as_bytes()), "value is not valid utf8"
         # )
-        self._slice = Span[Byte, origin](
+        self._slice = Span[Byte, Self.origin](
             ptr=unsafe_from_utf8.unsafe_ptr().address_space_cast[
-                Span[Byte, origin].address_space
+                Span[Byte, Self.origin].address_space
             ](),
             length=unsafe_from_utf8.__len__(),
         )
 
     fn __init__(
-        out self,
-        *,
-        unsafe_from_utf8_ptr: UnsafePointer[Byte, origin],
+        out self, *, unsafe_from_utf8_ptr: UnsafePointer[Byte, Self.origin]
     ):
         """Construct a new StringSlice from a `UnsafePointer[Byte]` pointing to
         null-terminated UTF-8 encoded bytes.
@@ -608,7 +606,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         )
         self = Self(unsafe_from_utf8=byte_slice)
 
-    fn __init__(out self, *, from_utf8: Span[Byte, origin, **_]) raises:
+    fn __init__(out self, *, from_utf8: Span[Byte, Self.origin, **_]) raises:
         """Construct a new `StringSlice` from a buffer containing UTF-8 encoded
         data.
 
@@ -625,9 +623,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         self = Self(unsafe_from_utf8=from_utf8)
 
     fn __init__(
-        out self,
-        *,
-        unsafe_from_utf8_ptr: UnsafePointer[c_char, origin],
+        out self, *, unsafe_from_utf8_ptr: UnsafePointer[c_char, Self.origin]
     ):
         """Construct a new StringSlice from a `UnsafePointer[c_char]` pointing
         to null-terminated UTF-8 encoded bytes.
@@ -647,7 +643,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     fn __init__(
         out self,
         *,
-        ptr: UnsafePointer[Byte, origin],
+        ptr: UnsafePointer[Byte, Self.origin],
         length: Int,
     ):
         """Construct a `StringSlice` from a pointer to a sequence of UTF-8
@@ -1054,7 +1050,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return rhs.as_string_slice() <= self
 
     @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
-    fn __iter__(self) -> CodepointSliceIter[origin]:
+    fn __iter__(self) -> CodepointSliceIter[Self.origin]:
         """Iterate over the string, returning immutable references.
 
         Returns:
@@ -1062,13 +1058,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return self.codepoint_slices()
 
-    fn __reversed__(self) -> CodepointSliceIter[origin, False]:
+    fn __reversed__(self) -> CodepointSliceIter[Self.origin, False]:
         """Iterate backwards over the string, returning immutable references.
 
         Returns:
             A reversed iterator of references to the string elements.
         """
-        return CodepointSliceIter[origin, forward=False](self)
+        return CodepointSliceIter[Self.origin, forward=False](self)
 
     fn __getitem__[I: Indexer, //](self, idx: I) -> String:
         """Gets the character at the specified position.
@@ -1170,8 +1166,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     ](
         self,
         out result: StringSlice[
-            mut = mut & other_type.origin.mut,
-            origin_of(origin, other_type.origin),
+            mut = Self.mut & other_type.origin.mut,
+            origin_of(Self.origin, other_type.origin),
         ],
     ):
         """Returns a string slice with merged origins.
@@ -1403,7 +1399,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return Self(unsafe_from_utf8=self.as_bytes()[l_idx:])
 
     @always_inline
-    fn codepoints(self) -> CodepointsIter[origin]:
+    fn codepoints(self) -> CodepointsIter[Self.origin]:
         """Returns an iterator over the `Codepoint`s encoded in this string slice.
 
         Returns:
@@ -1446,16 +1442,16 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return CodepointsIter(self)
 
-    fn codepoint_slices(self) -> CodepointSliceIter[origin]:
+    fn codepoint_slices(self) -> CodepointSliceIter[Self.origin]:
         """Iterate over the string, returning immutable references.
 
         Returns:
             An iterator of references to the string elements.
         """
-        return CodepointSliceIter[origin](self)
+        return CodepointSliceIter[Self.origin](self)
 
     @always_inline
-    fn as_bytes(self) -> Span[Byte, origin]:
+    fn as_bytes(self) -> Span[Byte, Self.origin]:
         """Get the sequence of encoded bytes of the underlying string.
 
         Returns:
@@ -1464,9 +1460,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return self._slice
 
     @always_inline
-    fn unsafe_ptr(
-        self,
-    ) -> UnsafePointer[Byte, origin]:
+    fn unsafe_ptr(self) -> UnsafePointer[Byte, Self.origin]:
         """Gets a pointer to the first element of this string slice.
 
         Returns:
@@ -1659,7 +1653,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if end == -1:
             return self.find(prefix, start) == start
         # FIXME: use normalize_index
-        return StringSlice[origin](
+        return StringSlice[Self.origin](
             ptr=self.unsafe_ptr() + start, length=end - start
         ).startswith(prefix)
 
@@ -1685,7 +1679,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if end == -1:
             return self.rfind(suffix, start) + len(suffix) == len(self)
         # FIXME: use normalize_index
-        return StringSlice[origin](
+        return StringSlice[Self.origin](
             ptr=self.unsafe_ptr() + start, length=end - start
         ).endswith(suffix)
 

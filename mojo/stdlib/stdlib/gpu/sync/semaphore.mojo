@@ -162,7 +162,7 @@ struct NamedBarrierSemaphore[
         """
         constrained[is_nvidia_gpu(), "target must be cuda"]()
         constrained[
-            id_offset + max_num_barriers < MaxHardwareBarriers,
+            Self.id_offset + Self.max_num_barriers < MaxHardwareBarriers,
             "max number of barriers is " + String(MaxHardwareBarriers),
         ]()
         self._lock = lock
@@ -190,7 +190,7 @@ struct NamedBarrierSemaphore[
             while self._state != status:
                 self._state = load_acquire[scope = Scope.GPU](self._lock)
 
-        named_barrier[thread_count,](id_offset + id)
+        named_barrier[Self.thread_count,](Self.id_offset + id)
 
     @always_inline
     fn wait_lt(mut self, id: Int32, count: Int32 = 0):
@@ -204,7 +204,7 @@ struct NamedBarrierSemaphore[
             while self._state < count:
                 self._state = load_acquire[scope = Scope.GPU](self._lock)
 
-        named_barrier[thread_count,](id_offset + id)
+        named_barrier[Self.thread_count,](Self.id_offset + id)
 
     @always_inline
     fn arrive_set(self, id: Int32, status: Int32 = 0):
@@ -214,7 +214,7 @@ struct NamedBarrierSemaphore[
             id: Barrier ID to use for synchronization.
             status: Status value to set after arriving.
         """
-        named_barrier[thread_count,](id_offset + id)
+        named_barrier[Self.thread_count,](Self.id_offset + id)
 
         if self._wait_thread:
             store_release[scope = Scope.GPU](self._lock, status)

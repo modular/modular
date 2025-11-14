@@ -806,10 +806,10 @@ fn _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
 
 @register_passable("trivial")
 struct _RegisterPackType[*a: AnyTrivialRegType]:
-    var storage: __mlir_type[`!kgen.pack<`, a, `>`]
+    var storage: __mlir_type[`!kgen.pack<`, Self.a, `>`]
 
     @always_inline("nodebug")
-    fn __getitem__[i: Int](self) -> a[i]:
+    fn __getitem__[i: Int](self) -> Self.a[i]:
         """Get the element.
 
         Parameters:

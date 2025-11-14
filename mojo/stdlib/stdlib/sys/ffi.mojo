@@ -837,7 +837,7 @@ struct _Global[
     init_fn: fn () -> StorageType,
     on_error_msg: Optional[fn () -> Error] = None,
 ](Defaultable):
-    alias ResultType = UnsafePointer[StorageType, MutAnyOrigin]
+    alias ResultType = UnsafePointer[Self.StorageType, MutAnyOrigin]
 
     fn __init__(out self):
         pass
@@ -848,7 +848,7 @@ struct _Global[
         # TODO:
         #   Any way to avoid the move, e.g. by calling this function
         #   with the ABI destination result pointer already set to `ptr`?
-        var ptr = OwnedPointer(init_fn())
+        var ptr = OwnedPointer(Self.init_fn())
 
         return ptr^.steal_data().bitcast[NoneType]()
 
@@ -856,19 +856,21 @@ struct _Global[
     fn _deinit_wrapper(opaque_ptr: OpaquePointer[MutAnyOrigin]):
         # Deinitialize and deallocate the storage.
         _ = OwnedPointer(
-            unsafe_from_raw_pointer=opaque_ptr.bitcast[StorageType]()
+            unsafe_from_raw_pointer=opaque_ptr.bitcast[Self.StorageType]()
         )
 
     @staticmethod
     fn get_or_create_ptr() raises -> Self.ResultType:
-        var ptr = _get_global[name, Self._init_wrapper, Self._deinit_wrapper]()
+        var ptr = _get_global[
+            Self.name, Self._init_wrapper, Self._deinit_wrapper
+        ]()
 
         @parameter
-        if on_error_msg:
+        if Self.on_error_msg:
             if not ptr:
-                raise on_error_msg.value()()
+                raise Self.on_error_msg.value()()
 
-        return ptr.bitcast[StorageType]()
+        return ptr.bitcast[Self.StorageType]()
 
     # Currently known values for get_or_create_indexed_ptr. See
     # NUM_INDEXED_GLOBALS in CompilerRT.
@@ -893,11 +895,11 @@ struct _Global[
         )
 
         @parameter
-        if on_error_msg:
+        if Self.on_error_msg:
             if not ptr:
-                raise on_error_msg.value()()
+                raise Self.on_error_msg.value()()
 
-        return ptr.bitcast[StorageType]()
+        return ptr.bitcast[Self.StorageType]()
 
 
 @always_inline

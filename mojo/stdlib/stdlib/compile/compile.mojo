@@ -124,9 +124,9 @@ struct CompiledFunctionInfo[
     alias populate = rebind[fn (OpaquePointer) capturing -> None](
         __mlir_attr[
             `#kgen.compile_offload_closure<`,
-            target,
+            Self.target,
             `,`,
-            func,
+            Self.func,
             `> : `,
             _PopulateInfo,
         ].populate

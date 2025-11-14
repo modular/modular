@@ -176,17 +176,19 @@ struct _Enumerate[InnerIteratorType: Iterator](
     original iterator.
     """
 
-    alias Element = Tuple[Int, InnerIteratorType.Element]
+    alias Element = Tuple[Int, Self.InnerIteratorType.Element]
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
-    var _inner: InnerIteratorType
+    var _inner: Self.InnerIteratorType
     var _count: Int
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __init__(out self, var iterator: InnerIteratorType, *, start: Int = 0):
+    fn __init__(
+        out self, var iterator: Self.InnerIteratorType, *, start: Int = 0
+    ):
         self._inner = iterator^
         self._count = start
 
@@ -241,13 +243,15 @@ fn enumerate[
 struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
     Copyable, Iterable, Iterator, Movable
 ):
-    alias Element = Tuple[IteratorTypeA.Element, IteratorTypeB.Element]
+    alias Element = Tuple[
+        Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
+    ]
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    var _inner_a: IteratorTypeA
-    var _inner_b: IteratorTypeB
+    var _inner_a: Self.IteratorTypeA
+    var _inner_b: Self.IteratorTypeB
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
@@ -270,15 +274,17 @@ struct _Zip3[
     IteratorTypeA: Iterator, IteratorTypeB: Iterator, IteratorTypeC: Iterator
 ](Copyable, Iterable, Iterator, Movable):
     alias Element = Tuple[
-        IteratorTypeA.Element, IteratorTypeB.Element, IteratorTypeC.Element
+        Self.IteratorTypeA.Element,
+        Self.IteratorTypeB.Element,
+        Self.IteratorTypeC.Element,
     ]
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    var _inner_a: IteratorTypeA
-    var _inner_b: IteratorTypeB
-    var _inner_c: IteratorTypeC
+    var _inner_a: Self.IteratorTypeA
+    var _inner_b: Self.IteratorTypeB
+    var _inner_c: Self.IteratorTypeC
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
@@ -314,19 +320,19 @@ struct _Zip4[
     IteratorTypeD: Iterator,
 ](Copyable, Iterable, Iterator, Movable):
     alias Element = Tuple[
-        IteratorTypeA.Element,
-        IteratorTypeB.Element,
-        IteratorTypeC.Element,
-        IteratorTypeD.Element,
+        Self.IteratorTypeA.Element,
+        Self.IteratorTypeB.Element,
+        Self.IteratorTypeC.Element,
+        Self.IteratorTypeD.Element,
     ]
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    var _inner_a: IteratorTypeA
-    var _inner_b: IteratorTypeB
-    var _inner_c: IteratorTypeC
-    var _inner_d: IteratorTypeD
+    var _inner_a: Self.IteratorTypeA
+    var _inner_b: Self.IteratorTypeB
+    var _inner_c: Self.IteratorTypeC
+    var _inner_d: Self.IteratorTypeD
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
@@ -500,12 +506,12 @@ struct _MapIterator[
     InnerIteratorType: Iterator, //,
     function: fn (var InnerIteratorType.Element) -> OutputType,
 ](Copyable, Iterable, Iterator, Movable):
-    alias Element = OutputType
+    alias Element = Self.OutputType
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    var _inner: InnerIteratorType
+    var _inner: Self.InnerIteratorType
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
@@ -514,7 +520,7 @@ struct _MapIterator[
         return self._inner.__has_next__()
 
     fn __next__(mut self) -> Self.Element:
-        return function(next(self._inner))
+        return Self.function(next(self._inner))
 
     fn copy(self) -> Self:
         return Self(self._inner.copy())

@@ -748,9 +748,9 @@ struct ExternalFunction[
 ]:
     @staticmethod
     @always_inline
-    fn load(lib: _DLHandle) -> type:
+    fn load(lib: _DLHandle) -> Self.type:
         """Loads this external function from an opened dynamic library."""
-        return lib._get_function[name, type]()
+        return lib._get_function[Self.name, Self.type]()
 
 
 # external functions for the CPython C API

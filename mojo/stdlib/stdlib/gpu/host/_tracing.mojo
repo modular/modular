@@ -258,11 +258,11 @@ struct EventAttributes:
 
 @register_passable("trivial")
 struct _dylib_function[fn_name: StaticString, type: AnyTrivialRegType]:
-    alias fn_type = type
+    alias fn_type = Self.type
 
     @staticmethod
-    fn load() raises -> type:
-        return _get_dylib_function[fn_name, type]()
+    fn load() raises -> Self.type:
+        return _get_dylib_function[Self.fn_name, Self.type]()
 
 
 # ===-----------------------------------------------------------------------===#

@@ -26,9 +26,9 @@ from sys.info import size_of
 
 struct _ArcPointerInner[T: Movable]:
     var refcount: Atomic[DType.uint64]
-    var payload: T
+    var payload: Self.T
 
-    fn __init__(out self, var value: T):
+    fn __init__(out self, var value: Self.T):
         """Create an initialized instance of this with a refcount of 1."""
         self.refcount = Atomic(UInt64(1))
         self.payload = value^
@@ -105,10 +105,10 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
         T: The type of the stored value.
     """
 
-    alias _inner_type = _ArcPointerInner[T]
+    alias _inner_type = _ArcPointerInner[Self.T]
     var _inner: UnsafePointer[Self._inner_type]
 
-    fn __init__(out self, var value: T):
+    fn __init__(out self, var value: Self.T):
         """Construct a new thread-safe, reference-counted smart pointer,
         and move the value into heap memory managed by the new pointer.
 
@@ -121,7 +121,7 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
             value^
         )
 
-    fn __init__(out self, *, unsafe_from_raw_pointer: UnsafePointer[T]):
+    fn __init__(out self, *, unsafe_from_raw_pointer: UnsafePointer[Self.T]):
         """Constructs an `ArcPointer` from a raw pointer.
 
         Args:
@@ -181,7 +181,7 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
     # correctly.
     fn __getitem__[
         self_life: ImmutOrigin
-    ](ref [self_life]self) -> ref [MutOrigin.cast_from[self_life]] T:
+    ](ref [self_life]self) -> ref [MutOrigin.cast_from[self_life]] Self.T:
         """Returns a mutable reference to the managed value.
 
         Parameters:
@@ -192,7 +192,7 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
         """
         return self._inner[].payload
 
-    fn unsafe_ptr(self) -> UnsafePointer[T]:
+    fn unsafe_ptr(self) -> UnsafePointer[Self.T]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:
@@ -213,7 +213,7 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
         # this ArcPointer is destroyed.
         return self._inner[].refcount.load[ordering = Consistency.MONOTONIC]()
 
-    fn steal_data(deinit self) -> UnsafePointer[T]:
+    fn steal_data(deinit self) -> UnsafePointer[Self.T]:
         """Consume this `ArcPointer`, returning a raw pointer to the underlying data.
 
         Returns:

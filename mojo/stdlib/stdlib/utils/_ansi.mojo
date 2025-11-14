@@ -36,9 +36,9 @@ struct Color(ImplicitlyCopyable, Movable, Writable):
 struct Text[W: Writable, origin: ImmutOrigin, //, color: Color](Writable):
     """Colors the given writable with the given `Color`."""
 
-    var writable: Pointer[W, origin]
+    var writable: Pointer[Self.W, Self.origin]
 
-    fn __init__(out self, ref [origin]w: W):
+    fn __init__(out self, ref [Self.origin]w: Self.W):
         self.writable = Pointer(to=w)
 
     fn write_to(self, mut writer: Some[Writer]):

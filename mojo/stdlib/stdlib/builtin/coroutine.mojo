@@ -113,7 +113,7 @@ struct Coroutine[type: AnyType, origins: OriginSet]:
         ](self._handle)
 
     @always_inline
-    fn _set_result_slot(self, slot: UnsafePointer[type, mut=True, **_]):
+    fn _set_result_slot(self, slot: UnsafePointer[Self.type, mut=True, **_]):
         __mlir_op.`co.set_byref_error_result`(self._handle, slot.address)
 
     @always_inline
@@ -137,7 +137,7 @@ struct Coroutine[type: AnyType, origins: OriginSet]:
         return self._handle
 
     @always_inline
-    fn __await__(deinit self, out result: type):
+    fn __await__(deinit self, out result: Self.type):
         """Suspends the current coroutine until the coroutine is complete.
 
         Returns:
@@ -199,7 +199,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
     @always_inline
     fn _set_result_slot(
         self,
-        slot: UnsafePointer[type, mut=True, **_],
+        slot: UnsafePointer[Self.type, mut=True, **_],
         err: UnsafePointer[Error, mut=False, **_],
     ):
         __mlir_op.`co.set_byref_error_result`(
@@ -227,7 +227,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
         __mlir_op.`co.destroy`(self._handle)
 
     @always_inline
-    fn __await__(var self, out result: type) raises:
+    fn __await__(var self, out result: Self.type) raises:
         """Suspends the current coroutine until the coroutine is complete.
 
         Returns:

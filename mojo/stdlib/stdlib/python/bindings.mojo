@@ -150,7 +150,7 @@ struct PyMojoObject[T: AnyType]:
     All Python objects begin with this header structure.
     """
 
-    var mojo_value: T
+    var mojo_value: Self.T
     """The actual Mojo value being wrapped and exposed to Python.
 
     This field stores the Mojo data that Python code can interact with through

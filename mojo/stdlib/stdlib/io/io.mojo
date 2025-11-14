@@ -57,7 +57,7 @@ struct _fdopen[mode: StaticString = "a"]:
         self.handle = fdopen(
             dup(stream_id.value),
             # Guarantee this is nul terminated.
-            get_static_string[mode]().unsafe_ptr().bitcast[c_char](),
+            get_static_string[Self.mode]().unsafe_ptr().bitcast[c_char](),
         )
 
     fn __enter__(self) -> Self:

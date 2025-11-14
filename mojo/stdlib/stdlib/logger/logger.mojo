@@ -269,9 +269,9 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         """
 
         @parameter
-        if level == Level.NOTSET:
+        if Self.level == Level.NOTSET:
             return True
-        return level > target_level
+        return Self.level > target_level
 
     @always_inline
     fn trace[

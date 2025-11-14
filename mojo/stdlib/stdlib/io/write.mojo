@@ -224,12 +224,12 @@ struct _WriteBufferStack[
     W: Writer, //,
     stack_buffer_bytes: UInt = STACK_BUFFER_BYTES,
 ](Writer):
-    var data: InlineArray[UInt8, Int(stack_buffer_bytes)]
+    var data: InlineArray[UInt8, Int(Self.stack_buffer_bytes)]
     var pos: Int
-    var writer: Pointer[W, origin]
+    var writer: Pointer[Self.W, Self.origin]
 
-    fn __init__(out self, ref [origin]writer: W):
-        self.data = InlineArray[UInt8, Int(stack_buffer_bytes)](
+    fn __init__(out self, ref [Self.origin]writer: Self.W):
+        self.data = InlineArray[UInt8, Int(Self.stack_buffer_bytes)](
             uninitialized=True
         )
         self.pos = 0
@@ -255,12 +255,12 @@ struct _WriteBufferStack[
     fn write_bytes(mut self, bytes: Span[Byte, _]):
         len_bytes = len(bytes)
         # If span is too large to fit in buffer, write directly and return
-        if len_bytes > Int(stack_buffer_bytes):
+        if len_bytes > Int(Self.stack_buffer_bytes):
             self.flush()
             self.writer[].write_bytes(bytes)
             return
         # If buffer would overflow, flush writer and reset pos to 0.
-        elif self.pos + len_bytes > Int(stack_buffer_bytes):
+        elif self.pos + len_bytes > Int(Self.stack_buffer_bytes):
             self.flush()
         # Continue writing to buffer
         memcpy(

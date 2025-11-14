@@ -42,7 +42,7 @@ def test_prop_test_runner_propagates_error():
 struct RecordingStrategy[origin: MutOrigin](Movable, Strategy):
     alias Value = Int
 
-    var list: UnsafePointer[List[Int], origin=origin]
+    var list: UnsafePointer[List[Int], origin = Self.origin]
 
     fn value(self, mut rng: Rng) raises -> Self.Value:
         var random = rng.rand_int()

@@ -199,18 +199,18 @@ struct Pointer[
     # Aliases
     alias _mlir_type = __mlir_type[
         `!lit.ref<`,
-        type,
+        Self.type,
         `, `,
-        origin._mlir_origin,
+        Self.origin._mlir_origin,
         `, `,
-        address_space._value._mlir_value,
+        Self.address_space._value._mlir_value,
         `>`,
     ]
-    alias _with_origin = Pointer[type, _, address_space]
+    alias _with_origin = Pointer[Self.type, _, Self.address_space]
 
-    alias Mutable = Self._with_origin[MutOrigin.cast_from[origin]]
+    alias Mutable = Self._with_origin[MutOrigin.cast_from[Self.origin]]
     """The mutable version of the `Pointer`."""
-    alias Immutable = Self._with_origin[ImmutOrigin.cast_from[origin]]
+    alias Immutable = Self._with_origin[ImmutOrigin.cast_from[Self.origin]]
     """The immutable version of the `Pointer`."""
     # Fields
     var _value: Self._mlir_type
@@ -246,7 +246,9 @@ struct Pointer[
 
     @always_inline("nodebug")
     fn __init__(
-        out self, *, ref [origin, address_space._value._mlir_value]to: type
+        out self,
+        *,
+        ref [Self.origin, Self.address_space._value._mlir_value]to: Self.type,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -273,7 +275,7 @@ struct Pointer[
     # ===------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn __getitem__(self) -> ref [origin, address_space] type:
+    fn __getitem__(self) -> ref [Self.origin, Self.address_space] Self.type:
         """Enable subscript syntax `ptr[]` to access the element.
 
         Returns:
@@ -287,7 +289,7 @@ struct Pointer[
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
-    fn __eq__(self, rhs: Pointer[type, _, address_space]) -> Bool:
+    fn __eq__(self, rhs: Pointer[Self.type, _, Self.address_space]) -> Bool:
         """Returns True if the two pointers are equal.
 
         Args:
@@ -300,7 +302,7 @@ struct Pointer[
 
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
-    fn __ne__(self, rhs: Pointer[type, _, address_space]) -> Bool:
+    fn __ne__(self, rhs: Pointer[Self.type, _, Self.address_space]) -> Bool:
         """Returns True if the two pointers are not equal.
 
         Args:
@@ -322,14 +324,14 @@ struct Pointer[
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: type_of(Pointer[type, _, address_space]),
+        other_type: type_of(Pointer[Self.type, _, Self.address_space]),
     ](
         self,
         out result: Pointer[
-            mut = mut & other_type.origin.mut,
-            type=type,
-            origin = origin_of(origin, other_type.origin),
-            address_space=address_space,
+            mut = Self.mut & other_type.origin.mut,
+            type = Self.type,
+            origin = origin_of(Self.origin, other_type.origin),
+            address_space = Self.address_space,
         ],
     ):
         """Returns a pointer merged with the specified `other_type`.

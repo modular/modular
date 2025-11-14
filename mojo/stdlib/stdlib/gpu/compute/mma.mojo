@@ -515,7 +515,7 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](
         smem_ptr: UnsafePointer[
-            Scalar[dtype],
+            Scalar[Self.dtype],
             address_space = AddressSpace.SHARED, **_,
         ],
     ) -> Self:

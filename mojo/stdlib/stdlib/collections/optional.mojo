@@ -88,12 +88,12 @@ struct Optional[T: Copyable & Movable](
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
-    alias Element = T
+    alias Element = Self.T
 
     # Fields
     # _NoneType comes first so its index is 0.
     # This means that Optionals that are 0-initialized will be None.
-    alias _type = Variant[_NoneType, T]
+    alias _type = Variant[_NoneType, Self.T]
     var _value: Self._type
 
     # ===-------------------------------------------------------------------===#
@@ -105,7 +105,7 @@ struct Optional[T: Copyable & Movable](
         self._value = Self._type(_NoneType())
 
     @implicit
-    fn __init__(out self, var value: T):
+    fn __init__(out self, var value: Self.T):
         """Construct an `Optional` containing a value.
 
         Args:
@@ -292,7 +292,7 @@ struct Optional[T: Copyable & Movable](
         return not self
 
     @always_inline
-    fn __getitem__(ref self) raises -> ref [self._value] T:
+    fn __getitem__(ref self) raises -> ref [self._value] Self.T:
         """Retrieve a reference to the value inside the `Optional`.
 
         Returns:
@@ -376,7 +376,7 @@ struct Optional[T: Copyable & Movable](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn value(ref self) -> ref [self._value] T:
+    fn value(ref self) -> ref [self._value] Self.T:
         """Retrieve a reference to the value of the `Optional`.
 
         Returns:
@@ -396,7 +396,7 @@ struct Optional[T: Copyable & Movable](
         return self.unsafe_value()
 
     @always_inline
-    fn unsafe_value(ref self) -> ref [self._value] T:
+    fn unsafe_value(ref self) -> ref [self._value] Self.T:
         """Unsafely retrieve a reference to the value of the `Optional`.
 
         Returns:
@@ -406,9 +406,9 @@ struct Optional[T: Copyable & Movable](
             This will **not** abort on empty `Optional`.
         """
         debug_assert(self.__bool__(), "`.value()` on empty `Optional`")
-        return self._value.unsafe_get[T]()
+        return self._value.unsafe_get[Self.T]()
 
-    fn take(mut self) -> T:
+    fn take(mut self) -> Self.T:
         """Move the value out of the `Optional`.
 
         Returns:
@@ -426,7 +426,7 @@ struct Optional[T: Copyable & Movable](
             )
         return self.unsafe_take()
 
-    fn unsafe_take(mut self) -> T:
+    fn unsafe_take(mut self) -> Self.T:
         """Unsafely move the value out of the `Optional`.
 
         Returns:
@@ -436,9 +436,9 @@ struct Optional[T: Copyable & Movable](
             This will **not** abort on empty `Optional`.
         """
         debug_assert(self.__bool__(), "`.unsafe_take()` on empty `Optional`")
-        return self._value.unsafe_replace[_NoneType, T](_NoneType())
+        return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
 
-    fn or_else(self, default: T) -> T:
+    fn or_else(self, default: Self.T) -> Self.T:
         """Return the underlying value contained in the `Optional` or a default
         value if the `Optional`'s underlying value is not present.
 
@@ -449,7 +449,7 @@ struct Optional[T: Copyable & Movable](
             The underlying value contained in the `Optional` or a default value.
         """
         if self.__bool__():
-            return self._value[T].copy()
+            return self._value[Self.T].copy()
         return default.copy()
 
     fn copied[
@@ -507,7 +507,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
     """
 
     # Fields
-    alias _mlir_type = __mlir_type[`!kgen.variant<`, T, `, i1>`]
+    alias _mlir_type = __mlir_type[`!kgen.variant<`, Self.T, `, i1>`]
     var _value: Self._mlir_type
 
     alias device_type: AnyType = Self
@@ -522,7 +522,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
         Returns:
             A string representation of the type, e.g. `OptionalReg[Int]`.
         """
-        return String("OptionalReg[", get_type_name[T](), "]")
+        return String("OptionalReg[", get_type_name[Self.T](), "]")
 
     @staticmethod
     fn get_device_type_name() -> String:
@@ -544,7 +544,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: T):
+    fn __init__(out self, value: Self.T):
         """Create an optional with a value.
 
         Args:
@@ -643,7 +643,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn value(self) -> T:
+    fn value(self) -> Self.T:
         """Get the optional value.
 
         Returns:
@@ -653,7 +653,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
             self._value
         )
 
-    fn or_else(var self, var default: T) -> T:
+    fn or_else(var self, var default: Self.T) -> Self.T:
         """Return the underlying value contained in the Optional or a default
         value if the Optional's underlying value is not present.
 
