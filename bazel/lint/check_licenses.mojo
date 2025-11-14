@@ -80,7 +80,9 @@ fn check_path(path: Path, mut files_without_license: List[Path]) raises:
 
     # Ignore #! in scripts
     if file_text.startswith("#!"):
-        has_license = "\n".join(file_text.splitlines()[1:]).startswith(LICENSE)
+        has_license = "\n".join(List(file_text.splitlines()[1:])).startswith(
+            LICENSE
+        )
     else:
         has_license = file_text.startswith(LICENSE)
 

@@ -287,7 +287,7 @@ struct _TotalWritableBytes(Writer):
         origin: ImmutOrigin = StaticConstantOrigin,
     ](
         out self,
-        values: List[T, *_],
+        values: Span[T, *_],
         sep: StringSlice[origin] = StringSlice[origin](),
     ):
         self.size = 0

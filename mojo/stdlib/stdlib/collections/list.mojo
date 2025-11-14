@@ -25,7 +25,7 @@ from sys import size_of
 from sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
 from memory import Pointer, memcpy
-
+from builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
 # ===-----------------------------------------------------------------------===#
@@ -1093,7 +1093,7 @@ struct List[T: Copyable & Movable](
         self.capacity = 0
         return ptr
 
-    fn __getitem__(self, slice: Slice) -> Self:
+    fn __getitem__(self, slice: StridedSlice) -> Self:
         """Gets the sequence of elements at the specified positions.
 
         Args:
@@ -1113,6 +1113,25 @@ struct List[T: Copyable & Movable](
             res.append(self[i].copy())
 
         return res^
+
+    fn __getitem__[
+        origin: Origin, //
+    ](ref [origin]self, slice: ContiguousSlice) -> Span[T, origin]:
+        """Gets the sequence of elements at the specified positions.
+
+        Parameters:
+            origin: The origin of `List`.
+
+        Args:
+            slice: A slice the specifies the positions of the new list.
+
+        Returns:
+            A span over the specified slice.
+        """
+        var start, end = slice.indices(len(self))
+        return Span[T, origin](
+            ptr=self.unsafe_ptr() + start, length=end - start
+        )
 
     fn __getitem__[I: Indexer, //](ref self, idx: I) -> ref [self] T:
         """Gets the list element at the given index.

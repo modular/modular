@@ -411,6 +411,12 @@ what we publish.
   - `gpu/sync/` - Synchronization primitives (barriers, semaphores)
   - `gpu/compute/` - Compute operations (mma, tensor cores, tcgen05)
 
+- New `ContiguousSlice` and `StridedSlice` types were added to
+  the `builtin_slice` module to support specialization for slicing without strides.
+
+- `List` slicing without a stride now returns a `Span`, instead of a `List` and
+  no longer allocates memory.
+
   **Backward compatibility**: All existing imports continue to work unchanged.
   Deprecated import paths (`gpu.id`, `gpu.mma`, `gpu.cluster`,
   `gpu.grid_controls`, `gpu.warp`, `gpu.semaphore`, `gpu.mma_sm100`,

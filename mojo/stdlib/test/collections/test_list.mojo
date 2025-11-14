@@ -695,12 +695,12 @@ def test_list_iter_bounds():
 def test_list_span():
     var vs = [1, 2, 3]
 
-    var es = vs[1:]
+    var es = List(vs[1:])
     assert_equal(es[0], 2)
     assert_equal(es[1], 3)
     assert_equal(len(es), 2)
 
-    es = vs[:-1]
+    es = List(vs[:-1])
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
     assert_equal(len(es), 2)
@@ -715,7 +715,7 @@ def test_list_span():
     assert_equal(es[2], 1)
     assert_equal(len(es), 3)
 
-    es = vs[:]
+    es = List(vs[:])
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
     assert_equal(es[2], 3)
@@ -732,7 +732,7 @@ def test_list_span():
 
     assert_equal(0, len(vs[:-1:-2]))
     assert_equal(0, len(vs[-50::-1]))
-    es = vs[-50::]
+    es = List(vs[-50::])
     assert_equal(3, len(es))
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
@@ -742,7 +742,7 @@ def test_list_span():
     assert_equal(es[0], 3)
     assert_equal(es[1], 2)
     assert_equal(es[2], 1)
-    es = vs[:50:]
+    es = List(vs[:50:])
     assert_equal(3, len(es))
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
