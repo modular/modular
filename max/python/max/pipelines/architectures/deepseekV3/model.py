@@ -47,6 +47,7 @@ from max.pipelines.lib import (
     SupportedEncoding,
 )
 from max.pipelines.lib.config_enums import PipelineRole
+from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 from typing_extensions import override
 
@@ -260,6 +261,90 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             use_subgraphs=self.pipeline_config.model_config.use_subgraphs,
             return_logits=self.return_logits,
         )
+
+    @classmethod
+    def estimate_weights_size(cls, pipeline_config: PipelineConfig) -> int:
+        """Calculates the estimated memory consumption of our model."""
+
+        model_config = pipeline_config.model_config
+        weights_size = model_config.weights_size()
+        n_gpus_per_node = len(model_config.device_specs)
+
+        # If the model is running with multi-node expert parallelism.
+        if pipeline_config.ep_size > n_gpus_per_node:
+            assert pipeline_config.ep_size % n_gpus_per_node == 0
+            n_nodes = pipeline_config.ep_size // n_gpus_per_node
+            weights_size //= n_nodes
+
+        return weights_size
+
+    @classmethod
+    def estimate_activation_memory(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        """Estimates the activation memory required for model execution.
+
+        This accounts for temporary memory buffers used during model execution,
+        such as intermediate activations and working buffers.
+
+        Args:
+            pipeline_config: Pipeline configuration
+            huggingface_config: HuggingFace model configuration
+
+        Returns:
+            Estimated activation memory in bytes
+        """
+
+        encoding = pipeline_config.model_config.quantization_encoding
+        assert encoding is not None
+        activation_memory: int = 0
+
+        # During the prefill, we need to up-project all the KV cache for
+        # current requests. The total context length of requests in a batch
+        # should be limited by max_batch_context_length.
+        if pipeline_config.pipeline_role != PipelineRole.DecodeOnly:
+            max_kv_length: int = 0
+
+            if pipeline_config.max_batch_context_length is None:
+                logger.info(
+                    "Estimation for activation memory might be inaccurate, "
+                    "max-batch-context-length is not set."
+                )
+            else:
+                max_kv_length = pipeline_config.max_batch_context_length
+
+            activation_memory += (
+                pipeline_config.model_config.data_parallel_degree
+                * 2  # 2 for K and V
+                * max_kv_length
+                * huggingface_config.num_attention_heads
+                * huggingface_config.qk_nope_head_dim
+                * encoding.cache_dtype.size_in_bytes
+            )
+
+        # Estimate activation memory during Expert Parallel MoE.
+        if pipeline_config.ep_size > 1:
+            n_gpus_per_node = len(pipeline_config.model_config.device_specs)
+            max_input_len_per_rank = pipeline_config.prefill_chunk_size
+
+            # Calculate the maximum number of tokens a rank may receive during all-to-all routing.
+            max_recv_tokens_per_rank = (
+                max_input_len_per_rank * huggingface_config.n_routed_experts
+            )
+
+            activation_memory += (
+                n_gpus_per_node
+                * max_recv_tokens_per_rank
+                * huggingface_config.hidden_size
+                * DType.bfloat16.size_in_bytes  # expert output is bfloat16, no matter the quantization type.
+            )
+
+        if activation_memory != 0:
+            logger.info(
+                f"Estimated activation memory: {to_human_readable_bytes(activation_memory)}"
+            )
+
+        return activation_memory
 
     @override
     def load_model(self, session: InferenceSession) -> Model:

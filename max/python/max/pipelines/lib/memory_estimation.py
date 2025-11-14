@@ -50,9 +50,22 @@ class MemoryEstimator:
             raise
 
     @classmethod
-    def model_weights_size(cls, model_config: MAXModelConfig) -> int:
-        """Return the size of the model weights in bytes."""
-        return model_config.weights_size()
+    def model_weights_size(
+        cls,
+        pipeline_model: type[PipelineModel[Any]],
+        pipeline_config: PipelineConfig,
+    ) -> int:
+        """Calculate the size of the model weights in bytes.
+
+        Args:
+            pipeline_model: The model class.
+            pipeline_config: The pipeline configuration.
+
+        Returns:
+            Model weights size in bytes.
+        """
+
+        return pipeline_model.estimate_weights_size(pipeline_config)
 
     @classmethod
     def activation_memory_size(
@@ -95,7 +108,7 @@ class MemoryEstimator:
             Total static memory usage in bytes.
         """
         return cls.model_weights_size(
-            model_config
+            pipeline_model, pipeline_config
         ) + cls.activation_memory_size(
             pipeline_model, pipeline_config, model_config
         )
@@ -205,7 +218,9 @@ class MemoryEstimator:
                 )
             return
 
-        model_weights_size = cls.model_weights_size(model_config)
+        model_weights_size = cls.model_weights_size(
+            pipeline_model, pipeline_config
+        )
 
         # Get activation memory estimate from the model
         activation_memory_size = cls.activation_memory_size(
