@@ -2061,6 +2061,28 @@ class ClosureInitOp(max._core.Operation):
     @nested_fn_scope.setter
     def nested_fn_scope(self, arg: max._core.Attribute, /) -> None: ...
 
+class CodegenReachableOp(max._core.Operation):
+    """
+    The `kgen.codegen.reachable` operation checks if
+    codegen into runtimne code is allowed or not.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        cond: max._core.dialects.builtin.TypedAttr,
+        message: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def cond(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @cond.setter
+    def cond(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
+    @property
+    def message(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @message.setter
+    def message(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
+
 class CompileOffloadOp(max._core.Operation):
     """
     The `kgen.compile_offload` operation indicates compilation to a
