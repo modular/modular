@@ -147,7 +147,7 @@ def _test_tanh_libm[N: Int = 8192]():
 
     # abs_rel_err = (abs_min, abs_max, rel_min, rel_max)
     var abs_rel_err = SIMD[test_dtype, 4](
-        0.0, 2.384185791015625e-07, 0.0, 2.5438197326366208e-07
+        0.0, 2.384185791015625e-07, 0.0, 3.2e-07
     )
 
     var err = compare[test_dtype](y32, libm_out, N, msg="Compare Mojo vs. LibM")

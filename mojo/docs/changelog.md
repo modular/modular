@@ -25,6 +25,13 @@ what we publish.
 
 ### Library changes
 
+- The `random` module now uses a pure Mojo implementation based on the Philox
+  algorithm (via an internal wrapper), replacing the previous `CompilerRT` C++
+  dependency. The Philox algorithm provides excellent statistical quality, works
+  on both CPU and GPU, and makes random number generation fully transparent and
+  source-available. Note that this changes the random number sequence for a given
+  seed value, which may affect tests or code relying on reproducible sequences.
+
 ### Tooling changes
 
 ### ❌ Removed

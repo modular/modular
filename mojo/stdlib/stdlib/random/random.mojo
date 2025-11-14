@@ -17,23 +17,21 @@ You can import these APIs from the `random` package. For example:
 ```mojo
 from random import seed
 ```
+
+Warning:
+    This module provides a pseudorandom number generator (PRNG) suitable for
+    simulations, games, and general statistical purposes. It is NOT
+    cryptographically secure and should not be used for security-sensitive
+    applications such as generating passwords, authentication tokens,
+    encryption keys, or any other security-critical random values.
 """
 
 import math
 from math import floor
-from memory import (
-    LegacyOpaquePointer as OpaquePointer,
-    LegacyUnsafePointer as UnsafePointer,
-)
-from sys import external_call
+from memory import LegacyUnsafePointer as UnsafePointer
 from time import perf_counter_ns
 
-
-fn _get_random_state() -> OpaquePointer:
-    return external_call[
-        "KGEN_CompilerRT_GetRandomState",
-        OpaquePointer,
-    ]()
+from ._rng import _get_global_random_state
 
 
 fn seed():
@@ -47,9 +45,7 @@ fn seed(a: Int):
     Args:
         a: The seed value.
     """
-    external_call["KGEN_CompilerRT_SetRandomStateSeed", NoneType](
-        _get_random_state(), a
-    )
+    _get_global_random_state()[].seed(UInt64(a))
 
 
 fn random_float64(min: Float64 = 0, max: Float64 = 1) -> Float64:
@@ -62,7 +58,7 @@ fn random_float64(min: Float64 = 0, max: Float64 = 1) -> Float64:
     Returns:
         A random number from the specified range.
     """
-    return external_call["KGEN_CompilerRT_RandomDouble", Float64](min, max)
+    return _get_global_random_state()[].random_float64(min, max)
 
 
 fn random_si64(min: Int64, max: Int64) -> Int64:
@@ -75,7 +71,7 @@ fn random_si64(min: Int64, max: Int64) -> Int64:
     Returns:
         A random number from the specified range.
     """
-    return external_call["KGEN_CompilerRT_RandomSInt64", Int64](min, max)
+    return _get_global_random_state()[].random_int64(min, max)
 
 
 fn random_ui64(min: UInt64, max: UInt64) -> UInt64:
@@ -88,7 +84,7 @@ fn random_ui64(min: UInt64, max: UInt64) -> UInt64:
     Returns:
         A random number from the specified range.
     """
-    return external_call["KGEN_CompilerRT_RandomUInt64", UInt64](min, max)
+    return _get_global_random_state()[].random_uint64(min, max)
 
 
 fn randint[
@@ -195,9 +191,7 @@ fn randn_float64(
     Returns:
         A random float64 sampled from Normal(mean, standard_deviation).
     """
-    return external_call["KGEN_CompilerRT_NormalDouble", Float64](
-        mean, standard_deviation
-    )
+    return _get_global_random_state()[].normal_float64(mean, standard_deviation)
 
 
 fn randn[

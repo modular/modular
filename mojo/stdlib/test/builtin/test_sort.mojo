@@ -628,7 +628,10 @@ fn test_sort_scalar() raises:
     sort(listi32)
     assert_sorted(listi32)
 
-    var listf32 = random_numbers[DType.float32](50, max=Int(Float32.MAX))
+    # Note: We'd use Float32.MAX_FINITE here, but it doesn't fit in Int
+    # (random_numbers takes Int max). Float32.MAX returns inf, so we use Int.MAX
+    # which is safe and provides good coverage (9.2e18 >> typical float32 values)
+    var listf32 = random_numbers[DType.float32](50, max=Int.MAX)
     sort(listf32)
     assert_sorted(listf32)
 
