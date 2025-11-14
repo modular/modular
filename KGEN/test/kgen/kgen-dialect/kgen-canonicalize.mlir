@@ -523,7 +523,7 @@ kgen.generator @param_if_break2(%arg0: !kgen.pointer<index>, %arg1: index) -> in
 
     // These operations get killed, but need to be removed bottom-up.
     %tmp = kgen.param.constant: index = <4>
-    %abc = index.add %tmp, %arg1 
+    %abc = index.add %tmp, %arg1
     kgen.return %abc : index
   }
 
@@ -585,4 +585,12 @@ kgen.func @trivial_struct_copy(%arg0: !kgen.struct<(i1)>, %arg1: !kgen.struct<(i
   // CHECK: return %struct, %arg0, %arg1, [[CREATE:%.*]]
   kgen.return %0, %2, %5, %6 : !kgen.struct<()>, !kgen.struct<(i1)>, !kgen.struct<(i1, i1)>, !kgen.struct<(i1, i1)>
 }
+
+// CHECK-LABEL: @codegen_reachable
+kgen.func @codegen_reachable() {
+  // CHECK-NOT: kgen.codegen.reachable
+  kgen.codegen.reachable <1>, "no op"
+  kgen.return
+}
+
 }
