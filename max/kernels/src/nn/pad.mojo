@@ -55,20 +55,20 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
              .....
     """
 
-    alias Element = IndexList[n_loops]
+    alias Element = IndexList[Self.n_loops]
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
 
     var cur: Self.Element
 
-    alias LoopBoundSpec = InlineArray[IndexList[2], n_loops]
+    alias LoopBoundSpec = InlineArray[IndexList[2], Self.n_loops]
     var loop_bounds: Self.LoopBoundSpec
     var early_stop: Bool
 
     fn __init__(out self, loop_bounds: Self.LoopBoundSpec):
         debug_assert(
-            len(loop_bounds) == n_loops,
+            len(loop_bounds) == Self.n_loops,
             (
                 "Number of entries in loop_bounds doesn't match the number of"
                 " loops specified"
@@ -79,10 +79,10 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
         #   a copy in places where the caller already has an owned value?
         self.loop_bounds = loop_bounds.copy()
 
-        self.cur = IndexList[n_loops]()
+        self.cur = IndexList[Self.n_loops]()
         self.early_stop = False
 
-        for i in range(n_loops):
+        for i in range(Self.n_loops):
             var lb = self._lb_loop(i)
             var ub = self._ub_loop(i)
 
@@ -110,7 +110,7 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
 
         self.cur[len(self.cur) - 1] += 1
 
-        for i in range(n_loops - 1, 0, -1):
+        for i in range(Self.n_loops - 1, 0, -1):
             if self.cur[i] == self._ub_loop(i):
                 self.cur[i] = self._lb_loop(i)
                 self.cur[i - 1] += 1
@@ -393,8 +393,8 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
     fn __init__(
         out self,
         axis: Int,
-        paddings: UnsafePointer[Scalar[paddings_type]],
-        output_shape: IndexList[rank],
+        paddings: UnsafePointer[Scalar[Self.paddings_type]],
+        output_shape: IndexList[Self.rank],
     ):
         var axis_dim = output_shape[axis]
         var pre_pad = Int(paddings[2 * axis])
@@ -439,9 +439,9 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
     @always_inline
     fn base(
         mut self,
-        output: UnsafePointer[Scalar[dtype]],
-        input: UnsafePointer[Scalar[dtype]],
-        constant: Scalar[dtype],
+        output: UnsafePointer[Scalar[Self.dtype]],
+        input: UnsafePointer[Scalar[Self.dtype]],
+        constant: Scalar[Self.dtype],
         axis_dim: Int,
     ):
         var pre_pad_start_ptr = output.offset(self.output_offset)
@@ -625,8 +625,8 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
     fn __init__(
         out self,
         axis: Int,
-        paddings: UnsafePointer[Scalar[paddings_type]],
-        output_shape: IndexList[rank],
+        paddings: UnsafePointer[Scalar[Self.paddings_type]],
+        output_shape: IndexList[Self.rank],
     ):
         var axis_dim = output_shape[axis]
         var pre_pad = Int(paddings[2 * axis])
@@ -666,10 +666,10 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         output_offset: Int,
         input_offset: Int,
         output: UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+            Scalar[Self.dtype], address_space = AddressSpace.GENERIC, **_
         ],
         input: UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.GENERIC, **_
+            Scalar[Self.dtype], address_space = AddressSpace.GENERIC, **_
         ],
     ):
         # no more dimensions to recurse, copy from input to unpadded region
@@ -682,7 +682,7 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         mut self,
         output_axis_stride: Int,
         output_offset: Int,
-        output: UnsafePointer[Scalar[dtype]],
+        output: UnsafePointer[Scalar[Self.dtype]],
     ):
         var pre_pad_start_ptr = output.offset(output_offset)
 

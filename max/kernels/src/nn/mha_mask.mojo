@@ -372,16 +372,16 @@ struct ChunkedMask[local_window_size: Int](
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         constrained[
-            width <= local_window_size,
+            width <= Self.local_window_size,
             "SIMD width of chunked mask must be <= local window size",
         ]()
 
         var k_start_idx = coord.data[3]
         var k_end_idx = k_start_idx + width - 1
 
-        q_chunk_idx = Int(coord.data[2] // local_window_size)
-        k_start_chunk_idx = Int(k_start_idx) // local_window_size
-        k_end_chunk_idx = Int(k_end_idx) // local_window_size
+        q_chunk_idx = Int(coord.data[2] // Self.local_window_size)
+        k_start_chunk_idx = Int(k_start_idx) // Self.local_window_size
+        k_end_chunk_idx = Int(k_end_idx) // Self.local_window_size
 
         if q_chunk_idx == k_start_chunk_idx == k_end_chunk_idx:
             # fully unmasked, return the value
@@ -392,9 +392,10 @@ struct ChunkedMask[local_window_size: Int](
             var retval = score_vec
             var boundary = (
                 UInt32(
-                    (k_start_idx + local_window_size - 1) // local_window_size
+                    (k_start_idx + Self.local_window_size - 1)
+                    // Self.local_window_size
                 )
-                * local_window_size
+                * Self.local_window_size
             )
 
             var mask_val = SIMD[DType.bool, width](fill=False)
@@ -419,14 +420,14 @@ struct ChunkedMask[local_window_size: Int](
         tile_offset: IndexList[2, element_type=element_type],
         tile_size: IndexList[2, element_type=element_type],
     ) -> TileMaskStatus:
-        var q_start_window = tile_offset[0] // local_window_size
+        var q_start_window = tile_offset[0] // Self.local_window_size
         var q_end_window = (
             tile_offset[0] + tile_size[0] - 1
-        ) // local_window_size
-        var k_start_window = tile_offset[1] // local_window_size
+        ) // Self.local_window_size
+        var k_start_window = tile_offset[1] // Self.local_window_size
         var k_end_window = (
             tile_offset[1] + tile_size[1] - 1
-        ) // local_window_size
+        ) // Self.local_window_size
 
         var overlapping_windows = (
             k_end_window >= q_start_window and q_end_window >= k_start_window
@@ -501,7 +502,7 @@ struct SlidingWindowCausalMask[window_size: Int](
         alias index_type = coord.element_type
 
         constrained[
-            width <= window_size,
+            width <= Self.window_size,
             "SIMD width of sliding window mask must be <= window size",
         ]()
 
@@ -520,7 +521,7 @@ struct SlidingWindowCausalMask[window_size: Int](
         # that we have applied.
         return (
             (SIMD[index_type, width](q_idx) - iota[index_type, width](k_idx))
-            .lt(window_size)
+            .lt(Self.window_size)
             .select(masked_score_vec, SIMD[dtype, width](MASK_VALUE))
         )
 
@@ -556,7 +557,7 @@ struct SlidingWindowCausalMask[window_size: Int](
         # around zero.
 
         var lhs = tile_offset.data[0] + 1
-        var rhs = tile_offset.data[1] + tile_size.data[1] + window_size
+        var rhs = tile_offset.data[1] + tile_size.data[1] + Self.window_size
         var queries_too_far_ahead_of_keys = lhs >= rhs
 
         if query_ends_before_keys_begin or queries_too_far_ahead_of_keys:
@@ -576,7 +577,7 @@ struct SlidingWindowCausalMask[window_size: Int](
         # earliest key position
         var max_query_within_window_of_min_key = (
             tile_offset.data[0] + tile_size.data[0] - 1
-            < tile_offset.data[1] + window_size
+            < tile_offset.data[1] + Self.window_size
         )
 
         if min_query_after_max_key and max_query_within_window_of_min_key:
@@ -602,7 +603,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
     alias mask_safe_out_of_bounds: Bool = False
     alias check_mask_during_decoding: Bool = True
 
-    alias MaskType = LayoutTensor[dtype_, layout_, MutAnyOrigin]
+    alias MaskType = LayoutTensor[Self.dtype_, Self.layout_, MutAnyOrigin]
     var mask_tensor: Self.MaskType
     var start_pos: OptionalReg[
         LayoutTensor[
@@ -634,12 +635,13 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
         ] = None,
     ):
         constrained[
-            layout_.rank() in (3, 4), "Expected rank 3 or 4 for mask tensor"
+            Self.layout_.rank() in (3, 4),
+            "Expected rank 3 or 4 for mask tensor",
         ]()
         self.mask_tensor = mask_tensor
         self.start_pos = start_pos
         self.is_multiple_of_2 = (
-            self.mask_tensor.dim[layout_.rank() - 1]() % 2 == 0
+            self.mask_tensor.dim[Self.layout_.rank() - 1]() % 2 == 0
         )
 
     @always_inline
@@ -648,8 +650,8 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
             return Int(self.start_pos.value()[batch_idx])
         else:
             return (
-                self.mask_tensor.dim[layout_.rank() - 1]()
-                - self.mask_tensor.dim[layout_.rank() - 2]()
+                self.mask_tensor.dim[Self.layout_.rank() - 1]()
+                - self.mask_tensor.dim[Self.layout_.rank() - 2]()
             )
 
     @always_inline
@@ -664,14 +666,14 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         alias IndexListType = IndexList[
-            layout_.rank(), element_type=element_type
+            Self.layout_.rank(), element_type=element_type
         ]
         var adjusted_coord: IndexListType
 
         var start_pos = self.get_start_pos(coord[0])
 
         @parameter
-        if layout_.rank() == 3:
+        if Self.layout_.rank() == 3:
             adjusted_coord = IndexListType(
                 coord[0], coord[2] - start_pos, coord[3]
             )
@@ -681,7 +683,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
             )
 
         var retval = SIMD[dtype, width](MASK_VALUE)
-        alias rank = layout_.rank()
+        alias rank = Self.layout_.rank()
         if adjusted_coord[rank - 2] < self.mask_tensor.dim[rank - 2]():
             if (
                 adjusted_coord[rank - 1] + width
@@ -730,10 +732,10 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 ):
     """Mask that's the AND of two masks."""
 
-    alias apply_log2e_after_mask: Bool = T.apply_log2e_after_mask or S.apply_log2e_after_mask
-    alias mask_out_of_bound: Bool = T.mask_out_of_bound or S.mask_out_of_bound
-    alias mask_safe_out_of_bounds: Bool = T.mask_safe_out_of_bounds and S.mask_safe_out_of_bounds
-    alias check_mask_during_decoding: Bool = T.check_mask_during_decoding and S.check_mask_during_decoding
+    alias apply_log2e_after_mask: Bool = Self.T.apply_log2e_after_mask or Self.S.apply_log2e_after_mask
+    alias mask_out_of_bound: Bool = Self.T.mask_out_of_bound or Self.S.mask_out_of_bound
+    alias mask_safe_out_of_bounds: Bool = Self.T.mask_safe_out_of_bounds and Self.S.mask_safe_out_of_bounds
+    alias check_mask_during_decoding: Bool = Self.T.check_mask_during_decoding and Self.S.check_mask_during_decoding
 
     alias device_type: AnyType = Self
 
@@ -794,10 +796,10 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 ):
     """Mask that's the OR of two masks."""
 
-    alias apply_log2e_after_mask: Bool = T.apply_log2e_after_mask or S.apply_log2e_after_mask
-    alias mask_out_of_bound: Bool = T.mask_out_of_bound and S.mask_out_of_bound
-    alias mask_safe_out_of_bounds: Bool = T.mask_safe_out_of_bounds and S.mask_safe_out_of_bounds
-    alias check_mask_during_decoding: Bool = T.check_mask_during_decoding or S.check_mask_during_decoding
+    alias apply_log2e_after_mask: Bool = Self.T.apply_log2e_after_mask or Self.S.apply_log2e_after_mask
+    alias mask_out_of_bound: Bool = Self.T.mask_out_of_bound and Self.S.mask_out_of_bound
+    alias mask_safe_out_of_bounds: Bool = Self.T.mask_safe_out_of_bounds and Self.S.mask_safe_out_of_bounds
+    alias check_mask_during_decoding: Bool = Self.T.check_mask_during_decoding or Self.S.check_mask_during_decoding
 
     alias device_type: AnyType = Self
 

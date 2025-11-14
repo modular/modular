@@ -461,7 +461,7 @@ fn radix_sort_pairs_kernel[
 
 
 struct DoubleBuffer[dtype: DType](ImplicitlyCopyable, Movable):
-    var _d_buffers: InlineArray[UnsafePointer[Scalar[dtype]], 2]
+    var _d_buffers: InlineArray[UnsafePointer[Scalar[Self.dtype]], 2]
     var _selection: Int32
     var _size: Int
 
@@ -472,8 +472,8 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable, Movable):
 
     fn __init__(
         out self,
-        current: UnsafePointer[Scalar[dtype]],
-        alternate: UnsafePointer[Scalar[dtype]],
+        current: UnsafePointer[Scalar[Self.dtype]],
+        alternate: UnsafePointer[Scalar[Self.dtype]],
         size: Int,
     ):
         self._d_buffers = [current, alternate]
@@ -481,8 +481,8 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable, Movable):
         self._size = size
 
     @always_inline
-    fn current(self, ctx: DeviceContext) -> DeviceBuffer[dtype]:
-        return DeviceBuffer[dtype](
+    fn current(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
+        return DeviceBuffer[Self.dtype](
             ctx,
             self._d_buffers[self._selection],
             self._size,
@@ -490,8 +490,8 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable, Movable):
         )
 
     @always_inline
-    fn alternate(self, ctx: DeviceContext) -> DeviceBuffer[dtype]:
-        return DeviceBuffer[dtype](
+    fn alternate(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
+        return DeviceBuffer[Self.dtype](
             ctx,
             self._d_buffers[self._selection ^ 1],
             self._size,

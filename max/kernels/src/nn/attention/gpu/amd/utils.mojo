@@ -157,33 +157,35 @@ struct SharedMemoryManager[
     token_gen: Bool,
 ]:
     var p_smem: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype], address_space = AddressSpace.SHARED
     ]
     # p_smem is used for p
     var k_smem: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype], address_space = AddressSpace.SHARED
     ]
     var v_smem: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype], address_space = AddressSpace.SHARED
     ]
     # k_v_smem is used for k, v, and scratch
-    alias alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
-    alias accum_type = get_accum_type[dtype]()
-    alias p_smem_size = BM * BN if token_gen else 0
-    alias simd_width = simd_width_of[dtype]()
+    alias alignment = align_of[SIMD[Self.dtype, simd_width_of[Self.dtype]()]]()
+    alias accum_type = get_accum_type[Self.dtype]()
+    alias p_smem_size = Self.BM * Self.BN if Self.token_gen else 0
+    alias simd_width = simd_width_of[Self.dtype]()
     # depth // simd_width is the padding
-    alias k_smem_size = BN * (depth if full_kv else BK) * (
-        2 if double_buffer else 1
+    alias k_smem_size = Self.BN * (Self.depth if Self.full_kv else Self.BK) * (
+        2 if Self.double_buffer else 1
     )
-    alias v_smem_size = (BN if full_kv else BK) * (
-        pad[dtype, depth, depth]() if depth_padded else depth
-    ) * (2 if double_buffer else 1)
+    alias v_smem_size = (Self.BN if Self.full_kv else Self.BK) * (
+        pad[
+            Self.dtype, Self.depth, Self.depth
+        ]() if Self.depth_padded else Self.depth
+    ) * (2 if Self.double_buffer else 1)
 
     @always_inline
     fn __init__(out self):
         self.p_smem = stack_allocation[
             Self.p_smem_size,
-            dtype,
+            Self.dtype,
             address_space = AddressSpace.SHARED,
             alignment = Self.alignment,
         ]()
@@ -191,15 +193,15 @@ struct SharedMemoryManager[
         alias kv_smem_size = max(Self.k_smem_size, Self.v_smem_size)
 
         self.k_smem = stack_allocation[
-            kv_smem_size if shared_kv else Self.k_smem_size,
-            dtype,
+            kv_smem_size if Self.shared_kv else Self.k_smem_size,
+            Self.dtype,
             address_space = AddressSpace.SHARED,
             alignment = Self.alignment,
         ]()
 
-        self.v_smem = self.k_smem if shared_kv else stack_allocation[
+        self.v_smem = self.k_smem if Self.shared_kv else stack_allocation[
             Self.v_smem_size,
-            dtype,
+            Self.dtype,
             address_space = AddressSpace.SHARED,
             alignment = Self.alignment,
         ]()
@@ -246,7 +248,7 @@ struct SharedMemoryManager[
         Scalar[_dtype],
         address_space = AddressSpace.SHARED,
     ]:
-        return self.k_smem.bitcast[Scalar[_dtype]]() if token_gen else {}
+        return self.k_smem.bitcast[Scalar[_dtype]]() if Self.token_gen else {}
 
 
 struct GlobalMemoryManager[
@@ -261,21 +263,25 @@ struct GlobalMemoryManager[
     q_depth: UInt32 = depth,
     output_depth: UInt32 = depth,
 ]:
-    alias kv_num_heads = num_heads // group
+    alias kv_num_heads = Self.num_heads // Self.group
     # BHSD layout for q and kv cache
     alias q_gmem_layout = Layout(
-        IntTuple(Int(BM), Int(q_depth)),
-        IntTuple(Int(num_heads * q_depth), 1),
-    ) if not token_gen else Layout.row_major(Int(BM), Int(q_depth))
+        IntTuple(Int(Self.BM), Int(Self.q_depth)),
+        IntTuple(Int(Self.num_heads * Self.q_depth), 1),
+    ) if not Self.token_gen else Layout.row_major(
+        Int(Self.BM), Int(Self.q_depth)
+    )
 
     alias output_gmem_layout = Layout(
-        IntTuple(Int(BM), Int(output_depth)),
-        IntTuple(Int(num_heads * output_depth), 1),
-    ) if not token_gen else Layout.row_major(Int(BM), Int(output_depth))
+        IntTuple(Int(Self.BM), Int(Self.output_depth)),
+        IntTuple(Int(Self.num_heads * Self.output_depth), 1),
+    ) if not Self.token_gen else Layout.row_major(
+        Int(Self.BM), Int(Self.output_depth)
+    )
 
     alias kv_gmem_layout = Layout(
-        IntTuple(Int(BN), Int(depth)),
-        IntTuple(Int(Self.kv_num_heads * depth), 1),
+        IntTuple(Int(Self.BN), Int(Self.depth)),
+        IntTuple(Int(Self.kv_num_heads * Self.depth), 1),
     )
 
     var q_offset: UInt32
@@ -302,22 +308,29 @@ struct GlobalMemoryManager[
         output_offset: UInt32,
     ):
         var q_tile_num_rows = min(
-            BM, UInt(seq_len) - q_tile_idx * BM
-        ) if not token_gen else group
+            Self.BM, UInt(seq_len) - q_tile_idx * Self.BM
+        ) if not Self.token_gen else Self.group
 
         self.q_offset = q_offset
         self.output_offset = output_offset
 
         self.q_runtime_layout = type_of(self.q_runtime_layout)(
-            {Int(q_tile_num_rows), Int(q_depth)},
-            {Int(num_heads * q_depth if not token_gen else q_depth), 1},
+            {Int(q_tile_num_rows), Int(Self.q_depth)},
+            {
+                Int(
+                    Self.num_heads
+                    * Self.q_depth if not Self.token_gen else Self.q_depth
+                ),
+                1,
+            },
         )
 
         self.output_runtime_layout = type_of(self.output_runtime_layout)(
-            {Int(q_tile_num_rows), Int(output_depth)},
+            {Int(q_tile_num_rows), Int(Self.output_depth)},
             {
                 Int(
-                    num_heads * output_depth if not token_gen else output_depth
+                    Self.num_heads
+                    * Self.output_depth if not Self.token_gen else Self.output_depth
                 ),
                 1,
             },
@@ -375,10 +388,10 @@ struct GlobalMemoryManager[
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = type_of(result.runtime_layout)(
             type_of(result.runtime_layout.shape)(
-                Int(kv_tile_num_rows), Int(depth)
+                Int(kv_tile_num_rows), Int(Self.depth)
             ),
             type_of(result.runtime_layout.stride)(
-                Int(Self.kv_num_heads * depth), 1
+                Int(Self.kv_num_heads * Self.depth), 1
             ),
         )
 

@@ -144,26 +144,26 @@ struct RegisterAccumulatorLayout[
     *,
     frag_simdwidth: Int = 2,
 ]:
-    alias frag_size: Int = MMA_M * MMA_N // consumer_group_size
+    alias frag_size: Int = Self.MMA_M * Self.MMA_N // Self.consumer_group_size
     alias num_row_blocks_per_mma = 2
     alias element_layout: Layout = Layout.row_major(1, Self.frag_simdwidth)
     alias rows_of_frags_layout: Layout = Layout.row_major(
-        num_m_mmas * num_n_mmas, Self.frag_size
+        Self.num_m_mmas * Self.num_n_mmas, Self.frag_size
     )
     alias vec_output_layout: Layout = Layout(
         IntTuple(
-            IntTuple(Self.num_row_blocks_per_mma, num_m_mmas),
+            IntTuple(Self.num_row_blocks_per_mma, Self.num_m_mmas),
             IntTuple(
                 Self.frag_size
                 // (Self.num_row_blocks_per_mma * Self.frag_simdwidth),
-                num_n_mmas,
+                Self.num_n_mmas,
             ),
         ),
         IntTuple(
             IntTuple(Self.frag_simdwidth, Self.frag_size),
             IntTuple(
                 Self.num_row_blocks_per_mma * Self.frag_simdwidth,
-                num_m_mmas * Self.frag_size,
+                Self.num_m_mmas * Self.frag_size,
             ),
         ),
     )
@@ -177,7 +177,7 @@ struct RegisterAccumulatorLayout[
         ]()
 
         return RegisterAccumulatorDescription(
-            num_m_mmas * num_n_mmas, Self.frag_size
+            Self.num_m_mmas * Self.num_n_mmas, Self.frag_size
         )
 
 
@@ -192,18 +192,20 @@ struct MMAOperandOffsetFn[
     WMMA_K: Int,
 ]:
     alias layout = tile_layout_k_major[
-        dtype, BMN, BK, swizzle
-    ]() if is_k_major else tile_layout_mn_major[dtype, BMN, BK, swizzle]()
+        Self.dtype, Self.BMN, Self.BK, Self.swizzle
+    ]() if Self.is_k_major else tile_layout_mn_major[
+        Self.dtype, Self.BMN, Self.BK, Self.swizzle
+    ]()
     alias layout_size: Int = Self.layout.size()
 
-    alias canonical_K = swizzle.bytes() // size_of[
-        dtype
-    ]() if swizzle != TensorMapSwizzle.SWIZZLE_NONE else BK
+    alias canonical_K = Self.swizzle.bytes() // size_of[
+        Self.dtype
+    ]() if Self.swizzle != TensorMapSwizzle.SWIZZLE_NONE else Self.BK
     alias canonical_layout_flat = tile_layout_k_major[
-        dtype, BMN, Self.canonical_K, swizzle
-    ]() if is_k_major else Self.layout
+        Self.dtype, Self.BMN, Self.canonical_K, Self.swizzle
+    ]() if Self.is_k_major else Self.layout
     alias canonical_layout = tile_to_descriptor[
-        dtype, Self.canonical_layout_flat, is_k_major
+        Self.dtype, Self.canonical_layout_flat, Self.is_k_major
     ]()
     alias canonical_layout_size = Self.canonical_layout.size()
 
@@ -329,7 +331,7 @@ trait AccumulatorTile(ImplicitlyCopyable, Movable):
 
 @register_passable("trivial")
 struct UMMADescriptorSS[operand_type: DType](DescriptorPair):
-    alias operand_t = operand_type
+    alias operand_t = Self.operand_type
     alias a_t = MMASmemDescriptor
     alias b_t = MMASmemDescriptor
 
@@ -374,9 +376,13 @@ struct TMemAccumulator[
     num_n_mmas: Int,
     num_softmax_threads: Int,
 ](AccumulatorTile):
-    alias dtype: DType = dtype_
+    alias dtype: DType = Self.dtype_
     alias layout_t = RegisterAccumulatorLayout[
-        MMA_M, MMA_N, num_m_mmas, num_n_mmas, num_softmax_threads
+        Self.MMA_M,
+        Self.MMA_N,
+        Self.num_m_mmas,
+        Self.num_n_mmas,
+        Self.num_softmax_threads,
     ]
     alias vec_output_layout = Self.layout_t.vec_output_layout
     alias element_layout = Self.layout_t.element_layout
@@ -406,7 +412,7 @@ struct TMemAccumulator[
 
     @always_inline
     fn __getitem__(self, i: UInt32) -> Self:
-        return {self.tmem_addr + i * MMA_N}
+        return {self.tmem_addr + i * Self.MMA_N}
 
     @always_inline
     @staticmethod
@@ -416,58 +422,58 @@ struct TMemAccumulator[
             "layout: "
             + String(Self.vec_output_layout)
             + "\nnum_m_mmas = "
-            + String(num_m_mmas),
+            + String(Self.num_m_mmas),
         ]()
         constrained[
             Self.vec_output_layout[1].size() > 0,
             "layout: " + String(Self.vec_output_layout),
         ]()
         constrained[
-            MMA_M > 0,
+            Self.MMA_M > 0,
             "MMA_M = "
-            + String(MMA_M)
+            + String(Self.MMA_M)
             + "\nMMA_N = "
-            + String(MMA_N)
+            + String(Self.MMA_N)
             + "\nnum_m_mmas = "
-            + String(num_m_mmas)
+            + String(Self.num_m_mmas)
             + "\nnum_n_mmas = "
-            + String(num_n_mmas)
+            + String(Self.num_n_mmas)
             + "\n",
         ]()
         constrained[
-            MMA_N > 0,
+            Self.MMA_N > 0,
             "MMA_M = "
-            + String(MMA_M)
+            + String(Self.MMA_M)
             + "\nMMA_N = "
-            + String(MMA_N)
+            + String(Self.MMA_N)
             + "\nnum_m_mmas = "
-            + String(num_m_mmas)
+            + String(Self.num_m_mmas)
             + "\nnum_n_mmas = "
-            + String(num_n_mmas)
+            + String(Self.num_n_mmas)
             + "\n",
         ]()
         constrained[
-            num_m_mmas > 0,
+            Self.num_m_mmas > 0,
             "MMA_M = "
-            + String(MMA_M)
+            + String(Self.MMA_M)
             + "\nMMA_N = "
-            + String(MMA_N)
+            + String(Self.MMA_N)
             + "\nnum_m_mmas = "
-            + String(num_m_mmas)
+            + String(Self.num_m_mmas)
             + "\nnum_n_mmas = "
-            + String(num_n_mmas)
+            + String(Self.num_n_mmas)
             + "\n",
         ]()
         constrained[
-            num_n_mmas > 0,
+            Self.num_n_mmas > 0,
             "MMA_M = "
-            + String(MMA_M)
+            + String(Self.MMA_M)
             + "\nMMA_N = "
-            + String(MMA_N)
+            + String(Self.MMA_N)
             + "\nm_mma = "
-            + String(num_m_mmas)
+            + String(Self.num_m_mmas)
             + "\nnum_n_mmas = "
-            + String(num_n_mmas)
+            + String(Self.num_n_mmas)
             + "\n",
         ]()
 
@@ -480,7 +486,7 @@ struct TMemAccumulator[
             return self.tmem_addr
         else:
             alias linear = _tmem_offset[
-                Self.dtype, MMA_N=MMA_N, m_mma=m_mma, n_mma=n_mma
+                Self.dtype, MMA_N = Self.MMA_N, m_mma=m_mma, n_mma=n_mma
             ]()
 
             return self.tmem_addr + linear
@@ -521,14 +527,14 @@ struct TMemAccumulator[
         alias repeat = frag_size_b32 // 4
 
         @parameter
-        for m_mma in range(num_m_mmas):
+        for m_mma in range(Self.num_m_mmas):
 
             @parameter
-            for n_mma in range(num_n_mmas):
-                alias mma_id = n_mma * num_m_mmas + m_mma
+            for n_mma in range(Self.num_n_mmas):
+                alias mma_id = n_mma * Self.num_m_mmas + m_mma
                 alias tmem_offset = _tmem_offset(
                     dtype_size,
-                    MMA_N=MMA_N,
+                    MMA_N=Self.MMA_N,
                     m_mma=m_mma,
                     n_mma=n_mma,
                 )
@@ -561,17 +567,19 @@ struct TMemAccumulator[
             Self.vec_output_layout.size() * Self.element_layout.size()
             == type_of(dst).layout.size() * type_of(dst).element_layout.size()
         ]()
-        constrained[num_m_mmas * num_n_mmas == type_of(frags).layout.size()]()
+        constrained[
+            Self.num_m_mmas * Self.num_n_mmas == type_of(frags).layout.size()
+        ]()
 
         @parameter
-        for m_mma in range(num_m_mmas):
+        for m_mma in range(Self.num_m_mmas):
 
             @parameter
-            for n_mma in range(num_n_mmas):
-                alias mma_id = n_mma * num_m_mmas + m_mma
+            for n_mma in range(Self.num_n_mmas):
+                alias mma_id = n_mma * Self.num_m_mmas + m_mma
                 alias tmem_offset = _tmem_offset(
                     dtype_size,
-                    MMA_N=MMA_N,
+                    MMA_N=Self.MMA_N,
                     m_mma=m_mma,
                     n_mma=n_mma,
                 )
@@ -605,13 +613,17 @@ struct TMemOperand[
     var tmem_addr: UInt32
 
     alias reg_layout = RegisterAccumulatorLayout[
-        MMA_M, MMA_N, num_m_mmas, num_n_mmas, num_softmax_threads
+        Self.MMA_M,
+        Self.MMA_N,
+        Self.num_m_mmas,
+        Self.num_n_mmas,
+        Self.num_softmax_threads,
     ]
     alias frag_size = Self.reg_layout.frag_size
     alias vec_output_layout = Self.reg_layout.vec_output_layout
     alias reg_tile_t = type_of(
         local_tensor_type[
-            dtype, Self.vec_output_layout, Self.reg_layout.element_layout
+            Self.dtype, Self.vec_output_layout, Self.reg_layout.element_layout
         ]()
     )
 
@@ -621,15 +633,15 @@ struct TMemOperand[
 
     @always_inline
     fn offset[m_mma: Int, k_mma: Int](self) -> UInt32:
-        constrained[MMA_M > 0, "MMA_M = " + String(MMA_M) + "\n"]()
-        constrained[MMA_K > 0, "MMA_K = " + String(MMA_K) + "\n"]()
+        constrained[Self.MMA_M > 0, "MMA_M = " + String(Self.MMA_M) + "\n"]()
+        constrained[Self.MMA_K > 0, "MMA_K = " + String(Self.MMA_K) + "\n"]()
 
         @parameter
         if m_mma == 0 and k_mma == 0:
             return self.tmem_addr
         else:
             alias linear = _tmem_offset[
-                DType.bfloat16, MMA_N=MMA_K, m_mma=m_mma, n_mma=k_mma
+                DType.bfloat16, MMA_N = Self.MMA_K, m_mma=m_mma, n_mma=k_mma
             ]()
             return self.tmem_addr + linear
 
@@ -650,8 +662,8 @@ struct TMemOperand[
     ):
         # src has row of frags layout
         alias num_frags = src_layout[0].size()
-        constrained[num_frags == num_m_mmas * num_n_mmas]()
-        constrained[num_n_mmas == 1]()
+        constrained[num_frags == Self.num_m_mmas * Self.num_n_mmas]()
+        constrained[Self.num_n_mmas == 1]()
         constrained[
             Self.frag_size == src_layout[1].size(),
             "Self.frag_size = "
@@ -661,7 +673,7 @@ struct TMemOperand[
         ]()
         constrained[src_element_layout.size() == 1]()
         alias src_size = size_of[src_type]()
-        alias dst_size = size_of[dtype]()
+        alias dst_size = size_of[Self.dtype]()
         alias frag_size_b32 = (Self.frag_size * dst_size) // 4
         # 16 x 256b results in repeated 8x4<1xN> pattern, where
         alias N = 32 // (4 * src_size)
@@ -675,12 +687,15 @@ struct TMemOperand[
         alias repeat = 64 * frag_size_b32 // bits
         # We need to reshape into a row of frags
         constrained[
-            num_m_mmas * num_n_mmas * Self.frag_size
+            Self.num_m_mmas * Self.num_n_mmas * Self.frag_size
             == src_layout.size() * src_element_layout.size()
         ]()
         frags = LayoutTensor[
             src_type,
-            Layout(IntTuple(num_m_mmas * num_n_mmas), IntTuple(Self.frag_size)),
+            Layout(
+                IntTuple(Self.num_m_mmas * Self.num_n_mmas),
+                IntTuple(Self.frag_size),
+            ),
             MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
             element_layout = Layout.row_major(Self.frag_size),
@@ -688,14 +703,14 @@ struct TMemOperand[
         # frags = src.vectorize[1, Self.frag_size]()
         # assume src loaded with 256 bits
         constrained[src_size >= dst_size]()
-        constrained[num_m_mmas == 1]()
-        constrained[num_n_mmas == 1]()
+        constrained[Self.num_m_mmas == 1]()
+        constrained[Self.num_n_mmas == 1]()
 
         @parameter
-        for m_mma in range(num_m_mmas):
+        for m_mma in range(Self.num_m_mmas):
             tmem = self.offset[m_mma, 0]()
             frag = bitcast[DType.uint32, frag_size_b32](
-                frags[m_mma].cast[dtype]()
+                frags[m_mma].cast[Self.dtype]()
             )
             # 16 x 256b results in repeated 8x4<1x64b> pattern
             # 256b means 256 // 4 = 64b per thread
@@ -725,14 +740,14 @@ struct TMemOperand[
     ):
         # src has row of frags layout
         alias num_frags = dst_layout[0].size()
-        constrained[num_frags == num_m_mmas * num_n_mmas]()
+        constrained[num_frags == Self.num_m_mmas * Self.num_n_mmas]()
         constrained[Self.frag_size == dst_layout[1].size()]()
         constrained[dst_element_layout.size() == 1]()
         constrained[size_of[dst_type]() == 4]()
         # 16 x 256b results in repeated 8x4<1x2> pattern
         # each repetition thus loads 8 columns
         # and loads 4 values per thread.
-        alias src_size = size_of[dtype]()
+        alias src_size = size_of[Self.dtype]()
         alias dst_size = size_of[dst_type]()
         alias frag_size_b32 = (Self.frag_size * src_size) // 4
         # 16 x 256b results in repeated 8x4<1xN> pattern, where
@@ -749,16 +764,16 @@ struct TMemOperand[
         frags = dst.vectorize[1, Self.frag_size]()
         # assume src loaded with 256 bits
         constrained[src_size <= dst_size]()
-        constrained[num_n_mmas == 1]()
+        constrained[Self.num_n_mmas == 1]()
 
         @parameter
-        for m_mma in range(num_m_mmas):
+        for m_mma in range(Self.num_m_mmas):
             tmem = self.offset[m_mma, 0]()
             # 16 x 256b results in repeated 8x4<1x2> pattern
             frags[m_mma, 0] = rebind[
                 SIMD[dst_type, type_of(frags).element_size]
             ](
-                bitcast[dtype, Self.frag_size](
+                bitcast[Self.dtype, Self.frag_size](
                     tcgen05_ld[
                         datapaths=16,  # first dimension of the shape
                         bits=bits,  # second dimension of the shape
@@ -783,15 +798,15 @@ struct UMMADescriptorTS[
     MMA_K: Int,
     consumer_group_size: Int,
 ](DescriptorPairTS):
-    alias operand_t = operand_type
+    alias operand_t = Self.operand_type
     alias a_t = TMemOperand[
-        operand_type,
-        num_m_mmas,
-        num_n_mmas,
-        MMA_M,
-        MMA_N,
-        MMA_K,
-        consumer_group_size,
+        Self.operand_type,
+        Self.num_m_mmas,
+        Self.num_n_mmas,
+        Self.MMA_M,
+        Self.MMA_N,
+        Self.MMA_K,
+        Self.consumer_group_size,
     ]
     alias b_t = MMASmemDescriptor
 
@@ -830,34 +845,46 @@ struct SM100TensorAccumulatorSS[
     cta_group: Int = 1,
     pipeline_stages: Int = 1,
 ]:
-    alias operand_t: DType = operand_type
-    alias accum_t: DType = accum_type
+    alias operand_t: DType = Self.operand_type
+    alias accum_t: DType = Self.accum_type
 
     alias MMA_K = 16
 
-    alias num_m_mmas = BM // MMA_M
-    alias num_n_mmas = BN // MMA_N
-    alias num_k_mmas = compute_BK // Self.MMA_K
+    alias num_m_mmas = Self.BM // Self.MMA_M
+    alias num_n_mmas = Self.BN // Self.MMA_N
+    alias num_k_mmas = Self.compute_BK // Self.MMA_K
 
-    alias num_m_blocks_per_warp = 2 * BM // num_softmax_threads
+    alias num_m_blocks_per_warp = 2 * Self.BM // Self.num_softmax_threads
 
     alias smem_ptr_t = UnsafePointer[
         Scalar[Self.operand_t], address_space = AddressSpace.SHARED
     ]
 
     alias a_offset = MMAOperandOffsetFn[
-        Self.operand_t, BM, BK, swizzle_a, True, Self.MMA_M, Self.MMA_K
+        Self.operand_t,
+        Self.BM,
+        Self.BK,
+        Self.swizzle_a,
+        True,
+        Self.MMA_M,
+        Self.MMA_K,
     ]()
     alias b_offset = MMAOperandOffsetFn[
-        Self.operand_t, BN, BK, swizzle_b, transpose_b, MMA_N, Self.MMA_K
+        Self.operand_t,
+        Self.BN,
+        Self.BK,
+        Self.swizzle_b,
+        Self.transpose_b,
+        Self.MMA_N,
+        Self.MMA_K,
     ]()
 
     alias idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
-        Index[dtype = DType.uint32](MMA_M, MMA_N),
-        transpose_b=transpose_b,
+        Index[dtype = DType.uint32](Self.MMA_M, Self.MMA_N),
+        transpose_b = Self.transpose_b,
     ]()
 
     alias ab_t: DescriptorPair = UMMADescriptorSS[Self.operand_t]
@@ -865,33 +892,33 @@ struct SM100TensorAccumulatorSS[
     alias b_t: MMAOperandDescriptor = Self.ab_t.b_t
     alias c_t: AccumulatorTile = TMemAccumulator[
         Self.accum_t,
-        BM // Self.num_m_blocks_per_warp,
-        MMA_N,
+        Self.BM // Self.num_m_blocks_per_warp,
+        Self.MMA_N,
         Self.num_m_blocks_per_warp,
         Self.num_n_mmas,
-        num_softmax_threads,
+        Self.num_softmax_threads,
     ]
 
     var mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED
     ]
-    var pipeline: PipelineState[pipeline_stages]
+    var pipeline: PipelineState[Self.pipeline_stages]
 
     @always_inline
     @staticmethod
     fn check_constraints():
         constrained[
-            (BM % MMA_M) == 0,
-            "BM, MMA_M = " + String(BM) + ", " + String(MMA_M),
+            (Self.BM % Self.MMA_M) == 0,
+            "BM, MMA_M = " + String(Self.BM) + ", " + String(Self.MMA_M),
         ]()
         constrained[
-            ((BN % MMA_N) == 0) and (Self.num_n_mmas > 0),
-            "BN, MMA_N = " + String(BN) + ", " + String(MMA_N),
+            ((Self.BN % Self.MMA_N) == 0) and (Self.num_n_mmas > 0),
+            "BN, MMA_N = " + String(Self.BN) + ", " + String(Self.MMA_N),
         ]()
         constrained[
-            ((compute_BK % Self.MMA_K) == 0) and (Self.num_k_mmas > 0),
+            ((Self.compute_BK % Self.MMA_K) == 0) and (Self.num_k_mmas > 0),
             "compute_BK, MMA_K = "
-            + String(compute_BK)
+            + String(Self.compute_BK)
             + ", "
             + String(Self.MMA_K),
         ]()
@@ -910,9 +937,9 @@ struct SM100TensorAccumulatorSS[
     @always_inline
     fn init(self):
         @parameter
-        for i in range(pipeline_stages):
+        for i in range(Self.pipeline_stages):
             self.mbar[i].init()
-            self.mbar[i + pipeline_stages].init(num_softmax_threads)
+            self.mbar[i + Self.pipeline_stages].init(Self.num_softmax_threads)
 
     @staticmethod
     @always_inline
@@ -931,19 +958,19 @@ struct SM100TensorAccumulatorSS[
         alias a_type = Self.operand_t
         alias aSBO = a_canonical_layout[0].stride[1].value() * size_of[a_type]()
         alias aLBO = a_canonical_layout[1].stride[1].value() * size_of[a_type]()
-        adesc_base = MMASmemDescriptor.create[aSBO, aLBO, swizzle_a](p_a)
+        adesc_base = MMASmemDescriptor.create[aSBO, aLBO, Self.swizzle_a](p_a)
 
         alias b_canonical_layout = Self.b_offset.canonical_layout
         alias b_type = Self.operand_t
         alias b_stride01 = b_canonical_layout[0].stride[1].value()
         alias b_stride11 = b_canonical_layout[1].stride[1].value()
-        alias bSBO = (b_stride01 if transpose_b else b_stride11) * size_of[
+        alias bSBO = (b_stride01 if Self.transpose_b else b_stride11) * size_of[
             b_type
         ]()
-        alias bLBO = (b_stride11 if transpose_b else b_stride01) * size_of[
+        alias bLBO = (b_stride11 if Self.transpose_b else b_stride01) * size_of[
             b_type
         ]()
-        bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, swizzle_b](p_b)
+        bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, Self.swizzle_b](p_b)
 
         return Self.ab_t(adesc_base, bdesc_base)
 
@@ -979,7 +1006,7 @@ struct SM100TensorAccumulatorSS[
 
                     @parameter
                     if k_mma == 0:
-                        mma[cta_group](
+                        mma[Self.cta_group](
                             a_desc,
                             b_desc,
                             c_tmem,
@@ -987,7 +1014,7 @@ struct SM100TensorAccumulatorSS[
                             scale_c,
                         )
                     else:
-                        mma[cta_group, c_scale=1](
+                        mma[Self.cta_group, c_scale=1](
                             a_desc, b_desc, c_tmem, Self.idesc
                         )
 
@@ -1012,7 +1039,7 @@ struct SM100TensorAccumulatorSS[
         """
         Wait for the accumulator tmem to finish being read.
         """
-        self.mbar[pipeline_stages + self.pipeline.index()].wait(
+        self.mbar[Self.pipeline_stages + self.pipeline.index()].wait(
             self.pipeline.phase()
         )
 
@@ -1028,15 +1055,15 @@ struct SM100TensorAccumulatorSS[
     @always_inline
     fn tmem_arrive_init(self):
         @parameter
-        for i in range(pipeline_stages):
-            _ = self.mbar[pipeline_stages + i].arrive()
+        for i in range(Self.pipeline_stages):
+            _ = self.mbar[Self.pipeline_stages + i].arrive()
 
     @always_inline
     fn tmem_arrive(mut self):
         """
         Indicate that the accumulator is ready to be updated.
         """
-        _ = self.mbar[pipeline_stages + self.pipeline.index()].arrive()
+        _ = self.mbar[Self.pipeline_stages + self.pipeline.index()].arrive()
         self.pipeline.step()
 
 
@@ -1054,34 +1081,40 @@ struct SM100TensorAccumulatorTS[
     transpose_b: Bool = True,
     cta_group: Int = 1,
 ]:
-    alias operand_t: DType = operand_type
-    alias accum_t: DType = accum_type
+    alias operand_t: DType = Self.operand_type
+    alias accum_t: DType = Self.accum_type
 
     alias MMA_K = 16
     alias smem_ptr_t = UnsafePointer[
         Scalar[Self.operand_t], address_space = AddressSpace.SHARED
     ]
 
-    alias num_m_mmas = BM // Self.MMA_M
-    alias num_n_mmas = BN // MMA_N
-    alias num_k_mmas = BK // Self.MMA_K
-    alias c_frag_size = Self.MMA_M * MMA_N // num_softmax_threads
-    alias a_frag_size = Self.MMA_M * Self.MMA_K // num_softmax_threads
-    alias num_m_blocks_per_warp = 2 * BM // num_softmax_threads
+    alias num_m_mmas = Self.BM // Self.MMA_M
+    alias num_n_mmas = Self.BN // Self.MMA_N
+    alias num_k_mmas = Self.BK // Self.MMA_K
+    alias c_frag_size = Self.MMA_M * Self.MMA_N // Self.num_softmax_threads
+    alias a_frag_size = Self.MMA_M * Self.MMA_K // Self.num_softmax_threads
+    alias num_m_blocks_per_warp = 2 * Self.BM // Self.num_softmax_threads
     alias ab_t: DescriptorPairTS = UMMADescriptorTS[
         Self.operand_t,
         Self.num_m_blocks_per_warp,
         Self.num_n_mmas,
-        MMA_M = BM // Self.num_m_blocks_per_warp,
-        MMA_N=BK,
+        MMA_M = Self.BM // Self.num_m_blocks_per_warp,
+        MMA_N = Self.BK,
         MMA_K = Self.MMA_K,
-        consumer_group_size=num_softmax_threads,
+        consumer_group_size = Self.num_softmax_threads,
     ]
     alias a_t: WriteableMMAOperandDescriptor = Self.ab_t.a_t
     alias b_t: MMAOperandDescriptor = Self.ab_t.b_t
 
     alias b_offset = MMAOperandOffsetFn[
-        Self.operand_t, BN, BK, swizzle_b, transpose_b, MMA_N, Self.MMA_K
+        Self.operand_t,
+        Self.BN,
+        Self.BK,
+        Self.swizzle_b,
+        Self.transpose_b,
+        Self.MMA_N,
+        Self.MMA_K,
     ]()
     alias c_t: AccumulatorTile = TMemAccumulator[
         Self.accum_t,
@@ -1089,15 +1122,15 @@ struct SM100TensorAccumulatorTS[
         Self.MMA_N,
         Self.num_m_blocks_per_warp,
         Self.num_n_mmas,
-        num_softmax_threads,
+        Self.num_softmax_threads,
     ]
 
     alias idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
-        Index[dtype = DType.uint32](MMA_M, MMA_N),
-        transpose_b=transpose_b,
+        Index[dtype = DType.uint32](Self.MMA_M, Self.MMA_N),
+        transpose_b = Self.transpose_b,
     ]()
 
     var mbar: UnsafePointer[
@@ -1109,16 +1142,16 @@ struct SM100TensorAccumulatorTS[
     @always_inline
     fn check_constraints():
         constrained[
-            (BM % MMA_M) == 0,
-            "BM, MMA_M = " + String(BM) + ", " + String(MMA_M),
+            (Self.BM % Self.MMA_M) == 0,
+            "BM, MMA_M = " + String(Self.BM) + ", " + String(Self.MMA_M),
         ]()
         constrained[
-            ((BN % MMA_N) == 0) and (Self.num_n_mmas > 0),
-            "BN, MMA_N = " + String(BN) + ", " + String(MMA_N),
+            ((Self.BN % Self.MMA_N) == 0) and (Self.num_n_mmas > 0),
+            "BN, MMA_N = " + String(Self.BN) + ", " + String(Self.MMA_N),
         ]()
         constrained[
-            ((BK % Self.MMA_K) == 0) and (Self.num_k_mmas > 0),
-            "BK, MMA_K = " + String(BK) + ", " + String(Self.MMA_K),
+            ((Self.BK % Self.MMA_K) == 0) and (Self.num_k_mmas > 0),
+            "BK, MMA_K = " + String(Self.BK) + ", " + String(Self.MMA_K),
         ]()
 
     @always_inline
@@ -1135,7 +1168,7 @@ struct SM100TensorAccumulatorTS[
     @always_inline
     fn init(self):
         self.mbar[0].init()
-        self.mbar[1].init(num_softmax_threads)
+        self.mbar[1].init(Self.num_softmax_threads)
 
     @staticmethod
     @always_inline
@@ -1157,14 +1190,14 @@ struct SM100TensorAccumulatorTS[
         alias b_type = Self.operand_t
         alias b_stride01 = b_canonical_layout[0].stride[1].value()
         alias b_stride11 = b_canonical_layout[1].stride[1].value()
-        alias bSBO = (b_stride01 if transpose_b else b_stride11) * size_of[
+        alias bSBO = (b_stride01 if Self.transpose_b else b_stride11) * size_of[
             b_type
         ]()
-        alias bLBO = (b_stride11 if transpose_b else b_stride01) * size_of[
+        alias bLBO = (b_stride11 if Self.transpose_b else b_stride01) * size_of[
             b_type
         ]()
 
-        return MMASmemDescriptor.create[bSBO, bLBO, swizzle_b](p_b)
+        return MMASmemDescriptor.create[bSBO, bLBO, Self.swizzle_b](p_b)
 
     @always_inline
     fn mma(
@@ -1191,7 +1224,7 @@ struct SM100TensorAccumulatorTS[
 
                     @parameter
                     if k_mma == 0:
-                        mma[cta_group](
+                        mma[Self.cta_group](
                             a_tmem,
                             b_desc,
                             c_tmem,
@@ -1199,7 +1232,7 @@ struct SM100TensorAccumulatorTS[
                             c_scale,
                         )
                     else:
-                        mma[cta_group, c_scale=1](
+                        mma[Self.cta_group, c_scale=1](
                             a_tmem, b_desc, c_tmem, Self.idesc
                         )
         mma_arrive(self.mbar)

@@ -55,7 +55,7 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
 ):
     alias USE_EXPERIMENTAL_CDNA4_MHA_KERNEL = _cdna_4_or_newer() and env_get_bool[
         "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
-    ]() and not token_gen
+    ]() and not Self.token_gen
 
     # share shared memory for k and v
     alias shared_kv = False if Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL else True
@@ -70,10 +70,10 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     @always_inline
     fn q_head_idx() -> UInt:
         @parameter
-        if token_gen:
+        if Self.token_gen:
             alias mma_shape = Self.get_mma_shape()
             var group_idx = lane_id() % UInt(mma_shape[0])
-            return block_idx.y * UInt(group) + UInt(group_idx)
+            return block_idx.y * UInt(Self.group) + UInt(group_idx)
         else:
             return block_idx.y
 
@@ -94,27 +94,33 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     fn get_mma_shape() -> IndexList[3]:
         var mma_shape = (
             IndexList[3](32, 32, 16) if (
-                (_cdna_4_or_newer() and config.depth != 64)
+                (_cdna_4_or_newer() and Self.config.depth != 64)
                 # will deal with 64 later
                 or Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL
             ) else IndexList[3](32, 32, 8)
-        ) if not token_gen else IndexList[3](16, 16, 16)
+        ) if not Self.token_gen else IndexList[3](16, 16, 16)
         return mma_shape
 
     @staticmethod
     @always_inline
     fn get_q_offset[q_depth: UInt]() -> UInt32:
         return q_depth * (
-            (Self.kv_head_idx() * UInt(group) if token_gen else block_idx.y)
-            + config.num_heads * Self.q_tile_idx() * config.block_m()
+            (
+                Self.kv_head_idx()
+                * UInt(Self.group) if Self.token_gen else block_idx.y
+            )
+            + Self.config.num_heads * Self.q_tile_idx() * Self.config.block_m()
         )
 
     @staticmethod
     @always_inline
     fn get_output_offset[output_depth: UInt]() -> UInt32:
         return output_depth * (
-            (Self.kv_head_idx() * UInt(group) if token_gen else block_idx.y)
-            + config.num_heads * Self.q_tile_idx() * config.block_m()
+            (
+                Self.kv_head_idx()
+                * UInt(Self.group) if Self.token_gen else block_idx.y
+            )
+            + Self.config.num_heads * Self.q_tile_idx() * Self.config.block_m()
         )
 
 

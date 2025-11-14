@@ -121,36 +121,36 @@ trait KVBufferConfig:
 @fieldwise_init
 struct KBufferConfig[BN: Int, BK: Int, WN: Int](KVBufferConfig):
     alias wsize = Self.wtile_dim0
-    alias wtile_dim0 = WN
-    alias wtile_dim1 = BK
+    alias wtile_dim0 = Self.WN
+    alias wtile_dim1 = Self.BK
 
-    alias btile_dim0 = BN
-    alias btile_dim1 = BK
+    alias btile_dim0 = Self.BN
+    alias btile_dim1 = Self.BK
 
     alias iterator_axis = 1
 
     @staticmethod
     @always_inline
     fn get_wtile_coord() -> IndexList[2]:
-        var warp_col = get_warp_coords[BN, WN]()[1]
+        var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
         return IndexList[2](Int(warp_col), 0)
 
 
 @fieldwise_init
 struct VBufferConfig[BN: Int, BK: Int, WN: Int, depth: Int](KVBufferConfig):
     alias wsize = Self.wtile_dim1
-    alias wtile_dim0 = BK
-    alias wtile_dim1 = depth // (BN // WN)
+    alias wtile_dim0 = Self.BK
+    alias wtile_dim1 = Self.depth // (Self.BN // Self.WN)
 
-    alias btile_dim0 = BK
-    alias btile_dim1 = depth
+    alias btile_dim0 = Self.BK
+    alias btile_dim1 = Self.depth
 
     alias iterator_axis = 0
 
     @staticmethod
     @always_inline
     fn get_wtile_coord() -> IndexList[2]:
-        var warp_col = get_warp_coords[BN, WN]()[1]
+        var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
         return IndexList[2](0, Int(warp_col))
 
 
@@ -174,17 +174,19 @@ struct KVBufferImpl[
     num_stages: Int = 1,
     token_gen: Bool = False,
 ](KVBuffer):
-    alias _dtype = dtype
-    alias _num_stages = num_stages
-    alias MMA_N = tensor_core_mma.shape[1]
-    alias MMA_K = tensor_core_mma.shape[2]
-    alias num_warps_n = BN // WN
-    alias num_mmas = ceildiv(config.wsize, Self.MMA_N)
+    alias _dtype = Self.dtype
+    alias _num_stages = Self.num_stages
+    alias MMA_N = Self.tensor_core_mma.shape[1]
+    alias MMA_K = Self.tensor_core_mma.shape[2]
+    alias num_warps_n = Self.BN // Self.WN
+    alias num_mmas = ceildiv(Self.config.wsize, Self.MMA_N)
 
-    alias num_k_tiles = ceildiv(BK, Self.MMA_K * tensor_core_mma.group_size)
-    alias simd_width = simd_width_of[dtype]()
+    alias num_k_tiles = ceildiv(
+        Self.BK, Self.MMA_K * Self.tensor_core_mma.group_size
+    )
+    alias simd_width = simd_width_of[Self.dtype]()
 
-    alias num_repeats = config.btile_dim1 // Self.simd_width
+    alias num_repeats = Self.config.btile_dim1 // Self.simd_width
 
     # Shared memory layout
     # Layout construction for standard memory access:
@@ -212,30 +214,33 @@ struct KVBufferImpl[
     # └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
     # stride between blocks = BN x simd_width = 128 x 8 = 1024
 
-    alias base_layout = Layout.row_major(config.btile_dim0, Self.simd_width)
+    alias base_layout = Layout.row_major(
+        Self.config.btile_dim0, Self.simd_width
+    )
     alias tiler_layout = Layout.row_major(1, Self.num_repeats)
     alias smem_layout = blocked_product(
         Self.base_layout,
         Self.tiler_layout,
         coalesce_output=True,
-    ) if not token_gen else Layout.row_major(
-        config.btile_dim0, config.btile_dim1
+    ) if not Self.token_gen else Layout.row_major(
+        Self.config.btile_dim0, Self.config.btile_dim1
     )
 
     alias thread_layout = Layout.row_major(
         min(
-            num_threads,
-            (config.btile_dim0 * config.btile_dim1) // Self.simd_width,
+            Self.num_threads,
+            (Self.config.btile_dim0 * Self.config.btile_dim1)
+            // Self.simd_width,
         )
         * Self.simd_width
         // Self.smem_layout.stride[0].value(),
         Self.smem_layout.stride[0].value() // Self.simd_width,
-    ) if token_gen else Layout.row_major(num_threads // 4, 4)
+    ) if Self.token_gen else Layout.row_major(Self.num_threads // 4, 4)
 
     alias LoadTileType = LocalLayoutTensor[
-        dtype,
+        Self.dtype,
         Layout.row_major(
-            num_stages * Self.num_mmas * Self.num_k_tiles,
+            Self.num_stages * Self.num_mmas * Self.num_k_tiles,
             Self.simd_width,
         ),
     ]
@@ -244,16 +249,16 @@ struct KVBufferImpl[
     alias mma_tile_layout = Layout.row_major(Self.num_mmas, Self.simd_width)
 
     alias MMATileType = LocalLayoutTensor[
-        dtype,
+        Self.dtype,
         Self.mma_tile_layout,
     ]
     var mma_tile: Self.MMATileType
 
-    alias wtile_dim0 = config.wtile_dim0
-    alias wtile_dim1 = config.wtile_dim1
+    alias wtile_dim0 = Self.config.wtile_dim0
+    alias wtile_dim1 = Self.config.wtile_dim1
 
     alias SharedIterType = LayoutTensorIter[
-        dtype,
+        Self.dtype,
         Self.smem_layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
@@ -271,20 +276,20 @@ struct KVBufferImpl[
     var load_tile_id: Int
 
     alias GlobalTensorType = LayoutTensor[
-        dtype,
-        layout,
-        origin,
-        address_space=address_space,
-        alignment=alignment,
-        masked=masked,
-        layout_int_type=layout_int_type,
-        linear_idx_type=linear_idx_type,
+        Self.dtype,
+        Self.layout,
+        Self.origin,
+        address_space = Self.address_space,
+        alignment = Self.alignment,
+        masked = Self.masked,
+        layout_int_type = Self.layout_int_type,
+        linear_idx_type = Self.linear_idx_type,
     ]
 
     alias GlobalTiledIteratorType = Self.GlobalTensorType.TiledIteratorType[
-        config.btile_dim0,
-        config.btile_dim1,
-        axis = config.iterator_axis,
+        Self.config.btile_dim0,
+        Self.config.btile_dim1,
+        axis = Self.config.iterator_axis,
     ]
 
     var global_iterator: Self.GlobalTiledIteratorType
@@ -295,7 +300,7 @@ struct KVBufferImpl[
         global_tile: Self.GlobalTensorType,
         num_b_rows: OptionalReg[Int],
         shared_ptr: UnsafePointer[
-            Scalar[dtype],
+            Scalar[Self.dtype],
             address_space = AddressSpace.SHARED, **_,
         ],
     ):
@@ -309,9 +314,9 @@ struct KVBufferImpl[
         alias stride = Self.GlobalTiledIteratorType.layout.stride[0].value()
         self.bounds = num_b_rows.value() * stride if num_b_rows else Int.MAX
         self.global_iterator = global_tile.tiled_iterator[
-            config.btile_dim0,
-            config.btile_dim1,
-            axis = config.iterator_axis,
+            Self.config.btile_dim0,
+            Self.config.btile_dim1,
+            axis = Self.config.iterator_axis,
         ](0, 0)
         self.load_tile_id = 0
 
@@ -325,14 +330,14 @@ struct KVBufferImpl[
         mut self,
     ):
         copy_dram_to_local[src_thread_layout = Self.thread_layout,](
-            self.load_tile.split[num_stages]()[self.load_tile_id].vectorize[
-                1, Self.simd_width
-            ](),
+            self.load_tile.split[Self.num_stages]()[
+                self.load_tile_id
+            ].vectorize[1, Self.simd_width](),
             self.global_iterator,
             self.bounds,
         )
         self.global_iterator._incr()
-        self.load_tile_id = (self.load_tile_id + 1) % num_stages
+        self.load_tile_id = (self.load_tile_id + 1) % Self.num_stages
 
     @always_inline
     fn get_mma_tile(self) -> Self.MMATileType:
@@ -344,10 +349,12 @@ struct KVBufferImpl[
     ](self,):
         var smem_tile = self.smem_iter.next_unsafe(0)[]
         copy_local_to_shared[
-            thread_layout = Self.thread_layout, swizzle=swizzle, row_major=True
+            thread_layout = Self.thread_layout,
+            swizzle = Self.swizzle,
+            row_major=True,
         ](
             smem_tile.vectorize[1, Self.simd_width](),
-            self.load_tile.split[num_stages]()[tile_id].vectorize[
+            self.load_tile.split[Self.num_stages]()[tile_id].vectorize[
                 1, Self.simd_width
             ](),
         )
@@ -356,17 +363,17 @@ struct KVBufferImpl[
     fn load_from_shared[
         k_mma: Int,
     ](self):
-        alias num_warps_n = BN // WN
-        var warp_col = get_warp_coords[BN, WN]()[1]
+        alias num_warps_n = Self.BN // Self.WN
+        var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
         var smem_tile = self.smem_iter.next_unsafe(0)[]
 
-        var wtile_coord0 = config.get_wtile_coord()[0]
-        var wtile_coord1 = config.get_wtile_coord()[1]
+        var wtile_coord0 = Self.config.get_wtile_coord()[0]
+        var wtile_coord1 = Self.config.get_wtile_coord()[1]
         var warp_tile = smem_tile.tile[Self.wtile_dim0, Self.wtile_dim1](
             wtile_coord0, wtile_coord1
         )
 
-        tensor_core_mma.mma_op.load_b[swizzle=swizzle](
+        Self.tensor_core_mma.mma_op.load_b[swizzle = Self.swizzle](
             warp_tile,
             self.get_mma_tile().vectorize[1, Self.simd_width](),
             UInt(k_mma),
@@ -436,10 +443,10 @@ struct VBufferTransposeLoads[
     num_threads: Int,
     num_stages: Int = 1,
 ](KVBuffer):
-    alias _dtype = dtype
-    alias _num_stages = num_stages
-    alias simd_width = simd_width_of[dtype]()
-    alias num_repeats = BK // Self.simd_width
+    alias _dtype = Self.dtype
+    alias _num_stages = Self.num_stages
+    alias simd_width = simd_width_of[Self.dtype]()
+    alias num_repeats = Self.BK // Self.simd_width
 
     # V Buffer shared memory layout
     # - base_layout: Layout.row_major(depth + padding, simd_width) -> (depth+padding)xsimd_width tiles
@@ -467,7 +474,7 @@ struct VBufferTransposeLoads[
     # stride between blocks = (depth + padding) x simd_width = 144 x 8 = 1152
 
     alias base_layout = Layout.row_major(
-        Self.pad[depth](),
+        Self.pad[Self.depth](),
         Self.simd_width,
     )
     alias tiler_layout = Layout.row_major(1, Self.num_repeats)
@@ -477,29 +484,31 @@ struct VBufferTransposeLoads[
         coalesce_output=True,
     )
 
-    alias MMA_M = tensor_core_mma.shape[0]
-    alias MMA_K = tensor_core_mma.shape[2]
-    alias num_k_tiles = ceildiv(BK, Self.MMA_K * tensor_core_mma.group_size)
-    alias num_depth_tiles = depth // Self.MMA_M
+    alias MMA_M = Self.tensor_core_mma.shape[0]
+    alias MMA_K = Self.tensor_core_mma.shape[2]
+    alias num_k_tiles = ceildiv(
+        Self.BK, Self.MMA_K * Self.tensor_core_mma.group_size
+    )
+    alias num_depth_tiles = Self.depth // Self.MMA_M
 
-    alias depth_tile_size = min(depth, 128)
+    alias depth_tile_size = min(Self.depth, 128)
 
     # for depth = 64, we use 8B loads instead of 16B loads
     # this keeps the layout of the memory access the same but may not be optimal
     # can come back to this if perf becomes an issue
-    alias load_width = 4 if depth == 64 else Self.simd_width
-    alias loads_per_thread_per_depth_tile = (Self.depth_tile_size * BK) // (
-        Self.load_width * Self.num_threads
-    )
+    alias load_width = 4 if Self.depth == 64 else Self.simd_width
+    alias loads_per_thread_per_depth_tile = (
+        Self.depth_tile_size * Self.BK
+    ) // (Self.load_width * Self.num_threads)
 
     alias LoadTileType = LocalLayoutTensor[
-        dtype,
+        Self.dtype,
         Layout.row_major(
             (
                 Self.loads_per_thread_per_depth_tile
-                * (depth // Self.depth_tile_size)
+                * (Self.depth // Self.depth_tile_size)
             )
-            * num_stages,
+            * Self.num_stages,
             Self.load_width,
         ),
     ]
@@ -507,18 +516,18 @@ struct VBufferTransposeLoads[
     var load_tile: Self.LoadTileType
 
     alias mma_tile_layout = Layout.row_major(
-        depth // Self.MMA_M, Self.simd_width
+        Self.depth // Self.MMA_M, Self.simd_width
     )
 
     alias MMATileType = LocalLayoutTensor[
-        dtype,
+        Self.dtype,
         Self.mma_tile_layout,
     ]
 
     var mma_tile: Self.MMATileType
 
     alias SharedIterType = LayoutTensorIter[
-        dtype,
+        Self.dtype,
         Self.smem_layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
@@ -530,19 +539,19 @@ struct VBufferTransposeLoads[
     alias SharedTileType = Self.SharedIterType.LayoutTensorType
 
     alias GlobalTensorType = LayoutTensor[
-        dtype,
-        layout,
-        origin,
-        address_space=address_space,
-        alignment=alignment,
-        masked=masked,
-        layout_int_type=layout_int_type,
-        linear_idx_type=linear_idx_type,
+        Self.dtype,
+        Self.layout,
+        Self.origin,
+        address_space = Self.address_space,
+        alignment = Self.alignment,
+        masked = Self.masked,
+        layout_int_type = Self.layout_int_type,
+        linear_idx_type = Self.linear_idx_type,
     ]
 
     alias GlobalTiledIteratorType = Self.GlobalTensorType.TiledIteratorType[
-        BK,
-        depth,
+        Self.BK,
+        Self.depth,
         axis=0,
     ]
 
@@ -555,20 +564,23 @@ struct VBufferTransposeLoads[
         out self,
         global_tile: Self.GlobalTensorType,
         shared_ptr: UnsafePointer[
-            Scalar[dtype],
+            Scalar[Self.dtype],
             address_space = AddressSpace.SHARED, **_,
         ],
     ):
-        constrained[depth in (64, 128, 256), "depth must be 64, 128, or 256"]()
         constrained[
-            tensor_core_mma.shape[2] * tensor_core_mma.group_size == 16,
+            Self.depth in (64, 128, 256), "depth must be 64, 128, or 256"
+        ]()
+        constrained[
+            Self.tensor_core_mma.shape[2] * Self.tensor_core_mma.group_size
+            == 16,
             "tensor_core_mma.shape[2] * tensor_core_mma.group_size must be 16",
         ]()
 
         self.global_base_tile = global_tile
-        self.global_iterator = global_tile.tiled_iterator[BK, depth, axis=0](
-            0, 0
-        )
+        self.global_iterator = global_tile.tiled_iterator[
+            Self.BK, Self.depth, axis=0
+        ](0, 0)
 
         self.load_tile = type_of(self.load_tile).stack_allocation()
         self.mma_tile = type_of(self.mma_tile).stack_allocation()
@@ -583,7 +595,7 @@ struct VBufferTransposeLoads[
     @always_inline
     @staticmethod
     fn pad[dim: Int]() -> Int:
-        return pad[dtype, depth, dim]()
+        return pad[Self.dtype, Self.depth, dim]()
 
     @always_inline
     fn load_from_dram(
@@ -601,7 +613,7 @@ struct VBufferTransposeLoads[
         ]
 
         @parameter
-        for depth_idx in range(depth // Self.depth_tile_size):
+        for depth_idx in range(Self.depth // Self.depth_tile_size):
             # every lane loads 2 elements (=8B for depth=64 and 16B for depth=128)
             # we transpose the global tile when writing to shared memory
             # the load pattern here is such that it enables us to use 16B loads
@@ -635,11 +647,11 @@ struct VBufferTransposeLoads[
             @parameter
             for i in range(Self.loads_per_thread_per_depth_tile):
                 var warp_tile = (
-                    global_tile.tile[16, depth](
+                    global_tile.tile[16, Self.depth](
                         Int(warp_id) // 2,
                         0,
                     )
-                    .tile[8, depth](i, 0)
+                    .tile[8, Self.depth](i, 0)
                     .tile[4, Self.depth_tile_size](Int(warp_id) % 2, depth_idx)
                 )
                 copy_dram_to_local[
@@ -684,9 +696,9 @@ struct VBufferTransposeLoads[
         var load_tile = self.load_tile.split[Self.num_stages]()[tile_id]
 
         @parameter
-        for depth_idx in range(depth // Self.depth_tile_size):
+        for depth_idx in range(Self.depth // Self.depth_tile_size):
             var smem_warp_tile = smem_iter_tensor.tile[
-                Self.pad[depth](),
+                Self.pad[Self.depth](),
                 Self.simd_width,
             ](0, Int(warp_id)).tile[
                 Self.pad[Self.depth_tile_size](),
@@ -709,7 +721,7 @@ struct VBufferTransposeLoads[
                 # they are interleaved and written to smem
                 var reg_tile_0 = load_tile[0 + depth_idx * 2, j][0]
                 var reg_tile_1 = load_tile[1 + depth_idx * 2, j][0]
-                var reg_pair = SIMD[dtype, 2](reg_tile_0, reg_tile_1)
+                var reg_pair = SIMD[Self.dtype, 2](reg_tile_0, reg_tile_1)
                 lane_tile[j, 0] = rebind[lane_tile.element_type](reg_pair)
 
     @always_inline
@@ -726,7 +738,7 @@ struct VBufferTransposeLoads[
         for depth_idx in range(Self.num_depth_tiles):
             # TODO: document and parameterize this magic
             var smem_fragment = (
-                smem_iter_tensor.tile[Self.pad[depth](), 8](
+                smem_iter_tensor.tile[Self.pad[Self.depth](), 8](
                     0, Int(col_idx + UInt(k_mma * 2))
                 )
                 .vectorize[1, Self.simd_width]()
@@ -753,25 +765,25 @@ struct QRegisterBuffer[
     depth: Int,
     thread_layout: Layout,
 ](RegisterMMABuffer):
-    alias reg_dtype = dtype
-    alias mma_dtype = dtype
-    alias simd_width = simd_width_of[dtype]()
-    alias MMA_M = mma_shape[0]
-    alias MMA_K = mma_shape[2]
-    alias num_mmas = ceildiv(WM, Self.MMA_M)
-    alias num_k_tiles = ceildiv(BK, Self.MMA_K * k_group_size)
+    alias reg_dtype = Self.dtype
+    alias mma_dtype = Self.dtype
+    alias simd_width = simd_width_of[Self.dtype]()
+    alias MMA_M = Self.mma_shape[0]
+    alias MMA_K = Self.mma_shape[2]
+    alias num_mmas = ceildiv(Self.WM, Self.MMA_M)
+    alias num_k_tiles = ceildiv(Self.BK, Self.MMA_K * Self.k_group_size)
 
     alias MMATileType = Self.RegisterTileType.SplitElementType[
         Self.num_tiles
     ].SplitElementType[Self.num_k_tiles]
     alias mma_tile_layout = Self.MMATileType.layout
 
-    alias num_tiles = depth // BK
+    alias num_tiles = Self.depth // Self.BK
     alias reg_tile_layout = Layout.row_major(
         Self.num_mmas * Self.num_k_tiles * Self.num_tiles, Self.simd_width
     )
     alias RegisterTileType = LocalLayoutTensor[
-        dtype,
+        Self.dtype,
         Self.reg_tile_layout,
     ]
 
@@ -790,24 +802,26 @@ struct QRegisterBuffer[
         return Self.reg_dtype
 
     @always_inline
-    fn __init__(out self, tensor: LayoutTensor[dtype, **_]):
+    fn __init__(out self, tensor: LayoutTensor[Self.dtype, **_]):
         self.reg_tile = type_of(self.reg_tile).stack_allocation()
 
-        alias num_warps_n = BN // WN
-        var warp_row = get_warp_coords[BN, WN]()[0]
+        alias num_warps_n = Self.BN // Self.WN
+        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
         var bounds = max(
-            min(Int32(WM), Int32(tensor.dim[0]() - WM * warp_row))
+            min(Int32(Self.WM), Int32(tensor.dim[0]() - Self.WM * warp_row))
             * tensor.stride[0](),
             0,
         )
-        var gmem_warp_iter = tensor.tiled_iterator[WM, BK, axis=1](warp_row, 0)
+        var gmem_warp_iter = tensor.tiled_iterator[Self.WM, Self.BK, axis=1](
+            warp_row, 0
+        )
         var mma_tiles = self.reg_tile.split[Self.num_tiles]()
 
         @parameter
         for i in range(Self.num_tiles):
             var reg_tile = mma_tiles[i]
             copy_dram_to_local[
-                src_thread_layout=thread_layout,
+                src_thread_layout = Self.thread_layout,
                 thread_scope = ThreadScope.WARP,
             ](
                 reg_tile.vectorize[1, Self.simd_width](),
@@ -843,13 +857,13 @@ struct OutputRegisterBuffer[
     num_n_mmas: Int,
     output_frag_size: Int,
 ](RegisterBuffer):
-    alias reg_dtype = dtype
+    alias reg_dtype = Self.dtype
 
     alias reg_tile_layout = Layout.row_major(
-        num_n_mmas * num_m_mmas, output_frag_size
+        Self.num_n_mmas * Self.num_m_mmas, Self.output_frag_size
     )
     alias RegisterTileType = LocalLayoutTensor[
-        dtype,
+        Self.dtype,
         Self.reg_tile_layout,
     ]
 
@@ -867,21 +881,21 @@ struct OutputRegisterBuffer[
     @always_inline
     fn vectorize(
         self,
-    ) -> Self.RegisterTileType.VectorizedType[1, output_frag_size]:
-        return self.reg_tile.vectorize[1, output_frag_size]()
+    ) -> Self.RegisterTileType.VectorizedType[1, Self.output_frag_size]:
+        return self.reg_tile.vectorize[1, Self.output_frag_size]()
 
     @always_inline
-    fn apply_softmax_denominator(self, rowsum: LayoutTensor[dtype, **_]):
+    fn apply_softmax_denominator(self, rowsum: LayoutTensor[Self.dtype, **_]):
         @parameter
-        for m_mma in range(num_m_mmas):
+        for m_mma in range(Self.num_m_mmas):
             var rowsum_inv = recip(rowsum[m_mma, 0])
 
             @parameter
-            for n_mma in range(num_n_mmas):
+            for n_mma in range(Self.num_n_mmas):
 
                 @parameter
-                for i in range(output_frag_size):
-                    self.reg_tile[n_mma * num_m_mmas + m_mma, i] *= rebind[
+                for i in range(Self.output_frag_size):
+                    self.reg_tile[n_mma * Self.num_m_mmas + m_mma, i] *= rebind[
                         Self.RegisterTileType.element_type
                     ](rowsum_inv)
 
@@ -910,15 +924,17 @@ struct PRegisterBuffer[
     k_group_size: Int,
     tr_load_enabled: Bool = False,
 ](RegisterMMABuffer):
-    alias reg_dtype = accum_type_
-    alias mma_dtype = dtype
-    alias mma_tile_layout = Layout.row_major(num_m_mmas, simd_width_of[dtype]())
+    alias reg_dtype = Self.accum_type_
+    alias mma_dtype = Self.dtype
+    alias mma_tile_layout = Layout.row_major(
+        Self.num_m_mmas, simd_width_of[Self.dtype]()
+    )
     alias reg_tile_layout = Layout.row_major(
-        num_n_mmas * num_m_mmas, output_frag_size
+        Self.num_n_mmas * Self.num_m_mmas, Self.output_frag_size
     )
 
     alias RegisterTileType = LocalLayoutTensor[
-        accum_type_,
+        Self.accum_type_,
         Self.reg_tile_layout,
     ]
 
@@ -930,11 +946,12 @@ struct PRegisterBuffer[
     var reg_tile: Self.RegisterTileType
 
     alias shared_memory_layout = blocked_product(
-        Layout.row_major(BM, BK), Layout.row_major(1, BN // BK)
+        Layout.row_major(Self.BM, Self.BK),
+        Layout.row_major(1, Self.BN // Self.BK),
     )
 
     alias SharedMemoryTileType = SharedLayoutTensor[
-        dtype,
+        Self.dtype,
         Self.shared_memory_layout,
     ]
 
@@ -944,7 +961,7 @@ struct PRegisterBuffer[
     fn __init__(
         out self,
         shared_ptr: UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.SHARED, **_
+            Scalar[Self.dtype], address_space = AddressSpace.SHARED, **_
         ],
     ):
         self.reg_tile = Self.RegisterTileType.stack_allocation()
@@ -954,49 +971,49 @@ struct PRegisterBuffer[
     fn get_mma_tile_reg[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
         alias OutputTileType = LocalLayoutTensor[
             Self.mma_dtype,
-            Layout.row_major(num_m_mmas, output_frag_size),
+            Layout.row_major(Self.num_m_mmas, Self.output_frag_size),
         ]
 
         var out = OutputTileType.stack_allocation()
 
         @parameter
-        if tr_load_enabled:
+        if Self.tr_load_enabled:
             # if tr loads are used then we don't need any packing logic
             # just convert the registers to bf16
             @parameter
-            if mma_shape[0] == 32:
+            if Self.mma_shape[0] == 32:
                 constrained[
-                    output_frag_size == 16,
+                    Self.output_frag_size == 16,
                     "output_frag_size must be 16 for 32x32 mma shape",
                 ]()
 
                 @parameter
-                for j in range(output_frag_size):
-                    out[0, j] = self.reg_tile[tile_idx, j].cast[dtype]()
-            elif mma_shape[0] == 16:
+                for j in range(Self.output_frag_size):
+                    out[0, j] = self.reg_tile[tile_idx, j].cast[Self.dtype]()
+            elif Self.mma_shape[0] == 16:
                 constrained[
-                    output_frag_size == 4,
+                    Self.output_frag_size == 4,
                     "output_frag_size must be 4 for 16x16 mma shape",
                 ]()
 
                 var mma_reg_tile = Self.MMATileType.stack_allocation()
-                var reg_tile_split = self.reg_tile.split[num_n_mmas // 2]()[
-                    tile_idx
-                ]
+                var reg_tile_split = self.reg_tile.split[
+                    Self.num_n_mmas // 2
+                ]()[tile_idx]
 
                 @parameter
                 for m, j in itertools.product(
-                    range(num_m_mmas), range(output_frag_size)
+                    range(Self.num_m_mmas), range(Self.output_frag_size)
                 ):
-                    mma_reg_tile[m, j] = reg_tile_split[m, j].cast[dtype]()
-                    mma_reg_tile[m, output_frag_size + j] = reg_tile_split[
-                        m + num_m_mmas, j
-                    ].cast[dtype]()
+                    mma_reg_tile[m, j] = reg_tile_split[m, j].cast[Self.dtype]()
+                    mma_reg_tile[m, Self.output_frag_size + j] = reg_tile_split[
+                        m + Self.num_m_mmas, j
+                    ].cast[Self.dtype]()
                 return mma_reg_tile
             else:
                 constrained[
                     False,
-                    String("Unsupported mma shape: ", mma_shape[0]),
+                    String("Unsupported mma shape: ", Self.mma_shape[0]),
                 ]()
         else:
             # this is special packing, the pattern here depends on how we load
@@ -1017,27 +1034,29 @@ struct PRegisterBuffer[
                     Self.mma_dtype
                 ]()
         return rebind[Self.MMATileType](
-            out.tile[num_n_mmas, simd_width_of[Self.mma_dtype]()](0, k_idx)
+            out.tile[Self.num_n_mmas, simd_width_of[Self.mma_dtype]()](0, k_idx)
         )
 
     @always_inline
     fn get_mma_tile_shared[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
         var mma_reg_tile = Self.MMATileType.stack_allocation()
-        alias num_warps_n = WN // BN
-        var warp_row = get_warp_coords[BN, WN]()[0]
-        var warp_tile = self.shared_memory_tile.tile[WM, BK](warp_row, tile_idx)
+        alias num_warps_n = Self.WN // Self.BN
+        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
+        var warp_tile = self.shared_memory_tile.tile[Self.WM, Self.BK](
+            warp_row, tile_idx
+        )
 
         alias tensor_core_mma = TiledTensorCore[
-            accum_type_,
-            dtype,
-            mma_shape,
-            group_size=k_group_size,
+            Self.accum_type_,
+            Self.dtype,
+            Self.mma_shape,
+            group_size = Self.k_group_size,
             transpose_b=False,
         ]()
 
         tensor_core_mma.mma_op.load_a[swizzle=None](
             warp_tile,
-            mma_reg_tile.vectorize[1, simd_width_of[dtype]()](),
+            mma_reg_tile.vectorize[1, simd_width_of[Self.dtype]()](),
             UInt(k_idx),
         )
         return mma_reg_tile
@@ -1058,8 +1077,8 @@ struct PRegisterBuffer[
     @always_inline
     fn vectorize(
         self,
-    ) -> Self.RegisterTileType.VectorizedType[1, output_frag_size]:
-        return self.reg_tile.vectorize[1, output_frag_size]()
+    ) -> Self.RegisterTileType.VectorizedType[1, Self.output_frag_size]:
+        return self.reg_tile.vectorize[1, Self.output_frag_size]()
 
     @always_inline
     fn zero(self):
@@ -1072,16 +1091,16 @@ struct PRegisterBuffer[
     @always_inline
     fn get_shared_memory_tile(
         self, tile_idx: Int
-    ) -> Self.SharedMemoryTileType.TileType[BM, BK]:
-        return self.shared_memory_tile.tile[BM, BK](0, tile_idx)
+    ) -> Self.SharedMemoryTileType.TileType[Self.BM, Self.BK]:
+        return self.shared_memory_tile.tile[Self.BM, Self.BK](0, tile_idx)
 
     @always_inline
     fn copy_to_shared(self):
-        alias warp_layout = get_warp_layout[mma_shape]()
-        alias fragment_layout = get_fragment_layout[mma_shape]()
+        alias warp_layout = get_warp_layout[Self.mma_shape]()
+        alias fragment_layout = get_fragment_layout[Self.mma_shape]()
         alias num_warps_n = Self.BN // Self.WN
-        var warp_row = get_warp_coords[BN, WN]()[0]
-        var warp_col = get_warp_coords[BN, WN]()[1]
+        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
+        var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
         alias num_n_mmas_per_bk = Self.num_n_mmas // (Self.WN // Self.BK)
 
         # for the following indexing logic, WN must be equal to BN or BK

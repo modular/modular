@@ -254,17 +254,17 @@ struct Attention[
     cache_depth: Int = Int(config.depth),
     output_depth: Int = Int(config.depth),
 ]:
-    alias BM = config.block_m()
-    alias BN = config.block_n()
-    alias BK = config.block_k()
-    alias WM = config.warp_m()
-    alias WN = config.warp_n()
-    alias num_threads = config.num_threads()
-    alias num_heads = config.num_heads
+    alias BM = Self.config.block_m()
+    alias BN = Self.config.block_n()
+    alias BK = Self.config.block_k()
+    alias WM = Self.config.warp_m()
+    alias WN = Self.config.warp_n()
+    alias num_threads = Self.config.num_threads()
+    alias num_heads = Self.config.num_heads
     alias num_warps_n = Self.BN // Self.WN
     alias num_warps_m = Self.BM // Self.WM
-    alias depth = config.depth
-    alias accum_type = get_accum_type[q_type]()
+    alias depth = Self.config.depth
+    alias accum_type = get_accum_type[Self.q_type]()
 
     alias mma_shape = Self.attention_config_t.get_mma_shape()
 
@@ -303,7 +303,7 @@ struct Attention[
 
     alias PRegisterBufferType = PRegisterBuffer[
         Self.accum_type,
-        q_type,
+        Self.q_type,
         Int(Self.BM),
         Int(Self.BN),
         Int(Self.BK),
@@ -317,7 +317,7 @@ struct Attention[
         Self.k_group_size,
         # use double buffer as proxy for experimental kernel
         # need to find a better way to determine this
-        tr_load_enabled = attention_config_t.double_buffer,
+        tr_load_enabled = Self.attention_config_t.double_buffer,
     ]
 
     alias row_layout = Layout.row_major(
@@ -332,7 +332,7 @@ struct Attention[
     alias RowSumTensorType = Self.RowMaxTensorType
 
     alias GlobalMemoryManagerType = GlobalMemoryManager[
-        q_type,
+        Self.q_type,
         Self.BM,
         Self.BN,
         Self.BK,
@@ -345,10 +345,10 @@ struct Attention[
     ]
 
     alias SharedMemoryManagerType = SharedMemoryManager[
-        attention_config_t.shared_kv,
-        attention_config_t.full_kv,
-        attention_config_t.depth_padded,
-        attention_config_t.double_buffer,
+        Self.attention_config_t.shared_kv,
+        Self.attention_config_t.full_kv,
+        Self.attention_config_t.depth_padded,
+        Self.attention_config_t.double_buffer,
         Self.q_type,
         Int(Self.BM),
         Int(Self.BN),
@@ -383,9 +383,9 @@ struct Attention[
 
     var batch_idx: Int
 
-    var k: k_t
-    var v: v_t
-    var mask: mask_t
+    var k: Self.k_t
+    var v: Self.v_t
+    var mask: Self.mask_t
 
     var mask_block_row: UInt32
     var mask_warp_row: UInt32
@@ -430,8 +430,8 @@ struct Attention[
     @always_inline
     fn get_tensor_core_mma_qk(
         out result: TiledTensorCore[
-            get_accum_type[q_type](),
-            q_type,
+            get_accum_type[Self.q_type](),
+            Self.q_type,
             Self.mma_shape,
             group_size = Self.k_group_size,
             transpose_b=True,
@@ -443,8 +443,8 @@ struct Attention[
     @always_inline
     fn get_tensor_core_mma_pv(
         out result: TiledTensorCore[
-            get_accum_type[q_type](),
-            q_type,
+            get_accum_type[Self.q_type](),
+            Self.q_type,
             Self.mma_shape,
             group_size = Self.k_group_size,
             transpose_b=False,
@@ -499,7 +499,7 @@ struct Attention[
         kv_tile_start_row: UInt32,
     ) -> TileMaskStatus:
         @parameter
-        if token_gen:
+        if Self.token_gen:
             # Decoding with mask checking: check single token at num_keys-1
             return self.mask.status(
                 Index[dtype = DType.uint32](
@@ -521,7 +521,7 @@ struct Attention[
     @always_inline
     fn mask_advance(mut self):
         @parameter
-        if not token_gen:
+        if not Self.token_gen:
             self.mask_warp_col += Self.BN
 
     @always_inline
@@ -534,7 +534,7 @@ struct Attention[
         kv_tile_start_row: UInt32,
     ) -> Bool:
         @parameter
-        if not token_gen or mask_t.check_mask_during_decoding:
+        if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
             var status = self.mask_status(
                 kv_tile_start_row,
             )
@@ -596,12 +596,12 @@ struct Attention[
     @always_inline
     fn __init__(
         out self,
-        attention_config: attention_config_t,
+        attention_config: Self.attention_config_t,
         output_ptr: UnsafePointer[Scalar[Self.output_type],],
         q: UnsafePointer[Scalar[Self.q_type]],
-        k: k_t,
-        v: v_t,
-        mask: mask_t,
+        k: Self.k_t,
+        v: Self.v_t,
+        mask: Self.mask_t,
         sink_weights: OptionalReg[
             LayoutTensor[
                 Self.q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
@@ -623,8 +623,10 @@ struct Attention[
             Self.q_tile_idx(),
             Self.kv_head_idx(),
             seq_len,
-            Self.attention_config_t.get_q_offset[UInt(q_depth)](),
-            Self.attention_config_t.get_output_offset[UInt(output_depth)](),
+            Self.attention_config_t.get_q_offset[UInt(Self.q_depth)](),
+            Self.attention_config_t.get_output_offset[
+                UInt(Self.output_depth)
+            ](),
         )
         self.smem_manager = Self.SharedMemoryManagerType()
 
@@ -660,7 +662,7 @@ struct Attention[
         self.cache_start_pos = cache_start_pos
 
         @parameter
-        if sink:
+        if Self.sink:
             debug_assert(
                 Bool(sink_weights),
                 "expect sink_weights to be non-null when sink=true",
@@ -758,7 +760,7 @@ struct Attention[
 
         var q_head_idx = self.q_head_idx()
         if num_partitions > 1:
-            if thread_idx.x < UInt(group):
+            if thread_idx.x < UInt(Self.group):
                 var row_sum = self.rowsum[0, 0][0]
                 var row_max = self.rowmax[0, 0][0]
 
