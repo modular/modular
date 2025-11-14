@@ -177,7 +177,7 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
         ),
         # ------------ llama3-8b-tp1 ------------#
         TuningConfigSM100(
-            M=72,
+            M=65,
             M_end=81,
             N=6144,
             K=4096,
@@ -206,7 +206,7 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             k_group_size=2,
         ),
         TuningConfigSM100(
-            M=17,
+            M=9,
             M_end=32,
             N=6144,
             K=4096,
