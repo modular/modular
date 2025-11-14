@@ -280,3 +280,30 @@ Ex: ```
         n_patches, _ = x.tensor.shape
         with pytest.raises(Exception, match=expected_error):
             _ = x.tensor.reshape([n_patches // 4, 4, 2048])
+
+
+def test_reshape__minus_one__symbolic_algebraic() -> None:
+    """Test that -1 resolves to algebraic expression with symbolic dims."""
+    # Symbolic batch; -1 should become (batch * 4) // 4 -> batch
+    input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
+    with Graph("reshape_minus_one_symbolic", input_types=[input_type]) as graph:
+        x = graph.inputs[0].tensor
+        y = x.reshape([-1, 4])  # -1 should be computed, not staged
+        # Assert the computed shape is symbolic batch, 4 (no -1 present)
+        assert y.shape == [Dim("batch"), 4]
+        graph.output(y)
+
+
+def test_reshape__minus_one__zero_dimension_error() -> None:
+    """Test that [-1, 0, ...] produces a clear error message."""
+    input_type = TensorType(DType.float32, [4, 5], device=DeviceRef.CPU())
+    with Graph("reshape_minus_one_zero", input_types=[input_type]) as graph:
+        x = graph.inputs[0].tensor
+        with pytest.raises(
+            ValueError,
+            match=re.escape(
+                "reshape(): cannot infer -1 dimension when "
+                "another dimension is 0"
+            ),
+        ):
+            x.reshape([-1, 0, 2])
