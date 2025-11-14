@@ -24,13 +24,30 @@ from gpu.host import DeviceContext, HostBuffer
 from gpu.host.device_context import _checked, _DeviceContextPtr
 
 from .shmem_api import shmem_free, shmem_malloc
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import (
+    LegacyUnsafePointer as UnsafePointer,
+    LegacyOpaquePointer as OpaquePointer,
+)
+from builtin.device_passable import DevicePassable
 
 
-struct SHMEMBuffer[dtype: DType](Sized):
+struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
     var _data: UnsafePointer[Scalar[dtype]]
     var _ctx_ptr: _DeviceContextPtr
     var _size: Int
+
+    alias device_type: AnyType = UnsafePointer[Scalar[dtype]]
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self._data
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return String("SHMEMBuffer[", String(dtype), "]")
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @doc_private
     @always_inline
