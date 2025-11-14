@@ -66,13 +66,13 @@ def test_ring_bcast(ctx: SHMEMContext):
 
     data.enqueue_copy_from(data_h)
 
-    var root = 0
+    var root: Int32 = 0
     ctx.barrier_all()
-    ctx.enqueue_function_collective[ring_bcast](
-        data.unsafe_ptr(),
+    ctx.enqueue_function_collective_checked[ring_bcast, ring_bcast](
+        data,
         data_len,
         root,
-        psync,
+        SHMEMBuffer[DType.uint64](ctx._ctx, psync, 1),
         grid_dim=1,
         block_dim=1,
     )

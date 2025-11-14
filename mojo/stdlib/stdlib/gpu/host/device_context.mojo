@@ -1755,6 +1755,34 @@ struct DeviceStream(ImplicitlyCopyable, Movable):
             location=location.or_else(__call_location()),
         )
 
+    @parameter
+    @always_inline
+    fn _enqueue_function_checked[
+        *Ts: DevicePassable
+    ](
+        self,
+        f: DeviceFunction,
+        args: VariadicPack[_, _, DevicePassable, *Ts],
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
+    ) raises:
+        f._call_with_pack_checked(
+            self,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
+        )
+
 
 @register_passable("trivial")
 struct EventFlags:
@@ -2596,6 +2624,206 @@ struct DeviceFunction[
             dense_args_addrs.free()
 
     @always_inline
+    @staticmethod
+    fn _validate_arguments[
+        *Ts: DevicePassable,
+        num_args: Int,
+    ]() -> Tuple[Int, InlineArray[Int, num_args]]:
+        alias declared_num_args = len(VariadicList(declared_arg_types.value()))
+        constrained[
+            declared_num_args == num_args,
+            "Wrong number of arguments to enqueue",
+        ]()
+
+        # For each argument determine the size of the device dtype and
+        # calculate the offset into a contiguous memory area which will
+        # be used to remap the passed arguments into the device dtypes.
+        var tmp_arg_offset = 0
+        var translated_arg_offsets = InlineArray[Int, num_args](
+            uninitialized=True
+        )
+        var num_translated_args = 0
+
+        @parameter
+        for i in range(num_args):
+            alias declared_arg_type = Self.declared_arg_types.value()[i]
+            alias actual_arg_type = Ts[i]
+
+            # Now we'll check if the given argument's device_type is
+            # what the kernel expects.
+
+            # First, check if they're handing in a device dtype, in other
+            # words, a dtype that can be passed directly and doesn't need to
+            # be mapped. For example, Int, IndexList, etc.
+            @parameter
+            if _type_is_eq[actual_arg_type, actual_arg_type.device_type]():
+                # Now check if they handed in the *correct* device dtype.
+                constrained[
+                    _type_is_eq[
+                        declared_arg_type, actual_arg_type.device_type
+                    ](),
+                    "Handed in wrong argument dtype for argument #",
+                    String(i),
+                    ", received a ",
+                    actual_arg_type.get_type_name(),
+                    ", but actual type name is: ",
+                    get_type_name[declared_arg_type](),
+                ]()
+            elif _is_pointer_convertible[
+                declared_arg_type, actual_arg_type.device_type
+            ]():
+                # This is a temporary check for the conversions between
+                # LegacyUnsafePointer and UnsafePointer (v2). Since type
+                # checking would fail between these two types, this allows
+                # you to convert between them without type checking errors.
+                pass
+            else:
+                # They handed in a host dtype, in other words, a dtype that
+                # needs to be mapped before handing it to the device. In
+                # this case, we use a more informative error message.
+                constrained[
+                    _type_is_eq[
+                        declared_arg_type, actual_arg_type.device_type
+                    ](),
+                    "Handed in wrong argument dtype for argument #",
+                    String(i),
+                    ", received a ",
+                    actual_arg_type.get_type_name(),
+                    " (which became device dtype ",
+                    actual_arg_type.get_device_type_name(),
+                    ")",
+                ]()
+            var aligned_type_size = align_up(
+                size_of[actual_arg_type.device_type](), 8
+            )
+            if aligned_type_size != 0:
+                num_translated_args += 1
+                translated_arg_offsets[i] = tmp_arg_offset
+                tmp_arg_offset += aligned_type_size
+            else:
+                translated_arg_offsets[i] = -1
+
+        return (num_translated_args, translated_arg_offsets)
+
+    @always_inline
+    @parameter
+    fn _call_with_pack_checked[
+        *Ts: DevicePassable
+    ](
+        self,
+        stream: DeviceStream,
+        args: VariadicPack[_, _, DevicePassable, *Ts],
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
+    ) raises:
+        alias num_args = len(VariadicList(Ts))
+        var num_captures = self._func_impl.num_captures
+        alias populate = type_of(self._func_impl).populate
+        alias num_captures_static = 16
+
+        @parameter
+        if declared_arg_types:
+            _ = Self._validate_arguments[*Ts, num_args=num_args]()
+
+        # NOTE: Manual short buffer optimization. We could use a
+        # Variant[List, InlineArray] instead, but it would look a lot more
+        # verbose. This way, however, we need to conditionally free at the end.
+        var dense_args_addrs: UnsafePointer[OpaquePointer]
+        if num_captures > num_captures_static:
+            dense_args_addrs = dense_args_addrs.alloc(num_captures + num_args)
+        else:
+            dense_args_addrs = stack_allocation[
+                num_captures_static + num_args, OpaquePointer
+            ]()
+
+        @parameter
+        for i in range(num_args):
+            # TODO(MSTDL-1904): Validate the safety of this.
+            dense_args_addrs[i] = (
+                UnsafePointer(to=args[i])
+                .bitcast[NoneType]()
+                .unsafe_mut_cast[True]()
+            )
+
+        if cluster_dim:
+            attributes.append(
+                LaunchAttribute.from_cluster_dim(cluster_dim.value())
+            )
+
+        for i in range(len(constant_memory)):
+            self._copy_to_constant_memory(constant_memory[i])
+
+        # const char *AsyncRT_DeviceContext_enqueueFunctionDirect(
+        #     const DeviceContext *ctx, const DeviceFunction *func,
+        #     uint32_t gridX, uint32_t gridY, uint32_t gridZ,
+        #     uint32_t blockX, uint32_t blockY, uint32_t blockZ,
+        #     uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
+        #     void **args)
+
+        if num_captures > 0:
+            # Call the populate function to initialize the captured values in the arguments array.
+            # The captured values are always at the end of the argument list.
+            # This function (generated by the compiler) has to be inlined here
+            # and be in the same scope as the user of dense_args_addr
+            # (i.e. the following external_call).
+            # Because this closure uses stack allocated ptrs
+            # to store the captured values in dense_args_addrs, they need to
+            # not go out of the scope before dense_args_addr is being use.
+            var capture_args_start = dense_args_addrs.offset(num_args)
+            populate(capture_args_start.bitcast[NoneType]())
+            _checked_call[Self.func](
+                external_call[
+                    "AsyncRT_DeviceStream_enqueueFunctionDirect",
+                    _ConstCharPtr,
+                ](
+                    stream,
+                    self._handle,
+                    grid_dim.x(),
+                    grid_dim.y(),
+                    grid_dim.z(),
+                    block_dim.x(),
+                    block_dim.y(),
+                    block_dim.z(),
+                    shared_mem_bytes.or_else(0),
+                    attributes.unsafe_ptr(),
+                    len(attributes),
+                    dense_args_addrs,
+                ),
+                device_context=self._context,
+                location=location.or_else(__call_location()),
+            )
+        else:
+            _checked_call[Self.func](
+                external_call[
+                    "AsyncRT_DeviceStream_enqueueFunctionDirect",
+                    _ConstCharPtr,
+                ](
+                    stream,
+                    self._handle,
+                    grid_dim.x(),
+                    grid_dim.y(),
+                    grid_dim.z(),
+                    block_dim.x(),
+                    block_dim.y(),
+                    block_dim.z(),
+                    shared_mem_bytes.or_else(0),
+                    attributes.unsafe_ptr(),
+                    len(attributes),
+                    dense_args_addrs,
+                ),
+                device_context=self._context,
+                location=location.or_else(__call_location()),
+            )
+
+        if num_captures > num_captures_static:
+            dense_args_addrs.free()
+
+    @always_inline
     @parameter
     fn _call_with_pack_checked[
         *Ts: DevicePassable
@@ -2623,78 +2851,10 @@ struct DeviceFunction[
         # Validate that all actual arguments do remap to the declared device
         # dtype in the kernel.
         @parameter
-        if Self.declared_arg_types:
-            alias declared_num_args = len(
-                VariadicList(Self.declared_arg_types.value())
+        if declared_arg_types:
+            num_translated_args, translated_arg_offsets = (
+                Self._validate_arguments[*Ts, num_args=num_passed_args]()
             )
-            constrained[
-                declared_num_args == num_passed_args,
-                "Wrong number of arguments to enqueue",
-            ]()
-
-            # For each argument determine the size of the device dtype and
-            # calculate the offset into a contiguous memory area which will
-            # be used to remap the passed arguments into the device dtypes.
-            var tmp_arg_offset = 0
-
-            @parameter
-            for i in range(num_passed_args):
-                alias declared_arg_type = Self.declared_arg_types.value()[i]
-                alias actual_arg_type = Ts[i]
-
-                # Now we'll check if the given argument's device_type is
-                # what the kernel expects.
-
-                # First, check if they're handing in a device dtype, in other
-                # words, a dtype that can be passed directly and doesn't need to
-                # be mapped. For example, Int, IndexList, etc.
-                @parameter
-                if _type_is_eq[actual_arg_type, actual_arg_type.device_type]():
-                    # Now check if they handed in the *correct* device dtype.
-                    constrained[
-                        _type_is_eq[
-                            declared_arg_type, actual_arg_type.device_type
-                        ](),
-                        "Handed in wrong argument dtype for argument #",
-                        String(i),
-                        ", received a ",
-                        actual_arg_type.get_type_name(),
-                        ", but actual type name is: ",
-                        get_type_name[declared_arg_type](),
-                    ]()
-                elif _is_pointer_convertible[
-                    declared_arg_type, actual_arg_type.device_type
-                ]():
-                    # This is a temporary check for the conversions between
-                    # LegacyUnsafePointer and UnsafePointer (v2). Since type
-                    # checking would fail between these two types, this allows
-                    # you to convert between them without type checking errors.
-                    pass
-                else:
-                    # They handed in a host dtype, in other words, a dtype that
-                    # needs to be mapped before handing it to the device. In
-                    # this case, we use a more informative error message.
-                    constrained[
-                        _type_is_eq[
-                            declared_arg_type, actual_arg_type.device_type
-                        ](),
-                        "Handed in wrong argument dtype for argument #",
-                        String(i),
-                        ", received a ",
-                        actual_arg_type.get_type_name(),
-                        " (which became device dtype ",
-                        actual_arg_type.get_device_type_name(),
-                        ")",
-                    ]()
-                var aligned_type_size = align_up(
-                    size_of[actual_arg_type.device_type](), 8
-                )
-                if aligned_type_size != 0:
-                    num_translated_args += 1
-                    translated_arg_offsets[i] = tmp_arg_offset
-                    tmp_arg_offset += aligned_type_size
-                else:
-                    translated_arg_offsets[i] = -1
 
         var num_captures = self._func_impl.num_captures
         alias populate = type_of(self._func_impl).populate

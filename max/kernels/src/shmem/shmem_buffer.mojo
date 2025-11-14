@@ -69,6 +69,18 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
             self._ctx_ptr = ctx._handle
             self._size = size
 
+    @doc_private
+    @always_inline
+    fn __init__(
+        out self,
+        ctx: DeviceContext,
+        data: UnsafePointer[Scalar[dtype]],
+        size: Int,
+    ):
+        self._data = data
+        self._ctx_ptr = ctx._handle
+        self._size = size
+
     fn __del__(deinit self):
         shmem_free(self._data)
 
