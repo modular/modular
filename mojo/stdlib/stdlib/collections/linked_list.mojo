@@ -242,7 +242,7 @@ struct LinkedList[
         Notes:
             Time Complexity: O(1).
         """
-        var addr = alloc[Node[ElementType]](1)
+        var addr = alloc[Node[Self.ElementType]](1)
         if not addr:
             abort("Out of memory")
         var value_ptr = UnsafePointer(to=addr[].value)
@@ -266,7 +266,7 @@ struct LinkedList[
             Time Complexity: O(1).
         """
         var node = Node(value^, None, self._head)
-        var addr = alloc[Node[ElementType]](1)
+        var addr = alloc[Node[Self.ElementType]](1)
         if not addr:
             abort("Out of memory")
         addr.init_pointee_move(node^)
@@ -456,7 +456,7 @@ struct LinkedList[
         i = max(0, i if i >= 0 else i + len(self))
 
         if i == 0:
-            var node = alloc[Node[ElementType]](1)
+            var node = alloc[Node[Self.ElementType]](1)
             if not node:
                 abort("Out of memory")
             node.init_pointee_move(
@@ -482,7 +482,7 @@ struct LinkedList[
         var current = self._get_node_ptr(i)
         if current:
             var next = current[].next
-            var node = alloc[Node[ElementType]](1)
+            var node = alloc[Node[Self.ElementType]](1)
             if not node:
                 abort("Out of memory")
             var data = UnsafePointer(to=node[].value)
