@@ -26,13 +26,13 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Device, DLPackArray, Tensor
+from max.driver import CPU, Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.graph import Weight
+from max.graph.tensor_utils import cast_dlpack_to, cast_tensor_to
 from max.graph.type import DeviceRef, TensorType
 from max.graph.value import TensorValue
 from max.graph.weights import WeightData, WeightsFormat, load_weights
-from max.graph.weights.weights import _cast_to_dtype
 from max.interfaces import (
     LoRAStatus,
     LoRAType,
@@ -432,7 +432,8 @@ class LoRAModel:
                     weight_np = padded
 
                 # Cast to base dtype after padding
-                data.data = _cast_to_dtype(weight_np, data.dtype, base_dtype)
+                weight_tensor = Tensor.from_numpy(weight_np)
+                data.data = cast_tensor_to(weight_tensor, base_dtype)
                 self._lora_A[key] = data
             elif LoRAType.B.value in key:
                 # A minor optimization so we don't have to multiply scale
@@ -452,10 +453,13 @@ class LoRAModel:
                     weight_np = padded
 
                 # Cast to base dtype after padding
-                data.data = _cast_to_dtype(weight_np, data.dtype, base_dtype)
+                weight_tensor = Tensor.from_numpy(weight_np)
+                data.data = cast_tensor_to(weight_tensor, base_dtype)
                 self._lora_B[key] = data
             elif LoRAType.BIAS.value in key:
-                data.data = _cast_to_dtype(data.data, data.dtype, base_dtype)
+                data.data = cast_dlpack_to(
+                    data.data, data.dtype, base_dtype, CPU()
+                )
                 self._lora_bias[key] = data
             else:
                 raise ValueError(f"Invalid LoRA type got key: {key}")
@@ -849,9 +853,10 @@ class LoRAManager:
         # cast from fp32 -> target dtype
         # if target dtype is bfloat16, this technically returns a float16 np.ndarray
         # we then view the MAX Tensor to get the correct dtype
-        weight = _cast_to_dtype(
-            Tensor.from_numpy(weight_np), DType.float32, base_weight.dtype
-        ).copy(base_weight.device.to_device())
+        weight_tensor = Tensor.from_numpy(weight_np)
+        weight = cast_tensor_to(weight_tensor, base_weight.dtype).copy(
+            base_weight.device.to_device()
+        )
 
         lora_weights = WeightData(
             weight,

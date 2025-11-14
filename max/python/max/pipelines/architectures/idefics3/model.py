@@ -26,6 +26,7 @@ from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph.tensor_utils import cast_dlpack_to
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -95,46 +96,6 @@ def _assert_image_embeddings_invariant(
         f"Vision embedding shape mismatch: {embed_count} embeddings "
         f"but {indices_count} indices."
     )
-
-
-_INF_SESSION = None
-_CAST_MODEL = None
-
-
-def _cast_to_dtype(
-    raw_tensor: DLPackArray, old_dtype: DType, new_dtype: DType, device: Device
-) -> Tensor:
-    # FIXME: This is a circular dep
-    from max.engine import InferenceSession
-
-    tensor = Tensor.from_dlpack(raw_tensor)
-
-    original_shape = tensor.shape
-    global _INF_SESSION
-    if not _INF_SESSION:
-        _INF_SESSION = InferenceSession(devices=[device])
-
-    global _CAST_MODEL
-    if not _CAST_MODEL:
-        with Graph(
-            "cast",
-            input_types=[
-                TensorType(
-                    dtype=old_dtype,
-                    shape=["dim"],
-                    device=DeviceRef.from_device(device),
-                )
-            ],
-        ) as graph:
-            graph.output(graph.inputs[0].tensor.cast(new_dtype))
-
-        _CAST_MODEL = _INF_SESSION.load(graph)
-
-    result = _CAST_MODEL(
-        tensor.view(old_dtype, [tensor.num_elements]).to(device)
-    )[0]
-    assert isinstance(result, Tensor)
-    return result.view(new_dtype, original_shape)
 
 
 class _VisionStacker:
@@ -630,7 +591,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         final_images = self._stacker.stack(images)
 
-        return _cast_to_dtype(
+        return cast_dlpack_to(
             final_images, DType.float32, DType.bfloat16, self.devices[0]
         )
 

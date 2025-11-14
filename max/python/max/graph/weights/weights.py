@@ -18,52 +18,15 @@ from collections.abc import Callable, Iterator
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 import numpy.typing as npt
-from max.driver import CPU, DLPackArray, Tensor
+from max.driver import CPU, DLPackArray
 from max.dtype import DType
 
-from .. import Graph, TensorType
 from ..quantization import QuantizationEncoding
+from ..tensor_utils import cast_dlpack_to
 from ..type import DeviceRef, Shape, ShapeLike
 from ..weight import Weight
 
 _Self = TypeVar("_Self", bound="Weights")
-
-_INF_SESSION = None
-_CAST_MODEL = None
-
-
-def _cast_to_dtype(
-    raw_tensor: DLPackArray, old_dtype: DType, new_dtype: DType
-) -> Tensor:
-    # FIXME: This is a circular dep
-    from max.engine import InferenceSession  # type: ignore
-
-    tensor = Tensor.from_dlpack(raw_tensor)
-
-    original_shape = tensor.shape
-    global _INF_SESSION
-    if not _INF_SESSION:
-        _INF_SESSION = InferenceSession(devices=[CPU()])
-
-    global _CAST_MODEL
-    if not _CAST_MODEL:
-        with Graph(
-            "cast",
-            input_types=[
-                TensorType(
-                    dtype=old_dtype,
-                    shape=["dim"],
-                    device=DeviceRef.from_device(CPU()),
-                )
-            ],
-        ) as graph:
-            graph.output(graph.inputs[0].tensor.cast(new_dtype))
-
-        _CAST_MODEL = _INF_SESSION.load(graph)
-
-    result = _CAST_MODEL(tensor.view(old_dtype, [tensor.num_elements]))[0]
-    assert isinstance(result, Tensor)
-    return result.view(new_dtype, original_shape)
 
 
 @runtime_checkable
@@ -279,7 +242,7 @@ class WeightData(DLPackArray):
         """
         if self.dtype == dtype:
             return self
-        data = _cast_to_dtype(self.data, self.dtype, dtype)
+        data = cast_dlpack_to(self.data, self.dtype, dtype, CPU())
         return WeightData(
             data=data,
             name=self.name,
