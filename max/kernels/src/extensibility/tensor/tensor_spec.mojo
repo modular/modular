@@ -26,7 +26,7 @@ from utils import IndexList, product
 @fieldwise_init
 @register_passable("trivial")
 struct RuntimeTensorSpec[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
-    var shape: IndexList[rank]
+    var shape: IndexList[Self.rank]
 
     fn __getitem__(self, idx: Int) -> Int:
         return self.shape[idx]
@@ -38,4 +38,4 @@ struct RuntimeTensorSpec[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
         Returns:
           The total byte count.
         """
-        return product(self.shape) * size_of[dtype]()
+        return product(self.shape) * size_of[Self.dtype]()

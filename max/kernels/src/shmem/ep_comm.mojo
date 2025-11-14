@@ -132,11 +132,13 @@ trait TokenFormat(DevicePassable):
 struct BF16TokenFormat[
     output_layout: Layout, //, _hid_dim: Int, _top_k: Int, _alignment: Int
 ](TokenFormat):
-    alias hid_dim = _hid_dim
-    alias top_k = _top_k
-    alias alignment = _alignment
+    alias hid_dim = Self._hid_dim
+    alias top_k = Self._top_k
+    alias alignment = Self._alignment
 
-    alias TensorType = LayoutTensor[DType.bfloat16, output_layout, MutAnyOrigin]
+    alias TensorType = LayoutTensor[
+        DType.bfloat16, Self.output_layout, MutAnyOrigin
+    ]
     var output_tokens: Self.TensorType
 
     alias device_type: AnyType = Self
@@ -154,7 +156,7 @@ struct BF16TokenFormat[
     fn get_type_name() -> String:
         return String(
             "BF16TokenFormat[output_layout = ",
-            String(output_layout),
+            String(Self.output_layout),
             ", hid_dim = ",
             String(Self.hid_dim),
             ", top_k = ",
@@ -234,13 +236,15 @@ struct BlockwiseFP8TokenFormat[
     _top_k: Int,
     _alignment: Int,
 ](TokenFormat):
-    alias hid_dim = _hid_dim
-    alias top_k = _top_k
-    alias alignment = _alignment
+    alias hid_dim = Self._hid_dim
+    alias top_k = Self._top_k
+    alias alignment = Self._alignment
 
-    alias TensorType = LayoutTensor[fp8_dtype, output_layout, MutAnyOrigin]
+    alias TensorType = LayoutTensor[
+        Self.fp8_dtype, Self.output_layout, MutAnyOrigin
+    ]
     alias ScalesTensorType = LayoutTensor[
-        scales_dtype, scales_layout, MutAnyOrigin
+        Self.scales_dtype, Self.scales_layout, MutAnyOrigin
     ]
     var output_tokens: Self.TensorType
     var output_scales: Self.ScalesTensorType

@@ -24,11 +24,11 @@ trait TuningConfig(ImplicitlyCopyable, Movable, Stringable):
 
 # DO NOT CHANGE
 struct Table[type: TuningConfig](Stringable):
-    var configs: List[type]
+    var configs: List[Self.type]
     var name: String
     var num_configs: UInt
 
-    fn __init__(out self, configs: List[type], name: String):
+    fn __init__(out self, configs: List[Self.type], name: String):
         self.configs = configs.copy()
         self.name = name
         self.num_configs = UInt(len(configs))
@@ -73,7 +73,7 @@ struct Table[type: TuningConfig](Stringable):
     #     These indices are marked valid in the flag and may not represent the entire domain.
     #   - Returns a list of matching indices, not the entire domain.
     fn query_index[
-        rule: fn (type) capturing -> Bool, domain: List[Int] = List[Int]()
+        rule: fn (Self.type) capturing -> Bool, domain: List[Int] = List[Int]()
     ](self) -> List[Int]:
         var flag: List[Bool]
 
@@ -97,7 +97,7 @@ struct Table[type: TuningConfig](Stringable):
     # Apply rule on all configs in the table and return list of all the unique results.
     fn query_values[
         ret_type: Comparable & ImplicitlyCopyable & Movable,
-        rule: fn (type) capturing -> ret_type,
+        rule: fn (Self.type) capturing -> ret_type,
         domain: List[Int] = List[Int](),
     ](self) -> List[ret_type]:
         var result = List[ret_type]()
@@ -125,9 +125,9 @@ struct Table[type: TuningConfig](Stringable):
         return result^
 
     fn find[
-        rule: fn (type) capturing -> Bool,
-    ](self) -> List[type]:
-        var result = List[type]()
+        rule: fn (Self.type) capturing -> Bool,
+    ](self) -> List[Self.type]:
+        var result = List[Self.type]()
 
         for config in self.configs:
             if rule(config):

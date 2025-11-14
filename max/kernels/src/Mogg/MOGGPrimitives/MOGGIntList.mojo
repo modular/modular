@@ -24,7 +24,7 @@ struct IntList[static_values: DimList = DimList()](
 ):
     # Array must be >= 1 length, so we clamp to that if we have unknown
     # length shape. DimList of size 0 represents a dynamically ranked list.
-    alias _length = static_values.__len__()
+    alias _length = Self.static_values.__len__()
     alias _safe_len = max(1, Self._length)
 
     # An alias to a parameter of the same sized shape as this but with the values unknown.
@@ -102,7 +102,7 @@ struct IntList[static_values: DimList = DimList()](
 
     @always_inline
     fn __init__[rank: Int](out self, shape: IndexList[rank]):
-        constrained[rank == len(static_values)]()
+        constrained[rank == len(Self.static_values)]()
         self.length = rank
         self.data = UnsafePointer[Int]()
         self.stack_alloc_data = rebind[IndexList[Self._safe_len]](shape)
