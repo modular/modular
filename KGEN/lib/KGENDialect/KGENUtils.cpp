@@ -2399,15 +2399,16 @@ KGEN::evaluateVariadicMap(VariadicMapAttr variadicMapAttr,
     return failure();
 
   // We have a concrete value for both the generator/variadic, then fold them.
-  SmallVector<TypedAttr> mappedVals;
-  for (unsigned i = 0; i < va.getValues().size(); i++) {
+  unsigned eltCnt = va.getValues().size();
+  SmallVector<TypedAttr> mappedVals(eltCnt, nullptr);
+  for (unsigned i = 0; i < eltCnt; i++) {
     IntegerAttr vaIdx = IntegerAttr::get(IndexType::get(va.getContext()), i);
     GeneratorAttr spGen =
         gen.getSpecializedGenerator({va, vaIdx}, evaluationContext);
     // This should never happen, we should have verified VariadicMapAttr.
     assert(spGen && spGen.isFullyBound() && "invalid form of variadic map");
     auto valueInst = spGen.getInstantiatedValue();
-    mappedVals.push_back(valueInst);
+    mappedVals[i] = valueInst;
   }
 
   return {VariadicAttr::get(mappedVals, variadicMapAttr.getType())};
