@@ -1192,7 +1192,6 @@ ErrorTreeOrSuccess CastOp::interpret(ArrayRef<Attribute> operands,
   auto inputType = cast<SIMDType>(cast<TypedAttr>(operands[0]).getType());
   auto outputType = cast<SIMDType>(getOutput().getType());
 
-  // if (auto result = fold(operands)) {
   if (auto result = castOpfoldHelper(*this, operands, resultType, inputType,
                                      outputType)) {
     state.mapResults(cast<Attribute>(result));
