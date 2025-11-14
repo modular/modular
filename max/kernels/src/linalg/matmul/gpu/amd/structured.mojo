@@ -25,21 +25,18 @@ from layout.tensor_core import num_matrix_reg, TensorCore
 from linalg.structuring import SMemTileType, RegTileType
 from sys._assembly import inlined_assembly
 from utils import IndexList, StaticTuple
+from gpu.intrinsics import load_acquire, store_release
 
 
-# NOTE: this struct might be a little overkill. may be consider simplifying this
-@fieldwise_init
 @register_passable("trivial")
-struct ThreadRole(Stringable, Writable):
-    var _value: UInt8
-
-    alias PRODUCER = Self(0)
-    alias CONSUMER = Self(1)
-    alias PRODUCER_CONSUMER = Self(2)
+trait Enum:
+    @always_inline
+    fn value(self) -> Int:
+        ...
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        return self.value() == other.value()
 
     @always_inline
     fn __ne__(self, other: Self) -> Bool:
@@ -52,6 +49,20 @@ struct ThreadRole(Stringable, Writable):
     @always_inline
     fn __isnot__(self, other: Self) -> Bool:
         return self != other
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct ThreadRole(Enum, Stringable, Writable):
+    var _value: Int
+
+    @always_inline
+    fn value(self) -> Int:
+        return self._value
+
+    alias PRODUCER = Self(0)
+    alias CONSUMER = Self(1)
+    alias PRODUCER_CONSUMER = Self(2)
 
     @always_inline
     fn __str__(self) -> String:
@@ -134,7 +145,41 @@ struct SMemBuffer[
 
 
 @register_passable("trivial")
-struct AMDSharedMemoryBarrier[size: Int]:
+struct AMDSharedMemoryBarrier:
+    var __repr: Int32
+
+    @always_inline
+    fn initialize(ref [AddressSpace.SHARED, MutAnyOrigin]self):
+        self.__repr = 0
+
+    @always_inline
+    fn value(ref [AddressSpace.SHARED]self) -> Int32:
+        var bar = rebind[
+            UnsafePointer[
+                Scalar[DType.int32], address_space = AddressSpace.SHARED
+            ]
+        ](Pointer(to=self.__repr))
+        return load_acquire(bar)
+
+    @always_inline
+    fn increment(ref [AddressSpace.SHARED, MutAnyOrigin]self, warp_id: Int):
+        var bar = rebind[
+            UnsafePointer[
+                Scalar[DType.int32], address_space = AddressSpace.SHARED
+            ]
+        ](Pointer(to=self.__repr))
+        store_release(bar, load_acquire(bar) + 1)
+
+    @always_inline
+    fn wait_until_greater_or_equal_to(ref [AddressSpace.SHARED]self, v: Int32):
+        while self.value() < v:
+            inlined_assembly[
+                "s_sleep 0", NoneType, constraints="", has_side_effect=True
+            ]()
+
+
+@register_passable("trivial")
+struct AMDWarpSharedMemoryBarrier[size: Int]:
     var __repr: StaticTuple[Int32, size]
 
     @always_inline
@@ -158,13 +203,6 @@ struct AMDSharedMemoryBarrier[size: Int]:
             ]
         ](Pointer(to=self.__repr))
         bar[warp_id] += 1
-
-    @always_inline
-    fn wait_until_equal_to(ref [AddressSpace.SHARED]self, v: Int32):
-        while self.value() != v:
-            inlined_assembly[
-                "s_sleep 0", NoneType, constraints="", has_side_effect=True
-            ]()
 
     @always_inline
     fn wait_until_greater_or_equal_to(ref [AddressSpace.SHARED]self, v: Int32):

@@ -10,13 +10,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""
+Ring Buffer implementation for producer-consumer synchronization in GPU kernels.
 
-from gpu import warp_id as get_warp_id
+This ring buffer coordinates data transfer between producer warps (loading from global memory)
+and consumer warps (performing computation) through shared memory tiles.
+
+Key features:
+- Configurable synchronization strategies via the SyncStrategy trait
+- Pipeline stages for overlapping data transfer and computation
+- Context managers for automatic acquire/release of tiles
+- Phase-based synchronization to prevent data races
+"""
+
+from gpu import thread_idx, WARP_SIZE
 from layout import Layout
 from linalg.structuring import SMemArrayType
+from os.atomic import Atomic
+from sys._assembly import inlined_assembly
 from utils import StaticTuple
 
-from .structured import AMDSharedMemoryBarrier, SMemBuffer
+from .structured import SMemBuffer
+from .ring_buffer_traits import (
+    SyncStrategy,
+    SingleCounterSync,
+    SplitCounterSync,
+    wait_for_counter,
+    increment_counter_if_first_thread,
+)
+
+
+# ===----------------------------------------------------------------------=== #
+# Tile Context Managers
+# ===----------------------------------------------------------------------=== #
 
 
 @register_passable("trivial")
@@ -24,18 +50,19 @@ struct ProducerTile[
     origin: Origin[True],
     ring_buffer_type: type_of(RingBuffer),
     warps_processed_per_producer: Int,
-    producer_warps: Int,
 ]:
     """Context manager for producer access to a single ring buffer tile."""
 
-    alias ProducerViewType = RingBufferProducer[
-        origin, ring_buffer_type, warps_processed_per_producer, producer_warps
+    alias ProducerViewType = ProducerView[
+        origin,
+        ring_buffer_type,
+        warps_processed_per_producer,
     ]
     alias ProducerViewPtrType = Pointer[Self.ProducerViewType, origin]
 
     var producer_view_ptr: Self.ProducerViewPtrType
-    var tile: ring_buffer_type.SmemBufferType.WarpTileType
     var stage: Int
+    var producer_iteration: Int  # Which iteration this producer is on
     var warp_tile_idx: Int
 
     @always_inline
@@ -43,23 +70,25 @@ struct ProducerTile[
         out self,
         producer_view_ptr: Self.ProducerViewPtrType,
         stage: Int,
+        producer_iteration: Int,
         warp_tile_idx: Int,
     ):
         self.producer_view_ptr = producer_view_ptr
         self.stage = stage
+        self.producer_iteration = producer_iteration
         self.warp_tile_idx = warp_tile_idx
-        # Acquire the tile
-        self.tile = self.producer_view_ptr[].get_tile(stage, warp_tile_idx)
 
     @always_inline
-    fn __enter__(mut self) -> ring_buffer_type.SmemBufferType.WarpTileType:
-        """Return the acquired tile for use."""
-        return self.tile
+    fn __enter__(mut self) -> ring_buffer_type.WarpTileTupleType:
+        """Acquire the tile for use."""
+        return self.producer_view_ptr[].acquire_tiles(
+            self.stage, self.producer_iteration, self.warp_tile_idx
+        )
 
     @always_inline
     fn __exit__(mut self):
         """Release the tile back to consumers."""
-        self.producer_view_ptr[].release_tile(self.stage, self.warp_tile_idx)
+        self.producer_view_ptr[].release_tiles(self.stage, self.warp_tile_idx)
 
 
 @register_passable("trivial")
@@ -67,21 +96,19 @@ struct ConsumerTile[
     origin: Origin[True],
     ring_buffer_type: type_of(RingBuffer),
     warps_computed_per_consumer: Int,
-    num_consumer_warps: Int,
 ]:
     """Context manager for consumer access to a single ring buffer tile."""
 
-    alias ConsumerViewType = RingBufferConsumer[
+    alias ConsumerViewType = ConsumerView[
         origin,
         ring_buffer_type,
         warps_computed_per_consumer,
-        num_consumer_warps,
     ]
     alias ConsumerViewPtrType = Pointer[Self.ConsumerViewType, origin]
 
     var consumer_view_ptr: Self.ConsumerViewPtrType
-    var tile: ring_buffer_type.SmemBufferType.WarpTileType
     var stage: Int
+    var consumer_iteration: Int  # Which iteration this consumer is on
     var warp_tile_idx: Int
 
     @always_inline
@@ -89,36 +116,39 @@ struct ConsumerTile[
         out self,
         consumer_view_ptr: Self.ConsumerViewPtrType,
         stage: Int,
-        local_tile_count: Int,
+        consumer_iteration: Int,
         warp_tile_idx: Int,
     ):
         self.consumer_view_ptr = consumer_view_ptr
         self.stage = stage
+        self.consumer_iteration = consumer_iteration
         self.warp_tile_idx = warp_tile_idx
-        # Acquire the tile
-        self.tile = self.consumer_view_ptr[].get_tile(
-            stage, local_tile_count, warp_tile_idx
-        )
 
     @always_inline
-    fn __enter__(mut self) -> ring_buffer_type.SmemBufferType.WarpTileType:
-        """Return the acquired tile for use."""
-        return self.tile
+    fn __enter__(mut self) -> ring_buffer_type.WarpTileTupleType:
+        """Acquire the tile for use."""
+        return self.consumer_view_ptr[].acquire_tiles(
+            self.stage, self.consumer_iteration, self.warp_tile_idx
+        )
 
     @always_inline
     fn __exit__(mut self):
         """Release the tile back to producers."""
-        self.consumer_view_ptr[].release_tile(self.stage, self.warp_tile_idx)
+        self.consumer_view_ptr[].release_tiles(self.stage, self.warp_tile_idx)
+
+
+# ===----------------------------------------------------------------------=== #
+# Producer and Consumer Views
+# ===----------------------------------------------------------------------=== #
 
 
 @register_passable("trivial")
-struct RingBufferProducer[
+struct ProducerView[
     origin: Origin[True],
     ring_buffer_type: type_of(RingBuffer),
     warps_processed_per_producer: Int,
-    producer_warps: Int,
 ]:
-    """Producer view of the ring buffer with phase management."""
+    """Producer view of the unified ring buffer."""
 
     alias RingBufferPtrType = Pointer[ring_buffer_type, origin]
 
@@ -133,63 +163,93 @@ struct RingBufferProducer[
         self.phases = StaticTuple[
             Int32,
             ring_buffer_type.pipeline_stages * warps_processed_per_producer,
-        ](fill=0)
+        ](
+            fill=0
+        )  # Producers start at phase 0
 
     @always_inline
     fn __enter__(mut self) -> Self:
-        """Context manager entry - no special initialization needed for producer.
-        """
+        """Context manager entry."""
         return self
 
     @always_inline
     fn __exit__(mut self):
-        """Context manager exit - no cleanup needed."""
+        """Context manager exit."""
         pass
+
+    @always_inline
+    fn acquire_tiles(
+        mut self,
+        stage: Int,
+        producer_iteration: Int,
+        warp_tile_idx: Int,
+    ) -> ring_buffer_type.WarpTileTupleType:
+        """Acquire tiles for writing by this producer.
+
+        Args:
+            stage: Pipeline stage to write to.
+            producer_iteration: Which iteration this producer is on (0 to warps_processed_per_producer-1).
+            warp_tile_idx: Which tile this producer is responsible for.
+        """
+        # Compute phase index based on stage and iteration
+        var phase_idx = (
+            stage * warps_processed_per_producer + producer_iteration
+        )
+        var phase = self.phases[phase_idx]
+
+        # Wait until consumers have finished with this tile
+        self.ring_buffer_ptr[].wait_producer_acquire(
+            warp_tile_idx, stage, phase
+        )
+
+        # Update phase for next pipeline cycle
+        self.phases[
+            phase_idx
+        ] += self.ring_buffer_ptr[].get_producer_phase_increment()
+
+        # Return the tiles from shared memory
+        return self.ring_buffer_ptr[].get_tiles(stage, warp_tile_idx)
+
+    @always_inline
+    fn release_tiles(mut self, stage: Int, warp_tile_idx: Int):
+        """Signal to consumers that tile is ready."""
+        self.ring_buffer_ptr[].signal_producer_release(warp_tile_idx, stage)
+
+    alias ProducerTileType = ProducerTile[
+        origin,
+        ring_buffer_type,
+        warps_processed_per_producer,
+    ]
 
     @always_inline
     fn get_tile(
         mut self,
         stage: Int,
         warp_tile_idx: Int,
-    ) -> ring_buffer_type.SmemBufferType.WarpTileType:
-        # Compute phase_idx directly from stage and warp_tile_idx
-        var phase_idx = stage * warps_processed_per_producer + (
-            warp_tile_idx // producer_warps
-        )
-        return self.ring_buffer_ptr[].get_tile(
-            self.phases[phase_idx], stage, warp_tile_idx
-        )
-
-    @always_inline
-    fn release_tile(mut self, stage: Int, warp_tile_idx: Int):
-        self.ring_buffer_ptr[].release_tile(stage, warp_tile_idx)
-
-    alias ProducerTileType = ProducerTile[
-        origin, ring_buffer_type, warps_processed_per_producer, producer_warps
-    ]
-
-    @always_inline
-    fn acquire_tile(
-        mut self,
-        stage: Int,
-        warp_tile_idx: Int,
+        producer_iteration: Int,
     ) -> Self.ProducerTileType:
-        """Get a context manager for accessing a tile."""
+        """Get a context manager for accessing a tile.
+
+        Args:
+            stage: Pipeline stage.
+            warp_tile_idx: Which tile to access.
+            producer_iteration: Current iteration of this producer.
+        """
         return Self.ProducerTileType(
             rebind[Pointer[Self, origin]](Pointer(to=self)),
             stage,
+            producer_iteration,
             warp_tile_idx,
         )
 
 
 @register_passable("trivial")
-struct RingBufferConsumer[
+struct ConsumerView[
     origin: Origin[True],
     ring_buffer_type: type_of(RingBuffer),
     warps_computed_per_consumer: Int,
-    num_consumer_warps: Int,
 ]:
-    """Consumer view of the ring buffer with phase management."""
+    """Consumer view of the unified ring buffer."""
 
     alias RingBufferPtrType = Pointer[ring_buffer_type, origin]
 
@@ -197,187 +257,239 @@ struct RingBufferConsumer[
     var phases: StaticTuple[
         Int32, ring_buffer_type.pipeline_stages * warps_computed_per_consumer
     ]
-    var consumer_warp_id: Int
 
     @always_inline
-    fn __init__(
-        out self, ring_buffer_ptr: Self.RingBufferPtrType, consumer_warp_id: Int
-    ):
+    fn __init__(out self, ring_buffer_ptr: Self.RingBufferPtrType):
         self.ring_buffer_ptr = ring_buffer_ptr
         self.phases = StaticTuple[
             Int32,
             ring_buffer_type.pipeline_stages * warps_computed_per_consumer,
-        ](fill=1)
-        self.consumer_warp_id = consumer_warp_id
+        ](
+            fill=1
+        )  # Consumers start at phase 1
 
     @always_inline
     fn __enter__(mut self) -> Self:
-        """Context manager entry for consumer."""
-        # Note: AMD version doesn't have arrive_empty_barriers like SM90
-        # The synchronization is handled differently via the barrier array
+        """Context manager entry."""
         return self
 
     @always_inline
     fn __exit__(mut self):
-        """Context manager exit - no cleanup needed."""
+        """Context manager exit."""
         pass
 
     @always_inline
-    fn get_tile(
+    fn acquire_tiles(
         mut self,
         stage: Int,
-        local_tile_count: Int,
+        consumer_iteration: Int,
         warp_tile_idx: Int,
-    ) -> ring_buffer_type.SmemBufferType.WarpTileType:
-        # Phase idx is computed from stage and local_tile_count
-        var phase_idx = stage * warps_computed_per_consumer + local_tile_count
-        return self.ring_buffer_ptr[].get_tile(
-            self.phases[phase_idx], stage, warp_tile_idx
+    ) -> ring_buffer_type.WarpTileTupleType:
+        """Acquire tiles for reading by this consumer.
+
+        Args:
+            stage: Pipeline stage to read from.
+            consumer_iteration: Which iteration this consumer is on (0 to warps_computed_per_consumer-1).
+            warp_tile_idx: Which tile this consumer wants to read.
+        """
+        # Compute phase index based on stage and iteration
+        var phase_idx = stage * warps_computed_per_consumer + consumer_iteration
+        var phase = self.phases[phase_idx]
+
+        # Wait until producer has finished writing to this tile
+        self.ring_buffer_ptr[].wait_consumer_acquire(
+            warp_tile_idx, stage, phase
         )
 
+        # Update phase for next pipeline cycle
+        self.phases[
+            phase_idx
+        ] += self.ring_buffer_ptr[].get_consumer_phase_increment()
+
+        # Return the tiles from shared memory
+        return self.ring_buffer_ptr[].get_tiles(stage, warp_tile_idx)
+
     @always_inline
-    fn release_tile(mut self, stage: Int, warp_tile_idx: Int):
-        self.ring_buffer_ptr[].release_tile(stage, warp_tile_idx)
+    fn release_tiles(mut self, stage: Int, warp_tile_idx: Int):
+        """Signal to producers that tile is free."""
+        self.ring_buffer_ptr[].signal_consumer_release(warp_tile_idx, stage)
 
     alias ConsumerTileType = ConsumerTile[
         origin,
         ring_buffer_type,
         warps_computed_per_consumer,
-        num_consumer_warps,
     ]
 
     @always_inline
-    fn acquire_tile(
+    fn get_tile(
         mut self,
         stage: Int,
-        local_tile_count: Int,
+        consumer_iteration: Int,
         warp_tile_idx: Int,
     ) -> Self.ConsumerTileType:
-        """Get a context manager for accessing a tile."""
+        """Get a context manager for accessing a tile.
+
+        Args:
+            stage: Pipeline stage.
+            consumer_iteration: Current iteration of this consumer.
+            warp_tile_idx: Which tile to access.
+        """
         return Self.ConsumerTileType(
             rebind[Pointer[Self, origin]](Pointer(to=self)),
             stage,
-            local_tile_count,
+            consumer_iteration,
             warp_tile_idx,
         )
+
+
+# ===----------------------------------------------------------------------=== #
+# Main Ring Buffer Implementation
+# ===----------------------------------------------------------------------=== #
 
 
 struct RingBuffer[
     dtype: DType,
     layout: Layout,
     pipeline_stages: Int,
-    B_rows: Int,  # BM for A, BN for B
-    B_cols: Int,  # BK for both
-    W_rows: Int,  # WM for A, WN for B
-    W_cols: Int, //,  # WK for both
-    consumer_warps: Int,
-    reads_per_warp_block: Int,  # how many times the warp block will be read from shared memory
+    block_rows: Int,
+    block_cols: Int,
+    warp_rows: Int,
+    warp_cols: Int,
+    reads_per_warp_block: Int,
+    tile_buffers: Int,
+    sync_strategy_type: SyncStrategy,
 ]:
+    """Ring buffer for coordinating producer-consumer warps in matrix multiplication.
 
-    """Manages access to shared memory tiles using barriers based in shared memory.
+    Parameters:
+        dtype: Data type of elements.
+        layout: Memory layout for shared memory tiles.
+        pipeline_stages: Number of stages for software pipelining.
+        block_rows: Number of rows in block-level tiles.
+        block_cols: Number of columns in block-level tiles.
+        warp_rows: Number of rows in warp-level tiles.
+        warp_cols: Number of columns in warp-level tiles.
+        reads_per_warp_block: How many consumer warps read each tile.
+        tile_buffers: Number of separate tile buffers (usually 1).
+        sync_strategy_type: Synchronization strategy (SingleCounterSync or SplitCounterSync).
     """
 
-    # NOTE: smem can be 3D if pipelined, in that case we need a way to extract
-    # the 2D tiles that's what this does
+    alias block_warps = block_rows // warp_rows
+    alias total_tiles = Self.block_warps * pipeline_stages
 
-    # The barrier consists of integers. Producers and
-    # consumers should wait if the barrier integer value does not fit into their expected range.
-    # The rows of the barrier represent the warp tile desired. the columns consist of pipeline stages
-    # each with consumer_warps slots. If pipeline_stages is > 1 then shared memory buffering is being used.
-    # There are also consumer_warps slots for each pipeline stage, since each warp can write to the barrier
-    # at the same time causing race conditions.
-
-    alias writes_per_warp_block = 1  # only one producer writes to one warp tile
-
-    alias block_warps = B_rows // W_rows
-
-    alias BarrierArray = SMemArrayType[
-        AMDSharedMemoryBarrier[consumer_warps],
-        Self.block_warps * pipeline_stages,
-    ]
-
-    var barrier: Self.BarrierArray
     alias SmemBufferType = SMemBuffer[
-        dtype, layout, pipeline_stages, B_rows, B_cols, W_rows, W_cols
+        dtype,
+        layout,
+        pipeline_stages,
+        block_rows,
+        block_cols,
+        warp_rows,
+        warp_cols,
     ]
+    alias WarpTileType = Self.SmemBufferType.WarpTileType
+    alias SMemBuffersType = StaticTuple[Self.SmemBufferType, tile_buffers]
+    alias WarpTileTupleType = StaticTuple[Self.WarpTileType, tile_buffers]
 
-    var smem_buffer: Self.SmemBufferType
+    var smem_buffers: Self.SMemBuffersType
+    var sync_strategy: sync_strategy_type
 
     @always_inline
-    fn __init__(
-        out self,
-        smem_buffer: Self.SmemBufferType,
-    ):
-        self.smem_buffer = smem_buffer
-        self.barrier = Self.BarrierArray.stack_allocation[alignment=32]()
+    fn __init__(out self):
+        constrained[
+            Self.total_tiles <= 32,
+            (
+                "total_tiles must be less than or equal to 32 for AMD atomic"
+                " limitations"
+            ),
+        ]()
+
+        var smem_buffer = Self.SmemBufferType()
+        self.smem_buffers = StaticTuple[type_of(smem_buffer), tile_buffers](
+            smem_buffer
+        )
+
+        # Initialize sync strategy based on type
+        # We still need compile-time dispatch for the specific type
+        self.sync_strategy = sync_strategy_type()
+
+    @always_inline
+    fn get_tiles(
+        self, stage: Int, warp_tile_idx: Int
+    ) -> Self.WarpTileTupleType:
+        """Get tiles from shared memory."""
+        var result = Self.WarpTileTupleType()
 
         @parameter
-        for i in range(type_of(self.barrier).size):
-            self.barrier[i][].initialize()
-
-    @always_inline
-    fn _wait(
-        self,
-        barrier: Self.BarrierArray,
-        phase: Int32,
-        tile_idx: Int,
-        stage: Int,
-    ):
-        barrier[
-            tile_idx * pipeline_stages + stage
-        ][].wait_until_greater_or_equal_to(phase)
-
-    @always_inline
-    fn get_tile(
-        mut self,
-        mut phase: Int32,
-        stage: Int,
-        tile_idx: Int,
-    ) -> Self.SmemBufferType.WarpTileType:
-        self._wait(self.barrier, phase, tile_idx, stage)
-
-        phase += Self.writes_per_warp_block + Self.reads_per_warp_block
-        var staged_smem_tile = self.smem_buffer.get_tile(stage)
-        return staged_smem_tile.tile[W_rows, W_cols](tile_idx, 0)
-
-    @always_inline
-    fn release_tile(mut self, stage: Int, tile_idx: Int):
-        self.barrier[tile_idx * pipeline_stages + stage][].increment(
-            Int(get_warp_id() % UInt(consumer_warps))
-        )
+        for i in range(Self.tile_buffers):
+            var staged_smem_tile = self.smem_buffers[i].get_tile(stage)
+            result[i] = staged_smem_tile.tile[Self.warp_rows, Self.warp_cols](
+                warp_tile_idx, 0
+            )
+        return result
 
     @always_inline
     fn producer[
-        warps_processed_per_producer: Int, producer_warps: Int
+        warps_processed_per_producer: Int
     ](
         mut self,
-    ) -> RingBufferProducer[
+    ) -> ProducerView[
         origin_of(self),
         type_of(self),
         warps_processed_per_producer,
-        producer_warps,
     ]:
         """Create a producer view of this ring buffer."""
-        return RingBufferProducer[
+        return ProducerView[
             origin_of(self),
             type_of(self),
             warps_processed_per_producer,
-            producer_warps,
         ](Pointer(to=self))
 
     @always_inline
     fn consumer[
-        warps_computed_per_consumer: Int, num_consumer_warps: Int
-    ](mut self, consumer_warp_id: Int) -> RingBufferConsumer[
+        warps_computed_per_consumer: Int
+    ](mut self) -> ConsumerView[
         origin_of(self),
         type_of(self),
         warps_computed_per_consumer,
-        num_consumer_warps,
     ]:
         """Create a consumer view of this ring buffer."""
-        return RingBufferConsumer[
+        return ConsumerView[
             origin_of(self),
             type_of(self),
             warps_computed_per_consumer,
-            num_consumer_warps,
-        ](Pointer(to=self), consumer_warp_id)
+        ](Pointer(to=self))
+
+    @always_inline
+    fn get_staged_idx(self, tile_idx: Int, stage: Int) -> Int:
+        """Get the staged index for a tile and stage."""
+        return self.sync_strategy.get_staged_idx(tile_idx, stage)
+
+    @always_inline
+    fn wait_producer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
+        """Producer waits to acquire a tile."""
+        self.sync_strategy.wait_producer_acquire(tile_idx, stage, phase)
+
+    @always_inline
+    fn signal_producer_release(mut self, tile_idx: Int, stage: Int):
+        """Producer signals it has released a tile."""
+        self.sync_strategy.signal_producer_release(tile_idx, stage)
+
+    @always_inline
+    fn wait_consumer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
+        """Consumer waits to acquire a tile."""
+        self.sync_strategy.wait_consumer_acquire(tile_idx, stage, phase)
+
+    @always_inline
+    fn signal_consumer_release(mut self, tile_idx: Int, stage: Int):
+        """Consumer signals it has released a tile."""
+        self.sync_strategy.signal_consumer_release(tile_idx, stage)
+
+    @always_inline
+    fn get_producer_phase_increment(self) -> Int32:
+        """Get the phase increment for producers."""
+        return self.sync_strategy.get_producer_phase_increment()
+
+    @always_inline
+    fn get_consumer_phase_increment(self) -> Int32:
+        """Get the phase increment for consumers."""
+        return self.sync_strategy.get_consumer_phase_increment()
