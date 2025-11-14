@@ -231,20 +231,7 @@ class PipelineOracle(ABC):
         )
 
 
-class MultiModalPipelineOracle(PipelineOracle):
-    """Knows about a kind of pipeline.
-
-    Can provide information about that pipeline, and create other objects
-    necessary to run the model.
-    """
-
-    @property
-    def inputs(self) -> list[MockTextGenerationRequest]:
-        """Input requests for multimodal model."""
-        return test_data.DEFAULT_MULTIMODAL
-
-
-class InternVLPipelineOracle(MultiModalPipelineOracle):
+class InternVLPipelineOracle(PipelineOracle):
     """Pipeline oracle for InternVL3 architectures."""
 
     hf_repo_id: str
@@ -337,7 +324,7 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
         )
 
 
-class Idefics3PipelineOracle(MultiModalPipelineOracle):
+class Idefics3PipelineOracle(PipelineOracle):
     """Pipeline oracle for Idefics3 architectures."""
 
     hf_repo_id: str
@@ -428,7 +415,7 @@ class Idefics3PipelineOracle(MultiModalPipelineOracle):
         )
 
 
-class Qwen2_5VLPipelineOracle(MultiModalPipelineOracle):
+class Qwen2_5VLPipelineOracle(PipelineOracle):
     """Pipeline oracle for Qwen2.5VL architectures."""
 
     hf_repo_id: str
@@ -536,7 +523,12 @@ class Qwen2_5VLPipelineOracle(MultiModalPipelineOracle):
         )
 
 
-class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
+class LlamaVisionPipelineOracle(PipelineOracle):
+    @property
+    def inputs(self) -> list[MockTextGenerationRequest]:
+        """Input requests for multimodal model."""
+        return test_data.DEFAULT_MULTIMODAL
+
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
         return {
@@ -603,7 +595,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
 
-class PixtralPipelineOracle(MultiModalPipelineOracle):
+class PixtralPipelineOracle(PipelineOracle):
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
         """Input requests for Pixtral model."""
