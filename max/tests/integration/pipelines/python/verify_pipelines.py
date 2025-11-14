@@ -1111,7 +1111,7 @@ PIPELINES = {
     ),
     "deepseek-ai/DeepSeek-R1": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["8xb200"],  # Requires 8 B200s to run
+        tags=["nvidia-multi", "8xb200"],  # Requires 8 B200s to run
         run=_make_pipeline_runner(
             pipeline="deepseek-ai/DeepSeek-R1",
             encoding="float8_e4m3fn",
