@@ -343,6 +343,48 @@ def is_virtual_device_mode() -> bool:
         bool: True if virtual device mode is enabled (count > 0), False otherwise.
     """
 
+def set_virtual_device_api(api: str) -> None:
+    """
+    Set the target API for virtual devices in compile-only mode.
+
+    This specifies which GPU API (e.g., "cuda", "hip", "metal") virtual
+    devices will use for compilation. Must be called before creating
+    virtual devices via set_virtual_device_count().
+
+    Args:
+        api (str): The target API string (e.g., "cuda" for NVIDIA,
+            "hip" for AMD, "metal" for Apple).
+    """
+
+def get_virtual_device_api() -> str:
+    """
+    Get the current target API for virtual devices.
+
+    Returns:
+        str: The target API string, or empty string if not set.
+    """
+
+def set_virtual_device_target_arch(arch: str) -> None:
+    """
+    Set the target GPU architecture for virtual devices in compile-only mode.
+
+    This specifies the GPU architecture (e.g., "sm_80", "sm_90") that virtual
+    devices will target when compiling code. Must be called before creating
+    virtual devices via set_virtual_device_count().
+
+    Args:
+        arch (str): The target GPU architecture string (e.g., "sm_80" for
+            Ampere/A100, "sm_90" for Hopper/H100).
+    """
+
+def get_virtual_device_target_arch() -> str:
+    """
+    Get the current target GPU architecture for virtual devices.
+
+    Returns:
+        str: The target GPU architecture string, or empty string if not set.
+    """
+
 class Tensor:
     """
     Device-resident tensor representation.

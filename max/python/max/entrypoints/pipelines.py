@@ -413,9 +413,28 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
 
 
 @main.command(name="warm-cache", cls=WithLazyPipelineOptions)
-def cli_warm_cache(**config_kwargs) -> None:
+@click.option(
+    "--target",
+    type=str,
+    default=None,
+    help=(
+        "Target API and architecture to compile for (e.g., cuda, cuda:sm_90, "
+        "hip:gfx942). When specified, uses virtual devices for compilation "
+        "without requiring physical hardware."
+    ),
+)
+def cli_warm_cache(target: str | None, **config_kwargs) -> None:
     """Load and compile the model to prepare caches."""
     from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+
+    # Log what we're doing if target mode is enabled
+    if target:
+        from max.serve.config import parse_api_and_target_arch
+
+        api, target_arch = parse_api_and_target_arch(target)
+        logging.info(
+            f"Compiling for target: {api} ({target_arch}) using virtual devices"
+        )
 
     pipeline_config = PipelineConfig(**config_kwargs)
     _ = PIPELINE_REGISTRY.retrieve(pipeline_config)

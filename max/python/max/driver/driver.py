@@ -112,3 +112,52 @@ def devices_exist(devices: list[DeviceSpec]) -> bool:
             return False
 
     return True
+
+
+def calculate_virtual_device_count(*device_spec_lists: list[DeviceSpec]) -> int:
+    """Calculate the minimum virtual device count needed for the given device specs.
+
+    Args:
+        *device_spec_lists: One or more lists of DeviceSpec objects (e.g., main devices
+            and draft devices)
+
+    Returns:
+        The minimum number of virtual devices needed (max GPU ID + 1), or 1 if no GPUs
+    """
+    max_gpu_id = -1
+    for device_specs in device_spec_lists:
+        for device_spec in device_specs:
+            if device_spec.device_type == "gpu":
+                max_gpu_id = max(max_gpu_id, device_spec.id)
+
+    return max(1, max_gpu_id + 1)
+
+
+def calculate_virtual_device_count_from_cli(
+    *device_inputs: str | list[int],
+) -> int:
+    """Calculate virtual device count from raw CLI inputs (before parsing).
+
+    This helper works with the raw device input strings or lists before they're
+    parsed into DeviceSpec objects. Used when virtual device mode needs to be
+    enabled before device validation occurs.
+
+    Args:
+        *device_inputs: One or more raw device inputs - either strings like "gpu:0,1,2"
+            or lists of integers like [0, 1, 2]
+
+    Returns:
+        The minimum number of virtual devices needed (max GPU ID + 1), or 1 if no GPUs
+    """
+    max_gpu_id = -1
+    for device_input in device_inputs:
+        if isinstance(device_input, list):
+            # Handle list of GPU IDs like [0, 1, 2]
+            if len(device_input) > 0:
+                max_gpu_id = max(max_gpu_id, max(device_input))
+        elif device_input in ("gpu", "default"):
+            # Handle "gpu" or "default" which means GPU 0
+            max_gpu_id = max(max_gpu_id, 0)
+        # Other string formats (like "gpu:0,1,2") are handled by the DevicesOptionType parser
+
+    return max(1, max_gpu_id + 1)
