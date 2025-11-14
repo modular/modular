@@ -20,9 +20,9 @@ fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
 
 # start-infer-struct-param
 struct One[Type: Writable & Copyable & Movable]:
-    var value: Type
+    var value: Self.Type
 
-    fn __init__(out self, value: Type):
+    fn __init__(out self, value: Self.Type):
         self.value = value.copy()
 
 
@@ -36,16 +36,16 @@ def use_one():
 
 # start-infer-constructor-static-param
 struct Two[Type: Writable & Copyable & Movable]:
-    var val1: Type
-    var val2: Type
+    var val1: Self.Type
+    var val2: Self.Type
 
-    fn __init__(out self, one: One[Type], another: One[Type]):
+    fn __init__(out self, one: One[Self.Type], another: One[Self.Type]):
         self.val1 = one.value.copy()
         self.val2 = another.value.copy()
         print(String(self.val1), String(self.val2))
 
     @staticmethod
-    fn fire(thing1: One[Type], thing2: One[Type]):
+    fn fire(thing1: One[Self.Type], thing2: One[Self.Type]):
         print("🔥", String(thing1.value), String(thing2.value))
 
 

@@ -696,7 +696,7 @@ struct Doublespeak(Repeater):
     alias count: Int = 2
 
 struct Multispeak[verbosity: Int](Repeater):
-    alias count: Int = verbosity*2+1
+    alias count: Int = Self.verbosity * 2 + 1
 ```
 
 The `Doublespeak` struct has a constant value for the alias, but the `Multispeak`
@@ -735,7 +735,7 @@ underlying storage:
 ```mojo
 struct MyStack[type: Copyable & Movable](Stacklike):
     """A simple Stack built using a List."""
-    alias EltType = type
+    alias EltType = Self.type
     alias list_type = List[Self.EltType]
 
     var list: Self.list_type

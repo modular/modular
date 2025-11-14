@@ -22,7 +22,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Movable, Stringable):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    alias num_cells = rows * cols
+    alias num_cells = Self.rows * Self.cols
     var data: UnsafePointer[Int8, MutOrigin.external]
 
     # ===-------------------------------------------------------------------===#
@@ -62,10 +62,10 @@ struct Grid[rows: Int, cols: Int](Copyable, Movable, Stringable):
     # ===-------------------------------------------------------------------===#
 
     fn __getitem__(self, row: Int, col: Int) -> Int8:
-        return (self.data + row * cols + col)[]
+        return (self.data + row * Self.cols + col)[]
 
     fn __setitem__(mut self, row: Int, col: Int, value: Int8) -> None:
-        (self.data + row * cols + col)[] = value
+        (self.data + row * Self.cols + col)[] = value
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -73,13 +73,13 @@ struct Grid[rows: Int, cols: Int](Copyable, Movable, Stringable):
 
     fn __str__(self) -> String:
         str = String()
-        for row in range(rows):
-            for col in range(cols):
+        for row in range(Self.rows):
+            for col in range(Self.cols):
                 if self[row, col] == 1:
                     str += "*"
                 else:
                     str += " "
-            if row != rows - 1:
+            if row != Self.rows - 1:
                 str += "\n"
         return str
 
@@ -90,15 +90,15 @@ struct Grid[rows: Int, cols: Int](Copyable, Movable, Stringable):
     fn evolve(self) -> Self:
         next_generation = Self()
 
-        for row in range(rows):
+        for row in range(Self.rows):
             # Calculate neighboring row indices, handling "wrap-around"
-            row_above = (row - 1) % rows
-            row_below = (row + 1) % rows
+            row_above = (row - 1) % Self.rows
+            row_below = (row + 1) % Self.rows
 
-            for col in range(cols):
+            for col in range(Self.cols):
                 # Calculate neighboring column indices, handling "wrap-around"
-                col_left = (col - 1) % cols
-                col_right = (col + 1) % cols
+                col_left = (col - 1) % Self.cols
+                col_right = (col + 1) % Self.cols
 
                 # Determine number of populated cells around the current cell
                 num_neighbors = (

@@ -13,18 +13,18 @@
 
 
 struct GenericArray[ElementType: Copyable & Movable]:
-    var data: UnsafePointer[ElementType, MutOrigin.external]
+    var data: UnsafePointer[Self.ElementType, MutOrigin.external]
     var size: Int
 
-    fn __init__(out self, var *elements: ElementType):
+    fn __init__(out self, var *elements: Self.ElementType):
         self.size = len(elements)
-        self.data = alloc[ElementType](self.size)
+        self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
             (self.data + i).init_pointee_move(elements[i].copy())
 
-    fn __init__(out self, *, count: Int, value: ElementType):
+    fn __init__(out self, *, count: Int, value: Self.ElementType):
         self.size = count
-        self.data = alloc[ElementType](self.size)
+        self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
             (self.data + i).init_pointee_copy(value)
 
@@ -33,14 +33,14 @@ struct GenericArray[ElementType: Copyable & Movable]:
             (self.data + i).destroy_pointee()
         self.data.free()
 
-    fn __getitem__(self, i: Int) raises -> ref [self] ElementType:
+    fn __getitem__(self, i: Int) raises -> ref [self] Self.ElementType:
         if i < self.size:
             return self.data[i]
         else:
             raise Error("Out of bounds")
 
     @staticmethod
-    fn splat(count: Int, value: ElementType) -> Self:
+    fn splat(count: Int, value: Self.ElementType) -> Self:
         # Create a new array with count instances of the given value
         return Self(count=count, value=value)
 

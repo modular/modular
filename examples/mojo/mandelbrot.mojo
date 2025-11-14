@@ -34,13 +34,15 @@ alias max_y = 1.5
 
 
 struct Matrix[dtype: DType, rows: Int, cols: Int]:
-    var data: UnsafePointer[Scalar[dtype], MutOrigin.external]
+    var data: UnsafePointer[Scalar[Self.dtype], MutOrigin.external]
 
     fn __init__(out self):
-        self.data = alloc[Scalar[dtype]](rows * cols)
+        self.data = alloc[Scalar[Self.dtype]](Self.rows * Self.cols)
 
-    fn store[nelts: Int](self, row: Int, col: Int, val: SIMD[dtype, nelts]):
-        self.data.store(row * cols + col, val)
+    fn store[
+        nelts: Int
+    ](self, row: Int, col: Int, val: SIMD[Self.dtype, nelts]):
+        self.data.store(row * Self.cols + col, val)
 
 
 fn mandelbrot_kernel_SIMD[
