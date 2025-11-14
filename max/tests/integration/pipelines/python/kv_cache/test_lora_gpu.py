@@ -21,8 +21,8 @@ from max.driver import CPU, Accelerator, Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
+from max.graph.tensor_utils import cast_tensor_to
 from max.graph.weights import WeightData
-from max.graph.weights.weights import _cast_to_dtype
 from max.kv_cache import (
     PagedKVCacheManager,
 )
@@ -93,16 +93,14 @@ def create_lora_buffers(
     )
     lora_B = lora_B * alpha / rank
     lora_A_buffer[0, :, :].inplace_copy_from(
-        _cast_to_dtype(
+        cast_tensor_to(
             Tensor.from_numpy(safe_tensor_to_numpy(lora_A)),
-            DType.float32,
             DType.bfloat16,
         ).to(device)
     )
     lora_B_buffer[0, :, :].inplace_copy_from(
-        _cast_to_dtype(
+        cast_tensor_to(
             Tensor.from_numpy(safe_tensor_to_numpy(lora_B)),
-            DType.float32,
             DType.bfloat16,
         ).to(device)
     )
@@ -474,9 +472,8 @@ def linear_lora_max_output(
     lora_input_slice_idx = np.array([batch_size], dtype=np.int64)
 
     x_tensor = (
-        _cast_to_dtype(
+        cast_tensor_to(
             Tensor.from_numpy(safe_tensor_to_numpy(x)),
-            DType.float32,
             DType.bfloat16,
         ).to(device)
         if is_gpu
@@ -734,9 +731,8 @@ def attention_lora_max_output(
     )
 
     x_tensor = (
-        _cast_to_dtype(
+        cast_tensor_to(
             Tensor.from_numpy(safe_tensor_to_numpy(x_flattened)),
-            DType.float32,
             DType.bfloat16,
         ).to(device)
         if is_gpu
