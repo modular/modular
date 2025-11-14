@@ -554,15 +554,15 @@ struct PipelineState[num_stages: Int](Defaultable, ImplicitlyCopyable, Movable):
         """
 
         @parameter
-        if num_stages > 1:
+        if Self.num_stages > 1:
             self._index += 1
             self._count += 1
-            if self._index == num_stages:
+            if self._index == Self.num_stages:
                 self._index = 0
                 self._phase ^= 1
 
         @parameter
-        if num_stages == 1:
+        if Self.num_stages == 1:
             self._count += 1
             self._phase ^= 1
 
@@ -652,13 +652,13 @@ struct TMATensorTile[
         """
         return String(
             "TMATensorTile[dtype = ",
-            dtype,
+            Self.dtype,
             ", layout = ",
-            layout,
+            Self.layout,
             ", desc_layout = ",
-            desc_layout,
+            Self.desc_layout,
             ", is_k_major = ",
-            is_k_major,
+            Self.is_k_major,
             "]",
         )
 
@@ -745,7 +745,7 @@ struct TMATensorTile[
         ]()
 
         constrained[
-            type_of(dst).dtype == dtype,
+            type_of(dst).dtype == Self.dtype,
             "Input tensor has a different type than the TMA op",
         ]()
 
@@ -757,14 +757,14 @@ struct TMATensorTile[
         # row_major(K, MN) for the latter.
         #
         # TODO: use layout algebra here
-        alias copy_dim0 = desc_layout.shape[0].value()
-        alias copy_dim1 = desc_layout.shape[1].value()
-        alias copy_size = desc_layout.size()
+        alias copy_dim0 = Self.desc_layout.shape[0].value()
+        alias copy_dim1 = Self.desc_layout.shape[1].value()
+        alias copy_size = Self.desc_layout.size()
         alias num_copies_dim0 = product(
-            layout.shape[Int(not is_k_major)]
+            Self.layout.shape[Int(not Self.is_k_major)]
         ) // copy_dim0
         alias num_copies_dim1 = product(
-            layout.shape[Int(is_k_major)]
+            Self.layout.shape[Int(Self.is_k_major)]
         ) // copy_dim1
 
         @parameter
@@ -775,15 +775,15 @@ struct TMATensorTile[
                 alias copy_offset = (i * num_copies_dim1 + j) * copy_size
 
                 constrained[
-                    (copy_offset * size_of[dtype]()) % 128 == 0,
+                    (copy_offset * size_of[Self.dtype]()) % 128 == 0,
                     "copy_offset="
                     + String(copy_offset)
                     + ", size_of[dtype]()="
-                    + String(size_of[dtype]())
+                    + String(size_of[Self.dtype]())
                     + "\nlayout="
-                    + String(layout)
+                    + String(Self.layout)
                     + "\ndesc_layout="
-                    + String(desc_layout),
+                    + String(Self.desc_layout),
                 ]()
                 cp_async_bulk_tensor_shared_cluster_global[cta_group=cta_group](
                     dst.ptr.mut_cast[True]() + copy_offset,
@@ -799,7 +799,7 @@ struct TMATensorTile[
     fn async_copy_3d(
         self,
         dst: LayoutTensor[
-            dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt, UInt],
@@ -837,13 +837,13 @@ struct TMATensorTile[
         # row_major(K, MN) for the latter.
         #
         # TODO: use layout algebra here
-        alias copy_dim0 = desc_layout.shape[0].value()
-        alias copy_dim1 = desc_layout.shape[1].value()
-        alias copy_dim2 = desc_layout.shape[2].value()
-        alias copy_size = desc_layout.size()
-        alias num_copies_dim0 = layout.shape[0].value() // copy_dim0
-        alias num_copies_dim1 = layout.shape[1].value() // copy_dim1
-        alias num_copies_dim2 = layout.shape[2].value() // copy_dim2
+        alias copy_dim0 = Self.desc_layout.shape[0].value()
+        alias copy_dim1 = Self.desc_layout.shape[1].value()
+        alias copy_dim2 = Self.desc_layout.shape[2].value()
+        alias copy_size = Self.desc_layout.size()
+        alias num_copies_dim0 = Self.layout.shape[0].value() // copy_dim0
+        alias num_copies_dim1 = Self.layout.shape[1].value() // copy_dim1
+        alias num_copies_dim2 = Self.layout.shape[2].value() // copy_dim2
 
         @parameter
         for m in range(num_copies_dim0):
@@ -874,7 +874,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            dtype, _, address_space = AddressSpace.SHARED, *_, **_
+            Self.dtype, _, address_space = AddressSpace.SHARED, *_, **_
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt],
@@ -912,11 +912,11 @@ struct TMATensorTile[
             "TMA requires 128B alignment in shared memory",
         ]()
 
-        alias copy_dim0 = desc_layout.shape[0].value()
-        alias copy_dim1 = desc_layout.shape[1].value()
-        alias copy_size = desc_layout.size()
-        alias num_copies_dim0 = layout.shape[0].value() // copy_dim0
-        alias num_copies_dim1 = layout.shape[1].value() // copy_dim1
+        alias copy_dim0 = Self.desc_layout.shape[0].value()
+        alias copy_dim1 = Self.desc_layout.shape[1].value()
+        alias copy_size = Self.desc_layout.size()
+        alias num_copies_dim0 = Self.layout.shape[0].value() // copy_dim0
+        alias num_copies_dim1 = Self.layout.shape[1].value() // copy_dim1
 
         @parameter
         for i in range(num_copies_dim0):
@@ -945,7 +945,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            dtype,
+            Self.dtype,
             _,
             address_space = AddressSpace.SHARED,
             alignment=128,
@@ -982,7 +982,7 @@ struct TMATensorTile[
             are partitioned across multiple CTAs for parallel processing.
         """
         var dst_slice = LayoutTensor[
-            dtype,
+            Self.dtype,
             dst.layout,
             address_space = AddressSpace.SHARED,
             alignment=128,
@@ -998,7 +998,9 @@ struct TMATensorTile[
     @always_inline
     fn async_store(
         self,
-        src: LayoutTensor[dtype, _, address_space = AddressSpace.SHARED, **_],
+        src: LayoutTensor[
+            Self.dtype, _, address_space = AddressSpace.SHARED, **_
+        ],
         coords: Tuple[UInt, UInt],
     ):
         """
@@ -1023,14 +1025,14 @@ struct TMATensorTile[
             "TMA requires 128B alignment in shared memory",
         ]()
 
-        alias copy_dim0 = desc_layout.shape[0].value()
-        alias copy_dim1 = desc_layout.shape[1].value()
-        alias copy_size = desc_layout.size()
+        alias copy_dim0 = Self.desc_layout.shape[0].value()
+        alias copy_dim1 = Self.desc_layout.shape[1].value()
+        alias copy_size = Self.desc_layout.size()
         alias num_copies_dim0 = product(
-            layout.shape[Int(not is_k_major)]
+            Self.layout.shape[Int(not Self.is_k_major)]
         ) // copy_dim0
         alias num_copies_dim1 = product(
-            layout.shape[Int(is_k_major)]
+            Self.layout.shape[Int(Self.is_k_major)]
         ) // copy_dim1
 
         @parameter
@@ -1055,7 +1057,7 @@ struct TMATensorTile[
     ](
         self,
         src: LayoutTensor[
-            dtype, layout, address_space = AddressSpace.SHARED, **_
+            Self.dtype, Self.layout, address_space = AddressSpace.SHARED, **_
         ],
         coords: Tuple[UInt, UInt],
     ):
@@ -1421,7 +1423,7 @@ struct TMATensorTile[
                     NoneType,
                     constraints="l,l",
                     has_side_effect=True,
-                ](desc_ptr, gmem_strides[rank - i - 1] * size_of[dtype]())
+                ](desc_ptr, gmem_strides[rank - i - 1] * size_of[Self.dtype]())
 
     @always_inline
     fn replace_tensormap_global_dim_strides_in_shared_mem[
@@ -2015,13 +2017,13 @@ struct TMATensorTileArray[
         """
         return String(
             "TMATensorTileArray[num_of_tensormaps = ",
-            num_of_tensormaps,
+            Self.num_of_tensormaps,
             ", dtype = ",
-            dtype,
+            Self.dtype,
             ", cta_tile_layout = ",
-            cta_tile_layout,
+            Self.cta_tile_layout,
             ", desc_layout = ",
-            desc_layout,
+            Self.desc_layout,
             "]",
         )
 
@@ -2055,7 +2057,7 @@ struct TMATensorTileArray[
         self,
         index: Int,
         out result: UnsafePointer[
-            TMATensorTile[dtype, cta_tile_layout, desc_layout]
+            TMATensorTile[Self.dtype, Self.cta_tile_layout, Self.desc_layout]
         ],
     ):
         """
@@ -2069,7 +2071,9 @@ struct TMATensorTileArray[
         """
         return UnsafePointer[UInt8](
             self.tensormaps_ptr + index * self.descriptor_bytes
-        ).bitcast[TMATensorTile[dtype, cta_tile_layout, desc_layout]]()
+        ).bitcast[
+            TMATensorTile[Self.dtype, Self.cta_tile_layout, Self.desc_layout]
+        ]()
 
 
 struct TensorMapArray[
@@ -2113,7 +2117,7 @@ struct TensorMapArray[
         - max_descriptor_length should be a reasonable power of 2 to optimize memory usage.
     """
 
-    alias arr_size = Int(log2(Float32(max_descriptor_length))) + 1
+    alias arr_size = Int(log2(Float32(Self.max_descriptor_length))) + 1
     """How many descriptors are in the array."""
 
     @staticmethod
@@ -2155,14 +2159,16 @@ struct TensorMapArray[
         """
 
         constrained[
-            rank == 2 or rank == 1,
+            Self.rank == 2 or Self.rank == 1,
             "we can only construct 2D or 3D descriptor shapes",
         ]()
-        var tup = IntTuple(num_elems=rank + 1)
+        var tup = IntTuple(num_elems=Self.rank + 1)
         tup.replace_entry(0, int_value=first_dim)
 
-        for i in range(rank):
-            tup.replace_entry(i + 1, int_value=desc_remaining_tile_shape[i])
+        for i in range(Self.rank):
+            tup.replace_entry(
+                i + 1, int_value=Self.desc_remaining_tile_shape[i]
+            )
 
         return tup
 
@@ -2188,15 +2194,15 @@ struct TensorMapArray[
         """
         return String(
             "TensorMapDescriptorArray[rank = ",
-            rank,
+            Self.rank,
             ", dtype = ",
-            dtype,
+            Self.dtype,
             ", desc_remaining_tile_shape = ",
-            desc_remaining_tile_shape,
+            Self.desc_remaining_tile_shape,
             ", swizzle_mode = ",
-            swizzle_mode,
+            Self.swizzle_mode,
             ", max_descriptor_length = ",
-            max_descriptor_length,
+            Self.max_descriptor_length,
             "]",
         )
 
@@ -2230,7 +2236,7 @@ struct TensorMapArray[
     fn __init__(
         out self,
         ctx: DeviceContext,
-        global_tensor: LayoutTensor[dtype, *_, **_],
+        global_tensor: LayoutTensor[Self.dtype, *_, **_],
     ) raises:
         """
         Initializes a TensorMapDescriptorArray with descriptors for all power-of-2 lengths.
@@ -2256,11 +2262,11 @@ struct TensorMapArray[
         """
 
         constrained[
-            max_descriptor_length.is_power_of_two(),
+            Self.max_descriptor_length.is_power_of_two(),
             "max_descriptor_length must be a power of two",
         ]()
         constrained[
-            max_descriptor_length <= 256,
+            Self.max_descriptor_length <= 256,
             "max_descriptor_length must be less than or equal to 256",
         ]()
 
@@ -2277,7 +2283,7 @@ struct TensorMapArray[
             )
 
             self.descriptor_array[i] = _create_tma_descriptor_helper[
-                desc_tile_shape, swizzle_mode
+                desc_tile_shape, Self.swizzle_mode
             ](ctx, global_tensor)
 
     fn _get_descriptor_ptr[desc_index: Int](self) -> UnsafePointer[NoneType]:
@@ -2302,9 +2308,9 @@ struct TensorMapArray[
     fn store_ragged_tile(
         self,
         rows_to_copy: Int,
-        start_coord: IndexList[rank + 1],
+        start_coord: IndexList[Self.rank + 1],
         src: UnsafePointer[
-            Scalar[dtype], *_, address_space = AddressSpace.SHARED, **_
+            Scalar[Self.dtype], *_, address_space = AddressSpace.SHARED, **_
         ],
     ):
         """
@@ -2357,11 +2363,11 @@ struct TensorMapArray[
     ](
         self,
         src: UnsafePointer[
-            Scalar[dtype], *_, address_space = AddressSpace.SHARED, **_
+            Scalar[Self.dtype], *_, address_space = AddressSpace.SHARED, **_
         ],
         num_copies: Int,
-        coords: IndexList[rank + 1],
-    ) -> IndexList[rank + 1]:
+        coords: IndexList[Self.rank + 1],
+    ) -> IndexList[Self.rank + 1]:
         """
         Performs batched asynchronous stores using a specific descriptor size.
 
@@ -2392,8 +2398,8 @@ struct TensorMapArray[
         alias copy_size = product(desc_shape)
         alias desc_0 = product(desc_shape[0])
 
-        var row_increment = IndexList[rank + 1](fill=0)
-        var reflected_position = rank
+        var row_increment = IndexList[Self.rank + 1](fill=0)
+        var reflected_position = Self.rank
 
         for i in range(num_copies):
             var copy_offset = i * copy_size

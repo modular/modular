@@ -119,7 +119,7 @@ struct ComptimeInt[val: Int](MixedTupleLike):
 
     @always_inline("nodebug")
     fn value(self) -> Int:
-        return val
+        return Self.val
 
     @always_inline("nodebug")
     fn tuple(self) -> MixedTuple[*Self.VariadicType]:
@@ -137,10 +137,10 @@ struct RuntimeInt[dtype: DType = DType.int](MixedTupleLike):
 
     alias VariadicType: VariadicOf[MixedTupleLike] = Tuple[Self].element_types
 
-    var val: Scalar[dtype]
+    var val: Scalar[Self.dtype]
     """The runtime scalar value."""
 
-    fn __init__(out self, value: Scalar[dtype]):
+    fn __init__(out self, value: Scalar[Self.dtype]):
         """Initialize a runtime integer with the given value.
 
         Args:
@@ -220,9 +220,9 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         element_types: The variadic pack of element types that implement `MixedTupleLike`.
     """
 
-    alias VariadicType: VariadicOf[MixedTupleLike] = element_types
+    alias VariadicType: VariadicOf[MixedTupleLike] = Self.element_types
 
-    var _storage: Tuple[*element_types]
+    var _storage: Tuple[*Self.element_types]
     """The underlying MLIR storage for the tuple elements."""
 
     @staticmethod
@@ -237,7 +237,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
         @parameter
         for i in range(Self.__len__()):
-            alias T = element_types[i]
+            alias T = Self.element_types[i]
             count += T.__len__()
 
         return count
@@ -250,7 +250,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
             The number of elements in the tuple.
         """
 
-        alias result = stdlib.builtin.variadic_size(element_types)
+        alias result = stdlib.builtin.variadic_size(Self.element_types)
         return result
 
     @always_inline("nodebug")
@@ -273,7 +273,9 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         return Self.__len__()
 
     @always_inline("nodebug")
-    fn __init__(out self, var *args: *element_types, __list_literal__: () = ()):
+    fn __init__(
+        out self, var *args: * Self.element_types, __list_literal__: () = ()
+    ):
         """Construct tuple from variadic arguments.
 
         Args:
@@ -286,7 +288,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     fn __init__(
         out self,
         *,
-        var storage: VariadicPack[_, _, MixedTupleLike, *element_types],
+        var storage: VariadicPack[_, _, MixedTupleLike, *Self.element_types],
     ):
         """Construct from a low-level variadic pack.
 
@@ -299,12 +301,12 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
                     type_of(storage).is_owned,
                     type_of(storage).origin,
                     Copyable & Movable,
-                    *element_types,
+                    *Self.element_types,
                 ]
             ](storage^)
         )
 
-        self._storage = rebind[Tuple[*element_types]](t^)
+        self._storage = rebind[Tuple[*Self.element_types]](t^)
 
     fn __del__(deinit self):
         """Destructor that destroys all elements."""
@@ -316,7 +318,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
     @always_inline("nodebug")
     fn __getitem__[
         idx: Int
-    ](ref self) -> ref [self._storage] element_types[idx]:
+    ](ref self) -> ref [self._storage] Self.element_types[idx]:
         """Get a reference to an element in the tuple.
 
         Parameters:
@@ -385,7 +387,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
         @parameter
         for i in range(Self.__len__()):
-            alias T = element_types[i]
+            alias T = Self.element_types[i]
             var t_elem = t[i]
 
             @parameter
@@ -434,7 +436,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
         @parameter
         for i in range(Self.__len__()):
-            alias T = element_types[i]
+            alias T = Self.element_types[i]
             alias U = other_types[i]
 
             @parameter
@@ -477,7 +479,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
 
         @parameter
         for i in range(Self.__len__()):
-            alias T = element_types[i]
+            alias T = Self.element_types[i]
             alias U = other_types[i]
 
             @parameter
