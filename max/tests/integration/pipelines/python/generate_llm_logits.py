@@ -1287,6 +1287,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "max_length": 516,
             "trust_remote_code": False,
             "prefill_chunk_size": 128,
+            "max_batch_size": 8,
             # TODO(MODELS-832): MPI issues when running with EP.
             # "ep_size": 8,
         },

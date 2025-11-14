@@ -1109,10 +1109,9 @@ PIPELINES = {
             kl_div_threshold=1.1e-2,
         ),
     ),
-    # TODO(MODELS-832): Enable when we have a workflow with 8 B200 runners.
     "deepseek-ai/DeepSeek-R1": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["manual", "8xb200"],  # Requires 8 B200s to run
+        tags=["8xb200"],  # Requires 8 B200s to run
         run=_make_pipeline_runner(
             pipeline="deepseek-ai/DeepSeek-R1",
             encoding="float8_e4m3fn",
@@ -1124,6 +1123,7 @@ PIPELINES = {
             ),
             cos_dist_threshold=2.8e-02,
             kl_div_threshold=1.1e-1,
+            timeout=1200,
         ),
     ),
     "google/gemma-3-1b-it-bfloat16": PipelineDef(
