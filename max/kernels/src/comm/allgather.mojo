@@ -261,9 +261,15 @@ fn allgather[
         _max_num_blocks: Maximum number of blocks for kernel launch (optional).
     """
 
-    # Return early, if input buffer is empty
-    var num_elements = input_buffers[0].num_elements()
-    if num_elements == 0:
+    # Return early, if all input buffers are empty
+    var all_empty = True
+
+    @parameter
+    for i in range(ngpus):
+        if input_buffers[i].num_elements() > 0:
+            all_empty = False
+            break
+    if all_empty:
         return
 
     # Default max blocks if not specified.

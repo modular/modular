@@ -249,6 +249,10 @@ def main() -> None:
         List[Int](4, 3, 3),
         # Another uneven case with 2 GPUs.
         List[Int](1025, 1024),
+        # Zero length cases
+        List[Int](0, 0),
+        List[Int](8 * 1024, 0),
+        List[Int](0, 8 * 1024),
     )
 
     @parameter
