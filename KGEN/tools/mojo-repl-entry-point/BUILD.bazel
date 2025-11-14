@@ -9,6 +9,13 @@ modular_cc_binary(
         "-O0",
         "-g0",
     ],
+    linkopts = select({
+        "@platforms//os:linux": [
+            # Make sure this never gets stripped because it is used as a lldb breakpoint
+            "-Wl,--export-dynamic-symbol=mojo_repl_main",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         "//Init",
         "//KGEN:CompilerRT",
