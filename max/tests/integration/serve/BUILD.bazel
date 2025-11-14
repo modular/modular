@@ -146,3 +146,27 @@ modular_py_test(
         requirement("transformers"),
     ],
 )
+
+modular_py_test(
+    name = "test_warm_cache_target",
+    size = "large",
+    srcs = [
+        "test_warm_cache_target.py",
+    ],
+    data = [
+        "//max/python/max/entrypoints:pipelines",
+    ],
+    tags = [
+        "AITLIB-293",
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max/python/max/entrypoints",
+    ],
+)
