@@ -8,6 +8,7 @@
 
 #include "AsyncRT/CompilerSupport/Context.h"
 #include "AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
+#include "AsyncRT/DeviceContext/CompilationDevice.h"
 #include "AsyncRT/Runtime/Algorithms.h"
 #include "AsyncRT/Runtime/Runtime.h"
 #include "KGEN/Compiler/LLVMIRUtils.h"
@@ -1757,10 +1758,10 @@ static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
   return buf;
 }
 
-static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
-                                            llvm::Module &inputModule,
-                                            StringRef ptx,
-                                            CompilationOptions options) {
+static ErrorOr<BufferRef>
+compilePTXToCUBIN(std::unique_ptr<AsyncRT::CompilationDevice> cd,
+                  llvm::Module &inputModule, StringRef ptx,
+                  CompilationOptions options) {
   LLVM_DEBUG(
       llvm::dbgs() << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n");
   KGEN_DEBUG(0, {
@@ -1768,9 +1769,9 @@ static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
   });
   // FIXME: Will clean this _v2 up once we decide which compiler to use to get
   // to cubin.
-  return ctx->compileFunction(ptx, options.getDebugLevelString(),
-                              options.optimizationLevel,
-                              getNVGPUName(options.targetAccelerator));
+  return cd->compileFunction(ptx, options.getDebugLevelString(),
+                             options.optimizationLevel,
+                             getNVGPUName(options.targetAccelerator));
 }
 
 static AnyAsyncValueRef lowerLLVMModuleToObject(
@@ -1944,16 +1945,17 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
 
           StringRef ptx(codeBuf->getBufferStart(), codeBuf->getBufferSize());
 
-          ErrorOr<AsyncRT::DeviceContextRef> errCtx =
-              AsyncRT::DeviceContext::create(AsyncRT::Device::cudaAPI);
-          if (errCtx.isError()) {
+          ErrorOr<std::unique_ptr<AsyncRT::CompilationDevice>> errCD =
+              AsyncRT::CompilationDevice::create(
+                  AsyncRT::Device::cudaAPI,
+                  getNVGPUName(options.targetAccelerator));
+          if (errCD.isError()) {
             return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-                "failed to create cuda device context to compile to cubin",
+                "failed to create cuda compilation device to compile to cubin",
                 loc));
           }
-
           ErrorOr<BufferRef> cubinOr =
-              compilePTXToCUBIN(*errCtx, inputModule, ptx, options);
+              compilePTXToCUBIN(std::move(*errCD), inputModule, ptx, options);
           if (cubinOr.isError()) {
             return std::move(output).setToError(
                 AsyncRT::getMLIRDiagnostic(cubinOr.takeError(), loc));
