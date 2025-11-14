@@ -118,21 +118,6 @@ def create_mock_request(
     return context
 
 
-def test_should_schedule_ce_empty_queue() -> None:
-    scheduler, _, _, _ = create_scheduler()
-    assert not scheduler.batch_constructor._should_schedule_ce(replica_idx=0)
-
-
-def test_should_schedule_ce_full_batch() -> None:
-    scheduler, request_push_socket, _, _ = create_scheduler()
-    for _ in range(scheduler.scheduler_config.max_batch_size_tg):
-        mock_request = create_mock_request(is_tg=True)
-        scheduler.batch_constructor.enqueue_new_request(mock_request)
-    mock_request = create_mock_request()
-    request_push_socket.put_nowait(mock_request)
-    assert not scheduler.batch_constructor._should_schedule_ce(replica_idx=0)
-
-
 def test_try_create_ce_batch() -> None:
     scheduler, request_push_socket, _, _ = create_scheduler()
 
@@ -297,6 +282,23 @@ def test_schedule_ce_with_chunked_prefill() -> None:
     assert data.start_idx == 20
     assert data.active_idx == 30
     assert data.active_length == 10
+
+
+def test_should_schedule_ce_empty_queue() -> None:
+    scheduler, _, _, _ = create_scheduler()
+    assert not scheduler.batch_constructor.construct_batch().batch
+
+
+def test_should_schedule_ce_full_batch() -> None:
+    scheduler, request_push_socket, _, _ = create_scheduler()
+    for _ in range(scheduler.scheduler_config.max_batch_size_tg):
+        mock_request = create_mock_request(is_tg=True)
+        scheduler.batch_constructor.enqueue_new_request(mock_request)
+    mock_request_ce = create_mock_request()
+    request_push_socket.put_nowait(mock_request_ce)
+    batch = scheduler.batch_constructor.construct_batch().batch
+    assert batch
+    assert mock_request_ce.request_id not in batch
 
 
 def test_schedule_mixed_ce_tg() -> None:
